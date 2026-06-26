@@ -124,12 +124,17 @@ any single event as a win — which is exactly why the set needs tests that poin
 - **Net-negative ledger.** Capital captured must exceed the overhead to capture it (curation, red-flag
   sweeps, the ritual). If maintaining the system costs more attention than the judgment + knowledge it
   banks, the telos has failed — and "the upgrade ported your content" is no defense, because the apparatus
-  cost more than its output. *(Currently uninstrumented — there is no denominator.)*
+  cost more than its output. *Minimal instrument (guideline): at each periodic review, score the last
+  stretch red/amber/green — did capture + maintenance cost more attention than the judgment/knowledge it
+  banked returned? A rough rating is enough to catch a sustained red; a real denominator can wait until a
+  red actually shows.*
 - **Transfer failure.** P0's central promise — capital survives a change of model/harness/tool — is
   measurable: actually move substrates and check how much "durable" capital ports vs. how much was secretly
   consumer-calibrated *shell* (see the seam in P0). If most of it needs rewriting on transfer, the promise
-  is falsified *by measurement*, not absorbed as an upgrade. *(Currently uninstrumented — there is no
-  transfer test.)*
+  is falsified *by measurement*, not absorbed as an upgrade. *Minimal instrument (guideline):
+  event-triggered — the next time you actually change model/harness, before re-explaining anything, write
+  down what ported unchanged vs. what you had to rebuild. That delta is the measurement; no upfront tooling
+  needed.*
 - **Recurring existential rewrite.** Stated just above: one foundational rebuild is healthy; *every*
   concept forcing one is failure. *(The only falsifier currently written down.)*
 
@@ -157,7 +162,7 @@ confirms it ran.*
 | **P1 ↔ P3** | economy/speed must never buy a wrong answer | "no optimization below the gate" — checked at review | **guideline** |
 | **P2 ↔ P3** | minimizing tokens must not strip context that prevents hallucination | structural tiering that runs + is tooling-checked (the reusable/personal seam, a thin index that points rather than dumps, a startup-footprint budget); cache-aware placement + retrieval-miss capture as conventions | **mechanism** |
 | **P0 ↔ P4** | accumulating capital must not become speculative building; friction-gating must not become an excuse to skip capturing what was genuinely earned | P4's prophylactic carve-out (irreversibility test) + P0's red-flag sweep at session end | **habit + guideline** |
-| **P0 ↔ P1 (self-calibration)** | the set's reflexes (upgrade / friction / loop-working) must not let it spin every outcome into a win and become unfalsifiable | the three Falsifiers above — net-negative ledger, transfer failure, recurring existential rewrite (a *ledger*, a *measurement*, a *rate* — the tests point-reframing cannot reach) | **guideline** *(first two uninstrumented)* |
+| **P0 ↔ P1 (self-calibration)** | the set's reflexes (upgrade / friction / loop-working) must not let it spin every outcome into a win and become unfalsifiable | the three Falsifiers above — net-negative ledger, transfer failure, recurring existential rewrite (a *ledger*, a *measurement*, a *rate* — the tests point-reframing cannot reach) | **guideline** *(ledger + transfer carry minimal rituals; promote to mechanism only when one actually fires)* |
 
 *Most tensions above are honest habits or guidelines, not mechanisms — that is the normal state. Mechanize
 a tension only when its absence has actually bitten (P4); a balance you've never seen fail doesn't yet need
@@ -167,12 +172,33 @@ a machine.*
 
 - **Per-session (cheap):** if the session surfaced friction that contradicts a principle here, note or
   revise it; otherwise skip silently. Most sessions add nothing — that is correct.
-- **Periodic (deeper):** re-read the tensions; for each, confirm its enforcement still exists and runs;
-  surface any tension that has drifted to "unenforced — risk." This is where principles are actually
-  edited.
+- **Periodic (deeper) — triggered, not calendar-based:** run this on any substrate change (model/harness),
+  whenever a falsifier fires, or — absent either — no more than a couple of times a year. Re-read the
+  tensions; for each, confirm its enforcement still exists and runs; surface any tension that has drifted to
+  "unenforced — risk"; and run the ledger score. This is where principles are actually edited.
 
 ---
 
 *The durable principles here (working set / locality / retrieval, invest in judgment not tooling) predate
 any specific model or framework — the occasion was applying them explicitly to long-running human–AI
 knowledge work.*
+
+---
+
+## Changelog
+
+This is the "changelog row" the success test points to — the cheap place a new idea lands instead of
+triggering a foundational rewrite. Each row: date, what changed, the friction that justified it.
+
+- **2026-06-26** — P3 re-anchored on P1: "stability > size" now justified by reproducibility /
+  attributability, not cache/KV-state; transformer specifics demoted to a labeled, depreciable mechanism
+  bonus. *Friction: the principle's strongest claim rested on its most depreciable argument.*
+- **2026-06-26** — P0: acknowledged the durable/depreciable seam runs *through* judgment (problem-/domain-facing
+  core vs consumer-calibrated shell) + added the 10× test. *Friction: P0 banked as "non-depreciating" parts
+  of judgment that actually die on a model change — including Keel's own core pitch.*
+- **2026-06-26** — Added the **Falsifiers** block (ledger / transfer / recurrence) and the **P0 ↔ P1
+  self-calibration** tension row. *Friction: the set's reflexes could spin any single outcome into a win,
+  i.e. it was unfalsifiable — a P1 violation.*
+- **2026-06-26** — Instrumented the ledger + transfer falsifiers to guideline-level rituals and gave the
+  periodic review a trigger. *Friction: an uninstrumented falsifier is a "wish" by the doc's own line — and
+  the changelog this list points to did not yet exist.*
