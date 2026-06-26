@@ -1,3 +1,8 @@
+# Private AI context — never commit to this public repo. Root-anchored so templates/ stays tracked.
+/CLAUDE.md
+/INSTANCE.md
+/.claude/
+
 # macOS / IDE / system noise
 .DS_Store
 .idea/
