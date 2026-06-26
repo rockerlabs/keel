@@ -15,7 +15,7 @@ operating principles in service of it.** They carry deliberate internal tension 
 so no single principle taken to its extreme wins (a purely lexicographic order is brittle;
 tension-with-bounds is robust). When two pull apart in a concrete moment, that tension is the signal to
 think, not a bug to remove. The named tensions and how each is held honest are in
-"How these principles stay alive" at the end.
+"How these principles stay alive" below.
 
 ## Load-bearing terms
 
@@ -138,7 +138,8 @@ gap is the friction that justifies building one.
 appears to undermine the approach — should be absorbed *cheaply* (a parked note / a changelog row), NOT
 trigger another foundational restructuring. The first such event correctly produces a foundation because
 none existed; a *recurring* need for an existential rewrite per concept is the signal the foundation has
-failed — and is itself the meta-trap above.
+failed — it is the recursive over-engineering trap named above, now playing out at the level of the whole
+foundation.
 
 **Falsifiers — the outcomes this set must not be allowed to spin.** P0's reflexes (a poached mechanism is
 an *upgrade*; a threatening idea is *friction*; a wrong principle is the *loop working*) can reframe almost
@@ -267,3 +268,7 @@ triggering a foundational rewrite. Each row: date, what changed, the friction th
   added the **Worked example — the founding decision**. *Friction: the absolute over-claimed (the seam in P0
   shows even judgment partly depreciates), and the doc told readers to "open this at a decision" without ever
   showing one decision run through the principles.*
+- **2026-06-26** — Coherence pass: aligned the header with P0's rate calibration, and tightened two dangling
+  references ("at the end" → "below"; named the vague "meta-trap" as the recursive over-engineering trap).
+  *Friction: the multi-edit sequence left the intro asserting an absolute P0 had walked back, plus two
+  internal pointers that no longer resolved cleanly.*
