@@ -74,4 +74,4 @@ tools/doctor.sh       ~/path/to/project
 ## License & scope
 
 A reference / methodology repository, not a packaged product or a subscription. Not tied to any one model
-or provider. See [`notes/positioning.md`](notes/positioning.md) for the longer framing.
+or provider.

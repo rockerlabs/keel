@@ -3,6 +3,9 @@
 /INSTANCE.md
 /.claude/
 
+# Draft zone — capture-first / work-in-progress material kept out of the public repo
+/private/
+
 # macOS / IDE / system noise
 .DS_Store
 .idea/
