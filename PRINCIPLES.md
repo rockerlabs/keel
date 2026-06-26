@@ -21,20 +21,28 @@ think, not a bug to remove. The named tensions and how each is held honest are i
 The goal of the whole activity is to accumulate **non-depreciating capital**: transferable *judgment*
 (problem decomposition, knowing what context a reasoner needs, verification/calibration,
 information-architecture taste, domain modeling) + *captured domain knowledge* (the project memories and
-decisions earned through real friction). These survive any change of model, harness, or tool.
+decisions earned through real friction). These survive any change of model, harness, or tool — with one
+caveat the seam below makes precise: only their *problem-/domain-facing core* ports cleanly.
 
 - **Mechanism depreciates** — specific files, hooks, indexing schemes, token budgets tuned to today's
   harness. Keep it thin and disposable.
-- **Devaluation risk is concentrated entirely in the mechanism layer.** The platform absorbing a
-  mechanism (native memory/retrieval) is an *upgrade*, not a loss: your content and judgment port onto
-  it. The platform cannot absorb *your* content (your specific projects and decisions).
+- **Devaluation risk is concentrated *mostly* in the mechanism layer — but the seam runs through
+  judgment too.** The platform absorbing a mechanism (native memory/retrieval) is an *upgrade*, not a
+  loss: your content and judgment port onto it; the platform cannot absorb *your* content (your specific
+  projects and decisions). The catch: *judgment is itself layered*. It has a durable **problem-/domain-facing
+  core** (decompose, model the consumer's knowledge gap, verify, model the domain) and a depreciable
+  **consumer-calibrated shell** (granularity tuned to a model's capability, "always include X because this
+  model forgets it," a chunk size that fits today's retrieval). The shell is *called* judgment but behaves
+  like mechanism — it dies when the model changes. Test: *would this still hold if the model were 10× more
+  capable?* If not, it's shell, not core.
 - **Universality axes serve durability, not decoration.** Portability / scale-invariance /
   substrate-independence are how captured capital survives a platform shift. "Reusable by another person"
   is *optionality without sunk cost*: keep the reusable/personal seam clean so sharing is *possible*, but
   do not invest in distribution (docs, packaging, generalization) until a real second consumer exists.
 - **Engine:** after any task done in a substrate-specific way, extract the substrate-independent lesson
   and capture *that* — the principle, not the recipe. Recipes depreciate; principles compound. This habit
-  is what turns disposable mechanism into durable capital.
+  is what turns disposable mechanism into durable capital — and it is the same move that distills the
+  depreciable *shell* of a judgment into its durable *core*.
 
 ## P1 — Gate: calibrated correctness
 
@@ -54,19 +62,22 @@ single-source-of-truth exist because *noise causes hallucination* (the model gra
 or drowns). The objective is to maximize the model's hit-rate on the needed fact while keeping the
 always-loaded set small, stable, and clear. Token-saving is a side effect, not the goal.
 
-## P3 — Attention, not cost, is the binding constraint
+## P3 — The binding constraint is the reasoner's attention, not the visible meters
 
-Optimization is real but subordinate: below P1 it doesn't exist; above P1 it serves P2. The thing being
-optimized is routinely misidentified — cost and latency are visible, but the real constraint is *attention
-and signal-to-noise*. Two correctives:
+Optimization is real but subordinate: below P1 it doesn't exist; above P1 it serves P2. The trap is
+optimizing the *visible proxy* (token count, cost, latency) instead of the actual scarce resource: the
+reasoner's attention and the signal-to-noise of what it must process. Whenever you shrink a visible
+meter, ask whether you're spending *more* of the real constraint to save the proxy. Two correctives:
 
-- **Over-dense compression hurts retrieval** — a clearer, slightly longer statement the model gets right
-  the first time is cheaper in effect than a compressed one that triggers a correction round-trip.
-- **Stability of the loaded set often matters more than its size.** A smaller but volatile set that
-  changes every session is worse than a slightly larger stable one — because every change busts whatever
-  cache or warm state the runtime maintains. Prefer *stability* over raw minimality. *(On hosted models
-  with prompt caching this is especially strong; on local models the same logic applies to context
-  reuse and warm KV state.)*
+- **Compression past clarity is negative-sum.** A statement dense enough to misparse costs a correction
+  round-trip — which consumes far more attention than the bytes it saved. Optimize for first-pass
+  correctness, not minimal size: the cheapest message is the one the reasoner gets right once.
+- **Stability of the loaded set is a self-standing asset, and its primary justification is epistemic, not
+  performance.** A smaller but volatile set that changes every session is worse than a slightly larger
+  stable one — because a context that shifts under you destroys reproducibility and makes any change of
+  behavior un-attributable (your edit, or context drift?). Stability is what makes the system
+  *diagnosable under P1*. *(Depreciable mechanism bonus: on substrates with prompt-caching / warm KV
+  state, stability also buys a direct latency/cost win — a side effect, not the reason.)*
 
 ## P4 — Build from friction, not from completeness
 
@@ -104,6 +115,27 @@ appears to undermine the approach — should be absorbed *cheaply* (a parked not
 trigger another foundational restructuring. The first such event correctly produces a foundation because
 none existed; a *recurring* need for an existential rewrite per concept is the signal the foundation has
 failed — and is itself the meta-trap above.
+
+**Falsifiers — the outcomes this set must not be allowed to spin.** P0's reflexes (a poached mechanism is
+an *upgrade*; a threatening idea is *friction*; a wrong principle is the *loop working*) can reframe almost
+any single event as a win — which is exactly why the set needs tests that point-reframing cannot reach: a
+*rate*, a *ledger*, a *measurement*. Three:
+
+- **Net-negative ledger.** Capital captured must exceed the overhead to capture it (curation, red-flag
+  sweeps, the ritual). If maintaining the system costs more attention than the judgment + knowledge it
+  banks, the telos has failed — and "the upgrade ported your content" is no defense, because the apparatus
+  cost more than its output. *(Currently uninstrumented — there is no denominator.)*
+- **Transfer failure.** P0's central promise — capital survives a change of model/harness/tool — is
+  measurable: actually move substrates and check how much "durable" capital ports vs. how much was secretly
+  consumer-calibrated *shell* (see the seam in P0). If most of it needs rewriting on transfer, the promise
+  is falsified *by measurement*, not absorbed as an upgrade. *(Currently uninstrumented — there is no
+  transfer test.)*
+- **Recurring existential rewrite.** Stated just above: one foundational rebuild is healthy; *every*
+  concept forcing one is failure. *(The only falsifier currently written down.)*
+
+Adding the first two is itself a friction-driven edit (P4), not a prophylactic one — the gap was surfaced
+by engaging this critique, which is exactly the "conceptual gap exposed by a new idea" that counts as valid
+friction here.
 
 **Self-balancing is real only as far as each tension is mechanized.** Principles have no agency — they do
 not enforce themselves. Each named tension below must be backed by a check or a ritual that actually runs;
