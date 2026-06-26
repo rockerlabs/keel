@@ -5,7 +5,7 @@ personal data and zero host paths**. A fresh adopter takes this file verbatim an
 `INSTANCE.md` (projects, hardware, language, model access). The thin always-loaded `CLAUDE.md` keeps the
 unconditional safety rails + a map, and points here on demand.
 
-- **On demand — NOT auto-loaded.** The always-loaded `CLAUDE.md` map says when to read this: knowledge base structure /
+- **On demand — NOT auto-loaded.** The always-loaded `CLAUDE.md` map says when to read this: knowledge-base structure /
   engineering conventions / changelog format / git mechanics.
 - **Reusability boundary:** this file must never contain an absolute host path, a username, hardware, a
   specific model provider, or a project name — those live in `INSTANCE.md`. `doctor` hard-fails if a
@@ -140,7 +140,7 @@ Before writing, check there isn't already a file on the topic. Delete what becam
 
 **The cwd-silo trap:** memory keyed by the session's cwd will NOT load when you later work from a different
 path for the same project. So: **cross-project facts** (user/environment, cross-cutting feedback, tool
-gotchas) → a global knowledge base file (cwd-independent); **project-specific facts** → that project's own memory, written
+gotchas) → a global knowledge-base file (cwd-independent); **project-specific facts** → that project's own memory, written
 while working FROM the project dir — never from a throwaway cwd. A cross-project fact stranded in a project
 silo is effectively invisible.
 
@@ -155,7 +155,7 @@ silo is effectively invisible.
 4. Open a PR into the default branch.
 5. After merge, delete the branch (local + remote) and prune stale refs.
 
-*(A solo single-author knowledge base repo with no reviewer and no CI is the one reasonable carve-out — committing to
+*(A solo single-author knowledge-base repo with no reviewer and no CI is the one reasonable carve-out — committing to
 the default directly there is ceremony-free; discipline still holds via clear commit messages. Decide this
 deliberately, per repo, not by silent default.)*
 

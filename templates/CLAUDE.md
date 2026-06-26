@@ -24,10 +24,10 @@
 ## Communication preferences
 
 <!-- Set your defaults here. Example: chat language, explanation verbosity. Persistent artifacts
-     (knowledge base docs, code, git/PR text) should stay in English for cross-model portability regardless. -->
+     (knowledge-base docs, code, git/PR text) should stay in English for cross-model portability regardless. -->
 
 - **Chat language:** <your preference>
-- **Persistent artifacts** (knowledge base docs, code, commits, PR text) → **English** (read at startup by whatever
+- **Persistent artifacts** (knowledge-base docs, code, commits, PR text) → **English** (read at startup by whatever
   model runs the session; English maximizes comprehension and portability across models).
 
 ---
@@ -35,11 +35,11 @@
 ## Git — mandatory rails
 
 **Never commit or push directly to the default branch** (any project, any change size). Feature branch →
-commit → push → PR → merge → delete the branch. (Full flow + the solo-knowledge base carve-out → `FRAMEWORK.md`.)
+commit → push → PR → merge → delete the branch. (Full flow + the solo knowledge-base carve-out → `FRAMEWORK.md`.)
 
 **Never commit private AI context or secrets.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
 (private AI context — default gitignored; choose public deliberately for OSS), plus IDE/OS/build artifacts.
-API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge base doc (plaintext on disk + pulled into model
+API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk + pulled into model
 context). Use environment variables; never hardcode credentials.
 
 ---
@@ -66,7 +66,7 @@ pass a smoke off as full verification.
 - On a **significant** fork (approach / library / architecture / an irreversible action) — don't guess
   silently: lay out the options with a recommendation and let the operator choose.
 - For small things with an obvious default — pick something reasonable, name the choice, move on.
-- **Foundations — front-load** at project start (knowledge base layout, memory approach, domain boundaries, stack, git
+- **Foundations — front-load** at project start (knowledge-base layout, memory approach, domain boundaries, stack, git
   workflow). Fix them explicitly with defaults right away, not mid-project.
 - Approval in one context does not carry to the next; confirm any irreversible/outward-facing action (push,
   merging a PR, release, deletion).
@@ -85,6 +85,6 @@ leave it chat-only: the next session starts cold and won't recall it. Each sessi
 ## Memory — where a fact lives
 
 Auto-memory is commonly keyed by the session's cwd, so a memory written from the wrong/throwaway cwd will
-NOT load later. **Cross-project facts** (user/environment, tool gotchas) → a global knowledge base file (cwd-independent).
+NOT load later. **Cross-project facts** (user/environment, tool gotchas) → a global knowledge-base file (cwd-independent).
 **Project-specific facts** → that project's own memory dir, written while working FROM the project dir.
 (Detail → `FRAMEWORK.md`.)

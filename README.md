@@ -32,7 +32,7 @@ The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable en
 | `templates/CLAUDE.md` | The thin always-loaded core — copy into your harness (e.g. `~/.claude/`) and edit. |
 | `templates/INSTANCE.md` | Your private personal layer (hardware, model access, project registry). |
 | `templates/project-CLAUDE.md` | Per-project context template. |
-| `tools/doctor.sh` | Structural self-audit of a project's knowledge base baseline. |
+| `tools/doctor.sh` | Structural self-audit of a project's knowledge-base baseline. |
 | `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
 | `commands/init-project.md` | The `/init-project` command. |
