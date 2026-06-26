@@ -1,0 +1,5 @@
+# macOS / IDE / system noise
+.DS_Store
+.idea/
+*.iml
+.vscode/
