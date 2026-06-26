@@ -7,6 +7,10 @@ keeping the judgment and project knowledge you accumulate from devaluing every t
 > base. It is published to find out whether it's useful to anyone beyond its author — not as a finished
 > product. Feedback welcome; expect rough edges.
 
+> **Built and tested on Claude Code.** The principles, framework, and `tools/` are harness-independent; the
+> commands assume a Claude-Code-style custom-command feature. To run Keel with another model or harness, see
+> [`ADAPTING.md`](ADAPTING.md) — that's where "model-agnostic" becomes a concrete how-to (and where it stops).
+
 ## The idea
 
 Every AI session starts cold — the agent re-learns your project, conventions, and past decisions from
@@ -73,5 +77,6 @@ tools/doctor.sh       ~/path/to/project
 
 ## License & scope
 
-A reference / methodology repository, not a packaged product or a subscription. Not tied to any one model
-or provider.
+A reference / methodology repository, not a packaged product or a subscription. Built for Claude Code but
+not tied to any one model or provider — see [`ADAPTING.md`](ADAPTING.md). Licensed under MIT (see
+[`LICENSE`](LICENSE)).
