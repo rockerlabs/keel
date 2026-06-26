@@ -1,7 +1,8 @@
 # Principles
 
 Five durable principles for human–AI knowledge work. They are meant to outlive any specific model,
-tool, or workflow — mechanisms change, these do not. P0 is the foundation (why this activity exists);
+tool, or workflow — mechanisms churn by the week; these are built to change slowly, in years not days
+(P0 makes the rate precise). P0 is the foundation (why this activity exists);
 P1–P4 are operating principles in service of it.
 
 *Open this when making a foundational decision, or when a decision feels like it trades one principle
