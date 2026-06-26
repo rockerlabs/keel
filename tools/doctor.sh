@@ -6,6 +6,7 @@
 #
 # Usage:
 #   doctor.sh [PROJECT_DIR ...]     audit each dir (default: current dir)
+#   doctor.sh --registry FILE       audit every project in an INSTANCE.md Projects table (the Path column)
 #   doctor.sh --quiet ...           print only GAP/WARN lines
 #
 # Checks per project:
@@ -17,13 +18,31 @@
 set -euo pipefail
 
 QUIET=0
+REGISTRY=""
 DIRS=()
-for a in "$@"; do
-  case "$a" in
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --quiet) QUIET=1 ;;
-    *) DIRS+=("$a") ;;
+    --registry) shift; REGISTRY="${1:?--registry needs a FILE}" ;;
+    *) DIRS+=("$1") ;;
   esac
+  shift
 done
+
+# Pull project paths from the Path column of an INSTANCE.md Projects table.
+# Skips the header, the separator, and unfilled placeholder rows; expands a leading ~.
+if [ -n "$REGISTRY" ]; then
+  [ -f "$REGISTRY" ] || { echo "doctor: registry not found: $REGISTRY" >&2; exit 2; }
+  while IFS='|' read -r _lead _col1 col_path _rest; do
+    path="$(printf '%s' "$col_path" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    case "$path" in
+      ""|Path|*"<"*) continue ;;        # header / blank / placeholder
+    esac
+    path="${path/#\~/$HOME}"
+    DIRS+=("$path")
+  done < <(grep -E '^[[:space:]]*\|' "$REGISTRY" | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
+fi
+
 [ "${#DIRS[@]}" -gt 0 ] || DIRS=(".")
 
 WARN_TOKENS="${KEEL_STARTUP_WARN_TOKENS:-10000}"

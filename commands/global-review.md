@@ -18,8 +18,8 @@ Startup (cheap + correct — do NOT re-onboard):
 
 Then:
 - **No argument → review/survey mode:** reconcile state (Projects table vs reality, the knowledge-base
-  repo's git status, open meta items) and run `tools/doctor.sh` across the registry's projects to surface
-  baseline drift. **Principles pass:** re-read the tensions in `PRINCIPLES.md` and confirm each still has an
+  repo's git status, open meta items) and run `tools/doctor.sh --registry INSTANCE.md` to audit every
+  project in the registry and surface baseline drift. **Principles pass:** re-read the tensions in `PRINCIPLES.md` and confirm each still has an
   enforcement that runs — surface any that drifted to "unenforced — risk" (the deeper, periodic arm of the
   principles revision ritual). Report what stands out and what's next; make no edits without direction.
 - **An argument ($ARGUMENTS) → work mode:** do that meta item autonomously. For edits to gitignored files
