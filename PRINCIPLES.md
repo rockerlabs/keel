@@ -157,6 +157,7 @@ confirms it ran.*
 | **P1 ↔ P3** | economy/speed must never buy a wrong answer | "no optimization below the gate" — checked at review | **guideline** |
 | **P2 ↔ P3** | minimizing tokens must not strip context that prevents hallucination | structural tiering that runs + is tooling-checked (the reusable/personal seam, a thin index that points rather than dumps, a startup-footprint budget); cache-aware placement + retrieval-miss capture as conventions | **mechanism** |
 | **P0 ↔ P4** | accumulating capital must not become speculative building; friction-gating must not become an excuse to skip capturing what was genuinely earned | P4's prophylactic carve-out (irreversibility test) + P0's red-flag sweep at session end | **habit + guideline** |
+| **P0 ↔ P1 (self-calibration)** | the set's reflexes (upgrade / friction / loop-working) must not let it spin every outcome into a win and become unfalsifiable | the three Falsifiers above — net-negative ledger, transfer failure, recurring existential rewrite (a *ledger*, a *measurement*, a *rate* — the tests point-reframing cannot reach) | **guideline** *(first two uninstrumented)* |
 
 *Most tensions above are honest habits or guidelines, not mechanisms — that is the normal state. Mechanize
 a tension only when its absence has actually bitten (P4); a balance you've never seen fail doesn't yet need
