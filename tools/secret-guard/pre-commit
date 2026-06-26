@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Keel secret-guard — pre-commit hook. Catches a key-shaped secret before it enters local history.
+# Resolves the scanner next to itself so a vendored copy is self-contained.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+scan="$here/secret-scan.sh"
+[ -x "$scan" ] || scan="$(command -v secret-scan.sh || true)"
+[ -n "${scan:-}" ] && [ -x "$scan" ] || { echo "secret-guard: scanner not found next to hook" >&2; exit 1; }
+exec "$scan"
