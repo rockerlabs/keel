@@ -16,6 +16,26 @@ tension-with-bounds is robust). When two pull apart in a concrete moment, that t
 think, not a bug to remove. The named tensions and how each is held honest are in
 "How these principles stay alive" at the end.
 
+## Load-bearing terms
+
+Only the terms the principles actually lean on — defined here so a reader (or a second consumer) doesn't
+grab the wrong sense mid-decision.
+
+- **Mechanism** — the disposable layer: files, hooks, indexing schemes, token budgets, prompts tuned to
+  today's harness. Depreciates *by design*; keep it thin.
+- **Judgment (core vs shell)** — transferable skill, but itself two-layered. *Core* is problem-/domain-facing
+  (decompose, model the consumer's knowledge gap, verify, model the domain) and durable. *Shell* is
+  consumer-calibrated (tuned to a specific model's current limits) and depreciates like mechanism — it dies
+  when the model changes. The 10× test in P0 separates them.
+- **Captured domain knowledge** — your specific projects, decisions, and memories earned through real
+  friction. The one thing no platform can absorb.
+- **Harness / substrate** — the runtime that hosts and drives the reasoner: the CLI/app, retrieval,
+  caching, the context window. Used interchangeably; both name the *swappable* environment a model runs in.
+- **Tiering** — splitting knowledge into a small, stable, always-loaded core plus an on-demand rest. A
+  mechanism in service of P2/P3, not a principle itself.
+- **Working set / loaded set** — what is actually in the reasoner's context at a given moment (the two
+  phrases are synonyms across these principles).
+
 ## P0 — Telos: invest in what doesn't devalue
 
 The goal of the whole activity is to accumulate **non-depreciating capital**: transferable *judgment*
@@ -202,3 +222,6 @@ triggering a foundational rewrite. Each row: date, what changed, the friction th
 - **2026-06-26** — Instrumented the ledger + transfer falsifiers to guideline-level rituals and gave the
   periodic review a trigger. *Friction: an uninstrumented falsifier is a "wish" by the doc's own line — and
   the changelog this list points to did not yet exist.*
+- **2026-06-26** — Added a **Load-bearing terms** glossary. *Friction: P2 risk — load-bearing terms
+  (judgment core/shell, mechanism, harness/substrate, tiering) were undefined, inviting a wrong-sense grab
+  mid-decision, especially for a second consumer.*
