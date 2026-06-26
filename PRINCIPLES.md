@@ -38,7 +38,10 @@ grab the wrong sense mid-decision.
 
 ## P0 — Telos: invest in what doesn't devalue
 
-The goal of the whole activity is to accumulate **non-depreciating capital**: transferable *judgment*
+The goal of the whole activity is to accumulate **non-depreciating capital** — strictly, capital that is
+*slow* to depreciate: the realistic target is surviving churn measured in months and years, not the
+daily/weekly cadence at which AI tooling devalues (chasing *that* cadence is the maddening, pointless
+treadmill P0 exists to refuse). That capital is transferable *judgment*
 (problem decomposition, knowing what context a reasoner needs, verification/calibration,
 information-architecture taste, domain modeling) + *captured domain knowledge* (the project memories and
 decisions earned through real friction). These survive any change of model, harness, or tool — with one
@@ -197,6 +200,40 @@ a machine.*
   tensions; for each, confirm its enforcement still exists and runs; surface any tension that has drifted to
   "unenforced — risk"; and run the ledger score. This is where principles are actually edited.
 
+## Worked example — the founding decision
+
+The first real decision this set was used on is the one that *created* it. Recorded here as the canonical
+illustration of the principles binding a live choice — tension and all.
+
+**The friction.** In AI work the tools, models, and workflows devalue so fast that trying to keep up is
+maddening and starts to feel pointless: the effort sunk last week is stale this week.
+
+**The decision.** Whether to respond by *chasing the churn* (adopt each new tool as it lands) or by building
+a small fixed set of principles whose whole purpose is to *not* devalue — ideally never, but at minimum not
+on a weekly cadence.
+
+**The tension — P0 vs P4 (with P3 underneath).** P0 says invest in what doesn't devalue, which argues *for*
+building the set. But P4 says don't build from completeness — a set of rules written in the abstract is
+exactly the speculative scaffolding P4 forbids. And P3 names the trap under the churn: the *visible* thing
+(new tools, new models) is not the real constraint; the real constraint is *attention/sanity* being shredded
+by chasing it.
+
+**What tipped it.** The friction was *felt*, not hypothetical — the madness of the treadmill is real lived
+friction, so P4's gate was genuinely satisfied, not bypassed. P0 then named what to anchor on: not the tools
+(they devalue weekly) but the thin slow-to-depreciate layer beneath them — judgment + captured knowledge.
+The synthesis that resolves the P0 ↔ P4 tension: build the *thinnest possible* durable layer (these
+principles + captured judgment) and keep every mechanism explicitly disposable. Don't build a framework —
+build a keel.
+
+**How it stays honest.** "Doesn't devalue, or at least not within a week" is a *rate*, not an absolute —
+which is why it's wired to the falsifiers: the success test (next threatening concept absorbed as a
+changelog row, not a rewrite) and the transfer test *are* the operational definitions of "slow to devalue."
+If concepts kept forcing rewrites, this founding decision would stand refuted.
+
+*(This is the genesis example — a decision that produced the principles. A downstream example — the
+principles deciding something later — should be added the first time one occurs; fabricating one now would
+violate P1/P4.)*
+
 ---
 
 *The durable principles here (working set / locality / retrieval, invest in judgment not tooling) predate
@@ -225,3 +262,7 @@ triggering a foundational rewrite. Each row: date, what changed, the friction th
 - **2026-06-26** — Added a **Load-bearing terms** glossary. *Friction: P2 risk — load-bearing terms
   (judgment core/shell, mechanism, harness/substrate, tiering) were undefined, inviting a wrong-sense grab
   mid-decision, especially for a second consumer.*
+- **2026-06-26** — Calibrated P0 from "non-depreciating" (absolute) to *slow*-to-depreciate (a rate), and
+  added the **Worked example — the founding decision**. *Friction: the absolute over-claimed (the seam in P0
+  shows even judgment partly depreciates), and the doc told readers to "open this at a decision" without ever
+  showing one decision run through the principles.*
