@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# init-project — scaffolds a born-compliant project; a second run never clobbers existing files.
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh"
+
+init="$REPO_ROOT/tools/init-project.sh"
+
+# scaffold a fresh project
+d="$SANDBOX/fresh-proj"
+run "$init" "$d"
+check_status "init fresh → exit 0" 0 "$STATUS"
+check_dir  "creates a git repo" "$d/.git"
+check_file "creates CLAUDE.md" "$d/CLAUDE.md"
+check_file "creates .gitignore" "$d/.gitignore"
+
+claude="$(cat "$d/CLAUDE.md")"
+check_contains "CLAUDE.md is named for the project" "$claude" "fresh-proj"
+check_absent  "placeholder is substituted away" "$claude" "<Project name>"
+
+gi="$(cat "$d/.gitignore")"
+check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
+check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
+
+# idempotency: a second run preserves an edited CLAUDE.md and adds no duplicate .gitignore lines
+printf '\nMY-EDIT\n' >> "$d/CLAUDE.md"
+before_lines="$(wc -l < "$d/.gitignore")"
+run "$init" "$d"
+check_status "init re-run → exit 0" 0 "$STATUS"
+check_contains "re-run preserves the user edit" "$(cat "$d/CLAUDE.md")" "MY-EDIT"
+check_contains "re-run reports CLAUDE.md untouched" "$OUT" "already exists"
+after_lines="$(wc -l < "$d/.gitignore")"
+check_status "re-run adds no duplicate .gitignore lines" "$before_lines" "$after_lines"
+
+summary

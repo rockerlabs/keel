@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# install.sh — one-command bootstrap: copy the core, wire the hook, idempotent, never clobber.
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh"
+
+install="$REPO_ROOT/install.sh"
+core=(CLAUDE.md INSTANCE.md LEARNINGS.md FRAMEWORK.md PRINCIPLES.md)
+
+# fresh install into the default home ($HOME/.claude, redirected into the sandbox)
+run "$install"
+check_status "fresh install → exit 0" 0 "$STATUS"
+for f in "${core[@]}"; do check_file "copies $f" "$HOME/.claude/$f"; done
+check_contains "wires secret-guard" "$OUT" "secret-guard"
+hp="$(git config --global core.hooksPath || true)"
+check_contains "sets global hooksPath to keel-hooks" "$hp" "keel-hooks"
+
+# idempotent re-run preserves a user edit and clobbers nothing
+printf '\nMY-EDIT\n' >> "$HOME/.claude/CLAUDE.md"
+run "$install"
+check_status "re-run → exit 0" 0 "$STATUS"
+check_contains "re-run preserves the user edit" "$(cat "$HOME/.claude/CLAUDE.md")" "MY-EDIT"
+check_contains "re-run leaves files untouched" "$OUT" "left untouched"
+
+# --no-hooks into a custom --home
+alt="$SANDBOX/alt-home"
+run "$install" --home "$alt" --no-hooks
+check_status "--no-hooks --home → exit 0" 0 "$STATUS"
+check_file "custom home gets CLAUDE.md" "$alt/CLAUDE.md"
+check_contains "secret-guard step skipped" "$OUT" "skipped"
+
+# never clobbers a pre-existing foreign global hooksPath
+git config --global core.hooksPath "$SANDBOX/foreign-hooks"
+run "$install"
+check_status "foreign hooksPath present → exit 0" 0 "$STATUS"
+check_contains "warns instead of clobbering" "$OUT" "not clobbering"
+hp="$(git config --global core.hooksPath || true)"
+check_status "foreign hooksPath is preserved" "$SANDBOX/foreign-hooks" "$hp"
+
+summary
