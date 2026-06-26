@@ -37,6 +37,7 @@ The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable en
 | `templates/INSTANCE.md` | Your private personal layer (hardware, model access, project registry). |
 | `templates/project-CLAUDE.md` | Per-project context template. |
 | `templates/LEARNINGS.md` | Workflow-insight staging tier (the on-ramp between "promote to a rule" and "drop"). |
+| `install.sh` | One-command bootstrap: copy the durable core into your harness home + wire the secret-guard hook. Idempotent — never clobbers existing files. |
 | `tools/doctor.sh` | Structural self-audit of a project's knowledge-base baseline. |
 | `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
@@ -50,6 +51,7 @@ Out-of-the-box behavior change comes only from the mechanized layer. So:
 
 **Mechanized — works without you remembering to apply it:**
 - `secret-guard` — blocks a key-shaped secret on commit/push (a git hook; fires by itself).
+- `install` — bootstraps the core + wires the global hook in one command (run it; it sets up).
 - `doctor` — reports baseline drift on demand (run it; it answers).
 - `init-project` — scaffolds a compliant project (run it; it sets up).
 
@@ -62,18 +64,20 @@ Knowing which is which is the point: don't expect the principles to enforce them
 ## Quickstart
 
 ```bash
-# 1. Put the thin core where your harness auto-loads it, then edit the placeholders:
-cp templates/CLAUDE.md   ~/.claude/CLAUDE.md
-cp templates/INSTANCE.md ~/.claude/INSTANCE.md      # keep private — your env + project list
-cp FRAMEWORK.md PRINCIPLES.md ~/.claude/
+# One command: copy the durable core into your harness home (~/.claude by default), wire the
+# secret-guard hook machine-wide, seed a private INSTANCE.md, and verify. It never clobbers a
+# file you already have, so re-running is safe.
+./install.sh
 
-# 2. Turn on the secret guard machine-wide (covers every repo without a local hooks override):
-tools/install-secret-guard.sh --global
-
-# 3. Scaffold or audit a project:
+# Then scaffold or audit a project:
 tools/init-project.sh ~/path/to/project
 tools/doctor.sh       ~/path/to/project
 ```
+
+`./install.sh --home DIR` targets a non-Claude-Code harness; `--no-hooks` skips the global git
+hook. To bootstrap by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`,
+`FRAMEWORK.md`, and `PRINCIPLES.md` into `~/.claude/`, then run `tools/install-secret-guard.sh
+--global`.
 
 ## License & scope
 
