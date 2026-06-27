@@ -73,4 +73,14 @@ check_contains "--registry visited the real project" "$OUT" "$(basename "$good")
 run "$doctor" --registry "$SANDBOX/nope.md"
 check_status "--registry missing file → exit 2" 2 "$STATUS"
 
+# publication-bound project (.public-audit present) committing with a real email → WARN (not a GAP)
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+git -C "$d" config user.email person@corp.com
+run "$doctor" "$d"
+check_status "publication project + real commit email → exit 0 (WARN)" 0 "$STATUS"
+check_contains "doctor nudges about the commit email" "$OUT" "not a noreply address"
+
 summary
