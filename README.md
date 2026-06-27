@@ -45,6 +45,7 @@ The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable en
 | `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
 | `commands/` | Lifecycle commands: `/init-project` (scaffold), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
+| `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
 
 ## What's mechanized vs what needs you
 
@@ -81,6 +82,9 @@ tools/doctor.sh       ~/path/to/project
 hook. To bootstrap by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`,
 `FRAMEWORK.md`, and `PRINCIPLES.md` into `~/.claude/`, then run `tools/install-secret-guard.sh
 --global`.
+
+Want to see it work first, without touching anything? Run the sandboxed
+[5-minute tour](examples/README.md): `examples/tour.sh`.
 
 ## Tests
 

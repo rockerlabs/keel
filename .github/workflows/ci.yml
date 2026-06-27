@@ -33,7 +33,7 @@ jobs:
         run: |
           shellcheck --version
           shellcheck -x \
-            install.sh \
+            install.sh examples/tour.sh \
             tools/doctor.sh tools/init-project.sh tools/install-secret-guard.sh \
             tools/secret-guard/secret-scan.sh \
             tools/secret-guard/pre-commit tools/secret-guard/pre-push \
