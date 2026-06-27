@@ -5,5 +5,8 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 scan="$here/secret-scan.sh"
 [ -x "$scan" ] || scan="$(command -v secret-scan.sh || true)"
-[ -n "${scan:-}" ] && [ -x "$scan" ] || { echo "secret-guard: scanner not found next to hook" >&2; exit 1; }
+if [ -z "${scan:-}" ] || [ ! -x "$scan" ]; then
+  echo "secret-guard: scanner not found next to hook" >&2
+  exit 1
+fi
 exec "$scan"

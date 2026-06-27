@@ -1,5 +1,8 @@
 # Keel
 
+[![CI](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A thin, model-agnostic layer for **what to load into an AI agent's context, when, and how much** — and for
 keeping the judgment and project knowledge you accumulate from devaluing every time the tools change.
 
@@ -78,6 +81,18 @@ tools/doctor.sh       ~/path/to/project
 hook. To bootstrap by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`,
 `FRAMEWORK.md`, and `PRINCIPLES.md` into `~/.claude/`, then run `tools/install-secret-guard.sh
 --global`.
+
+## Tests
+
+The tools verify themselves — a zero-dependency bash suite (no bats, no deps) runs on every PR across
+Linux and macOS, plus a `shellcheck` gate. A regression in any tool turns CI red.
+
+```bash
+tests/run.sh   # secret-guard block/allow/allowlist, doctor GAP/WARN/--registry,
+               # init-project idempotency, install.sh bootstrap + clobber-guards
+```
+
+This is P1 applied to Keel itself: the methodology project is the first thing it audits.
 
 ## License & scope
 

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pinned to explicit images (not the drifting -latest aliases) for reproducible runs.
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash version
+        run: bash --version | head -1
+      - name: Run test suite
+        run: bash tests/run.sh
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          shellcheck -x \
+            install.sh \
+            tools/doctor.sh tools/init-project.sh tools/install-secret-guard.sh \
+            tools/secret-guard/secret-scan.sh \
+            tools/secret-guard/pre-commit tools/secret-guard/pre-push \
+            tests/lib.sh tests/run.sh tests/test_*.sh
