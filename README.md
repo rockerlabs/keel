@@ -102,4 +102,4 @@ This is P1 applied to Keel itself: the methodology project is the first thing it
 
 A reference / methodology repository, not a packaged product or a subscription. Built for Claude Code but
 not tied to any one model or provider — see [`ADAPTING.md`](ADAPTING.md). Licensed under MIT (see
-[`LICENSE`](LICENSE)).
+[`LICENSE`](LICENSE)). Releases are tracked in [`CHANGELOG.md`](CHANGELOG.md).
