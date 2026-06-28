@@ -22,6 +22,8 @@
 #
 # Note: a committed `.public-audit` literally contains its token strings. For a truly-secret token,
 # pass it with --token (ephemeral) or keep the config gitignored, rather than committing it.
+# Note: tokens are unanchored regexes — a short token also matches inside unrelated strings such as
+# a commit hash. Prefer a specific token to avoid false positives.
 set -uo pipefail
 
 QUIET=0
@@ -142,6 +144,17 @@ cyr_pat=$'[\xd0-\xd3][\x80-\xbf]'
 cyr="$( cd "$DIR" && git ls-files -z -- . "${excludes[@]}" 2>/dev/null \
         | LC_ALL=C xargs -0 grep -lI "$cyr_pat" 2>/dev/null | head -1 || true)"
 [ -n "$cyr" ] && warn "Cyrillic text in tracked file — e.g. $cyr"
+
+# --- 4. agent tooling / session metadata (WARN) --------------------------------------------------
+# The per-session trailers a coding agent appends to commits (and the same shape in tracked files).
+# We hit this leak class ourselves and the audit missed it — so surface it on purpose.
+session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
+sess_tree="$(tree_grep "$session_re" | head -1 || true)"
+[ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  sess_msg="$(git -C "$DIR" log --all --format='%B' 2>/dev/null | grep -aE "$session_re" | head -1 || true)"
+  [ -n "$sess_msg" ] && warn "agent/session metadata in a commit message — e.g. $sess_msg"
+fi
 
 # --- verdict -------------------------------------------------------------------------------------
 [ "$exit_code" = 0 ] && say "public-audit: no publication blockers found"
