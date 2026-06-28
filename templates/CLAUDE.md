@@ -50,6 +50,8 @@ Never start an implementation from scratch without analyzing what already exists
 1. Read the project `CLAUDE.md` — architecture, modules, patterns, constraints.
 2. Grep shared modules — the function you're about to write probably already exists; extend, don't duplicate.
 3. `git fetch --prune` FIRST, then read the log / PR state — reconcile against fresh refs, not a stale picture.
+   Re-reconcile before *reporting* status too, not only before starting: mid-session PR/branch state goes
+   stale as merges land — fetch again before claiming a PR is open/merged or opening the next one.
 
 ---
 
@@ -79,6 +81,12 @@ Any idea, finding, decision, or loose-end surfaced in a session must be persiste
 committed rule, or the `LEARNINGS.md` staging tier — or dropped with an explicit recorded reason. Never
 leave it chat-only: the next session starts cold and won't recall it. Each session wrap ends with a
 **red-flag sweep** that catches anything left unpersisted. (Why → `PRINCIPLES.md` P0.)
+
+**Propose in real time — the agent spots, the human judges.** When something worth keeping surfaces
+mid-session, propose the entry *then and there*, by a bar: **reusable + non-obvious + costly to
+re-derive** — an incident (→ rule/`LEARNINGS.md`), a repeated manual action (→ mechanize it), an
+environment/project gotcha (→ memory), or a resolved significant fork (→ record the decision + why). Below
+the bar (routine/obvious): stay quiet — over-proposing is its own friction.
 
 ---
 
