@@ -80,6 +80,7 @@ door; the tools never enter the model's context at all. That is the whole point 
 | `commands/` | Lifecycle commands: `/init-project` (scaffold), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
 | `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
 | `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
+| `docs/getting-started.md` | The fuller install + integration walk: what gets set up, how it folds into your day-to-day agent flow, how to tell it's working. |
 | `docs/going-public.md` | The safe procedure to flip a private repo public: detect leaks (`public-audit`) → fix identity → scrub history → flip. The fix companion to `public-audit`. |
 
 ## What's mechanized vs what needs you
@@ -121,6 +122,9 @@ hook. To bootstrap by hand instead, copy `templates/CLAUDE.md`, `templates/INSTA
 
 Want to see it work first, without touching anything? Run the sandboxed
 [5-minute tour](examples/README.md): `examples/tour.sh`.
+
+New here? The fuller walk — what gets set up, how it folds into your day-to-day agent flow, and how to tell
+it's working — is in [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Tests
 
