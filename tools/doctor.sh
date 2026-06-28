@@ -60,7 +60,7 @@ for d in "${DIRS[@]}"; do
 
   if [ ! -d "$d" ]; then gap "directory not found"; continue; fi
 
-  if [ ! -d "$d/.git" ]; then
+  if ! git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     gap "not a git repo (git init + a feature-branch flow — see FRAMEWORK.md)"
   fi
 
@@ -91,8 +91,8 @@ for d in "${DIRS[@]}"; do
 
   if [ -n "$global_hooks" ]; then
     :  # machine-global secret-guard assumed
-  elif [ -x "$d/.git/hooks/pre-commit" ]; then
-    :  # vendored
+  elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
+    :  # vendored (resolve the real hooks dir — a worktree/submodule isn't .git/hooks)
   else
     warn "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
   fi

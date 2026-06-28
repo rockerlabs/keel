@@ -67,9 +67,9 @@ examples/tour.sh                 # sandboxed: init-project → doctor → secret
 tools/doctor.sh <your-project>   # a real baseline audit
 ```
 
-> Note: running `doctor .` on the Keel repo itself **GAPs** with "no project CLAUDE.md" — expected, not a
-> bug. Keel's own project `CLAUDE.md` is gitignored (private tool context, per P0), so a clone has none.
-> Point `doctor` at *your* project, not at Keel.
+> Note: running `doctor .` on the Keel repo itself **WARNs** (advisory; exit 0, "structural baseline
+> OK") — it does not GAP. Keel's own project `CLAUDE.md` is gitignored (private tool context, per P0), so
+> a clone has none. Point `doctor` at *your* project, not at Keel, to see a populated baseline audit.
 
 The **prose rails** (the loaded core) bias the agent *when read* — there is no deterministic "test" for
 that, because loaded text nudges a model, it doesn't execute (see the README's *mechanized vs needs-you*).

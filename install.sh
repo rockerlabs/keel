@@ -67,11 +67,11 @@ copy_gap "$root/FRAMEWORK.md"           "$HOME_DIR/FRAMEWORK.md"
 copy_gap "$root/PRINCIPLES.md"          "$HOME_DIR/PRINCIPLES.md"
 
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.
+# Must match the path install-secret-guard.sh --global writes to (re-used by Verify below). If they
+# drift, the guard degrades safely (a WARN + skip) — it never clobbers a foreign hooksPath.
+keel_hooks="$HOME/.config/git/keel-hooks"
 if [ "$DO_HOOKS" = 1 ]; then
   existing="$(git config --global core.hooksPath 2>/dev/null || true)"
-  # Must match the path install-secret-guard.sh --global writes to. If they drift, the guard
-  # degrades safely (a spurious WARN + skip) — it never clobbers a foreign hooksPath.
-  keel_hooks="$HOME/.config/git/keel-hooks"
   if [ -z "$existing" ] || [ "$existing" = "$keel_hooks" ]; then
     # Non-fatal: a wiring failure must still fall through to the verify summary below
     # (which reports the hook state), not abort the whole bootstrap under `set -e`.
@@ -99,8 +99,12 @@ done
 
 if [ "$DO_HOOKS" = 1 ]; then
   hp="$(git config --global core.hooksPath 2>/dev/null || true)"
-  if [ -n "$hp" ] && [ -x "$hp/pre-commit" ]; then
+  if [ "$hp" = "$keel_hooks" ] && [ -x "$hp/pre-commit" ] && grep -q 'Keel secret-guard' "$hp/pre-commit" 2>/dev/null; then
     echo "  OK   secret-guard ($hp)"
+  elif [ -n "$hp" ]; then
+    # A foreign global hooksPath is set — we did NOT wire Keel's guard (and didn't clobber theirs).
+    echo "  WARN secret-guard NOT wired — a foreign global core.hooksPath ('$hp') is set."
+    echo "       Vendor per-repo instead: tools/install-secret-guard.sh <repo>"
   else
     echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
   fi

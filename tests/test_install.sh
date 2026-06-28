@@ -13,6 +13,7 @@ for f in "${core[@]}"; do check_file "copies $f" "$HOME/.claude/$f"; done
 check_contains "wires secret-guard" "$OUT" "secret-guard"
 hp="$(git config --global core.hooksPath || true)"
 check_contains "sets global hooksPath to keel-hooks" "$hp" "keel-hooks"
+check_contains "verify confirms Keel's secret-guard is wired" "$OUT" "OK   secret-guard"
 
 # idempotent re-run preserves a user edit and clobbers nothing
 printf '\nMY-EDIT\n' >> "$HOME/.claude/CLAUDE.md"
@@ -28,11 +29,16 @@ check_status "--no-hooks --home → exit 0" 0 "$STATUS"
 check_file "custom home gets CLAUDE.md" "$alt/CLAUDE.md"
 check_contains "secret-guard step skipped" "$OUT" "skipped"
 
-# never clobbers a pre-existing foreign global hooksPath
+# never clobbers a pre-existing foreign global hooksPath — and, with a real (foreign) pre-commit
+# present there, must NOT then falsely report it as Keel's secret-guard (the old verify did).
+mkdir -p "$SANDBOX/foreign-hooks"
+printf '#!/bin/sh\nexit 0\n' > "$SANDBOX/foreign-hooks/pre-commit"; chmod +x "$SANDBOX/foreign-hooks/pre-commit"
 git config --global core.hooksPath "$SANDBOX/foreign-hooks"
 run "$install"
 check_status "foreign hooksPath present → exit 0" 0 "$STATUS"
 check_contains "warns instead of clobbering" "$OUT" "not clobbering"
+check_contains "verify flags the foreign hooksPath" "$OUT" "foreign global core.hooksPath"
+check_absent "verify does NOT falsely claim secret-guard OK" "$OUT" "OK   secret-guard"
 hp="$(git config --global core.hooksPath || true)"
 check_status "foreign hooksPath is preserved" "$SANDBOX/foreign-hooks" "$hp"
 
