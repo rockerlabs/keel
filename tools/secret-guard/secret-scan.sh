@@ -72,9 +72,22 @@ case "$mode" in
   --range)
     shift
     rng="${1:?--range needs A..B}"
-    while IFS= read -r f; do
-      [ -n "$f" ] && emit_diff "$f" "$rng"
-    done < <(git diff --name-only --diff-filter=ACM "$rng" 2>/dev/null || true)
+    # Scan every blob the push would INTRODUCE (objects reachable in the range), not the net endpoint
+    # diff. A secret added in one pushed commit and removed in a later one is absent from both endpoint
+    # trees, yet its blob still ships to the remote and stays recoverable — `git diff A..B` would miss
+    # it. rng is a commit range (A..B) or rev-list args (a first push passes "<tip> --not --remotes"),
+    # so word-splitting is intentional. Blobs already on the far side of the range are excluded, so this
+    # scans only what is actually being pushed. -I skips binary; grep -n gives the real file line.
+    while IFS=' ' read -r otype osha opath; do
+      [ "$otype" = blob ] || continue
+      while IFS= read -r hit; do
+        records+="$opath:$hit"$'\n'
+      done < <(git cat-file blob "$osha" 2>/dev/null | grep -nIE "$joined" || true)
+    done < <(
+      # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
+      git rev-list --objects $rng 2>/dev/null \
+        | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null || true
+    )
     ;;
   staged|"")
     while IFS= read -r f; do

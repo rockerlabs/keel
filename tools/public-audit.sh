@@ -97,6 +97,16 @@ warn() { echo "  WARN $1"; }
 is_git=0
 git -C "$DIR" rev-parse --git-dir >/dev/null 2>&1 && is_git=1
 
+# Temp refs from the host-PR-ref scan (section 6) must never outlive the run. Clean them on EXIT/INT/TERM
+# so a Ctrl-C mid-fetch — or a run against a repo with no GitHub remote — leaves nothing behind, and any
+# orphan a prior interrupted run left is reaped on the next run's exit.
+cleanup_pr_refs() {
+  [ "$is_git" = 1 ] || return 0
+  git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
+    | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
+}
+trap cleanup_pr_refs EXIT INT TERM
+
 say "● public-audit ($DIR)"
 [ "$is_git" = 1 ] || say "       (not a git repo — git-history checks skipped)"
 
@@ -105,6 +115,11 @@ tree_grep() { git -C "$DIR" grep -nIE "$1" -- . "${excludes[@]}" 2>/dev/null; }
 
 # --- 1. identities in git history (GAP) ----------------------------------------------------------
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  # A shallow clone only carries part of history, so every scan below sees an incomplete picture and a
+  # clean result is not trustworthy. Warn loudly (visible even under --quiet, via the WARN stream).
+  if [ "$(git -C "$DIR" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    warn "shallow clone — git-history scans are INCOMPLETE; run 'git fetch --unshallow' before trusting a clean result"
+  fi
   ids="$( { git -C "$DIR" log --all --format='%ae%n%ce' 2>/dev/null;
             git -C "$DIR" for-each-ref --format='%(taggeremail)' refs/tags 2>/dev/null | tr -d '<>'; } \
           | sed '/^$/d' | sort -u )"
@@ -217,8 +232,7 @@ EOF
     [ -n "$ph" ] && warn "Cyrillic text in a host PR ref (refs/pull/*) — e.g. $ph"
     ph="$(printf '%s\n' "$pr_hist" | grep -naE "$session_re" | head -1 || true)"
     [ -n "$ph" ] && warn "agent/session metadata in a host PR ref (refs/pull/*) — e.g. $ph"
-    git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
-      | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
+    cleanup_pr_refs   # reap this remote's temp refs before the next iteration (also runs on EXIT)
   done <<EOF_REMOTES
 $(git -C "$DIR" remote 2>/dev/null)
 EOF_REMOTES

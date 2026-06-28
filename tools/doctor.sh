@@ -40,7 +40,8 @@ if [ -n "$REGISTRY" ]; then
     esac
     path="${path/#\~/$HOME}"
     DIRS+=("$path")
-  done < <(grep -E '^[[:space:]]*\|' "$REGISTRY" | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
+  done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$REGISTRY" \
+            | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
 fi
 
 [ "${#DIRS[@]}" -gt 0 ] || DIRS=(".")

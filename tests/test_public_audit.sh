@@ -151,4 +151,20 @@ run bash "$pa" "$d"
 check_status "personal email in an annotated-tag body → exit 0 (WARN)" 0 "$STATUS"
 check_contains "warns about the tag-body email" "$OUT" "email in git history"
 
+# a shallow clone carries only partial history, so a clean result isn't trustworthy → a visible WARN
+src="$(repo_by dev@example.com)"
+git -C "$src" -c user.email=leaker@realcorp.com -c user.name=x commit --allow-empty -q -m deep
+git -C "$src" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q -m recent
+shallow="$(mktemp -d "$SANDBOX/shallow.XXXXXX")/c"
+git clone -q --depth 1 "file://$src" "$shallow" 2>/dev/null
+run bash "$pa" "$shallow"
+check_contains "shallow clone → WARN that history is incomplete" "$OUT" "shallow clone"
+
+# an orphaned refs/keel-pr-audit/* (e.g. from an interrupted run) is reaped on exit, even with no remote
+d="$(repo_by dev@example.com)"
+git -C "$d" update-ref refs/keel-pr-audit/head-stale HEAD
+run bash "$pa" "$d"
+left="$(git -C "$d" for-each-ref refs/keel-pr-audit/ | wc -l | tr -d ' ')"
+check_status "orphaned PR-audit temp refs are reaped" 0 "$left"
+
 summary

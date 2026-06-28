@@ -9,6 +9,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **secret-guard pre-push now scans the blobs a push introduces, not the net endpoint diff.** It used
+  `git diff A..B`, which only sees the two endpoint trees — a secret added in one pushed commit and
+  removed in a later one was absent from both, so the scan said "clean" while the blob still shipped to
+  the remote (the most common remediation flow: commit a key, `git rm` it, push). `secret-scan --range`
+  now enumerates `git rev-list --objects` for the range and scans each introduced blob; pre-push passes
+  rev-list args so the first push (root commit included) needs no special-casing. (Regression test:
+  add-then-remove within the range is now blocked.)
+- `public-audit.sh` warns on a **shallow clone** — `git log --all` only sees the fetched depth there, so
+  a clean result was silently untrustworthy. It now prints a visible WARN advising `git fetch --unshallow`.
+- `public-audit.sh` reaps its `refs/keel-pr-audit/*` temp refs via an EXIT/INT/TERM trap, so a Ctrl-C
+  mid-fetch — or a run against a repo with no GitHub remote — no longer orphans them.
+- `doctor.sh --registry` skips table-shaped rows inside fenced code blocks, so a documentation example
+  in an `INSTANCE.md` is no longer parsed as a real project.
 - **secret-guard pre-push no longer waves through a new repo's first push.** On the first push the
   oldest unpushed commit is the *root* commit, so the old `${base}^..` range referenced a nonexistent
   parent, `git diff` errored silently, and the scan saw nothing — every commit in the most common push

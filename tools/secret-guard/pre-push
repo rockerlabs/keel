@@ -15,16 +15,10 @@ status=0
 while read -r _localref localsha _remoteref remotesha; do
   [ "$localsha" = "$z" ] && continue                        # branch deletion — nothing to scan
   if [ "$remotesha" = "$z" ]; then
-    # new branch: scan every commit not already on a remote
-    base="$(git rev-list "$localsha" --not --remotes 2>/dev/null | tail -1)"
-    if [ -n "$base" ] && git rev-parse -q --verify "${base}^" >/dev/null 2>&1; then
-      range="${base}^..${localsha}"
-    else
-      # base is the repo's ROOT commit (its first push — the common case), so `${base}^` doesn't
-      # exist and the old range silently scanned nothing. Diff from the empty tree instead, so the
-      # whole initial history is scanned rather than waved through.
-      range="$(git hash-object -t tree /dev/null)..${localsha}"
-    fi
+    # new branch: everything reachable from the tip but not already on any remote. Passed as rev-list
+    # args (not an A..B range) so secret-scan enumerates the introduced objects directly — this covers
+    # the first push (no remotes → the whole history, incl. the root commit) with no special-casing.
+    range="$localsha --not --remotes"
   else
     range="${remotesha}..${localsha}"
   fi

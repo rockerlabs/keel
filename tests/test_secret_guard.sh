@@ -88,6 +88,18 @@ OUT="$(cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$sha" "$(
 check_status "pre-push blocks a first-push (root-commit) secret" 1 "$STATUS"
 check_contains "pre-push reports BLOCKED on first push" "$OUT" "BLOCKED"
 
+# --- a secret ADDED then REMOVED within the pushed range still ships its blob, so --range must catch
+# it — a net endpoint diff (git diff A..B) would see neither endpoint and pass clean -----------------
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+root="$(git -C "$repo" rev-parse HEAD)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/leak.txt"
+git -C "$repo" add leak.txt; git -C "$repo" commit -qm addkey
+git -C "$repo" rm -q leak.txt; git -C "$repo" commit -qm rmkey
+run_in "$repo" "$scan" --range "$root..HEAD"
+check_status "add-then-remove within range → BLOCKED (transient blob still ships)" 1 "$STATUS"
+check_contains "names the transient leak file" "$OUT" "leak.txt"
+
 # --- allowlist tolerates a CRLF-saved file (a trailing CR must not become part of the ERE) --------
 d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
 printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
