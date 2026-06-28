@@ -7,6 +7,13 @@
 doctor="$REPO_ROOT/tools/doctor.sh"
 mkproj() { mktemp -d "$SANDBOX/proj.XXXXXX"; }
 
+# --help prints usage and exits 0 (not a raw `basename: illegal option` crash); unknown flag → exit 2
+run "$doctor" --help
+check_status "--help → exit 0" 0 "$STATUS"
+check_contains "--help prints usage" "$OUT" "Usage:"
+run "$doctor" --bogus
+check_status "unknown flag → exit 2" 2 "$STATUS"
+
 # GAP: not a git repo
 d="$(mkproj)"
 run "$doctor" "$d"

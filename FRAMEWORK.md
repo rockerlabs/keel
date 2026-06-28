@@ -32,7 +32,7 @@ effort is the finer, cheaper dial.
 
 Tie to P3: economy lives *above* the P1 gate — never downgrade below what a correct result needs, but don't
 pay for headroom a task won't use. When unsure whether a task is "hard," name the uncertainty and let the
-operator pick the tier.
+user pick the tier.
 
 ---
 

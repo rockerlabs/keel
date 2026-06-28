@@ -21,7 +21,7 @@ buffer (≤2 one-liners with ✅), not straight to the archive — a just-closed
 **Red-flag sweep (P0 "capture is checked"):** scan THIS session for any idea / finding / decision /
 loose-end that surfaced but isn't persisted — each becomes a backlog ticket, a promoted rule, a
 `LEARNINGS.md` candidate (bump its `[n×]`; promote on the 2nd hit), or an explicit recorded drop. Never end
-with floating chat-only ideas (the next session starts cold; the operator forgets); if any remain, flag them
+with floating chat-only ideas (the next session starts cold; you forget); if any remain, flag them
 prominently rather than closing silently.
 
 **3. Memory** — only reusable invariants not present in code/git. One file = one topic; update the existing

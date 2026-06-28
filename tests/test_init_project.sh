@@ -31,4 +31,12 @@ check_contains "re-run reports CLAUDE.md untouched" "$OUT" "already exists"
 after_lines="$(wc -l < "$d/.gitignore")"
 check_status "re-run adds no duplicate .gitignore lines" "$before_lines" "$after_lines"
 
+# --help prints usage and exits 0 (a newcomer's reflex must not look like a crash); an unknown flag
+# is a usage error, not silently treated as a directory to scaffold.
+run "$init" --help
+check_status "--help → exit 0" 0 "$STATUS"
+check_contains "--help prints usage" "$OUT" "Usage:"
+run "$init" --bogus
+check_status "unknown flag → exit 2" 2 "$STATUS"
+
 summary

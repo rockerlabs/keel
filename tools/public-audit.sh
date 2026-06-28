@@ -31,13 +31,28 @@ NO_HISTORY=0
 CONFIG=""
 DIR=""
 cli_tokens=()
+usage() {
+  cat <<'EOF'
+public-audit — is this repo safe to publish? Scan the tree AND git history (and host PR refs)
+for personal / instance-specific leakage before a private->public flip.
+
+Usage:
+  public-audit.sh [DIR]            audit DIR (default: .); reads DIR/.public-audit if present
+  public-audit.sh --token ERE ...  add a private token to hunt (repeatable; CLI, not committed)
+  public-audit.sh --no-history     tree only (skip the git-history + PR-ref scan)
+  public-audit.sh --config FILE    use a specific config file
+  public-audit.sh --quiet          print only GAP/WARN lines
+  public-audit.sh -h | --help
+EOF
+}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet)      QUIET=1 ;;
     --no-history) NO_HISTORY=1 ;;
     --config)     shift; CONFIG="${1:?--config needs a FILE}" ;;
     --token)      shift; cli_tokens+=("${1:?--token needs an ERE}") ;;
-    -*)           echo "public-audit: unknown option '$1'" >&2; exit 2 ;;
+    -h|--help)    usage; exit 0 ;;
+    -*)           echo "public-audit: unknown option '$1' (try --help)" >&2; exit 2 ;;
     *)            DIR="$1" ;;
   esac
   shift

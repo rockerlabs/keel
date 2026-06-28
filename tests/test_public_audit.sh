@@ -16,6 +16,11 @@ repo_by() {
 }
 commit_in() { git -C "$1" add -A; git -C "$1" -c user.email=dev@example.com -c user.name=dev commit -qm "$2"; }
 
+# --help prints usage and exits 0 (a newcomer's reflex command must not error)
+run bash "$pa" --help
+check_status "--help → exit 0" 0 "$STATUS"
+check_contains "--help prints usage" "$OUT" "Usage:"
+
 # clean: identity on the built-in safe list, no tokens
 d="$(repo_by dev@example.com)"
 run bash "$pa" "$d"

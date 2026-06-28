@@ -9,6 +9,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- `-h`/`--help` for `doctor.sh`, `init-project.sh`, and `public-audit.sh` (matching `install.sh`). A
+  newcomer's reflex `--help` previously hit raw `basename: illegal option` / `mkdir: illegal option` /
+  `unknown option` errors that looked like a crash; the tools now print usage and exit 0, and an unknown
+  flag is a clean usage error (exit 2) instead of being treated as a path.
 - CI now runs the test suite under **Alpine/busybox** (in addition to Ubuntu + macOS), guarding against
   GNU-only constructs on a non-GNU userland — the durable regression net for portability.
 
@@ -22,11 +26,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - `public-audit.sh` validates each `allow-email` regex from `.public-audit`: a broken ERE now yields a
   clear "invalid allow-email regex" WARN instead of repeated `grep: bad regex` spew + silently dropped
   content WARNs. (The identity GAP already failed closed; this restores the WARN layer + clarity.)
+- `init-project.sh` now prints its resolved target ("scaffolding <path>") so the no-arg cwd default —
+  which performs writes — is never silent.
 
 ### Docs
 - `docs/getting-started.md` states the `bash` (3.2+) and `git` prerequisite — minimal images (Alpine,
   distroless) need `bash` first. Without it the hooks fail *closed* (a commit/push is blocked), but
   nothing runs; the dependency was previously unstated.
+- `docs/getting-started.md` install block uses the real clone URL — the `<repo-url>` placeholder failed a
+  verbatim copy-paste (`fatal: repository '<repo-url>' does not exist`).
+- Replaced the internal-KB term "operator" with "you"/"the user" in published docs/templates
+  (`FRAMEWORK.md`, `docs/going-public.md`, `commands/wrap.md`, `templates/CLAUDE.md`).
 - `install.sh` no longer aborts with `HOME: unbound variable` under `set -u` when `$HOME` is unset but
   the target is given explicitly (`--home` / `KEEL_HOME`) and hooks are skipped. The `$HOME` default is
   resolved only as a fallback after arg parsing, and `keel_hooks` is resolved only when hooks are wired
