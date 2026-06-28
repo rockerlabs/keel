@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- Corrected the `FRAMEWORK.md` token figure in `docs/loading-and-cost.md` and the README "how it
+  loads" diagram (`~3,300`/`~3.4K` → `~4,200`/`~4.2K`); the file had grown past its quoted size by
+  the doc's own ~4-chars/token ruler. Added `tests/test_doc_figures.sh` to fail if a quoted figure
+  drifts more than 10% from the real file, so this class of drift can't slip through again.
+
 ## [0.1.0] — 2026-06-27
 
 First release: the durable foundation plus a one-command, self-verifying, demonstrable mechanized
