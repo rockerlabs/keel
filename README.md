@@ -28,7 +28,8 @@ Keel rests on three ideas:
    to be "complete." This is what keeps it from rotting into bureaucracy.
 
 The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable engine is in
-[`FRAMEWORK.md`](FRAMEWORK.md).
+[`FRAMEWORK.md`](FRAMEWORK.md). For exactly what loads when — and what tiering costs you in tokens, with a
+with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-cost.md).
 
 ## What's in the box
 
@@ -47,6 +48,7 @@ The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable en
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
 | `commands/` | Lifecycle commands: `/init-project` (scaffold), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
 | `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
+| `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
 
 ## What's mechanized vs what needs you
 
