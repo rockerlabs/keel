@@ -58,7 +58,7 @@ Never start an implementation from scratch without analyzing what already exists
 ## Verify discipline
 
 Don't claim "done / works" until you've checked. If tests fail or a step was skipped — say so plainly, with
-the output. No GUI access → run a headless smoke and be honest the visual check is on the operator. Don't
+the output. No GUI access → run a headless smoke and be honest the visual check is on you. Don't
 pass a smoke off as full verification.
 
 ---
@@ -66,7 +66,7 @@ pass a smoke off as full verification.
 ## Decisions & forks
 
 - On a **significant** fork (approach / library / architecture / an irreversible action) — don't guess
-  silently: lay out the options with a recommendation and let the operator choose.
+  silently: lay out the options with a recommendation and let the user choose.
 - For small things with an obvious default — pick something reasonable, name the choice, move on.
 - **Foundations — front-load** at project start (knowledge-base layout, memory approach, domain boundaries, stack, git
   workflow). Fix them explicitly with defaults right away, not mid-project.

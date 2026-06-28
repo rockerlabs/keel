@@ -10,7 +10,7 @@ image without it (Alpine, distroless) needs `bash` first — e.g. `apk add bash 
 `bash` the hooks fail *closed* (a commit/push is blocked, not let through), but nothing will run.
 
 ```bash
-git clone <repo-url> keel && cd keel
+git clone https://github.com/dbudnikau-personal/keel.git && cd keel
 ./install.sh
 ```
 

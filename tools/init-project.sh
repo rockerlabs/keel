@@ -9,10 +9,27 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 tpl_project="$root/templates/project-CLAUDE.md"
 
+case "${1:-}" in
+  -h|--help)
+    cat <<'EOF'
+init-project — scaffold a new project to the Keel baseline (born-compliant).
+
+Usage:
+  init-project.sh [PROJECT_DIR]   scaffold PROJECT_DIR (default: current dir)
+  init-project.sh -h | --help
+
+Idempotent: fills gaps (git, a .gitignore that hides private context, a project
+CLAUDE.md) and reports — it never overwrites a file you already have.
+EOF
+    exit 0 ;;
+  -*) echo "init-project: unknown option '$1' (try --help)" >&2; exit 2 ;;
+esac
+
 dir="${1:-.}"
 mkdir -p "$dir"
 cd "$dir"
 name="$(basename "$(pwd)")"
+echo "init-project: scaffolding $(pwd)"   # make the target explicit — the cwd default is never silent
 
 # 1. git
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

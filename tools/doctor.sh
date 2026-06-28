@@ -20,10 +20,25 @@ set -euo pipefail
 QUIET=0
 REGISTRY=""
 DIRS=()
+usage() {
+  cat <<'EOF'
+doctor — audit a project's Keel knowledge-base baseline (a GAP fails, a WARN advises).
+
+Usage:
+  doctor.sh [DIR ...]          audit DIR(s) for the baseline (default: .)
+  doctor.sh --registry FILE    audit every project in an INSTANCE.md Projects table
+  doctor.sh --quiet            print only GAP/WARN lines
+  doctor.sh -h | --help
+
+Example:  doctor.sh ~/code/my-project
+EOF
+}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1 ;;
     --registry) shift; REGISTRY="${1:?--registry needs a FILE}" ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "doctor: unknown option '$1' (try --help)" >&2; exit 2 ;;
     *) DIRS+=("$1") ;;
   esac
   shift
