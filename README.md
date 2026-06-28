@@ -3,6 +3,10 @@
 [![CI](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> **In plain words:** a small "how I work" file your AI agent reads at the start of every session — so it
+> stops re-learning your project, conventions, and past decisions — plus a few plain-Bash tools that block
+> secrets and audit your setup. Model-agnostic; about 10 minutes to adopt.
+
 **AI agents start every session cold** — re-deriving your project, your conventions, and decisions you
 already made. Overcompensate by dumping everything into context and they drown in noise and grab the wrong
 fact. Keel is the discipline in between: a thin, model-agnostic layer for **what an agent loads, when, and
@@ -30,6 +34,33 @@ Keel rests on three ideas:
 The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable engine is in
 [`FRAMEWORK.md`](FRAMEWORK.md). For exactly what loads when — and what tiering costs you in tokens, with a
 with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-cost.md).
+
+### How it loads, at a glance
+
+```mermaid
+flowchart TD
+    subgraph always["Always loaded — every session (~1.4K tokens)"]
+        core["CLAUDE.md — thin core:<br/>rails + a map of where the rest lives"]
+        proj["project CLAUDE.md<br/>(when you are in a project)"]
+    end
+    subgraph demand["On demand — pulled only when a task needs it"]
+        fw["FRAMEWORK.md (~3.4K)"]
+        prin["PRINCIPLES.md (~5.1K)"]
+        inst["INSTANCE.md"]
+        cmd["commands/* (when invoked)"]
+    end
+    subgraph never["Never in context — runs in the shell (0 tokens)"]
+        tools["secret-guard, doctor,<br/>public-audit, init-project"]
+    end
+    core -->|the map points here| fw
+    core --> prin
+    core --> inst
+    core -.->|when invoked| cmd
+    tools -.->|only their output reaches context| core
+```
+
+The always-loaded tier stays tiny; the heavy material (`PRINCIPLES`, `FRAMEWORK`) waits behind an on-demand
+door; the tools never enter the model's context at all. That is the whole point of tiering.
 
 ## What's in the box
 
