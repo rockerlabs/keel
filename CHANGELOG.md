@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-29
+
+Hardening release: eleven external audit rounds drove findings from a real PR-ref secret leak down to
+cosmetic/UX nits, all fixed. Notable: the push guard now scans the blobs a push introduces (not the net
+diff), cross-platform CI (Alpine/busybox) guards portability, and every CLI has `--help`.
+
 ### Added
 - `-h`/`--help` for `doctor.sh`, `init-project.sh`, and `public-audit.sh` (matching `install.sh`). A
   newcomer's reflex `--help` previously hit raw `basename: illegal option` / `mkdir: illegal option` /
