@@ -90,6 +90,15 @@ for d in "${DIRS[@]}"; do
   else
     warn "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
   fi
+
+  # Publication-bound projects (those with a .public-audit config) shouldn't commit with a real
+  # personal/corporate email — it ends up in public history. Nudge toward a noreply address.
+  if [ -f "$d/.public-audit" ]; then
+    email="$(git -C "$d" config user.email 2>/dev/null || true)"
+    if [ -n "$email" ] && ! printf '%s' "$email" | grep -qE 'noreply|@example\.|\.invalid'; then
+      warn "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)"
+    fi
+  fi
 done
 
 [ "$exit_code" = 0 ] && say "doctor: structural baseline OK"

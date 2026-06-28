@@ -42,6 +42,7 @@ The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable en
 | `templates/LEARNINGS.md` | Workflow-insight staging tier (the on-ramp between "promote to a rule" and "drop"). |
 | `install.sh` | One-command bootstrap: copy the durable core into your harness home + wire the secret-guard hook. Idempotent — never clobbers existing files. |
 | `tools/doctor.sh` | Structural self-audit of a project's knowledge-base baseline. |
+| `tools/public-audit.sh` | Publication-readiness scan: hunts personal/instance leakage in the tree **and git history** (identities, private tokens) before a private→public flip. |
 | `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
 | `commands/` | Lifecycle commands: `/init-project` (scaffold), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
@@ -57,6 +58,7 @@ Out-of-the-box behavior change comes only from the mechanized layer. So:
 - `secret-guard` — blocks a key-shaped secret on commit/push (a git hook; fires by itself).
 - `install` — bootstraps the core + wires the global hook in one command (run it; it sets up).
 - `doctor` — reports baseline drift on demand (run it; it answers).
+- `public-audit` — scans tree + git history for personal/instance leakage before going public (run it; it answers).
 - `init-project` — scaffolds a compliant project (run it; it sets up).
 
 **Needs you — prose that biases, but the human must apply:**
