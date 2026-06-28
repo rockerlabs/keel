@@ -22,7 +22,7 @@ install_into() {
 
 case "${1:-}" in
   --global)
-    dir="${HOME}/.config/git/keel-hooks"
+    dir="${HOME:?install-secret-guard: --global needs HOME set}/.config/git/keel-hooks"
     install_into "$dir"
     git config --global core.hooksPath "$dir"
     echo "secret-guard: wired machine-global at $dir (git config --global core.hooksPath)"

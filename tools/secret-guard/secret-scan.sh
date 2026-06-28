@@ -27,6 +27,8 @@ PATTERNS=(
   'AKIA[0-9A-Z]{16}'                    # AWS access key id
   'AIza[0-9A-Za-z_-]{35}'              # Google API key
   'sk-ant-[A-Za-z0-9_-]{20,}'          # Anthropic API key
+  'sk-proj-[A-Za-z0-9_-]{20,}'         # OpenAI project key (the hyphen breaks the generic sk- rule)
+  'sk-svcacct-[A-Za-z0-9_-]{20,}'      # OpenAI service-account key
   'sk-[A-Za-z0-9]{32,}'                # generic "sk-" secret key
   'sk_(live|test)_[A-Za-z0-9]{16,}'    # Stripe secret key (underscore form)
   'glpat-[A-Za-z0-9_-]{20,}'           # GitLab personal access token
@@ -73,21 +75,29 @@ case "$mode" in
     shift
     rng="${1:?--range needs A..B}"
     # Scan every blob the push would INTRODUCE (objects reachable in the range), not the net endpoint
-    # diff. A secret added in one pushed commit and removed in a later one is absent from both endpoint
-    # trees, yet its blob still ships to the remote and stays recoverable — `git diff A..B` would miss
-    # it. rng is a commit range (A..B) or rev-list args (a first push passes "<tip> --not --remotes"),
-    # so word-splitting is intentional. Blobs already on the far side of the range are excluded, so this
-    # scans only what is actually being pushed. -I skips binary; grep -n gives the real file line.
-    while IFS=' ' read -r otype osha opath; do
-      [ "$otype" = blob ] || continue
-      while IFS= read -r hit; do
-        records+="$opath:$hit"$'\n'
-      done < <(git cat-file blob "$osha" 2>/dev/null | grep -nIE "$joined" || true)
-    done < <(
-      # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-      git rev-list --objects $rng 2>/dev/null \
-        | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null || true
-    )
+    # diff: a secret added in one pushed commit and removed in a later one is absent from both endpoint
+    # trees yet its blob still ships and stays recoverable — `git diff A..B` would miss it. rng is a
+    # commit range (A..B) or rev-list args (a first push passes "<tip> --not --remotes"), so the
+    # word-split is intentional. Blobs already on the far side are excluded → only what's being pushed.
+    #
+    # Fast path (the common case — a clean push): stream ALL introduced blob contents through ONE grep.
+    # If nothing matches we stop here, paying ~4 processes regardless of blob count (the per-blob
+    # `cat-file | grep` loop was O(blobs) — minutes on a large first push). Only on a hit do we re-scan
+    # per blob for the exact path/line. -I skips binary in the detailed pass; grep -n gives a real line.
+    # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
+    blobs="$(git rev-list --objects $rng 2>/dev/null \
+              | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null \
+              | awk '$1=="blob"' || true)"
+    if [ -n "$blobs" ] \
+       && printf '%s\n' "$blobs" | awk '{print $2}' \
+            | git cat-file --batch 2>/dev/null | grep -qaE "$joined"; then
+      while IFS=' ' read -r _otype osha opath; do
+        [ -n "$osha" ] || continue
+        while IFS= read -r hit; do
+          records+="$opath:$hit"$'\n'
+        done < <(git cat-file blob "$osha" 2>/dev/null | grep -nIE "$joined" || true)
+      done <<< "$blobs"
+    fi
     ;;
   staged|"")
     while IFS= read -r f; do
@@ -98,7 +108,10 @@ case "$mode" in
     echo "secret-scan: unknown option '$mode'" >&2; exit 2
     ;;
   *)
-    for f in "$@"; do emit_file "$f"; done
+    for f in "$@"; do
+      [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
+      emit_file "$f"
+    done
     ;;
 esac
 

@@ -20,6 +20,7 @@ block_file "GitHub PAT (ghp_)"       "tok = $(key 'ghp_' "$(rep A 36)")"
 block_file "GitHub fine-grained PAT" "tok = $(key 'github_pat_' "$(rep A 60)")"
 block_file "Google API key"          "k = $(key 'AIza' "$(rep A 35)")"
 block_file "Anthropic key (sk-ant-)" "k = $(key 'sk-ant-' "$(rep A 24)")"
+block_file "OpenAI project (sk-proj-)" "k = $(key 'sk-proj-' "$(rep A 24)")"
 block_file "generic sk- key"         "k = $(key 'sk-' "$(rep A 32)")"
 block_file "Stripe key (sk_live_)"   "k = $(key 'sk_live_' "$(rep A 24)")"
 block_file "GitLab PAT (glpat-)"     "k = $(key 'glpat-' "$(rep A 20)")"
@@ -99,6 +100,18 @@ git -C "$repo" rm -q leak.txt; git -C "$repo" commit -qm rmkey
 run_in "$repo" "$scan" --range "$root..HEAD"
 check_status "add-then-remove within range → BLOCKED (transient blob still ships)" 1 "$STATUS"
 check_contains "names the transient leak file" "$OUT" "leak.txt"
+
+# a clean commit range → clean (locks the fast pre-check path of the batched object scan)
+repo="$(new_repo)"
+printf 'nothing secret here\n' > "$repo/ok.txt"; git -C "$repo" add ok.txt; git -C "$repo" commit -qm base
+cleanbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'still fine\n' > "$repo/ok2.txt"; git -C "$repo" add ok2.txt; git -C "$repo" commit -qm more
+run_in "$repo" "$scan" --range "$cleanbase..HEAD"
+check_status "clean range → exit 0" 0 "$STATUS"
+
+# an explicit missing file is an error (exit 2), not a false "clean" (cf. doctor/public-audit)
+run "$scan" "$SANDBOX/does-not-exist-$$.txt"
+check_status "missing explicit file → exit 2" 2 "$STATUS"
 
 # --- allowlist tolerates a CRLF-saved file (a trailing CR must not become part of the ERE) --------
 d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
