@@ -159,6 +159,11 @@ silo is effectively invisible.
 the default directly there is ceremony-free; discipline still holds via clear commit messages. Decide this
 deliberately, per repo, not by silent default.)*
 
+**Force-push targets a named branch.** Before any `--force`: reconcile the local branch with its upstream
+first (never force-push a stale local default), and push the *specific* ref — `git push origin --force
+<branch>` — never `git push origin --force --all`, which overwrites every remote ref, including from a
+stale local default, and can silently roll the default branch back over merged work.
+
 **Before writing code — reconcile first.** Never start an implementation without analyzing what already
 exists. Read the project `CLAUDE.md`; grep shared modules (the function you're about to write probably
 exists — extend it, don't duplicate); `git fetch --prune` FIRST so you reconcile against fresh
