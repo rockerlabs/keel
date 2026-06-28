@@ -3,8 +3,10 @@
 [![CI](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A thin, model-agnostic layer for **what to load into an AI agent's context, when, and how much** — and for
-keeping the judgment and project knowledge you accumulate from devaluing every time the tools change.
+**AI agents start every session cold** — re-deriving your project, your conventions, and decisions you
+already made. Overcompensate by dumping everything into context and they drown in noise and grab the wrong
+fact. Keel is the discipline in between: a thin, model-agnostic layer for **what an agent loads, when, and
+how much** — so the judgment and project knowledge you accumulate don't depreciate every time the tools change.
 
 > **Status: experimental probe.** This is an early, depersonalized extract of a working personal knowledge
 > base. It is published to find out whether it's useful to anyone beyond its author — not as a finished
@@ -16,9 +18,7 @@ keeping the judgment and project knowledge you accumulate from devaluing every t
 
 ## The idea
 
-Every AI session starts cold — the agent re-learns your project, conventions, and past decisions from
-scratch. Dumping everything into context is the opposite failure: the agent drowns in noise and grabs the
-wrong fact. Keel is the discipline in between, on three ideas:
+Keel rests on three ideas:
 
 1. **Tiering** — a small, stable core is always loaded; everything else is pulled on demand. This is what
    makes it work even on small context windows.
@@ -100,8 +100,11 @@ tests/run.sh   # secret-guard block/allow/allowlist, doctor GAP/WARN/--registry,
 
 This is P1 applied to Keel itself: the methodology project is the first thing it audits.
 
-## License & scope
+## Scope
 
 A reference / methodology repository, not a packaged product or a subscription. Built for Claude Code but
-not tied to any one model or provider — see [`ADAPTING.md`](ADAPTING.md). Licensed under MIT (see
-[`LICENSE`](LICENSE)). Releases are tracked in [`CHANGELOG.md`](CHANGELOG.md).
+not tied to any one model or provider — see [`ADAPTING.md`](ADAPTING.md).
+
+## License
+
+Licensed under MIT (see [`LICENSE`](LICENSE)). Releases are tracked in [`CHANGELOG.md`](CHANGELOG.md).
