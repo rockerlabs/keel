@@ -22,6 +22,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `PRINCIPLES.md`, so drift in any other row shipped unguarded), and the combined
   `ADAPTING.md / CHANGELOG.md` row was split into one row per file so each figure is unambiguously
   checkable. Corrected the stale `CHANGELOG.md` figure surfaced by the wider check.
+- `public-audit.sh` now applies its full heuristic set — home paths, Cyrillic, and agent/session
+  metadata — to host PR-ref content, matching what it already runs over local history; previously the
+  PR-ref scan ran only identity/token/email, so a home path or session trailer living only in a closed
+  PR would have passed clean. Covered by a new `tests/test_public_audit.sh` case.
+- The CI shellcheck gate now lints every tracked file with a shell shebang, not just `*.sh` plus two
+  hardcoded hook paths, so a new extensionless script can't escape it.
+- Widened the `commands/*.md` size range in `docs/loading-and-cost.md` to bracket the real min/max
+  and added a `test_doc_figures.sh` guard for it; removed redundant duplicate `.gitignore` entries.
 
 ## [0.1.0] — 2026-06-27
 

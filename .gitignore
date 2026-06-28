@@ -11,9 +11,3 @@
 .idea/
 *.iml
 .vscode/
-
-# Draft zone — work-in-progress / capture-first material, never committed (see CLAUDE.md)
-private/
-
-# Private AI-session context — tool-specific mechanism, kept out of the public tool-independent product (P0)
-CLAUDE.md
