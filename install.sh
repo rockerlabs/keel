@@ -30,7 +30,7 @@ Usage:
 EOF
 }
 
-HOME_DIR="${KEEL_HOME:-$HOME/.claude}"
+HOME_DIR="${KEEL_HOME:-}"          # --home overrides; the $HOME default is resolved AFTER parsing
 DO_HOOKS=1
 
 while [ "$#" -gt 0 ]; do
@@ -43,6 +43,10 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
+# Default to $HOME/.claude only if neither KEEL_HOME nor --home was given — so those callers never
+# need $HOME (and `set -u` won't abort when it's unset). Require $HOME only when we actually fall back.
+: "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/.claude}"
+
 echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
@@ -52,7 +56,7 @@ copy_gap() {
   if [ -f "$dest" ]; then
     echo "  =    $(basename "$dest") exists (left untouched)"
   elif [ -f "$src" ]; then
-    cp "$src" "$dest"
+    cp "$src" "$dest.keeltmp.$$" && mv -f "$dest.keeltmp.$$" "$dest"   # atomic: no half-written dest
     echo "  +    $(basename "$dest")"
   else
     echo "  !    source missing: $src" >&2
@@ -67,10 +71,12 @@ copy_gap "$root/FRAMEWORK.md"           "$HOME_DIR/FRAMEWORK.md"
 copy_gap "$root/PRINCIPLES.md"          "$HOME_DIR/PRINCIPLES.md"
 
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.
-# Must match the path install-secret-guard.sh --global writes to (re-used by Verify below). If they
-# drift, the guard degrades safely (a WARN + skip) — it never clobbers a foreign hooksPath.
-keel_hooks="$HOME/.config/git/keel-hooks"
+# keel_hooks must match the path install-secret-guard.sh --global writes to (re-used by Verify below).
+# Resolved only when hooks are in play, so --no-hooks never needs $HOME; a clear message (not a bare
+# "unbound variable") if $HOME is unset while wiring hooks.
+keel_hooks=""
 if [ "$DO_HOOKS" = 1 ]; then
+  keel_hooks="${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}/.config/git/keel-hooks"
   existing="$(git config --global core.hooksPath 2>/dev/null || true)"
   if [ -z "$existing" ] || [ "$existing" = "$keel_hooks" ]; then
     # Non-fatal: a wiring failure must still fall through to the verify summary below

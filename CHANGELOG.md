@@ -9,6 +9,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- `install.sh` no longer aborts with `HOME: unbound variable` under `set -u` when `$HOME` is unset but
+  the target is given explicitly (`--home` / `KEEL_HOME`) and hooks are skipped. The `$HOME` default is
+  resolved only as a fallback after arg parsing, and `keel_hooks` is resolved only when hooks are wired
+  (a clear message, not a bare unbound error, if `$HOME` is missing while wiring). `install-secret-guard.sh
+  --global` likewise gives a clear message instead of crashing. Core-file copies are now atomic
+  (`cp` to a temp name + `mv`), so an interrupted install can't leave a half-written file under the final name.
+- `secret-scan.sh` now blocks modern OpenAI `sk-proj-` / `sk-svcacct-` keys — the hyphen after `proj`
+  broke the generic `sk-` rule, so the most-scraped current OpenAI shape evaded a scanner the README
+  advertises as covering `sk-…`.
+- `secret-scan.sh --range` no longer spawns a `git cat-file` per blob (O(blobs) — minutes on a large
+  first push). It now fast-paths a clean push through a single batched `git cat-file --batch` + one grep,
+  re-scanning per blob only when something matches. Same semantics (transient add-then-removed blobs
+  still caught), regression tests unchanged.
+- `secret-scan.sh FILE` on a missing path now exits 2 (was a false `clean`, exit 0), matching the
+  exit-2-on-bad-target contract of `doctor` and `public-audit`.
 - **secret-guard pre-push now scans the blobs a push introduces, not the net endpoint diff.** It used
   `git diff A..B`, which only sees the two endpoint trees — a secret added in one pushed commit and
   removed in a later one was absent from both, so the scan said "clean" while the blob still shipped to

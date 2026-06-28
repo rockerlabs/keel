@@ -42,4 +42,14 @@ check_absent "verify does NOT falsely claim secret-guard OK" "$OUT" "OK   secret
 hp="$(git config --global core.hooksPath || true)"
 check_status "foreign hooksPath is preserved" "$SANDBOX/foreign-hooks" "$hp"
 
+# unset $HOME must not crash when the target is given explicitly and hooks are skipped — neither
+# --home nor KEEL_HOME should ever need $HOME (regression for `set -u` on an eager $HOME default).
+run env -u HOME bash "$install" --home "$SANDBOX/nohome-flag" --no-hooks
+check_status "unset HOME + --home + --no-hooks → exit 0" 0 "$STATUS"
+check_file "installs into --home with HOME unset" "$SANDBOX/nohome-flag/CLAUDE.md"
+
+run env -u HOME KEEL_HOME="$SANDBOX/nohome-env" bash "$install" --no-hooks
+check_status "unset HOME + KEEL_HOME + --no-hooks → exit 0" 0 "$STATUS"
+check_file "installs into KEEL_HOME with HOME unset" "$SANDBOX/nohome-env/CLAUDE.md"
+
 summary
