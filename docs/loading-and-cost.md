@@ -26,7 +26,7 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
 | `ADAPTING.md` | on demand — port to another model or harness | Reference. | ~730 |
-| `CHANGELOG.md` | on demand — release history | Reference. | ~1,440 |
+| `CHANGELOG.md` | on demand — release history | Reference. | ~1,730 |
 | `commands/*.md` | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–1,010 each |
 | `install.sh`, `tools/*.sh`, `secret-guard/*` | **never loaded** — executed in the shell | The mechanized layer: blocks secrets, runs audits. Only their few lines of **output** reach the context. | **0** |
 

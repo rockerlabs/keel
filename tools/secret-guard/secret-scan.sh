@@ -51,10 +51,12 @@ emit_file() {
   [ -f "$f" ] || return 0
   while IFS= read -r line; do
     records+="$f:$line"$'\n'
-  done < <(grep -nE "$joined" -- "$f" 2>/dev/null || true)
+  done < <(grep -nIE "$joined" -- "$f" 2>/dev/null || true)   # -I: skip binary (per the backstop boundary)
 }
 
-# scan the added lines of one file's diff, emitting path-aware "path:n:content" records
+# scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
+# the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
+# not the file — a misleading figure. The path + matched content is what's actionable.
 emit_diff() {
   local path="$1"; shift   # remaining args = git diff args
   while IFS= read -r hit; do
@@ -62,7 +64,7 @@ emit_diff() {
   done < <(git diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null \
             | grep -E '^\+' | grep -vE '^\+\+\+' \
             | sed 's/^\+//' \
-            | grep -nE "$joined" || true)
+            | grep -E "$joined" || true)
 }
 
 mode="${1:-staged}"
@@ -94,6 +96,7 @@ drop_res=()
 path_globs=()
 if [ -f "$ALLOW_FILE" ]; then
   while IFS= read -r entry; do
+    entry="${entry%$'\r'}"                 # tolerate a CRLF-saved allowlist (strip trailing CR)
     [ -z "$entry" ] && continue
     case "$entry" in
       \#*) ;;                              # comment

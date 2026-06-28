@@ -17,10 +17,13 @@ while read -r _localref localsha _remoteref remotesha; do
   if [ "$remotesha" = "$z" ]; then
     # new branch: scan every commit not already on a remote
     base="$(git rev-list "$localsha" --not --remotes 2>/dev/null | tail -1)"
-    if [ -n "$base" ]; then
+    if [ -n "$base" ] && git rev-parse -q --verify "${base}^" >/dev/null 2>&1; then
       range="${base}^..${localsha}"
     else
-      range="$localsha"
+      # base is the repo's ROOT commit (its first push — the common case), so `${base}^` doesn't
+      # exist and the old range silently scanned nothing. Diff from the empty tree instead, so the
+      # whole initial history is scanned rather than waved through.
+      range="$(git hash-object -t tree /dev/null)..${localsha}"
     fi
   else
     range="${remotesha}..${localsha}"

@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **secret-guard pre-push no longer waves through a new repo's first push.** On the first push the
+  oldest unpushed commit is the *root* commit, so the old `${base}^..` range referenced a nonexistent
+  parent, `git diff` errored silently, and the scan saw nothing — every commit in the most common push
+  there is bypassed the hook. It now diffs from the empty tree when there's no parent, scanning the
+  whole initial history. (Regression test added.)
+- `public-audit.sh` now probes **every** remote, not just `git remote | head -1`. A non-GitHub mirror
+  that sorted alphabetically ahead of the GitHub remote silently skipped the `refs/pull/*` scan; the
+  tool now scans each remote that exposes PR refs and only notes "out of scope" if none do.
+- `secret-scan.sh` tolerates a **CRLF-saved** `.secret-scan-allow` — a trailing CR used to become part
+  of the ERE and break suppression, wrongly blocking a legit fixture. Also: dropped a misleading line
+  number from diff-mode records (it numbered the added-lines stream, not the file), and `-I`-skips
+  binary files in explicit-file mode (was emitting a malformed "Binary file … matches" record).
 - `install.sh` no longer reports `OK secret-guard` when a **foreign** global `core.hooksPath` is set.
   It already refused to clobber a foreign hooksPath, but the verify step then printed OK for whatever
   `pre-commit` happened to live there — falsely claiming Keel's hook was wired. Verify now confirms the
