@@ -99,6 +99,18 @@ for d in "${DIRS[@]}"; do
       warn "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)"
     fi
   fi
+
+  # Dependency pinning (FRAMEWORK "Dependency versioning") — WARN on a floating version of a pinnable dep:
+  # a Docker/compose image :latest tag, or a major-only GitHub Action @vN tag. A *-latest CI runner label
+  # is NOT flagged — a managed alias, not a pinnable artifact.
+  dep="$(grep -rInE '^[^#]*(FROM|image:)[[:space:]]+[^[:space:]]+:latest' "$d" \
+           --include='Dockerfile*' --include='*compose*.yml' --include='*compose*.yaml' 2>/dev/null | head -1 || true)"
+  if [ -z "$dep" ] && [ -d "$d/.github/workflows" ]; then
+    dep="$(grep -rInE 'uses:[[:space:]]+[^[:space:]]+@v[0-9]+([[:space:]]|$)' "$d/.github/workflows" 2>/dev/null | head -1 || true)"
+  fi
+  if [ -n "$dep" ]; then
+    warn "floating dependency version — pin it (no image :latest / Action @vN; FRAMEWORK 'Dependency versioning')"
+  fi
 done
 
 [ "$exit_code" = 0 ] && say "doctor: structural baseline OK"
