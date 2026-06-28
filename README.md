@@ -44,7 +44,7 @@ flowchart TD
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end
     subgraph demand["On demand — pulled only when a task needs it"]
-        fw["FRAMEWORK.md (~3.4K)"]
+        fw["FRAMEWORK.md (~4.2K)"]
         prin["PRINCIPLES.md (~5.1K)"]
         inst["INSTANCE.md"]
         cmd["commands/* (when invoked)"]
