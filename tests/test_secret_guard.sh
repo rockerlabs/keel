@@ -77,4 +77,22 @@ git -C "$repo" add b.txt; git -C "$repo" commit -qm withkey
 run_in "$repo" "$scan" --range "$base..HEAD"
 check_status "--range backstop blocks key in range" 1 "$STATUS"
 
+# --- integration: pre-push on a NEW repo's FIRST push scans the root commit (it has no parent, so a
+# naive ${base}^ range used to scan nothing and wave the secret through) ---------------------------
+prepush="$REPO_ROOT/tools/secret-guard/pre-push"
+repo="$(new_repo)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/root.txt"
+git -C "$repo" add root.txt; git -C "$repo" commit -qm root
+sha="$(git -C "$repo" rev-parse HEAD)"
+OUT="$(cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$sha" "$(rep 0 40)" | bash "$prepush" 2>&1)"; STATUS=$?
+check_status "pre-push blocks a first-push (root-commit) secret" 1 "$STATUS"
+check_contains "pre-push reports BLOCKED on first push" "$OUT" "BLOCKED"
+
+# --- allowlist tolerates a CRLF-saved file (a trailing CR must not become part of the ERE) --------
+d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
+printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
+printf '%s\r\n' "$(key 'ghp_' 'A')" > "$d/.secret-scan-allow"   # CRLF line ending
+run_in "$d" "$scan" f.txt
+check_status "CRLF-saved allowlist still suppresses → exit 0" 0 "$STATUS"
+
 summary

@@ -130,6 +130,20 @@ run bash "$pa" "$d"
 check_status "leak only in a refs/pull/*/merge ref → GAP exit 1" 1 "$STATUS"
 check_contains "flags the merge-ref identity" "$OUT" "host PR ref"
 
+# multi-remote: a non-GitHub remote that sorts FIRST alphabetically must not hide a later remote's
+# PR-ref leak (regression for `git remote | head -1`, which picked the wrong remote and skipped scan).
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add aaa-mirror "$SANDBOX/no-such-mirror.git"   # sorts first; has no refs/pull/*
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=person@corp.com -c user.name=x commit --allow-empty -q -m leak
+git -C "$d" push -q origin HEAD:refs/pull/1/head
+git -C "$d" reset -q --hard HEAD~1
+run bash "$pa" "$d"
+check_status "multi-remote: a later remote's PR-ref leak still GAPs" 1 "$STATUS"
+check_contains "scanned the GitHub-shaped remote despite a non-GitHub one sorting first" "$OUT" "host PR ref"
+
 # a personal email in an ANNOTATED-TAG message body (which `git log -p` omits) → WARN
 d="$(repo_by dev@example.com)"
 git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a v9 -m "$(printf 'release\n\nby %s' 'zoe@gmail.com')"
