@@ -25,7 +25,8 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,100 |
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
-| `ADAPTING.md` / `CHANGELOG.md` | on demand — port to another harness / history | Reference. | ~730 / ~620 |
+| `ADAPTING.md` | on demand — port to another model or harness | Reference. | ~730 |
+| `CHANGELOG.md` | on demand — release history | Reference. | ~890 |
 | `commands/*.md` | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~270–1,000 each |
 | `install.sh`, `tools/*.sh`, `secret-guard/*` | **never loaded** — executed in the shell | The mechanized layer: blocks secrets, runs audits. Only their few lines of **output** reach the context. | **0** |
 

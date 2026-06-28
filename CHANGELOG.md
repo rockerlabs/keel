@@ -8,11 +8,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- `/go` command (`commands/go.md`) — start a backlog task autonomously with minimal context — and
+  four promoted `FRAMEWORK.md` sections, both lifted from the private knowledge base.
+
 ### Fixed
 - Corrected the `FRAMEWORK.md` token figure in `docs/loading-and-cost.md` and the README "how it
   loads" diagram (`~3,300`/`~3.4K` → `~4,200`/`~4.2K`); the file had grown past its quoted size by
   the doc's own ~4-chars/token ruler. Added `tests/test_doc_figures.sh` to fail if a quoted figure
   drifts more than 10% from the real file, so this class of drift can't slip through again.
+- Made the token-figure guard exhaustive. `tests/test_doc_figures.sh` now checks **every** quoted
+  per-file figure in `docs/loading-and-cost.md` (it previously covered only `FRAMEWORK.md` and
+  `PRINCIPLES.md`, so drift in any other row shipped unguarded), and the combined
+  `ADAPTING.md / CHANGELOG.md` row was split into one row per file so each figure is unambiguously
+  checkable. Corrected the stale `CHANGELOG.md` figure surfaced by the wider check.
 
 ## [0.1.0] — 2026-06-27
 
