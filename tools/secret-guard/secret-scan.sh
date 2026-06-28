@@ -28,6 +28,8 @@ PATTERNS=(
   'AIza[0-9A-Za-z_-]{35}'              # Google API key
   'sk-ant-[A-Za-z0-9_-]{20,}'          # Anthropic API key
   'sk-[A-Za-z0-9]{32,}'                # generic "sk-" secret key
+  'sk_(live|test)_[A-Za-z0-9]{16,}'    # Stripe secret key (underscore form)
+  'glpat-[A-Za-z0-9_-]{20,}'           # GitLab personal access token
   'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack token
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'  # PEM private key
 )

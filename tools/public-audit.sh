@@ -54,6 +54,7 @@ SAFE_EMAILS=(
   '@[A-Za-z0-9.-]*\.invalid'
 )
 EMAIL_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+HOME_RE='/(Users|home)/[A-Za-z0-9._-]+'
 
 # --- gather config -------------------------------------------------------------------------------
 tokens=()
@@ -131,7 +132,7 @@ if [ "${#tokens[@]}" -gt 0 ]; then
 fi
 
 # --- 3. heuristic content scans (WARN) -----------------------------------------------------------
-home="$(tree_grep '/(Users|home)/[A-Za-z0-9._-]+' | head -1 || true)"
+home="$(tree_grep "$HOME_RE" | head -1 || true)"
 [ -n "$home" ] && warn "absolute home path in tracked tree — e.g. $home"
 
 emails="$(tree_grep "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
@@ -154,6 +155,20 @@ sess_tree="$(tree_grep "$session_re" | head -1 || true)"
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   sess_msg="$(git -C "$DIR" log --all --format='%B' 2>/dev/null | grep -aE "$session_re" | head -1 || true)"
   [ -n "$sess_msg" ] && warn "agent/session metadata in a commit message — e.g. $sess_msg"
+fi
+
+# --- 5. history content heuristics (WARN) --------------------------------------------------------
+# Section 3 scans the working tree only — so personal data in a commit-message body or a historical
+# diff (an added-then-removed blob) would pass clean. Scan history content (messages + diffs in one
+# `git log -p` pass) with the SAME regexes; reuse EMAIL_RE/HOME_RE/safe_re/cyr_pat. WARN, not GAP.
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  hist="$(git -C "$DIR" log --all -p 2>/dev/null || true)"
+  h="$(printf '%s\n' "$hist" | grep -nE "$HOME_RE" | head -1 || true)"
+  [ -n "$h" ] && warn "absolute home path in git history — e.g. $h"
+  h="$(printf '%s\n' "$hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
+  [ -n "$h" ] && warn "email in git history content — e.g. $h"
+  h="$(printf '%s\n' "$hist" | LC_ALL=C grep -n "$cyr_pat" | head -1 || true)"
+  [ -n "$h" ] && warn "Cyrillic text in git history — e.g. $h"
 fi
 
 # --- verdict -------------------------------------------------------------------------------------

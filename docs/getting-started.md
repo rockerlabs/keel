@@ -67,6 +67,10 @@ examples/tour.sh                 # sandboxed: init-project → doctor → secret
 tools/doctor.sh <your-project>   # a real baseline audit
 ```
 
+> Note: running `doctor .` on the Keel repo itself **GAPs** with "no project CLAUDE.md" — expected, not a
+> bug. Keel's own project `CLAUDE.md` is gitignored (private tool context, per P0), so a clone has none.
+> Point `doctor` at *your* project, not at Keel.
+
 The **prose rails** (the loaded core) bias the agent *when read* — there is no deterministic "test" for
 that, because loaded text nudges a model, it doesn't execute (see the README's *mechanized vs needs-you*).
 You feel it instead: the agent branches rather than committing to the default, greps before rewriting a

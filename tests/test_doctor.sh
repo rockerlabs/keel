@@ -84,22 +84,22 @@ check_status "publication project + real commit email → exit 0 (WARN)" 0 "$STA
 check_contains "doctor nudges about the commit email" "$OUT" "not a noreply address"
 
 # dependency pinning (FRAMEWORK "Dependency versioning") — advisory WARN, never a GAP
-mkbase() {  # a GAP-free baseline project, prints its path
+newbase() {  # a GAP-free baseline project, prints its path
   local d; d="$(mkproj)"; git -C "$d" init -q
   printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
   printf '%s' "$d"
 }
-d="$(mkbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
+d="$(newbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
 run "$doctor" "$d"
 check_status "Docker :latest → still exit 0 (WARN)" 0 "$STATUS"
 check_contains "warns about a floating dependency" "$OUT" "floating dependency version"
 
-d="$(mkbase)"; mkdir -p "$d/.github/workflows"
+d="$(newbase)"; mkdir -p "$d/.github/workflows"
 printf 'jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v4\n' > "$d/.github/workflows/ci.yml"
 run "$doctor" "$d"
 check_contains "warns about a major-only Action tag" "$OUT" "floating dependency version"
 
-d="$(mkbase)"
+d="$(newbase)"
 printf 'FROM postgres:16.3\n' > "$d/Dockerfile"
 mkdir -p "$d/.github/workflows"
 printf 'jobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4.1.1\n' > "$d/.github/workflows/ci.yml"
