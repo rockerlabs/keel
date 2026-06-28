@@ -162,13 +162,53 @@ fi
 # diff (an added-then-removed blob) would pass clean. Scan history content (messages + diffs in one
 # `git log -p` pass) with the SAME regexes; reuse EMAIL_RE/HOME_RE/safe_re/cyr_pat. WARN, not GAP.
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-  hist="$(git -C "$DIR" log --all -p 2>/dev/null || true)"
+  # message bodies + diffs, AND annotated-tag message bodies (which `git log -p` omits).
+  hist="$( { git -C "$DIR" log --all -p 2>/dev/null;
+             git -C "$DIR" for-each-ref --format='%(contents)' refs/tags 2>/dev/null; } || true)"
   h="$(printf '%s\n' "$hist" | grep -nE "$HOME_RE" | head -1 || true)"
   [ -n "$h" ] && warn "absolute home path in git history — e.g. $h"
   h="$(printf '%s\n' "$hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
   [ -n "$h" ] && warn "email in git history content — e.g. $h"
   h="$(printf '%s\n' "$hist" | LC_ALL=C grep -n "$cyr_pat" | head -1 || true)"
   [ -n "$h" ] && warn "Cyrillic text in git history — e.g. $h"
+fi
+
+# --- 6. host-side PR refs (GitHub refs/pull/*) ---------------------------------------------------
+# These are served by the host but are NOT reachable from `git log --all`, so a leak in a closed PR's
+# commits passes the local scan (a force-push of `main` does not purge them). When a remote is set
+# (and not --no-history), fetch them and run the SAME checks: identity/token = GAP, heuristic = WARN.
+# Offline / no PR refs / non-GitHub remote → a prominent NOTE (out of local scope — the only fix is
+# delete-and-recreate; see docs/going-public.md). The network call is gated so the tool still runs offline.
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  remote="$(git -C "$DIR" remote 2>/dev/null | head -1)"
+  if [ -n "$remote" ]; then
+    if git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*/head' 2>/dev/null | grep -q .; then
+      git -C "$DIR" fetch -q "$remote" 'refs/pull/*/head:refs/keel-pr-audit/*' 2>/dev/null || true
+      while IFS= read -r e; do
+        [ -z "$e" ] && continue
+        printf '%s' "$e" | grep -qE "$safe_re" && continue
+        gap "non-public-safe identity in a host PR ref (refs/pull/*): $e — purge via delete-and-recreate (going-public.md)"
+      done <<EOF
+$(git -C "$DIR" log --glob='refs/keel-pr-audit/*' --format='%ae%n%ce' 2>/dev/null | sed '/^$/d' | sort -u)
+EOF
+      pr_hist="$(git -C "$DIR" log --glob='refs/keel-pr-audit/*' -p 2>/dev/null || true)"
+      if [ "${#tokens[@]}" -gt 0 ]; then
+        for t in "${tokens[@]}"; do
+          [ -z "$t" ] && continue
+          printf '%s' "$pr_hist" | grep -qE "$t" && \
+            gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
+        done
+      fi
+      ph="$(printf '%s\n' "$pr_hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
+      [ -n "$ph" ] && warn "email in a host PR ref (refs/pull/*) — e.g. $ph"
+      git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
+        | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
+    else
+      say "       NOTE: host PR refs (refs/pull/*) are OUT OF SCOPE of this local scan (offline, none,"
+      say "       or a non-GitHub remote). A repo with closed PRs must purge them via delete-and-recreate"
+      say "       before going public — git log --all does NOT cover them. See docs/going-public.md."
+    fi
+  fi
 fi
 
 # --- verdict -------------------------------------------------------------------------------------

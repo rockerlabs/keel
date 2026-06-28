@@ -13,12 +13,19 @@ run "$doctor" "$d"
 check_status "bare dir → GAP exit 1" 1 "$STATUS"
 check_contains "reports not-a-git-repo" "$OUT" "not a git repo"
 
-# GAP: git repo, but no project CLAUDE.md
+# GAP: git repo, no project CLAUDE.md, and CLAUDE.md is NOT gitignored (genuinely missing)
 d="$(mkproj)"; git -C "$d" init -q
-printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf '.claude/\n' > "$d/.gitignore"   # ignores .claude/ (no gitignore GAP) but NOT CLAUDE.md
 run "$doctor" "$d"
-check_status "missing CLAUDE.md → GAP exit 1" 1 "$STATUS"
+check_status "missing CLAUDE.md (not gitignored) → GAP exit 1" 1 "$STATUS"
 check_contains "reports missing CLAUDE.md" "$OUT" "no project CLAUDE.md"
+
+# WARN (not GAP): CLAUDE.md absent but gitignored (a private-fork / mechanism repo like Keel itself)
+d="$(mkproj)"; git -C "$d" init -q
+printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"   # ignores CLAUDE.md; none present in this checkout
+run "$doctor" "$d"
+check_status "gitignored + absent CLAUDE.md → exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "advises rather than GAPs" "$OUT" "gitignored (private/mechanism repo)"
 
 # GAP: CLAUDE.md present, untracked, but .gitignore does not ignore the private context
 d="$(mkproj)"; git -C "$d" init -q
