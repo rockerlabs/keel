@@ -15,9 +15,11 @@ This page is the **procedure** to fix what it finds and flip without churn.
 0. **Detect** — run `public-audit`.
 1. **Stop the bleed** — fix your commit identity (two settings).
 2. **Scrub history** — only if `public-audit` flags identities/tokens.
-3. **Flip** visibility to public.
-4. **Trigger** one CI run.
-5. **Share** the probe.
+3. **Purge host PR refs** — if the repo has any closed PRs, their old commits survive a `main`
+   force-push in `refs/pull/*`. The only fix is **delete-and-recreate** (see below).
+4. **Flip** visibility to public — only after steps 2–3 are done AND `public-audit` is exit 0.
+5. **Trigger** one CI run.
+6. **Share** the probe.
 
 ## 0. Detect
 
@@ -70,23 +72,36 @@ git push origin --force <default>:<default>                 # a NAMED branch —
 > and can silently roll the default branch back over merged work. Push the *named* branch, and reconcile
 > your local default with the remote first.
 
-### If the repo already has public PRs
+## 3. Purge host PR refs (if the repo has closed PRs)
 
-Hosts cache PR commits (e.g. `refs/pull/<n>/*`), so a force-push leaves the old commits reachable by SHA. To
-*fully* purge, **delete and recreate** the repo from the scrubbed clone — acceptable for a pre-launch solo
-repo (you lose PR threads; the tag/release are re-pushable). A private pre-launch repo with no external
-clones is the cheapest moment to scrub, before any of this accumulates.
+This is the one a `main` scrub does **not** fix. The host keeps every PR's commits in `refs/pull/<n>/*`,
+which are **world-fetchable on a public repo** and survive a force-push of `main`. They carry whatever those
+old commits carried — a real email, an ex-employer name. **`git log --all` does not reach them**, so a
+local-only scan can miss them; `public-audit` fetches them when a remote is reachable (and GAPs on a leak
+there), but the **only remediation is delete-and-recreate** — there is no force-push that purges PR refs.
 
-## 3. Flip visibility
+**Delete and recreate** the repo from the scrubbed clone (or ask the host to garbage-collect the refs).
+Acceptable for a pre-launch solo repo — you lose PR threads; the tag/release are re-pushable. A private
+pre-launch repo with no external clones is the cheapest moment to do this, before PRs accumulate.
 
-Flip to public **only after `public-audit` is exit 0** (history and tree clean).
+```bash
+# from your scrubbed working clone (main already clean):
+gh repo delete <owner>/<repo> --yes          # needs the delete_repo scope
+gh repo create <owner>/<repo> --private --source=. --remote=origin --push
+git push origin <tag> ; gh release create <tag> --notes-from-tag   # re-push tag + release
+```
 
-## 4. Trigger one CI run
+## 4. Flip visibility
+
+Flip to public **only after** steps 2–3 are done **and** a fresh `public-audit` (with network, so it covers
+host PR refs) is exit 0 — history, tree, and PR refs all clean.
+
+## 5. Trigger one CI run
 
 Public CI is typically free and unlimited. The badge stays stale until a run lands — push a trivial commit
 or dispatch the workflow once to turn it green.
 
-## 5. Share
+## 6. Share
 
 Hand the probe to a few people, or post it. The remaining product readiness is **real-user signal** — only
 publishing unlocks it; don't keep polishing for hypothetical users instead.

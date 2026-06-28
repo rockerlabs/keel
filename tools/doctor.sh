@@ -65,7 +65,13 @@ for d in "${DIRS[@]}"; do
   fi
 
   if [ ! -f "$d/CLAUDE.md" ]; then
-    gap "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
+    if git -C "$d" check-ignore -q CLAUDE.md 2>/dev/null; then
+      # CLAUDE.md is gitignored (a private-fork or a "mechanism" repo like Keel itself), so a fresh
+      # clone legitimately has none — advise, don't fail.
+      warn "no project CLAUDE.md in this checkout — it's gitignored (private/mechanism repo); create it locally"
+    else
+      gap "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
+    fi
   else
     chars="$(wc -c < "$d/CLAUDE.md" | tr -d ' ')"
     est=$(( chars / 4 ))

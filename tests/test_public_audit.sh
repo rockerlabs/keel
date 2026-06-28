@@ -89,4 +89,25 @@ check_status "history-message leak → exit 0 (WARN, not GAP)" 0 "$STATUS"
 check_contains "warns about an email in git history" "$OUT" "email in git history"
 check_contains "warns about a home path in git history" "$OUT" "home path in git history"
 
+# host PR refs: a leak reachable ONLY from a refs/pull/*-style ref (the host's closed-PR cache) must be
+# detected — git log --all doesn't see it, so this is the false-clean the audit caught. Simulate with a
+# local bare remote serving such a ref (hermetic, no network).
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=person@corp.com -c user.name=x commit --allow-empty -q -m leak
+git -C "$d" push -q origin HEAD:refs/pull/1/head     # leak lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                    # ...not in main / any local ref
+run bash "$pa" "$d"
+check_status "leak only in a refs/pull ref → GAP exit 1 (no false clean)" 1 "$STATUS"
+check_contains "flags the PR-ref identity" "$OUT" "host PR ref"
+
+# a personal email in an ANNOTATED-TAG message body (which `git log -p` omits) → WARN
+d="$(repo_by dev@example.com)"
+git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a v9 -m "$(printf 'release\n\nby %s' 'zoe@gmail.com')"
+run bash "$pa" "$d"
+check_status "personal email in an annotated-tag body → exit 0 (WARN)" 0 "$STATUS"
+check_contains "warns about the tag-body email" "$OUT" "email in git history"
+
 summary
