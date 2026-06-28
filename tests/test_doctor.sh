@@ -43,6 +43,18 @@ run "$doctor" "$d"
 check_status "clean baseline → exit 0" 0 "$STATUS"
 check_contains "reports baseline OK" "$OUT" "baseline OK"
 
+# a git WORKTREE — where .git is a FILE, not a dir — must not be mis-detected as "not a git repo"
+# (the same trap hits submodules). Regression for the [ -d .git ] → git rev-parse fix.
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\n' > "$base/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
+git -C "$base" add .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wt="$SANDBOX/wt.$$"
+git -C "$base" worktree add -q "$wt" >/dev/null 2>&1
+run "$doctor" "$wt"
+check_absent "git worktree not mis-flagged as non-repo" "$OUT" "not a git repo"
+check_status "doctor on a worktree → exit 0" 0 "$STATUS"
+
 # public fork: a tracked CLAUDE.md is deliberate, so no gitignore GAP
 d="$(mkproj)"; git -C "$d" init -q
 printf '# public ctx\n' > "$d/CLAUDE.md"

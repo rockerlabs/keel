@@ -8,6 +8,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- `install.sh` no longer reports `OK secret-guard` when a **foreign** global `core.hooksPath` is set.
+  It already refused to clobber a foreign hooksPath, but the verify step then printed OK for whatever
+  `pre-commit` happened to live there — falsely claiming Keel's hook was wired. Verify now confirms the
+  hooksPath is Keel's *and* the hook carries the Keel marker, else WARNs and points to per-repo vendoring.
+- `doctor.sh`, `init-project.sh`, and `install-secret-guard.sh` detected a git repo via `[ -d .git ]`,
+  which is false in a **git worktree or submodule** (there `.git` is a file) — `doctor` false-GAP'd a
+  legitimate repo with "not a git repo". They now detect via `git rev-parse`, and `install-secret-guard`
+  vendors into the real hooks dir (`git rev-parse --git-path hooks`), not an assumed `.git/hooks`.
+- `docs/getting-started.md`: corrected a stale note — `doctor .` on the Keel repo **WARNs** (advisory,
+  exit 0), it does not GAP, since the project `CLAUDE.md` is gitignored.
+
 ### Added
 - `/go` command (`commands/go.md`) — start a backlog task autonomously with minimal context — and
   four promoted `FRAMEWORK.md` sections, both lifted from the private knowledge base.

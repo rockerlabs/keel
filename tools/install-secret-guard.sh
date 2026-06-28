@@ -32,11 +32,15 @@ case "${1:-}" in
     echo "usage: install-secret-guard.sh --global | <repo-path>" >&2; exit 2 ;;
   *)
     repo="$1"
-    [ -d "$repo/.git" ] || { echo "not a git repo: $repo" >&2; exit 2; }
+    git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
     if hp="$(git -C "$repo" config --local core.hooksPath 2>/dev/null)" && [ -n "$hp" ]; then
       install_into "$repo/$hp"
     else
-      install_into "$repo/.git/hooks"
+      # The real hooks dir — NOT $repo/.git/hooks: in a worktree/submodule .git is a file and hooks
+      # live in the common dir. --git-path resolves it; make it absolute relative to $repo if needed.
+      hooks="$(git -C "$repo" rev-parse --git-path hooks)"
+      case "$hooks" in /*) ;; *) hooks="$repo/$hooks" ;; esac
+      install_into "$hooks"
     fi
     seed="$repo/.secret-scan-allow"
     [ -f "$seed" ] || printf '# Keel secret-guard allowlist\n# <ERE> to drop a matched line; path:<glob> to exclude a path\n' > "$seed"

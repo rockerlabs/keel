@@ -15,7 +15,7 @@ cd "$dir"
 name="$(basename "$(pwd)")"
 
 # 1. git
-if [ ! -d .git ]; then
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git init -q
   echo "  + git initialized"
 else
