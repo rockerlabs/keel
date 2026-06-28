@@ -199,8 +199,15 @@ EOF
             gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
         done
       fi
+      # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
       ph="$(printf '%s\n' "$pr_hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
       [ -n "$ph" ] && warn "email in a host PR ref (refs/pull/*) — e.g. $ph"
+      ph="$(printf '%s\n' "$pr_hist" | grep -nE "$HOME_RE" | head -1 || true)"
+      [ -n "$ph" ] && warn "absolute home path in a host PR ref (refs/pull/*) — e.g. $ph"
+      ph="$(printf '%s\n' "$pr_hist" | LC_ALL=C grep -n "$cyr_pat" | head -1 || true)"
+      [ -n "$ph" ] && warn "Cyrillic text in a host PR ref (refs/pull/*) — e.g. $ph"
+      ph="$(printf '%s\n' "$pr_hist" | grep -naE "$session_re" | head -1 || true)"
+      [ -n "$ph" ] && warn "agent/session metadata in a host PR ref (refs/pull/*) — e.g. $ph"
       git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
         | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
     else

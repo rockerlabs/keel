@@ -32,5 +32,13 @@ jobs:
       - name: ShellCheck
         run: |
           shellcheck --version
-          # Lint every tracked *.sh plus the extensionless git hooks — a new script can't escape the gate.
-          shellcheck -x $(git ls-files '*.sh') tools/secret-guard/pre-commit tools/secret-guard/pre-push
+          # Lint every tracked shell script — *.sh plus any file with a shell shebang (the
+          # extensionless git hooks, and any new script) — so a new shell script can't escape the gate.
+          files="$(git ls-files | while IFS= read -r f; do
+            case "$f" in
+              *.sh) printf '%s\n' "$f" ;;
+              *) head -1 -- "$f" 2>/dev/null | grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)' && printf '%s\n' "$f" ;;
+            esac
+          done)"
+          # shellcheck disable=SC2086  # intentional word-split of the newline list (no spaces in tracked paths)
+          shellcheck -x $files

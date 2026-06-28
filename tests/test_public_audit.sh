@@ -103,6 +103,20 @@ run bash "$pa" "$d"
 check_status "leak only in a refs/pull ref → GAP exit 1 (no false clean)" 1 "$STATUS"
 check_contains "flags the PR-ref identity" "$OUT" "host PR ref"
 
+# host PR refs apply the SAME heuristics as local history, not just identity/email: a home path living
+# ONLY in a PR-ref commit (authored by a safe identity, so no GAP) must still be WARNed.
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q \
+  -m "$(printf 'fix\n\nkey at %s' '/Users/realname/k.pem')"
+git -C "$d" push -q origin HEAD:refs/pull/2/head     # home path lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                    # ...not in main / any local ref
+run bash "$pa" "$d"
+check_status "home path only in a PR ref → exit 0 (WARN, safe identity)" 0 "$STATUS"
+check_contains "warns about the PR-ref home path" "$OUT" "home path in a host PR ref"
+
 # a personal email in an ANNOTATED-TAG message body (which `git log -p` omits) → WARN
 d="$(repo_by dev@example.com)"
 git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a v9 -m "$(printf 'release\n\nby %s' 'zoe@gmail.com')"
