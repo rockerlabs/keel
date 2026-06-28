@@ -15,10 +15,11 @@ cosmetic/UX nits, all fixed. Notable: the push guard now scans the blobs a push 
 diff), cross-platform CI (Alpine/busybox) guards portability, and every CLI has `--help`.
 
 ### Added
-- `-h`/`--help` for `doctor.sh`, `init-project.sh`, and `public-audit.sh` (matching `install.sh`). A
-  newcomer's reflex `--help` previously hit raw `basename: illegal option` / `mkdir: illegal option` /
-  `unknown option` errors that looked like a crash; the tools now print usage and exit 0, and an unknown
-  flag is a clean usage error (exit 2) instead of being treated as a path.
+- `-h`/`--help` for **every** tool — `doctor.sh`, `init-project.sh`, `public-audit.sh`, and
+  `install-secret-guard.sh` (matching `install.sh`). A newcomer's reflex `--help` previously hit raw
+  `basename: illegal option` / `mkdir: illegal option` / `unknown option` / `not a git repo: --help`
+  errors that looked like a crash; the tools now print usage and exit 0, and an unknown flag is a clean
+  usage error (exit 2) instead of being treated as a path.
 - CI now runs the test suite under **Alpine/busybox** (in addition to Ubuntu + macOS), guarding against
   GNU-only constructs on a non-GNU userland — the durable regression net for portability.
 

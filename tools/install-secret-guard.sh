@@ -28,6 +28,16 @@ case "${1:-}" in
     echo "secret-guard: wired machine-global at $dir (git config --global core.hooksPath)"
     echo "Note: a repo with its own core.hooksPath overrides this — vendor into it directly."
     ;;
+  -h|--help)
+    cat <<'EOF'
+install-secret-guard — wire the secret-guard hooks (block key-shaped secrets on commit/push).
+
+Usage:
+  install-secret-guard.sh --global       set a machine-global core.hooksPath (covers every repo)
+  install-secret-guard.sh <repo-path>    vendor a self-contained copy into one repo
+  install-secret-guard.sh -h | --help
+EOF
+    exit 0 ;;
   "" )
     echo "usage: install-secret-guard.sh --global | <repo-path>" >&2; exit 2 ;;
   *)

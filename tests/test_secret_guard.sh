@@ -60,9 +60,15 @@ printf 'path:fixtures/*\n' > "$d/.secret-scan-allow"
 run_in "$d" "$scan" fixtures/keys.txt
 check_status "path-glob allowlist → exit 0" 0 "$STATUS"
 
+# install-secret-guard --help prints usage and exits 0 (it must not treat the flag as a repo path)
+isg="$REPO_ROOT/tools/install-secret-guard.sh"
+run "$isg" --help
+check_status "install-secret-guard --help → exit 0" 0 "$STATUS"
+check_contains "install-secret-guard --help prints usage" "$OUT" "Usage:"
+
 # --- integration: the real pre-commit hook blocks a staged key ----------------------------------
 repo="$(new_repo)"
-"$REPO_ROOT/tools/install-secret-guard.sh" "$repo" >/dev/null
+"$isg" "$repo" >/dev/null
 printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/conf.txt"
 git -C "$repo" add conf.txt
 run git -C "$repo" commit -m "should be blocked"
