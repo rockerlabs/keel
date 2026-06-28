@@ -117,6 +117,19 @@ run bash "$pa" "$d"
 check_status "home path only in a PR ref → exit 0 (WARN, safe identity)" 0 "$STATUS"
 check_contains "warns about the PR-ref home path" "$OUT" "home path in a host PR ref"
 
+# host PR refs include GitHub's synthetic …/merge ref, not just …/head: a leak reachable ONLY from a
+# refs/pull/*/merge ref must also be caught.
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=person@corp.com -c user.name=x commit --allow-empty -q -m leak
+git -C "$d" push -q origin HEAD:refs/pull/7/merge     # leak lives only in the MERGE ref...
+git -C "$d" reset -q --hard HEAD~1                     # ...not in main / head / any local ref
+run bash "$pa" "$d"
+check_status "leak only in a refs/pull/*/merge ref → GAP exit 1" 1 "$STATUS"
+check_contains "flags the merge-ref identity" "$OUT" "host PR ref"
+
 # a personal email in an ANNOTATED-TAG message body (which `git log -p` omits) → WARN
 d="$(repo_by dev@example.com)"
 git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a v9 -m "$(printf 'release\n\nby %s' 'zoe@gmail.com')"

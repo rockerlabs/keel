@@ -30,6 +30,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   hardcoded hook paths, so a new extensionless script can't escape it.
 - Widened the `commands/*.md` size range in `docs/loading-and-cost.md` to bracket the real min/max
   and added a `test_doc_figures.sh` guard for it; removed redundant duplicate `.gitignore` entries.
+- `public-audit.sh` now also scans GitHub's synthetic merge refs (`refs/pull/*/merge`), not just the
+  PR tips (`refs/pull/*/head`), so a leak reachable only from a merge ref is caught too; a new
+  `tests/test_public_audit.sh` case covers it.
+- README: noted that `secret-guard` is a prefix-based backstop for known key shapes, not full DLP, so
+  readers don't over-trust it for arbitrary secrets (an AWS secret key, a JWT, a password).
 
 ## [0.1.0] — 2026-06-27
 

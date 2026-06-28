@@ -182,8 +182,11 @@ fi
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   remote="$(git -C "$DIR" remote 2>/dev/null | head -1)"
   if [ -n "$remote" ]; then
-    if git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*/head' 2>/dev/null | grep -q .; then
-      git -C "$DIR" fetch -q "$remote" 'refs/pull/*/head:refs/keel-pr-audit/*' 2>/dev/null || true
+    if git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*' 2>/dev/null | grep -q .; then
+      # Fetch both the PR tip (…/head) AND GitHub's synthetic merge (…/merge) — neither is reachable
+      # from `git log --all`. Flat dest names keep them in one namespace for the scans below.
+      git -C "$DIR" fetch -q "$remote" 'refs/pull/*/head:refs/keel-pr-audit/head-*' \
+        'refs/pull/*/merge:refs/keel-pr-audit/merge-*' 2>/dev/null || true
       while IFS= read -r e; do
         [ -z "$e" ] && continue
         printf '%s' "$e" | grep -qE "$safe_re" && continue
