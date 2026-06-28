@@ -24,6 +24,18 @@ jobs:
       - name: Run test suite
         run: bash tests/run.sh
 
+  alpine:
+    name: tests (alpine-busybox)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Run the suite under Alpine's busybox coreutils — the durable guard against GNU-only constructs.
+      # A busybox `grep --include` gap shipped uncaught precisely because the matrix was GNU + BSD only.
+      - name: Run test suite on Alpine/busybox
+        run: |
+          docker run --rm -v "$PWD:/keel" -w /keel alpine:3.21 \
+            sh -c 'apk add --no-cache bash git >/dev/null && bash tests/run.sh'
+
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-24.04

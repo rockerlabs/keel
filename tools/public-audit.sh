@@ -78,8 +78,16 @@ fi
 # combined safe-email regex (built-ins + configured allow-email)
 safe_re=""
 for e in "${SAFE_EMAILS[@]}"; do safe_re="${safe_re:+$safe_re|}$e"; done
+# A configured allow-email is user input — a broken ERE would make every later `grep -E "$safe_re"`
+# spew "bad regex" and silently drop the content-leak WARNs. Validate each before trusting it; collect
+# the bad ones to report once the WARN helper is defined below.
+bad_allow_emails=()
 if [ "${#allow_emails[@]}" -gt 0 ]; then
-  for e in "${allow_emails[@]}"; do [ -n "$e" ] && safe_re="${safe_re:+$safe_re|}$e"; done
+  for e in "${allow_emails[@]}"; do
+    [ -n "$e" ] || continue
+    printf '' | grep -qE -- "$e" 2>/dev/null; [ "$?" -lt 2 ] || { bad_allow_emails+=("$e"); continue; }
+    safe_re="${safe_re:+$safe_re|}$e"
+  done
 fi
 
 # pathspec exclusions for content scans (the config file always; plus any allow-path globs)
@@ -109,6 +117,10 @@ trap cleanup_pr_refs EXIT INT TERM
 
 say "● public-audit ($DIR)"
 [ "$is_git" = 1 ] || say "       (not a git repo — git-history checks skipped)"
+
+for e in "${bad_allow_emails[@]:-}"; do
+  [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
+done
 
 # helper: first matching line of a tracked-tree grep, or empty
 tree_grep() { git -C "$DIR" grep -nIE "$1" -- . "${excludes[@]}" 2>/dev/null; }

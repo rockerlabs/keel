@@ -5,6 +5,10 @@ set up, how it actually changes your sessions, and how to tell it's working.
 
 ## 1. Install
 
+**Requirements:** `bash` (3.2+) and `git`. The tools and git hooks have a `bash` shebang, so a minimal
+image without it (Alpine, distroless) needs `bash` first — e.g. `apk add bash git` on Alpine. Without
+`bash` the hooks fail *closed* (a commit/push is blocked, not let through), but nothing will run.
+
 ```bash
 git clone <repo-url> keel && cd keel
 ./install.sh

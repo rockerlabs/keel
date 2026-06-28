@@ -73,6 +73,13 @@ run env KEEL_STARTUP_WARN_TOKENS=1 "$doctor" "$d"
 check_status "footprint over budget → still exit 0" 0 "$STATUS"
 check_contains "reports footprint WARN" "$OUT" "footprint"
 
+# a non-numeric token budget falls back to the default instead of leaking a `[: integer expected`
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=abc "$doctor" "$d"
+check_status "non-numeric token budget → exit 0 (no crash)" 0 "$STATUS"
+check_absent "no '[: integer expected' diagnostic" "$OUT" "integer expected"
+
 # --registry: sweep an INSTANCE.md Projects table, skipping the unfilled placeholder row
 good="$(mkproj)"; git -C "$good" init -q
 printf '# ctx\n' > "$good/CLAUDE.md"
