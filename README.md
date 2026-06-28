@@ -75,7 +75,7 @@ door; the tools never enter the model's context at all. That is the whole point 
 | `install.sh` | One-command bootstrap: copy the durable core into your harness home + wire the secret-guard hook. Idempotent — never clobbers existing files. |
 | `tools/doctor.sh` | Structural self-audit of a project's knowledge-base baseline. |
 | `tools/public-audit.sh` | Publication-readiness scan: hunts personal/instance leakage in the tree **and git history** (identities, private tokens) before a private→public flip. |
-| `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. |
+| `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. A prefix-based backstop, not full DLP — it catches known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
 | `commands/` | Lifecycle commands: `/init-project` (scaffold), `/go` (start a backlog task autonomously), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
 | `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
