@@ -32,9 +32,5 @@ jobs:
       - name: ShellCheck
         run: |
           shellcheck --version
-          shellcheck -x \
-            install.sh examples/tour.sh \
-            tools/doctor.sh tools/init-project.sh tools/install-secret-guard.sh tools/public-audit.sh \
-            tools/secret-guard/secret-scan.sh \
-            tools/secret-guard/pre-commit tools/secret-guard/pre-push \
-            tests/lib.sh tests/run.sh tests/test_*.sh
+          # Lint every tracked *.sh plus the extensionless git hooks — a new script can't escape the gate.
+          shellcheck -x $(git ls-files '*.sh') tools/secret-guard/pre-commit tools/secret-guard/pre-push

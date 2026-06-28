@@ -79,4 +79,14 @@ run bash "$pa" "$d"
 check_status "session metadata in a message → exit 0 (WARN)" 0 "$STATUS"
 check_contains "warns about agent/session metadata" "$OUT" "session metadata"
 
+# history-content heuristics: a personal email + home path in a COMMIT MESSAGE BODY (not in any file)
+# — the tree scan can't see it; the history pass must. WARN, not GAP.
+d="$(repo_by dev@example.com)"
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q \
+  -m "$(printf 'fix\n\nContact %s about it; key at %s' 'jane@gmail.com' '/Users/realname/k.pem')"
+run bash "$pa" "$d"
+check_status "history-message leak → exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "warns about an email in git history" "$OUT" "email in git history"
+check_contains "warns about a home path in git history" "$OUT" "home path in git history"
+
 summary

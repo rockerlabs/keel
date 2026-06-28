@@ -21,6 +21,8 @@ block_file "GitHub fine-grained PAT" "tok = $(key 'github_pat_' "$(rep A 60)")"
 block_file "Google API key"          "k = $(key 'AIza' "$(rep A 35)")"
 block_file "Anthropic key (sk-ant-)" "k = $(key 'sk-ant-' "$(rep A 24)")"
 block_file "generic sk- key"         "k = $(key 'sk-' "$(rep A 32)")"
+block_file "Stripe key (sk_live_)"   "k = $(key 'sk_live_' "$(rep A 24)")"
+block_file "GitLab PAT (glpat-)"     "k = $(key 'glpat-' "$(rep A 20)")"
 block_file "Slack token (xoxb-)"     "k = $(key 'xoxb-' "$(rep A 12)")"
 block_file "PEM private key"         "$(key '-----BEGIN RSA ' 'PRIVATE KEY-----')"
 
