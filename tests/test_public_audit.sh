@@ -167,4 +167,11 @@ run bash "$pa" "$d"
 left="$(git -C "$d" for-each-ref refs/keel-pr-audit/ | wc -l | tr -d ' ')"
 check_status "orphaned PR-audit temp refs are reaped" 0 "$left"
 
+# a broken allow-email ERE in .public-audit is reported clearly and ignored — not raw `grep: bad regex`
+d="$(repo_by dev@example.com)"
+printf 'allow-email: foo(bar\n' > "$d/.public-audit"
+run bash "$pa" --no-history "$d"
+check_contains "broken allow-email regex is flagged" "$OUT" "invalid allow-email"
+check_absent "no raw grep bad-regex spew" "$OUT" "bad regex"
+
 summary

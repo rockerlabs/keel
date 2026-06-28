@@ -8,7 +8,25 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- CI now runs the test suite under **Alpine/busybox** (in addition to Ubuntu + macOS), guarding against
+  GNU-only constructs on a non-GNU userland — the durable regression net for portability.
+
 ### Fixed
+- `doctor.sh` floating-dependency check used `grep -r --include=…`, which **busybox grep doesn't support**
+  (Alpine): the option errored, was swallowed, and the WARN silently never fired. Replaced with a portable
+  `find … -exec grep` that works across GNU/BSD/busybox. (This is what the new Alpine CI leg would have
+  caught.)
+- `doctor.sh` no longer leaks `[: integer expected` when `KEEL_STARTUP_WARN_TOKENS` is non-numeric — it
+  falls back to the default.
+- `public-audit.sh` validates each `allow-email` regex from `.public-audit`: a broken ERE now yields a
+  clear "invalid allow-email regex" WARN instead of repeated `grep: bad regex` spew + silently dropped
+  content WARNs. (The identity GAP already failed closed; this restores the WARN layer + clarity.)
+
+### Docs
+- `docs/getting-started.md` states the `bash` (3.2+) and `git` prerequisite — minimal images (Alpine,
+  distroless) need `bash` first. Without it the hooks fail *closed* (a commit/push is blocked), but
+  nothing runs; the dependency was previously unstated.
 - `install.sh` no longer aborts with `HOME: unbound variable` under `set -u` when `$HOME` is unset but
   the target is given explicitly (`--home` / `KEEL_HOME`) and hooks are skipped. The `$HOME` default is
   resolved only as a fallback after arg parsing, and `keel_hooks` is resolved only when hooks are wired

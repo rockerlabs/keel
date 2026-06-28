@@ -47,6 +47,7 @@ fi
 [ "${#DIRS[@]}" -gt 0 ] || DIRS=(".")
 
 WARN_TOKENS="${KEEL_STARTUP_WARN_TOKENS:-10000}"
+case "$WARN_TOKENS" in ''|*[!0-9]*) WARN_TOKENS=10000 ;; esac   # non-numeric → default (no `[: integer expected`)
 exit_code=0
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
@@ -110,8 +111,10 @@ for d in "${DIRS[@]}"; do
   # Dependency pinning (FRAMEWORK "Dependency versioning") — WARN on a floating version of a pinnable dep:
   # a Docker/compose image :latest tag, or a major-only GitHub Action @vN tag. A *-latest CI runner label
   # is NOT flagged — a managed alias, not a pinnable artifact.
-  dep="$(grep -rInE '^[^#]*(FROM|image:)[[:space:]]+[^[:space:]]+:latest' "$d" \
-           --include='Dockerfile*' --include='*compose*.yml' --include='*compose*.yaml' 2>/dev/null | head -1 || true)"
+  # find+grep, not `grep -r --include=…`: busybox grep (Alpine) has no --include, so the option errored
+  # and this check silently never fired there. find's -name globs are portable across GNU/BSD/busybox.
+  dep="$(find "$d" -type f \( -name 'Dockerfile*' -o -name '*compose*.yml' -o -name '*compose*.yaml' \) \
+           -exec grep -InE '^[^#]*(FROM|image:)[[:space:]]+[^[:space:]]+:latest' {} + 2>/dev/null | head -1 || true)"
   if [ -z "$dep" ] && [ -d "$d/.github/workflows" ]; then
     dep="$(grep -rInE 'uses:[[:space:]]+[^[:space:]]+@v[0-9]+([[:space:]]|$)' "$d/.github/workflows" 2>/dev/null | head -1 || true)"
   fi
