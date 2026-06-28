@@ -69,4 +69,14 @@ run bash "$pa" --no-history "$d"
 check_status "Cyrillic → exit 0 (WARN)" 0 "$STATUS"
 check_contains "warns about Cyrillic" "$OUT" "Cyrillic"
 
+# agent/session tooling metadata in a commit message → WARN (not a GAP). Built from parts so this
+# test's own source carries no whole session token (keeps the repo's audit clean).
+d="$(repo_by dev@example.com)"
+sess="$(printf 'Claude-%s: https://claude.ai/code/%s_01ABCxyz' 'Session' 'session')"
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q \
+  -m "$(printf 'work\n\n%s' "$sess")"
+run bash "$pa" "$d"
+check_status "session metadata in a message → exit 0 (WARN)" 0 "$STATUS"
+check_contains "warns about agent/session metadata" "$OUT" "session metadata"
+
 summary
