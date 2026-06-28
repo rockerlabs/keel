@@ -92,6 +92,22 @@ check_contains "--registry visited the real project" "$OUT" "$(basename "$good")
 run "$doctor" --registry "$SANDBOX/nope.md"
 check_status "--registry missing file → exit 2" 2 "$STATUS"
 
+# --registry: a table-shaped row inside a fenced code block is a doc example, not a real project
+realp="$(mkproj)"; git -C "$realp" init -q
+printf '# ctx\n' > "$realp/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$realp/.gitignore"
+reg="$SANDBOX/INSTANCE-fenced.md"
+{
+  printf '| Project | Path | CLAUDE.md | Tag |\n'
+  printf '|---------|------|-----------|-----|\n'
+  printf '| real | %s | link | bash |\n' "$realp"
+  printf '\n```\n'
+  printf '| example | /nonexistent/should/be/ignored | link | bash |\n'
+  printf '```\n'
+} > "$reg"
+run "$doctor" --registry "$reg"
+check_status "fenced example row ignored → clean exit 0" 0 "$STATUS"
+check_contains "real registry row still audited" "$OUT" "$(basename "$realp")"
+
 # publication-bound project (.public-audit present) committing with a real email → WARN (not a GAP)
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"
