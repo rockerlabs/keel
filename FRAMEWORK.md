@@ -204,6 +204,70 @@ tests.
 
 ---
 
+## PR review
+
+Review the diff before merge — for correctness bugs and for reuse/simplification/efficiency cleanups.
+
+- **Manual review is the mandatory baseline:** a deliberate read of the branch's diff (by you, or a
+  heavyweight review pass your harness offers) before the PR merges.
+- **An automated PR-review bot is optional (opt-in), not a baseline.** A bot that comments on every PR is
+  useful, but it usually needs its own API budget/token (a cost beyond a normal subscription) and may have
+  auth/expiry constraints unfit for CI. Wire one only where an API key is deliberately available; otherwise
+  rely on the manual pass.
+
+---
+
+## Git branch lifecycle — the squash/rebase "merged" caveat
+
+Git decides "is this branch merged?" by **commit-SHA reachability**. A **squash- or rebase-merge** rewrites
+the commits, so the branch keeps SHAs that are *not* ancestors of the default branch even though its content
+is fully merged. Two false "unmerged" verdicts follow:
+
+- `git branch -d <local>` **refuses** (thinks work would be lost) → after confirming, use `git branch -D`.
+- `git branch -r --no-merged origin/<default>` **flags the branch** → do NOT treat that as stranded work.
+
+**How to apply:** judge "merged?" by **PR state** (`gh pr list --head <branch> --state all`), not by
+SHA-reachability alone. Classify each branch `--no-merged` flags: **MERGED** (content is in the default,
+branch just not deleted — a cleanup target) · **CLOSED** (deliberately abandoned) · **open** (in-flight,
+never flag) · **no PR + real unmerged commits** (genuinely stranded — the only class to surface for human
+triage). Enable `gh repo edit <repo> --delete-branch-on-merge` once per repo so merged branches never
+accumulate in the first place.
+
+---
+
+## Dependency versioning — NEVER use `latest`
+
+**In every config across every project — pin explicit versions. Never `:latest`, `*`, or unversioned
+references.** Applies to:
+
+- Docker images: `postgres:16.3`, not `postgres:latest`
+- GitHub Actions: `actions/checkout@v4.1.1`, not `actions/checkout@v4`
+- CI runner OS: `ubuntu-24.04`, not `ubuntu-latest`
+- Language versions in CI: `python-version: '3.11.9'`, not `'3.11'` / `'3.x'`
+- Package manifests: pin in the lockfile / a versions block, never floating inline
+
+**Why:** floating versions break builds silently when upstream releases a new version; pinned versions make
+builds reproducible and failures explicit. (`doctor` flags floating image `:latest` tags and major-only
+Action `@vN` tags — a managed `*-latest` CI runner label is *not* flagged, it's a recommended alias.)
+
+---
+
+## Shell — an agent's Bash tool often runs the login shell (commonly zsh, not bash)
+
+Many agent "Bash" tools execute via the user's **login shell**, not bash — on macOS that is **zsh** by
+default (`$0` = `/bin/zsh`, `BASH_VERSION` unset), despite the tool's name.
+
+**Trap (zsh):** zsh does NOT word-split unquoted parameter expansions (bash does). An unquoted `$var`
+holding newline/space-separated items stays a **single argument** — e.g. `git push origin --delete $var`
+built from a multi-line substitution passes ONE multi-line refspec and fails (`invalid refspec`), deleting
+nothing.
+
+**How to apply:** for multi-item args, don't rely on unquoted `$var` splitting — pipe the list to `xargs`,
+loop explicitly, or use a real array; quote single values as `"$var"`. (Which shell your instance runs is an
+`INSTANCE.md` fact.)
+
+---
+
 ## Changelog
 
 When a project reaches a milestone (end of a session with big changes, infra upgrade, new version), add an
