@@ -77,7 +77,7 @@ door; the tools never enter the model's context at all. That is the whole point 
 | `tools/public-audit.sh` | Publication-readiness scan: hunts personal/instance leakage in the tree **and git history** (identities, private tokens) before a private→public flip. |
 | `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant). |
-| `commands/` | Lifecycle commands: `/init-project` (scaffold), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
+| `commands/` | Lifecycle commands: `/init-project` (scaffold), `/go` (start a backlog task autonomously), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
 | `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
 | `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
 | `docs/getting-started.md` | The fuller install + integration walk: what gets set up, how it folds into your day-to-day agent flow, how to tell it's working. |
