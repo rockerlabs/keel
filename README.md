@@ -1,6 +1,6 @@
 # Keel
 
-[![CI](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/dbudnikau-personal/keel/actions/workflows/ci.yml)
+[![CI](https://github.com/rockerlabs/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/rockerlabs/keel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **In plain words:** a small "how I work" file your AI agent reads at the start of every session — so it
@@ -107,13 +107,13 @@ Knowing which is which is the point: don't expect the principles to enforce them
 One line — clones to a temp dir, runs the installer, cleans up (needs `bash` + `git`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dbudnikau-personal/keel/main/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh
 ```
 
 Or from a clone, if you'd rather read first (same result):
 
 ```bash
-git clone https://github.com/dbudnikau-personal/keel.git && cd keel
+git clone https://github.com/rockerlabs/keel.git && cd keel
 ./install.sh
 ```
 
