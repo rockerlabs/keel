@@ -9,21 +9,29 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 tpl_project="$root/templates/project-CLAUDE.md"
 
-case "${1:-}" in
-  -h|--help)
-    cat <<'EOF'
+REGISTER=1
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      cat <<'EOF'
 init-project — scaffold a new project to the Keel baseline (born-compliant).
 
 Usage:
   init-project.sh [PROJECT_DIR]   scaffold PROJECT_DIR (default: current dir)
+  init-project.sh --no-register   skip adding it to the INSTANCE.md Projects registry
   init-project.sh -h | --help
 
 Idempotent: fills gaps (git, a .gitignore that hides private context, a project
-CLAUDE.md) and reports — it never overwrites a file you already have.
+CLAUDE.md), auto-registers the project in your INSTANCE.md, and reports — it never
+overwrites a file you already have.
 EOF
-    exit 0 ;;
-  -*) echo "init-project: unknown option '$1' (try --help)" >&2; exit 2 ;;
-esac
+      exit 0 ;;
+    --no-register) REGISTER=0 ;;
+    -*) echo "init-project: unknown option '$1' (try --help)" >&2; exit 2 ;;
+    *) break ;;
+  esac
+  shift
+done
 
 dir="${1:-.}"
 mkdir -p "$dir"
@@ -60,9 +68,20 @@ else
   echo "  ! template not found: $tpl_project" >&2
 fi
 
+# Auto-register in the INSTANCE.md Projects index (best-effort; --no-register to skip).
+registered=0
+instance="${KEEL_INSTANCE:-${KEEL_HOME:-${HOME:-}/.claude}/INSTANCE.md}"
+if [ "$REGISTER" = 1 ] && [ -f "$instance" ]; then
+  "$here/register-project.sh" "$(pwd)" >/dev/null 2>&1 && registered=1
+fi
+
 echo ""
 echo "Next:"
 echo "  - fill in CLAUDE.md (overview, stack, conventions, roadmap)"
 echo "  - wire secret-guard:  install-secret-guard.sh --global   (or vendor into this repo)"
-echo "  - add the project to your INSTANCE.md Projects registry"
+if [ "$registered" = 1 ]; then
+  echo "  - added to your INSTANCE.md Projects registry — refine its Tag there"
+else
+  echo "  - add to your INSTANCE.md registry:  register-project.sh \"$(pwd)\""
+fi
 echo "  - verify:  doctor.sh ."

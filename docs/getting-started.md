@@ -55,7 +55,13 @@ tools/doctor.sh       <path>   # audit the baseline (GAP fails, WARN advises)
 ```
 
 Fill the project `CLAUDE.md` (stack, conventions, roadmap). It loads **automatically** when you work in
-that repo. Add the project to your `INSTANCE.md` registry so a cross-project sweep can find it.
+that repo. `init-project` also **auto-adds the project to your `INSTANCE.md` registry** (so a
+cross-project sweep can find it) — `--no-register` skips that. To register projects you already have, in
+one go:
+
+```bash
+tools/register-project.sh ~/code/projA ~/code/projB   # one row each, idempotent
+```
 
 ## 4. How it folds into your flow — what changes day to day
 
