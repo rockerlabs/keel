@@ -104,13 +104,25 @@ Knowing which is which is the point: don't expect the principles to enforce them
 
 ## Quickstart
 
-```bash
-# One command: copy the durable core into your harness home (~/.claude by default), wire the
-# secret-guard hook machine-wide, seed a private INSTANCE.md, and verify. It never clobbers a
-# file you already have, so re-running is safe.
-./install.sh
+One line — clones to a temp dir, runs the installer, cleans up (needs `bash` + `git`):
 
-# Then scaffold or audit a project:
+```bash
+curl -fsSL https://raw.githubusercontent.com/dbudnikau-personal/keel/main/bootstrap.sh | sh
+```
+
+Or from a clone, if you'd rather read first (same result):
+
+```bash
+git clone https://github.com/dbudnikau-personal/keel.git && cd keel
+./install.sh
+```
+
+Either way it copies the durable core into your harness home (`~/.claude` by default), wires the
+secret-guard hook machine-wide, installs the slash commands, seeds a private `INSTANCE.md`, and
+verifies. It **never clobbers a file you already have**, so re-running is safe. Then scaffold or audit
+a project:
+
+```bash
 tools/init-project.sh ~/path/to/project
 tools/doctor.sh       ~/path/to/project
 ```

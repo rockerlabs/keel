@@ -65,4 +65,13 @@ check_contains "flags that rails were not merged in" "$OUT" "NOT merged in"
 check_contains "foreign CLAUDE.md left untouched" "$(cat "$fhome/CLAUDE.md")" "My own global notes"
 check_file "still wires commands into a foreign home" "$fhome/commands/wrap.md"
 
+# bootstrap.sh: the one-line install path — clone (here a local repo, no network) + run install.sh,
+# into an isolated home. Verifies the curl|sh entry point wires the core + commands end to end.
+boot="$REPO_ROOT/bootstrap.sh"
+bhome="$SANDBOX/boot-home"
+run env KEEL_REPO="$REPO_ROOT" sh "$boot" --home "$bhome" --no-hooks
+check_status "bootstrap → exit 0" 0 "$STATUS"
+check_file "bootstrap installs the core" "$bhome/CLAUDE.md"
+check_file "bootstrap installs the slash commands" "$bhome/commands/wrap.md"
+
 summary
