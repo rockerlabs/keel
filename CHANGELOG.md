@@ -27,6 +27,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   **your own project, not the `keel` clone**, with the session **restart** (commands load only at session
   start) promoted from a fallback footnote into the step itself; the README Quickstart states the
   `bash` + `git` requirement up front.
+- Plain-language pass over the user docs (README, `docs/getting-started.md`, `ADAPTING.md`): dropped the
+  in-house jargon a newcomer can't parse — "harness", "rails", "tiering", "clobber", "depreciate",
+  "mechanized vs needs-you", bare P-numbers — for everyday words ("your AI tool", "ground rules", "load a
+  little always", "overwrite", "runs by itself vs up to you"). Meaning, structure, links, and the honest
+  boundaries are unchanged; the reference core (`PRINCIPLES.md`, `FRAMEWORK.md`) is left precise on purpose.
+- `ADAPTING.md` rewritten around a concrete **non-Claude quickstart** (3 steps + a where-do-instructions-live
+  table for Cursor/Codex/Aider/Continue/plain-API) and now states up front that only Claude Code is
+  author-tested. README gained a short "Not using Claude Code?" pointer.
+
+### Added
+- `ADAPTING.md` → **"Help map your tool"** — an explicit, low-ceremony call for users who run Keel on
+  another AI tool to contribute their recipe (which file auto-loads, where the core went, how commands were
+  wired, what was wrong) via a short PR/issue. The honest answer to a "model-agnostic" claim the author has
+  only verified on Claude Code.
 
 ## [0.2.0] — 2026-06-29
 

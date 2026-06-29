@@ -1,48 +1,47 @@
-# Getting started — install Keel and fold it into your agent flow
+# Getting started — set up Keel and fit it into how you work
 
-The [Quickstart](../README.md#quickstart) is the one-command version. This is the fuller walk: what gets
-set up, how it actually changes your sessions, and how to tell it's working.
+The [Quickstart](../README.md#quickstart) is the short version. This is the longer walk: what gets set up,
+how it actually changes your sessions, and how to tell it's working.
 
 ## What you actually do — two steps
 
-**1. Install** (§1) — copies the core into `~/.claude`, wires `secret-guard`, installs the slash commands.
-One command:
+**1. Install** (§1) — copies the always-on files into `~/.claude`, turns on `secret-guard`, and adds the
+commands. One command:
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
 **2. Run `/keel-setup` in your project** (§2–§3) — open Claude Code inside a project you want Keel on (**not**
-the `keel` clone); if Claude Code was already running, **restart it** so the new command loads. The agent
-auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and
-fills/merges the always-loaded rails — you **review** the draft and add the genuinely-yours bits (model
-access, roadmap).
+the `keel` clone); if Claude Code was already open, **restart it** so the new command shows up. The assistant
+fills in your machine details, **drafts that project's `CLAUDE.md` from its code**, and sets up the always-on
+ground rules — you **check** the draft and add the parts only you know (which models you use, your roadmap).
 
 ```
 /keel-setup
 ```
 
-After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are
-filled. That's the loop — re-run `/keel-setup` in each project you adopt.
+After step 1, secret-guard already protects every commit; after step 2 the ground rules and project notes
+are filled in. That's the loop — run `/keel-setup` again in each new project you add.
 
-> **`/keel-setup` not showing up in Claude Code?** Slash commands load when a session **starts** — open a
-> **new Claude Code session** after installing, then type `/` and confirm `keel-setup` is listed.
+> **`/keel-setup` not showing up in Claude Code?** New commands appear only when a session **starts** —
+> open a **new Claude Code session** after installing, then type `/` and check that `keel-setup` is listed.
 >
 > The `keel-` prefix keeps it from clashing with a `/setup` you might already have. (`install.sh` never
 > overwrites a command you already have under *any* name — it prints `=  <name> exists (left untouched)`;
 > if that happens, just follow [`commands/keel-setup.md`](../commands/keel-setup.md) by hand — it's a short
 > prompt.)
 
-> **Rather do it by hand — or want to know exactly what `/keel-setup` fills?** `/keel-setup` is just these files,
-> drafted by the agent from your repo/machine instead of typed by you. The sections below break each one
-> down (and the `tools/` you'd run yourself): the always-loaded rails (§2), the per-project `CLAUDE.md`
-> (§3), and how to check it works (§5).
+> **Rather do it by hand — or want to know exactly what `/keel-setup` fills in?** `/keel-setup` is just the
+> files below, drafted by the assistant from your repo and machine instead of typed by you. The sections
+> below break each one down (and the `tools/` you'd run yourself): the always-on ground rules (§2), the
+> per-project `CLAUDE.md` (§3), and how to check it works (§5).
 
 ## 1. Install
 
-**Requirements:** `bash` (3.2+) and `git`. The tools and git hooks have a `bash` shebang, so a minimal
-image without it (Alpine, distroless) needs `bash` first — e.g. `apk add bash git` on Alpine. Without
-`bash` the hooks fail *closed* (a commit/push is blocked, not let through), but nothing will run.
+**You need:** `bash` (3.2+) and `git`. The tools and git checks start with a `bash` line, so a bare image
+without it (Alpine, distroless) needs `bash` first — e.g. `apk add bash git` on Alpine. Without `bash` the
+checks fail *safe* (a commit/push is blocked, not let through), but nothing else runs.
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel
@@ -50,94 +49,93 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 ```
 
 > **Express (core only):** `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh`
-> installs the always-loaded core + the secret-guard hook + the slash commands into `~/.claude` in one
-> command (pass install flags after `--`, e.g. `… | sh -s -- --no-hooks`). It leaves **no local checkout**,
+> installs the always-on core + the secret-guard check + the commands into `~/.claude` in one command (pass
+> install flags after `--`, e.g. `… | sh -s -- --no-hooks`). It leaves **no local copy of the repo**,
 > though — the `tools/` (`doctor`, `public-audit`) and `examples/tour.sh` need the clone above.
 
-`install.sh` is idempotent and **never clobbers a file you already have**. It:
+`install.sh` is safe to re-run and **never overwrites a file you already have**. It:
 
-- copies the durable core into your harness home (`~/.claude` by default),
-- installs the lifecycle commands into `<home>/commands/` (so `/wrap`, `/go`, `/init-project`, … are
-  slash commands on Claude Code — no manual copy),
-- wires the `secret-guard` git hook machine-wide,
-- seeds a private `INSTANCE.md`,
-- verifies the result and prints a `Done. Next:` summary (your install-moment confirmation).
+- copies the always-on files into your config folder (`~/.claude` by default),
+- adds the commands into `<config>/commands/` (so `/wrap`, `/go`, `/init-project`, … are commands on Claude
+  Code — no manual copy),
+- turns on the `secret-guard` git check machine-wide,
+- creates a private `INSTANCE.md`,
+- checks the result and prints a `Done. Next:` summary so you know it worked.
 
-> **Already use Claude Code?** If you already have a `~/.claude/CLAUDE.md`, install **won't overwrite it**
-> — it copies everything else but leaves your file untouched, so Keel's always-loaded rails aren't merged
-> in. It says so in `Verify` and points you at a `diff` to merge the rails you want by hand.
+> **Already use Claude Code?** If you already have a `~/.claude/CLAUDE.md`, install **won't overwrite it** —
+> it copies everything else but leaves your file alone, so Keel's always-on ground rules aren't merged in.
+> It says so in `Verify` and points you at a `diff` so you can merge the parts you want by hand.
 
-Flags: `--home DIR` targets a non-Claude-Code harness's always-loaded slot; `--no-hooks` skips the global
-git hook.
+Flags: `--home DIR` sets up the always-on slot for an AI tool other than Claude Code; `--no-hooks` skips the
+git check.
 
 ## 2. What just got set up
 
-| In your harness home | What it is | You should |
+| In your config folder | What it is | What to do |
 |---|---|---|
-| `CLAUDE.md` | the thin **always-loaded core** — rails + a map | **edit its placeholders** (chat language, etc.) |
-| `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md` | on-demand docs | leave as-is; they're pulled when needed |
-| `INSTANCE.md` | your **private** layer — environment + a project registry | fill in the **environment**; the registry auto-fills as you `init-project`/`register-project`. Keep it private (gitignored). |
-| a global git hook | `secret-guard` | nothing — it fires by itself |
+| `CLAUDE.md` | the small **always-on file** — ground rules + a map of where the rest lives | **fill in its placeholders** (chat language, etc.) |
+| `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md` | files loaded only when needed | leave as-is; they're pulled in when a task needs them |
+| `INSTANCE.md` | your **private** layer — machine details + a list of your projects | fill in the **machine details**; the project list fills itself as you `init-project`/`register-project`. Keep it private (git-ignored). |
+| a global git check | `secret-guard` | nothing — it runs on its own |
 
 (What loads when → the README's [*How it loads*](../README.md#the-idea) diagram and
 [`loading-and-cost.md`](loading-and-cost.md).)
 
 ## 3. Per project (each repo you work in)
 
-`/keel-setup` (above) does this for you — it scaffolds, then **drafts the project `CLAUDE.md` from the repo's
-code** for you to review. The by-hand equivalent:
+`/keel-setup` (above) does this for you — it sets the project up, then **drafts the project `CLAUDE.md` from
+the repo's code** for you to check. The by-hand version:
 
 ```bash
-tools/init-project.sh <path>   # scaffold: git, a .gitignore that hides private context, a project CLAUDE.md
-tools/doctor.sh       <path>   # audit the baseline (GAP fails, WARN advises)
+tools/init-project.sh <path>   # set up: git, a .gitignore that hides private notes, a project CLAUDE.md
+tools/doctor.sh       <path>   # check the setup (GAP = something's missing, WARN = a suggestion)
 ```
 
-Fill the project `CLAUDE.md` (stack, conventions, roadmap). It loads **automatically** when you work in
-that repo. `init-project` also **auto-adds the project to your `INSTANCE.md` registry** (so a
-cross-project sweep can find it) — `--no-register` skips that. To register projects you already have, in
-one go:
+Fill in the project `CLAUDE.md` (your stack, conventions, roadmap). It loads **automatically** when you work
+in that repo. `init-project` also **adds the project to your `INSTANCE.md` list** (so a review across all
+projects can find it) — `--no-register` skips that. To add projects you already have, all at once:
 
 ```bash
-tools/register-project.sh ~/code/projA ~/code/projB   # one row each, idempotent
+tools/register-project.sh ~/code/projA ~/code/projB   # one line each, safe to re-run
 ```
 
-## 4. How it folds into your flow — what changes day to day
+## 4. How it fits into your day — what changes
 
-- **Always-loaded rails.** Every session your agent reads the thin core — git flow, reconcile-first, verify,
-  secrets, how to handle forks. You do nothing; it's loaded. The agent is biased toward your way of working,
-  so you **stop re-explaining it** each session.
-- **Per-project context.** `cd` into a project and its `CLAUDE.md` loads — the agent knows the stack and
+- **The always-on file.** Every session your assistant reads the small core — your git flow, check-before-
+  you-start, verify, secrets, how to handle a choice with no obvious answer. You do nothing; it's loaded.
+  The assistant leans toward your way of working, so you **stop re-explaining it** every session.
+- **Per-project notes.** `cd` into a project and its `CLAUDE.md` loads — the assistant knows the stack and
   conventions without being told.
-- **The git hook fires by itself.** A key-shaped secret is blocked on commit/push whether or not anyone
-  remembered to check.
-- **On-demand docs.** The agent pulls `FRAMEWORK`/`PRINCIPLES` only when a task needs them — you don't carry
-  them in every session's footprint.
-- **Commands.** `/wrap`, `/go`, `/init-project`, `/global-review`, `/backlog` are prompt procedures.
-  `install.sh` copies them into `<home>/commands/`, so on Claude Code they're slash commands out of the
-  box; on another harness, point its custom-command feature at that dir, or paste the body.
-- **Audits on demand.** `doctor` (baseline drift) and `public-audit` (before going public) — run them when
-  you want; they cost zero context tokens.
+- **The git check runs on its own.** A key-shaped secret is blocked on commit/push whether or not anyone
+  remembered to look.
+- **Load-only-when-needed files.** The assistant pulls in `FRAMEWORK`/`PRINCIPLES` only when a task needs
+  them — you don't carry them in every session's memory.
+- **Commands.** `/wrap`, `/go`, `/init-project`, `/global-review`, `/backlog` are ready-made prompts.
+  `install.sh` copies them into `<config>/commands/`, so on Claude Code they're commands out of the box; on
+  another AI tool, point its custom-command feature at that folder, or paste the body.
+- **Checks when you want them.** `doctor` (what's missing) and `public-audit` (before going public) — run
+  them when you like; they cost zero memory.
 
 ## 5. Did it work? — an honest check
 
-The **mechanized** parts are checkable. Run them and watch:
+The **tool** parts are checkable. Run them and watch:
 
 ```bash
-examples/tour.sh                 # sandboxed: init-project → doctor → secret-guard blocks a fake key
-tools/doctor.sh <your-project>   # a real baseline audit
+examples/tour.sh                 # safe sandbox: init-project → doctor → secret-guard blocks a fake key
+tools/doctor.sh <your-project>   # a real check of your project
 ```
 
-> Note: running `doctor .` on the Keel repo itself **WARNs** (advisory; exit 0, "structural baseline
-> OK") — it does not GAP. Keel's own project `CLAUDE.md` is gitignored (private tool context, per P0), so
-> a clone has none. Point `doctor` at *your* project, not at Keel, to see a populated baseline audit.
+> Note: running `doctor .` on the Keel repo itself gives a **WARN** (just a suggestion; it passes,
+> "structural baseline OK") — not a failure. Keel's own project `CLAUDE.md` is git-ignored (private tool
+> notes), so a fresh clone has none. Point `doctor` at *your* project, not at Keel, to see a full check.
 
-The **prose rails** (the loaded core) bias the agent *when read* — there is no deterministic "test" for
-that, because loaded text nudges a model, it doesn't execute (see the README's *mechanized vs needs-you*).
-You feel it instead: the agent branches rather than committing to the default, greps before rewriting a
-helper, won't hardcode a secret. If it doesn't, the rails are loaded but the agent didn't apply them — the
-human is still the trigger.
+The **advice** part (the always-on file) nudges the assistant *when read* — there's no automatic "test" for
+that, because loaded text only nudges, it doesn't run (see the README's *what runs by itself vs what's up to
+you*). You feel it instead: the assistant weighs options instead of charging at the default, searches before
+rewriting a helper that already exists, won't hardcode a secret. If it doesn't, the file is loaded but the
+assistant didn't act on it — you're still the trigger.
 
-## 6. Another model or harness?
+## 6. Another model or AI tool?
 
-Most of Keel is harness-independent. To run it under Cursor / Aider / Continue / a plain API agent, see
-[`../ADAPTING.md`](../ADAPTING.md) — what ports as-is, what needs a small adapter, and where it stops.
+Most of Keel works with any AI tool. To run it under Cursor / Aider / Codex / Continue / a plain API agent,
+see [`../ADAPTING.md`](../ADAPTING.md) — what works as-is, what needs a small tweak, and where it stops.

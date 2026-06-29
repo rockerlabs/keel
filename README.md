@@ -3,65 +3,70 @@
 [![CI](https://github.com/rockerlabs/keel/actions/workflows/ci.yml/badge.svg)](https://github.com/rockerlabs/keel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **In plain words:** a small "how I work" file your AI agent reads at the start of every session — so it
-> stops re-learning your project, conventions, and past decisions — plus a few plain-Bash tools that block
-> secrets and audit your setup. Model-agnostic; about 10 minutes to adopt.
+> **In plain words:** a short "how I work" file your AI coding assistant reads at the start of every
+> session — so it stops re-learning your project, your conventions, and the decisions you already made —
+> plus a few small Bash tools that block secrets and check your setup. Works with any AI tool, not just
+> Claude. About 10 minutes to set up.
 
-**AI agents start every session cold** — re-deriving your project, your conventions, and decisions you
-already made. Overcompensate by dumping everything into context and they drown in noise and grab the wrong
-fact. Keel is the discipline in between: a thin, model-agnostic layer for **what an agent loads, when, and
-how much** — so the judgment and project knowledge you accumulate don't depreciate every time the tools change.
+**AI assistants start every session from zero.** Each new chat re-figures-out your project, your habits,
+and choices you already settled — and if you paste in everything to make up for it, the assistant drowns in
+detail and grabs the wrong fact. Keel is the middle path: a small, tool-independent layer that decides
+**what your assistant loads, when, and how much** — so the knowledge and judgment you build up don't get
+thrown away every time the tools change.
 
 ## Quickstart
 
-**1. Install.** Copies the always-loaded core into `~/.claude`, wires the **secret-guard** hook (blocks
-key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-project` slash commands —
-**never clobbering a file you already have.** (Needs `bash` + `git` — nothing else.)
+**1. Install.** Copies the small always-on file into `~/.claude`, turns on the **secret-guard** check
+(stops key-shaped secrets from being committed or pushed), and adds the `/wrap` `/go` `/init-project`
+commands — **without overwriting any file you already have.** (Needs `bash` + `git` — nothing else.)
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-**2. Open Claude Code in your own project and let the agent finish setup — no hand-editing.** Open
+**2. Open Claude Code in your own project and let it finish the setup — no editing by hand.** Open
 **your own project** (not the `keel` folder you just cloned) in Claude Code — **if Claude Code was already
-running, restart it**, because commands load only at session start. Then run `/keel-setup`: it auto-fills
-your machine details, **drafts that project's `CLAUDE.md` from its actual code**, and wires the rails — you
-*review*, you don't author it. Run it once per project you want Keel on.
+open, restart it**, because new commands only show up when a session starts. Then run `/keel-setup`: it
+fills in your machine details, **writes a first draft of that project's `CLAUDE.md` from its own code**, and
+sets up the ground rules — you *check* the draft, you don't write it. Run it once per project you want Keel
+on.
 
 ```
 /keel-setup
 ```
 
-Two steps. After step 1, `secret-guard` already guards your commits; `/keel-setup` fills the rest, with you
-reviewing the drafts. (Still don't see `/keel-setup`? You're in an old session — start a fresh one.)
+Two steps. After step 1, secret-guard already protects your commits; `/keel-setup` does the rest, and you
+just review what it drafts. (Still don't see `/keel-setup`? You're in an old session — start a fresh one.)
 
-*Want proof before you install?* `./examples/tour.sh` runs a self-contained sandbox demo (touches nothing
-on your machine) that scaffolds a project and watches `secret-guard` block a real key.
+*Want to see it work before installing?* `./examples/tour.sh` runs a safe demo in a throwaway sandbox
+(touches nothing on your machine): it sets up a sample project and watches secret-guard block a real key.
 
-That's the loop. Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" →
-[docs/getting-started.md](docs/getting-started.md).
+That's the whole loop. Longer walk-through, other AI tools, and the honest "what runs by itself vs what's up
+to you" → [docs/getting-started.md](docs/getting-started.md).
 
-> **Status: experimental probe.** This is an early, depersonalized extract of a working personal knowledge
-> base. It is published to find out whether it's useful to anyone beyond its author — not as a finished
-> product. Feedback welcome; expect rough edges.
+> **Not using Claude Code?** Keel doesn't depend on it. The ideas, the `tools/`, and the always-on file
+> work with any AI coding tool (Cursor, Aider, Codex, a plain API agent, …). The one Claude-Code-specific
+> bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md) for a short non-Claude setup — and, if you
+> get it running on another tool, a quick way to share how.
 
-> **Built and tested on Claude Code.** The principles, framework, and `tools/` are harness-independent; the
-> commands assume a Claude-Code-style custom-command feature. To run Keel with another model or harness, see
-> [`ADAPTING.md`](ADAPTING.md) — that's where "model-agnostic" becomes a concrete how-to (and where it stops).
+> **Status: early experiment.** This is an early, cleaned-up copy of one person's working setup. It's
+> public to find out whether it helps anyone besides its author — not as a finished product. Feedback
+> welcome; expect rough edges.
 
 ## The idea
 
-Keel rests on three ideas:
+Keel rests on three plain ideas:
 
-1. **Tiering** — a small, stable core is always loaded; everything else is pulled on demand. This is what
-   makes it work even on small context windows.
-2. **Durable vs disposable** — tools devalue in a year; your judgment and domain decisions don't. Invest in
-   the durable layer; keep mechanism thin and replaceable.
-3. **Build from friction** — every rule earns its place by solving a real, felt problem, never by wanting
-   to be "complete." This is what keeps it from rotting into bureaucracy.
+1. **Load a little always, the rest on demand.** A small, stable core loads every session; everything else
+   is pulled in only when a task actually needs it. That's what lets it work even when the assistant's
+   working memory is small.
+2. **Some things last, some don't.** Tools go out of date in a year; your judgment and project decisions
+   don't. Put your effort into the lasting part, and keep the machinery thin and easy to swap out.
+3. **Add a rule only when something hurts.** Every rule has to fix a real problem you actually ran into —
+   not just be there to look complete. That's what keeps it from turning into red tape.
 
-The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md) (P0–P4); the reusable engine is in
-[`FRAMEWORK.md`](FRAMEWORK.md). For exactly what loads when — and what tiering costs you in tokens, with a
+The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md); the reusable how-to is in
+[`FRAMEWORK.md`](FRAMEWORK.md). For exactly what loads when — and what it costs in tokens, with a
 with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-cost.md).
 
 ### How it loads, at a glance
@@ -69,7 +74,7 @@ with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-co
 ```mermaid
 flowchart TD
     subgraph always["Always loaded — every session (~1.4K tokens)"]
-        core["CLAUDE.md — thin core:<br/>rails + a map of where the rest lives"]
+        core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end
     subgraph demand["On demand — pulled only when a task needs it"]
@@ -88,77 +93,76 @@ flowchart TD
     tools -.->|only their output reaches context| core
 ```
 
-The always-loaded tier stays tiny; the heavy material (`PRINCIPLES`, `FRAMEWORK`) waits behind an on-demand
-door; the tools never enter the model's context at all. That is the whole point of tiering.
+The always-on part stays tiny; the bigger files (`PRINCIPLES`, `FRAMEWORK`) wait behind a door and load only
+when needed; the tools never enter the assistant's memory at all. That's the whole point.
 
 ## What's in the box
 
 | | |
 |---|---|
-| `PRINCIPLES.md` | The durable foundation (P0–P4) — consult on foundational decisions. |
-| `FRAMEWORK.md` | The reusable methodology: tiering, the registry-as-index, startup-footprint discipline, git/code conventions. Zero personal data. |
-| `templates/CLAUDE.md` | The thin always-loaded core — copy into your harness (e.g. `~/.claude/`) and edit. |
-| `templates/INSTANCE.md` | Your private personal layer (hardware, model access, project registry). |
-| `templates/project-CLAUDE.md` | Per-project context template. |
-| `templates/LEARNINGS.md` | Workflow-insight staging tier (the on-ramp between "promote to a rule" and "drop"). |
-| `install.sh` | One-command bootstrap: copy the durable core into your harness home + wire the secret-guard hook. Idempotent — never clobbers existing files. |
-| `tools/doctor.sh` | Structural self-audit of a project's knowledge-base baseline. |
-| `tools/public-audit.sh` | Publication-readiness scan: hunts personal/instance leakage in the tree **and git history** (identities, private tokens) before a private→public flip. |
-| `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. A prefix-based backstop, not full DLP — it catches known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
-| `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant); auto-registers it in your `INSTANCE.md`. |
-| `tools/register-project.sh` | Add project root(s) to the `INSTANCE.md` Projects registry — one row each, idempotent: `register-project.sh <path>…`. |
-| `commands/` | Lifecycle commands: `/keel-setup` (agent finishes install — drafts your machine env + a project's `CLAUDE.md` from its code), `/init-project` (scaffold), `/go` (start a backlog task autonomously), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
-| `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
+| `PRINCIPLES.md` | The lasting foundation — the handful of ideas everything else rests on. Read it for big, hard-to-undo decisions. |
+| `FRAMEWORK.md` | The reusable how-to: load-a-little-always, the project list, keeping the always-on part small, plus git and code conventions. No personal data. |
+| `templates/CLAUDE.md` | The small always-on file — copy it into your AI tool's config folder (e.g. `~/.claude/`) and edit it. |
+| `templates/INSTANCE.md` | Your private personal layer (hardware, which models you can use, your list of projects). |
+| `templates/project-CLAUDE.md` | A template for per-project notes. |
+| `templates/LEARNINGS.md` | A holding place for workflow tips that aren't yet worth a full rule (between "make it a rule" and "drop it"). |
+| `install.sh` | One-command setup: copies the always-on files into your config folder and turns on the secret-guard check. Safe to re-run — never overwrites your files. |
+| `tools/doctor.sh` | Checks a project's setup for missing pieces. |
+| `tools/public-audit.sh` | Before you make a private repo public, scans the files **and the git history** for anything personal that shouldn't leak (names, private tokens). |
+| `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
+| `tools/init-project.sh` | Sets up a new project with the basics in place, and adds it to your `INSTANCE.md` project list. |
+| `tools/register-project.sh` | Adds existing project folder(s) to the `INSTANCE.md` project list — one line each, safe to re-run: `register-project.sh <path>…`. |
+| `commands/` | Commands you can run: `/keel-setup` (lets the assistant finish setup — fills your machine details and drafts a project's `CLAUDE.md` from its code), `/init-project` (set up a project), `/go` (start a backlog task on its own), `/wrap` (close out a session — tidy up notes, changelog, backlog), `/global-review` (review across all projects), `/backlog` (show the backlog). |
+| `examples/` | A runnable, safe 5-minute tour of the tools — `init-project` → `doctor` → `secret-guard` blocking a key, start to finish. |
 | `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
-| `docs/getting-started.md` | The fuller install + integration walk: what gets set up, how it folds into your day-to-day agent flow, how to tell it's working. |
-| `docs/going-public.md` | The safe procedure to flip a private repo public: detect leaks (`public-audit`) → fix identity → scrub history → flip. The fix companion to `public-audit`. |
+| `docs/getting-started.md` | The longer setup walk-through: what gets set up, how it fits into your day-to-day, and how to tell it's working. |
+| `docs/going-public.md` | A safe step-by-step for making a private repo public: find leaks (`public-audit`) → fix names → clean history → flip. |
 
-## What's mechanized vs what needs you
+## What runs by itself vs what's up to you
 
-This is the honest part. A pure-prose principles file does **not** change an agent's behavior on its own —
-loaded text nudges a model but neither enforces nor reliably activates; **the human is the trigger.**
-Out-of-the-box behavior change comes only from the mechanized layer. So:
+This is the honest part. A file full of good advice does **not**, on its own, change how your assistant
+behaves — loaded text nudges it, but nothing forces it to follow, and it won't always remember to.
+**You are the trigger.** Real out-of-the-box behavior change comes only from the tools. So:
 
-**Mechanized — works without you remembering to apply it:**
-- `secret-guard` — blocks a key-shaped secret on commit/push (a git hook; fires by itself).
-- `install` — bootstraps the core + wires the global hook in one command (run it; it sets up).
-- `doctor` — reports baseline drift on demand (run it; it answers).
-- `public-audit` — scans tree + git history for personal/instance leakage before going public (run it; it answers).
-- `init-project` — scaffolds a compliant project (run it; it sets up).
+**Runs by itself — works without you remembering:**
+- `secret-guard` — blocks a key-shaped secret when you commit or push (a git check; fires on its own).
+- `install` — sets up the core and the check in one command (run it; it's done).
+- `doctor` — tells you what's missing when you ask (run it; it answers).
+- `public-audit` — scans files and git history for personal leaks before you go public (run it; it answers).
+- `init-project` — sets up a project (run it; it's done).
 
-**Needs you — prose that biases, but the human must apply:**
-- `PRINCIPLES.md`, `FRAMEWORK.md`, the `CLAUDE.md` rails — these shape decisions *when read*, but nothing
-  forces them. Treat them as a lens you invoke, not an autopilot.
+**Up to you — advice that nudges, but you have to apply it:**
+- `PRINCIPLES.md`, `FRAMEWORK.md`, the `CLAUDE.md` ground rules — they shape decisions *when read*, but
+  nothing makes the assistant obey. Think of them as a lens you choose to look through, not an autopilot.
 
-Knowing which is which is the point: don't expect the principles to enforce themselves.
+Knowing which is which is the point: don't expect the advice to enforce itself.
 
-`./install.sh --home DIR` targets a non-Claude-Code harness; `--no-hooks` skips the global git
-hook. To bootstrap by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`,
-`FRAMEWORK.md`, and `PRINCIPLES.md` into `~/.claude/`, then run `tools/install-secret-guard.sh
---global`.
+`./install.sh --home DIR` sets Keel up for an AI tool other than Claude Code; `--no-hooks` skips the git
+check. To set it up by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`, `FRAMEWORK.md`,
+and `PRINCIPLES.md` into `~/.claude/`, then run `tools/install-secret-guard.sh --global`.
 
-Want to see it work first, without touching anything? Run the sandboxed
+Want to see it work first, without touching anything? Run the safe
 [5-minute tour](examples/README.md): `examples/tour.sh`.
 
-New here? The fuller walk — what gets set up, how it folds into your day-to-day agent flow, and how to tell
-it's working — is in [`docs/getting-started.md`](docs/getting-started.md).
+New here? The longer walk-through — what gets set up, how it fits into your day-to-day, and how to tell it's
+working — is in [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Tests
 
-The tools verify themselves — a zero-dependency bash suite (no bats, no deps) runs on every PR across
-Linux and macOS, plus a `shellcheck` gate. A regression in any tool turns CI red.
+The tools check themselves — a small Bash test suite (no extra dependencies) runs on every change across
+Linux and macOS, plus a `shellcheck` pass. If any tool breaks, the tests go red.
 
 ```bash
-tests/run.sh   # secret-guard block/allow/allowlist, doctor GAP/WARN/--registry,
-               # init-project idempotency, install.sh bootstrap + clobber-guards
+tests/run.sh   # secret-guard block/allow/allowlist, doctor checks,
+               # init-project re-run safety, install.sh setup + don't-overwrite guards
 ```
 
-This is P1 applied to Keel itself: the methodology project is the first thing it audits.
+It's the same rule Keel asks of you, applied to Keel itself: the project is the first thing it checks.
 
 ## Scope
 
-A reference / methodology repository, not a packaged product or a subscription. Built for Claude Code but
-not tied to any one model or provider — see [`ADAPTING.md`](ADAPTING.md).
+A reference and method, not a packaged product or a subscription. Built for Claude Code but not tied to any
+one model or tool — see [`ADAPTING.md`](ADAPTING.md).
 
 ## License
 
