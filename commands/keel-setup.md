@@ -1,4 +1,4 @@
-# /setup
+# /keel-setup
 
 Finish a Keel install — fill the content that `install.sh` (mechanical) can't, by inspecting **this
 machine** and the **current project**. You **draft**; the human reviews. Hard rules: never clobber a
