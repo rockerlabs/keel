@@ -19,6 +19,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   that was hand-editing a markdown table; `doctor --registry` reads exactly these rows.
 - `init-project.sh` now **auto-registers** the project it scaffolds in `INSTANCE.md` (best-effort; skip
   with `--no-register`) — so a new project lands in the registry without a second step.
+- `docs/publishing-checklist.md` — the "is it finished and presentable?" list (README/LICENSE/CHANGELOG/
+  SECURITY, About metadata, CI + branch protection, release, social preview), each item marked **[auto]**
+  (a `gh`/tool command answers it) or **[you]**, plus an explicit "decide, don't default" section for the
+  community files Keel deliberately defers. The **presentation** companion to `going-public.md`'s **safety**
+  flip; the two now cross-link. Captures a repeatedly hand-walked process so it goes fast next time.
 
 ### Changed
 - Onboarding clarity (novice-eyed pass): `install.sh`'s `Done. Next:` now leads with `/keel-setup` as the
