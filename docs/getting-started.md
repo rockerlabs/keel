@@ -3,6 +3,23 @@
 The [Quickstart](../README.md#quickstart) is the one-command version. This is the fuller walk: what gets
 set up, how it actually changes your sessions, and how to tell it's working.
 
+## What you actually do — the whole checklist
+
+Keel is **mechanized setup + content only you can write.** The scripts can't write the content for you —
+that's the point (your judgment and project knowledge, not a generated guess). The full list:
+
+| | Step | Type |
+|---|---|---|
+| 1 | **Install** — `git clone … && cd keel && ./install.sh` (§1) | one command |
+| 2 | **Make the rails yours** — fill the placeholders in `~/.claude/CLAUDE.md`. **If you already had a `~/.claude/CLAUDE.md`, install won't overwrite it — merge Keel's rails in by hand** (§1–§2). | ✍️ content |
+| 3 | **Fill your private layer** — `~/.claude/INSTANCE.md` **environment** (hardware, model access). The project *registry* fills itself in step 5, so this is just the environment (§2). | ✍️ content |
+| 4 | **Check it works** — `examples/tour.sh`, then `doctor` on a real project (§5). | one command |
+| 5 | **Per project (repeat for each repo)** — `tools/init-project.sh <path>` *(scaffolds the repo **and auto-registers it** in `INSTANCE.md`)*, **then fill the project `CLAUDE.md` it creates** (stack, conventions, roadmap) (§3). | command + ✍️ content |
+
+The ✍️ content steps (2, 3, the fill in 5) are where Keel becomes useful — an unfilled template loads
+nothing worth loading, and `secret-guard` is the only piece that works with zero input from you. Details
+of each step below.
+
 ## 1. Install
 
 **Requirements:** `bash` (3.2+) and `git`. The tools and git hooks have a `bash` shebang, so a minimal
@@ -41,7 +58,7 @@ git hook.
 |---|---|---|
 | `CLAUDE.md` | the thin **always-loaded core** — rails + a map | **edit its placeholders** (chat language, etc.) |
 | `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md` | on-demand docs | leave as-is; they're pulled when needed |
-| `INSTANCE.md` | your **private** layer — environment + project registry | fill it; keep it private (gitignored) |
+| `INSTANCE.md` | your **private** layer — environment + a project registry | fill in the **environment**; the registry auto-fills as you `init-project`/`register-project`. Keep it private (gitignored). |
 | a global git hook | `secret-guard` | nothing — it fires by itself |
 
 (What loads when → the README's [*How it loads*](../README.md#the-idea) diagram and
