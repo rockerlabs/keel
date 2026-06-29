@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- `bootstrap.sh` + a README one-liner: `curl -fsSL …/bootstrap.sh | sh` clones Keel to a temp dir, runs
+  `install.sh`, and cleans up — collapsing clone+cd+install into a single command. POSIX `sh` (checks for
+  `bash`/`git`); passes flags through (`… | sh -s -- --no-hooks`); pin with `KEEL_REF`. Works once the
+  repo is public (the raw URL must be reachable).
+
 ## [0.2.0] — 2026-06-29
 
 Hardening release: eleven external audit rounds drove findings from a real PR-ref secret leak down to
