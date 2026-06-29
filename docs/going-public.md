@@ -10,6 +10,10 @@ Cyrillic — in the tree *and* in history (message bodies + diffs), plus agent/s
 personal name in a message body isn't a hard GAP, so hunt declared tokens with `--token` before a flip.
 This page is the **procedure** to fix what it finds and flip without churn.
 
+> **This page is the *safety* half — "don't leak."** For the *presentation* half — "does the repo look
+> finished?" (README, LICENSE, About metadata, social preview, release, branch protection) — see
+> [`publishing-checklist.md`](publishing-checklist.md). Run this one first, that one second.
+
 ## Checklist
 
 0. **Detect** — run `public-audit`.
