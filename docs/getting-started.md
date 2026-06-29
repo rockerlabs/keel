@@ -3,26 +3,25 @@
 The [Quickstart](../README.md#quickstart) is the one-command version. This is the fuller walk: what gets
 set up, how it actually changes your sessions, and how to tell it's working.
 
-## What you actually do — the whole checklist
+## What you actually do — two steps
 
-Keel is **mechanized setup + content only you can write.** The scripts can't write the content for you —
-that's the point (your judgment and project knowledge, not a generated guess). The full list:
-
-| | Step | Type |
+| | Step | |
 |---|---|---|
-| 1 | **Install** — `git clone … && cd keel && ./install.sh` (§1) | one command |
-| 2 | **Make the rails yours** — fill the placeholders in `~/.claude/CLAUDE.md`. **If you already had a `~/.claude/CLAUDE.md`, install won't overwrite it — merge Keel's rails in by hand** (§1–§2). | ✍️ content |
-| 3 | **Fill your private layer** — `~/.claude/INSTANCE.md` **environment** (hardware, model access). The project *registry* fills itself in step 5, so this is just the environment (§2). | ✍️ content |
-| 4 | **Check it works** — `examples/tour.sh`, then `doctor` on a real project (§5). | one command |
-| 5 | **Per project (repeat for each repo)** — `tools/init-project.sh <path>` *(scaffolds the repo **and auto-registers it** in `INSTANCE.md`)*, **then fill the project `CLAUDE.md` it creates** (stack, conventions, roadmap) (§3). | command + ✍️ content |
+| 1 | **Install** (§1) — copies the core into `~/.claude`, wires `secret-guard`, installs the slash commands. | one command |
+| 2 | **`/setup`** in Claude Code, run inside a project you want Keel on (§2–§3) — the agent auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and fills/merges the always-loaded rails. You **review** the draft and add the genuinely-yours bits (model access, roadmap). | agent + a review |
 
-The ✍️ content steps (2, 3, the fill in 5) are where Keel becomes useful — an unfilled template loads
-nothing worth loading, and `secret-guard` is the only piece that works with zero input from you.
+```bash
+git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh   # step 1
+# then, in Claude Code, inside your project:  /setup                            # step 2
+```
 
-> **Shortcut — `/setup`.** In Claude Code, run `/setup` after install and it does the ✍️ steps *for* you:
-> auto-fills your machine environment, **drafts a project's `CLAUDE.md` from its actual code**, and offers
-> to merge/fill the rails. It drafts; **you review** (and supply the genuinely-yours bits — model access,
-> roadmap). You stop *authoring* these files and start *correcting a draft*. Details of each step below.
+After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are
+filled. That's the loop — re-run `/setup` in each project you adopt.
+
+> **Rather do it by hand — or want to know exactly what `/setup` fills?** `/setup` is just these files,
+> drafted by the agent from your repo/machine instead of typed by you. The sections below break each one
+> down (and the `tools/` you'd run yourself): the always-loaded rails (§2), the per-project `CLAUDE.md`
+> (§3), and how to check it works (§5).
 
 ## 1. Install
 
@@ -69,6 +68,9 @@ git hook.
 [`loading-and-cost.md`](loading-and-cost.md).)
 
 ## 3. Per project (each repo you work in)
+
+`/setup` (above) does this for you — it scaffolds, then **drafts the project `CLAUDE.md` from the repo's
+code** for you to review. The by-hand equivalent:
 
 ```bash
 tools/init-project.sh <path>   # scaffold: git, a .gitignore that hides private context, a project CLAUDE.md
