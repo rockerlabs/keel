@@ -8,12 +8,6 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
-### Added
-- `bootstrap.sh` + a README one-liner: `curl -fsSL …/bootstrap.sh | sh` clones Keel to a temp dir, runs
-  `install.sh`, and cleans up — collapsing clone+cd+install into a single command. POSIX `sh` (checks for
-  `bash`/`git`); passes flags through (`… | sh -s -- --no-hooks`); pin with `KEEL_REF`. Works once the
-  repo is public (the raw URL must be reachable).
-
 ## [0.2.0] — 2026-06-29
 
 Hardening release: eleven external audit rounds drove findings from a real PR-ref secret leak down to
@@ -21,6 +15,9 @@ cosmetic/UX nits, all fixed. Notable: the push guard now scans the blobs a push 
 diff), cross-platform CI (Alpine/busybox) guards portability, and every CLI has `--help`.
 
 ### Added
+- One-line install: `curl -fsSL …/bootstrap.sh | sh` (`bootstrap.sh`) clones Keel to a temp dir, runs
+  `install.sh`, and cleans up — collapsing clone+cd+install into a single command. POSIX `sh` (checks
+  for `bash`/`git`); passes flags through (`… | sh -s -- --no-hooks`); pin with `KEEL_REF`.
 - `install.sh` now wires the lifecycle commands too — it copies `commands/*.md` into `<home>/commands/`,
   so `/wrap`, `/go`, `/init-project`, … are slash commands on Claude Code with no manual copy step.
 - `install.sh` detects a **pre-existing, non-Keel `CLAUDE.md`** and says so loudly (a `Verify` WARN +
