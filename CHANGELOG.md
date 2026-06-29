@@ -46,6 +46,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   project gitignores `CLAUDE.md`, so `git worktree add` checks it out without one and that worktree's session
   starts blind to the project context. doctor now WARNs when a live linked worktree is missing the bridge.
   Public-fork (committed `CLAUDE.md`) is exempt. Advisory WARN.
+- README: new **"Already have your own conventions?"** door, alongside "Not using Claude Code?". Reframes
+  adoption for readers who already run a tuned setup — take the **ideas** (`PRINCIPLES`/`FRAMEWORK`), the
+  **standalone tools** (`secret-guard`/`public-audit`, plain Bash + git, no Keel core needed), or one
+  command/template à la carte, rather than installing the whole thing. States the positioning in one line:
+  *a method and a few tools you graft onto what you have — not a framework you adopt whole.*
 
 ## [0.3.0] — 2026-06-30
 
