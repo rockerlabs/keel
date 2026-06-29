@@ -14,20 +14,28 @@ how much** — so the judgment and project knowledge you accumulate don't deprec
 
 ## Quickstart
 
+**1. Install.** Copies the always-loaded core into `~/.claude`, wires the **secret-guard** hook (blocks
+key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-project` slash commands —
+**never clobbering a file you already have.**
+
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-That one command copies the always-loaded core into `~/.claude`, wires the **secret-guard** hook (blocks
-key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-project` slash commands —
-**never clobbering a file you already have.** See it block a real key, in a throwaway sandbox:
+**2. See it work.** The tour blocks a real key in a throwaway sandbox, end to end:
 
 ```bash
 ./examples/tour.sh
 ```
 
-Then point it at a project — `tools/init-project.sh ~/your/project` — and fill the `CLAUDE.md` it creates.
-Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" → [docs/getting-started.md](docs/getting-started.md).
+**3. Use it on a project.** Scaffold a repo, then fill the `CLAUDE.md` it creates (your stack, conventions):
+
+```bash
+tools/init-project.sh ~/your/project
+```
+
+That's the whole loop. Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" →
+[docs/getting-started.md](docs/getting-started.md).
 
 > **Status: experimental probe.** This is an early, depersonalized extract of a working personal knowledge
 > base. It is published to find out whether it's useful to anyone beyond its author — not as a finished
