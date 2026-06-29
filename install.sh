@@ -142,8 +142,11 @@ fi
 
 cat <<EOF
 
-Done. Next:
-  - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>); keep  $HOME_DIR/INSTANCE.md  private
+Done. secret-guard already guards your commits. Next:
+  - EASIEST — in Claude Code, open YOUR project (not this keel clone) and run  /keel-setup
+    It fills the rest for you: machine details + a project CLAUDE.md drafted from its code.
+    You review, you don't author. Not listed? Start a NEW Claude Code session (commands load at startup).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, /init-project, …
-  - scaffold or audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>
+  - prefer to do it by hand? edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md
+    private, and scaffold/audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>
 EOF

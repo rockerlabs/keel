@@ -16,15 +16,16 @@ how much** — so the judgment and project knowledge you accumulate don't deprec
 
 **1. Install.** Copies the always-loaded core into `~/.claude`, wires the **secret-guard** hook (blocks
 key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-project` slash commands —
-**never clobbering a file you already have.**
+**never clobbering a file you already have.** (Needs `bash` + `git` — nothing else.)
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-**2. Let the agent finish setup — no hand-editing.** In Claude Code, run `/keel-setup`: it auto-fills your
-machine details, **drafts a project's `CLAUDE.md` from its actual code**, and wires the rails — you
-*review*, you don't author it. Run it once per project you want Keel on.
+**2. Let the agent finish setup — no hand-editing.** In Claude Code, open **your own project** (not the
+`keel` folder you just cloned) and run `/keel-setup`: it auto-fills your machine details, **drafts that
+project's `CLAUDE.md` from its actual code**, and wires the rails — you *review*, you don't author it. Run
+it once per project you want Keel on.
 
 ```
 /keel-setup

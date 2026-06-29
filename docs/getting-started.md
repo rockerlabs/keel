@@ -12,7 +12,7 @@ set up, how it actually changes your sessions, and how to tell it's working.
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh   # step 1
-# then, in Claude Code, inside your project:  /keel-setup                            # step 2
+# then, in Claude Code, inside YOUR project (not the keel clone):  /keel-setup       # step 2
 ```
 
 After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are
