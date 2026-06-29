@@ -8,6 +8,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- `/setup` command (`commands/setup.md`) — an agent procedure that finishes the install `install.sh` can't:
+  auto-fills the `INSTANCE.md` **environment** from the machine (`uname`/`sysctl`/`$SHELL`), **drafts a
+  project's `CLAUDE.md` from its actual code** (stack/build/test from real files; roadmap stubbed), and
+  fills/merges the always-loaded rails. It drafts and the human reviews — never clobbers, never commits,
+  never invents a fact. Turns the content steps from authoring into reviewing.
+- `tools/register-project.sh <path>…` — adds project root(s) to the `INSTANCE.md` Projects registry, one
+  table row each (name = dir basename, Path = absolute path), idempotent. Mechanizes the registry upkeep
+  that was hand-editing a markdown table; `doctor --registry` reads exactly these rows.
+- `init-project.sh` now **auto-registers** the project it scaffolds in `INSTANCE.md` (best-effort; skip
+  with `--no-register`) — so a new project lands in the registry without a second step.
+
 ## [0.2.0] — 2026-06-29
 
 Hardening release: eleven external audit rounds drove findings from a real PR-ref secret leak down to

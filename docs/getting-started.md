@@ -3,6 +3,26 @@
 The [Quickstart](../README.md#quickstart) is the one-command version. This is the fuller walk: what gets
 set up, how it actually changes your sessions, and how to tell it's working.
 
+## What you actually do — two steps
+
+| | Step | |
+|---|---|---|
+| 1 | **Install** (§1) — copies the core into `~/.claude`, wires `secret-guard`, installs the slash commands. | one command |
+| 2 | **`/setup`** in Claude Code, run inside a project you want Keel on (§2–§3) — the agent auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and fills/merges the always-loaded rails. You **review** the draft and add the genuinely-yours bits (model access, roadmap). | agent + a review |
+
+```bash
+git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh   # step 1
+# then, in Claude Code, inside your project:  /setup                            # step 2
+```
+
+After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are
+filled. That's the loop — re-run `/setup` in each project you adopt.
+
+> **Rather do it by hand — or want to know exactly what `/setup` fills?** `/setup` is just these files,
+> drafted by the agent from your repo/machine instead of typed by you. The sections below break each one
+> down (and the `tools/` you'd run yourself): the always-loaded rails (§2), the per-project `CLAUDE.md`
+> (§3), and how to check it works (§5).
+
 ## 1. Install
 
 **Requirements:** `bash` (3.2+) and `git`. The tools and git hooks have a `bash` shebang, so a minimal
@@ -41,7 +61,7 @@ git hook.
 |---|---|---|
 | `CLAUDE.md` | the thin **always-loaded core** — rails + a map | **edit its placeholders** (chat language, etc.) |
 | `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md` | on-demand docs | leave as-is; they're pulled when needed |
-| `INSTANCE.md` | your **private** layer — environment + project registry | fill it; keep it private (gitignored) |
+| `INSTANCE.md` | your **private** layer — environment + a project registry | fill in the **environment**; the registry auto-fills as you `init-project`/`register-project`. Keep it private (gitignored). |
 | a global git hook | `secret-guard` | nothing — it fires by itself |
 
 (What loads when → the README's [*How it loads*](../README.md#the-idea) diagram and
@@ -49,13 +69,22 @@ git hook.
 
 ## 3. Per project (each repo you work in)
 
+`/setup` (above) does this for you — it scaffolds, then **drafts the project `CLAUDE.md` from the repo's
+code** for you to review. The by-hand equivalent:
+
 ```bash
 tools/init-project.sh <path>   # scaffold: git, a .gitignore that hides private context, a project CLAUDE.md
 tools/doctor.sh       <path>   # audit the baseline (GAP fails, WARN advises)
 ```
 
 Fill the project `CLAUDE.md` (stack, conventions, roadmap). It loads **automatically** when you work in
-that repo. Add the project to your `INSTANCE.md` registry so a cross-project sweep can find it.
+that repo. `init-project` also **auto-adds the project to your `INSTANCE.md` registry** (so a
+cross-project sweep can find it) — `--no-register` skips that. To register projects you already have, in
+one go:
+
+```bash
+tools/register-project.sh ~/code/projA ~/code/projB   # one row each, idempotent
+```
 
 ## 4. How it folds into your flow — what changes day to day
 
