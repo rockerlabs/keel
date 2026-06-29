@@ -15,6 +15,11 @@ cosmetic/UX nits, all fixed. Notable: the push guard now scans the blobs a push 
 diff), cross-platform CI (Alpine/busybox) guards portability, and every CLI has `--help`.
 
 ### Added
+- `install.sh` now wires the lifecycle commands too — it copies `commands/*.md` into `<home>/commands/`,
+  so `/wrap`, `/go`, `/init-project`, … are slash commands on Claude Code with no manual copy step.
+- `install.sh` detects a **pre-existing, non-Keel `CLAUDE.md`** and says so loudly (a `Verify` WARN +
+  a `diff` to merge from), instead of silently leaving the always-loaded rails un-applied — the exact
+  trap an existing Claude Code user hit. (Your file is still never clobbered.)
 - `-h`/`--help` for **every** tool — `doctor.sh`, `init-project.sh`, `public-audit.sh`, and
   `install-secret-guard.sh` (matching `install.sh`). A newcomer's reflex `--help` previously hit raw
   `basename: illegal option` / `mkdir: illegal option` / `unknown option` / `not a git repo: --help`

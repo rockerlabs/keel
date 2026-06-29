@@ -14,6 +14,8 @@ check_contains "wires secret-guard" "$OUT" "secret-guard"
 hp="$(git config --global core.hooksPath || true)"
 check_contains "sets global hooksPath to keel-hooks" "$hp" "keel-hooks"
 check_contains "verify confirms Keel's secret-guard is wired" "$OUT" "OK   secret-guard"
+check_file "installs lifecycle commands as slash commands" "$HOME/.claude/commands/wrap.md"
+check_absent "no foreign-core nag when install created CLAUDE.md" "$OUT" "NOT merged in"
 
 # idempotent re-run preserves a user edit and clobbers nothing
 printf '\nMY-EDIT\n' >> "$HOME/.claude/CLAUDE.md"
@@ -21,6 +23,7 @@ run "$install"
 check_status "re-run → exit 0" 0 "$STATUS"
 check_contains "re-run preserves the user edit" "$(cat "$HOME/.claude/CLAUDE.md")" "MY-EDIT"
 check_contains "re-run leaves files untouched" "$OUT" "left untouched"
+check_absent "no foreign-core nag on a Keel-derived CLAUDE.md" "$OUT" "NOT merged in"
 
 # --no-hooks into a custom --home
 alt="$SANDBOX/alt-home"
@@ -51,5 +54,15 @@ check_file "installs into --home with HOME unset" "$SANDBOX/nohome-flag/CLAUDE.m
 run env -u HOME KEEL_HOME="$SANDBOX/nohome-env" bash "$install" --no-hooks
 check_status "unset HOME + KEEL_HOME + --no-hooks → exit 0" 0 "$STATUS"
 check_file "installs into KEEL_HOME with HOME unset" "$SANDBOX/nohome-env/CLAUDE.md"
+
+# a pre-existing NON-Keel CLAUDE.md: never clobbered, install loudly flags the un-merged rails, and
+# still wires everything else (commands included) so onboarding isn't silently half-done.
+fhome="$SANDBOX/foreign-core"; mkdir -p "$fhome"
+printf '# My own global notes\nnothing keel here\n' > "$fhome/CLAUDE.md"
+run "$install" --home "$fhome" --no-hooks
+check_status "foreign CLAUDE.md → exit 0" 0 "$STATUS"
+check_contains "flags that rails were not merged in" "$OUT" "NOT merged in"
+check_contains "foreign CLAUDE.md left untouched" "$(cat "$fhome/CLAUDE.md")" "My own global notes"
+check_file "still wires commands into a foreign home" "$fhome/commands/wrap.md"
 
 summary
