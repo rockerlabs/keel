@@ -3,6 +3,23 @@
 The [Quickstart](../README.md#quickstart) is the one-command version. This is the fuller walk: what gets
 set up, how it actually changes your sessions, and how to tell it's working.
 
+## What you actually do — the whole checklist
+
+Keel is **mechanized setup + content only you can write.** The scripts can't write the content for you —
+that's the point (your judgment and project knowledge, not a generated guess). The full list:
+
+| | Step | Type |
+|---|---|---|
+| 1 | **Install** — `git clone … && cd keel && ./install.sh` (§1) | one command |
+| 2 | **Make the rails yours** — fill the placeholders in `~/.claude/CLAUDE.md`. **If you already had a `~/.claude/CLAUDE.md`, install won't overwrite it — merge Keel's rails in by hand** (§1–§2). | ✍️ content |
+| 3 | **Fill your private layer** — `~/.claude/INSTANCE.md`: your environment + a registry of your projects (§2). | ✍️ content |
+| 4 | **Check it works** — `examples/tour.sh`, then `doctor` on a real project (§5). | one command |
+| 5 | **Per project (repeat for each repo)** — `tools/init-project.sh <path>`, **then fill the project `CLAUDE.md` it scaffolds** (stack, conventions, roadmap); add the repo to your `INSTANCE.md` registry (§3). | command + ✍️ content |
+
+The ✍️ content steps (2, 3, the fill in 5) are where Keel becomes useful — an unfilled template loads
+nothing worth loading, and `secret-guard` is the only piece that works with zero input from you. Details
+of each step below.
+
 ## 1. Install
 
 **Requirements:** `bash` (3.2+) and `git`. The tools and git hooks have a `bash` shebang, so a minimal
