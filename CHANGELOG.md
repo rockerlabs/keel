@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-30
+
+Onboarding & adoption release. The agent now finishes setup for you (`/keel-setup`), projects self-register
+in your `INSTANCE.md`, the user docs are rewritten in plain language with a concrete non-Claude path, and a
+publishing checklist captures the go-public process end to end.
+
 ### Added
 - `/keel-setup` command (`commands/keel-setup.md`) — an agent procedure that finishes the install `install.sh` can't:
   auto-fills the `INSTANCE.md` **environment** from the machine (`uname`/`sysctl`/`$SHELL`), **drafts a
@@ -24,6 +30,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (a `gh`/tool command answers it) or **[you]**, plus an explicit "decide, don't default" section for the
   community files Keel deliberately defers. The **presentation** companion to `going-public.md`'s **safety**
   flip; the two now cross-link. Captures a repeatedly hand-walked process so it goes fast next time.
+- `ADAPTING.md` → **"Help map your tool"** — an explicit, low-ceremony call for users who run Keel on
+  another AI tool to contribute their recipe (which file auto-loads, where the core went, how commands were
+  wired, what was wrong) via a short PR/issue. The honest answer to a "model-agnostic" claim the author has
+  only verified on Claude Code.
 
 ### Changed
 - Onboarding clarity (novice-eyed pass): `install.sh`'s `Done. Next:` now leads with `/keel-setup` as the
@@ -40,12 +50,6 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - `ADAPTING.md` rewritten around a concrete **non-Claude quickstart** (3 steps + a where-do-instructions-live
   table for Cursor/Codex/Aider/Continue/plain-API) and now states up front that only Claude Code is
   author-tested. README gained a short "Not using Claude Code?" pointer.
-
-### Added
-- `ADAPTING.md` → **"Help map your tool"** — an explicit, low-ceremony call for users who run Keel on
-  another AI tool to contribute their recipe (which file auto-loads, where the core went, how commands were
-  wired, what was wrong) via a short PR/issue. The honest answer to a "model-agnostic" claim the author has
-  only verified on Claude Code.
 
 ## [0.2.0] — 2026-06-29
 
