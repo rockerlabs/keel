@@ -17,8 +17,12 @@ that's the point (your judgment and project knowledge, not a generated guess). T
 | 5 | **Per project (repeat for each repo)** — `tools/init-project.sh <path>` *(scaffolds the repo **and auto-registers it** in `INSTANCE.md`)*, **then fill the project `CLAUDE.md` it creates** (stack, conventions, roadmap) (§3). | command + ✍️ content |
 
 The ✍️ content steps (2, 3, the fill in 5) are where Keel becomes useful — an unfilled template loads
-nothing worth loading, and `secret-guard` is the only piece that works with zero input from you. Details
-of each step below.
+nothing worth loading, and `secret-guard` is the only piece that works with zero input from you.
+
+> **Shortcut — `/setup`.** In Claude Code, run `/setup` after install and it does the ✍️ steps *for* you:
+> auto-fills your machine environment, **drafts a project's `CLAUDE.md` from its actual code**, and offers
+> to merge/fill the rails. It drafts; **you review** (and supply the genuinely-yours bits — model access,
+> roadmap). You stop *authoring* these files and start *correcting a draft*. Details of each step below.
 
 ## 1. Install
 

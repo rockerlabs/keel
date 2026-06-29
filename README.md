@@ -22,19 +22,21 @@ key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-**2. See it work.** The tour blocks a real key in a throwaway sandbox, end to end:
+**2. Let the agent finish setup — no hand-editing.** In Claude Code, run `/setup`: it auto-fills your
+machine details, **drafts a project's `CLAUDE.md` from its actual code**, and wires the rails — you
+*review*, you don't author it. Run it once per project you want Keel on.
+
+```
+/setup
+```
+
+**3. See it work.** The tour blocks a real key in a throwaway sandbox, end to end:
 
 ```bash
 ./examples/tour.sh
 ```
 
-**3. Use it on a project.** Scaffold a repo, then fill the `CLAUDE.md` it creates (your stack, conventions):
-
-```bash
-tools/init-project.sh ~/your/project
-```
-
-That's the whole loop. Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" →
+That's the loop. Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" →
 [docs/getting-started.md](docs/getting-started.md).
 
 > **Status: experimental probe.** This is an early, depersonalized extract of a working personal knowledge
@@ -103,7 +105,7 @@ door; the tools never enter the model's context at all. That is the whole point 
 | `tools/secret-guard/` | A git-hook scanner that blocks key-shaped secrets on commit/push. A prefix-based backstop, not full DLP — it catches known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
 | `tools/init-project.sh` | Scaffold a new project to the baseline (born-compliant); auto-registers it in your `INSTANCE.md`. |
 | `tools/register-project.sh` | Add project root(s) to the `INSTANCE.md` Projects registry — one row each, idempotent: `register-project.sh <path>…`. |
-| `commands/` | Lifecycle commands: `/init-project` (scaffold), `/go` (start a backlog task autonomously), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
+| `commands/` | Lifecycle commands: `/setup` (agent finishes install — drafts your machine env + a project's `CLAUDE.md` from its code), `/init-project` (scaffold), `/go` (start a backlog task autonomously), `/wrap` (close a session — reconcile, changelog, backlog, capture), `/global-review` (cross-project audit + principles pass), `/backlog` (read-only backlog table). |
 | `examples/` | A runnable, sandboxed 5-minute tour of the mechanized tools — `init-project` → `doctor` → `secret-guard` blocking a key, end to end. |
 | `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
 | `docs/getting-started.md` | The fuller install + integration walk: what gets set up, how it folds into your day-to-day agent flow, how to tell it's working. |
