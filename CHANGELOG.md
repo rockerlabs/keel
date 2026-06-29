@@ -24,8 +24,9 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - Onboarding clarity (novice-eyed pass): `install.sh`'s `Done. Next:` now leads with `/keel-setup` as the
   easiest path (matching the README's two-step promise) instead of opening with hand-editing — the manual
   route stays as an explicit fallback. README and getting-started now say to run `/keel-setup` inside
-  **your own project, not the `keel` clone**, and the README Quickstart states the `bash` + `git`
-  requirement up front.
+  **your own project, not the `keel` clone**, with the session **restart** (commands load only at session
+  start) promoted from a fallback footnote into the step itself; the README Quickstart states the
+  `bash` + `git` requirement up front.
 
 ## [0.2.0] — 2026-06-29
 

@@ -8,11 +8,11 @@ set up, how it actually changes your sessions, and how to tell it's working.
 | | Step | |
 |---|---|---|
 | 1 | **Install** (§1) — copies the core into `~/.claude`, wires `secret-guard`, installs the slash commands. | one command |
-| 2 | **`/keel-setup`** in Claude Code, run inside a project you want Keel on (§2–§3) — the agent auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and fills/merges the always-loaded rails. You **review** the draft and add the genuinely-yours bits (model access, roadmap). | agent + a review |
+| 2 | **`/keel-setup`** in Claude Code — open (or **restart**, so the new command loads) Claude Code inside a project you want Keel on, not the `keel` clone (§2–§3). The agent auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and fills/merges the always-loaded rails. You **review** the draft and add the genuinely-yours bits (model access, roadmap). | agent + a review |
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh   # step 1
-# then, in Claude Code, inside YOUR project (not the keel clone):  /keel-setup       # step 2
+# then open/restart Claude Code in YOUR project (not the keel clone), and run:  /keel-setup   # step 2
 ```
 
 After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are

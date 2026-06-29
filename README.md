@@ -22,18 +22,18 @@ key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-**2. Let the agent finish setup — no hand-editing.** In Claude Code, open **your own project** (not the
-`keel` folder you just cloned) and run `/keel-setup`: it auto-fills your machine details, **drafts that
-project's `CLAUDE.md` from its actual code**, and wires the rails — you *review*, you don't author it. Run
-it once per project you want Keel on.
+**2. Open Claude Code in your own project and let the agent finish setup — no hand-editing.** Open
+**your own project** (not the `keel` folder you just cloned) in Claude Code — **if Claude Code was already
+running, restart it**, because commands load only at session start. Then run `/keel-setup`: it auto-fills
+your machine details, **drafts that project's `CLAUDE.md` from its actual code**, and wires the rails — you
+*review*, you don't author it. Run it once per project you want Keel on.
 
 ```
 /keel-setup
 ```
 
 Two steps. After step 1, `secret-guard` already guards your commits; `/keel-setup` fills the rest, with you
-reviewing the drafts. (If `/keel-setup` isn't listed, start a **new** Claude Code session — commands load
-at session start.)
+reviewing the drafts. (Still don't see `/keel-setup`? You're in an old session — start a fresh one.)
 
 *Want proof before you install?* `./examples/tour.sh` runs a self-contained sandbox demo (touches nothing
 on your machine) that scaffolds a project and watches `secret-guard` block a real key.
