@@ -172,11 +172,17 @@ run bash "$pa" "$d"
 left="$(git -C "$d" for-each-ref refs/keel-pr-audit/ | wc -l | tr -d ' ')"
 check_status "orphaned PR-audit temp refs are reaped" 0 "$left"
 
-# a broken allow-email ERE in .public-audit is reported clearly and ignored — not raw `grep: bad regex`
+# a broken allow-email ERE in .public-audit is reported clearly and ignored — not raw `grep: bad regex`.
+# Whether `foo(bar` is "broken" depends on the grep: GNU rejects it, busybox accepts it as a literal.
+# Gate on what THIS platform's grep actually does so the test is correct on both.
 d="$(repo_by dev@example.com)"
 printf 'allow-email: foo(bar\n' > "$d/.public-audit"
 run bash "$pa" --no-history "$d"
-check_contains "broken allow-email regex is flagged" "$OUT" "invalid allow-email"
 check_absent "no raw grep bad-regex spew" "$OUT" "bad regex"
+if [ -n "$(printf '' | grep -E -- 'foo(bar' 2>&1 >/dev/null)" ]; then
+  check_contains "broken allow-email regex is flagged (grep rejects it here)" "$OUT" "invalid allow-email"
+else
+  pass "allow-email regex tolerated by this grep (busybox) → nothing to flag"
+fi
 
 summary

@@ -69,6 +69,10 @@ check_file "still wires commands into a foreign home" "$fhome/commands/wrap.md"
 # into an isolated home. Verifies the curl|sh entry point wires the core + commands end to end.
 boot="$REPO_ROOT/bootstrap.sh"
 bhome="$SANDBOX/boot-home"
+# Mark REPO_ROOT safe: in a container (CI Alpine leg) the mounted repo is owned by a different uid than
+# the runner, so git would refuse to clone it ("dubious ownership", exit 128). Written to the sandbox
+# global config (lib.sh's GIT_CONFIG_GLOBAL), which the bootstrap's git clone inherits.
+git config --global --add safe.directory '*'
 run env KEEL_REPO="$REPO_ROOT" sh "$boot" --home "$bhome" --no-hooks
 check_status "bootstrap → exit 0" 0 "$STATUS"
 check_file "bootstrap installs the core" "$bhome/CLAUDE.md"

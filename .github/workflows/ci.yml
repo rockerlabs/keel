@@ -53,4 +53,6 @@ jobs:
             esac
           done)"
           # shellcheck disable=SC2086  # intentional word-split of the newline list (no spaces in tracked paths)
-          shellcheck -x $files
+          # --severity=warning: fail on warning/error, not on info/style (e.g. SC2015), which vary by
+          # shellcheck version and would make the gate flaky across runners.
+          shellcheck -x --severity=warning $files
