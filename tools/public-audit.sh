@@ -100,7 +100,11 @@ bad_allow_emails=()
 if [ "${#allow_emails[@]}" -gt 0 ]; then
   for e in "${allow_emails[@]}"; do
     [ -n "$e" ] || continue
-    printf '' | grep -qE -- "$e" 2>/dev/null; [ "$?" -lt 2 ] || { bad_allow_emails+=("$e"); continue; }
+    # Bad ERE? Detect by stderr, not exit code: a valid pattern on empty input exits 1 (no match) with
+    # no stderr; a broken one prints an error. (busybox grep doesn't use exit 2 for a bad regex, so the
+    # old `[ $? -lt 2 ]` check passed broken regexes through there.)
+    gerr="$(printf '' | grep -E -- "$e" 2>&1 >/dev/null)"
+    [ -z "$gerr" ] || { bad_allow_emails+=("$e"); continue; }
     safe_re="${safe_re:+$safe_re|}$e"
   done
 fi

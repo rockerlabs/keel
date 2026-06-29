@@ -18,7 +18,7 @@ assert_figure() {
   local label="$1" file="$2" path="$REPO_ROOT/$2"
   if [ ! -f "$path" ]; then fail "$label" "missing file: $path"; return; fi
 
-  local chars actual row doc_fig lo hi
+  local chars="" actual="" row="" doc_fig="" lo="" hi=""   # init all (set -u safe on bash 3.2)
   chars="$(wc -c < "$path" | tr -d ' ')"
   actual=$(( chars / 4 ))
 
@@ -39,7 +39,7 @@ assert_figure() {
 # size falls inside the quoted [LO, HI] band, so this row can't drift unguarded either.
 assert_commands_range() {
   local label="$1"
-  local row lo hi f c tok bad=""
+  local row="" lo="" hi="" f="" c="" tok="" bad=""   # init all (set -u safe on bash 3.2)
   row="$(grep -E '^\|.*`commands/\*' "$doc" | head -1)"
   if [ -z "$row" ]; then fail "$label" "no commands/*.md row in loading-and-cost.md"; return; fi
   # the figure cell is "~LO–HI each" (one tilde, an en-dash); read the last table cell, take its two
