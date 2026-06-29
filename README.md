@@ -31,7 +31,9 @@ machine details, **drafts a project's `CLAUDE.md` from its actual code**, and wi
 ```
 
 Two steps. After step 1, `secret-guard` already guards your commits; `/setup` fills the rest, with you
-reviewing the drafts.
+reviewing the drafts. (If `/setup` isn't listed, start a **new** Claude Code session — commands load at
+session start. Already have your own `/setup`? Install won't overwrite it — see
+[getting-started](docs/getting-started.md).)
 
 *Want proof before you install?* `./examples/tour.sh` runs a self-contained sandbox demo (touches nothing
 on your machine) that scaffolds a project and watches `secret-guard` block a real key.

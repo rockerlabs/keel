@@ -18,6 +18,14 @@ git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh   # 
 After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are
 filled. That's the loop — re-run `/setup` in each project you adopt.
 
+> **`/setup` not showing up in Claude Code?** Slash commands are loaded when a session **starts** — open a
+> **new Claude Code session** after installing, then type `/` and confirm `setup` is in the list.
+>
+> **Already have your own `/setup`?** `install.sh` **never overwrites a file you have** — it prints
+> `=  setup.md exists (left untouched)` and keeps *your* command, so `/setup` won't be Keel's. Either
+> rename yours, or just follow the steps in [`commands/setup.md`](../commands/setup.md) by hand (it's a
+> short prompt). The same goes for any command name you already use (`/wrap`, `/go`, …).
+
 > **Rather do it by hand — or want to know exactly what `/setup` fills?** `/setup` is just these files,
 > drafted by the agent from your repo/machine instead of typed by you. The sections below break each one
 > down (and the `tools/` you'd run yourself): the always-loaded rails (§2), the per-project `CLAUDE.md`
