@@ -12,6 +12,23 @@ already made. Overcompensate by dumping everything into context and they drown i
 fact. Keel is the discipline in between: a thin, model-agnostic layer for **what an agent loads, when, and
 how much** — so the judgment and project knowledge you accumulate don't depreciate every time the tools change.
 
+## Quickstart
+
+```bash
+git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
+```
+
+That one command copies the always-loaded core into `~/.claude`, wires the **secret-guard** hook (blocks
+key-shaped secrets on every commit/push), and installs the `/wrap` `/go` `/init-project` slash commands —
+**never clobbering a file you already have.** See it block a real key, in a throwaway sandbox:
+
+```bash
+./examples/tour.sh
+```
+
+Then point it at a project — `tools/init-project.sh ~/your/project` — and fill the `CLAUDE.md` it creates.
+Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" → [docs/getting-started.md](docs/getting-started.md).
+
 > **Status: experimental probe.** This is an early, depersonalized extract of a working personal knowledge
 > base. It is published to find out whether it's useful to anyone beyond its author — not as a finished
 > product. Feedback welcome; expect rough edges.
@@ -101,31 +118,6 @@ Out-of-the-box behavior change comes only from the mechanized layer. So:
   forces them. Treat them as a lens you invoke, not an autopilot.
 
 Knowing which is which is the point: don't expect the principles to enforce themselves.
-
-## Quickstart
-
-One line — clones to a temp dir, runs the installer, cleans up (needs `bash` + `git`):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh
-```
-
-Or from a clone, if you'd rather read first (same result):
-
-```bash
-git clone https://github.com/rockerlabs/keel.git && cd keel
-./install.sh
-```
-
-Either way it copies the durable core into your harness home (`~/.claude` by default), wires the
-secret-guard hook machine-wide, installs the slash commands, seeds a private `INSTANCE.md`, and
-verifies. It **never clobbers a file you already have**, so re-running is safe. Then scaffold or audit
-a project:
-
-```bash
-tools/init-project.sh ~/path/to/project
-tools/doctor.sh       ~/path/to/project
-```
 
 `./install.sh --home DIR` targets a non-Claude-Code harness; `--no-hooks` skips the global git
 hook. To bootstrap by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`,

@@ -14,6 +14,11 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 ./install.sh
 ```
 
+> **Express (core only):** `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh`
+> installs the always-loaded core + the secret-guard hook + the slash commands into `~/.claude` in one
+> command (pass install flags after `--`, e.g. `… | sh -s -- --no-hooks`). It leaves **no local checkout**,
+> though — the `tools/` (`doctor`, `public-audit`) and `examples/tour.sh` need the clone above.
+
 `install.sh` is idempotent and **never clobbers a file you already have**. It:
 
 - copies the durable core into your harness home (`~/.claude` by default),
