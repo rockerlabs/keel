@@ -8,17 +8,25 @@ set up, how it actually changes your sessions, and how to tell it's working.
 | | Step | |
 |---|---|---|
 | 1 | **Install** (§1) — copies the core into `~/.claude`, wires `secret-guard`, installs the slash commands. | one command |
-| 2 | **`/setup`** in Claude Code, run inside a project you want Keel on (§2–§3) — the agent auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and fills/merges the always-loaded rails. You **review** the draft and add the genuinely-yours bits (model access, roadmap). | agent + a review |
+| 2 | **`/keel-setup`** in Claude Code, run inside a project you want Keel on (§2–§3) — the agent auto-fills your machine **environment**, **drafts that project's `CLAUDE.md` from its code**, and fills/merges the always-loaded rails. You **review** the draft and add the genuinely-yours bits (model access, roadmap). | agent + a review |
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh   # step 1
-# then, in Claude Code, inside your project:  /setup                            # step 2
+# then, in Claude Code, inside your project:  /keel-setup                            # step 2
 ```
 
 After step 1, `secret-guard` already guards every commit; after step 2 the rails and project context are
-filled. That's the loop — re-run `/setup` in each project you adopt.
+filled. That's the loop — re-run `/keel-setup` in each project you adopt.
 
-> **Rather do it by hand — or want to know exactly what `/setup` fills?** `/setup` is just these files,
+> **`/keel-setup` not showing up in Claude Code?** Slash commands load when a session **starts** — open a
+> **new Claude Code session** after installing, then type `/` and confirm `keel-setup` is listed.
+>
+> The `keel-` prefix keeps it from clashing with a `/setup` you might already have. (`install.sh` never
+> overwrites a command you already have under *any* name — it prints `=  <name> exists (left untouched)`;
+> if that happens, just follow [`commands/keel-setup.md`](../commands/keel-setup.md) by hand — it's a short
+> prompt.)
+
+> **Rather do it by hand — or want to know exactly what `/keel-setup` fills?** `/keel-setup` is just these files,
 > drafted by the agent from your repo/machine instead of typed by you. The sections below break each one
 > down (and the `tools/` you'd run yourself): the always-loaded rails (§2), the per-project `CLAUDE.md`
 > (§3), and how to check it works (§5).
@@ -69,7 +77,7 @@ git hook.
 
 ## 3. Per project (each repo you work in)
 
-`/setup` (above) does this for you — it scaffolds, then **drafts the project `CLAUDE.md` from the repo's
+`/keel-setup` (above) does this for you — it scaffolds, then **drafts the project `CLAUDE.md` from the repo's
 code** for you to review. The by-hand equivalent:
 
 ```bash
