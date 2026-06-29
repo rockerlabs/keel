@@ -64,11 +64,28 @@ copy_gap() {
   fi
 }
 
+# Detect a pre-existing CLAUDE.md that ISN'T Keel's core: we never clobber it, so the always-loaded
+# rails won't be merged in. Flag that in Verify instead of leaving it silent. Keel's core (and any file
+# derived from it) carries this heading; a foreign file won't.
+foreign_core=0
+if [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+  foreign_core=1
+fi
+
 copy_gap "$root/templates/CLAUDE.md"    "$HOME_DIR/CLAUDE.md"
 copy_gap "$root/templates/INSTANCE.md"  "$HOME_DIR/INSTANCE.md"
 copy_gap "$root/templates/LEARNINGS.md" "$HOME_DIR/LEARNINGS.md"
 copy_gap "$root/FRAMEWORK.md"           "$HOME_DIR/FRAMEWORK.md"
 copy_gap "$root/PRINCIPLES.md"          "$HOME_DIR/PRINCIPLES.md"
+
+# Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
+# This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
+if [ -d "$root/commands" ]; then
+  mkdir -p "$HOME_DIR/commands"
+  for cmd in "$root"/commands/*.md; do
+    [ -f "$cmd" ] && copy_gap "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
+  done
+fi
 
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.
 # keel_hooks must match the path install-secret-guard.sh --global writes to (re-used by Verify below).
@@ -116,11 +133,17 @@ if [ "$DO_HOOKS" = 1 ]; then
   fi
 fi
 
+if [ "$foreign_core" = 1 ]; then
+  echo "  WARN $HOME_DIR/CLAUDE.md predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
+  echo "       Merge the rails you want by hand:  diff $HOME_DIR/CLAUDE.md $root/templates/CLAUDE.md"
+fi
+
 [ "$missing" = 0 ] || { echo "install: verification FAILED — core file(s) missing" >&2; exit 1; }
 
 cat <<EOF
 
 Done. Next:
   - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>); keep  $HOME_DIR/INSTANCE.md  private
+  - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, /init-project, …
   - scaffold or audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>
 EOF

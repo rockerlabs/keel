@@ -17,9 +17,15 @@ git clone https://github.com/dbudnikau-personal/keel.git && cd keel
 `install.sh` is idempotent and **never clobbers a file you already have**. It:
 
 - copies the durable core into your harness home (`~/.claude` by default),
+- installs the lifecycle commands into `<home>/commands/` (so `/wrap`, `/go`, `/init-project`, … are
+  slash commands on Claude Code — no manual copy),
 - wires the `secret-guard` git hook machine-wide,
 - seeds a private `INSTANCE.md`,
 - verifies the result and prints a `Done. Next:` summary (your install-moment confirmation).
+
+> **Already use Claude Code?** If you already have a `~/.claude/CLAUDE.md`, install **won't overwrite it**
+> — it copies everything else but leaves your file untouched, so Keel's always-loaded rails aren't merged
+> in. It says so in `Verify` and points you at a `diff` to merge the rails you want by hand.
 
 Flags: `--home DIR` targets a non-Claude-Code harness's always-loaded slot; `--no-hooks` skips the global
 git hook.
@@ -57,8 +63,9 @@ that repo. Add the project to your `INSTANCE.md` registry so a cross-project swe
   remembered to check.
 - **On-demand docs.** The agent pulls `FRAMEWORK`/`PRINCIPLES` only when a task needs them — you don't carry
   them in every session's footprint.
-- **Commands.** `/wrap`, `/init-project`, `/global-review`, `/backlog` are prompt procedures. On Claude Code
-  they're slash commands; on another harness, wire them to its custom-command feature, or paste the body.
+- **Commands.** `/wrap`, `/go`, `/init-project`, `/global-review`, `/backlog` are prompt procedures.
+  `install.sh` copies them into `<home>/commands/`, so on Claude Code they're slash commands out of the
+  box; on another harness, point its custom-command feature at that dir, or paste the body.
 - **Audits on demand.** `doctor` (baseline drift) and `public-audit` (before going public) — run them when
   you want; they cost zero context tokens.
 
