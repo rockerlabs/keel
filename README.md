@@ -30,11 +30,11 @@ machine details, **drafts a project's `CLAUDE.md` from its actual code**, and wi
 /setup
 ```
 
-**3. See it work.** The tour blocks a real key in a throwaway sandbox, end to end:
+Two steps. After step 1, `secret-guard` already guards your commits; `/setup` fills the rest, with you
+reviewing the drafts.
 
-```bash
-./examples/tour.sh
-```
+*Want proof before you install?* `./examples/tour.sh` runs a self-contained sandbox demo (touches nothing
+on your machine) that scaffolds a project and watches `secret-guard` block a real key.
 
 That's the loop. Fuller walk, other harnesses, and the honest "what's mechanized vs needs you" →
 [docs/getting-started.md](docs/getting-started.md).
