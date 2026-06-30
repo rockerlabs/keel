@@ -33,6 +33,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   Both now capture the first match (`[ -n "$(producer | head -n1)" ]`) instead of gating on the pipeline
   status — SIGPIPE can no longer flip a real hit into a clean result. Added scale regressions to
   `tests/test_doctor.sh` and `tests/test_public_audit.sh` (each fails on the pre-fix code).
+- `docs/going-public.md` — the scrub runbook ran `tools/public-audit.sh … .` from *inside* the throwaway
+  `git clone <url> scrub` (cwd is the scrub clone), where `tools/` doesn't exist — the gate command failed
+  for any non-Keel repo. Now referenced as `<keel>/tools/public-audit.sh` (run Keel's auditor against the
+  scrub clone, not from it).
+- `docs/getting-started.md` — the bootstrap "Express" note listed only `doctor` / `public-audit` as needing
+  the clone, omitting `init-project` — so a `curl | sh` adopter was steered to `/keel-setup` (and
+  `/init-project`) with no hint that the tool those commands drive isn't installed by bootstrap. The note now
+  says so. (The deeper gap — installed commands referencing `tools/` by a repo-relative path — is a layout
+  decision left to the maintainer; see the deferred list.)
 - `SECURITY.md` — the "Supported versions" line hardcoded `(currently `v0.2.0`)`, which silently went
   stale once `v0.3.0` shipped. Dropped the duplicated literal — the most recent tag is single-sourced in
   git, not restated in prose (FRAMEWORK "Knowledge & context upkeep"). Added `tests/test_security_doc.sh`

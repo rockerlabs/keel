@@ -51,7 +51,9 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 > **Express (core only):** `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh`
 > installs the always-on core + the secret-guard check + the commands into `~/.claude` in one command (pass
 > install flags after `--`, e.g. `… | sh -s -- --no-hooks`). It leaves **no local copy of the repo**,
-> though — the `tools/` (`doctor`, `public-audit`) and `examples/tour.sh` need the clone above.
+> though — the `tools/` (`doctor`, `public-audit`, `init-project`) and `examples/tour.sh` need the clone
+> above. That includes the `/keel-setup` and `/init-project` commands: they call `tools/init-project.sh`,
+> so they need the full clone too — bootstrap installs the commands, not the tool they drive.
 
 `install.sh` is safe to re-run and **never overwrites a file you already have**. It:
 
