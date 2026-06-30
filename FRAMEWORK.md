@@ -186,9 +186,9 @@ committing; after merge, tear the worktree down too. A private-fork project giti
 fresh worktree starts blind — symlink the main checkout's `CLAUDE.md` into the worktree so the session keeps
 the project's context.
 
-**The squash/rebase "merged" caveat.** Git judges "merged?" by commit-SHA reachability, so a squash- or
-rebase-merge looks *unmerged* even when its content is fully in. Judge "merged?" by PR state, never by
-SHA-reachability alone, before deleting a branch.
+**The squash/rebase "merged" caveat.** A squash/rebase-merge looks *unmerged* by SHA even when its content
+is fully in — judge "merged?" by PR state, not SHA-reachability, before deleting a branch. Full rule (the
+two false verdicts, branch classification, delete-on-merge) → the *Git branch lifecycle* section below.
 
 ---
 
@@ -200,8 +200,8 @@ of it (e.g. a `.editorconfig`/formatter config present and wired into CI). A sta
 has no gate. `doctor` checks the gate's presence; add a check when a new stack enters the fleet.
 
 **Dependency versioning — never float.** Pin explicit versions everywhere; never `:latest`, `*`, or
-unversioned refs (container images, CI runners, language versions, packages). Floating versions break builds
-silently when upstream releases; pinned versions make builds reproducible and failures explicit.
+unversioned refs. Full rule (what to pin, examples, the *why*, what `doctor` flags) → the *Dependency
+versioning* section below.
 
 **Configuration & secrets.** Never hardcode credentials, URLs, ports, timeouts, or magic numbers — use
 environment variables. Personal / machine-specific identifiers (signing IDs, local paths, per-machine

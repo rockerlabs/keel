@@ -9,6 +9,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Changed
+- `FRAMEWORK.md` — removed two in-file duplications that violated its own single-source rule ("a fact lives
+  in one place; everywhere else is a pointer"). The squash/rebase "merged" caveat and the dependency-
+  versioning rule each appeared **twice** — a full bold paragraph under *Git/Code conventions* and a
+  dedicated section lower down. Kept the dedicated sections (*Git branch lifecycle*, *Dependency
+  versioning*) as canonical; the earlier mentions are now one-line gist + pointer, so the rule can't drift
+  between two copies.
 - `tests/test_doc_figures.sh` — a `~N,NNN+` token figure in `docs/loading-and-cost.md` is now read as an
   open-ended **floor** (assert the real size is *at least* it, no upper bound) instead of a ±10% band. The
   `CHANGELOG.md` row uses it: a monotonically-growing reference file no longer forces a figure bump on every
