@@ -45,8 +45,8 @@ Put in perspective:
 - A ~200K-token context window means the core is **~0.6–0.75%** of it. Practically noise.
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
-- Over a month at ~50 sessions, the always-loaded core is ~60K input tokens total — cents, less with caching.
-- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~8K for one decision.
+- Over a month at ~50 sessions, the always-loaded core is ~70K input tokens total — cents, less with caching.
+- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~9.5K for one decision.
 
 A guard against bloat ships with it: `doctor` raises a **WARN** if the always-loaded core exceeds **10,000
 tokens** (`KEEL_STARTUP_WARN_TOKENS`). The template core is ~1,380 — about 14% of that budget, with room.
@@ -90,7 +90,7 @@ consistent across sessions.
 
 ## The honest boundary
 
-Keel is not magic, and this page won't pretend otherwise (see the README's *mechanized vs needs-you*):
+Keel is not magic, and this page won't pretend otherwise (see the README's *what runs by itself vs what's up to you*):
 
 - The **prose rails bias** the agent — loaded text makes the good path *much more likely*, but it does not
   *enforce*. "With Keel" means consistent biasing, not a guarantee.
