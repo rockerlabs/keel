@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-30
+
+Audit-hardening & documentation release. A 4-report external audit drove a fix to a real under-reporting
+bug in `doctor` / `public-audit` (a `pipefail` + SIGPIPE false-negative on large inputs), a batch of new
+`doctor` checks, and internal-consistency + claim-accuracy fixes across the docs. No breaking changes.
+
 ### Changed
 - `tools/doctor.sh` + `tools/public-audit.sh` — single-sourced the **public-safe email** set. doctor's
   commit-email nudge used a loose hand-rolled pattern (`noreply|@example\.|\.invalid`) that drifted from
@@ -35,6 +41,32 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - `tools/pre-pr-gate.sh` — a missing `jq` is now handled explicitly (`command -v jq || exit 0`): the gate
   can't parse its event without it, so it allows rather than block every command — a documented choice for
   a workflow gate (not the secret boundary), no longer a silent fail-open.
+- `FRAMEWORK.md` — three generic refinements: a fallback model "falls back, it doesn't route" note (a
+  fallback is for provider unavailability, not task difficulty); a monorepo note (nested `CLAUDE.md` per
+  subtree); and a "fork a plugin-shipped skill/command, don't edit it in place" durability gotcha
+  (in-place edits are lost on the next plugin update and absent on a fresh machine).
+- `tools/doctor.sh` — the secret-guard check no longer assumes a machine-global `core.hooksPath` covers a
+  repo: it now detects a **local** `core.hooksPath` override that carries no guard hook, which silently
+  bypasses the global secret-guard for that repo (git runs the local path instead). A real gotcha — a repo
+  with its own hooks dir loses the global guard without warning. Advisory WARN, exit unchanged.
+- `tools/doctor.sh` — **per-stack lint-gate checks** (FRAMEWORK "Code conventions"): flags a project whose
+  stack is detected but its native linter config is absent — Java→Checkstyle (and no wildcard imports),
+  Python→Ruff (`[tool.ruff]` / `ruff.toml`), Swift→SwiftLint — plus a Java wildcard-import check. Build-output
+  and vendored-dependency trees are pruned, so a dependency's sources or configs never trip the gate.
+  Advisory WARN; busybox/Alpine-safe (find-only, no `grep --include`).
+- `tools/doctor.sh` — **worktree CLAUDE.md bridge check** (FRAMEWORK "Worktree discipline"): a private-fork
+  project gitignores `CLAUDE.md`, so `git worktree add` checks it out without one and that worktree's session
+  starts blind to the project context. doctor now WARNs when a live linked worktree is missing the bridge.
+  Public-fork (committed `CLAUDE.md`) is exempt. Advisory WARN.
+- `docs/getting-started.md` — itemized what `doctor` actually checks (private-context gitignore, `CLAUDE.md`
+  presence + startup budget, secret-guard wiring incl. the local `core.hooksPath` bypass, dependency pinning,
+  per-stack lint gates, the worktree bridge) and noted the `--registry` fleet sweep — the checks added this
+  cycle weren't reflected in the walkthrough.
+- README: new **"Already have your own conventions?"** door, alongside "Not using Claude Code?". Reframes
+  adoption for readers who already run a tuned setup — take the **ideas** (`PRINCIPLES`/`FRAMEWORK`), the
+  **standalone tools** (`secret-guard`/`public-audit`, plain Bash + git, no Keel core needed), or one
+  command/template à la carte, rather than installing the whole thing. States the positioning in one line:
+  *a method and a few tools you graft onto what you have — not a framework you adopt whole.*
 
 ### Fixed
 - `PRINCIPLES.md` — three internal-consistency fixes. (1) **Term collision on "mechanism":** the word named
@@ -89,30 +121,6 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   that blocks `gh pr create` until `/polish` has run cleanly on the current HEAD. The sentinel is
   content-checked against the live HEAD SHA, so a bare `touch` (empty file) or a sentinel from an earlier
   commit both fail — the bypass path is closed by content, not just presence.
-
-### Changed
-- `FRAMEWORK.md` — three generic refinements: a fallback model "falls back, it doesn't route" note (a
-  fallback is for provider unavailability, not task difficulty); a monorepo note (nested `CLAUDE.md` per
-  subtree); and a "fork a plugin-shipped skill/command, don't edit it in place" durability gotcha
-  (in-place edits are lost on the next plugin update and absent on a fresh machine).
-- `tools/doctor.sh` — the secret-guard check no longer assumes a machine-global `core.hooksPath` covers a
-  repo: it now detects a **local** `core.hooksPath` override that carries no guard hook, which silently
-  bypasses the global secret-guard for that repo (git runs the local path instead). A real gotcha — a repo
-  with its own hooks dir loses the global guard without warning. Advisory WARN, exit unchanged.
-- `tools/doctor.sh` — **per-stack lint-gate checks** (FRAMEWORK "Code conventions"): flags a project whose
-  stack is detected but its native linter config is absent — Java→Checkstyle (and no wildcard imports),
-  Python→Ruff (`[tool.ruff]` / `ruff.toml`), Swift→SwiftLint — plus a Java wildcard-import check. Build-output
-  and vendored-dependency trees are pruned, so a dependency's sources or configs never trip the gate.
-  Advisory WARN; busybox/Alpine-safe (find-only, no `grep --include`).
-- `tools/doctor.sh` — **worktree CLAUDE.md bridge check** (FRAMEWORK "Worktree discipline"): a private-fork
-  project gitignores `CLAUDE.md`, so `git worktree add` checks it out without one and that worktree's session
-  starts blind to the project context. doctor now WARNs when a live linked worktree is missing the bridge.
-  Public-fork (committed `CLAUDE.md`) is exempt. Advisory WARN.
-- README: new **"Already have your own conventions?"** door, alongside "Not using Claude Code?". Reframes
-  adoption for readers who already run a tuned setup — take the **ideas** (`PRINCIPLES`/`FRAMEWORK`), the
-  **standalone tools** (`secret-guard`/`public-audit`, plain Bash + git, no Keel core needed), or one
-  command/template à la carte, rather than installing the whole thing. States the positioning in one line:
-  *a method and a few tools you graft onto what you have — not a framework you adopt whole.*
 
 ## [0.3.0] — 2026-06-30
 
