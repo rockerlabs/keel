@@ -83,7 +83,13 @@ copy_gap "$root/PRINCIPLES.md"          "$HOME_DIR/PRINCIPLES.md"
 if [ -d "$root/commands" ]; then
   mkdir -p "$HOME_DIR/commands"
   for cmd in "$root"/commands/*.md; do
-    [ -f "$cmd" ] && copy_gap "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
+    [ -f "$cmd" ] || continue
+    # polish.md is maintainer dev-tooling: a Claude-Code-specific pre-PR flow that pairs with
+    # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without its
+    # gate would hand adopters an inert feature, so skip it — it stays in the repo for the maintainer +
+    # downstream consumers. (Intentional; a future audit should read this as scoped, not half-shipped.)
+    case "$(basename "$cmd")" in polish.md) continue ;; esac
+    copy_gap "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
   done
 fi
 
