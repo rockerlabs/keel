@@ -62,6 +62,24 @@ run "$doctor" "$wt"
 check_absent "git worktree not mis-flagged as non-repo" "$OUT" "not a git repo"
 check_status "doctor on a worktree → exit 0" 0 "$STATUS"
 
+# a LOCAL core.hooksPath override that carries no guard silently bypasses the machine-global secret-guard
+# → WARN (advisory, exit 0). Regression: doctor used to assume "global wired ⇒ covered", missing the override.
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+mkdir -p "$d/emptyhooks"
+git -C "$d" config core.hooksPath emptyhooks
+run "$doctor" "$d"
+check_status "local hooksPath override, no guard → exit 0 (WARN)" 0 "$STATUS"
+check_contains "warns the override bypasses the guard" "$OUT" "silently bypassed"
+
+# the same override, but it DOES carry the guard (an executable pre-commit) → no bypass WARN
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+mkdir -p "$d/hooks"; printf '#!/bin/sh\n' > "$d/hooks/pre-commit"; chmod +x "$d/hooks/pre-commit"
+git -C "$d" config core.hooksPath hooks
+run "$doctor" "$d"
+check_absent "guarded local override → no bypass WARN" "$OUT" "silently bypassed"
+
 # public fork: a tracked CLAUDE.md is deliberate, so no gitignore GAP
 d="$(mkproj)"; git -C "$d" init -q
 printf '# public ctx\n' > "$d/CLAUDE.md"
