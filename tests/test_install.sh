@@ -15,6 +15,8 @@ hp="$(git config --global core.hooksPath || true)"
 check_contains "sets global hooksPath to keel-hooks" "$hp" "keel-hooks"
 check_contains "verify confirms Keel's secret-guard is wired" "$OUT" "OK   secret-guard"
 check_file "installs lifecycle commands as slash commands" "$HOME/.claude/commands/wrap.md"
+# polish.md is maintainer dev-tooling (its pre-pr-gate hook is never wired) — install must NOT ship it.
+check_nofile "does NOT install the maintainer-only /polish command" "$HOME/.claude/commands/polish.md"
 check_absent "no foreign-core nag when install created CLAUDE.md" "$OUT" "NOT merged in"
 
 # idempotent re-run preserves a user edit and clobbers nothing
