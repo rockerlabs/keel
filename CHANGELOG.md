@@ -8,6 +8,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+- `tests/test_doc_figures.sh` — a `~N,NNN+` token figure in `docs/loading-and-cost.md` is now read as an
+  open-ended **floor** (assert the real size is *at least* it, no upper bound) instead of a ±10% band. The
+  `CHANGELOG.md` row uses it: a monotonically-growing reference file no longer forces a figure bump on every
+  PR that touches it, while the figure stays honest (it never overclaims the cost). Stable files keep the
+  exact ±10% check.
+- `commands/polish.md` + `tools/pre-pr-gate.sh` are now scoped as **maintainer dev-tooling** —
+  `install.sh` no longer ships `/polish` to adopters. Its `pre-pr-gate` hook is never wired by the
+  installer, so shipping the command handed adopters an inert feature; both now stay in the repo for the
+  maintainer + downstream consumers, with the rationale documented in-tree (so it reads as scoped, not
+  half-shipped). A test asserts `/polish` is not installed.
+- `tools/pre-pr-gate.sh` — a missing `jq` is now handled explicitly (`command -v jq || exit 0`): the gate
+  can't parse its event without it, so it allows rather than block every command — a documented choice for
+  a workflow gate (not the secret boundary), no longer a silent fail-open.
+
 ### Fixed
 - `SECURITY.md` — the "Supported versions" line hardcoded `(currently `v0.2.0`)`, which silently went
   stale once `v0.3.0` shipped. Dropped the duplicated literal — the most recent tag is single-sourced in

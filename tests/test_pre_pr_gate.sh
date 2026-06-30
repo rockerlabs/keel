@@ -7,8 +7,9 @@
 # HEAD SHA — so the deny paths are security-adjacent and were entirely untested.
 #
 # The gate parses its input with jq, so these tests need jq. The busybox/Alpine CI job installs only
-# bash+git; there, skip cleanly (a missing jq makes the gate fail OPEN — flagged in the audit report,
-# not exercised here since we cannot meaningfully assert a deny without the parser).
+# bash+git; there, skip cleanly. Without jq the gate now exits early by an EXPLICIT, documented choice
+# (`command -v jq || exit 0`) — it can't tell `gh pr create` from any other Bash call, so it allows rather
+# than block everything; it's a workflow reminder, not the secret boundary (that's secret-guard, no jq).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 
