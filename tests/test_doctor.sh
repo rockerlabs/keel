@@ -173,4 +173,36 @@ printf 'jobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actio
 run "$doctor" "$d"
 check_absent "pinned deps + managed runner → no floating WARN" "$OUT" "floating dependency version"
 
+# --- per-stack lint gate (FRAMEWORK "Code conventions") — advisory WARN, never a GAP ------------
+# Java stack without a Checkstyle config → WARN; adding one clears it
+d="$(newbase)"; printf 'public class A {}\n' > "$d/A.java"
+run "$doctor" "$d"
+check_status  "Java stack, no checkstyle → exit 0 (WARN)" 0 "$STATUS"
+check_contains "flags missing checkstyle" "$OUT" "no checkstyle"
+printf '<module name="Indentation"/>\n' > "$d/checkstyle.xml"
+run "$doctor" "$d"
+check_absent  "checkstyle present → no checkstyle WARN" "$OUT" "no checkstyle"
+# a Java wildcard import is flagged
+d="$(newbase)"; printf 'import java.util.*;\npublic class B {}\n' > "$d/B.java"
+printf '<module name="Indentation"/>\n' > "$d/checkstyle.xml"
+run "$doctor" "$d"
+check_contains "flags a Java wildcard import" "$OUT" "wildcard import"
+
+# Python stack (pyproject without [tool.ruff]) → WARN; with it → none
+d="$(newbase)"; printf '[project]\nname = "x"\n' > "$d/pyproject.toml"
+run "$doctor" "$d"
+check_contains "flags missing Ruff config" "$OUT" "no Ruff config"
+printf '[tool.ruff]\nline-length = 100\n' >> "$d/pyproject.toml"
+run "$doctor" "$d"
+check_absent  "[tool.ruff] present → no Ruff WARN" "$OUT" "no Ruff config"
+
+# Swift stack without SwiftLint → WARN; a VENDORED config under .build/ must NOT count (pruning)
+d="$(newbase)"; printf 'print("hi")\n' > "$d/main.swift"
+mkdir -p "$d/.build/dep"; printf 'rules: []\n' > "$d/.build/dep/.swiftlint.yml"
+run "$doctor" "$d"
+check_contains "flags missing SwiftLint (vendored .build/ config pruned)" "$OUT" "no SwiftLint"
+printf 'rules: []\n' > "$d/.swiftlint.yml"
+run "$doctor" "$d"
+check_absent  "first-party SwiftLint config → no WARN" "$OUT" "no SwiftLint"
+
 summary
