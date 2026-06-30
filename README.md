@@ -39,7 +39,7 @@ Two steps. After step 1, secret-guard already protects your commits; `/keel-setu
 just review what it drafts. (Still don't see `/keel-setup`? You're in an old session — start a fresh one.)
 
 *Want to see it work before installing?* `./examples/tour.sh` runs a safe demo in a throwaway sandbox
-(touches nothing on your machine): it sets up a sample project and watches secret-guard block a real key.
+(touches nothing on your machine): it sets up a sample project and watches secret-guard block a key-shaped secret.
 
 That's the whole loop. Longer walk-through, other AI tools, and the honest "what runs by itself vs what's up
 to you" → [docs/getting-started.md](docs/getting-started.md).
@@ -57,7 +57,7 @@ to you" → [docs/getting-started.md](docs/getting-started.md).
 >   fits into your *own* `CLAUDE.md`. Load-a-little-always, durable-vs-disposable, build-from-friction port
 >   to any setup — you don't need Keel's files to use them.
 > - **The standalone tools.** `secret-guard` (blocks key-shaped secrets on every commit/push) and
->   `public-audit` (catches personal/secret leaks before a repo goes public) are plain Bash + git, and run
+>   `public-audit` (flags personal/secret leaks before a repo goes public) are plain Bash + git, and run
 >   next to whatever you already use — no Keel "core" required: `tools/install-secret-guard.sh --global`,
 >   `tools/public-audit.sh <repo>`.
 > - **One piece at a time.** Grab a single `commands/*.md` or a template and ignore the rest.
@@ -123,7 +123,7 @@ when needed; the tools never enter the assistant's memory at all. That's the who
 | `templates/LEARNINGS.md` | A holding place for workflow tips that aren't yet worth a full rule (between "make it a rule" and "drop it"). |
 | `install.sh` | One-command setup: copies the always-on files into your config folder and turns on the secret-guard check. Safe to re-run — never overwrites your files. |
 | `tools/doctor.sh` | Checks a project's setup for missing pieces. |
-| `tools/public-audit.sh` | Before you make a private repo public, scans the files **and the git history** for anything personal that shouldn't leak (names, private tokens). |
+| `tools/public-audit.sh` | Before you make a private repo public, scans the files **and the git history** for things that shouldn't leak. A committer identity or a declared private token is a hard stop; names, emails and home paths in file content are flagged for you to review. |
 | `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
 | `tools/init-project.sh` | Sets up a new project with the basics in place, and adds it to your `INSTANCE.md` project list. |
 | `tools/register-project.sh` | Adds existing project folder(s) to the `INSTANCE.md` project list — one line each, safe to re-run: `register-project.sh <path>…`. |
