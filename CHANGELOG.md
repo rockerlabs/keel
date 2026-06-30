@@ -24,6 +24,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   a workflow gate (not the secret boundary), no longer a silent fail-open.
 
 ### Fixed
+- `PRINCIPLES.md` — three internal-consistency fixes. (1) **Term collision on "mechanism":** the word named
+  both the disposable layer (glossary/P0) *and* the automated tier of the enforcement taxonomy, so
+  "each tension is **mechanized**" (any enforcement that runs) read straight into "most tensions are **not
+  mechanisms**" (automated only) two paragraphs later. The enforcement tier is renamed **"automated check"**,
+  reserving "mechanism" for the single disposable-layer sense. (2) **P1 logic:** "useful **iff**
+  correct + calibrated" overstated — a correct, calibrated tool can still be useless (irrelevant, slow,
+  redundant); the gate is necessary, not sufficient → "useful **only if**". (3) A stale parenthetical called
+  the recurring-rewrite falsifier "the only falsifier currently written down" while sitting in a list of
+  three; corrected to "the original falsifier; the two above were added later".
 - `tools/doctor.sh` + `tools/public-audit.sh` — a `set -o pipefail` + SIGPIPE false-negative made both
   audit tools **silently under-report on large inputs**. The pattern `producer | grep -q .` (and `… && gap`)
   gates on the pipeline's exit status: once `grep -q` matches and closes the pipe, the still-writing
