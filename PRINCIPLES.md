@@ -70,7 +70,7 @@ caveat the seam below makes precise: only their *problem-/domain-facing core* po
 
 ## P1 — Gate: calibrated correctness
 
-A tool/approach is useful **iff** it produces *verifiably correct* results AND honestly marks the
+A tool/approach is useful **only if** it produces *verifiably correct* results AND honestly marks the
 boundary of its confidence. A confidently-wrong answer is worse than an honest "can't" — it costs a
 wasted debugging cycle and erodes trust. Economy, speed, and elegance do not exist below this gate.
 
@@ -161,15 +161,15 @@ any single event as a win — which is exactly why the set needs tests that poin
   down what ported unchanged vs. what you had to rebuild. That delta is the measurement; no upfront tooling
   needed.*
 - **Recurring existential rewrite.** Stated just above: one foundational rebuild is healthy; *every*
-  concept forcing one is failure. *(The only falsifier currently written down.)*
+  concept forcing one is failure. *(The original falsifier; the two above were added later.)*
 
 Adding the first two is itself a friction-driven edit (P4), not a prophylactic one — the gap was surfaced
 by engaging this critique, which is exactly the "conceptual gap exposed by a new idea" that counts as valid
 friction here.
 
-**Self-balancing is real only as far as each tension is mechanized.** Principles have no agency — they do
-not enforce themselves. Each named tension below must be backed by a check or a ritual that actually runs;
-an unenforced balance is a wish, not a mechanism.
+**Self-balancing is real only as far as each tension is backed by an enforcement that runs.** Principles
+have no agency — they do not enforce themselves. Each named tension below must carry a check or a
+ritual that actually runs; an unenforced balance is a wish, not a working balance.
 
 **Capture is real only as far as it's checked.** P0's "capture the lesson" habit is itself a wish unless a
 step confirms it happened. So every session should end with a **red-flag sweep**: anything surfaced in the
@@ -177,7 +177,7 @@ session — an idea, a finding, a decision, a loose-end — must be persisted (a
 memory) or explicitly dropped with its reason before closing; nothing stays chat-only (the next session
 starts cold and won't recall it; the human forgets).
 
-*Enforcement types — **mechanism**: automated, checked by tooling, runs without a human step;
+*Enforcement types — **automated check**: checked by tooling, runs without a human step;
 **guideline**: a written convention applied at human judgment; **habit**: purely behavioral, no check
 confirms it ran.*
 
@@ -185,13 +185,13 @@ confirms it ran.*
 |---|---|---|---|
 | **P0 ↔ P1** | skill-building must not excuse a wrong/unverified result; correctness must not over-fit to ephemeral mechanism | an explicit verify-discipline convention + the P0 "extract the transferable lesson" habit | **habit + guideline** |
 | **P1 ↔ P3** | economy/speed must never buy a wrong answer | "no optimization below the gate" — checked at review | **guideline** |
-| **P2 ↔ P3** | minimizing tokens must not strip context that prevents hallucination | structural tiering that runs + is tooling-checked (the reusable/personal seam, a thin index that points rather than dumps, a startup-footprint budget); cache-aware placement + retrieval-miss capture as conventions | **mechanism** |
+| **P2 ↔ P3** | minimizing tokens must not strip context that prevents hallucination | structural tiering that runs + is tooling-checked (the reusable/personal seam, a thin index that points rather than dumps, a startup-footprint budget); cache-aware placement + retrieval-miss capture as conventions | **automated check** |
 | **P0 ↔ P4** | accumulating capital must not become speculative building; friction-gating must not become an excuse to skip capturing what was genuinely earned | P4's prophylactic carve-out (irreversibility test) + P0's red-flag sweep at session end | **habit + guideline** |
-| **P0 ↔ P1 (self-calibration)** | the set's reflexes (upgrade / friction / loop-working) must not let it spin every outcome into a win and become unfalsifiable | the three Falsifiers above — net-negative ledger, transfer failure, recurring existential rewrite (a *ledger*, a *measurement*, a *rate* — the tests point-reframing cannot reach) | **guideline** *(ledger + transfer carry minimal rituals; promote to mechanism only when one actually fires)* |
+| **P0 ↔ P1 (self-calibration)** | the set's reflexes (upgrade / friction / loop-working) must not let it spin every outcome into a win and become unfalsifiable | the three Falsifiers above — net-negative ledger, transfer failure, recurring existential rewrite (a *ledger*, a *measurement*, a *rate* — the tests point-reframing cannot reach) | **guideline** *(ledger + transfer carry minimal rituals; promote to an automated check only when one actually fires)* |
 
-*Most tensions above are honest habits or guidelines, not mechanisms — that is the normal state. Mechanize
-a tension only when its absence has actually bitten (P4); a balance you've never seen fail doesn't yet need
-a machine.*
+*Most tensions above are honest habits or guidelines, not automated checks — that is the normal state.
+Automate a tension only when its absence has actually bitten (P4); a balance you've never seen fail doesn't
+yet need a machine.*
 
 **Revision ritual (the only improvement engine):**
 
