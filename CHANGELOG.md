@@ -9,6 +9,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Changed
+- `tools/doctor.sh` + `tools/public-audit.sh` — single-sourced the **public-safe email** set. doctor's
+  commit-email nudge used a loose hand-rolled pattern (`noreply|@example\.|\.invalid`) that drifted from
+  public-audit's canonical `SAFE_EMAILS`; the two could disagree on whether an address is safe (e.g. a
+  deceptive `dev@noreply.corp.com` was waved through by doctor but not by the audit). doctor now mirrors
+  the canonical anchored patterns, with a cross-reference comment in both files (public-audit is the source;
+  doctor is its advisory mirror). A test locks it (a github-noreply draws no nudge; a `noreply`-substring
+  corporate address now does).
 - `FRAMEWORK.md` — removed two in-file duplications that violated its own single-source rule ("a fact lives
   in one place; everywhere else is a pointer"). The squash/rebase "merged" caveat and the dependency-
   versioning rule each appeared **twice** — a full bold paragraph under *Git/Code conventions* and a

@@ -61,6 +61,7 @@ DIR="${DIR:-.}"
 [ -d "$DIR" ] || { echo "public-audit: not a directory: $DIR" >&2; exit 2; }
 
 # Built-in public-safe email patterns (ERE). Real personal/corporate emails are deliberately absent.
+# Canonical set — doctor.sh mirrors it ($safe_email_re, its advisory commit-email nudge); update both together.
 SAFE_EMAILS=(
   '@users\.noreply\.github\.com'
   'noreply@anthropic\.com'
