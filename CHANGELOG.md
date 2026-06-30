@@ -26,6 +26,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   repo: it now detects a **local** `core.hooksPath` override that carries no guard hook, which silently
   bypasses the global secret-guard for that repo (git runs the local path instead). A real gotcha — a repo
   with its own hooks dir loses the global guard without warning. Advisory WARN, exit unchanged.
+- `tools/doctor.sh` — **per-stack lint-gate checks** (FRAMEWORK "Code conventions"): flags a project whose
+  stack is detected but its native linter config is absent — Java→Checkstyle (and no wildcard imports),
+  Python→Ruff (`[tool.ruff]` / `ruff.toml`), Swift→SwiftLint — plus a Java wildcard-import check. Build-output
+  and vendored-dependency trees are pruned, so a dependency's sources or configs never trip the gate.
+  Advisory WARN; busybox/Alpine-safe (find-only, no `grep --include`).
 
 ## [0.3.0] — 2026-06-30
 

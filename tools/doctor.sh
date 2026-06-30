@@ -16,6 +16,8 @@
 #   WARN  secret-guard not wired (no global core.hooksPath and no local pre-commit)
 #   WARN  a local core.hooksPath override carries no guard — it silently bypasses the machine-global one
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
+#   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff, Swift→SwiftLint)
+#         or a Java file uses a wildcard import
 set -euo pipefail
 
 QUIET=0
@@ -69,6 +71,15 @@ exit_code=0
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 gap()  { echo "  GAP  $1"; exit_code=1; }
 warn() { echo "  WARN $1"; }
+
+# First-party find: prune build-output / vendored-dependency dirs so a dependency's sources or lint
+# configs never trip a per-stack gate. find only (busybox/Alpine has no `grep --include`). Usage:
+# fp_find DIR  EXPR...   e.g. fp_find "$d" -name '*.java' -print
+fp_find() {
+  find "$1" \( -name .git -o -name .claude -o -name target -o -name build -o -name .build \
+               -o -name .gradle -o -name node_modules -o -name vendor -o -name dist -o -name out \) -prune \
+            -o "${@:2}" 2>/dev/null
+}
 
 global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
 
@@ -147,6 +158,33 @@ for d in "${DIRS[@]}"; do
   fi
   if [ -n "$dep" ]; then
     warn "floating dependency version — pin it (no image :latest / Action @vN; FRAMEWORK 'Dependency versioning')"
+  fi
+
+  # Per-stack lint gate (FRAMEWORK "Code conventions"): each stack enforces its native linter, run in CI.
+  # doctor flags a project whose stack is detected but its lint config is absent. Detection prunes build /
+  # vendored-dependency trees, so a dependency's sources or configs never flip the gate or count as ours.
+  # Java — Checkstyle present, and no wildcard imports.
+  if fp_find "$d" \( -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print | grep -q . \
+     || fp_find "$d" -name '*.java' -print | grep -q .; then
+    if fp_find "$d" -name '*.java' -exec grep -lE '^import[[:space:]]+(static[[:space:]]+)?[A-Za-z0-9_.]+\.\*;' {} + | grep -q .; then
+      warn "Java wildcard imports present — list each import individually (FRAMEWORK 'Code conventions')"
+    fi
+    fp_find "$d" -name 'checkstyle*.xml' -print | grep -q . \
+      || warn "Java stack but no checkstyle config present — add one and wire it into CI (FRAMEWORK 'Code conventions')"
+  fi
+  # Python — Ruff config ([tool.ruff] in a pyproject.toml, or a ruff.toml / .ruff.toml).
+  if fp_find "$d" \( -name pyproject.toml -o -name setup.py -o -name setup.cfg \) -print | grep -q . \
+     || [ -f "$d/requirements.txt" ]; then
+    if ! { fp_find "$d" -name pyproject.toml -exec grep -lE '\[tool\.ruff' {} + | grep -q . \
+           || fp_find "$d" \( -name ruff.toml -o -name .ruff.toml \) -print | grep -q .; }; then
+      warn "Python stack but no Ruff config ([tool.ruff] / ruff.toml) — add one and run it in CI (FRAMEWORK 'Code conventions')"
+    fi
+  fi
+  # Swift — a first-party SwiftLint config.
+  if fp_find "$d" \( -name Package.swift -o -name '*.xcodeproj' -o -name '*.xcworkspace' \) -print | grep -q . \
+     || fp_find "$d" -name '*.swift' -print | grep -q .; then
+    fp_find "$d" \( -name .swiftlint.yml -o -name .swiftlint.yaml \) -print | grep -q . \
+      || warn "Swift stack but no SwiftLint config — add a first-party .swiftlint.yml and run it in CI (FRAMEWORK 'Code conventions')"
   fi
 done
 
