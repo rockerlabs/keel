@@ -49,6 +49,21 @@ to you" → [docs/getting-started.md](docs/getting-started.md).
 > bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md) for a short non-Claude setup — and, if you
 > get it running on another tool, a quick way to share how.
 
+> **Already have your own conventions?** Keel isn't all-or-nothing, and it won't fight your setup —
+> `install.sh` never overwrites a file you have. But you probably don't want the whole thing on top of a
+> system you've already tuned. Take only what's useful:
+>
+> - **The ideas.** Read [`PRINCIPLES.md`](PRINCIPLES.md) and [`FRAMEWORK.md`](FRAMEWORK.md) and lift what
+>   fits into your *own* `CLAUDE.md`. Load-a-little-always, durable-vs-disposable, build-from-friction port
+>   to any setup — you don't need Keel's files to use them.
+> - **The standalone tools.** `secret-guard` (blocks key-shaped secrets on every commit/push) and
+>   `public-audit` (catches personal/secret leaks before a repo goes public) are plain Bash + git, and run
+>   next to whatever you already use — no Keel "core" required: `tools/install-secret-guard.sh --global`,
+>   `tools/public-audit.sh <repo>`.
+> - **One piece at a time.** Grab a single `commands/*.md` or a template and ignore the rest.
+>
+> Keel is a method and a few tools you graft onto what you have — not a framework you adopt whole.
+
 > **Status: early experiment.** This is an early, cleaned-up copy of one person's working setup. It's
 > public to find out whether it helps anyone besides its author — not as a finished product. Feedback
 > welcome; expect rough edges.
