@@ -27,6 +27,18 @@ assert_figure() {
   doc_fig="$(printf '%s' "$row" | grep -oE '~[0-9,]+' | tail -1 | tr -d '~, ')"
   if [ -z "$doc_fig" ]; then fail "$label" "no ~figure on the $file row of loading-and-cost.md"; return; fi
 
+  # A "~N,NNN+" figure is an open-ended FLOOR — for a monotonically-growing file (CHANGELOG), assert the
+  # real size is AT LEAST the floor (never an overclaim) with no upper bound, so steady growth doesn't force
+  # a figure bump on every PR. A plain "~N,NNN" is still held to ±10%.
+  if printf '%s' "$row" | grep -qE '~[0-9,]+\+'; then
+    if [ "$actual" -ge "$doc_fig" ]; then
+      pass "$label (doc ~$doc_fig+ floor vs actual ~$actual)"
+    else
+      fail "$label" "doc floor ~$doc_fig+ but actual is only ~$actual tok (chars=$chars) — lower the floor"
+    fi
+    return
+  fi
+
   lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
   if [ "$doc_fig" -ge "$lo" ] && [ "$doc_fig" -le "$hi" ]; then
     pass "$label (doc ~$doc_fig vs actual ~$actual)"
