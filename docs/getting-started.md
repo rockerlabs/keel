@@ -93,6 +93,12 @@ tools/init-project.sh <path>   # set up: git, a .gitignore that hides private no
 tools/doctor.sh       <path>   # check the setup (GAP = something's missing, WARN = a suggestion)
 ```
 
+`doctor` checks the essentials: the private AI context is git-ignored, `CLAUDE.md` exists and stays inside
+the startup-token budget, `secret-guard` is wired (and not silently bypassed by a repo-local `core.hooksPath`),
+dependencies are pinned (no `:latest` / `@vN`), each detected stack has its native linter gate
+(Checkstyle / Ruff / SwiftLint), and a live worktree carries its `CLAUDE.md` bridge. It can also sweep every
+project in your `INSTANCE.md` registry at once: `tools/doctor.sh --registry ~/.claude/INSTANCE.md`.
+
 Fill in the project `CLAUDE.md` (your stack, conventions, roadmap). It loads **automatically** when you work
 in that repo. `init-project` also **adds the project to your `INSTANCE.md` list** (so a review across all
 projects can find it) — `--no-register` skips that. To add projects you already have, all at once:
