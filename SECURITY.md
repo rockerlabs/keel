@@ -33,5 +33,5 @@ Known limits (by design — not vulnerabilities):
 
 ## Supported versions
 
-Only the latest `main` and the most recent tag (currently `v0.2.0`) receive fixes; there is no
+Only the latest `main` and the most recent tag receive fixes; there is no
 back-porting.

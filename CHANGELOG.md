@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- `SECURITY.md` — the "Supported versions" line hardcoded `(currently `v0.2.0`)`, which silently went
+  stale once `v0.3.0` shipped. Dropped the duplicated literal — the most recent tag is single-sourced in
+  git, not restated in prose (FRAMEWORK "Knowledge & context upkeep"). Added `tests/test_security_doc.sh`
+  to keep a `vN.N.N` literal from creeping back into `SECURITY.md`.
+
 ### Added
 - `tests/test_pre_pr_gate.sh` — coverage for `tools/pre-pr-gate.sh`, which previously had none. Exercises
   the allow path (non-`gh pr create` commands, and a sentinel holding the live HEAD SHA) and every deny
