@@ -31,6 +31,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   Python→Ruff (`[tool.ruff]` / `ruff.toml`), Swift→SwiftLint — plus a Java wildcard-import check. Build-output
   and vendored-dependency trees are pruned, so a dependency's sources or configs never trip the gate.
   Advisory WARN; busybox/Alpine-safe (find-only, no `grep --include`).
+- `tools/doctor.sh` — **worktree CLAUDE.md bridge check** (FRAMEWORK "Worktree discipline"): a private-fork
+  project gitignores `CLAUDE.md`, so `git worktree add` checks it out without one and that worktree's session
+  starts blind to the project context. doctor now WARNs when a live linked worktree is missing the bridge.
+  Public-fork (committed `CLAUDE.md`) is exempt. Advisory WARN.
 
 ## [0.3.0] — 2026-06-30
 

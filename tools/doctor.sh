@@ -18,6 +18,7 @@
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
 #   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff, Swift→SwiftLint)
 #         or a Java file uses a wildcard import
+#   WARN  a private-fork project's linked worktree is missing the CLAUDE.md bridge (session starts blind)
 set -euo pipefail
 
 QUIET=0
@@ -185,6 +186,26 @@ for d in "${DIRS[@]}"; do
      || fp_find "$d" -name '*.swift' -print | grep -q .; then
     fp_find "$d" \( -name .swiftlint.yml -o -name .swiftlint.yaml \) -print | grep -q . \
       || warn "Swift stack but no SwiftLint config — add a first-party .swiftlint.yml and run it in CI (FRAMEWORK 'Code conventions')"
+  fi
+
+  # Worktree CLAUDE.md bridge (FRAMEWORK "Worktree discipline"): a private-fork project gitignores CLAUDE.md,
+  # so `git worktree add` checks it out WITHOUT one and that worktree's session starts blind to the project
+  # context. Each live linked worktree should carry a CLAUDE.md (a bridge symlink). Public-fork (committed
+  # CLAUDE.md) is exempt — a worktree checks it out normally.
+  if [ -f "$d/CLAUDE.md" ] && git -C "$d" check-ignore -q CLAUDE.md 2>/dev/null; then
+    wt_missing=0
+    while IFS= read -r wline; do
+      case "$wline" in "worktree "*) wt="${wline#worktree }" ;; *) continue ;; esac
+      if [ "$wt" = "$d" ]; then continue; fi                                  # the main checkout, not a worktree
+      if [ ! -d "$wt" ]; then continue; fi                                    # gone/prunable
+      if [ -e "$wt/CLAUDE.md" ] || [ -L "$wt/CLAUDE.md" ]; then continue; fi  # already bridged
+      wt_missing=$((wt_missing + 1))
+    done <<EOF
+$(git -C "$d" worktree list --porcelain 2>/dev/null)
+EOF
+    if [ "$wt_missing" -gt 0 ]; then
+      warn "$wt_missing linked worktree(s) missing the CLAUDE.md bridge — the session starts blind there (FRAMEWORK 'Worktree discipline')"
+    fi
   fi
 done
 

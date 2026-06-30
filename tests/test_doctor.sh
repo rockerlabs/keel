@@ -205,4 +205,29 @@ printf 'rules: []\n' > "$d/.swiftlint.yml"
 run "$doctor" "$d"
 check_absent  "first-party SwiftLint config → no WARN" "$OUT" "no SwiftLint"
 
+# --- worktree CLAUDE.md bridge (FRAMEWORK "Worktree discipline") — advisory WARN -----------------
+# private-fork project (gitignored CLAUDE.md): a linked worktree checks out WITHOUT one → bridge WARN
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\n' > "$base/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
+git -C "$base" add .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wtb="$SANDBOX/wtbridge.$$"
+git -C "$base" worktree add -q "$wtb" >/dev/null 2>&1
+run "$doctor" "$base"
+check_contains "private-fork worktree missing CLAUDE.md → bridge WARN" "$OUT" "missing the CLAUDE.md bridge"
+# adding the bridge symlink clears it
+ln -s "$base/CLAUDE.md" "$wtb/CLAUDE.md"
+run "$doctor" "$base"
+check_absent  "bridged worktree → no bridge WARN" "$OUT" "missing the CLAUDE.md bridge"
+
+# public-fork project (committed CLAUDE.md): a worktree checks it out → exempt, no bridge WARN
+base="$(mkproj)"; git -C "$base" init -q
+printf '# pub\n' > "$base/CLAUDE.md"; printf '*.log\n' > "$base/.gitignore"
+git -C "$base" add CLAUDE.md .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wtp="$SANDBOX/wtpub.$$"
+git -C "$base" worktree add -q "$wtp" >/dev/null 2>&1
+run "$doctor" "$base"
+check_absent  "public-fork worktree → exempt from bridge WARN" "$OUT" "missing the CLAUDE.md bridge"
+
 summary
