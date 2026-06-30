@@ -42,6 +42,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `/init-project`) with no hint that the tool those commands drive isn't installed by bootstrap. The note now
   says so. (The deeper gap — installed commands referencing `tools/` by a repo-relative path — is a layout
   decision left to the maintainer; see the deferred list.)
+- `README.md` — three claim-accuracy fixes. (1) The tour line said secret-guard blocks "a real key"; it
+  plants the canonical AWS *example* key, so it's now "a key-shaped secret" — matching the careful
+  "key-shaped" wording used everywhere else. (2) `public-audit`'s description implied it *catches* every
+  personal leak; in fact a committer identity or a declared `--token` is a hard stop (GAP/exit 1), while
+  names, emails and home paths in content are advisory WARNs (exit 0, a human decides). The README now
+  draws that line instead of lumping "names, private tokens" together as if both block. (3) "catches" →
+  "flags" in the standalone-tools blurb, for the same reason.
 - `SECURITY.md` — the "Supported versions" line hardcoded `(currently `v0.2.0`)`, which silently went
   stale once `v0.3.0` shipped. Dropped the duplicated literal — the most recent tag is single-sourced in
   git, not restated in prose (FRAMEWORK "Knowledge & context upkeep"). Added `tests/test_security_doc.sh`
