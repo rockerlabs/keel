@@ -82,6 +82,14 @@ fp_find() {
             -o "${@:2}" 2>/dev/null
 }
 
+# fp_any DIR EXPR...   true iff fp_find yields ≥1 line. The result comes from the CAPTURED first line,
+# never the pipeline's exit status — so a producer killed by SIGPIPE when `head` closes the pipe early
+# (under `set -o pipefail`, on a large tree) can't flip a real match into a false negative. Do NOT
+# rewrite this as `fp_find … | grep -q .`: that gates on the pipeline status and reintroduces the bug.
+fp_any() {
+  [ -n "$(fp_find "$@" | head -n1)" ]
+}
+
 global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
 
 for d in "${DIRS[@]}"; do
@@ -165,26 +173,26 @@ for d in "${DIRS[@]}"; do
   # doctor flags a project whose stack is detected but its lint config is absent. Detection prunes build /
   # vendored-dependency trees, so a dependency's sources or configs never flip the gate or count as ours.
   # Java — Checkstyle present, and no wildcard imports.
-  if fp_find "$d" \( -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print | grep -q . \
-     || fp_find "$d" -name '*.java' -print | grep -q .; then
-    if fp_find "$d" -name '*.java' -exec grep -lE '^import[[:space:]]+(static[[:space:]]+)?[A-Za-z0-9_.]+\.\*;' {} + | grep -q .; then
+  if fp_any "$d" \( -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print \
+     || fp_any "$d" -name '*.java' -print; then
+    if fp_any "$d" -name '*.java' -exec grep -lE '^import[[:space:]]+(static[[:space:]]+)?[A-Za-z0-9_.]+\.\*;' {} +; then
       warn "Java wildcard imports present — list each import individually (FRAMEWORK 'Code conventions')"
     fi
-    fp_find "$d" -name 'checkstyle*.xml' -print | grep -q . \
+    fp_any "$d" -name 'checkstyle*.xml' -print \
       || warn "Java stack but no checkstyle config present — add one and wire it into CI (FRAMEWORK 'Code conventions')"
   fi
   # Python — Ruff config ([tool.ruff] in a pyproject.toml, or a ruff.toml / .ruff.toml).
-  if fp_find "$d" \( -name pyproject.toml -o -name setup.py -o -name setup.cfg \) -print | grep -q . \
+  if fp_any "$d" \( -name pyproject.toml -o -name setup.py -o -name setup.cfg \) -print \
      || [ -f "$d/requirements.txt" ]; then
-    if ! { fp_find "$d" -name pyproject.toml -exec grep -lE '\[tool\.ruff' {} + | grep -q . \
-           || fp_find "$d" \( -name ruff.toml -o -name .ruff.toml \) -print | grep -q .; }; then
+    if ! { fp_any "$d" -name pyproject.toml -exec grep -lE '\[tool\.ruff' {} + \
+           || fp_any "$d" \( -name ruff.toml -o -name .ruff.toml \) -print; }; then
       warn "Python stack but no Ruff config ([tool.ruff] / ruff.toml) — add one and run it in CI (FRAMEWORK 'Code conventions')"
     fi
   fi
   # Swift — a first-party SwiftLint config.
-  if fp_find "$d" \( -name Package.swift -o -name '*.xcodeproj' -o -name '*.xcworkspace' \) -print | grep -q . \
-     || fp_find "$d" -name '*.swift' -print | grep -q .; then
-    fp_find "$d" \( -name .swiftlint.yml -o -name .swiftlint.yaml \) -print | grep -q . \
+  if fp_any "$d" \( -name Package.swift -o -name '*.xcodeproj' -o -name '*.xcworkspace' \) -print \
+     || fp_any "$d" -name '*.swift' -print; then
+    fp_any "$d" \( -name .swiftlint.yml -o -name .swiftlint.yaml \) -print \
       || warn "Swift stack but no SwiftLint config — add a first-party .swiftlint.yml and run it in CI (FRAMEWORK 'Code conventions')"
   fi
 

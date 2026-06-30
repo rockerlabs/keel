@@ -24,6 +24,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   a workflow gate (not the secret boundary), no longer a silent fail-open.
 
 ### Fixed
+- `tools/doctor.sh` + `tools/public-audit.sh` — a `set -o pipefail` + SIGPIPE false-negative made both
+  audit tools **silently under-report on large inputs**. The pattern `producer | grep -q .` (and `… && gap`)
+  gates on the pipeline's exit status: once `grep -q` matches and closes the pipe, the still-writing
+  producer dies with SIGPIPE (141), `pipefail` propagates the 141, and the gate flips to false. So
+  `doctor`'s per-stack lint check skipped a real stack on a big tree (no WARN), and `public-audit`'s
+  PR-ref scan could pass a private-token leak clean when the token matched early in a large history.
+  Both now capture the first match (`[ -n "$(producer | head -n1)" ]`) instead of gating on the pipeline
+  status — SIGPIPE can no longer flip a real hit into a clean result. Added scale regressions to
+  `tests/test_doctor.sh` and `tests/test_public_audit.sh` (each fails on the pre-fix code).
 - `SECURITY.md` — the "Supported versions" line hardcoded `(currently `v0.2.0`)`, which silently went
   stale once `v0.3.0` shipped. Dropped the duplicated literal — the most recent tag is single-sourced in
   git, not restated in prose (FRAMEWORK "Knowledge & context upkeep"). Added `tests/test_security_doc.sh`
