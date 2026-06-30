@@ -8,6 +8,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- `/polish` command (`commands/polish.md`) — the pre-PR polish pass: `git diff` scope → `/simplify` →
+  `/code-review --fix` → run the project's tests → unlock the gate → `gh pr create`. Hands a human reviewer
+  an already-tidied, bug-hunted diff. Runs between implementation and `/wrap`.
+- `tools/pre-pr-gate.sh` — the enforcement half of the polish flow: a Claude Code `PreToolUse(Bash)` hook
+  that blocks `gh pr create` until `/polish` has run cleanly on the current HEAD. The sentinel is
+  content-checked against the live HEAD SHA, so a bare `touch` (empty file) or a sentinel from an earlier
+  commit both fail — the bypass path is closed by content, not just presence.
+
+### Changed
+- `FRAMEWORK.md` — three generic refinements: a fallback model "falls back, it doesn't route" note (a
+  fallback is for provider unavailability, not task difficulty); a monorepo note (nested `CLAUDE.md` per
+  subtree); and a "fork a plugin-shipped skill/command, don't edit it in place" durability gotcha
+  (in-place edits are lost on the next plugin update and absent on a fresh machine).
+
 ## [0.3.0] — 2026-06-30
 
 Onboarding & adoption release. The agent now finishes setup for you (`/keel-setup`), projects self-register
