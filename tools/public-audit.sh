@@ -233,7 +233,10 @@ if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   while IFS= read -r remote; do
     [ -n "$remote" ] || continue
     any_remote=1
-    git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*' 2>/dev/null | grep -q . || continue
+    # Capture the first ref, don't gate on the pipeline status: under `pipefail`, `… | grep -q .`
+    # makes ls-remote die with SIGPIPE on a busy remote (1000+ refs/pull/*), and the 141 would skip
+    # the whole PR-ref scan for that remote. The captured-non-empty test can't be flipped by SIGPIPE.
+    [ -n "$(git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*' 2>/dev/null | head -n1)" ] || continue
     scanned_pr=1
     # Fetch both the PR tip (…/head) AND GitHub's synthetic merge (…/merge) — neither is reachable
     # from `git log --all`. Flat dest names keep them in one namespace for the scans below.
@@ -250,8 +253,12 @@ EOF
     if [ "${#tokens[@]}" -gt 0 ]; then
       for t in "${tokens[@]}"; do
         [ -z "$t" ] && continue
-        printf '%s' "$pr_hist" | grep -qE "$t" && \
+        # Capture-then-test, not `grep -qE … && gap`: with a token that matches EARLY in a large
+        # pr_hist, `printf | grep -q` SIGPIPEs printf, and `pipefail` makes the pipeline 141 — so the
+        # `&& gap` never fires and a real leak passes clean. The captured hit can't be lost to SIGPIPE.
+        if [ -n "$(printf '%s\n' "$pr_hist" | grep -E "$t" | head -n1 || true)" ]; then
           gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
+        fi
       done
     fi
     # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
