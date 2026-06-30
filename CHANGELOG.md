@@ -22,6 +22,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   fallback is for provider unavailability, not task difficulty); a monorepo note (nested `CLAUDE.md` per
   subtree); and a "fork a plugin-shipped skill/command, don't edit it in place" durability gotcha
   (in-place edits are lost on the next plugin update and absent on a fresh machine).
+- `tools/doctor.sh` — the secret-guard check no longer assumes a machine-global `core.hooksPath` covers a
+  repo: it now detects a **local** `core.hooksPath` override that carries no guard hook, which silently
+  bypasses the global secret-guard for that repo (git runs the local path instead). A real gotcha — a repo
+  with its own hooks dir loses the global guard without warning. Advisory WARN, exit unchanged.
 
 ## [0.3.0] — 2026-06-30
 

@@ -14,6 +14,7 @@
 #   GAP   no project CLAUDE.md
 #   GAP   .gitignore does not ignore the private AI context (.claude/ or CLAUDE.md) — unless public fork
 #   WARN  secret-guard not wired (no global core.hooksPath and no local pre-commit)
+#   WARN  a local core.hooksPath override carries no guard — it silently bypasses the machine-global one
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
 set -euo pipefail
 
@@ -106,8 +107,19 @@ for d in "${DIRS[@]}"; do
     gap ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
   fi
 
-  if [ -n "$global_hooks" ]; then
-    :  # machine-global secret-guard assumed
+  # A machine-global core.hooksPath covers this repo — UNLESS the repo sets its own LOCAL core.hooksPath,
+  # which silently overrides the global one (git runs the local path, so the global guard never fires here).
+  # So when a local override exists, verify it actually carries the guard before trusting it.
+  local_hooks="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
+  if [ -n "$local_hooks" ]; then
+    case "$local_hooks" in /*) lhd="$local_hooks" ;; *) lhd="$d/$local_hooks" ;; esac
+    if [ -f "$lhd/secret-scan.sh" ] || [ -x "$lhd/pre-commit" ] || [ -x "$lhd/pre-push" ]; then
+      :  # the local override carries the guard — fine
+    else
+      warn "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
+    fi
+  elif [ -n "$global_hooks" ]; then
+    :  # machine-global secret-guard covers it (no local override)
   elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
     :  # vendored (resolve the real hooks dir — a worktree/submodule isn't .git/hooks)
   else
