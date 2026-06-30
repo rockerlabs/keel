@@ -29,6 +29,8 @@ effort is the finer, cheaper dial.
   deep root-cause hunts, anything where a confidently-wrong answer is expensive. Not for volume.
 - **Context size is NOT a model-selection signal.** Hitting the window calls for compaction / a fresh
   session / better retrieval (P2), not a bigger model.
+- **A fallback model falls back, it doesn't route.** A configured fallback model is for provider
+  overload/unavailability, not for task difficulty — don't conflate the two.
 
 Tie to P3: economy lives *above* the P1 gate — never downgrade below what a correct result needs, but don't
 pay for headroom a task won't use. When unsure whether a task is "hard," name the uncertainty and let the
@@ -43,6 +45,9 @@ whole thing stays maintainable. Applies to all projects.
 
 **Default assumption:** a project = a software repo under git. A different kind of project (notes / content
 / infra without a repo) — adapt the layout, don't silently force the software structure.
+
+**Monorepo:** one repo ≠ one project — nested `CLAUDE.md` files in subfolders are allowed, each loaded when
+you work inside its subtree.
 
 **Three tiers — by *when* content loads** *(everything at startup is paid in EVERY session):*
 1. **Startup (always loaded):** the project `CLAUDE.md` (how the project works + a roadmap index). Only what
@@ -134,6 +139,12 @@ So context files don't bloat and stay useful.
   "promote" and "drop"). Each entry carries a recurrence counter; on the 2nd occurrence promote it into the
   right surface and delete the entry — recurrence is the felt-friction promotion signal. Prune candidates
   that neither promoted nor recurred in ~5 sessions; an unpruned list is noise (P2/P3).
+
+**Customizing a plugin-shipped skill or command — fork it, don't edit in place.** A skill or command
+installed from a plugin lives under the harness's own plugin directory, which is third-party and not tracked
+by your knowledge base — so an in-place edit is lost on the next plugin update and absent on a fresh machine
+(plugins reinstall clean). Copy it into your own tracked skills/commands directory and edit the copy: a
+same-name user-level entry overrides the plugin's, and the fork is versioned and travels with your KB.
 
 **Memory:** one file = one topic. An index file carries one hook line per file, not a copy of the content.
 Before writing, check there isn't already a file on the topic. Delete what became wrong.
