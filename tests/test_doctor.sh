@@ -150,6 +150,24 @@ run "$doctor" "$d"
 check_status "publication project + real commit email → exit 0 (WARN)" 0 "$STATUS"
 check_contains "doctor nudges about the commit email" "$OUT" "not a noreply address"
 
+# ...but a public-safe noreply commit email draws NO nudge — doctor's safe set mirrors public-audit's
+# SAFE_EMAILS (a GitHub numeric-id noreply is on that canonical list).
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+git -C "$d" config user.email '12345+dev@users.noreply.github.com'
+run "$doctor" "$d"
+check_absent "github-noreply commit email → no nudge (safe set matches public-audit)" "$OUT" "not a noreply address"
+
+# a deceptive 'noreply'-containing corporate email is NOT public-safe — the old loose `noreply` substring
+# waved it through; the aligned set (anchored patterns) nudges, matching public-audit's verdict.
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+git -C "$d" config user.email 'dev@noreply.corp.com'
+run "$doctor" "$d"
+check_contains "deceptive noreply-corp email → nudges (no longer waved through)" "$OUT" "not a noreply address"
+
 # dependency pinning (FRAMEWORK "Dependency versioning") — advisory WARN, never a GAP
 newbase() {  # a GAP-free baseline project, prints its path
   local d; d="$(mkproj)"; git -C "$d" init -q
@@ -187,6 +205,26 @@ d="$(newbase)"; printf 'import java.util.*;\npublic class B {}\n' > "$d/B.java"
 printf '<module name="Indentation"/>\n' > "$d/checkstyle.xml"
 run "$doctor" "$d"
 check_contains "flags a Java wildcard import" "$OUT" "wildcard import"
+
+# SCALE regression (S1 — pipefail + SIGPIPE): on a large tree the OLD `fp_find … | grep -q .` made find
+# keep writing after grep matched and exited, so find died with SIGPIPE (141); `set -o pipefail` propagated
+# the 141 and the `if`/`||` gate silently flipped — the stack went undetected, NO WARN. Enough .java paths
+# here to overflow the pipe buffer (~64KB on Linux, ~16KB on macOS), which is what triggers the bug.
+bulk_java() {  # $1 dir, $2 count — empty .java files under src/ to overflow the pipe buffer with paths
+  local dir="$1" n="$2" i=1
+  mkdir -p "$dir/src"
+  while [ "$i" -le "$n" ]; do : > "$dir/src/File$i.java"; i=$((i + 1)); done
+}
+d="$(newbase)"; bulk_java "$d" 2000
+run "$doctor" "$d"
+check_status   "large Java tree → exit 0 (no pipefail/SIGPIPE crash)" 0 "$STATUS"
+check_contains "large Java tree still detected despite scale (S1)" "$OUT" "no checkstyle"
+# the -exec grep scan (wildcard imports) is the same pipe shape — must still find a real hit at scale
+d="$(newbase)"; bulk_java "$d" 2000
+printf '<module name="Indentation"/>\n' > "$d/checkstyle.xml"
+printf 'import java.util.*;\npublic class Wild {}\n' > "$d/src/Wild.java"
+run "$doctor" "$d"
+check_contains "wildcard import still found on a large tree (S1 -exec scan)" "$OUT" "wildcard import"
 
 # Python stack (pyproject without [tool.ruff]) → WARN; with it → none
 d="$(newbase)"; printf '[project]\nname = "x"\n' > "$d/pyproject.toml"

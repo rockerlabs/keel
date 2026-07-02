@@ -149,6 +149,27 @@ run bash "$pa" "$d"
 check_status "multi-remote: a later remote's PR-ref leak still GAPs" 1 "$STATUS"
 check_contains "scanned the GitHub-shaped remote despite a non-GitHub one sorting first" "$OUT" "host PR ref"
 
+# SCALE regression (S2 — pipefail + SIGPIPE in the PR-ref token scan): a --token matching EARLY in a LARGE
+# pr_hist made the old `printf … | grep -qE "$t" && gap` SIGPIPE printf (it keeps writing after grep matches
+# and exits); `set -o pipefail` turned the pipeline into 141, so `&& gap` never fired and a real private-token
+# leak passed CLEAN. The bulk commit pushes pr_hist well past the pipe buffer, then the token rides the newest
+# commit (first in `git log -p`) so grep matches early — exactly the shape that triggered the false clean.
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+i=1; while [ "$i" -le 4000 ]; do printf 'padding line %s of bulk PR-ref history\n' "$i"; i=$((i + 1)); done > "$d/bulk.txt"
+git -C "$d" add bulk.txt
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit -q -m bulk        # big older diff...
+printf 'config token ACME-PR-TOKEN here\n' > "$d/leak.txt"
+git -C "$d" add leak.txt
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit -q -m 'add token' # ...token in the newest
+git -C "$d" push -q origin HEAD:refs/pull/9/head     # both live only in the PR ref...
+git -C "$d" reset -q --hard HEAD~2                    # ...not in main / tree / any local ref
+run bash "$pa" --token 'ACME-PR-TOKEN' "$d"
+check_status "token early in a LARGE PR-ref history → GAP exit 1 (S2, no SIGPIPE false-clean)" 1 "$STATUS"
+check_contains "flags the PR-ref token at scale" "$OUT" "private token /ACME-PR-TOKEN/ in a host PR ref"
+
 # a personal email in an ANNOTATED-TAG message body (which `git log -p` omits) → WARN
 d="$(repo_by dev@example.com)"
 git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a v9 -m "$(printf 'release\n\nby %s' 'zoe@gmail.com')"

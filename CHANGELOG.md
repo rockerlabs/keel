@@ -8,7 +8,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-30
+
+Audit-hardening & documentation release. A 4-report external audit drove a fix to a real under-reporting
+bug in `doctor` / `public-audit` (a `pipefail` + SIGPIPE false-negative on large inputs), a batch of new
+`doctor` checks, and internal-consistency + claim-accuracy fixes across the docs. No breaking changes.
+
 ### Changed
+- `tools/doctor.sh` + `tools/public-audit.sh` — single-sourced the **public-safe email** set. doctor's
+  commit-email nudge used a loose hand-rolled pattern (`noreply|@example\.|\.invalid`) that drifted from
+  public-audit's canonical `SAFE_EMAILS`; the two could disagree on whether an address is safe (e.g. a
+  deceptive `dev@noreply.corp.com` was waved through by doctor but not by the audit). doctor now mirrors
+  the canonical anchored patterns, with a cross-reference comment in both files (public-audit is the source;
+  doctor is its advisory mirror). A test locks it (a github-noreply draws no nudge; a `noreply`-substring
+  corporate address now does).
+- `FRAMEWORK.md` — removed two in-file duplications that violated its own single-source rule ("a fact lives
+  in one place; everywhere else is a pointer"). The squash/rebase "merged" caveat and the dependency-
+  versioning rule each appeared **twice** — a full bold paragraph under *Git/Code conventions* and a
+  dedicated section lower down. Kept the dedicated sections (*Git branch lifecycle*, *Dependency
+  versioning*) as canonical; the earlier mentions are now one-line gist + pointer, so the rule can't drift
+  between two copies.
 - `tests/test_doc_figures.sh` — a `~N,NNN+` token figure in `docs/loading-and-cost.md` is now read as an
   open-ended **floor** (assert the real size is *at least* it, no upper bound) instead of a ±10% band. The
   `CHANGELOG.md` row uses it: a monotonically-growing reference file no longer forces a figure bump on every
@@ -22,8 +41,68 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - `tools/pre-pr-gate.sh` — a missing `jq` is now handled explicitly (`command -v jq || exit 0`): the gate
   can't parse its event without it, so it allows rather than block every command — a documented choice for
   a workflow gate (not the secret boundary), no longer a silent fail-open.
+- `FRAMEWORK.md` — three generic refinements: a fallback model "falls back, it doesn't route" note (a
+  fallback is for provider unavailability, not task difficulty); a monorepo note (nested `CLAUDE.md` per
+  subtree); and a "fork a plugin-shipped skill/command, don't edit it in place" durability gotcha
+  (in-place edits are lost on the next plugin update and absent on a fresh machine).
+- `tools/doctor.sh` — the secret-guard check no longer assumes a machine-global `core.hooksPath` covers a
+  repo: it now detects a **local** `core.hooksPath` override that carries no guard hook, which silently
+  bypasses the global secret-guard for that repo (git runs the local path instead). A real gotcha — a repo
+  with its own hooks dir loses the global guard without warning. Advisory WARN, exit unchanged.
+- `tools/doctor.sh` — **per-stack lint-gate checks** (FRAMEWORK "Code conventions"): flags a project whose
+  stack is detected but its native linter config is absent — Java→Checkstyle (and no wildcard imports),
+  Python→Ruff (`[tool.ruff]` / `ruff.toml`), Swift→SwiftLint — plus a Java wildcard-import check. Build-output
+  and vendored-dependency trees are pruned, so a dependency's sources or configs never trip the gate.
+  Advisory WARN; busybox/Alpine-safe (find-only, no `grep --include`).
+- `tools/doctor.sh` — **worktree CLAUDE.md bridge check** (FRAMEWORK "Worktree discipline"): a private-fork
+  project gitignores `CLAUDE.md`, so `git worktree add` checks it out without one and that worktree's session
+  starts blind to the project context. doctor now WARNs when a live linked worktree is missing the bridge.
+  Public-fork (committed `CLAUDE.md`) is exempt. Advisory WARN.
+- `docs/getting-started.md` — itemized what `doctor` actually checks (private-context gitignore, `CLAUDE.md`
+  presence + startup budget, secret-guard wiring incl. the local `core.hooksPath` bypass, dependency pinning,
+  per-stack lint gates, the worktree bridge) and noted the `--registry` fleet sweep — the checks added this
+  cycle weren't reflected in the walkthrough.
+- README: new **"Already have your own conventions?"** door, alongside "Not using Claude Code?". Reframes
+  adoption for readers who already run a tuned setup — take the **ideas** (`PRINCIPLES`/`FRAMEWORK`), the
+  **standalone tools** (`secret-guard`/`public-audit`, plain Bash + git, no Keel core needed), or one
+  command/template à la carte, rather than installing the whole thing. States the positioning in one line:
+  *a method and a few tools you graft onto what you have — not a framework you adopt whole.*
 
 ### Fixed
+- `PRINCIPLES.md` — three internal-consistency fixes. (1) **Term collision on "mechanism":** the word named
+  both the disposable layer (glossary/P0) *and* the automated tier of the enforcement taxonomy, so
+  "each tension is **mechanized**" (any enforcement that runs) read straight into "most tensions are **not
+  mechanisms**" (automated only) two paragraphs later. The enforcement tier is renamed **"automated check"**,
+  reserving "mechanism" for the single disposable-layer sense. (2) **P1 logic:** "useful **iff**
+  correct + calibrated" overstated — a correct, calibrated tool can still be useless (irrelevant, slow,
+  redundant); the gate is necessary, not sufficient → "useful **only if**". (3) A stale parenthetical called
+  the recurring-rewrite falsifier "the only falsifier currently written down" while sitting in a list of
+  three; corrected to "the original falsifier; the two above were added later".
+- `tools/doctor.sh` + `tools/public-audit.sh` — a `set -o pipefail` + SIGPIPE false-negative made both
+  audit tools **silently under-report on large inputs**. The pattern `producer | grep -q .` (and `… && gap`)
+  gates on the pipeline's exit status: once `grep -q` matches and closes the pipe, the still-writing
+  producer dies with SIGPIPE (141), `pipefail` propagates the 141, and the gate flips to false. So
+  `doctor`'s per-stack lint check skipped a real stack on a big tree (no WARN), and `public-audit`'s
+  PR-ref scan could pass a private-token leak clean when the token matched early in a large history.
+  Both now capture the first match (`[ -n "$(producer | head -n1)" ]`) instead of gating on the pipeline
+  status — SIGPIPE can no longer flip a real hit into a clean result. Added scale regressions to
+  `tests/test_doctor.sh` and `tests/test_public_audit.sh` (each fails on the pre-fix code).
+- `docs/going-public.md` — the scrub runbook ran `tools/public-audit.sh … .` from *inside* the throwaway
+  `git clone <url> scrub` (cwd is the scrub clone), where `tools/` doesn't exist — the gate command failed
+  for any non-Keel repo. Now referenced as `<keel>/tools/public-audit.sh` (run Keel's auditor against the
+  scrub clone, not from it).
+- `docs/getting-started.md` — the bootstrap "Express" note listed only `doctor` / `public-audit` as needing
+  the clone, omitting `init-project` — so a `curl | sh` adopter was steered to `/keel-setup` (and
+  `/init-project`) with no hint that the tool those commands drive isn't installed by bootstrap. The note now
+  says so. (The deeper gap — installed commands referencing `tools/` by a repo-relative path — is a layout
+  decision left to the maintainer; see the deferred list.)
+- `README.md` — three claim-accuracy fixes. (1) The tour line said secret-guard blocks "a real key"; it
+  plants the canonical AWS *example* key, so it's now "a key-shaped secret" — matching the careful
+  "key-shaped" wording used everywhere else. (2) `public-audit`'s description implied it *catches* every
+  personal leak; in fact a committer identity or a declared `--token` is a hard stop (GAP/exit 1), while
+  names, emails and home paths in content are advisory WARNs (exit 0, a human decides). The README now
+  draws that line instead of lumping "names, private tokens" together as if both block. (3) "catches" →
+  "flags" in the standalone-tools blurb, for the same reason.
 - `SECURITY.md` — the "Supported versions" line hardcoded `(currently `v0.2.0`)`, which silently went
   stale once `v0.3.0` shipped. Dropped the duplicated literal — the most recent tag is single-sourced in
   git, not restated in prose (FRAMEWORK "Knowledge & context upkeep"). Added `tests/test_security_doc.sh`
@@ -42,30 +121,6 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   that blocks `gh pr create` until `/polish` has run cleanly on the current HEAD. The sentinel is
   content-checked against the live HEAD SHA, so a bare `touch` (empty file) or a sentinel from an earlier
   commit both fail — the bypass path is closed by content, not just presence.
-
-### Changed
-- `FRAMEWORK.md` — three generic refinements: a fallback model "falls back, it doesn't route" note (a
-  fallback is for provider unavailability, not task difficulty); a monorepo note (nested `CLAUDE.md` per
-  subtree); and a "fork a plugin-shipped skill/command, don't edit it in place" durability gotcha
-  (in-place edits are lost on the next plugin update and absent on a fresh machine).
-- `tools/doctor.sh` — the secret-guard check no longer assumes a machine-global `core.hooksPath` covers a
-  repo: it now detects a **local** `core.hooksPath` override that carries no guard hook, which silently
-  bypasses the global secret-guard for that repo (git runs the local path instead). A real gotcha — a repo
-  with its own hooks dir loses the global guard without warning. Advisory WARN, exit unchanged.
-- `tools/doctor.sh` — **per-stack lint-gate checks** (FRAMEWORK "Code conventions"): flags a project whose
-  stack is detected but its native linter config is absent — Java→Checkstyle (and no wildcard imports),
-  Python→Ruff (`[tool.ruff]` / `ruff.toml`), Swift→SwiftLint — plus a Java wildcard-import check. Build-output
-  and vendored-dependency trees are pruned, so a dependency's sources or configs never trip the gate.
-  Advisory WARN; busybox/Alpine-safe (find-only, no `grep --include`).
-- `tools/doctor.sh` — **worktree CLAUDE.md bridge check** (FRAMEWORK "Worktree discipline"): a private-fork
-  project gitignores `CLAUDE.md`, so `git worktree add` checks it out without one and that worktree's session
-  starts blind to the project context. doctor now WARNs when a live linked worktree is missing the bridge.
-  Public-fork (committed `CLAUDE.md`) is exempt. Advisory WARN.
-- README: new **"Already have your own conventions?"** door, alongside "Not using Claude Code?". Reframes
-  adoption for readers who already run a tuned setup — take the **ideas** (`PRINCIPLES`/`FRAMEWORK`), the
-  **standalone tools** (`secret-guard`/`public-audit`, plain Bash + git, no Keel core needed), or one
-  command/template à la carte, rather than installing the whole thing. States the positioning in one line:
-  *a method and a few tools you graft onto what you have — not a framework you adopt whole.*
 
 ## [0.3.0] — 2026-06-30
 

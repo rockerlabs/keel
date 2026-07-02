@@ -66,7 +66,7 @@ git filter-repo --mailmap /tmp/mailmap --replace-message /tmp/msg --replace-text
 # --- gates: all three must hold before any push ---
 git log --all --format='%ae' | sort -u                     # only noreply addresses
 [ "$(git rev-parse HEAD^{tree})" = "$before" ] && echo OK   # tree UNCHANGED — rewrite touches history, not content
-tools/public-audit.sh --token <private-name> .              # exit 0
+<keel>/tools/public-audit.sh --token <private-name> .        # exit 0  (<keel> = your Keel checkout; the auditor lives there, not in this scrub clone)
 
 git remote add origin <url>                                 # filter-repo drops origin
 git push origin --force <default>:<default>                 # a NAMED branch — never --all

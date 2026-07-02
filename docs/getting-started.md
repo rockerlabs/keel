@@ -51,7 +51,9 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 > **Express (core only):** `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh`
 > installs the always-on core + the secret-guard check + the commands into `~/.claude` in one command (pass
 > install flags after `--`, e.g. `… | sh -s -- --no-hooks`). It leaves **no local copy of the repo**,
-> though — the `tools/` (`doctor`, `public-audit`) and `examples/tour.sh` need the clone above.
+> though — the `tools/` (`doctor`, `public-audit`, `init-project`) and `examples/tour.sh` need the clone
+> above. That includes the `/keel-setup` and `/init-project` commands: they call `tools/init-project.sh`,
+> so they need the full clone too — bootstrap installs the commands, not the tool they drive.
 
 `install.sh` is safe to re-run and **never overwrites a file you already have**. It:
 
@@ -90,6 +92,12 @@ the repo's code** for you to check. The by-hand version:
 tools/init-project.sh <path>   # set up: git, a .gitignore that hides private notes, a project CLAUDE.md
 tools/doctor.sh       <path>   # check the setup (GAP = something's missing, WARN = a suggestion)
 ```
+
+`doctor` checks the essentials: the private AI context is git-ignored, `CLAUDE.md` exists and stays inside
+the startup-token budget, `secret-guard` is wired (and not silently bypassed by a repo-local `core.hooksPath`),
+dependencies are pinned (no `:latest` / `@vN`), each detected stack has its native linter gate
+(Checkstyle / Ruff / SwiftLint), and a live worktree carries its `CLAUDE.md` bridge. It can also sweep every
+project in your `INSTANCE.md` registry at once: `tools/doctor.sh --registry ~/.claude/INSTANCE.md`.
 
 Fill in the project `CLAUDE.md` (your stack, conventions, roadmap). It loads **automatically** when you work
 in that repo. `init-project` also **adds the project to your `INSTANCE.md` list** (so a review across all
