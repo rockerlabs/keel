@@ -10,7 +10,9 @@ branch), and a long chat later the model still believes a PR "awaits merge" afte
 writes that stale status. So BEFORE the steps below: `git fetch --prune`, then read the truth from git, not
 session memory — `git log --oneline origin/<default> -5`, and merged-PR state where the repo uses PRs. Set
 every status to match git: a merged PR → its item moves to *Recently closed* / the changelog, **never** left
-as "waiting on PR".
+as "waiting on PR". **Sync installed artifacts:** if a landed merge touched files installed elsewhere
+(`commands/*.md` symlinked into `~/.claude/commands/`), run `git -C <main-checkout> pull --ff-only` now —
+a stale checkout leaves every project running the old version.
 
 **1. Changelog** — in the project `CLAUDE.md` `## Changelog`: one line per milestone (`| YYYY-MM-DD | gist |`).
 Don't retell details (they live in git/PR); keep only the last few here, older ones in the on-demand archive.
