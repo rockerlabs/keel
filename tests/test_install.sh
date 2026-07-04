@@ -27,6 +27,15 @@ check_contains "re-run preserves the user edit" "$(cat "$HOME/.claude/CLAUDE.md"
 check_contains "re-run leaves files untouched" "$OUT" "left untouched"
 check_absent "no foreign-core nag on a Keel-derived CLAUDE.md" "$OUT" "NOT merged in"
 
+# a DRIFTED Keel-owned file (FRAMEWORK) on a non-interactive re-run: never overwritten without a yes, but
+# flagged loudly with the cp to run (unlike user-owned files, which stay silent). No TTY here → WARN path,
+# and it must never block on input. A user-owned file edited the same way still stays silent + preserved.
+printf '\nDRIFTED-FRAMEWORK\n' >> "$HOME/.claude/FRAMEWORK.md"
+run "$install"
+check_status "drifted Keel-owned file → exit 0 (no hang)" 0 "$STATUS"
+check_contains "warns the installed FRAMEWORK differs" "$OUT" "FRAMEWORK.md differs from Keel's shipped version"
+check_contains "preserves the drifted copy (no clobber without a yes)" "$(cat "$HOME/.claude/FRAMEWORK.md")" "DRIFTED-FRAMEWORK"
+
 # --no-hooks into a custom --home
 alt="$SANDBOX/alt-home"
 run "$install" --home "$alt" --no-hooks

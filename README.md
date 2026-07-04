@@ -18,7 +18,9 @@ thrown away every time the tools change.
 
 **1. Install.** Copies the small always-on file into `~/.claude`, turns on the **secret-guard** check
 (stops key-shaped secrets from being committed or pushed), and adds the `/wrap` `/go` `/init-project`
-commands — **without overwriting any file you already have.** (Needs `bash` + `git` — nothing else.)
+commands — **without ever touching a file you own.** (A re-run offers to update Keel's *own* core files if
+they've drifted, asking first — see [getting-started](docs/getting-started.md#1-install). Needs `bash` +
+`git` — nothing else.)
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
@@ -50,7 +52,7 @@ to you" → [docs/getting-started.md](docs/getting-started.md).
 > get it running on another tool, a quick way to share how.
 
 > **Already have your own conventions?** Keel isn't all-or-nothing, and it won't fight your setup —
-> `install.sh` never overwrites a file you have. But you probably don't want the whole thing on top of a
+> `install.sh` never touches a file you own. But you probably don't want the whole thing on top of a
 > system you've already tuned. Take only what's useful:
 >
 > - **The ideas.** Read [`PRINCIPLES.md`](PRINCIPLES.md) and [`FRAMEWORK.md`](FRAMEWORK.md) and lift what
@@ -121,7 +123,7 @@ when needed; the tools never enter the assistant's memory at all. That's the who
 | `templates/INSTANCE.md` | Your private personal layer (hardware, which models you can use, your list of projects). |
 | `templates/project-CLAUDE.md` | A template for per-project notes. |
 | `templates/LEARNINGS.md` | A holding place for workflow tips that aren't yet worth a full rule (between "make it a rule" and "drop it"). |
-| `install.sh` | One-command setup: copies the always-on files into your config folder and turns on the secret-guard check. Safe to re-run — never overwrites your files. |
+| `install.sh` | One-command setup: copies the always-on files into your config folder and turns on the secret-guard check. Safe to re-run — never touches your own files; offers to update Keel's own core if it's drifted, asking first. |
 | `tools/doctor.sh` | Checks a project's setup for missing pieces. |
 | `tools/public-audit.sh` | Before you make a private repo public, scans the files **and the git history** for things that shouldn't leak. A committer identity or a declared private token is a hard stop; names, emails and home paths in file content are flagged for you to review. |
 | `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
