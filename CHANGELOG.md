@@ -8,6 +8,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+- `install.sh` — a re-run now **keeps Keel's own core in sync** instead of leaving every already-installed
+  copy frozen at its first-install version. Files you own (`CLAUDE.md`, `INSTANCE.md`, `LEARNINGS.md`) are
+  still never touched; Keel-owned files (`FRAMEWORK.md`, `PRINCIPLES.md`, `commands/*.md`) that have
+  **drifted** from the shipped version are offered for update — an interactive `y/N` prompt (default *no*,
+  so a copy is never lost without a yes) when run from a terminal, or a WARN with the exact `cp` to run when
+  non-interactive (`curl|sh`, CI). The non-interactive path never blocks on input. Previously a `git pull`
+  in the clone plus a re-run delivered no updates at all to the installed commands or core; now it does.
+  `README.md` + `docs/getting-started.md` reworded from the old blanket "never overwrites a file you already
+  have" to this accurate split (your files vs Keel's own).
+- `commands/wrap.md` — the step-0 *"sync installed artifacts"* sub-step dropped a maintainer-specific detail
+  (`commands/*.md` symlinked into `~/.claude/commands/`, a `git -C <main-checkout> pull`) that both leaked a
+  personal-setup mechanism into the tool-independent product and was inaccurate for adopters (Keel *copies*
+  commands, it doesn't symlink, and the bootstrap clone leaves no persistent checkout to pull). It now points
+  at the tool-independent "re-run the install/sync step" — which the `install.sh` change above makes real.
+
 ## [0.3.1] — 2026-06-30
 
 Audit-hardening & documentation release. A 4-report external audit drove a fix to a real under-reporting

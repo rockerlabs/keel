@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # install — one-command bootstrap for Keel into your harness home.
 #
-# Copies the durable core into the harness home WITHOUT clobbering any file you already have,
-# wires the secret-guard git hook machine-global (never over an existing hooksPath), seeds a
-# private INSTANCE.md, and verifies the result. Re-running only fills gaps and re-verifies.
+# Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md, LEARNINGS.md)
+# are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, the commands) is offered for update on a
+# re-run when the installed copy has drifted — interactively (y/N, default no) when run from a terminal,
+# else a WARN with the exact cp to run. Wires the secret-guard git hook machine-global (never over an
+# existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
 #
 # Usage:
 #   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
@@ -18,9 +20,11 @@ usage() {
   cat <<'EOF'
 install — one-command bootstrap for Keel into your harness home.
 
-Copies the durable core into the harness home WITHOUT clobbering any file you already
-have, wires the secret-guard git hook machine-global (never over an existing hooksPath),
-seeds a private INSTANCE.md, and verifies the result. Re-running only fills gaps.
+Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md,
+LEARNINGS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, commands) is
+offered for update on a re-run when it has drifted — interactively (y/N, default no) from
+a terminal, else a WARN with the cp to run. Wires the secret-guard git hook machine-global
+(never over an existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
 
 Usage:
   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
@@ -50,17 +54,53 @@ done
 echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
-# 1. Durable core — copy each file only if the destination is absent (never clobber).
+# 1. Durable core.
+# atomic_copy — write via a temp sibling + rename, so a dest is never left half-written.
+atomic_copy() {
+  cp "$1" "$2.keeltmp.$$" && mv -f "$2.keeltmp.$$" "$2"
+}
+
+# copy_gap — for USER-owned files (CLAUDE.md, INSTANCE.md, LEARNINGS.md): copy only if the destination is
+# absent, never clobber. The user edits these (placeholders, private data), so a re-run must preserve them.
 copy_gap() {
   local src="$1" dest="$2"
   if [ -f "$dest" ]; then
     echo "  =    $(basename "$dest") exists (left untouched)"
   elif [ -f "$src" ]; then
-    cp "$src" "$dest.keeltmp.$$" && mv -f "$dest.keeltmp.$$" "$dest"   # atomic: no half-written dest
+    atomic_copy "$src" "$dest"
     echo "  +    $(basename "$dest")"
   else
     echo "  !    source missing: $src" >&2
     return 1
+  fi
+}
+
+# sync_product — for KEEL-owned core (FRAMEWORK, PRINCIPLES, commands/*): these are canonical Keel content,
+# so a re-run after `git pull` SHOULD deliver the newer version. We still never clobber silently: if the
+# installed copy has drifted (an older release, or you edited it) we ask before overwriting — interactively
+# when a terminal is attached (default no, so your copy is never lost without a yes), else a WARN with the
+# exact cp to run. Non-interactive (curl|sh, CI) never blocks on input: no TTY → WARN path, not a hang.
+sync_product() {
+  local src="$1" dest="$2" name; name="$(basename "$dest")"
+  if [ ! -f "$src" ]; then
+    echo "  !    source missing: $src" >&2
+    return 1
+  elif [ ! -f "$dest" ]; then
+    atomic_copy "$src" "$dest"
+    echo "  +    $name"
+  elif cmp -s "$src" "$dest"; then
+    echo "  =    $name (up to date)"
+  elif [ -t 0 ]; then
+    echo "  ~    $name differs from Keel's shipped version — an older release, or you edited it."
+    printf "       Overwrite your copy with the shipped version? [y/N] "
+    local reply=""; read -r reply || reply=""
+    case "$reply" in
+      [yY]|[yY][eE][sS]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
+      *)                 echo "  =    $name left untouched (update later:  cp \"$src\" \"$dest\")" ;;
+    esac
+  else
+    echo "  !    $name differs from Keel's shipped version — left untouched."
+    echo "       Update when ready:  cp \"$src\" \"$dest\""
   fi
 }
 
@@ -72,11 +112,13 @@ if [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLA
   foreign_core=1
 fi
 
+# User-owned (never clobber) …
 copy_gap "$root/templates/CLAUDE.md"    "$HOME_DIR/CLAUDE.md"
 copy_gap "$root/templates/INSTANCE.md"  "$HOME_DIR/INSTANCE.md"
 copy_gap "$root/templates/LEARNINGS.md" "$HOME_DIR/LEARNINGS.md"
-copy_gap "$root/FRAMEWORK.md"           "$HOME_DIR/FRAMEWORK.md"
-copy_gap "$root/PRINCIPLES.md"          "$HOME_DIR/PRINCIPLES.md"
+# … Keel-owned (offered for update on a drifted re-run).
+sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
+sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
 
 # Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
@@ -89,7 +131,7 @@ if [ -d "$root/commands" ]; then
     # gate would hand adopters an inert feature, so skip it — it stays in the repo for the maintainer +
     # downstream consumers. (Intentional; a future audit should read this as scoped, not half-shipped.)
     case "$(basename "$cmd")" in polish.md) continue ;; esac
-    copy_gap "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
+    sync_product "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
   done
 fi
 

@@ -27,10 +27,9 @@ are filled in. That's the loop — run `/keel-setup` again in each new project y
 > **`/keel-setup` not showing up in Claude Code?** New commands appear only when a session **starts** —
 > open a **new Claude Code session** after installing, then type `/` and check that `keel-setup` is listed.
 >
-> The `keel-` prefix keeps it from clashing with a `/setup` you might already have. (`install.sh` never
-> overwrites a command you already have under *any* name — it prints `=  <name> exists (left untouched)`;
-> if that happens, just follow [`commands/keel-setup.md`](../commands/keel-setup.md) by hand — it's a short
-> prompt.)
+> The `keel-` prefix keeps it from clashing with a `/setup` you might already have — it installs as
+> `/keel-setup`, a name nothing else uses. If for some reason it isn't wired, just follow
+> [`commands/keel-setup.md`](../commands/keel-setup.md) by hand — it's a short prompt.
 
 > **Rather do it by hand — or want to know exactly what `/keel-setup` fills in?** `/keel-setup` is just the
 > files below, drafted by the assistant from your repo and machine instead of typed by you. The sections
@@ -55,7 +54,10 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 > above. That includes the `/keel-setup` and `/init-project` commands: they call `tools/init-project.sh`,
 > so they need the full clone too — bootstrap installs the commands, not the tool they drive.
 
-`install.sh` is safe to re-run and **never overwrites a file you already have**. It:
+`install.sh` is safe to re-run. It **never touches the files you own** (`CLAUDE.md`, `INSTANCE.md`,
+`LEARNINGS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run offers to update a
+copy that has **drifted** from the shipped version — asking first (default *no*) when run from a terminal,
+or printing the `cp` to run otherwise. It:
 
 - copies the always-on files into your config folder (`~/.claude` by default),
 - adds the commands into `<config>/commands/` (so `/wrap`, `/go`, `/init-project`, … are commands on Claude
