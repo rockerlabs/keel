@@ -147,11 +147,18 @@ check_contains "personal literal → BLOCKED" "$OUT" "BLOCKED"
 run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/absent.rx" "$scan" "$d/f.txt"
 check_status "absent personal file → keys-only, exit 0" 0 "$STATUS"
 
-# a malformed personal ERE must fail CLOSED (exit 2), never silently disable detection
+# a malformed personal ERE must fail CLOSED (exit 2), never silently disable detection.
+# Only observable where the host grep actually REJECTS the ERE — busybox grep accepts an
+# unbalanced '(' and then scans with it consistently, so there is nothing to fail closed on.
 bad="$SANDBOX/bad.rx"
 printf 'unbalanced(\n' > "$bad"
-run env SECRET_SCAN_PERSONAL_FILE="$bad" "$scan" "$d/f.txt"
-check_status "malformed personal regex → exit 2 (fail closed)" 2 "$STATUS"
+rc=0; printf '' | grep -iE 'unbalanced(' >/dev/null 2>&1 || rc=$?
+if [ "$rc" -ge 2 ]; then
+  run env SECRET_SCAN_PERSONAL_FILE="$bad" "$scan" "$d/f.txt"
+  check_status "malformed personal regex → exit 2 (fail closed)" 2 "$STATUS"
+else
+  pass "malformed personal regex → host grep accepts the ERE; fail-closed not applicable"
+fi
 
 # staged text: the pre-commit path sees a personal literal in an added line
 repo="$(new_repo)"
