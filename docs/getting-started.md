@@ -117,7 +117,9 @@ tools/register-project.sh ~/code/projA ~/code/projB   # one line each, safe to r
 - **Per-project notes.** `cd` into a project and its `CLAUDE.md` loads — the assistant knows the stack and
   conventions without being told.
 - **The git check runs on its own.** A key-shaped secret is blocked on commit/push whether or not anyone
-  remembered to look.
+  remembered to look. Opt-in, it also blocks your *personal data* (real name, drive labels, emails,
+  serials — even inside UTF-16 binary files): copy `tools/secret-guard/secret-scan-personal.example`
+  to `~/.claude/secret-scan-personal` and fill in your literals; the file stays local, never committed.
 - **Load-only-when-needed files.** The assistant pulls in `FRAMEWORK`/`PRINCIPLES` only when a task needs
   them — you don't carry them in every session's memory.
 - **Commands.** `/wrap`, `/go`, `/init-project`, `/global-review`, `/backlog` are ready-made prompts.

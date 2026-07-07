@@ -8,6 +8,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- `secret-guard` — a second detector class: **personal data**. Operator-specific literals (real name,
+  device serials, personal drive labels, personal emails) are read as EREs from a **local, never-committed**
+  file (`~/.claude/secret-scan-personal`, override `$SECRET_SCAN_PERSONAL_FILE`; starter:
+  `tools/secret-guard/secret-scan-personal.example`) and matched case-insensitively. Both classes now also
+  scan **binary content** — staged binary files, binary blobs in a pushed range, and binary FILE arguments
+  are decoded (NUL-strip with no dependencies; iconv UTF-16LE/BE when available for non-ASCII literals;
+  raw-printable) — a real name inside a UTF-16 binary fixture is invisible to a plain-text grep, which is
+  exactly how such a leak shipped in practice. A malformed personal ERE **fails closed** (exit 2) instead
+  of silently disabling detection. Absent file → key-only behavior, exactly as before.
+
+### Fixed
+- `secret-guard` — the `--range` fast path could **intermittently miss a real secret** (the macOS CI
+  flake): `grep -q` exits on the first match, the still-writing `git cat-file --batch` takes SIGPIPE, and
+  under `pipefail` the whole pipeline reads as failed — the hit was discarded and the push scanned clean,
+  timing/buffer-dependent. The fast check now uses `grep -c`, which consumes the whole stream, making the
+  result deterministic; a regression test plants a key early in a large pushed range.
+
 ### Changed
 - `install.sh` — a re-run now **keeps Keel's own core in sync** instead of leaving every already-installed
   copy frozen at its first-install version. Files you own (`CLAUDE.md`, `INSTANCE.md`, `LEARNINGS.md`) are
