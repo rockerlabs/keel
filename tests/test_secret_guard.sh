@@ -126,4 +126,76 @@ printf '%s\r\n' "$(key 'ghp_' 'A')" > "$d/.secret-scan-allow"   # CRLF line endi
 run_in "$d" "$scan" f.txt
 check_status "CRLF-saved allowlist still suppresses → exit 0" 0 "$STATUS"
 
+# =================================================================================================
+# --- personal-data class: operator literals from $SECRET_SCAN_PERSONAL_FILE ----------------------
+pfile="$SANDBOX/personal.rx"
+printf '# operator literals (test fixture)\nJane[[:space:]]+Q[[:space:]]+Public\nMy[ _-]?Backup[ _-]?Drive\n' > "$pfile"
+
+# blocks a personal literal in FILE mode, case-insensitively
+d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
+printf 'author: jane q public\n' > "$d/f.txt"
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan" "$d/f.txt"
+check_status "personal literal (case-insensitive) → exit 1" 1 "$STATUS"
+check_contains "personal literal → BLOCKED" "$OUT" "BLOCKED"
+
+# the same content with NO personal file → only the key class runs → clean
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/absent.rx" "$scan" "$d/f.txt"
+check_status "absent personal file → keys-only, exit 0" 0 "$STATUS"
+
+# a malformed personal ERE must fail CLOSED (exit 2), never silently disable detection
+bad="$SANDBOX/bad.rx"
+printf 'unbalanced(\n' > "$bad"
+run env SECRET_SCAN_PERSONAL_FILE="$bad" "$scan" "$d/f.txt"
+check_status "malformed personal regex → exit 2 (fail closed)" 2 "$STATUS"
+
+# staged text: the pre-commit path sees a personal literal in an added line
+repo="$(new_repo)"
+printf 'backup goes to my backup drive\n' > "$repo/notes.txt"
+git -C "$repo" add notes.txt
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan"
+check_status "staged personal literal → exit 1" 1 "$STATUS"
+
+# staged BINARY: a personal literal hidden as UTF-16LE inside a binary file — the class a
+# plain-text grep cannot see (e.g. a real name inside a binary media-database fixture)
+utf16le() { local s="$1" i; for ((i=0; i<${#s}; i++)); do printf '%s\000' "${s:i:1}"; done; }
+repo="$(new_repo)"
+{ printf '\000\000padding\000\000'; utf16le "made by Jane Q Public"; printf '\000\000'; } > "$repo/fixture.bin"
+git -C "$repo" add fixture.bin
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan"
+check_status "staged UTF-16LE binary with personal literal → exit 1" 1 "$STATUS"
+check_contains "binary hit names the file" "$OUT" "fixture.bin"
+
+# --range: a personal literal in a pushed commit range is blocked
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+pbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'shot on My Backup Drive\n' > "$repo/b.txt"; git -C "$repo" add b.txt; git -C "$repo" commit -qm withpii
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan" --range "$pbase..HEAD"
+check_status "--range blocks a personal literal" 1 "$STATUS"
+
+# --range: a UTF-16 binary blob introduced by the range is decoded and blocked
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+pbase="$(git -C "$repo" rev-parse HEAD)"
+utf16le "Jane Q Public archive" > "$repo/lib.bin"
+git -C "$repo" add lib.bin; git -C "$repo" commit -qm binpii
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan" --range "$pbase..HEAD"
+check_status "--range blocks a UTF-16 binary personal literal" 1 "$STATUS"
+
+# --- determinism regression: a key EARLY in a large pushed range must always block ---------------
+# The old fast path used `grep -q`, whose first-match exit SIGPIPE'd the still-writing
+# `git cat-file --batch`; under pipefail the whole pipeline then read as failed and the hit was
+# intermittently discarded (the macOS CI flake). A small secret-bearing blob plus a large blob in
+# the same range locks the fixed (`grep -c`, stream fully consumed) behavior.
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+pbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/leak.txt"
+git -C "$repo" add leak.txt; git -C "$repo" commit -qm addkey
+awk 'BEGIN{for(i=0;i<40000;i++) print "padding line", i}' > "$repo/big.txt"
+git -C "$repo" add big.txt; git -C "$repo" commit -qm bigblob
+run_in "$repo" "$scan" --range "$pbase..HEAD"
+check_status "key early in a large range → deterministic exit 1" 1 "$STATUS"
+check_contains "large-range scan names the leak" "$OUT" "leak.txt"
+
 summary

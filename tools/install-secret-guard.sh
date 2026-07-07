@@ -27,6 +27,8 @@ case "${1:-}" in
     git config --global core.hooksPath "$dir"
     echo "secret-guard: wired machine-global at $dir (git config --global core.hooksPath)"
     echo "Note: a repo with its own core.hooksPath overrides this — vendor into it directly."
+    echo "Optional: block YOUR personal data (name/drives/emails) too — copy"
+    echo "  $src/secret-scan-personal.example → ~/.claude/secret-scan-personal and fill it in."
     ;;
   -h|--help)
     cat <<'EOF'

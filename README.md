@@ -17,7 +17,8 @@ thrown away every time the tools change.
 ## Quickstart
 
 **1. Install.** Copies the small always-on file into `~/.claude`, turns on the **secret-guard** check
-(stops key-shaped secrets from being committed or pushed), and adds the `/wrap` `/go` `/init-project`
+(stops key-shaped secrets — and, opt-in, your own personal data — from being committed or pushed),
+and adds the `/wrap` `/go` `/init-project`
 commands — **without ever touching a file you own.** (A re-run offers to update Keel's *own* core files if
 they've drifted, asking first — see [getting-started](docs/getting-started.md#1-install). Needs `bash` +
 `git` — nothing else.)
@@ -58,7 +59,7 @@ to you" → [docs/getting-started.md](docs/getting-started.md).
 > - **The ideas.** Read [`PRINCIPLES.md`](PRINCIPLES.md) and [`FRAMEWORK.md`](FRAMEWORK.md) and lift what
 >   fits into your *own* `CLAUDE.md`. Load-a-little-always, durable-vs-disposable, build-from-friction port
 >   to any setup — you don't need Keel's files to use them.
-> - **The standalone tools.** `secret-guard` (blocks key-shaped secrets on every commit/push) and
+> - **The standalone tools.** `secret-guard` (blocks key-shaped secrets — plus, opt-in, your personal data — on every commit/push) and
 >   `public-audit` (flags personal/secret leaks before a repo goes public) are plain Bash + git, and run
 >   next to whatever you already use — no Keel "core" required: `tools/install-secret-guard.sh --global`,
 >   `tools/public-audit.sh <repo>`.
@@ -126,7 +127,7 @@ when needed; the tools never enter the assistant's memory at all. That's the who
 | `install.sh` | One-command setup: copies the always-on files into your config folder and turns on the secret-guard check. Safe to re-run — never touches your own files; offers to update Keel's own core if it's drifted, asking first. |
 | `tools/doctor.sh` | Checks a project's setup for missing pieces. |
 | `tools/public-audit.sh` | Before you make a private repo public, scans the files **and the git history** for things that shouldn't leak. A committer identity or a declared private token is a hard stop; names, emails and home paths in file content are flagged for you to review. |
-| `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …), not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
+| `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push — and, opt-in, your personal data (name, drive labels, emails, serials) listed in a local never-committed file, caught even inside UTF-16 binary fixtures. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …) plus your listed literals, not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. |
 | `tools/init-project.sh` | Sets up a new project with the basics in place, and adds it to your `INSTANCE.md` project list. |
 | `tools/register-project.sh` | Adds existing project folder(s) to the `INSTANCE.md` project list — one line each, safe to re-run: `register-project.sh <path>…`. |
 | `commands/` | Commands you can run: `/keel-setup` (lets the assistant finish setup — fills your machine details and drafts a project's `CLAUDE.md` from its code), `/init-project` (set up a project), `/go` (start a backlog task on its own), `/wrap` (close out a session — tidy up notes, changelog, backlog), `/global-review` (review across all projects), `/backlog` (show the backlog). |
@@ -142,7 +143,8 @@ behaves — loaded text nudges it, but nothing forces it to follow, and it won't
 **You are the trigger.** Real out-of-the-box behavior change comes only from the tools. So:
 
 **Runs by itself — works without you remembering:**
-- `secret-guard` — blocks a key-shaped secret when you commit or push (a git check; fires on its own).
+- `secret-guard` — blocks a key-shaped secret, or your listed personal data, when you commit or push
+  (a git check; fires on its own).
 - `install` — sets up the core and the check in one command (run it; it's done).
 - `doctor` — tells you what's missing when you ask (run it; it answers).
 - `public-audit` — scans files and git history for personal leaks before you go public (run it; it answers).
