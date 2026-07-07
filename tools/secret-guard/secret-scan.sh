@@ -92,16 +92,15 @@ records=""
 # a file (or blob) is binary if it contains a NUL byte
 is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
 
-# match a text stream on stdin against both classes; optional extra grep flag (e.g. -n) via $1
-match_text() {  # $1 = extra grep flags ('' for none)
-  local flags="$1" buf
-  buf="$(cat)"
+# match a text FILE against both classes; optional extra grep flag (e.g. -n) via $1
+match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan
+  local flags="$1" f="$2"
   {
     # shellcheck disable=SC2086  # $flags intentionally word-split ('' → no extra flag)
-    printf '%s\n' "$buf" | grep -aE $flags "$joined" 2>/dev/null || true
+    grep -aE $flags "$joined" "$f" 2>/dev/null || true
     if [ -n "$personal" ]; then
       # shellcheck disable=SC2086
-      printf '%s\n' "$buf" | grep -aiE $flags "$personal" 2>/dev/null || true
+      grep -aiE $flags "$personal" "$f" 2>/dev/null || true
     fi
   } | LC_ALL=C sort -u
 }
@@ -130,17 +129,21 @@ emit_blob() {  # $1 = record label (path)
   done <<< "$hits"
 }
 
-emit_file() {
-  # $1 = path on disk; scan its current content (text via grep, binary via the decode pass)
-  local f="$1"
-  [ -f "$f" ] || return 0
-  if is_binary_file "$f"; then
-    emit_blob "$f" < "$f"
-    return 0
+# route one unit of content (stdin) by type: binary → the decode pass, text → line matching with
+# line numbers. Spools stdin to a temp file; callers must feed it via redirection or process
+# substitution (NOT a pipe) so the records+= appends run in this shell.
+emit_stream() {  # $1 = record label (path)
+  local label="$1" stmp
+  stmp="$(mktemp)"
+  cat > "$stmp"
+  if is_binary_file "$stmp"; then
+    emit_blob "$label" < "$stmp"
+  else
+    while IFS= read -r line; do
+      records+="$label:$line"$'\n'
+    done < <(match_text -n "$stmp")
   fi
-  while IFS= read -r line; do
-    [ -n "$line" ] && records+="$f:$line"$'\n'
-  done < <(match_text -n < "$f")
+  rm -f "$stmp"
 }
 
 # scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
@@ -148,12 +151,15 @@ emit_file() {
 # not the file — a misleading figure. The path + matched content is what's actionable.
 emit_diff() {
   local path="$1"; shift   # remaining args = git diff args
+  local dtmp
+  dtmp="$(mktemp)"
+  git diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null \
+    | grep -E '^\+' | grep -vE '^\+\+\+' \
+    | sed 's/^\+//' > "$dtmp" || true
   while IFS= read -r hit; do
-    [ -n "$hit" ] && records+="$path:$hit"$'\n'
-  done < <(git diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null \
-            | grep -E '^\+' | grep -vE '^\+\+\+' \
-            | sed 's/^\+//' \
-            | match_text '')
+    records+="$path:$hit"$'\n'
+  done < <(match_text '' "$dtmp")
+  rm -f "$dtmp"
 }
 
 mode="${1:-staged}"
@@ -180,30 +186,30 @@ case "$mode" in
     blobs="$(git rev-list --objects $rng 2>/dev/null \
               | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null \
               | awk '$1=="blob"' || true)"
-    range_hits=0
-    if [ -n "$blobs" ]; then
-      stream_blobs() {
-        printf '%s\n' "$blobs" | awk '{print $2}' \
-          | git cat-file --batch 2>/dev/null | LC_ALL=C tr -d '\000'
-      }
-      range_hits="$(stream_blobs | grep -acE "$joined" || true)"
-      if [ "${range_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
-        range_hits="$(stream_blobs | grep -aciE "$personal" || true)"
-      fi
+    range_hits=1                                    # default: run the detailed scan
+    if [ -z "$blobs" ]; then
+      range_hits=0
+    else
+      case "$personal" in
+        *[![:ascii:]]*) ;;  # a non-ASCII personal literal (e.g. a Cyrillic name) is invisible to
+                            # the NUL-strip fast view of UTF-16 bytes — skip the fast path and let
+                            # the detailed scan's iconv pass see it
+        *)
+          rtmp="$(mktemp)"
+          printf '%s\n' "$blobs" | awk '{print $2}' \
+            | git cat-file --batch 2>/dev/null | LC_ALL=C tr -d '\000' > "$rtmp"
+          range_hits="$(grep -acE "$joined" "$rtmp" || true)"
+          if [ "${range_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
+            range_hits="$(grep -aciE "$personal" "$rtmp" || true)"
+          fi
+          rm -f "$rtmp"
+          ;;
+      esac
     fi
     if [ "${range_hits:-0}" -gt 0 ]; then
       while IFS=' ' read -r _otype osha opath; do
         [ -n "$osha" ] || continue
-        btmp="$(mktemp)"
-        git cat-file blob "$osha" > "$btmp" 2>/dev/null || { rm -f "$btmp"; continue; }
-        if is_binary_file "$btmp"; then
-          emit_blob "$opath" < "$btmp"
-        else
-          while IFS= read -r hit; do
-            [ -n "$hit" ] && records+="$opath:$hit"$'\n'
-          done < <(match_text -n < "$btmp")
-        fi
-        rm -f "$btmp"
+        emit_stream "$opath" < <(git cat-file blob "$osha" 2>/dev/null)
       done <<< "$blobs"
     fi
     ;;
@@ -211,14 +217,10 @@ case "$mode" in
     while IFS= read -r f; do
       [ -n "$f" ] && emit_diff "$f" --cached
     done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
-    # binary staged files have no text diff (numstat shows "- -") — decode and scan their staged
-    # blobs. Via a temp file, NOT a pipe: emit_blob must run in this shell to append to $records.
+    # binary staged files have no text diff (numstat shows "- -") — decode and scan their staged blobs
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      btmp="$(mktemp)"
-      git show ":$f" > "$btmp" 2>/dev/null || { rm -f "$btmp"; continue; }
-      emit_blob "$f" < "$btmp"
-      rm -f "$btmp"
+      emit_stream "$f" < <(git show ":$f" 2>/dev/null)
     done < <(git -c core.quotePath=false diff --cached --numstat --diff-filter=ACM 2>/dev/null \
              | awk -F'\t' '$1=="-" && $2=="-"{print $3}')
     ;;
@@ -228,7 +230,7 @@ case "$mode" in
   *)
     for f in "$@"; do
       [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-      emit_file "$f"
+      emit_stream "$f" < "$f"
     done
     ;;
 esac
