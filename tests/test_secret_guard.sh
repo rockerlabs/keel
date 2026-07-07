@@ -6,6 +6,11 @@
 
 scan="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 
+# Point the personal-literals file at a nonexistent sandbox path by default, so a real
+# ~/.claude/secret-scan-personal on the dev machine can never leak into these tests even if
+# HOME isolation ever regresses. Personal-class tests override this per-invocation with env.
+export SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent"
+
 # --- block: every key-shaped pattern, scanned as a FILE -----------------------------------------
 block_file() {  # desc content
   local d; d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"

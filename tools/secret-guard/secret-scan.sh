@@ -56,6 +56,13 @@ PATTERNS=(
 ALLOW_FILE=".secret-scan-allow"
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 
+# All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
+# a hook that runs on every commit must not litter $TMPDIR with orphans.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # Build a combined regex (class 1, case-sensitive).
 joined=""
 for p in "${PATTERNS[@]}"; do
@@ -67,7 +74,8 @@ personal=""
 if [ -f "$PERSONAL_FILE" ]; then
   while IFS= read -r _t || [ -n "$_t" ]; do
     _t="${_t%$'\r'}"                                              # tolerate CRLF
-    _t="$(printf '%s' "$_t" | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+    # BRE on purpose — the repo's sed usage stays POSIX-portable (busybox included), no -E
+    _t="$(printf '%s' "$_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
     case "$_t" in
       ''|\#*) ;;
       *)      personal="${personal:+$personal|}$_t" ;;
@@ -109,7 +117,7 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan
 # classes, and emit "label:(binary) MATCH" records
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec hits
-  tmp="$(mktemp)"; dec="$(mktemp)"
+  tmp="$(mktemp "$SCRATCH/blob.XXXXXX")"; dec="$(mktemp "$SCRATCH/blob.XXXXXX")"
   cat > "$tmp"
   {
     LC_ALL=C tr -d '\000' < "$tmp"; echo                          # ASCII-range UTF-16, no deps
@@ -134,7 +142,7 @@ emit_blob() {  # $1 = record label (path)
 # substitution (NOT a pipe) so the records+= appends run in this shell.
 emit_stream() {  # $1 = record label (path)
   local label="$1" stmp
-  stmp="$(mktemp)"
+  stmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
   cat > "$stmp"
   if is_binary_file "$stmp"; then
     emit_blob "$label" < "$stmp"
@@ -152,7 +160,7 @@ emit_stream() {  # $1 = record label (path)
 emit_diff() {
   local path="$1"; shift   # remaining args = git diff args
   local dtmp
-  dtmp="$(mktemp)"
+  dtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
   git diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null \
     | grep -E '^\+' | grep -vE '^\+\+\+' \
     | sed 's/^\+//' > "$dtmp" || true
@@ -195,7 +203,7 @@ case "$mode" in
                             # the NUL-strip fast view of UTF-16 bytes — skip the fast path and let
                             # the detailed scan's iconv pass see it
         *)
-          rtmp="$(mktemp)"
+          rtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
           printf '%s\n' "$blobs" | awk '{print $2}' \
             | git cat-file --batch 2>/dev/null | LC_ALL=C tr -d '\000' > "$rtmp"
           range_hits="$(grep -acE "$joined" "$rtmp" || true)"
