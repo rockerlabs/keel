@@ -7,6 +7,11 @@
 > session — so it stops re-learning your project, your conventions, and the decisions you already made —
 > plus a few small Bash tools that block secrets and check your setup. Works with any AI tool, not just
 > Claude. About 10 minutes to set up.
+>
+> **"Isn't this just a well-written CLAUDE.md?"** Mostly, yes — and that's the point: one that's already
+> written, installed in one command, tested on CI across three platforms, plus the guard rails a text
+> file can't give you — a git hook that blocks secrets and personal data, and an audit for taking a
+> repo public.
 
 **AI assistants start every session from zero.** Each new chat re-figures-out your project, your habits,
 and choices you already settled — and if you paste in everything to make up for it, the assistant drowns in
@@ -47,6 +52,26 @@ just review what it drafts. (Still don't see `/keel-setup`? You're in an old ses
 That's the whole loop. Longer walk-through, other AI tools, and the honest "what runs by itself vs what's up
 to you" → [docs/getting-started.md](docs/getting-started.md).
 
+## Just want the git hook?
+
+The two safety tools work standalone — plain Bash + git, no Keel core, no config files, and they never
+enter your assistant's context:
+
+```bash
+git clone https://github.com/rockerlabs/keel.git && cd keel
+tools/install-secret-guard.sh --global   # every repo on this machine, from now on
+```
+
+- **secret-guard** blocks key-shaped secrets (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …) on every commit and
+  push — and, opt-in, **your own personal data** (real name, emails, drive labels, serials) listed in a
+  local never-committed file, caught even inside UTF-16 binary fixtures. It exists because exactly such a
+  leak shipped in practice: test fixtures generated from a real device carried their owner's name, and a
+  plain-text scan couldn't see it.
+- **public-audit** (`tools/public-audit.sh <repo>`) scans a repo's files **and its git history** for
+  personal and secret leaks before you flip it public — committer identities, tokens, names, home paths.
+
+Everything below is optional on top of that.
+
 > **Not using Claude Code?** Keel doesn't depend on it. The ideas, the `tools/`, and the always-on file
 > work with any AI coding tool (Cursor, Aider, Codex, a plain API agent, …). The one Claude-Code-specific
 > bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md) for a short non-Claude setup — and, if you
@@ -59,10 +84,8 @@ to you" → [docs/getting-started.md](docs/getting-started.md).
 > - **The ideas.** Read [`PRINCIPLES.md`](PRINCIPLES.md) and [`FRAMEWORK.md`](FRAMEWORK.md) and lift what
 >   fits into your *own* `CLAUDE.md`. Load-a-little-always, durable-vs-disposable, build-from-friction port
 >   to any setup — you don't need Keel's files to use them.
-> - **The standalone tools.** `secret-guard` (blocks key-shaped secrets — plus, opt-in, your personal data — on every commit/push) and
->   `public-audit` (flags personal/secret leaks before a repo goes public) are plain Bash + git, and run
->   next to whatever you already use — no Keel "core" required: `tools/install-secret-guard.sh --global`,
->   `tools/public-audit.sh <repo>`.
+> - **The standalone tools.** `secret-guard` and `public-audit` run next to whatever you already use —
+>   no Keel "core" required; see [Just want the git hook?](#just-want-the-git-hook) above.
 > - **One piece at a time.** Grab a single `commands/*.md` or a template and ignore the rest.
 >
 > Keel is a method and a few tools you graft onto what you have — not a framework you adopt whole.

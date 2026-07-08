@@ -27,6 +27,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   result deterministic; a regression test plants a key early in a large pushed range.
 
 ### Changed
+- `README.md` — repositioned for a reader who arrives cold: a **"Just want the git hook?"** section right
+  after the Quickstart sells `secret-guard` + `public-audit` as standalone products (one-command install,
+  the real leak story that motivated the personal-data class), and the TL;DR now answers the most likely
+  objection head-on ("isn't this just a well-written CLAUDE.md?"). The "already have your own conventions"
+  block now points at the new section instead of duplicating it. Rationale: the pitch sold the methodology
+  first, but the tools are the demonstrable entry door (project backlog #6 — split the pitch, not the repo).
 - `install.sh` — a re-run now **keeps Keel's own core in sync** instead of leaving every already-installed
   copy frozen at its first-install version. Files you own (`CLAUDE.md`, `INSTANCE.md`, `LEARNINGS.md`) are
   still never touched; Keel-owned files (`FRAMEWORK.md`, `PRINCIPLES.md`, `commands/*.md`) that have
