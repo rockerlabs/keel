@@ -6,6 +6,9 @@
 # Draft zone — capture-first / work-in-progress material kept out of the public repo
 /private/
 
+# Impact event log — session-local, deterministic guardrail-fire events; never committed
+/.keel/
+
 # macOS / IDE / system noise
 .DS_Store
 .idea/

@@ -11,5 +11,9 @@ few events is weaker. Event counts: **guard** guardrail fired · **fire** rule a
 hit · **miss** retrieval miss (promote pressure) · **fric** friction (demote pressure) · **silent**
 always-loaded rules that did not fire (demote candidates; NOT folded into the score).
 
+**guard** is collected deterministically: with `$KEEL_IMPACT_LOG` set, shell tools (e.g. `secret-guard`)
+record each fire to a zero-token event log that `add` auto-ingests — the objective signal never depends on
+the model counting it.
+
 | date | score | conf | guard | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
 |------|-------|------|-------|------|-----|------|------|--------|----------|----------------------|

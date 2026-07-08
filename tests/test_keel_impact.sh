@@ -9,6 +9,10 @@ set -uo pipefail
 TOOL="$REPO_ROOT/tools/keel-impact.sh"
 LEDGER="$SANDBOX/ledger.md"
 export KEEL_IMPACT_LEDGER="$LEDGER"
+# Isolate the event log from the very top: an absent path means the early add cases ingest nothing,
+# so an ambient $KEEL_IMPACT_LOG in the runner's environment can't perturb the derived scores. The
+# auto-ingest section below points this at a real log on purpose.
+export KEEL_IMPACT_LOG="$SANDBOX/no-such-log"
 
 # --- empty state --------------------------------------------------------------------------------
 run bash "$TOOL" rollup
@@ -74,5 +78,37 @@ check_status "unknown flag is rejected" 2 "$STATUS"
 run bash "$TOOL" add --evidence "nothing happened" --gap "none"
 check_status "eventless add is legal" 0 "$STATUS"
 check_contains "eventless add derives em-dash" "$OUT" "derived score —/100"
+
+# --- deterministic event log: producer API + auto-ingest ---------------------------------------
+# A fresh, isolated ledger+log for the ingest cases (the cases above left rows in $LEDGER).
+LEDGER="$SANDBOX/ledger2.md"; LOG="$SANDBOX/events.log"
+export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG"
+
+run bash "$TOOL" event guard secret-guard blocked
+check_status "event records a guard line" 0 "$STATUS"
+check_contains "event confirms the write" "$OUT" "recorded guard event"
+check_contains "log line is well-formed TSV" "$(cat "$LOG")" "guard	secret-guard	blocked"
+
+run bash "$TOOL" event bogus
+check_status "unknown event type is rejected" 2 "$STATUS"
+
+# a second guard event, then a score: the model passes NO --guard; both logged guards are auto-ingested.
+run bash "$TOOL" event guard secret-guard blocked
+run bash "$TOOL" add --fire 1 --evidence "flow" --gap "none"
+check_status "add with pending log events succeeds" 0 "$STATUS"
+check_contains "add reports the auto-ingest" "$OUT" "2 auto-ingested"
+# HELP = 3*2(guard, from log) + 2*1(fire) = 8, COST=0 → score 100; guard col shows the ingested 2
+check_contains "logged guards reach the derived score" "$(cat "$LEDGER")" "| 100 | med | 2 | 1 |"
+check_contains "log is truncated after ingest" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# a subsequent score does NOT re-count the consumed events (no double counting)
+run bash "$TOOL" add --hit 1 --evidence "later" --gap "none"
+check_contains "consumed events are not re-ingested" "$OUT" "from 1 event(s)"
+
+# --no-ingest leaves the log untouched and scores only the model's counts
+run bash "$TOOL" event guard secret-guard blocked
+run bash "$TOOL" add --fire 1 --no-ingest --evidence "manual only" --gap "none"
+check_contains "--no-ingest ignores the log" "$OUT" "from 1 event(s)"
+check_contains "--no-ingest preserves the log" "$(wc -l < "$LOG" | tr -d ' ')" "1"
 
 summary

@@ -210,4 +210,22 @@ run_in "$repo" "$scan" --range "$pbase..HEAD"
 check_status "key early in a large range → deterministic exit 1" 1 "$STATUS"
 check_contains "large-range scan names the leak" "$OUT" "leak.txt"
 
+# --- impact instrumentation: opt-in, metadata-only guardrail-fire event --------------------------
+# When $KEEL_IMPACT_LOG is set, a block records ONE event line — and never the matched secret. Default
+# (env unset) writes nothing, so the hook's behaviour is byte-identical to before.
+imp_dir="$(mktemp -d "$SANDBOX/imp.XXXXXX")"; imp_log="$imp_dir/events.log"
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$imp_dir/leak.txt"
+
+run env KEEL_IMPACT_LOG="$imp_log" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" "$imp_dir/leak.txt"
+check_status "block still exits 1 with impact log on" 1 "$STATUS"
+check_file "block records an impact event" "$imp_log"
+check_contains "event is a guard/secret-guard line" "$(cat "$imp_log")" "	guard	secret-guard	blocked"
+check_absent "event log never contains the secret" "$(cat "$imp_log")" "AKIA"
+
+# default: no env → no side effect
+rm -f "$imp_log"
+run env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" "$imp_dir/leak.txt"
+check_status "block still exits 1 with impact log off" 1 "$STATUS"
+check_nofile "no impact log written when the env is unset" "$imp_log"
+
 summary

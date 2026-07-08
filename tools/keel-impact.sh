@@ -29,6 +29,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LEDGER="${KEEL_IMPACT_LEDGER:-$REPO_ROOT/docs/keel-impact.md}"
+# The deterministic event log: shell tools (secret-guard, …) append cited events here at zero token cost,
+# and `add` auto-ingests them. Default is CWD-relative so a git hook and a wrap in the same repo agree;
+# $KEEL_IMPACT_LOG overrides. Never commit it (keel's .gitignore ignores /.keel/).
+LOG="${KEEL_IMPACT_LOG:-.keel/impact-events.log}"
+EVENT_TYPES="guard fire hit miss friction"
 
 usage() {
   cat <<'EOF'
@@ -37,8 +42,14 @@ keel-impact — derive a session's impact score from counted, cited events and a
 Usage:
   keel-impact.sh add --guard N --fire N --hit N --miss N --friction N [--silent N] \
                      --evidence "..." --gap "..."
+  keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh rollup
   keel-impact.sh -h | --help
+
+`add` auto-ingests any events shell tools recorded in the log ($KEEL_IMPACT_LOG, else .keel/impact-events.log)
+and folds them into the counts — so objective events (e.g. a secret-guard block) reach the score
+deterministically, at zero token cost, without the model counting them. Pass --no-ingest to skip.
+TYPE is one of: guard fire hit miss friction.
 
 Event counts (non-negative integers; each MUST be backed by a citation you gathered per keel-score.md):
   --guard N     guardrail actually blocked/caught something (secret-guard, pre-pr-gate, public-audit)
@@ -71,6 +82,10 @@ few events is weaker. Event counts: **guard** guardrail fired · **fire** rule a
 hit · **miss** retrieval miss (promote pressure) · **fric** friction (demote pressure) · **silent**
 always-loaded rules that did not fire (demote candidates; NOT folded into the score).
 
+**guard** is collected deterministically: with `$KEEL_IMPACT_LOG` set, shell tools (e.g. `secret-guard`)
+record each fire to a zero-token event log that `add` auto-ingests — the objective signal never depends on
+the model counting it.
+
 | date | score | conf | guard | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
 |------|-------|------|-------|------|-----|------|------|--------|----------|----------------------|'
 
@@ -89,6 +104,25 @@ require_count() {
     *[!0-9]* ) printf 'keel-impact: --%s must be a non-negative integer\n' "$name" >&2; exit 2 ;;
     * ) printf '%s' "$val" ;;
   esac
+}
+
+# is $1 one of the recognized event types?
+is_event_type() {
+  case " $EVENT_TYPES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
+# event TYPE [source] [detail] — append one deterministic event to the log. Producers (secret-guard et al.)
+# can also append the TSV line directly; this subcommand is the friendly, validated entry point.
+cmd_event() {
+  local type="${1:-}" source="${2:-}" detail="${3:-}"
+  [ -n "$type" ] || { printf 'keel-impact: event needs a TYPE (%s)\n' "$EVENT_TYPES" >&2; exit 2 ; }
+  is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
+  # strip tabs/newlines so one event is always exactly one well-formed TSV line
+  source="${source//$'\t'/ }"; source="${source//$'\n'/ }"
+  detail="${detail//$'\t'/ }"; detail="${detail//$'\n'/ }"
+  mkdir -p "$(dirname "$LOG")"
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$source" "$detail" >> "$LOG"
+  printf 'keel-impact: recorded %s event to %s\n' "$type" "$LOG"
 }
 
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, retrieval misses) ------
@@ -120,17 +154,18 @@ rollup() {
 }
 
 cmd_add() {
-  local guard="" fire="" hit="" miss="" friction="" silent="" evidence="" gap=""
+  local guard="" fire="" hit="" miss="" friction="" silent="" evidence="" gap="" ingest=1
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --guard)    guard="${2:?}";    shift 2 ;;
-      --fire)     fire="${2:?}";     shift 2 ;;
-      --hit)      hit="${2:?}";      shift 2 ;;
-      --miss)     miss="${2:?}";     shift 2 ;;
-      --friction) friction="${2:?}"; shift 2 ;;
-      --silent)   silent="${2:?}";   shift 2 ;;
-      --evidence) evidence="${2:?}"; shift 2 ;;
-      --gap)      gap="${2:?}";      shift 2 ;;
+      --guard)     guard="${2:?}";    shift 2 ;;
+      --fire)      fire="${2:?}";     shift 2 ;;
+      --hit)       hit="${2:?}";      shift 2 ;;
+      --miss)      miss="${2:?}";     shift 2 ;;
+      --friction)  friction="${2:?}"; shift 2 ;;
+      --silent)    silent="${2:?}";   shift 2 ;;
+      --evidence)  evidence="${2:?}"; shift 2 ;;
+      --gap)       gap="${2:?}";      shift 2 ;;
+      --no-ingest) ingest=0;          shift 1 ;;
       *) printf 'keel-impact: unknown flag %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
   done
@@ -141,6 +176,25 @@ cmd_add() {
   miss="$(require_count miss "$miss")"
   friction="$(require_count friction "$friction")"
   silent="$(require_count silent "$silent")"
+
+  # --- auto-ingest deterministic events the shell layer recorded (zero-token, portable) -----------
+  # Fold each logged event type into the model-supplied counts, then clear the log so events are never
+  # double-counted by a later score. Objective events (a secret-guard block) thus reach the score without
+  # the model counting them — and cannot be under- or over-stated by it.
+  local ingested=0 t n
+  if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
+    for t in $EVENT_TYPES; do
+      n="$(awk -F'\t' -v ty="$t" '$2==ty{c++} END{print c+0}' "$LOG")"
+      case "$t" in
+        guard)    guard=$(( guard + n )) ;;
+        fire)     fire=$(( fire + n )) ;;
+        hit)      hit=$(( hit + n )) ;;
+        miss)     miss=$(( miss + n )) ;;
+        friction) friction=$(( friction + n )) ;;
+      esac
+      ingested=$(( ingested + n ))
+    done
+  fi
 
   # --- derive the score from the events (the whole point: computed, never asserted) ---------------
   local help cost denom score ev_count conf
@@ -169,13 +223,19 @@ cmd_add() {
   printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$today" "$score" "$conf" "$guard" "$fire" "$hit" "$miss" "$friction" "$silent" "$ev" "$gp" >> "$LEDGER"
 
-  printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s) — HELP=%d COST=%d; appended to %s\n' \
-    "$score" "$conf" "$ev_count" "$help" "$cost" "$LEDGER"
+  # Only now that the row is durably appended is it safe to consume the log — so a failed write never
+  # loses events. Truncate (not delete) so the path and any producer's open append still work.
+  if [ "$ingested" -gt 0 ]; then : > "$LOG"; fi
+
+  printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s)' "$score" "$conf" "$ev_count"
+  [ "$ingested" -gt 0 ] && printf ' (%d auto-ingested from %s)' "$ingested" "$LOG"
+  printf ' — HELP=%d COST=%d; appended to %s\n' "$help" "$cost" "$LEDGER"
   rollup
 }
 
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
+  event)          shift; cmd_event "$@" ;;
   rollup)         rollup ;;
   -h|--help|"")   usage ;;
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;

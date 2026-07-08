@@ -289,6 +289,13 @@ while IFS= read -r rec; do
 done <<< "$records"
 
 if [ "$found" = 1 ]; then
+  # Impact instrumentation (opt-in, metadata only): when $KEEL_IMPACT_LOG is set, record that a guardrail
+  # fired so keel-impact can auto-ingest it — a deterministic, zero-token signal. NEVER the matched secret;
+  # only the fact of a block. Default (env unset) writes nothing, so the hook's behaviour is unchanged.
+  if [ -n "${KEEL_IMPACT_LOG:-}" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard secret-guard blocked \
+      >> "$KEEL_IMPACT_LOG" 2>/dev/null || true
+  fi
   echo "" >&2
   echo "If this is a legit fixture, add it to $ALLOW_FILE or an inline 'secret-scan:allow' — don't weaken the scanner." >&2
   echo "Operator-specific literals live in the local, never-committed \$SECRET_SCAN_PERSONAL_FILE." >&2

@@ -23,8 +23,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   fires, total retrieval misses = standing promote pressure). The command also documents the only real
   counterfactual — an occasional A/B (same task with Keel vs cold) — as the ground truth these self-reported
   scores estimate. Wired as an optional step 7 in `/wrap`; append-only ledger at `docs/keel-impact.md`.
-  Portable by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill). Covered by
-  `tests/test_keel_impact.sh` (29 assertions).
+  Portable by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill).
+- **Impact events — the objective signal, collected in the shell at zero token cost.** The most objective
+  input to the score (a guardrail actually firing) is now captured deterministically instead of counted by
+  the model: `secret-guard` appends a metadata-only event (never the matched secret) to a session-local log
+  (`$KEEL_IMPACT_LOG`, default `.keel/impact-events.log`, gitignored) when it blocks, and `keel-impact.sh
+  add` auto-ingests any logged events into the score, then truncates the log so nothing is double-counted
+  (`--no-ingest` opts out). A new `keel-impact.sh event TYPE [source] [detail]` is the producer entry point
+  for any shell tool. The `secret-guard` instrumentation is opt-in (writes only when `$KEEL_IMPACT_LOG` is
+  set), so default hook behaviour is byte-identical. Covered by `tests/test_keel_impact.sh` (40 assertions)
+  and `tests/test_secret_guard.sh` (metadata-only + no-leak + off-by-default).
 - README **demo GIF** (`docs/demo.gif`) — a ~40s real, sandboxed secret-guard run near the top of the
   README: hook install → an API key blocked on commit → the owner's name blocked inside a UTF-16 binary
   fixture. Nothing mocked: the frames are the hook's actual output. Recorded by the committed, reproducible
