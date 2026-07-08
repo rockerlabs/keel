@@ -8,22 +8,29 @@
 # stays in the prompt; the arithmetic stays here (same split as `doctor`: model writes, script counts).
 #
 # Score formula (all inputs are non-negative event counts):
-#   HELP  = 3*guard + 2*fire + 1*hit        # guard weighted highest: an objective block, not a judgement
-#   COST  = 2*miss  + 2*friction            # retrieval miss = promote pressure; friction = demote pressure
+#   HELP  = 4*hold + 3*guard + 2*fire + 1*hit  # hold highest: keel caught the AGENT bypassing a constraint
+#   COST  = 2*miss + 2*friction                # retrieval miss = promote pressure; friction = demote pressure
 #   score = (HELP+COST == 0) ? "—" : round(100 * HELP / (HELP+COST))
-#   conf  = evidence count E = guard+fire+hit+miss+friction  → none(0) / low(<3) / med(<6) / high(>=6)
+#   conf  = evidence count E = hold+guard+fire+hit+miss+friction  → none(0) / low(<3) / med(<6) / high(>=6)
+# `hold` is guard's higher-value sibling: a routine guard blocks bad *content*; a hold is keel restraining
+# the agent's own attempt to weaken/bypass a rule or guardrail — its highest function, so it scores above guard.
 # `silent` (always-loaded rules that did NOT fire — demote candidates) is recorded but deliberately NOT
 # folded into the score: the headline number leans only on counted help/cost, while silent stays an
 # actionable side-signal. A session with no events scores "—" (nothing to measure), never a fake 0.
 #
+# Auditable counts (thread A): the model does not pass bare counts — it passes ONE cited event per flag, so
+# a count is literally the number of citations (no citation → no count, mechanically). Each cited event is
+# archived to a durable per-event evidence file, so a score is a checkable trail, not a number to trust.
+#
 # Usage:
-#   keel-impact.sh add --guard N --fire N --hit N --miss N --friction N [--silent N] \
-#                      --evidence "..." --gap "..."   derive+append a row, print the rollup
+#   keel-impact.sh add [--guard "cite"]... --fire "cite"... --hit "cite"... --miss "cite"... \
+#                      --friction "cite"... [--silent N] --gap "..."   derive+append a row, print the rollup
 #   keel-impact.sh rollup                             recompute + print the trend and aggregates only
 #   keel-impact.sh -h | --help
 #
-# The ledger file: KEEL_IMPACT_LEDGER wins, else docs/keel-impact.md under the repo root. The date is
-# stamped from `date -u` so rows are ordered and reproducible.
+# The ledger file: KEEL_IMPACT_LEDGER wins, else docs/keel-impact.md under the repo root. The per-event
+# evidence file: KEEL_IMPACT_EVIDENCE wins, else .keel/evidence.md (marker) / docs/keel-impact-evidence.md.
+# The date is stamped from `date -u` so rows are ordered and reproducible.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,20 +53,32 @@ _resolve_log() {
   if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/impact-events.log"; return; fi
   printf '%s' ".keel/impact-events.log"
 }
+# The durable per-event evidence file — the auditable trail behind each ledger row. Same resolution shape as
+# the ledger (it is trackable too, unlike the ephemeral event log): explicit env override, else the .keel/
+# marker, else Keel's own dogfooding copy under docs/.
+_resolve_evidence() {
+  if [ -n "${KEEL_IMPACT_EVIDENCE:-}" ]; then printf '%s' "$KEEL_IMPACT_EVIDENCE"; return; fi
+  local top; top="$(_keel_top)"
+  if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/evidence.md"; return; fi
+  printf '%s' "$REPO_ROOT/docs/keel-impact-evidence.md"
+}
 LEDGER="$(_resolve_ledger)"
 LOG="$(_resolve_log)"
-EVENT_TYPES="guard fire hit miss friction"
+EVIDENCE="$(_resolve_evidence)"
+EVENT_TYPES="hold guard fire hit miss friction"
 
 usage() {
   cat <<'EOF'
 keel-impact — derive a session's impact score from counted, cited events and append it to the ledger.
 
 Usage:
-  keel-impact.sh add --guard N --fire N --hit N --miss N --friction N [--silent N] \
-                     --evidence "..." --gap "..."
+  keel-impact.sh add [--guard "cite"]... --fire "cite"... --hit "cite"... --miss "cite"... \
+                     --friction "cite"... [--silent N] --gap "..."
+  keel-impact.sh add ... --retro [--asof YYYY-MM-DD]   record a quarantined retrospective score (see below)
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh enable [dir]                    opt a repo into tracking (create .keel/ marker + gitignore)
-  keel-impact.sh rollup                          this repo's trend + cumulative signals
+  keel-impact.sh rollup                          this repo's live trend + cumulative signals
+  keel-impact.sh rollup --retro                  only the quarantined retrospective scores
   keel-impact.sh rollup --registry FILE          cross-project sweep of an INSTANCE.md Projects table
   keel-impact.sh -h | --help
 
@@ -69,20 +88,28 @@ folds them into the counts — so objective events (e.g. a secret-guard block) r
 deterministically, at zero token cost, without the model counting them. $KEEL_IMPACT_LOG overrides the
 default log path (.keel/impact-events.log); pass --no-ingest to skip ingestion. TYPE ∈ guard fire hit miss friction.
 
-Event counts (non-negative integers; each MUST be backed by a citation you gathered per keel-score.md):
-  --guard N     guardrail actually blocked/caught something (secret-guard, pre-pr-gate, public-audit)
-  --fire N      an always-loaded rule/convention was concretely applied (cold session would not have)
-  --hit N       a needed fact was pre-loaded and used
-  --miss N      had to hunt for a fact that should have been always-loaded (promote pressure)
-  --friction N  a stale/noisy rule got in the way (demote pressure)
-  --silent N    always-loaded rules that did NOT fire this session (demote candidates; not scored)
-  --evidence S  one-line strongest citation
-  --gap S       one-line top demote/promote candidate (or "none")
+Cited events (REPEAT a flag once per event; the count is the number of citations, never a bare integer — no
+citation, no count). Each citation is archived to the evidence file so the score is a checkable trail:
+  --hold "cite"      keel restrained the AGENT from weakening/bypassing a rule or guardrail (its highest function)
+  --guard "cite"     guardrail blocked/caught bad content (usually auto-ingested; pass only for a log-missed fire)
+  --fire "cite"      an always-loaded rule/convention was concretely applied (cold session would not have)
+  --hit "cite"       a needed fact was pre-loaded and used
+  --miss "cite"      had to hunt for a fact that should have been always-loaded (promote pressure)
+  --friction "cite"  a stale/noisy rule got in the way (demote pressure)
+  --silent N         COUNT ONLY (no citation): always-loaded rules that did NOT fire (demote candidates; not scored)
+  --gap S            one-line top demote/promote candidate (or "none")
 
-The script derives score = round(100*HELP/(HELP+COST)), HELP=3*guard+2*fire+hit, COST=2*miss+2*friction,
+The script derives score = round(100*HELP/(HELP+COST)), HELP=4*hold+3*guard+2*fire+hit, COST=2*miss+2*friction,
 and a confidence tag from the total event count. No --score flag: the number is computed, never asserted.
+The row's evidence cell is auto-filled with the strongest citation (hold > guard > fire > hit > miss > friction).
 
-Ledger file: $KEEL_IMPACT_LEDGER, else docs/keel-impact.md under the repo root.
+--retro records a retrospectively-scored PAST session (e.g. reconstructed from a chat transcript). It is
+quarantined so it never inflates the live signal: it skips the live event log, its row is conf-tagged
+`-retro` (and dropped one tier, since a retro estimate is weaker), and the live `rollup` excludes it —
+`rollup --retro` shows only these. --asof YYYY-MM-DD backdates the row to the session's real date.
+
+Ledger file: $KEEL_IMPACT_LEDGER, else docs/keel-impact.md. Evidence file: $KEEL_IMPACT_EVIDENCE, else
+.keel/evidence.md (marker) / docs/keel-impact-evidence.md.
 EOF
 }
 
@@ -94,23 +121,43 @@ cited events; `tools/keel-impact.sh` computes the 0-100 number from them by a fi
 function of the evidence and cannot be inflated by vibe. This is the quantified form of the wrap-time
 promote/demote ritual (`FRAMEWORK.md` → "retrieval miss = promote signal").
 
-Columns: **score** = round(100·HELP/(HELP+COST)) where HELP=3·guard+2·fire+hit, COST=2·miss+2·friction
+Columns: **score** = round(100·HELP/(HELP+COST)) where HELP=4·hold+3·guard+2·fire+hit, COST=2·miss+2·friction
 (`—` = no events, nothing to measure). **conf** = evidence-count tier (none/low/med/high) — a score behind
-few events is weaker. Event counts: **guard** guardrail fired · **fire** rule applied · **hit** retrieval
-hit · **miss** retrieval miss (promote pressure) · **fric** friction (demote pressure) · **silent**
-always-loaded rules that did not fire (demote candidates; NOT folded into the score).
+few events is weaker; a `-retro` suffix marks a quarantined retrospective score. Event counts: **guard**
+guardrail blocked bad content · **hold** keel restrained the agent from bypassing a rule (its highest
+function; scores above guard) · **fire** rule applied · **hit** retrieval hit · **miss** retrieval miss
+(promote pressure) · **fric** friction (demote pressure) · **silent** always-loaded rules that did not fire
+(demote candidates; NOT folded into the score).
 
 **guard** is collected deterministically: in a tracked repo (an enabled `.keel/` marker, or `$KEEL_IMPACT_LOG`)
 the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire to a zero-token event
 log that `add` auto-ingests — the objective signal never depends on the model counting it.
 
-| date | score | conf | guard | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
-|------|-------|------|-------|------|-----|------|------|--------|----------|----------------------|'
+Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
+citation, and the full per-event trail (every event → its citation) lives in `evidence.md` next to this file.
+
+| date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
+|------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|'
+
+# --- the evidence file header, written once when it is first created ------------------------------
+EVIDENCE_HEADER='# Keel impact — per-event evidence
+
+The auditable trail behind each row in `ledger.md`. Every scored session appends one dated block listing
+each counted event and the citation that backs it — so a score is a checkable record, not a number to
+trust. A count in the ledger equals the number of citations here: no citation, no count. Guard citations
+are captured from the guardrail hooks (`source | detail`); the rest are supplied at score time.'
 
 ensure_ledger() {
   if [ ! -f "$LEDGER" ]; then
     mkdir -p "$(dirname "$LEDGER")"
     printf '%s\n' "$LEDGER_HEADER" > "$LEDGER"
+  fi
+}
+
+ensure_evidence() {
+  if [ ! -f "$EVIDENCE" ]; then
+    mkdir -p "$(dirname "$EVIDENCE")"
+    printf '%s\n' "$EVIDENCE_HEADER" > "$EVIDENCE"
   fi
 }
 
@@ -129,6 +176,14 @@ is_event_type() {
   case " $EVENT_TYPES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
 
+# Flatten a value to a single line (strip tabs + newlines). The "one event = one line" invariant is
+# load-bearing for both the TSV event log and the evidence trail, so both sanitize through this one place.
+_flatten() { local s="${1//$'\t'/ }"; printf '%s' "${s//$'\n'/ }"; }
+
+# A citation flag needs a non-empty value (no citation → no count). Reject empty/missing with the tool's own
+# clean exit 2, not bash's cryptic `${2:?}` abort (exit 1). $2 is the flag name, for the message.
+_need_cite() { [ -n "$1" ] || { printf 'keel-impact: %s needs a non-empty citation\n' "$2" >&2; exit 2; }; }
+
 # event TYPE [source] [detail] — append one deterministic event to the log. Producers (secret-guard et al.)
 # can also append the TSV line directly; this subcommand is the friendly, validated entry point.
 cmd_event() {
@@ -136,8 +191,7 @@ cmd_event() {
   [ -n "$type" ] || { printf 'keel-impact: event needs a TYPE (%s)\n' "$EVENT_TYPES" >&2; exit 2 ; }
   is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
   # strip tabs/newlines so one event is always exactly one well-formed TSV line
-  source="${source//$'\t'/ }"; source="${source//$'\n'/ }"
-  detail="${detail//$'\t'/ }"; detail="${detail//$'\n'/ }"
+  source="$(_flatten "$source")"; detail="$(_flatten "$detail")"
   mkdir -p "$(dirname "$LOG")"
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$source" "$detail" >> "$LOG"
   printf 'keel-impact: recorded %s event to %s\n' "$type" "$LOG"
@@ -146,8 +200,8 @@ cmd_event() {
 # enable [dir] — opt a repo into impact tracking: create its .keel/ marker (which the guardrail hooks look
 # for before recording a fire) and gitignore the ephemeral event log. Idempotent. Run once per project; the
 # AI-session flow then works with no env: hooks write events into .keel/, `add` auto-ingests them. Only the
-# event log is ignored — .keel/ledger.md (the durable score history) stays trackable, so `git add` it to
-# keep a shareable, cross-clone record.
+# event log is ignored — .keel/ledger.md (the durable score history) and .keel/evidence.md (the per-event
+# audit trail) stay trackable, so `git add` them to keep a shareable, cross-clone record.
 cmd_enable() {
   local dir="${1:-.}" top
   top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
@@ -159,25 +213,35 @@ cmd_enable() {
     printf 'keel-impact: gitignored /.keel/impact-events.log in %s\n' "$gi"
   fi
   printf 'keel-impact: impact tracking enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
-  printf '  guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md to keep the history.\n'
+  printf '  guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md and .keel/evidence.md to keep the history + audit trail.\n'
 }
 
-# --- rollup: score trend + the honest cumulative signals (guardrail fires, retrieval misses) ------
+# --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
 # A data row is a table line whose first cell is an ISO date. Explicit digit classes (not {n} intervals)
 # so busybox awk matches this too. A "—" score row still counts as a session but is skipped from the mean.
+# mode: "live" (default) skips quarantined retro rows; "retro" shows only them (a conf cell tagged `-retro`).
 rollup() {
+  local mode="${1:-live}"
   ensure_ledger
-  awk -F'|' '
+  awk -F'|' -v mode="$mode" '
     $2 ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
+      is_retro = ($4 ~ /retro/)                  # cols: date=2 score=3 conf=4 guard=5 hold=6 fire=7 hit=8 miss=9
+      if (mode == "retro" && !is_retro) next
+      if (mode != "retro" && is_retro) next
       sessions++
-      guard += $5 + 0; miss += $8 + 0            # cols: date=2 score=3 conf=4 guard=5 fire=6 hit=7 miss=8
+      guard += $5 + 0; hold += $6 + 0; miss += $9 + 0
       s = $3; gsub(/ /, "", s)
       if (s ~ /^[0-9]+$/) { n++; sum += s + 0; order[n] = s + 0 }
     }
     END {
-      if (sessions == 0) { print "impact ledger: no scored sessions yet."; exit 0 }
-      if (n > 0) printf "impact ledger: %d session(s), mean score %.1f/100 over %d scored\n", sessions, sum / n, n
-      else       printf "impact ledger: %d session(s), no numeric scores yet (all inert)\n", sessions
+      label = (mode == "retro" ? "retro impact ledger" : "impact ledger")
+      if (sessions == 0) {
+        if (mode == "retro") print "retro impact ledger: no retrospective sessions yet."
+        else                 print "impact ledger: no scored sessions yet."
+        exit 0
+      }
+      if (n > 0) printf "%s: %d session(s), mean score %.1f/100 over %d scored\n", label, sessions, sum / n, n
+      else       printf "%s: %d session(s), no numeric scores yet (all inert)\n", label, sessions
       if (n > 0) {
         start = (n > 5 ? n - 4 : 1)
         line = "  recent: "
@@ -185,21 +249,24 @@ rollup() {
         print line
       }
       # the honest cumulative signals, straight from counted events (not judged)
-      printf "  cumulative: %d guardrail fire(s), %d retrieval miss(es) — the standing promote pressure\n", guard, miss
+      printf "  cumulative: %d guardrail fire(s), %d agent-hold(s), %d retrieval miss(es) — the standing promote pressure\n", guard, hold, miss
     }
   ' "$LEDGER"
 }
 
-# Emit "sessions scored sum guard miss" for one ledger file (all zeros if absent/empty). The single source
-# of the per-ledger tally, shared by the cross-project rollup.
+# Emit "sessions scored sum guard hold miss" for one ledger file (all zeros if absent/empty). The single
+# source of the per-ledger tally, shared by the cross-project rollup. Quarantined retro rows are excluded —
+# the cross-project view is the live usefulness signal.
 _ledger_stats() {
+  # cols: date=2 score=3 conf=4 guard=5 hold=6 fire=7 hit=8 miss=9 (keep in sync with LEDGER_HEADER + cmd_add's printf)
   awk -F'|' '
     $2 ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
-      sess++; g += $5 + 0; m += $8 + 0
+      if ($4 ~ /retro/) next
+      sess++; g += $5 + 0; ho += $6 + 0; m += $9 + 0
       s = $3; gsub(/ /, "", s)
       if (s ~ /^[0-9]+$/) { nsc++; sum += s + 0 }
     }
-    END { printf "%d %d %d %d %d", sess+0, nsc+0, sum+0, g+0, m+0 }
+    END { printf "%d %d %d %d %d %d", sess+0, nsc+0, sum+0, g+0, ho+0, m+0 }
   ' "$1" 2>/dev/null
 }
 
@@ -210,7 +277,7 @@ rollup_registry() {
   local reg="$1"
   [ -f "$reg" ] || { printf 'keel-impact: registry not found: %s\n' "$reg" >&2; exit 2; }
   printf 'Keel impact — cross-project rollup (%s)\n' "$reg"
-  local t_sess=0 t_scored=0 t_sum=0 t_guard=0 t_miss=0 shown=0 path ledger
+  local t_sess=0 t_scored=0 t_sum=0 t_guard=0 t_hold=0 t_miss=0 shown=0 path ledger
   local _lead _col1 col_path _rest
   while IFS='|' read -r _lead _col1 col_path _rest; do
     path="$(printf '%s' "$col_path" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
@@ -222,15 +289,15 @@ rollup_registry() {
       printf '  %-28s —  (tracking off or no sessions scored)\n' "$(basename "$path")"
       continue
     fi
-    local sess scored sum g m
-    read -r sess scored sum g m <<EOF
+    local sess scored sum g ho m
+    read -r sess scored sum g ho m <<EOF
 $(_ledger_stats "$ledger")
 EOF
     t_sess=$(( t_sess + sess )); t_scored=$(( t_scored + scored )); t_sum=$(( t_sum + sum ))
-    t_guard=$(( t_guard + g )); t_miss=$(( t_miss + m ))
+    t_guard=$(( t_guard + g )); t_hold=$(( t_hold + ho )); t_miss=$(( t_miss + m ))
     if [ "$scored" -gt 0 ]; then
-      awk -v n="$(basename "$path")" -v s="$sess" -v sc="$scored" -v su="$sum" -v g="$g" \
-        'BEGIN{ printf "  %-28s mean %.1f/100 over %d scored (%d session(s), %d guard fire(s))\n", n, su/sc, sc, s, g }'
+      awk -v n="$(basename "$path")" -v s="$sess" -v sc="$scored" -v su="$sum" -v g="$g" -v ho="$ho" \
+        'BEGIN{ printf "  %-28s mean %.1f/100 over %d scored (%d session(s), %d guard fire(s), %d hold(s))\n", n, su/sc, sc, s, g, ho }'
     else
       printf '  %-28s —  (%d session(s), none scored yet)\n' "$(basename "$path")" "$sess"
     fi
@@ -238,91 +305,147 @@ EOF
             | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
   printf '  %s\n' '----'
   if [ "$t_scored" -gt 0 ]; then
-    awk -v p="$shown" -v s="$t_sess" -v sc="$t_scored" -v su="$t_sum" -v g="$t_guard" -v m="$t_miss" \
-      'BEGIN{ printf "  ALL: %d project(s), mean %.1f/100 over %d scored session(s); %d guard fire(s), %d miss(es)\n", p, su/sc, sc, s, g, m }'
+    awk -v p="$shown" -v s="$t_sess" -v sc="$t_scored" -v su="$t_sum" -v g="$t_guard" -v ho="$t_hold" -v m="$t_miss" \
+      'BEGIN{ printf "  ALL: %d project(s), mean %.1f/100 over %d scored session(s); %d guard fire(s), %d hold(s), %d miss(es)\n", p, su/sc, sc, s, g, ho, m }'
   else
     printf '  ALL: %d project(s), no scored sessions yet\n' "$shown"
   fi
 }
 
+# Per-event citation accumulators. Counts are derived from the number of citations (thread A: no bare
+# integer flags — a count is exactly how many cited events back it). Portable string accumulation, not
+# arrays, so this stays safe under bash 3.2 / busybox (no empty-array-under-`set -u` pitfall).
+_n_hold=0; _n_guard=0; _n_fire=0; _n_hit=0; _n_miss=0; _n_friction=0
+_ev_hold=""; _ev_guard=""; _ev_fire=""; _ev_hit=""; _ev_miss=""; _ev_friction=""   # accumulated "- TYPE: cite\n" lines
+_first_hold=""; _first_guard=""; _first_fire=""; _first_hit=""; _first_miss=""; _first_friction=""  # first raw cite per type
+
+# add_cite TYPE CITATION — count one cited event of TYPE and stash its citation (newline/tab-flattened so one
+# event stays exactly one evidence line). Explicit `if`, never a `test && assign` chain, to dodge the set -e trap.
+add_cite() {
+  local ty="$1" c; c="$(_flatten "$2")"
+  case "$ty" in
+    hold)     _n_hold=$(( _n_hold + 1 ));         _ev_hold="${_ev_hold}- hold: ${c}"$'\n'
+              if [ -z "$_first_hold" ];     then _first_hold="$c";     fi ;;
+    guard)    _n_guard=$(( _n_guard + 1 ));       _ev_guard="${_ev_guard}- guard: ${c}"$'\n'
+              if [ -z "$_first_guard" ];    then _first_guard="$c";    fi ;;
+    fire)     _n_fire=$(( _n_fire + 1 ));         _ev_fire="${_ev_fire}- fire: ${c}"$'\n'
+              if [ -z "$_first_fire" ];     then _first_fire="$c";     fi ;;
+    hit)      _n_hit=$(( _n_hit + 1 ));           _ev_hit="${_ev_hit}- hit: ${c}"$'\n'
+              if [ -z "$_first_hit" ];      then _first_hit="$c";      fi ;;
+    miss)     _n_miss=$(( _n_miss + 1 ));         _ev_miss="${_ev_miss}- miss: ${c}"$'\n'
+              if [ -z "$_first_miss" ];     then _first_miss="$c";     fi ;;
+    friction) _n_friction=$(( _n_friction + 1 )); _ev_friction="${_ev_friction}- friction: ${c}"$'\n'
+              if [ -z "$_first_friction" ]; then _first_friction="$c"; fi ;;
+  esac
+}
+
 cmd_add() {
-  local guard="" fire="" hit="" miss="" friction="" silent="" evidence="" gap="" ingest=1
+  local silent="" gap="" ingest=1 retro=0 asof=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --guard)     guard="${2:?}";    shift 2 ;;
-      --fire)      fire="${2:?}";     shift 2 ;;
-      --hit)       hit="${2:?}";      shift 2 ;;
-      --miss)      miss="${2:?}";     shift 2 ;;
-      --friction)  friction="${2:?}"; shift 2 ;;
-      --silent)    silent="${2:?}";   shift 2 ;;
-      --evidence)  evidence="${2:?}"; shift 2 ;;
-      --gap)       gap="${2:?}";      shift 2 ;;
-      --no-ingest) ingest=0;          shift 1 ;;
+      --hold)      _need_cite "${2:-}" --hold;     add_cite hold     "$2"; shift 2 ;;
+      --guard)     _need_cite "${2:-}" --guard;    add_cite guard    "$2"; shift 2 ;;
+      --fire)      _need_cite "${2:-}" --fire;     add_cite fire     "$2"; shift 2 ;;
+      --hit)       _need_cite "${2:-}" --hit;      add_cite hit      "$2"; shift 2 ;;
+      --miss)      _need_cite "${2:-}" --miss;     add_cite miss     "$2"; shift 2 ;;
+      --friction)  _need_cite "${2:-}" --friction; add_cite friction "$2"; shift 2 ;;
+      --silent)    silent="${2:?}";                shift 2 ;;
+      --gap)       gap="${2:?}";               shift 2 ;;
+      --no-ingest) ingest=0;                   shift 1 ;;
+      --retro)     retro=1;                    shift 1 ;;
+      --asof)      asof="${2:?}";              shift 2 ;;
       *) printf 'keel-impact: unknown flag %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
   done
-
-  guard="$(require_count guard "$guard")"
-  fire="$(require_count fire "$fire")"
-  hit="$(require_count hit "$hit")"
-  miss="$(require_count miss "$miss")"
-  friction="$(require_count friction "$friction")"
   silent="$(require_count silent "$silent")"
-
-  # --- auto-ingest deterministic events the shell layer recorded (zero-token, portable) -----------
-  # Fold each logged event type into the model-supplied counts, then clear the log so events are never
-  # double-counted by a later score. Objective events (a secret-guard block) thus reach the score without
-  # the model counting them — and cannot be under- or over-stated by it.
-  local ingested=0 t n
-  if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
-    for t in $EVENT_TYPES; do
-      n="$(awk -F'\t' -v ty="$t" '$2==ty{c++} END{print c+0}' "$LOG")"
-      case "$t" in
-        guard)    guard=$(( guard + n )) ;;
-        fire)     fire=$(( fire + n )) ;;
-        hit)      hit=$(( hit + n )) ;;
-        miss)     miss=$(( miss + n )) ;;
-        friction) friction=$(( friction + n )) ;;
-      esac
-      ingested=$(( ingested + n ))
-    done
+  # Retro (thread C): a retrospectively-scored past session. Quarantined — it never touches the live event
+  # log (force --no-ingest, since a past session's guard fires are not in this repo's log) and its row is
+  # tagged so the live rollup excludes it. --asof backdates the row to the session's real date.
+  if [ "$retro" -eq 1 ]; then ingest=0; fi
+  if [ -n "$asof" ]; then
+    case "$asof" in
+      [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
+      *) printf 'keel-impact: --asof must be a YYYY-MM-DD date\n' >&2; exit 2 ;;
+    esac
   fi
 
-  # --- derive the score from the events (the whole point: computed, never asserted) ---------------
+  # --- auto-ingest deterministic events the shell layer recorded (zero-token, portable) -----------
+  # Each logged event becomes a cited event too: its `source | detail` is the citation, so the objective
+  # signal is auditable exactly like the model's. Consumed (log truncated) only after the row lands, so a
+  # failed write never double-counts or loses events.
+  local ingested=0 _ts _ty _src _det _cite
+  if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
+    # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
+    # still populates the vars) — otherwise that event would be dropped, then lost when the log is truncated.
+    while IFS=$'\t' read -r _ts _ty _src _det || [ -n "$_ty" ]; do
+      is_event_type "$_ty" || continue
+      _cite="$_src"
+      if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
+      add_cite "$_ty" "$_cite"
+      ingested=$(( ingested + 1 ))
+    done < "$LOG"
+  fi
+
+  # --- derive the score from the counted, cited events (computed, never asserted) -----------------
   local help cost denom score ev_count conf
-  help=$(( 3 * guard + 2 * fire + hit ))
-  cost=$(( 2 * miss + 2 * friction ))
+  help=$(( 4 * _n_hold + 3 * _n_guard + 2 * _n_fire + _n_hit ))
+  cost=$(( 2 * _n_miss + 2 * _n_friction ))
   denom=$(( help + cost ))
   if [ "$denom" -eq 0 ]; then
     score="—"
   else
     score=$(( (100 * help + denom / 2) / denom ))   # integer round-half-up
   fi
-  ev_count=$(( guard + fire + hit + miss + friction ))
+  ev_count=$(( _n_hold + _n_guard + _n_fire + _n_hit + _n_miss + _n_friction ))
   if   [ "$ev_count" -eq 0 ]; then conf="none"
   elif [ "$ev_count" -lt 3 ]; then conf="low"
   elif [ "$ev_count" -lt 6 ]; then conf="med"
   else                             conf="high"
   fi
+  # A retro estimate is weaker than a live one: drop one confidence tier and tag it so the live rollup can
+  # quarantine it (the `-retro` marker is what rollup's filter keys on).
+  if [ "$retro" -eq 1 ]; then
+    case "$conf" in
+      high) conf="med" ;;
+      med)  conf="low" ;;
+    esac
+    conf="${conf}-retro"
+  fi
 
-  # Sanitize free-text cells so a stray pipe/newline can't break the table.
-  local ev="${evidence:-—}" gp="${gap:-—}"
+  # The row's evidence cell = the single strongest citation (hold > guard > fire > hit > miss > friction); the
+  # full per-event trail goes to the evidence file. Sanitize free-text so a stray pipe/newline can't break the table.
+  local raw_ev="" cand
+  for cand in "$_first_hold" "$_first_guard" "$_first_fire" "$_first_hit" "$_first_miss" "$_first_friction"; do
+    if [ -n "$cand" ]; then raw_ev="$cand"; break; fi
+  done
+  local ev="${raw_ev:-—}" gp="${gap:-—}"
   ev="${ev//|/\\|}"; ev="${ev//$'\n'/ }"
   gp="${gp//|/\\|}"; gp="${gp//$'\n'/ }"
 
   ensure_ledger
-  local today; today="$(date -u +%Y-%m-%d)"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-    "$today" "$score" "$conf" "$guard" "$fire" "$hit" "$miss" "$friction" "$silent" "$ev" "$gp" >> "$LEDGER"
+  local today; today="${asof:-$(date -u +%Y-%m-%d)}"
+  # cols: date score conf guard hold fire hit miss fric silent evidence gap — this ordering is the source of
+  # truth the awk readers (rollup, _ledger_stats) index by position; keep all three + LEDGER_HEADER in sync.
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+    "$today" "$score" "$conf" "$_n_guard" "$_n_hold" "$_n_fire" "$_n_hit" "$_n_miss" "$_n_friction" "$silent" "$ev" "$gp" >> "$LEDGER"
 
-  # Only now that the row is durably appended is it safe to consume the log — so a failed write never
-  # loses events. Truncate (not delete) so the path and any producer's open append still work.
+  # Archive the per-event citations — the auditable trail. Only when there was something to cite; an inert
+  # ("—") session leaves no block, mirroring "no evidence, nothing to record".
+  if [ "$ev_count" -gt 0 ]; then
+    ensure_evidence
+    { printf '\n## %s — score %s/100 (conf %s)\n\n' "$today" "$score" "$conf"
+      printf '%s' "${_ev_hold}${_ev_guard}${_ev_fire}${_ev_hit}${_ev_miss}${_ev_friction}"
+    } >> "$EVIDENCE"
+  fi
+
+  # Safe now that both the row and the evidence block are durably appended. Truncate (not delete) so the
+  # path and any producer's open append still work.
   if [ "$ingested" -gt 0 ]; then : > "$LOG"; fi
 
   printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s)' "$score" "$conf" "$ev_count"
-  [ "$ingested" -gt 0 ] && printf ' (%d auto-ingested from %s)' "$ingested" "$LOG"
+  if [ "$ingested" -gt 0 ]; then printf ' (%d auto-ingested from %s)' "$ingested" "$LOG"; fi
   printf ' — HELP=%d COST=%d; appended to %s\n' "$help" "$cost" "$LEDGER"
-  rollup
+  if [ "$retro" -eq 1 ]; then rollup retro; else rollup; fi
 }
 
 case "${1:-}" in
@@ -333,6 +456,8 @@ case "${1:-}" in
     shift
     if [ "${1:-}" = "--registry" ]; then
       rollup_registry "${2:?keel-impact: --registry needs an INSTANCE.md FILE}"
+    elif [ "${1:-}" = "--retro" ]; then
+      rollup retro
     else
       rollup
     fi ;;

@@ -30,6 +30,7 @@ git config --global commit.gpgsign false
 # fresh repo. Removed with the sandbox on exit.
 export KEEL_IMPACT_LOG="$SANDBOX/harness-impact.log"
 export KEEL_IMPACT_LEDGER="$SANDBOX/harness-ledger.md"
+export KEEL_IMPACT_EVIDENCE="$SANDBOX/harness-evidence.md"
 
 trap 'rm -rf "$SANDBOX"' EXIT
 
