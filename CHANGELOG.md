@@ -8,6 +8,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-08
+
+"Personal-data guard" release. `secret-guard` grows a second detector class — your own personal data
+(name, emails, drive labels, serials), read from a local never-committed file and caught even inside
+UTF-16 binary fixtures — plus a determinism fix for a rare `--range` miss under SIGPIPE. `install.sh`
+re-runs now keep Keel's own core in sync instead of freezing it at first install. The README gains a
+tools-first entry door ("Just want the git hook?") and answers the obvious objection up front. No
+breaking changes; without a personal-literals file, secret-guard behaves exactly as before.
+
 ### Added
 - `secret-guard` — a second detector class: **personal data**. Operator-specific literals (real name,
   device serials, personal drive labels, personal emails) are read as EREs from a **local, never-committed**
