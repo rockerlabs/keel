@@ -43,13 +43,15 @@ Usage:
   keel-impact.sh add --guard N --fire N --hit N --miss N --friction N [--silent N] \
                      --evidence "..." --gap "..."
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
+  keel-impact.sh enable [dir]                    opt a repo into tracking (create .keel/ marker + gitignore)
   keel-impact.sh rollup
   keel-impact.sh -h | --help
 
-`add` auto-ingests any events shell tools recorded in the log ($KEEL_IMPACT_LOG, else .keel/impact-events.log)
-and folds them into the counts — so objective events (e.g. a secret-guard block) reach the score
-deterministically, at zero token cost, without the model counting them. Pass --no-ingest to skip.
-TYPE is one of: guard fire hit miss friction.
+`enable` turns a repo on: it creates the .keel/ marker the guardrail hooks look for. Once enabled, a
+guardrail fire in that repo records an event with no env needed; `add` auto-ingests any logged events and
+folds them into the counts — so objective events (e.g. a secret-guard block) reach the score
+deterministically, at zero token cost, without the model counting them. $KEEL_IMPACT_LOG overrides the
+default log path (.keel/impact-events.log); pass --no-ingest to skip ingestion. TYPE ∈ guard fire hit miss friction.
 
 Event counts (non-negative integers; each MUST be backed by a citation you gathered per keel-score.md):
   --guard N     guardrail actually blocked/caught something (secret-guard, pre-pr-gate, public-audit)
@@ -82,9 +84,9 @@ few events is weaker. Event counts: **guard** guardrail fired · **fire** rule a
 hit · **miss** retrieval miss (promote pressure) · **fric** friction (demote pressure) · **silent**
 always-loaded rules that did not fire (demote candidates; NOT folded into the score).
 
-**guard** is collected deterministically: with `$KEEL_IMPACT_LOG` set, the guardrail hooks (`secret-guard`,
-`pre-pr-gate`, `public-audit`) record each fire to a zero-token event log that `add` auto-ingests — the
-objective signal never depends on the model counting it.
+**guard** is collected deterministically: in a tracked repo (an enabled `.keel/` marker, or `$KEEL_IMPACT_LOG`)
+the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire to a zero-token event
+log that `add` auto-ingests — the objective signal never depends on the model counting it.
 
 | date | score | conf | guard | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
 |------|-------|------|-------|------|-----|------|------|--------|----------|----------------------|'
@@ -123,6 +125,23 @@ cmd_event() {
   mkdir -p "$(dirname "$LOG")"
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$source" "$detail" >> "$LOG"
   printf 'keel-impact: recorded %s event to %s\n' "$type" "$LOG"
+}
+
+# enable [dir] — opt a repo into impact tracking: create its .keel/ marker (which the guardrail hooks look
+# for before recording a fire) and gitignore it. Idempotent. Run once per project; the AI-session flow then
+# works with no env: hooks write events into .keel/, `add` auto-ingests them.
+cmd_enable() {
+  local dir="${1:-.}" top
+  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$top" ] || top="$dir"                 # not a git repo yet: fall back to the dir as-is
+  mkdir -p "$top/.keel"
+  local gi="$top/.gitignore"
+  if ! { [ -f "$gi" ] && grep -qxF '/.keel/' "$gi"; }; then
+    printf '/.keel/\n' >> "$gi"
+    printf 'keel-impact: gitignored /.keel/ in %s\n' "$gi"
+  fi
+  printf 'keel-impact: impact tracking enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
+  printf '  guardrail fires in this repo now record events; run /keel-score (or keel-impact.sh add) to score.\n'
 }
 
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, retrieval misses) ------
@@ -236,6 +255,7 @@ cmd_add() {
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
   event)          shift; cmd_event "$@" ;;
+  enable)         shift; cmd_enable "$@" ;;
   rollup)         rollup ;;
   -h|--help|"")   usage ;;
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;

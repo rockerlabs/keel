@@ -10,6 +10,7 @@ root="$(cd "$here/.." && pwd)"
 tpl_project="$root/templates/project-CLAUDE.md"
 
 REGISTER=1
+IMPACT=1
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -h|--help)
@@ -19,14 +20,17 @@ init-project — scaffold a new project to the Keel baseline (born-compliant).
 Usage:
   init-project.sh [PROJECT_DIR]   scaffold PROJECT_DIR (default: current dir)
   init-project.sh --no-register   skip adding it to the INSTANCE.md Projects registry
+  init-project.sh --no-impact     skip opting the project into impact tracking (.keel/)
   init-project.sh -h | --help
 
 Idempotent: fills gaps (git, a .gitignore that hides private context, a project
-CLAUDE.md), auto-registers the project in your INSTANCE.md, and reports — it never
-overwrites a file you already have.
+CLAUDE.md), opts the project into impact tracking (a gitignored .keel/ marker so
+guardrail fires get recorded), auto-registers the project in your INSTANCE.md, and
+reports — it never overwrites a file you already have.
 EOF
       exit 0 ;;
     --no-register) REGISTER=0 ;;
+    --no-impact)   IMPACT=0 ;;
     -*) echo "init-project: unknown option '$1' (try --help)" >&2; exit 2 ;;
     *) break ;;
   esac
@@ -57,6 +61,18 @@ ensure_ignore "CLAUDE.md"
 ensure_ignore ".claude/"
 ensure_ignore ".DS_Store"
 ensure_ignore ".idea/"
+
+# 2b. Impact tracking — opt this project in by creating the .keel/ marker the guardrail hooks look for
+# before recording a fire (a gitignored, session-local event log). Zero token cost; --no-impact to skip.
+if [ "$IMPACT" = 1 ]; then
+  ensure_ignore "/.keel/"
+  if [ -d .keel ]; then
+    echo "  = impact tracking already enabled (.keel/)"
+  else
+    mkdir -p .keel
+    echo "  + impact tracking enabled (.keel/ marker for guardrail-fire events)"
+  fi
+fi
 
 # 3. project CLAUDE.md from template
 if [ -f CLAUDE.md ]; then

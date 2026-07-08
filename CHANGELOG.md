@@ -9,6 +9,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Impact tracking works out of the box, per project, with no env.** Guardrail-fire recording is now gated
+  on a repo-local `.keel/` marker (resolved from the git top level), so the loop needs no exported variable
+  and works in any commit context (git hook, IDE, CI): the hooks write events into the tracked repo's
+  `.keel/impact-events.log` and `keel-impact.sh add` reads them there. `keel-impact.sh enable [dir]` opts an
+  existing repo in (creates the gitignored `.keel/` marker); `init-project.sh` enables it by default for new
+  projects (`--no-impact` to skip). `$KEEL_IMPACT_LOG` remains an explicit override. The test harness pins
+  `KEEL_IMPACT_LOG` into its sandbox so a suite run never records into a maintainer's real `.keel/`; every
+  guardrail test now covers all three enable paths (override / marker-only / neither → nothing written).
 - **Keel impact score** — an optional way to quantify how much Keel shaped a session, built around one
   honesty rule: **the score is derived, not asserted.** `/keel-score` (`commands/keel-score.md`) does not
   pick a number — it enumerates *counted, cited events* (guardrail fires, rule fires, retrieval

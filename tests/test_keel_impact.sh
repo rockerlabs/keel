@@ -111,4 +111,22 @@ run bash "$TOOL" add --fire 1 --no-ingest --evidence "manual only" --gap "none"
 check_contains "--no-ingest ignores the log" "$OUT" "from 1 event(s)"
 check_contains "--no-ingest preserves the log" "$(wc -l < "$LOG" | tr -d ' ')" "1"
 
+# --- enable: opt a repo into tracking (the .keel/ marker the hooks look for) ---------------------
+erepo="$(new_repo)"
+run bash "$TOOL" enable "$erepo"
+check_status "enable succeeds on a git repo" 0 "$STATUS"
+check_dir "enable creates the .keel/ marker" "$erepo/.keel"
+check_contains "enable gitignores /.keel/" "$(cat "$erepo/.gitignore" 2>/dev/null)" "/.keel/"
+check_contains "enable confirms tracking is on" "$OUT" "impact tracking enabled"
+
+# idempotent: a second enable doesn't duplicate the gitignore line
+run bash "$TOOL" enable "$erepo"
+check_status "second enable succeeds" 0 "$STATUS"
+check_contains "gitignore has exactly one /.keel/ line" "$(grep -c '^/\.keel/$' "$erepo/.gitignore")" "1"
+
+# end-to-end: an enabled repo records a guard event with NO env, and add auto-ingests it
+export KEEL_IMPACT_LEDGER="$erepo/ledger.md"
+run_in "$erepo" env -u KEEL_IMPACT_LOG bash "$TOOL" event guard secret-guard blocked
+check_file "event lands in the enabled repo's .keel/ log" "$erepo/.keel/impact-events.log"
+
 summary

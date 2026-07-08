@@ -210,22 +210,32 @@ run_in "$repo" "$scan" --range "$pbase..HEAD"
 check_status "key early in a large range → deterministic exit 1" 1 "$STATUS"
 check_contains "large-range scan names the leak" "$OUT" "leak.txt"
 
-# --- impact instrumentation: opt-in, metadata-only guardrail-fire event --------------------------
-# When $KEEL_IMPACT_LOG is set, a block records ONE event line — and never the matched secret. Default
-# (env unset) writes nothing, so the hook's behaviour is byte-identical to before.
+# --- impact instrumentation: metadata-only guardrail-fire event ----------------------------------
+# A block records ONE event line — never the matched secret — when tracking is on, via either the
+# $KEEL_IMPACT_LOG override or a repo's .keel/ marker. With neither it writes nothing (behaviour unchanged).
 imp_dir="$(mktemp -d "$SANDBOX/imp.XXXXXX")"; imp_log="$imp_dir/events.log"
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$imp_dir/leak.txt"
 
+# (a) explicit override
 run env KEEL_IMPACT_LOG="$imp_log" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" "$imp_dir/leak.txt"
 check_status "block still exits 1 with impact log on" 1 "$STATUS"
 check_file "block records an impact event" "$imp_log"
 check_contains "event is a guard/secret-guard line" "$(cat "$imp_log")" "	guard	secret-guard	blocked"
 check_absent "event log never contains the secret" "$(cat "$imp_log")" "AKIA"
 
-# default: no env → no side effect
-rm -f "$imp_log"
-run env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" "$imp_dir/leak.txt"
-check_status "block still exits 1 with impact log off" 1 "$STATUS"
-check_nofile "no impact log written when the env is unset" "$imp_log"
+# (b) per-repo .keel/ marker, NO env — the out-of-the-box path
+mrepo="$(new_repo)"; mkdir "$mrepo/.keel"
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$mrepo/leak.txt"
+run_in "$mrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+check_status "block exits 1 with only a .keel/ marker" 1 "$STATUS"
+check_file "marker alone records the event (no env)" "$mrepo/.keel/impact-events.log"
+check_contains "marker event is a guard/secret-guard line" "$(cat "$mrepo/.keel/impact-events.log" 2>/dev/null)" "	guard	secret-guard	blocked"
+
+# (c) no override AND no marker → nothing written
+nrepo="$(new_repo)"                                  # a repo WITHOUT .keel/
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$nrepo/leak.txt"
+run_in "$nrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+check_status "block still exits 1 with tracking off" 1 "$STATUS"
+check_nofile "no event written without override or marker" "$nrepo/.keel/impact-events.log"
 
 summary

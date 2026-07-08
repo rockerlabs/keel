@@ -21,6 +21,10 @@ gi="$(cat "$d/.gitignore")"
 check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
 
+# impact tracking is on by default: the .keel/ marker is created and gitignored
+check_dir "creates the .keel/ impact marker" "$d/.keel"
+check_contains ".gitignore ignores /.keel/" "$gi" "/.keel/"
+
 # idempotency: a second run preserves an edited CLAUDE.md and adds no duplicate .gitignore lines
 printf '\nMY-EDIT\n' >> "$d/CLAUDE.md"
 before_lines="$(wc -l < "$d/.gitignore")"
@@ -53,5 +57,12 @@ np="$SANDBOX/no-reg-proj"
 run env KEEL_INSTANCE="$inst2" "$init" --no-register "$np"
 check_status "--no-register → exit 0" 0 "$STATUS"
 check_absent "--no-register adds no row" "$(cat "$inst2")" "| $np |"
+
+# --no-impact opts out of impact tracking (no .keel/ marker, no /.keel/ ignore)
+ni="$SANDBOX/no-impact-proj"
+run "$init" --no-impact "$ni"
+check_status "--no-impact → exit 0" 0 "$STATUS"
+if [ -d "$ni/.keel" ]; then fail "--no-impact creates no .keel/ marker" "dir exists: $ni/.keel"; else pass "--no-impact creates no .keel/ marker"; fi
+check_absent "--no-impact adds no /.keel/ ignore" "$(cat "$ni/.gitignore")" "/.keel/"
 
 summary
