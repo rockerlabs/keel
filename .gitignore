@@ -6,8 +6,9 @@
 # Draft zone — capture-first / work-in-progress material kept out of the public repo
 /private/
 
-# Impact event log — session-local, deterministic guardrail-fire events; never committed
-/.keel/
+# Impact event log — session-local, ephemeral guardrail-fire events (consumed on ingest); never committed.
+# NOTE: only the log is ignored — .keel/ledger.md (the durable per-session score history) stays trackable.
+/.keel/impact-events.log
 
 # macOS / IDE / system noise
 .DS_Store

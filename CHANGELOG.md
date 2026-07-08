@@ -16,18 +16,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   in `doctor`: `doctor` stays a baseline audit and does not gain an impact-status line (that would be false
   drift for an optional feature). To make the sweep coherent, `keel-impact.sh` now resolves the ledger (and
   the event log) from the tracked repo's `.keel/` marker, so a project's sessions score into
-  `.keel/ledger.md` with no env — the same out-of-the-box resolution the guardrails use. `doctor` gains one
-  narrow, justified check: a WARN (not a GAP) when a `.keel/` marker exists but isn't gitignored, so an
-  enabled event log can't leak into history — mirroring its existing unignored-private-context check. It
-  never nags a project to *enable* tracking. Covered by `tests/test_keel_impact.sh` and
-  `tests/test_doctor.sh`.
+  `.keel/ledger.md` with no env — the same out-of-the-box resolution the guardrails use. Only the ephemeral
+  event log is gitignored; **`.keel/ledger.md` (the durable score history) stays trackable**, so a project
+  can commit it and keep a shareable, cross-clone record. `doctor` gains one narrow, justified check: a WARN
+  (not a GAP) when a `.keel/` marker exists but its event log (`.keel/impact-events.log`) isn't gitignored,
+  so scratch can't leak into history — mirroring its existing unignored-private-context check, and targeting
+  the log specifically so it never flags the committable ledger. It never nags a project to *enable*
+  tracking. Covered by `tests/test_keel_impact.sh` and `tests/test_doctor.sh`.
 - **Impact tracking works out of the box, per project, with no env.** Guardrail-fire recording is now gated
   on a repo-local `.keel/` marker (resolved from the git top level), so the loop needs no exported variable
   and works in any commit context (git hook, IDE, CI): the hooks write events into the tracked repo's
   `.keel/impact-events.log` and `keel-impact.sh add` reads them there. `keel-impact.sh enable [dir]` opts an
-  existing repo in (creates the gitignored `.keel/` marker); `init-project.sh` enables it by default for new
-  projects (`--no-impact` to skip). `$KEEL_IMPACT_LOG` remains an explicit override. The test harness pins
-  `KEEL_IMPACT_LOG` into its sandbox so a suite run never records into a maintainer's real `.keel/`; every
+  existing repo in (creates the `.keel/` marker and gitignores only the event log); `init-project.sh` enables
+  it by default for new projects (`--no-impact` to skip). `$KEEL_IMPACT_LOG` remains an explicit override. The
+  test harness pins `KEEL_IMPACT_LOG` into its sandbox so a suite run never records into a maintainer's real
+  `.keel/`; every
   guardrail test now covers all three enable paths (override / marker-only / neither → nothing written).
 - **Keel impact score** — an optional way to quantify how much Keel shaped a session, built around one
   honesty rule: **the score is derived, not asserted.** `/keel-score` (`commands/keel-score.md`) does not

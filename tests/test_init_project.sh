@@ -21,9 +21,14 @@ gi="$(cat "$d/.gitignore")"
 check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
 
-# impact tracking is on by default: the .keel/ marker is created and gitignored
+# impact tracking is on by default: the .keel/ marker is created; only the event log is gitignored
 check_dir "creates the .keel/ impact marker" "$d/.keel"
-check_contains ".gitignore ignores /.keel/" "$gi" "/.keel/"
+check_contains ".gitignore ignores the event log" "$gi" "/.keel/impact-events.log"
+if grep -qxF '/.keel/' "$d/.gitignore"; then
+  fail ".gitignore does NOT ignore the whole .keel/ (ledger stays trackable)" "a bare /.keel/ line is present"
+else
+  pass ".gitignore does NOT ignore the whole .keel/ (ledger stays trackable)"
+fi
 
 # idempotency: a second run preserves an edited CLAUDE.md and adds no duplicate .gitignore lines
 printf '\nMY-EDIT\n' >> "$d/CLAUDE.md"
@@ -63,6 +68,6 @@ ni="$SANDBOX/no-impact-proj"
 run "$init" --no-impact "$ni"
 check_status "--no-impact → exit 0" 0 "$STATUS"
 if [ -d "$ni/.keel" ]; then fail "--no-impact creates no .keel/ marker" "dir exists: $ni/.keel"; else pass "--no-impact creates no .keel/ marker"; fi
-check_absent "--no-impact adds no /.keel/ ignore" "$(cat "$ni/.gitignore")" "/.keel/"
+check_absent "--no-impact adds no impact-log ignore" "$(cat "$ni/.gitignore")" "/.keel/impact-events.log"
 
 summary

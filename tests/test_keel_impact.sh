@@ -116,19 +116,22 @@ erepo="$(new_repo)"
 run bash "$TOOL" enable "$erepo"
 check_status "enable succeeds on a git repo" 0 "$STATUS"
 check_dir "enable creates the .keel/ marker" "$erepo/.keel"
-check_contains "enable gitignores /.keel/" "$(cat "$erepo/.gitignore" 2>/dev/null)" "/.keel/"
+check_contains "enable gitignores the event log only" "$(cat "$erepo/.gitignore" 2>/dev/null)" "/.keel/impact-events.log"
 check_contains "enable confirms tracking is on" "$OUT" "impact tracking enabled"
 
 # idempotent: a second enable doesn't duplicate the gitignore line
 run bash "$TOOL" enable "$erepo"
 check_status "second enable succeeds" 0 "$STATUS"
-check_contains "gitignore has exactly one /.keel/ line" "$(grep -c '^/\.keel/$' "$erepo/.gitignore")" "1"
+check_contains "gitignore has exactly one event-log line" "$(grep -c '^/\.keel/impact-events\.log$' "$erepo/.gitignore")" "1"
 
 # end-to-end: an enabled repo records a guard event with NO env, and the ledger resolves to .keel/ledger.md
 run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" event guard secret-guard blocked
 check_file "event lands in the enabled repo's .keel/ log" "$erepo/.keel/impact-events.log"
 run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" add --fire 1 --evidence e --gap none
 check_file "score writes the ledger to .keel/ledger.md (marker-resolved, no env)" "$erepo/.keel/ledger.md"
+# the split: the ephemeral log is ignored, the durable ledger stays trackable
+git -C "$erepo" check-ignore -q .keel/impact-events.log && pass "event log is gitignored" || fail "event log is gitignored" "not ignored"
+git -C "$erepo" check-ignore -q .keel/ledger.md && fail "ledger stays trackable (not ignored)" "ledger is ignored" || pass "ledger stays trackable (not ignored)"
 
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" enable . >/dev/null 2>&1

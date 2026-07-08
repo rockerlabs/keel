@@ -144,20 +144,22 @@ cmd_event() {
 }
 
 # enable [dir] — opt a repo into impact tracking: create its .keel/ marker (which the guardrail hooks look
-# for before recording a fire) and gitignore it. Idempotent. Run once per project; the AI-session flow then
-# works with no env: hooks write events into .keel/, `add` auto-ingests them.
+# for before recording a fire) and gitignore the ephemeral event log. Idempotent. Run once per project; the
+# AI-session flow then works with no env: hooks write events into .keel/, `add` auto-ingests them. Only the
+# event log is ignored — .keel/ledger.md (the durable score history) stays trackable, so `git add` it to
+# keep a shareable, cross-clone record.
 cmd_enable() {
   local dir="${1:-.}" top
   top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
   [ -n "$top" ] || top="$dir"                 # not a git repo yet: fall back to the dir as-is
   mkdir -p "$top/.keel"
   local gi="$top/.gitignore"
-  if ! { [ -f "$gi" ] && grep -qxF '/.keel/' "$gi"; }; then
-    printf '/.keel/\n' >> "$gi"
-    printf 'keel-impact: gitignored /.keel/ in %s\n' "$gi"
+  if ! { [ -f "$gi" ] && grep -qxF '/.keel/impact-events.log' "$gi"; }; then
+    printf '/.keel/impact-events.log\n' >> "$gi"
+    printf 'keel-impact: gitignored /.keel/impact-events.log in %s\n' "$gi"
   fi
   printf 'keel-impact: impact tracking enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
-  printf '  guardrail fires in this repo now record events; run /keel-score (or keel-impact.sh add) to score.\n'
+  printf '  guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md to keep the history.\n'
 }
 
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, retrieval misses) ------

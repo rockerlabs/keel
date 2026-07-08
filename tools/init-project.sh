@@ -24,9 +24,9 @@ Usage:
   init-project.sh -h | --help
 
 Idempotent: fills gaps (git, a .gitignore that hides private context, a project
-CLAUDE.md), opts the project into impact tracking (a gitignored .keel/ marker so
-guardrail fires get recorded), auto-registers the project in your INSTANCE.md, and
-reports — it never overwrites a file you already have.
+CLAUDE.md), opts the project into impact tracking (a .keel/ marker so guardrail
+fires get recorded; only its ephemeral event log is gitignored), auto-registers
+the project in your INSTANCE.md, and reports — it never overwrites a file you have.
 EOF
       exit 0 ;;
     --no-register) REGISTER=0 ;;
@@ -63,14 +63,15 @@ ensure_ignore ".DS_Store"
 ensure_ignore ".idea/"
 
 # 2b. Impact tracking — opt this project in by creating the .keel/ marker the guardrail hooks look for
-# before recording a fire (a gitignored, session-local event log). Zero token cost; --no-impact to skip.
+# before recording a fire. Only the ephemeral event log is gitignored; .keel/ledger.md (the durable score
+# history) stays trackable. Zero token cost; --no-impact to skip.
 if [ "$IMPACT" = 1 ]; then
-  ensure_ignore "/.keel/"
+  ensure_ignore "/.keel/impact-events.log"
   if [ -d .keel ]; then
     echo "  = impact tracking already enabled (.keel/)"
   else
     mkdir -p .keel
-    echo "  + impact tracking enabled (.keel/ marker for guardrail-fire events)"
+    echo "  + impact tracking enabled (.keel/ marker; ledger.md trackable, event log ignored)"
   fi
 fi
 

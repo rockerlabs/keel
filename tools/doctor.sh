@@ -13,7 +13,7 @@
 #   GAP   not a git repo
 #   GAP   no project CLAUDE.md
 #   GAP   .gitignore does not ignore the private AI context (.claude/ or CLAUDE.md) — unless public fork
-#   WARN  a .keel/ impact-tracking marker exists but isn't gitignored (its event log could leak into history)
+#   WARN  a .keel/ marker exists but its event log (.keel/impact-events.log) isn't gitignored (leak risk)
 #   WARN  secret-guard not wired (no global core.hooksPath and no local pre-commit)
 #   WARN  a local core.hooksPath override carries no guard — it silently bypasses the machine-global one
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
@@ -128,11 +128,12 @@ for d in "${DIRS[@]}"; do
     gap ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
   fi
 
-  # Impact-tracking hygiene: a repo opted into impact tracking carries a .keel/ marker whose event log is
-  # session-local and must stay out of git. Fires ONLY when .keel/ already exists AND isn't ignored — this
-  # keeps an enabled log from leaking into history; it never nags a project to enable tracking (optional).
-  if [ -d "$d/.keel" ] && ! git -C "$d" check-ignore -q .keel 2>/dev/null; then
-    warn ".keel/ (impact tracking) is not gitignored — its event log can leak into history (add /.keel/ to .gitignore, or run keel-impact.sh enable)"
+  # Impact-tracking hygiene: a repo opted into impact tracking carries a .keel/ marker. Its event log is
+  # ephemeral and must stay out of git (the ledger.md beside it is durable and MAY be committed — so we
+  # check the log specifically, not the whole dir). Fires ONLY when .keel/ exists AND the log isn't ignored;
+  # it never nags a project to enable tracking (optional).
+  if [ -d "$d/.keel" ] && ! git -C "$d" check-ignore -q .keel/impact-events.log 2>/dev/null; then
+    warn "impact event log (.keel/impact-events.log) is not gitignored — it can leak into history (run keel-impact.sh enable, or add /.keel/impact-events.log to .gitignore)"
   fi
 
   # A machine-global core.hooksPath covers this repo — UNLESS the repo sets its own LOCAL core.hooksPath,
