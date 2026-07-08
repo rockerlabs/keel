@@ -124,9 +124,36 @@ run bash "$TOOL" enable "$erepo"
 check_status "second enable succeeds" 0 "$STATUS"
 check_contains "gitignore has exactly one /.keel/ line" "$(grep -c '^/\.keel/$' "$erepo/.gitignore")" "1"
 
-# end-to-end: an enabled repo records a guard event with NO env, and add auto-ingests it
-export KEEL_IMPACT_LEDGER="$erepo/ledger.md"
-run_in "$erepo" env -u KEEL_IMPACT_LOG bash "$TOOL" event guard secret-guard blocked
+# end-to-end: an enabled repo records a guard event with NO env, and the ledger resolves to .keel/ledger.md
+run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" event guard secret-guard blocked
 check_file "event lands in the enabled repo's .keel/ log" "$erepo/.keel/impact-events.log"
+run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" add --fire 1 --evidence e --gap none
+check_file "score writes the ledger to .keel/ledger.md (marker-resolved, no env)" "$erepo/.keel/ledger.md"
+
+# --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
+pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" enable . >/dev/null 2>&1
+run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" add --guard 1 --evidence e --gap none   # 100
+pb="$(new_repo)"; run_in "$pb" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" enable . >/dev/null 2>&1
+run_in "$pb" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER bash "$TOOL" add --miss 1 --evidence e --gap none    # 0
+pc="$(new_repo)"                                                                                                # enrolled but unscored
+
+reg="$SANDBOX/INSTANCE.md"
+{
+  printf '## Projects\n\n| Name | Path | Tag |\n|------|------|-----|\n'
+  printf '| pa | `%s` | x |\n' "$pa"
+  printf '| pb | `%s` | y |\n' "$pb"
+  printf '| pc | `%s` | z |\n' "$pc"
+} > "$reg"
+
+run bash "$TOOL" rollup --registry "$reg"
+check_status "rollup --registry succeeds" 0 "$STATUS"
+check_contains "a scored project shows its mean" "$OUT" "mean 100.0/100 over 1 scored"
+check_contains "a zero-score project is included" "$OUT" "mean 0.0/100"
+check_contains "an unscored project is flagged, not counted" "$OUT" "tracking off or no sessions scored"
+check_contains "grand total averages only scored sessions" "$OUT" "3 project(s), mean 50.0/100 over 2 scored"
+check_contains "grand total sums the honest guard signal" "$OUT" "1 guard fire(s)"
+
+run bash "$TOOL" rollup --registry "$SANDBOX/nope.md"
+check_status "missing registry → exit 2" 2 "$STATUS"
 
 summary

@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Cross-project impact rollup + a doctor hygiene check.** `keel-impact.sh rollup --registry FILE` sweeps
+  every project in an `INSTANCE.md` Projects table (the same parser as `doctor --registry`) and reports each
+  one's mean score from its own `.keel/ledger.md`, plus a grand total and the cumulative guardrail-fire /
+  retrieval-miss signals — the cross-project "usefulness of Keel" view. It lives in the impact tool, **not**
+  in `doctor`: `doctor` stays a baseline audit and does not gain an impact-status line (that would be false
+  drift for an optional feature). To make the sweep coherent, `keel-impact.sh` now resolves the ledger (and
+  the event log) from the tracked repo's `.keel/` marker, so a project's sessions score into
+  `.keel/ledger.md` with no env — the same out-of-the-box resolution the guardrails use. `doctor` gains one
+  narrow, justified check: a WARN (not a GAP) when a `.keel/` marker exists but isn't gitignored, so an
+  enabled event log can't leak into history — mirroring its existing unignored-private-context check. It
+  never nags a project to *enable* tracking. Covered by `tests/test_keel_impact.sh` and
+  `tests/test_doctor.sh`.
 - **Impact tracking works out of the box, per project, with no env.** Guardrail-fire recording is now gated
   on a repo-local `.keel/` marker (resolved from the git top level), so the loop needs no exported variable
   and works in any commit context (git hook, IDE, CI): the hooks write events into the tracked repo's

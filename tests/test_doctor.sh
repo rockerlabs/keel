@@ -50,6 +50,21 @@ run "$doctor" "$d"
 check_status "clean baseline → exit 0" 0 "$STATUS"
 check_contains "reports baseline OK" "$OUT" "baseline OK"
 
+# WARN (not GAP): an impact-tracking .keel/ marker exists but is NOT gitignored — its event log could leak
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"   # baseline clean...
+mkdir "$d/.keel"                                    # ...but .keel/ present and not ignored
+run "$doctor" "$d"
+check_status "unignored .keel/ → exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "warns about the unignored .keel/" "$OUT" ".keel/ (impact tracking) is not gitignored"
+
+# ...and once /.keel/ is ignored, the warning is gone (the out-of-the-box enable state)
+printf '/.keel/\n' >> "$d/.gitignore"
+run "$doctor" "$d"
+check_status "gitignored .keel/ → exit 0" 0 "$STATUS"
+check_absent "no .keel/ warning once it's ignored" "$OUT" ".keel/ (impact tracking) is not gitignored"
+
 # a git WORKTREE — where .git is a FILE, not a dir — must not be mis-detected as "not a git repo"
 # (the same trap hits submodules). Regression for the [ -d .git ] → git rev-parse fix.
 base="$(mkproj)"; git -C "$base" init -q

@@ -28,11 +28,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-LEDGER="${KEEL_IMPACT_LEDGER:-$REPO_ROOT/docs/keel-impact.md}"
-# The deterministic event log: shell tools (secret-guard, …) append cited events here at zero token cost,
-# and `add` auto-ingests them. Default is CWD-relative so a git hook and a wrap in the same repo agree;
-# $KEEL_IMPACT_LOG overrides. Never commit it (keel's .gitignore ignores /.keel/).
-LOG="${KEEL_IMPACT_LOG:-.keel/impact-events.log}"
+
+# Ledger + event log both live in the tracked repo's .keel/ (the same per-repo marker the guardrail hooks
+# use), so the loop is out-of-the-box per project with no env. Resolution: an explicit env override wins;
+# else, if the repo has a .keel/ marker, use it; else fall back (the ledger to Keel's own dogfooding copy,
+# the log to a CWD-relative path). $KEEL_IMPACT_LEDGER / $KEEL_IMPACT_LOG override either.
+_keel_top() { git rev-parse --show-toplevel 2>/dev/null || true; }
+_resolve_ledger() {
+  if [ -n "${KEEL_IMPACT_LEDGER:-}" ]; then printf '%s' "$KEEL_IMPACT_LEDGER"; return; fi
+  local top; top="$(_keel_top)"
+  if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/ledger.md"; return; fi
+  printf '%s' "$REPO_ROOT/docs/keel-impact.md"
+}
+_resolve_log() {
+  if [ -n "${KEEL_IMPACT_LOG:-}" ]; then printf '%s' "$KEEL_IMPACT_LOG"; return; fi
+  local top; top="$(_keel_top)"
+  if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/impact-events.log"; return; fi
+  printf '%s' ".keel/impact-events.log"
+}
+LEDGER="$(_resolve_ledger)"
+LOG="$(_resolve_log)"
 EVENT_TYPES="guard fire hit miss friction"
 
 usage() {
@@ -44,7 +59,8 @@ Usage:
                      --evidence "..." --gap "..."
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh enable [dir]                    opt a repo into tracking (create .keel/ marker + gitignore)
-  keel-impact.sh rollup
+  keel-impact.sh rollup                          this repo's trend + cumulative signals
+  keel-impact.sh rollup --registry FILE          cross-project sweep of an INSTANCE.md Projects table
   keel-impact.sh -h | --help
 
 `enable` turns a repo on: it creates the .keel/ marker the guardrail hooks look for. Once enabled, a
@@ -172,6 +188,61 @@ rollup() {
   ' "$LEDGER"
 }
 
+# Emit "sessions scored sum guard miss" for one ledger file (all zeros if absent/empty). The single source
+# of the per-ledger tally, shared by the cross-project rollup.
+_ledger_stats() {
+  awk -F'|' '
+    $2 ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
+      sess++; g += $5 + 0; m += $8 + 0
+      s = $3; gsub(/ /, "", s)
+      if (s ~ /^[0-9]+$/) { nsc++; sum += s + 0 }
+    }
+    END { printf "%d %d %d %d %d", sess+0, nsc+0, sum+0, g+0, m+0 }
+  ' "$1" 2>/dev/null
+}
+
+# rollup --registry FILE — sweep every project in an INSTANCE.md Projects table (same parser as doctor) and
+# report each one's impact from its own .keel/ledger.md, plus a grand total. This is the cross-project
+# "usefulness of Keel" view; it lives here, in the impact tool, NOT in doctor (which audits baseline only).
+rollup_registry() {
+  local reg="$1"
+  [ -f "$reg" ] || { printf 'keel-impact: registry not found: %s\n' "$reg" >&2; exit 2; }
+  printf 'Keel impact — cross-project rollup (%s)\n' "$reg"
+  local t_sess=0 t_scored=0 t_sum=0 t_guard=0 t_miss=0 shown=0 path ledger
+  local _lead _col1 col_path _rest
+  while IFS='|' read -r _lead _col1 col_path _rest; do
+    path="$(printf '%s' "$col_path" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    case "$path" in ""|Path|*"<"*) continue ;; esac          # header / blank / placeholder row
+    path="${path/#\~/$HOME}"
+    shown=$(( shown + 1 ))
+    ledger="$path/.keel/ledger.md"
+    if [ ! -f "$ledger" ]; then
+      printf '  %-28s —  (tracking off or no sessions scored)\n' "$(basename "$path")"
+      continue
+    fi
+    local sess scored sum g m
+    read -r sess scored sum g m <<EOF
+$(_ledger_stats "$ledger")
+EOF
+    t_sess=$(( t_sess + sess )); t_scored=$(( t_scored + scored )); t_sum=$(( t_sum + sum ))
+    t_guard=$(( t_guard + g )); t_miss=$(( t_miss + m ))
+    if [ "$scored" -gt 0 ]; then
+      awk -v n="$(basename "$path")" -v s="$sess" -v sc="$scored" -v su="$sum" -v g="$g" \
+        'BEGIN{ printf "  %-28s mean %.1f/100 over %d scored (%d session(s), %d guard fire(s))\n", n, su/sc, sc, s, g }'
+    else
+      printf '  %-28s —  (%d session(s), none scored yet)\n' "$(basename "$path")" "$sess"
+    fi
+  done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$reg" \
+            | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
+  printf '  %s\n' '----'
+  if [ "$t_scored" -gt 0 ]; then
+    awk -v p="$shown" -v s="$t_sess" -v sc="$t_scored" -v su="$t_sum" -v g="$t_guard" -v m="$t_miss" \
+      'BEGIN{ printf "  ALL: %d project(s), mean %.1f/100 over %d scored session(s); %d guard fire(s), %d miss(es)\n", p, su/sc, sc, s, g, m }'
+  else
+    printf '  ALL: %d project(s), no scored sessions yet\n' "$shown"
+  fi
+}
+
 cmd_add() {
   local guard="" fire="" hit="" miss="" friction="" silent="" evidence="" gap="" ingest=1
   while [ "$#" -gt 0 ]; do
@@ -256,7 +327,13 @@ case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
   event)          shift; cmd_event "$@" ;;
   enable)         shift; cmd_enable "$@" ;;
-  rollup)         rollup ;;
+  rollup)
+    shift
+    if [ "${1:-}" = "--registry" ]; then
+      rollup_registry "${2:?keel-impact: --registry needs an INSTANCE.md FILE}"
+    else
+      rollup
+    fi ;;
   -h|--help|"")   usage ;;
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac
