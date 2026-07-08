@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Keel impact score** — an optional, evidence-first way to quantify how much Keel shaped a session.
+  `/keel-score` (`commands/keel-score.md`) scores the session 0–100 on a five-axis rubric (convention
+  adherence, retrieval hit − miss, rework avoided, guardrails fired, command leverage), governed by three
+  honesty rules: no point without a citation, score the counterfactual delta not the absolute, and subtract
+  a friction penalty (help − friction). The deterministic half — date stamp, row append, rolling trend — is
+  `tools/keel-impact.sh`, which writes an append-only ledger (`docs/keel-impact.md`); the model judges, the
+  script counts (same split as `doctor`). Wired as an optional step 7 in `/wrap`, so it rides the existing
+  session-wrap ritual and feeds its promote/demote signal a tracked number instead of a gut call. Portable
+  by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill) so it works under any AI
+  assistant, like the rest of Keel. Covered by `tests/test_keel_impact.sh` (21 assertions).
 - README **demo GIF** (`docs/demo.gif`) — a ~40s real, sandboxed secret-guard run near the top of the
   README: hook install → an API key blocked on commit → the owner's name blocked inside a UTF-16 binary
   fixture. Nothing mocked: the frames are the hook's actual output. Recorded by the committed, reproducible

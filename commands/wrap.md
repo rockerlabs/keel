@@ -43,7 +43,12 @@ file with no git undo, back it up to a temp dir before a mass edit.
 strained a principle in `PRINCIPLES.md` (P0–P4 or a named tension), note or revise it there: the cheap
 per-session arm of the revision ritual. Most sessions add nothing; skip silently if so.
 
-**7. Persist** — stage the **explicit paths** this session changed (never `git add -A` in a shared
+**7. Impact (optional — the quantified promote/demote signal)** — step 4 is a gut call; `/keel-score` turns
+it into a tracked number. If the session leaned on Keel in a citable way, run it: it scores the session
+0–100 on an evidence-first rubric (help minus friction) and appends a ledger row, surfacing silent rules
+(demote) and hunted-for facts (promote). Skip silently on a trivial session.
+
+**8. Persist** — stage the **explicit paths** this session changed (never `git add -A` in a shared
 knowledge-base repo — it sweeps a sibling's in-flight work under your commit), re-run `git status` /
 `git diff --staged` and confirm the staged set matches your commit message, then commit. The `secret-guard`
 hook scans automatically on commit/push, so there's no manual scan step. Push, then **verify the push
