@@ -8,6 +8,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- README **demo GIF** (`docs/demo.gif`) — a ~40s real, sandboxed secret-guard run near the top of the
+  README: hook install → an API key blocked on commit → the owner's name blocked inside a UTF-16 binary
+  fixture. Nothing mocked: the frames are the hook's actual output. Recorded by the committed, reproducible
+  `docs/demo/record-demo.sh` (asciinema + agg; HOME and the global git config are redirected into a temp
+  sandbox, so recording touches nothing on the machine). Closes the "the README asks to be believed" gap —
+  the demonstrable tool is now demonstrated (project backlog #6, T2).
+
 ## [0.4.0] — 2026-07-08
 
 "Personal-data guard" release. `secret-guard` grows a second detector class — your own personal data

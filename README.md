@@ -19,6 +19,12 @@ detail and grabs the wrong fact. Keel is the middle path: a small, tool-independ
 **what your assistant loads, when, and how much** — so the knowledge and judgment you build up don't get
 thrown away every time the tools change.
 
+![Real sandboxed run: secret-guard blocks an API key on commit, then the owner's own name hidden inside a UTF-16 binary fixture](docs/demo.gif)
+
+*~40 seconds, nothing mocked: install the hook → an API key is blocked on commit → your own name is
+blocked even inside a UTF-16 binary fixture. Reproduce it yourself:
+[`docs/demo/record-demo.sh`](docs/demo/record-demo.sh) (sandboxed, touches nothing).*
+
 ## Quickstart
 
 **1. Install.** Copies the small always-on file into `~/.claude`, turns on the **secret-guard** check
