@@ -9,6 +9,28 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Impact score is now an auditable trail, with a `hold` signal and retrospective scoring.** Three
+  refinements to the (still-unreleased) impact score:
+  - **Auditable counts (per-event evidence).** The score is no longer built from bare counts. `keel-score`
+    passes **one cited event per flag** (repeat `--fire "…"` / `--hit "…"` / `--miss "…"` / `--friction "…"`);
+    the count is the number of citations, so *no citation → no count*, mechanically — the same "derived, not
+    asserted" honesty the score already had, pushed down to the counts. Every citation (including each
+    auto-ingested guardrail fire, cited by its `source | detail`) is archived to a durable, trackable
+    `.keel/evidence.md` next to the ledger, so a score is a checkable record rather than a number to trust.
+    The ledger's `evidence` cell is auto-filled with the single strongest citation. **Breaking** for the
+    unreleased `add` interface: the `--guard N …` integer flags and `--evidence` are replaced by repeatable
+    citation flags (`--silent N` stays a bare count).
+  - **`hold` — keel's highest function, scored above guard.** A new event type for when keel *restrained the
+    agent* from weakening or bypassing a rule/guardrail (vs `guard`, which blocks bad content). It weighs
+    highest: `HELP = 4·hold + 3·guard + 2·fire + hit`. It gets its own ledger column and cumulative signal.
+    **Schema change:** the ledger gains a `hold` column after `guard`.
+  - **Retrospective scoring, quarantined.** `add --retro [--asof YYYY-MM-DD]` records a score reconstructed
+    from a past session (e.g. a chat transcript) without contaminating the live signal: it never touches the
+    live event log, its row is conf-tagged `-retro` and dropped one tier, and the live `rollup` excludes it
+    (`rollup --retro` shows only these). Transcript→events extraction stays a manual, opt-in step.
+
+  Covered by `tests/test_keel_impact.sh` (89 cases). A/B calibration remains documented-only (the sole true
+  counterfactual is not zero-cost, so it is deliberately not automated).
 - **Cross-project impact rollup + a doctor hygiene check.** `keel-impact.sh rollup --registry FILE` sweeps
   every project in an `INSTANCE.md` Projects table (the same parser as `doctor --registry`) and reports each
   one's mean score from its own `.keel/ledger.md`, plus a grand total and the cumulative guardrail-fire /
@@ -36,8 +58,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   honesty rule: **the score is derived, not asserted.** `/keel-score` (`commands/keel-score.md`) does not
   pick a number — it enumerates *counted, cited events* (guardrail fires, rule fires, retrieval
   hits/misses, friction), each owing a concrete artifact from the session. `tools/keel-impact.sh` then
-  computes the 0–100 score by a fixed formula — `HELP = 3·guard + 2·fire + hit`, `COST = 2·miss + 2·friction`,
-  `score = round(100·HELP/(HELP+COST))` — so the marketing number is a pure function of the evidence and
+  computes the 0–100 score by a fixed formula — `HELP = 4·hold + 3·guard + 2·fire + hit`,
+  `COST = 2·miss + 2·friction`, `score = round(100·HELP/(HELP+COST))` — so the marketing number is a pure function of the evidence and
   cannot be inflated by vibe. Guardrail fires (objective blocks) dominate; retrieval misses and friction pull
   it down; a session with no events derives `—` (nothing to measure), never a fake 0. Each row carries a
   `conf` tier from the event count (a score behind one event is visibly weak) and a `silent`-rules count
