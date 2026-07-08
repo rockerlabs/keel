@@ -24,10 +24,10 @@ do not count it. Never round a count up on vibes.
 | `--friction` | a **stale/noisy rule got in the way** | the rule + how it misled — *cost*, lowers the score (demote pressure) |
 | `--silent` | always-loaded rules that **did not fire** this session | count only; the demote-candidate list — recorded, but **not** folded into the score |
 
-**Guardrail fires are collected for you.** When `$KEEL_IMPACT_LOG` is set, `secret-guard` records each block
-to a zero-token event log (metadata only, never the secret) and `add` auto-ingests it into `--guard` — so
-normally leave `--guard` at 0; the most objective signal reaches the score without you counting it. Pass
-`--guard` only for a fire the log did not capture.
+**Guardrail fires are collected for you.** When `$KEEL_IMPACT_LOG` is set, the guardrail hooks
+(`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire to a zero-token event log (metadata only,
+never the secret) and `add` auto-ingests it into `--guard` — so normally leave `--guard` at 0; the objective
+signal reaches the score uncounted by you. Pass `--guard` only for a fire the log missed.
 
 **How the number falls out** (so you can predict it, not target it): `HELP = 3·guard + 2·fire + hit`,
 `COST = 2·miss + 2·friction`, `score = round(100·HELP/(HELP+COST))`. Guardrail fires dominate because they

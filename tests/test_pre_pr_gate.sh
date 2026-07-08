@@ -85,4 +85,21 @@ gate "gh pr create --fill" "$d"
 check_contains "non-git cwd → denied, never silently allowed" "$OUT" '"permissionDecision":"deny"'
 rm -f "$(sentinel_for "$d")"
 
+# --- impact instrumentation: opt-in guardrail-fire event on deny --------------------------------
+# A deny (here: no sentinel → run /polish first) records ONE metadata-only guard event when
+# $KEEL_IMPACT_LOG is set, on the log file only — never on stdout, so the hook's JSON stays intact.
+d="$(mkrepo)"; rm -f "$(sentinel_for "$d")"
+imp_log="$SANDBOX/pprg-events.log"; rm -f "$imp_log"
+json="$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}')"
+out="$(printf '%s' "$json" | KEEL_IMPACT_LOG="$imp_log" bash "$gate" 2>/dev/null)"
+check_contains "deny still emits the deny payload on stdout" "$out" '"permissionDecision":"deny"'
+check_absent "stdout is not polluted by the event line" "$out" "pre-pr-gate	blocked"
+check_file "deny records an impact event when opted in" "$imp_log"
+check_contains "event is a guard/pre-pr-gate line" "$(cat "$imp_log" 2>/dev/null)" "	guard	pre-pr-gate	blocked"
+
+# default: no env → no side effect
+rm -f "$imp_log"
+printf '%s' "$json" | bash "$gate" >/dev/null 2>&1
+check_nofile "no impact log written when the env is unset" "$imp_log"
+
 summary

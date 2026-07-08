@@ -26,13 +26,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   Portable by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill).
 - **Impact events — the objective signal, collected in the shell at zero token cost.** The most objective
   input to the score (a guardrail actually firing) is now captured deterministically instead of counted by
-  the model: `secret-guard` appends a metadata-only event (never the matched secret) to a session-local log
-  (`$KEEL_IMPACT_LOG`, default `.keel/impact-events.log`, gitignored) when it blocks, and `keel-impact.sh
-  add` auto-ingests any logged events into the score, then truncates the log so nothing is double-counted
-  (`--no-ingest` opts out). A new `keel-impact.sh event TYPE [source] [detail]` is the producer entry point
-  for any shell tool. The `secret-guard` instrumentation is opt-in (writes only when `$KEEL_IMPACT_LOG` is
-  set), so default hook behaviour is byte-identical. Covered by `tests/test_keel_impact.sh` (40 assertions)
-  and `tests/test_secret_guard.sh` (metadata-only + no-leak + off-by-default).
+  the model: all three guardrails — `secret-guard` (on a block), `pre-pr-gate` (on a deny), `public-audit`
+  (on a GAP) — append a metadata-only event (never the matched secret) to a session-local log
+  (`$KEEL_IMPACT_LOG`, default `.keel/impact-events.log`, gitignored), and `keel-impact.sh add` auto-ingests
+  any logged events into the score, then truncates the log so nothing is double-counted (`--no-ingest` opts
+  out). A new `keel-impact.sh event TYPE [source] [detail]` is the producer entry point for any shell tool.
+  The instrumentation is opt-in (each hook writes only when `$KEEL_IMPACT_LOG` is set), so default hook
+  behaviour is byte-identical, and it writes to the log file only — never stdout, so `pre-pr-gate`'s JSON
+  decision stays intact. Covered by `tests/test_keel_impact.sh` (40), `tests/test_secret_guard.sh`,
+  `tests/test_pre_pr_gate.sh`, and `tests/test_public_audit.sh` (each: metadata-only + no-leak +
+  off-by-default; `public-audit` also asserts a clean run records nothing).
 - README **demo GIF** (`docs/demo.gif`) — a ~40s real, sandboxed secret-guard run near the top of the
   README: hook install → an API key blocked on commit → the owner's name blocked inside a UTF-16 binary
   fixture. Nothing mocked: the frames are the hook's actual output. Recorded by the committed, reproducible

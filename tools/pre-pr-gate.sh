@@ -32,6 +32,13 @@ wt=$(basename "$cwd")
 sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
+  # Impact instrumentation (opt-in, metadata only): record that this guardrail fired so keel-impact can
+  # auto-ingest it — deterministic, zero-token. Writes to the log file, never stdout (the hook's JSON stays
+  # intact). Default ($KEEL_IMPACT_LOG unset) writes nothing, so the gate's behaviour is unchanged.
+  if [ -n "${KEEL_IMPACT_LOG:-}" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard pre-pr-gate blocked \
+      >> "$KEEL_IMPACT_LOG" 2>/dev/null || true
+  fi
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
   exit 0
 }

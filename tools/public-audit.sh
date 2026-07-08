@@ -284,4 +284,12 @@ fi
 
 # --- verdict -------------------------------------------------------------------------------------
 [ "$exit_code" = 0 ] && say "public-audit: no publication blockers found"
+
+# Impact instrumentation (opt-in, metadata only): a GAP is a real publication blocker caught — record the
+# guardrail fire so keel-impact can auto-ingest it (deterministic, zero-token). Only on GAP (exit 1), never
+# on a clean run or advisory WARNs. Default ($KEEL_IMPACT_LOG unset) writes nothing.
+if [ "$exit_code" != 0 ] && [ -n "${KEEL_IMPACT_LOG:-}" ]; then
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard public-audit blocked \
+    >> "$KEEL_IMPACT_LOG" 2>/dev/null || true
+fi
 exit "$exit_code"

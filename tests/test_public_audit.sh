@@ -206,4 +206,20 @@ else
   pass "allow-email regex tolerated by this grep (busybox) → nothing to flag"
 fi
 
+# --- impact instrumentation: opt-in guardrail-fire event on GAP ---------------------------------
+# A GAP (a real publication blocker caught) records ONE metadata-only guard event when $KEEL_IMPACT_LOG
+# is set. A clean run (exit 0) and advisory WARNs record nothing. Default (env unset) writes nothing.
+imp_log="$SANDBOX/pa-events.log"; rm -f "$imp_log"
+d="$(repo_by person@corp.com)"                       # non-safe identity in history → GAP exit 1
+run env KEEL_IMPACT_LOG="$imp_log" bash "$pa" "$d"
+check_status "GAP still exits 1 with impact log on" 1 "$STATUS"
+check_file "GAP records an impact event" "$imp_log"
+check_contains "event is a guard/public-audit line" "$(cat "$imp_log" 2>/dev/null)" "	guard	public-audit	blocked"
+
+rm -f "$imp_log"
+d="$(repo_by dev@example.com)"                        # safe identity, clean tree → exit 0
+run env KEEL_IMPACT_LOG="$imp_log" bash "$pa" "$d"
+check_status "clean run exits 0 with impact log on" 0 "$STATUS"
+check_nofile "a clean run records no impact event" "$imp_log"
+
 summary
