@@ -1,13 +1,15 @@
 # Keel impact ledger
 
-One row per scored session — the *quantified* form of the wrap-time promote/demote ritual
-(`FRAMEWORK.md` → "retrieval miss = promote signal"). Rows are appended by `tools/keel-impact.sh`; the
-scoring rubric and the honesty rules live in `commands/keel-score.md`. The number is only as good as the
-`evidence` beside it — a row with a vague citation should be distrusted, not averaged in.
+One row per scored session. The score is **derived, not asserted**: `commands/keel-score.md` gathers counted,
+cited events; `tools/keel-impact.sh` computes the 0-100 number from them by a fixed formula, so it is a pure
+function of the evidence and cannot be inflated by vibe. This is the quantified form of the wrap-time
+promote/demote ritual (`FRAMEWORK.md` → "retrieval miss = promote signal").
 
-Axes (each 0-20 unless noted): **conv** convention adherence · **retr** retrieval hit − miss (may be
-negative) · **rework** rework avoided · **guard** guardrails fired · **cmd** command leverage.
-**fric** friction penalty already subtracted from **score**.
+Columns: **score** = round(100·HELP/(HELP+COST)) where HELP=3·guard+2·fire+hit, COST=2·miss+2·friction
+(`—` = no events, nothing to measure). **conf** = evidence-count tier (none/low/med/high) — a score behind
+few events is weaker. Event counts: **guard** guardrail fired · **fire** rule applied · **hit** retrieval
+hit · **miss** retrieval miss (promote pressure) · **fric** friction (demote pressure) · **silent**
+always-loaded rules that did not fire (demote candidates; NOT folded into the score).
 
-| date | score | conv | retr | rework | guard | cmd | fric | evidence | gap (demote/promote) |
-|------|-------|------|------|--------|-------|-----|------|----------|----------------------|
+| date | score | conf | guard | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
+|------|-------|------|-------|------|-----|------|------|--------|----------|----------------------|

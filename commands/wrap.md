@@ -44,9 +44,10 @@ strained a principle in `PRINCIPLES.md` (P0–P4 or a named tension), note or re
 per-session arm of the revision ritual. Most sessions add nothing; skip silently if so.
 
 **7. Impact (optional — the quantified promote/demote signal)** — step 4 is a gut call; `/keel-score` turns
-it into a tracked number. If the session leaned on Keel in a citable way, run it: it scores the session
-0–100 on an evidence-first rubric (help minus friction) and appends a ledger row, surfacing silent rules
-(demote) and hunted-for facts (promote). Skip silently on a trivial session.
+it into a tracked number. If the session leaned on Keel in a citable way, run it: you count cited events
+(guardrail fires, rule fires, retrieval hits/misses, friction) and the tool *derives* a 0–100 score from
+them — never a hand-picked number — while the ledger row surfaces silent rules (demote) and hunted-for facts
+(promote). Skip silently on a trivial session.
 
 **8. Persist** — stage the **explicit paths** this session changed (never `git add -A` in a shared
 knowledge-base repo — it sweeps a sibling's in-flight work under your commit), re-run `git status` /

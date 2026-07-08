@@ -9,16 +9,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
-- **Keel impact score** — an optional, evidence-first way to quantify how much Keel shaped a session.
-  `/keel-score` (`commands/keel-score.md`) scores the session 0–100 on a five-axis rubric (convention
-  adherence, retrieval hit − miss, rework avoided, guardrails fired, command leverage), governed by three
-  honesty rules: no point without a citation, score the counterfactual delta not the absolute, and subtract
-  a friction penalty (help − friction). The deterministic half — date stamp, row append, rolling trend — is
-  `tools/keel-impact.sh`, which writes an append-only ledger (`docs/keel-impact.md`); the model judges, the
-  script counts (same split as `doctor`). Wired as an optional step 7 in `/wrap`, so it rides the existing
-  session-wrap ritual and feeds its promote/demote signal a tracked number instead of a gut call. Portable
-  by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill) so it works under any AI
-  assistant, like the rest of Keel. Covered by `tests/test_keel_impact.sh` (21 assertions).
+- **Keel impact score** — an optional way to quantify how much Keel shaped a session, built around one
+  honesty rule: **the score is derived, not asserted.** `/keel-score` (`commands/keel-score.md`) does not
+  pick a number — it enumerates *counted, cited events* (guardrail fires, rule fires, retrieval
+  hits/misses, friction), each owing a concrete artifact from the session. `tools/keel-impact.sh` then
+  computes the 0–100 score by a fixed formula — `HELP = 3·guard + 2·fire + hit`, `COST = 2·miss + 2·friction`,
+  `score = round(100·HELP/(HELP+COST))` — so the marketing number is a pure function of the evidence and
+  cannot be inflated by vibe. Guardrail fires (objective blocks) dominate; retrieval misses and friction pull
+  it down; a session with no events derives `—` (nothing to measure), never a fake 0. Each row carries a
+  `conf` tier from the event count (a score behind one event is visibly weak) and a `silent`-rules count
+  (always-loaded rules that did not fire — demote candidates, recorded but deliberately *not* folded into the
+  score). Rollup skips `—` rows from the mean and surfaces the honest cumulative signals (total guardrail
+  fires, total retrieval misses = standing promote pressure). The command also documents the only real
+  counterfactual — an occasional A/B (same task with Keel vs cold) — as the ground truth these self-reported
+  scores estimate. Wired as an optional step 7 in `/wrap`; append-only ledger at `docs/keel-impact.md`.
+  Portable by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill). Covered by
+  `tests/test_keel_impact.sh` (29 assertions).
 - README **demo GIF** (`docs/demo.gif`) — a ~40s real, sandboxed secret-guard run near the top of the
   README: hook install → an API key blocked on commit → the owner's name blocked inside a UTF-16 binary
   fixture. Nothing mocked: the frames are the hook's actual output. Recorded by the committed, reproducible
