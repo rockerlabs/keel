@@ -23,6 +23,14 @@ git config --global user.email test@keel.invalid
 git config --global user.name "Keel Test"
 git config --global init.defaultBranch main
 git config --global commit.gpgsign false
+
+# Redirect impact writes into the sandbox by default, so a guardrail firing (or a stray `add`) during a
+# test never records into a real .keel/ log or into Keel's own docs/keel-impact.md. Tests that assert on
+# these override with their own path; tests of the .keel/-marker default path unset them and run inside a
+# fresh repo. Removed with the sandbox on exit.
+export KEEL_IMPACT_LOG="$SANDBOX/harness-impact.log"
+export KEEL_IMPACT_LEDGER="$SANDBOX/harness-ledger.md"
+
 trap 'rm -rf "$SANDBOX"' EXIT
 
 # --- assertions ---------------------------------------------------------------------------------

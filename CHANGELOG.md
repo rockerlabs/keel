@@ -9,6 +9,56 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Cross-project impact rollup + a doctor hygiene check.** `keel-impact.sh rollup --registry FILE` sweeps
+  every project in an `INSTANCE.md` Projects table (the same parser as `doctor --registry`) and reports each
+  one's mean score from its own `.keel/ledger.md`, plus a grand total and the cumulative guardrail-fire /
+  retrieval-miss signals — the cross-project "usefulness of Keel" view. It lives in the impact tool, **not**
+  in `doctor`: `doctor` stays a baseline audit and does not gain an impact-status line (that would be false
+  drift for an optional feature). To make the sweep coherent, `keel-impact.sh` now resolves the ledger (and
+  the event log) from the tracked repo's `.keel/` marker, so a project's sessions score into
+  `.keel/ledger.md` with no env — the same out-of-the-box resolution the guardrails use. Only the ephemeral
+  event log is gitignored; **`.keel/ledger.md` (the durable score history) stays trackable**, so a project
+  can commit it and keep a shareable, cross-clone record. `doctor` gains one narrow, justified check: a WARN
+  (not a GAP) when a `.keel/` marker exists but its event log (`.keel/impact-events.log`) isn't gitignored,
+  so scratch can't leak into history — mirroring its existing unignored-private-context check, and targeting
+  the log specifically so it never flags the committable ledger. It never nags a project to *enable*
+  tracking. Covered by `tests/test_keel_impact.sh` and `tests/test_doctor.sh`.
+- **Impact tracking works out of the box, per project, with no env.** Guardrail-fire recording is now gated
+  on a repo-local `.keel/` marker (resolved from the git top level), so the loop needs no exported variable
+  and works in any commit context (git hook, IDE, CI): the hooks write events into the tracked repo's
+  `.keel/impact-events.log` and `keel-impact.sh add` reads them there. `keel-impact.sh enable [dir]` opts an
+  existing repo in (creates the `.keel/` marker and gitignores only the event log); `init-project.sh` enables
+  it by default for new projects (`--no-impact` to skip). `$KEEL_IMPACT_LOG` remains an explicit override. The
+  test harness pins `KEEL_IMPACT_LOG` into its sandbox so a suite run never records into a maintainer's real
+  `.keel/`; every
+  guardrail test now covers all three enable paths (override / marker-only / neither → nothing written).
+- **Keel impact score** — an optional way to quantify how much Keel shaped a session, built around one
+  honesty rule: **the score is derived, not asserted.** `/keel-score` (`commands/keel-score.md`) does not
+  pick a number — it enumerates *counted, cited events* (guardrail fires, rule fires, retrieval
+  hits/misses, friction), each owing a concrete artifact from the session. `tools/keel-impact.sh` then
+  computes the 0–100 score by a fixed formula — `HELP = 3·guard + 2·fire + hit`, `COST = 2·miss + 2·friction`,
+  `score = round(100·HELP/(HELP+COST))` — so the marketing number is a pure function of the evidence and
+  cannot be inflated by vibe. Guardrail fires (objective blocks) dominate; retrieval misses and friction pull
+  it down; a session with no events derives `—` (nothing to measure), never a fake 0. Each row carries a
+  `conf` tier from the event count (a score behind one event is visibly weak) and a `silent`-rules count
+  (always-loaded rules that did not fire — demote candidates, recorded but deliberately *not* folded into the
+  score). Rollup skips `—` rows from the mean and surfaces the honest cumulative signals (total guardrail
+  fires, total retrieval misses = standing promote pressure). The command also documents the only real
+  counterfactual — an occasional A/B (same task with Keel vs cold) — as the ground truth these self-reported
+  scores estimate. Wired as an optional step 7 in `/wrap`; append-only ledger at `docs/keel-impact.md`.
+  Portable by design (a Markdown command + a POSIX-ish Bash tool, not a Claude-only skill).
+- **Impact events — the objective signal, collected in the shell at zero token cost.** The most objective
+  input to the score (a guardrail actually firing) is now captured deterministically instead of counted by
+  the model: all three guardrails — `secret-guard` (on a block), `pre-pr-gate` (on a deny), `public-audit`
+  (on a GAP) — append a metadata-only event (never the matched secret) to a session-local log
+  (`$KEEL_IMPACT_LOG`, default `.keel/impact-events.log`, gitignored), and `keel-impact.sh add` auto-ingests
+  any logged events into the score, then truncates the log so nothing is double-counted (`--no-ingest` opts
+  out). A new `keel-impact.sh event TYPE [source] [detail]` is the producer entry point for any shell tool.
+  The instrumentation is opt-in (each hook writes only when `$KEEL_IMPACT_LOG` is set), so default hook
+  behaviour is byte-identical, and it writes to the log file only — never stdout, so `pre-pr-gate`'s JSON
+  decision stays intact. Covered by `tests/test_keel_impact.sh` (40), `tests/test_secret_guard.sh`,
+  `tests/test_pre_pr_gate.sh`, and `tests/test_public_audit.sh` (each: metadata-only + no-leak +
+  off-by-default; `public-audit` also asserts a clean run records nothing).
 - README **demo GIF** (`docs/demo.gif`) — a ~40s real, sandboxed secret-guard run near the top of the
   README: hook install → an API key blocked on commit → the owner's name blocked inside a UTF-16 binary
   fixture. Nothing mocked: the frames are the hook's actual output. Recorded by the committed, reproducible

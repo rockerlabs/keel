@@ -289,6 +289,19 @@ while IFS= read -r rec; do
 done <<< "$records"
 
 if [ "$found" = 1 ]; then
+  # Impact instrumentation (metadata only, opt-in per repo): record that a guardrail fired so keel-impact
+  # can auto-ingest it — a deterministic, zero-token signal. NEVER the matched secret; only the fact of a
+  # block. Enabled either explicitly ($KEEL_IMPACT_LOG) or per repo by a .keel/ marker at its top level;
+  # with neither, nothing is written and the hook's behaviour is unchanged.
+  _klog="${KEEL_IMPACT_LOG:-}"
+  if [ -z "$_klog" ]; then
+    _ktop="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
+  fi
+  if [ -n "$_klog" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard secret-guard blocked \
+      >> "$_klog" 2>/dev/null || true
+  fi
   echo "" >&2
   echo "If this is a legit fixture, add it to $ALLOW_FILE or an inline 'secret-scan:allow' — don't weaken the scanner." >&2
   echo "Operator-specific literals live in the local, never-committed \$SECRET_SCAN_PERSONAL_FILE." >&2

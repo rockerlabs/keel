@@ -85,4 +85,31 @@ gate "gh pr create --fill" "$d"
 check_contains "non-git cwd → denied, never silently allowed" "$OUT" '"permissionDecision":"deny"'
 rm -f "$(sentinel_for "$d")"
 
+# --- impact instrumentation: guardrail-fire event on deny ---------------------------------------
+# A deny (here: no sentinel → run /polish first) records ONE metadata-only guard event when tracking is on
+# (via $KEEL_IMPACT_LOG or the target repo's .keel/ marker), on the log file only — never on stdout, so the
+# hook's JSON decision stays intact.
+d="$(mkrepo)"; rm -f "$(sentinel_for "$d")"
+imp_log="$SANDBOX/pprg-events.log"; rm -f "$imp_log"
+json="$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}')"
+
+# (a) explicit override
+out="$(printf '%s' "$json" | KEEL_IMPACT_LOG="$imp_log" bash "$gate" 2>/dev/null)"
+check_contains "deny still emits the deny payload on stdout" "$out" '"permissionDecision":"deny"'
+check_absent "stdout is not polluted by the event line" "$out" "pre-pr-gate	blocked"
+check_file "deny records an impact event when opted in" "$imp_log"
+check_contains "event is a guard/pre-pr-gate line" "$(cat "$imp_log" 2>/dev/null)" "	guard	pre-pr-gate	blocked"
+
+# (b) per-repo .keel/ marker, NO env — resolved from the hook's cwd ($d)
+mkdir -p "$d/.keel"; rm -f "$(sentinel_for "$d")"
+printf '%s' "$json" | env -u KEEL_IMPACT_LOG bash "$gate" >/dev/null 2>&1
+check_file "marker alone records the deny event (no env)" "$d/.keel/impact-events.log"
+check_contains "marker event is a guard/pre-pr-gate line" "$(cat "$d/.keel/impact-events.log" 2>/dev/null)" "	guard	pre-pr-gate	blocked"
+
+# (c) no override AND no marker → nothing written
+d2="$(mkrepo)"; rm -f "$(sentinel_for "$d2")"
+json2="$(jq -n --arg c "gh pr create --fill" --arg d "$d2" '{tool_input:{command:$c}, cwd:$d}')"
+printf '%s' "$json2" | env -u KEEL_IMPACT_LOG bash "$gate" >/dev/null 2>&1
+check_nofile "no event written without override or marker" "$d2/.keel/impact-events.log"
+
 summary

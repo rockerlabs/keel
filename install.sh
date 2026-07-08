@@ -197,4 +197,6 @@ Done. secret-guard already guards your commits. Next:
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, /init-project, …
   - prefer to do it by hand? edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md
     private, and scaffold/audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>
+  - measure Keel's impact: new projects (init-project) are tracked by default; for an existing repo run
+    tools/keel-impact.sh enable <dir>  then score a session with  /keel-score
 EOF

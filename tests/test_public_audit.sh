@@ -206,4 +206,35 @@ else
   pass "allow-email regex tolerated by this grep (busybox) → nothing to flag"
 fi
 
+# --- impact instrumentation: guardrail-fire event on GAP ----------------------------------------
+# A GAP (a real publication blocker caught) records ONE metadata-only guard event when tracking is on (via
+# $KEEL_IMPACT_LOG or the audited repo's .keel/ marker). A clean run (exit 0) and advisory WARNs, and the
+# no-tracking default, record nothing.
+imp_log="$SANDBOX/pa-events.log"; rm -f "$imp_log"
+
+# (a) explicit override on a GAP
+d="$(repo_by person@corp.com)"                       # non-safe identity in history → GAP exit 1
+run env KEEL_IMPACT_LOG="$imp_log" bash "$pa" "$d"
+check_status "GAP still exits 1 with impact log on" 1 "$STATUS"
+check_file "GAP records an impact event" "$imp_log"
+check_contains "event is a guard/public-audit line" "$(cat "$imp_log" 2>/dev/null)" "	guard	public-audit	blocked"
+
+# (b) per-repo .keel/ marker, NO env — resolved from the audited dir
+d="$(repo_by person@corp.com)"; mkdir "$d/.keel"
+run env -u KEEL_IMPACT_LOG bash "$pa" "$d"
+check_status "GAP exits 1 with only a .keel/ marker" 1 "$STATUS"
+check_file "marker alone records the GAP event (no env)" "$d/.keel/impact-events.log"
+
+# (c) a clean run records nothing even with tracking on (only a GAP is a fire)
+d="$(repo_by dev@example.com)"; mkdir "$d/.keel"
+run env -u KEEL_IMPACT_LOG bash "$pa" "$d"
+check_status "clean run exits 0" 0 "$STATUS"
+check_nofile "a clean run records no impact event" "$d/.keel/impact-events.log"
+
+# (d) no override AND no marker → nothing written on a GAP
+d="$(repo_by person@corp.com)"                        # GAP, but no .keel/ marker
+run env -u KEEL_IMPACT_LOG bash "$pa" "$d"
+check_status "GAP exits 1 with tracking off" 1 "$STATUS"
+check_nofile "no event written without override or marker" "$d/.keel/impact-events.log"
+
 summary

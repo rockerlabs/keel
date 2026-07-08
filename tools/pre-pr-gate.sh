@@ -32,6 +32,19 @@ wt=$(basename "$cwd")
 sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
+  # Impact instrumentation (metadata only, opt-in per repo): record that this guardrail fired so keel-impact
+  # can auto-ingest it — deterministic, zero-token. Writes to the log file, never stdout (the hook's JSON
+  # stays intact). Enabled via $KEEL_IMPACT_LOG or a .keel/ marker at the target repo's top level; with
+  # neither, nothing is written and the gate's behaviour is unchanged.
+  _klog="${KEEL_IMPACT_LOG:-}"
+  if [ -z "$_klog" ]; then
+    _ktop="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
+  fi
+  if [ -n "$_klog" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard pre-pr-gate blocked \
+      >> "$_klog" 2>/dev/null || true
+  fi
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
   exit 0
 }
