@@ -9,6 +9,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`secret-scan` grows three verification/audit modes** (second batch of the KB-on-Keel migration —
+  the modes the maintainer's KB tooling depends on, upstreamed so the private fork can collapse onto
+  Keel's engine):
+  - **`--selftest`** — end-to-end verification via child runs of the scanner from a neutral cwd (a
+    repo's allowlist can't mask a probe): key-shape caught, no self-match on the pattern doc, inline
+    allow honored, a personal literal caught in text and inside a UTF-16LE blob, and a malformed
+    personal ERE fails *closed*. A guard you can't verify degrades silently.
+  - **`--tracked`** — detective audit of ALL tracked content (text + binary decode pass) for
+    `doctor`-style periodic reviews; **`--staged`** — the default pre-commit mode, spelled out.
+  - `install-secret-guard.sh` now runs the **installed copy's** `--selftest` after wiring (a failing
+    gate fails that script), and `install.sh`'s Verify step re-checks it functionally — so a
+    wired-but-broken gate is failed or flagged instead of degrading silently. Host-dependent probes
+    (no `iconv`, a lenient busybox grep) degrade to an honest WARN, not a false FAIL.
 - **Three field-tested gotchas upstreamed from the maintainer's own knowledge base** (the first batch of
   the KB-on-Keel migration — the maintainer's KB now consumes Keel as its base, and generic lessons flow
   upstream instead of accumulating in a private fork):

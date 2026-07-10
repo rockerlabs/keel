@@ -238,4 +238,64 @@ run_in "$nrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/perso
 check_status "block still exits 1 with tracking off" 1 "$STATUS"
 check_nofile "no event written without override or marker" "$nrepo/.keel/impact-events.log"
 
+# --- the explicit --staged alias behaves exactly like the default staged mode --------------------
+repo="$(new_repo)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/conf.txt"
+git -C "$repo" add conf.txt
+run_in "$repo" "$scan" --staged
+check_status "--staged alias blocks a staged key" 1 "$STATUS"
+
+repo="$(new_repo)"
+printf 'nothing here\n' > "$repo/ok.txt"; git -C "$repo" add ok.txt
+run_in "$repo" "$scan" --staged
+check_status "--staged on a clean staging area → exit 0" 0 "$STATUS"
+
+# --- --tracked detective audit: ALL tracked content, not just a diff (doctor / periodic review) --
+repo="$(new_repo)"
+printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/old.txt"
+git -C "$repo" add old.txt; git -C "$repo" commit -qm withkey
+printf 'clean\n' > "$repo/new.txt"; git -C "$repo" add new.txt; git -C "$repo" commit -qm clean
+run_in "$repo" "$scan" --tracked
+check_status "--tracked audit finds a long-committed key" 1 "$STATUS"
+check_contains "--tracked names the file with a line number" "$OUT" "old.txt:1"
+
+# --tracked audits tracked content ONLY: an untracked leak is out of scope, a clean tree passes
+repo="$(new_repo)"
+printf 'clean\n' > "$repo/ok.txt"; git -C "$repo" add ok.txt; git -C "$repo" commit -qm base
+printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/untracked.txt"
+run_in "$repo" "$scan" --tracked
+check_status "--tracked ignores untracked files / clean tracked → exit 0" 0 "$STATUS"
+
+# --tracked runs the binary decode pass too (a tracked UTF-16 fixture is the felt leak class)
+if command -v iconv >/dev/null 2>&1; then
+  repo="$(new_repo)"
+  printf 'name is SeekritPersonName ok' | iconv -f UTF-8 -t UTF-16LE > "$repo/fix.bin"
+  git -C "$repo" add fix.bin; git -C "$repo" commit -qm bin
+  pfile="$SANDBOX/personal-tracked"; printf 'SeekritPersonName\n' > "$pfile"
+  run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan" --tracked
+  check_status "--tracked catches a personal literal in a tracked UTF-16 binary" 1 "$STATUS"
+  check_contains "--tracked labels the binary hit" "$OUT" "(binary)"
+fi
+
+# --- --selftest verifies the scanner end-to-end and exits 0 --------------------------------------
+run "$scan" --selftest
+check_status "--selftest → exit 0" 0 "$STATUS"
+check_contains "--selftest checks the key-shape catch" "$OUT" "caught a key-shaped string"
+check_absent "--selftest reports no FAIL" "$OUT" "FAIL"
+# host-dependent probes degrade to a WARN (no iconv → no UTF-16 probe; lenient busybox grep → no
+# fail-closed probe) — assert their OK lines only where the host actually runs them
+if command -v iconv >/dev/null 2>&1; then
+  check_contains "--selftest checks the UTF-16 blob catch" "$OUT" "UTF-16LE blob"
+fi
+greprc=0; printf '' | grep -iE 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
+if [ "$greprc" -ge 2 ]; then
+  check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
+fi
+
+# --- install verifies the INSTALLED copy via selftest (a wired-but-broken gate must fail install) -
+repo="$(new_repo)"
+run "$isg" "$repo"
+check_status "vendor install with selftest verify → exit 0" 0 "$STATUS"
+check_contains "install runs the installed copy's selftest" "$OUT" "selftest: OK"
+
 summary

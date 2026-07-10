@@ -24,7 +24,10 @@
 #
 # Usage:
 #   secret-scan.sh                 scan staged changes (added/modified), for a pre-commit hook
+#   secret-scan.sh --staged        same as the default, spelled out (for callers outside the hook)
 #   secret-scan.sh --range A..B    scan the diff of a commit range, for a pre-push hook
+#   secret-scan.sh --tracked       detective audit: scan ALL tracked content (doctor / periodic review)
+#   secret-scan.sh --selftest      verify the scanner catches what it claims (end-to-end child runs)
 #   secret-scan.sh FILE...         scan specific files
 #
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
@@ -170,6 +173,58 @@ emit_diff() {
   rm -f "$dtmp"
 }
 
+# selftest — end-to-end verification via child runs of this same script in FILE mode, from a neutral
+# cwd (so a repo's .secret-scan-allow can't mask a probe) with a fixture personal file. A guard you
+# can't verify degrades silently — this is the check install/bootstrap scripts run after wiring.
+selftest() {
+  local script dir rc=0 fake greprc
+  # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
+  # from another cwd — a selftest that can't find itself would fail for the wrong reason.
+  script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  dir="$SCRATCH/selftest"; mkdir -p "$dir"
+  # %.0s prints zero chars of each of the 36 args → 'a' repeated 36 times, built at runtime so the
+  # literal token body never sits in this file (the scanner must not trip on its own source).
+  fake="ghp_$(printf 'a%.0s' {1..36})"
+  printf 'SeekritPersonName\n' > "$dir/personal"
+
+  probe() {  # $1 = expected exit, $2 = label, $3 = personal file, $4 = fixture path
+    local want="$1" label="$2" pfile="$3" fixture="$4" got=0
+    (cd "$dir" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
+    if [ "$got" -eq "$want" ]; then
+      echo "selftest: OK   — $label"
+    else
+      echo "selftest: FAIL — $label (exit $got, want $want)" >&2; rc=1
+    fi
+  }
+
+  printf '%s\n' "$fake" > "$dir/key.txt"
+  probe 1 "caught a key-shaped string" /dev/null "$dir/key.txt"
+  printf 'docs reference ghp_[A-Za-z0-9]{36} and sk-ant-[A-Za-z0-9_-]{20,}\n' > "$dir/doc.txt"
+  probe 0 "ignored the anchored pattern doc (no self-match)" /dev/null "$dir/doc.txt"
+  printf '%s secret-scan:allow\n' "$fake" > "$dir/allowed.txt"
+  probe 0 "honored the inline allow pragma" /dev/null "$dir/allowed.txt"
+  printf 'author: seekritpersonname\n' > "$dir/pers.txt"
+  probe 1 "caught a personal literal in text (case-insensitive)" "$dir/personal" "$dir/pers.txt"
+  # The fail-closed probe holds only where grep itself signals a malformed ERE (exit >= 2); a
+  # lenient minimal grep (busybox) can't distinguish "bad pattern" from "no match" — WARN honestly
+  # there instead of failing the whole selftest on an otherwise-working host.
+  greprc=0; printf '' | grep -iE 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
+  if [ "$greprc" -ge 2 ]; then
+    printf 'unbalanced(paren\n' > "$dir/badre"
+    printf 'anything\n' > "$dir/any.txt"
+    probe 2 "malformed personal regex fails CLOSED (config error, not a silent pass)" "$dir/badre" "$dir/any.txt"
+  else
+    echo "selftest: WARN — this grep does not flag a malformed ERE; the fail-closed guard is a no-op on this host" >&2
+  fi
+  if command -v iconv >/dev/null 2>&1; then
+    printf 'lead-in SeekritPersonName trail' | iconv -f UTF-8 -t UTF-16LE > "$dir/fixture.bin"
+    probe 1 "caught a personal literal inside a UTF-16LE blob" "$dir/personal" "$dir/fixture.bin"
+  else
+    echo "selftest: WARN — iconv absent; the non-ASCII UTF-16 pass is degraded on this host" >&2
+  fi
+  return $rc
+}
+
 mode="${1:-staged}"
 case "$mode" in
   --range)
@@ -221,7 +276,7 @@ case "$mode" in
       done <<< "$blobs"
     fi
     ;;
-  staged|"")
+  staged|--staged|"")
     while IFS= read -r f; do
       [ -n "$f" ] && emit_diff "$f" --cached
     done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
@@ -231,6 +286,32 @@ case "$mode" in
       emit_stream "$f" < <(git show ":$f" 2>/dev/null)
     done < <(git -c core.quotePath=false diff --cached --numstat --diff-filter=ACM 2>/dev/null \
              | awk -F'\t' '$1=="-" && $2=="-"{print $3}')
+    ;;
+  --tracked)
+    # Detective audit: scan ALL tracked content as it sits in the working tree — text with line
+    # numbers, binaries through the decode pass. For a periodic review / doctor run, not a hook
+    # (it is O(repo), not O(change)). Anchored to the repo root so a subdirectory invocation can
+    # never silently audit only that subtree; the allowlist is the root one for the same reason.
+    top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "secret-scan: --tracked needs a git repo" >&2; exit 2; }
+    ALLOW_FILE="$top/.secret-scan-allow"
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if [ -L "$top/$f" ]; then
+        # a tracked symlink's committed content IS its target string — scan that (it can carry a
+        # personal path); the target file itself, if tracked, is scanned as its own entry
+        emit_stream "$f" < <(readlink "$top/$f")
+      elif [ -f "$top/$f" ]; then
+        if [ -r "$top/$f" ]; then
+          emit_stream "$f" < "$top/$f"
+        else
+          # skip-and-warn, never abort: one unreadable file must not void the rest of the audit
+          echo "secret-scan: WARN unreadable, skipped: $f" >&2
+        fi
+      fi
+    done < <(git -C "$top" -c core.quotePath=false ls-files 2>/dev/null)
+    ;;
+  --selftest)
+    selftest; exit $?
     ;;
   -*)
     echo "secret-scan: unknown option '$mode'" >&2; exit 2
