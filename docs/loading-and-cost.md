@@ -21,7 +21,7 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 |---|---|---|---|
 | `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~1,380** |
 | `<project>/CLAUDE.md` (from `templates/project-CLAUDE.md`) | when you work **in that project** | Project context: stack, architecture, conventions, roadmap. Shapes decisions inside the project. | ~270 *(as filled)* |
-| `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~4,400 |
+| `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~5,000 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,100 |
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
@@ -46,7 +46,7 @@ Put in perspective:
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
 - Over a month at ~50 sessions, the always-loaded core is ~70K input tokens total — cents, less with caching.
-- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~9.5K for one decision.
+- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~10K for one decision.
 
 A guard against bloat ships with it: `doctor` raises a **WARN** if the always-loaded core exceeds **10,000
 tokens** (`KEEL_STARTUP_WARN_TOKENS`). The template core is ~1,380 — about 14% of that budget, with room.
