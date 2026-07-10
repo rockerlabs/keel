@@ -189,7 +189,7 @@ selftest() {
 
   probe() {  # $1 = expected exit, $2 = label, $3 = personal file, $4 = fixture path
     local want="$1" label="$2" pfile="$3" fixture="$4" got=0
-    (cd "$dir" && KEEL_IMPACT_LOG= SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
+    (cd "$dir" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
     if [ "$got" -eq "$want" ]; then
       echo "selftest: OK   — $label"
     else
