@@ -44,8 +44,8 @@ Show the draft and ask the user to correct it. You're saving them the typing, no
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
 
 ### 4. Report
-List what you filled (with the detected values) and what still needs the user: model access, the roadmap,
-and any convention you marked uncertain. Remind them nothing was committed.
+List what you filled (with the detected values) and what still needs the user: model access, plus — when
+step 2 ran — the roadmap and any convention you marked uncertain. Remind them nothing was committed.
 
 ## Guardrails
 - **Draft, don't decide:** facts auto-fill; judgment is the user's to confirm.

@@ -38,12 +38,11 @@ they've drifted, asking first — see [getting-started](docs/getting-started.md#
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-**2. Open Claude Code in your own project and let it finish the setup — no editing by hand.** Open
-**your own project** (not the `keel` folder you just cloned) in Claude Code — **if Claude Code was already
-open, restart it**, because new commands only show up when a session starts. Then run `/keel-setup`: it
-fills in your machine details, **writes a first draft of that project's `CLAUDE.md` from its own code**, and
-sets up the ground rules — you *check* the draft, you don't write it. Run it once per project you want Keel
-on.
+**2. Run `/keel-setup` and let the assistant finish the setup — no editing by hand.** Restart Claude Code
+(new commands only show up when a session starts) and run `/keel-setup` — from anywhere, even with **no
+projects yet**: it fills in your machine details and sets up the ground rules. Then run it again inside
+each project you want Keel on (**not** the `keel` folder you just cloned): that part **writes a first
+draft of the project's `CLAUDE.md` from its own code** — you *check* the draft, you don't write it.
 
 ```
 /keel-setup
