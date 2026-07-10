@@ -25,7 +25,8 @@
 # Usage:
 #   secret-scan.sh                 scan staged changes (added/modified), for a pre-commit hook
 #   secret-scan.sh --staged        same as the default, spelled out (for callers outside the hook)
-#   secret-scan.sh --range A..B    scan the diff of a commit range, for a pre-push hook
+#   secret-scan.sh --range A..B    scan a commit range — introduced blobs AND the commits'
+#                                  messages (agent/session-metadata trailers), for a pre-push hook
 #   secret-scan.sh --tracked       detective audit: scan ALL tracked content (doctor / periodic review)
 #   secret-scan.sh --selftest      verify the scanner catches what it claims (end-to-end child runs)
 #   secret-scan.sh FILE...         scan specific files
@@ -55,6 +56,13 @@ PATTERNS=(
   'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack token
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'  # PEM private key
 )
+
+# Agent/session metadata in COMMIT MESSAGES — the per-session trailer an agent harness appends
+# (a `Claude-Session` line with its session URL). Scanned by --range only: a message is not a
+# blob, so no content pass above can see it, and the push is where it becomes effectively
+# unpurgeable (a protected public history needs a rewrite). Mirrors public-audit.sh session_re —
+# keep the two in sync.
+SESSION_META='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 
 ALLOW_FILE=".secret-scan-allow"
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
@@ -178,7 +186,7 @@ emit_diff() {
 # cwd (so a repo's .secret-scan-allow can't mask a probe) with a fixture personal file. A guard you
 # can't verify degrades silently — this is the check install/bootstrap scripts run after wiring.
 selftest() {
-  local script dir rc=0 fake greprc
+  local script dir rc=0 fake greprc mrepo mgot
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -222,6 +230,26 @@ selftest() {
     probe 1 "caught a personal literal inside a UTF-16LE blob" "$dir/personal" "$dir/fixture.bin"
   else
     echo "selftest: WARN — iconv absent; the non-ASCII UTF-16 pass is degraded on this host" >&2
+  fi
+  # a session trailer in a pushed commit MESSAGE (a message is not a blob — only the --range
+  # message pass sees it). The trailer is built by printf so this source never holds the literal.
+  # --template= + --no-verify + explicit -c identity: the probe repo must not depend on host
+  # hooks/config (--no-verify alone leaves a template-installed prepare-commit-msg hook running).
+  mrepo="$dir/msgrepo"
+  if git init -q --template= "$mrepo" 2>/dev/null \
+     && git -C "$mrepo" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+          commit -q --no-verify --allow-empty -m probe \
+          -m "$(printf 'Claude-%s: https://claude.ai/code/%s_selftest' Session session)" 2>/dev/null; then
+    mgot=0
+    (cd "$mrepo" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
+       "$script" --range "HEAD --not --remotes" >/dev/null 2>&1) || mgot=$?
+    if [ "$mgot" -eq 1 ]; then
+      echo "selftest: OK   — caught a session trailer in a pushed commit message"
+    else
+      echo "selftest: FAIL — session trailer in a commit message (exit $mgot, want 1)" >&2; rc=1
+    fi
+  else
+    echo "selftest: WARN — could not create the message-probe repo; the commit-message pass is unverified on this host" >&2
   fi
   return $rc
 }
@@ -275,6 +303,22 @@ case "$mode" in
         [ -n "$osha" ] || continue
         emit_stream "$opath" < <(git cat-file blob "$osha" 2>/dev/null)
       done <<< "$blobs"
+    fi
+    # The push also introduces the commits' MESSAGES, which no blob pass sees. Felt (2026-07-10
+    # audit): seven harness-appended session trailers reached the public main through merged PRs,
+    # visible afterwards only as a post-hoc audit WARN. Block them here, at the outward boundary.
+    # Same fast-path shape as the blob scan above: ONE batched grep over every message (`-c`, not
+    # `-q` — the same SIGPIPE/pipefail hole applies), and only on a hit re-walk per commit to
+    # attribute the exact sha.
+    # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
+    msg_hits="$(git log --format=%B $rng 2>/dev/null | grep -acE "$SESSION_META" || true)"
+    if [ "${msg_hits:-0}" -gt 0 ]; then
+      while IFS= read -r csha; do
+        [ -n "$csha" ] || continue
+        while IFS= read -r hit; do
+          [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
+        done < <(git log -1 --format=%B "$csha" 2>/dev/null | grep -aE "$SESSION_META" || true)
+      done < <(git rev-list $rng 2>/dev/null || true)
     fi
     ;;
   staged|--staged|"")

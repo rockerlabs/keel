@@ -9,6 +9,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`secret-scan --range` (the pre-push path) now also scans the pushed commits' MESSAGES for
+  agent/session metadata.** A commit message is not a blob, so every content pass — staged diff,
+  range blobs, the binary decode — is structurally blind to it; felt (2026-07-10 self-audit):
+  seven `Claude-Session` trailers auto-appended by an agent harness reached the public `main`
+  through merged PRs, where a protected history makes them effectively unpurgeable, and
+  `public-audit` could only report them as a post-hoc WARN. The pattern mirrors `public-audit`'s
+  `session_re` (cross-referenced, kept in sync); the sanctioned noreply `Co-Authored-By` trailer
+  does not trip it. Wired into the engine (not the hook), so an installed guard picks the check
+  up on the next engine re-sync — expect `doctor`'s one-time drift WARN and re-run
+  `install-secret-guard.sh --global` to clear it. `--selftest` verifies the new pass end-to-end;
+  deliberate bypass unchanged (`--no-verify`). Note the same first-push semantics as the blob scan
+  (deliberately no special-casing): a first push to a brand-new remote enumerates the whole
+  reachable history, so pre-existing trailer history — including this repo's own — will block
+  there and needs the deliberate `--no-verify`; incremental pushes to an established remote
+  grandfather it naturally via the `remote..local` range.
 - **`public-audit` decodes binary blobs; `doctor` catches installed-guard drift** (third batch of the
   KB-on-Keel migration — both close felt gaps from the maintainer's own audits):
   - **Binary-blob pass (`public-audit`).** The text passes cannot see inside a binary: the tree grep

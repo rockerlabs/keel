@@ -274,6 +274,7 @@ cyr="$( cd "$DIR" && git ls-files -z -- . "${excludes[@]}" 2>/dev/null \
 # --- 4. agent tooling / session metadata (WARN) --------------------------------------------------
 # The per-session trailers a coding agent appends to commits (and the same shape in tracked files).
 # We hit this leak class ourselves and the audit missed it — so surface it on purpose.
+# Mirrored by secret-guard/secret-scan.sh SESSION_META (the preventive pre-push block) — keep in sync.
 session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 sess_tree="$(tree_grep "$session_re" | head -1 || true)"
 [ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"

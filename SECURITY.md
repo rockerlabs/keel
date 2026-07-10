@@ -29,7 +29,8 @@ Known limits (by design — not vulnerabilities):
 
 - `secret-guard` is a **prefix backstop, not full DLP**. It catches known key shapes (`ghp_`, `AKIA…`,
   `sk-…`, `glpat-`, …), not arbitrary secrets like an AWS *secret* key, a JWT, or a password. A clean pass
-  means "no known key shape found," never "no secret here."
+  means "no known key shape found," never "no secret here." On push it additionally blocks agent
+  session-metadata trailers (a `Claude-Session`-style line) in the pushed commits' messages.
 - The prose layer (`PRINCIPLES.md`, `FRAMEWORK.md`, the rails) biases an agent; it does not enforce
   anything — the human is the trigger (see the README's *mechanized vs needs-you*).
 
