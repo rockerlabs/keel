@@ -21,9 +21,14 @@ facts (run the commands; don't assume):
 Leave **Model access** and **Other tools** for the user — ask once, don't guess. Do **not** touch the
 Projects registry (it auto-fills via `init-project` / `register-project`).
 
-### 2. This project → draft its `CLAUDE.md` (facts: from the repo)
-If the current directory isn't yet a Keel project, run `tools/init-project.sh .` (scaffolds + registers).
-Then read the repo and fill the **draft** project `CLAUDE.md`:
+### 2. This project → draft its `CLAUDE.md` (facts: from the repo) — only if there IS a project
+First ask: **is the current directory a project the user wants Keel on?** A fresh user may have no
+projects yet, and the keel clone itself doesn't count. If there's no such project here (or they're
+unsure), skip this step — steps 1 and 3 are machine-wide and work from anywhere — and tell them to
+re-run `/keel-setup` later inside each project they add.
+
+Once confirmed: if the directory isn't yet a Keel project, run `tools/init-project.sh .` (scaffolds +
+registers). Then read the repo and fill the **draft** project `CLAUDE.md`:
 - **Overview** — 2–3 lines of what this project is, inferred from its README / entry points.
 - **Stack & conventions** — language, framework, build + test + lint commands, read from the **real**
   files (`package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `Makefile`, CI config). State only

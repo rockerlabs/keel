@@ -141,6 +141,12 @@ fi
 # "unbound variable") if $HOME is unset while wiring hooks.
 keel_hooks=""
 if [ "$DO_HOOKS" = 1 ]; then
+  # Plain-language heads-up first: felt (first fresh-adopter install, 2026-07-11) — when an AI tool
+  # drives this install, its permission dialog for the git config change reads as "a bug" to a novice
+  # unless the step announces itself in human terms right before.
+  echo "Next: wiring secret-guard — a git safety check that blocks key-shaped secrets (and, opt-in,"
+  echo "      your personal data) from ever being committed. If an AI tool is running this install,"
+  echo "      it may ask your permission for the git config change — expected, and safe to allow."
   keel_hooks="${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}/.config/git/keel-hooks"
   existing="$(git config --global core.hooksPath 2>/dev/null || true)"
   if [ -z "$existing" ] || [ "$existing" = "$keel_hooks" ]; then
@@ -198,9 +204,13 @@ fi
 cat <<EOF
 
 Done. secret-guard already guards your commits. Next:
-  - EASIEST — open Claude Code in YOUR project (not this keel clone) and run  /keel-setup
-    If Claude Code was already running, RESTART it first — commands load only at session start.
-    It fills the rest for you: machine details + a project CLAUDE.md drafted from its code (you review).
+  - EASIEST — restart Claude Code (commands load only at session start), then run  /keel-setup
+    Machine setup works from ANYWHERE — no projects needed yet: it fills your machine details and
+    the always-on ground rules. Later, run /keel-setup again INSIDE each project you want Keel on —
+    that part drafts the project's CLAUDE.md from its code (you review).
+  - KEEP this keel clone — /keel-setup and /init-project run its tools/. Park it anywhere out of the
+    way (e.g. ~/keel); it's Keel itself, not one of your projects, so don't register it. To update
+    later:  git pull && ./install.sh
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, /init-project, …
   - prefer to do it by hand? edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md
     private, and scaffold/audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>

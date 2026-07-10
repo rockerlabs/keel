@@ -24,6 +24,10 @@ ground rules — you **check** the draft and add the parts only you know (which 
 After step 1, secret-guard already protects every commit; after step 2 the ground rules and project notes
 are filled in. That's the loop — run `/keel-setup` again in each new project you add.
 
+> **No projects yet?** That's fine — run `/keel-setup` from anywhere. The machine half (your details, the
+> always-on ground rules) doesn't need a project; it skips the project part and you re-run it later inside
+> each project you start.
+
 > **`/keel-setup` not showing up in Claude Code?** New commands appear only when a session **starts** —
 > open a **new Claude Code session** after installing, then type `/` and check that `keel-setup` is listed.
 >
@@ -53,6 +57,17 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 > though — the `tools/` (`doctor`, `public-audit`, `init-project`) and `examples/tour.sh` need the clone
 > above. That includes the `/keel-setup` and `/init-project` commands: they call `tools/init-project.sh`,
 > so they need the full clone too — bootstrap installs the commands, not the tool they drive.
+
+> **What you'll be asked during install:** the secret-guard step changes one global git setting
+> (`core.hooksPath`) so the check runs in every repo on the machine. If an AI tool is driving the
+> install (Claude Code, the Claude desktop app, …), it will likely show a **permission dialog** for
+> that change. It looks technical, but it isn't a bug — it's the one change that turns the protection
+> on; allowing it is expected. (Skip the step entirely with `--no-hooks`.)
+
+**Keep the clone when you're done.** `/keel-setup` and `/init-project` call its `tools/`, and `doctor` /
+`public-audit` / `examples/tour.sh` live there — so don't delete it; park it anywhere out of the way
+(e.g. `~/keel`). It's Keel itself, not one of your projects: don't register it or point `/keel-setup` at
+it. To update later, run `git pull && ./install.sh` in the clone.
 
 `install.sh` is safe to re-run. It **never touches the files you own** (`CLAUDE.md`, `INSTANCE.md`,
 `LEARNINGS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run offers to update a
