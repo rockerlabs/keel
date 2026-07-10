@@ -18,6 +18,8 @@ install_into() {
   cp "$src/pre-commit"     "$hooks_dir/pre-commit"
   cp "$src/pre-push"       "$hooks_dir/pre-push"
   chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
+  # Verify the installed copy via selftest — a wired-but-broken gate must fail the install (set -e).
+  "$hooks_dir/secret-scan.sh" --selftest | sed 's/^/  /'
 }
 
 case "${1:-}" in

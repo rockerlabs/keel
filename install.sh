@@ -171,7 +171,14 @@ done
 if [ "$DO_HOOKS" = 1 ]; then
   hp="$(git config --global core.hooksPath 2>/dev/null || true)"
   if [ "$hp" = "$keel_hooks" ] && [ -x "$hp/pre-commit" ] && grep -q 'Keel secret-guard' "$hp/pre-commit" 2>/dev/null; then
-    echo "  OK   secret-guard ($hp)"
+    # Presence is not function: also run the installed scanner's selftest, so a wired-but-broken
+    # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
+    if [ -x "$hp/secret-scan.sh" ] && "$hp/secret-scan.sh" --selftest >/dev/null 2>&1; then
+      echo "  OK   secret-guard ($hp; selftest passed)"
+    else
+      echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
+      echo "       Inspect:  $hp/secret-scan.sh --selftest"
+    fi
   elif [ -n "$hp" ]; then
     # A foreign global hooksPath is set — we did NOT wire Keel's guard (and didn't clobber theirs).
     echo "  WARN secret-guard NOT wired — a foreign global core.hooksPath ('$hp') is set."

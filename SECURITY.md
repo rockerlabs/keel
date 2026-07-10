@@ -19,7 +19,9 @@ that; a fix lands as a normal PR and is noted in [`CHANGELOG.md`](CHANGELOG.md).
 
 In scope:
 
-- `secret-guard` failing **open** — a key-shaped secret that should be blocked slips through commit/push.
+- `secret-guard` failing **open** — a key-shaped secret that should be blocked slips through commit/push,
+  a `--tracked` audit that misses tracked content it claims to cover, or a `--selftest` that reports OK
+  while the installed gate is actually broken.
 - `public-audit` missing a real identity/secret leak it claims to catch before a private→public flip.
 - `install.sh` or the hooks clobbering or mis-wiring a user's existing git config or files.
 
