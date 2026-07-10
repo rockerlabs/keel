@@ -25,8 +25,9 @@
 # Usage:
 #   secret-scan.sh                 scan staged changes (added/modified), for a pre-commit hook
 #   secret-scan.sh --staged        same as the default, spelled out (for callers outside the hook)
-#   secret-scan.sh --range A..B    scan a commit range — introduced blobs AND the commits'
-#                                  messages (agent/session-metadata trailers), for a pre-push hook
+#   secret-scan.sh --range A..B    scan a commit range — introduced blobs, the commits' messages
+#                                  (agent/session-metadata trailers), and annotated-tag message
+#                                  bodies, for a pre-push hook
 #   secret-scan.sh --tracked       detective audit: scan ALL tracked content (doctor / periodic review)
 #   secret-scan.sh --selftest      verify the scanner catches what it claims (end-to-end child runs)
 #   secret-scan.sh FILE...         scan specific files
@@ -57,11 +58,11 @@ PATTERNS=(
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'  # PEM private key
 )
 
-# Agent/session metadata in COMMIT MESSAGES — the per-session trailer an agent harness appends
-# (a `Claude-Session` line with its session URL). Scanned by --range only: a message is not a
-# blob, so no content pass above can see it, and the push is where it becomes effectively
-# unpurgeable (a protected public history needs a rewrite). Mirrors public-audit.sh session_re —
-# keep the two in sync.
+# Agent/session metadata in COMMIT and annotated-TAG MESSAGES — the per-session trailer an agent
+# harness appends (a `Claude-Session` line with its session URL). Scanned by --range only: a
+# message is not a blob, so no content pass above can see it, and the push is where it becomes
+# effectively unpurgeable (a protected public history needs a rewrite). Mirrors public-audit.sh
+# session_re — keep the two in sync.
 SESSION_META='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 
 ALLOW_FILE=".secret-scan-allow"
@@ -275,9 +276,9 @@ case "$mode" in
     # away and the push scans CLEAN. That was a real intermittent scanner hole (flaked on macOS CI,
     # buffer/timing-dependent). -c consumes the whole stream, so the status is deterministic.
     # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    blobs="$(git rev-list --objects $rng 2>/dev/null \
-              | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null \
-              | awk '$1=="blob"' || true)"
+    objs="$(git rev-list --objects $rng 2>/dev/null \
+              | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null || true)"
+    blobs="$(printf '%s\n' "$objs" | awk '$1=="blob"')"
     range_hits=1                                    # default: run the detailed scan
     if [ -z "$blobs" ]; then
       range_hits=0
@@ -319,6 +320,37 @@ case "$mode" in
           [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
         done < <(git log -1 --format=%B "$csha" 2>/dev/null | grep -aE "$SESSION_META" || true)
       done < <(git rev-list $rng 2>/dev/null || true)
+    fi
+    # An annotated TAG's own message is neither a blob nor a commit message, so both passes above
+    # are blind to it — a pushed tag (pre-push passes "<tagsha> --not --remotes") would carry a
+    # key, a personal literal, or a session trailer to the remote unscanned. The tag objects are
+    # already in the batch-check stream captured above; scan each tag's message body against all
+    # three matchers. Same fast-path shape (`grep -c`, not `-q` — the SIGPIPE/pipefail hole).
+    tagshas="$(printf '%s\n' "$objs" | awk '$1=="tag"{print $2}')"
+    if [ -n "$tagshas" ]; then
+      tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+      while IFS= read -r tsha; do
+        [ -n "$tsha" ] || continue
+        # the message body is everything after the first blank line of the raw tag object
+        git cat-file tag "$tsha" 2>/dev/null | sed '1,/^$/d'
+      done <<< "$tagshas" > "$tagtmp"
+      tag_hits="$(grep -acE "$joined|$SESSION_META" "$tagtmp" || true)"
+      if [ "${tag_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
+        tag_hits="$(grep -aciE "$personal" "$tagtmp" || true)"
+      fi
+      rm -f "$tagtmp"
+      if [ "${tag_hits:-0}" -gt 0 ]; then
+        while IFS= read -r tsha; do
+          [ -n "$tsha" ] || continue
+          tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+          git cat-file tag "$tsha" 2>/dev/null | sed '1,/^$/d' > "$tagtmp"
+          while IFS= read -r hit; do
+            [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
+          done < <({ match_text '' "$tagtmp"
+                     grep -aE "$SESSION_META" "$tagtmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
+          rm -f "$tagtmp"
+        done <<< "$tagshas"
+      fi
     fi
     ;;
   staged|--staged|"")

@@ -279,8 +279,12 @@ session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 sess_tree="$(tree_grep "$session_re" | head -1 || true)"
 [ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-  sess_msg="$(git -C "$DIR" log --all --format='%B' 2>/dev/null | grep -aE "$session_re" | head -1 || true)"
-  [ -n "$sess_msg" ] && warn "agent/session metadata in a commit message — e.g. $sess_msg"
+  # commit messages AND annotated-tag message bodies (the same for-each-ref pass section 5 uses —
+  # a tag's message is not a commit message, so `git log` alone leaves a blind spot)
+  sess_msg="$( { git -C "$DIR" log --all --format='%B' 2>/dev/null;
+                 git -C "$DIR" for-each-ref --format='%(contents)' refs/tags 2>/dev/null; } \
+               | grep -aE "$session_re" | head -1 || true)"
+  [ -n "$sess_msg" ] && warn "agent/session metadata in a commit or tag message — e.g. $sess_msg"
 fi
 
 # --- 5. history content heuristics (WARN) --------------------------------------------------------
