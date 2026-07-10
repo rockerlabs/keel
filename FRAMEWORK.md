@@ -147,7 +147,10 @@ by your knowledge base — so an in-place edit is lost on the next plugin update
 same-name user-level entry overrides the plugin's, and the fork is versioned and travels with your KB.
 
 **Memory:** one file = one topic. An index file carries one hook line per file, not a copy of the content.
-Before writing, check there isn't already a file on the topic. Delete what became wrong.
+Before writing, check there isn't already a file on the topic. Delete what became wrong. Name files
+predictably — snake_case with a category prefix (`feedback_` / `project_` / `reference_`), the in-file
+slug and `[[links]]` as the same name in kebab-case — so recall and linking never depend on remembering
+an ad-hoc name.
 
 **The cwd-silo trap:** memory keyed by the session's cwd will NOT load when you later work from a different
 path for the same project. So: **cross-project facts** (user/environment, cross-cutting feedback, tool
@@ -181,10 +184,16 @@ exists — extend it, don't duplicate); `git fetch --prune` FIRST so you reconci
 remote-tracking refs, not a stale picture.
 
 **Worktree discipline.** When working from a git worktree: use the worktree path for every `file_path`/`cd`
-(absolute paths leak into the main checkout otherwise); verify `git branch --show-current` before
-committing; after merge, tear the worktree down too. A private-fork project gitignores `CLAUDE.md`, so a
-fresh worktree starts blind — symlink the main checkout's `CLAUDE.md` into the worktree so the session keeps
-the project's context.
+(absolute paths leak into the main checkout otherwise). **The shell cwd drifts silently** after any `cd`
+or `git -C <other-checkout>` op — a later `git checkout -b` then creates the branch in the wrong working
+tree — so run repo ops with an explicit `git -C <worktree-path>` and verify
+`git -C <path> rev-parse --abbrev-ref HEAD` per working copy before committing; never take the cwd alone
+as proof of which tree you're in. On a leak, move the changes over with `git stash` (the checkouts share
+one `.git`) or a patch. After merge, tear the worktree down too — worktrees pile up faster than branches
+(`git worktree remove <path>`; `git worktree prune` for ones whose dir is already gone) — and if your
+harness keeps a per-worktree session-memory dir, sweep that orphan as well. A private-fork project
+gitignores `CLAUDE.md`, so a fresh worktree starts blind — symlink the main checkout's `CLAUDE.md` into
+the worktree so the session keeps the project's context.
 
 **The squash/rebase "merged" caveat.** A squash/rebase-merge looks *unmerged* by SHA even when its content
 is fully in — judge "merged?" by PR state, not SHA-reachability, before deleting a branch. Full rule (the
@@ -276,6 +285,31 @@ nothing.
 **How to apply:** for multi-item args, don't rely on unquoted `$var` splitting — pipe the list to `xargs`,
 loop explicitly, or use a real array; quote single values as `"$var"`. (Which shell your instance runs is an
 `INSTANCE.md` fact.)
+
+---
+
+## Service managers run with an empty environment — `set -u` turns a bare `$HOME` into a fatal crash
+
+A script that runs fine when tested by hand can crash the moment a service manager runs it, because
+**systemd (and most service managers) start services with a near-empty environment — `$HOME` is unset**
+(also `$USER`, `$LOGNAME`, and only a minimal `PATH`). If the script has `set -u` (nounset) and references
+a bare `$HOME` (e.g. `export PATH="…:$HOME/bin:$PATH"`, or `~/…`), expanding the unset var aborts the
+whole script before it does anything.
+
+**Why it's a nasty one:** running the script manually — even `sudo ./script.sh` — *does* set `$HOME` (sudo
+preserves/sets it), so the manual smoke test passes and the bug only shows up under the timer/service —
+e.g. a health-check unit and its `ExecStopPost` handler both dying on `HOME: unbound variable` on the
+first real timer fire, after every manual run had been green.
+
+**How to apply:**
+- Don't reference a bare `$HOME` in a service script under `set -u`. Use the nounset-safe forms
+  `${HOME:+:$HOME/bin}` (append only if set) / `${HOME:-/root}` (explicit default), and `${PATH:-}` for
+  `PATH` itself.
+- Better: don't depend on `$HOME` at all — hard-code the absolute `PATH` the service needs
+  (`/usr/local/bin:/usr/bin:/bin`), or set `Environment=HOME=/root` in the unit's `[Service]` block.
+- **Test the real path:** trigger via `systemctl start <unit>` (which reproduces the empty service env),
+  not by running the script by hand — the manual run hides exactly this class of bug. Then read
+  `journalctl -u <unit>`.
 
 ---
 

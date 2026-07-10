@@ -21,7 +21,9 @@ Don't retell details (they live in git/PR); keep only the last few here, older o
 never in memory. **Archive with a cooldown:** a just-closed task goes into a small `## Recently closed`
 buffer (≤2 one-liners with ✅), not straight to the archive — a just-closed task often spawns a follow-up.
 **Red-flag sweep (P0 "capture is checked"):** scan THIS session for any idea / finding / decision /
-loose-end that surfaced but isn't persisted — each becomes a backlog ticket, a promoted rule, a
+loose-end that surfaced but isn't persisted — **including incident signals**: a `git push --force`, a
+`git revert` / `reset --hard`, a history rewrite, or a command that failed and was redone differently are
+mechanical traces of a lesson — each becomes a backlog ticket, a promoted rule, a
 `LEARNINGS.md` candidate (bump its `[n×]`; promote on the 2nd hit), or an explicit recorded drop. Never end
 with floating chat-only ideas (the next session starts cold; you forget); if any remain, flag them
 prominently rather than closing silently.

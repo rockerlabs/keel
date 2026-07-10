@@ -9,6 +9,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Three field-tested gotchas upstreamed from the maintainer's own knowledge base** (the first batch of
+  the KB-on-Keel migration — the maintainer's KB now consumes Keel as its base, and generic lessons flow
+  upstream instead of accumulating in a private fork):
+  - **`FRAMEWORK.md` — "Service managers run with an empty environment":** a `set -u` script referencing
+    a bare `$HOME` passes every manual test (even under `sudo`) and then dies on the first real
+    timer/service fire, because systemd starts services with `$HOME`/`$USER` unset. Nounset-safe forms,
+    the `Environment=` escape hatch, and *test via `systemctl start`, not by hand*.
+  - **`FRAMEWORK.md` — worktree discipline hardened:** the shell cwd drifts silently after any `cd` /
+    `git -C <other-checkout>` op, so a later `git checkout -b` lands in the wrong working tree — prevent
+    it with an explicit `git -C <worktree-path>` per repo op; also sweep the per-worktree session-memory
+    dir at teardown, and a predictable memory-file naming scheme in the upkeep section.
+  - **`/wrap` — the red-flag sweep now names incident signals:** a `git push --force`, a
+    `revert`/`reset --hard`, or a command that failed and was redone differently — mechanical traces of a
+    lesson the sweep must surface.
 - **`/context-dump` — onboard an existing, undocumented codebase.** `/keel-setup`'s project-`CLAUDE.md`
   draft only reads the README and manifest files, which isn't enough for a real legacy repo grown without
   docs. `/context-dump` reads the actual source tree instead — real stack/versions from the lockfile, the
