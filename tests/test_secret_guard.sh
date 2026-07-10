@@ -120,6 +120,27 @@ printf 'still fine\n' > "$repo/ok2.txt"; git -C "$repo" add ok2.txt; git -C "$re
 run_in "$repo" "$scan" --range "$cleanbase..HEAD"
 check_status "clean range → exit 0" 0 "$STATUS"
 
+# --- a session trailer in a pushed commit MESSAGE is blocked by --range (a message is not a blob,
+# so every content pass is blind to it; felt 2026-07-10: such trailers reached a public main).
+# The trailer is assembled by printf so this file never holds the literal the scanners flag. --------
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+mbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'fine\n' > "$repo/b.txt"; git -C "$repo" add b.txt
+git -C "$repo" commit -qm "$(printf 'change\n\nClaude-%s: https://claude.ai/code/%s_01test' Session session)"
+run_in "$repo" "$scan" --range "$mbase..HEAD"
+check_status "session trailer in a pushed commit message → BLOCKED" 1 "$STATUS"
+check_contains "labels the offending commit message" "$OUT" "message"
+
+# the sanctioned noreply co-author trailer must NOT trip the message pass
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+mbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'fine\n' > "$repo/b.txt"; git -C "$repo" add b.txt
+git -C "$repo" commit -qm "$(printf 'change\n\nCo-Authored-By: Claude <noreply@anthropic.com>')"
+run_in "$repo" "$scan" --range "$mbase..HEAD"
+check_status "noreply co-author trailer in a message → exit 0" 0 "$STATUS"
+
 # an explicit missing file is an error (exit 2), not a false "clean" (cf. doctor/public-audit)
 run "$scan" "$SANDBOX/does-not-exist-$$.txt"
 check_status "missing explicit file → exit 2" 2 "$STATUS"
