@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/context-dump` — onboard an existing, undocumented codebase.** `/keel-setup`'s project-`CLAUDE.md`
+  draft only reads the README and manifest files, which isn't enough for a real legacy repo grown without
+  docs. `/context-dump` reads the actual source tree instead — real stack/versions from the lockfile, the
+  architecture pattern actually in use, existing reusable pieces (auth, a user repo, …) — and drafts into
+  Keel's existing structure rather than new file types: `project-CLAUDE.md`'s Overview/Stack, plus a
+  `legacy`-tagged backlog line for every outdated dependency or risky pattern it found, each cited to a
+  file. Same draft-only contract as `/keel-setup`: never invents a fact, never clobbers, never commits.
+  *Friction: the maintainer's own legacy projects still needed this onboarding done by hand — reviewing an
+  external AI-dev workflow video surfaced the gap, but the friction it named was already real:
+  `/init-project` only scaffolds, `/keel-setup` only skims.*
 - **Impact score is now an auditable trail, with a `hold` signal and retrospective scoring.** Three
   refinements to the (still-unreleased) impact score:
   - **Auditable counts (per-event evidence).** The score is no longer built from bare counts. `keel-score`

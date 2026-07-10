@@ -109,6 +109,11 @@ projects can find it) — `--no-register` skips that. To add projects you alread
 tools/register-project.sh ~/code/projA ~/code/projB   # one line each, safe to re-run
 ```
 
+**Onboarding an existing, undocumented codebase?** `/keel-setup`'s draft is a shallow README/manifest
+read — fine for a small or well-documented repo. For a real legacy repo, run `/context-dump` instead: it
+reads the actual source tree (not just the front door) to draft the stack, architecture, and a
+`legacy`-tagged backlog of what it found outdated or risky, citing the file each claim came from.
+
 ## 4. How it fits into your day — what changes
 
 - **The always-on file.** Every session your assistant reads the small core — your git flow, check-before-
@@ -122,7 +127,8 @@ tools/register-project.sh ~/code/projA ~/code/projB   # one line each, safe to r
   to `~/.claude/secret-scan-personal` and fill in your literals; the file stays local, never committed.
 - **Load-only-when-needed files.** The assistant pulls in `FRAMEWORK`/`PRINCIPLES` only when a task needs
   them — you don't carry them in every session's memory.
-- **Commands.** `/wrap`, `/go`, `/init-project`, `/global-review`, `/backlog` are ready-made prompts.
+- **Commands.** `/wrap`, `/go`, `/init-project`, `/context-dump`, `/global-review`, `/backlog` are
+  ready-made prompts.
   `install.sh` copies them into `<config>/commands/`, so on Claude Code they're commands out of the box; on
   another AI tool, point its custom-command feature at that folder, or paste the body.
 - **Checks when you want them.** `doctor` (what's missing) and `public-audit` (before going public) — run
