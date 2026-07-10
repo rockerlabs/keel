@@ -8,6 +8,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+- **The install path answers a first-time adopter's three stumbles** (felt 2026-07-11: the first
+  completely fresh external user — macOS, Claude desktop app, clone install — walked through setup;
+  the first live-user feedback since going public). Docs-and-echo only, no behavior change:
+  - `install.sh` announces the secret-guard step in plain language *before* wiring it, so the AI
+    tool's permission dialog for the global git-config change reads as expected instead of as a bug;
+    `docs/getting-started.md` gains the matching "what you'll be asked" note.
+  - `/keel-setup` no longer assumes a project exists: step 2 first asks whether the current directory
+    is a project the user wants Keel on, and skips gracefully when there is none (the machine-wide
+    steps still run) — a fresh user with zero projects previously got a half-run project setup. The
+    machine-now / projects-later split is mirrored in the install "Next:" text and the docs.
+  - The docs now say what to do with the keel clone after installing: keep it (the commands call its
+    `tools/`), park it out of the way, don't register it as a project, `git pull && ./install.sh` to
+    update. The underlying clone dependency is audit finding D1; its real fix is the unified CLI
+    direction on the backlog.
+
 ### Fixed
 - **Annotated-tag message bodies no longer bypass the outward secret boundary.** A tag object is
   neither a blob nor a commit, so `secret-scan --range` (the pre-push path) scanned neither its

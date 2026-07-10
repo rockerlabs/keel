@@ -21,9 +21,14 @@ facts (run the commands; don't assume):
 Leave **Model access** and **Other tools** for the user — ask once, don't guess. Do **not** touch the
 Projects registry (it auto-fills via `init-project` / `register-project`).
 
-### 2. This project → draft its `CLAUDE.md` (facts: from the repo)
-If the current directory isn't yet a Keel project, run `tools/init-project.sh .` (scaffolds + registers).
-Then read the repo and fill the **draft** project `CLAUDE.md`:
+### 2. This project → draft its `CLAUDE.md` (facts: from the repo) — only if there IS a project
+First ask: **is the current directory a project the user wants Keel on?** A fresh user may have no
+projects yet, and the keel clone itself doesn't count. If there's no such project here (or they're
+unsure), skip this step — steps 1 and 3 are machine-wide and work from anywhere — and tell them to
+re-run `/keel-setup` later inside each project they add.
+
+Once confirmed: if the directory isn't yet a Keel project, run `tools/init-project.sh .` (scaffolds +
+registers). Then read the repo and fill the **draft** project `CLAUDE.md`:
 - **Overview** — 2–3 lines of what this project is, inferred from its README / entry points.
 - **Stack & conventions** — language, framework, build + test + lint commands, read from the **real**
   files (`package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `Makefile`, CI config). State only
@@ -39,8 +44,8 @@ Show the draft and ask the user to correct it. You're saving them the typing, no
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
 
 ### 4. Report
-List what you filled (with the detected values) and what still needs the user: model access, the roadmap,
-and any convention you marked uncertain. Remind them nothing was committed.
+List what you filled (with the detected values) and what still needs the user: model access, plus — when
+step 2 ran — the roadmap and any convention you marked uncertain. Remind them nothing was committed.
 
 ## Guardrails
 - **Draft, don't decide:** facts auto-fill; judgment is the user's to confirm.

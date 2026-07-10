@@ -12,10 +12,11 @@ commands. One command:
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
-**2. Run `/keel-setup` in your project** (§2–§3) — open Claude Code inside a project you want Keel on (**not**
-the `keel` clone); if Claude Code was already open, **restart it** so the new command shows up. The assistant
-fills in your machine details, **drafts that project's `CLAUDE.md` from its code**, and sets up the always-on
-ground rules — you **check** the draft and add the parts only you know (which models you use, your roadmap).
+**2. Run `/keel-setup`** (§2–§3) — restart Claude Code first (new commands show up only when a session
+starts). The machine half runs from **anywhere** — even with no projects yet: the assistant fills in your
+machine details and the always-on ground rules. Then run it again **inside each project you want Keel on**
+(**not** the `keel` clone): that part **drafts the project's `CLAUDE.md` from its code** — you **check** the
+draft and add the parts only you know (which models you use, your roadmap).
 
 ```
 /keel-setup
@@ -53,6 +54,16 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 > though — the `tools/` (`doctor`, `public-audit`, `init-project`) and `examples/tour.sh` need the clone
 > above. That includes the `/keel-setup` and `/init-project` commands: they call `tools/init-project.sh`,
 > so they need the full clone too — bootstrap installs the commands, not the tool they drive.
+
+> **What you'll be asked during install:** the secret-guard step changes one global git setting
+> (`core.hooksPath`) so the check runs in every repo on the machine. If an AI tool is driving the
+> install (Claude Code, the Claude desktop app, …), it will likely show a **permission dialog** for
+> that change. It looks technical, but it isn't a bug — it's the one change that turns the protection
+> on; allowing it is expected. (Skip the step entirely with `--no-hooks`.)
+
+**Keep the clone when you're done.** The commands and checks need it (the note above lists which) — don't
+delete it; park it anywhere out of the way (e.g. `~/keel`). It's Keel itself, not one of your projects:
+don't register it or point `/keel-setup` at it. To update later, run `git pull && ./install.sh` in the clone.
 
 `install.sh` is safe to re-run. It **never touches the files you own** (`CLAUDE.md`, `INSTANCE.md`,
 `LEARNINGS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run offers to update a
