@@ -8,6 +8,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **Annotated-tag message bodies no longer bypass the outward secret boundary.** A tag object is
+  neither a blob nor a commit, so `secret-scan --range` (the pre-push path) scanned neither its
+  content passes nor its message pass over it — pushing `git tag -a v1.0 -m "<key / personal
+  literal / Claude-Session trailer>"` shipped the tag message to the remote uncaught. The range
+  scan now also extracts each introduced annotated tag's message body (the tag objects already
+  appear in the same `rev-list --objects` stream) and matches it against all three detector sets —
+  key shapes, personal literals, and session metadata — with the same batched fast-path/SIGPIPE
+  discipline as the blob and commit-message passes. `public-audit`'s session-metadata check
+  (section 4) had the matching blind spot while its history heuristics (section 5) already covered
+  tag messages; it now scans annotated-tag `%(contents)` too, keeping the two mirrored `session_re`
+  / `SESSION_META` checks consistent. `--selftest` gains a matching end-to-end tag probe, so an
+  installed guard can prove the new pass works on its own host.
+
 ### Added
 - **`secret-scan --range` (the pre-push path) now also scans the pushed commits' MESSAGES for
   agent/session metadata.** A commit message is not a blob, so every content pass — staged diff,

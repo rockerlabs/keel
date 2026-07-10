@@ -84,6 +84,15 @@ run bash "$pa" "$d"
 check_status "session metadata in a message → exit 0 (WARN)" 0 "$STATUS"
 check_contains "warns about agent/session metadata" "$OUT" "session metadata"
 
+# the same trailer in an ANNOTATED TAG message — not a commit message, so `git log` alone is blind
+# to it; the check must mirror section 5's for-each-ref tag pass
+d="$(repo_by dev@example.com)"
+git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a v1 \
+  -m "$(printf 'release\n\n%s' "$sess")"
+run bash "$pa" "$d"
+check_status "session metadata in a tag message → exit 0 (WARN)" 0 "$STATUS"
+check_contains "warns about session metadata in a tag" "$OUT" "session metadata"
+
 # history-content heuristics: a personal email + home path in a COMMIT MESSAGE BODY (not in any file)
 # — the tree scan can't see it; the history pass must. WARN, not GAP.
 d="$(repo_by dev@example.com)"

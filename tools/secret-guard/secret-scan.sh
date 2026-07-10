@@ -25,8 +25,9 @@
 # Usage:
 #   secret-scan.sh                 scan staged changes (added/modified), for a pre-commit hook
 #   secret-scan.sh --staged        same as the default, spelled out (for callers outside the hook)
-#   secret-scan.sh --range A..B    scan a commit range — introduced blobs AND the commits'
-#                                  messages (agent/session-metadata trailers), for a pre-push hook
+#   secret-scan.sh --range A..B    scan a commit range — introduced blobs, the commits' messages
+#                                  (agent/session-metadata trailers), and annotated-tag message
+#                                  bodies, for a pre-push hook
 #   secret-scan.sh --tracked       detective audit: scan ALL tracked content (doctor / periodic review)
 #   secret-scan.sh --selftest      verify the scanner catches what it claims (end-to-end child runs)
 #   secret-scan.sh FILE...         scan specific files
@@ -57,11 +58,11 @@ PATTERNS=(
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'  # PEM private key
 )
 
-# Agent/session metadata in COMMIT MESSAGES — the per-session trailer an agent harness appends
-# (a `Claude-Session` line with its session URL). Scanned by --range only: a message is not a
-# blob, so no content pass above can see it, and the push is where it becomes effectively
-# unpurgeable (a protected public history needs a rewrite). Mirrors public-audit.sh session_re —
-# keep the two in sync.
+# Agent/session metadata in COMMIT and annotated-TAG MESSAGES — the per-session trailer an agent
+# harness appends (a `Claude-Session` line with its session URL). Scanned by --range only: a
+# message is not a blob, so no content pass above can see it, and the push is where it becomes
+# effectively unpurgeable (a protected public history needs a rewrite). Mirrors public-audit.sh
+# session_re — keep the two in sync.
 SESSION_META='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 
 ALLOW_FILE=".secret-scan-allow"
@@ -166,6 +167,9 @@ emit_stream() {  # $1 = record label (path)
   rm -f "$stmp"
 }
 
+# an annotated tag's message body — everything after the first blank line of the raw tag object
+tag_body() { git cat-file tag "$1" 2>/dev/null | sed '1,/^$/d'; }
+
 # scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
 # not the file — a misleading figure. The path + matched content is what's actionable.
@@ -186,7 +190,7 @@ emit_diff() {
 # cwd (so a repo's .secret-scan-allow can't mask a probe) with a fixture personal file. A guard you
 # can't verify degrades silently — this is the check install/bootstrap scripts run after wiring.
 selftest() {
-  local script dir rc=0 fake greprc mrepo mgot
+  local script dir rc=0 fake greprc trailer mrepo trepo
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -231,25 +235,46 @@ selftest() {
   else
     echo "selftest: WARN — iconv absent; the non-ASCII UTF-16 pass is degraded on this host" >&2
   fi
-  # a session trailer in a pushed commit MESSAGE (a message is not a blob — only the --range
-  # message pass sees it). The trailer is built by printf so this source never holds the literal.
-  # --template= + --no-verify + explicit -c identity: the probe repo must not depend on host
-  # hooks/config (--no-verify alone leaves a template-installed prepare-commit-msg hook running).
-  mrepo="$dir/msgrepo"
-  if git init -q --template= "$mrepo" 2>/dev/null \
-     && git -C "$mrepo" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
-          commit -q --no-verify --allow-empty -m probe \
-          -m "$(printf 'Claude-%s: https://claude.ai/code/%s_selftest' Session session)" 2>/dev/null; then
-    mgot=0
-    (cd "$mrepo" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
-       "$script" --range "HEAD --not --remotes" >/dev/null 2>&1) || mgot=$?
-    if [ "$mgot" -eq 1 ]; then
-      echo "selftest: OK   — caught a session trailer in a pushed commit message"
+  # a session trailer in a pushed commit MESSAGE and in an annotated TAG message (neither is a
+  # blob — only the --range message/tag passes see them). The trailer is built by printf so this
+  # source never holds the literal. --template= + --no-verify + explicit -c identity: a probe repo
+  # must not depend on host hooks/config (--no-verify alone leaves a template-installed
+  # prepare-commit-msg hook running) — the recipe lives once, shared by both probes.
+  trailer="$(printf 'Claude-%s: https://claude.ai/code/%s_selftest' Session session)"
+  probe_repo() {  # $1 = dir, $2 = optional second -m paragraph for the probe commit
+    git init -q --template= "$1" 2>/dev/null || return 1
+    if [ -n "${2:-}" ]; then
+      git -C "$1" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+        commit -q --no-verify --allow-empty -m probe -m "$2" 2>/dev/null
     else
-      echo "selftest: FAIL — session trailer in a commit message (exit $mgot, want 1)" >&2; rc=1
+      git -C "$1" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+        commit -q --no-verify --allow-empty -m probe 2>/dev/null
     fi
+  }
+  range_probe() {  # $1 = repo, $2 = rev to push-scan, $3 = label — expects the scan to BLOCK
+    local got=0
+    (cd "$1" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
+       "$script" --range "$2 --not --remotes" >/dev/null 2>&1) || got=$?
+    if [ "$got" -eq 1 ]; then
+      echo "selftest: OK   — $3"
+    else
+      echo "selftest: FAIL — $3 (exit $got, want 1)" >&2; rc=1
+    fi
+  }
+  mrepo="$dir/msgrepo"
+  if probe_repo "$mrepo" "$trailer"; then
+    range_probe "$mrepo" HEAD "caught a session trailer in a pushed commit message"
   else
     echo "selftest: WARN — could not create the message-probe repo; the commit-message pass is unverified on this host" >&2
+  fi
+  # the tag probe's commit is CLEAN, so a hit can only come from the tag body
+  trepo="$dir/tagrepo"
+  if probe_repo "$trepo" \
+     && git -C "$trepo" -c user.name=keel -c user.email=keel@keel.invalid -c tag.gpgsign=false \
+          tag -a probe-tag -m "$(printf 'release\n\n%s' "$trailer")" 2>/dev/null; then
+    range_probe "$trepo" probe-tag "caught a session trailer in a pushed annotated-tag message"
+  else
+    echo "selftest: WARN — could not create the tag-probe repo; the tag-message pass is unverified on this host" >&2
   fi
   return $rc
 }
@@ -275,9 +300,9 @@ case "$mode" in
     # away and the push scans CLEAN. That was a real intermittent scanner hole (flaked on macOS CI,
     # buffer/timing-dependent). -c consumes the whole stream, so the status is deterministic.
     # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    blobs="$(git rev-list --objects $rng 2>/dev/null \
-              | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null \
-              | awk '$1=="blob"' || true)"
+    objs="$(git rev-list --objects $rng 2>/dev/null \
+              | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null || true)"
+    blobs="$(printf '%s\n' "$objs" | awk '$1=="blob"')"
     range_hits=1                                    # default: run the detailed scan
     if [ -z "$blobs" ]; then
       range_hits=0
@@ -319,6 +344,36 @@ case "$mode" in
           [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
         done < <(git log -1 --format=%B "$csha" 2>/dev/null | grep -aE "$SESSION_META" || true)
       done < <(git rev-list $rng 2>/dev/null || true)
+    fi
+    # An annotated TAG's own message is neither a blob nor a commit message, so both passes above
+    # are blind to it — a pushed tag (pre-push passes "<tagsha> --not --remotes") would carry a
+    # key, a personal literal, or a session trailer to the remote unscanned. The tag objects are
+    # already in the batch-check stream captured above; scan each tag's message body against all
+    # three matchers. Same fast-path shape (`grep -c`, not `-q` — the SIGPIPE/pipefail hole).
+    tagshas="$(printf '%s\n' "$objs" | awk '$1=="tag"{print $2}')"
+    if [ -n "$tagshas" ]; then
+      tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+      while IFS= read -r tsha; do
+        [ -n "$tsha" ] || continue
+        tag_body "$tsha"
+      done <<< "$tagshas" > "$tagtmp"
+      tag_hits="$(grep -acE "$joined|$SESSION_META" "$tagtmp" || true)"
+      if [ "${tag_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
+        tag_hits="$(grep -aciE "$personal" "$tagtmp" || true)"
+      fi
+      rm -f "$tagtmp"
+      if [ "${tag_hits:-0}" -gt 0 ]; then
+        while IFS= read -r tsha; do
+          [ -n "$tsha" ] || continue
+          tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+          tag_body "$tsha" > "$tagtmp"
+          while IFS= read -r hit; do
+            [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
+          done < <({ match_text '' "$tagtmp"
+                     grep -aE "$SESSION_META" "$tagtmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
+          rm -f "$tagtmp"
+        done <<< "$tagshas"
+      fi
     fi
     ;;
   staged|--staged|"")
