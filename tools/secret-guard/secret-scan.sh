@@ -190,7 +190,7 @@ emit_diff() {
 # cwd (so a repo's .secret-scan-allow can't mask a probe) with a fixture personal file. A guard you
 # can't verify degrades silently — this is the check install/bootstrap scripts run after wiring.
 selftest() {
-  local script dir rc=0 fake greprc mrepo mgot trepo tgot
+  local script dir rc=0 fake greprc trailer mrepo trepo
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -235,44 +235,44 @@ selftest() {
   else
     echo "selftest: WARN — iconv absent; the non-ASCII UTF-16 pass is degraded on this host" >&2
   fi
-  # a session trailer in a pushed commit MESSAGE (a message is not a blob — only the --range
-  # message pass sees it). The trailer is built by printf so this source never holds the literal.
-  # --template= + --no-verify + explicit -c identity: the probe repo must not depend on host
-  # hooks/config (--no-verify alone leaves a template-installed prepare-commit-msg hook running).
-  mrepo="$dir/msgrepo"
-  if git init -q --template= "$mrepo" 2>/dev/null \
-     && git -C "$mrepo" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
-          commit -q --no-verify --allow-empty -m probe \
-          -m "$(printf 'Claude-%s: https://claude.ai/code/%s_selftest' Session session)" 2>/dev/null; then
-    mgot=0
-    (cd "$mrepo" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
-       "$script" --range "HEAD --not --remotes" >/dev/null 2>&1) || mgot=$?
-    if [ "$mgot" -eq 1 ]; then
-      echo "selftest: OK   — caught a session trailer in a pushed commit message"
+  # a session trailer in a pushed commit MESSAGE and in an annotated TAG message (neither is a
+  # blob — only the --range message/tag passes see them). The trailer is built by printf so this
+  # source never holds the literal. --template= + --no-verify + explicit -c identity: a probe repo
+  # must not depend on host hooks/config (--no-verify alone leaves a template-installed
+  # prepare-commit-msg hook running) — the recipe lives once, shared by both probes.
+  trailer="$(printf 'Claude-%s: https://claude.ai/code/%s_selftest' Session session)"
+  probe_repo() {  # $1 = dir, $2 = optional second -m paragraph for the probe commit
+    git init -q --template= "$1" 2>/dev/null || return 1
+    if [ -n "${2:-}" ]; then
+      git -C "$1" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+        commit -q --no-verify --allow-empty -m probe -m "$2" 2>/dev/null
     else
-      echo "selftest: FAIL — session trailer in a commit message (exit $mgot, want 1)" >&2; rc=1
+      git -C "$1" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+        commit -q --no-verify --allow-empty -m probe 2>/dev/null
     fi
+  }
+  range_probe() {  # $1 = repo, $2 = rev to push-scan, $3 = label — expects the scan to BLOCK
+    local got=0
+    (cd "$1" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
+       "$script" --range "$2 --not --remotes" >/dev/null 2>&1) || got=$?
+    if [ "$got" -eq 1 ]; then
+      echo "selftest: OK   — $3"
+    else
+      echo "selftest: FAIL — $3 (exit $got, want 1)" >&2; rc=1
+    fi
+  }
+  mrepo="$dir/msgrepo"
+  if probe_repo "$mrepo" "$trailer"; then
+    range_probe "$mrepo" HEAD "caught a session trailer in a pushed commit message"
   else
     echo "selftest: WARN — could not create the message-probe repo; the commit-message pass is unverified on this host" >&2
   fi
-  # the same trailer in an annotated TAG message (a tag is neither a blob nor a commit message —
-  # only the --range tag pass sees it). A separate probe repo with a CLEAN commit, so a hit can
-  # only come from the tag body.
+  # the tag probe's commit is CLEAN, so a hit can only come from the tag body
   trepo="$dir/tagrepo"
-  if git init -q --template= "$trepo" 2>/dev/null \
-     && git -C "$trepo" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
-          commit -q --no-verify --allow-empty -m probe 2>/dev/null \
+  if probe_repo "$trepo" \
      && git -C "$trepo" -c user.name=keel -c user.email=keel@keel.invalid -c tag.gpgsign=false \
-          tag -a probe-tag \
-          -m "$(printf 'release\n\nClaude-%s: https://claude.ai/code/%s_selftest' Session session)" 2>/dev/null; then
-    tgot=0
-    (cd "$trepo" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
-       "$script" --range "probe-tag --not --remotes" >/dev/null 2>&1) || tgot=$?
-    if [ "$tgot" -eq 1 ]; then
-      echo "selftest: OK   — caught a session trailer in a pushed annotated-tag message"
-    else
-      echo "selftest: FAIL — session trailer in a tag message (exit $tgot, want 1)" >&2; rc=1
-    fi
+          tag -a probe-tag -m "$(printf 'release\n\n%s' "$trailer")" 2>/dev/null; then
+    range_probe "$trepo" probe-tag "caught a session trailer in a pushed annotated-tag message"
   else
     echo "selftest: WARN — could not create the tag-probe repo; the tag-message pass is unverified on this host" >&2
   fi

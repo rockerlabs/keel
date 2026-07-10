@@ -278,13 +278,11 @@ cyr="$( cd "$DIR" && git ls-files -z -- . "${excludes[@]}" 2>/dev/null \
 session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 sess_tree="$(tree_grep "$session_re" | head -1 || true)"
 [ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"
-# annotated-tag message bodies, captured once for sections 4 and 5 — a tag's message is neither a
-# commit message nor a diff, so `git log` (any format) never shows it
 tag_msgs=""
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  # annotated-tag message bodies, captured once for sections 4 and 5 — a tag's message is neither
+  # a commit message nor a diff, so `git log` (any format) never shows it
   tag_msgs="$(git -C "$DIR" for-each-ref --format='%(contents)' refs/tags 2>/dev/null || true)"
-fi
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   sess_msg="$( { git -C "$DIR" log --all --format='%B' 2>/dev/null;
                  printf '%s\n' "$tag_msgs"; } | grep -aE "$session_re" | head -1 || true)"
   [ -n "$sess_msg" ] && warn "agent/session metadata in a commit or tag message — e.g. $sess_msg"
@@ -297,7 +295,7 @@ fi
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   # message bodies + diffs, AND annotated-tag message bodies (which `git log -p` omits).
   hist="$( { git -C "$DIR" log --all -p 2>/dev/null;
-             printf '%s\n' "$tag_msgs"; } || true)"
+             printf '%s\n' "$tag_msgs"; } )"
   h="$(printf '%s\n' "$hist" | grep -nE "$HOME_RE" | head -1 || true)"
   [ -n "$h" ] && warn "absolute home path in git history — e.g. $h"
   h="$(printf '%s\n' "$hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"

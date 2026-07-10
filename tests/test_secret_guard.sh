@@ -150,11 +150,8 @@ tag_range() {  # desc  tag-message  expected-exit  [personal-file]
   printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
   git -C "$repo" tag -a v1.0 -m "$2"
   tagsha="$(git -C "$repo" rev-parse v1.0)"
-  if [ -n "${4:-}" ]; then
-    run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$4" "$scan" --range "$tagsha --not --remotes"
-  else
-    run_in "$repo" "$scan" --range "$tagsha --not --remotes"
-  fi
+  run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="${4:-$SECRET_SCAN_PERSONAL_FILE}" \
+    "$scan" --range "$tagsha --not --remotes"
   check_status "$1" "$3" "$STATUS"
 }
 
