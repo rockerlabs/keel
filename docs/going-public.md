@@ -6,7 +6,10 @@ commit/tag metadata, private tokens or personal data in old blobs and messages).
 [`public-audit`](../tools/public-audit.sh) is the detector — but know exactly what it **fails** on vs what
 it only **flags**: it **GAPs** (exit 1) on a non-public-safe commit/tag identity email and on an
 user-declared `--token`; it **WARNs** (advisory) on heuristic hits — emails, absolute home paths, and
-Cyrillic — in the tree *and* in history (message bodies + diffs), plus agent/session metadata. A bare
+Cyrillic — in the tree *and* in history (message bodies + diffs), plus agent/session metadata. **Binary
+blobs are covered too:** every binary blob reachable from any ref (and a PR ref's exclusive blobs) is
+decoded (NUL-strip + UTF-16LE/BE + raw-printable) and scanned with the same set — a personal name
+UTF-16-encoded inside a binary fixture no longer hides behind "Binary files differ". A bare
 personal name in a message body isn't a hard GAP, so hunt declared tokens with `--token` before a flip.
 This page is the **procedure** to fix what it finds and flip without churn.
 

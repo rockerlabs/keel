@@ -16,6 +16,8 @@
 #   WARN  a .keel/ marker exists but its event log (.keel/impact-events.log) isn't gitignored (leak risk)
 #   WARN  secret-guard not wired (no global core.hooksPath and no local pre-commit)
 #   WARN  a local core.hooksPath override carries no guard — it silently bypasses the machine-global one
+#   WARN  an installed secret-guard copy (machine-global — checked once — or a repo's wired vendored
+#         copy) differs from the engine this Keel checkout ships — re-run install-secret-guard.sh
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
 #   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff, Swift→SwiftLint)
 #         or a Java file uses a wildcard import
@@ -92,6 +94,20 @@ fp_any() {
 }
 
 global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
+# shellcheck disable=SC2088  # matching a LITERAL ~ a user wrote into git config (git returns it verbatim)
+case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; esac
+
+# The engine THIS checkout ships — the drift reference for every installed secret-guard copy. An
+# installed copy that differs runs old (or unknown) detection while looking wired; presence is not
+# freshness. Machine-global is checked ONCE here (not per project — it covers the whole machine);
+# per-repo vendored copies are checked inside the loop.
+# BASH_SOURCE, not $0: resolves this script's real location even when invoked as `bash doctor.sh`
+# from another cwd — a drift check that can't find its own reference would silently never fire.
+shipped_scan="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/secret-guard/secret-scan.sh"
+if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+   && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
+  warn "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
+fi
 
 for d in "${DIRS[@]}"; do
   name="$(basename "$(cd "$d" 2>/dev/null && pwd || echo "$d")")"
@@ -143,14 +159,22 @@ for d in "${DIRS[@]}"; do
   if [ -n "$local_hooks" ]; then
     case "$local_hooks" in /*) lhd="$local_hooks" ;; *) lhd="$d/$local_hooks" ;; esac
     if [ -f "$lhd/secret-scan.sh" ] || [ -x "$lhd/pre-commit" ] || [ -x "$lhd/pre-push" ]; then
-      :  # the local override carries the guard — fine
+      # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection
+      if [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
+        warn "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+      fi
     else
       warn "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
     fi
   elif [ -n "$global_hooks" ]; then
-    :  # machine-global secret-guard covers it (no local override)
+    :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
   elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
-    :  # vendored (resolve the real hooks dir — a worktree/submodule isn't .git/hooks)
+    # vendored into the real hooks dir (a worktree/submodule isn't .git/hooks) — same drift check
+    vh="$(git -C "$d" rev-parse --git-path hooks 2>/dev/null)"
+    case "$vh" in /*) ;; *) vh="$d/$vh" ;; esac
+    if [ -f "$vh/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$vh/secret-scan.sh" "$shipped_scan"; then
+      warn "vendored secret-guard ($vh) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+    fi
   else
     warn "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
   fi

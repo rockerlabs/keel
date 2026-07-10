@@ -237,4 +237,69 @@ run env -u KEEL_IMPACT_LOG bash "$pa" "$d"
 check_status "GAP exits 1 with tracking off" 1 "$STATUS"
 check_nofile "no event written without override or marker" "$d/.keel/impact-events.log"
 
+# --- 5b. binary blobs: the decoded scan catches what the text passes cannot see ------------------
+# ASCII payload inside a UTF-16LE binary (NUL-interleaved — visible to the NUL-strip pass, no iconv
+# needed, so this leg also runs on busybox). A plain-text grep sees none of it.
+
+d="$(repo_by dev@example.com)"
+{ printf '\000\000pad\000\000'; utf16le "built at /Users/tester/dev with token SeekritCorpName"; } > "$d/fix.bin"
+commit_in "$d" "add binary fixture"
+run bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "token inside a UTF-16LE binary blob → exit 1 (GAP)" 1 "$STATUS"
+check_contains "binary-blob token GAP names the path" "$OUT" "in a binary blob in git history — fix.bin"
+check_contains "binary-blob home-path WARN fires too" "$OUT" "absolute home path in a binary blob"
+
+# an added-then-REMOVED binary still ships its blob — the scan walks blobs, not the final tree
+git -C "$d" rm -q fix.bin; commit_in "$d" "remove the fixture"
+run bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "removed-from-tree binary blob still detected → exit 1" 1 "$STATUS"
+
+# non-ASCII (Cyrillic) inside UTF-16 needs the iconv pass — gate on the host having a usable iconv.
+# The fixture name is built from UTF-8 escapes at runtime ("Testovoe Imya" in Cyrillic) so the test
+# source stays ASCII — same discipline as the tree-scan Cyrillic test above.
+cyrname="$(printf '\xd0\xa2\xd0\xb5\xd1\x81\xd1\x82\xd0\xbe\xd0\xb2\xd0\xbe\xd0\xb5\x20\xd0\x98\xd0\xbc\xd1\x8f')"
+if command -v iconv >/dev/null 2>&1 && printf '%s' "$cyrname" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
+  d="$(repo_by dev@example.com)"
+  printf 'author: %s' "$cyrname" | iconv -f UTF-8 -t UTF-16LE > "$d/cyr.bin"
+  commit_in "$d" "add cyr fixture"
+  run bash "$pa" "$d"
+  check_contains "Cyrillic inside a UTF-16 binary blob → WARN" "$OUT" "Cyrillic text in a binary blob"
+fi
+
+# a text-only repo emits no binary-blob lines (text blobs are the text passes' job)
+d="$(repo_by dev@example.com)"
+run bash "$pa" "$d"
+check_absent "text-only repo → no binary-blob output" "$OUT" "binary blob"
+
+# compressed-data noise: ISOLATED [\xd0-\xd3][\x80-\xbf] byte pairs occur by chance in any real
+# binary (a gif matches hundreds of times per MB) — the Cyrillic heuristic requires a RUN, so
+# isolated pairs must not trip it (regression: keel's own demo.gif was false-positived)
+d="$(repo_by dev@example.com)"
+{ printf '\000\000GIF89a'; printf '\xd0\x8f'; printf 'xx\x01\x02'; printf '\xd1\x82'; printf 'yy\x03\x04'; printf '\xd2\x91'; } > "$d/noise.bin"
+commit_in "$d" "add noisy binary"
+run bash "$pa" "$d"
+check_absent "isolated Cyrillic byte pairs in a binary → no false positive" "$OUT" "Cyrillic text in a binary blob"
+
+# a BINARY leak reachable ONLY from a refs/pull/* ref must be caught by the decoded pass too
+# (regression: `--not --all` excluded the fetched temp refs themselves — the scan was a no-op)
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+{ printf '\000\000'; utf16le "token SeekritCorpName pr only"; } > "$d/pr.bin"
+commit_in "$d" "pr binary"
+git -C "$d" push -q origin HEAD:refs/pull/9/head      # binary leak lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                     # ...not in main / any local ref
+run bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "binary token only in a PR ref → GAP exit 1" 1 "$STATUS"
+check_contains "names the PR-ref binary blob" "$OUT" "binary blob in a host PR ref"
+
+# an oversized blob is skipped but SURFACED, never silently trusted
+d="$(repo_by dev@example.com)"
+{ printf '\000\000'; utf16le "token SeekritCorpName beyond the cap"; } > "$d/big.bin"
+commit_in "$d" "add big binary"
+run env KEEL_AUDIT_BLOB_MAX=10 bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "oversized blob skipped → its token NOT found (exit 0)" 0 "$STATUS"
+check_contains "skipped blob is surfaced as UN-audited" "$OUT" "UN-audited"
+
 summary

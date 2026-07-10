@@ -15,6 +15,9 @@
 #   public-audit.sh --config FILE    use a specific config file
 #   public-audit.sh --quiet ...      print only GAP/WARN lines
 #
+# Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) — per-blob cap for the binary decode pass;
+#      oversized blobs are skipped but SURFACED as un-audited.
+#
 # Config (.public-audit) — ERE values, '#' comments:
 #   token: <ERE>         a private string to flag in tree + history (an internal name, host, ...)
 #   allow-email: <ERE>   an email/domain OK in history & content (added to the built-in noreply set)
@@ -43,6 +46,9 @@ Usage:
   public-audit.sh --config FILE    use a specific config file
   public-audit.sh --quiet          print only GAP/WARN lines
   public-audit.sh -h | --help
+
+Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) caps the binary-blob decode pass;
+     oversized blobs are skipped but surfaced as un-audited.
 EOF
 }
 while [ "$#" -gt 0 ]; do
@@ -133,7 +139,79 @@ cleanup_pr_refs() {
   git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
     | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
 }
-trap cleanup_pr_refs EXIT INT TERM
+audit_tmp="$(mktemp -d)"
+trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT INT TERM
+
+# --- binary-blob decode scan (shared by sections 5b and 6) ----------------------------------------
+# The text passes cannot see INSIDE a binary: tree_grep's -I skips binary files, and `git log -p`
+# renders a binary change as "Binary files … differ" — so personal data encoded in a binary blob (the
+# felt leak class: a real name UTF-16-encoded inside a fixture) passes every text check above. This
+# decodes each binary blob reachable from the given revs (NUL-strip + iconv UTF-16LE/BE when available
+# + raw-printable) and re-runs the same regex set: declared tokens = GAP, heuristics = WARN — one
+# example per category per pass, like the text sections. KEEL_AUDIT_BLOB_MAX (bytes, default 10MB)
+# bounds the per-blob cost; oversized blobs are counted and SURFACED, never silently trusted.
+scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g. --all)
+  local label="$1"; shift
+  local max="${KEEL_AUDIT_BLOB_MAX:-10485760}"
+  case "$max" in ''|*[!0-9]*) max=10485760 ;; esac
+  local tmp="$audit_tmp/blob" dec="$audit_tmp/blob.dec"
+  local otype osha osize opath h t skipped=0 reported_toks=""
+  local hit_home="" hit_email="" hit_cyr=""
+  # A failed mktemp (full/unwritable TMPDIR) must not silently no-op the whole pass — the tool's job
+  # is never to trust unscanned content. Surface it and bail.
+  if [ ! -d "$audit_tmp" ]; then
+    warn "binary-blob scan of $label SKIPPED — no usable temp dir (mktemp failed); result is INCOMPLETE"
+    return 0
+  fi
+  while IFS='|' read -r otype osha osize opath; do
+    [ "$otype" = "blob" ] && [ -n "$osha" ] || continue
+    if [ "${osize:-0}" -gt "$max" ]; then skipped=$((skipped + 1)); continue; fi
+    git -C "$DIR" cat-file blob "$osha" > "$tmp" 2>/dev/null || continue
+    # binary = contains a NUL byte; text blobs are already covered by the text passes
+    LC_ALL=C tr -d '\000' < "$tmp" | cmp -s - "$tmp" && continue
+    # Decode recipe: keep IN SYNC with secret-guard/secret-scan.sh emit_blob() — deliberately
+    # duplicated (each tool stands alone), so an encoding gap fixed there must be fixed here too.
+    {
+      LC_ALL=C tr -d '\000' < "$tmp"; echo                        # ASCII-range UTF-16, no deps
+      if command -v iconv >/dev/null 2>&1; then                   # non-ASCII UTF-16 (e.g. a Cyrillic name)
+        iconv -f UTF-16LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+        iconv -f UTF-16BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      fi
+      LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo          # raw printable runs
+    } > "$dec"
+    if [ "${#tokens[@]}" -gt 0 ]; then
+      for t in "${tokens[@]}"; do
+        [ -z "$t" ] && continue
+        case "$reported_toks" in *"|$t|"*) continue ;; esac       # one GAP per token per pass
+        if [ -n "$(grep -aE "$t" "$dec" 2>/dev/null | head -n1 || true)" ]; then
+          gap "private token /$t/ in a binary blob in $label — ${opath:-$osha}"
+          reported_toks="$reported_toks|$t|"
+        fi
+      done
+    fi
+    if [ -z "$hit_home" ]; then
+      h="$(grep -aoE "$HOME_RE" "$dec" 2>/dev/null | head -1 || true)"
+      [ -n "$h" ] && hit_home="$h (${opath:-$osha})"
+    fi
+    if [ -z "$hit_email" ]; then
+      h="$(grep -aoE "$EMAIL_RE" "$dec" 2>/dev/null | grep -vE "$safe_re" | head -1 || true)"
+      [ -n "$h" ] && hit_email="$h (${opath:-$osha})"
+    fi
+    if [ -z "$hit_cyr" ]; then
+      # Require ≥4 CONSECUTIVE Cyrillic chars, unlike the single-pair text heuristic: the NUL-strip
+      # and raw-printable views of compressed data (a gif, a zip) match an isolated
+      # [\xd0-\xd3][\x80-\xbf] pair by chance hundreds of times per MB — a real name is a run.
+      h="$(LC_ALL=C grep -acE "(${cyr_pat}){4}" "$dec" 2>/dev/null || true)"
+      [ "${h:-0}" -gt 0 ] && hit_cyr="${opath:-$osha}"
+    fi
+  done < <(git -C "$DIR" rev-list --objects "$@" 2>/dev/null \
+           | git -C "$DIR" cat-file --batch-check='%(objecttype)|%(objectname)|%(objectsize)|%(rest)' 2>/dev/null)
+  [ -n "$hit_home" ]  && warn "absolute home path in a binary blob in $label — e.g. $hit_home"
+  [ -n "$hit_email" ] && warn "email in a binary blob in $label — e.g. $hit_email"
+  [ -n "$hit_cyr" ]   && warn "Cyrillic text in a binary blob in $label — e.g. $hit_cyr"
+  [ "$skipped" -gt 0 ] && warn "$skipped binary blob(s) over KEEL_AUDIT_BLOB_MAX (${max}B) skipped in $label — UN-audited; raise the cap to cover them"
+  return 0
+}
 
 say "● public-audit ($DIR)"
 [ "$is_git" = 1 ] || say "       (not a git repo — git-history checks skipped)"
@@ -220,6 +298,11 @@ if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   [ -n "$h" ] && warn "Cyrillic text in git history — e.g. $h"
 fi
 
+# --- 5b. binary blobs — the decoded scan of what sections 3/5 cannot see (tree + history) ---------
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  scan_binary_blobs "git history" --all
+fi
+
 # --- 6. host-side PR refs (GitHub refs/pull/*) ---------------------------------------------------
 # These are served by the host but are NOT reachable from `git log --all`, so a leak in a closed PR's
 # commits passes the local scan (a force-push of `main` does not purge them). When a remote is set
@@ -271,6 +354,13 @@ EOF
     [ -n "$ph" ] && warn "Cyrillic text in a host PR ref (refs/pull/*) — e.g. $ph"
     ph="$(printf '%s\n' "$pr_hist" | grep -naE "$session_re" | head -1 || true)"
     [ -n "$ph" ] && warn "agent/session metadata in a host PR ref (refs/pull/*) — e.g. $ph"
+    # Binary blobs a PR ref carries that local history does not. The exclusion must NOT be a bare
+    # `--not --all`: --all includes the refs/keel-pr-audit/* temp refs themselves (fetched above), so
+    # the include-set would be a subset of the exclude-set and the scan a silent no-op — --exclude
+    # carves the temp namespace out of the --all that follows it. A leak in a closed PR's binary
+    # fixture is exactly as recoverable as a text one.
+    scan_binary_blobs "a host PR ref (refs/pull/*)" \
+      --glob='refs/keel-pr-audit/*' --not --exclude='refs/keel-pr-audit/*' --all
     cleanup_pr_refs   # reap this remote's temp refs before the next iteration (also runs on EXIT)
   done <<EOF_REMOTES
 $(git -C "$DIR" remote 2>/dev/null)
