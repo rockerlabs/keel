@@ -117,7 +117,8 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan
 }
 
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
-# classes, and emit "label:(binary) MATCH" records
+# classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
+# public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync.
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec hits
   tmp="$(mktemp "$SCRATCH/blob.XXXXXX")"; dec="$(mktemp "$SCRATCH/blob.XXXXXX")"

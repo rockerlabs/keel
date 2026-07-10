@@ -169,7 +169,6 @@ check_status "staged personal literal → exit 1" 1 "$STATUS"
 
 # staged BINARY: a personal literal hidden as UTF-16LE inside a binary file — the class a
 # plain-text grep cannot see (e.g. a real name inside a binary media-database fixture)
-utf16le() { local s="$1" i; for ((i=0; i<${#s}; i++)); do printf '%s\000' "${s:i:1}"; done; }
 repo="$(new_repo)"
 { printf '\000\000padding\000\000'; utf16le "made by Jane Q Public"; printf '\000\000'; } > "$repo/fixture.bin"
 git -C "$repo" add fixture.bin

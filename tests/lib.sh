@@ -69,6 +69,8 @@ check_nofile()   { if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; e
 key() { printf '%s%s' "$1" "$2"; }
 # Repeat CHAR ($1) N ($2) times — e.g. a key body of the length the pattern requires.
 rep() { printf "%*s" "$2" '' | tr ' ' "$1"; }
+# ASCII string -> UTF-16LE bytes (NUL-interleaved), no iconv needed — for binary-fixture tests
+utf16le() { local s="$1" i; for ((i=0; i<${#s}; i++)); do printf '%s\000' "${s:i:1}"; done; }
 
 # A throwaway git repo under the sandbox; prints its path.
 new_repo() {

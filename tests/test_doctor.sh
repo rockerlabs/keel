@@ -284,4 +284,47 @@ git -C "$base" worktree add -q "$wtp" >/dev/null 2>&1
 run "$doctor" "$base"
 check_absent  "public-fork worktree → exempt from bridge WARN" "$OUT" "missing the CLAUDE.md bridge"
 
+# --- secret-guard drift: an installed copy that differs from the shipped engine → WARN -----------
+shipped="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
+
+# a WIRED local-override copy that drifted
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+mkdir -p "$d/vhooks"; cp "$shipped" "$d/vhooks/secret-scan.sh"; printf '\n# stale\n' >> "$d/vhooks/secret-scan.sh"
+git -C "$d" config core.hooksPath vhooks
+run "$doctor" "$d"
+check_status "drifted local-override guard → exit 0 (WARN)" 0 "$STATUS"
+check_contains "warns the vendored engine drifted" "$OUT" "differs from the engine this Keel checkout ships"
+
+# the same override with an IDENTICAL copy → no drift WARN
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+mkdir -p "$d/vhooks"; cp "$shipped" "$d/vhooks/secret-scan.sh"
+git -C "$d" config core.hooksPath vhooks
+run "$doctor" "$d"
+check_absent "up-to-date local-override guard → no drift WARN" "$OUT" "differs from the engine"
+
+# a vendored copy in the REAL hooks dir (no override, no global) that drifted
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+vh="$(git -C "$d" rev-parse --git-path hooks)"; case "$vh" in /*) ;; *) vh="$d/$vh" ;; esac
+mkdir -p "$vh"; printf '#!/bin/sh\n' > "$vh/pre-commit"; chmod +x "$vh/pre-commit"
+cp "$shipped" "$vh/secret-scan.sh"; printf '\n# stale\n' >> "$vh/secret-scan.sh"
+run "$doctor" "$d"
+check_contains "drifted git-path-hooks vendored guard → WARN" "$OUT" "differs from the engine this Keel checkout ships"
+
+# machine-global drift: reported ONCE (sandboxed global gitconfig), silent when in sync
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+gdir="$SANDBOX/ghooks-drift"; mkdir -p "$gdir"
+cp "$shipped" "$gdir/secret-scan.sh"; printf '\n# stale\n' >> "$gdir/secret-scan.sh"
+git config --global core.hooksPath "$gdir"
+run "$doctor" "$d"
+check_status "machine-global drifted guard → exit 0 (WARN)" 0 "$STATUS"
+check_contains "warns the machine-global engine drifted" "$OUT" "machine-global secret-guard"
+cp "$shipped" "$gdir/secret-scan.sh"
+run "$doctor" "$d"
+check_absent "machine-global guard in sync → no drift WARN" "$OUT" "machine-global secret-guard"
+git config --global --unset core.hooksPath
+
 summary

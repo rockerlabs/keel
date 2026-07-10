@@ -9,6 +9,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`public-audit` decodes binary blobs; `doctor` catches installed-guard drift** (third batch of the
+  KB-on-Keel migration — both close felt gaps from the maintainer's own audits):
+  - **Binary-blob pass (`public-audit`).** The text passes cannot see inside a binary: the tree grep
+    skips binaries and `git log -p` renders a binary change as "Binary files … differ" — so personal
+    data encoded in a binary blob (the felt class: a real name UTF-16-encoded inside a fixture) passed
+    every check. Now every binary blob reachable from any ref — plus a host PR ref's exclusive blobs —
+    is decoded (NUL-strip + iconv UTF-16LE/BE + raw-printable) and re-scanned with the same regex set:
+    declared tokens = GAP, home-path/email/Cyrillic = WARN. An added-then-removed blob is still caught
+    (the scan walks blobs, not the final tree). `KEEL_AUDIT_BLOB_MAX` (default 10 MB) bounds the
+    per-blob cost; oversized blobs are counted and surfaced as UN-audited, never silently trusted.
+  - **Installed-guard drift check (`doctor`).** Presence is not freshness: a wired secret-guard copy
+    that has drifted from the engine this checkout ships runs old detection while looking fine (felt:
+    an engine upgrade reached some installed copies but not others — days of degraded detection).
+    `doctor` now compares the machine-global copy (once) and each repo's wired local-override /
+    hooks-dir copy (per project) against `tools/secret-guard/secret-scan.sh` and WARNs with the exact
+    re-sync command on any mismatch. *(Expect a one-time WARN on machines with an already-installed
+    guard after any engine-touching release — that's the check working; re-run
+    `install-secret-guard.sh --global` to clear it.)*
 - **`secret-scan` grows three verification/audit modes** (second batch of the KB-on-Keel migration —
   the modes the maintainer's KB tooling depends on, upstreamed so the private fork can collapse onto
   Keel's engine):
