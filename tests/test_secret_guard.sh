@@ -144,38 +144,32 @@ check_status "noreply co-author trailer in a message → exit 0" 0 "$STATUS"
 # --- an annotated TAG's message is neither a blob nor a commit message — a pushed tag (pre-push
 # passes "<tagsha> --not --remotes") must have its message body scanned too, or a key / personal
 # literal / session trailer in the tag ships to the remote uncaught -------------------------------
-repo="$(new_repo)"
-printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
-git -C "$repo" tag -a v1.0 -m "release token $(key 'ghp_' "$(rep a 36)") end"
-tagsha="$(git -C "$repo" rev-parse v1.0)"
-run_in "$repo" "$scan" --range "$tagsha --not --remotes"
-check_status "key in an annotated tag message → BLOCKED" 1 "$STATUS"
+tag_range() {  # desc  tag-message  expected-exit  [personal-file]
+  local repo tagsha
+  repo="$(new_repo)"
+  printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+  git -C "$repo" tag -a v1.0 -m "$2"
+  tagsha="$(git -C "$repo" rev-parse v1.0)"
+  if [ -n "${4:-}" ]; then
+    run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$4" "$scan" --range "$tagsha --not --remotes"
+  else
+    run_in "$repo" "$scan" --range "$tagsha --not --remotes"
+  fi
+  check_status "$1" "$3" "$STATUS"
+}
+
+tag_range "key in an annotated tag message → BLOCKED" \
+  "release token $(key 'ghp_' "$(rep a 36)") end" 1
 check_contains "labels the offending tag" "$OUT" "tag"
-
-# a session trailer in a tag message (assembled by printf — the source never holds the literal)
-repo="$(new_repo)"
-printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
-git -C "$repo" tag -a v1.0 -m "$(printf 'release\n\nClaude-%s: https://claude.ai/code/%s_01test' Session session)"
-tagsha="$(git -C "$repo" rev-parse v1.0)"
-run_in "$repo" "$scan" --range "$tagsha --not --remotes"
-check_status "session trailer in an annotated tag message → BLOCKED" 1 "$STATUS"
-
-# a personal literal in a tag message (class 2 reaches the tag pass, case-insensitively)
-repo="$(new_repo)"
+# session trailer assembled by printf — the source never holds the literal
+tag_range "session trailer in an annotated tag message → BLOCKED" \
+  "$(printf 'release\n\nClaude-%s: https://claude.ai/code/%s_01test' Session session)" 1
+# class 2 reaches the tag pass, case-insensitively
 tagpfile="$SANDBOX/personal-tag"; printf 'SeekritPersonName\n' > "$tagpfile"
-printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
-git -C "$repo" tag -a v1.0 -m "thanks to seekritpersonname"
-tagsha="$(git -C "$repo" rev-parse v1.0)"
-run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$tagpfile" "$scan" --range "$tagsha --not --remotes"
-check_status "personal literal in an annotated tag message → BLOCKED" 1 "$STATUS"
-
-# a clean annotated tag message still passes
-repo="$(new_repo)"
-printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
-git -C "$repo" tag -a v1.0 -m "ordinary release notes"
-tagsha="$(git -C "$repo" rev-parse v1.0)"
-run_in "$repo" "$scan" --range "$tagsha --not --remotes"
-check_status "clean annotated tag message → exit 0" 0 "$STATUS"
+tag_range "personal literal in an annotated tag message → BLOCKED" \
+  "thanks to seekritpersonname" 1 "$tagpfile"
+tag_range "clean annotated tag message → exit 0" \
+  "ordinary release notes" 0
 
 # an explicit missing file is an error (exit 2), not a false "clean" (cf. doctor/public-audit)
 run "$scan" "$SANDBOX/does-not-exist-$$.txt"

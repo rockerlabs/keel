@@ -19,7 +19,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   discipline as the blob and commit-message passes. `public-audit`'s session-metadata check
   (section 4) had the matching blind spot while its history heuristics (section 5) already covered
   tag messages; it now scans annotated-tag `%(contents)` too, keeping the two mirrored `session_re`
-  / `SESSION_META` checks consistent.
+  / `SESSION_META` checks consistent. `--selftest` gains a matching end-to-end tag probe, so an
+  installed guard can prove the new pass works on its own host.
 
 ### Added
 - **`secret-scan --range` (the pre-push path) now also scans the pushed commits' MESSAGES for

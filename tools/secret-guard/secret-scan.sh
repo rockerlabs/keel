@@ -167,6 +167,9 @@ emit_stream() {  # $1 = record label (path)
   rm -f "$stmp"
 }
 
+# an annotated tag's message body — everything after the first blank line of the raw tag object
+tag_body() { git cat-file tag "$1" 2>/dev/null | sed '1,/^$/d'; }
+
 # scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
 # not the file — a misleading figure. The path + matched content is what's actionable.
@@ -187,7 +190,7 @@ emit_diff() {
 # cwd (so a repo's .secret-scan-allow can't mask a probe) with a fixture personal file. A guard you
 # can't verify degrades silently — this is the check install/bootstrap scripts run after wiring.
 selftest() {
-  local script dir rc=0 fake greprc mrepo mgot
+  local script dir rc=0 fake greprc mrepo mgot trepo tgot
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -251,6 +254,27 @@ selftest() {
     fi
   else
     echo "selftest: WARN — could not create the message-probe repo; the commit-message pass is unverified on this host" >&2
+  fi
+  # the same trailer in an annotated TAG message (a tag is neither a blob nor a commit message —
+  # only the --range tag pass sees it). A separate probe repo with a CLEAN commit, so a hit can
+  # only come from the tag body.
+  trepo="$dir/tagrepo"
+  if git init -q --template= "$trepo" 2>/dev/null \
+     && git -C "$trepo" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+          commit -q --no-verify --allow-empty -m probe 2>/dev/null \
+     && git -C "$trepo" -c user.name=keel -c user.email=keel@keel.invalid -c tag.gpgsign=false \
+          tag -a probe-tag \
+          -m "$(printf 'release\n\nClaude-%s: https://claude.ai/code/%s_selftest' Session session)" 2>/dev/null; then
+    tgot=0
+    (cd "$trepo" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
+       "$script" --range "probe-tag --not --remotes" >/dev/null 2>&1) || tgot=$?
+    if [ "$tgot" -eq 1 ]; then
+      echo "selftest: OK   — caught a session trailer in a pushed annotated-tag message"
+    else
+      echo "selftest: FAIL — session trailer in a tag message (exit $tgot, want 1)" >&2; rc=1
+    fi
+  else
+    echo "selftest: WARN — could not create the tag-probe repo; the tag-message pass is unverified on this host" >&2
   fi
   return $rc
 }
@@ -331,8 +355,7 @@ case "$mode" in
       tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
       while IFS= read -r tsha; do
         [ -n "$tsha" ] || continue
-        # the message body is everything after the first blank line of the raw tag object
-        git cat-file tag "$tsha" 2>/dev/null | sed '1,/^$/d'
+        tag_body "$tsha"
       done <<< "$tagshas" > "$tagtmp"
       tag_hits="$(grep -acE "$joined|$SESSION_META" "$tagtmp" || true)"
       if [ "${tag_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
@@ -343,7 +366,7 @@ case "$mode" in
         while IFS= read -r tsha; do
           [ -n "$tsha" ] || continue
           tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-          git cat-file tag "$tsha" 2>/dev/null | sed '1,/^$/d' > "$tagtmp"
+          tag_body "$tsha" > "$tagtmp"
           while IFS= read -r hit; do
             [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
           done < <({ match_text '' "$tagtmp"
