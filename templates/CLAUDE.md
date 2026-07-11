@@ -61,6 +61,10 @@ Don't claim "done / works" until you've checked. If tests fail or a step was ski
 the output. No GUI access → run a headless smoke and be honest the visual check is on you. Don't
 pass a smoke off as full verification.
 
+Prefer a **narrow, deterministic check** (a test, a script assertion) over eyeballing — it can't
+hallucinate and costs zero context; a check you'd repeat by hand is a candidate to mechanize. A **fast
+negative result is a valid result** — report it as plainly as a pass; it beats a long false hope.
+
 ---
 
 ## Decisions & forks

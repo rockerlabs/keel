@@ -30,6 +30,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **The core's Verify discipline gains the verification *method*, not just the honesty rule**
+  (`templates/CLAUDE.md`): prefer a narrow, deterministic check (a test, a script assertion) over
+  eyeballing — it can't hallucinate and costs zero context; a check you'd repeat by hand is a candidate
+  to mechanize; and a fast negative result is a valid result, reported as plainly as a pass. The
+  mechanized tier already *practices* this (secret-guard, doctor, the narrow test suite) — now the
+  always-loaded rails *say* it, so the model is biased to build gates instead of trusting its own
+  eyes. ~65 tokens added to the core (still ~14% of the startup budget).
+- **Token-figure honesty extended to the README** (felt 2026-07-11: README's "How it loads" diagram
+  still said `FRAMEWORK.md (~4.2K)` after the file had grown to ~5.0K — the loading-and-cost.md table
+  is guarded by `test_doc_figures.sh`, but the README's separate mermaid figures weren't). Fixed the
+  stale figure, added the missing `/keel-score` + `tools/keel-impact.sh` rows to "What's in the box",
+  and mechanized the gap: `test_doc_figures.sh` now asserts the README's FRAMEWORK / PRINCIPLES /
+  always-loaded-core figures within the same ±10% band.
+- **Two honest-boundary notes for adopters** (both felt 2026-07-11):
+  - `ADAPTING.md`: the Memory section of `templates/CLAUDE.md` assumes a persistent auto-memory keyed
+    to the session/cwd (Claude Code's mechanism) — on a tool without one, drop that section when
+    copying the file over.
+  - `docs/getting-started.md`: a macOS tip for adopters without git — `xcode-select --install` gets
+    git alone; no need for the longer Homebrew detour (felt: a non-coding adopter's install spent half
+    the session on Homebrew-then-git).
 - **The install path answers a first-time adopter's three stumbles** (felt 2026-07-11: the first
   completely fresh external user — macOS, Claude desktop app, clone install — walked through setup;
   the first live-user feedback since going public). Docs-and-echo only, no behavior change:
