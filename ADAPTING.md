@@ -61,6 +61,9 @@ keep them around and paste the one you need when you need it.
 - The **Memory section** in `templates/CLAUDE.md` assumes your tool has a persistent auto-memory keyed to
   the session or working directory (that's how Claude Code's auto-memory works). If your tool has no such
   feature, drop that section when you copy the file over — there's nothing for it to attach to.
+- The **Git rails and reconcile-first sections** of `templates/CLAUDE.md` assume you work with code in git
+  repositories. If you don't (documents, research, writing), drop both when you copy the file over —
+  `/keel-setup` offers this trim on Claude Code; elsewhere just delete the two sections.
 - The **advice** (principles, framework, ground rules) nudges any model *when it's loaded*, but — as always
   — doesn't enforce itself. You're the trigger.
 

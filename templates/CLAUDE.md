@@ -37,6 +37,9 @@
 **Never commit or push directly to the default branch** (any project, any change size). Feature branch →
 commit → push → PR → merge → delete the branch. (Full flow + the solo knowledge-base carve-out → `FRAMEWORK.md`.)
 
+**Force-push only a named branch** (`--force <branch>`), reconciled with its upstream first — never
+`--force --all`: it overwrites every remote ref, including from a stale local default.
+
 **Never commit private AI context or secrets.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
 (private AI context — default gitignored; choose public deliberately for OSS), plus IDE/OS/build artifacts.
 API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk + pulled into model

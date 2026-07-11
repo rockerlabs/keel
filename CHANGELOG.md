@@ -30,6 +30,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **The git/code rails become droppable-as-a-unit for non-coding adopters — trimmed at setup, not
+  hedged in the core** (felt 2026-07-11: a real adopter who writes scripts and documents, no git,
+  carries the two git/code sections — ~25% of the always-loaded core — as pure dead weight every
+  session). The fix costs zero core tokens: `/keel-setup` step 3 asks one plain-words scope question
+  (*coding projects in git, or mostly documents and texts?*) and, on a clear "no code", offers to
+  remove "Git — mandatory rails" and "Before writing code — reconcile first" from the user's copy;
+  unsure/mixed keeps both (the safe default), and the "read the project's `CLAUDE.md` first" rail
+  survives in the map either way. `ADAPTING.md`'s honest-boundary section documents the same trim for
+  non-Claude tools. With the block droppable, it can also serve its primary audience better: the core's
+  git rails gain the **force-push guard** (only a named branch, reconciled with upstream first — never
+  `--force --all`), promoted from `FRAMEWORK.md`'s on-demand tier because a model won't open FRAMEWORK
+  mid-push and the felt incident (a `--force --all` that rolled back main and dropped three merged PRs)
+  is an irreversible loss class.
 - **The core exports two felt rules that had never actually shipped** (`templates/CLAUDE.md`):
   - **No personal data in committed artifacts — anonymize at authoring time** (Git rails). The product
     ships the *mechanism* for this leak class (secret-guard's personal-literal scan, its README
