@@ -19,6 +19,14 @@
   reusable insight; promote on recurrence; prune when stale.
 - **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
 
+## Precedence — when sources conflict
+
+Nearest scope wins: live user instruction > session > `<project>/CLAUDE.md` > this file. Record
+exceptions at the scope they belong to — a project carve-out lives in the project's file, keeping this
+one thin. Two limits: **safety rails** (secrets, personal data, irreversible actions) yield only to an
+explicit human decision, never silently to a nearer file; and when applying an override, **name it** —
+a contradiction may be staleness, not a deliberate exception.
+
 ---
 
 ## Communication preferences

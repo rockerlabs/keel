@@ -30,6 +30,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **The core gains a precedence rule — nearest scope wins on a conflict** (`templates/CLAUDE.md`, after
+  the map): live user instruction > session > project `CLAUDE.md` > the global core. Behavior on a
+  contradiction between layers was previously undefined — the model guessed or asked. The rule also
+  tells exceptions where to live (a project carve-out belongs in the project's file, not carried by the
+  always-loaded core every session — an anti-bloat mechanism, felt: a single repo's
+  direct-to-default-branch carve-out living globally). Two limits ride with it: safety rails (secrets,
+  personal data, irreversible actions) yield only to an explicit human decision, never silently to a
+  nearer file; and an applied override must be named — a contradiction may be staleness, not a
+  deliberate exception.
 - **Collision-aware command install** (closes backlog dir #9): when a command name is already taken by
   the adopter's *own* file (a pre-existing `/go` is likely — the name is generic), `install.sh` no
   longer poses overwrite-or-nothing, where both answers lose something (yes destroys their command,
