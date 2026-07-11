@@ -1,36 +1,9 @@
-# Global preferences — always-loaded core (TEMPLATE)
+# Always-on core — the rails
 
-> Copy this to your harness's always-loaded location (e.g. `~/.claude/CLAUDE.md`) and edit the placeholders.
-> This is the **only file auto-loaded in EVERY session**. Keep it deliberately thin: the unconditional
-> safety/behavior rails + a **map** of where the rest lives. Everything else is read **on demand** — follow
-> the map; don't re-derive it.
+<!-- Rails only, no placeholders. Edit between the markers, then mirror the block into
+     templates/CLAUDE.md (test_core_wrapper_sync.sh pins byte equality). -->
 
-## Where things live (the map — read the right file when the task needs it)
-
-- **`FRAMEWORK.md`** — the reusable methodology/engine (no personal data). Read before: setting up or
-  grooming a project's knowledge base / `CLAUDE.md` structure; applying engineering conventions; adding a changelog
-  entry; git worktree/branch mechanics.
-- **`INSTANCE.md`** — this user/machine: the Projects registry, hardware, model access, backup remote. Read
-  when you need the project registry or any environment fact. Check it before asking the user "do you have
-  X?" — settled facts live there so sessions don't re-ask.
-- **`PRINCIPLES.md`** — P0–P4, the durable foundation. Consult for foundational / expensive-to-reverse
-  decisions.
-- **`LEARNINGS.md`** — staging tier for workflow insights not yet worth a committed rule. Append on a
-  reusable insight; promote on recurrence; prune when stale.
-- **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
-
-## Communication preferences
-
-<!-- Set your defaults here. Example: chat language, explanation verbosity. Persistent artifacts
-     (knowledge-base docs, code, git/PR text) should stay in English for cross-model portability regardless. -->
-
-- **Chat language:** <your preference>
-- **Persistent artifacts** (knowledge-base docs, code, commits, PR text) → **English** (read at startup by whatever
-  model runs the session; English maximizes comprehension and portability across models).
-
----
-
-<!-- KEEL-CORE-BEGIN — rails below are verbatim from CORE.md; edit them there (test_core_wrapper_sync.sh pins byte equality) -->
+<!-- KEEL-CORE-BEGIN -->
 ## Precedence — when sources conflict
 
 Nearest scope wins: live user instruction > session > `<project>/CLAUDE.md` > this file. Record

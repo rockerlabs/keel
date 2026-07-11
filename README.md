@@ -148,7 +148,8 @@ when needed; the tools never enter the assistant's memory at all. That's the who
 |---|---|
 | `PRINCIPLES.md` | The lasting foundation — the handful of ideas everything else rests on. Read it for big, hard-to-undo decisions. |
 | `FRAMEWORK.md` | The reusable how-to: load-a-little-always, the project list, keeping the always-on part small, plus git and code conventions. No personal data. |
-| `templates/CLAUDE.md` | The small always-on file — copy it into your AI tool's config folder (e.g. `~/.claude/`) and edit it. |
+| `CORE.md` | The always-on rails by themselves — no placeholders, nothing personal. On Claude Code you can import it live from your own file instead of copying (`git pull` in the checkout then refreshes the rails); the template below embeds it verbatim for everyone else. |
+| `templates/CLAUDE.md` | The small always-on file — copy it into your AI tool's config folder (e.g. `~/.claude/`) and edit it. It's `CORE.md` embedded verbatim plus the personal sections you fill in (the file map, your preferences). |
 | `templates/INSTANCE.md` | Your private personal layer (hardware, which models you can use, your list of projects). |
 | `templates/project-CLAUDE.md` | A template for per-project notes. |
 | `templates/LEARNINGS.md` | A holding place for workflow tips that aren't yet worth a full rule (between "make it a rule" and "drop it"). |
