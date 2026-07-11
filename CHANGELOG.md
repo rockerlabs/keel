@@ -9,6 +9,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Security
+- **`secret-scan` learns six more key shapes** (closes audit finding SEC2): GitHub OAuth/user/server/
+  refresh tokens (`gho_`/`ghu_`/`ghs_`/`ghr_`, folded with the existing `ghp_` into one
+  `gh[oprsu]_[A-Za-z0-9]{36}` pattern), npm access tokens (`npm_…`), and Hugging Face user tokens
+  (`hf_…`). All length-anchored like the rest, so a bare prefix or this list itself never trips; one
+  block test per shape. These are common CI/registry credentials the prefix backstop previously waved
+  through.
 - **Binary decode passes now cover UTF-32, closing a non-ASCII blind spot** in both `secret-guard`
   (`secret-scan.sh` `emit_blob`) and `public-audit` (`scan_binary_blobs`). The blob decoders ran
   `iconv` for UTF-16LE/BE but not UTF-32, so a **non-ASCII** personal literal (e.g. a Cyrillic name)
