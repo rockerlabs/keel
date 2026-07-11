@@ -10,8 +10,16 @@
 # secret-guard git hook machine-global (never over an existing hooksPath), seeds a private INSTANCE.md,
 # and verifies the result.
 #
+# Linked mode (--link): instead of copying, wire Keel-owned content BY REFERENCE — a `<home>/keel/`
+# consumption dir of symlinks into this checkout (CORE, FRAMEWORK, PRINCIPLES), one `@import` line in
+# the global CLAUDE.md, and command symlinks. `git pull` here then refreshes every consumer at once;
+# re-run `install.sh --link` after a pull to wire files a release ADDED (pull refreshes content, not
+# composition). Requires a checkout you keep (not bootstrap's temp clone). The `@import` line is a
+# Claude Code mechanism — other harnesses should stay on the copy path (see ADAPTING.md).
+#
 # Usage:
 #   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
+#   install.sh --link          linked mode: symlinks + one @import line (Claude Code; keep this clone)
 #   install.sh --home DIR      bootstrap into DIR (for a non-Claude-Code harness)
 #   install.sh --no-hooks      skip the global secret-guard step (wire it yourself)
 #   install.sh -h | --help
@@ -31,8 +39,15 @@ command (say, /go), Keel's version goes alongside as keel-<name> instead — off
 terminal, automatic when non-interactive. Wires the secret-guard git hook machine-global
 (never over an existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
 
+Linked mode (--link, Claude Code): wires by reference instead of copying — <home>/keel/
+symlinks into this checkout + ONE @import line in your global CLAUDE.md + command
+symlinks. `git pull` here refreshes everything; re-run `install.sh --link` after a pull
+to wire newly shipped files. Keep this clone — it IS the installation. Removal is the
+mirror image: delete <home>/keel/, the import line, and the command symlinks.
+
 Usage:
   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
+  install.sh --link          linked mode: symlinks + one @import line (Claude Code; keep this clone)
   install.sh --home DIR      bootstrap into DIR (for a non-Claude-Code harness)
   install.sh --no-hooks      skip the global secret-guard step (wire it yourself)
   install.sh -h | --help
@@ -41,11 +56,13 @@ EOF
 
 HOME_DIR="${KEEL_HOME:-}"          # --home overrides; the $HOME default is resolved AFTER parsing
 DO_HOOKS=1
+LINK=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --home) shift; HOME_DIR="${1:?--home needs a DIR}" ;;
     --no-hooks) DO_HOOKS=0 ;;
+    --link) LINK=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "install: unknown argument '$1' (try --help)" >&2; exit 2 ;;
   esac
@@ -56,14 +73,88 @@ done
 # need $HOME (and `set -u` won't abort when it's unset). Require $HOME only when we actually fall back.
 : "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/.claude}"
 
+# Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES
+# back in as stale shadows — "git pull && ./install.sh" is exactly the muscle-memory the copy-mode
+# docs teach, so detect the linked layout and stay in linked mode. (-L, not -f: even a dangling
+# CORE.md link marks the home as linked — the re-run then heals it.)
+if [ "$LINK" = 0 ] && [ -L "$HOME_DIR/keel/CORE.md" ]; then
+  LINK=1
+  echo "install: this home is a LINKED install — continuing in linked mode (as if --link was passed)"
+fi
+
 echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
 # 1. Durable core.
-# atomic_copy — write via a temp sibling + rename, so a dest is never left half-written.
-atomic_copy() {
-  cp "$1" "$2.keeltmp.$$" && mv -f "$2.keeltmp.$$" "$2"
+# atomic_write DEST — stdin lands via a temp sibling + rename, so a dest is never left half-written.
+# The ONE spelling of the atomicity protocol; every file write below routes through it (or make_link).
+atomic_write() {
+  cat > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
 }
+atomic_copy() {
+  atomic_write "$2" < "$1"
+}
+
+# make_link — same temp-sibling + rename discipline for a symlink, so a dest is replaced, never
+# left dangling mid-write.
+make_link() {
+  ln -s "$1" "$2.keeltmp.$$" && mv -f "$2.keeltmp.$$" "$2"
+}
+
+# place / in_sync / FIX — the one seam between copy mode and linked mode: how Keel-owned content
+# lands at dest, when dest already matches the shipped source, and the one-liner we print for
+# fixing drift by hand. Everything else (never-clobber, collision aliases, tty/non-tty behavior)
+# is shared, so the two modes can't drift apart in semantics.
+place() {
+  if [ "$LINK" = 1 ]; then make_link "$1" "$2"; else atomic_copy "$1" "$2"; fi
+}
+in_sync() {
+  if [ "$LINK" = 1 ]; then
+    # -ef, not a readlink string compare: the same checkout is reachable through different path
+    # spellings (/tmp vs /private/tmp on macOS, a symlinked parent) — a link to the same physical
+    # file is in sync however it's spelled. A link to a DIFFERENT checkout stays out of sync.
+    [ -L "$2" ] && [ "$2" -ef "$1" ]
+  else
+    cmp -s "$1" "$2"
+  fi
+}
+if [ "$LINK" = 1 ]; then FIX="ln -sf"; else FIX="cp"; fi
+
+# Linked-mode helpers (used by the --link branch below AND its Verify section; $import_line is set
+# by the --link branch before any call).
+# strip_core_block FILE [REPLACEMENT] → stdout, with the KEEL-CORE block replaced by REPLACEMENT
+# (default: the import line; "" = block removed). The ONE definition of the marker transform;
+# callers own the destination (in-place migration or a pipe).
+strip_core_block() {
+  awk -v imp="${2-$import_line}" '
+    /KEEL-CORE-BEGIN/ {if (imp != "") print imp; skip=1; next}
+    /KEEL-CORE-END/   {skip=0; next}
+    !skip
+  ' "$1"
+}
+# resolve_file FILE — follow symlinks (≤10 hops) to the real file, so an in-place rewrite lands in
+# the file's true home instead of severing the link (a dotfiles-managed CLAUDE.md is a symlink).
+resolve_file() {
+  local f="$1" t i=0
+  while [ -L "$f" ] && [ "$i" -lt 10 ]; do
+    t="$(readlink "$f")"
+    case "$t" in /*) f="$t" ;; *) f="$(dirname "$f")/$t" ;; esac
+    i=$((i + 1))
+  done
+  printf '%s' "$f"
+}
+replace_core_block() {  # $1=file, optional $2 forwarded to strip_core_block
+  local real; real="$(resolve_file "$1")"
+  strip_core_block "$1" ${2+"$2"} > "$real.keeltmp.$$" && mv -f "$real.keeltmp.$$" "$real"
+}
+# core_block FILE → the lines strictly between the markers (markers excluded — their comment text
+# legitimately differs). Mirror of block_of() in tests/test_core_wrapper_sync.sh — keep in sync.
+core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
+# has_core_import FILE — THE definition of "the import line is wired". Claude Code treats an @path
+# anywhere in prose as an import, so the token may sit mid-line with text around it — an anchored
+# ^@…$ would call a working import unwired (and then append a duplicate). Verify uses this too, and
+# tools/doctor.sh --install carries a mirrored copy (cross-referenced there) — keep them in sync.
+has_core_import() { grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$1" 2>/dev/null; }
 
 # copy_gap — for USER-owned files (CLAUDE.md, INSTANCE.md, LEARNINGS.md): copy only if the destination is
 # absent, never clobber. The user edits these (placeholders, private data), so a re-run must preserve them.
@@ -95,35 +186,51 @@ sync_product() {
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
     return 1
-  elif [ -n "$alias_dest" ] && [ -f "$alias_dest" ]; then
+  elif [ -n "$alias_dest" ] && { [ -e "$alias_dest" ] || [ -L "$alias_dest" ]; }; then
     # resolved collision: Keel's copy lives at the alias; $dest — present, absent, or even identical to
     # the shipped file — is the user's space now. Route the drift check to the alias, always.
+    # (-e OR -L: a dangling alias symlink — e.g. the checkout moved — still marks the resolved state.)
     if [ -f "$dest" ]; then
       echo "  =    $name left untouched (yours; Keel's version lives at $(basename "$alias_dest"))"
     fi
     sync_product "$src" "$alias_dest"
+  elif in_sync "$src" "$dest"; then
+    echo "  =    $name (up to date)"
   elif [ ! -f "$dest" ]; then
-    atomic_copy "$src" "$dest"
+    # absent — or a dangling symlink (a moved/reaped checkout): place() replaces it atomically either way.
+    place "$src" "$dest"
     echo "  +    $name"
   elif cmp -s "$src" "$dest"; then
-    echo "  =    $name (up to date)"
+    # content equals the shipped version but isn't in the mode's canonical form. In copy mode the
+    # canonical form IS identical content (absorbed by in_sync above), so this only fires in linked
+    # mode — for a real file (the copy→linked migration) or a same-content symlink into another
+    # checkout (a re-link after a move or re-clone): converge to the canonical link either way.
+    place "$src" "$dest"
+    echo "  ^    $name — identical copy upgraded to a symlink (now updates with git pull)"
   elif [ -t 0 ] && [ -n "$alias_dest" ]; then
     echo "  ~    $name exists and differs — an older Keel copy, or your own /${name%.md} command."
     printf "       [u]pdate it with Keel's version / [a] keep yours + add Keel's as %s / [N]either: " "$(basename "$alias_dest")"
     read -r reply || reply=""
     case "$reply" in
-      [uU]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
+      [uU]) place "$src" "$dest"; echo "  +    $name updated" ;;
       [aA]) sync_product "$src" "$alias_dest" ;;
-      *)    echo "  =    $name left untouched (add Keel's alongside later:  cp \"$src\" \"$alias_dest\")" ;;
+      *)    echo "  =    $name left untouched (add Keel's alongside later:  $FIX \"$src\" \"$alias_dest\")" ;;
     esac
   elif [ -t 0 ]; then
     echo "  ~    $name differs from Keel's shipped version — an older release, or you edited it."
     printf "       Overwrite your copy with the shipped version? [y/N] "
     read -r reply || reply=""
     case "$reply" in
-      [yY]|[yY][eE][sS]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
-      *)                 echo "  =    $name left untouched (update later:  cp \"$src\" \"$dest\")" ;;
+      [yY]|[yY][eE][sS]) place "$src" "$dest"; echo "  +    $name updated" ;;
+      *)                 echo "  =    $name left untouched (update later:  $FIX \"$src\" \"$dest\")" ;;
     esac
+  elif [ "$LINK" = 1 ] && [ -L "$dest" ]; then
+    # non-tty, and dest is a symlink resolving to a different target with different content: far
+    # more likely a stale link into an old/moved keel checkout than the user's own wiring. Never
+    # fork it into a keel-<name> alias here — that would cede the real name to the stale link
+    # forever (resolved-state semantics). Flag it and let a human decide (a tty re-run offers [u]).
+    echo "  !    $name is a symlink to a different target — an old Keel checkout, or your own wiring. Left untouched."
+    echo "       If it's a stale Keel link, re-point it:  $FIX \"$src\" \"$dest\""
   elif [ -n "$alias_dest" ]; then
     # no TTY to ask which way to resolve the collision — but creating the alias is non-destructive (a
     # brand-new file; the user's $name is untouched), so converge to the resolved state instead of
@@ -133,25 +240,133 @@ sync_product() {
     sync_product "$src" "$alias_dest"
   else
     echo "  !    $name differs from Keel's shipped version — left untouched."
-    echo "       Update when ready:  cp \"$src\" \"$dest\""
+    echo "       Update when ready:  $FIX \"$src\" \"$dest\""
   fi
 }
 
 # Detect a pre-existing CLAUDE.md that ISN'T Keel's core: we never clobber it, so the always-loaded
 # rails won't be merged in. Flag that in Verify instead of leaving it silent. Keel's core (and any file
 # derived from it) carries this heading; a foreign file won't.
+# (Copy mode only — linked mode has no such gap: the import line delivers the rails into any file.)
 foreign_core=0
-if [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
   foreign_core=1
 fi
 
-# User-owned (never clobber) …
-copy_gap "$root/templates/CLAUDE.md"    "$HOME_DIR/CLAUDE.md"
+if [ "$LINK" = 1 ]; then
+  # Linked mode: everything Keel-owned lives under ONE consumption point ($HOME_DIR/keel/) as
+  # symlinks into this checkout — enumerable (traceable), refreshed by `git pull`, removable by
+  # deleting the dir + the one import line. User-owned files stay real files, never symlinks into
+  # a public checkout (INSTANCE.md carries personal data).
+  link_dir="$HOME_DIR/keel"
+  import_line="@$link_dir/CORE.md"
+  # Prefer the ~-form when the home sits under $HOME — shorter, and survives a username-preserving
+  # home move. (${HOME:-} guard: --home/KEEL_HOME callers may legitimately run without $HOME.)
+  if [ -n "${HOME:-}" ]; then
+    case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
+  fi
+  mkdir -p "$link_dir"
+
+  sync_product "$root/CORE.md"       "$link_dir/CORE.md"
+  sync_product "$root/FRAMEWORK.md"  "$link_dir/FRAMEWORK.md"
+  sync_product "$root/PRINCIPLES.md" "$link_dir/PRINCIPLES.md"
+
+  # A short README so the dir explains itself later (written once; yours to edit after).
+  # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
+  # moves — the symlinks themselves are the live pointer (readlink shows where).
+  if [ ! -f "$link_dir/README.md" ]; then
+    atomic_write "$link_dir/README.md" <<'EOF'
+# keel/ — the Keel consumption point (linked install)
+
+Everything here is a symlink into the Keel checkout — `readlink CORE.md` shows where that is.
+`git pull` in the checkout refreshes them all; a running session keeps what it loaded at start.
+After a pull, re-run `install.sh --link` once — a pull refreshes content, not composition
+(a newly shipped file doesn't wire itself).
+
+- `CORE.md` — the always-on rails, @imported by the global `CLAUDE.md` one level up
+- `FRAMEWORK.md`, `PRINCIPLES.md` — read on demand via the map in that `CLAUDE.md`
+
+To remove Keel: delete this dir, the one `@` import line in the global `CLAUDE.md`, and any
+`commands/` symlinks (one level up) into the checkout. Health check: `tools/doctor.sh --install`
+(run from the checkout).
+EOF
+    echo "  +    keel/README.md"
+  fi
+
+  # The global CLAUDE.md — exactly ONE @import line delivers the rails, whatever was there before:
+  #   absent            → generate a thin wrapper: the template minus the embedded core, import line instead
+  #   already imports   → up to date (never append twice)
+  #   copy-mode wrapper → migrate: swap the embedded KEEL-CORE block for the import line — automatic
+  #                       when the block is byte-identical to the shipped core (pure duplication,
+  #                       zero information loss), asked/flagged when it drifted (your edits may live there)
+  #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
+  gclaude="$HOME_DIR/CLAUDE.md"
+  if [ ! -f "$gclaude" ]; then
+    # The sed strips/re-points TEMPLATE-only prose; tests/test_install_link.sh pins these exact
+    # strings in templates/CLAUDE.md, so a reword there fails loudly instead of no-oping here.
+    strip_core_block "$root/templates/CLAUDE.md" \
+      | sed -e 's/ (TEMPLATE)$//' \
+            -e '/^> Copy this to your harness/d' \
+            -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
+            -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
+      > "$gclaude.keeltmp.$$" && mv -f "$gclaude.keeltmp.$$" "$gclaude"
+    echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
+  elif has_core_import "$gclaude"; then
+    if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+      # half-done manual migration: the import line AND a leftover embedded block — the rails load
+      # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
+      if [ "$(core_block "$gclaude")" = "$(core_block "$root/CORE.md")" ]; then
+        replace_core_block "$gclaude" ""
+        echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
+      else
+        echo "  !    CLAUDE.md has BOTH the import line and an embedded KEEL-CORE block that differs from the shipped core."
+        echo "       The rails load twice each session — remove the block (or the import line) by hand."
+      fi
+    else
+      echo "  =    CLAUDE.md already imports the linked core"
+    fi
+  elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+    if [ "$(core_block "$gclaude")" = "$(core_block "$root/CORE.md")" ]; then
+      replace_core_block "$gclaude"
+      echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
+    elif [ -t 0 ]; then
+      echo "  ~    CLAUDE.md embeds rails that differ from the shipped core — an older release, or your edits inside the block."
+      printf "       Replace the embedded block with the import line (adopts the CURRENT shipped rails)? [y/N] "
+      read -r reply || reply=""
+      case "$reply" in
+        [yY]|[yY][eE][sS]) replace_core_block "$gclaude"; echo "  +    CLAUDE.md now imports the linked core" ;;
+        *) echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)" ;;
+      esac
+    else
+      echo "  !    CLAUDE.md embeds rails that differ from the shipped core — left untouched (your edits may live in the block)."
+      echo "       Compare, then migrate by hand: replace the KEEL-CORE block with the line  $import_line"
+    fi
+  else
+    printf '\n%s\n' "$import_line" >> "$gclaude"
+    echo "  +    CLAUDE.md: appended the Keel core import line (one line, at the end — remove it to unlink)"
+  fi
+
+  # Root-level copies from an earlier copy-mode install would now shadow the linked versions and
+  # silently go stale — flag them (the map in YOUR CLAUDE.md may still point at them, so we never
+  # delete; you re-point the map, then remove the copies).
+  for stale in FRAMEWORK.md PRINCIPLES.md; do
+    if [ -e "$HOME_DIR/$stale" ] && [ ! -L "$HOME_DIR/$stale" ]; then
+      echo "  !    $stale root copy remains from a copy-mode install — linked mode reads keel/$stale."
+      echo "       Point your CLAUDE.md map at keel/$stale, then remove the copy:  rm \"$HOME_DIR/$stale\""
+    fi
+  done
+else
+  # User-owned (never clobber) …
+  copy_gap "$root/templates/CLAUDE.md"    "$HOME_DIR/CLAUDE.md"
+  # … Keel-owned (offered for update on a drifted re-run).
+  sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
+  sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
+fi
+
+# User-owned seeds — identical in both modes (real files, never clobbered, never symlinks into a
+# public checkout: INSTANCE.md carries personal data).
 copy_gap "$root/templates/INSTANCE.md"  "$HOME_DIR/INSTANCE.md"
 copy_gap "$root/templates/LEARNINGS.md" "$HOME_DIR/LEARNINGS.md"
-# … Keel-owned (offered for update on a drifted re-run).
-sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
-sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
 
 # Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
@@ -165,7 +380,7 @@ if [ -d "$root/commands" ]; then
       # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without
       # its gate would hand adopters an inert feature, so skip it — it stays in the repo for the
       # maintainer + downstream consumers. (Intentional; a future audit should read this as scoped, not
-      # half-shipped.)
+      # half-shipped.) tools/doctor.sh --install mirrors this skip list — keep the two in sync.
       polish.md) continue ;;
       # keel-* commands never get an alias (a keel-keel-* name would be noise) — plain drift handling.
       keel-*)    alias_dest="" ;;
@@ -207,13 +422,40 @@ fi
 # 3. Verify the result — fail loudly if a core file or the hook wiring is missing.
 echo "Verify:"
 missing=0
-for f in CLAUDE.md INSTANCE.md LEARNINGS.md FRAMEWORK.md PRINCIPLES.md; do
+if [ "$LINK" = 1 ]; then
+  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md keel/CORE.md keel/FRAMEWORK.md keel/PRINCIPLES.md)
+else
+  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md FRAMEWORK.md PRINCIPLES.md)
+fi
+for f in "${vfiles[@]}"; do
   if [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
+  elif [ -L "$HOME_DIR/$f" ]; then
+    echo "  MISS $f (dangling symlink — did the checkout move? re-run install.sh --link from its new home)" >&2; missing=1
   else
     echo "  MISS $f" >&2; missing=1
   fi
 done
+
+# (Rails trichotomy: parallel to tools/doctor.sh --install's core-rails check — keep the two in
+# sync. Severities differ on purpose: in a --link run an embedded block means "un-migrated" (WARN);
+# to doctor it's legitimate copy mode (OK).)
+if [ "$LINK" = 1 ]; then
+  if has_core_import "$HOME_DIR/CLAUDE.md"; then
+    if grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+      echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
+      echo "       Remove the block (or the import line) by hand."
+    else
+      echo "  OK   CLAUDE.md imports keel/CORE.md"
+    fi
+  elif grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+    echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
+    echo "       Migrate when ready: replace the KEEL-CORE block with the line  $import_line"
+  else
+    echo "  WARN CLAUDE.md does not import the linked core — the always-on rails will NOT load."
+    echo "       Add the line:  $import_line"
+  fi
+fi
 
 if [ "$DO_HOOKS" = 1 ]; then
   hp="$(git config --global core.hooksPath 2>/dev/null || true)"
@@ -242,13 +484,30 @@ fi
 
 [ "$missing" = 0 ] || { echo "install: verification FAILED — core file(s) missing" >&2; exit 1; }
 
+# Shared opening — the mode-specific middle differs below (clone handling, update, removal).
+if [ "$LINK" = 1 ]; then mode_tag=" (linked mode)"; else mode_tag=""; fi
 cat <<EOF
 
-Done. secret-guard already guards your commits. Next:
+Done$mode_tag. secret-guard already guards your commits. Next:
   - EASIEST — restart Claude Code (commands load only at session start), then run  /keel-setup
     Machine setup works from ANYWHERE — no projects needed yet: it fills your machine details and
     the always-on ground rules. Later, run /keel-setup again INSIDE each project you want Keel on —
     that part drafts the project's CLAUDE.md from its code (you review).
+EOF
+if [ "$LINK" = 1 ]; then
+  cat <<EOF
+  - This clone IS the installation — everything points into it, so never delete it, and park it
+    somewhere permanent BEFORE re-running (moving it later dangles every link).
+    Update:  git pull  — rails/docs/commands refresh in place; then  ./install.sh --link  once, to
+    wire anything a release ADDED (a pull refreshes content, not composition).
+    A pull changes your next session's rails without review — pull deliberately, or pin a tag.
+  - health check:  tools/doctor.sh --install     (everything shipped is wired, nothing dangles)
+  - remove Keel:  delete  $HOME_DIR/keel/ , the one @import line in  $HOME_DIR/CLAUDE.md ,
+    and the  $HOME_DIR/commands/  symlinks into this checkout.
+  - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md  private.
+EOF
+else
+  cat <<EOF
   - KEEP this keel clone — /keel-setup and /init-project run its tools/. Park it anywhere out of the
     way (e.g. ~/keel); it's Keel itself, not one of your projects, so don't register it. To update
     later:  git pull && ./install.sh
@@ -258,3 +517,4 @@ Done. secret-guard already guards your commits. Next:
   - measure Keel's impact: new projects (init-project) are tracked by default; for an existing repo run
     tools/keel-impact.sh enable <dir>  then score a session with  /keel-score
 EOF
+fi

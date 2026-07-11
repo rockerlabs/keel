@@ -17,6 +17,17 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "keel: '$1' is required but n
 need git
 need bash   # install.sh and the git hooks have a bash shebang
 
+# Linked mode needs a checkout that OUTLIVES the install — this temp clone is deleted on exit,
+# which would leave every symlink and the @import line dangling.
+for a in "$@"; do
+  if [ "$a" = "--link" ]; then
+    echo "keel: --link needs a clone you keep; bootstrap's temp clone is deleted on exit." >&2
+    echo "      Clone it yourself, then link:" >&2
+    echo "        git clone $REPO keel && cd keel && ./install.sh --link" >&2
+    exit 2
+  fi
+done
+
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 

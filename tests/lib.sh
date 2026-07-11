@@ -62,6 +62,8 @@ check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3
 check_file()     { if [ -f "$2" ]; then pass "$1"; else fail "$1" "missing file: $2"; fi; }
 check_dir()      { if [ -d "$2" ]; then pass "$1"; else fail "$1" "missing dir: $2"; fi; }
 check_nofile()   { if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; else pass "$1"; fi; }
+check_link()     { if [ -L "$2" ]; then pass "$1"; else fail "$1" "not a symlink: $2"; fi; }
+check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2"; else pass "$1"; fi; }
 
 # --- fixtures -----------------------------------------------------------------------------------
 # Join a prefix and body so the *source* of a test file never holds a whole key-shaped token —

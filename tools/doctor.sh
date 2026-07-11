@@ -34,16 +34,21 @@ doctor — audit a project's Keel knowledge-base baseline (a GAP fails, a WARN a
 Usage:
   doctor.sh [DIR ...]          audit DIR(s) for the baseline (default: .)
   doctor.sh --registry FILE    audit every project in an INSTANCE.md Projects table
+  doctor.sh --install [HOME]   audit the Keel INSTALL instead: everything this checkout ships
+                               is wired (or deliberately declined), nothing dangles
+                               (default HOME: \$KEEL_HOME, else ~/.claude)
   doctor.sh --quiet            print only GAP/WARN lines
   doctor.sh -h | --help
 
 Example:  doctor.sh ~/code/my-project
 EOF
 }
+INSTALL_MODE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1 ;;
     --registry) shift; REGISTRY="${1:?--registry needs a FILE}" ;;
+    --install) INSTALL_MODE=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "doctor: unknown option '$1' (try --help)" >&2; exit 2 ;;
     *) DIRS+=("$1") ;;
@@ -66,7 +71,10 @@ if [ -n "$REGISTRY" ]; then
             | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
 fi
 
-[ "${#DIRS[@]}" -gt 0 ] || DIRS=(".")
+# In install mode a positional arg is the harness HOME, not a project dir — don't default it to ".".
+if [ "$INSTALL_MODE" = 0 ]; then
+  [ "${#DIRS[@]}" -gt 0 ] || DIRS=(".")
+fi
 
 WARN_TOKENS="${KEEL_STARTUP_WARN_TOKENS:-10000}"
 case "$WARN_TOKENS" in ''|*[!0-9]*) WARN_TOKENS=10000 ;; esac   # non-numeric → default (no `[: integer expected`)
@@ -103,10 +111,123 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # per-repo vendored copies are checked inside the loop.
 # BASH_SOURCE, not $0: resolves this script's real location even when invoked as `bash doctor.sh`
 # from another cwd — a drift check that can't find its own reference would silently never fire.
-shipped_scan="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/secret-guard/secret-scan.sh"
+tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
 if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
    && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
   warn "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
+fi
+
+# --install: audit the INSTALL itself (wired-vs-shipped completeness), not a project. The linked-mode
+# contract this closes: `git pull` refreshes CONTENT, never COMPOSITION — a release that ADDS a command
+# wires itself nowhere, and only this check notices. Also the reverse of the liveness check: dead
+# symlinks/imports (a moved or deleted checkout) are HARD failures, missing commands are advisory
+# (declining a command is a legitimate choice).
+if [ "$INSTALL_MODE" = 1 ]; then
+  # Reject nonsense combinations up front: the registry fills DIRS with PROJECT paths, and install
+  # mode reads DIRS[0] as the harness HOME — composing them would audit a random project as a home.
+  if [ -n "$REGISTRY" ]; then
+    echo "doctor: --install and --registry don't combine (audit the install and the projects separately)" >&2; exit 2
+  fi
+  if [ "${#DIRS[@]}" -gt 1 ]; then
+    echo "doctor: --install takes at most one HOME dir" >&2; exit 2
+  fi
+  ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/.claude}}"
+  repo_root="$(cd "$tools_dir/.." && pwd)"
+  say "● keel install ($ihome)"
+  if [ ! -d "$ihome" ]; then
+    gap "no install found at $ihome (run install.sh)"
+    exit "$exit_code"
+  fi
+
+  # Liveness: every symlink Keel wires must resolve — including a hand-migrated top-level
+  # FRAMEWORK/PRINCIPLES layout. ([ -L ] skips the literal glob when a dir is empty.) A link that
+  # RESOLVES but into a different checkout than this one looks healthy while running stale content —
+  # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/*; do
+    [ -L "$l" ] || continue
+    if [ ! -e "$l" ]; then
+      gap "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
+      continue
+    fi
+    b="$(basename "$l")"
+    case "$l" in
+      "$ihome/commands/"*)
+        tgt="$repo_root/commands/${b#keel-}"
+        if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
+      "$ihome/keel/"*)
+        tgt="$repo_root/$b" ;;
+      *)
+        # top level: only FRAMEWORK/PRINCIPLES are ever Keel-wired there (a hand-migrated layout);
+        # CLAUDE/INSTANCE/LEARNINGS are user-owned — a dotfiles symlink is their business, not drift.
+        case "$b" in FRAMEWORK.md|PRINCIPLES.md) tgt="$repo_root/$b" ;; *) tgt="" ;; esac ;;
+    esac
+    if [ -n "$tgt" ] && [ -f "$tgt" ] && [ ! "$l" -ef "$tgt" ]; then
+      warn "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link from here if this is the live one"
+    fi
+  done
+
+  # Always-on rails: delivered by the @import line (linked) or the embedded block (copy mode).
+  # (Trichotomy parallel to install.sh's linked-mode Verify — keep in sync. Severities differ on
+  # purpose: an embedded block is legitimate copy mode here, an un-migrated WARN there.)
+  gclaude="$ihome/CLAUDE.md"
+  if [ ! -f "$gclaude" ]; then
+    gap "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh)"
+  # (import-line regex: mirror of install.sh's has_core_import() — keep the two in sync)
+  elif grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$gclaude"; then
+    if [ ! -f "$ihome/keel/CORE.md" ]; then
+      gap "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link)"
+    elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+      warn "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
+    else
+      say "  OK   core rails: linked (@import → keel/CORE.md)"
+    fi
+  elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+    say "  OK   core rails: embedded copy (copy mode; install.sh re-runs check drift)"
+  else
+    warn "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh, or migrate: install.sh --link)"
+  fi
+
+  # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
+  # keel/ version is a stale shadow (a leftover of the copy→linked migration) that a map still
+  # pointing at the root name would silently keep reading.
+  for f in FRAMEWORK.md PRINCIPLES.md; do
+    if [ ! -f "$ihome/keel/$f" ] && [ ! -f "$ihome/$f" ]; then
+      warn "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh)"
+    elif [ -f "$ihome/keel/$f" ] && [ -e "$ihome/$f" ] && [ ! -L "$ihome/$f" ]; then
+      warn "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your CLAUDE.md map at keel/$f, then remove the copy"
+    fi
+  done
+
+  # Commands: X of Y shipped are wired (under their own name, or as a keel-<name> collision alias).
+  wired=0; total=0; missing_cmds=""
+  for cmd in "$repo_root"/commands/*.md; do
+    [ -f "$cmd" ] || continue
+    cname="$(basename "$cmd")"
+    # maintainer-only by design — mirror of install.sh's ship-skip list; keep the two in sync
+    case "$cname" in polish.md) continue ;; esac
+    total=$((total + 1))
+    if [ -f "$ihome/commands/$cname" ] || [ -f "$ihome/commands/keel-$cname" ]; then
+      wired=$((wired + 1))
+    else
+      missing_cmds="$missing_cmds $cname"
+    fi
+  done
+  if [ "$wired" = "$total" ]; then
+    say "  OK   commands: $wired of $total shipped are wired"
+  else
+    warn "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh; or ignore this if declined deliberately)"
+  fi
+
+  # Secret-guard: machine-global wiring (per-repo vendoring is checked by the project audit).
+  if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
+    say "  OK   secret-guard: machine-global ($global_hooks)"
+  else
+    warn "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)"
+  fi
+
+  [ "$exit_code" = 0 ] && say "doctor: install is complete — everything shipped is wired or declined"
+  exit "$exit_code"
 fi
 
 for d in "${DIRS[@]}"; do

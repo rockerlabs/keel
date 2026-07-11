@@ -46,6 +46,10 @@ Show the draft and ask the user to correct it. You're saving them the typing, no
   first" (meaningfully lighter every session; the "read the project's `CLAUDE.md` first" rail survives in
   the map, and the "Secrets & personal data" section always stays — it applies with or without git).
   Unsure or mixed → keep both (the safe default); a later re-run can still trim.
+  **Linked install:** if the file has no embedded rails but an `@…/keel/CORE.md` import line, NEVER edit
+  the imported file — it's a symlink into the shared checkout (the trim would break it and be reverted
+  by the next pull). To trim there: replace the import line with the core's rails minus the two
+  sections (the file becomes copy-owned, losing pull-through — say so), or keep as-is.
 - If it's the user's **pre-existing** file (install left it untouched), do **not** overwrite. Show what
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
 

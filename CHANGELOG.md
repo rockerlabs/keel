@@ -8,6 +8,30 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **Linked install — `install.sh --link` makes the checkout the installation** (closes backlog dir #17,
+  stages 2–3; dissolves audit finding D1's confusing-leftover-clone half). Instead of copying, `--link`
+  wires Keel by reference: a `<home>/keel/` consumption dir of symlinks into the checkout
+  (`CORE.md`/`FRAMEWORK.md`/`PRINCIPLES.md` + a generated README), **one `@…/keel/CORE.md` import
+  line** in the global `CLAUDE.md`, and the commands as symlinks — so `git pull` refreshes every
+  consumer at once, and removal is mechanically enumerable (the dir, the line, the links — the
+  reverse-list backlog dir #13 was missing). The one seam between the modes is a `place`/`in_sync`
+  pair inside the same `sync_product` decision tree, so never-clobber, collision aliases
+  (`keel-<name>`, resolved-state semantics), and tty/non-tty behavior are shared, not re-implemented.
+  Mode specifics: a fresh home gets a thin generated wrapper (template minus the embedded core, import
+  line in its place, map re-pointed at `keel/*`); an existing **foreign** `CLAUDE.md` gets the single
+  import line appended (announced, reversible — closing the copy-path "rails NOT merged in" gap); a
+  **copy-mode** home migrates losslessly (a byte-identical embedded block is swapped for the import
+  line, identical command copies upgrade to symlinks, anything edited is left alone and flagged);
+  re-runs are idempotent and self-heal dangling links. `bootstrap.sh` refuses `--link` (its temp clone
+  is reaped on exit). Honest constraints shipped with the feature, not after: a pull refreshes
+  *content, never composition* — so **`doctor.sh --install`** audits wired-vs-shipped completeness
+  (dangling symlink/dead import = hard GAP; a missing command = advisory, declining is legitimate;
+  "X of Y shipped commands wired"); docs state plainly that a pull changes the next session's rails
+  without review (pull deliberately, or pin a tag), and that `@import`/symlinks are Claude Code/Unix
+  mechanisms — the copy path stays the tool-independent default (ADAPTING.md, getting-started §1).
+  Covered end-to-end by `tests/test_install_link.sh`.
+
 ### Security
 - **`secret-scan` learns six more key shapes** (closes audit finding SEC2): GitHub OAuth/user/server/
   refresh tokens (`gho_`/`ghu_`/`ghs_`/`ghr_`, folded with the existing `ghp_` into one
