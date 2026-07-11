@@ -119,7 +119,7 @@ with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-co
 
 ```mermaid
 flowchart TD
-    subgraph always["Always loaded — every session (~1.4K tokens)"]
+    subgraph always["Always loaded — every session (~1.6K tokens)"]
         core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end

@@ -42,6 +42,11 @@ commit → push → PR → merge → delete the branch. (Full flow + the solo kn
 API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk + pulled into model
 context). Use environment variables; never hardcode credentials.
 
+**No personal data in committed artifacts** (code, commits, fixtures, examples): no real names, emails,
+personal paths, serials — use neutral stand-ins (`Alice`, `/Users/x/…`, `example.com`). Anonymize **at
+authoring time**, not as a pre-release scrub: data captured from a real device or account carries its
+owner's identity — strip it before the first commit. (A guard hook is the backstop; this rule is primary.)
+
 ---
 
 ## Before writing code — reconcile first (mandatory)
@@ -64,6 +69,7 @@ pass a smoke off as full verification.
 Prefer a **narrow, deterministic check** (a test, a script assertion) over eyeballing — it can't
 hallucinate and costs zero context; a check you'd repeat by hand is a candidate to mechanize. A **fast
 negative result is a valid result** — report it as plainly as a pass; it beats a long false hope.
+Don't assert a fact you haven't checked; flag a guess as a guess — **a blank beats a wrong guess**.
 
 ---
 

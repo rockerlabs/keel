@@ -30,6 +30,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **The core exports two felt rules that had never actually shipped** (`templates/CLAUDE.md`):
+  - **No personal data in committed artifacts — anonymize at authoring time** (Git rails). The product
+    ships the *mechanism* for this leak class (secret-guard's personal-literal scan, its README
+    differentiator) but the primary *rule* — neutral stand-ins in code/commits/fixtures/examples, strip
+    real-device data before the first commit — existed only in the author's private KB, explicitly
+    marked "Keel-exportable" there and never exported. The felt leak: golden test fixtures generated
+    from a real device shipped their owner's real name, caught only at a pre-OSS audit.
+  - **"A blank beats a wrong guess"** (Verify discipline): don't assert an unchecked fact; flag a guess
+    as a guess. Generalized into the every-session rails from `/keel-setup`'s guardrails, where it
+    applied only at install time.
+
+  Core grows ~1,450 → ~1,590 tokens (~16% of the startup budget); the token figures in
+  `docs/loading-and-cost.md` and the README diagram are bumped to match — enforced by
+  `test_doc_figures.sh`, which failed on the stale figures exactly as designed.
 - **The core's Verify discipline gains the verification *method*, not just the honesty rule**
   (`templates/CLAUDE.md`): prefer a narrow, deterministic check (a test, a script assertion) over
   eyeballing — it can't hallucinate and costs zero context; a check you'd repeat by hand is a candidate
