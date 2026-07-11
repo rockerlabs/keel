@@ -4,8 +4,10 @@
 # Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md, LEARNINGS.md)
 # are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, the commands) is offered for update on a
 # re-run when the installed copy has drifted — interactively (y/N, default no) when run from a terminal,
-# else a WARN with the exact cp to run. Wires the secret-guard git hook machine-global (never over an
-# existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
+# else a WARN with the exact cp to run. On a command-name collision with your OWN command (a pre-existing
+# /go), Keel's version is offered alongside as keel-<name> instead of overwrite-or-nothing. Wires the
+# secret-guard git hook machine-global (never over an existing hooksPath), seeds a private INSTANCE.md,
+# and verifies the result.
 #
 # Usage:
 #   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
@@ -23,8 +25,10 @@ install — one-command bootstrap for Keel into your harness home.
 Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md,
 LEARNINGS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, commands) is
 offered for update on a re-run when it has drifted — interactively (y/N, default no) from
-a terminal, else a WARN with the cp to run. Wires the secret-guard git hook machine-global
-(never over an existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
+a terminal, else a WARN with the cp to run. If a command name is already taken by your OWN
+command (say, /go), Keel's version is offered alongside as keel-<name> instead. Wires the
+secret-guard git hook machine-global (never over an existing hooksPath), seeds a private
+INSTANCE.md, and verifies the result.
 
 Usage:
   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
@@ -120,6 +124,36 @@ copy_gap "$root/templates/LEARNINGS.md" "$HOME_DIR/LEARNINGS.md"
 sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
 sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
 
+# sync_command — commands/*.md get one extra resolution over sync_product: a collision may be the
+# adopter's OWN command under the same generic name (a pre-existing /go is likely), where both overwrite
+# AND skip lose something. Offer a third way: keep theirs and install Keel's alongside as keel-<name> —
+# the collision fallback of the naming rule in ADAPTING.md (unprefixed = lifecycle commands that become
+# yours; keel-* = commands about Keel itself). Files already shipped as keel-* just use sync_product
+# (a keel-keel-* alias would be noise).
+sync_command() {
+  local src="$1" destdir="$2" name; name="$(basename "$src")"
+  local dest="$destdir/$name"
+  case "$name" in keel-*) sync_product "$src" "$dest"; return ;; esac
+  if [ ! -f "$src" ] || [ ! -f "$dest" ] || cmp -s "$src" "$dest"; then
+    sync_product "$src" "$dest"; return
+  fi
+  local alias_dest="$destdir/keel-$name"
+  if [ -t 0 ]; then
+    echo "  ~    $name exists and differs — an older Keel copy, or your own /${name%.md} command."
+    printf "       [u]pdate it with Keel's version / [a] keep yours + add Keel's as keel-%s / [N]either: " "$name"
+    local reply=""; read -r reply || reply=""
+    case "$reply" in
+      [uU]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
+      [aA]) sync_product "$src" "$alias_dest" ;;
+      *)    echo "  =    $name left untouched (add Keel's alongside later:  cp \"$src\" \"$alias_dest\")" ;;
+    esac
+  else
+    echo "  !    $name differs from Keel's shipped version — left untouched."
+    echo "       Update:  cp \"$src\" \"$dest\"  — or keep yours and add Keel's alongside:"
+    echo "       cp \"$src\" \"$alias_dest\""
+  fi
+}
+
 # Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
 if [ -d "$root/commands" ]; then
@@ -131,7 +165,7 @@ if [ -d "$root/commands" ]; then
     # gate would hand adopters an inert feature, so skip it — it stays in the repo for the maintainer +
     # downstream consumers. (Intentional; a future audit should read this as scoped, not half-shipped.)
     case "$(basename "$cmd")" in polish.md) continue ;; esac
-    sync_product "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
+    sync_command "$cmd" "$HOME_DIR/commands"
   done
 fi
 

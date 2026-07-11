@@ -36,6 +36,22 @@ check_status "drifted Keel-owned file → exit 0 (no hang)" 0 "$STATUS"
 check_contains "warns the installed FRAMEWORK differs" "$OUT" "FRAMEWORK.md differs from Keel's shipped version"
 check_contains "preserves the drifted copy (no clobber without a yes)" "$(cat "$HOME/.claude/FRAMEWORK.md")" "DRIFTED-FRAMEWORK"
 
+# a command-name collision: the adopter's OWN /go under the generic name. Non-interactive → never
+# clobbered, never hung, and the WARN offers BOTH resolutions (update in place / add alongside as
+# keel-go.md) instead of overwrite-or-nothing. Nothing is created without a yes.
+printf '# my own go command\n' > "$HOME/.claude/commands/go.md"
+run "$install"
+check_status "own /go collision → exit 0 (no hang)" 0 "$STATUS"
+check_contains "own /go preserved" "$(cat "$HOME/.claude/commands/go.md")" "my own go command"
+check_contains "collision WARN offers the alongside fallback" "$OUT" "keel-go.md"
+check_nofile "keel-go.md not created without a yes" "$HOME/.claude/commands/keel-go.md"
+
+# keel-* commands never get a keel-keel-* alias offer — plain drift handling only.
+printf '\nMY-EDIT\n' >> "$HOME/.claude/commands/keel-setup.md"
+run "$install"
+check_absent "no keel-keel-* alias offer" "$OUT" "keel-keel-setup"
+check_contains "keel-setup drift still flagged" "$OUT" "keel-setup.md differs"
+
 # --no-hooks into a custom --home
 alt="$SANDBOX/alt-home"
 run "$install" --home "$alt" --no-hooks

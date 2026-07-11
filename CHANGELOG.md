@@ -30,6 +30,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **Collision-aware command install** (closes backlog dir #9): when a command name is already taken by
+  the adopter's *own* file (a pre-existing `/go` is likely — the name is generic), `install.sh` no
+  longer poses overwrite-or-nothing, where both answers lose something (yes destroys their command,
+  breaking the "never touches a file you own" promise in spirit; no silently drops Keel's). A new
+  `sync_command` resolution offers a third way: keep theirs and install Keel's alongside as
+  `keel-<name>` — interactively `[u]pdate / [a]longside / [N]either` (default: leave untouched);
+  non-interactively a WARN with both `cp` commands, never a hang, nothing created without a yes.
+  Commands already shipped as `keel-*` keep plain drift handling (no `keel-keel-*` noise). The naming
+  rule this leans on is now codified in `ADAPTING.md`: unprefixed = lifecycle verbs that become yours;
+  `keel-` prefix = commands about Keel itself, doubling as the collision fallback. Covered in
+  `tests/test_install.sh`.
 - **Two install-scenario gaps answered docs-level** (from a scenario audit: fresh vs pre-existing
   context, coding vs chat-only):
   - `ADAPTING.md`: an adopter who already has tuned rules on another tool (`.cursorrules`, `AGENTS.md`,

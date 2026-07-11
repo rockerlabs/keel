@@ -50,6 +50,11 @@ tool's config lives somewhere other than `~/.claude`.)
 plain English. If your tool has a custom-command or snippet feature, point it at that folder. If it doesn't,
 keep them around and paste the one you need when you need it.
 
+> **Command naming:** unprefixed names (`/wrap`, `/go`, `/init-project`) are lifecycle verbs — once
+> installed they're *yours* to edit. The `keel-` prefix marks commands about Keel itself (`/keel-setup`,
+> `/keel-score`) — and doubles as the collision fallback: if you already own a command under one of the
+> unprefixed names, `install.sh` offers Keel's version alongside as `keel-<name>` instead of overwriting.
+
 ## What works as-is (no change)
 
 - **`PRINCIPLES.md`, `FRAMEWORK.md`** — pure method; any model can read them.
