@@ -23,7 +23,7 @@ for a in "$@"; do
   if [ "$a" = "--link" ]; then
     echo "keel: --link needs a clone you keep; bootstrap's temp clone is deleted on exit." >&2
     echo "      Clone it yourself, then link:" >&2
-    echo "        git clone https://github.com/rockerlabs/keel && cd keel && ./install.sh --link" >&2
+    echo "        git clone $REPO keel && cd keel && ./install.sh --link" >&2
     exit 2
   fi
 done

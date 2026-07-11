@@ -15,8 +15,7 @@ check_status "fresh --link → exit 0" 0 "$STATUS"
 # (run overwrites $OUT — assert on the install output BEFORE the file-state runs below)
 check_contains "verify confirms the import line" "$OUT" "OK   CLAUDE.md imports keel/CORE.md"
 for f in CORE.md FRAMEWORK.md PRINCIPLES.md; do
-  run test -L "$HOME/.claude/keel/$f"
-  check_status "keel/$f is a symlink" 0 "$STATUS"
+  check_link "keel/$f is a symlink" "$HOME/.claude/keel/$f"
   run cmp -s "$HOME/.claude/keel/$f" "$REPO_ROOT/$f"
   check_status "keel/$f resolves to the shipped $f" 0 "$STATUS"
 done
@@ -35,10 +34,8 @@ check_contains "template still carries the (TEMPLATE) tag the generator strips" 
 check_contains "template still carries the copy-me line the generator strips" "$tpl" "> Copy this to your harness"
 check_contains "template map names FRAMEWORK.md the way the re-pointer expects" "$tpl" '**`FRAMEWORK.md`**'
 check_contains "template map names PRINCIPLES.md the way the re-pointer expects" "$tpl" '**`PRINCIPLES.md`**'
-run test -L "$HOME/.claude/INSTANCE.md"
-check_status "INSTANCE.md is a real file, never a symlink into the checkout" 1 "$STATUS"
-run test -L "$HOME/.claude/commands/wrap.md"
-check_status "commands are wired as symlinks" 0 "$STATUS"
+check_nolink "INSTANCE.md is a real file, never a symlink into the checkout" "$HOME/.claude/INSTANCE.md"
+check_link "commands are wired as symlinks" "$HOME/.claude/commands/wrap.md"
 check_nofile "maintainer-only /polish is still not shipped" "$HOME/.claude/commands/polish.md"
 
 # --- idempotent re-run: nothing re-created, the ONE import line never duplicates ------------------
@@ -51,8 +48,13 @@ check_status "exactly one import line after a re-run" 1 "$n"
 # --- doctor --install: complete → OK; missing command → WARN (exit 0); dangling link → GAP (exit 1)
 run "$doctor" --install "$HOME/.claude"
 check_status "doctor --install on a complete install → exit 0" 0 "$STATUS"
+# deliberate change-detector: shipping (or skipping) another command MUST consciously bump this count
 check_contains "doctor reports full command coverage" "$OUT" "commands: 8 of 8 shipped are wired"
 check_contains "doctor sees the linked core" "$OUT" "core rails: linked"
+touch "$SANDBOX/empty-registry.md"
+run "$doctor" --install "$HOME/.claude" --registry "$SANDBOX/empty-registry.md"
+check_status "--install + --registry rejected → exit 2" 2 "$STATUS"
+check_contains "rejection names the conflict" "$OUT" "don't combine"
 rm "$HOME/.claude/commands/wrap.md"
 run "$doctor" --install "$HOME/.claude"
 check_status "a missing (declinable) command stays advisory → exit 0" 0 "$STATUS"
@@ -120,6 +122,49 @@ run test -L "$chome/commands/keel-go.md"
 check_status "keel-go.md alias is a symlink" 0 "$STATUS"
 run cmp -s "$chome/commands/keel-go.md" "$REPO_ROOT/commands/go.md"
 check_status "alias resolves to the shipped go.md" 0 "$STATUS"
+
+# --- mode is sticky: a PLAIN re-run over a linked home stays linked (no stale root copies) --------
+run "$install" --home "$HOME/.claude" --no-hooks
+check_status "plain re-run on a linked home → exit 0" 0 "$STATUS"
+check_contains "announces it stays in linked mode" "$OUT" "continuing in linked mode"
+check_nofile "no root FRAMEWORK.md copy manufactured" "$HOME/.claude/FRAMEWORK.md"
+
+# --- re-link through a different PATH SPELLING of the same checkout: in sync, no spurious aliases -
+ln -s "$REPO_ROOT" "$SANDBOX/repo-alias"
+run "$SANDBOX/repo-alias/install.sh" --link --home "$HOME/.claude" --no-hooks
+check_status "re-link via an aliased path → exit 0" 0 "$STATUS"
+check_absent "same physical file is in sync (no collision)" "$OUT" "is your own command"
+check_absent "no stale-link warning for the same checkout" "$OUT" "symlink to a different target"
+check_nofile "no spurious keel-wrap.md alias" "$HOME/.claude/commands/keel-wrap.md"
+
+# --- a symlink to a genuinely different target is flagged, never forked into an alias -------------
+ln -sfn "$REPO_ROOT/README.md" "$HOME/.claude/commands/go.md"
+run "$install" --link --home "$HOME/.claude" --no-hooks
+check_status "foreign-target symlink re-run → exit 0" 0 "$STATUS"
+check_contains "flags the foreign-target symlink" "$OUT" "go.md is a symlink to a different target"
+check_nofile "no keel-go.md alias forked from it" "$HOME/.claude/commands/keel-go.md"
+run "$doctor" --install "$HOME/.claude"
+check_status "doctor: foreign-resolving link is advisory → exit 0" 0 "$STATUS"
+check_contains "doctor names the outside-checkout link" "$OUT" "resolves outside this checkout"
+ln -sfn "$REPO_ROOT/commands/go.md" "$HOME/.claude/commands/go.md"   # restore for later sections
+
+# --- a dotfiles-managed (symlinked) CLAUDE.md: migration edits THROUGH the link, never severs it --
+shome="$SANDBOX/link-dotfiles"; mkdir -p "$shome" "$SANDBOX/dotfiles"
+cp "$REPO_ROOT/templates/CLAUDE.md" "$SANDBOX/dotfiles/CLAUDE.md"
+ln -s "$SANDBOX/dotfiles/CLAUDE.md" "$shome/CLAUDE.md"
+run "$install" --link --home "$shome" --no-hooks
+check_status "symlinked CLAUDE.md + --link → exit 0" 0 "$STATUS"
+check_link "CLAUDE.md is still a symlink after migration" "$shome/CLAUDE.md"
+check_contains "dotfiles file received the import line" "$(cat "$SANDBOX/dotfiles/CLAUDE.md")" "keel/CORE.md"
+check_absent "dotfiles file lost the embedded block" "$(cat "$SANDBOX/dotfiles/CLAUDE.md")" "KEEL-CORE-BEGIN"
+
+# --- half-done manual migration (import line + leftover identical block): block auto-removed ------
+hhome="$SANDBOX/link-halfdone"; mkdir -p "$hhome"
+{ cat "$REPO_ROOT/templates/CLAUDE.md"; printf '\n@%s/keel/CORE.md\n' "$hhome"; } > "$hhome/CLAUDE.md"
+run "$install" --link --home "$hhome" --no-hooks
+check_status "import + leftover block → exit 0" 0 "$STATUS"
+check_contains "identical leftover block removed (was loading twice)" "$OUT" "removed the embedded rails block"
+check_absent "no KEEL-CORE block remains" "$(cat "$hhome/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
 # --- bootstrap refuses --link: its temp clone is deleted on exit --------------------------------
 run sh "$REPO_ROOT/bootstrap.sh" --link

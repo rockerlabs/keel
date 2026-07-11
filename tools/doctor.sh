@@ -124,6 +124,14 @@ fi
 # symlinks/imports (a moved or deleted checkout) are HARD failures, missing commands are advisory
 # (declining a command is a legitimate choice).
 if [ "$INSTALL_MODE" = 1 ]; then
+  # Reject nonsense combinations up front: the registry fills DIRS with PROJECT paths, and install
+  # mode reads DIRS[0] as the harness HOME — composing them would audit a random project as a home.
+  if [ -n "$REGISTRY" ]; then
+    echo "doctor: --install and --registry don't combine (audit the install and the projects separately)" >&2; exit 2
+  fi
+  if [ "${#DIRS[@]}" -gt 1 ]; then
+    echo "doctor: --install takes at most one HOME dir" >&2; exit 2
+  fi
   ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/.claude}}"
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
@@ -132,22 +140,47 @@ if [ "$INSTALL_MODE" = 1 ]; then
     exit "$exit_code"
   fi
 
-  # Liveness: every symlink Keel wires must resolve. ([ -L ] skips the literal glob when a dir is empty.)
-  for l in "$ihome/keel"/* "$ihome/commands"/*; do
+  # Liveness: every symlink Keel wires must resolve — including a hand-migrated top-level
+  # FRAMEWORK/PRINCIPLES layout. ([ -L ] skips the literal glob when a dir is empty.) A link that
+  # RESOLVES but into a different checkout than this one looks healthy while running stale content —
+  # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/*; do
     [ -L "$l" ] || continue
-    [ -e "$l" ] || gap "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
+    if [ ! -e "$l" ]; then
+      gap "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
+      continue
+    fi
+    b="$(basename "$l")"
+    case "$l" in
+      "$ihome/commands/"*)
+        tgt="$repo_root/commands/${b#keel-}"
+        if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
+      "$ihome/keel/"*)
+        tgt="$repo_root/$b" ;;
+      *)
+        # top level: only FRAMEWORK/PRINCIPLES are ever Keel-wired there (a hand-migrated layout);
+        # CLAUDE/INSTANCE/LEARNINGS are user-owned — a dotfiles symlink is their business, not drift.
+        case "$b" in FRAMEWORK.md|PRINCIPLES.md) tgt="$repo_root/$b" ;; *) tgt="" ;; esac ;;
+    esac
+    if [ -n "$tgt" ] && [ -f "$tgt" ] && [ ! "$l" -ef "$tgt" ]; then
+      warn "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link from here if this is the live one"
+    fi
   done
 
   # Always-on rails: delivered by the @import line (linked) or the embedded block (copy mode).
+  # (Trichotomy parallel to install.sh's linked-mode Verify — keep in sync. Severities differ on
+  # purpose: an embedded block is legitimate copy mode here, an un-migrated WARN there.)
   gclaude="$ihome/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
     gap "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh)"
   # (import-line regex: mirror of install.sh's has_core_import() — keep the two in sync)
-  elif grep -qE '^@.*keel/CORE\.md[[:space:]]*$' "$gclaude"; then
-    if [ -f "$ihome/keel/CORE.md" ]; then
-      say "  OK   core rails: linked (@import → keel/CORE.md)"
-    else
+  elif grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$gclaude"; then
+    if [ ! -f "$ihome/keel/CORE.md" ]; then
       gap "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link)"
+    elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+      warn "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
+    else
+      say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
     say "  OK   core rails: embedded copy (copy mode; install.sh re-runs check drift)"
@@ -155,10 +188,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
     warn "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh, or migrate: install.sh --link)"
   fi
 
-  # On-demand tier reachable in either layout.
+  # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
+  # keel/ version is a stale shadow (a leftover of the copy→linked migration) that a map still
+  # pointing at the root name would silently keep reading.
   for f in FRAMEWORK.md PRINCIPLES.md; do
     if [ ! -f "$ihome/keel/$f" ] && [ ! -f "$ihome/$f" ]; then
       warn "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh)"
+    elif [ -f "$ihome/keel/$f" ] && [ -e "$ihome/$f" ] && [ ! -L "$ihome/$f" ]; then
+      warn "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your CLAUDE.md map at keel/$f, then remove the copy"
     fi
   done
 
