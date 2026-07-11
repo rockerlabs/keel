@@ -111,7 +111,8 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # per-repo vendored copies are checked inside the loop.
 # BASH_SOURCE, not $0: resolves this script's real location even when invoked as `bash doctor.sh`
 # from another cwd — a drift check that can't find its own reference would silently never fire.
-shipped_scan="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/secret-guard/secret-scan.sh"
+tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
 if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
    && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
   warn "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
@@ -124,7 +125,7 @@ fi
 # (declining a command is a legitimate choice).
 if [ "$INSTALL_MODE" = 1 ]; then
   ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/.claude}}"
-  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
     gap "no install found at $ihome (run install.sh)"
@@ -141,6 +142,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   gclaude="$ihome/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
     gap "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh)"
+  # (import-line regex: mirror of install.sh's has_core_import() — keep the two in sync)
   elif grep -qE '^@.*keel/CORE\.md[[:space:]]*$' "$gclaude"; then
     if [ -f "$ihome/keel/CORE.md" ]; then
       say "  OK   core rails: linked (@import → keel/CORE.md)"
@@ -165,7 +167,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
   for cmd in "$repo_root"/commands/*.md; do
     [ -f "$cmd" ] || continue
     cname="$(basename "$cmd")"
-    case "$cname" in polish.md) continue ;; esac  # maintainer-only by design — install.sh never ships it
+    # maintainer-only by design — mirror of install.sh's ship-skip list; keep the two in sync
+    case "$cname" in polish.md) continue ;; esac
     total=$((total + 1))
     if [ -f "$ihome/commands/$cname" ] || [ -f "$ihome/commands/keel-$cname" ]; then
       wired=$((wired + 1))

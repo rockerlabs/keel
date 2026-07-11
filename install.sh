@@ -104,6 +104,27 @@ in_sync() {
 }
 if [ "$LINK" = 1 ]; then FIX="ln -sf"; else FIX="cp"; fi
 
+# Linked-mode helpers (used by the --link branch below AND its Verify section; $import_line is set
+# by the --link branch before any call).
+# strip_core_block FILE → stdout, with the KEEL-CORE block replaced by the import line. The ONE
+# definition of the marker transform; callers own the destination (in-place migration or a pipe).
+strip_core_block() {
+  awk -v imp="$import_line" '
+    /KEEL-CORE-BEGIN/ {print imp; skip=1; next}
+    /KEEL-CORE-END/   {skip=0; next}
+    !skip
+  ' "$1"
+}
+replace_core_block() {
+  strip_core_block "$1" > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
+}
+# core_block FILE → the lines strictly between the markers (markers excluded — their comment text
+# legitimately differs). Mirror of block_of() in tests/test_core_wrapper_sync.sh — keep in sync.
+core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
+# has_core_import FILE — THE definition of "the import line is wired". Verify uses it too, and
+# tools/doctor.sh --install carries a mirrored copy (cross-referenced there) — keep them in sync.
+has_core_import() { grep -qE '^@.*keel/CORE\.md[[:space:]]*$' "$1" 2>/dev/null; }
+
 # copy_gap — for USER-owned files (CLAUDE.md, INSTANCE.md, LEARNINGS.md): copy only if the destination is
 # absent, never clobber. The user edits these (placeholders, private data), so a re-run must preserve them.
 copy_gap() {
@@ -148,9 +169,11 @@ sync_product() {
     # absent — or a dangling symlink (a moved/reaped checkout): place() replaces it atomically either way.
     place "$src" "$dest"
     echo "  +    $name"
-  elif [ "$LINK" = 1 ] && [ ! -L "$dest" ] && cmp -s "$src" "$dest"; then
-    # linked mode over an identical copy-mode file: pure duplication, zero information loss — upgrade
-    # it to a symlink so it starts tracking `git pull` (this IS the copy→linked migration path).
+  elif [ ! -L "$dest" ] && cmp -s "$src" "$dest"; then
+    # content equals the shipped version but isn't in the mode's canonical form. In copy mode the
+    # canonical form IS identical content (absorbed by in_sync above), so this only fires in linked
+    # mode: upgrade the identical copy to a symlink that tracks `git pull` — the copy→linked
+    # migration path, falling out of the general converge-to-canonical rule.
     place "$src" "$dest"
     echo "  ^    $name — identical copy upgraded to a symlink (now updates with git pull)"
   elif [ -t 0 ] && [ -n "$alias_dest" ]; then
@@ -186,8 +209,9 @@ sync_product() {
 # Detect a pre-existing CLAUDE.md that ISN'T Keel's core: we never clobber it, so the always-loaded
 # rails won't be merged in. Flag that in Verify instead of leaving it silent. Keel's core (and any file
 # derived from it) carries this heading; a foreign file won't.
+# (Copy mode only — linked mode has no such gap: the import line delivers the rails into any file.)
 foreign_core=0
-if [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
   foreign_core=1
 fi
 
@@ -236,36 +260,24 @@ EOF
   #                       when the block is byte-identical to the shipped core (pure duplication,
   #                       zero information loss), asked/flagged when it drifted (your edits may live there)
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
-  replace_core_block() {
-    awk -v imp="$import_line" '
-      /KEEL-CORE-BEGIN/ {print imp; skip=1; next}
-      /KEEL-CORE-END/   {skip=0; next}
-      !skip
-    ' "$1" > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
-  }
   gclaude="$HOME_DIR/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
-    awk -v imp="$import_line" '
-      /KEEL-CORE-BEGIN/ {print imp; skip=1; next}
-      /KEEL-CORE-END/   {skip=0; next}
-      !skip
-    ' "$root/templates/CLAUDE.md" \
+    # The sed strips/re-points TEMPLATE-only prose; tests/test_install_link.sh pins these exact
+    # strings in templates/CLAUDE.md, so a reword there fails loudly instead of no-oping here.
+    strip_core_block "$root/templates/CLAUDE.md" \
       | sed -e 's/ (TEMPLATE)$//' \
             -e '/^> Copy this to your harness/d' \
             -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
             -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
       > "$gclaude.keeltmp.$$" && mv -f "$gclaude.keeltmp.$$" "$gclaude"
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
-  elif grep -qE '^@.*keel/CORE\.md[[:space:]]*$' "$gclaude"; then
+  elif has_core_import "$gclaude"; then
     echo "  =    CLAUDE.md already imports the linked core"
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    embedded="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$gclaude" | sed '1d;$d')"
-    shipped="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md" | sed '1d;$d')"
-    if [ "$embedded" = "$shipped" ]; then
+    if [ "$(core_block "$gclaude")" = "$(core_block "$root/CORE.md")" ]; then
       replace_core_block "$gclaude"
       echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
     elif [ -t 0 ]; then
-      reply=""
       echo "  ~    CLAUDE.md embeds rails that differ from the shipped core — an older release, or your edits inside the block."
       printf "       Replace the embedded block with the import line (adopts the CURRENT shipped rails)? [y/N] "
       read -r reply || reply=""
@@ -317,7 +329,7 @@ if [ -d "$root/commands" ]; then
       # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without
       # its gate would hand adopters an inert feature, so skip it — it stays in the repo for the
       # maintainer + downstream consumers. (Intentional; a future audit should read this as scoped, not
-      # half-shipped.)
+      # half-shipped.) tools/doctor.sh --install mirrors this skip list — keep the two in sync.
       polish.md) continue ;;
       # keel-* commands never get an alias (a keel-keel-* name would be noise) — plain drift handling.
       keel-*)    alias_dest="" ;;
@@ -375,7 +387,7 @@ for f in "${vfiles[@]}"; do
 done
 
 if [ "$LINK" = 1 ]; then
-  if grep -qE '^@.*keel/CORE\.md[[:space:]]*$' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+  if has_core_import "$HOME_DIR/CLAUDE.md"; then
     echo "  OK   CLAUDE.md imports keel/CORE.md"
   elif grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
@@ -406,8 +418,7 @@ if [ "$DO_HOOKS" = 1 ]; then
   fi
 fi
 
-if [ "$foreign_core" = 1 ] && [ "$LINK" = 0 ]; then
-  # (linked mode has no such gap: the import line delivers the rails into any pre-existing file.)
+if [ "$foreign_core" = 1 ]; then
   echo "  WARN $HOME_DIR/CLAUDE.md predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
   echo "       Merge the rails you want by hand:  diff $HOME_DIR/CLAUDE.md $root/templates/CLAUDE.md"
 fi

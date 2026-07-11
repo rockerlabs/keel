@@ -27,6 +27,14 @@ check_absent  "generated CLAUDE.md has no embedded KEEL-CORE block" "$gc" "KEEL-
 check_absent  "generated CLAUDE.md drops the (TEMPLATE) header tag" "$gc" "(TEMPLATE)"
 check_absent  "generated CLAUDE.md drops the copy-me instruction" "$gc" "Copy this to your harness"
 check_contains "generated map points at keel/FRAMEWORK.md" "$gc" '`keel/FRAMEWORK.md`'
+# Coupling pins (same precedent as test_doc_figures' heading pins): the generator's sed targets these
+# exact template strings — absence-only checks above go green the moment the template rewords, so pin
+# the strings HERE to make a reword fail loudly instead of the sed silently no-oping.
+tpl="$(cat "$REPO_ROOT/templates/CLAUDE.md")"
+check_contains "template still carries the (TEMPLATE) tag the generator strips" "$tpl" "(TEMPLATE)"
+check_contains "template still carries the copy-me line the generator strips" "$tpl" "> Copy this to your harness"
+check_contains "template map names FRAMEWORK.md the way the re-pointer expects" "$tpl" '**`FRAMEWORK.md`**'
+check_contains "template map names PRINCIPLES.md the way the re-pointer expects" "$tpl" '**`PRINCIPLES.md`**'
 run test -L "$HOME/.claude/INSTANCE.md"
 check_status "INSTANCE.md is a real file, never a symlink into the checkout" 1 "$STATUS"
 run test -L "$HOME/.claude/commands/wrap.md"
@@ -69,8 +77,9 @@ printf '# My own global notes\nnothing keel here\n' > "$fhome/CLAUDE.md"
 run "$install" --link --home "$fhome" --no-hooks
 check_status "foreign CLAUDE.md + --link → exit 0" 0 "$STATUS"
 check_contains "announces the appended import line" "$OUT" "appended the Keel core import line"
-check_contains "user content preserved" "$(cat "$fhome/CLAUDE.md")" "My own global notes"
-check_contains "absolute import path outside \$HOME" "$(cat "$fhome/CLAUDE.md")" "@$fhome/keel/CORE.md"
+fc="$(cat "$fhome/CLAUDE.md")"
+check_contains "user content preserved" "$fc" "My own global notes"
+check_contains "absolute import path outside \$HOME" "$fc" "@$fhome/keel/CORE.md"
 run "$install" --link --home "$fhome" --no-hooks
 n="$(grep -c '^@' "$fhome/CLAUDE.md")"
 check_status "re-run never appends a second line" 1 "$n"
@@ -89,11 +98,12 @@ run test -L "$mhome/commands/wrap.md"
 check_status "wrap.md is a symlink after migration" 0 "$STATUS"
 
 # --- an EDITED embedded block is never swapped non-interactively --------------------------------
-dhome="$SANDBOX/link-drifted"
-run "$install" --home "$dhome" --no-hooks
-# the edit must land INSIDE the KEEL-CORE block — that's what "your edits may live there" protects
-sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$dhome/CLAUDE.md" > "$dhome/CLAUDE.md.tmp" \
-  && mv "$dhome/CLAUDE.md.tmp" "$dhome/CLAUDE.md"
+dhome="$SANDBOX/link-drifted"; mkdir -p "$dhome"
+# a copy-mode CLAUDE.md is byte-identical to the template (copy_gap is a plain cp) — seed it directly
+# instead of paying a full installer run; the edit must land INSIDE the KEEL-CORE block, which is
+# exactly what the "your edits may live there" guard protects
+sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$REPO_ROOT/templates/CLAUDE.md" \
+  > "$dhome/CLAUDE.md"
 run "$install" --link --home "$dhome" --no-hooks
 check_status "drifted block + --link → exit 0 (no hang, no clobber)" 0 "$STATUS"
 check_contains "flags the drifted embedded rails" "$OUT" "embeds rails that differ from the shipped core"
