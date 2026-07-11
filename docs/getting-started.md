@@ -83,9 +83,32 @@ or printing the `cp` to run otherwise. It:
 > **Already use Claude Code?** If you already have a `~/.claude/CLAUDE.md`, install **won't overwrite it** —
 > it copies everything else but leaves your file alone, so Keel's always-on ground rules aren't merged in.
 > It says so in `Verify` and points you at a `diff` so you can merge the parts you want by hand.
+> (Linked mode below closes this gap differently — with one appended line.)
 
-Flags: `--home DIR` sets up the always-on slot for an AI tool other than Claude Code; `--no-hooks` skips the
-git check.
+### Linked install — recommended on Claude Code
+
+`./install.sh --link` wires Keel **by reference** instead of copying: a `~/.claude/keel/` folder of
+symlinks into the clone, ONE `@…/keel/CORE.md` import line in your global `CLAUDE.md` (Claude Code
+expands `@path` lines at session start), and the commands as symlinks. What that buys — and costs:
+
+- **Update = `git pull` in the clone.** The next session runs the fresh rails, commands, and docs.
+  Then re-run `./install.sh --link` once: a pull refreshes *content*, not *composition* — a file a new
+  release ADDS doesn't wire itself. `tools/doctor.sh --install` checks nothing is missing or dangling.
+- **Have your own `~/.claude/CLAUDE.md`?** Linked mode appends the single import line to it
+  (announced; delete that line to unlink) — your rules stay yours, the rails ride in under them.
+- **Migrating from a copy install:** re-run with `--link` — it swaps the embedded rails block for the
+  import line and upgrades unmodified command copies to symlinks; anything you edited is left alone
+  and flagged instead.
+- **A pull changes your next session's rails without review.** `main` is PR- and CI-protected, but
+  pull deliberately — don't automate it; a conservative setup pins a release tag (`git checkout vX.Y.Z`).
+- **The clone becomes the installation.** Park it somewhere permanent *before* linking; moving it later
+  dangles every link (re-run `--link` from the new spot to repair). Removal is fully enumerable:
+  delete `~/.claude/keel/`, the one import line, and the command symlinks.
+- `@import` and symlinks are **Claude Code / Unix mechanisms** — on other tools, and on Windows setups
+  without symlink support, stay on the copy path above (see [ADAPTING.md](../ADAPTING.md)).
+
+Flags: `--link` wires by reference as above (Claude Code); `--home DIR` sets up the always-on slot for
+an AI tool other than Claude Code; `--no-hooks` skips the git check.
 
 ## 2. What just got set up
 

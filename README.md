@@ -38,6 +38,10 @@ they've drifted, asking first — see [getting-started](docs/getting-started.md#
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 ```
 
+> On Claude Code, prefer `./install.sh --link`: it wires by **reference** (symlinks + one import line),
+> so a later `git pull` in this clone updates everything at once — and removal is one folder + one line.
+> [Details & trade-offs](docs/getting-started.md#linked-install--recommended-on-claude-code).
+
 **2. Run `/keel-setup` and let the assistant finish the setup — no editing by hand.** Restart Claude Code
 (new commands only show up when a session starts) and run `/keel-setup` — from anywhere, even with **no
 projects yet**: it fills in your machine details and sets up the ground rules. Then run it again inside
