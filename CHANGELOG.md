@@ -8,6 +8,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Security
+- **Binary decode passes now cover UTF-32, closing a non-ASCII blind spot** in both `secret-guard`
+  (`secret-scan.sh` `emit_blob`) and `public-audit` (`scan_binary_blobs`). The blob decoders ran
+  `iconv` for UTF-16LE/BE but not UTF-32, so a **non-ASCII** personal literal (e.g. a Cyrillic name)
+  encoded in UTF-32LE/BE passed both scanners: the dependency-free NUL-strip pass recovers an *ASCII*
+  string from UTF-32 (3-of-4 bytes are NUL) but not a multi-byte code point, and the raw-printable
+  pass sees only isolated bytes. Added `iconv -f UTF-32LE/BE` steps symmetric with the existing UTF-16
+  ones (same `command -v iconv` guard; a host without iconv degrades honestly, as before). ASCII
+  secrets/names in UTF-32 were already caught via NUL-strip — this specifically closes the
+  non-ASCII-in-UTF-32 case, the same felt leak class as a real name inside a UTF-16 binary fixture.
+  `--selftest` gains a non-ASCII UTF-32LE probe; regression tests in `test_secret_guard.sh`
+  (`--range`) and `test_public_audit.sh` (binary WARN), both iconv-guarded. Found by the DeepSeek
+  audit-loop (L3). Also documented in `secret-scan-personal.example`: keep personal EREs simple
+  (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
+
 ### Changed
 - **The install path answers a first-time adopter's three stumbles** (felt 2026-07-11: the first
   completely fresh external user — macOS, Claude desktop app, clone install — walked through setup;

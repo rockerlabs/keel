@@ -74,6 +74,24 @@ run bash "$pa" --no-history "$d"
 check_status "Cyrillic → exit 0 (WARN)" 0 "$STATUS"
 check_contains "warns about Cyrillic" "$OUT" "Cyrillic"
 
+# a NON-ASCII (Cyrillic) name inside a UTF-32 BINARY blob → WARN via the iconv-UTF-32 decode pass.
+# ASCII-in-UTF-32 survives NUL-strip, but a multi-byte code point needs the explicit UTF-32 decode —
+# the felt leak class (a real name inside a binary fixture), here in UTF-32 rather than UTF-16.
+# iconv-guarded; bytes built at runtime so this test source stays ASCII.
+# NOTE: no --no-history — the binary-blob scan runs in the history pass (scan_binary_blobs over
+# --all); the local sandbox repo has no remote, so the run stays offline.
+cyr32="$(printf '\xd0\x98\xd0\xb2\xd0\xb0\xd0\xbd\xd0\xbe\xd0\xb2')"   # "Ivanov" (Cyrillic) in UTF-8
+if command -v iconv >/dev/null 2>&1 && printf '%s' "$cyr32" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+  d="$(repo_by dev@example.com)"
+  printf '%s' "$cyr32" | iconv -f UTF-8 -t UTF-32LE > "$d/name32.bin"
+  commit_in "$d" bin32
+  run bash "$pa" "$d"
+  check_status "UTF-32 binary Cyrillic → exit 0 (WARN)" 0 "$STATUS"
+  check_contains "warns about Cyrillic in a binary blob" "$OUT" "Cyrillic text in a binary blob"
+else
+  pass "UTF-32 binary Cyrillic test skipped (no iconv / no UTF-32 converter)"
+fi
+
 # agent/session tooling metadata in a commit message → WARN (not a GAP). Built from parts so this
 # test's own source carries no whole session token (keeps the repo's audit clean).
 d="$(repo_by dev@example.com)"

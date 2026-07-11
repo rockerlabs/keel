@@ -15,9 +15,9 @@
 #      reference. Starter: tools/secret-guard/secret-scan-personal.example
 #
 # Both classes are scanned over text AND over BINARY content: binary files/blobs are decoded via a
-# NUL-strip pass (catches ASCII-range UTF-16 with no dependencies) plus iconv UTF-16LE/BE when iconv
-# is available (needed for non-ASCII literals, e.g. a Cyrillic name) plus a raw-printable pass — a
-# real name inside a UTF-16 binary fixture is invisible to a plain-text grep.
+# NUL-strip pass (catches ASCII-range UTF-16/UTF-32 with no dependencies) plus iconv UTF-16 and UTF-32
+# LE/BE when iconv is available (needed for non-ASCII literals, e.g. a Cyrillic name) plus a
+# raw-printable pass — a real name inside a UTF-16/UTF-32 binary fixture is invisible to a plain-text grep.
 #
 # It does NOT catch passwords, opaque/custom tokens, or base64 blobs: it is a backstop to .gitignore +
 # env vars, NOT a complete DLP. Mark that boundary honestly (P1).
@@ -134,9 +134,13 @@ emit_blob() {  # $1 = record label (path)
   cat > "$tmp"
   {
     LC_ALL=C tr -d '\000' < "$tmp"; echo                          # ASCII-range UTF-16, no deps
-    if command -v iconv >/dev/null 2>&1; then                     # non-ASCII UTF-16 (e.g. a Cyrillic name)
+    if command -v iconv >/dev/null 2>&1; then                     # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
       iconv -f UTF-16LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
       iconv -f UTF-16BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      # UTF-32: an ASCII literal survives the NUL-strip pass above (3-of-4 bytes are NUL), but a
+      # NON-ASCII one (multi-byte code point) does not — decode it explicitly, symmetric with UTF-16.
+      iconv -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      iconv -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
     fi
     LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo            # raw printable runs
   } > "$dec"
@@ -232,8 +236,20 @@ selftest() {
   if command -v iconv >/dev/null 2>&1; then
     printf 'lead-in SeekritPersonName trail' | iconv -f UTF-8 -t UTF-16LE > "$dir/fixture.bin"
     probe 1 "caught a personal literal inside a UTF-16LE blob" "$dir/personal" "$dir/fixture.bin"
+    # UTF-32 with a NON-ASCII literal: a Cyrillic name (built from bytes so this source stays ASCII)
+    # survives ONLY via the iconv UTF-32 pass — its multi-byte code points are garbage after NUL-strip.
+    cyr="$(printf '\320\230\320\262\320\260\320\275')"           # "Ivan" (Cyrillic) in UTF-8
+    # Guard on the UTF-32 converter specifically (some minimal iconv builds have UTF-16 but not
+    # UTF-32) — otherwise the encode silently yields an empty fixture and the probe FAILs falsely.
+    if printf '%s' "$cyr" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+      printf '%s\n' "$cyr" > "$dir/personal32"
+      printf 'lead %s trail' "$cyr" | iconv -f UTF-8 -t UTF-32LE > "$dir/fixture32.bin"
+      probe 1 "caught a non-ASCII personal literal inside a UTF-32LE blob" "$dir/personal32" "$dir/fixture32.bin"
+    else
+      echo "selftest: WARN — iconv lacks a UTF-32 converter; the UTF-32 pass is degraded on this host" >&2
+    fi
   else
-    echo "selftest: WARN — iconv absent; the non-ASCII UTF-16 pass is degraded on this host" >&2
+    echo "selftest: WARN — iconv absent; the non-ASCII UTF-16/UTF-32 passes are degraded on this host" >&2
   fi
   # a session trailer in a pushed commit MESSAGE and in an annotated TAG message (neither is a
   # blob — only the --range message/tag passes see them). The trailer is built by printf so this
