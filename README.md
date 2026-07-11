@@ -119,12 +119,12 @@ with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-co
 
 ```mermaid
 flowchart TD
-    subgraph always["Always loaded — every session (~1.4K tokens)"]
+    subgraph always["Always loaded — every session (~1.8K tokens)"]
         core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end
     subgraph demand["On demand — pulled only when a task needs it"]
-        fw["FRAMEWORK.md (~4.2K)"]
+        fw["FRAMEWORK.md (~5.0K)"]
         prin["PRINCIPLES.md (~5.1K)"]
         inst["INSTANCE.md"]
         cmd["commands/* (when invoked)"]
@@ -158,7 +158,8 @@ when needed; the tools never enter the assistant's memory at all. That's the who
 | `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push — and, opt-in, your personal data (name, drive labels, emails, serials) listed in a local never-committed file, caught even inside UTF-16 binary fixtures. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …) plus your listed literals, not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. On push it also blocks agent session-metadata trailers (a `Claude-Session`-style line) in the pushed commits' messages, and scans annotated-tag messages against all of the above. |
 | `tools/init-project.sh` | Sets up a new project with the basics in place, and adds it to your `INSTANCE.md` project list. |
 | `tools/register-project.sh` | Adds existing project folder(s) to the `INSTANCE.md` project list — one line each, safe to re-run: `register-project.sh <path>…`. |
-| `commands/` | Commands you can run: `/keel-setup` (lets the assistant finish setup — fills your machine details and drafts a project's `CLAUDE.md` from its code), `/init-project` (set up a project), `/context-dump` (onboard an existing, undocumented codebase by actually reading it), `/go` (start a backlog task on its own), `/wrap` (close out a session — tidy up notes, changelog, backlog), `/global-review` (review across all projects), `/backlog` (show the backlog). |
+| `commands/` | Commands you can run: `/keel-setup` (lets the assistant finish setup — fills your machine details and drafts a project's `CLAUDE.md` from its code), `/init-project` (set up a project), `/context-dump` (onboard an existing, undocumented codebase by actually reading it), `/go` (start a backlog task on its own), `/wrap` (close out a session — tidy up notes, changelog, backlog), `/global-review` (review across all projects), `/backlog` (show the backlog), `/keel-score` (score how much Keel shaped a session — derived from cited events, not asserted). |
+| `tools/keel-impact.sh` | Optional per-project tracker behind `/keel-score`: an append-only, auditable ledger of cited fire/hit/miss/friction events. Opt-in (`keel-impact.sh enable <dir>`); off by default. |
 | `examples/` | A runnable, safe 5-minute tour of the tools — `init-project` → `doctor` → `secret-guard` blocking a key, start to finish. |
 | `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
 | `docs/getting-started.md` | The longer setup walk-through: what gets set up, how it fits into your day-to-day, and how to tell it's working. |

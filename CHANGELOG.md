@@ -30,6 +30,96 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **The core gains a precedence rule — nearest scope wins on a conflict** (`templates/CLAUDE.md`, after
+  the map): live user instruction > session > project `CLAUDE.md` > the global core. Behavior on a
+  contradiction between layers was previously undefined — the model guessed or asked. The rule also
+  tells exceptions where to live (a project carve-out belongs in the project's file, not carried by the
+  always-loaded core every session — an anti-bloat mechanism, felt: a single repo's
+  direct-to-default-branch carve-out living globally). Two limits ride with it: safety rails (secrets,
+  personal data, irreversible actions) yield only to an explicit human decision, never silently to a
+  nearer file; and an applied override must be named — a contradiction may be staleness, not a
+  deliberate exception.
+- **Collision-aware command install** (closes backlog dir #9): when a command name is already taken by
+  the adopter's *own* file (a pre-existing `/go` is likely — the name is generic), `install.sh` no
+  longer poses overwrite-or-nothing, where both answers lose something (yes destroys their command,
+  breaking the "never touches a file you own" promise in spirit; no silently drops Keel's).
+  `sync_product` gains an optional alongside resolution for commands: keep theirs and install Keel's as
+  `keel-<name>` — interactively `[u]pdate / [a]longside / [N]either` (default: leave untouched);
+  non-interactively (curl|sh, CI) the alias is installed **automatically** — creating a brand-new
+  `keel-<name>` touches nothing the user owns, and the bootstrap path would otherwise re-warn on every
+  re-run with `cp` hints pointing into a temp clone it reaps on exit, never delivering the command. Once
+  `keel-<name>` exists the collision is **resolved state**: the unprefixed name is the user's for good —
+  re-runs never touch or re-create it (even if later deleted, or byte-identical to the shipped file) and
+  the drift check routes to the alias, so the question is paid once, not on every
+  `git pull && ./install.sh`. Commands already shipped as `keel-*` keep plain drift handling (no
+  `keel-keel-*` noise), and a shipped `keel-<name>` is never repurposed as a collision alias for
+  `<name>`. The naming rule this leans on is now codified in `ADAPTING.md`: unprefixed = lifecycle verbs
+  that become yours; `keel-` prefix = commands about Keel itself, doubling as the collision fallback.
+  Covered in `tests/test_install.sh`.
+- **Two install-scenario gaps answered docs-level** (from a scenario audit: fresh vs pre-existing
+  context, coding vs chat-only):
+  - `ADAPTING.md`: an adopter who already has tuned rules on another tool (`.cursorrules`, `AGENTS.md`,
+    a conventions file) is told to *keep their file* and lift only what they want from the template —
+    usually the map plus missing rails — instead of replacing it; the `tools/` work regardless. Keel
+    previously answered "run Keel on another tool" but not "coexist with the context already there".
+  - `docs/getting-started.md`: a no-git / chat-style user gets the honest boundary stated plainly —
+    the advice layer still applies, but the mechanized layer is git-based and won't fire without
+    repositories: advice that nudges, not guarantees that run. (The matching `/keel-setup` trim is the
+    droppable-rails entry below.)
+- **The git/code rails become droppable-as-a-unit for non-coding adopters — trimmed at setup, not
+  hedged in the core** (felt 2026-07-11: a real adopter who writes scripts and documents, no git,
+  carries the two git/code sections — roughly a quarter of the always-loaded core — as pure dead weight every
+  session). The fix costs zero core tokens: `/keel-setup` step 3 asks one plain-words scope question
+  (*coding projects in git, or mostly documents and texts?*) and, on a clear "no code", offers to
+  remove "Git — mandatory rails" and "Before writing code — reconcile first" from the user's copy;
+  unsure/mixed keeps both (the safe default), and the "read the project's `CLAUDE.md` first" rail
+  survives in the map either way. `ADAPTING.md`'s honest-boundary section documents the same trim for
+  non-Claude tools. The secrets and personal-data rules that shared the git section's roof now live in
+  their own **"Secrets & personal data"** section, which the trim never touches — a no-git adopter keeps
+  those rails (they apply to knowledge-base files regardless of git; caught in review: the trim as first
+  drafted would have silently dropped them, exactly what the same branch's precedence rule forbids).
+  With the block droppable, it can also serve its primary audience better: the core's git rails gain the
+  **force-push guard** (only a named branch, reconciled with upstream first — never `--force --all`),
+  promoted from `FRAMEWORK.md`'s on-demand tier because a model won't open FRAMEWORK mid-push and the
+  felt incident (a `--force --all` that rolled back main and dropped three merged PRs) is an
+  irreversible loss class.
+- **The core exports two felt rules that had never actually shipped** (`templates/CLAUDE.md`):
+  - **No personal data in committed artifacts — anonymize at authoring time** (the "Secrets & personal
+    data" section). The product
+    ships the *mechanism* for this leak class (secret-guard's personal-literal scan, its README
+    differentiator) but the primary *rule* — neutral stand-ins in code/commits/fixtures/examples, strip
+    real-device data before the first commit — existed only in the author's private KB, explicitly
+    marked "Keel-exportable" there and never exported. The felt leak: golden test fixtures generated
+    from a real device shipped their owner's real name, caught only at a pre-OSS audit.
+  - **"A blank beats a wrong guess"** (Verify discipline): don't assert an unchecked fact; flag a guess
+    as a guess. Generalized into the every-session rails from `/keel-setup`'s guardrails, where it
+    applied only at install time.
+
+  Core grows to ~1,590 tokens at this entry; the branch's later additions (the force-push guard and
+  the precedence rule) take the final core to ~1,760 — about 18% of the 10K startup budget — and the
+  figures in `docs/loading-and-cost.md` and the README diagram track that final state, enforced by
+  `test_doc_figures.sh`, which failed on each stale figure exactly as designed.
+- **The core's Verify discipline gains the verification *method*, not just the honesty rule**
+  (`templates/CLAUDE.md`): prefer a narrow, deterministic check (a test, a script assertion) over
+  eyeballing — it can't hallucinate and costs zero context; a check you'd repeat by hand is a candidate
+  to mechanize; and a fast negative result is a valid result, reported as plainly as a pass. The
+  mechanized tier already *practices* this (secret-guard, doctor, the narrow test suite) — now the
+  always-loaded rails *say* it, so the model is biased to build gates instead of trusting its own
+  eyes. ~65 tokens added to the core at this entry (final size after the branch's later additions:
+  ~1,760, about 18% of the startup budget).
+- **Token-figure honesty extended to the README** (felt 2026-07-11: README's "How it loads" diagram
+  still said `FRAMEWORK.md (~4.2K)` after the file had grown to ~5.0K — the loading-and-cost.md table
+  is guarded by `test_doc_figures.sh`, but the README's separate mermaid figures weren't). Fixed the
+  stale figure, added the missing `/keel-score` + `tools/keel-impact.sh` rows to "What's in the box",
+  and mechanized the gap: `test_doc_figures.sh` now asserts the README's FRAMEWORK / PRINCIPLES /
+  always-loaded-core figures within the same ±10% band.
+- **Two honest-boundary notes for adopters** (both felt 2026-07-11):
+  - `ADAPTING.md`: the Memory section of `templates/CLAUDE.md` assumes a persistent auto-memory keyed
+    to the session/cwd (Claude Code's mechanism) — on a tool without one, drop that section when
+    copying the file over.
+  - `docs/getting-started.md`: a macOS tip for adopters without git — `xcode-select --install` gets
+    git alone; no need for the longer Homebrew detour (felt: a non-coding adopter's install spent half
+    the session on Homebrew-then-git).
 - **The install path answers a first-time adopter's three stumbles** (felt 2026-07-11: the first
   completely fresh external user — macOS, Claude desktop app, clone install — walked through setup;
   the first live-user feedback since going public). Docs-and-echo only, no behavior change:

@@ -19,6 +19,14 @@
   reusable insight; promote on recurrence; prune when stale.
 - **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
 
+## Precedence — when sources conflict
+
+Nearest scope wins: live user instruction > session > `<project>/CLAUDE.md` > this file. Record
+exceptions at the scope they belong to — a project carve-out lives in the project's file, keeping this
+one thin. Two limits: **safety rails** (secrets, personal data, irreversible actions) yield only to an
+explicit human decision, never silently to a nearer file; and when applying an override, **name it** —
+a contradiction may be staleness, not a deliberate exception.
+
 ---
 
 ## Communication preferences
@@ -37,10 +45,21 @@
 **Never commit or push directly to the default branch** (any project, any change size). Feature branch →
 commit → push → PR → merge → delete the branch. (Full flow + the solo knowledge-base carve-out → `FRAMEWORK.md`.)
 
-**Never commit private AI context or secrets.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
+**Force-push only a named branch** (`--force <branch>`), reconciled with its upstream first — never
+`--force --all`: it overwrites every remote ref, including from a stale local default.
+
+**Never commit private AI context.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
 (private AI context — default gitignored; choose public deliberately for OSS), plus IDE/OS/build artifacts.
-API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk + pulled into model
-context). Use environment variables; never hardcode credentials.
+
+## Secrets & personal data
+
+API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk +
+pulled into model context). Use environment variables; never hardcode credentials.
+
+**No personal data in shared or committed artifacts** (code, commits, fixtures, examples): no real names,
+emails, personal paths, serials — use neutral stand-ins (`Alice`, `/Users/x/…`, `example.com`). Anonymize
+**at authoring time**, not as a pre-release scrub: data captured from a real device or account carries its
+owner's identity — strip it before the first commit. (A guard hook is the backstop; this rule is primary.)
 
 ---
 
@@ -60,6 +79,11 @@ Never start an implementation from scratch without analyzing what already exists
 Don't claim "done / works" until you've checked. If tests fail or a step was skipped — say so plainly, with
 the output. No GUI access → run a headless smoke and be honest the visual check is on you. Don't
 pass a smoke off as full verification.
+
+Prefer a **narrow, deterministic check** (a test, a script assertion) over eyeballing — it can't
+hallucinate and costs zero context; a check you'd repeat by hand is a candidate to mechanize. A **fast
+negative result is a valid result** — report it as plainly as a pass; it beats a long false hope.
+Don't assert a fact you haven't checked; flag a guess as a guess — **a blank beats a wrong guess**.
 
 ---
 

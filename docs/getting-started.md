@@ -43,6 +43,9 @@ are filled in. That's the loop — run `/keel-setup` again in each new project y
 without it (Alpine, distroless) needs `bash` first — e.g. `apk add bash git` on Alpine. Without `bash` the
 checks fail *safe* (a commit/push is blocked, not let through), but nothing else runs.
 
+> **Don't have git yet (macOS)?** Run `xcode-select --install` — a small, quick prompt that installs git on
+> its own. You don't need Homebrew first just to get git; that's a longer route to the same tool.
+
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel
 ./install.sh
@@ -144,6 +147,12 @@ reads the actual source tree (not just the front door) to draft the stack, archi
   another AI tool, point its custom-command feature at that folder, or paste the body.
 - **Checks when you want them.** `doctor` (what's missing) and `public-audit` (before going public) — run
   them when you like; they cost zero memory.
+
+> **Working without git or code** (documents, research, chat-style sessions)? Be clear about what's left:
+> the advice layer still applies — persist decisions, verify before claiming done, handle forks openly —
+> and `/keel-setup` offers to trim the git/code sections from your always-on file. But the mechanized
+> layer (`secret-guard`, `doctor`, `public-audit`) is git-based and won't fire without repositories:
+> for you, Keel is advice that nudges, not guarantees that run by themselves.
 
 ## 5. Did it work? — an honest check
 

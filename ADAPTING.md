@@ -28,6 +28,12 @@ the bottom to point at wherever you keep `FRAMEWORK.md`, `INSTANCE.md`, and `PRI
 
 These are starting points — check your tool's docs for the exact file, and tell us what worked (see below).
 
+> **Already have rules on your tool** (`.cursorrules`, `AGENTS.md`, a conventions file you've tuned)?
+> Don't replace them. Keep *your* file as the always-on core and lift into it only what you want from
+> [`templates/CLAUDE.md`](templates/CLAUDE.md) — usually the map (pointing at wherever you park
+> `FRAMEWORK.md` / `PRINCIPLES.md`) plus whichever rails you don't already have. The `tools/` work the
+> same no matter whose rules file you keep.
+
 **2. Use the tools directly — nothing to change.** `tools/` is plain Bash + git. They never call a model,
 so they run under any tool, any model, or none:
 
@@ -44,6 +50,11 @@ tool's config lives somewhere other than `~/.claude`.)
 plain English. If your tool has a custom-command or snippet feature, point it at that folder. If it doesn't,
 keep them around and paste the one you need when you need it.
 
+> **Command naming:** unprefixed names (`/wrap`, `/go`, `/init-project`) are lifecycle verbs — once
+> installed they're *yours* to edit. The `keel-` prefix marks commands about Keel itself (`/keel-setup`,
+> `/keel-score`) — and doubles as the collision fallback: if you already own a command under one of the
+> unprefixed names, `install.sh` offers Keel's version alongside as `keel-<name>` instead of overwriting.
+
 ## What works as-is (no change)
 
 - **`PRINCIPLES.md`, `FRAMEWORK.md`** — pure method; any model can read them.
@@ -58,6 +69,13 @@ keep them around and paste the one you need when you need it.
   and **works everywhere**, any tool or none.
 - The **commands** only auto-run if your tool has a command feature. Without one, they're prompts you paste
   by hand, not autopilot.
+- The **Memory section** in `templates/CLAUDE.md` assumes your tool has a persistent auto-memory keyed to
+  the session or working directory (that's how Claude Code's auto-memory works). If your tool has no such
+  feature, drop that section when you copy the file over — there's nothing for it to attach to.
+- The **Git rails and reconcile-first sections** of `templates/CLAUDE.md` assume you work with code in git
+  repositories. If you don't (documents, research, writing), drop both when you copy the file over —
+  `/keel-setup` offers this trim on Claude Code; elsewhere just delete the two sections. Keep the
+  **Secrets & personal data** section either way: it applies with or without git.
 - The **advice** (principles, framework, ground rules) nudges any model *when it's loaded*, but — as always
   — doesn't enforce itself. You're the trigger.
 

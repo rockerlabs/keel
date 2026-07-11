@@ -27,14 +27,28 @@ check_contains "re-run preserves the user edit" "$(cat "$HOME/.claude/CLAUDE.md"
 check_contains "re-run leaves files untouched" "$OUT" "left untouched"
 check_absent "no foreign-core nag on a Keel-derived CLAUDE.md" "$OUT" "NOT merged in"
 
-# a DRIFTED Keel-owned file (FRAMEWORK) on a non-interactive re-run: never overwritten without a yes, but
-# flagged loudly with the cp to run (unlike user-owned files, which stay silent). No TTY here → WARN path,
-# and it must never block on input. A user-owned file edited the same way still stays silent + preserved.
+# One non-interactive re-run covers three drift/collision scenarios at once (each extra installer run
+# costs a full guard install + selftest on a 3-OS CI matrix):
+#  - a DRIFTED Keel-owned file (FRAMEWORK): never overwritten without a yes, flagged loudly, no hang;
+#  - the adopter's OWN /go under the generic name: their file untouched, and Keel's lands alongside as
+#    keel-go.md AUTOMATICALLY (a brand-new file clobbers nothing; the curl|sh path would otherwise
+#    re-warn forever and never deliver the command);
+#  - a drifted keel-* command: plain drift handling only, never a keel-keel-* alias.
 printf '\nDRIFTED-FRAMEWORK\n' >> "$HOME/.claude/FRAMEWORK.md"
+printf '# my own go command\n' > "$HOME/.claude/commands/go.md"
+printf '\nMY-EDIT\n' >> "$HOME/.claude/commands/keel-setup.md"
 run "$install"
-check_status "drifted Keel-owned file → exit 0 (no hang)" 0 "$STATUS"
+check_status "drift + collision re-run → exit 0 (no hang)" 0 "$STATUS"
 check_contains "warns the installed FRAMEWORK differs" "$OUT" "FRAMEWORK.md differs from Keel's shipped version"
 check_contains "preserves the drifted copy (no clobber without a yes)" "$(cat "$HOME/.claude/FRAMEWORK.md")" "DRIFTED-FRAMEWORK"
+check_contains "own /go preserved" "$(cat "$HOME/.claude/commands/go.md")" "my own go command"
+check_contains "collision announces the alongside install" "$OUT" "go.md is your own command"
+check_file "keel-go.md auto-installed alongside" "$HOME/.claude/commands/keel-go.md"
+check_absent "no keel-keel-* alias" "$OUT" "keel-keel-setup"
+check_contains "keel-setup drift still flagged" "$OUT" "keel-setup.md differs"
+# (run overwrites $OUT — keep this content check after the output assertions above)
+run cmp -s "$REPO_ROOT/commands/go.md" "$HOME/.claude/commands/keel-go.md"
+check_status "keel-go.md content is Keel's shipped go.md" 0 "$STATUS"
 
 # --no-hooks into a custom --home
 alt="$SANDBOX/alt-home"
@@ -55,6 +69,21 @@ check_contains "verify flags the foreign hooksPath" "$OUT" "foreign global core.
 check_absent "verify does NOT falsely claim secret-guard OK" "$OUT" "OK   secret-guard"
 hp="$(git config --global core.hooksPath || true)"
 check_status "foreign hooksPath is preserved" "$SANDBOX/foreign-hooks" "$hp"
+# … and this run doubles as the resolved-collision re-run (keel-go.md exists since the collision run):
+# the user's own /go is recognized as theirs — no repeat prompt/WARN — and drift routes to the alias.
+check_contains "resolved collision: own /go not re-nagged" "$OUT" "go.md left untouched (yours"
+check_absent "no drift WARN for the user's own go.md" "$OUT" "!    go.md differs"
+check_contains "drift check routed to the alias" "$OUT" "keel-go.md (up to date)"
+
+# resolved state is absolute: with keel-go.md present, even deleting your own go.md does NOT re-create
+# the unprefixed name (you kept the prefixed one on purpose) — and a drifted alias still gets drift
+# handling instead of silently going stale.
+rm "$HOME/.claude/commands/go.md"
+printf '\nSTALE-ALIAS\n' >> "$HOME/.claude/commands/keel-go.md"
+run "$install"
+check_status "deleted own command re-run → exit 0" 0 "$STATUS"
+check_nofile "unprefixed go.md not re-created while the alias exists" "$HOME/.claude/commands/go.md"
+check_contains "drifted alias still gets drift handling" "$OUT" "keel-go.md differs"
 
 # unset $HOME must not crash when the target is given explicitly and hooks are skipped — neither
 # --home nor KEEL_HOME should ever need $HOME (regression for `set -u` on an eager $HOME default).

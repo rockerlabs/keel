@@ -4,8 +4,11 @@
 # Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md, LEARNINGS.md)
 # are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, the commands) is offered for update on a
 # re-run when the installed copy has drifted — interactively (y/N, default no) when run from a terminal,
-# else a WARN with the exact cp to run. Wires the secret-guard git hook machine-global (never over an
-# existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
+# else a WARN with the exact cp to run. On a command-name collision with your OWN command (a pre-existing
+# /go), Keel's version goes alongside as keel-<name> instead of overwrite-or-nothing — offered on a
+# terminal, automatic when non-interactive (creating the alias touches nothing you own). Wires the
+# secret-guard git hook machine-global (never over an existing hooksPath), seeds a private INSTANCE.md,
+# and verifies the result.
 #
 # Usage:
 #   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
@@ -23,7 +26,9 @@ install — one-command bootstrap for Keel into your harness home.
 Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md,
 LEARNINGS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, commands) is
 offered for update on a re-run when it has drifted — interactively (y/N, default no) from
-a terminal, else a WARN with the cp to run. Wires the secret-guard git hook machine-global
+a terminal, else a WARN with the cp to run. If a command name is already taken by your OWN
+command (say, /go), Keel's version goes alongside as keel-<name> instead — offered on a
+terminal, automatic when non-interactive. Wires the secret-guard git hook machine-global
 (never over an existing hooksPath), seeds a private INSTANCE.md, and verifies the result.
 
 Usage:
@@ -80,24 +85,52 @@ copy_gap() {
 # installed copy has drifted (an older release, or you edited it) we ask before overwriting — interactively
 # when a terminal is attached (default no, so your copy is never lost without a yes), else a WARN with the
 # exact cp to run. Non-interactive (curl|sh, CI) never blocks on input: no TTY → WARN path, not a hang.
+#
+# Optional ALIAS_DEST (commands only): on a name collision with the adopter's OWN command (a pre-existing
+# /go is likely), Keel's version goes alongside as keel-<name> instead of overwrite-or-nothing — the
+# collision fallback of the naming rule in ADAPTING.md. Once the alias exists, the unprefixed name is the
+# user's for good: re-runs never touch or re-create it, and the drift check routes to the alias.
 sync_product() {
-  local src="$1" dest="$2" name; name="$(basename "$dest")"
+  local src="$1" dest="$2" alias_dest="${3:-}" name reply=""; name="$(basename "$dest")"
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
     return 1
+  elif [ -n "$alias_dest" ] && [ -f "$alias_dest" ]; then
+    # resolved collision: Keel's copy lives at the alias; $dest — present, absent, or even identical to
+    # the shipped file — is the user's space now. Route the drift check to the alias, always.
+    if [ -f "$dest" ]; then
+      echo "  =    $name left untouched (yours; Keel's version lives at $(basename "$alias_dest"))"
+    fi
+    sync_product "$src" "$alias_dest"
   elif [ ! -f "$dest" ]; then
     atomic_copy "$src" "$dest"
     echo "  +    $name"
   elif cmp -s "$src" "$dest"; then
     echo "  =    $name (up to date)"
+  elif [ -t 0 ] && [ -n "$alias_dest" ]; then
+    echo "  ~    $name exists and differs — an older Keel copy, or your own /${name%.md} command."
+    printf "       [u]pdate it with Keel's version / [a] keep yours + add Keel's as %s / [N]either: " "$(basename "$alias_dest")"
+    read -r reply || reply=""
+    case "$reply" in
+      [uU]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
+      [aA]) sync_product "$src" "$alias_dest" ;;
+      *)    echo "  =    $name left untouched (add Keel's alongside later:  cp \"$src\" \"$alias_dest\")" ;;
+    esac
   elif [ -t 0 ]; then
     echo "  ~    $name differs from Keel's shipped version — an older release, or you edited it."
     printf "       Overwrite your copy with the shipped version? [y/N] "
-    local reply=""; read -r reply || reply=""
+    read -r reply || reply=""
     case "$reply" in
       [yY]|[yY][eE][sS]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
       *)                 echo "  =    $name left untouched (update later:  cp \"$src\" \"$dest\")" ;;
     esac
+  elif [ -n "$alias_dest" ]; then
+    # no TTY to ask which way to resolve the collision — but creating the alias is non-destructive (a
+    # brand-new file; the user's $name is untouched), so converge to the resolved state instead of
+    # re-warning on every re-run: the curl|sh path would otherwise never get Keel's command at all
+    # (its cp hints point into a temp clone that bootstrap reaps on exit).
+    echo "  ~    $name is your own command — installing Keel's version alongside it:"
+    sync_product "$src" "$alias_dest"
   else
     echo "  !    $name differs from Keel's shipped version — left untouched."
     echo "       Update when ready:  cp \"$src\" \"$dest\""
@@ -126,12 +159,20 @@ if [ -d "$root/commands" ]; then
   mkdir -p "$HOME_DIR/commands"
   for cmd in "$root"/commands/*.md; do
     [ -f "$cmd" ] || continue
-    # polish.md is maintainer dev-tooling: a Claude-Code-specific pre-PR flow that pairs with
-    # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without its
-    # gate would hand adopters an inert feature, so skip it — it stays in the repo for the maintainer +
-    # downstream consumers. (Intentional; a future audit should read this as scoped, not half-shipped.)
-    case "$(basename "$cmd")" in polish.md) continue ;; esac
-    sync_product "$cmd" "$HOME_DIR/commands/$(basename "$cmd")"
+    name="$(basename "$cmd")"; alias_dest="$HOME_DIR/commands/keel-$name"
+    case "$name" in
+      # polish.md is maintainer dev-tooling: a Claude-Code-specific pre-PR flow that pairs with
+      # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without
+      # its gate would hand adopters an inert feature, so skip it — it stays in the repo for the
+      # maintainer + downstream consumers. (Intentional; a future audit should read this as scoped, not
+      # half-shipped.)
+      polish.md) continue ;;
+      # keel-* commands never get an alias (a keel-keel-* name would be noise) — plain drift handling.
+      keel-*)    alias_dest="" ;;
+    esac
+    # a genuinely shipped keel-<name> owns that slot — never repurpose it as a collision alias.
+    if [ -n "$alias_dest" ] && [ -f "$root/commands/keel-$name" ]; then alias_dest=""; fi
+    sync_product "$cmd" "$HOME_DIR/commands/$name" "$alias_dest"
   done
 fi
 
