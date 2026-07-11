@@ -84,8 +84,16 @@ copy_gap() {
 # installed copy has drifted (an older release, or you edited it) we ask before overwriting — interactively
 # when a terminal is attached (default no, so your copy is never lost without a yes), else a WARN with the
 # exact cp to run. Non-interactive (curl|sh, CI) never blocks on input: no TTY → WARN path, not a hang.
+#
+# Optional ALIAS_DEST (commands only): a collision may be the adopter's OWN command under the same generic
+# name (a pre-existing /go is likely), where both overwrite AND skip lose something. With ALIAS_DEST set,
+# the drift resolution gains a third way — keep theirs and install Keel's alongside as keel-<name> (the
+# collision fallback of the naming rule in ADAPTING.md: unprefixed = lifecycle commands that become yours;
+# keel-* = commands about Keel itself). Once the alias exists, the unprefixed name is the user's by
+# definition — later re-runs leave it alone and route the drift check to the alias, so the collision
+# question is asked once, not on every update.
 sync_product() {
-  local src="$1" dest="$2" name; name="$(basename "$dest")"
+  local src="$1" dest="$2" alias_dest="${3:-}" name reply=""; name="$(basename "$dest")"
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
     return 1
@@ -94,17 +102,37 @@ sync_product() {
     echo "  +    $name"
   elif cmp -s "$src" "$dest"; then
     echo "  =    $name (up to date)"
+  elif [ -n "$alias_dest" ] && [ -f "$alias_dest" ]; then
+    # resolved collision: the alias exists, so $dest is the user's own command — never re-prompt for it.
+    echo "  =    $name left untouched (yours; Keel's version lives at $(basename "$alias_dest"))"
+    sync_product "$src" "$alias_dest"
   elif [ -t 0 ]; then
-    echo "  ~    $name differs from Keel's shipped version — an older release, or you edited it."
-    printf "       Overwrite your copy with the shipped version? [y/N] "
-    local reply=""; read -r reply || reply=""
-    case "$reply" in
-      [yY]|[yY][eE][sS]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
-      *)                 echo "  =    $name left untouched (update later:  cp \"$src\" \"$dest\")" ;;
-    esac
+    if [ -n "$alias_dest" ]; then
+      echo "  ~    $name exists and differs — an older Keel copy, or your own /${name%.md} command."
+      printf "       [u]pdate it with Keel's version / [a] keep yours + add Keel's as %s / [N]either: " "$(basename "$alias_dest")"
+      read -r reply || reply=""
+      case "$reply" in
+        [uU]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
+        [aA]) sync_product "$src" "$alias_dest" ;;
+        *)    echo "  =    $name left untouched (add Keel's alongside later:  cp \"$src\" \"$alias_dest\")" ;;
+      esac
+    else
+      echo "  ~    $name differs from Keel's shipped version — an older release, or you edited it."
+      printf "       Overwrite your copy with the shipped version? [y/N] "
+      read -r reply || reply=""
+      case "$reply" in
+        [yY]|[yY][eE][sS]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
+        *)                 echo "  =    $name left untouched (update later:  cp \"$src\" \"$dest\")" ;;
+      esac
+    fi
   else
     echo "  !    $name differs from Keel's shipped version — left untouched."
-    echo "       Update when ready:  cp \"$src\" \"$dest\""
+    if [ -n "$alias_dest" ]; then
+      echo "       Update:  cp \"$src\" \"$dest\"  — or keep yours and add Keel's alongside:"
+      echo "       cp \"$src\" \"$alias_dest\""
+    else
+      echo "       Update when ready:  cp \"$src\" \"$dest\""
+    fi
   fi
 }
 
@@ -124,48 +152,25 @@ copy_gap "$root/templates/LEARNINGS.md" "$HOME_DIR/LEARNINGS.md"
 sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
 sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
 
-# sync_command — commands/*.md get one extra resolution over sync_product: a collision may be the
-# adopter's OWN command under the same generic name (a pre-existing /go is likely), where both overwrite
-# AND skip lose something. Offer a third way: keep theirs and install Keel's alongside as keel-<name> —
-# the collision fallback of the naming rule in ADAPTING.md (unprefixed = lifecycle commands that become
-# yours; keel-* = commands about Keel itself). Files already shipped as keel-* just use sync_product
-# (a keel-keel-* alias would be noise).
-sync_command() {
-  local src="$1" destdir="$2" name; name="$(basename "$src")"
-  local dest="$destdir/$name"
-  case "$name" in keel-*) sync_product "$src" "$dest"; return ;; esac
-  if [ ! -f "$src" ] || [ ! -f "$dest" ] || cmp -s "$src" "$dest"; then
-    sync_product "$src" "$dest"; return
-  fi
-  local alias_dest="$destdir/keel-$name"
-  if [ -t 0 ]; then
-    echo "  ~    $name exists and differs — an older Keel copy, or your own /${name%.md} command."
-    printf "       [u]pdate it with Keel's version / [a] keep yours + add Keel's as keel-%s / [N]either: " "$name"
-    local reply=""; read -r reply || reply=""
-    case "$reply" in
-      [uU]) atomic_copy "$src" "$dest"; echo "  +    $name updated" ;;
-      [aA]) sync_product "$src" "$alias_dest" ;;
-      *)    echo "  =    $name left untouched (add Keel's alongside later:  cp \"$src\" \"$alias_dest\")" ;;
-    esac
-  else
-    echo "  !    $name differs from Keel's shipped version — left untouched."
-    echo "       Update:  cp \"$src\" \"$dest\"  — or keep yours and add Keel's alongside:"
-    echo "       cp \"$src\" \"$alias_dest\""
-  fi
-}
-
 # Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
 if [ -d "$root/commands" ]; then
   mkdir -p "$HOME_DIR/commands"
   for cmd in "$root"/commands/*.md; do
     [ -f "$cmd" ] || continue
-    # polish.md is maintainer dev-tooling: a Claude-Code-specific pre-PR flow that pairs with
-    # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without its
-    # gate would hand adopters an inert feature, so skip it — it stays in the repo for the maintainer +
-    # downstream consumers. (Intentional; a future audit should read this as scoped, not half-shipped.)
-    case "$(basename "$cmd")" in polish.md) continue ;; esac
-    sync_command "$cmd" "$HOME_DIR/commands"
+    name="$(basename "$cmd")"
+    case "$name" in
+      # polish.md is maintainer dev-tooling: a Claude-Code-specific pre-PR flow that pairs with
+      # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without
+      # its gate would hand adopters an inert feature, so skip it — it stays in the repo for the
+      # maintainer + downstream consumers. (Intentional; a future audit should read this as scoped, not
+      # half-shipped.)
+      polish.md) continue ;;
+      # keel-* commands never get an alias (a keel-keel-* name would be noise) — plain drift handling.
+      keel-*)    sync_product "$cmd" "$HOME_DIR/commands/$name" ;;
+      # everything else gets the collision fallback: keel-<name> alongside the adopter's own command.
+      *)         sync_product "$cmd" "$HOME_DIR/commands/$name" "$HOME_DIR/commands/keel-$name" ;;
+    esac
   done
 fi
 

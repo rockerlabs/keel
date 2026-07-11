@@ -10,6 +10,22 @@
 doc="$REPO_ROOT/docs/loading-and-cost.md"
 check_file "loading-and-cost.md exists" "$doc"
 
+# One ruler for every guard below: ~4 chars/token, the same estimate doctor.sh uses. One copy, so the
+# guards can't diverge from each other (this idiom used to be pasted per-function).
+tok_of() { local c; c="$(wc -c < "$1" | tr -d ' ')"; echo $(( c / 4 )); }
+
+# Shared ±10% verdict: the quoted figure FIG (from SRCDESC) vs the file's ACTUAL token estimate.
+assert_band() {
+  local label="$1" fig="$2" actual="$3" srcdesc="$4"
+  local lo="" hi=""   # init all (set -u safe on bash 3.2)
+  lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
+  if [ "$fig" -ge "$lo" ] && [ "$fig" -le "$hi" ]; then
+    pass "$label ($srcdesc ~$fig vs actual ~$actual)"
+  else
+    fail "$label" "$srcdesc says ~$fig but actual is ~$actual tok (allowed $lo..$hi)"
+  fi
+}
+
 # Assert the ~figure on FILE's table row is within ±10% of (chars / 4). The table keys some rows by
 # install location with the source file in parens (e.g. "(from `templates/CLAUDE.md`)"), so match any
 # table row (starts with "|") that mentions the backticked path — not just rows that start with it.
@@ -18,9 +34,8 @@ assert_figure() {
   local label="$1" file="$2" path="$REPO_ROOT/$2"
   if [ ! -f "$path" ]; then fail "$label" "missing file: $path"; return; fi
 
-  local chars="" actual="" row="" doc_fig="" lo="" hi=""   # init all (set -u safe on bash 3.2)
-  chars="$(wc -c < "$path" | tr -d ' ')"
-  actual=$(( chars / 4 ))
+  local actual="" row="" doc_fig=""   # init all (set -u safe on bash 3.2)
+  actual="$(tok_of "$path")"
 
   row="$(grep -E "^\|.*\`${file//./\\.}\`" "$doc" | head -1)"
   if [ -z "$row" ]; then fail "$label" "no table row mentions \`$file\` in loading-and-cost.md"; return; fi
@@ -34,17 +49,12 @@ assert_figure() {
     if [ "$actual" -ge "$doc_fig" ]; then
       pass "$label (doc ~$doc_fig+ floor vs actual ~$actual)"
     else
-      fail "$label" "doc floor ~$doc_fig+ but actual is only ~$actual tok (chars=$chars) — lower the floor"
+      fail "$label" "doc floor ~$doc_fig+ but actual is only ~$actual tok — lower the floor"
     fi
     return
   fi
 
-  lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
-  if [ "$doc_fig" -ge "$lo" ] && [ "$doc_fig" -le "$hi" ]; then
-    pass "$label (doc ~$doc_fig vs actual ~$actual)"
-  else
-    fail "$label" "doc says ~$doc_fig but actual is ~$actual tok (chars=$chars; allowed $lo..$hi)"
-  fi
+  assert_band "$label" "$doc_fig" "$actual" "doc"
 }
 
 # The "commands/*.md ~LO-HI each" row quotes a range, not one figure: assert every command file's
@@ -64,7 +74,7 @@ assert_commands_range() {
   fi
   for f in "$REPO_ROOT"/commands/*.md; do
     [ -f "$f" ] || continue
-    c="$(wc -c < "$f" | tr -d ' ')"; tok=$(( c / 4 ))
+    tok="$(tok_of "$f")"
     if [ "$tok" -lt "$lo" ] || [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
   done
   if [ -z "$bad" ]; then pass "$label (all within ~$lo-$hi)"; else fail "$label" "outside ~$lo-$hi:$bad"; fi
@@ -78,9 +88,8 @@ assert_readme_figure() {
   local label="$1" file="$2" pattern="$3" path="$REPO_ROOT/$2" readme="$REPO_ROOT/README.md"
   if [ ! -f "$path" ]; then fail "$label" "missing file: $path"; return; fi
 
-  local chars="" actual="" line="" fig_raw="" fig="" lo="" hi=""   # init all (set -u safe on bash 3.2)
-  chars="$(wc -c < "$path" | tr -d ' ')"
-  actual=$(( chars / 4 ))
+  local actual="" line="" fig_raw="" fig=""   # init all (set -u safe on bash 3.2)
+  actual="$(tok_of "$path")"
 
   line="$(grep -E "$pattern" "$readme" | head -1)"
   if [ -z "$line" ]; then fail "$label" "no line matching /$pattern/ in README.md"; return; fi
@@ -88,12 +97,7 @@ assert_readme_figure() {
   if [ -z "$fig_raw" ]; then fail "$label" "no ~N.NK figure on the matched README.md line: $line"; return; fi
   fig="$(printf '%s' "$fig_raw" | tr -d '~K' | awk '{printf "%d", $1*1000}')"
 
-  lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
-  if [ "$fig" -ge "$lo" ] && [ "$fig" -le "$hi" ]; then
-    pass "$label (README $fig_raw vs actual ~$actual)"
-  else
-    fail "$label" "README says $fig_raw (~$fig) but actual is ~$actual tok (chars=$chars; allowed $lo..$hi)"
-  fi
+  assert_band "$label" "$fig" "$actual" "README"
 }
 
 # Every file with a quoted per-file figure in the table. Keep this list in sync with the table:
@@ -111,5 +115,15 @@ assert_commands_range "commands/*.md sizes fall inside the quoted range"
 assert_readme_figure "README FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'
 assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'
 assert_readme_figure "README always-loaded core figure within 10%" templates/CLAUDE.md 'Always loaded.*~[0-9.]+K tokens'
+
+# /keel-setup step 3 and ADAPTING.md tell a no-git adopter which two template sections to drop BY NAME —
+# a heading rename in templates/CLAUDE.md would strand those instructions silently. Pin the coupling.
+for h in "Git — mandatory rails" "Before writing code — reconcile first"; do
+  if grep -q "^## $h" "$REPO_ROOT/templates/CLAUDE.md"; then
+    pass "droppable-section heading present: $h"
+  else
+    fail "droppable-section heading present: $h" "renamed in templates/CLAUDE.md? update commands/keel-setup.md + ADAPTING.md to match"
+  fi
+done
 
 summary

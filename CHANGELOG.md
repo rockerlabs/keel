@@ -42,14 +42,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - **Collision-aware command install** (closes backlog dir #9): when a command name is already taken by
   the adopter's *own* file (a pre-existing `/go` is likely — the name is generic), `install.sh` no
   longer poses overwrite-or-nothing, where both answers lose something (yes destroys their command,
-  breaking the "never touches a file you own" promise in spirit; no silently drops Keel's). A new
-  `sync_command` resolution offers a third way: keep theirs and install Keel's alongside as
+  breaking the "never touches a file you own" promise in spirit; no silently drops Keel's).
+  `sync_product` gains an optional alongside resolution for commands: keep theirs and install Keel's as
   `keel-<name>` — interactively `[u]pdate / [a]longside / [N]either` (default: leave untouched);
-  non-interactively a WARN with both `cp` commands, never a hang, nothing created without a yes.
-  Commands already shipped as `keel-*` keep plain drift handling (no `keel-keel-*` noise). The naming
-  rule this leans on is now codified in `ADAPTING.md`: unprefixed = lifecycle verbs that become yours;
-  `keel-` prefix = commands about Keel itself, doubling as the collision fallback. Covered in
-  `tests/test_install.sh`.
+  non-interactively a WARN with both `cp` commands, never a hang, nothing created without a yes. Once
+  `keel-<name>` exists the collision is **resolved state**: the unprefixed name is the user's by
+  definition, so re-runs stop re-asking and route the drift check to the alias — the question is paid
+  once, not on every `git pull && ./install.sh`. Commands already shipped as `keel-*` keep plain drift
+  handling (no `keel-keel-*` noise). The naming rule this leans on is now codified in `ADAPTING.md`:
+  unprefixed = lifecycle verbs that become yours; `keel-` prefix = commands about Keel itself, doubling
+  as the collision fallback. Covered in `tests/test_install.sh`.
 - **Two install-scenario gaps answered docs-level** (from a scenario audit: fresh vs pre-existing
   context, coding vs chat-only):
   - `ADAPTING.md`: an adopter who already has tuned rules on another tool (`.cursorrules`, `AGENTS.md`,
@@ -57,8 +59,9 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     usually the map plus missing rails — instead of replacing it; the `tools/` work regardless. Keel
     previously answered "run Keel on another tool" but not "coexist with the context already there".
   - `docs/getting-started.md`: a no-git / chat-style user gets the honest boundary stated plainly —
-    the advice layer still applies (and `/keel-setup` offers the git-section trim), but the mechanized
-    layer is git-based and won't fire without repositories: advice that nudges, not guarantees that run.
+    the advice layer still applies, but the mechanized layer is git-based and won't fire without
+    repositories: advice that nudges, not guarantees that run. (The matching `/keel-setup` trim is the
+    droppable-rails entry below.)
 - **The git/code rails become droppable-as-a-unit for non-coding adopters — trimmed at setup, not
   hedged in the core** (felt 2026-07-11: a real adopter who writes scripts and documents, no git,
   carries the two git/code sections — ~25% of the always-loaded core — as pure dead weight every

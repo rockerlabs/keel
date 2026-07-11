@@ -36,21 +36,28 @@ check_status "drifted Keel-owned file → exit 0 (no hang)" 0 "$STATUS"
 check_contains "warns the installed FRAMEWORK differs" "$OUT" "FRAMEWORK.md differs from Keel's shipped version"
 check_contains "preserves the drifted copy (no clobber without a yes)" "$(cat "$HOME/.claude/FRAMEWORK.md")" "DRIFTED-FRAMEWORK"
 
-# a command-name collision: the adopter's OWN /go under the generic name. Non-interactive → never
-# clobbered, never hung, and the WARN offers BOTH resolutions (update in place / add alongside as
-# keel-go.md) instead of overwrite-or-nothing. Nothing is created without a yes.
+# a command-name collision (the adopter's OWN /go) + a drifted keel-* command, both in one run:
+# non-interactive → never clobbered, never hung; the collision WARN offers BOTH resolutions (update in
+# place / add alongside as keel-go.md) instead of overwrite-or-nothing; nothing is created without a
+# yes; and keel-* names get plain drift handling only (no keel-keel-* alias noise).
 printf '# my own go command\n' > "$HOME/.claude/commands/go.md"
+printf '\nMY-EDIT\n' >> "$HOME/.claude/commands/keel-setup.md"
 run "$install"
 check_status "own /go collision → exit 0 (no hang)" 0 "$STATUS"
 check_contains "own /go preserved" "$(cat "$HOME/.claude/commands/go.md")" "my own go command"
 check_contains "collision WARN offers the alongside fallback" "$OUT" "keel-go.md"
 check_nofile "keel-go.md not created without a yes" "$HOME/.claude/commands/keel-go.md"
-
-# keel-* commands never get a keel-keel-* alias offer — plain drift handling only.
-printf '\nMY-EDIT\n' >> "$HOME/.claude/commands/keel-setup.md"
-run "$install"
 check_absent "no keel-keel-* alias offer" "$OUT" "keel-keel-setup"
 check_contains "keel-setup drift still flagged" "$OUT" "keel-setup.md differs"
+
+# once keel-go.md EXISTS the collision is resolved state — the unprefixed name is the user's by
+# definition (ADAPTING.md naming rule), so re-runs stop nagging about it and route drift to the alias.
+cp "$REPO_ROOT/commands/go.md" "$HOME/.claude/commands/keel-go.md"
+run "$install"
+check_status "resolved collision re-run → exit 0" 0 "$STATUS"
+check_contains "own /go recognized as yours, no repeat nag" "$OUT" "go.md left untouched (yours"
+check_absent "no drift WARN for the user's own go.md" "$OUT" "go.md differs from Keel's shipped version"
+check_contains "drift check routed to the alias" "$OUT" "keel-go.md (up to date)"
 
 # --no-hooks into a custom --home
 alt="$SANDBOX/alt-home"
