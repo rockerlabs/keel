@@ -44,7 +44,7 @@ set -euo pipefail
 
 # Length-anchored patterns: a bare prefix or this pattern list itself never trips them.
 PATTERNS=(
-  'ghp_[A-Za-z0-9]{36}'                 # GitHub personal access token
+  'gh[oprsu]_[A-Za-z0-9]{36}'           # GitHub token — PAT ghp_, OAuth gho_, user ghu_, server ghs_, refresh ghr_
   'github_pat_[A-Za-z0-9_]{60,}'        # GitHub fine-grained PAT
   'AKIA[0-9A-Z]{16}'                    # AWS access key id
   'AIza[0-9A-Za-z_-]{35}'              # Google API key
@@ -54,6 +54,8 @@ PATTERNS=(
   'sk-[A-Za-z0-9]{32,}'                # generic "sk-" secret key
   'sk_(live|test)_[A-Za-z0-9]{16,}'    # Stripe secret key (underscore form)
   'glpat-[A-Za-z0-9_-]{20,}'           # GitLab personal access token
+  'npm_[A-Za-z0-9]{36}'                # npm access token
+  'hf_[A-Za-z0-9]{34,}'                # Hugging Face user access token
   'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack token
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'  # PEM private key
 )
