@@ -70,6 +70,32 @@ assert_commands_range() {
   if [ -z "$bad" ]; then pass "$label (all within ~$lo-$hi)"; else fail "$label" "outside ~$lo-$hi:$bad"; fi
 }
 
+# README.md's mermaid "How it loads" diagram quotes its own rounded ~N.NK figures for the same files —
+# a separate line from loading-and-cost.md's table, so assert_figure's table-row grep never reaches it.
+# That's exactly how FRAMEWORK.md's figure went stale (~4.2K in README vs ~5.0K real) while the
+# loading-and-cost.md row stayed guarded — close the same hole here.
+assert_readme_figure() {
+  local label="$1" file="$2" pattern="$3" path="$REPO_ROOT/$2" readme="$REPO_ROOT/README.md"
+  if [ ! -f "$path" ]; then fail "$label" "missing file: $path"; return; fi
+
+  local chars="" actual="" line="" fig_raw="" fig="" lo="" hi=""   # init all (set -u safe on bash 3.2)
+  chars="$(wc -c < "$path" | tr -d ' ')"
+  actual=$(( chars / 4 ))
+
+  line="$(grep -E "$pattern" "$readme" | head -1)"
+  if [ -z "$line" ]; then fail "$label" "no line matching /$pattern/ in README.md"; return; fi
+  fig_raw="$(printf '%s' "$line" | grep -oE '~[0-9]+\.[0-9]+K' | tail -1)"
+  if [ -z "$fig_raw" ]; then fail "$label" "no ~N.NK figure on the matched README.md line: $line"; return; fi
+  fig="$(printf '%s' "$fig_raw" | tr -d '~K' | awk '{printf "%d", $1*1000}')"
+
+  lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
+  if [ "$fig" -ge "$lo" ] && [ "$fig" -le "$hi" ]; then
+    pass "$label (README $fig_raw vs actual ~$actual)"
+  else
+    fail "$label" "README says $fig_raw (~$fig) but actual is ~$actual tok (chars=$chars; allowed $lo..$hi)"
+  fi
+}
+
 # Every file with a quoted per-file figure in the table. Keep this list in sync with the table:
 # a new figure-bearing row should get a line here (the table itself is the source of truth for sizes).
 assert_figure "templates/CLAUDE.md figure within 10%"         templates/CLAUDE.md
@@ -81,5 +107,9 @@ assert_figure "templates/LEARNINGS.md figure within 10%"      templates/LEARNING
 assert_figure "ADAPTING.md figure within 10%"                 ADAPTING.md
 assert_figure "CHANGELOG.md figure within 10%"                CHANGELOG.md
 assert_commands_range "commands/*.md sizes fall inside the quoted range"
+
+assert_readme_figure "README FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'
+assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'
+assert_readme_figure "README always-loaded core figure within 10%" templates/CLAUDE.md 'Always loaded.*~[0-9.]+K tokens'
 
 summary

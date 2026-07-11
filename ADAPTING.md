@@ -58,6 +58,9 @@ keep them around and paste the one you need when you need it.
   and **works everywhere**, any tool or none.
 - The **commands** only auto-run if your tool has a command feature. Without one, they're prompts you paste
   by hand, not autopilot.
+- The **Memory section** in `templates/CLAUDE.md` assumes your tool has a persistent auto-memory keyed to
+  the session or working directory (that's how Claude Code's auto-memory works). If your tool has no such
+  feature, drop that section when you copy the file over — there's nothing for it to attach to.
 - The **advice** (principles, framework, ground rules) nudges any model *when it's loaded*, but — as always
   — doesn't enforce itself. You're the trigger.
 
