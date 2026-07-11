@@ -146,8 +146,8 @@ trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT INT TERM
 # The text passes cannot see INSIDE a binary: tree_grep's -I skips binary files, and `git log -p`
 # renders a binary change as "Binary files … differ" — so personal data encoded in a binary blob (the
 # felt leak class: a real name UTF-16-encoded inside a fixture) passes every text check above. This
-# decodes each binary blob reachable from the given revs (NUL-strip + iconv UTF-16LE/BE when available
-# + raw-printable) and re-runs the same regex set: declared tokens = GAP, heuristics = WARN — one
+# decodes each binary blob reachable from the given revs (NUL-strip + iconv UTF-16/UTF-32 LE/BE when
+# available + raw-printable) and re-runs the same regex set: declared tokens = GAP, heuristics = WARN — one
 # example per category per pass, like the text sections. KEEL_AUDIT_BLOB_MAX (bytes, default 10MB)
 # bounds the per-blob cost; oversized blobs are counted and SURFACED, never silently trusted.
 scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g. --all)
@@ -172,10 +172,12 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
     # Decode recipe: keep IN SYNC with secret-guard/secret-scan.sh emit_blob() — deliberately
     # duplicated (each tool stands alone), so an encoding gap fixed there must be fixed here too.
     {
-      LC_ALL=C tr -d '\000' < "$tmp"; echo                        # ASCII-range UTF-16, no deps
-      if command -v iconv >/dev/null 2>&1; then                   # non-ASCII UTF-16 (e.g. a Cyrillic name)
+      LC_ALL=C tr -d '\000' < "$tmp"; echo                        # ASCII-range UTF-16/UTF-32, no deps
+      if command -v iconv >/dev/null 2>&1; then                   # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
         iconv -f UTF-16LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
         iconv -f UTF-16BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+        iconv -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+        iconv -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
       fi
       LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo          # raw printable runs
     } > "$dec"

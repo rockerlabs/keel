@@ -241,6 +241,24 @@ git -C "$repo" add lib.bin; git -C "$repo" commit -qm binpii
 run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan" --range "$pbase..HEAD"
 check_status "--range blocks a UTF-16 binary personal literal" 1 "$STATUS"
 
+# --range: a NON-ASCII personal literal in a UTF-32 binary blob is decoded and blocked. A NON-ASCII
+# literal is used on purpose — an ASCII one survives the NUL-strip pass even in UTF-32, so only a
+# multi-byte code point exercises the iconv-UTF-32 pass. iconv-guarded (the capability needs it); the
+# Cyrillic literal is built from bytes so this test source stays ASCII.
+cyr="$(printf '\320\230\320\262\320\260\320\275\320\276\320\262')"   # "Ivanov" (Cyrillic) in UTF-8
+if command -v iconv >/dev/null 2>&1 && printf '%s' "$cyr" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+  repo="$(new_repo)"
+  printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+  pbase="$(git -C "$repo" rev-parse HEAD)"
+  p32="$SANDBOX/personal.utf32"; printf '%s\n' "$cyr" > "$p32"
+  printf 'author %s here' "$cyr" | iconv -f UTF-8 -t UTF-32LE > "$repo/name32.bin"
+  git -C "$repo" add name32.bin; git -C "$repo" commit -qm bin32
+  run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$p32" "$scan" --range "$pbase..HEAD"
+  check_status "--range blocks a UTF-32 binary non-ASCII personal literal" 1 "$STATUS"
+else
+  pass "--range UTF-32 binary test skipped (no iconv / no UTF-32 converter)"
+fi
+
 # --- determinism regression: a key EARLY in a large pushed range must always block ---------------
 # The old fast path used `grep -q`, whose first-match exit SIGPIPE'd the still-writing
 # `git cat-file --batch`; under pipefail the whole pipeline then read as failed and the hit was
