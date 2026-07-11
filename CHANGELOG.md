@@ -30,6 +30,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
 ### Changed
+- **Two install-scenario gaps answered docs-level** (from a scenario audit: fresh vs pre-existing
+  context, coding vs chat-only):
+  - `ADAPTING.md`: an adopter who already has tuned rules on another tool (`.cursorrules`, `AGENTS.md`,
+    a conventions file) is told to *keep their file* and lift only what they want from the template —
+    usually the map plus missing rails — instead of replacing it; the `tools/` work regardless. Keel
+    previously answered "run Keel on another tool" but not "coexist with the context already there".
+  - `docs/getting-started.md`: a no-git / chat-style user gets the honest boundary stated plainly —
+    the advice layer still applies (and `/keel-setup` offers the git-section trim), but the mechanized
+    layer is git-based and won't fire without repositories: advice that nudges, not guarantees that run.
 - **The git/code rails become droppable-as-a-unit for non-coding adopters — trimmed at setup, not
   hedged in the core** (felt 2026-07-11: a real adopter who writes scripts and documents, no git,
   carries the two git/code sections — ~25% of the always-loaded core — as pure dead weight every

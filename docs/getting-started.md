@@ -148,6 +148,12 @@ reads the actual source tree (not just the front door) to draft the stack, archi
 - **Checks when you want them.** `doctor` (what's missing) and `public-audit` (before going public) — run
   them when you like; they cost zero memory.
 
+> **Working without git or code** (documents, research, chat-style sessions)? Be clear about what's left:
+> the advice layer still applies — persist decisions, verify before claiming done, handle forks openly —
+> and `/keel-setup` offers to trim the git/code sections from your always-on file. But the mechanized
+> layer (`secret-guard`, `doctor`, `public-audit`) is git-based and won't fire without repositories:
+> for you, Keel is advice that nudges, not guarantees that run by themselves.
+
 ## 5. Did it work? — an honest check
 
 The **tool** parts are checkable. Run them and watch:
