@@ -74,7 +74,8 @@ keep them around and paste the one you need when you need it.
   feature, drop that section when you copy the file over — there's nothing for it to attach to.
 - The **Git rails and reconcile-first sections** of `templates/CLAUDE.md` assume you work with code in git
   repositories. If you don't (documents, research, writing), drop both when you copy the file over —
-  `/keel-setup` offers this trim on Claude Code; elsewhere just delete the two sections.
+  `/keel-setup` offers this trim on Claude Code; elsewhere just delete the two sections. Keep the
+  **Secrets & personal data** section either way: it applies with or without git.
 - The **advice** (principles, framework, ground rules) nudges any model *when it's loaded*, but — as always
   — doesn't enforce itself. You're the trigger.
 

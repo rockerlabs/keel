@@ -48,14 +48,17 @@ commit → push → PR → merge → delete the branch. (Full flow + the solo kn
 **Force-push only a named branch** (`--force <branch>`), reconciled with its upstream first — never
 `--force --all`: it overwrites every remote ref, including from a stale local default.
 
-**Never commit private AI context or secrets.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
+**Never commit private AI context.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
 (private AI context — default gitignored; choose public deliberately for OSS), plus IDE/OS/build artifacts.
-API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk + pulled into model
-context). Use environment variables; never hardcode credentials.
 
-**No personal data in committed artifacts** (code, commits, fixtures, examples): no real names, emails,
-personal paths, serials — use neutral stand-ins (`Alice`, `/Users/x/…`, `example.com`). Anonymize **at
-authoring time**, not as a pre-release scrub: data captured from a real device or account carries its
+## Secrets & personal data
+
+API keys / tokens must NOT go into `CLAUDE.md` / memory / any knowledge-base doc (plaintext on disk +
+pulled into model context). Use environment variables; never hardcode credentials.
+
+**No personal data in shared or committed artifacts** (code, commits, fixtures, examples): no real names,
+emails, personal paths, serials — use neutral stand-ins (`Alice`, `/Users/x/…`, `example.com`). Anonymize
+**at authoring time**, not as a pre-release scrub: data captured from a real device or account carries its
 owner's identity — strip it before the first commit. (A guard hook is the backstop; this rule is primary.)
 
 ---

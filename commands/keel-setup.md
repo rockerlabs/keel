@@ -43,8 +43,9 @@ Show the draft and ask the user to correct it. You're saving them the typing, no
 - Ask one scope question, in plain words: **will AI sessions on this machine be used for coding projects
   in git, or mostly for documents and texts?** If clearly no-code/no-git, offer to remove the two
   code-specific sections from *their copy* — "Git — mandatory rails" and "Before writing code — reconcile
-  first" (~25% lighter every session; the "read the project's `CLAUDE.md` first" rail survives in the
-  map). Unsure or mixed → keep both (the safe default); a later re-run can still trim.
+  first" (meaningfully lighter every session; the "read the project's `CLAUDE.md` first" rail survives in
+  the map, and the "Secrets & personal data" section always stays — it applies with or without git).
+  Unsure or mixed → keep both (the safe default); a later re-run can still trim.
 - If it's the user's **pre-existing** file (install left it untouched), do **not** overwrite. Show what
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
 

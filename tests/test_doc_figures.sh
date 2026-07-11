@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# test_doc_figures.sh — every per-file token figure quoted in docs/loading-and-cost.md must stay close
-# to the real file size by the doc's own ruler (~4 chars/token). A methodology selling honest token
-# accounting can't ship a stale number. This guards EVERY figure-bearing row, not a subset: a prior
-# pass left FRAMEWORK.md understated, and a partial guard then let CHANGELOG.md drift the same way —
-# so the lock has to cover all of them or it doesn't close the hole.
+# test_doc_figures.sh — every per-file token figure quoted in docs/loading-and-cost.md (and the README's
+# diagram) must stay close to the real file size by the doc's own ruler (~4 chars/token), plus the
+# doc-coupling pins that keep prose references (droppable-section headings) in sync with the template.
+# A methodology selling honest token accounting can't ship a stale number. This guards EVERY
+# figure-bearing row, not a subset: a prior pass left FRAMEWORK.md understated, and a partial guard then
+# let CHANGELOG.md drift the same way — so the lock has to cover all of them or it doesn't close the hole.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 
@@ -61,7 +62,7 @@ assert_figure() {
 # size falls inside the quoted [LO, HI] band, so this row can't drift unguarded either.
 assert_commands_range() {
   local label="$1"
-  local row="" lo="" hi="" f="" c="" tok="" bad=""   # init all (set -u safe on bash 3.2)
+  local row="" lo="" hi="" f="" tok="" bad=""   # init all (set -u safe on bash 3.2)
   row="$(grep -E '^\|.*`commands/\*' "$doc" | head -1)"
   if [ -z "$row" ]; then fail "$label" "no commands/*.md row in loading-and-cost.md"; return; fi
   # the figure cell is "~LO-HI each" (one tilde, an en-dash); read the last table cell, take its two
@@ -93,9 +94,10 @@ assert_readme_figure() {
 
   line="$(grep -E "$pattern" "$readme" | head -1)"
   if [ -z "$line" ]; then fail "$label" "no line matching /$pattern/ in README.md"; return; fi
-  fig_raw="$(printf '%s' "$line" | grep -oE '~[0-9]+\.[0-9]+K' | tail -1)"
-  if [ -z "$fig_raw" ]; then fail "$label" "no ~N.NK figure on the matched README.md line: $line"; return; fi
-  fig="$(printf '%s' "$fig_raw" | tr -d '~K' | awk '{printf "%d", $1*1000}')"
+  fig_raw="$(printf '%s' "$line" | grep -oE '~[0-9]+(\.[0-9]+)?K' | tail -1)"
+  if [ -z "$fig_raw" ]; then fail "$label" "no ~N[.N]K figure on the matched README.md line: $line"; return; fi
+  # LC_ALL=C: awk parses "1.8" by locale — a comma-decimal locale would read it as 1 and false-fail.
+  fig="$(printf '%s' "$fig_raw" | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}')"
 
   assert_band "$label" "$fig" "$actual" "README"
 }
@@ -117,12 +119,20 @@ assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md
 assert_readme_figure "README always-loaded core figure within 10%" templates/CLAUDE.md 'Always loaded.*~[0-9.]+K tokens'
 
 # /keel-setup step 3 and ADAPTING.md tell a no-git adopter which two template sections to drop BY NAME —
-# a heading rename in templates/CLAUDE.md would strand those instructions silently. Pin the coupling.
+# a heading rename in templates/CLAUDE.md would strand those instructions silently. Pin BOTH legs of the
+# coupling: the heading must exist in the template AND still be quoted by the trim instruction (the
+# keel-setup quote may be line-wrapped, so whitespace is normalized before matching). ADAPTING.md
+# paraphrases rather than quotes, so it can't be pinned mechanically.
 for h in "Git — mandatory rails" "Before writing code — reconcile first"; do
   if grep -q "^## $h" "$REPO_ROOT/templates/CLAUDE.md"; then
-    pass "droppable-section heading present: $h"
+    pass "template has droppable heading: $h"
   else
-    fail "droppable-section heading present: $h" "renamed in templates/CLAUDE.md? update commands/keel-setup.md + ADAPTING.md to match"
+    fail "template has droppable heading: $h" "renamed in templates/CLAUDE.md? update commands/keel-setup.md + ADAPTING.md + this list"
+  fi
+  if tr -s '[:space:]' ' ' < "$REPO_ROOT/commands/keel-setup.md" | grep -qF "$h"; then
+    pass "keel-setup trim quotes the heading: $h"
+  else
+    fail "keel-setup trim quotes the heading: $h" "the trim instruction no longer names this section"
   fi
 done
 
