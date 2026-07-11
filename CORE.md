@@ -1,10 +1,7 @@
 # Always-on core — the rails
 
-<!-- The placeholder-free, tool-independent half of the always-on file: pure rails, no personal
-     preferences, no file map. Linked consumers import this file live (e.g. Claude Code `@import` —
-     `git pull` here refreshes every session's rails); copy-path adopters take templates/CLAUDE.md,
-     which embeds the block below verbatim. Edit rails HERE first, then mirror the block into the
-     wrapper — tests/test_core_wrapper_sync.sh fails on any byte difference. -->
+<!-- Rails only, no placeholders. Edit between the markers, then mirror the block into
+     templates/CLAUDE.md (test_core_wrapper_sync.sh pins byte equality). -->
 
 <!-- KEEL-CORE-BEGIN -->
 ## Precedence — when sources conflict

@@ -34,13 +34,7 @@ block_of() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 core_block="$(block_of "$core")"
 wrapper_block="$(block_of "$wrapper")"
 
-if [ -n "$core_block" ]; then
-  pass "core block is non-empty"
-else
-  fail "core block is non-empty" "extraction between markers yielded nothing"
-fi
-
-# Sanity that the block really is the rails, not an accidental slice.
+# Sanity that the block really is the rails, not an accidental (or empty) slice.
 check_contains "core block carries the git rails" "$core_block" "## Git — mandatory rails"
 
 if [ "$core_block" = "$wrapper_block" ]; then
@@ -51,13 +45,11 @@ else
 fi
 
 # CORE.md is consumed live (imported/symlinked) — template artifacts in it would ride into every
-# session of every linked consumer. Placeholders belong to the wrapper only.
+# session of every linked consumer. Placeholders belong to the wrapper only. (A deliberate denylist,
+# not a general <…> grep: the core legitimately contains `<project>/CLAUDE.md`.)
+core_content="$(cat "$core")"
 for probe in "<your preference>" "(TEMPLATE)" "Copy this to your harness"; do
-  if grep -qF "$probe" "$core"; then
-    fail "CORE.md is placeholder-free: $probe" "template artifact found in the consumable core"
-  else
-    pass "CORE.md is placeholder-free: $probe"
-  fi
+  check_absent "CORE.md is placeholder-free: $probe" "$core_content" "$probe"
 done
 
 summary

@@ -36,7 +36,7 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `(TEMPLATE)` header, the "Copy this…" blockquote, and the `<your preference>` placeholder into every
   session (~100 tokens of noise), and editing around them meant editing inside the checkout — pull
   conflicts waiting to happen. Now the rails (precedence, git, secrets, reconcile-first, verify,
-  forks, persist, memory — ~1,430 tok) live in root `CORE.md` next to `FRAMEWORK.md`/`PRINCIPLES.md`,
+  forks, persist, memory — ~1,350 tok) live in root `CORE.md` next to `FRAMEWORK.md`/`PRINCIPLES.md`,
   and `templates/CLAUDE.md` becomes a thin wrapper: the file map + communication placeholders + the
   core embedded **verbatim** between `KEEL-CORE-BEGIN/END` markers. The copy path is untouched —
   `install.sh`, the by-hand copy, and ADAPTING's non-Claude recipe still take the single wrapper file.
@@ -44,7 +44,7 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   equality of the marked blocks, single-line markers appearing exactly once, and no template
   artifacts in `CORE.md`. Honest boundary in ADAPTING.md: `@import` is a Claude Code adapter
   mechanism; copying stays the tool-independent default. Groundwork for the linked-install mode
-  (dir #17). Docs figures re-synced (wrapper ~1,870; `CORE.md` row added and guarded in
+  (dir #17). Docs figures re-synced (wrapper ~1,810; `CORE.md` row added and guarded in
   `test_doc_figures.sh`).
 
 ### Changed

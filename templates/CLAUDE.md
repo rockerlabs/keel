@@ -4,10 +4,6 @@
 > This is the **only file auto-loaded in EVERY session**. Keep it deliberately thin: the unconditional
 > safety/behavior rails + a **map** of where the rest lives. Everything else is read **on demand** — follow
 > the map; don't re-derive it.
->
-> Copy-free alternative on Claude Code: keep only the personal sections (this map + preferences) in your
-> own file and import the rails live from the checkout's `CORE.md` — `git pull` then refreshes them.
-> Copying this file stays the tool-independent default.
 
 ## Where things live (the map — read the right file when the task needs it)
 
