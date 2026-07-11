@@ -69,6 +69,11 @@ keep them around and paste the one you need when you need it.
   and **works everywhere**, any tool or none.
 - The **commands** only auto-run if your tool has a command feature. Without one, they're prompts you paste
   by hand, not autopilot.
+- **Linked consumption of `CORE.md`** — on Claude Code the always-on file can *import* the rails live
+  (an `@path` line pointing at the checkout's `CORE.md`), so `git pull` refreshes them without re-copying.
+  That import mechanism is Claude Code-specific. On another tool, copying `templates/CLAUDE.md` stays the
+  way in — unless your tool has its own include mechanism, in which case the same split (rails imported,
+  personal sections yours) works there too.
 - The **Memory section** in `templates/CLAUDE.md` assumes your tool has a persistent auto-memory keyed to
   the session or working directory (that's how Claude Code's auto-memory works). If your tool has no such
   feature, drop that section when you copy the file over — there's nothing for it to attach to.

@@ -105,6 +105,7 @@ assert_readme_figure() {
 # Every file with a quoted per-file figure in the table. Keep this list in sync with the table:
 # a new figure-bearing row should get a line here (the table itself is the source of truth for sizes).
 assert_figure "templates/CLAUDE.md figure within 10%"         templates/CLAUDE.md
+assert_figure "CORE.md figure within 10%"                     CORE.md
 assert_figure "templates/project-CLAUDE.md figure within 10%" templates/project-CLAUDE.md
 assert_figure "FRAMEWORK.md figure within 10%"                FRAMEWORK.md
 assert_figure "PRINCIPLES.md figure within 10%"               PRINCIPLES.md

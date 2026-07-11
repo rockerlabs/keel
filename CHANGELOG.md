@@ -29,6 +29,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   audit-loop (L3). Also documented in `secret-scan-personal.example`: keep personal EREs simple
   (avoid nested quantifiers that can backtrack on some BSD/busybox greps).
 
+### Added
+- **`CORE.md` — the always-on rails split out as a placeholder-free consumable file** (closes backlog
+  dir #16). The always-on template used to be one file, so a linked consumer (an `@import` line in the
+  adopter's own `CLAUDE.md` pointing into the checkout — the maintainer's setup) carried the
+  `(TEMPLATE)` header, the "Copy this…" blockquote, and the `<your preference>` placeholder into every
+  session (~100 tokens of noise), and editing around them meant editing inside the checkout — pull
+  conflicts waiting to happen. Now the rails (precedence, git, secrets, reconcile-first, verify,
+  forks, persist, memory — ~1,430 tok) live in root `CORE.md` next to `FRAMEWORK.md`/`PRINCIPLES.md`,
+  and `templates/CLAUDE.md` becomes a thin wrapper: the file map + communication placeholders + the
+  core embedded **verbatim** between `KEEL-CORE-BEGIN/END` markers. The copy path is untouched —
+  `install.sh`, the by-hand copy, and ADAPTING's non-Claude recipe still take the single wrapper file.
+  The embed is hand-maintained duplication, so `tests/test_core_wrapper_sync.sh` pins it: byte
+  equality of the marked blocks, single-line markers appearing exactly once, and no template
+  artifacts in `CORE.md`. Honest boundary in ADAPTING.md: `@import` is a Claude Code adapter
+  mechanism; copying stays the tool-independent default. Groundwork for the linked-install mode
+  (dir #17). Docs figures re-synced (wrapper ~1,870; `CORE.md` row added and guarded in
+  `test_doc_figures.sh`).
+
 ### Changed
 - **The core gains a precedence rule — nearest scope wins on a conflict** (`templates/CLAUDE.md`, after
   the map): live user instruction > session > project `CLAUDE.md` > the global core. Behavior on a

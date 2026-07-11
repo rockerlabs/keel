@@ -19,7 +19,8 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 
 | File | When it loads | Why / what it influences | ~Tokens |
 |---|---|---|---|
-| `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~1,760** |
+| `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~1,870** |
+| `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. | ~1,430 |
 | `<project>/CLAUDE.md` (from `templates/project-CLAUDE.md`) | when you work **in that project** | Project context: stack, architecture, conventions, roadmap. Shapes decisions inside the project. | ~270 *(as filled)* |
 | `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~5,000 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,100 |
@@ -34,8 +35,9 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 
 The only thing you pay **every** session is the always-loaded core:
 
-- **Globally, any session:** ~1,760 tokens.
-- **Working inside a project:** + ~270 → **~2,030 tokens** at session start.
+- **Globally, any session:** ~1,870 tokens (a linked setup importing `CORE.md` pays ~1,430 + its own
+  map/preferences — the same material, just split differently).
+- **Working inside a project:** + ~270 → **~2,140 tokens** at session start.
 
 Everything else is opt-in. A typical session reads **none** of `FRAMEWORK` / `PRINCIPLES` / the commands —
 they open pointwise, under a specific task. The tools cost **zero** context.
@@ -49,7 +51,7 @@ Put in perspective:
 - Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~10K for one decision.
 
 A guard against bloat ships with it: `doctor` raises a **WARN** if the always-loaded core exceeds **10,000
-tokens** (`KEEL_STARTUP_WARN_TOKENS`). The template core is ~1,760 — about 18% of that budget, with room.
+tokens** (`KEEL_STARTUP_WARN_TOKENS`). The template core is ~1,870 — about 19% of that budget, with room.
 
 ## With Keel vs without — a concrete moment
 
@@ -70,7 +72,7 @@ you ▸ "we branch off main… there's already a client in net/… don't hardcod
 Cost: a variable re-explanation tax **every session** (hundreds–thousands of tokens of back-and-forth) +
 your time + a wrong-fact commit to undo. Outcomes drift between sessions.
 
-**With Keel — the rails and project context are already loaded (~2,030 tokens, cached):**
+**With Keel — the rails and project context are already loaded (~2,140 tokens, cached):**
 
 ```
 ~/.claude/CLAUDE.md (always loaded) already encodes:
@@ -85,7 +87,7 @@ agent ▸ greps net/ → finds the existing client, extends it
         (and if it ever stages a key, secret-guard blocks the commit — mechanically)
 ```
 
-Cost: ~2,030 fixed, cacheable tokens — and you **stop paying the re-explanation tax**. Outcomes are
+Cost: ~2,140 fixed, cacheable tokens — and you **stop paying the re-explanation tax**. Outcomes are
 consistent across sessions.
 
 ## The honest boundary
@@ -100,7 +102,7 @@ Keel is not magic, and this page won't pretend otherwise (see the README's *what
 
 ## Bottom line
 
-You pay a **small, stable, cacheable** fixed cost — ~1,760 tokens globally, ~2,030 inside a project — for
+You pay a **small, stable, cacheable** fixed cost — ~1,870 tokens globally, ~2,140 inside a project — for
 two things: the agent stops re-deriving your project from scratch each session, and a mechanical layer
 guards your commits for free. The heavy material (`PRINCIPLES`, `FRAMEWORK`) stays behind an on-demand
 door, off the startup footprint. That is the whole point of tiering — keep the *always* tier tiny, and let
