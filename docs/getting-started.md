@@ -43,6 +43,9 @@ are filled in. That's the loop — run `/keel-setup` again in each new project y
 without it (Alpine, distroless) needs `bash` first — e.g. `apk add bash git` on Alpine. Without `bash` the
 checks fail *safe* (a commit/push is blocked, not let through), but nothing else runs.
 
+> **Don't have git yet (macOS)?** Run `xcode-select --install` — a small, quick prompt that installs git on
+> its own. You don't need Homebrew first just to get git; that's a longer route to the same tool.
+
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel
 ./install.sh
