@@ -12,7 +12,14 @@ session memory — `git log --oneline origin/<default> -5`, and merged-PR state 
 every status to match git: a merged PR → its item moves to *Recently closed* / the changelog, **never** left
 as "waiting on PR". **Sync installed artifacts:** if a landed merge changed files that were *installed*
 from this repo into your environment (e.g. lifecycle commands copied into your agent's command dir), re-run
-the install/sync step so the installed copies aren't left running the old version.
+the install/sync step so the installed copies aren't left running the old version. **Prune merged branches
+(graded, never a blanket delete):** merged local branches and their worktrees pile up at wrap (CORE.md: merge
+→ delete the branch). Run `tools/branch-cleanup.sh` (zero-dep, reuses the fetch above) — it grades each local
+branch by how safe deletion provably is: **AUTO** (merged, no worktree, older than `--days`, ephemeral — a
+redundant pointer, deletion is lossless), **ASK** (merged but recent/off-pattern — confirm), **FLAG** (merged
+but in a worktree — never auto-removed, may hold uncommitted/gitignored work); see the tool's `-h` for exact
+rules. Auto-delete AUTO with `--prune-safe`, act on ASK only after a yes, print FLAG (`git worktree remove`).
+Never the current branch/worktree or an unmerged branch.
 
 **1. Changelog** — in the project `CLAUDE.md` `## Changelog`: one line per milestone (`| YYYY-MM-DD | gist |`).
 Don't retell details (they live in git/PR); keep only the last few here, older ones in the on-demand archive.
