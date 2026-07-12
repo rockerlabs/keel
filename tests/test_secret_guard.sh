@@ -381,4 +381,26 @@ run "$isg" "$repo"
 check_status "vendor install with selftest verify → exit 0" 0 "$STATUS"
 check_contains "install runs the installed copy's selftest" "$OUT" "selftest: OK"
 
+# --- never clobber the user's own hook (SEC1): refuse by default, --force backs up ------------------
+frepo="$(new_repo)"
+mkdir -p "$frepo/.git/hooks"
+printf '#!/bin/sh\n# my own pre-commit\nexit 0\n' > "$frepo/.git/hooks/pre-commit"
+chmod +x "$frepo/.git/hooks/pre-commit"
+run "$isg" "$frepo"
+check_status "refuses to clobber a foreign pre-commit → exit 3" 3 "$STATUS"
+check_contains "refusal names the user's data" "$OUT" "refusing to overwrite your data"
+check_contains "foreign pre-commit preserved verbatim" "$(cat "$frepo/.git/hooks/pre-commit")" "my own pre-commit"
+check_nofile "guard scanner NOT installed on refusal" "$frepo/.git/hooks/secret-scan.sh"
+check_nofile "no backup written without --force" "$frepo/.git/hooks/pre-commit.pre-keel.bak"
+
+run "$isg" --force "$frepo"
+check_status "--force replaces the foreign hook → exit 0" 0 "$STATUS"
+check_file "--force backs up the user's hook" "$frepo/.git/hooks/pre-commit.pre-keel.bak"
+check_contains "backup keeps the user's content" "$(cat "$frepo/.git/hooks/pre-commit.pre-keel.bak")" "my own pre-commit"
+check_contains "Keel guard now installed (marker present)" "$(cat "$frepo/.git/hooks/pre-commit")" "Keel secret-guard"
+
+# re-vendor over OUR own hook is silent + idempotent — the marker recognizes it as ours, no false refusal
+run "$isg" "$frepo"
+check_status "re-vendor over Keel's own hook → exit 0 (no false refusal)" 0 "$STATUS"
+
 summary

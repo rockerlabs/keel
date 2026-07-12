@@ -20,6 +20,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   event/add/enable resolution in `test_keel_impact.sh`, an in-worktree block recording to the main log
   in `test_secret_guard.sh`.
 
+- **`install-secret-guard.sh <repo>` no longer silently overwrites your own git hook** (closes audit
+  finding SEC1's pre-commit-clobber half). A pre-existing `pre-commit`/`pre-push` that isn't Keel's own
+  (detected by the `Keel secret-guard` marker) is treated as higher-precedence user data: the install
+  now **refuses by default** with a message on how to proceed, leaving the file untouched. Pass
+  `--force` to back it up to `<hook>.pre-keel.bak` and replace. The same guard covers the machine-global
+  slot — a foreign `--global core.hooksPath` is not replaced without `--force` (matching what `install.sh`
+  already did before delegating). Re-vendoring Keel's own hook stays silent and idempotent. This makes
+  the "never clobber user data" rule `install.sh` already followed hold in the low-level tool too.
+  Regression tests: refuse/`--force`/backup/no-false-refusal in `test_secret_guard.sh`.
+
 ### Added
 - **Linked install — `install.sh --link` makes the checkout the installation** (closes backlog dir #17,
   stages 2–3; dissolves audit finding D1's confusing-leftover-clone half). Instead of copying, `--link`
