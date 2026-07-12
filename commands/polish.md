@@ -27,18 +27,30 @@ Steps, in order:
    `--no-test`, skip the run and say explicitly that tests were skipped by request (the human runs them before
    the PR).
 
-4. **Pick a review depth — matched to the diff.** Gate this on the steps above being clean: proceed only
-   if simplify left no open problems AND (tests are green OR were explicitly skipped). Otherwise report
-   what is left and stop — do NOT write the sentinel. Then size the step-1 diff cheaply (lines changed,
-   files touched, and whether it touches real logic vs docs/tests only) and open an `AskUserQuestion`
-   dialog offering a `/code-review` depth, with the recommended level pre-selected from that sizing:
-   - trivial / docs-only → **skip** (or `low`)
-   - ordinary change → **medium**
+4. **Pick a review depth — matched to the diff, mostly automatic.** Gate this on the steps above being
+   clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly skipped).
+   Otherwise report what is left and stop — do NOT write the sentinel.
+
+   Size the step-1 diff cheaply — lines changed, files touched, real logic vs docs/tests only, and whether
+   it touches cross-references/links. From that, form a **recommended level**:
+   - pure docs/wording, no cross-references → **skip**
+   - docs with cross-references, or trivial code → **low** (a cheap safety net beats skip)
+   - ordinary code → **medium**
    - logic-heavy / large → **high**
    - security- or invariant-sensitive / very large → **max** or **ultra**
 
-   Always include a **skip** option — the point of the dialog is to spend review tokens deliberately, not
-   by default. Recommend one level; let the human override.
+   When the bucket is unclear (near a size threshold, mixed docs+code, references present), bias the
+   recommendation **up** one notch — uncertainty favours more review.
+
+   Then decide **auto vs ask**:
+   - **`high` or above → always open an `AskUserQuestion` dialog, never auto-run.** High+ is expensive
+     (`ultra` is billed) and may be unwanted or out of budget — spend it only on an explicit yes. (A fixed
+     cost rule, not a live budget check: there is no token-budget signal.)
+   - **`skip`/`low`/`medium` on a diff that sits clearly inside one bucket → run that level automatically**,
+     no dialog; state which level and why. Auto-**skip** only for a clearly pure-docs, reference-free
+     change — never auto-skip a diff that touches code or cross-references.
+   - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
+     the recommended level pre-selected and a **skip** option always present; let the human override.
 
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
    `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings. For
