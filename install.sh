@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install — one-command bootstrap for Keel into your harness home.
 #
-# Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md, LEARNINGS.md)
-# are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, the commands) is offered for update on a
+# Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md, LEARNINGS.md,
+# IDEAS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, the commands) is offered for update on a
 # re-run when the installed copy has drifted — interactively (y/N, default no) when run from a terminal,
 # else a WARN with the exact cp to run. On a command-name collision with your OWN command (a pre-existing
 # /go), Keel's version goes alongside as keel-<name> instead of overwrite-or-nothing — offered on a
@@ -32,7 +32,7 @@ usage() {
 install — one-command bootstrap for Keel into your harness home.
 
 Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md,
-LEARNINGS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, commands) is
+LEARNINGS.md, IDEAS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, commands) is
 offered for update on a re-run when it has drifted — interactively (y/N, default no) from
 a terminal, else a WARN with the cp to run. If a command name is already taken by your OWN
 command (say, /go), Keel's version goes alongside as keel-<name> instead — offered on a
@@ -156,7 +156,7 @@ core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 # tools/doctor.sh --install carries a mirrored copy (cross-referenced there) — keep them in sync.
 has_core_import() { grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$1" 2>/dev/null; }
 
-# copy_gap — for USER-owned files (CLAUDE.md, INSTANCE.md, LEARNINGS.md): copy only if the destination is
+# copy_gap — for USER-owned files (CLAUDE.md, INSTANCE.md, LEARNINGS.md, IDEAS.md): copy only if the destination is
 # absent, never clobber. The user edits these (placeholders, private data), so a re-run must preserve them.
 copy_gap() {
   local src="$1" dest="$2"
@@ -367,6 +367,7 @@ fi
 # public checkout: INSTANCE.md carries personal data).
 copy_gap "$root/templates/INSTANCE.md"  "$HOME_DIR/INSTANCE.md"
 copy_gap "$root/templates/LEARNINGS.md" "$HOME_DIR/LEARNINGS.md"
+copy_gap "$root/templates/IDEAS.md"     "$HOME_DIR/IDEAS.md"
 
 # Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
@@ -423,9 +424,9 @@ fi
 echo "Verify:"
 missing=0
 if [ "$LINK" = 1 ]; then
-  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md keel/CORE.md keel/FRAMEWORK.md keel/PRINCIPLES.md)
+  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md IDEAS.md keel/CORE.md keel/FRAMEWORK.md keel/PRINCIPLES.md)
 else
-  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md FRAMEWORK.md PRINCIPLES.md)
+  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
 for f in "${vfiles[@]}"; do
   if [ -f "$HOME_DIR/$f" ]; then

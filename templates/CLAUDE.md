@@ -17,6 +17,8 @@
   decisions.
 - **`LEARNINGS.md`** — staging tier for workflow insights not yet worth a committed rule. Append on a
   reusable insight; promote on recurrence; prune when stale.
+- **`IDEAS.md`** — staging tier for raw, not-yet-actionable ideas (Ideas != Backlog: no next step
+  required). Append freely; promote to `BACKLOG.md`/`LEARNINGS.md` once it earns one, or drop it.
 - **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
 
 ## Communication preferences
@@ -103,9 +105,10 @@ Don't assert a fact you haven't checked; flag a guess as a guess — **a blank b
 ## Persist everything — nothing stays chat-only
 
 Any idea, finding, decision, or loose-end surfaced in a session must be persisted — a backlog ticket, a
-committed rule, or the `LEARNINGS.md` staging tier — or dropped with an explicit recorded reason. Never
-leave it chat-only: the next session starts cold and won't recall it. Each session wrap ends with a
-**red-flag sweep** that catches anything left unpersisted. (Why → `PRINCIPLES.md` P0.)
+committed rule, the `LEARNINGS.md` staging tier, or — for a raw idea with no clear next step yet — the
+`IDEAS.md` staging tier — or dropped with an explicit recorded reason. Never leave it chat-only: the next
+session starts cold and won't recall it. Each session wrap ends with a **red-flag sweep** that catches
+anything left unpersisted. (Why → `PRINCIPLES.md` P0.)
 
 **Propose in real time — the agent spots, the human judges.** When something worth keeping surfaces
 mid-session, propose the entry *then and there*, by a bar: **reusable + non-obvious + costly to

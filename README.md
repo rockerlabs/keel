@@ -75,6 +75,22 @@ just review what it drafts. (Still don't see `/keel-setup`? You're in an old ses
 That's the whole loop. Longer walk-through, other AI tools, and the honest "what runs by itself vs what's up
 to you" → [docs/getting-started.md](docs/getting-started.md).
 
+### Which install flow fits you?
+
+These aren't alternatives to weigh — they're doors sized to different users; pick the row that matches
+you. Two facts decide everything: the *prose rails* are just text files (git isn't needed to place
+them), but **secret-guard is a git hook** — no git, no guard. And **linked** (symlinks + one import
+line; `git pull` updates everything) differs from **copy** (a snapshot that never updates on its own).
+
+| # | Flow | What you do | Needs git? | Auto-updates? | secret-guard? | Best for |
+|---|------|--------------|:---:|:---:|:---:|----------|
+| 1 | Ask your agent | one sentence to Claude Code: "install Keel from github.com/rockerlabs/keel" | agent decides | yes, if git | yes, if git | anyone already on Claude Code — the agent handles every branch |
+| 2 | One line, terminal | `curl … \| sh` (add `--link` to wire by reference) | optional | yes, with `--link` | yes, if git | fastest path — no manual clone |
+| 3 | Manual, step by step | `git clone … && cd keel && ./install.sh --link` | yes | yes | yes | inspect-first, offline, or full control |
+| 4 | Download & open (`.dmg`) | — | no | no | no | deferred — no real demand yet |
+
+Full walk-through of each row → [docs/getting-started.md](docs/getting-started.md).
+
 ## Just want the git hook?
 
 The two safety tools work standalone — plain Bash + git, no Keel core, no config files, and they never
