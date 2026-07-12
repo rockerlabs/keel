@@ -238,6 +238,54 @@ git -C "$erepo" check-ignore -q .keel/impact-events.log && pass "event log is gi
 git -C "$erepo" check-ignore -q .keel/ledger.md && fail "ledger stays trackable (not ignored)" "ledger is ignored" || pass "ledger stays trackable (not ignored)"
 git -C "$erepo" check-ignore -q .keel/evidence.md && fail "evidence stays trackable (not ignored)" "evidence is ignored" || pass "evidence stays trackable (not ignored)"
 
+# --- worktree fallback: the marker is untracked, so it lives ONLY at the main checkout's top ------
+# a session in a linked worktree must still resolve the MAIN .keel/ (log, ledger, evidence) — before the
+# fallback, events from worktree sessions silently vanished (felt on keel's own dogfooding, dir #10)
+git -C "$erepo" add -A -- ':!.keel' >/dev/null 2>&1
+git -C "$erepo" commit -qm "seed" >/dev/null 2>&1
+ewt="$SANDBOX/erepo-wt"
+git -C "$erepo" worktree add -q -b wt-session "$ewt" >/dev/null 2>&1
+check_dir "worktree fixture exists" "$ewt"
+wt_log_before="$(wc -l < "$erepo/.keel/impact-events.log" | tr -d ' ')"
+run_in "$ewt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" event guard secret-guard blocked
+check_status "event from a worktree succeeds" 0 "$STATUS"
+check_contains "worktree event appends to the MAIN checkout's log" "$(wc -l < "$erepo/.keel/impact-events.log" | tr -d ' ')" "$((wt_log_before + 1))"
+[ ! -d "$ewt/.keel" ] && pass "no stray worktree-local .keel/" || fail "no stray worktree-local .keel/" "worktree grew its own marker"
+# the add also auto-ingests the pending guard event above FROM the main log — proof the worktree session
+# reads and writes the main .keel/ end-to-end (guard=1 ingested + fire=1 cited → 100, guard cell wins)
+run_in "$ewt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --fire "wt cite" --gap none
+check_contains "add from a worktree ingests the MAIN log and writes the MAIN ledger" "$(cat "$erepo/.keel/ledger.md")" "| 100 | low | 1 | 0 | 1 | 0 | 0 | 0 | 0 |"
+check_contains "add from a worktree archives to the MAIN evidence trail" "$(cat "$erepo/.keel/evidence.md")" "- fire: wt cite"
+
+# enable run FROM a worktree targets the main checkout (an in-worktree marker would be ephemeral)
+wrepo="$(new_repo)"
+run_in "$wrepo" git commit -qm seed --allow-empty
+wwt="$SANDBOX/wrepo-wt"
+git -C "$wrepo" worktree add -q -b wt-enable "$wwt" >/dev/null 2>&1
+run_in "$wwt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+check_status "enable from a worktree succeeds" 0 "$STATUS"
+check_dir "enable from a worktree creates the marker at the MAIN top" "$wrepo/.keel"
+[ ! -d "$wwt/.keel" ] && pass "enable leaves no worktree-local marker" || fail "enable leaves no worktree-local marker" "marker created in the worktree"
+check_contains "enable from a worktree gitignores at the MAIN top" "$(cat "$wrepo/.gitignore" 2>/dev/null)" "/.keel/impact-events.log"
+
+# bare-main topology: the first worktree-list entry has no working tree — enable must NOT write .keel/
+# into the bare repo dir (nothing could ever commit it); it falls back to the worktree's own top
+brepo="$SANDBOX/bare-main.git"
+git clone -q --bare "$wrepo" "$brepo" 2>/dev/null    # reuse the seeded repo above for a HEAD to check out
+bwt="$SANDBOX/bare-wt"
+git -C "$brepo" worktree add -q -b wt-bare "$bwt" >/dev/null 2>&1
+run_in "$bwt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+check_status "enable under a bare main succeeds" 0 "$STATUS"
+[ ! -d "$brepo/.keel" ] && pass "bare main gets no .keel/" || fail "bare main gets no .keel/" ".keel created inside the bare repo"
+check_dir "bare-main enable falls back to the worktree's own top" "$bwt/.keel"
+
+# not-a-repo-yet: enable must fall back to the dir as-is (regression: the worktree-list probe exits 128
+# outside a repo, and under set -euo pipefail an unguarded pipeline killed the whole script)
+ngdir="$(mktemp -d "$SANDBOX/nogit.XXXXXX")"
+run bash "$TOOL" enable "$ngdir"
+check_status "enable on a not-yet-git dir still succeeds" 0 "$STATUS"
+check_dir "not-yet-git enable creates the marker in the dir as-is" "$ngdir/.keel"
+
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1
 run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard "e" --gap none   # 100
