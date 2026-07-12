@@ -8,6 +8,28 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **`bootstrap.sh` gets a permanent-clone linked mode, a no-git tarball fallback, and an
+  agent-install prompt** (closes backlog dir #21, flows 1/2b/2c). Previously `--link` refused
+  outright — the one-liner's clone lived in a reaped temp dir, so every symlink would dangle on exit.
+  Now `bootstrap.sh --link` clones into a **permanent** dir (`KEEL_DIR`, default `~/keel`), never reaps
+  it, and re-running the same line over that checkout updates it in place instead of re-cloning (a
+  `git fetch` + `checkout` when `KEEL_REF` is set, otherwise a fast-forward `git pull`) — collapsing
+  clone + `cd` + `--link` into one pasted line. A non-Keel directory already occupying `KEEL_DIR` is
+  refused, never clobbered. **No git?** The copy-mode default now falls back to downloading a source
+  tarball (`${REPO%.git}/archive/${KEEL_REF:-main}.tar.gz`, or `KEEL_TARBALL` for a URL or local file)
+  via curl/wget, installs the **prose rails + commands only** (`--no-hooks` forced — secret-guard is a
+  git hook, so it's skipped and announced up front rather than failing on a bare "git not found").
+  Version selection (`KEEL_REF=<tag>`, no flag = latest `main`) works identically on every path. The
+  README also gains a one-sentence **"let your assistant install it"** prompt — paste it into Claude
+  Code and it clones, picks linked-vs-copy for the machine, and points you at `/keel-setup`. 18 new
+  checks across `test_install.sh` (`KEEL_TARBALL` path, a PATH-farm that hides git) and
+  `test_install_link.sh` (permanent-clone, in-place re-run, refuse-foreign-dir); a review pass caught
+  one bug before merge — a re-run ignored `KEEL_REF` and silently kept the old version, fixed
+  (fetch + checkout) with a regression test. Live network download isn't CI-tested (CI runs offline) —
+  covered by inspection and the local-`KEEL_TARBALL` path instead. Flow 4 (a git-free `.dmg`/download
+  package) stays deferred until real no-terminal demand appears.
+
 ### Fixed
 - **Impact tracking now works from linked worktrees** (felt on keel's own dogfooding, backlog dir #10:
   the `.keel/` marker is an untracked dir, so a linked worktree's top never carries it — guard events
