@@ -259,6 +259,17 @@ if [ "$LINK" = 1 ]; then
   # deleting the dir + the one import line. User-owned files stay real files, never symlinks into
   # a public checkout (INSTANCE.md carries personal data).
   link_dir="$HOME_DIR/keel"
+  # Self-link guard: if the consumption dir IS this checkout (e.g. --home "$HOME" while the checkout
+  # sits at $HOME/keel, bootstrap's default), sync_product would see src -ef dest and "upgrade" the
+  # checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves — corrupting every
+  # file the links resolve to. -ef (not a string compare): different spellings of the same dir still
+  # collide. Refuse rather than no-op — the invocation is nonsensical (home is ~/.claude, not the checkout).
+  if [ "$link_dir" -ef "$root" ] 2>/dev/null; then
+    echo "install: --link consumption dir ($link_dir) is the Keel checkout itself — refusing (it would" >&2
+    echo "         replace the checkout's own core files with self-referential symlinks). Point --home at" >&2
+    echo "         your Claude home (e.g. ~/.claude), not the checkout." >&2
+    exit 2
+  fi
   import_line="@$link_dir/CORE.md"
   # Prefer the ~-form when the home sits under $HOME — shorter, and survives a username-preserving
   # home move. (${HOME:-} guard: --home/KEEL_HOME callers may legitimately run without $HOME.)

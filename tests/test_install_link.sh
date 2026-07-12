@@ -195,4 +195,21 @@ check_status "bootstrap --link over a foreign dir → exit 2" 2 "$STATUS"
 check_contains "refusal names the not-a-checkout reason" "$OUT" "not a Keel checkout"
 check_file "the foreign dir's own file is left untouched" "$occupied/my-file"
 
+# --- self-link guard: a --home whose keel/ IS the checkout is refused, nothing corrupted ------------
+# Reproduces the near-zero but silently-destructive case (--home "$HOME" while the checkout sits at
+# $HOME/keel): link_dir -ef root, so sync_product would "upgrade" the checkout's own core files into
+# symlinks pointing at themselves. Run a DISPOSABLE copy of the checkout as $root (install.sh + the
+# three core files) so a guard regression can only corrupt the copy, never the real REPO_ROOT the
+# suite runs from; symlinking its keel/ back at that copy recreates link_dir -ef root portably.
+slroot="$SANDBOX/selflink-checkout"; mkdir -p "$slroot"
+cp "$REPO_ROOT/install.sh" "$slroot/install.sh"
+for f in CORE.md FRAMEWORK.md PRINCIPLES.md; do cp "$REPO_ROOT/$f" "$slroot/$f"; done
+slhome="$SANDBOX/selflink-home"; mkdir -p "$slhome"
+ln -s "$slroot" "$slhome/keel"                       # link_dir ($slhome/keel) -ef root ($slroot)
+run bash "$slroot/install.sh" --link --home "$slhome" --no-hooks
+check_status "--link where keel/ IS the checkout → refused (exit 2)" 2 "$STATUS"
+check_contains "refusal names the self-link reason" "$OUT" "is the Keel checkout itself"
+check_nolink "checkout's own CORE.md untouched (not self-symlinked)" "$slroot/CORE.md"
+check_file "checkout CORE.md is still a real file" "$slroot/CORE.md"
+
 summary
