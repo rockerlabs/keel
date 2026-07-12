@@ -31,6 +31,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   Regression tests: refuse/`--force`/backup/no-false-refusal in `test_secret_guard.sh`.
 
 ### Added
+- **`tools/self/doctor.sh` — a structural self-audit of the keel repo itself**, distinct from
+  `tools/doctor.sh` (which audits a *consumer's* project or install). Native checks: `install.sh`'s
+  command ship-skip list agrees with `doctor.sh --install`'s mirror of it, every
+  `tools/`/`commands/`/`templates/` path referenced in tracked docs and scripts resolves on disk,
+  every `tools/*.sh` script is referenced somewhere and covered by a test, `CHANGELOG.md` isn't stale
+  relative to the last `commands/`/`tools/`/`install.sh` change. It deliberately *orchestrates* rather
+  than duplicates — folding `tests/test_doc_figures.sh`, `tests/test_core_wrapper_sync.sh`, and a
+  shellcheck sweep into one report instead of re-implementing their logic. Shellcheck's own
+  file-selection logic moved out of `ci.yml` into a shared `tools/self/shellcheck-targets.sh`, used by
+  both. Wired into CI as a 4th job (`self-check`) and into `/polish` (a new step 7: a GAP blocks the PR
+  gate the same as a red test, skipped silently for any project that doesn't ship the script). Caught
+  three real bugs on itself during its own `/simplify` + `/code-review high` pass — including a live
+  one already on this branch: a plain bash glob doesn't cross `/`, so the tracked
+  `tools/secret-guard/secret-scan.sh` was invisible to its own tool-wiring check. 34 regression tests
+  across `tests/test_self_doctor.sh` + `tests/test_shellcheck_targets.sh`.
+
 - **Linked install — `install.sh --link` makes the checkout the installation** (closes backlog dir #17,
   stages 2–3; dissolves audit finding D1's confusing-leftover-clone half). Instead of copying, `--link`
   wires Keel by reference: a `<home>/keel/` consumption dir of symlinks into the checkout
