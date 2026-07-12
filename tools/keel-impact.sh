@@ -44,8 +44,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # the current top has no .keel/, try the main checkout's top (first `git worktree list` entry; equals the
 # current top in a plain repo). The awk reads its whole input on purpose: no early exit, no SIGPIPE.
 _keel_main_top() {  # the main checkout's top; empty if not a repo or the main entry is BARE (no working tree)
+  # `|| true`: outside a repo git exits 128 and pipefail would trip set -e (porcelain emits `bare` only
+  # for the main entry, which is always listed first)
   git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
-    awk '/^$/{blk=1} !blk && /^bare$/{bare=1} NR==1{sub(/^worktree /,""); path=$0} END{if (!bare) print path}'
+    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
 }
 _keel_top() {  # memoized: invariant within a run, and the resolvers below all call it at startup
   if [ -z "${_KEEL_TOP_CACHE+x}" ]; then

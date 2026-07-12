@@ -279,6 +279,13 @@ check_status "enable under a bare main succeeds" 0 "$STATUS"
 [ ! -d "$brepo/.keel" ] && pass "bare main gets no .keel/" || fail "bare main gets no .keel/" ".keel created inside the bare repo"
 check_dir "bare-main enable falls back to the worktree's own top" "$bwt/.keel"
 
+# not-a-repo-yet: enable must fall back to the dir as-is (regression: the worktree-list probe exits 128
+# outside a repo, and under set -euo pipefail an unguarded pipeline killed the whole script)
+ngdir="$(mktemp -d "$SANDBOX/nogit.XXXXXX")"
+run bash "$TOOL" enable "$ngdir"
+check_status "enable on a not-yet-git dir still succeeds" 0 "$STATUS"
+check_dir "not-yet-git enable creates the marker in the dir as-is" "$ngdir/.keel"
+
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1
 run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard "e" --gap none   # 100

@@ -43,7 +43,7 @@ deny() {
     _ktop="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
       _kmain="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
-        awk '/^$/{blk=1} !blk && /^bare$/{bare=1} NR==1{sub(/^worktree /,""); path=$0} END{if (!bare) print path}')"
+        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
       if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
     fi
     if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
