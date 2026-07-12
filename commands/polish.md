@@ -65,12 +65,18 @@ Steps, in order:
    re-invokes. **This is one bounded re-run, not a loop back to simplify or the review dialog.** If the
    review changed nothing (or tests were skipped), skip this step.
 
-7. **Unlock the gate.** Now that the diff is final (reviewed and re-tested), write the current HEAD SHA:
+7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it —
+   it's the repo's own structural self-audit (dead references, ship-skip-list sync, tool wiring, doc
+   staleness — distinct from the test suite). A GAP (non-zero exit) is treated the same as a red test: do
+   NOT write the sentinel, report what it flagged, and stop. Silently skip this step for any project that
+   doesn't have the script.
+
+8. **Unlock the gate.** Now that the diff is final (reviewed and re-tested), write the current HEAD SHA:
    `git rev-parse HEAD > /tmp/pre-pr-gate-$(basename "$PWD")`. That releases the `gh pr create` block. The
    SHA is recorded *after* the review so it matches exactly what the PR will contain.
 
-8. **Open the PR.** After the gate passes, run `gh pr create` — compose the title and body from the
+9. **Open the PR.** After the gate passes, run `gh pr create` — compose the title and body from the
    implementation context (what changed, why, a test plan). Return the PR URL.
 
-9. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run), which
-   review depth ran (or that it was skipped), and the PR URL.
+10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
+    self-check result), which review depth ran (or that it was skipped), and the PR URL.

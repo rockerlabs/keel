@@ -44,15 +44,23 @@ jobs:
       - name: ShellCheck
         run: |
           shellcheck --version
-          # Lint every tracked shell script — *.sh plus any file with a shell shebang (the
-          # extensionless git hooks, and any new script) — so a new shell script can't escape the gate.
-          files="$(git ls-files | while IFS= read -r f; do
-            case "$f" in
-              *.sh) printf '%s\n' "$f" ;;
-              *) head -1 -- "$f" 2>/dev/null | grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)' && printf '%s\n' "$f" ;;
-            esac
-          done)"
+          # One canonical file-selection source (tools/self/shellcheck-targets.sh) shared with
+          # tools/self/doctor.sh, so this list can't drift into two hand-maintained copies.
+          files="$(tools/self/shellcheck-targets.sh)"
           # shellcheck disable=SC2086  # intentional word-split of the newline list (no spaces in tracked paths)
           # --severity=warning: fail on warning/error, not on info/style (e.g. SC2015), which vary by
           # shellcheck version and would make the gate flaky across runners.
           shellcheck -x --severity=warning $files
+
+  self-check:
+    name: keel self-check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # tools/self/doctor.sh audits keel's OWN repo health (ship-skip-list sync, dead internal
+      # references, tool wiring/test-coverage, CHANGELOG staleness) — distinct from the `tests` and
+      # `shellcheck` jobs above, though it also orchestrates (re-runs) those same checks into one
+      # report, so a regression in the self-audit tool itself is caught here even if the underlying
+      # checks it wraps still pass individually.
+      - name: keel self-check
+        run: bash tools/self/doctor.sh
