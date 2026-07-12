@@ -53,10 +53,21 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 
 > **Express (core only):** `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh`
 > installs the always-on core + the secret-guard check + the commands into `~/.claude` in one command (pass
-> install flags after `--`, e.g. `… | sh -s -- --no-hooks`). It leaves **no local copy of the repo**,
-> though — the `tools/` (`doctor`, `public-audit`, `init-project`) and `examples/tour.sh` need the clone
-> above. That includes the `/keel-setup` and `/init-project` commands: they call `tools/init-project.sh`,
-> so they need the full clone too — bootstrap installs the commands, not the tool they drive.
+> install flags after `--`, e.g. `… | sh -s -- --no-hooks`). In copy mode it leaves **no local copy of the
+> repo**, though — the `tools/` (`doctor`, `public-audit`, `init-project`) and `examples/tour.sh` need the
+> clone above. That includes the `/keel-setup` and `/init-project` commands: they call
+> `tools/init-project.sh`, so they need the full clone too — bootstrap installs the commands, not the tool
+> they drive. (Passing `--link` is the exception: it *keeps* a clone — see [Linked install](#linked-install--recommended-on-claude-code).)
+
+> **No git?** The same one-liner still works — it downloads a source tarball instead of cloning and
+> installs the **prose rails + commands only** (secret-guard is a git hook, so it's skipped and `--no-hooks`
+> is forced). Install git first for the full setup incl. the guard (macOS tip above). Already have a
+> `.tar.gz`? Point `KEEL_TARBALL` at it (URL or local file) to install offline.
+
+> **Latest vs a pinned version:** no flag installs the latest `main`; pin a release with `KEEL_REF=<tag>`
+> — it works on every path: `… | KEEL_REF=v0.4.0 sh`, `… | KEEL_REF=v0.4.0 sh -s -- --link`, or
+> `git clone --branch v0.4.0 …`. (Linked: re-run with a new `KEEL_REF` to move a pinned checkout to
+> another tag; a bare re-run just fast-forwards whatever it's tracking.)
 
 > **What you'll be asked during install:** the secret-guard step changes one global git setting
 > (`core.hooksPath`) so the check runs in every repo on the machine. If an AI tool is driving the
@@ -90,6 +101,12 @@ or printing the `cp` to run otherwise. It:
 `./install.sh --link` wires Keel **by reference** instead of copying: a `~/.claude/keel/` folder of
 symlinks into the clone, ONE `@…/keel/CORE.md` import line in your global `CLAUDE.md` (Claude Code
 expands `@path` lines at session start), and the commands as symlinks. What that buys — and costs:
+
+**One line, no manual clone:** `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s -- --link`
+does the clone for you — into `~/keel` (set `KEEL_DIR` to change) — then links it. Re-run the same line
+anytime to update the checkout in place (`git pull`) and re-wire; it refuses if `KEEL_DIR` already holds
+something that isn't a Keel checkout. (Plain `curl … | sh` without `--link` stays copy mode and keeps no
+clone — the linked path needs a checkout that survives, so this variant keeps one.)
 
 - **Update = `git pull` in the clone.** The next session runs the fresh rails, commands, and docs.
   Then re-run `./install.sh --link` once: a pull refreshes *content*, not *composition* — a file a new

@@ -118,4 +118,36 @@ check_status "bootstrap → exit 0" 0 "$STATUS"
 check_file "bootstrap installs the core" "$bhome/CLAUDE.md"
 check_file "bootstrap installs the slash commands" "$bhome/commands/wrap.md"
 
+# --- no-git copy install (2c): fetch a source tarball instead of cloning --------------------------
+# A tarball of the committed tree; `git archive --prefix=keel/` gives the single top dir bootstrap unwraps.
+tb="$SANDBOX/keel-src.tar.gz"
+git -C "$REPO_ROOT" archive --format=tar.gz --prefix=keel/ HEAD -o "$tb"
+
+# T1: explicit KEEL_TARBALL (git present) → tarball path, copy install works end to end
+t1home="$SANDBOX/tar-home"
+run env KEEL_TARBALL="$tb" sh "$boot" --home "$t1home" --no-hooks
+check_status "KEEL_TARBALL install → exit 0" 0 "$STATUS"
+check_file "tarball install lands the core" "$t1home/CLAUDE.md"
+check_file "tarball install lands the commands" "$t1home/commands/wrap.md"
+
+# T2: git hidden via a PATH farm (symlink every tool EXCEPT git) → no-git fallback fires:
+# prose-only announced, --no-hooks auto-forced, install still lands from the tarball.
+farm="$SANDBOX/nogit-bin"; mkdir -p "$farm"
+IFS=:; for d in $PATH; do
+  [ -d "$d" ] || continue
+  for f in "$d"/*; do
+    [ -e "$f" ] || continue
+    n=${f##*/}
+    [ "$n" = git ] && continue
+    [ -e "$farm/$n" ] || ln -s "$f" "$farm/$n"
+  done
+done
+unset IFS
+t2home="$SANDBOX/nogit-home"
+run env PATH="$farm" HOME="$HOME" KEEL_TARBALL="$tb" sh "$boot" --home "$t2home"
+check_status "bootstrap without git → exit 0" 0 "$STATUS"
+check_contains "no-git run announces prose-only" "$OUT" "prose rails"
+check_file "no-git install still lands the core" "$t2home/CLAUDE.md"
+check_file "no-git install still lands the commands" "$t2home/commands/wrap.md"
+
 summary
