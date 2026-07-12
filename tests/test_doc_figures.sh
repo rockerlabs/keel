@@ -60,9 +60,14 @@ assert_figure() {
 
 # The "commands/*.md ~LO-HI each" row quotes a range, not one figure: assert every command file's
 # size falls inside the quoted [LO, HI] band, so this row can't drift unguarded either.
+# A trailing "+" on HI ("~LO-HI+ each") makes the upper bound an open floor — the same growth-tolerant
+# semantics assert_figure gives the monotonic CHANGELOG row. Commands only grow (procedures accrete
+# steps), so a command nudging past HI shouldn't force a doc bump on every PR; understating your own
+# ceiling behind an explicit "+" is never an overclaim of cheapness. The LO bound stays enforced so the
+# quoted floor can't drift above the smallest command.
 assert_commands_range() {
   local label="$1"
-  local row="" lo="" hi="" f="" tok="" bad=""   # init all (set -u safe on bash 3.2)
+  local row="" lo="" hi="" f="" tok="" bad="" open_upper=""   # init all (set -u safe on bash 3.2)
   row="$(grep -E '^\|.*`commands/\*' "$doc" | head -1)"
   if [ -z "$row" ]; then fail "$label" "no commands/*.md row in loading-and-cost.md"; return; fi
   # the figure cell is "~LO-HI each" (one tilde, an en-dash); read the last table cell, take its two
@@ -73,12 +78,16 @@ assert_commands_range() {
   if [ -z "$lo" ] || [ -z "$hi" ] || [ "$lo" = "$hi" ]; then
     fail "$label" "couldn't parse a LO-HI range from: $row"; return
   fi
+  # HI carries a trailing "+" → open ceiling: enforce only the LO floor per file.
+  if printf '%s' "$cell" | grep -qE '[0-9][0-9,]*\+'; then open_upper=1; fi
   for f in "$REPO_ROOT"/commands/*.md; do
     [ -f "$f" ] || continue
     tok="$(tok_of "$f")"
-    if [ "$tok" -lt "$lo" ] || [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
+    if [ "$tok" -lt "$lo" ]; then bad="$bad $(basename "$f")=$tok"; continue; fi
+    if [ -z "$open_upper" ] && [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
   done
-  if [ -z "$bad" ]; then pass "$label (all within ~$lo-$hi)"; else fail "$label" "outside ~$lo-$hi:$bad"; fi
+  local rangedesc="~$lo-$hi"; [ -n "$open_upper" ] && rangedesc="~$lo-$hi+ (open upper)"
+  if [ -z "$bad" ]; then pass "$label (all within $rangedesc)"; else fail "$label" "outside $rangedesc:$bad"; fi
 }
 
 # README.md's mermaid "How it loads" diagram quotes its own rounded ~N.NK figures for the same files —

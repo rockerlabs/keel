@@ -1,6 +1,12 @@
 ---
 description: Wrap up the session — reconcile, then update changelog, backlog, and memory per the knowledge-base convention
 ---
+> **Before running this base — is a composing `/wrap` supposed to run instead?** If you reached here because
+> the user asked to *wrap / seal the session*, and your setup layers its own `/wrap` (extra persist / backup
+> steps) **on top of** this base, invoke that composition instead — running this base alone silently skips the
+> wrapper's steps. If a composing wrapper explicitly told you to read and execute this base, proceed: that is
+> the correct path.
+
 Wrap up the session per "Project context-file structure" in `FRAMEWORK.md`. If there were no significant
 changes — say so and write nothing. All knowledge-base documents are written in English.
 

@@ -9,6 +9,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`commands/wrap.md` opens with a composed-component banner** (backlog dir #27). If you layer your own
+  `/wrap` (extra persist/backup steps) on top of Keel's base, an agent that reads this base to "wrap the
+  session" can run it standalone and silently skip your wrapper's steps — a real footgun hit while
+  dogfooding. A banner at the top of the base now redirects to the composing `/wrap` when one exists, with
+  an explicit carve-out for the correct case (a wrapper that told the agent to read+execute the base).
+  Benefits any adopter who composes over the base, not just Keel's own setup.
 - **`tools/branch-cleanup.sh` — a confidence classifier for post-merge branch/worktree cleanup, wired
   into `/wrap` step 0** (backlog dir #25). CORE.md's git rails promise "merge → delete the branch", but
   nothing closed the loop: merged local branches and their worktrees piled up (this repo hit 12 live
@@ -64,6 +70,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   green.
 
 ### Fixed
+- **The `commands/*.md` token band no longer forces a doc bump every time a command grows** (closes the
+  recurring papercut, backlog dir #3b — felt four times). `docs/loading-and-cost.md` quoted a hard
+  `[LO, HI]` band and `test_doc_figures.sh` asserted every command file fell inside it, so growing any
+  command past `HI` tripped CI and needed a manual figure bump (or a trim to fit). The HI now carries a
+  trailing `+` (`~250–1,450+ each`) making the upper bound an **open floor** — the same growth-tolerant
+  semantics the monotonic CHANGELOG row already uses (dir #3). Understating your own ceiling behind an
+  explicit `+` is never an overclaim of cheapness; the LO floor stays enforced so the quoted minimum
+  can't drift above the smallest command. This unblocked adding the dir #27 banner to `wrap.md` (which
+  pushed it past the old ceiling) in the same PR.
 - **`install.sh --link` refuses to link the checkout into itself** (closes backlog dir #23). If the
   consumption dir resolves to the checkout itself — e.g. `--link --home "$HOME"` while the checkout
   sits at `$HOME/keel` (bootstrap's default `KEEL_DIR`) — the old code let `sync_product` see source
