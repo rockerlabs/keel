@@ -8,6 +8,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **Impact tracking now works from linked worktrees** (felt on keel's own dogfooding, backlog dir #10:
+  the `.keel/` marker is an untracked dir, so a linked worktree's top never carries it — guard events
+  from worktree sessions silently vanished and self-scores undercounted). All four resolution sites —
+  the guardrail snippets in `secret-scan.sh` / `pre-pr-gate.sh` / `public-audit.sh` and
+  `keel-impact.sh`'s `_keel_top` — now fall back to the MAIN checkout's top (first `git worktree list`
+  entry; equals the current top in a plain repo, and the awk reads its whole input, so no
+  SIGPIPE-under-pipefail regression). `keel-impact.sh enable` run from a worktree likewise targets the
+  main checkout instead of creating an ephemeral in-worktree marker. Regression tests: worktree
+  event/add/enable resolution in `test_keel_impact.sh`, an in-worktree block recording to the main log
+  in `test_secret_guard.sh`.
+
 ### Added
 - **Linked install — `install.sh --link` makes the checkout the installation** (closes backlog dir #17,
   stages 2–3; dissolves audit finding D1's confusing-leftover-clone half). Instead of copying, `--link`

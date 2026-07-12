@@ -40,7 +40,18 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # use), so the loop is out-of-the-box per project with no env. Resolution: an explicit env override wins;
 # else, if the repo has a .keel/ marker, use it; else fall back (the ledger to Keel's own dogfooding copy,
 # the log to a CWD-relative path). $KEEL_IMPACT_LEDGER / $KEEL_IMPACT_LOG override either.
-_keel_top() { git rev-parse --show-toplevel 2>/dev/null || true; }
+# Worktree fallback: the marker is an UNTRACKED dir, so a linked worktree's top never carries it — when
+# the current top has no .keel/, try the main checkout's top (first `git worktree list` entry; equals the
+# current top in a plain repo). The awk reads its whole input on purpose: no early exit, no SIGPIPE.
+_keel_top() {
+  local top main
+  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
+    main="$(git worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
+    if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
+  fi
+  printf '%s' "$top"
+}
 _resolve_ledger() {
   if [ -n "${KEEL_IMPACT_LEDGER:-}" ]; then printf '%s' "$KEEL_IMPACT_LEDGER"; return; fi
   local top; top="$(_keel_top)"
@@ -203,8 +214,15 @@ cmd_event() {
 # event log is ignored — .keel/ledger.md (the durable score history) and .keel/evidence.md (the per-event
 # audit trail) stay trackable, so `git add` them to keep a shareable, cross-clone record.
 cmd_enable() {
-  local dir="${1:-.}" top
+  local dir="${1:-.}" top main
   top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ]; then
+    # always target the MAIN checkout's top: a marker created in a linked worktree would be ephemeral and
+    # invisible to every other worktree (untracked dirs aren't shared); the .gitignore line IS tracked, so
+    # it reaches the worktrees from the main checkout anyway
+    main="$(git -C "$dir" worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
+    if [ -n "$main" ]; then top="$main"; fi
+  fi
   [ -n "$top" ] || top="$dir"                 # not a git repo yet: fall back to the dir as-is
   mkdir -p "$top/.keel"
   local gi="$top/.gitignore"

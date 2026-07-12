@@ -386,11 +386,17 @@ fi
 # Impact instrumentation (metadata only, opt-in per repo): a GAP is a real publication blocker caught —
 # record the guardrail fire so keel-impact can auto-ingest it (deterministic, zero-token). Only on GAP
 # (exit 1), never on a clean run or advisory WARNs. Enabled via $KEEL_IMPACT_LOG or a .keel/ marker at the
-# audited repo's top level; with neither, nothing is written.
+# audited repo's top level (in a linked worktree: the MAIN checkout's top — the untracked marker isn't
+# shared, so fall back to the first `git worktree list` entry; awk reads its whole input on purpose — no
+# early exit, no SIGPIPE); with neither, nothing is written.
 if [ "$exit_code" != 0 ]; then
   _klog="${KEEL_IMPACT_LOG:-}"
   if [ -z "$_klog" ]; then
     _ktop="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
+      _kmain="$(git -C "$DIR" worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
+      if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
+    fi
     if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
   fi
   if [ -n "$_klog" ]; then

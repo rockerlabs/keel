@@ -302,6 +302,18 @@ check_status "block exits 1 with only a .keel/ marker" 1 "$STATUS"
 check_file "marker alone records the event (no env)" "$mrepo/.keel/impact-events.log"
 check_contains "marker event is a guard/secret-guard line" "$(cat "$mrepo/.keel/impact-events.log" 2>/dev/null)" "	guard	secret-guard	blocked"
 
+# (b2) worktree fallback: the untracked marker lives only at the MAIN checkout — a block inside a
+# linked worktree must still record there (before the fallback these events silently vanished)
+run_in "$mrepo" git commit -qm seed --allow-empty
+mwt="$SANDBOX/mrepo-wt"
+git -C "$mrepo" worktree add -q -b wt-guard "$mwt" >/dev/null 2>&1
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$mwt/leak.txt"
+wt_events_before="$(wc -l < "$mrepo/.keel/impact-events.log" | tr -d ' ')"
+run_in "$mwt" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+check_status "block in a worktree still exits 1" 1 "$STATUS"
+check_contains "worktree block records to the MAIN checkout's log" "$(wc -l < "$mrepo/.keel/impact-events.log" | tr -d ' ')" "$((wt_events_before + 1))"
+check_nofile "no worktree-local event log appears" "$mwt/.keel/impact-events.log"
+
 # (c) no override AND no marker → nothing written
 nrepo="$(new_repo)"                                  # a repo WITHOUT .keel/
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$nrepo/leak.txt"

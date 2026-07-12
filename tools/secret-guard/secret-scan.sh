@@ -490,11 +490,17 @@ done <<< "$records"
 if [ "$found" = 1 ]; then
   # Impact instrumentation (metadata only, opt-in per repo): record that a guardrail fired so keel-impact
   # can auto-ingest it — a deterministic, zero-token signal. NEVER the matched secret; only the fact of a
-  # block. Enabled either explicitly ($KEEL_IMPACT_LOG) or per repo by a .keel/ marker at its top level;
-  # with neither, nothing is written and the hook's behaviour is unchanged.
+  # block. Enabled either explicitly ($KEEL_IMPACT_LOG) or per repo by a .keel/ marker at its top level
+  # (in a linked worktree: the MAIN checkout's top — the untracked marker isn't shared, so fall back to
+  # the first `git worktree list` entry; awk reads its whole input on purpose — no early exit, no
+  # SIGPIPE); with neither, nothing is written and the hook's behaviour is unchanged.
   _klog="${KEEL_IMPACT_LOG:-}"
   if [ -z "$_klog" ]; then
     _ktop="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
+      _kmain="$(git worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
+      if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
+    fi
     if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
   fi
   if [ -n "$_klog" ]; then
