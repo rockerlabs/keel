@@ -166,9 +166,33 @@ check_status "import + leftover block → exit 0" 0 "$STATUS"
 check_contains "identical leftover block removed (was loading twice)" "$OUT" "removed the embedded rails block"
 check_absent "no KEEL-CORE block remains" "$(cat "$hhome/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
-# --- bootstrap refuses --link: its temp clone is deleted on exit --------------------------------
-run sh "$REPO_ROOT/bootstrap.sh" --link
-check_status "bootstrap --link → exit 2" 2 "$STATUS"
-check_contains "explains the kept-clone requirement" "$OUT" "clone you keep"
+# --- bootstrap --link (2b): clone into a PERMANENT dir, then wire the linked install --------------
+# Mark REPO_ROOT safe so the bootstrap's `git clone`/`fetch` don't trip "dubious ownership" (exit 128)
+# on the CI Alpine leg, where the mounted repo is owned by a different uid than the runner (same guard
+# test_install.sh uses; written to lib.sh's sandbox GIT_CONFIG_GLOBAL, inherited by the child git).
+git config --global --add safe.directory '*'
+blink_dir="$SANDBOX/kept-keel"; blink_home="$SANDBOX/boot-link-home"
+run env KEEL_REPO="$REPO_ROOT" KEEL_DIR="$blink_dir" sh "$REPO_ROOT/bootstrap.sh" --link --home "$blink_home" --no-hooks
+check_status "bootstrap --link → exit 0" 0 "$STATUS"
+check_dir  "bootstrap --link keeps the permanent checkout (not a reaped temp clone)" "$blink_dir"
+check_file "the kept checkout carries install.sh" "$blink_dir/install.sh"
+check_link "linked install wired keel/CORE.md as a symlink" "$blink_home/keel/CORE.md"
+check_contains "generated CLAUDE.md imports the linked core" "$(cat "$blink_home/CLAUDE.md")" "keel/CORE.md"
+
+# re-running the one-liner over the kept checkout updates it in place (git pull), still exit 0
+run env KEEL_REPO="$REPO_ROOT" KEEL_DIR="$blink_dir" sh "$REPO_ROOT/bootstrap.sh" --link --home "$blink_home" --no-hooks
+check_status "bootstrap --link re-run over the kept checkout → exit 0" 0 "$STATUS"
+check_contains "re-run updates the existing checkout in place" "$OUT" "updating the existing checkout"
+
+# a re-run that names KEEL_REF takes the ref path (fetch + checkout), not a bare pull → still exit 0
+run env KEEL_REPO="$REPO_ROOT" KEEL_DIR="$blink_dir" KEEL_REF=HEAD sh "$REPO_ROOT/bootstrap.sh" --link --home "$blink_home" --no-hooks
+check_status "bootstrap --link re-run with KEEL_REF → exit 0 (honors the ref)" 0 "$STATUS"
+
+# a non-Keel dir already occupying KEEL_DIR is user data — refuse, never clobber
+occupied="$SANDBOX/occupied-dir"; mkdir -p "$occupied"; printf 'mine\n' > "$occupied/my-file"
+run env KEEL_REPO="$REPO_ROOT" KEEL_DIR="$occupied" sh "$REPO_ROOT/bootstrap.sh" --link --home "$blink_home" --no-hooks
+check_status "bootstrap --link over a foreign dir → exit 2" 2 "$STATUS"
+check_contains "refusal names the not-a-checkout reason" "$OUT" "not a Keel checkout"
+check_file "the foreign dir's own file is left untouched" "$occupied/my-file"
 
 summary

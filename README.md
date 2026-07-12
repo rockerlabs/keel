@@ -32,7 +32,8 @@ blocked even inside a UTF-16 binary fixture. Reproduce it yourself:
 and adds the `/wrap` `/go` `/init-project`
 commands — **without ever touching a file you own.** (A re-run offers to update Keel's *own* core files if
 they've drifted, asking first — see [getting-started](docs/getting-started.md#1-install). Needs `bash` +
-`git` — nothing else.)
+`git` — nothing else. No git? It still installs the rails-only half; pin a version with `KEEL_REF=<tag>` —
+[details](docs/getting-started.md#1-install).)
 
 ```bash
 git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
@@ -40,8 +41,20 @@ git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
 
 > On Claude Code, prefer `./install.sh --link`: it wires by **reference** (symlinks + one import line),
 > so a later `git pull` in this clone updates everything at once — and removal is fully enumerable
-> (one folder, one import line, the command symlinks).
+> (one folder, one import line, the command symlinks). Or do it in one line, no manual clone:
+> `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s -- --link`
+> clones Keel to `~/keel` (set `KEEL_DIR` to change) and links it; re-run it anytime to update.
 > [Details & trade-offs](docs/getting-started.md#linked-install--recommended-on-claude-code).
+
+> **Even simpler — let your assistant install it.** On Claude Code (or the Claude desktop app) you can hand
+> the whole thing over. Paste:
+>
+> > Install Keel from https://github.com/rockerlabs/keel — read its README install section and set it up for
+> > me (linked mode if I have git), then tell me how to finish with `/keel-setup`.
+>
+> It clones, runs the installer with the right flags for your machine, and points you at the last step — no
+> terminal commands on your side. (The `/keel-setup` command only shows up in a **fresh** session after
+> install, so it'll tell you to restart to get it.)
 
 **2. Run `/keel-setup` and let the assistant finish the setup — no editing by hand.** Restart Claude Code
 (new commands only show up when a session starts) and run `/keel-setup` — from anywhere, even with **no
