@@ -9,6 +9,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`tools/branch-cleanup.sh` — a confidence classifier for post-merge branch/worktree cleanup, wired
+  into `/wrap` step 0** (backlog dir #25). CORE.md's git rails promise "merge → delete the branch", but
+  nothing closed the loop: merged local branches and their worktrees piled up (this repo hit 12 live
+  worktrees, several on already-merged branches). The tool reads only git facts — zero-dependency,
+  network-free — and grades every local branch by how safe deletion *provably* is, never a blanket
+  delete: **AUTO** (merged into `origin/<default>`, no worktree, ≥7 days old, ephemeral name — a
+  redundant pointer whose commits all survive on the default branch, so deletion loses nothing),
+  **ASK** (merged but recent or an off-pattern name that may be long-lived like `staging`/`release-*` —
+  surfaced for confirmation, never auto-deleted), and **FLAG** (merged but checked out in a worktree —
+  reported with `git worktree remove <path>`, never auto-removed since a worktree can hold uncommitted
+  or gitignored work). The current session's branch/worktree and any unmerged branch are always left
+  alone. `--prune-safe` deletes the AUTO tier; default is a non-destructive report. "Merged" = the tip
+  is an ancestor of `origin/<default>` (assumes the `git fetch --prune` `/wrap` already runs), so a
+  squash-merge workflow leaves its branches unlisted rather than risk a false delete — the honest
+  zero-dep boundary (`gh`-based squash detection is left to the future unified CLI). 33 checks in
+  `test_branch_cleanup.sh` pin every tier, the age gate, current-branch/worktree protection, the
+  `origin/<default>` base path, and that `--prune-safe` deletes only AUTO.
 - **`bootstrap.sh` gets a permanent-clone linked mode, a no-git tarball fallback, and an
   agent-install prompt** (closes backlog dir #21, flows 1/2b/2c). Previously `--link` refused
   outright — the one-liner's clone lived in a reaped temp dir, so every symlink would dangle on exit.
