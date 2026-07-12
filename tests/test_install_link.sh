@@ -167,6 +167,10 @@ check_contains "identical leftover block removed (was loading twice)" "$OUT" "re
 check_absent "no KEEL-CORE block remains" "$(cat "$hhome/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
 # --- bootstrap --link (2b): clone into a PERMANENT dir, then wire the linked install --------------
+# Mark REPO_ROOT safe so the bootstrap's `git clone`/`fetch` don't trip "dubious ownership" (exit 128)
+# on the CI Alpine leg, where the mounted repo is owned by a different uid than the runner (same guard
+# test_install.sh uses; written to lib.sh's sandbox GIT_CONFIG_GLOBAL, inherited by the child git).
+git config --global --add safe.directory '*'
 blink_dir="$SANDBOX/kept-keel"; blink_home="$SANDBOX/boot-link-home"
 run env KEEL_REPO="$REPO_ROOT" KEEL_DIR="$blink_dir" sh "$REPO_ROOT/bootstrap.sh" --link --home "$blink_home" --no-hooks
 check_status "bootstrap --link → exit 0" 0 "$STATUS"
