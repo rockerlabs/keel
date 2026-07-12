@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-label="Before and after: what your AI assistant reads at the start of a session. Without Keel it starts from zero and re-asks what it already knew; with Keel it reads one thin always-on file of ground rules plus a map of where the rest lives, loaded on demand.">
+  <style>
+    :root{
+      --bg:#ffffff; --card:#f6f8fa; --ink:#1f2328; --muted:#59636e; --line:#d0d7de;
+      --bad:#cf222e; --badbg:#ffebe9; --good:#1a7f37; --goodbg:#dafbe1; --accent:#0969da;
+      --code:#eaeef2;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg:#0d1117; --card:#161b22; --ink:#e6edf3; --muted:#9198a1; --line:#30363d;
+        --bad:#ff7b72; --badbg:#3d1518; --good:#3fb950; --goodbg:#0f2417; --accent:#4493f8;
+        --code:#1c2128;
+      }
+    }
+    .ink{fill:var(--ink)} .muted{fill:var(--muted)}
+    .h{font-size:15px;font-weight:700}
+    .t{font-size:13px} .s{font-size:12px} .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+    #stateA{animation:aCycle 8s ease-in-out infinite}
+    #stateB{animation:bCycle 8s ease-in-out infinite}
+    @keyframes aCycle{0%{opacity:1}45%{opacity:1}50%{opacity:0}95%{opacity:0}100%{opacity:1}}
+    @keyframes bCycle{0%{opacity:0}45%{opacity:0}50%{opacity:1}95%{opacity:1}100%{opacity:0}}
+    @media (prefers-reduced-motion: reduce){
+      /* no animation: show the payoff (With Keel), not the problem frame */
+      #stateA{animation:none;opacity:0} #stateB{animation:none;opacity:1}
+    }
+  </style>
+
+  <rect x="0" y="0" width="720" height="400" rx="14" fill="var(--bg)"/>
+  <rect x="0.5" y="0.5" width="719" height="399" rx="14" fill="none" stroke="var(--line)"/>
+
+  <text x="32" y="42" class="h ink">What your AI assistant reads when a session starts</text>
+
+  <!-- ============ STATE A : without Keel ============ -->
+  <g id="stateA">
+    <rect x="32" y="64" width="180" height="26" rx="13" fill="var(--badbg)"/>
+    <text x="48" y="82" class="t" fill="var(--bad)" font-weight="700">✕ Without Keel</text>
+
+    <text x="32" y="118" class="t muted">Every session starts from zero — it re-asks what you already settled:</text>
+
+    <!-- assistant "re-learning" bubbles -->
+    <g>
+      <rect x="32" y="134" width="640" height="34" rx="8" fill="var(--card)" stroke="var(--line)"/>
+      <text x="48" y="156" class="t ink">“Wait — what does this project do? Which database did we pick again?”</text>
+    </g>
+    <g>
+      <rect x="32" y="176" width="640" height="34" rx="8" fill="var(--card)" stroke="var(--line)"/>
+      <text x="48" y="198" class="t ink">“What are your git conventions? Remind me of the folder layout…”</text>
+    </g>
+
+    <text x="32" y="248" class="t muted">…so you paste your whole project in every time —</text>
+    <g>
+      <rect x="32" y="262" width="640" height="96" rx="8" fill="var(--code)" stroke="var(--line)"/>
+      <text x="48" y="284" class="mono muted">context ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</text>
+      <text x="48" y="304" class="mono muted">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</text>
+      <text x="48" y="324" class="mono muted">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</text>
+      <text x="48" y="346" class="t" fill="var(--bad)" font-weight="700">→ it drowns in detail and grabs the wrong fact.</text>
+    </g>
+  </g>
+
+  <!-- ============ STATE B : with Keel ============ -->
+  <g id="stateB">
+    <rect x="32" y="64" width="150" height="26" rx="13" fill="var(--goodbg)"/>
+    <text x="48" y="82" class="t" fill="var(--good)" font-weight="700">✓ With Keel</text>
+
+    <text x="32" y="118" class="t muted">One thin always-on file loads automatically — ground rules + a map:</text>
+
+    <!-- the always-on file card -->
+    <rect x="32" y="134" width="640" height="150" rx="8" fill="var(--card)" stroke="var(--line)"/>
+    <text x="48" y="156" class="mono muted"># CLAUDE.md — read at the start of every session</text>
+    <text x="48" y="180" class="mono ink">· branch → PR → merge — never push to main</text>
+    <text x="48" y="200" class="mono ink">· no secrets or personal data in committed files</text>
+    <text x="48" y="224" class="mono muted"># where the rest lives — pulled in only when a task needs it</text>
+    <text x="48" y="248" class="mono ink">· FRAMEWORK.md  ·  PRINCIPLES.md  ·  this project's notes</text>
+    <text x="48" y="272" class="mono" fill="var(--accent)">↳ small always; everything else loads on demand</text>
+
+    <g>
+      <rect x="32" y="300" width="640" height="58" rx="8" fill="var(--goodbg)"/>
+      <text x="48" y="324" class="t" fill="var(--good)" font-weight="700">“Got it — I know your rules and where things are.”</text>
+      <text x="48" y="344" class="s muted">It stops re-learning your project. You keep the judgment; the tools stay swappable.</text>
+    </g>
+  </g>
+</svg>

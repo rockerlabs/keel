@@ -53,6 +53,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   covered by inspection and the local-`KEEL_TARBALL` path instead. Flow 4 (a git-free `.dmg`/download
   package) stays deferred until real no-terminal demand appears.
 
+### Changed
+- **`README.md` reworked for usability — a first-screen a newcomer can actually parse** (closes backlog
+  dir #28). The old front door stacked three competing intros before any action and pushed
+  objection-handling above the install. Now it leads with one hook (*"Context isn't free — and most of
+  yours is clutter"*) aimed at the real 2026 pain — a bloated `CLAUDE.md` and junk-drawer `.claude/`
+  reloading as context ballast every session — then a plain what/who/win lead that names the target
+  adopter, then an animated before/after hero (`docs/session-start.svg`, theme-aware with a
+  `prefers-reduced-motion` fallback) that shows the *product* (the always-on context layer), not a
+  single tool. Install now sits right after the hero; the honest "runs by itself vs advice that nudges"
+  split is lifted up as **What you actually get**; the long capabilities table is demoted to
+  **Reference: what's in the box**; the objection blockquotes are folded into a **Good to know** section
+  at the end. The secret-guard `demo.gif` moved down beside **Just want the git hook?** (it demos one
+  tool, so it no longer occupies the most valuable real estate). The pinned mermaid token figures
+  (`~1.8K` / `FRAMEWORK.md ~5.0K` / `PRINCIPLES.md ~5.1K`) are unchanged — `test_doc_figures.sh` stays
+  green.
+
 ### Fixed
 - **The `commands/*.md` token band no longer forces a doc bump every time a command grows** (closes the
   recurring papercut, backlog dir #3b — felt four times). `docs/loading-and-cost.md` quoted a hard
