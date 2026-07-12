@@ -195,4 +195,16 @@ check_status "bootstrap --link over a foreign dir → exit 2" 2 "$STATUS"
 check_contains "refusal names the not-a-checkout reason" "$OUT" "not a Keel checkout"
 check_file "the foreign dir's own file is left untouched" "$occupied/my-file"
 
+# --- self-link guard: a --home whose keel/ IS the checkout is refused, checkout left intact ---------
+# Reproduces the near-zero but silently-destructive case (--home "$HOME" while the checkout sits at
+# $HOME/keel): link_dir -ef root, so sync_product would "upgrade" the checkout's own core files into
+# symlinks pointing at themselves. A keel/ symlink to REPO_ROOT recreates link_dir -ef root portably.
+slhome="$SANDBOX/selflink-home"; mkdir -p "$slhome"
+ln -s "$REPO_ROOT" "$slhome/keel"
+run "$install" --link --home "$slhome" --no-hooks
+check_status "--link where keel/ IS the checkout → refused (exit 2)" 2 "$STATUS"
+check_contains "refusal names the self-link reason" "$OUT" "is the Keel checkout itself"
+check_nolink "checkout's own CORE.md untouched (not self-symlinked)" "$REPO_ROOT/CORE.md"
+check_file "checkout CORE.md is still a real file" "$REPO_ROOT/CORE.md"
+
 summary

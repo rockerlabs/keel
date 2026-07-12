@@ -31,6 +31,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   package) stays deferred until real no-terminal demand appears.
 
 ### Fixed
+- **`install.sh --link` refuses to link the checkout into itself** (closes backlog dir #23). If the
+  consumption dir resolves to the checkout itself — e.g. `--link --home "$HOME"` while the checkout
+  sits at `$HOME/keel` (bootstrap's default `KEEL_DIR`) — the old code let `sync_product` see source
+  and destination as the same inode and "upgraded" the checkout's own `CORE.md`/`FRAMEWORK.md`/
+  `PRINCIPLES.md` into symlinks pointing at themselves, corrupting every file the links resolved to.
+  A `[ "$link_dir" -ef "$root" ]` guard now refuses that invocation (exit 2, checkout untouched) with
+  a message pointing `--home` at your Claude home instead. Near-zero real-world likelihood (the
+  `--home "$HOME"` needed contradicts the docs) but silently destructive — surfaced by the dir #21
+  install-flows review. Regression test in `test_install_link.sh`.
 - **Impact tracking now works from linked worktrees** (felt on keel's own dogfooding, backlog dir #10:
   the `.keel/` marker is an untracked dir, so a linked worktree's top never carries it — guard events
   from worktree sessions silently vanished and self-scores undercounted). All four resolution sites —
