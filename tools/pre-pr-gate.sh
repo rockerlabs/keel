@@ -36,13 +36,14 @@ deny() {
   # can auto-ingest it — deterministic, zero-token. Writes to the log file, never stdout (the hook's JSON
   # stays intact). Enabled via $KEEL_IMPACT_LOG or a .keel/ marker at the target repo's top level (in a
   # linked worktree: the MAIN checkout's top — the untracked marker isn't shared, so fall back to the
-  # first `git worktree list` entry; awk reads its whole input on purpose — no early exit, no SIGPIPE);
+  # first `git worktree list` entry, skipped when bare; awk reads its whole input on purpose — no early exit, no SIGPIPE);
   # with neither, nothing is written and the gate's behaviour is unchanged.
   _klog="${KEEL_IMPACT_LOG:-}"
   if [ -z "$_klog" ]; then
     _ktop="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
-      _kmain="$(git -C "$cwd" worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
+      _kmain="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
+        awk '/^$/{blk=1} !blk && /^bare$/{bare=1} NR==1{sub(/^worktree /,""); path=$0} END{if (!bare) print path}')"
       if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
     fi
     if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi

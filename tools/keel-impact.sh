@@ -43,14 +43,21 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Worktree fallback: the marker is an UNTRACKED dir, so a linked worktree's top never carries it — when
 # the current top has no .keel/, try the main checkout's top (first `git worktree list` entry; equals the
 # current top in a plain repo). The awk reads its whole input on purpose: no early exit, no SIGPIPE.
-_keel_top() {
-  local top main
-  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-    main="$(git worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
-    if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
+_keel_main_top() {  # the main checkout's top; empty if not a repo or the main entry is BARE (no working tree)
+  git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
+    awk '/^$/{blk=1} !blk && /^bare$/{bare=1} NR==1{sub(/^worktree /,""); path=$0} END{if (!bare) print path}'
+}
+_keel_top() {  # memoized: invariant within a run, and the resolvers below all call it at startup
+  if [ -z "${_KEEL_TOP_CACHE+x}" ]; then
+    local top main
+    top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
+      main="$(_keel_main_top)"
+      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
+    fi
+    _KEEL_TOP_CACHE="$top"
   fi
-  printf '%s' "$top"
+  printf '%s' "$_KEEL_TOP_CACHE"
 }
 _resolve_ledger() {
   if [ -n "${KEEL_IMPACT_LEDGER:-}" ]; then printf '%s' "$KEEL_IMPACT_LEDGER"; return; fi
@@ -214,15 +221,12 @@ cmd_event() {
 # event log is ignored — .keel/ledger.md (the durable score history) and .keel/evidence.md (the per-event
 # audit trail) stay trackable, so `git add` them to keep a shareable, cross-clone record.
 cmd_enable() {
-  local dir="${1:-.}" top main
-  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -n "$top" ]; then
-    # always target the MAIN checkout's top: a marker created in a linked worktree would be ephemeral and
-    # invisible to every other worktree (untracked dirs aren't shared); the .gitignore line IS tracked, so
-    # it reaches the worktrees from the main checkout anyway
-    main="$(git -C "$dir" worktree list --porcelain 2>/dev/null | awk 'NR==1 && sub(/^worktree /,"")')"
-    if [ -n "$main" ]; then top="$main"; fi
-  fi
+  local dir="${1:-.}" top
+  # always target the MAIN checkout's top: a marker created in a linked worktree would be ephemeral and
+  # invisible to every other worktree (untracked dirs aren't shared); the .gitignore line IS tracked, so
+  # it reaches the worktrees from the main checkout anyway
+  top="$(_keel_main_top "$dir")"
+  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"  # bare main: this worktree's top
   [ -n "$top" ] || top="$dir"                 # not a git repo yet: fall back to the dir as-is
   mkdir -p "$top/.keel"
   local gi="$top/.gitignore"

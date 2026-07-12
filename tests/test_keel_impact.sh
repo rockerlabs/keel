@@ -268,6 +268,17 @@ check_dir "enable from a worktree creates the marker at the MAIN top" "$wrepo/.k
 [ ! -d "$wwt/.keel" ] && pass "enable leaves no worktree-local marker" || fail "enable leaves no worktree-local marker" "marker created in the worktree"
 check_contains "enable from a worktree gitignores at the MAIN top" "$(cat "$wrepo/.gitignore" 2>/dev/null)" "/.keel/impact-events.log"
 
+# bare-main topology: the first worktree-list entry has no working tree — enable must NOT write .keel/
+# into the bare repo dir (nothing could ever commit it); it falls back to the worktree's own top
+brepo="$SANDBOX/bare-main.git"
+git clone -q --bare "$wrepo" "$brepo" 2>/dev/null    # reuse the seeded repo above for a HEAD to check out
+bwt="$SANDBOX/bare-wt"
+git -C "$brepo" worktree add -q -b wt-bare "$bwt" >/dev/null 2>&1
+run_in "$bwt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+check_status "enable under a bare main succeeds" 0 "$STATUS"
+[ ! -d "$brepo/.keel" ] && pass "bare main gets no .keel/" || fail "bare main gets no .keel/" ".keel created inside the bare repo"
+check_dir "bare-main enable falls back to the worktree's own top" "$bwt/.keel"
+
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1
 run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard "e" --gap none   # 100
