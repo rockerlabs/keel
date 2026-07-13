@@ -19,6 +19,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   an artifact while the declared check is red and interrupts on the N-th red) is the follow-up tier T1. The
   rail complements the adjacent "a blank beats a wrong guess" line. Mirrored byte-equal into
   `templates/CLAUDE.md` (the copy-path wrapper); no token-figure bump — it fits inside the existing ±10% band.
+- **`tools/keel-check.sh` — the stop-mode floor, model-independent half (backlog dir #33, tier T1a).** Run
+  a task's declared verification command through this shim (`keel-check.sh "npm test"`, or an argv form
+  `keel-check.sh go test ./...`) and repeated failure becomes a *mechanical* signal: it counts consecutive
+  failures of the same check and, on the 2nd (tunable via `KEEL_CHECK_THRESHOLD`), prints a
+  STOP-and-diagnose banner instead of letting the agent spiral into a third variant on hope. A pass resets
+  the streak; the check's own exit code passes through (callers/CI see the real result); zero dependencies
+  (POSIX `cksum` keys the per-task counter, busybox-safe). Where the `CORE.md` rail above only *nudges*,
+  this *holds* — the banner fires off the exit code no matter the model's strength. Optional: appends one
+  zero-token friction event to `KEEL_IMPACT_LOG` on a stop, mirroring the other guardrails. The banner says
+  *what* to do (diagnose), never *how* to defeat the check (applies the "Enforcement mechanics" convention
+  below). The opt-in HARD veto — block a commit/PR while the declared check is still red — is the follow-up
+  tier T1b.
 - **`FRAMEWORK.md` — new convention "Enforcement mechanics — never name the bypass in the error text".** An
   enforcement mechanism (commit hook, gate, guard, CI check) is read by an *agent*, not just a human, so any
   bypass instruction printed in its block/error message becomes a step-by-step exploit the agent follows to
