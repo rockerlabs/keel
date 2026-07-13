@@ -1,5 +1,6 @@
 ---
 description: Wrap up the session — reconcile, then update changelog, backlog, and memory per the knowledge-base convention
+argument-hint: "[-s]"
 ---
 > **Before running this base — is a composing `/wrap` supposed to run instead?** If you reached here because
 > the user asked to *wrap / seal the session*, and your setup layers its own `/wrap` (extra persist / backup
@@ -61,11 +62,12 @@ file with no git undo, back it up to a temp dir before a mass edit.
 strained a principle in `PRINCIPLES.md` (P0–P4 or a named tension), note or revise it there: the cheap
 per-session arm of the revision ritual. Most sessions add nothing; skip silently if so.
 
-**7. Impact (optional — the quantified promote/demote signal)** — step 4 is a gut call; `/keel-score` turns
-it into a tracked number. If the session leaned on Keel in a citable way, run it: you count cited events
-(guardrail fires, rule fires, retrieval hits/misses, friction) and the tool *derives* a 0–100 score from
-them — never a hand-picked number — while the ledger row surfaces silent rules (demote) and hunted-for facts
-(promote). Skip silently on a trivial session.
+**7. Impact (the quantified promote/demote signal)** — step 4 is a gut call; `/keel-score` turns
+it into a tracked number: you count cited events (guardrail fires, rule fires, retrieval hits/misses,
+friction) and the tool *derives* a 0–100 score from them — never a hand-picked number — while the ledger row
+surfaces silent rules (demote) and hunted-for facts (promote). **If `$ARGUMENTS` contains `-s`, this step is
+not optional — run `/keel-score` for this session, even a light one.** Otherwise it stays optional and by
+judgment: run it if the session leaned on Keel in a citable way, skip silently on a trivial session.
 
 **8. Persist** — stage the **explicit paths** this session changed (never `git add -A` in a shared
 knowledge-base repo — it sweeps a sibling's in-flight work under your commit), re-run `git status` /
