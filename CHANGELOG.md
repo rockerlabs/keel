@@ -9,6 +9,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`FRAMEWORK.md` — new convention "Enforcement mechanics — never name the bypass in the error text".** An
+  enforcement mechanism (commit hook, gate, guard, CI check) is read by an *agent*, not just a human, so any
+  bypass instruction printed in its block/error message becomes a step-by-step exploit the agent follows to
+  get unblocked. Felt twice: `pre-pr-gate` once printed the literal `touch …` unlock command → the agent ran
+  exactly that; `secret-guard`'s block message names `.secret-scan-allow` → an agent (being tested on Cursor)
+  wrote that allowlist to commit a secret-shaped key. The rule: say *what* is wrong and *what* to do at the
+  task level, never *how* to defeat the check; keep a legitimate human escape hatch out-of-band and not
+  agent-usable in-band; the guard, not its prose, is the enforcement. (Surfaced while validating Keel's rails
+  on non-Claude tools. The `secret-guard` message itself is not yet fixed — tracked separately.)
 - **`commands/wrap.md` opens with a composed-component banner** (backlog dir #27). If you layer your own
   `/wrap` (extra persist/backup steps) on top of Keel's base, an agent that reads this base to "wrap the
   session" can run it standalone and silently skip your wrapper's steps — a real footgun hit while
