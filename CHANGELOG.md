@@ -31,6 +31,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   *what* to do (diagnose), never *how* to defeat the check (applies the "Enforcement mechanics" convention
   below). The opt-in HARD veto — block a commit/PR while the declared check is still red — is the follow-up
   tier T1b.
+- **`tools/keel-check-gate.sh` — the opt-in HARD veto for the stop-mode floor (backlog dir #33, tier T1b).**
+  A Claude Code `PreToolUse(Bash)` hook (the same proven shape as `pre-pr-gate.sh`): while a check the agent
+  declared through `keel-check.sh` is still RED, it blocks `git commit` / `gh pr create` — the "no artifact
+  below the gate" half of the anti-hallucination floor (`PRINCIPLES.md` P1). Where the `CORE.md` rail nudges
+  and the shim's banner interrupts, this *refuses* to let a confident "done" reach a commit while that same
+  check is failing; a green re-run through `keel-check.sh` clears the marker and the commit proceeds. OFF by
+  default — enable per session with `KEEL_CHECK_VETO`, so a deliberate work-in-progress commit on a red test
+  is never blocked unless you asked for it. The deny message says *what* to do (make the check pass), never
+  *how* to defeat the gate (applies the "Enforcement mechanics" convention below); a zero-token guard event
+  goes to `KEEL_IMPACT_LOG` on a block. To support it, `keel-check.sh`'s per-task counter moved under a
+  per-repo directory so the gate can answer "is any declared check for this repo still red?" cheaply.
+  Maintainer-registered like `pre-pr-gate` — `install.sh` does NOT auto-wire it into an adopter's
+  `settings.json` (that adopter auto-registration, plus a per-repo `.keel/stop-mode-veto` enable marker with
+  the worktree→main-checkout fallback, are a deferred tier). 16 offline tests, jq-gated so they skip cleanly
+  on the busybox CI leg.
 - **`FRAMEWORK.md` — new convention "Enforcement mechanics — never name the bypass in the error text".** An
   enforcement mechanism (commit hook, gate, guard, CI check) is read by an *agent*, not just a human, so any
   bypass instruction printed in its block/error message becomes a step-by-step exploit the agent follows to

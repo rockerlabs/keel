@@ -33,11 +33,17 @@ fi
 # The check command, reassembled for display + task identity.
 cmd="$*"
 
-# Per-task counter key: the check text + the working dir, so two different checks — or the same check in
-# two repos — never share a count. cksum is POSIX, so no md5/shasum dependency (busybox-safe).
-key="$(printf '%s' "$cmd|$PWD" | cksum | tr -cd '0-9')"
+# Per-task counter, keyed under a per-repo directory so the opt-in veto gate (keel-check-gate.sh) can
+# answer "is any declared check for this repo still red?" by testing whether the repo dir is non-empty.
+# The repo top (the worktree dir, in a worktree) groups checks; the command text separates streaks within
+# it. cksum is POSIX, so no md5/shasum dependency (busybox-safe).
+repo_top="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
+repo_key="$(printf '%s' "$repo_top" | cksum | tr -cd '0-9')"
+cmd_key="$(printf '%s' "$cmd" | cksum | tr -cd '0-9')"
 state_dir="${KEEL_CHECK_STATE_DIR:-${TMPDIR:-/tmp}}"
-state="$state_dir/keel-check-$key"
+repo_dir="$state_dir/keel-check/$repo_key"
+state="$repo_dir/$cmd_key"
+mkdir -p "$repo_dir" 2>/dev/null || true
 
 # Run the check with its output inherited (the agent still sees the real failure), then capture its code.
 if [ "$#" -eq 1 ]; then
@@ -49,6 +55,7 @@ rc=$?
 
 if [ "$rc" -eq 0 ]; then
   rm -f "$state" 2>/dev/null || true
+  rmdir "$repo_dir" 2>/dev/null || true   # empties the repo's "red set" once the last check goes green
   printf 'keel-check: PASS — %s (streak reset)\n' "$cmd" >&2
   exit 0
 fi
