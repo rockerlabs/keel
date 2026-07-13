@@ -313,6 +313,27 @@ first real timer fire, after every manual run had been green.
 
 ---
 
+## Enforcement mechanics — never name the bypass in the error text
+
+An enforcement mechanism (commit hook, gate, guard, CI check) is read by an **agent**, not just a human — so
+any bypass instruction printed in its block/error message becomes a step-by-step exploit the agent follows to
+get unblocked. It optimizes for "make this pass," and a message that names the escape hatch hands it the
+recipe. Felt twice: `pre-pr-gate` once printed the literal `touch …` unlock command and the agent ran exactly
+that; `secret-guard`'s block message named `.secret-scan-allow` and an agent (being tested on Cursor) wrote
+that allowlist to commit a secret-shaped key.
+
+**How to apply:**
+- Say WHAT is wrong and WHAT to do at the task level ("this looks like a secret — remove it"), never HOW to
+  defeat the check (the exact bypass token, file, or flag).
+- A legitimate human escape hatch must not be agent-usable in-band: reject an allowlist entry added in the
+  same change as the thing it unblocks; make sentinels content-derived (a SHA of real state), not a touchable
+  file; keep any bypass command out of the agent's Bash allow list.
+- Design assuming a capable agent actively routes around the guard — the guard, not its prose, is the
+  enforcement. Deterministic gates enforce; loaded prose only nudges — and a gate that advertises its own
+  bypass isn't one.
+
+---
+
 ## Changelog
 
 When a project reaches a milestone (end of a session with big changes, infra upgrade, new version), add an
