@@ -66,6 +66,8 @@ Don't assert a fact you haven't checked; flag a guess as a guess — **a blank b
 - On a **significant** fork (approach / library / architecture / an irreversible action) — don't guess
   silently: lay out the options with a recommendation and let the user choose.
 - For small things with an obvious default — pick something reasonable, name the choice, move on.
+  **Don't ask to confirm a documented flow or a default you'd pick anyway**: a prompt whose answer
+  wouldn't change what you do is friction, not diligence. Reserve a question for a real fork.
 - **Foundations — front-load** at project start (knowledge-base layout, memory approach, domain boundaries, stack, git
   workflow). Fix them explicitly with defaults right away, not mid-project.
 - Approval in one context does not carry to the next; confirm any irreversible/outward-facing action (push,

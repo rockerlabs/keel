@@ -31,6 +31,8 @@
 #   branch-cleanup.sh -h | --help
 #
 # Env: KEEL_CLEANUP_GLOBS overrides the ephemeral-name allowlist (space-separated globs).
+#      KEEL_KEEP_WORKTREE=<path> names the worktree to never FLAG for removal (defaults to this run's own
+#      worktree); a caller that reconciles from another dir exports it to protect the session's worktree.
 #
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
@@ -47,7 +49,8 @@ branch-cleanup.sh — classify local branches for post-merge cleanup (zero-dep, 
 AUTO = merged into origin/<default>, no worktree, >= N days old (default 7), ephemeral name -> safe to delete.
 ASK  = merged + free but recent or off-pattern (maybe long-lived) -> confirm before deleting.
 FLAG = merged but checked out in a worktree -> remove the worktree by hand.
-Env: KEEL_CLEANUP_GLOBS overrides the ephemeral-name allowlist (space-separated globs).
+Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
+     KEEL_KEEP_WORKTREE  path of the worktree to never FLAG (default: this run's own worktree).
 EOF
 }
 
@@ -84,7 +87,13 @@ if git rev-parse --verify -q "origin/$default" >/dev/null 2>&1; then base="origi
 git rev-parse --verify -q "$base" >/dev/null 2>&1 \
   || { printf 'branch-cleanup: no %s to compare against (fetch first?)\n' "$base" >&2; exit 0; }
 
-current="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+# The one worktree we must never suggest removing: the one this run sits in (you can't `git worktree
+# remove` your own CWD, and at wrap the session usually sits on an already-merged branch). Identify it by
+# PATH, not branch name -- the old name check (`abbrev-ref HEAD`) compared the branch of the INVOKING cwd,
+# so when the tool ran from a different dir than the session's worktree (e.g. wrap reconciling from the
+# main checkout) the session's own worktree got FLAGged to remove itself. KEEL_KEEP_WORKTREE lets a caller
+# that must cd away still name the worktree to protect (wrap exports it).
+current_wt="${KEEL_KEEP_WORKTREE:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
 
 # Branches checked out in ANY worktree -> "name<TAB>path", so FLAG can print the worktree to remove.
 # The awk reads to EOF (no early exit -> no SIGPIPE), the felt -c-not-q discipline.
@@ -115,7 +124,7 @@ while read -r b cd; do
   age=$(( (now - ${cd:-$now}) / 86400 ))
   wtp="$(wt_path_for "$b")"
   if [ -n "$wtp" ]; then                                    # checked out in a worktree
-    [ "$b" = "$current" ] && continue                       # current session's branch -> never touch
+    [ "$wtp" -ef "$current_wt" ] && continue                # the worktree we're standing in -> never touch
     flag="${flag}${b}"$'\t'"${wtp}"$'\n'; n_flag=$((n_flag + 1))
     continue
   fi

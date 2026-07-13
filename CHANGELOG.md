@@ -68,6 +68,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   tool, so it no longer occupies the most valuable real estate). The pinned mermaid token figures
   (`~1.8K` / `FRAMEWORK.md ~5.0K` / `PRINCIPLES.md ~5.1K`) are unchanged — `test_doc_figures.sh` stays
   green.
+- **The `CORE.md` decision rail now explicitly discourages over-asking.** The "small things with an
+  obvious default" bullet gained a sharp clause: *don't ask to confirm a documented flow or a default
+  you'd pick anyway — a prompt whose answer wouldn't change what you do is friction, not diligence;
+  reserve a question for a real fork.* The rail already said "pick something reasonable and move on," but
+  the soft wording didn't counter an agent that reflexively confirms established flows (e.g. an open-a-PR
+  step with a documented default). Naming the anti-pattern in the always-loaded core gives every session
+  an explicit brake. ~48 tokens; `CORE.md` stays inside the 10% figure band and the wrapper embed stays
+  byte-equal (`test_core_wrapper_sync.sh` + `test_doc_figures.sh` green).
 
 ### Fixed
 - **The `commands/*.md` token band no longer forces a doc bump every time a command grows** (closes the
@@ -108,6 +116,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   already did before delegating). Re-vendoring Keel's own hook stays silent and idempotent. This makes
   the "never clobber user data" rule `install.sh` already followed hold in the low-level tool too.
   Regression tests: refuse/`--force`/backup/no-false-refusal in `test_secret_guard.sh`.
+- **`tools/branch-cleanup.sh` no longer FLAGs the session's own worktree for removal** (backlog dir #25
+  follow-up). The "never touch the current worktree" guard compared the branch name of the *invoking*
+  cwd (`git rev-parse --abbrev-ref HEAD`), so when the tool ran from a different directory than the
+  session's worktree — e.g. `/wrap` reconciling from the main checkout — the session's own worktree
+  (usually already merged, since you reuse it after its PR lands) was mistaken for a stale one and
+  printed with `git worktree remove <its own path>` every session. The guard is now **path-based**
+  (`git rev-parse --show-toplevel`, compared with `-ef` so symlinked temp dirs match), and a new
+  `KEEL_KEEP_WORKTREE=<path>` env var lets a caller that must run from elsewhere name the worktree to
+  protect — `commands/wrap.md` step 0 now documents running from the session worktree or exporting it.
+  Two regression tests pin it: running *inside* a merged worktree never flags that worktree (while a
+  *different* merged worktree still FLAGs), and `KEEL_KEEP_WORKTREE` shields a named worktree from a run
+  elsewhere.
 
 ### Added
 - **`tools/self/doctor.sh` — a structural self-audit of the keel repo itself**, distinct from

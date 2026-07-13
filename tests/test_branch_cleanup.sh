@@ -85,6 +85,31 @@ run_in "$repo2" bash "$TOOL" --days 0
 check_absent "current branch is never listed" "$OUT" "claude/cur"
 check_contains "nothing to do -> zero counts" "$OUT" "0 auto-safe, 0 to confirm (ASK), 0 worktrees to review"
 
+# --- the worktree the run sits IN is never FLAGged to remove itself (path-based, not branch-name) --------
+# Regression: the exclusion used to compare the INVOKING cwd's branch NAME, so running from a different dir
+# than the session's worktree (e.g. wrap reconciling from the main checkout) flagged the session's own
+# worktree. Now it's compared by PATH. Two merged worktrees; running FROM one must shield only that one.
+wtrepo="$(new_repo)"
+git -C "$wtrepo" symbolic-ref HEAD refs/heads/main
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$wtrepo" commit -q --allow-empty -m c1
+c1w="$(git -C "$wtrepo" rev-parse HEAD)"
+git -C "$wtrepo" commit -q --allow-empty -m c2                 # main tip; c1 is merged into it
+git -C "$wtrepo" branch claude/session "$c1w"                  # merged, ephemeral, old
+git -C "$wtrepo" worktree add -q "$wtrepo.session" claude/session >/dev/null
+git -C "$wtrepo" branch claude/other "$c1w"                    # a second merged worktree
+git -C "$wtrepo" worktree add -q "$wtrepo.other" claude/other >/dev/null
+run_in "$wtrepo.session" bash "$TOOL" --days 0
+check_absent   "own worktree is never flagged to remove itself" "$OUT" "claude/session"
+check_contains "a different merged worktree still FLAGs"        "$(line_for claude/other)" "FLAG"
+
+# KEEL_KEEP_WORKTREE shields a named worktree even when the tool runs from ELSEWHERE (wrap from main-top):
+# run from the main checkout but protect the session worktree by path.
+export KEEL_KEEP_WORKTREE="$wtrepo.session"
+run_in "$wtrepo" bash "$TOOL" --days 0
+unset KEEL_KEEP_WORKTREE
+check_absent   "KEEL_KEEP_WORKTREE shields the named worktree from a run elsewhere" "$OUT" "claude/session"
+check_contains "other worktree still FLAGs under KEEL_KEEP_WORKTREE" "$(line_for claude/other)" "FLAG"
+
 # --- origin/<default> is preferred over the local default as the merge base --------------------
 # The proof needs local main and origin/main to DIVERGE: a branch merged into origin/main but NOT into
 # local main must still be AUTO. If the tool wrongly used the local base, it would be skipped instead.
