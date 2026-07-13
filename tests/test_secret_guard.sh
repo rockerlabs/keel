@@ -38,6 +38,18 @@ block_file "GitLab PAT (glpat-)"     "k = $(key 'glpat-' "$(rep A 20)")"
 block_file "Slack token (xoxb-)"     "k = $(key 'xoxb-' "$(rep A 12)")"
 block_file "PEM private key"         "$(key '-----BEGIN RSA ' 'PRIVATE KEY-----')"
 
+# --- the BLOCK message must NOT print the allowlist bypass syntax (FRAMEWORK "Enforcement mechanics") ---
+# An agent optimizing to get unblocked follows any bypass recipe printed in the error text — one did, on
+# Cursor: it read the old "add it to .secret-scan-allow" line and committed the key. The message must state
+# WHAT is wrong, never HOW to defeat the check.
+d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
+printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
+run "$scan" "$d/f.txt"
+check_status  "block-message probe → exit 1" 1 "$STATUS"
+check_contains "block message states the problem (BLOCKED)" "$OUT" "BLOCKED"
+check_absent  "block message omits the .secret-scan-allow recipe" "$OUT" ".secret-scan-allow"
+check_absent  "block message omits the inline secret-scan:allow recipe" "$OUT" "secret-scan:allow"
+
 # --- allow: clean content, and shapes that must NOT trip the length-anchored patterns -----------
 clean_file() {  # desc content
   local d; d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
