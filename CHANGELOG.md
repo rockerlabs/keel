@@ -74,6 +74,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   package) stays deferred until real no-terminal demand appears.
 
 ### Changed
+- **`ADAPTING.md` rewritten around the first live cross-tool validation** (closes backlog dir #30/#31/#32).
+  Until now the doc's honesty caveat was "the author only tested Claude Code"; Keel has since been run live on
+  three substrates and the doc now reflects it. The tool table gains a `Tested?` column and splits **Codex in
+  the ChatGPT desktop app** (`~/.codex/AGENTS.md`, a skills system rather than prompts, its own native memory)
+  from the standalone **Codex CLI**. The **Cursor** row now points at project-root **`AGENTS.md`**, not
+  `.cursor/rules/*.mdc` — in testing an `alwaysApply: true` `.mdc` loaded as *agent-requestable on demand* so
+  the rails silently didn't fire (the agent committed straight to `master`), while the identical core in
+  `AGENTS.md` injected as always-on and fired; a warning callout documents this, plus an "`AGENTS.md` is the
+  emerging cross-tool standard" note (the same file worked on both Codex and Cursor). A new callout records
+  that skills systems (Codex, Cursor) convert Keel commands 1:1 — autopilot, not paste-by-hand. The honest
+  boundary gains: Codex's native memory means dropping the Memory section, and the prose nudge **scales with
+  model strength** — weak and unreliable on a small local model, with the git-level `secret-guard` the only
+  model-independent floor. `docs/loading-and-cost.md`'s `ADAPTING.md` figure bumped ~1,650 → ~2,300 to match.
 - **`README.md` reworked for usability — a first-screen a newcomer can actually parse** (closes backlog
   dir #28). The old front door stacked three competing intros before any action and pushed
   objection-handling above the install. Now it leads with one hook (*"Context isn't free — and most of
