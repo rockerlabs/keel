@@ -111,6 +111,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   package) stays deferred until real no-terminal demand appears.
 
 ### Changed
+- **`/wrap` gains a `-s` flag that makes the Impact step run `/keel-score` unconditionally.** Step 7 (Impact)
+  was optional-by-judgment — the agent decided whether the session "leaned on Keel enough" to score. Passing
+  `-s` (surfaced via `argument-hint`) removes that judgment: the wrap runs `/keel-score` for the session even
+  a light one, so a run you want tracked can't be silently skipped. Without the flag the behavior is
+  unchanged (optional, by judgment).
 - **`ADAPTING.md` rewritten around the first live cross-tool validation** (closes backlog dir #30/#31/#32).
   Until now the doc's honesty caveat was "the author only tested Claude Code"; Keel has since been run live on
   three substrates and the doc now reflects it. The tool table gains a `Tested?` column and splits **Codex in
