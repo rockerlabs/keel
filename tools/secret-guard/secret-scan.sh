@@ -509,7 +509,12 @@ if [ "$found" = 1 ]; then
       >> "$_klog" 2>/dev/null || true
   fi
   echo "" >&2
-  echo "If this is a legit fixture, add it to $ALLOW_FILE or an inline 'secret-scan:allow' — don't weaken the scanner." >&2
+  # Say WHAT to do (remove the secret), not HOW to bypass the check: the exact allowlist syntax is
+  # deliberately kept OUT of this block message so an agent optimizing to get unblocked can't follow it as
+  # a recipe (an agent under test on Cursor did exactly that). A genuine fixture is a human, out-of-band
+  # decision — the mechanism is documented in this script's header. See FRAMEWORK.md "Enforcement mechanics".
+  echo "This looks like a real secret — remove it (use an env var or a secret manager), then re-commit." >&2
+  echo "A genuine test fixture is a rare exception a human allowlists deliberately (see this script's header); an agent must NOT add an allowlist entry just to get a commit through." >&2
   echo "Operator-specific literals live in the local, never-committed \$SECRET_SCAN_PERSONAL_FILE." >&2
   exit 1
 fi

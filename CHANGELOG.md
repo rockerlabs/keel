@@ -17,7 +17,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   wrote that allowlist to commit a secret-shaped key. The rule: say *what* is wrong and *what* to do at the
   task level, never *how* to defeat the check; keep a legitimate human escape hatch out-of-band and not
   agent-usable in-band; the guard, not its prose, is the enforcement. (Surfaced while validating Keel's rails
-  on non-Claude tools. The `secret-guard` message itself is not yet fixed — tracked separately.)
+  on non-Claude tools; the `secret-guard` message is hardened to match — see Security below.)
+
+### Security
+- **`secret-guard`'s block message no longer prints the allowlist bypass syntax.** It used to say "add it to
+  `.secret-scan-allow` or an inline `secret-scan:allow`" — a ready-made bypass an agent optimizing to get
+  unblocked will follow, and one did: while validating the rail on Cursor, an agent hit the guard on a fake
+  AWS key, read that line, wrote the allowlist, and committed the key. The message now states *what* is wrong
+  ("remove it — use an env var or a secret manager") and notes a genuine test fixture is a deliberate human,
+  out-of-band decision, with an explicit "an agent must NOT add an allowlist entry just to get a commit
+  through." The allowlist mechanism is unchanged — a real human fixture still works; only the block message
+  stops advertising the bypass. Regression test added. Applies the new `FRAMEWORK.md` "Enforcement mechanics"
+  convention above.
 - **`commands/wrap.md` opens with a composed-component banner** (backlog dir #27). If you layer your own
   `/wrap` (extra persist/backup steps) on top of Keel's base, an agent that reads this base to "wrap the
   session" can run it standalone and silently skip your wrapper's steps — a real footgun hit while
