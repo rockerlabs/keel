@@ -25,7 +25,10 @@ branch by how safe deletion provably is: **AUTO** (merged, no worktree, older th
 redundant pointer, deletion is lossless), **ASK** (merged but recent/off-pattern — confirm), **FLAG** (merged
 but in a worktree — never auto-removed, may hold uncommitted/gitignored work); see the tool's `-h` for exact
 rules. Auto-delete AUTO with `--prune-safe`, act on ASK only after a yes, print FLAG (`git worktree remove`).
-Never the current branch/worktree or an unmerged branch.
+Never the current branch/worktree or an unmerged branch. Run it **from the session's own worktree** so it
+excludes the worktree you're in; if you reconciled from the main checkout, prefix
+`KEEL_KEEP_WORKTREE="$(git -C <session-worktree> rev-parse --show-toplevel)"` so it never suggests removing
+the worktree you're working in.
 
 **1. Changelog** — in the project `CLAUDE.md` `## Changelog`: one line per milestone (`| YYYY-MM-DD | gist |`).
 Don't retell details (they live in git/PR); keep only the last few here, older ones in the on-demand archive.
