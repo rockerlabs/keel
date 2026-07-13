@@ -58,8 +58,9 @@ keep them around and paste the one you need when you need it.
 ## What works as-is (no change)
 
 - **`PRINCIPLES.md`, `FRAMEWORK.md`** — pure method; any model can read them.
-- **`tools/`** — `doctor.sh`, `secret-guard/`, `init-project.sh` are plain Bash + git. They don't depend on
-  any model.
+- **`tools/`** — `doctor.sh`, `secret-guard/`, `init-project.sh`, `keel-check.sh` are plain Bash. They don't
+  depend on any model — e.g. `keel-check.sh "npm test"` fires its stop-the-spiral banner (after the same
+  check fails twice) on any tool that runs a shell.
 - **The ideas** — load-a-little-always, the project list, keeping the always-on part small — are concepts,
   not code.
 
@@ -69,6 +70,10 @@ keep them around and paste the one you need when you need it.
   and **works everywhere**, any tool or none.
 - The **commands** only auto-run if your tool has a command feature. Without one, they're prompts you paste
   by hand, not autopilot.
+- The **stop-the-spiral shim** (`keel-check.sh`) works everywhere — its banner fires off your check's exit
+  code on any tool with a shell. Its **hard** form — `keel-check-gate.sh` *blocking* a commit while the
+  check is red — is a Claude Code `PreToolUse` hook, so like the commands it's autopilot only where your
+  tool has that hook feature; elsewhere the banner is the nudge you get.
 - **Linked consumption of `CORE.md`** — on Claude Code the always-on file can *import* the rails live
   (an `@path` line pointing at the checkout's `CORE.md`), so `git pull` refreshes them without re-copying.
   `install.sh --link` mechanizes exactly this (plus command symlinks; `doctor.sh --install` audits the
