@@ -35,7 +35,9 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
 repo_top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
 repo_key="$(printf '%s' "$repo_top" | cksum | tr -cd '0-9')"
-state_dir="${KEEL_CHECK_STATE_DIR:-${TMPDIR:-/tmp}}"
+# Fixed /tmp (not $TMPDIR) so this hook and keel-check.sh — separate processes with possibly different
+# $TMPDIR — always resolve the same state path; a mismatch would make the veto silently never fire.
+state_dir="${KEEL_CHECK_STATE_DIR:-/tmp}"
 repo_dir="$state_dir/keel-check/$repo_key"
 
 deny() {

@@ -15,7 +15,9 @@
 #           keel-check.sh go test ./...     # many args -> run as an argv
 # Exit:   passes through the check's own exit code (0 on green), so callers/CI see the real result.
 # Env:    KEEL_CHECK_THRESHOLD  (default 2) — consecutive failures before the STOP banner fires.
-#         KEEL_CHECK_STATE_DIR  (default ${TMPDIR:-/tmp}) — where the per-task counter file lives.
+#         KEEL_CHECK_STATE_DIR  (default /tmp) — where the per-task counter lives. Fixed /tmp, not
+#                                 $TMPDIR, so this shim and keel-check-gate.sh (a separate process, whose
+#                                 $TMPDIR may differ) always agree on the path — matches pre-pr-gate.sh.
 #         KEEL_IMPACT_LOG       — if set, append one zero-token friction event when the banner fires
 #                                 (metadata only; never the check's output). Mirrors pre-pr-gate.sh.
 set -uo pipefail
@@ -40,7 +42,7 @@ cmd="$*"
 repo_top="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
 repo_key="$(printf '%s' "$repo_top" | cksum | tr -cd '0-9')"
 cmd_key="$(printf '%s' "$cmd" | cksum | tr -cd '0-9')"
-state_dir="${KEEL_CHECK_STATE_DIR:-${TMPDIR:-/tmp}}"
+state_dir="${KEEL_CHECK_STATE_DIR:-/tmp}"
 repo_dir="$state_dir/keel-check/$repo_key"
 state="$repo_dir/$cmd_key"
 mkdir -p "$repo_dir" 2>/dev/null || true
