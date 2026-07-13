@@ -88,6 +88,10 @@ hallucinate and costs zero context; a check you'd repeat by hand is a candidate 
 negative result is a valid result** — report it as plainly as a pass; it beats a long false hope.
 Don't assert a fact you haven't checked; flag a guess as a guess — **a blank beats a wrong guess**.
 
+**When the same check keeps failing, stop — don't spiral.** Name the check that proves *done* up front;
+after it fails twice, diagnose what you misunderstood instead of trying a third variant on hope. Repeated
+failure is a missing *cause*, not a missing attempt.
+
 ---
 
 ## Decisions & forks

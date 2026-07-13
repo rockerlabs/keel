@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`CORE.md` — new always-on Verify rail: "stop the spiral" (backlog dir #33, tier T0).** After the same
+  declared check fails twice, stop and diagnose what you misunderstood instead of emitting a third variant on
+  hope — repeated failure is a missing *cause*, not a missing attempt. Felt: an operator observation that no
+  model — not even the weakest — ever says "I can't" or "I don't understand"; a result *always* exists, but it
+  may be non-working, and the model then circles through ever-new "this time it'll work" variants, burning
+  time for zero benefit. This is the cheapest tier (a nudge in the always-loaded core) of a planned
+  anti-hallucination *floor*: the model-independent enforcement (a `keel check` shim + a hook that hard-blocks
+  an artifact while the declared check is red and interrupts on the N-th red) is the follow-up tier T1. The
+  rail complements the adjacent "a blank beats a wrong guess" line. Mirrored byte-equal into
+  `templates/CLAUDE.md` (the copy-path wrapper); no token-figure bump — it fits inside the existing ±10% band.
 - **`FRAMEWORK.md` — new convention "Enforcement mechanics — never name the bypass in the error text".** An
   enforcement mechanism (commit hook, gate, guard, CI check) is read by an *agent*, not just a human, so any
   bypass instruction printed in its block/error message becomes a step-by-step exploit the agent follows to
