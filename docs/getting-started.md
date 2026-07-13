@@ -187,6 +187,11 @@ reads the actual source tree (not just the front door) to draft the stack, archi
   another AI tool, point its custom-command feature at that folder, or paste the body.
 - **Checks when you want them.** `doctor` (what's missing) and `public-audit` (before going public) — run
   them when you like; they cost zero memory.
+- **Stop the spiral when a fix keeps failing.** Run your task's check through `tools/keel-check.sh "npm
+  test"` (any command): after the same check fails twice it prints a STOP-and-diagnose banner instead of
+  letting the assistant keep trying new variants on hope. Zero-dependency, works on any tool with a shell.
+  On Claude Code you can go further — `KEEL_CHECK_VETO=1` plus registering `tools/keel-check-gate.sh` as a
+  PreToolUse hook *blocks* a commit while your declared check is still red.
 
 > **Working without git or code** (documents, research, chat-style sessions)? Be clear about what's left:
 > the advice layer still applies — persist decisions, verify before claiming done, handle forks openly —

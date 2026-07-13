@@ -9,6 +9,43 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`CORE.md` — new always-on Verify rail: "stop the spiral" (backlog dir #33, tier T0).** After the same
+  declared check fails twice, stop and diagnose what you misunderstood instead of emitting a third variant on
+  hope — repeated failure is a missing *cause*, not a missing attempt. Felt: an operator observation that no
+  model — not even the weakest — ever says "I can't" or "I don't understand"; a result *always* exists, but it
+  may be non-working, and the model then circles through ever-new "this time it'll work" variants, burning
+  time for zero benefit. This is the cheapest tier (a nudge in the always-loaded core) of a planned
+  anti-hallucination *floor*: the model-independent enforcement (a `keel check` shim + a hook that hard-blocks
+  an artifact while the declared check is red and interrupts on the N-th red) is the follow-up tier T1. The
+  rail complements the adjacent "a blank beats a wrong guess" line. Mirrored byte-equal into
+  `templates/CLAUDE.md` (the copy-path wrapper); no token-figure bump — it fits inside the existing ±10% band.
+- **`tools/keel-check.sh` — the stop-mode floor, model-independent half (backlog dir #33, tier T1a).** Run
+  a task's declared verification command through this shim (`keel-check.sh "npm test"`, or an argv form
+  `keel-check.sh go test ./...`) and repeated failure becomes a *mechanical* signal: it counts consecutive
+  failures of the same check and, on the 2nd (tunable via `KEEL_CHECK_THRESHOLD`), prints a
+  STOP-and-diagnose banner instead of letting the agent spiral into a third variant on hope. A pass resets
+  the streak; the check's own exit code passes through (callers/CI see the real result); zero dependencies
+  (POSIX `cksum` keys the per-task counter, busybox-safe). Where the `CORE.md` rail above only *nudges*,
+  this *holds* — the banner fires off the exit code no matter the model's strength. Optional: appends one
+  zero-token friction event to `KEEL_IMPACT_LOG` on a stop, mirroring the other guardrails. The banner says
+  *what* to do (diagnose), never *how* to defeat the check (applies the "Enforcement mechanics" convention
+  below). The opt-in HARD veto — block a commit/PR while the declared check is still red — is the follow-up
+  tier T1b.
+- **`tools/keel-check-gate.sh` — the opt-in HARD veto for the stop-mode floor (backlog dir #33, tier T1b).**
+  A Claude Code `PreToolUse(Bash)` hook (the same proven shape as `pre-pr-gate.sh`): while a check the agent
+  declared through `keel-check.sh` is still RED, it blocks `git commit` / `gh pr create` — the "no artifact
+  below the gate" half of the anti-hallucination floor (`PRINCIPLES.md` P1). Where the `CORE.md` rail nudges
+  and the shim's banner interrupts, this *refuses* to let a confident "done" reach a commit while that same
+  check is failing; a green re-run through `keel-check.sh` clears the marker and the commit proceeds. OFF by
+  default — enable per session with `KEEL_CHECK_VETO`, so a deliberate work-in-progress commit on a red test
+  is never blocked unless you asked for it. The deny message says *what* to do (make the check pass), never
+  *how* to defeat the gate (applies the "Enforcement mechanics" convention below); a zero-token guard event
+  goes to `KEEL_IMPACT_LOG` on a block. To support it, `keel-check.sh`'s per-task counter moved under a
+  per-repo directory so the gate can answer "is any declared check for this repo still red?" cheaply.
+  Maintainer-registered like `pre-pr-gate` — `install.sh` does NOT auto-wire it into an adopter's
+  `settings.json` (that adopter auto-registration, plus a per-repo `.keel/stop-mode-veto` enable marker with
+  the worktree→main-checkout fallback, are a deferred tier). 16 offline tests, jq-gated so they skip cleanly
+  on the busybox CI leg.
 - **`FRAMEWORK.md` — new convention "Enforcement mechanics — never name the bypass in the error text".** An
   enforcement mechanism (commit hook, gate, guard, CI check) is read by an *agent*, not just a human, so any
   bypass instruction printed in its block/error message becomes a step-by-step exploit the agent follows to

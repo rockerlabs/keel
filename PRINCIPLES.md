@@ -185,6 +185,7 @@ confirms it ran.*
 |---|---|---|---|
 | **P0 ↔ P1** | skill-building must not excuse a wrong/unverified result; correctness must not over-fit to ephemeral mechanism | an explicit verify-discipline convention + the P0 "extract the transferable lesson" habit | **habit + guideline** |
 | **P1 ↔ P3** | economy/speed must never buy a wrong answer | "no optimization below the gate" — checked at review | **guideline** |
+| **P1 (the gate itself) vs. the model's drive to always emit an answer** | a confidently-wrong or endlessly-retried answer must not reach an artifact | an external pass/fail check the claim must clear (verification external to the claim) + a repeated-failure *stop* that breaks the retry spiral and, in its strong form, refuses to release the artifact while the declared check is red | **automated check** *(a nudge where no external check is declared)* |
 | **P2 ↔ P3** | minimizing tokens must not strip context that prevents hallucination | structural tiering that runs + is tooling-checked (the reusable/personal seam, a thin index that points rather than dumps, a startup-footprint budget); cache-aware placement + retrieval-miss capture as conventions | **automated check** |
 | **P0 ↔ P4** | accumulating capital must not become speculative building; friction-gating must not become an excuse to skip capturing what was genuinely earned | P4's prophylactic carve-out (irreversibility test) + P0's red-flag sweep at session end | **habit + guideline** |
 | **P0 ↔ P1 (self-calibration)** | the set's reflexes (upgrade / friction / loop-working) must not let it spin every outcome into a win and become unfalsifiable | the three Falsifiers above — net-negative ledger, transfer failure, recurring existential rewrite (a *ledger*, a *measurement*, a *rate* — the tests point-reframing cannot reach) | **guideline** *(ledger + transfer carry minimal rituals; promote to an automated check only when one actually fires)* |
@@ -249,6 +250,13 @@ knowledge work.*
 This is the "changelog row" the success test points to — the cheap place a new idea lands instead of
 triggering a foundational rewrite. Each row: date, what changed, the friction that justified it.
 
+- **2026-07-14** — Added a **P1-enforcement row** to the tension table: the gate now names a *running*
+  floor — an external pass/fail check the claim must clear, plus a repeated-failure *stop* that breaks the
+  retry spiral and, in its strong form, refuses the artifact while the declared check is red. *Friction:
+  P1's only enforcement was a `habit + guideline` verify convention, so by this document's own line ("an
+  unenforced balance is a wish") the gate was under-enforced against the very failure mode it exists to
+  stop — a model that always emits a confident result and then circles through variants. A felt operator
+  incident drove building the mechanism, so the row now points at something that runs, not a wish.*
 - **2026-06-26** — P3 re-anchored on P1: "stability > size" now justified by reproducibility /
   attributability, not cache/KV-state; transformer specifics demoted to a labeled, depreciable mechanism
   bonus. *Friction: the principle's strongest claim rested on its most depreciable argument.*
