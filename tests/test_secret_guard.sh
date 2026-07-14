@@ -414,6 +414,21 @@ run "$isg" "$repo"
 check_status "vendor install with selftest verify → exit 0" 0 "$STATUS"
 check_contains "install runs the installed copy's selftest" "$OUT" "selftest: OK"
 
+# --- the INSTALLED pre-push hook actually runs end-to-end, not just secret-scan.sh's own --selftest:
+# install used to vendor pre-push without its range-lib.sh dependency, so every real push through a
+# freshly installed hook crashed on a missing sourced file, not just ones containing a secret --------
+check_file "install vendors range-lib.sh next to pre-push" "$repo/.git/hooks/range-lib.sh"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/root.txt"
+git -C "$repo" add root.txt
+# --no-verify: the just-installed pre-commit hook would otherwise block this fixture commit itself
+# (it contains the same key-shaped secret on purpose) before pre-push ever gets exercised. Bypassing a
+# single commit this way is the mechanism install-secret-guard.sh's own header documents for it.
+git -C "$repo" commit -qm root --no-verify
+sha="$(git -C "$repo" rev-parse HEAD)"
+OUT="$(cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$sha" "$(rep 0 40)" | bash .git/hooks/pre-push 2>&1)"; STATUS=$?
+check_status "the INSTALLED pre-push hook blocks a first-push secret" 1 "$STATUS"
+check_contains "installed hook reports BLOCKED (not a missing-dependency crash)" "$OUT" "BLOCKED"
+
 # --- never clobber the user's own hook (SEC1): refuse by default, --force backs up ------------------
 frepo="$(new_repo)"
 mkdir -p "$frepo/.git/hooks"

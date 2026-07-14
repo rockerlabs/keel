@@ -52,6 +52,27 @@ jobs:
           # shellcheck version and would make the gate flaky across runners.
           shellcheck -x --severity=warning $files
 
+  secret-scan:
+    name: secret-scan (server-side floor, SEC4)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Full commit history, not the default shallow clone: --range walks ancestry between two
+          # shas (PR base/head, or push before/after), which a depth-1 checkout wouldn't have locally.
+          # filter=blob:none keeps that history request cheap — full commit/tree topology up front,
+          # but blob content is fetched lazily, only for the objects the range scan actually reads.
+          fetch-depth: 0
+          filter: blob:none
+      - name: secret-scan --range (introduced blobs, commit messages, tag bodies)
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_EVENT_AFTER: ${{ github.event.after }}
+        run: tools/secret-guard/ci-scan.sh
+
   self-check:
     name: keel self-check
     runs-on: ubuntu-24.04

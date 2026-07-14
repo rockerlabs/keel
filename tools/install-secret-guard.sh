@@ -51,6 +51,7 @@ install_into() {
   cp "$src/secret-scan.sh" "$hooks_dir/secret-scan.sh"
   cp "$src/pre-commit"     "$hooks_dir/pre-commit"
   cp "$src/pre-push"       "$hooks_dir/pre-push"
+  cp "$src/range-lib.sh"   "$hooks_dir/range-lib.sh"     # pre-push sources this next to itself
   chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
   # Verify the installed copy via selftest — a wired-but-broken gate must fail the install (set -e).
   "$hooks_dir/secret-scan.sh" --selftest | sed 's/^/  /'
