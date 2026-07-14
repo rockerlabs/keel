@@ -83,6 +83,6 @@ Operator-specific literals live in the local, never-committed $SECRET_SCAN_PERSO
 ## Then what?
 
 - Bootstrap it for real on your machine: [`../install.sh`](../install.sh) (see the
-  [Quickstart](../README.md#quickstart)).
+  [Install](../README.md#install)).
 - The foundation: [`../PRINCIPLES.md`](../PRINCIPLES.md) and [`../FRAMEWORK.md`](../FRAMEWORK.md).
 - Run it under another model/harness: [`../ADAPTING.md`](../ADAPTING.md).

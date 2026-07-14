@@ -8,6 +8,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+- **`README.md` — body restructured for scannability (phase 2 of the README rework).** Install now leads
+  with one recommended path (`git clone … && ./install.sh --link`); the alternatives (curl one-liner,
+  agent-install prompt, the install-flows table, version pinning, the no-git fallback) fold into a single
+  collapsible "Other ways to install". "The idea" and the "How it loads" diagram merge into one *How it
+  works* section (pinned token figures unchanged). The 16-row "what's in the box" table moves to a new
+  grouped, one-line-per-row [`docs/reference.md`](docs/reference.md); the README gains a short *Docs*
+  pointer section instead. Tests/Scope/License collapse into one closing section; stale `#quickstart`
+  anchors in `docs/getting-started.md` and `examples/README.md` fixed. No install-flow behavior changed —
+  a density pass only.
+
 ### Added
 - **`CORE.md` — new always-on Verify rail: "stop the spiral" (backlog dir #33, tier T0).** After the same
   declared check fails twice, stop and diagnose what you misunderstood instead of emitting a third variant on
