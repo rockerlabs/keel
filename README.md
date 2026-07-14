@@ -21,103 +21,70 @@ months-long horizon, and/or you're taking a private repo public. If that's you, 
 
 ## Install
 
-Two steps. The first sets up the thin always-on file and turns on the secret-guard git hook — **without
-ever touching a file you own.**
+Two steps, and the installer **never touches a file you own**.
 
-**1. Install.**
+**1. Clone and install:**
 
 ```bash
-git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh
+git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh --link
 ```
 
-> **On Claude Code, prefer `./install.sh --link`.** It wires everything by *reference* (symlinks + one
-> import line), so a later `git pull` in this clone updates it all at once — and removal is fully
-> enumerable (one folder, one import line, the command symlinks). Or skip the manual clone entirely:
->
-> ```bash
-> curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s -- --link
-> ```
->
-> That clones Keel to `~/keel` (set `KEEL_DIR` to change) and links it; re-run anytime to update.
-> [Details & trade-offs](docs/getting-started.md#linked-install--recommended-on-claude-code).
+`--link` wires everything by *reference* (symlinks + one import line): a later `git pull` in this clone
+updates it all at once, and removal is fully enumerable. It also turns on the secret-guard git hook.
+(Plain `./install.sh` makes a one-time copy instead — right for tools other than Claude Code.)
 
-> **Even simpler — let your assistant install it.** On Claude Code (or the Claude desktop app), paste:
->
-> > Install Keel from https://github.com/rockerlabs/keel — read its README install section and set it
-> > up for me (linked mode if I have git), then tell me how to finish with `/keel-setup`.
->
-> It clones, runs the installer with the right flags for your machine, and points you at the last step.
-
-**2. Run `/keel-setup` and let the assistant finish setup — no editing by hand.** Restart Claude Code
-(new commands only appear when a session starts) and run `/keel-setup` from anywhere, even with **no
-projects yet** — it fills in your machine details and sets the ground rules. Run it again inside each
-project you want Keel on (**not** the `keel` folder you just cloned): there it **writes a first draft of
-that project's `CLAUDE.md` from its own code** — you *review* the draft, you don't write it.
-
-```
-/keel-setup
-```
-
-After step 1, secret-guard already protects your commits; `/keel-setup` does the rest, and you just
-review what it drafts. (Don't see `/keel-setup`? You're in an old session — start a fresh one.)
+**2. Restart Claude Code and run `/keel-setup`** — the assistant finishes setup, no editing by hand.
+It works even with **no projects yet**: it fills in your machine details and sets the ground rules.
+Run it again inside each project you want Keel on (**not** the `keel` folder you just cloned): there it
+**writes a first draft of that project's `CLAUDE.md` from its own code** — you *review* the draft, you
+don't write it. (Don't see `/keel-setup`? You're in an old session — start a fresh one.)
 
 *Want to see it work before installing?* `./examples/tour.sh` runs a safe demo in a throwaway sandbox
 (touches nothing on your machine): it sets up a sample project and watches secret-guard block a
 key-shaped secret.
 
-### Which install flow fits you?
+<details>
+<summary><strong>Other ways to install</strong> — one-liner, ask your agent, no git, pinned version</summary>
 
-These aren't alternatives to weigh — they're doors sized to different users; pick the row that matches
-you. Two facts decide everything: the *prose rails* are just text files (git isn't needed to place
-them), but **secret-guard is a git hook** — no git, no guard. And **linked** (symlinks + one import
-line; `git pull` updates everything) differs from **copy** (a snapshot that never updates on its own).
+> **One line, no manual clone:**
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s -- --link
+> ```
+>
+> Clones Keel to `~/keel` (set `KEEL_DIR` to change) and links it; re-run anytime to update. Drop
+> `--link` for a one-time copy.
+
+> **Let your assistant install it.** On Claude Code (or the Claude desktop app), paste:
+>
+> > Install Keel from https://github.com/rockerlabs/keel — read its README install section and set it
+> > up for me (linked mode if I have git), then tell me how to finish with `/keel-setup`.
 
 | # | Flow | What you do | Needs git? | Auto-updates? | secret-guard? | Best for |
 |---|------|--------------|:---:|:---:|:---:|----------|
-| 1 | Ask your agent | one sentence to Claude Code: "install Keel from github.com/rockerlabs/keel" | agent decides | yes, if git | yes, if git | anyone already on Claude Code — the agent handles every branch |
-| 2 | One line, terminal | `curl … \| sh` (add `--link` to wire by reference) | optional | yes, with `--link` | yes, if git | fastest path — no manual clone |
-| 3 | Manual, step by step | `git clone … && cd keel && ./install.sh --link` | yes | yes | yes | inspect-first, offline, or full control |
+| 1 | Manual, step by step | the command at the top of Install | yes | yes | yes | the default — inspect-first, full control |
+| 2 | One line, terminal | `curl … \| sh -s -- --link` | optional | yes, with `--link` | yes, if git | fastest path — no manual clone |
+| 3 | Ask your agent | one sentence to Claude Code (above) | agent decides | yes, if git | yes, if git | anyone already on Claude Code |
 | 4 | Download & open (`.dmg`) | — | no | no | no | deferred — no real demand yet |
 
-Full walk-through of each row → [docs/getting-started.md](docs/getting-started.md).
+Two facts decide the columns: the *prose rails* are just text files (git isn't needed to place them),
+but **secret-guard is a git hook** — no git, no guard (the `curl` path falls back to a tarball and
+installs the rails-only half). Pin a release instead of latest `main` with `KEEL_REF=<tag>` — works on
+every path. Full walk-through of each row, including the no-git fallback and version pinning →
+[docs/getting-started.md](docs/getting-started.md).
 
-## What you actually get
+</details>
 
-This is the honest part. A file full of good advice does **not**, on its own, change how your assistant
-behaves — loaded text nudges it, but nothing forces it to follow. **Real, out-of-the-box behavior change
-comes only from the tools.** So Keel is two things, and it's worth knowing which is which:
-
-**Runs by itself — works without you remembering:**
-- **secret-guard** — a git hook that blocks a key-shaped secret, or your listed personal data, when you
-  commit or push. Fires on its own, every time.
-- **public-audit** — scans a repo's files *and its git history* for personal and secret leaks before you
-  flip it public.
-- **install / doctor / init-project** — set up the core, report what's missing, scaffold a project. Run
-  them; they're done.
-
-**Up to you — advice that nudges, but you apply it:**
-- `PRINCIPLES.md`, `FRAMEWORK.md`, and the `CLAUDE.md` ground rules shape decisions *when read* — a lens
-  you choose to look through, not an autopilot. Nothing makes the assistant obey.
-
-Knowing which is which is the point: the always-on layer keeps context lean; the tools do the enforcing.
-
-## The idea
+## How it works
 
 Keel rests on three plain ideas:
 
-1. **Load a little always, the rest on demand.** A small, stable core loads every session; everything
-   else is pulled in only when a task actually needs it. That's what keeps context from bloating — and
-   what lets it work even when the assistant's working memory is small.
-2. **Some things last, some don't.** Tools go out of date in a year; your judgment and project decisions
-   don't. Put your effort into the lasting part, and keep the machinery thin and easy to swap out.
-3. **Add a rule only when something hurts.** Every rule has to fix a real problem you actually ran into —
-   not just be there to look complete. That's what keeps a `CLAUDE.md` from rotting into a junk drawer.
-
-The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md); the reusable how-to is in
-[`FRAMEWORK.md`](FRAMEWORK.md). For exactly what loads when — and what it costs in tokens, with a
-with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-cost.md).
-
-### How it loads, at a glance
+1. **Load a little always, the rest on demand** — a small stable core every session; everything else
+   pulled in only when a task needs it.
+2. **Some things last, some don't** — tools go out of date in a year; your judgment and project
+   decisions don't. Invest in the lasting part, keep the machinery thin.
+3. **Add a rule only when something hurts** — every rule must fix a real problem you actually ran into.
+   That's what keeps a `CLAUDE.md` from rotting into a junk drawer.
 
 ```mermaid
 flowchart TD
@@ -141,8 +108,22 @@ flowchart TD
     tools -.->|only their output reaches context| core
 ```
 
-The always-on part stays tiny; the bigger files (`PRINCIPLES`, `FRAMEWORK`) wait behind a door and load
-only when needed; the tools never enter the assistant's memory at all. That's the whole point.
+The foundation is in [`PRINCIPLES.md`](PRINCIPLES.md); the reusable how-to is in
+[`FRAMEWORK.md`](FRAMEWORK.md). For exactly what loads when — and what it costs in tokens, with a
+with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-cost.md).
+
+## What runs by itself, what only nudges
+
+This is the honest part. A file full of good advice does **not**, on its own, change how your assistant
+behaves — loaded text nudges it, but nothing forces it to follow.
+
+- **Runs by itself:** the tools — the **secret-guard** git hook, the **public-audit** go-public scan,
+  **install / doctor / init-project**. They fire whether or not anyone remembers them; what each does →
+  [`docs/reference.md`](docs/reference.md).
+- **Up to you:** `PRINCIPLES.md`, `FRAMEWORK.md`, and the `CLAUDE.md` ground rules shape decisions
+  *when read* — a lens you choose to look through, not an autopilot.
+
+Knowing which is which is the point: the always-on layer keeps context lean; the tools do the enforcing.
 
 ## Just want the git hook?
 
@@ -168,79 +149,41 @@ tools/install-secret-guard.sh --global   # every repo on this machine, from now 
 your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yourself:
 [`docs/demo/record-demo.sh`](docs/demo/record-demo.sh) (sandboxed, touches nothing).*
 
-## Reference: what's in the box
-
-| | |
-|---|---|
-| `PRINCIPLES.md` | The lasting foundation — the handful of ideas everything else rests on. Read it for big, hard-to-undo decisions. |
-| `FRAMEWORK.md` | The reusable how-to: load-a-little-always, the project list, keeping the always-on part small, plus git and code conventions. No personal data. |
-| `CORE.md` | The always-on rails by themselves — no placeholders, nothing personal. On Claude Code you can import it live from your own file instead of copying (`git pull` in the checkout then refreshes the rails); the template below embeds it verbatim for everyone else. |
-| `templates/CLAUDE.md` | The small always-on file — copy it into your AI tool's config folder (e.g. `~/.claude/`) and edit it. It's `CORE.md` embedded verbatim plus the personal sections you fill in (the file map, your preferences). |
-| `templates/INSTANCE.md` | Your private personal layer (hardware, which models you can use, your list of projects). |
-| `templates/project-CLAUDE.md` | A template for per-project notes. |
-| `templates/LEARNINGS.md` | A holding place for workflow tips that aren't yet worth a full rule (between "make it a rule" and "drop it"). |
-| `install.sh` | One-command setup: copies the always-on files into your config folder (or, with `--link`, wires them as symlinks + one import line) and turns on the secret-guard check. Safe to re-run — never touches your own files; offers to update Keel's own core if it's drifted, asking first. |
-| `tools/doctor.sh` | Checks a project's setup for missing pieces. |
-| `tools/public-audit.sh` | Before you make a private repo public, scans the files **and the git history** for things that shouldn't leak. A committer identity or a declared private token is a hard stop; names, emails and home paths in file content are flagged for you to review. |
-| `tools/secret-guard/` | A git check that blocks key-shaped secrets when you commit or push — and, opt-in, your personal data (name, drive labels, emails, serials) listed in a local never-committed file, caught even inside UTF-16 binary fixtures. It's a safety net for known key shapes (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …) plus your listed literals, not a catch-all — it won't catch arbitrary secrets like an AWS *secret* key, a JWT, or a password. On push it also blocks agent session-metadata trailers (a `Claude-Session`-style line) in the pushed commits' messages, and scans annotated-tag messages against all of the above. |
-| `tools/init-project.sh` | Sets up a new project with the basics in place, and adds it to your `INSTANCE.md` project list. |
-| `tools/register-project.sh` | Adds existing project folder(s) to the `INSTANCE.md` project list — one line each, safe to re-run: `register-project.sh <path>…`. |
-| `commands/` | Commands you can run: `/keel-setup` (lets the assistant finish setup — fills your machine details and drafts a project's `CLAUDE.md` from its code), `/init-project` (set up a project), `/context-dump` (onboard an existing, undocumented codebase by actually reading it), `/go` (start a backlog task on its own), `/wrap` (close out a session — tidy up notes, changelog, backlog), `/global-review` (review across all projects), `/backlog` (show the backlog), `/keel-score` (score how much Keel shaped a session — derived from cited events, not asserted). |
-| `tools/keel-impact.sh` | Optional per-project tracker behind `/keel-score`: an append-only, auditable ledger of cited fire/hit/miss/friction events. Opt-in (`keel-impact.sh enable <dir>`); off by default. |
-| `examples/` | A runnable, safe 5-minute tour of the tools — `init-project` → `doctor` → `secret-guard` blocking a key, start to finish. |
-| `docs/loading-and-cost.md` | What loads when, why, and the per-session token cost — with a with/without-Keel comparison. |
-| `docs/getting-started.md` | The longer setup walk-through: what gets set up, how it fits into your day-to-day, and how to tell it's working. |
-| `docs/going-public.md` | A safe step-by-step for making a private repo public: find leaks (`public-audit`) → fix names → clean history → flip. |
-
-`./install.sh --home DIR` sets Keel up for an AI tool other than Claude Code; `--no-hooks` skips the git
-check. To set it up by hand instead, copy `templates/CLAUDE.md`, `templates/INSTANCE.md`, `FRAMEWORK.md`,
-and `PRINCIPLES.md` into `~/.claude/`, then run `tools/install-secret-guard.sh --global`.
-
 ## Good to know
 
 > **"Isn't this just a well-written `CLAUDE.md`?"** Mostly, yes — and that's the point: one that's
 > already written, installed in one command, tested on CI across three platforms, and disciplined enough
-> to stay thin instead of bloating. Plus the guard rails a text file can't give you — a git hook that
-> blocks secrets and personal data, and an audit for taking a repo public.
+> to stay thin. Plus the guard rails a text file can't give you — the git hook and the go-public audit.
 
 > **Not using Claude Code?** Keel doesn't depend on it. The ideas, the `tools/`, and the always-on file
-> work with any AI coding tool (Cursor, Aider, Codex, a plain API agent, …). The one Claude-Code-specific
-> bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md) for a short non-Claude setup — and, if you
-> get it running on another tool, a quick way to share how.
+> work with any AI coding tool (Cursor, Aider, Codex, a plain API agent, …); the one Claude-Code-specific
+> bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md).
 
-> **Already have your own conventions?** Keel isn't all-or-nothing, and it won't fight your setup —
-> `install.sh` never touches a file you own. Take only what's useful:
->
-> - **The ideas.** Read [`PRINCIPLES.md`](PRINCIPLES.md) and [`FRAMEWORK.md`](FRAMEWORK.md) and lift what
->   fits into your *own* `CLAUDE.md`. Load-a-little-always, durable-vs-disposable, build-from-friction
->   port to any setup — you don't need Keel's files to use them.
-> - **The standalone tools.** `secret-guard` and `public-audit` run next to whatever you already use —
->   no Keel "core" required; see [Just want the git hook?](#just-want-the-git-hook) above.
-> - **One piece at a time.** Grab a single `commands/*.md` or a template and ignore the rest.
->
-> Keel is a method and a few tools you graft onto what you have — not a framework you adopt whole.
+> **Already have your own conventions?** Keel isn't all-or-nothing and won't fight your setup —
+> `install.sh` never touches a file you own. Lift single ideas from
+> [`PRINCIPLES.md`](PRINCIPLES.md)/[`FRAMEWORK.md`](FRAMEWORK.md) into your own `CLAUDE.md`, run the
+> [standalone tools](#just-want-the-git-hook) next to what you have, or grab one `commands/*.md` and
+> ignore the rest — a method to graft on, not a framework to adopt whole.
 
-> **Status: early experiment.** This is an early, cleaned-up copy of one person's working setup. It's
-> public to find out whether it helps anyone besides its author — not as a finished product. Feedback
-> welcome; expect rough edges.
+> **Status: early experiment.** A cleaned-up copy of one person's working setup, public to find out
+> whether it helps anyone besides its author. Feedback welcome; expect rough edges.
 
-## Tests
+## Docs
 
-The tools check themselves — a small Bash test suite (no extra dependencies) runs on every change across
-Linux and macOS, plus a `shellcheck` pass. If any tool breaks, the tests go red.
+- [`docs/reference.md`](docs/reference.md) — **what's in the box**: every file, tool, and command at a glance.
+- [`docs/getting-started.md`](docs/getting-started.md) — the longer setup walk-through, install flows, version pinning.
+- [`docs/loading-and-cost.md`](docs/loading-and-cost.md) — what loads when and the per-session token cost.
+- [`docs/going-public.md`](docs/going-public.md) — a safe step-by-step for making a private repo public.
+- [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
+- [`PRINCIPLES.md`](PRINCIPLES.md) · [`FRAMEWORK.md`](FRAMEWORK.md) — the foundation and the reusable how-to.
 
-```bash
-tests/run.sh   # secret-guard block/allow/allowlist, doctor checks,
-               # init-project re-run safety, install.sh setup + don't-overwrite guards
-```
+## Tests, scope, license
 
-It's the same rule Keel asks of you, applied to Keel itself: the project is the first thing it checks.
+A small Bash test suite (no extra dependencies) runs on every change across Linux and macOS, plus a
+`shellcheck` pass — `tests/run.sh` runs it locally. It's the same rule Keel asks of you, applied to Keel
+itself.
 
-## Scope
-
-A reference and method, not a packaged product or a subscription. Built for Claude Code but not tied to
-any one model or tool — see [`ADAPTING.md`](ADAPTING.md).
-
-## License
+Keel is a reference and method, not a packaged product or a subscription. Built for Claude Code but not
+tied to any one model or tool — see [`ADAPTING.md`](ADAPTING.md).
 
 Licensed under MIT (see [`LICENSE`](LICENSE)). Releases are tracked in [`CHANGELOG.md`](CHANGELOG.md).

@@ -1,6 +1,6 @@
 # Getting started — set up Keel and fit it into how you work
 
-The [Quickstart](../README.md#quickstart) is the short version. This is the longer walk: what gets set up,
+The README's [Install](../README.md#install) is the short version. This is the longer walk: what gets set up,
 how it actually changes your sessions, and how to tell it's working.
 
 ## What you actually do — two steps
@@ -136,7 +136,7 @@ an AI tool other than Claude Code; `--no-hooks` skips the git check.
 | `INSTANCE.md` | your **private** layer — machine details + a list of your projects | fill in the **machine details**; the project list fills itself as you `init-project`/`register-project`. Keep it private (git-ignored). |
 | a global git check | `secret-guard` | nothing — it runs on its own |
 
-(What loads when → the README's [*How it loads*](../README.md#the-idea) diagram and
+(What loads when → the README's [*How it works*](../README.md#how-it-works) diagram and
 [`loading-and-cost.md`](loading-and-cost.md).)
 
 ## 3. Per project (each repo you work in)
