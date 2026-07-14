@@ -222,10 +222,12 @@ check_dir "enable creates the .keel/ marker" "$erepo/.keel"
 check_contains "enable gitignores the event log only" "$(cat "$erepo/.gitignore" 2>/dev/null)" "/.keel/impact-events.log"
 check_contains "enable confirms tracking is on" "$OUT" "impact tracking enabled"
 
-# idempotent: a second enable doesn't duplicate the gitignore line
+# idempotent: a second enable doesn't duplicate the gitignore line, and reports itself as a no-op
+# (not "enabled" again) — the same +/= convention init-project.sh uses for its other idempotent steps
 run bash "$TOOL" enable "$erepo"
 check_status "second enable succeeds" 0 "$STATUS"
 check_contains "gitignore has exactly one event-log line" "$(grep -c '^/\.keel/impact-events\.log$' "$erepo/.gitignore")" "1"
+check_contains "second enable reports already-enabled, not newly-enabled" "$OUT" "impact tracking already enabled"
 
 # end-to-end: an enabled repo records a guard event with NO env, and the ledger resolves to .keel/ledger.md
 run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" event guard secret-guard blocked

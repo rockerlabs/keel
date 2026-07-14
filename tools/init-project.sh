@@ -69,8 +69,7 @@ ensure_ignore ".idea/"
 # Only the ephemeral event log is gitignored; .keel/ledger.md (the durable score history) stays trackable.
 # Zero token cost; --no-impact to skip.
 if [ "$IMPACT" = 1 ]; then
-  out="$("$here/keel-impact.sh" enable .)"
-  echo "$out" | sed 's/^/  /'
+  "$here/keel-impact.sh" enable . | sed 's/^/  /'
 fi
 
 # 3. project CLAUDE.md from template

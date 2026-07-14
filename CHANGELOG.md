@@ -50,7 +50,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `.keel/`): it fires from either side — a worktree carrying its own marker next to the main checkout's,
   or a main checkout whose linked worktrees carry their own — since PR #67's resolvers try the current
   top first, and a leftover local marker silently diverts that worktree's events into its own ledger
-  while the main-top ledger undercounts.
+  while the main-top ledger undercounts. `keel-impact.sh enable` also regains the idempotent
+  "already enabled" (vs. "enabled") distinction the old inline code had, restoring the `=`/`+` reporting
+  convention `init-project.sh`'s other steps still follow — a code-review pass on this PR caught that the
+  delegation had silently dropped it.
 - **`tools/branch-cleanup.sh` — a merged worktree is now graded by LIVENESS instead of always being
   FLAGged.** Previously every merged branch checked out in a worktree went to FLAG (manual review), even a
   long-idle one holding nothing — so worktrees never got auto-cleaned and piled up (this repo hit 12). A new

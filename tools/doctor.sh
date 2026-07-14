@@ -400,7 +400,7 @@ EOF
       if [ -e "$wt/CLAUDE.md" ] || [ -L "$wt/CLAUDE.md" ]; then continue; fi  # already bridged
       wt_missing=$((wt_missing + 1))
     done <<EOF
-$(git -C "$d" worktree list --porcelain 2>/dev/null)
+$wt_list
 EOF
     if [ "$wt_missing" -gt 0 ]; then
       warn "$wt_missing linked worktree(s) missing the CLAUDE.md bridge — the session starts blind there (FRAMEWORK 'Worktree discipline')"
