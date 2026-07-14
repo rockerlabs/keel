@@ -284,6 +284,27 @@ git -C "$base" worktree add -q "$wtp" >/dev/null 2>&1
 run "$doctor" "$base"
 check_absent  "public-fork worktree → exempt from bridge WARN" "$OUT" "missing the CLAUDE.md bridge"
 
+# --- impact-tracking split-brain (dir #10 residue (b)): a worktree-local .keel/ marker alongside the
+# main checkout's own → advisory WARN, both directions -------------------------------------------
+base="$(mkproj)"; git -C "$base" init -q
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init --allow-empty >/dev/null
+wts="$SANDBOX/wtsplit.$$"
+git -C "$base" worktree add -q "$wts" >/dev/null 2>&1
+# neither side has a marker yet → no split-brain WARN
+run "$doctor" "$wts"
+check_absent "no .keel/ anywhere → no split-brain WARN" "$OUT" "coexists with the main checkout"
+mkdir "$base/.keel"
+run "$doctor" "$wts"
+check_absent "only the main-top marker → no split-brain WARN from the worktree side" "$OUT" "coexists with the main checkout"
+run "$doctor" "$base"
+check_absent "only the main-top marker → no split-brain WARN from the main side" "$OUT" "carry their own .keel/ marker"
+# now plant a stray marker in the worktree too → split-brain WARN, checked from BOTH sides
+mkdir "$wts/.keel"
+run "$doctor" "$wts"
+check_contains "worktree-local + main-top .keel/ → split-brain WARN (from the worktree)" "$OUT" "coexists with the main checkout"
+run "$doctor" "$base"
+check_contains "worktree-local + main-top .keel/ → split-brain WARN (from the main checkout)" "$OUT" "carry their own .keel/ marker"
+
 # --- secret-guard drift: an installed copy that differs from the shipped engine → WARN -----------
 shipped="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 
