@@ -14,6 +14,7 @@
 #   GAP   no project CLAUDE.md
 #   GAP   .gitignore does not ignore the private AI context (.claude/ or CLAUDE.md) — unless public fork
 #   WARN  a .keel/ marker exists but its event log (.keel/impact-events.log) isn't gitignored (leak risk)
+#   WARN  a worktree-local .keel/ marker coexists with the main checkout's — events split across ledgers
 #   WARN  secret-guard not wired (no global core.hooksPath and no local pre-commit)
 #   WARN  a local core.hooksPath override carries no guard — it silently bypasses the machine-global one
 #   WARN  an installed secret-guard copy (machine-global — checked once — or a repo's wired vendored
@@ -271,6 +272,38 @@ for d in "${DIRS[@]}"; do
   # it never nags a project to enable tracking (optional).
   if [ -d "$d/.keel" ] && ! git -C "$d" check-ignore -q .keel/impact-events.log 2>/dev/null; then
     warn "impact event log (.keel/impact-events.log) is not gitignored — it can leak into history (run keel-impact.sh enable, or add /.keel/impact-events.log to .gitignore)"
+  fi
+
+  # Impact-tracking split-brain (dir #10 residue (b)): a pre-#67 `enable`/init-project run could have
+  # planted the .keel/ marker at a linked worktree's own top (untracked, so it's invisible to other
+  # worktrees). PR #67's resolvers try the CURRENT top first, so a leftover worktree-local marker
+  # silently diverts that worktree's events into its own ledger while the main-top ledger undercounts —
+  # a split it's easy not to notice without this check. Covers both directions: $d itself carrying a
+  # stray local marker next to the main one, and $d (as the main checkout) having linked worktrees that
+  # each carry their own.
+  # `|| true`: outside a repo (e.g. the "bare dir" GAP case above, which doesn't `continue`) git exits
+  # 128 and pipefail would trip `set -e` here, aborting the whole audit instead of just skipping this
+  # check — same guard as keel-impact.sh's `_keel_main_top`. Both paths come from git (not `cd && pwd`)
+  # so they're canonicalized the same way — on macOS /tmp is a symlink to /private/tmp, and comparing a
+  # shell-resolved path against git's own realpath'd worktree list would otherwise false-positive.
+  d_top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
+  main_top="$(git -C "$d" worktree list --porcelain 2>/dev/null | awk 'NR==1{sub(/^worktree /,""); print; exit}' || true)"
+  if [ -n "$d_top" ] && [ -n "$main_top" ] && [ -d "$main_top/.keel" ]; then
+    if [ "$main_top" != "$d_top" ] && [ -d "$d/.keel" ]; then
+      warn "worktree-local .keel/ marker coexists with the main checkout's ($main_top/.keel/) — events split across two ledgers (this worktree wins locally); remove this worktree's .keel/ so events land in the shared one"
+    elif [ "$main_top" = "$d_top" ]; then
+      stray_wt=0
+      while IFS= read -r wline; do
+        case "$wline" in "worktree "*) wt="${wline#worktree }" ;; *) continue ;; esac
+        if [ "$wt" = "$d_top" ]; then continue; fi          # the main checkout itself
+        if [ -d "$wt/.keel" ]; then stray_wt=$((stray_wt + 1)); fi
+      done <<EOF
+$(git -C "$d" worktree list --porcelain 2>/dev/null)
+EOF
+      if [ "$stray_wt" -gt 0 ]; then
+        warn "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
+      fi
+    fi
   fi
 
   # A machine-global core.hooksPath covers this repo — UNLESS the repo sets its own LOCAL core.hooksPath,
