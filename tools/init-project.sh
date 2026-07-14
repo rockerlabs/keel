@@ -63,16 +63,13 @@ ensure_ignore ".DS_Store"
 ensure_ignore ".idea/"
 
 # 2b. Impact tracking — opt this project in by creating the .keel/ marker the guardrail hooks look for
-# before recording a fire. Only the ephemeral event log is gitignored; .keel/ledger.md (the durable score
-# history) stays trackable. Zero token cost; --no-impact to skip.
+# before recording a fire. Delegated to keel-impact.sh enable (not a raw `mkdir -p .keel` here): its
+# resolver always targets the MAIN checkout's top (PR #67 discipline), so scaffolding a project FROM a
+# linked worktree doesn't plant a stray local marker other worktrees can't see (dir #10 residue (a)).
+# Only the ephemeral event log is gitignored; .keel/ledger.md (the durable score history) stays trackable.
+# Zero token cost; --no-impact to skip.
 if [ "$IMPACT" = 1 ]; then
-  ensure_ignore "/.keel/impact-events.log"
-  if [ -d .keel ]; then
-    echo "  = impact tracking already enabled (.keel/)"
-  else
-    mkdir -p .keel
-    echo "  + impact tracking enabled (.keel/ marker; ledger.md trackable, event log ignored)"
-  fi
+  "$here/keel-impact.sh" enable . | sed 's/^/  /'
 fi
 
 # 3. project CLAUDE.md from template

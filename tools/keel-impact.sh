@@ -230,14 +230,20 @@ cmd_enable() {
   top="$(_keel_main_top "$dir")"
   [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"  # bare main: this worktree's top
   [ -n "$top" ] || top="$dir"                 # not a git repo yet: fall back to the dir as-is
+  local already=0
+  [ -d "$top/.keel" ] && already=1
   mkdir -p "$top/.keel"
   local gi="$top/.gitignore"
   if ! { [ -f "$gi" ] && grep -qxF '/.keel/impact-events.log' "$gi"; }; then
     printf '/.keel/impact-events.log\n' >> "$gi"
     printf 'keel-impact: gitignored /.keel/impact-events.log in %s\n' "$gi"
   fi
-  printf 'keel-impact: impact tracking enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
-  printf '  guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md and .keel/evidence.md to keep the history + audit trail.\n'
+  if [ "$already" -eq 1 ]; then
+    printf 'keel-impact: impact tracking already enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
+  else
+    printf 'keel-impact: impact tracking enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
+    printf '  guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md and .keel/evidence.md to keep the history + audit trail.\n'
+  fi
 }
 
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --

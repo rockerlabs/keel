@@ -70,4 +70,17 @@ check_status "--no-impact → exit 0" 0 "$STATUS"
 if [ -d "$ni/.keel" ]; then fail "--no-impact creates no .keel/ marker" "dir exists: $ni/.keel"; else pass "--no-impact creates no .keel/ marker"; fi
 check_absent "--no-impact adds no impact-log ignore" "$(cat "$ni/.gitignore")" "/.keel/impact-events.log"
 
+# dir #10 residue (a): scaffolding FROM a linked worktree routes the .keel/ marker through
+# keel-impact.sh's main-top resolution (PR #67 discipline) — it must land at the MAIN checkout's top,
+# never as a stray local marker other worktrees can't see. Build the repo by hand (not via a first
+# init-project run) so the worktree starts with no .keel/ of its own.
+wbase="$SANDBOX/wt-base-proj"; mkdir -p "$wbase"; git -C "$wbase" init -q
+git -C "$wbase" -c user.email=t@keel.invalid -c user.name=t commit -qm init --allow-empty >/dev/null
+wt="$SANDBOX/wt-base-proj.wt"
+git -C "$wbase" worktree add -q -b wt-branch "$wt" >/dev/null 2>&1
+run "$init" --no-register "$wt"
+check_status "init from a linked worktree → exit 0" 0 "$STATUS"
+check_dir "marker lands at the main checkout's top" "$wbase/.keel"
+if [ -d "$wt/.keel" ]; then fail "no stray local marker in the worktree" "dir exists: $wt/.keel"; else pass "no stray local marker in the worktree"; fi
+
 summary
