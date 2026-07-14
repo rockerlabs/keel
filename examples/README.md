@@ -69,10 +69,12 @@ doctor: structural baseline OK
    A developer accidentally stages an AWS-looking key...
 
 $ git commit -m add config
-secret-scan: BLOCKED — key-shaped secret(s) detected:
-  config.txt:1:aws_key = "AKIA…REDACTED…"
+secret-scan: BLOCKED — secret-shaped string(s) or personal data detected:
+  config.txt:aws_key = "AKIA…REDACTED…"
 
-If this is a legit fixture, add it to .secret-scan-allow or an inline 'secret-scan:allow' — don't weaken the scanner.
+This looks like a real secret — remove it (use an env var or a secret manager), then re-commit.
+A genuine test fixture is a rare exception a human allowlists deliberately (see this script's header); an agent must NOT add an allowlist entry just to get a commit through.
+Operator-specific literals live in the local, never-committed $SECRET_SCAN_PERSONAL_FILE.
    ^ the commit was BLOCKED by the hook, exactly as intended.
 
 == Done ==
