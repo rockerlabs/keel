@@ -49,7 +49,7 @@ key-shaped secret.
 ### Other ways to install
 
 <details>
-<summary>The other doors, ranked <strong>#1 → #3 from simplest to most control</strong> — pick the row that matches you</summary>
+<summary><strong>#1 → #3, simplest first</strong> — pick your door (the last row is deferred)</summary>
 
 > **#1 — Let your assistant install it** *(simplest — one sentence, the agent handles every branch)*.
 > On Claude Code (or the Claude desktop app), paste:
@@ -69,18 +69,18 @@ key-shaped secret.
 > **#3 — Manual, step by step** — the `git clone … && ./install.sh --link` command at the top of
 > Install: inspect-first, offline, full control.
 
-| # | Flow | Needs git? | Auto-updates? | secret-guard? | Best for |
-|---|------|:---:|:---:|:---:|----------|
-| 1 | Ask your agent | agent decides | yes, if git | yes, if git | anyone already on Claude Code — zero terminal work |
-| 2 | One line, terminal | optional | yes, with `--link` | yes, if git | fastest hands-on path — no manual clone |
-| 3 | Manual, step by step | yes | yes | yes | inspect-first, full control |
-| 4 | Download & open (`.dmg`) | no | no | no | deferred — no real demand yet |
+| # | Flow | Needs git? | Auto-updates? | secret-guard? |
+|---|------|:---:|:---:|:---:|
+| 1 | Ask your agent | agent decides | yes, if git | yes, if git |
+| 2 | One line, terminal | optional | yes, with `--link` | yes, if git |
+| 3 | Manual, step by step | yes | yes | yes |
+| — | Download & open (`.dmg`) | no | no | no |
 
 Two facts decide the columns: the *prose rails* are just text files (git isn't needed to place them),
 but **secret-guard is a git hook** — no git, no guard (the `curl` path falls back to a tarball and
-installs the rails-only half). Pin a release instead of latest `main` with `KEEL_REF=<tag>` — works on
-every path. Full walk-through of each row, including the no-git fallback and version pinning →
-[docs/getting-started.md](docs/getting-started.md).
+installs the rails-only half). The `.dmg` row is deferred until real demand. Pin a release instead of
+latest `main` with `KEEL_REF=<tag>` — works on every path. Full walk-through of the terminal flows,
+including the no-git fallback and version pinning → [docs/getting-started.md](docs/getting-started.md).
 
 </details>
 
