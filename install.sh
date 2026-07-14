@@ -403,6 +403,27 @@ if [ -d "$root/commands" ]; then
   done
 fi
 
+# The `keel` CLI on PATH — one entry point (keel install|sync|doctor|audit|init|check|uninstall) so
+# the lifecycle tools work from any cwd, not just the checkout. ALWAYS a symlink into the checkout in
+# BOTH modes: the dispatcher resolves its siblings (install.sh, tools/*) relative to its real path, so
+# a copy severed from the checkout couldn't dispatch. Refuse-to-clobber: only ever replace our own
+# symlink, never a real file you put at bin/keel. $HOME_DIR/bin keeps Keel's whole footprint under one
+# root (clean uninstall) at the cost of a PATH line the summary prints if the dir isn't already on PATH.
+if [ -f "$root/keel" ]; then
+  mkdir -p "$HOME_DIR/bin"
+  keel_link="$HOME_DIR/bin/keel"
+  if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
+    if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
+      echo "  =    bin/keel already wired"
+    else
+      make_link "$root/keel" "$keel_link"
+      echo "  +    bin/keel → $root/keel  (run 'keel help')"
+    fi
+  else
+    echo "  !    $keel_link exists and is not a Keel symlink — left it untouched (remove it to let Keel wire the CLI)."
+  fi
+fi
+
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.
 # keel_hooks must match the path install-secret-guard.sh --global writes to (re-used by Verify below).
 # Resolved only when hooks are in play, so --no-hooks never needs $HOME; a clear message (not a bare
@@ -489,6 +510,15 @@ if [ "$DO_HOOKS" = 1 ]; then
   fi
 fi
 
+# The keel CLI: wired iff bin/keel resolves back into this checkout.
+if [ -f "$root/keel" ]; then
+  if [ -L "$HOME_DIR/bin/keel" ] && [ "$HOME_DIR/bin/keel" -ef "$root/keel" ]; then
+    echo "  OK   keel CLI (bin/keel)"
+  else
+    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — run 'install.sh' again, or add an alias by hand."
+  fi
+fi
+
 if [ "$foreign_core" = 1 ]; then
   echo "  WARN $HOME_DIR/CLAUDE.md predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
   echo "       Merge the rails you want by hand:  diff $HOME_DIR/CLAUDE.md $root/templates/CLAUDE.md"
@@ -506,6 +536,13 @@ Done$mode_tag. secret-guard already guards your commits. Next:
     the always-on ground rules. Later, run /keel-setup again INSIDE each project you want Keel on —
     that part drafts the project's CLAUDE.md from its code (you review).
 EOF
+if [ -f "$root/keel" ]; then
+  echo "  - the  keel  CLI is on  $HOME_DIR/bin  →  keel help  (install · sync · doctor · audit · init · check · uninstall)"
+  case ":${PATH:-}:" in
+    *":$HOME_DIR/bin:"*) : ;;
+    *) echo "    (add it to PATH:  export PATH=\"$HOME_DIR/bin:\$PATH\"  — or keep using the tools by path)" ;;
+  esac
+fi
 if [ "$LINK" = 1 ]; then
   cat <<EOF
   - This clone IS the installation — everything points into it, so never delete it, and park it
@@ -514,8 +551,9 @@ if [ "$LINK" = 1 ]; then
     wire anything a release ADDED (a pull refreshes content, not composition).
     A pull changes your next session's rails without review — pull deliberately, or pin a tag.
   - health check:  tools/doctor.sh --install     (everything shipped is wired, nothing dangles)
-  - remove Keel:  delete  $HOME_DIR/keel/ , the one @import line in  $HOME_DIR/CLAUDE.md ,
-    and the  $HOME_DIR/commands/  symlinks into this checkout.
+  - remove Keel:  keel uninstall  (reverses this, backing up what it removes) — or by hand: delete
+    $HOME_DIR/keel/ , the @import line in  $HOME_DIR/CLAUDE.md , the  $HOME_DIR/commands/  symlinks,
+    and  $HOME_DIR/bin/keel .
   - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md  private.
 EOF
 else
@@ -528,5 +566,6 @@ else
     private, and scaffold/audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>
   - measure Keel's impact: new projects (init-project) are tracked by default; for an existing repo run
     tools/keel-impact.sh enable <dir>  then score a session with  /keel-score
+  - remove Keel later:  keel uninstall  (reverses this install, backing up what it removes)
 EOF
 fi

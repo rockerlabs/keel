@@ -1,0 +1,101 @@
+#!/bin/sh
+# keel — the one entry point for Keel's lifecycle tools. A THIN dispatcher: every verb is a rename
+# of a script that already exists (install.sh, tools/*.sh), so this file adds no capability of its
+# own except `uninstall`, `version`, and `help`. It resolves ITS OWN checkout by following the
+# symlink install.sh puts on your PATH, then runs the sibling script — so `keel <verb>` works from
+# ANY cwd, which the bare `tools/*.sh` paths (unresolvable from a user's own project) never did
+# (backlog dir #4/D1 — the felt reason this CLI exists, hit live with the first external adopter).
+#
+# Verbs:
+#   keel install [--link]      -> install.sh            bootstrap / linked wiring into your home
+#   keel sync                  -> git pull + install.sh  refresh a linked install after a release
+#   keel doctor [--install]    -> tools/doctor.sh        audit a project, or the install itself
+#   keel audit                 -> tools/public-audit.sh  leak-surface scan before going public
+#   keel init [DIR]            -> tools/init-project.sh  scaffold a project's knowledge base
+#   keel check <cmd...>        -> tools/keel-check.sh    run a check through the stop-mode floor
+#   keel uninstall             -> uninstall.sh           reverse install.sh (backs up what it removes)
+#   keel version               -> the checkout's version (git describe)
+#   keel help | -h | --help    -> this usage
+#
+# Zero-dependency POSIX sh. A child's exit code passes straight through (via exec), so callers and CI
+# see the real result. An unknown verb prints usage to stderr and exits 2.
+set -eu
+
+prog="keel"
+
+# --- resolve this script's real path, following symlinks (macOS has no `readlink -f`) -----------
+# $0 is however we were invoked: the PATH symlink install.sh wires (<home>/bin/keel -> <checkout>/keel),
+# a relative ./keel, or a bare `keel` found on PATH. Normalise all three to the physical file, then take
+# its directory as the checkout. `pwd -P` collapses any symlinked parent dirs too. No `--` on readlink /
+# command below: our values never start with `-`, and dropping it sidesteps a busybox portability wart.
+self="$0"
+case "$self" in
+  */*) : ;;                              # already has a path component
+  *) self="$(command -v "$self" || true)"  # bare name -> locate on PATH
+     [ -n "$self" ] || { echo "$prog: cannot locate my own path" >&2; exit 1; } ;;
+esac
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in
+    /*) self="$link" ;;
+    *)  self="$(dirname "$self")/$link" ;;
+  esac
+done
+CHECKOUT="$(cd "$(dirname "$self")" && pwd -P)"
+
+# Sanity: the checkout must carry the scripts we dispatch to. Guards against a stray `keel` COPIED
+# (not symlinked) somewhere its siblings don't exist — a clear error beats a confusing "no such file".
+if [ ! -f "$CHECKOUT/install.sh" ] || [ ! -d "$CHECKOUT/tools" ]; then
+  echo "$prog: cannot find the Keel checkout next to me ($CHECKOUT has no install.sh/tools)." >&2
+  echo "      keel must stay a symlink into its checkout — re-run install.sh to re-wire it." >&2
+  exit 1
+fi
+
+usage() {
+  cat <<EOF
+$prog — one entry point for Keel's lifecycle tools (checkout: $CHECKOUT)
+
+Usage: $prog <command> [args...]
+
+Commands:
+  install [--link]     install/refresh Keel into your harness home (--link: wire by symlink)
+  sync                 refresh a linked install: git pull in the checkout, then re-wire
+  doctor [--install]   audit a project's KB baseline (--install: audit the install itself)
+  audit                scan the leak surface before pushing public
+  init [DIR]           scaffold a project's Keel knowledge base
+  check <cmd...>       run a verification command through the stop-mode floor
+  uninstall            reverse install.sh (backs up anything it removes)
+  version              print the checkout's version
+  help                 show this help
+
+Every command forwards its arguments and exit code to the underlying tool.
+EOF
+}
+
+[ "$#" -ge 1 ] || { usage >&2; exit 2; }
+
+cmd="$1"
+shift
+case "$cmd" in
+  install)   exec "$CHECKOUT/install.sh" "$@" ;;
+  sync)
+    # Refresh semantics for a linked install: pull the checkout, then re-run install — which is sticky
+    # (it detects a linked home and re-wires in linked mode, picking up anything a release ADDED; a pull
+    # refreshes content, not composition). Pull is best-effort: a detached/dirty/offline checkout still
+    # gets the re-wire rather than aborting the whole refresh.
+    if ! git -C "$CHECKOUT" pull --ff-only; then
+      echo "$prog sync: git pull did not fast-forward — re-wiring from the checkout as-is." >&2
+    fi
+    exec "$CHECKOUT/install.sh" "$@" ;;
+  doctor)    exec "$CHECKOUT/tools/doctor.sh" "$@" ;;
+  audit)     exec "$CHECKOUT/tools/public-audit.sh" "$@" ;;
+  init)      exec "$CHECKOUT/tools/init-project.sh" "$@" ;;
+  check)     exec "$CHECKOUT/tools/keel-check.sh" "$@" ;;
+  uninstall) exec "$CHECKOUT/uninstall.sh" "$@" ;;
+  version)
+    v="$(git -C "$CHECKOUT" describe --tags --always --dirty 2>/dev/null || true)"
+    [ -n "$v" ] || v="unknown"
+    echo "keel $v ($CHECKOUT)" ;;
+  help|-h|--help) usage ;;
+  *) echo "$prog: unknown command '$cmd' (try '$prog help')" >&2; usage >&2; exit 2 ;;
+esac

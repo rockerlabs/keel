@@ -9,6 +9,31 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Unified `keel` CLI — one entry point over the lifecycle tools (backlog dir #2, phase 1).** A single
+  zero-dependency POSIX `keel` script at the repo root, put on your PATH by `install.sh` (as a symlink
+  into the checkout, under `<home>/bin/`, never over a file you own). It dispatches
+  `keel install [--link]` → `install.sh`, `keel sync` → git pull + re-wire, `keel doctor [--install]`,
+  `keel audit` → `public-audit.sh`, `keel init` → `init-project.sh`, `keel check` → `keel-check.sh`,
+  `keel uninstall`, and `keel version`/`keel help`. Every verb is a rename of an existing script's
+  invocation — no new capability except `uninstall` — so the tools finally work from **any** directory,
+  not only from inside the clone (the felt D1 papercut: installed commands referenced `tools/*.sh` by
+  repo-relative paths unresolvable from a user's own project, hit live with the first external adopter).
+  The dispatcher resolves its own checkout by following the PATH symlink (portable, no `readlink -f`),
+  and passes each child's exit code straight through; an unknown verb prints usage and exits 2.
+- **`uninstall.sh` — reverse `install.sh`, backing up what it removes (backlog dir #13, via #2).** The
+  mirror image of the install write-list: it removes only Keel-owned content (the linked `keel/`
+  consumption dir, the one `@import` line / embedded `KEEL-CORE` block in the global `CLAUDE.md`, the
+  command symlinks + `keel-<name>` collision aliases, the `bin/keel` PATH symlink, and any copy-mode
+  `FRAMEWORK`/`PRINCIPLES` it placed). Refuse-to-clobber in reverse: a command or on-demand file that
+  *differs* from what Keel ships is treated as yours and left in place; `INSTANCE.md`/`LEARNINGS.md`/
+  `IDEAS.md` are never touched; the machine-global secret-guard is kept (a shared safety net — its
+  removal is a separate, announced one-liner). Everything it removes is **moved** into a timestamped
+  backup dir under the home (nothing hard-deleted), so an uninstall is reversible. `--dry-run` previews;
+  `--yes` is required when not run from a terminal. `tools/doctor.sh --install` now also reports the CLI's
+  presence (and flags a dangling or foreign-checkout `bin/keel`). Covered by `tests/test_keel_cli.sh`
+  (dispatch table, exit pass-through, self-resolution, the orphaned-`keel` guard) and
+  `tests/test_uninstall.sh` (a real install→uninstall round-trip in both modes, no-clobber, dry-run,
+  backup, idempotence).
 - **Server-side `secret-scan` CI job (SEC4, backlog dir #37).** A new `secret-scan` leg in `ci.yml` runs
   `secret-scan.sh --range` on every pull request and every push to `main` — the security floor the guard
   was missing: previously the scan ran only in the local `pre-commit`/`pre-push` hooks, so a contributor
