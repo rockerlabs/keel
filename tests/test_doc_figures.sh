@@ -90,7 +90,7 @@ assert_commands_range() {
   if [ -z "$bad" ]; then pass "$label (all within $rangedesc)"; else fail "$label" "outside $rangedesc:$bad"; fi
 }
 
-# README.md's mermaid "How it loads" diagram quotes its own rounded ~N.NK figures for the same files —
+# README.md's mermaid "How it works" diagram quotes its own rounded ~N.NK figures for the same files —
 # a separate line from loading-and-cost.md's table, so assert_figure's table-row grep never reaches it.
 # That's exactly how FRAMEWORK.md's figure went stale (~4.2K in README vs ~5.0K real) while the
 # loading-and-cost.md row stayed guarded — close the same hole here.

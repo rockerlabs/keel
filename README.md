@@ -62,7 +62,7 @@ key-shaped secret.
 
 | # | Flow | What you do | Needs git? | Auto-updates? | secret-guard? | Best for |
 |---|------|--------------|:---:|:---:|:---:|----------|
-| 1 | Manual, step by step | `git clone … && cd keel && ./install.sh --link` | yes | yes | yes | the default — inspect-first, full control |
+| 1 | Manual, step by step | the command at the top of Install | yes | yes | yes | the default — inspect-first, full control |
 | 2 | One line, terminal | `curl … \| sh -s -- --link` | optional | yes, with `--link` | yes, if git | fastest path — no manual clone |
 | 3 | Ask your agent | one sentence to Claude Code (above) | agent decides | yes, if git | yes, if git | anyone already on Claude Code |
 | 4 | Download & open (`.dmg`) | — | no | no | no | deferred — no real demand yet |
@@ -117,9 +117,9 @@ with/without comparison — see [`docs/loading-and-cost.md`](docs/loading-and-co
 This is the honest part. A file full of good advice does **not**, on its own, change how your assistant
 behaves — loaded text nudges it, but nothing forces it to follow.
 
-- **Runs by itself:** the tools — **secret-guard** (a git hook that blocks key-shaped secrets and your
-  listed personal data on commit/push), **public-audit** (scans files *and git history* before you flip
-  a repo public), **install / doctor / init-project**. They fire whether or not anyone remembers them.
+- **Runs by itself:** the tools — the **secret-guard** git hook, the **public-audit** go-public scan,
+  **install / doctor / init-project**. They fire whether or not anyone remembers them; what each does →
+  [`docs/reference.md`](docs/reference.md).
 - **Up to you:** `PRINCIPLES.md`, `FRAMEWORK.md`, and the `CLAUDE.md` ground rules shape decisions
   *when read* — a lens you choose to look through, not an autopilot.
 
