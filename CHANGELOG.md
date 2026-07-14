@@ -8,6 +8,35 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **Server-side `secret-scan` CI job (SEC4, backlog dir #37).** A new `secret-scan` leg in `ci.yml` runs
+  `secret-scan.sh --range` on every pull request and every push to `main` — the security floor the guard
+  was missing: previously the scan ran only in the local `pre-commit`/`pre-push` hooks, so a contributor
+  without the hook installed (or a hand-crafted push) shipped unscanned into the public repo. The range
+  is resolved by the new `tools/secret-guard/ci-scan.sh` (a PR's `base..head`, or a push's
+  `before..after`) — no new detection logic, reuses the existing scanner as-is. The job checks out with
+  `fetch-depth: 0` + `filter: blob:none` (full commit ancestry for the range walk, blob content fetched
+  lazily only for what the scan actually reads) and needs no repo secrets, so it runs safely on fork PRs
+  too. Only key shapes and agent session-metadata trailers are checked in CI — the personal-literal list
+  stays local-only by design (`$SECRET_SCAN_PERSONAL_FILE`, gitignored) and is never sent to a CI runner.
+  SECURITY.md notes the new floor.
+
+  The first-push all-zero-`before` case moved into a new shared `tools/secret-guard/range-lib.sh` — but
+  as two distinct functions, not one: `resolve_range_local()` (the pre-push hook's existing `--not
+  --remotes` trick, valid there because the hook runs *before* git updates the remote-tracking refs for
+  its own push) and `resolve_range_ci()` (a CI checkout runs *after* the push already landed, so its
+  remote-tracking refs reflect post-push state — reusing the `--not --remotes` trick there would exclude
+  the very commits it should scan and silently pass a brand-new ref's first push as clean; the CI
+  variant scans the full history reachable from `after` instead). `ci-scan.sh` also explicitly skips a
+  ref-deletion push (`after` is the all-zero sha) rather than let an unresolvable range fail silently,
+  and a missing/unrecognized event or env var is a clean exit 2 (config error), never the exit-1 code
+  `secret-scan.sh` reserves for "a secret was found". `tools/install-secret-guard.sh` now vendors
+  `range-lib.sh` alongside `pre-push` (it was missing it, which would have broken every freshly
+  installed hook's first real push). Regression tests in `tests/test_ci_secret_scan.sh` (16 cases,
+  including a real bare-repo-push-then-clone reproduction of the CI remote-state gap) and
+  `tests/test_secret_guard.sh` (an end-to-end run of the *installed* `pre-push` hook, not just
+  `secret-scan.sh`'s own `--selftest`) cover the above.
+
 ### Changed
 - **`secret-guard` — the `--range` commit-message pass now scans all three detector classes (backlog
   dir #12).** Previously a pushed *commit* message was checked only for agent session-metadata trailers,

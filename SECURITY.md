@@ -34,6 +34,12 @@ Known limits (by design — not vulnerabilities):
   personal data, and agent session-metadata trailers (a `Claude-Session`-style line).
 - The prose layer (`PRINCIPLES.md`, `FRAMEWORK.md`, the rails) biases an agent; it does not enforce
   anything — the human is the trigger (see the README's *mechanized vs needs-you*).
+- A server-side CI job backs up the local hook: `secret-scan.sh --range` also runs on every pull
+  request and every push to `main`, so a contributor without the local hook (or a hand-crafted push
+  straight to `main`) doesn't ship a secret unscanned there. It only checks key shapes and agent
+  session-metadata trailers — the personal-literal list is local-only by design and never reaches the
+  CI runner. A push to a non-`main` branch with no open PR yet isn't covered by either trigger; the
+  local hook is the only backstop until a PR opens.
 
 ## Supported versions
 
