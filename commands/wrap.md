@@ -22,10 +22,14 @@ from this repo into your environment (e.g. lifecycle commands copied into your a
 the install/sync step so the installed copies aren't left running the old version. **Prune merged branches
 (graded, never a blanket delete):** merged local branches and their worktrees pile up at wrap (CORE.md: merge
 → delete the branch). Run `tools/branch-cleanup.sh` (zero-dep, reuses the fetch above) — it grades each local
-branch by how safe deletion provably is: **AUTO** (merged, no worktree, older than `--days`, ephemeral — a
-redundant pointer, deletion is lossless), **ASK** (merged but recent/off-pattern — confirm), **FLAG** (merged
-but in a worktree — never auto-removed, may hold uncommitted/gitignored work); see the tool's `-h` for exact
-rules. Auto-delete AUTO with `--prune-safe`, act on ASK only after a yes, print FLAG (`git worktree remove`).
+branch by how safe deletion provably is: **AUTO** (merged + older than `--days` + ephemeral name — a free
+branch is a redundant pointer, and a worktree that is provably *dead* (clean of tracked/untracked work and
+holding no valued gitignored content) is removed along with it; deletion is lossless), **ASK** (merged but
+not provably safe — a recent/off-pattern free branch, or a clean worktree that's recent/off-pattern or holds
+non-disposable gitignored content like `private/` — confirm), **FLAG** (a worktree with LIVE uncommitted or
+untracked work that `git worktree remove` would refuse — surfaced for review, no destructive command, since
+forcing it would discard that work); see the tool's `-h` for exact rules. Auto-delete/-remove AUTO with
+`--prune-safe`, act on ASK only after a yes, review FLAG by hand.
 Never the current branch/worktree or an unmerged branch. Run it **from the session's own worktree** so it
 excludes the worktree you're in; if you reconciled from the main checkout, prefix
 `KEEL_KEEP_WORKTREE="$(git -C <session-worktree> rev-parse --show-toplevel)"` so it never suggests removing

@@ -41,6 +41,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   reads just that section plus its cross-links, a phrase does one keyword grep, and a heading that isn't
   found makes `/go` stop instead of inventing a task. Keeps a `/go` session's warm-up cost flat as the
   backlog grows.
+- **`tools/branch-cleanup.sh` — a merged worktree is now graded by LIVENESS instead of always being
+  FLAGged.** Previously every merged branch checked out in a worktree went to FLAG (manual review), even a
+  long-idle one holding nothing — so worktrees never got auto-cleaned and piled up (this repo hit 12). A new
+  `worktree_state` check inspects the worktree: **clean** (no tracked/untracked work; only provably
+  disposable gitignored state — a `CLAUDE.md` symlink into the main checkout, the worktree's `.claude/`,
+  `.DS_Store`, regenerable build dirs) + old + ephemeral name → **AUTO**, removed with `git worktree remove`
+  (never `--force`) and its branch deleted, exactly like a confident free branch; **keep-ignored** (holds
+  non-disposable gitignored content such as `private/`, a local `.env`) or recent/off-pattern → **ASK**;
+  **dirty** (uncommitted or untracked-non-ignored work, which `git worktree remove` would refuse) → **FLAG**,
+  surfaced for review with no destructive command. `--prune-safe` now removes the dead-worktree AUTO tier
+  too. The current/own worktree and `KEEL_KEEP_WORKTREE` are still never touched; `commands/wrap.md`'s step-0
+  tier description is updated to match.
 
 ### Added
 - **`CORE.md` — new always-on Verify rail: "stop the spiral" (backlog dir #33, tier T0).** After the same
