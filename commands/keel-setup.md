@@ -38,24 +38,39 @@ registers). Then read the repo and fill the **draft** project `CLAUDE.md`:
 Show the draft and ask the user to correct it. You're saving them the typing, not the judgment.
 
 ### 3. `~/.claude/CLAUDE.md` → the always-loaded rails
-- If it's Keel's **template** (still has `<placeholders>` like chat language), fill them — ask the user
-  the few choices, don't assume.
+**Always ask the scope question below exactly once, even if every other part of this step is a no-op**
+(fully-configured machine, nothing left to fill) — it's a standing preference check, not a
+placeholder-fill, so "nothing to detect" is never a reason to skip it.
+
 - Ask one scope question, in plain words: **will AI sessions on this machine be used for coding projects
   in git, or mostly for documents and texts?** If clearly no-code/no-git, offer to remove the two
   code-specific sections from *their copy* — "Git — mandatory rails" and "Before writing code — reconcile
   first" (meaningfully lighter every session; the "read the project's `CLAUDE.md` first" rail survives in
   the map, and the "Secrets & personal data" section always stays — it applies with or without git).
   Unsure or mixed → keep both (the safe default); a later re-run can still trim.
+- If it's Keel's **template** (still has `<placeholders>` like chat language), fill them — ask the user
+  the few choices, don't assume.
   **Linked install:** if the file has no embedded rails but an `@…/keel/CORE.md` import line, NEVER edit
   the imported file — it's a symlink into the shared checkout (the trim would break it and be reverted
   by the next pull). To trim there: replace the import line with the core's rails minus the two
   sections (the file becomes copy-owned, losing pull-through — say so), or keep as-is.
 - If it's the user's **pre-existing** file (install left it untouched), do **not** overwrite. Show what
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
+- If none of the above apply (template already filled, no pre-existing file to diff, linked install
+  already current) — say so explicitly rather than going quiet; that's a legitimate "nothing to do
+  here," not a broken step.
 
-### 4. Report
-List what you filled (with the detected values) and what still needs the user: model access, plus — when
-step 2 ran — the roadmap and any convention you marked uncertain. Remind them nothing was committed.
+### 4. Report — always, even when nothing changed
+Always end with a visible **checked / skipped / why** report, one line per step (1–3), even when the
+answer for every step is "nothing to do" — a fully-configured machine still gets this report, so silence
+is never mistaken for failure:
+- **checked** — what you inspected (`INSTANCE.md`, the project dir, `~/.claude/CLAUDE.md`).
+- **skipped** — which steps made no change, and why (e.g. "step 2 skipped — no project in this cwd";
+  "step 1 skipped — Environment already filled").
+- **still needs the user** — model access, plus — when step 2 ran — the roadmap and any convention you
+  marked uncertain.
+
+Remind them nothing was committed.
 
 ## Guardrails
 - **Draft, don't decide:** facts auto-fill; judgment is the user's to confirm.

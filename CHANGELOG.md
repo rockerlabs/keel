@@ -63,6 +63,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `secret-scan.sh`'s own `--selftest`) cover the above.
 
 ### Changed
+- **`commands/keel-setup.md` — step 3's scope question and step 4's report are now unconditional
+  (backlog dir #20).** Felt incident: `/keel-setup` on a fully-configured machine produced zero output,
+  reading as broken. The spec already mandated a scope question and a checked/skipped/why report even
+  when nothing changes, but the bullets weren't structured to guarantee either — restructured so the
+  scope question always fires (independent of the template-fill / linked-install / pre-existing-file
+  bullets) and step 4 always ends with a visible report, explicitly covering the nothing-to-do case.
+  Docs-only, no script changes.
 - **`secret-guard` — the `--range` commit-message pass now scans all three detector classes (backlog
   dir #12).** Previously a pushed *commit* message was checked only for agent session-metadata trailers,
   while the annotated-*tag* message pass already checked key shapes and personal literals too — so a
