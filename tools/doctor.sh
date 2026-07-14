@@ -287,7 +287,8 @@ for d in "${DIRS[@]}"; do
   # so they're canonicalized the same way — on macOS /tmp is a symlink to /private/tmp, and comparing a
   # shell-resolved path against git's own realpath'd worktree list would otherwise false-positive.
   d_top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
-  main_top="$(git -C "$d" worktree list --porcelain 2>/dev/null | awk 'NR==1{sub(/^worktree /,""); print; exit}' || true)"
+  wt_list="$(git -C "$d" worktree list --porcelain 2>/dev/null || true)"  # one snapshot, read below for both main_top and the stray-worktree scan
+  main_top="$(printf '%s\n' "$wt_list" | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
   if [ -n "$d_top" ] && [ -n "$main_top" ] && [ -d "$main_top/.keel" ]; then
     if [ "$main_top" != "$d_top" ] && [ -d "$d/.keel" ]; then
       warn "worktree-local .keel/ marker coexists with the main checkout's ($main_top/.keel/) — events split across two ledgers (this worktree wins locally); remove this worktree's .keel/ so events land in the shared one"
@@ -298,7 +299,7 @@ for d in "${DIRS[@]}"; do
         if [ "$wt" = "$d_top" ]; then continue; fi          # the main checkout itself
         if [ -d "$wt/.keel" ]; then stray_wt=$((stray_wt + 1)); fi
       done <<EOF
-$(git -C "$d" worktree list --porcelain 2>/dev/null)
+$wt_list
 EOF
       if [ "$stray_wt" -gt 0 ]; then
         warn "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
