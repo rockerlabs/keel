@@ -18,6 +18,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   pointer section instead. Tests/Scope/License collapse into one closing section; stale `#quickstart`
   anchors in `docs/getting-started.md` and `examples/README.md` fixed. No install-flow behavior changed —
   a density pass only.
+- **`README.md` — install alternatives ranked, diagram labels sharpened (phase-2 follow-up).** The
+  collapsed "Other ways to install" block gains a real heading (linkable anchor), Install points at it
+  explicitly, and the flows are ranked **#1 → #3 simplest-first** (ask your agent → curl one-liner →
+  manual clone) so a newcomer picks by fit instead of weighing four equal rows. The *How it works*
+  diagram's always-on label now says the ~1.8K figure is the thin core alone (the project file adds its
+  own), and the zero-token tools list is marked as non-exhaustive.
 
 ### Added
 - **`CORE.md` — new always-on Verify rail: "stop the spiral" (backlog dir #33, tier T0).** After the same

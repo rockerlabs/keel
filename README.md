@@ -33,6 +33,9 @@ git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh --li
 updates it all at once, and removal is fully enumerable. It also turns on the secret-guard git hook.
 (Plain `./install.sh` makes a one-time copy instead — right for tools other than Claude Code.)
 
+Prefer a different door — one terminal line, no git, or let the agent do it? See
+[Other ways to install](#other-ways-to-install) below, ranked simplest-first.
+
 **2. Restart Claude Code and run `/keel-setup`** — the assistant finishes setup, no editing by hand.
 It works even with **no projects yet**: it fills in your machine details and sets the ground rules.
 Run it again inside each project you want Keel on (**not** the `keel` folder you just cloned): there it
@@ -43,10 +46,18 @@ don't write it. (Don't see `/keel-setup`? You're in an old session — start a f
 (touches nothing on your machine): it sets up a sample project and watches secret-guard block a
 key-shaped secret.
 
-<details>
-<summary><strong>Other ways to install</strong> — one-liner, ask your agent, no git, pinned version</summary>
+### Other ways to install
 
-> **One line, no manual clone:**
+<details>
+<summary>The other doors, ranked <strong>#1 → #3 from simplest to most control</strong> — pick the row that matches you</summary>
+
+> **#1 — Let your assistant install it** *(simplest — one sentence, the agent handles every branch)*.
+> On Claude Code (or the Claude desktop app), paste:
+>
+> > Install Keel from https://github.com/rockerlabs/keel — read its README install section and set it
+> > up for me (linked mode if I have git), then tell me how to finish with `/keel-setup`.
+
+> **#2 — One line, no manual clone:**
 >
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s -- --link
@@ -55,17 +66,15 @@ key-shaped secret.
 > Clones Keel to `~/keel` (set `KEEL_DIR` to change) and links it; re-run anytime to update. Drop
 > `--link` for a one-time copy.
 
-> **Let your assistant install it.** On Claude Code (or the Claude desktop app), paste:
->
-> > Install Keel from https://github.com/rockerlabs/keel — read its README install section and set it
-> > up for me (linked mode if I have git), then tell me how to finish with `/keel-setup`.
+> **#3 — Manual, step by step** — the `git clone … && ./install.sh --link` command at the top of
+> Install: inspect-first, offline, full control.
 
-| # | Flow | What you do | Needs git? | Auto-updates? | secret-guard? | Best for |
-|---|------|--------------|:---:|:---:|:---:|----------|
-| 1 | Manual, step by step | the command at the top of Install | yes | yes | yes | the default — inspect-first, full control |
-| 2 | One line, terminal | `curl … \| sh -s -- --link` | optional | yes, with `--link` | yes, if git | fastest path — no manual clone |
-| 3 | Ask your agent | one sentence to Claude Code (above) | agent decides | yes, if git | yes, if git | anyone already on Claude Code |
-| 4 | Download & open (`.dmg`) | — | no | no | no | deferred — no real demand yet |
+| # | Flow | Needs git? | Auto-updates? | secret-guard? | Best for |
+|---|------|:---:|:---:|:---:|----------|
+| 1 | Ask your agent | agent decides | yes, if git | yes, if git | anyone already on Claude Code — zero terminal work |
+| 2 | One line, terminal | optional | yes, with `--link` | yes, if git | fastest hands-on path — no manual clone |
+| 3 | Manual, step by step | yes | yes | yes | inspect-first, full control |
+| 4 | Download & open (`.dmg`) | no | no | no | deferred — no real demand yet |
 
 Two facts decide the columns: the *prose rails* are just text files (git isn't needed to place them),
 but **secret-guard is a git hook** — no git, no guard (the `curl` path falls back to a tarball and
@@ -88,7 +97,7 @@ Keel rests on three plain ideas:
 
 ```mermaid
 flowchart TD
-    subgraph always["Always loaded — every session (~1.8K tokens)"]
+    subgraph always["Always loaded — every session (thin core ~1.8K tokens + your project file)"]
         core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end
@@ -99,7 +108,7 @@ flowchart TD
         cmd["commands/* (when invoked)"]
     end
     subgraph never["Never in context — runs in the shell (0 tokens)"]
-        tools["secret-guard, doctor,<br/>public-audit, init-project"]
+        tools["secret-guard, doctor,<br/>public-audit, init-project, …"]
     end
     core -->|the map points here| fw
     core --> prin
