@@ -9,14 +9,18 @@
 # git facts and sorts each local branch into one tier, so the destructive decision is graded by how safe it
 # provably is -- never a blanket delete.
 #
-#   AUTO   merged into origin/<default> AND not checked out in any worktree AND last commit >= --days old
-#          AND the name matches an ephemeral glob (claude/*, feat/*, ...). Safe to delete unattended --
-#          the tip is provably an ancestor of the default branch, so every commit survives there; the
-#          local ref is a redundant pointer, recreatable from origin/<default>. Deletion loses nothing.
-#   ASK    merged + free, but recent (< --days) OR an off-pattern name (could be long-lived like
-#          staging / release-*). Surface for the human to confirm -- never auto-deleted.
-#   FLAG   merged but checked out in a NON-current worktree. Never auto-removed (a worktree can hold
-#          uncommitted or gitignored work -- e.g. a private/ draft); only reported with the manual command.
+#   AUTO   merged into origin/<default> AND last commit >= --days old AND the name matches an ephemeral
+#          glob (claude/*, feat/*, ...). A FREE branch is deleted (its tip is provably an ancestor of the
+#          default branch, so every commit survives there; the ref is a redundant pointer). A branch in a
+#          WORKTREE also qualifies IF the worktree is provably safe to drop — clean of tracked/untracked
+#          work AND holding no gitignored content of value (see worktree_state); it is removed via
+#          `git worktree remove` (no --force) and its branch deleted. Either way, removal loses nothing.
+#   ASK    merged but not provably safe unattended: a free branch that's recent (< --days) or off-pattern
+#          (maybe long-lived like staging / release-*), OR a clean worktree that's recent/off-pattern/holds
+#          non-disposable gitignored content. Surfaced with the manual command -- never auto-removed.
+#   FLAG   merged worktree with LIVE work — uncommitted or untracked-non-ignored files, so `git worktree
+#          remove` would refuse without --force. Reported WITHOUT a destructive command (forcing it would
+#          discard that work); the human reviews first. This is the genuinely-alive case, not mere presence.
 #   (skip) not merged (unmerged work OR a squash-merge, which is indistinguishable from active work without
 #          gh -- left alone by design: zero-dep buys no false positives at the cost of not cleaning
 #          squash-merged branches), the default branch itself, and the current branch / worktree.
@@ -43,14 +47,17 @@ usage() {
 branch-cleanup.sh — classify local branches for post-merge cleanup (zero-dep, network-free).
 
   branch-cleanup.sh [--days N]               report AUTO/ASK/FLAG tiers; delete nothing (default)
-  branch-cleanup.sh --prune-safe [--days N]  delete the AUTO tier, then report ASK/FLAG
+  branch-cleanup.sh --prune-safe [--days N]  delete/remove the AUTO tier, then report ASK/FLAG
   branch-cleanup.sh -h | --help
 
-AUTO = merged into origin/<default>, no worktree, >= N days old (default 7), ephemeral name -> safe to delete.
-ASK  = merged + free but recent or off-pattern (maybe long-lived) -> confirm before deleting.
-FLAG = merged but checked out in a worktree -> remove the worktree by hand.
+AUTO = merged + >= N days old (default 7) + ephemeral name. A free branch is deleted; a worktree that is
+       also clean + holds no gitignored content of value is removed (git worktree remove, no --force) + its
+       branch deleted. Nothing of value is lost.
+ASK  = merged but not provably safe: recent/off-pattern free branch, or a clean worktree that's
+       recent/off-pattern/holds non-disposable ignored content -> confirm before removing.
+FLAG = merged worktree with live (uncommitted/untracked) work -> reported for review, no destructive command.
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
-     KEEL_KEEP_WORKTREE  path of the worktree to never FLAG (default: this run's own worktree).
+     KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
 EOF
 }
 
@@ -110,10 +117,45 @@ wt_path_for() {
   return 0   # no match: still succeed (the loop's trailing `read` fails at EOF -> would abort under set -e)
 }
 
+# Classify a worktree by how provably safe removing it is (no network, no deletion). `git worktree remove`
+# without --force is the built-in safety net for TRACKED work: it refuses on any uncommitted change or
+# untracked non-ignored file. The one gap it leaves is GITIGNORED content, which it deletes silently — so
+# that is the only thing we gate here. Prints exactly one word:
+#   dirty        — porcelain non-empty (uncommitted or untracked non-ignored): remove would refuse. Alive.
+#   keep-ignored — clean of tracked/untracked, but holds gitignored content that isn't provably disposable
+#                  (e.g. private/, .env, a local config): auto-removing would delete it -> a human decides.
+#   clean        — clean, and every gitignored entry is provably disposable (a CLAUDE.md symlink into the
+#                  main checkout, the worktree's own .claude/ tool state, .DS_Store, or a regenerable build
+#                  dir): nothing of value is lost by removal.
+worktree_state() {
+  local wtp="$1" out ignored line path
+  # One `status` call: --ignored is a superset of plain porcelain, so it answers both questions.
+  out="$(git -C "$wtp" status --porcelain --ignored 2>/dev/null || true)"
+  # Any porcelain line that ISN'T an ignored (`!! `) entry is tracked/untracked work -> remove would refuse.
+  [ -n "$(printf '%s\n' "$out" | grep -v '^!! ' | grep . || true)" ] && { printf 'dirty\n'; return 0; }
+  ignored="$(printf '%s\n' "$out" | grep '^!! ' || true)"
+  [ -n "$ignored" ] || { printf 'clean\n'; return 0; }
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path="${line#!! }"
+    case "$path" in
+      CLAUDE.md) [ -L "$wtp/CLAUDE.md" ] || { printf 'keep-ignored\n'; return 0; } ;;  # symlink into main = safe; a real file may hold work
+      .claude/|.DS_Store|.git|.git/) : ;;                                              # tool / OS state
+      node_modules/|target/|dist/|build/|.venv/|venv/|.next/|.gradle/|Pods/|DerivedData/|.build/|vendor/|.idea/) : ;;  # regenerable build dirs
+      *) printf 'keep-ignored\n'; return 0 ;;                                          # anything else -> a human decides
+    esac
+  done <<EOF
+$ignored
+EOF
+  printf 'clean\n'
+}
+
 now="$(date +%s)"
-auto=""; n_auto=0
-ask="";  n_ask=0
-flag=""; n_flag=0
+auto="";   n_auto=0          # free branches safe to delete (also carries worktree autos, see autowt)
+autowt=""                   # worktrees safe to auto-remove: name<TAB>age<TAB>path
+ask="";    n_ask=0           # free branches to confirm
+askwt=""                    # worktrees to confirm: name<TAB>age<TAB>path<TAB>reason
+flag="";   n_flag=0          # worktrees with live (dirty) work — never auto-touched
 
 # --merged="$base" does the "merged" gate in git itself (tip reachable from base — an unmerged or
 # squash-merged branch is simply not listed), replacing a per-branch `git merge-base` fork. The committer
@@ -122,15 +164,26 @@ flag=""; n_flag=0
 while read -r b cd; do
   [ "$b" = "$default" ] && continue                         # base is trivially merged into itself
   age=$(( (now - ${cd:-$now}) / 86400 ))
-  wtp="$(wt_path_for "$b")"
-  if [ -n "$wtp" ]; then                                    # checked out in a worktree
-    [ "$wtp" -ef "$current_wt" ] && continue                # the worktree we're standing in -> never touch
-    flag="${flag}${b}"$'\t'"${wtp}"$'\n'; n_flag=$((n_flag + 1))
-    continue
-  fi
   match=0
   # shellcheck disable=SC2254  # $g is INTENTIONALLY a glob here (claude/*, feat/*): we match the name against it
   for g in $GLOBS; do case "$b" in $g) match=1; break ;; esac; done
+  wtp="$(wt_path_for "$b")"
+  if [ -n "$wtp" ]; then                                    # checked out in a worktree
+    [ "$wtp" -ef "$current_wt" ] && continue                # the worktree we're standing in -> never touch
+    state="$(worktree_state "$wtp")"
+    if [ "$state" = dirty ]; then                          # live work -> remove would need --force. Never auto.
+      flag="${flag}${b}"$'\t'"${wtp}"$'\n'; n_flag=$((n_flag + 1))
+    elif [ "$state" = clean ] && [ "$age" -ge "$DAYS" ] && [ "$match" -eq 1 ]; then
+      # provably safe: idle, ephemeral name, nothing of value on disk -> auto-remove like a confident branch
+      autowt="${autowt}${b}"$'\t'"${age}"$'\t'"${wtp}"$'\n'; n_auto=$((n_auto + 1))
+    else                                                    # clean but recent / off-pattern / keep-ignored -> confirm
+      if [ "$state" = keep-ignored ]; then wr=keep-ignored
+      elif [ "$age" -lt "$DAYS" ]; then wr=recent
+      else wr=off-pattern; fi
+      askwt="${askwt}${b}"$'\t'"${age}"$'\t'"${wtp}"$'\t'"${wr}"$'\n'; n_ask=$((n_ask + 1))
+    fi
+    continue
+  fi
   if [ "$age" -ge "$DAYS" ] && [ "$match" -eq 1 ]; then
     auto="${auto}${b}"$'\t'"${age}"$'\n'; n_auto=$((n_auto + 1))
   else
@@ -140,39 +193,62 @@ while read -r b cd; do
 done < <(git for-each-ref --merged="$base" --format='%(refname:short) %(committerdate:unix)' refs/heads/)
 
 # --- act + report -------------------------------------------------------------------------------
+# delete_branch NAME — -d first (belt); -D fallback only because -d compares against the current HEAD, not
+# $base, so it would false-refuse a branch merged into origin/<default> but not into whatever branch we are
+# on. AUTO is proven an ancestor of $base above, so every commit survives there regardless.
+delete_branch() { git branch -d "$1" >/dev/null 2>&1 || git branch -D "$1" >/dev/null 2>&1; }
+
 deleted=0
 if [ "$PRUNE" -eq 1 ]; then
   # in-shell (process substitution, not a pipe) so `deleted` survives the loop
   while IFS=$'\t' read -r b _age; do
     [ -n "$b" ] || continue
-    # AUTO is proven an ancestor of $base above, so every commit survives there. -d first (belt); -D
-    # fallback only because -d compares the branch against the current HEAD, not $base -- it would
-    # false-refuse a branch merged into origin/<default> but not into whatever branch we happen to be on.
-    if git branch -d "$b" >/dev/null 2>&1 || git branch -D "$b" >/dev/null 2>&1; then
+    if delete_branch "$b"; then
       printf 'deleted  %-40s merged into %s\n' "$b" "$base"; deleted=$((deleted + 1))
     else
       printf 'FAILED   %-40s could not delete\n' "$b" >&2
     fi
   done < <(printf '%s' "$auto")
+  # Worktree autos: `git worktree remove` WITHOUT --force (git re-verifies tracked/untracked cleanliness —
+  # a last guard against a race since we last checked), then delete the now-free branch. Never --force.
+  while IFS=$'\t' read -r b _age wtp; do
+    [ -n "$b" ] || continue
+    if git worktree remove "$wtp" >/dev/null 2>&1; then
+      delete_branch "$b" || true
+      printf 'removed  %-40s worktree %s + branch\n' "$b" "$wtp"; deleted=$((deleted + 1))
+    else
+      printf 'FAILED   %-40s worktree not clean, left as-is: %s\n' "$b" "$wtp" >&2
+    fi
+  done < <(printf '%s' "$autowt")
 else
   while IFS=$'\t' read -r b age; do
     [ -n "$b" ] || continue
     printf 'AUTO  %-40s merged, %sd old\n' "$b" "$age"
   done < <(printf '%s' "$auto")
+  while IFS=$'\t' read -r b age wtp; do
+    [ -n "$b" ] || continue
+    printf 'AUTO  %-40s merged, %sd old, worktree %s  ->  git worktree remove %s\n' "$b" "$age" "$wtp" "$wtp"
+  done < <(printf '%s' "$autowt")
 fi
 
 while IFS=$'\t' read -r b age reason; do
   [ -n "$b" ] || continue
   printf 'ASK   %-40s merged, %sd old (%s)\n' "$b" "$age" "$reason"
 done < <(printf '%s' "$ask")
+while IFS=$'\t' read -r b age wtp reason; do
+  [ -n "$b" ] || continue
+  printf 'ASK   %-40s merged, %sd old (%s), worktree %s  ->  git worktree remove %s\n' "$b" "$age" "$reason" "$wtp" "$wtp"
+done < <(printf '%s' "$askwt")
 
+# FLAG is now only a worktree with LIVE (uncommitted/untracked) work — surfaced without a destructive
+# command on purpose: removing it needs --force and would discard that work, so the human reviews first.
 while IFS=$'\t' read -r b path; do
   [ -n "$b" ] || continue
-  printf 'FLAG  %-40s merged, in worktree %s  ->  git worktree remove %s\n' "$b" "$path" "$path"
+  printf 'FLAG  %-40s worktree %s has uncommitted/untracked work — review before removing\n' "$b" "$path"
 done < <(printf '%s' "$flag")
 
 if [ "$PRUNE" -eq 1 ]; then
-  printf -- '--- %d deleted, %d to confirm (ASK), %d worktrees to review (FLAG)\n' "$deleted" "$n_ask" "$n_flag"
+  printf -- '--- %d removed, %d to confirm (ASK), %d with live work (FLAG)\n' "$deleted" "$n_ask" "$n_flag"
 else
-  printf -- '--- %d auto-safe, %d to confirm (ASK), %d worktrees to review (FLAG)\n' "$n_auto" "$n_ask" "$n_flag"
+  printf -- '--- %d auto-safe, %d to confirm (ASK), %d with live work (FLAG)\n' "$n_auto" "$n_ask" "$n_flag"
 fi
