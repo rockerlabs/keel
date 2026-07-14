@@ -23,7 +23,9 @@ Every file, tool, and command — grouped, one line each.
 
 | Tool | What it does |
 |---|---|
+| [`keel`](../keel) | One CLI over the rest, on your PATH after install: `keel install \| sync \| doctor \| audit \| init \| check \| uninstall`. A thin dispatcher, so it works from any directory. |
 | [`install.sh`](../install.sh) | One-command setup: copies (or, with `--link`, symlinks) the always-on files and turns on secret-guard. Safe to re-run; never touches your own files. |
+| [`uninstall.sh`](../uninstall.sh) | Reverses `install.sh` (`keel uninstall`): removes only Keel-owned content, backs up what it removes, leaves your own files and the machine-global secret-guard alone. |
 | [`tools/secret-guard/`](../tools/secret-guard/) | Git hook: blocks key-shaped secrets (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …) on commit/push — and, opt-in, your listed personal data, even inside UTF-16 binaries. Also blocks agent session-metadata trailers on push and scans annotated-tag messages. |
 | [`tools/public-audit.sh`](../tools/public-audit.sh) | Pre-go-public scan of files **and git history**: committer identities and declared tokens are a hard stop; names/emails/home paths are flagged for review. |
 | [`tools/doctor.sh`](../tools/doctor.sh) | Checks a setup for missing pieces (`--install` audits the linked install). |

@@ -174,6 +174,11 @@ your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yours
 > [standalone tools](#just-want-the-git-hook) next to what you have, or grab one `commands/*.md` and
 > ignore the rest — a method to graft on, not a framework to adopt whole.
 
+> **One command for the rest.** After install, a `keel` CLI is on your PATH — `keel help` lists it:
+> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, and `keel uninstall`
+> (reverses the install, backing up anything it removes). It's a thin front-end over the same
+> `tools/*.sh`, so it works from any directory, not just the clone.
+
 > **Status: early experiment.** A cleaned-up copy of one person's working setup, public to find out
 > whether it helps anyone besides its author. Feedback welcome; expect rough edges.
 

@@ -145,7 +145,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # FRAMEWORK/PRINCIPLES layout. ([ -L ] skips the literal glob when a dir is empty.) A link that
   # RESOLVES but into a different checkout than this one looks healthy while running stale content —
   # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
-  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/*; do
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     if [ ! -e "$l" ]; then
       gap "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
@@ -156,6 +156,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
       "$ihome/commands/"*)
         tgt="$repo_root/commands/${b#keel-}"
         if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
+      "$ihome/bin/keel")
+        tgt="$repo_root/keel" ;;
       "$ihome/keel/"*)
         tgt="$repo_root/$b" ;;
       *)
@@ -218,6 +220,23 @@ if [ "$INSTALL_MODE" = 1 ]; then
     say "  OK   commands: $wired of $total shipped are wired"
   else
     warn "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh; or ignore this if declined deliberately)"
+  fi
+
+  # The keel CLI: install wires bin/keel as a symlink into the checkout. Only flag it when this
+  # checkout actually ships a `keel` (older checkouts predate it) — and a resolved-but-foreign link
+  # is the same stale-clone smell as the command links above (advisory, a second checkout can be
+  # deliberate). Missing entirely is advisory too: the CLI is a convenience, not a rail.
+  if [ -f "$repo_root/keel" ]; then
+    kl="$ihome/bin/keel"
+    if [ -L "$kl" ] && [ -e "$kl" ]; then
+      if [ "$kl" -ef "$repo_root/keel" ]; then
+        say "  OK   keel CLI: wired ($kl)"
+      else
+        warn "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh from here if this is the live one"
+      fi
+    else
+      warn "keel CLI not wired at $ihome/bin/keel — re-run install.sh (or add an alias by hand)"
+    fi
   fi
 
   # Secret-guard: machine-global wiring (per-repo vendoring is checked by the project audit).
