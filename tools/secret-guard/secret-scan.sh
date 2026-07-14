@@ -127,6 +127,22 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan
   } | LC_ALL=C sort -u
 }
 
+# fast-path hit count for one spooled scan FILE — the shared shape of every --range pre-check (blob
+# stream, commit messages, tag bodies). ONE case-sensitive grep over class 1 (key shapes, optionally
+# OR'd with an extra ERE like $SESSION_META for messages); only if that is clean, ONE case-insensitive
+# grep over class 2 (personal literals). `grep -c` (count), NEVER `-q`: -q exits on the first match and
+# SIGPIPEs the still-writing producer, which under `pipefail` reads as failure and drops the hit — a
+# real intermittent scanner hole (flaked on macOS CI). -c consumes the whole stream → deterministic.
+# Prints the count on stdout.
+count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 ('' for none)
+  local f="$1" extra="${2:-}" n
+  n="$(grep -acE "${extra:+$extra|}$joined" "$f" || true)"
+  if [ "${n:-0}" -eq 0 ] && [ -n "$personal" ]; then
+    n="$(grep -aciE "$personal" "$f" || true)"
+  fi
+  printf '%s' "${n:-0}"
+}
+
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
 # classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
 # public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync.
@@ -333,10 +349,7 @@ case "$mode" in
           rtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
           printf '%s\n' "$blobs" | awk '{print $2}' \
             | git cat-file --batch 2>/dev/null | LC_ALL=C tr -d '\000' > "$rtmp"
-          range_hits="$(grep -acE "$joined" "$rtmp" || true)"
-          if [ "${range_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
-            range_hits="$(grep -aciE "$personal" "$rtmp" || true)"
-          fi
+          range_hits="$(count_matches "$rtmp")"
           rm -f "$rtmp"
           ;;
       esac
@@ -349,25 +362,33 @@ case "$mode" in
     fi
     # The push also introduces the commits' MESSAGES, which no blob pass sees. Felt (2026-07-10
     # audit): seven harness-appended session trailers reached the public main through merged PRs,
-    # visible afterwards only as a post-hoc audit WARN. Block them here, at the outward boundary.
-    # Same fast-path shape as the blob scan above: ONE batched grep over every message (`-c`, not
-    # `-q` — the same SIGPIPE/pipefail hole applies), and only on a hit re-walk per commit to
-    # attribute the exact sha.
+    # visible afterwards only as a post-hoc audit WARN. Scan the messages against ALL THREE classes
+    # (key shapes + personal literals + session metadata) — a key or a personal literal pasted into
+    # a commit message ships to the remote just as unpurgeably as a session trailer, and the tag
+    # pass below already scans all three; a commit message must not be the weaker sibling. Same
+    # fast-path shape as the blob/tag scans (`count_matches`, `-c` not `-q`), then re-walk per
+    # commit on a hit to attribute the exact sha.
     # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    msg_hits="$(git log --format=%B $rng 2>/dev/null | grep -acE "$SESSION_META" || true)"
-    if [ "${msg_hits:-0}" -gt 0 ]; then
+    msgtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+    git log --format=%B $rng > "$msgtmp" 2>/dev/null || true
+    if [ "$(count_matches "$msgtmp" "$SESSION_META")" -gt 0 ]; then
       while IFS= read -r csha; do
         [ -n "$csha" ] || continue
+        ctmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+        git log -1 --format=%B "$csha" > "$ctmp" 2>/dev/null || true
         while IFS= read -r hit; do
           [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
-        done < <(git log -1 --format=%B "$csha" 2>/dev/null | grep -aE "$SESSION_META" || true)
+        done < <({ match_text '' "$ctmp"
+                   grep -aE "$SESSION_META" "$ctmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
+        rm -f "$ctmp"
       done < <(git rev-list $rng 2>/dev/null || true)
     fi
+    rm -f "$msgtmp"
     # An annotated TAG's own message is neither a blob nor a commit message, so both passes above
     # are blind to it — a pushed tag (pre-push passes "<tagsha> --not --remotes") would carry a
     # key, a personal literal, or a session trailer to the remote unscanned. The tag objects are
     # already in the batch-check stream captured above; scan each tag's message body against all
-    # three matchers. Same fast-path shape (`grep -c`, not `-q` — the SIGPIPE/pipefail hole).
+    # three matchers via the same `count_matches` fast-path shared with the blob/commit passes.
     tagshas="$(printf '%s\n' "$objs" | awk '$1=="tag"{print $2}')"
     if [ -n "$tagshas" ]; then
       tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
@@ -375,10 +396,7 @@ case "$mode" in
         [ -n "$tsha" ] || continue
         tag_body "$tsha"
       done <<< "$tagshas" > "$tagtmp"
-      tag_hits="$(grep -acE "$joined|$SESSION_META" "$tagtmp" || true)"
-      if [ "${tag_hits:-0}" -eq 0 ] && [ -n "$personal" ]; then
-        tag_hits="$(grep -aciE "$personal" "$tagtmp" || true)"
-      fi
+      tag_hits="$(count_matches "$tagtmp" "$SESSION_META")"
       rm -f "$tagtmp"
       if [ "${tag_hits:-0}" -gt 0 ]; then
         while IFS= read -r tsha; do

@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Changed
+- **`secret-guard` — the `--range` commit-message pass now scans all three detector classes (backlog
+  dir #12).** Previously a pushed *commit* message was checked only for agent session-metadata trailers,
+  while the annotated-*tag* message pass already checked key shapes and personal literals too — so a
+  `ghp_…` key or a personal literal in a commit message shipped uncaught while the identical text in a
+  tag message blocked. The commit-message pass now matches key shapes, personal literals, and session
+  metadata, converging the two message passes. The three near-identical fast-path count idioms in the
+  `--range` arm (blob stream, commit messages, tag bodies) fold into one shared `count_matches` helper
+  that preserves the `grep -c` (not `-q`) SIGPIPE/pipefail discipline. Regression tests: a key and a
+  personal literal in a pushed commit message both block. No new false positives — the sanctioned
+  `noreply` co-author trailer still passes.
 - **`README.md` — body restructured for scannability (phase 2 of the README rework).** Install now leads
   with one recommended path (`git clone … && ./install.sh --link`); the alternatives (curl one-liner,
   agent-install prompt, the install-flows table, version pinning, the no-git fallback) fold into a single
