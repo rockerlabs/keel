@@ -159,6 +159,27 @@ git -C "$repo" commit -qm "$(printf 'change\n\nCo-Authored-By: Claude <noreply@a
 run_in "$repo" "$scan" --range "$mbase..HEAD"
 check_status "noreply co-author trailer in a message → exit 0" 0 "$STATUS"
 
+# the commit-message pass scans ALL THREE classes, not just session metadata (backlog dir #12): a
+# key or a personal literal pasted into a commit message ships as unpurgeably as a tag message's
+# would, so both must block here exactly as they do in the tag pass. --------------------------------
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+mbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'fine\n' > "$repo/b.txt"; git -C "$repo" add b.txt
+git -C "$repo" commit -qm "$(printf 'change\n\ntoken %s end' "$(key 'ghp_' "$(rep a 36)")")"
+run_in "$repo" "$scan" --range "$mbase..HEAD"
+check_status "key in a pushed commit message → BLOCKED" 1 "$STATUS"
+check_contains "labels the offending commit message (key)" "$OUT" "message"
+
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+mbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'fine\n' > "$repo/b.txt"; git -C "$repo" add b.txt
+git -C "$repo" commit -qm "change thanks to seekritpersonname"
+msgpfile="$SANDBOX/personal-msg"; printf 'SeekritPersonName\n' > "$msgpfile"
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$msgpfile" "$scan" --range "$mbase..HEAD"
+check_status "personal literal in a pushed commit message → BLOCKED" 1 "$STATUS"
+
 # --- an annotated TAG's message is neither a blob nor a commit message — a pushed tag (pre-push
 # passes "<tagsha> --not --remotes") must have its message body scanned too, or a key / personal
 # literal / session trailer in the tag ships to the remote uncaught -------------------------------
