@@ -34,6 +34,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   manual clone) so a newcomer picks by fit instead of weighing four equal rows. The *How it works*
   diagram's always-on label now says the ~1.8K figure is the thin core alone (the project file adds its
   own), and the zero-token tools list is marked as non-exhaustive.
+- **`commands/go.md` — `/go` now reads a project's on-demand `BACKLOG.md` first (backlog dir #34).** A
+  project can split its backlog out of the always-loaded `CLAUDE.md` into a separate `BACKLOG.md` at the
+  main checkout root; `/go` now resolves that source the way `/backlog` already does (`BACKLOG.md` →
+  inline `CLAUDE.md` section) and loads only the addressed item — a task id greps the `### N.` heading and
+  reads just that section plus its cross-links, a phrase does one keyword grep, and a heading that isn't
+  found makes `/go` stop instead of inventing a task. Keeps a `/go` session's warm-up cost flat as the
+  backlog grows.
 
 ### Added
 - **`CORE.md` — new always-on Verify rail: "stop the spiral" (backlog dir #33, tier T0).** After the same

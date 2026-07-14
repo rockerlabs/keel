@@ -1,5 +1,6 @@
 # Private AI context — never commit to this public repo. Root-anchored so templates/ stays tracked.
 /CLAUDE.md
+/BACKLOG.md
 /INSTANCE.md
 /.claude/
 
