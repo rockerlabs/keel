@@ -11,6 +11,9 @@
 # NOTE: only the log is ignored — .keel/ledger.md (the durable per-session score history) stays trackable.
 /.keel/impact-events.log
 
+# doctor's map-drift baseline (dir #39 T1) — an accepted stale-path mention; per-checkout, script-only read.
+/.keel/map-drift-baseline
+
 # macOS / IDE / system noise
 .DS_Store
 .idea/

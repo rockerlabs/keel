@@ -20,6 +20,7 @@ check_absent  "placeholder is substituted away" "$claude" "<Project name>"
 gi="$(cat "$d/.gitignore")"
 check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
+check_contains ".gitignore ignores the map-drift baseline" "$gi" "/.keel/map-drift-baseline"
 
 # impact tracking is on by default: the .keel/ marker is created; only the event log is gitignored
 check_dir "creates the .keel/ impact marker" "$d/.keel"

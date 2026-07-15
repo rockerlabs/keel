@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`doctor.sh` map-drift check (backlog dir #39, T1).** A new advisory WARN: a backtick-spanned
+  path/filename in a project's live `CLAUDE.md` (never `CLAUDE-archive.md`/`BACKLOG.md`, which
+  legitimately name historical paths) that no longer resolves on disk — the map goes stale as code
+  moves, and an agent that trusts it confidently follows a dead path. Precision is built in, not
+  post-hoc tuned: only backtick spans count (the author's own "literal identifier" marker), a span's
+  trailing args/flags are stripped to its first token, and placeholders/globs/env-vars/`~`-paths/
+  absolute paths (including the KB's neutral stand-ins) are skipped as unverifiable by design. An
+  accepted mention lands in a gitignored `.keel/map-drift-baseline` (one path per line) and never
+  warns again; for a linked worktree the baseline resolves to the MAIN checkout's `.keel/`, never a
+  worktree-local one, so accepting a mention never tempts anyone into creating the split-brain `.keel/`
+  the existing impact-tracking check already flags. `init-project.sh` now gitignores the baseline path
+  up front. Report is capped at 5 named paths plus an "and K more" tail.
 - **Unified `keel` CLI — one entry point over the lifecycle tools (backlog dir #2, phase 1).** A single
   zero-dependency POSIX `keel` script at the repo root, put on your PATH by `install.sh` (as a symlink
   into the checkout, under `<home>/bin/`, never over a file you own). It dispatches

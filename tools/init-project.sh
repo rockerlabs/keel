@@ -61,6 +61,9 @@ ensure_ignore "CLAUDE.md"
 ensure_ignore ".claude/"
 ensure_ignore ".DS_Store"
 ensure_ignore ".idea/"
+# doctor's map-drift check (dir #39 T1): an accepted stale-path mention lands here, script-only read —
+# gitignore it up front so a later `doctor.sh` WARN never tempts a `git add` of a per-checkout file.
+ensure_ignore "/.keel/map-drift-baseline"
 
 # 2b. Impact tracking — opt this project in by creating the .keel/ marker the guardrail hooks look for
 # before recording a fire. Delegated to keel-impact.sh enable (not a raw `mkdir -p .keel` here): its

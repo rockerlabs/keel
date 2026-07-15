@@ -20,6 +20,8 @@
 #   WARN  an installed secret-guard copy (machine-global — checked once — or a repo's wired vendored
 #         copy) differs from the engine this Keel checkout ships — re-run install-secret-guard.sh
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
+#   WARN  CLAUDE.md map may be stale — a backtick-spanned path/filename it names no longer exists on disk
+#         (accept a legitimate historical mention via .keel/map-drift-baseline)
 #   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff, Swift→SwiftLint)
 #         or a Java file uses a wildcard import
 #   WARN  a private-fork project's linked worktree is missing the CLAUDE.md bridge (session starts blind)
@@ -323,6 +325,73 @@ EOF
       if [ "$stray_wt" -gt 0 ]; then
         warn "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
       fi
+    fi
+  fi
+
+  # Map-drift (dir #39 T1): a backtick-spanned path/filename in the LIVE map that no longer exists on
+  # disk — code moves, the map doesn't, and the agent confidently follows a dead path. Backtick-spans
+  # ONLY (never bare prose): a backtick is the author's own "literal identifier" marker, the strongest
+  # precision filter available. NEVER check CLAUDE-archive.md/BACKLOG.md — historical files legitimately
+  # name dead paths; every hit there would be false by definition. A span may carry trailing args/flags
+  # (`` `tools/doctor.sh --quiet` ``) — only its first whitespace token is a path candidate. Narrower
+  # scope than tools/self/doctor.sh's "dead internal references" check on purpose: that one audits the
+  # Keel repo's OWN tools/commands/templates references; this one audits an arbitrary CONSUMER project's
+  # CLAUDE.md against that project's own tree — different corpus, different skip rules, not a duplicate.
+  if [ -f "$d/CLAUDE.md" ]; then
+    # The baseline lives at the MAIN checkout's .keel/ (main_top, computed above), never a worktree-local
+    # one — same discipline as the split-brain check just above: a worktree-local .keel/ is exactly what
+    # that check flags, so a baseline lookup must not tempt anyone into creating one just to hold it.
+    baseline="${main_top:-${d_top:-$d}}/.keel/map-drift-baseline"
+    # Read once, not once-per-missing-token: a grep-per-candidate against the baseline would re-open and
+    # re-scan the same small file for every drift hit on a doc with many accepted mentions.
+    baseline_set=$'\n'
+    [ -f "$baseline" ] && baseline_set="$baseline_set$(cat "$baseline")"$'\n'
+    drift_list=""
+    drift_count=0
+    max_show=5
+    while IFS= read -r tok; do
+      [ -n "$tok" ] || continue
+      case "$tok" in
+        # URL (scheme://…), placeholder, glob, env-var, ~-path, or absolute path (incl. the KB's neutral
+        # stand-ins like /Users/x/…) — unverifiable by design, skip rather than false-positive. $ matches
+        # ANYWHERE (an env-var mid-path, e.g. `output/$BUILD_ID/report.md`, is exactly as unverifiable as
+        # one at the start); ~ stays prefix-anchored — a trailing ~ is a real, checkable editor-backup
+        # name (`file.sh~`), not a placeholder, so a mid-token ~ must not be swept up with it.
+        *'://'*|*'<'*|*'>'*|*'$'*|*'*'*|*'?'*|'~'*|/*) continue ;;
+      esac
+      # strip a trailing `:LINE` decoration (`tools/doctor.sh:42`, this file's own doc-link convention)
+      # before judging path-shape or checking existence — the decoration isn't part of the path.
+      case "$tok" in
+        *:[0-9]*)
+          suffix="${tok##*:}"
+          case "$suffix" in ''|*[!0-9]*) ;; *) tok="${tok%:*}" ;; esac
+          ;;
+      esac
+      if [[ "$tok" != */* ]]; then
+        if [[ "$tok" =~ ^\.[A-Za-z][A-Za-z0-9]*$ ]]; then
+          # single-dot-led, no further dots: a SHORT one names a file TYPE in prose (`` `.sh` ``,
+          # `` `.json` ``) — no basename to check for existence. A LONGER one is a real dotfile's whole
+          # name (`.gitignore`, `.editorconfig`) — keep those as candidates unconditionally.
+          [ "${#tok}" -le 5 ] && continue
+        else
+          # normal name.ext shape (or a multi-dot dotfile like .swiftlint.yml) — needs an extension-
+          # looking ending, capped length, to count as a path signal at all.
+          [[ "$tok" =~ \.[A-Za-z][A-Za-z0-9]{0,5}$ ]] || continue
+        fi
+      fi
+      [ -e "$d/$tok" ] && continue
+      case "$baseline_set" in *$'\n'"$tok"$'\n'*) continue ;; esac
+      drift_count=$((drift_count + 1))
+      [ "$drift_count" -le "$max_show" ] && drift_list="${drift_list}${drift_list:+, }$tok"
+    done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$d/CLAUDE.md" 2>/dev/null \
+               | grep -oE '`[^`[:space:]][^`]*`' \
+               | sed -e 's/^`//' -e 's/`$//' \
+               | awk '{print $1}' \
+               | sort -u)
+    if [ "$drift_count" -gt 0 ]; then
+      more=""
+      [ "$drift_count" -gt "$max_show" ] && more=" and $((drift_count - max_show)) more"
+      warn "CLAUDE.md map may be stale — not found on disk: ${drift_list}${more} (fix the mention, or accept it in .keel/map-drift-baseline)"
     fi
   fi
 
