@@ -384,6 +384,60 @@ d="$(newbase)"
 run "$doctor" "$d"
 check_absent "placeholder/glob/~/absolute mentions → no map-drift WARN" "$OUT" "map may be stale"
 
+# a backtick-quoted URL is never a candidate — it contains a slash but has no relative-path meaning,
+# and would otherwise sail past the extension-requirement branch (that branch only fires when there's
+# no slash) straight into a doomed existence check
+d="$(newbase)"; printf '# ctx\nSee `https://github.com/rockerlabs/keel/blob/main/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_absent "backtick-quoted URL → no map-drift WARN" "$OUT" "map may be stale"
+
+# a mid-token env-var reference is unverifiable wherever it sits, not just at the start
+d="$(newbase)"; printf '# ctx\nWrites to `output/$BUILD_ID/report.md`.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_absent "mid-token env-var reference → no map-drift WARN" "$OUT" "map may be stale"
+
+# a literal trailing ~ (an editor backup name) is a real, checkable filename — NOT swept up by the
+# ~-path skip rule the way a mid-token $ is, since ~-paths stay prefix-anchored
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh~` for details.\n' >> "$d/CLAUDE.md"
+mkdir -p "$d/scripts"; : > "$d/scripts/ghost.sh~"
+run "$doctor" "$d"
+check_absent "literal trailing ~ filename that exists → no map-drift WARN" "$OUT" "map may be stale"
+
+# a `path:LINE` doc-link decoration (this file's own convention, e.g. `tools/doctor.sh:42`) is stripped
+# before the existence check — the decoration isn't part of the path
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh:42` for details.\n' >> "$d/CLAUDE.md"
+mkdir -p "$d/scripts"; : > "$d/scripts/ghost.sh"
+run "$doctor" "$d"
+check_absent "path:LINE decoration stripped, existing target → no map-drift WARN" "$OUT" "map may be stale"
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh:42` for details.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_contains "path:LINE decoration stripped, missing target → WARN names the bare path" "$OUT" "scripts/ghost.sh"
+check_absent "the report never leaks the :LINE decoration itself" "$OUT" "scripts/ghost.sh:42"
+
+# a long dot-led name (a real dotfile's whole name, e.g. .gitignore/.editorconfig) is a candidate —
+# distinct from a short bare extension mention (`.sh`, `.json`), which is a file-TYPE reference in
+# prose with no basename to check
+d="$(newbase)"; printf '# ctx\nSee `.editorconfig` for style rules.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_contains "missing long dotfile name → WARN names it" "$OUT" ".editorconfig"
+d="$(newbase)"; printf '# ctx\nSee `.editorconfig` for style rules.\n' >> "$d/CLAUDE.md"
+: > "$d/.editorconfig"
+run "$doctor" "$d"
+check_absent "existing long dotfile name → no map-drift WARN" "$OUT" "map may be stale"
+
+# a backtick-quoted illustrative path INSIDE a fenced code block is a doc example, not a live map
+# reference — the live-map-only rule (dir #39 spec) applies to fences the same way it applies to
+# CLAUDE-archive.md/BACKLOG.md: a fence's own content is not the author's current map assertion
+d="$(newbase)"
+{
+  printf '# ctx\n'
+  printf '```bash\n'
+  printf '# example: see `scripts/old-example.sh` for the old approach\n'
+  printf '```\n'
+} >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_absent "backtick span inside a fenced code block → no map-drift WARN" "$OUT" "map may be stale"
+
 # a baseline-accepted mention (gitignored .keel/map-drift-baseline) never warns again
 d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
 mkdir -p "$d/.keel"; printf 'scripts/ghost.sh\n' > "$d/.keel/map-drift-baseline"
