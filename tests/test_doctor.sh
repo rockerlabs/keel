@@ -348,4 +348,78 @@ run "$doctor" "$d"
 check_absent "machine-global guard in sync → no drift WARN" "$OUT" "machine-global secret-guard"
 git config --global --unset core.hooksPath
 
+# --- map-drift (dir #39 T1): a backtick-spanned path in the LIVE map that no longer exists ------
+# a bare filename with a known extension that exists on disk → no drift WARN
+d="$(newbase)"; printf '# ctx\nSee `doctor.sh` for the checks.\n' >> "$d/CLAUDE.md"
+mkdir -p "$d/tools"; : > "$d/doctor.sh"
+run "$doctor" "$d"
+check_absent "existing path mentioned → no map-drift WARN" "$OUT" "map may be stale"
+
+# a slash-path that does NOT exist on disk → WARN, names the missing token
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_status "missing mapped path → still exit 0 (WARN)" 0 "$STATUS"
+check_contains "map-drift WARN fires" "$OUT" "map may be stale"
+check_contains "map-drift WARN names the missing path" "$OUT" "scripts/ghost.sh"
+
+# a trailing-args span (`scripts/ghost.sh --quiet`) still checks only the first token as the path
+d="$(newbase)"; printf '# ctx\nRun `scripts/ghost.sh --quiet` first.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_contains "trailing-args span still flags the leading path token" "$OUT" "scripts/ghost.sh"
+
+# a backtick span with no path signal (no slash, no known extension) is never a candidate
+d="$(newbase)"; printf '# ctx\nRun `git status` first.\n' >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_absent "non-path backtick span → no map-drift WARN" "$OUT" "map may be stale"
+
+# placeholders, globs, ~-paths, and absolute paths (incl. KB neutral stand-ins) are unverifiable by
+# design — never flagged even though none of them exist on disk
+d="$(newbase)"
+{
+  printf 'placeholder: `<project>/CLAUDE.md`\n'
+  printf 'glob: `src/*.ts`\n'
+  printf 'home: `~/.claude/CLAUDE.md`\n'
+  printf 'stand-in: `/Users/x/pet-projects/ghost/CLAUDE.md`\n'
+} >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_absent "placeholder/glob/~/absolute mentions → no map-drift WARN" "$OUT" "map may be stale"
+
+# a baseline-accepted mention (gitignored .keel/map-drift-baseline) never warns again
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
+mkdir -p "$d/.keel"; printf 'scripts/ghost.sh\n' > "$d/.keel/map-drift-baseline"
+run "$doctor" "$d"
+check_absent "baseline-accepted path → no map-drift WARN" "$OUT" "map may be stale"
+
+# a linked worktree's map-drift baseline resolves to the MAIN checkout's .keel/, never a worktree-local
+# one (mirrors the split-brain discipline just above — a worktree-local .keel/ would itself draw a WARN)
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\nSee `scripts/ghost.sh` for details.\n' > "$base/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
+git -C "$base" add .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wtd="$SANDBOX/wtdrift.$$"
+git -C "$base" worktree add -q "$wtd" >/dev/null 2>&1
+ln -s "$base/CLAUDE.md" "$wtd/CLAUDE.md"
+run "$doctor" "$wtd"
+check_contains "worktree audit still flags the missing path (no baseline yet)" "$OUT" "map may be stale"
+mkdir -p "$base/.keel"; printf 'scripts/ghost.sh\n' > "$base/.keel/map-drift-baseline"
+run "$doctor" "$wtd"
+check_absent "main-checkout baseline suppresses the WARN from the worktree" "$OUT" "map may be stale"
+check_absent "no worktree-local .keel/ was created just to look up the baseline" "$OUT" "coexists with the main checkout"
+
+# report cap: more than 5 missing paths → top 5 named plus a "and K more" tail
+d="$(newbase)"
+{
+  printf 'a: `one.sh` b: `two.sh` c: `three.sh`\n'
+  printf 'd: `four.sh` e: `five.sh` f: `six.sh` g: `seven.sh`\n'
+} >> "$d/CLAUDE.md"
+run "$doctor" "$d"
+check_contains "report cap: names the tail count" "$OUT" "and 2 more"
+
+# CLAUDE-archive.md / BACKLOG.md are historical by convention — doctor never reads them for drift,
+# only the live project CLAUDE.md, so a dead path mentioned there must NOT surface here
+d="$(newbase)"; printf '# ctx\nDead: `ghost-in-archive.sh`\n' > "$d/CLAUDE-archive.md"
+run "$doctor" "$d"
+check_absent "CLAUDE-archive.md mentions are never checked" "$OUT" "ghost-in-archive.sh"
+
 summary

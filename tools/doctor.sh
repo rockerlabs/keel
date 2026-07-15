@@ -20,6 +20,8 @@
 #   WARN  an installed secret-guard copy (machine-global — checked once — or a repo's wired vendored
 #         copy) differs from the engine this Keel checkout ships — re-run install-secret-guard.sh
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
+#   WARN  CLAUDE.md map may be stale — a backtick-spanned path/filename it names no longer exists on disk
+#         (accept a legitimate historical mention via .keel/map-drift-baseline)
 #   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff, Swift→SwiftLint)
 #         or a Java file uses a wildcard import
 #   WARN  a private-fork project's linked worktree is missing the CLAUDE.md bridge (session starts blind)
@@ -323,6 +325,53 @@ EOF
       if [ "$stray_wt" -gt 0 ]; then
         warn "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
       fi
+    fi
+  fi
+
+  # Map-drift (dir #39 T1): a backtick-spanned path/filename in the LIVE map that no longer exists on
+  # disk — code moves, the map doesn't, and the agent confidently follows a dead path. Backtick-spans
+  # ONLY (never bare prose): a backtick is the author's own "literal identifier" marker, the strongest
+  # precision filter available. NEVER check CLAUDE-archive.md/BACKLOG.md — historical files legitimately
+  # name dead paths; every hit there would be false by definition. A span may carry trailing args/flags
+  # (`` `tools/doctor.sh --quiet` ``) — only its first whitespace token is a path candidate.
+  if [ -f "$d/CLAUDE.md" ]; then
+    # The baseline lives at the MAIN checkout's .keel/ (main_top, computed above), never a worktree-local
+    # one — same discipline as the split-brain check just above: a worktree-local .keel/ is exactly what
+    # that check flags, so a baseline lookup must not tempt anyone into creating one just to hold it.
+    baseline="${main_top:-${d_top:-$d}}/.keel/map-drift-baseline"
+    drift_list=""
+    drift_count=0
+    seen=$'\n'   # de-dupe: the same dead path mentioned twice must count/report only once
+    while IFS= read -r span; do
+      tok="${span%%[[:space:]]*}"
+      [ -n "$tok" ] || continue
+      case "$tok" in
+        # placeholder / glob / env-var / ~-path / absolute path (incl. the KB's neutral stand-ins like
+        # /Users/x/…) — unverifiable by design, skip rather than false-positive.
+        *'<'*|*'>'*|'$'*|*'*'*|*'?'*|'~'*|/*) continue ;;
+      esac
+      # a bare short dot-suffix (`` `.sh` ``, `` `.md` ``) names a FILE TYPE in prose, not a specific
+      # file — no basename to check for existence. A longer dot-led name (`.gitignore`,
+      # `.editorconfig`) IS a real dotfile's whole name, not an extension mention — keep those as
+      # candidates (below, the slash-free general case still requires an extension-shaped ending).
+      if [[ "$tok" != */* ]] && [[ "$tok" =~ ^\.[A-Za-z][A-Za-z0-9]{0,3}$ ]]; then
+        continue
+      fi
+      # path signal: a slash, or a known extension (letter-led, ≤6 chars) at the very end of the token.
+      if [[ "$tok" != */* ]] && [[ ! "$tok" =~ \.[A-Za-z][A-Za-z0-9]{0,5}$ ]]; then
+        continue
+      fi
+      [ -e "$d/$tok" ] && continue
+      if [ -f "$baseline" ] && grep -qxF "$tok" "$baseline" 2>/dev/null; then continue; fi
+      case "$seen" in *$'\n'"$tok"$'\n'*) continue ;; esac
+      seen="${seen}${tok}"$'\n'
+      drift_count=$((drift_count + 1))
+      [ "$drift_count" -le 5 ] && drift_list="${drift_list}${drift_list:+, }$tok"
+    done < <(grep -oE '`[^`[:space:]][^`]*`' "$d/CLAUDE.md" 2>/dev/null | sed -e 's/^`//' -e 's/`$//')
+    if [ "$drift_count" -gt 0 ]; then
+      more=""
+      [ "$drift_count" -gt 5 ] && more=" and $((drift_count - 5)) more"
+      warn "CLAUDE.md map may be stale — not found on disk: ${drift_list}${more} (fix the mention, or accept it in .keel/map-drift-baseline)"
     fi
   fi
 
