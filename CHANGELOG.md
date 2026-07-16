@@ -9,6 +9,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **"Loop model" section in `FRAMEWORK.md`.** Documents the KB's four operational loops — Session,
+  Wrap, Global review, and Dev — each with its input, work, carry-forward, termination, frequency, and
+  observability, plus their coupling and known gaps. Gives future cadence/convergence work a stable
+  shared vocabulary instead of ad-hoc reasoning about "the review process."
 - **`/go` in-flight discipline (backlog dir #40).** Before picking a ticket, `/go` now scans
   `git branch -a` (after `git fetch --prune`) for a live branch already working it — the installed
   `go-<n>-` branch pattern first, then a keyword grep of branch names against the ticket title. A
