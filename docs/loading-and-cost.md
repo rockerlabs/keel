@@ -22,7 +22,7 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 | `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~1,810** |
 | `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. | ~1,350 |
 | `<project>/CLAUDE.md` (from `templates/project-CLAUDE.md`) | when you work **in that project** | Project context: stack, architecture, conventions, roadmap. Shapes decisions inside the project. | ~270 *(as filled)* |
-| `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~5,000 |
+| `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~6,200 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,100 |
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |

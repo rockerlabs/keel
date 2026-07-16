@@ -121,6 +121,47 @@ mechanism is an upgrade, not a loss — P0.)*
 
 ---
 
+## Loop model — the four operational loops
+
+The knowledge base runs on four nested loops, each with its own input, work, carry-forward, and
+termination. Naming them gives future improvements (a cadence backstop, a convergence check) a stable
+target instead of ad-hoc reasoning about "the review process."
+
+- **L1 — Session.** *Input:* the backlog + memory + the operator's request. *Work:* whatever the session
+  does. *Carry-forward:* memory + backlog + changelog updates. *Termination:* session wrap. *Frequency:*
+  every session. *Observability:* none built in — carry-forward correctness is currently an agent's
+  judgment call at wrap time, not a measured or verified step.
+- **L2 — Wrap.** *Input:* the session's git log + a chat summary. *Work:* reconcile state, update
+  backlog/memory/changelog. *Carry-forward:* a commit to the knowledge-base repo. *Termination:* the
+  commit is pushed. *Frequency:* end of most sessions. *Observability:* none — nothing automatically
+  verifies the reconciliation actually captured everything worth persisting.
+- **L3 — Global review.** *Input:* the structure-audit tool (`doctor`) + the backlog + `PRINCIPLES.md`.
+  *Work:* sweep the KB for drift, stale items, and structural issues; reconcile. *Carry-forward:* an
+  updated KB, pushed. *Termination:* the audit passes clean ("structural-green") and any remaining gaps
+  are deliberately deferred to the backlog. *Frequency:* felt-friction-triggered — no fixed cadence by
+  default. *Observability:* a pass/fail signal from `doctor`, but no convergence criterion — passing
+  clean says "not broken," not "improving."
+- **L4 — Dev (a backlog ticket).** *Input:* one backlog ticket. *Work:* implement, test, review.
+  *Carry-forward:* a merged PR + the ticket closed in the backlog. *Termination:* PR merged and the
+  session wraps. *Frequency:* per ticket. *Observability:* none for a ticket that runs long — no
+  mid-task checkpoint if the session is interrupted before merge.
+
+**Coupling:** L4 nests inside L1 (a dev session is still a session — it starts and ends the same way).
+L1 triggers L2 (every session ends in a wrap). L3 reads the accumulated state of every L1/L2 iteration
+since the last review — it is the only loop that looks backward across many sessions rather than forward
+within one. **Shared state:** all four loops read and write the same knowledge-base repo; there is no
+separate state store per loop, so a loop's "carry-forward" is really just "what it committed."
+
+**Known gaps** (candidates for future backlog tickets, not a design flaw to fix here):
+- L1/L2 carry-forward correctness is asserted, not verified — nothing checks that a wrap actually
+  captured everything worth persisting.
+- L3 has a pass/fail structural check but no *quality* convergence criterion beyond "not broken."
+- L3 has no cadence backstop — a felt-friction trigger with no maximum interval can go dormant
+  indefinitely.
+- L4 has no mid-task checkpoint, so a long-running ticket interrupted mid-session loses its plan state.
+
+---
+
 ## Knowledge & context upkeep
 
 So context files don't bloat and stay useful.
