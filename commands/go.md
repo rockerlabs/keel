@@ -17,6 +17,14 @@ even from a worktree) → the inline open-work section of `<path>/CLAUDE.md`. Th
 - **Heading / item not found** → say so and stop. Don't invent a task or guess which one was meant — a
   blank beats a wrong guess.
 
+**In-flight check (before picking, after resolving ticket N):** `git fetch --prune`, then scan
+`git branch -a` for a live branch already working this ticket — the `go-<n>-` install pattern first,
+then a keyword grep of branch names against the ticket title. A match means another session is already
+on it (in progress, not closed — the "closed in a parallel session" rail above doesn't cover this case).
+**STOP: report "in flight on `<branch>`"** and do not re-pick; offer to continue that branch or pick a
+different ticket instead. This is advisory, not a lock — two sessions starting in the same minute can
+still race, and only sessions running this version of `/go` apply it.
+
 Also skim the project memory for anything the section cross-links.
 
 **Worktree check (first step, before any code):**
@@ -28,3 +36,8 @@ Run `git branch --show-current` from the current cwd.
 - If the cwd is the main checkout — create a feature branch as usual.
 
 Never rely on the implicit shell cwd as proof of which working tree you are in.
+
+**Claim step (right after cutting/confirming the feature branch):** write `⏳ IN FLIGHT (YYYY-MM-DD,
+branch <name>)` onto the ticket's own heading line in the project's backlog file, resolved at the
+**main checkout root** (per the `dir #34` worktree rule above). On merge, the closing sweep replaces
+this with ✅ (existing convention) — don't leave both markers on the same heading.

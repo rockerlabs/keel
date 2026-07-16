@@ -9,6 +9,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/go` in-flight discipline (backlog dir #40).** Before picking a ticket, `/go` now scans
+  `git branch -a` (after `git fetch --prune`) for a live branch already working it — the installed
+  `go-<n>-` branch pattern first, then a keyword grep of branch names against the ticket title. A
+  match stops with "in flight on `<branch>`" instead of re-picking, offering to continue that branch
+  or pick another. Right after cutting its own branch, `/go` now also claims the ticket by writing a
+  `⏳ IN FLIGHT (YYYY-MM-DD, branch <name>)` marker onto its backlog heading, which the closing sweep
+  replaces with ✅ on merge. Closes a gap the existing "already closed in a parallel session" rail
+  didn't cover: a ticket already *in progress*, not yet closed (felt when a grooming session appended
+  spec notes to a ticket mid-implementation by a parallel `/go` session).
 - **`doctor.sh` map-drift check (backlog dir #39, T1).** A new advisory WARN: a backtick-spanned
   path/filename in a project's live `CLAUDE.md` (never `CLAUDE-archive.md`/`BACKLOG.md`, which
   legitimately name historical paths) that no longer resolves on disk — the map goes stale as code
