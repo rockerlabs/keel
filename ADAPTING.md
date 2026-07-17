@@ -123,6 +123,57 @@ So: the lasting layer and the git-level check work everywhere; the command conve
 tool's command support, and the prose rails are as strong as your model. That's exactly what "works with any
 AI tool" means here — and exactly where it stops.
 
+## Running several tools on one project in parallel
+
+Keel's rails are tool-independent, so nothing stops you from pointing **different** AI tools at the
+**same** repository at the same time — one ticket each. We ran this live: three small independent
+tickets on one Java/Spring project, worked concurrently by Claude Code, Codex (the ChatGPT-app one),
+and Cursor, with Keel as the only coordination layer — no orchestrator, no daemon, just the rails,
+git, and a shared backlog file. All three delivered green PRs; the merged result passed the full test
+suite with **zero cross-task interference**. Here is what made it work, and what bit us.
+
+**What carried the run:**
+
+- **Pre-assign tickets and file ownership.** The operator fixed ticket→tool up front (no self-pick),
+  and each ticket's spec named the exact files it owns — "if your change needs a file another ticket
+  owns, STOP and report." The three PRs ended up with zero overlapping files and merged without a
+  single conflict. This is the cheapest concurrency control there is: partition, don't lock.
+- **One isolated working copy per tool** (worktree or clone — see the gotcha below), each branch cut
+  from fresh `main` before launch.
+- **Claim markers in the shared backlog.** Each session stamps `⏳ IN FLIGHT (date, branch)` onto its
+  ticket at session start. Advisory, not a lock — but combined with the branch scan it's enough.
+- **The rails themselves.** Branch-first held on all three tools. Best moment of the run: a session
+  hit a git state it didn't expect (the coordinator had renamed branches mid-flight — our mistake,
+  see below), re-checked git, and **stopped and asked instead of guessing** — "a blank beats a wrong
+  guess" firing exactly as written, zero damage.
+
+**What bit us (learn from our run):**
+
+- **Per-folder-sandboxed tools can't use linked worktrees.** A linked worktree's `.git` is a pointer
+  into the main checkout's `.git/worktrees/…` — *outside* the folder the tool's sandbox granted. The
+  ChatGPT-app Codex finished its ticket, then couldn't run a single git write. For such tools use a
+  **full clone** (self-contained `.git`); keep worktrees for tools whose file access spans the main
+  checkout.
+- **A ticket number is not a unique key.** On a machine with several Keel projects, "ticket 14"
+  resolved against the *wrong project's* backlog and produced a coherent, confidently wrong
+  "already done" story. Have the session echo back *which project and ticket title* it resolved
+  before it starts working — a cheap catch point for you.
+- **Vendor quota dies mid-ticket.** One tool hit its plan limit after authoring the code but before
+  commit/PR. Keep every lane finishable without that tool's model: the remaining git mechanics are
+  LLM-free, and honest authorship labeling in the PR keeps the record straight.
+- **Land your `.gitignore` changes before cutting the working copies** (they inherit ignore rules
+  from the commit they're created at), and mind that a *dir-only* pattern like `.cursor/` does not
+  match a symlink standing in for that directory.
+- **Don't touch branches under live sessions.** A cosmetic branch rename by the coordinator
+  mid-flight stalled a session into (correctly) refusing to proceed. Rename before launch or after
+  the PRs — or not at all.
+- **Merge stays human, one PR at a time.** The tools deliver; the acceptance gate is yours.
+
+The honest summary: the coordination Keel provides here is **passive** — conventions plus git. It was
+enough for disjoint tickets, and the failure modes we hit were environmental (sandboxes, quotas,
+ignore rules), not collisions between the agents themselves. Overlapping tickets would need more than
+this; start disjoint.
+
 ## Help map your tool
 
 Claude Code, Codex (ChatGPT app), and Cursor have been run live; everything else in the table is still a
