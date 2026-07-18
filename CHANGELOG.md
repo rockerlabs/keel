@@ -9,6 +9,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`doctor.sh` — Bash/ShellCheck as a fourth per-stack lint gate (#100).**
+  Extends the existing Java→Checkstyle / Python→Ruff / Swift→SwiftLint gate with Bash: a repo with
+  first-party `*.sh` files is flagged unless it carries a first-party `.shellcheckrc`, or invokes
+  `shellcheck` somewhere under `.github/workflows`. The second signal exists because, unlike the other
+  three tools, shellcheck runs perfectly well with zero configuration — a bare "config file present"
+  check would false-positive on any repo (this checkout included, which runs `shellcheck` straight in
+  `ci.yml` with no rc file) that adopted the gate without ever needing a config.
 - **"Loop model" section in `FRAMEWORK.md`.** Documents the KB's four operational loops — Session,
   Wrap, Global review, and Dev — each with its input, work, carry-forward, termination, frequency, and
   observability, plus their coupling and known gaps. Gives future cadence/convergence work a stable
