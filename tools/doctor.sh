@@ -22,8 +22,8 @@
 #   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
 #   WARN  CLAUDE.md map may be stale — a backtick-spanned path/filename it names no longer exists on disk
 #         (accept a legitimate historical mention via .keel/map-drift-baseline)
-#   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff, Swift→SwiftLint)
-#         or a Java file uses a wildcard import
+#   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff,
+#         Swift→SwiftLint, Bash→ShellCheck) or a Java file uses a wildcard import
 #   WARN  a private-fork project's linked worktree is missing the CLAUDE.md bridge (session starts blind)
 set -euo pipefail
 
@@ -473,6 +473,17 @@ EOF
      || fp_any "$d" -name '*.swift' -print; then
     fp_any "$d" \( -name .swiftlint.yml -o -name .swiftlint.yaml \) -print \
       || warn "Swift stack but no SwiftLint config — add a first-party .swiftlint.yml and run it in CI (FRAMEWORK 'Code conventions')"
+  fi
+  # Bash — either a first-party .shellcheckrc, or shellcheck actually invoked in CI (unlike
+  # Checkstyle/Ruff/SwiftLint, shellcheck runs fine with zero config, so a config file alone isn't a
+  # reliable signal — a repo that wires `shellcheck` straight into its workflow with no rc file, e.g.
+  # this Keel checkout itself, must not be flagged).
+  if fp_any "$d" -name '*.sh' -print; then
+    if ! fp_any "$d" -name '.shellcheckrc' -print \
+       && ! { [ -d "$d/.github/workflows" ] \
+              && grep -rlE '(^|[^A-Za-z0-9_-])shellcheck([^A-Za-z0-9_-]|$)' "$d/.github/workflows" >/dev/null 2>&1; }; then
+      warn "Bash stack but no ShellCheck config (.shellcheckrc) and no shellcheck invocation in CI — wire one (FRAMEWORK 'Code conventions')"
+    fi
   fi
 
   # Worktree CLAUDE.md bridge (FRAMEWORK "Worktree discipline"): a private-fork project gitignores CLAUDE.md,
