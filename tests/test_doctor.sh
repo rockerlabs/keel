@@ -259,6 +259,21 @@ printf 'rules: []\n' > "$d/.swiftlint.yml"
 run "$doctor" "$d"
 check_absent  "first-party SwiftLint config → no WARN" "$OUT" "no SwiftLint"
 
+# Bash stack without ShellCheck config → WARN; a VENDORED config under node_modules/ must NOT count (pruning)
+d="$(newbase)"; printf '#!/usr/bin/env bash\necho hi\n' > "$d/run.sh"
+mkdir -p "$d/node_modules/dep"; printf 'disable=SC2034\n' > "$d/node_modules/dep/.shellcheckrc"
+run "$doctor" "$d"
+check_contains "flags missing ShellCheck config (vendored node_modules/ config pruned)" "$OUT" "no ShellCheck"
+printf 'disable=SC2034\n' > "$d/.shellcheckrc"
+run "$doctor" "$d"
+check_absent  "first-party .shellcheckrc → no WARN" "$OUT" "no ShellCheck"
+# a CI-wired shellcheck invocation with no rc file (no config-file signal available) must still clear the gate
+d="$(newbase)"; printf '#!/usr/bin/env bash\necho hi\n' > "$d/run.sh"
+mkdir -p "$d/.github/workflows"
+printf 'jobs:\n  x:\n    steps:\n      - run: shellcheck run.sh\n' > "$d/.github/workflows/ci.yml"
+run "$doctor" "$d"
+check_absent  "shellcheck invoked in CI with no rc file → no WARN" "$OUT" "no ShellCheck"
+
 # --- worktree CLAUDE.md bridge (FRAMEWORK "Worktree discipline") — advisory WARN -----------------
 # private-fork project (gitignored CLAUDE.md): a linked worktree checks out WITHOUT one → bridge WARN
 base="$(mkproj)"; git -C "$base" init -q
