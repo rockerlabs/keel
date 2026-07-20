@@ -598,20 +598,28 @@ check_contains "worktree run counts the hidden finding" "$OUT" "(1 accepted hidd
 # empty," not crash the whole run under set -euo pipefail — regression for a review finding: the two
 # files are read via a bare (non-`local`) assignment, so an unguarded `sed`/`cat` failure there used
 # to kill the script mid-unit, silently dropping every finding already buffered for it.
+# `chmod 000` is meaningless as root (root reads regardless of mode bits — the CI alpine-busybox leg
+# runs as root in its container), so the content assertion only holds under a real unprivileged user;
+# skip it there rather than assert something the platform can't produce (a `0 failed` skip beats a
+# guaranteed-false red herring). The `exit 0` / no-crash half is platform-independent and always runs.
 d="$(newbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
 mkdir -p "$d/.keel"; printf 'H-DEP-FLOATING\n' > "$d/.keel/doctor-accept"
 chmod 000 "$d/.keel/doctor-accept"
 run "$doctor" "$d"
-check_status   "unreadable doctor-accept → doesn't crash (exit 0)" 0 "$STATUS"
-check_contains "unreadable doctor-accept → treated as empty, finding still shown" "$OUT" "[H-DEP-FLOATING]"
+check_status "unreadable doctor-accept → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable doctor-accept → treated as empty, finding still shown" "$OUT" "[H-DEP-FLOATING]"
+fi
 chmod 644 "$d/.keel/doctor-accept"
 
 d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
 mkdir -p "$d/.keel"; printf 'scripts/ghost.sh\n' > "$d/.keel/map-drift-baseline"
 chmod 000 "$d/.keel/map-drift-baseline"
 run "$doctor" "$d"
-check_status   "unreadable map-drift-baseline → doesn't crash (exit 0)" 0 "$STATUS"
-check_contains "unreadable map-drift-baseline → treated as empty, drift still flagged" "$OUT" "map may be stale"
+check_status "unreadable map-drift-baseline → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable map-drift-baseline → treated as empty, drift still flagged" "$OUT" "map may be stale"
+fi
 chmod 644 "$d/.keel/map-drift-baseline"
 
 summary
