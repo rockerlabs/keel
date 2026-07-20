@@ -106,7 +106,7 @@ Usage:
 guardrail fire in that repo records an event with no env needed; `add` auto-ingests any logged events and
 folds them into the counts — so objective events (e.g. a secret-guard block) reach the score
 deterministically, at zero token cost, without the model counting them. $KEEL_IMPACT_LOG overrides the
-default log path (.keel/impact-events.log); pass --no-ingest to skip ingestion. TYPE ∈ guard fire hit miss friction.
+default log path (.keel/impact-events.log); pass --no-ingest to skip ingestion. TYPE ∈ hold guard fire hit miss friction.
 
 Cited events (REPEAT a flag once per event; the count is the number of citations, never a bare integer — no
 citation, no count). Each citation is archived to the evidence file so the score is a checkable trail:

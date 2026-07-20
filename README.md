@@ -24,7 +24,7 @@ months-long horizon, and/or you're taking a private repo public. If that's you, 
 Four properties, independent of which model or tool you run — ordered from the most immediately
 felt to the reason the project exists:
 
-1. **Economy.** A thin, stable core (~1.8K tokens) instead of a context dump — the re-explanation
+1. **Economy.** A thin, stable core (~2K tokens) instead of a context dump — the re-explanation
    tax ("we branch off main… there's already a client in `net/`…") stops being paid every session.
 2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
    and the unchanged prefix is prime prompt-cache material.
@@ -40,7 +40,8 @@ scales with your model, constraint is mechanical — which is exactly the honest
 
 ## Install
 
-Two steps, and the installer **never touches a file you own**.
+Two steps, and the installer **never overwrites a file you own** (linked mode's one edit: it appends
+the single import line to an existing `~/.claude/CLAUDE.md`).
 
 **1. Clone and install:**
 
@@ -188,13 +189,14 @@ your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yours
 > bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md).
 
 > **Already have your own conventions?** Keel isn't all-or-nothing and won't fight your setup —
-> `install.sh` never touches a file you own. Lift single ideas from
+> `install.sh` never overwrites a file you own. Lift single ideas from
 > [`PRINCIPLES.md`](PRINCIPLES.md)/[`FRAMEWORK.md`](FRAMEWORK.md) into your own `CLAUDE.md`, run the
 > [standalone tools](#just-want-the-git-hook) next to what you have, or grab one `commands/*.md` and
 > ignore the rest — a method to graft on, not a framework to adopt whole.
 
-> **One command for the rest.** After install, a `keel` CLI is on your PATH — `keel help` lists it:
-> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, and `keel uninstall`
+> **One command for the rest.** Install drops a `keel` CLI into `~/.claude/bin` (the summary prints a
+> one-line PATH hint if that dir isn't on your PATH) — `keel help` lists the verbs: `keel install`,
+> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`, and `keel uninstall`
 > (reverses the install, backing up anything it removes). It's a thin front-end over the same
 > `tools/*.sh`, so it works from any directory, not just the clone.
 
@@ -212,7 +214,8 @@ your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yours
 
 ## Tests, scope, license
 
-A small Bash test suite (no extra dependencies) runs on every change across Linux and macOS, plus a
+A small Bash test suite (no extra dependencies) runs on every change across Linux, macOS, and
+Alpine/busybox, plus a
 `shellcheck` pass — `tests/run.sh` runs it locally. It's the same rule Keel asks of you, applied to Keel
 itself.
 

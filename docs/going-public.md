@@ -4,7 +4,7 @@ Keel is publication-first, but a repo that grew up private accumulates two kinds
 expose: **content** (personal data / instance-specific strings in the tree) and **history** (real emails in
 commit/tag metadata, private tokens or personal data in old blobs and messages).
 [`public-audit`](../tools/public-audit.sh) is the detector — but know exactly what it **fails** on vs what
-it only **flags**: it **GAPs** (exit 1) on a non-public-safe commit/tag identity email and on an
+it only **flags**: it **GAPs** (exit 1) on a non-public-safe commit/tag identity email and on a
 user-declared `--token`; it **WARNs** (advisory) on heuristic hits — emails, absolute home paths, and
 Cyrillic — in the tree *and* in history (message bodies + diffs), plus agent/session metadata. **Binary
 blobs are covered too:** every binary blob reachable from any ref (and a PR ref's exclusive blobs) is

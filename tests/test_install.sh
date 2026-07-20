@@ -56,6 +56,12 @@ run "$install" --home "$alt" --no-hooks
 check_status "--no-hooks --home → exit 0" 0 "$STATUS"
 check_file "custom home gets CLAUDE.md" "$alt/CLAUDE.md"
 check_contains "secret-guard step skipped" "$OUT" "skipped"
+# the closing summary must not tell an unguarded user they are guarded (2026-07-21 audit)
+case "$OUT" in
+  *"secret-guard already guards"*) fail "--no-hooks summary must NOT claim the guard is active" "found the claim in output" ;;
+  *) pass "--no-hooks summary does not claim the guard is active" ;;
+esac
+check_contains "--no-hooks summary says the guard is NOT wired" "$OUT" "secret-guard is NOT wired"
 
 # never clobbers a pre-existing foreign global hooksPath — and, with a real (foreign) pre-commit
 # present there, must NOT then falsely report it as Keel's secret-guard (the old verify did).

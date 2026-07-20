@@ -18,7 +18,8 @@ the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each 
 log that `add` auto-ingests — the objective signal never depends on the model counting it.
 
 Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
-citation, and the full per-event trail (every event → its citation) lives in `evidence.md` next to this file.
+citation, and the full per-event trail (every event → its citation) lives in `keel-impact-evidence.md`
+next to this file (in an installed project's `.keel/` dir the same file is named `evidence.md`).
 
 | date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
 |------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|

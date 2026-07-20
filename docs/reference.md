@@ -18,23 +18,32 @@ Every file, tool, and command — grouped, one line each.
 | [`templates/INSTANCE.md`](../templates/INSTANCE.md) | Your private layer: hardware, available models, project list. |
 | [`templates/project-CLAUDE.md`](../templates/project-CLAUDE.md) | Per-project notes. |
 | [`templates/LEARNINGS.md`](../templates/LEARNINGS.md) | Holding place for tips not yet worth a full rule. |
+| [`templates/IDEAS.md`](../templates/IDEAS.md) | Free-form scratchpad for raw ideas — the lowest-commitment staging tier, one step before `LEARNINGS.md`. |
 
 ## ⚙️ Tools — run by themselves, zero context cost
 
 | Tool | What it does |
 |---|---|
-| [`keel`](../keel) | One CLI over the rest, on your PATH after install: `keel install \| sync \| doctor \| audit \| init \| check \| uninstall`. A thin dispatcher, so it works from any directory. |
-| [`install.sh`](../install.sh) | One-command setup: copies (or, with `--link`, symlinks) the always-on files and turns on secret-guard. Safe to re-run; never touches your own files. On a machine with no git projects, `--link --no-git` trims the code/git rails from the always-on core (sticky across re-runs; `--with-git` restores). |
+| [`keel`](../keel) | One CLI over the rest, installed to `~/.claude/bin` (the install summary prints a one-line PATH hint if that dir isn't on your PATH): `keel install \| sync \| doctor \| audit \| init \| check \| uninstall`. A thin dispatcher, so it works from any directory. |
+| [`bootstrap.sh`](../bootstrap.sh) | The `curl … \| sh` entry point: fetches the repo (git clone, or a tarball on a git-less machine) and runs `install.sh`. |
+| [`install.sh`](../install.sh) | One-command setup: copies (or, with `--link`, symlinks) the always-on files and turns on secret-guard. Safe to re-run; never overwrites your own files. On a machine with no git projects, `--link --no-git` trims the code/git rails from the always-on core (sticky across re-runs; `--with-git` restores). |
 | [`uninstall.sh`](../uninstall.sh) | Reverses `install.sh` (`keel uninstall`): removes only Keel-owned content, backs up what it removes, leaves your own files and the machine-global secret-guard alone. |
 | [`tools/secret-guard/`](../tools/secret-guard/) | Git hook: blocks key-shaped secrets (`ghp_`, `AKIA…`, `sk-…`, `glpat-`, …) on commit/push — and, opt-in, your listed personal data, even inside UTF-16 binaries. Also blocks agent session-metadata trailers on push and scans annotated-tag messages. |
 | [`tools/public-audit.sh`](../tools/public-audit.sh) | Pre-go-public scan of files **and git history**: committer identities and declared tokens are a hard stop; names/emails/home paths are flagged for review. |
 | [`tools/doctor.sh`](../tools/doctor.sh) | Checks a setup for missing pieces (`--install` audits the linked install). |
 | [`tools/init-project.sh`](../tools/init-project.sh) | Scaffolds a new project and registers it in `INSTANCE.md`. |
 | [`tools/register-project.sh`](../tools/register-project.sh) | Adds existing project folder(s) to the `INSTANCE.md` list; safe to re-run. |
-| [`tools/keel-impact.sh`](../tools/keel-impact.sh) | Optional per-project tracker behind `/keel-score`: an auditable ledger of cited events. Off by default. |
+| [`tools/keel-impact.sh`](../tools/keel-impact.sh) | Optional per-project tracker behind `/keel-score`: an auditable ledger of cited events. Projects scaffolded by `init-project` are tracked by default (`--no-impact` opts out); an existing repo is off until `keel-impact.sh enable <dir>`. |
+| [`tools/install-secret-guard.sh`](../tools/install-secret-guard.sh) | Wires the secret-guard hooks: `--global` sets a machine-wide `core.hooksPath`; `<repo-path>` vendors a self-contained copy into one repo. Never clobbers a non-Keel hook without `--force` (which backs it up). |
+| [`tools/keel-check.sh`](../tools/keel-check.sh) | The stop-mode floor: run a task's verification command through it and repeated failure of the same check prints a STOP-and-diagnose banner instead of letting an agent spiral. |
+| [`tools/branch-cleanup.sh`](../tools/branch-cleanup.sh) | Classifies local branches after merges into AUTO/ASK/FLAG confidence tiers so post-merge cleanup never blanket-deletes live work. |
 
 *secret-guard is a safety net for known key shapes plus your listed literals — not a catch-all. It won't
 catch an arbitrary AWS secret key, a JWT, or a password.*
+
+*Maintainer dev-tooling, deliberately not shipped by `install.sh`: `tools/pre-pr-gate.sh` +
+`commands/polish.md` (the pre-PR polish→gate flow), `tools/keel-check-gate.sh` (opt-in hard-veto half of
+the stop-mode floor), and `tools/self/` (this repo's own structural self-checks).*
 
 ## Commands (`commands/`)
 

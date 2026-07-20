@@ -8,7 +8,7 @@ citations are captured from the guardrail hooks (`source | detail`); the rest ar
 `tools/keel-impact.sh add` writes the blocks; this header is created once. Shape of a block:
 
 ```
-## 2026-07-09 — score 82/100 (conf high)
+## 2026-07-09 — score 80/100 (conf med)
 
 - guard: secret-guard | blocked
 - fire: P0 real-time-propose | LEARNINGS.md:42 | cold would have waited to be told

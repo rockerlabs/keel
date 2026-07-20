@@ -574,6 +574,7 @@ if [ "$LINK" = 1 ]; then
   fi
 fi
 
+guard_ok=0
 if [ "$DO_HOOKS" = 1 ]; then
   hp="$(git config --global core.hooksPath 2>/dev/null || true)"
   if [ "$hp" = "$keel_hooks" ] && [ -x "$hp/pre-commit" ] && grep -q 'Keel secret-guard' "$hp/pre-commit" 2>/dev/null; then
@@ -581,6 +582,7 @@ if [ "$DO_HOOKS" = 1 ]; then
     # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
     if [ -x "$hp/secret-scan.sh" ] && "$hp/secret-scan.sh" --selftest >/dev/null 2>&1; then
       echo "  OK   secret-guard ($hp; selftest passed)"
+      guard_ok=1
     else
       echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
       echo "       Inspect:  $hp/secret-scan.sh --selftest"
@@ -611,10 +613,17 @@ fi
 [ "$missing" = 0 ] || { echo "install: verification FAILED — core file(s) missing" >&2; exit 1; }
 
 # Shared opening — the mode-specific middle differs below (clone handling, update, removal).
+# The guard sentence must match reality: after --no-hooks, a refused foreign hooksPath, or a wiring
+# failure, claiming "already guards your commits" tells an unprotected user they are protected.
 if [ "$LINK" = 1 ]; then mode_tag=" (linked mode)"; else mode_tag=""; fi
+if [ "$guard_ok" = 1 ]; then
+  guard_note="secret-guard already guards your commits."
+else
+  guard_note="NOTE: secret-guard is NOT wired (see Verify above)."
+fi
 cat <<EOF
 
-Done$mode_tag. secret-guard already guards your commits. Next:
+Done$mode_tag. $guard_note Next:
   - EASIEST — restart Claude Code (commands load only at session start), then run  /keel-setup
     Machine setup works from ANYWHERE — no projects needed yet: it fills your machine details and
     the always-on ground rules. Later, run /keel-setup again INSIDE each project you want Keel on —

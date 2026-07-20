@@ -22,7 +22,8 @@ draft and add the parts only you know (which models you use, your roadmap).
 /keel-setup
 ```
 
-After step 1, secret-guard already protects every commit; after step 2 the ground rules and project notes
+After step 1, secret-guard protects every commit — the install summary confirms it (and says so plainly
+instead if you skipped it with `--no-hooks` or wiring was refused/failed); after step 2 the ground rules and project notes
 are filled in. That's the loop — run `/keel-setup` again in each new project you add.
 
 > **`/keel-setup` not showing up in Claude Code?** New commands appear only when a session **starts** —
@@ -80,7 +81,7 @@ delete it; park it anywhere out of the way (e.g. `~/keel`). It's Keel itself, no
 don't register it or point `/keel-setup` at it. To update later, run `git pull && ./install.sh` in the clone.
 
 `install.sh` is safe to re-run. It **never touches the files you own** (`CLAUDE.md`, `INSTANCE.md`,
-`LEARNINGS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run offers to update a
+`LEARNINGS.md`, `IDEAS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run offers to update a
 copy that has **drifted** from the shipped version — asking first (default *no*) when run from a terminal,
 or printing the `cp` to run otherwise. It:
 
@@ -89,7 +90,7 @@ or printing the `cp` to run otherwise. It:
   Code — no manual copy),
 - turns on the `secret-guard` git check machine-wide,
 - creates a private `INSTANCE.md`,
-- checks the result and prints a `Done. Next:` summary so you know it worked.
+- checks the result and prints a closing `Done. … Next:` summary so you know it worked.
 
 > **Already use Claude Code?** If you already have a `~/.claude/CLAUDE.md`, install **won't overwrite it** —
 > it copies everything else but leaves your file alone, so Keel's always-on ground rules aren't merged in.
@@ -148,13 +149,13 @@ the repo's code** for you to check. The by-hand version:
 
 ```bash
 tools/init-project.sh <path>   # set up: git, a .gitignore that hides private notes, a project CLAUDE.md
-tools/doctor.sh       <path>   # check the setup (GAP = something's missing, WARN = a suggestion)
+tools/doctor.sh       <path>   # check the setup (GAP = missing, WARN = a suggestion, HINT = a nudge)
 ```
 
 `doctor` checks the essentials: the private AI context is git-ignored, `CLAUDE.md` exists and stays inside
 the startup-token budget, `secret-guard` is wired (and not silently bypassed by a repo-local `core.hooksPath`),
 dependencies are pinned (no `:latest` / `@vN`), each detected stack has its native linter gate
-(Checkstyle / Ruff / SwiftLint), and a live worktree carries its `CLAUDE.md` bridge. It can also sweep every
+(Checkstyle / Ruff / SwiftLint / shellcheck), and a live worktree carries its `CLAUDE.md` bridge. It can also sweep every
 project in your `INSTANCE.md` registry at once: `tools/doctor.sh --registry ~/.claude/INSTANCE.md`.
 
 Fill in the project `CLAUDE.md` (your stack, conventions, roadmap). It loads **automatically** when you work

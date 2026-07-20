@@ -8,6 +8,28 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **First public global audit (dir #50) — the verified findings of three independent external
+  auditors, fixed in one pass.** Two Claude sessions (repo-reading) and the DeepSeek harness audited
+  the public tree; every finding was adversarially re-verified against the live repo before any fix.
+  Guard/installer correctness: `install-secret-guard.sh` now honors an **absolute** local
+  `core.hooksPath` (it used to vendor into a junk dir under the repo while reporting success — guard
+  silently inactive; mirrors `doctor.sh`'s handling) and rejects a surplus repo-path argument instead
+  of silently dropping the first; `secret-scan.sh --range` with an unresolvable range and `--staged`
+  outside a git repo now exit 2 per their own contract instead of failing OPEN as "clean";
+  `install.sh`'s closing summary claims "secret-guard already guards your commits" only when the
+  verify step actually proved it (after `--no-hooks`, a refused foreign hooksPath, or a wiring
+  failure it now says the guard is NOT wired). Each fix carries a regression test.
+  Doc↔reality corrections across README / `docs/`: the `keel` CLI is in `~/.claude/bin`, not
+  magically "on your PATH"; "never touches a file you own" qualified with linked mode's one
+  announced append; the CI platform list (three, incl. Alpine/busybox) and `keel help` verb list
+  completed; `reference.md` inventory completed (bootstrap, install-secret-guard, keel-check,
+  branch-cleanup, IDEAS template, maintainer-tooling note) and its `keel-impact` "off by default"
+  corrected (init-project tracks by default); stale token figures refreshed (core ~2K, CHANGELOG
+  ~25,000+, FRAMEWORK+PRINCIPLES ~12K); `keel-impact-evidence.md`'s worked example now matches its
+  own formula (80/med, was 82/high); dead `evidence.md` pointer, doctor tier legend (+HINT),
+  shellcheck in doctor's linter-gate list, `keel-impact.sh` usage (+`hold`), and two typos.
+
 ### Added
 - **`docs/tier-growth.svg` — an animated companion figure for `docs/loading-and-cost.md`** (dir #44,
   PR #113). The "Three tiers" table states the tiering discipline at one instant; this figure shows it
