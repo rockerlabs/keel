@@ -491,4 +491,83 @@ d="$(newbase)"; printf '# ctx\nDead: `ghost-in-archive.sh`\n' > "$d/CLAUDE-archi
 run "$doctor" "$d"
 check_absent "CLAUDE-archive.md mentions are never checked" "$OUT" "ghost-in-archive.sh"
 
+# --- dir #45: triaged output — tiers ordered GAP→WARN→HINT, stable IDs, accept file, tail summary
+# a mixed run: GAP (no CLAUDE.md) + WARN (event log) + HINT (floating dep) — every line carries its
+# ID, and the tiers print in severity order regardless of check order in the code
+mixed() {  # a project that draws one finding of each tier; prints its path
+  local d; d="$(mkproj)"; git -C "$d" init -q
+  printf '.claude/\n' > "$d/.gitignore"             # no CLAUDE.md, not gitignored → GAP
+  mkdir "$d/.keel"                                  # event log not gitignored → WARN
+  printf 'FROM postgres:latest\n' > "$d/Dockerfile" # floating dep → HINT
+  printf '%s' "$d"
+}
+d="$(mixed)"
+run "$doctor" "$d"
+check_status   "mixed run → GAP still fails (exit 1)" 1 "$STATUS"
+check_contains "GAP line carries its stable ID"  "$OUT" "[G-CLAUDEMD-MISSING]"
+check_contains "WARN line carries its stable ID" "$OUT" "[W-EVENTLOG-TRACKED]"
+check_contains "HINT line carries its stable ID" "$OUT" "[H-DEP-FLOATING]"
+ord="$(printf '%s\n' "$OUT" | grep -oE 'G-CLAUDEMD-MISSING|W-EVENTLOG-TRACKED|H-DEP-FLOATING' | tr '\n' ' ')"
+if [ "$ord" = "G-CLAUDEMD-MISSING W-EVENTLOG-TRACKED H-DEP-FLOATING " ]; then
+  pass "findings print in tier order GAP → WARN → HINT"
+else
+  fail "findings print in tier order GAP → WARN → HINT" "got order: $ord"
+fi
+# (exact warn count varies with the sandbox: no global guard there adds W-GUARD-UNWIRED)
+check_contains "dirty run prints the tail summary" "$OUT" "doctor: 1 gap,"
+check_contains "dirty summary counts the hint" "$OUT" "1 hint"
+
+# the tail summary prints on a CLEAN run too (alongside the baseline-OK line)
+d="$(newbase)"
+run "$doctor" "$d"
+check_contains "clean run keeps the baseline-OK line" "$OUT" "baseline OK"
+check_contains "clean run prints the tail summary"    "$OUT" "doctor: 0 gap,"
+
+# --quiet: GAP/WARN lines only — hints hidden from the listing but still counted in the summary
+d="$(mixed)"
+run "$doctor" --quiet "$d"
+check_contains "--quiet keeps the GAP line"  "$OUT" "[G-CLAUDEMD-MISSING]"
+check_contains "--quiet keeps the WARN line" "$OUT" "[W-EVENTLOG-TRACKED]"
+check_absent   "--quiet hides the HINT line" "$OUT" "[H-DEP-FLOATING]"
+check_contains "--quiet still counts the hidden hint in the summary" "$OUT" "1 hint"
+
+# .keel/doctor-accept: a listed WARN/HINT ID is suppressed with an honest hidden-count; --all reveals it
+d="$(newbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
+mkdir -p "$d/.keel"
+printf '# convention nudges reviewed 2026-07-20\nH-DEP-FLOATING  # pinning parked\n' > "$d/.keel/doctor-accept"
+printf '/.keel/impact-events.log\n' >> "$d/.gitignore"   # keep the .keel/ dir itself finding-free
+run "$doctor" "$d"
+check_absent   "accepted HINT is suppressed" "$OUT" "[H-DEP-FLOATING]"
+check_contains "suppressed finding is counted in the summary" "$OUT" "(1 accepted hidden)"
+run "$doctor" --all "$d"
+check_contains "--all reveals the accepted finding" "$OUT" "[H-DEP-FLOATING]"
+check_contains "--all marks it as accepted" "$OUT" "(accepted)"
+check_absent   "--all hides nothing" "$OUT" "accepted hidden"
+
+# accepting a GAP ID is ignored — a hard failure can't be waved away into a green exit
+d="$(mkproj)"; git -C "$d" init -q
+printf '.claude/\n/.keel/impact-events.log\n' > "$d/.gitignore"   # no CLAUDE.md → GAP
+mkdir -p "$d/.keel"; printf 'G-CLAUDEMD-MISSING\n' > "$d/.keel/doctor-accept"
+run "$doctor" "$d"
+check_status   "accepted GAP still fails the audit" 1 "$STATUS"
+check_contains "accepted GAP still prints" "$OUT" "[G-CLAUDEMD-MISSING]"
+
+# a linked worktree resolves the accept file at the MAIN checkout's .keel/ — same discipline as the
+# map-drift baseline (a worktree-local .keel/ would itself draw the split-brain WARN)
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\n' > "$base/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n/.keel/impact-events.log\n' > "$base/.gitignore"
+printf 'FROM postgres:latest\n' > "$base/Dockerfile"
+git -C "$base" add .gitignore Dockerfile
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wta="$SANDBOX/wtaccept.$$"
+git -C "$base" worktree add -q "$wta" >/dev/null 2>&1
+ln -s "$base/CLAUDE.md" "$wta/CLAUDE.md"
+run "$doctor" "$wta"
+check_contains "worktree audit flags the floating dep (no accept yet)" "$OUT" "[H-DEP-FLOATING]"
+mkdir -p "$base/.keel"; printf 'H-DEP-FLOATING\n' > "$base/.keel/doctor-accept"
+run "$doctor" "$wta"
+check_absent   "main-checkout accept file suppresses it from the worktree" "$OUT" "[H-DEP-FLOATING]"
+check_contains "worktree run counts the hidden finding" "$OUT" "(1 accepted hidden)"
+
 summary

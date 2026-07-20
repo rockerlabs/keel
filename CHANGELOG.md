@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`tools/doctor.sh` — triaged output: GAP → WARN → HINT, stable IDs, an accept file, a tail summary.**
+  A brownfield adopter's first `keel doctor` run used to be a flat, unordered stream of every advisory
+  finding, jargon-heavy and un-triaged — alarm fatigue risked drowning the few WARNs that actually
+  protect the adopter (leak risk, rails not wired) among convention nudges (missing lint gates,
+  floating dependency versions). Findings now print ordered by severity — GAP (fails the audit) → WARN
+  (safety/integrity) → HINT (engineering-convention nudge, the new third tier) — each carrying a stable
+  ID (`G-*`/`W-*`/`H-*`) referenceable in docs and issues. `.keel/doctor-accept` (main checkout, one ID
+  per line, `#` comments) suppresses a listed WARN/HINT class; a GAP can never be suppressed. Every run
+  ends with a tail summary (`doctor: X gap, Y warn, Z hint (N accepted hidden)`), on both clean and
+  dirty runs. `--quiet` now hides HINTs (the tier a quiet run wants gone) while `--all` reveals anything
+  `.keel/doctor-accept` suppressed. `--install` mode's findings gained the same ID scheme (GAP/WARN
+  only — it has no HINT tier).
 - **`install.sh --no-git` — trim the code/git rails from a linked install's always-on core.**
   `CORE.md` now fences its two code/git-specific sections ("Git — mandatory rails", "Before writing
   code — reconcile first") in `KEEL-GIT` markers, and `install.sh --link --no-git` generates
