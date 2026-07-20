@@ -16,3 +16,7 @@ citations are captured from the guardrail hooks (`source | detail`); the rest ar
 - hit: test command @ CLAUDE.md | ran the suite
 - miss: hunted for the lint command
 ```
+
+## 2026-07-20 — score 100/100 (conf low)
+
+- guard: SEC4 server-side secret-scan (CI run 29722488680, PR #104) blocked agent session-metadata trailers (Claude-Session:) in commit messages 1dfb7d0 + 1d30f73; fixed by history rewrite (filter-branch), not by allowlisting
