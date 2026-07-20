@@ -164,8 +164,8 @@ target instead of ad-hoc reasoning about "the review process."
   *Work:* sweep the KB for drift, stale items, and structural issues; reconcile. *Carry-forward:* an
   updated KB, pushed. *Termination:* the audit passes clean ("structural-green") and any remaining gaps
   are deliberately deferred to the backlog. *Frequency:* felt-friction-triggered — no fixed cadence by
-  default. *Observability:* a pass/fail signal from `doctor`, but no convergence criterion — passing
-  clean says "not broken," not "improving."
+  default. *Observability:* a pass/fail signal from `doctor`, plus the qualitative signals in the
+  "Convergence check" subsection below.
 - **L4 — Dev (a backlog ticket).** *Input:* one backlog ticket. *Work:* implement, test, review.
   *Carry-forward:* a merged PR + the ticket closed in the backlog. *Termination:* PR merged and the
   session wraps. *Frequency:* per ticket. *Observability:* none for a ticket that runs long — no
@@ -177,10 +177,32 @@ since the last review — it is the only loop that looks backward across many se
 within one. **Shared state:** all four loops read and write the same knowledge-base repo; there is no
 separate state store per loop, so a loop's "carry-forward" is really just "what it committed."
 
+### Convergence check
+
+The structural audit answers "not broken"; it does not answer "improving." A global review (L3) that
+terminates on structural-green alone has a necessary but insufficient convergence signal — the review
+can keep passing while the knowledge base quietly stops getting better. Before closing a review, read
+four qualitative signals:
+
+1. **Advisory-warning trend.** Compare this review's advisory-warning count (the warn-not-gap class the
+   structural-audit tool reports) against the last recorded count. Flat across two or more reviews — or
+   rising — is a convergence miss worth naming.
+2. **Stuck backlog items.** A backlog item open and unchanged across two or more consecutive reviews is
+   not moving; surface it explicitly instead of letting it age silently.
+3. **Prune-tier health.** The staging tier for not-yet-rules (promote on recurrence, prune when stale)
+   only works if entries move. An entry that hit its promotion count but was not promoted — or nothing
+   promoted in roughly five sessions — means the tier is filling instead of draining.
+4. **Review-over-review improvement.** Are fewer gaps and warnings surfacing per review as conventions
+   mature, or does each review find a similarly sized pile? The latter means the conventions are not
+   sticking — only the review is.
+
+None of these is a hard gate; each is a question the review answers in a line. What matters is that the
+answers are recorded, so the next review has something to diff against — an unrecorded signal cannot
+trend.
+
 **Known gaps** (candidates for future backlog tickets, not a design flaw to fix here):
 - L1/L2 carry-forward correctness is asserted, not verified — nothing checks that a wrap actually
   captured everything worth persisting.
-- L3 has a pass/fail structural check but no *quality* convergence criterion beyond "not broken."
 - L3 has no cadence backstop — a felt-friction trigger with no maximum interval can go dormant
   indefinitely.
 - L4 has no mid-task checkpoint, so a long-running ticket interrupted mid-session loses its plan state.
