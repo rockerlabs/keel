@@ -21,7 +21,12 @@ Then:
   repo's git status, open meta items) and run `tools/doctor.sh --registry INSTANCE.md` to audit every
   project in the registry and surface baseline drift. **Principles pass:** re-read the tensions in `PRINCIPLES.md` and confirm each still has an
   enforcement that runs — surface any that drifted to "unenforced — risk" (the deeper, periodic arm of the
-  principles revision ritual). Report what stands out and what's next; make no edits without direction.
+  principles revision ritual). **Convergence check:** answer the four convergence signals — advisory-warning
+  trend, stuck backlog items, prune-tier health, review-over-review improvement (full writeup:
+  `FRAMEWORK.md` "Convergence check") — each in a line, and persist this review's advisory-warning count
+  somewhere durable enough for the *next* review to diff against: your review log if one exists, otherwise
+  a dated note wherever you already track review state. Report what stands out and what's next; make no
+  edits without direction.
 - **An argument ($ARGUMENTS) → work mode:** do that meta item autonomously. For edits to gitignored files
   with no git undo, back them up first and edit surgically (parallel-session-safe). Persist at the end via
   `/wrap`.
