@@ -23,7 +23,7 @@
 #   GAP   G-GIT-MISSING        not a git repo
 #   GAP   G-CLAUDEMD-MISSING   no project CLAUDE.md
 #   GAP   G-GITIGNORE-CONTEXT  .gitignore does not ignore the private AI context — unless public fork
-#   WARN  W-CLAUDEMD-MISSING   CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
+#   WARN  W-CLAUDEMD-GITIGNORED  CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit)
@@ -116,15 +116,24 @@ gap()  { NOTES+=("GAP	$1	$2"); exit_code=1; }
 warn() { NOTES+=("WARN	$1	$2"); }
 hint() { NOTES+=("HINT	$1	$2"); }
 
-# The accept set for the current unit: newline-framed IDs so a substring can't false-match.
-# One ID per line; `#` starts a comment (whole-line or trailing); blank lines ignored.
-ACCEPT_SET=$'\n'
-load_accept() {
-  ACCEPT_SET=$'\n'
-  [ -n "${1:-}" ] && [ -f "$1" ] || return 0
-  ACCEPT_SET="$ACCEPT_SET$(sed 's/#.*//' "$1" | awk 'NF{print $1}')"$'\n'
+# Shared newline-framed token-set idiom (also used below by the map-drift baseline): load_token_set
+# FILE prints one token per line (a bare `$(...)` — the caller frames it, since command substitution
+# strips ALL trailing newlines and a naive "frame inside the function" would silently lose the closing
+# frame). STRIP_COMMENTS=1 drops a trailing `# ...`; the map-drift baseline passes 0 — its file
+# predates comment support and a bare `#`-led path mention there is a real (if unlikely) token, not
+# an annotation, so silently swallowing it would be a behavior change, not a cleanup.
+load_token_set() {
+  local file="$1" strip_comments="${2:-0}"
+  [ -n "$file" ] && [ -f "$file" ] || return 0
+  if [ "$strip_comments" = 1 ]; then sed 's/#.*//' "$file" | awk 'NF{print $1}'; else cat "$file"; fi
 }
-is_accepted() { case "$ACCEPT_SET" in *$'\n'"$1"$'\n'*) return 0 ;; *) return 1 ;; esac }
+in_token_set() { case "$1" in *$'\n'"$2"$'\n'*) return 0 ;; *) return 1 ;; esac }
+
+# The accept set for the current unit. One ID per line; `#` starts a comment (whole-line or
+# trailing); blank lines ignored.
+ACCEPT_SET=$'\n'
+load_accept() { ACCEPT_SET=$'\n'"$(load_token_set "${1:-}" 1)"$'\n'; }
+is_accepted() { in_token_set "$ACCEPT_SET" "$1"; }
 
 # flush_notes ACCEPT_FILE — print the unit's buffered findings in tier order and tally the global
 # counters. An accepted WARN/HINT is hidden (counted in n_hidden) unless --all, which prints it
@@ -194,7 +203,11 @@ if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shi
   warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
 fi
 # This machine-wide finding belongs to no audit unit — flush it now, against the accept file of the
-# repo the CWD sits in (so `cd project && keel doctor …` can still accept it there).
+# repo the CWD sits in (so `cd project && keel doctor …` can still accept it there). Deliberately NOT
+# $ihome/.keel/doctor-accept even under --install: this check runs before the --install branch below,
+# and the finding is about the MACHINE's global guard, not the install at $ihome — the two can differ
+# (e.g. auditing a --install HOME while sitting in an unrelated repo). An --install run that wants to
+# accept this specific finding does so via the CWD's accept file, same as any other invocation.
 cwd_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 flush_notes "${cwd_top:-.}/.keel/doctor-accept"
 
@@ -377,7 +390,7 @@ for d in "${DIRS[@]}"; do
     if git -C "$d" check-ignore -q CLAUDE.md 2>/dev/null; then
       # CLAUDE.md is gitignored (a private-fork or a "mechanism" repo like Keel itself), so a fresh
       # clone legitimately has none — advise, don't fail.
-      warn W-CLAUDEMD-MISSING "no project CLAUDE.md in this checkout — it's gitignored (private/mechanism repo); create it locally"
+      warn W-CLAUDEMD-GITIGNORED "no project CLAUDE.md in this checkout — it's gitignored (private/mechanism repo); create it locally"
     else
       gap G-CLAUDEMD-MISSING "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
     fi
@@ -421,6 +434,10 @@ for d in "${DIRS[@]}"; do
   d_top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
   wt_list="$(git -C "$d" worktree list --porcelain 2>/dev/null || true)"  # one snapshot, read below for both main_top and the stray-worktree scan
   main_top="$(printf '%s\n' "$wt_list" | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+  # The MAIN checkout's top, never a worktree-local one — a single fallback chain reused below by
+  # both the map-drift baseline and the doctor-accept file: a worktree-local .keel/ is exactly what
+  # the split-brain check above flags, so neither lookup should tempt anyone into creating one.
+  unit_top="${main_top:-${d_top:-$d}}"
   if [ -n "$d_top" ] && [ -n "$main_top" ] && [ -d "$main_top/.keel" ]; then
     if [ "$main_top" != "$d_top" ] && [ -d "$d/.keel" ]; then
       warn W-KEEL-SPLIT "worktree-local .keel/ marker coexists with the main checkout's ($main_top/.keel/) — events split across two ledgers (this worktree wins locally); remove this worktree's .keel/ so events land in the shared one"
@@ -449,14 +466,13 @@ EOF
   # Keel repo's OWN tools/commands/templates references; this one audits an arbitrary CONSUMER project's
   # CLAUDE.md against that project's own tree — different corpus, different skip rules, not a duplicate.
   if [ -f "$d/CLAUDE.md" ]; then
-    # The baseline lives at the MAIN checkout's .keel/ (main_top, computed above), never a worktree-local
-    # one — same discipline as the split-brain check just above: a worktree-local .keel/ is exactly what
-    # that check flags, so a baseline lookup must not tempt anyone into creating one just to hold it.
-    baseline="${main_top:-${d_top:-$d}}/.keel/map-drift-baseline"
+    # unit_top (computed above) resolves this at the main checkout, never a worktree-local one.
+    baseline="$unit_top/.keel/map-drift-baseline"
     # Read once, not once-per-missing-token: a grep-per-candidate against the baseline would re-open and
-    # re-scan the same small file for every drift hit on a doc with many accepted mentions.
-    baseline_set=$'\n'
-    [ -f "$baseline" ] && baseline_set="$baseline_set$(cat "$baseline")"$'\n'
+    # re-scan the same small file for every drift hit on a doc with many accepted mentions. No comment
+    # support here (unlike doctor-accept, see load_token_set above) — this file predates it, and a bare
+    # `#`-led path mention would be a real token, not an annotation to strip.
+    baseline_set=$'\n'"$(load_token_set "$baseline" 0)"$'\n'
     drift_list=""
     drift_count=0
     max_show=5
@@ -491,7 +507,7 @@ EOF
         fi
       fi
       [ -e "$d/$tok" ] && continue
-      case "$baseline_set" in *$'\n'"$tok"$'\n'*) continue ;; esac
+      in_token_set "$baseline_set" "$tok" && continue
       drift_count=$((drift_count + 1))
       [ "$drift_count" -le "$max_show" ] && drift_list="${drift_list}${drift_list:+, }$tok"
     done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$d/CLAUDE.md" 2>/dev/null \
@@ -617,9 +633,9 @@ EOF
     fi
   fi
 
-  # The unit's accept file lives at the MAIN checkout's .keel/ — same resolution discipline as the
-  # map-drift baseline above, and for the same reason (a worktree-local .keel/ is itself a finding).
-  flush_notes "${main_top:-${d_top:-$d}}/.keel/doctor-accept"
+  # unit_top: same fallback chain as the map-drift baseline above (a worktree-local .keel/ would
+  # itself be a finding, so neither lookup should tempt anyone into creating one).
+  flush_notes "$unit_top/.keel/doctor-accept"
 done
 
 if [ "$exit_code" = 0 ]; then say "doctor: structural baseline OK"; fi
