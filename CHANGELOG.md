@@ -9,6 +9,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`FRAMEWORK.md` — two knowledge-upkeep practices made explicit: the staleness check and
+  decision capture.** "Delete what became wrong" gained its missing detection half — the pull-side
+  note-age-vs-code-age check (compare `git log -1 --format=%cs` of a note against the code it
+  describes when the note gets read; older note ⇒ suspect), with its limits stated honestly (lazy,
+  per-file; no push triggers or dependency graphs by design). And the CORE persist rail's
+  "record the fork" line gained its visible workflow: draft the one-line record (choice + dated why)
+  the moment a fork settles, human ratifies the wording, the wrap red-flag sweep as the net —
+  a process, not a record format. Both were told as raw practice for weeks; field demand
+  (independent practitioners asking for exactly these mechanisms) promoted documenting them.
 - **`tools/doctor.sh` — triaged output: GAP → WARN → HINT, stable IDs, an accept file, a tail summary.**
   A brownfield adopter's first `keel doctor` run used to be a flat, unordered stream of every advisory
   finding, jargon-heavy and un-triaged — alarm fatigue risked drowning the few WARNs that actually

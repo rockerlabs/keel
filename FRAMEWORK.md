@@ -181,6 +181,17 @@ So context files don't bloat and stay useful.
   right surface and delete the entry — recurrence is the felt-friction promotion signal. Prune candidates
   that neither promoted nor recurred in ~5 sessions; an unpruned list is noise (P2/P3).
 
+**Decision capture — record the fork when it resolves.** The moment a significant fork settles
+in-session (a library pick, an approach, a convention agreed in chat), draft the record THEN: one
+line — what was chosen plus the dated why, naming the losing option when it clarifies the reason —
+and the human ratifies or rejects the wording before it lands. The ratify step is what keeps the
+record "what was ruled", not "what the agent found notable". Route it via the list above (a
+`CLAUDE.md` conventions line, a backlog ticket, a changelog entry) — no new file kind, no format
+mandate. The recorded why is what stops a later session from re-litigating a settled choice; a bare
+"X was chosen" reopens the debate. Capture at the moment is primary; the wrap red-flag sweep is the
+net for forks that resolved without a record. This is a process — capture, ratify, sweep — not a
+record format; external decision-record formats compose with it.
+
 **Customizing a plugin-shipped skill or command — fork it, don't edit in place.** A skill or command
 installed from a plugin lives under the harness's own plugin directory, which is third-party and not tracked
 by your knowledge base — so an in-place edit is lost on the next plugin update and absent on a fresh machine
@@ -192,6 +203,15 @@ Before writing, check there isn't already a file on the topic. Delete what becam
 predictably — snake_case with a category prefix (`feedback_` / `project_` / `reference_`), the in-file
 slug and `[[links]]` as the same name in kebab-case — so recall and linking never depend on remembering
 an ad-hoc name.
+
+**Staleness check — note-age vs code-age.** "Delete what became wrong" needs a way to notice a note
+went wrong. The pull-side check: when a note actually gets read, compare its last-touched date with
+the last real change of the code it describes — `git log -1 --format=%cs -- <note-file>` vs
+`git log -1 --format=%cs -- <code-path>` (committer dates; squash-merges rewrite them to when the
+change actually landed). A note older than the code's last change is suspect: re-verify before
+trusting it, then refresh the note or delete it. Honest limits, by design: the check is lazy (drift
+sits undetected between reads) and per-file — the one-file-one-topic rule above is what makes it
+land on something small enough to point at the suspect claim. No push triggers or dependency graphs.
 
 **The cwd-silo trap:** memory keyed by the session's cwd will NOT load when you later work from a different
 path for the same project. So: **cross-project facts** (user/environment, cross-cutting feedback, tool
