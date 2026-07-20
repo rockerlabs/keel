@@ -19,7 +19,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   outside a git repo now exit 2 per their own contract instead of failing OPEN as "clean";
   `install.sh`'s closing summary claims "secret-guard already guards your commits" only when the
   verify step actually proved it (after `--no-hooks`, a refused foreign hooksPath, or a wiring
-  failure it now says the guard is NOT wired). Each fix carries a regression test.
+  failure it now says the guard is NOT wired); `ci-scan.sh` handles the force-push topology the
+  fail-closed `--range` exposed — an orphaned "before" sha (absent from the CI clone) now degrades
+  to a full-history scan of "after" instead of reading as an error (or, before this release,
+  silently as "clean"). Each fix carries a regression test.
   Doc↔reality corrections across README / `docs/`: the `keel` CLI is in `~/.claude/bin`, not
   magically "on your PATH"; "never touches a file you own" qualified with linked mode's one
   announced append; the CI platform list (three, incl. Alpine/busybox) and `keel help` verb list
