@@ -15,6 +15,11 @@ same estimate `doctor.sh` uses). Your real numbers depend on how much you fill t
 | **On-demand** | only when the task pulls it (the core's map points there) | yes, but only when read |
 | **Mechanisms** | never — they run in the shell | no — only their short output appears |
 
+![As sessions progress from 1 to 10 to 30, the on-demand files — FRAMEWORK.md, BACKLOG.md, LEARNINGS.md — grow taller, with BACKLOG.md briefly shrinking when tickets close. The always-on core files stay the same thin height throughout, and a gauge showing tokens loaded at session start stays flat at about 2K across all three moments — the per-session cost never grows even as total knowledge does.](tier-growth.svg)
+
+This is the tiering discipline shown over time rather than at one instant: the *dynamic* companion to
+the table above.
+
 ## File by file
 
 | File | When it loads | Why / what it influences | ~Tokens |
