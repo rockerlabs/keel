@@ -22,3 +22,4 @@ citation, and the full per-event trail (every event → its citation) lives in `
 
 | date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
 |------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|
+| 2026-07-20 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | SEC4 server-side secret-scan (CI run 29722488680, PR #104) blocked agent session-metadata trailers (Claude-Session:) in commit messages 1dfb7d0 + 1d30f73; fixed by history rewrite (filter-branch), not by allowlisting | none — session ran in a container with no always-on Keel layer, so only the mechanized tier could produce events |
