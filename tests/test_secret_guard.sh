@@ -451,4 +451,34 @@ check_contains "Keel guard now installed (marker present)" "$(cat "$frepo/.git/h
 run "$isg" "$frepo"
 check_status "re-vendor over Keel's own hook → exit 0 (no false refusal)" 0 "$STATUS"
 
+# --- vendoring honors an ABSOLUTE local core.hooksPath (2026-07-21 audit): joining it under $repo
+# put the hooks in a junk dir while the real hooks dir stayed empty — guard reported success, inactive.
+ahrepo="$(new_repo)"
+ahooks="$(mktemp -d "$SANDBOX/abshooks.XXXXXX")"
+git -C "$ahrepo" config core.hooksPath "$ahooks"
+run "$isg" "$ahrepo"
+check_status "vendor into absolute hooksPath → exit 0" 0 "$STATUS"
+check_file "guard scanner lands in the REAL absolute hooks dir" "$ahooks/secret-scan.sh"
+check_nofile "no junk copy under \$repo/<abs-path>" "$ahrepo$ahooks/secret-scan.sh"
+printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$ahrepo/leak.txt"
+git -C "$ahrepo" add leak.txt
+OUT="$(git -C "$ahrepo" -c user.email=t@example.com -c user.name=t commit -qm leak 2>&1)"; STATUS=$?
+check_status "commit with a key is BLOCKED via the absolute-hooksPath guard" 1 "$STATUS"
+
+# --- a second non-flag argument is a usage error, not a silent overwrite of the first ------------
+run "$isg" "$frepo" "$ahrepo"
+check_status "two repo paths → exit 2 (usage error)" 2 "$STATUS"
+check_contains "extra-argument error names the surplus arg" "$OUT" "unexpected extra argument"
+
+# --- fail-closed on caller/config errors (2026-07-21 audit): a bad range or a repo-less --staged
+# must exit 2 per the header contract, never read as "clean" over unscanned content.
+errepo="$(new_repo)"
+git -C "$errepo" -c user.email=t@example.com -c user.name=t commit -qm root --allow-empty --no-verify
+run_in "$errepo" "$scan" --range "deadbeef..cafebabe"
+check_status "--range with unresolvable revs → exit 2, not clean" 2 "$STATUS"
+check_contains "bad-range error names the range" "$OUT" "bad range"
+norepo="$(mktemp -d "$SANDBOX/norepo.XXXXXX")"
+run_in "$norepo" "$scan" --staged
+check_status "--staged outside a git repo → exit 2, not clean" 2 "$STATUS"
+
 summary

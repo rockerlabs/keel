@@ -54,6 +54,14 @@ case "${GITHUB_EVENT_NAME:-}" in
       echo "ci-scan: ref deleted (after is the zero sha) — nothing to scan"
       exit 0
     fi
+    # A force-push orphans "before", so the CI clone may not have that object at all. before..after
+    # would then be a config error (secret-scan --range fails closed, exit 2) — but this is an
+    # expected topology, not a misconfiguration: fall back to the zero-sha shape and scan the FULL
+    # history reachable from "after" instead. Correctness over cheapness; never silently "clean".
+    if [ "$before" != "$SECRET_GUARD_ZERO_SHA" ] && ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+      echo "ci-scan: before-sha $before not in this clone (force-push?) — scanning full history from after"
+      before="$SECRET_GUARD_ZERO_SHA"
+    fi
     range="$(resolve_range_ci "$before" "$after")"
     ;;
   *)

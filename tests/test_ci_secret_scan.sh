@@ -104,6 +104,25 @@ for ev in workflow_dispatch ""; do
   check_status "event name '$ev' -> exit 2 (config error)" 2 "$STATUS"
 done
 
+# --- push: an ORPHANED before-sha (force-push topology) falls back to full-history scan ----------
+# The clone doesn't have "before" after a force-push; before..after must not read as exit-2 config
+# error (nor, pre-2026-07-21, silently "clean") — ci-scan degrades to the zero-sha full scan.
+repo="$(new_repo)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/root.txt"
+git -C "$repo" add root.txt; git -C "$repo" commit -qm root
+after="$(git -C "$repo" rev-parse HEAD)"
+orphan="$(rep d 40)"
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" "$ci"
+check_status "push: orphaned before (force-push) -> full scan still BLOCKS the key" 1 "$STATUS"
+check_contains "announces the fallback" "$OUT" "scanning full history"
+
+repo="$(new_repo)"
+printf 'clean\n' > "$repo/root.txt"
+git -C "$repo" add root.txt; git -C "$repo" commit -qm root
+after="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" "$ci"
+check_status "push: orphaned before over a clean history -> exit 0" 0 "$STATUS"
+
 # --- the scanner missing next to ci-scan.sh is a config error, not a raw exec failure --------------
 missing="$(mktemp -d "$SANDBOX/missing.XXXXXX")"
 cp "$ci" "$missing/ci-scan.sh"

@@ -318,6 +318,14 @@ case "$mode" in
   --range)
     shift
     rng="${1:?--range needs A..B}"
+    # Validate the range up front — a typo'd/unfetched rev must be exit 2 (config error), not a
+    # silent "clean": the object walk below discards rev-list stderr, so a bad range would
+    # otherwise scan zero blobs and fail OPEN. --max-count=0 resolves the revs without walking.
+    # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
+    if ! git rev-list --max-count=0 $rng >/dev/null 2>&1; then
+      echo "secret-scan: bad range '$rng' — not resolvable in this repo" >&2
+      exit 2
+    fi
     # Scan every blob the push would INTRODUCE (objects reachable in the range), not the net endpoint
     # diff: a secret added in one pushed commit and removed in a later one is absent from both endpoint
     # trees yet its blob still ships and stays recoverable — `git diff A..B` would miss it. rng is a
@@ -413,6 +421,9 @@ case "$mode" in
     fi
     ;;
   staged|--staged|"")
+    # Outside a git repo there is nothing staged to scan — that is a caller error (exit 2), not a
+    # clean result: the `|| true` guards below would otherwise read as "clean" and fail OPEN.
+    git rev-parse --git-dir >/dev/null 2>&1 || { echo "secret-scan: --staged needs a git repo" >&2; exit 2; }
     while IFS= read -r f; do
       [ -n "$f" ] && emit_diff "$f" --cached
     done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)

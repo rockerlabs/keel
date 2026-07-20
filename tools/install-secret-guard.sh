@@ -23,7 +23,11 @@ rest=""
 for a in "$@"; do
   case "$a" in
     --force) force=1 ;;
-    *) rest="$a" ;;
+    *) if [ -n "$rest" ]; then
+         echo "install-secret-guard.sh: unexpected extra argument '$a' — one repo path (or --global) per run" >&2
+         exit 2
+       fi
+       rest="$a" ;;
   esac
 done
 set -- ${rest:+"$rest"}
@@ -92,7 +96,10 @@ EOF
     repo="$1"
     git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
     if hp="$(git -C "$repo" config --local core.hooksPath 2>/dev/null)" && [ -n "$hp" ]; then
-      install_into "$repo/$hp"
+      # hooksPath may be absolute — joining it under $repo would vendor into a junk dir while the
+      # real hooks dir stays empty (guard silently inactive). Mirror doctor.sh's handling.
+      case "$hp" in /*) hpd="$hp" ;; *) hpd="$repo/$hp" ;; esac
+      install_into "$hpd"
     else
       # The real hooks dir — NOT $repo/.git/hooks: in a worktree/submodule .git is a file and hooks
       # live in the common dir. --git-path resolves it; make it absolute relative to $repo if needed.
