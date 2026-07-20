@@ -125,7 +125,9 @@ clone — the linked path needs a checkout that survives, so this variant keeps 
   without symlink support, stay on the copy path above (see [ADAPTING.md](../ADAPTING.md)).
 
 Flags: `--link` wires by reference as above (Claude Code); `--home DIR` sets up the always-on slot for
-an AI tool other than Claude Code; `--no-hooks` skips the git check.
+an AI tool other than Claude Code; `--no-hooks` skips the git check; `--link --no-git` trims the
+code/git rails from the always-on core on a machine with **no** git projects (sticky across re-runs;
+`--with-git` restores them — do that *before* git ever enters the workflow).
 
 ## 2. What just got set up
 
@@ -195,7 +197,9 @@ reads the actual source tree (not just the front door) to draft the stack, archi
 
 > **Working without git or code** (documents, research, chat-style sessions)? Be clear about what's left:
 > the advice layer still applies — persist decisions, verify before claiming done, handle forks openly —
-> and `/keel-setup` offers to trim the git/code sections from your always-on file. But the mechanized
+> and the git/code sections can come out of your always-on file: on a linked install run
+> `install.sh --link --no-git` (`/keel-setup` will offer it; `--with-git` brings the rails back if git
+> ever enters the picture), on a copy install `/keel-setup` trims your copy in place. But the mechanized
 > layer (`secret-guard`, `doctor`, `public-audit`) is git-based and won't fire without repositories:
 > for you, Keel is advice that nudges, not guarantees that run by themselves.
 
