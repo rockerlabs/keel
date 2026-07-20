@@ -8,7 +8,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
-## [0.5.0] — 2026-07-21
+### Fixed
+- **`curl … | sh` copy-mode install no longer ships a dangling `keel` CLI** (v0.5.0's named known
+  issue, the first public audit's one broken-functionality finding). Bootstrap's copy mode installs
+  from a temp clone that is deleted right after the run, so the `bin/keel` symlink it used to wire
+  pointed into a reaped directory (`keel help` → exit 127) and the closing summary promised
+  `keel uninstall` and "KEEP this keel clone" for a clone that was already gone. Bootstrap now tells
+  `install.sh` the checkout is ephemeral (`KEEL_EPHEMERAL=1`); the install skips the CLI symlink
+  (announced, not silent), the verify step no longer grades it, and the closing summary honestly
+  points every checkout-backed verb (the CLI, `keel uninstall`, tool-backed commands) at `--link`
+  or a kept clone instead. Linked mode and clone-then-install keep wiring the CLI exactly as
+  before; regression tests cover both sides.
 
 The first public global audit release: three independent external auditors (two repo-reading
 sessions + the DeepSeek harness) swept the whole public tree; every confirmed finding is either

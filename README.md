@@ -198,7 +198,9 @@ your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yours
 > one-line PATH hint if that dir isn't on your PATH) — `keel help` lists the verbs: `keel install`,
 > `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`, and `keel uninstall`
 > (reverses the install, backing up anything it removes). It's a thin front-end over the same
-> `tools/*.sh`, so it works from any directory, not just the clone.
+> `tools/*.sh`, so it works from any directory, not just the clone. The CLI needs a checkout it can
+> point into, so the plain `curl | sh` copy install skips it (its temp clone is deleted right after —
+> the summary says so); the `--link` flow and manual-clone installs wire it.
 
 > **Status: early experiment.** A cleaned-up copy of one person's working setup, public to find out
 > whether it helps anyone besides its author. Feedback welcome; expect rough edges.
