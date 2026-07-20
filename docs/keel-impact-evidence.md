@@ -20,3 +20,9 @@ citations are captured from the guardrail hooks (`source | detail`); the rest ar
 ## 2026-07-20 — score 100/100 (conf low)
 
 - guard: SEC4 server-side secret-scan (CI run 29722488680, PR #104) blocked agent session-metadata trailers (Claude-Session:) in commit messages 1dfb7d0 + 1d30f73; fixed by history rewrite (filter-branch), not by allowlisting
+
+## 2026-07-20 — score 100/100 (conf med)
+
+- guard: SEC4 ci-scan blocked PR #106 push (secret-scan job, 2026-07-20): the coding harness's session-URL commit trailer in both commit messages matched the key-shape patterns; resolved by stripping the trailer via filter-branch (no allowlist added, per the gate's own rule), scan clean on re-push
+- hit: CORE.md Precedence rail ('safety rails yield only to an explicit human decision') @ always-on core — anchored the central design call of PR #106: --no-git is an install-time trim, never load-on-demand, so a git user's rails sit in context before the first git command
+- hit: ADAPTING.md no-git trim note + keel-setup.md scope-question precedent @ KB — defined the exact KEEL-GIT module boundary (the same two sections the copy-mode trim already removed) without re-deriving it
