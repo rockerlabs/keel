@@ -19,6 +19,25 @@ months-long horizon, and/or you're taking a private repo public. If that's you, 
 
 ![Before and after: without Keel the assistant starts every session from zero and re-asks what you already settled; with Keel it reads one thin always-on file — ground rules plus a map of where the rest lives, loaded on demand](docs/session-start.svg)
 
+## What Keel brings
+
+Four properties, independent of which model or tool you run — ordered from the most immediately
+felt to the reason the project exists:
+
+1. **Economy.** A thin, stable core (~1.8K tokens) instead of a context dump — the re-explanation
+   tax ("we branch off main… there's already a client in `net/`…") stops being paid every session.
+2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
+   and the unchanged prefix is prime prompt-cache material.
+3. **Constraint.** The mechanized layer — the secret-guard git hook — blocks a key-shaped leak no
+   matter what the model decides. The one hard guarantee.
+4. **Accumulation.** The reason for the other three ([`PRINCIPLES.md`](PRINCIPLES.md), P0):
+   decisions and project knowledge earned in a session outlive the session — and the model, and the
+   tool itself.
+
+They hold with different force — economy and accumulation are structural, stability is a nudge that
+scales with your model, constraint is mechanical — which is exactly the honest split in
+[What runs by itself, what only nudges](#what-runs-by-itself-what-only-nudges) below.
+
 ## Install
 
 Two steps, and the installer **never touches a file you own**.

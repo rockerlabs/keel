@@ -9,6 +9,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **README — "What Keel brings": the four result-properties as the front-door answer to "why".**
+  A short section right after the hook naming what Keel aims to bring to work with any model —
+  economy, stability, constraint, and accumulation — ordered from the most immediately felt to the
+  project's telos (P0), each labeled with the force it holds at (structural / nudge / mechanical),
+  cross-linked to the existing "what runs by itself vs what only nudges" honesty split. Complements
+  the "three plain ideas" (how it's built) with the properties of the result (what you get).
+- **`docs/mcp-decision.md` — MCP analyzed and deliberately not adopted.** Examines three roles MCP
+  could play (Keel as an MCP server, Keel managing MCP config, docs-only acknowledgement) against
+  P0–P4 and rejects the first two: the always-on core needs *injected* text while MCP delivery is
+  agent-requestable (the Cursor `.cursor/rules` failure mode as normal operation), an MCP server
+  breaks the zero-dependency boundary, and wrapping the git-level tools as MCP tools would trade
+  zero-token mechanized enforcement for a callable the model must remember to use. MCP servers stay
+  an `INSTANCE.md` environment fact; the doc names the three felt-friction triggers that would
+  reopen the decision. The cheap-absorption move `PRINCIPLES.md`'s success test calls for — a parked
+  note, not a restructuring.
 - **`doctor.sh` — Bash/ShellCheck as a fourth per-stack lint gate (#100).**
   Extends the existing Java→Checkstyle / Python→Ruff / Swift→SwiftLint gate with Bash: a repo with
   first-party `*.sh` files is flagged unless it carries a first-party `.shellcheckrc`, or invokes
