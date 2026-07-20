@@ -122,10 +122,16 @@ hint() { NOTES+=("HINT	$1	$2"); }
 # frame). STRIP_COMMENTS=1 drops a trailing `# ...`; the map-drift baseline passes 0 — its file
 # predates comment support and a bare `#`-led path mention there is a real (if unlikely) token, not
 # an annotation, so silently swallowing it would be a behavior change, not a cleanup.
+# `|| true`: an existing-but-unreadable file (permission-denied, an odd .keel/ sync state) must
+# degrade to an empty set, not take down the whole run — under set -euo pipefail a failed read here
+# (this isn't a `local` assignment) would kill the script mid-unit, losing every finding already
+# buffered for it, the same trap the CLAUDE.md footprint read below guards against.
 load_token_set() {
   local file="$1" strip_comments="${2:-0}"
   [ -n "$file" ] && [ -f "$file" ] || return 0
-  if [ "$strip_comments" = 1 ]; then sed 's/#.*//' "$file" | awk 'NF{print $1}'; else cat "$file"; fi
+  if [ "$strip_comments" = 1 ]; then sed 's/#.*//' "$file" 2>/dev/null | awk 'NF{print $1}' || true
+  else cat "$file" 2>/dev/null || true
+  fi
 }
 in_token_set() { case "$1" in *$'\n'"$2"$'\n'*) return 0 ;; *) return 1 ;; esac }
 
@@ -136,9 +142,13 @@ load_accept() { ACCEPT_SET=$'\n'"$(load_token_set "${1:-}" 1)"$'\n'; }
 is_accepted() { in_token_set "$ACCEPT_SET" "$1"; }
 
 # flush_notes ACCEPT_FILE — print the unit's buffered findings in tier order and tally the global
-# counters. An accepted WARN/HINT is hidden (counted in n_hidden) unless --all, which prints it
-# with an "(accepted)" suffix and counts it in its tier. HINTs are exactly the tier a --quiet run
-# wants gone — hidden there, but still counted so the tail summary stays honest.
+# counters. n_gap/n_warn/n_hint count only findings still ACTIVE (unaccepted) in that tier — an
+# accepted WARN/HINT is excluded from its tier's count and instead tallied once in n_hidden, unless
+# --all, which prints it with an "(accepted)" suffix and DOES count it in its tier (nothing is
+# hidden under --all, so there is nothing left for n_hidden to track). This is deliberately different
+# from --quiet, which hides HINTs from the printed listing but leaves them counted in n_hint — quiet
+# only changes what's DISPLAYED, accept changes what's ACTIVE. "doctor: 0 hint (2 accepted hidden)"
+# means exactly what it says: zero unaddressed hints, two waived ones on record.
 flush_notes() {
   local tier line t rest id msg suffix
   load_accept "${1:-}"
@@ -208,8 +218,14 @@ fi
 # and the finding is about the MACHINE's global guard, not the install at $ihome — the two can differ
 # (e.g. auditing a --install HOME while sitting in an unrelated repo). An --install run that wants to
 # accept this specific finding does so via the CWD's accept file, same as any other invocation.
-cwd_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-flush_notes "${cwd_top:-.}/.keel/doctor-accept"
+#
+# Resolved to the MAIN checkout, same fallback chain as unit_top below — NOT the raw CWD toplevel: a
+# CWD sitting inside a linked worktree would otherwise point this at the worktree's own .keel/, which
+# is exactly the split-brain condition W-KEEL-SPLIT flags (an accept file only that worktree ever sees).
+cwd_d_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+cwd_main_top="$(git worktree list --porcelain 2>/dev/null \
+  | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+flush_notes "${cwd_main_top:-${cwd_d_top:-.}}/.keel/doctor-accept"
 
 # --install: audit the INSTALL itself (wired-vs-shipped completeness), not a project. The linked-mode
 # contract this closes: `git pull` refreshes CONTENT, never COMPOSITION — a release that ADDS a command
@@ -395,7 +411,11 @@ for d in "${DIRS[@]}"; do
       gap G-CLAUDEMD-MISSING "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
     fi
   else
-    chars="$(wc -c < "$d/CLAUDE.md" | tr -d ' ')"
+    # `|| true` + empty fallback: findings are now buffered until this unit's flush_notes (dir #45),
+    # so an unguarded read failure here (e.g. a permission-denied CLAUDE.md) would abort under
+    # set -e before anything already recorded for this unit — including a GAP — ever printed.
+    chars="$(wc -c < "$d/CLAUDE.md" 2>/dev/null | tr -d ' ')" || chars=0
+    [ -n "$chars" ] || chars=0
     est=$(( chars / 4 ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
       hint H-FOOTPRINT "CLAUDE.md startup footprint ~${est} tokens > budget ${WARN_TOKENS} — move detail to the on-demand tier (P2/P3)"

@@ -363,6 +363,30 @@ run "$doctor" "$d"
 check_absent "machine-global guard in sync → no drift WARN" "$OUT" "machine-global secret-guard"
 git config --global --unset core.hooksPath
 
+# ...and from a linked WORKTREE, the machine-global drift accept file resolves at the MAIN checkout
+# — not the raw CWD toplevel (which, inside a worktree, is the worktree itself). A regression test for
+# a bug found in review: an earlier version keyed this one WARN's accept lookup off the raw worktree
+# toplevel, so accepting it there would have planted exactly the worktree-local .keel/ marker the
+# split-brain check (W-KEEL-SPLIT) exists to catch.
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\n' > "$base/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
+git -C "$base" add .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wtg="$SANDBOX/wtguard.$$"
+git -C "$base" worktree add -q "$wtg" >/dev/null 2>&1
+ln -s "$base/CLAUDE.md" "$wtg/CLAUDE.md"
+gdir2="$SANDBOX/ghooks-drift-wt"; mkdir -p "$gdir2"
+cp "$shipped" "$gdir2/secret-scan.sh"; printf '\n# stale\n' >> "$gdir2/secret-scan.sh"
+git config --global core.hooksPath "$gdir2"
+# invoked FROM inside the worktree (cwd, not a positional arg) — the case the fix targets
+run_in "$wtg" "$doctor" .
+check_contains "worktree-cwd run flags the drift (no accept yet)" "$OUT" "machine-global secret-guard"
+mkdir -p "$base/.keel"; printf 'W-GUARD-GLOBAL-STALE\n' > "$base/.keel/doctor-accept"
+run_in "$wtg" "$doctor" .
+check_absent "main-checkout accept file suppresses it from the worktree cwd" "$OUT" "machine-global secret-guard"
+check_absent "no worktree-local .keel/ needed to accept it" "$OUT" "coexists with the main checkout"
+git config --global --unset core.hooksPath
+
 # --- map-drift (dir #39 T1): a backtick-spanned path in the LIVE map that no longer exists ------
 # a bare filename with a known extension that exists on disk → no drift WARN
 d="$(newbase)"; printf '# ctx\nSee `doctor.sh` for the checks.\n' >> "$d/CLAUDE.md"
@@ -569,5 +593,25 @@ mkdir -p "$base/.keel"; printf 'H-DEP-FLOATING\n' > "$base/.keel/doctor-accept"
 run "$doctor" "$wta"
 check_absent   "main-checkout accept file suppresses it from the worktree" "$OUT" "[H-DEP-FLOATING]"
 check_contains "worktree run counts the hidden finding" "$OUT" "(1 accepted hidden)"
+
+# an EXISTING-but-UNREADABLE .keel/doctor-accept (or map-drift-baseline) must degrade to "treat as
+# empty," not crash the whole run under set -euo pipefail — regression for a review finding: the two
+# files are read via a bare (non-`local`) assignment, so an unguarded `sed`/`cat` failure there used
+# to kill the script mid-unit, silently dropping every finding already buffered for it.
+d="$(newbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
+mkdir -p "$d/.keel"; printf 'H-DEP-FLOATING\n' > "$d/.keel/doctor-accept"
+chmod 000 "$d/.keel/doctor-accept"
+run "$doctor" "$d"
+check_status   "unreadable doctor-accept → doesn't crash (exit 0)" 0 "$STATUS"
+check_contains "unreadable doctor-accept → treated as empty, finding still shown" "$OUT" "[H-DEP-FLOATING]"
+chmod 644 "$d/.keel/doctor-accept"
+
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
+mkdir -p "$d/.keel"; printf 'scripts/ghost.sh\n' > "$d/.keel/map-drift-baseline"
+chmod 000 "$d/.keel/map-drift-baseline"
+run "$doctor" "$d"
+check_status   "unreadable map-drift-baseline → doesn't crash (exit 0)" 0 "$STATUS"
+check_contains "unreadable map-drift-baseline → treated as empty, drift still flagged" "$OUT" "map may be stale"
+chmod 644 "$d/.keel/map-drift-baseline"
 
 summary
