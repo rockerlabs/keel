@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`FRAMEWORK.md` — interview-loop discipline for a genuine multi-question elicitation.** CORE's
+  "Decisions & forks" rail covers a single fork; the new "Interview loops" section is the operational
+  elaboration for a decision-tree interview: check whether an answer is discoverable from code/docs/
+  environment before asking (only put genuine judgment calls to the user), go sequential when a later
+  question depends on an earlier answer but batch independent questions (deliberately not a blanket
+  "one at a time" — that's a chat-interview convention, not a universal), always attach a recommended
+  answer, and an explicit line that this doesn't lower CORE's bar for opening a fork in the first
+  place. Names the thin-orchestrator/reusable-interview-skill split as a future idiom, gated the same
+  way as the `git worktree list --porcelain` dedup (#26) — built only once a second command needs it,
+  not speculatively. Sourced from reading a third-party Claude skill (`grill-me`/`grilling`) during an
+  unrelated `/design` session; two of its ideas (ask-vs-look-up, always-recommend) generalized cleanly
+  to Keel's own methodology.
 - **`FRAMEWORK.md` — two knowledge-upkeep practices made explicit: the staleness check and
   decision capture.** "Delete what became wrong" gained its missing detection half — the pull-side
   note-age-vs-code-age check (compare `git log -1 --format=%cs` of a note against the code it
