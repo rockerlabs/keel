@@ -19,7 +19,7 @@ check_file "installs lifecycle commands as slash commands" "$HOME/.claude/comman
 check_nofile "does NOT install the maintainer-only /polish command" "$HOME/.claude/commands/polish.md"
 check_absent "no foreign-core nag when install created CLAUDE.md" "$OUT" "NOT merged in"
 # a KEPT clone (this direct run) wires the CLI; the ephemeral-bootstrap case below must NOT
-check_contains "kept-clone install wires bin/keel" "$([ -L "$HOME/.claude/bin/keel" ] && echo y)" "y"
+check_link "kept-clone install wires bin/keel" "$HOME/.claude/bin/keel"
 check_contains "summary offers the CLI on a kept clone" "$OUT" "keel help"
 
 # idempotent re-run preserves a user edit and clobbers nothing
@@ -129,7 +129,8 @@ check_file "bootstrap installs the slash commands" "$bhome/commands/wrap.md"
 # Regression (first public audit, 2026-07-21): bootstrap's copy-mode clone is reaped on exit, so the
 # run must NOT ship a bin/keel symlink into it (it would dangle) and the closing summary must not
 # promise checkout-backed behaviour it can't keep (CLI on PATH, "KEEP this keel clone").
-check_absent "no bin/keel from the reaped bootstrap clone" "$({ [ -e "$bhome/bin/keel" ] || [ -L "$bhome/bin/keel" ]; } && echo y)" "y"
+check_nolink "no bin/keel symlink from the reaped bootstrap clone" "$bhome/bin/keel"
+check_nofile "no bin/keel file either" "$bhome/bin/keel"
 check_contains "install announces the deliberate CLI skip" "$OUT" "keel CLI skipped"
 check_absent "verify does not WARN about the skipped CLI" "$OUT" "WARN keel CLI"
 check_absent "summary does not offer the CLI on the express path" "$OUT" "keel help"
