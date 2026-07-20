@@ -116,7 +116,7 @@ Keel rests on three plain ideas:
 
 ```mermaid
 flowchart TD
-    subgraph always["Always loaded — every session (thin core ~1.8K tokens + your project file)"]
+    subgraph always["Always loaded — every session (thin core ~2K tokens + your project file)"]
         core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end

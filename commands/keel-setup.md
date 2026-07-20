@@ -43,17 +43,25 @@ Show the draft and ask the user to correct it. You're saving them the typing, no
 placeholder-fill, so "nothing to detect" is never a reason to skip it.
 
 - Ask one scope question, in plain words: **will AI sessions on this machine be used for coding projects
-  in git, or mostly for documents and texts?** If clearly no-code/no-git, offer to remove the two
-  code-specific sections from *their copy* — "Git — mandatory rails" and "Before writing code — reconcile
-  first" (meaningfully lighter every session; the "read the project's `CLAUDE.md` first" rail survives in
+  in git, or mostly for documents and texts?** If clearly no-code/no-git, offer the trim of the two
+  code-specific sections — "Git — mandatory rails" and "Before writing code — reconcile first"
+  (meaningfully lighter every session; the "read the project's `CLAUDE.md` first" rail survives in
   the map, and the "Secrets & personal data" section always stays — it applies with or without git).
-  Unsure or mixed → keep both (the safe default); a later re-run can still trim.
+  Unsure, mixed, or even ONE git project on the machine → keep both (the safe default); a later re-run
+  can still trim.
+- **The reverse transition too:** if the core is *already trimmed* — the imported `keel/CORE.md` (or the
+  user's copy) carries the `KEEL-NOGIT` marker / "Git rails not installed" — but the answer is now
+  git/code, recommend restoring BEFORE any git work: `install.sh --link --with-git` in the Keel checkout
+  (linked), or re-add the two sections from `CORE.md` (copy). Don't let a git command run under a
+  trimmed core.
 - If it's Keel's **template** (still has `<placeholders>` like chat language), fill them — ask the user
   the few choices, don't assume.
+  **Copy install:** the trim above is an edit of *their copy* — remove the two sections in place.
   **Linked install:** if the file has no embedded rails but an `@…/keel/CORE.md` import line, NEVER edit
-  the imported file — it's a symlink into the shared checkout (the trim would break it and be reverted
-  by the next pull). To trim there: replace the import line with the core's rails minus the two
-  sections (the file becomes copy-owned, losing pull-through — say so), or keep as-is.
+  the imported file by hand. The supported trim is `install.sh --link --no-git` (run in the Keel
+  checkout): it swaps the `keel/CORE.md` symlink for a generated copy minus the marked blocks, keeps
+  the import line and pull-through, and stays sticky across re-runs (`--with-git` restores). Offer to
+  run it.
 - If it's the user's **pre-existing** file (install left it untouched), do **not** overwrite. Show what
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
 - If none of the above apply (template already filled, no pre-existing file to diff, linked install

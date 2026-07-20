@@ -107,9 +107,11 @@ keep them around and paste the one you need when you need it.
   has its *own* native memory that works differently (Codex, for instance, keeps its own memory store, so
   the cwd-keyed-file model doesn't apply). Let the tool handle memory its own way.
 - The **Git rails and reconcile-first sections** of `templates/CLAUDE.md` assume you work with code in git
-  repositories. If you don't (documents, research, writing), drop both when you copy the file over —
-  `/keel-setup` offers this trim on Claude Code; elsewhere just delete the two sections. Keep the
-  **Secrets & personal data** section either way: it applies with or without git.
+  repositories. If you don't (documents, research, writing), drop both — on a copy install just delete
+  the two sections when you copy the file over (`/keel-setup` offers this trim on Claude Code); on a
+  linked install run `install.sh --link --no-git`, which generates a trimmed `keel/CORE.md` in place of
+  the symlink, keeps the import line, and stays sticky across re-runs (`--with-git` restores the full
+  rails). Keep the **Secrets & personal data** section either way: it applies with or without git.
 - The **advice** (principles, framework, ground rules) nudges any model *when it's loaded*, but — as always
   — doesn't enforce itself. You're the trigger.
 - **The nudge scales with the model.** On a strong model behind real injection (Claude Code, Codex) the

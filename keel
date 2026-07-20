@@ -7,7 +7,7 @@
 # (backlog dir #4/D1 — the felt reason this CLI exists, hit live with the first external adopter).
 #
 # Verbs:
-#   keel install [--link]      -> install.sh            bootstrap / linked wiring into your home
+#   keel install [--link] [--no-git]  -> install.sh     bootstrap / linked wiring into your home
 #   keel sync                  -> git pull + install.sh  refresh a linked install after a release
 #   keel doctor [--install]    -> tools/doctor.sh        audit a project, or the install itself
 #   keel audit                 -> tools/public-audit.sh  leak-surface scan before going public
@@ -58,7 +58,8 @@ $prog — one entry point for Keel's lifecycle tools (checkout: $CHECKOUT)
 Usage: $prog <command> [args...]
 
 Commands:
-  install [--link]     install/refresh Keel into your harness home (--link: wire by symlink)
+  install [--link]     install/refresh Keel into your harness home (--link: wire by symlink;
+                       --no-git trims the code/git rails for a git-less machine, --with-git restores)
   sync                 refresh a linked install: git pull in the checkout, then re-wire
   doctor [--install]   audit a project's KB baseline (--install: audit the install itself)
   audit                scan the leak surface before pushing public
