@@ -50,8 +50,10 @@ $ sed -n 1,10p /tmp/demo/my-project/CLAUDE.md
 
 $ ./tools/doctor.sh /tmp/demo/my-project
 ● my-project (/tmp/demo/my-project)
-  WARN secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)
+  WARN [W-GUARD-UNWIRED] secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)
+  HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
 doctor: structural baseline OK
+doctor: 0 gap, 1 warn, 1 hint
 
 == 4. Wire secret-guard into the project ==
    A git hook that blocks key-shaped secrets before they ever reach a commit.
@@ -63,7 +65,9 @@ secret-guard: vendored into /tmp/demo/my-project
 
 $ ./tools/doctor.sh /tmp/demo/my-project
 ● my-project (/tmp/demo/my-project)
+  HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
 doctor: structural baseline OK
+doctor: 0 gap, 0 warn, 1 hint
 
 == 6. secret-guard blocks a key-shaped secret on commit ==
    A developer accidentally stages an AWS-looking key...

@@ -2,29 +2,43 @@
 # doctor — structural self-audit of a project's knowledge-base baseline.
 #
 # The baseline is the durable convention; this script is its current instance. It reports drift, it does
-# not fix it. A GAP fails the audit (exit 1); a WARN is advisory (exit stays at the structural baseline).
+# not fix it. Three tiers, printed ordered GAP → WARN → HINT per audit unit (dir #45 — a brownfield
+# first run is a triaged report, not a wall in check order):
+#   GAP   fails the audit (exit 1) — the baseline is structurally broken
+#   WARN  advisory, safety/integrity — something that leaks, or a rail that looks wired but isn't
+#   HINT  advisory, engineering convention — a nudge, exactly the tier a quiet run wants gone
+# Every finding carries a stable ID ([G-*]/[W-*]/[H-*]) — referenceable in docs and issues, and the key
+# the accept file matches on: .keel/doctor-accept (at the MAIN checkout's .keel/, one ID per line,
+# `#` comments) suppresses that WARN/HINT class; suppressed findings are counted in the tail summary,
+# `--all` shows them. doctor only READS the file. A GAP is never suppressed — accepting a hard failure
+# would fake a green exit. The tail summary (`doctor: X gap, Y warn, Z hint`) prints on every run.
 #
 # Usage:
 #   doctor.sh [PROJECT_DIR ...]     audit each dir (default: current dir)
 #   doctor.sh --registry FILE       audit every project in an INSTANCE.md Projects table (the Path column)
-#   doctor.sh --quiet ...           print only GAP/WARN lines
+#   doctor.sh --quiet ...           print only GAP/WARN lines (+ the tail summary)
+#   doctor.sh --all ...             also show findings suppressed by .keel/doctor-accept
 #
 # Checks per project:
-#   GAP   not a git repo
-#   GAP   no project CLAUDE.md
-#   GAP   .gitignore does not ignore the private AI context (.claude/ or CLAUDE.md) — unless public fork
-#   WARN  a .keel/ marker exists but its event log (.keel/impact-events.log) isn't gitignored (leak risk)
-#   WARN  a worktree-local .keel/ marker coexists with the main checkout's — events split across ledgers
-#   WARN  secret-guard not wired (no global core.hooksPath and no local pre-commit)
-#   WARN  a local core.hooksPath override carries no guard — it silently bypasses the machine-global one
-#   WARN  an installed secret-guard copy (machine-global — checked once — or a repo's wired vendored
-#         copy) differs from the engine this Keel checkout ships — re-run install-secret-guard.sh
-#   WARN  CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, default 10000)
-#   WARN  CLAUDE.md map may be stale — a backtick-spanned path/filename it names no longer exists on disk
-#         (accept a legitimate historical mention via .keel/map-drift-baseline)
-#   WARN  a detected stack is missing its per-stack lint gate (Java→Checkstyle, Python→Ruff,
-#         Swift→SwiftLint, Bash→ShellCheck) or a Java file uses a wildcard import
-#   WARN  a private-fork project's linked worktree is missing the CLAUDE.md bridge (session starts blind)
+#   GAP   G-GIT-MISSING        not a git repo
+#   GAP   G-CLAUDEMD-MISSING   no project CLAUDE.md
+#   GAP   G-GITIGNORE-CONTEXT  .gitignore does not ignore the private AI context — unless public fork
+#   WARN  W-CLAUDEMD-GITIGNORED  CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
+#   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
+#   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
+#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit)
+#   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
+#   WARN  W-GUARD-STALE        a wired vendored secret-guard copy differs from the engine this checkout
+#                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
+#   WARN  W-EMAIL-PUBLIC       publication-bound project committing with a non-noreply email
+#   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
+#   HINT  H-FOOTPRINT          CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
+#   HINT  H-MAP-DRIFT          CLAUDE.md map may be stale — a backtick-spanned path no longer on disk
+#                              (path-granular accept stays .keel/map-drift-baseline)
+#   HINT  H-DEP-FLOATING       floating dependency version (image :latest / Action @vN)
+#   HINT  H-LINT-*             a detected stack missing its lint gate (JAVA/PY/SWIFT/BASH);
+#                              H-JAVA-WILDCARD — a Java file uses a wildcard import
+# (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below.)
 set -euo pipefail
 
 QUIET=0
@@ -32,7 +46,10 @@ REGISTRY=""
 DIRS=()
 usage() {
   cat <<'EOF'
-doctor — audit a project's Keel knowledge-base baseline (a GAP fails, a WARN advises).
+doctor — audit a project's Keel knowledge-base baseline.
+Findings print ordered GAP (fails, exit 1) → WARN (safety/integrity advisory) → HINT (convention
+nudge), each with a stable ID. List WARN/HINT IDs in .keel/doctor-accept (main checkout, one ID per
+line, # comments) to suppress that class — suppressed findings are counted in the tail summary.
 
 Usage:
   doctor.sh [DIR ...]          audit DIR(s) for the baseline (default: .)
@@ -40,16 +57,19 @@ Usage:
   doctor.sh --install [HOME]   audit the Keel INSTALL instead: everything this checkout ships
                                is wired (or deliberately declined), nothing dangles
                                (default HOME: \$KEEL_HOME, else ~/.claude)
-  doctor.sh --quiet            print only GAP/WARN lines
+  doctor.sh --quiet            print only GAP/WARN lines (+ the tail summary)
+  doctor.sh --all              also show findings suppressed by .keel/doctor-accept
   doctor.sh -h | --help
 
 Example:  doctor.sh ~/code/my-project
 EOF
 }
 INSTALL_MODE=0
+SHOW_ALL=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1 ;;
+    --all) SHOW_ALL=1 ;;
     --registry) shift; REGISTRY="${1:?--registry needs a FILE}" ;;
     --install) INSTALL_MODE=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -84,8 +104,80 @@ case "$WARN_TOKENS" in ''|*[!0-9]*) WARN_TOKENS=10000 ;; esac   # non-numeric �
 exit_code=0
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
-gap()  { echo "  GAP  $1"; exit_code=1; }
-warn() { echo "  WARN $1"; }
+
+# Findings are BUFFERED per audit unit (a project dir, or the install) and flushed ordered
+# GAP → WARN → HINT (dir #45): the checks run in code order, the reader sees severity order.
+# Record shape: TIER<TAB>ID<TAB>message (no message ever contains a tab). gap() sets the exit
+# code at RECORD time, so a GAP fails the run even if its ID is (mistakenly) listed in the
+# accept file — accepting a hard failure must not fake a green exit.
+NOTES=()
+n_gap=0; n_warn=0; n_hint=0; n_hidden=0
+gap()  { NOTES+=("GAP	$1	$2"); exit_code=1; }
+warn() { NOTES+=("WARN	$1	$2"); }
+hint() { NOTES+=("HINT	$1	$2"); }
+
+# Shared newline-framed token-set idiom (also used below by the map-drift baseline): load_token_set
+# FILE prints one token per line (a bare `$(...)` — the caller frames it, since command substitution
+# strips ALL trailing newlines and a naive "frame inside the function" would silently lose the closing
+# frame). STRIP_COMMENTS=1 drops a trailing `# ...`; the map-drift baseline passes 0 — its file
+# predates comment support and a bare `#`-led path mention there is a real (if unlikely) token, not
+# an annotation, so silently swallowing it would be a behavior change, not a cleanup.
+# `|| true`: an existing-but-unreadable file (permission-denied, an odd .keel/ sync state) must
+# degrade to an empty set, not take down the whole run — under set -euo pipefail a failed read here
+# (this isn't a `local` assignment) would kill the script mid-unit, losing every finding already
+# buffered for it, the same trap the CLAUDE.md footprint read below guards against.
+load_token_set() {
+  local file="$1" strip_comments="${2:-0}"
+  [ -n "$file" ] && [ -f "$file" ] || return 0
+  if [ "$strip_comments" = 1 ]; then sed 's/#.*//' "$file" 2>/dev/null | awk 'NF{print $1}' || true
+  else cat "$file" 2>/dev/null || true
+  fi
+}
+in_token_set() { case "$1" in *$'\n'"$2"$'\n'*) return 0 ;; *) return 1 ;; esac }
+
+# The accept set for the current unit. One ID per line; `#` starts a comment (whole-line or
+# trailing); blank lines ignored.
+ACCEPT_SET=$'\n'
+load_accept() { ACCEPT_SET=$'\n'"$(load_token_set "${1:-}" 1)"$'\n'; }
+is_accepted() { in_token_set "$ACCEPT_SET" "$1"; }
+
+# flush_notes ACCEPT_FILE — print the unit's buffered findings in tier order and tally the global
+# counters. n_gap/n_warn/n_hint count only findings still ACTIVE (unaccepted) in that tier — an
+# accepted WARN/HINT is excluded from its tier's count and instead tallied once in n_hidden, unless
+# --all, which prints it with an "(accepted)" suffix and DOES count it in its tier (nothing is
+# hidden under --all, so there is nothing left for n_hidden to track). This is deliberately different
+# from --quiet, which hides HINTs from the printed listing but leaves them counted in n_hint — quiet
+# only changes what's DISPLAYED, accept changes what's ACTIVE. "doctor: 0 hint (2 accepted hidden)"
+# means exactly what it says: zero unaddressed hints, two waived ones on record.
+flush_notes() {
+  local tier line t rest id msg suffix
+  load_accept "${1:-}"
+  for tier in GAP WARN HINT; do
+    for line in ${NOTES[@]+"${NOTES[@]}"}; do
+      t="${line%%	*}"; rest="${line#*	}"; id="${rest%%	*}"; msg="${rest#*	}"
+      [ "$t" = "$tier" ] || continue
+      suffix=""
+      if [ "$t" != "GAP" ] && is_accepted "$id"; then
+        if [ "$SHOW_ALL" = 1 ]; then suffix=" (accepted)"; else n_hidden=$((n_hidden + 1)); continue; fi
+      fi
+      case "$t" in
+        GAP)  n_gap=$((n_gap + 1));   echo "  GAP  [$id] $msg$suffix" ;;
+        WARN) n_warn=$((n_warn + 1)); echo "  WARN [$id] $msg$suffix" ;;
+        HINT) n_hint=$((n_hint + 1)); [ "$QUIET" = 1 ] || echo "  HINT [$id] $msg$suffix" ;;
+      esac
+    done
+  done
+  NOTES=()
+}
+
+# The tail summary prints on EVERY run (dir #45 item 4) — quiet included: one line, and the only
+# place a hidden accepted finding is still visible as a count.
+finish() {
+  local s="doctor: $n_gap gap, $n_warn warn, $n_hint hint"
+  if [ "$n_hidden" -gt 0 ]; then s="$s ($n_hidden accepted hidden)"; fi
+  echo "$s"
+  exit "$exit_code"
+}
 
 # First-party find: prune build-output / vendored-dependency dirs so a dependency's sources or lint
 # configs never trip a per-stack gate. find only (busybox/Alpine has no `grep --include`). Usage:
@@ -118,8 +210,22 @@ tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
 if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
    && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
-  warn "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
+  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
 fi
+# This machine-wide finding belongs to no audit unit — flush it now, against the accept file of the
+# repo the CWD sits in (so `cd project && keel doctor …` can still accept it there). Deliberately NOT
+# $ihome/.keel/doctor-accept even under --install: this check runs before the --install branch below,
+# and the finding is about the MACHINE's global guard, not the install at $ihome — the two can differ
+# (e.g. auditing a --install HOME while sitting in an unrelated repo). An --install run that wants to
+# accept this specific finding does so via the CWD's accept file, same as any other invocation.
+#
+# Resolved to the MAIN checkout, same fallback chain as unit_top below — NOT the raw CWD toplevel: a
+# CWD sitting inside a linked worktree would otherwise point this at the worktree's own .keel/, which
+# is exactly the split-brain condition W-KEEL-SPLIT flags (an accept file only that worktree ever sees).
+cwd_d_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+cwd_main_top="$(git worktree list --porcelain 2>/dev/null \
+  | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+flush_notes "${cwd_main_top:-${cwd_d_top:-.}}/.keel/doctor-accept"
 
 # --install: audit the INSTALL itself (wired-vs-shipped completeness), not a project. The linked-mode
 # contract this closes: `git pull` refreshes CONTENT, never COMPOSITION — a release that ADDS a command
@@ -139,8 +245,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
-    gap "no install found at $ihome (run install.sh)"
-    exit "$exit_code"
+    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh)"
+    flush_notes ""
+    finish
   fi
 
   # Liveness: every symlink Keel wires must resolve — including a hand-migrated top-level
@@ -150,7 +257,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     if [ ! -e "$l" ]; then
-      gap "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
+      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
       continue
     fi
     b="$(basename "$l")"
@@ -168,7 +275,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         case "$b" in FRAMEWORK.md|PRINCIPLES.md) tgt="$repo_root/$b" ;; *) tgt="" ;; esac ;;
     esac
     if [ -n "$tgt" ] && [ -f "$tgt" ] && [ ! "$l" -ef "$tgt" ]; then
-      warn "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link from here if this is the live one"
+      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link from here if this is the live one"
     fi
   done
 
@@ -177,13 +284,13 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # purpose: an embedded block is legitimate copy mode here, an un-migrated WARN there.)
   gclaude="$ihome/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
-    gap "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh)"
+    gap G-RAILS-MISSING "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh)"
   # (import-line regex: mirror of install.sh's has_core_import() — keep the two in sync)
   elif grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
-      gap "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link)"
+      gap G-RAILS-IMPORT-BROKEN "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link)"
     elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-      warn "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
+      warn W-RAILS-DOUBLE "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
     elif [ ! -L "$ihome/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$ihome/keel/CORE.md"; then
       # A --no-git install: keel/CORE.md is a GENERATED trimmed copy, not a symlink — `git pull`
       # refreshes the checkout but never this file. Two risks only this check notices:
@@ -198,7 +305,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$ref_trim" = "$inst_trim" ]; then
         say "  OK   core rails: linked, trimmed (--no-git — code/git rails not installed)"
       else
-        warn "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh --link (a re-run keeps the trim and refreshes it)"
+        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh --link (a re-run keeps the trim and refreshes it)"
       fi
       git_projects=0
       if [ -f "$ihome/INSTANCE.md" ]; then
@@ -212,17 +319,17 @@ if [ "$INSTALL_MODE" = 1 ]; then
                   | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
       fi
       if [ "$git_projects" -gt 0 ]; then
-        warn "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link --with-git"
+        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link --with-git"
       fi
     elif [ ! -L "$ihome/keel/CORE.md" ]; then
-      warn "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link"
+      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link"
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
     say "  OK   core rails: embedded copy (copy mode; install.sh re-runs check drift)"
   else
-    warn "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh, or migrate: install.sh --link)"
+    warn W-RAILS-UNWIRED "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh, or migrate: install.sh --link)"
   fi
 
   # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
@@ -230,9 +337,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # pointing at the root name would silently keep reading.
   for f in FRAMEWORK.md PRINCIPLES.md; do
     if [ ! -f "$ihome/keel/$f" ] && [ ! -f "$ihome/$f" ]; then
-      warn "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh)"
+      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh)"
     elif [ -f "$ihome/keel/$f" ] && [ -e "$ihome/$f" ] && [ ! -L "$ihome/$f" ]; then
-      warn "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your CLAUDE.md map at keel/$f, then remove the copy"
+      warn W-TIER-SHADOW "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your CLAUDE.md map at keel/$f, then remove the copy"
     fi
   done
 
@@ -253,7 +360,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ "$wired" = "$total" ]; then
     say "  OK   commands: $wired of $total shipped are wired"
   else
-    warn "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh; or ignore this if declined deliberately)"
+    warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh; or ignore this if declined deliberately)"
   fi
 
   # The keel CLI: install wires bin/keel as a symlink into the checkout. Only flag it when this
@@ -266,10 +373,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$kl" -ef "$repo_root/keel" ]; then
         say "  OK   keel CLI: wired ($kl)"
       else
-        warn "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh from here if this is the live one"
+        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh from here if this is the live one"
       fi
     else
-      warn "keel CLI not wired at $ihome/bin/keel — re-run install.sh (or add an alias by hand)"
+      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh (or add an alias by hand)"
     fi
   fi
 
@@ -277,36 +384,41 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($global_hooks)"
   else
-    warn "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)"
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)"
   fi
 
-  [ "$exit_code" = 0 ] && say "doctor: install is complete — everything shipped is wired or declined"
-  exit "$exit_code"
+  flush_notes "$ihome/.keel/doctor-accept"
+  if [ "$exit_code" = 0 ]; then say "doctor: install is complete — everything shipped is wired or declined"; fi
+  finish
 fi
 
 for d in "${DIRS[@]}"; do
   name="$(basename "$(cd "$d" 2>/dev/null && pwd || echo "$d")")"
   say "● $name ($d)"
 
-  if [ ! -d "$d" ]; then gap "directory not found"; continue; fi
+  if [ ! -d "$d" ]; then gap G-DIR-MISSING "directory not found"; flush_notes ""; continue; fi
 
   if ! git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    gap "not a git repo (git init + a feature-branch flow — see FRAMEWORK.md)"
+    gap G-GIT-MISSING "not a git repo (git init + a feature-branch flow — see FRAMEWORK.md)"
   fi
 
   if [ ! -f "$d/CLAUDE.md" ]; then
     if git -C "$d" check-ignore -q CLAUDE.md 2>/dev/null; then
       # CLAUDE.md is gitignored (a private-fork or a "mechanism" repo like Keel itself), so a fresh
       # clone legitimately has none — advise, don't fail.
-      warn "no project CLAUDE.md in this checkout — it's gitignored (private/mechanism repo); create it locally"
+      warn W-CLAUDEMD-GITIGNORED "no project CLAUDE.md in this checkout — it's gitignored (private/mechanism repo); create it locally"
     else
-      gap "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
+      gap G-CLAUDEMD-MISSING "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
     fi
   else
-    chars="$(wc -c < "$d/CLAUDE.md" | tr -d ' ')"
+    # `|| true` + empty fallback: findings are now buffered until this unit's flush_notes (dir #45),
+    # so an unguarded read failure here (e.g. a permission-denied CLAUDE.md) would abort under
+    # set -e before anything already recorded for this unit — including a GAP — ever printed.
+    chars="$(wc -c < "$d/CLAUDE.md" 2>/dev/null | tr -d ' ')" || chars=0
+    [ -n "$chars" ] || chars=0
     est=$(( chars / 4 ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
-      warn "CLAUDE.md startup footprint ~${est} tokens > budget ${WARN_TOKENS} — move detail to the on-demand tier (P2/P3)"
+      hint H-FOOTPRINT "CLAUDE.md startup footprint ~${est} tokens > budget ${WARN_TOKENS} — move detail to the on-demand tier (P2/P3)"
     fi
   fi
 
@@ -316,7 +428,7 @@ for d in "${DIRS[@]}"; do
   elif [ -f "$d/CLAUDE.md" ] && git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1; then
     say "       (CLAUDE.md is tracked — treating as a deliberate public fork; ensure no secrets/PII)"
   else
-    gap ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
+    gap G-GITIGNORE-CONTEXT ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
   fi
 
   # Impact-tracking hygiene: a repo opted into impact tracking carries a .keel/ marker. Its event log is
@@ -324,7 +436,7 @@ for d in "${DIRS[@]}"; do
   # check the log specifically, not the whole dir). Fires ONLY when .keel/ exists AND the log isn't ignored;
   # it never nags a project to enable tracking (optional).
   if [ -d "$d/.keel" ] && ! git -C "$d" check-ignore -q .keel/impact-events.log 2>/dev/null; then
-    warn "impact event log (.keel/impact-events.log) is not gitignored — it can leak into history (run keel-impact.sh enable, or add /.keel/impact-events.log to .gitignore)"
+    warn W-EVENTLOG-TRACKED "impact event log (.keel/impact-events.log) is not gitignored — it can leak into history (run keel-impact.sh enable, or add /.keel/impact-events.log to .gitignore)"
   fi
 
   # Impact-tracking split-brain (dir #10 residue (b)): a pre-#67 `enable`/init-project run could have
@@ -342,9 +454,13 @@ for d in "${DIRS[@]}"; do
   d_top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
   wt_list="$(git -C "$d" worktree list --porcelain 2>/dev/null || true)"  # one snapshot, read below for both main_top and the stray-worktree scan
   main_top="$(printf '%s\n' "$wt_list" | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+  # The MAIN checkout's top, never a worktree-local one — a single fallback chain reused below by
+  # both the map-drift baseline and the doctor-accept file: a worktree-local .keel/ is exactly what
+  # the split-brain check above flags, so neither lookup should tempt anyone into creating one.
+  unit_top="${main_top:-${d_top:-$d}}"
   if [ -n "$d_top" ] && [ -n "$main_top" ] && [ -d "$main_top/.keel" ]; then
     if [ "$main_top" != "$d_top" ] && [ -d "$d/.keel" ]; then
-      warn "worktree-local .keel/ marker coexists with the main checkout's ($main_top/.keel/) — events split across two ledgers (this worktree wins locally); remove this worktree's .keel/ so events land in the shared one"
+      warn W-KEEL-SPLIT "worktree-local .keel/ marker coexists with the main checkout's ($main_top/.keel/) — events split across two ledgers (this worktree wins locally); remove this worktree's .keel/ so events land in the shared one"
     elif [ "$main_top" = "$d_top" ]; then
       stray_wt=0
       while IFS= read -r wline; do
@@ -355,7 +471,7 @@ for d in "${DIRS[@]}"; do
 $wt_list
 EOF
       if [ "$stray_wt" -gt 0 ]; then
-        warn "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
+        warn W-KEEL-SPLIT "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
       fi
     fi
   fi
@@ -370,14 +486,13 @@ EOF
   # Keel repo's OWN tools/commands/templates references; this one audits an arbitrary CONSUMER project's
   # CLAUDE.md against that project's own tree — different corpus, different skip rules, not a duplicate.
   if [ -f "$d/CLAUDE.md" ]; then
-    # The baseline lives at the MAIN checkout's .keel/ (main_top, computed above), never a worktree-local
-    # one — same discipline as the split-brain check just above: a worktree-local .keel/ is exactly what
-    # that check flags, so a baseline lookup must not tempt anyone into creating one just to hold it.
-    baseline="${main_top:-${d_top:-$d}}/.keel/map-drift-baseline"
+    # unit_top (computed above) resolves this at the main checkout, never a worktree-local one.
+    baseline="$unit_top/.keel/map-drift-baseline"
     # Read once, not once-per-missing-token: a grep-per-candidate against the baseline would re-open and
-    # re-scan the same small file for every drift hit on a doc with many accepted mentions.
-    baseline_set=$'\n'
-    [ -f "$baseline" ] && baseline_set="$baseline_set$(cat "$baseline")"$'\n'
+    # re-scan the same small file for every drift hit on a doc with many accepted mentions. No comment
+    # support here (unlike doctor-accept, see load_token_set above) — this file predates it, and a bare
+    # `#`-led path mention would be a real token, not an annotation to strip.
+    baseline_set=$'\n'"$(load_token_set "$baseline" 0)"$'\n'
     drift_list=""
     drift_count=0
     max_show=5
@@ -412,7 +527,7 @@ EOF
         fi
       fi
       [ -e "$d/$tok" ] && continue
-      case "$baseline_set" in *$'\n'"$tok"$'\n'*) continue ;; esac
+      in_token_set "$baseline_set" "$tok" && continue
       drift_count=$((drift_count + 1))
       [ "$drift_count" -le "$max_show" ] && drift_list="${drift_list}${drift_list:+, }$tok"
     done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$d/CLAUDE.md" 2>/dev/null \
@@ -423,7 +538,7 @@ EOF
     if [ "$drift_count" -gt 0 ]; then
       more=""
       [ "$drift_count" -gt "$max_show" ] && more=" and $((drift_count - max_show)) more"
-      warn "CLAUDE.md map may be stale — not found on disk: ${drift_list}${more} (fix the mention, or accept it in .keel/map-drift-baseline)"
+      hint H-MAP-DRIFT "CLAUDE.md map may be stale — not found on disk: ${drift_list}${more} (fix the mention, or accept it in .keel/map-drift-baseline)"
     fi
   fi
 
@@ -436,10 +551,10 @@ EOF
     if [ -f "$lhd/secret-scan.sh" ] || [ -x "$lhd/pre-commit" ] || [ -x "$lhd/pre-push" ]; then
       # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection
       if [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
-        warn "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+        warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
       fi
     else
-      warn "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
+      warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
     fi
   elif [ -n "$global_hooks" ]; then
     :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
@@ -448,10 +563,10 @@ EOF
     vh="$(git -C "$d" rev-parse --git-path hooks 2>/dev/null)"
     case "$vh" in /*) ;; *) vh="$d/$vh" ;; esac
     if [ -f "$vh/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$vh/secret-scan.sh" "$shipped_scan"; then
-      warn "vendored secret-guard ($vh) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+      warn W-GUARD-STALE "vendored secret-guard ($vh) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
     fi
   else
-    warn "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
+    warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
   fi
 
   # Publication-bound projects (those with a .public-audit config) shouldn't commit with a real
@@ -462,7 +577,7 @@ EOF
   if [ -f "$d/.public-audit" ]; then
     email="$(git -C "$d" config user.email 2>/dev/null || true)"
     if [ -n "$email" ] && ! printf '%s' "$email" | grep -qE "$safe_email_re"; then
-      warn "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)"
+      warn W-EMAIL-PUBLIC "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)"
     fi
   fi
 
@@ -477,7 +592,7 @@ EOF
     dep="$(grep -rInE 'uses:[[:space:]]+[^[:space:]]+@v[0-9]+([[:space:]]|$)' "$d/.github/workflows" 2>/dev/null | head -1 || true)"
   fi
   if [ -n "$dep" ]; then
-    warn "floating dependency version — pin it (no image :latest / Action @vN; FRAMEWORK 'Dependency versioning')"
+    hint H-DEP-FLOATING "floating dependency version — pin it (no image :latest / Action @vN; FRAMEWORK 'Dependency versioning')"
   fi
 
   # Per-stack lint gate (FRAMEWORK "Code conventions"): each stack enforces its native linter, run in CI.
@@ -487,24 +602,24 @@ EOF
   if fp_any "$d" \( -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print \
      || fp_any "$d" -name '*.java' -print; then
     if fp_any "$d" -name '*.java' -exec grep -lE '^import[[:space:]]+(static[[:space:]]+)?[A-Za-z0-9_.]+\.\*;' {} +; then
-      warn "Java wildcard imports present — list each import individually (FRAMEWORK 'Code conventions')"
+      hint H-JAVA-WILDCARD "Java wildcard imports present — list each import individually (FRAMEWORK 'Code conventions')"
     fi
     fp_any "$d" -name 'checkstyle*.xml' -print \
-      || warn "Java stack but no checkstyle config present — add one and wire it into CI (FRAMEWORK 'Code conventions')"
+      || hint H-LINT-JAVA "Java stack but no checkstyle config present — add one and wire it into CI (FRAMEWORK 'Code conventions')"
   fi
   # Python — Ruff config ([tool.ruff] in a pyproject.toml, or a ruff.toml / .ruff.toml).
   if fp_any "$d" \( -name pyproject.toml -o -name setup.py -o -name setup.cfg \) -print \
      || [ -f "$d/requirements.txt" ]; then
     if ! { fp_any "$d" -name pyproject.toml -exec grep -lE '\[tool\.ruff' {} + \
            || fp_any "$d" \( -name ruff.toml -o -name .ruff.toml \) -print; }; then
-      warn "Python stack but no Ruff config ([tool.ruff] / ruff.toml) — add one and run it in CI (FRAMEWORK 'Code conventions')"
+      hint H-LINT-PY "Python stack but no Ruff config ([tool.ruff] / ruff.toml) — add one and run it in CI (FRAMEWORK 'Code conventions')"
     fi
   fi
   # Swift — a first-party SwiftLint config.
   if fp_any "$d" \( -name Package.swift -o -name '*.xcodeproj' -o -name '*.xcworkspace' \) -print \
      || fp_any "$d" -name '*.swift' -print; then
     fp_any "$d" \( -name .swiftlint.yml -o -name .swiftlint.yaml \) -print \
-      || warn "Swift stack but no SwiftLint config — add a first-party .swiftlint.yml and run it in CI (FRAMEWORK 'Code conventions')"
+      || hint H-LINT-SWIFT "Swift stack but no SwiftLint config — add a first-party .swiftlint.yml and run it in CI (FRAMEWORK 'Code conventions')"
   fi
   # Bash — either a first-party .shellcheckrc, or shellcheck actually invoked in CI (unlike
   # Checkstyle/Ruff/SwiftLint, shellcheck runs fine with zero config, so a config file alone isn't a
@@ -514,7 +629,7 @@ EOF
     if ! fp_any "$d" -name '.shellcheckrc' -print \
        && ! { [ -d "$d/.github/workflows" ] \
               && grep -rlE '(^|[^A-Za-z0-9_-])shellcheck([^A-Za-z0-9_-]|$)' "$d/.github/workflows" >/dev/null 2>&1; }; then
-      warn "Bash stack but no ShellCheck config (.shellcheckrc) and no shellcheck invocation in CI — wire one (FRAMEWORK 'Code conventions')"
+      hint H-LINT-BASH "Bash stack but no ShellCheck config (.shellcheckrc) and no shellcheck invocation in CI — wire one (FRAMEWORK 'Code conventions')"
     fi
   fi
 
@@ -534,10 +649,14 @@ EOF
 $wt_list
 EOF
     if [ "$wt_missing" -gt 0 ]; then
-      warn "$wt_missing linked worktree(s) missing the CLAUDE.md bridge — the session starts blind there (FRAMEWORK 'Worktree discipline')"
+      warn W-WT-BRIDGE "$wt_missing linked worktree(s) missing the CLAUDE.md bridge — the session starts blind there (FRAMEWORK 'Worktree discipline')"
     fi
   fi
+
+  # unit_top: same fallback chain as the map-drift baseline above (a worktree-local .keel/ would
+  # itself be a finding, so neither lookup should tempt anyone into creating one).
+  flush_notes "$unit_top/.keel/doctor-accept"
 done
 
-[ "$exit_code" = 0 ] && say "doctor: structural baseline OK"
-exit "$exit_code"
+if [ "$exit_code" = 0 ]; then say "doctor: structural baseline OK"; fi
+finish

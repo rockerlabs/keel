@@ -8,7 +8,7 @@ tour="$REPO_ROOT/examples/tour.sh"
 run bash "$tour"
 check_status "tour runs end-to-end → exit 0" 0 "$STATUS"
 check_contains "scaffolds via init-project" "$OUT" "CLAUDE.md created from template"
-check_contains "doctor flags the secret-guard WARN first" "$OUT" "WARN secret-guard not wired"
+check_contains "doctor flags the secret-guard WARN first" "$OUT" "WARN [W-GUARD-UNWIRED] secret-guard not wired"
 check_contains "ends on a clean baseline (WARN cleared)" "$OUT" "structural baseline OK"
 check_contains "secret-guard blocks the planted key" "$OUT" "BLOCKED"
 

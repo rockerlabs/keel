@@ -363,6 +363,30 @@ run "$doctor" "$d"
 check_absent "machine-global guard in sync → no drift WARN" "$OUT" "machine-global secret-guard"
 git config --global --unset core.hooksPath
 
+# ...and from a linked WORKTREE, the machine-global drift accept file resolves at the MAIN checkout
+# — not the raw CWD toplevel (which, inside a worktree, is the worktree itself). A regression test for
+# a bug found in review: an earlier version keyed this one WARN's accept lookup off the raw worktree
+# toplevel, so accepting it there would have planted exactly the worktree-local .keel/ marker the
+# split-brain check (W-KEEL-SPLIT) exists to catch.
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\n' > "$base/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
+git -C "$base" add .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wtg="$SANDBOX/wtguard.$$"
+git -C "$base" worktree add -q "$wtg" >/dev/null 2>&1
+ln -s "$base/CLAUDE.md" "$wtg/CLAUDE.md"
+gdir2="$SANDBOX/ghooks-drift-wt"; mkdir -p "$gdir2"
+cp "$shipped" "$gdir2/secret-scan.sh"; printf '\n# stale\n' >> "$gdir2/secret-scan.sh"
+git config --global core.hooksPath "$gdir2"
+# invoked FROM inside the worktree (cwd, not a positional arg) — the case the fix targets
+run_in "$wtg" "$doctor" .
+check_contains "worktree-cwd run flags the drift (no accept yet)" "$OUT" "machine-global secret-guard"
+mkdir -p "$base/.keel"; printf 'W-GUARD-GLOBAL-STALE\n' > "$base/.keel/doctor-accept"
+run_in "$wtg" "$doctor" .
+check_absent "main-checkout accept file suppresses it from the worktree cwd" "$OUT" "machine-global secret-guard"
+check_absent "no worktree-local .keel/ needed to accept it" "$OUT" "coexists with the main checkout"
+git config --global --unset core.hooksPath
+
 # --- map-drift (dir #39 T1): a backtick-spanned path in the LIVE map that no longer exists ------
 # a bare filename with a known extension that exists on disk → no drift WARN
 d="$(newbase)"; printf '# ctx\nSee `doctor.sh` for the checks.\n' >> "$d/CLAUDE.md"
@@ -490,5 +514,112 @@ check_contains "report cap: names the tail count" "$OUT" "and 2 more"
 d="$(newbase)"; printf '# ctx\nDead: `ghost-in-archive.sh`\n' > "$d/CLAUDE-archive.md"
 run "$doctor" "$d"
 check_absent "CLAUDE-archive.md mentions are never checked" "$OUT" "ghost-in-archive.sh"
+
+# --- dir #45: triaged output — tiers ordered GAP→WARN→HINT, stable IDs, accept file, tail summary
+# a mixed run: GAP (no CLAUDE.md) + WARN (event log) + HINT (floating dep) — every line carries its
+# ID, and the tiers print in severity order regardless of check order in the code
+mixed() {  # a project that draws one finding of each tier; prints its path
+  local d; d="$(mkproj)"; git -C "$d" init -q
+  printf '.claude/\n' > "$d/.gitignore"             # no CLAUDE.md, not gitignored → GAP
+  mkdir "$d/.keel"                                  # event log not gitignored → WARN
+  printf 'FROM postgres:latest\n' > "$d/Dockerfile" # floating dep → HINT
+  printf '%s' "$d"
+}
+d="$(mixed)"
+run "$doctor" "$d"
+check_status   "mixed run → GAP still fails (exit 1)" 1 "$STATUS"
+check_contains "GAP line carries its stable ID"  "$OUT" "[G-CLAUDEMD-MISSING]"
+check_contains "WARN line carries its stable ID" "$OUT" "[W-EVENTLOG-TRACKED]"
+check_contains "HINT line carries its stable ID" "$OUT" "[H-DEP-FLOATING]"
+ord="$(printf '%s\n' "$OUT" | grep -oE 'G-CLAUDEMD-MISSING|W-EVENTLOG-TRACKED|H-DEP-FLOATING' | tr '\n' ' ')"
+if [ "$ord" = "G-CLAUDEMD-MISSING W-EVENTLOG-TRACKED H-DEP-FLOATING " ]; then
+  pass "findings print in tier order GAP → WARN → HINT"
+else
+  fail "findings print in tier order GAP → WARN → HINT" "got order: $ord"
+fi
+# (exact warn count varies with the sandbox: no global guard there adds W-GUARD-UNWIRED)
+check_contains "dirty run prints the tail summary" "$OUT" "doctor: 1 gap,"
+check_contains "dirty summary counts the hint" "$OUT" "1 hint"
+
+# the tail summary prints on a CLEAN run too (alongside the baseline-OK line)
+d="$(newbase)"
+run "$doctor" "$d"
+check_contains "clean run keeps the baseline-OK line" "$OUT" "baseline OK"
+check_contains "clean run prints the tail summary"    "$OUT" "doctor: 0 gap,"
+
+# --quiet: GAP/WARN lines only — hints hidden from the listing but still counted in the summary
+d="$(mixed)"
+run "$doctor" --quiet "$d"
+check_contains "--quiet keeps the GAP line"  "$OUT" "[G-CLAUDEMD-MISSING]"
+check_contains "--quiet keeps the WARN line" "$OUT" "[W-EVENTLOG-TRACKED]"
+check_absent   "--quiet hides the HINT line" "$OUT" "[H-DEP-FLOATING]"
+check_contains "--quiet still counts the hidden hint in the summary" "$OUT" "1 hint"
+
+# .keel/doctor-accept: a listed WARN/HINT ID is suppressed with an honest hidden-count; --all reveals it
+d="$(newbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
+mkdir -p "$d/.keel"
+printf '# convention nudges reviewed 2026-07-20\nH-DEP-FLOATING  # pinning parked\n' > "$d/.keel/doctor-accept"
+printf '/.keel/impact-events.log\n' >> "$d/.gitignore"   # keep the .keel/ dir itself finding-free
+run "$doctor" "$d"
+check_absent   "accepted HINT is suppressed" "$OUT" "[H-DEP-FLOATING]"
+check_contains "suppressed finding is counted in the summary" "$OUT" "(1 accepted hidden)"
+run "$doctor" --all "$d"
+check_contains "--all reveals the accepted finding" "$OUT" "[H-DEP-FLOATING]"
+check_contains "--all marks it as accepted" "$OUT" "(accepted)"
+check_absent   "--all hides nothing" "$OUT" "accepted hidden"
+
+# accepting a GAP ID is ignored — a hard failure can't be waved away into a green exit
+d="$(mkproj)"; git -C "$d" init -q
+printf '.claude/\n/.keel/impact-events.log\n' > "$d/.gitignore"   # no CLAUDE.md → GAP
+mkdir -p "$d/.keel"; printf 'G-CLAUDEMD-MISSING\n' > "$d/.keel/doctor-accept"
+run "$doctor" "$d"
+check_status   "accepted GAP still fails the audit" 1 "$STATUS"
+check_contains "accepted GAP still prints" "$OUT" "[G-CLAUDEMD-MISSING]"
+
+# a linked worktree resolves the accept file at the MAIN checkout's .keel/ — same discipline as the
+# map-drift baseline (a worktree-local .keel/ would itself draw the split-brain WARN)
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\n' > "$base/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n/.keel/impact-events.log\n' > "$base/.gitignore"
+printf 'FROM postgres:latest\n' > "$base/Dockerfile"
+git -C "$base" add .gitignore Dockerfile
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wta="$SANDBOX/wtaccept.$$"
+git -C "$base" worktree add -q "$wta" >/dev/null 2>&1
+ln -s "$base/CLAUDE.md" "$wta/CLAUDE.md"
+run "$doctor" "$wta"
+check_contains "worktree audit flags the floating dep (no accept yet)" "$OUT" "[H-DEP-FLOATING]"
+mkdir -p "$base/.keel"; printf 'H-DEP-FLOATING\n' > "$base/.keel/doctor-accept"
+run "$doctor" "$wta"
+check_absent   "main-checkout accept file suppresses it from the worktree" "$OUT" "[H-DEP-FLOATING]"
+check_contains "worktree run counts the hidden finding" "$OUT" "(1 accepted hidden)"
+
+# an EXISTING-but-UNREADABLE .keel/doctor-accept (or map-drift-baseline) must degrade to "treat as
+# empty," not crash the whole run under set -euo pipefail — regression for a review finding: the two
+# files are read via a bare (non-`local`) assignment, so an unguarded `sed`/`cat` failure there used
+# to kill the script mid-unit, silently dropping every finding already buffered for it.
+# `chmod 000` is meaningless as root (root reads regardless of mode bits — the CI alpine-busybox leg
+# runs as root in its container), so the content assertion only holds under a real unprivileged user;
+# skip it there rather than assert something the platform can't produce (a `0 failed` skip beats a
+# guaranteed-false red herring). The `exit 0` / no-crash half is platform-independent and always runs.
+d="$(newbase)"; printf 'FROM postgres:latest\n' > "$d/Dockerfile"
+mkdir -p "$d/.keel"; printf 'H-DEP-FLOATING\n' > "$d/.keel/doctor-accept"
+chmod 000 "$d/.keel/doctor-accept"
+run "$doctor" "$d"
+check_status "unreadable doctor-accept → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable doctor-accept → treated as empty, finding still shown" "$OUT" "[H-DEP-FLOATING]"
+fi
+chmod 644 "$d/.keel/doctor-accept"
+
+d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh` for details.\n' >> "$d/CLAUDE.md"
+mkdir -p "$d/.keel"; printf 'scripts/ghost.sh\n' > "$d/.keel/map-drift-baseline"
+chmod 000 "$d/.keel/map-drift-baseline"
+run "$doctor" "$d"
+check_status "unreadable map-drift-baseline → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable map-drift-baseline → treated as empty, drift still flagged" "$OUT" "map may be stale"
+fi
+chmod 644 "$d/.keel/map-drift-baseline"
 
 summary
