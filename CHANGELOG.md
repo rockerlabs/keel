@@ -8,6 +8,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-21
+
+The first public global audit release: three independent external auditors (two repo-reading
+sessions + the DeepSeek harness) swept the whole public tree; every confirmed finding is either
+fixed below or tracked as an explicit known issue. Known issue: the `curl … | sh` copy-mode
+install leaves the `keel` CLI symlink dangling (the bootstrap tmp-clone is reaped) — `keel help`
+exits 127 on that path until the fix lands; linked mode (`--link`) and clone-then-install are
+unaffected.
+
 ### Fixed
 - **First public global audit (dir #50) — the verified findings of three independent external
   auditors, fixed in one pass.** Two Claude sessions (repo-reading) and the DeepSeek harness audited
