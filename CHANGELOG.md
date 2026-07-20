@@ -9,6 +9,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`docs/tier-growth.svg` — an animated companion figure for `docs/loading-and-cost.md`** (dir #44,
+  PR #113). The "Three tiers" table states the tiering discipline at one instant; this figure shows it
+  over time — a hand-authored, CSS-keyframe-animated SVG (same theme-aware, `prefers-reduced-motion`-safe
+  technique as the `docs/session-start.svg` hero) cycling through session 1 → 10 → 30: the on-demand
+  files grow, with `BACKLOG.md` visibly shrinking once as tickets close, while the always-on core bars
+  and the "loaded at session start" token gauge never move.
 - **`FRAMEWORK.md` — interview-loop discipline for a genuine multi-question elicitation.** CORE's
   "Decisions & forks" rail covers a single fork; the new "Interview loops" section is the operational
   elaboration for a decision-tree interview: check whether an answer is discoverable from code/docs/
