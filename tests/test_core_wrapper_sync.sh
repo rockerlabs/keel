@@ -37,6 +37,23 @@ wrapper_block="$(block_of "$wrapper")"
 # Sanity that the block really is the rails, not an accidental (or empty) slice.
 check_contains "core block carries the git rails" "$core_block" "## Git — mandatory rails"
 
+# The KEEL-GIT markers fence what `install.sh --link --no-git` trims — malformed fencing would make
+# the trim silently remove the wrong rails (or none). Pin: BEGIN/END counts match, the two code/git
+# sections sit INSIDE the fenced blocks, and the sections that must survive a trim sit OUTSIDE.
+git_begins="$(grep -c 'KEEL-GIT-BEGIN' "$core")"
+git_ends="$(grep -c 'KEEL-GIT-END' "$core")"
+if [ "$git_begins" = "$git_ends" ] && [ "$git_begins" -ge 1 ]; then
+  pass "KEEL-GIT markers are balanced ($git_begins block(s))"
+else
+  fail "KEEL-GIT markers are balanced" "found $git_begins BEGIN / $git_ends END"
+fi
+git_blocks="$(awk '/KEEL-GIT-BEGIN/{f=1;next} /KEEL-GIT-END/{f=0;next} f' "$core")"
+check_contains "git rails sit inside a KEEL-GIT block" "$git_blocks" "## Git — mandatory rails"
+check_contains "reconcile-first sits inside a KEEL-GIT block" "$git_blocks" "## Before writing code"
+outside_blocks="$(awk '/KEEL-GIT-BEGIN/{f=1;next} /KEEL-GIT-END/{f=0;next} !f' "$core")"
+check_contains "secrets rails stay OUTSIDE the trim" "$outside_blocks" "## Secrets & personal data"
+check_contains "verify discipline stays OUTSIDE the trim" "$outside_blocks" "## Verify discipline"
+
 if [ "$core_block" = "$wrapper_block" ]; then
   pass "wrapper embeds CORE.md block byte-for-byte"
 else

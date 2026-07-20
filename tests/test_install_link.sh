@@ -212,4 +212,65 @@ check_contains "refusal names the self-link reason" "$OUT" "is the Keel checkout
 check_nolink "checkout's own CORE.md untouched (not self-symlinked)" "$slroot/CORE.md"
 check_file "checkout CORE.md is still a real file" "$slroot/CORE.md"
 
+# --- --no-git: the always-on core lands as a GENERATED trimmed copy, not the CORE.md symlink ------
+nghome="$SANDBOX/link-nogit"
+run "$install" --link --no-git --home "$nghome" --no-hooks
+check_status "fresh --link --no-git → exit 0" 0 "$STATUS"
+check_contains "verify announces the trimmed core" "$OUT" "trimmed --no-git core"
+check_nolink "keel/CORE.md is not a symlink" "$nghome/keel/CORE.md"
+check_file   "keel/CORE.md is a real generated file" "$nghome/keel/CORE.md"
+ngc="$(cat "$nghome/keel/CORE.md")"
+check_absent   "git rails trimmed out" "$ngc" "## Git — mandatory rails"
+check_absent   "reconcile-first trimmed out" "$ngc" "## Before writing code"
+check_absent   "no KEEL-GIT marker survives the trim" "$ngc" "KEEL-GIT-BEGIN"
+check_contains "breadcrumb marks the trim as deliberate" "$ngc" "KEEL-NOGIT"
+check_contains "breadcrumb tells the assistant how to restore" "$ngc" "install.sh --link --with-git"
+check_contains "secrets rails survive the trim" "$ngc" "## Secrets & personal data"
+check_contains "verify discipline survives the trim" "$ngc" "## Verify discipline"
+check_contains "delivery is still the one import line" "$(cat "$nghome/CLAUDE.md")" "keel/CORE.md"
+check_link "FRAMEWORK.md stays a symlink" "$nghome/keel/FRAMEWORK.md"
+
+# doctor: a fresh trim is healthy and named as trimmed
+run "$doctor" --install "$nghome"
+check_status "doctor --install on a fresh trim → exit 0" 0 "$STATUS"
+check_contains "doctor names the trimmed state" "$OUT" "trimmed (--no-git"
+check_absent "no staleness warning on a fresh trim" "$OUT" "stale against this checkout"
+
+# a STALE trim (generated from an older CORE.md) → doctor WARNs; a PLAIN re-run keeps + heals it
+printf 'STALE-MARKER-LINE\n' >> "$nghome/keel/CORE.md"
+run "$doctor" --install "$nghome"
+check_status "stale trim stays advisory → exit 0" 0 "$STATUS"
+check_contains "doctor flags the stale trim" "$OUT" "stale against this checkout"
+run "$install" --home "$nghome" --no-hooks          # plain re-run: neither --link nor --no-git
+check_status "plain re-run over a --no-git home → exit 0" 0 "$STATUS"
+check_contains "re-run announces it keeps the trim" "$OUT" "keeping the trim"
+ngc="$(cat "$nghome/keel/CORE.md")"
+check_absent "healed trim dropped the stale line" "$ngc" "STALE-MARKER-LINE"
+check_absent "healed trim still carries no git rails" "$ngc" "## Git — mandatory rails"
+check_nolink "re-run did NOT silently restore the symlink" "$nghome/keel/CORE.md"
+
+# git evidence: a registered project with a .git under a trimmed core → doctor says restore
+mkdir -p "$SANDBOX/ng-proj/.git"
+printf '| Project | Path | CLAUDE.md | Tag |\n|---------|------|-----------|-----|\n| p | %s | - | sh |\n' \
+  "$SANDBOX/ng-proj" > "$nghome/INSTANCE.md"
+run "$doctor" --install "$nghome"
+check_status "git evidence stays advisory → exit 0" 0 "$STATUS"
+check_contains "doctor flags git projects under a trimmed core" "$OUT" "live in git"
+check_contains "doctor names the restore command" "$OUT" "--with-git"
+
+# --with-git restores the canonical symlink
+run "$install" --link --with-git --home "$nghome" --no-hooks
+check_status "--with-git restore → exit 0" 0 "$STATUS"
+check_contains "restore announces itself" "$OUT" "git rails restored"
+check_link "keel/CORE.md is a symlink again" "$nghome/keel/CORE.md"
+run cmp -s "$nghome/keel/CORE.md" "$REPO_ROOT/CORE.md"
+check_status "restored CORE.md resolves to the shipped rails" 0 "$STATUS"
+
+# flag validation: the trim is a linked-mode verb; contradictory flags are refused
+run "$install" --no-git --home "$SANDBOX/ng-copy" --no-hooks
+check_status "--no-git without --link → exit 2" 2 "$STATUS"
+check_contains "rejection points at the copy-path trim" "$OUT" "keel-setup"
+run "$install" --link --no-git --with-git --home "$SANDBOX/ng-both" --no-hooks
+check_status "--no-git + --with-git → exit 2" 2 "$STATUS"
+
 summary

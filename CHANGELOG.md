@@ -9,6 +9,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`install.sh --no-git` — trim the code/git rails from a linked install's always-on core.**
+  `CORE.md` now fences its two code/git-specific sections ("Git — mandatory rails", "Before writing
+  code — reconcile first") in `KEEL-GIT` markers, and `install.sh --link --no-git` generates
+  `keel/CORE.md` as a trimmed copy of the shipped core (marked blocks removed) instead of the symlink —
+  keeping the one `@import` line and pull-through for everything else. Closes the gap where a
+  linked-mode no-git user could only trim by de-linking into copy mode. The trim is deliberately
+  install-time, not load-on-demand: for anyone who DOES use git, the safety rails must sit in context
+  before the first git command. Three detectors guard the risky no-git → git transition: the trim
+  leaves a constant always-on breadcrumb telling the assistant to restore the rails before any git
+  work; `doctor.sh --install` warns when the trimmed copy is stale against the checkout, when
+  `keel/CORE.md` is a regular file without the `KEEL-NOGIT` marker, and when a registered project
+  lives in git under a trimmed core; and `/keel-setup` now handles both directions of the transition.
+  The trim is sticky — a plain re-run keeps it and refreshes the generated copy (healing staleness);
+  restoring is explicit via `--with-git`.
 - **README — "What Keel brings": the four result-properties as the front-door answer to "why".**
   A short section right after the hook naming what Keel aims to bring to work with any model —
   economy, stability, constraint, and accumulation — ordered from the most immediately felt to the

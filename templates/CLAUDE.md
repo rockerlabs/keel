@@ -43,6 +43,7 @@ a contradiction may be staleness, not a deliberate exception.
 
 ---
 
+<!-- KEEL-GIT-BEGIN -->
 ## Git — mandatory rails
 
 **Never commit or push directly to the default branch** (any project, any change size). Feature branch →
@@ -53,6 +54,7 @@ commit → push → PR → merge → delete the branch. (Full flow + the solo kn
 
 **Never commit private AI context.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
 (private AI context — default gitignored; choose public deliberately for OSS), plus IDE/OS/build artifacts.
+<!-- KEEL-GIT-END -->
 
 ## Secrets & personal data
 
@@ -64,6 +66,7 @@ emails, personal paths, serials — use neutral stand-ins (`Alice`, `/Users/x/�
 **at authoring time**, not as a pre-release scrub: data captured from a real device or account carries its
 owner's identity — strip it before the first commit. (A guard hook is the backstop; this rule is primary.)
 
+<!-- KEEL-GIT-BEGIN -->
 ---
 
 ## Before writing code — reconcile first (mandatory)
@@ -74,6 +77,7 @@ Never start an implementation from scratch without analyzing what already exists
 3. `git fetch --prune` FIRST, then read the log / PR state — reconcile against fresh refs, not a stale picture.
    Re-reconcile before *reporting* status too, not only before starting: mid-session PR/branch state goes
    stale as merges land — fetch again before claiming a PR is open/merged or opening the next one.
+<!-- KEEL-GIT-END -->
 
 ---
 

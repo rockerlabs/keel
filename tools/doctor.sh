@@ -184,6 +184,38 @@ if [ "$INSTALL_MODE" = 1 ]; then
       gap "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link)"
     elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
       warn "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
+    elif [ ! -L "$ihome/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$ihome/keel/CORE.md"; then
+      # A --no-git install: keel/CORE.md is a GENERATED trimmed copy, not a symlink — `git pull`
+      # refreshes the checkout but never this file. Two risks only this check notices:
+      #   staleness — the copy was generated from an older CORE.md. Compare crumb-insensitively
+      #   (drop the KEEL-NOGIT-BEGIN..END breadcrumb from the installed side, the KEEL-GIT blocks
+      #   from the shipped side): the breadcrumb wording may legitimately change across releases,
+      #   the rails content must not. (Mirror of install.sh's strip_git_blocks — keep in sync.)
+      #   git evidence — a registered project lives in git while the always-on git rails are absent:
+      #   exactly the user the rails exist for, in the window where they're missing.
+      ref_trim="$(awk '/KEEL-GIT-BEGIN/{skip=1;next} /KEEL-GIT-END/{skip=0;next} !skip' "$repo_root/CORE.md")"
+      inst_trim="$(sed '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/d' "$ihome/keel/CORE.md")"
+      if [ "$ref_trim" = "$inst_trim" ]; then
+        say "  OK   core rails: linked, trimmed (--no-git — code/git rails not installed)"
+      else
+        warn "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh --link (a re-run keeps the trim and refreshes it)"
+      fi
+      git_projects=0
+      if [ -f "$ihome/INSTANCE.md" ]; then
+        # Path column of the INSTANCE.md Projects table — same parse as --registry above; keep in sync.
+        while IFS='|' read -r _lead _col1 col_path _rest; do
+          p="$(printf '%s' "$col_path" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          case "$p" in ""|Path|*"<"*) continue ;; esac
+          p="${p/#\~/${HOME:-}}"
+          if [ -e "$p/.git" ]; then git_projects=$((git_projects + 1)); fi
+        done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$ihome/INSTANCE.md" \
+                  | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
+      fi
+      if [ "$git_projects" -gt 0 ]; then
+        warn "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link --with-git"
+      fi
+    elif [ ! -L "$ihome/keel/CORE.md" ]; then
+      warn "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link"
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
