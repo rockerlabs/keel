@@ -38,6 +38,31 @@ user pick the tier.
 
 ---
 
+## Interview loops — eliciting a multi-question decision
+
+CORE's "Decisions & forks" rail covers a single fork; this is the operational elaboration for a genuine
+multi-question **interview** — a decision tree, not one isolated choice (`/design`'s process step 2 runs
+one informally today).
+
+- **Fact-vs-decision split first.** Before putting anything to the user, check whether the answer is
+  discoverable by reading code, docs, or the environment (`INSTANCE.md` included) — ask only what needs
+  the user's own judgment.
+- **Sequential when questions branch, batched when independent.** An earlier answer that changes which
+  later question even applies (the decision-tree case) forces sequential; independent questions cost less
+  round-trip batched — a tool like `AskUserQuestion` supports multi-question batches by design. Don't carry
+  a blanket "one at a time" rule forward — that's a chat-interview convention, not a universal.
+- **Always attach a recommended answer** to each question, so the user's fastest path is confirming a
+  default instead of composing one from scratch.
+- **Doesn't lower CORE's bar for opening a fork.** "Don't ask to confirm a default you'd pick anyway"
+  still governs whether to open the interview at all — this section only covers mechanics once a genuine
+  multi-question fork is already in motion.
+- **Thin-orchestrator / reusable-interview-skill split — named, not built.** When a second Keel command
+  needs this same interview logic, extract it into a shared skill invoked by thin per-command wrappers.
+  Every `commands/*.md` today is monolithic with no felt duplication yet — build the split only once a
+  second real command needs it, not speculatively.
+
+---
+
 ## Project context-file structure (the knowledge base)
 
 How to organize `CLAUDE.md` + memory so session startup is cheap on tokens, facts are traceable, and the
