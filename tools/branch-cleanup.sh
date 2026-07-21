@@ -87,8 +87,11 @@ while [ $# -gt 0 ]; do
     *) printf 'branch-cleanup: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
-case "$DAYS" in ''|*[!0-9]*) printf 'branch-cleanup: --days must be a non-negative integer\n' >&2; exit 2 ;; esac
-case "$LIVE_HOURS" in ''|*[!0-9]*) printf 'branch-cleanup: --live-hours must be a non-negative integer\n' >&2; exit 2 ;; esac
+require_nonneg_int() {
+  case "$2" in ''|*[!0-9]*) printf 'branch-cleanup: %s must be a non-negative integer\n' "$1" >&2; exit 2 ;; esac
+}
+require_nonneg_int --days "$DAYS"
+require_nonneg_int --live-hours "$LIVE_HOURS"
 
 git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
 
@@ -159,10 +162,16 @@ EOF
   printf 'clean\n'
 }
 
-# Portable file mtime, epoch seconds: GNU/busybox stat use -c '%Y'; BSD stat (macOS) uses -f '%m'. Try the
-# GNU/busybox form first (it's what CI's two Linux legs need) and fall back to BSD -- see the ticket note on
-# stat -f/-c divergence. Neither form errors loudly enough to trip `set -e` inside the `||`, so this is safe.
-epoch_mtime() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null || true; }
+# Portable file mtime, epoch seconds: GNU/busybox stat use -c '%Y'; BSD stat (macOS) uses -f '%m'. Detected
+# ONCE below (STAT_FMT) rather than trying both forms per file -- see the ticket note on stat -f/-c divergence.
+epoch_mtime() {
+  case "$STAT_FMT" in
+    c) stat -c '%Y' "$1" 2>/dev/null ;;
+    f) stat -f '%m' "$1" 2>/dev/null ;;
+  esac
+}
+STAT_FMT=c
+stat -c '%Y' "$0" >/dev/null 2>&1 || STAT_FMT=f
 
 # Is any file under the worktree (including its .git link file) touched within --live-hours? A merged,
 # git-clean worktree with fresh file activity is plausibly a parallel session still mid-wrap, not a dead
@@ -171,6 +180,7 @@ epoch_mtime() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null |
 # are portable across GNU, BSD, and busybox find. Heavy regenerable dirs are pruned to bound the walk; a
 # build having just run in one doesn't itself prove a live session, and scanning e.g. node_modules is slow.
 worktree_live() {
+  [ "$LIVE_HOURS" -eq 0 ] && return 1   # probe disabled -- skip the walk entirely
   local wtp="$1" threshold f m
   threshold=$(( now - LIVE_HOURS * 3600 ))
   while IFS= read -r f; do
