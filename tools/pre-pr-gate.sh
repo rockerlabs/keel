@@ -126,17 +126,8 @@ IFS= read -r -d '' PPG_AWK_PROG <<'PPG_AWK_EOF' || true
 function flush_tok() {
   if (buf != "") { ntok++; tok[ntok] = buf; buf = "" }
 }
-function is_assign(t   ,c,eq,name,i,ch) {
-  c = substr(t, 1, 1)
-  if (!((c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || c == "_")) return 0
-  eq = index(t, "=")
-  if (eq <= 1) return 0
-  name = substr(t, 1, eq - 1)
-  for (i = 1; i <= length(name); i++) {
-    ch = substr(name, i, 1)
-    if (!((ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9") || ch == "_")) return 0
-  }
-  return 1
+function is_assign(t) {
+  return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
 }
 function check_segment(   i,j,found_pr) {
   i = 1
@@ -220,9 +211,7 @@ function end_segment() {
       continue
     }
     if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")" || c == "`") {
-      flush_tok()
-      if (ntok > 0) check_segment()
-      ntok = 0
+      end_segment()
       pos++
       continue
     }
@@ -235,7 +224,7 @@ function end_segment() {
 END { exit (matched ? 0 : 1) }
 PPG_AWK_EOF
 
-if ! printf '%s\n' "$cmd" | awk "$PPG_AWK_PROG"; then
+if ! awk "$PPG_AWK_PROG" <<< "$cmd"; then
   exit 0
 fi
 
