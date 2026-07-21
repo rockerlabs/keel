@@ -31,6 +31,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `KEEL_REF` unset + no stamp keeps installing latest `main`, unchanged.
 
 ### Changed
+- **`/keel-score`'s `--fire` event now has an explicit two-test bar** (dir #24, anchored by the first
+  A/B calibration run). A fire citation must name a counterfactual that is (1) *reachable* — a moment
+  a cold session actually gets to; behavior behind a keel-only mechanism or past the cold endpoint is
+  capability, not a counterfactual — and (2) *beyond orientation* — indistinguishable-from-ordinary-
+  orientation behavior (listing branches, reading files) never clears the bar. The A/B found fire
+  over-credit concentrated in exactly those two shapes, while the largest real keel-vs-cold delta
+  (branch discipline) went unclaimed — so the calibration note now records the score as a floor on the
+  estimate's honesty, not a ceiling on Keel's effect. Wording only; the score formula is unchanged.
+
 - **README now explains the internal citation shorthand** (dir #55, first public audit finding).
   Code comments cite the maintainer's backlog using shorthand (`dir #N`, `KB.n`, `SEC4`) — the
   README's Docs section now includes a brief note that these are internal development trace and
