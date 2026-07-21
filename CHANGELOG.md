@@ -19,6 +19,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `KEEL_REF` unset + no stamp keeps installing latest `main`, unchanged.
 
 ### Changed
+- **README now explains the internal citation shorthand** (dir #55, first public audit finding).
+  Code comments cite the maintainer's backlog using shorthand (`dir #N`, `KB.n`, `SEC4`) — the
+  README's Docs section now includes a brief note that these are internal development trace and
+  the public explanation is always in the surrounding text.
 - **`CORE.md`'s git rails now carry a per-commit fetch+branch-check floor** (dir #52,
   operator-decided). Before every commit: `git fetch --prune` + `git branch --show-current` —
   refresh refs and confirm you're on your own, expected branch at the moment a stale picture
