@@ -8,6 +8,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+- **`CORE.md`'s git rails now carry a per-commit fetch+branch-check floor** (dir #52,
+  operator-decided). Before every commit: `git fetch --prune` + `git branch --show-current` —
+  refresh refs and confirm you're on your own, expected branch at the moment a stale picture
+  would do damage (non-blocking: a failed fetch never blocks a local commit). Placed alongside,
+  not inside, the existing reconcile-first rule, which stays the session-start/step-level check.
+  Mirrored into `templates/CLAUDE.md` (byte-pinned by `test_core_wrapper_sync.sh`).
+
 ### Fixed
 - **`curl … | sh` copy-mode install no longer ships a dangling `keel` CLI** (v0.5.0's named known
   issue, the first public audit's one broken-functionality finding). Bootstrap's copy mode installs
