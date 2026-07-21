@@ -70,6 +70,14 @@ git clone https://github.com/rockerlabs/keel.git && cd keel
 > `git clone --branch v0.4.0 …`. (Linked: re-run with a new `KEEL_REF` to move a pinned checkout to
 > another tag; a bare re-run just fast-forwards whatever it's tracking.)
 
+> **Or default to the last release instead of naming a tag:** each GitHub release attaches its own
+> `bootstrap.sh`, stamped to install ITS OWN tag by default (main-tracking `KEEL_REF` still overrides
+> it) — `curl -fsSL https://github.com/rockerlabs/keel/releases/latest/download/bootstrap.sh | sh`.
+> GitHub's `releases/latest` redirect moves itself on every release, so this always resolves to the
+> most recent tagged (audited) cut with no manual pointer to maintain — the tradeoff for "audited, one
+> version behind main" instead of "freshest, CI-gated but unaudited." `-s -- --link` and `KEEL_TARBALL`
+> work the same as above.
+
 > **What you'll be asked during install:** the secret-guard step changes one global git setting
 > (`core.hooksPath`) so the check runs in every repo on the machine. If an AI tool is driving the
 > install (Claude Code, the Claude desktop app, …), it will likely show a **permission dialog** for

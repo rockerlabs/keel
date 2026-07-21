@@ -8,6 +8,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **Release-pinned install one-liner** (dir #56, operator-raised post-v0.5.0). Release branches were
+  rejected — a manually-moved `stable` pointer under a solo maintainer guarantees drift — in favor of
+  attaching a stamped `bootstrap.sh` to each GitHub release: `tools/stamp-release-bootstrap.sh <tag>`
+  bakes `KEEL_DEFAULT_REF="<tag>"` into a copy of `bootstrap.sh` (the tracked copy always ships
+  `KEEL_DEFAULT_REF=""`, so it keeps tracking main), so
+  `curl -fsSL https://github.com/rockerlabs/keel/releases/latest/download/bootstrap.sh | sh` always
+  installs the last tagged (audited) release, not whatever's on main — `KEEL_REF` still overrides it.
+  `KEEL_REF` unset + no stamp keeps installing latest `main`, unchanged.
+
 ### Changed
 - **`CORE.md`'s git rails now carry a per-commit fetch+branch-check floor** (dir #52,
   operator-decided). Before every commit: `git fetch --prune` + `git branch --show-current` —

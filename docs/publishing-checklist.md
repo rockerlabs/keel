@@ -46,6 +46,10 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
 - [ ] **A version tag + GitHub release** — so people can pin a version and read what changed. **[you]**
 - [ ] **A no-clone install path works**, if you offer one (e.g. `curl … | sh`) — and you actually ran it
       once on a clean machine/sandbox, not just wrote it. **[you]**
+- [ ] **Attach a stamped `bootstrap.sh` to the release**, so `releases/latest/download/bootstrap.sh`
+      installs THIS tag by default instead of tracking main:
+      `tools/stamp-release-bootstrap.sh <tag> /tmp/bootstrap.sh && gh release create <tag> --notes-from-tag /tmp/bootstrap.sh`
+      (or `gh release upload <tag> /tmp/bootstrap.sh` on an existing release). **[auto]**
 
 ## 5. Presentation
 
