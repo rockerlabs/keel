@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/polish` step-receipt gate** (dir #49, maintainer dev-tooling pilot). `tools/pre-pr-gate.sh` gained
+  `init`/`receipt`/`log` CLI subcommands: each `/polish` step now appends a receipt line
+  (`<run-nonce>\t<step-id>\t<outcome>`) instead of the gate trusting a bare HEAD-SHA sentinel. The
+  `gh pr create` hook denies unless every expected step id is present under the *current* run's nonce
+  (a leftover line from an earlier run doesn't count — closes a stale-receipt-replay gap) and the final
+  step's recorded SHA matches live HEAD. Deny naming the missing id(s), a stale-nonce replay, and a clean
+  pass are each logged to `.keel/impact-events.log` (`receipt-deny` / `receipt-replay-deny` /
+  `receipt-pass`) alongside the existing `guard` event, so the pilot can be measured and dropped later if
+  it doesn't earn its keep — decision rule and review window are in `BACKLOG.md` #49. This is a
+  completeness check over self-reported receipts, not proof of execution — an honest limit recorded in
+  the ticket and worth restating here.
+
 - **Release-pinned install one-liner** (dir #56, operator-raised post-v0.5.0). Release branches were
   rejected — a manually-moved `stable` pointer under a solo maintainer guarantees drift — in favor of
   attaching a stamped `bootstrap.sh` to each GitHub release: `tools/stamp-release-bootstrap.sh <tag>`
