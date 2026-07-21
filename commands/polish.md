@@ -56,6 +56,11 @@ Steps, in order:
    `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings. For
    `ultra` you cannot launch it yourself (cloud, billed, user-triggered) — print the exact `/code-review
    ultra` command, stop before the sentinel/PR, and let the human run it (they re-invoke `/polish` after).
+   **If the `/code-review` skill is not available in this session** (missing from the skill list, or
+   present but blocked from model invocation), do not substitute `/review` or guess — instead perform
+   ONE inline review pass of the step-1 diff at the chosen depth (correctness-focused, same
+   single-terminal-pass rule as below), resolve any real findings, and say in the summary that the
+   review ran inline because the skill wasn't available.
    **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
    if `--fix` changes files.** No infinite cycle.
 
