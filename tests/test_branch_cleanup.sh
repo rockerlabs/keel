@@ -147,6 +147,35 @@ check_absent   "live-hours 0: fresh-mtime worktree no longer FLAGged" \
 run bash "$TOOL" --live-hours abc
 check_status "non-numeric --live-hours exits 2" 2 "$STATUS"
 
+# --- the felt incident itself: an OLD, ephemeral, clean worktree -- otherwise a plain AUTO -- that's been
+# touched recently must survive --prune-safe, not just report as FLAG. Commit age alone (what AUTO/ASK grade
+# on) says nothing about whether a worktree is still attached to a live session; only the probe does.
+oldliverepo="$(new_repo)"
+git -C "$oldliverepo" symbolic-ref HEAD refs/heads/main
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$oldliverepo" commit -q --allow-empty -m c1
+c1ol="$(git -C "$oldliverepo" rev-parse HEAD)"
+git -C "$oldliverepo" commit -q --allow-empty -m c2                     # main tip
+git -C "$oldliverepo" branch claude/wt-old-touched "$c1ol"              # old commit, ephemeral -> AUTO-eligible
+git -C "$oldliverepo" worktree add -q "$oldliverepo.wt-old-touched" claude/wt-old-touched >/dev/null
+# worktree files are freshly created by `worktree add` above -- naturally within the live window, no backdate
+
+run_in "$oldliverepo" bash "$TOOL" --prune-safe --days 7
+check_contains "old+touched worktree is FLAGged, not auto-removed" \
+  "$(line_for claude/wt-old-touched)" "FLAG"
+check_contains "prune-safe removed nothing this run" "$OUT" "0 removed"
+run git -C "$oldliverepo" rev-parse --verify -q refs/heads/claude/wt-old-touched
+check_status "the branch survives prune-safe" 0 "$STATUS"
+check_contains "the worktree dir survives prune-safe" \
+  "$([ -d "$oldliverepo.wt-old-touched" ] && echo y)" "y"
+
+# proof the probe -- not some other gate -- was what held it back: with --live-hours 0, the same fixture
+# (same age, same commit, same worktree) is provably safe again and prune-safe DOES remove it.
+run_in "$oldliverepo" bash "$TOOL" --prune-safe --days 7 --live-hours 0
+check_contains "live-hours 0 lets prune-safe remove the now-idle worktree" \
+  "$(line_for claude/wt-old-touched)" "removed"
+run git -C "$oldliverepo" rev-parse --verify -q refs/heads/claude/wt-old-touched
+check_status "branch is gone once the probe is disabled" 1 "$STATUS"
+
 # --- current branch is never a candidate, even if otherwise AUTO-eligible ----------------------
 repo2="$(new_repo)"
 git -C "$repo2" symbolic-ref HEAD refs/heads/main

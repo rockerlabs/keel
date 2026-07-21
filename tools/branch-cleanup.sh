@@ -170,6 +170,9 @@ epoch_mtime() {
     f) stat -f '%m' "$1" 2>/dev/null ;;
   esac
 }
+# Probed against $0 (this script's own path), which relies on being invoked by path (`bash
+# tools/branch-cleanup.sh ...`, as wrap.md and every test do) rather than piped via stdin -- a stdin
+# invocation would make $0 unstat-able and silently pin STAT_FMT to the BSD form.
 STAT_FMT=c
 stat -c '%Y' "$0" >/dev/null 2>&1 || STAT_FMT=f
 
@@ -177,8 +180,10 @@ stat -c '%Y' "$0" >/dev/null 2>&1 || STAT_FMT=f
 # git-clean worktree with fresh file activity is plausibly a parallel session still mid-wrap, not a dead
 # leftover (backlog #51). `find -newermt`/`-mmin` aren't reliably available on busybox, so this compares
 # mtimes directly instead of relying on find's own time predicates -- only -name/-prune/-type/-print, which
-# are portable across GNU, BSD, and busybox find. Heavy regenerable dirs are pruned to bound the walk; a
-# build having just run in one doesn't itself prove a live session, and scanning e.g. node_modules is slow.
+# are portable across GNU, BSD, and busybox find. Heavy regenerable dirs are pruned to bound the walk (a
+# build having just run in one doesn't itself prove a live session, and scanning e.g. node_modules is slow);
+# .DS_Store is pruned too -- Finder/a cloud-sync watcher can refresh it well after a session ends, and
+# worktree_state already treats it as disposable, not evidence of work.
 worktree_live() {
   [ "$LIVE_HOURS" -eq 0 ] && return 1   # probe disabled -- skip the walk entirely
   local wtp="$1" threshold f m
@@ -190,7 +195,7 @@ worktree_live() {
     [ "$m" -gt "$threshold" ] && return 0
   done < <(find "$wtp" \( -name node_modules -o -name target -o -name dist -o -name build -o -name .venv \
     -o -name venv -o -name .next -o -name .gradle -o -name Pods -o -name DerivedData -o -name .build \
-    -o -name vendor -o -name .idea \) -prune -o -type f -print 2>/dev/null)
+    -o -name vendor -o -name .idea -o -name .DS_Store \) -prune -o -type f -print 2>/dev/null)
   return 1
 }
 
