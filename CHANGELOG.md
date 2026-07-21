@@ -30,6 +30,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   not inside, the existing reconcile-first rule, which stays the session-start/step-level check.
   Mirrored into `templates/CLAUDE.md` (byte-pinned by `test_core_wrapper_sync.sh`).
 
+- **`/polish` step 5 documents an inline-review fallback for when `/code-review` isn't in the
+  harness** (dir #57, felt 2026-07-21, 5th occurrence). The skill isn't always present or
+  invocable — missing from the session's skill list, or gated behind
+  `disable-model-invocation` — and each hit so far improvised the same fix (one inline review
+  pass at the chosen depth, no loop-back). That fallback is now spelled out in `commands/polish.md`
+  itself so future sessions don't have to reinvent it, and no longer guess a substitute like
+  `/review` (which mis-parses a review level as a PR number).
+
 ### Fixed
 - **`branch-cleanup.sh` no longer offers to delete a merged worktree that's still a live parallel
   session** (dir #51, felt 2026-07-20). A merged, git-clean worktree used to grade ASK purely on
