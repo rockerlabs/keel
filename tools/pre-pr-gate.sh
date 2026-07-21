@@ -36,14 +36,16 @@ EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth po
 
 sentinel_path() { printf '/tmp/pre-pr-gate-%s' "$(basename "$PWD")"; }
 
-# Resolve the impact log path for $PWD, same precedence as the hook path below: $KEEL_IMPACT_LOG, else
-# the repo's own .keel/ marker (falling back to the main checkout's marker from a linked worktree).
+# Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
+# (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
+# so a linked worktree looks at the first `git worktree list` entry, skipped when bare). One resolution
+# used everywhere a guard/receipt/log event is recorded (dir #49 folded three copies into this one).
 resolve_impact_log() {
-  local klog="${KEEL_IMPACT_LOG:-}" top main
+  local cwd="$1" klog="${KEEL_IMPACT_LOG:-}" top main
   if [ -z "$klog" ]; then
-    top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(git worktree list --porcelain 2>/dev/null |
+      main="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
         awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
       if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
     fi
@@ -52,9 +54,11 @@ resolve_impact_log() {
   printf '%s' "$klog"
 }
 
-log_impact() {
-  local ty="$1" detail="${2:-}" log
-  log="$(resolve_impact_log)"
+# Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —
+# never stdout, so a hook's JSON decision stays intact; with no log path resolved, this is a silent no-op.
+log_event() {
+  local ty="$1" detail="${2:-}" cwd="${3:-$PWD}" log
+  log="$(resolve_impact_log "$cwd")"
   [ -n "$log" ] || return 0
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" >> "$log" 2>/dev/null || true
 }
@@ -86,7 +90,7 @@ case "${1:-}" in
   log)
     ty="${2:?pre-pr-gate: log <type> [detail] — type required}"
     detail="${3:-}"
-    log_impact "$ty" "$detail"
+    log_event "$ty" "$detail" "$PWD"
     exit 0
     ;;
 esac
@@ -115,47 +119,14 @@ sentinel="/tmp/pre-pr-gate-$wt"
 deny() {
   # Impact instrumentation (metadata only, opt-in per repo): record that this guardrail fired so keel-impact
   # can auto-ingest it — deterministic, zero-token. Writes to the log file, never stdout (the hook's JSON
-  # stays intact). Enabled via $KEEL_IMPACT_LOG or a .keel/ marker at the target repo's top level (in a
-  # linked worktree: the MAIN checkout's top — the untracked marker isn't shared, so fall back to the
-  # first `git worktree list` entry, skipped when bare; awk reads its whole input on purpose — no early exit, no SIGPIPE);
-  # with neither, nothing is written and the gate's behaviour is unchanged.
-  _klog="${KEEL_IMPACT_LOG:-}"
-  if [ -z "$_klog" ]; then
-    _ktop="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
-      _kmain="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
-        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-      if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
-    fi
-    if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
-  fi
-  if [ -n "$_klog" ]; then
-    printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard pre-pr-gate blocked \
-      >> "$_klog" 2>/dev/null || true
-  fi
+  # stays intact); with no log path resolved, nothing is written and the gate's behaviour is unchanged.
+  log_event guard blocked "$cwd"
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
   exit 0
 }
 
-# Same resolution as deny()'s guard event, scoped to $cwd (the hook's cwd, not this script's $PWD).
-log_receipt_event() {
-  local ty="$1" detail="${2:-}" klog top main
-  klog="${KEEL_IMPACT_LOG:-}"
-  if [ -z "$klog" ]; then
-    top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
-        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
-    fi
-    if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
-  fi
-  [ -n "$klog" ] || return 0
-  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" >> "$klog" 2>/dev/null || true
-}
-
 if [ ! -f "$sentinel" ]; then
-  log_receipt_event receipt-deny "no-run"
+  log_event receipt-deny "no-run" "$cwd"
   deny "Pre-PR gate: run /polish first (simplify + inline review + tests). The gate unlocks automatically when /polish completes cleanly."
 fi
 
@@ -193,28 +164,28 @@ detail="${result#*$'\t'}"
 case "$status" in
   MALFORMED)
     rm -f "$sentinel"
-    log_receipt_event receipt-deny "malformed"
+    log_event receipt-deny "malformed" "$cwd"
     deny "Pre-PR gate: receipt is malformed or empty (no nonce). Run /polish again."
     ;;
   MISSING)
     rm -f "$sentinel"
-    log_receipt_event receipt-deny "$detail"
+    log_event receipt-deny "$detail" "$cwd"
     deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail. Run /polish again."
     ;;
   REPLAY)
     rm -f "$sentinel"
-    log_receipt_event receipt-replay-deny "$detail"
+    log_event receipt-replay-deny "$detail" "$cwd"
     deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
     ;;
   PASS)
     current_sha=$(git -C "$cwd" rev-parse HEAD 2>/dev/null)
     if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
       rm -f "$sentinel"
-      log_receipt_event receipt-deny "sha-mismatch"
+      log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
     rm -f "$sentinel"
-    log_receipt_event receipt-pass ""
+    log_event receipt-pass "" "$cwd"
     exit 0
     ;;
 esac
