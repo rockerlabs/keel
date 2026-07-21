@@ -99,8 +99,10 @@ key-shaped secret.
 Two facts decide the columns: the *prose rails* are just text files (git isn't needed to place them),
 but **secret-guard is a git hook** — no git, no guard (the `curl` path falls back to a tarball and
 installs the rails-only half). The `.dmg` row is deferred until real demand. Pin a release instead of
-latest `main` with `KEEL_REF=<tag>` — works on every path. Full walk-through of the terminal flows,
-including the no-git fallback and version pinning → [docs/getting-started.md](docs/getting-started.md).
+latest `main` with `KEEL_REF=<tag>`, or default to the last release automatically with
+`.../releases/latest/download/bootstrap.sh` — both work on every path. Full walk-through of the
+terminal flows, including the no-git fallback and version pinning →
+[docs/getting-started.md](docs/getting-started.md).
 
 </details>
 

@@ -8,6 +8,11 @@
 # Version: no flag installs the latest main; pin a release with KEEL_REF=<tag> (a tag/branch). Point
 # elsewhere with KEEL_REPO; force/offline a source tarball with KEEL_TARBALL (a .tar.gz URL or local file).
 #
+# Release-pinned copy: `releases/latest/download/bootstrap.sh` serves a copy stamped at release time
+# (KEEL_DEFAULT_REF below, set by tools/stamp-release-bootstrap.sh) so that asset installs ITS OWN tag
+# by default instead of main — KEEL_REF still overrides it. The copy tracked in git always ships
+# KEEL_DEFAULT_REF="" (tracks main) — never hand-edit that line; it's stamped into the release asset only.
+#
 # Linked mode (--link, Claude Code): the linked install wires by REFERENCE (symlinks into a checkout +
 # one import line), so it needs a checkout that OUTLIVES this script — the temp clone below would leave
 # every symlink dangling. So --link clones into a PERMANENT dir (KEEL_DIR, default ~/keel) and never
@@ -22,7 +27,8 @@
 set -eu
 
 REPO="${KEEL_REPO:-https://github.com/rockerlabs/keel.git}"
-REF="${KEEL_REF:-}"
+KEEL_DEFAULT_REF=""
+REF="${KEEL_REF:-$KEEL_DEFAULT_REF}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 need() { have "$1" || { echo "keel: '$1' is required but not found" >&2; exit 1; }; }
