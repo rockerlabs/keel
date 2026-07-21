@@ -8,9 +8,90 @@
 #
 # Wire it as a Claude Code PreToolUse(Bash) hook: it intercepts `gh pr create` and requires /polish
 # (simplify + inline review + tests) to have run on the current HEAD. The bypass path is closed by
-# content, not just presence: /polish writes the HEAD SHA to the sentinel, and the gate re-checks it
-# against the live HEAD — so a bare `touch` (empty file) or a sentinel from an earlier commit both fail.
-# Unlock: run /polish — it writes the sentinel automatically when it completes cleanly.
+# content, not just presence: each polish step appends a receipt line (see below), and the gate denies
+# unless every expected step id is present AND the final step's recorded SHA matches live HEAD — so a
+# bare `touch` (empty file), a partial run, or a sentinel from an earlier commit all fail.
+# Unlock: run /polish — it writes the receipt automatically as it completes each step.
+#
+# --- receipt format (dir #49) ---------------------------------------------------------------------
+# The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
+#   nonce\t<run-id>                     (line 1, written by `init`)
+#   <run-id>\t<step-id>\t<outcome>      (one per step, written by `receipt`, in any order)
+# Only lines carrying the CURRENT run's nonce count — a leftover line from an earlier run (a different
+# nonce) is invisible to the completeness check, so a stale receipt can't be replayed just because it
+# happens to still list the right step ids. `polish.8-unlock`'s outcome IS the HEAD SHA, so its presence
+# doubles as both the last step id and the existing SHA effect-check — no separate finalize step needed.
+#
+# CLI subcommands (used by commands/polish.md, so a step never needs a raw `echo >>`):
+#   pre-pr-gate.sh init                    mint a fresh nonce, start a new receipt (run from repo root)
+#   pre-pr-gate.sh receipt <step-id> [outcome]   append a receipt line for the current run (outcome default: done)
+#   pre-pr-gate.sh log <type> [detail]     append a line to the impact log (same resolution as the guard event)
+#
+# With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
+# decides allow/deny for `gh pr create`.
+
+set -u
+
+EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
+
+sentinel_path() { printf '/tmp/pre-pr-gate-%s' "$(basename "$PWD")"; }
+
+# Resolve the impact log path for $PWD, same precedence as the hook path below: $KEEL_IMPACT_LOG, else
+# the repo's own .keel/ marker (falling back to the main checkout's marker from a linked worktree).
+resolve_impact_log() {
+  local klog="${KEEL_IMPACT_LOG:-}" top main
+  if [ -z "$klog" ]; then
+    top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
+      main="$(git worktree list --porcelain 2>/dev/null |
+        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
+    fi
+    if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
+  fi
+  printf '%s' "$klog"
+}
+
+log_impact() {
+  local ty="$1" detail="${2:-}" log
+  log="$(resolve_impact_log)"
+  [ -n "$log" ] || return 0
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" >> "$log" 2>/dev/null || true
+}
+
+case "${1:-}" in
+  init)
+    sentinel="$(sentinel_path)"
+    nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
+    printf 'nonce\t%s\n' "$nonce" > "$sentinel"
+    printf 'pre-pr-gate: receipt started (nonce %s)\n' "$nonce"
+    exit 0
+    ;;
+  receipt)
+    step_id="${2:?pre-pr-gate: receipt <step-id> [outcome] — step id required}"
+    outcome="${3:-done}"
+    sentinel="$(sentinel_path)"
+    if [ ! -f "$sentinel" ]; then
+      printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
+      exit 1
+    fi
+    nonce="$(awk -F'\t' 'NR==1 && $1=="nonce"{print $2}' "$sentinel")"
+    if [ -z "$nonce" ]; then
+      printf 'pre-pr-gate: receipt file has no nonce header — run "pre-pr-gate.sh init" first\n' >&2
+      exit 1
+    fi
+    printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
+    exit 0
+    ;;
+  log)
+    ty="${2:?pre-pr-gate: log <type> [detail] — type required}"
+    detail="${3:-}"
+    log_impact "$ty" "$detail"
+    exit 0
+    ;;
+esac
+
+# --- hook mode: PreToolUse(Bash) on `gh pr create` -------------------------------------------------
 
 # Needs jq to parse the hook event. Without it the gate cannot tell `gh pr create` from any other Bash
 # command, so it allows rather than block EVERY command — an explicit, documented choice: this is a
@@ -56,18 +137,88 @@ deny() {
   exit 0
 }
 
+# Same resolution as deny()'s guard event, scoped to $cwd (the hook's cwd, not this script's $PWD).
+log_receipt_event() {
+  local ty="$1" detail="${2:-}" klog top main
+  klog="${KEEL_IMPACT_LOG:-}"
+  if [ -z "$klog" ]; then
+    top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
+      main="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
+        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
+    fi
+    if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
+  fi
+  [ -n "$klog" ] || return 0
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" >> "$klog" 2>/dev/null || true
+}
+
 if [ ! -f "$sentinel" ]; then
+  log_receipt_event receipt-deny "no-run"
   deny "Pre-PR gate: run /polish first (simplify + inline review + tests). The gate unlocks automatically when /polish completes cleanly."
 fi
 
-# Content check: the sentinel must hold the current HEAD SHA. A bare touch (empty) or a stale SHA fails.
-current_sha=$(git -C "$cwd" rev-parse HEAD 2>/dev/null)
-sentinel_sha=$(tr -d '[:space:]' < "$sentinel" 2>/dev/null)
+# Parse the receipt: line 1 must be the nonce header; every later line is <nonce>\t<step-id>\t<outcome>.
+# Only lines whose nonce matches the header count toward completeness — a leftover line from an earlier
+# run (different nonce) neither counts nor is silently accepted, so it surfaces as a replay, not a pass.
+result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" '
+  BEGIN { n = split(steps, want, " "); for (i = 1; i <= n; i++) need[want[i]] = 1 }
+  NR == 1 {
+    if ($1 == "nonce" && $2 != "") { nonce = $2; next }
+    malformed = 1; next
+  }
+  NF >= 3 {
+    if (nonce != "" && $1 == nonce) { got[$2] = 1; val[$2] = $3 }
+    else { foreign[$2] = 1 }
+  }
+  END {
+    if (malformed || nonce == "") { print "MALFORMED\t"; exit }
+    missing = ""; replay = ""
+    for (s in need) {
+      if (!(s in got)) {
+        missing = (missing == "" ? s : missing "," s)
+        if (s in foreign) replay = (replay == "" ? s : replay "," s)
+      }
+    }
+    if (missing == "") { print "PASS\t" val["polish.8-unlock"]; exit }
+    if (replay != "") { print "REPLAY\t" missing; exit }
+    print "MISSING\t" missing
+  }
+' "$sentinel")"
 
-if [ -z "$current_sha" ] || [ "$sentinel_sha" != "$current_sha" ]; then
-  rm -f "$sentinel"
-  deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
-fi
+status="${result%%$'\t'*}"
+detail="${result#*$'\t'}"
 
+case "$status" in
+  MALFORMED)
+    rm -f "$sentinel"
+    log_receipt_event receipt-deny "malformed"
+    deny "Pre-PR gate: receipt is malformed or empty (no nonce). Run /polish again."
+    ;;
+  MISSING)
+    rm -f "$sentinel"
+    log_receipt_event receipt-deny "$detail"
+    deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail. Run /polish again."
+    ;;
+  REPLAY)
+    rm -f "$sentinel"
+    log_receipt_event receipt-replay-deny "$detail"
+    deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
+    ;;
+  PASS)
+    current_sha=$(git -C "$cwd" rev-parse HEAD 2>/dev/null)
+    if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
+      rm -f "$sentinel"
+      log_receipt_event receipt-deny "sha-mismatch"
+      deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
+    fi
+    rm -f "$sentinel"
+    log_receipt_event receipt-pass ""
+    exit 0
+    ;;
+esac
+
+# Fail-safe: any unrecognized status denies rather than silently allowing.
 rm -f "$sentinel"
-exit 0
+deny "Pre-PR gate: could not verify the receipt. Run /polish again."

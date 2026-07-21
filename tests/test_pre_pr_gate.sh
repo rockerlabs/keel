@@ -3,8 +3,9 @@
 #
 # tools/pre-pr-gate.sh is a Claude Code PreToolUse(Bash) hook: it reads a JSON event on stdin and emits
 # a JSON allow/deny decision (always exit 0; an empty stdout = allow, a "permissionDecision":"deny"
-# payload = block). It is meant to be unbypassable by a bare `touch` — the sentinel must carry the live
-# HEAD SHA — so the deny paths are security-adjacent and were entirely untested.
+# payload = block). It is meant to be unbypassable by a bare `touch` — the sentinel is a per-run receipt
+# (a nonce header + one line per expected step id) and the deny paths are security-adjacent, so both the
+# hook-mode gate and the `init`/`receipt`/`log` CLI subcommands (dir #49) are covered here.
 #
 # The gate parses its input with jq, so these tests need jq. The busybox/Alpine CI job installs only
 # bash+git; there, skip cleanly. Without jq the gate now exits early by an EXPLICIT, documented choice
@@ -20,6 +21,8 @@ if ! command -v jq >/dev/null 2>&1; then
   pass "jq not available — pre-pr-gate tests skipped (gate requires jq to parse its event)"
   summary; exit $?
 fi
+
+ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 
 # A git repo with one commit; prints its path.
 mkrepo() {
@@ -38,6 +41,27 @@ gate() {
   STATUS=$?
 }
 
+# Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
+# both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
+# incomplete-receipt tests); $3 = optional step whose line should be re-tagged with a foreign nonce instead
+# of being written at all (for the replay tests).
+write_full_receipt() {
+  local d="$1" omit="${2:-}" replay_step="${3:-}" s
+  run_in "$d" bash "$gate" init
+  for s in $ALL_STEPS; do
+    [ "$s" = "$omit" ] && continue
+    if [ "$s" = "$replay_step" ]; then
+      printf 'stale-nonce-from-a-previous-run\t%s\tdone\n' "$s" >> "$(sentinel_for "$d")"
+      continue
+    fi
+    if [ "$s" = "polish.8-unlock" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
+    else
+      run_in "$d" bash "$gate" receipt "$s"
+    fi
+  done
+}
+
 # 1. A command that is NOT `gh pr create` is none of the gate's business → allow (empty out, exit 0).
 d="$(mkrepo)"
 gate "ls -la" "$d"
@@ -53,29 +77,29 @@ check_status "no sentinel → exit 0 (hook always exits 0)" 0 "$STATUS"
 check_contains "no sentinel → deny decision" "$OUT" '"permissionDecision":"deny"'
 check_contains "no sentinel → tells the user to run /polish" "$OUT" "run /polish first"
 
-# 3. THE bypass case: a bare `touch` (empty sentinel) must NOT unlock the gate — empty != HEAD SHA.
+# 3. THE bypass case: a bare `touch` (empty sentinel, current behaviour) must NOT unlock the gate.
 d="$(mkrepo)"
 : > "$(sentinel_for "$d")"            # the `touch` bypass attempt
 gate "gh pr create --fill" "$d"
 check_contains "empty sentinel (bare touch) → still denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "empty sentinel → reported as stale/bypass" "$OUT" "stale"
+check_contains "empty/malformed sentinel → reported as malformed" "$OUT" "malformed"
 check_nofile "a rejected sentinel is removed" "$(sentinel_for "$d")"
 
-# 4. A sentinel holding a STALE SHA (an earlier commit) → deny; the live HEAD has moved on.
+# 4. A complete receipt (all step ids, nonce-matching) but polish.8-unlock's SHA is STALE (HEAD moved on).
 d="$(mkrepo)"
-old="$(git -C "$d" rev-parse HEAD)"
-git -C "$d" commit --allow-empty -qm second      # HEAD advances past $old
-printf '%s' "$old" > "$(sentinel_for "$d")"
+write_full_receipt "$d"
+git -C "$d" commit --allow-empty -qm second      # HEAD advances past the recorded SHA
 gate "gh pr create --fill" "$d"
-check_contains "stale-SHA sentinel → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "stale-SHA receipt → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "stale-SHA receipt → reported as stale" "$OUT" "stale"
 check_nofile "stale sentinel is removed" "$(sentinel_for "$d")"
 
-# 5. A sentinel holding the CURRENT HEAD SHA (what /polish writes) → allow, and consume the sentinel.
+# 5. A complete receipt with the CURRENT HEAD SHA (what /polish's step 8 writes) → allow, one-shot consume.
 d="$(mkrepo)"
-git -C "$d" rev-parse HEAD > "$(sentinel_for "$d")"
+write_full_receipt "$d"
 gate "gh pr create --fill" "$d"
-check_status "matching sentinel → exit 0" 0 "$STATUS"
-check_absent "matching sentinel → allowed (no deny payload)" "$OUT" "deny"
+check_status "matching receipt → exit 0" 0 "$STATUS"
+check_absent "matching receipt → allowed (no deny payload)" "$OUT" "deny"
 check_nofile "the sentinel is consumed (one-shot, removed after a pass)" "$(sentinel_for "$d")"
 
 # 6. Edge: a matching-looking request whose cwd is not a git repo → HEAD SHA is empty → deny (fail safe).
@@ -83,6 +107,64 @@ d="$(mktemp -d "$SANDBOX/notrepo.XXXXXX")"
 printf 'whatever' > "$(sentinel_for "$d")"
 gate "gh pr create --fill" "$d"
 check_contains "non-git cwd → denied, never silently allowed" "$OUT" '"permissionDecision":"deny"'
+rm -f "$(sentinel_for "$d")"
+
+# --- receipt completeness (dir #49) --------------------------------------------------------------
+# 7. Missing one step id (the rest complete, current nonce, matching SHA) → deny naming that id.
+d="$(mkrepo)"
+write_full_receipt "$d" "polish.3-tests"
+gate "gh pr create --fill" "$d"
+check_contains "missing-step receipt → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "missing-step receipt → names the missing id" "$OUT" "polish.3-tests"
+check_nofile "incomplete sentinel is removed" "$(sentinel_for "$d")"
+
+# 8. Stale-nonce replay: the missing id's only line carries a DIFFERENT (earlier-run) nonce, not the
+# current header's — a leftover line from a previous run must not count toward completeness.
+d="$(mkrepo)"
+write_full_receipt "$d" "" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_contains "stale-nonce replay → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "stale-nonce replay → names the affected id" "$OUT" "polish.5-review"
+check_contains "stale-nonce replay → reported as a replay, not a plain miss" "$OUT" "stale nonce"
+check_nofile "replayed sentinel is removed" "$(sentinel_for "$d")"
+
+# 9. Conditional steps skipped-with-outcome still count as present (set-completeness, no order check).
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests "skipped:--no-test"
+run_in "$d" bash "$gate" receipt polish.4-depth low
+run_in "$d" bash "$gate" receipt polish.5-review low
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_status "skipped-with-outcome steps still pass → exit 0" 0 "$STATUS"
+check_absent "skipped-with-outcome steps still pass → allowed" "$OUT" "deny"
+
+# --- CLI subcommands: init / receipt -------------------------------------------------------------
+# 10. `receipt` before `init` refuses (no active receipt to append to).
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+run_in "$d" bash "$gate" receipt polish.1-diff
+check_status "receipt before init → non-zero exit" 1 "$STATUS"
+check_contains "receipt before init → tells the user to run init" "$OUT" "init"
+rm -f "$(sentinel_for "$d")"
+
+# 11. `init` mints a fresh nonce and discards a previous run's leftover lines.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+old_nonce="$(awk -F'\t' 'NR==1{print $2}' "$(sentinel_for "$d")")"
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" init
+new_nonce="$(awk -F'\t' 'NR==1{print $2}' "$(sentinel_for "$d")")"
+lines="$(wc -l < "$(sentinel_for "$d")" | tr -d ' ')"
+if [ "$old_nonce" != "$new_nonce" ] && [ "$lines" = "1" ]; then
+  pass "re-running init mints a new nonce and clears prior step lines"
+else
+  fail "re-running init mints a new nonce and clears prior step lines" "nonces: $old_nonce / $new_nonce, lines: $lines"
+fi
 rm -f "$(sentinel_for "$d")"
 
 # --- impact instrumentation: guardrail-fire event on deny ---------------------------------------
@@ -99,6 +181,7 @@ check_contains "deny still emits the deny payload on stdout" "$out" '"permission
 check_absent "stdout is not polluted by the event line" "$out" "pre-pr-gate	blocked"
 check_file "deny records an impact event when opted in" "$imp_log"
 check_contains "event is a guard/pre-pr-gate line" "$(cat "$imp_log" 2>/dev/null)" "	guard	pre-pr-gate	blocked"
+check_contains "a receipt-deny event is also recorded (no-run)" "$(cat "$imp_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	no-run"
 
 # (b) per-repo .keel/ marker, NO env — resolved from the hook's cwd ($d)
 mkdir -p "$d/.keel"; rm -f "$(sentinel_for "$d")"
@@ -111,5 +194,19 @@ d2="$(mkrepo)"; rm -f "$(sentinel_for "$d2")"
 json2="$(jq -n --arg c "gh pr create --fill" --arg d "$d2" '{tool_input:{command:$c}, cwd:$d}')"
 printf '%s' "$json2" | env -u KEEL_IMPACT_LOG bash "$gate" >/dev/null 2>&1
 check_nofile "no event written without override or marker" "$d2/.keel/impact-events.log"
+
+# (d) a clean pass records a receipt-pass event too.
+d="$(mkrepo)"
+write_full_receipt "$d"
+imp_log2="$SANDBOX/pprg-events-pass.log"; rm -f "$imp_log2"
+out="$(KEEL_IMPACT_LOG="$imp_log2" bash "$gate" <<<"$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}')" 2>&1)"
+check_absent "a clean pass emits no deny payload" "$out" "deny"
+check_contains "a clean pass records a receipt-pass event" "$(cat "$imp_log2" 2>/dev/null)" "	receipt-pass	pre-pr-gate	"
+
+# (e) `pre-pr-gate.sh log` appends an arbitrary verdict/friction line for the current run.
+d="$(mkrepo)"
+mkdir -p "$d/.keel"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" log receipt-verdict "true-catch polish.3-tests"
+check_contains "log subcommand appends the given type/detail" "$(cat "$d/.keel/impact-events.log" 2>/dev/null)" "	receipt-verdict	pre-pr-gate	true-catch polish.3-tests"
 
 summary
