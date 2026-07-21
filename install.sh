@@ -26,6 +26,10 @@
 #                              machine with NO git projects; sticky — plain re-runs keep the trim)
 #   install.sh --with-git      linked mode: restore the full rails after a --no-git install
 #   install.sh -h | --help
+#
+# KEEL_EPHEMERAL=1 (env, set by bootstrap's copy mode): this checkout is a temp clone reaped right
+# after the run — skip the bin/keel symlink and the checkout-backed promises in the summary (a link
+# into a reaped clone would dangle; the closing text must not promise `keel …` verbs it can't keep).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")" && pwd)"          # repo root (this script lives at the top level)
@@ -65,6 +69,7 @@ DO_HOOKS=1
 LINK=0
 NOGIT=0
 WITHGIT=0
+EPHEMERAL="${KEEL_EPHEMERAL:-0}"   # env, not a flag: an internal bootstrap→install signal (see header)
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -489,7 +494,10 @@ fi
 # a copy severed from the checkout couldn't dispatch. Refuse-to-clobber: only ever replace our own
 # symlink, never a real file you put at bin/keel. $HOME_DIR/bin keeps Keel's whole footprint under one
 # root (clean uninstall) at the cost of a PATH line the summary prints if the dir isn't already on PATH.
-if [ -f "$root/keel" ]; then
+# Ephemeral bootstrap run (see header): $root is reaped right after — a symlink would dangle.
+if [ "$EPHEMERAL" = 1 ]; then
+  echo "  =    keel CLI skipped (temporary bootstrap clone — the summary below has the --link alternative)"
+elif [ -f "$root/keel" ]; then
   mkdir -p "$HOME_DIR/bin"
   keel_link="$HOME_DIR/bin/keel"
   if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
@@ -596,8 +604,9 @@ if [ "$DO_HOOKS" = 1 ]; then
   fi
 fi
 
-# The keel CLI: wired iff bin/keel resolves back into this checkout.
-if [ -f "$root/keel" ]; then
+# The keel CLI: wired iff bin/keel resolves back into this checkout. Not graded in an ephemeral
+# run — the CLI is deliberately not wired there (see header).
+if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   if [ -L "$HOME_DIR/bin/keel" ] && [ "$HOME_DIR/bin/keel" -ef "$root/keel" ]; then
     echo "  OK   keel CLI (bin/keel)"
   else
@@ -629,7 +638,7 @@ Done$mode_tag. $guard_note Next:
     the always-on ground rules. Later, run /keel-setup again INSIDE each project you want Keel on —
     that part drafts the project's CLAUDE.md from its code (you review).
 EOF
-if [ -f "$root/keel" ]; then
+if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   echo "  - the  keel  CLI is on  $HOME_DIR/bin  →  keel help  (install · sync · doctor · audit · init · check · uninstall)"
   case ":${PATH:-}:" in
     *":$HOME_DIR/bin:"*) : ;;
@@ -648,6 +657,20 @@ if [ "$LINK" = 1 ]; then
     $HOME_DIR/keel/ , the @import line in  $HOME_DIR/CLAUDE.md , the  $HOME_DIR/commands/  symlinks,
     and  $HOME_DIR/bin/keel .
   - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md  private.
+EOF
+elif [ "$EPHEMERAL" = 1 ]; then
+  # Ephemeral bootstrap run: every promise here must hold WITHOUT a checkout on disk (no CLI, no
+  # uninstall.sh, no tools/ for the commands that shell out) — point checkout-backed verbs elsewhere.
+  cat <<EOF
+  - installed by the one-line bootstrap: the temporary clone it ran from is removed as it exits, so
+    the files above stand alone. The  keel  CLI,  keel uninstall , and the commands that shell out to
+    Keel's tools/ (/keel-setup project drafting, /init-project) need a KEPT checkout — either re-run
+    the one-liner with  --link  (keeps a checkout at ~/keel and wires everything to it), or
+    git clone the keel repo and run  ./install.sh  from it (re-runs never clobber your files).
+  - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
+  - to update later: re-run the same one-liner.
+  - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, the
+    commands/ entries) — CLAUDE.md and INSTANCE.md are yours; or get a checkout and run  keel uninstall .
 EOF
 else
   cat <<EOF

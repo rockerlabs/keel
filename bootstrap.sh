@@ -119,5 +119,8 @@ else
   fi
 
   echo "keel: running install.sh …"
-  ( cd "$src" && ./install.sh "$@" )
+  # This clone/extract is reaped when the trap fires — tell install.sh, so it skips everything that
+  # must point into a KEPT checkout (the bin/keel symlink, the CLI/uninstall promises in the
+  # summary). Otherwise the run would ship a symlink that dangles the moment this script exits.
+  ( cd "$src" && KEEL_EPHEMERAL=1 ./install.sh "$@" )
 fi
