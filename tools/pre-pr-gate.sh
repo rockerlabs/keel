@@ -105,9 +105,17 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat 2>/dev/null)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Fast-exit: only care about `gh pr create`.
+# Fast-exit: only care about `gh pr create`. A substring match (not just a leading-prefix match,
+# S6/backlog dir #4) so a chained/prefixed invocation — `cd repo && gh pr create`, `GH_TOKEN=x gh pr
+# create`, `foo; gh pr create` — still gets caught instead of silently bypassing the gate. False
+# positives (e.g. an unrelated command that happens to mention the phrase) just force an unneeded
+# /polish reminder; a false negative is an actual bypass, so err toward catching more. Still lexical,
+# not a real command parse — e.g. `gh --repo owner/name pr create` (a global flag before the
+# subcommand) has no contiguous "gh pr create" substring and would still slip through. Closing that
+# needs real argv-aware parsing, disproportionate for what the header above calls a WORKFLOW gate (a
+# /polish reminder), not the secret boundary — left as a known residual gap, not a promise this is exhaustive.
 case "$cmd" in
-  "gh pr create"*) ;;
+  *"gh pr create"*) ;;
   *) exit 0 ;;
 esac
 

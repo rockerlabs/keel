@@ -82,6 +82,27 @@ new_repo() {
   printf '%s' "$d"
 }
 
+# A PATH dir ($1) symlinking every executable currently on $PATH EXCEPT the names in $2.. — for
+# testing a script's dependency check when one or more tools are missing.
+path_farm() {
+  local dest="$1" d f n hide hidden=0
+  shift
+  mkdir -p "$dest"
+  IFS=:
+  for d in $PATH; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      [ -e "$f" ] || continue
+      n=${f##*/}
+      hidden=0
+      for hide in "$@"; do [ "$n" = "$hide" ] && { hidden=1; break; }; done
+      [ "$hidden" = 1 ] && continue
+      [ -e "$dest/$n" ] || ln -s "$f" "$dest/$n"
+    done
+  done
+  unset IFS
+}
+
 summary() {
   printf '\n%s: %d passed, %d failed\n' "$(basename "$0")" "$_pass" "$_fail"
   [ "$_fail" -eq 0 ]

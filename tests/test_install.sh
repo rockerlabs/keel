@@ -14,6 +14,9 @@ check_contains "wires secret-guard" "$OUT" "secret-guard"
 hp="$(git config --global core.hooksPath || true)"
 check_contains "sets global hooksPath to keel-hooks" "$hp" "keel-hooks"
 check_contains "verify confirms Keel's secret-guard is wired" "$OUT" "OK   secret-guard"
+# S8 (backlog dir #4): install's own Verify asserts the onboarding command it tells you to run next
+# actually landed, instead of only doctor.sh --install catching a silently-skipped wiring bug.
+check_contains "verify confirms keel-setup.md is wired" "$OUT" "OK   commands/keel-setup.md"
 check_file "installs lifecycle commands as slash commands" "$HOME/.claude/commands/wrap.md"
 # polish.md is maintainer dev-tooling (its pre-pr-gate hook is never wired) — install must NOT ship it.
 check_nofile "does NOT install the maintainer-only /polish command" "$HOME/.claude/commands/polish.md"
@@ -151,22 +154,45 @@ check_file "tarball install lands the commands" "$t1home/commands/wrap.md"
 
 # T2: git hidden via a PATH farm (symlink every tool EXCEPT git) → no-git fallback fires:
 # prose-only announced, --no-hooks auto-forced, install still lands from the tarball.
-farm="$SANDBOX/nogit-bin"; mkdir -p "$farm"
-IFS=:; for d in $PATH; do
-  [ -d "$d" ] || continue
-  for f in "$d"/*; do
-    [ -e "$f" ] || continue
-    n=${f##*/}
-    [ "$n" = git ] && continue
-    [ -e "$farm/$n" ] || ln -s "$f" "$farm/$n"
-  done
-done
-unset IFS
+farm="$SANDBOX/nogit-bin"; path_farm "$farm" git
 t2home="$SANDBOX/nogit-home"
 run env PATH="$farm" HOME="$HOME" KEEL_TARBALL="$tb" sh "$boot" --home "$t2home"
 check_status "bootstrap without git → exit 0" 0 "$STATUS"
 check_contains "no-git run announces prose-only" "$OUT" "prose rails"
 check_file "no-git install still lands the core" "$t2home/CLAUDE.md"
 check_file "no-git install still lands the commands" "$t2home/commands/wrap.md"
+
+# --- bootstrap.sh error paths (S4, backlog dir #4): each must fail loudly with an actionable message,
+# never hang or crash with a raw command-not-found trace, and never touch what it hasn't reached yet.
+
+# E1: `--link` with git hidden → named-dependency error, not a bare clone failure (checked before the
+# clone destination is even resolved, so this doesn't need --home/KEEL_DIR to be meaningful).
+run env PATH="$farm" HOME="$HOME" sh "$boot" --link
+check_status "--link without git → exit 1" 1 "$STATUS"
+check_contains "--link without git → names the missing dependency" "$OUT" "--link needs git"
+
+# E2: `--link` re-run over an existing directory that is NOT a Keel checkout → refuse rather than
+# clobber (the dest lacks .git/install.sh/CORE.md, so it fails the "already a Keel checkout" test).
+foreign_dir="$SANDBOX/foreign-keel-dir"; mkdir -p "$foreign_dir"
+printf 'not keel\n' > "$foreign_dir/some-file"
+run env KEEL_DIR="$foreign_dir" sh "$boot" --link --no-hooks
+check_status "--link over a non-Keel dir → exit 2 (refuses to overwrite)" 2 "$STATUS"
+check_contains "--link over a non-Keel dir → explains the refusal" "$OUT" "is not a Keel checkout"
+check_contains "foreign dir content is left untouched" "$(cat "$foreign_dir/some-file")" "not keel"
+
+# E3: no git AND no curl/wget → fetch() fails with a clear message instead of silently hanging or
+# crashing with an unbound-variable trace. KEEL_TARBALL is a URL (not a local file), so the script
+# reaches fetch() rather than erroring earlier on "can't derive a tarball URL".
+farm_nonet="$SANDBOX/nonet-bin"; path_farm "$farm_nonet" git curl wget
+run env PATH="$farm_nonet" HOME="$HOME" KEEL_TARBALL="https://example.invalid/keel.tar.gz" sh "$boot" --home "$SANDBOX/nonet-home"
+check_status "no git, no curl/wget → exit 1" 1 "$STATUS"
+check_contains "no git, no curl/wget → names the missing fetch tools" "$OUT" "need git, or curl/wget"
+
+# E4: bash itself missing → the very first dependency check fails loudly (`need bash`), before
+# anything else runs.
+farm_nobash="$SANDBOX/nobash-bin"; path_farm "$farm_nobash" bash
+run env PATH="$farm_nobash" HOME="$HOME" sh "$boot" --home "$SANDBOX/nobash-home"
+check_status "bash missing → exit 1" 1 "$STATUS"
+check_contains "bash missing → names bash as the missing dependency" "$OUT" "'bash' is required but not found"
 
 summary

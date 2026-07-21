@@ -614,6 +614,17 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   fi
 fi
 
+# keel-setup.md: the closing summary below tells the adopter to run /keel-setup as the very first
+# next step (S8, backlog dir #4) — assert it actually landed instead of only doctor.sh --install
+# catching a silently-skipped wiring bug. WARN, not a hard fail: like doctor's own command-coverage
+# check (tools/doctor.sh, "missing commands are advisory"), a declined interactive drift prompt is a
+# legitimate reason the file might be an older copy, not a broken install.
+if [ -f "$HOME_DIR/commands/keel-setup.md" ] || [ -L "$HOME_DIR/commands/keel-setup.md" ]; then
+  echo "  OK   commands/keel-setup.md (the onboarding command the summary below tells you to run)"
+else
+  echo "  WARN commands/keel-setup.md is missing — the 'run /keel-setup' step below won't work."
+fi
+
 if [ "$foreign_core" = 1 ]; then
   echo "  WARN $HOME_DIR/CLAUDE.md predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
   echo "       Merge the rails you want by hand:  diff $HOME_DIR/CLAUDE.md $root/templates/CLAUDE.md"
