@@ -216,6 +216,8 @@ your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yours
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
 - [`PRINCIPLES.md`](PRINCIPLES.md) · [`FRAMEWORK.md`](FRAMEWORK.md) — the foundation and the reusable how-to.
 
+> **Note on code comments:** References like `dir #N`, `KB.n`, and `SEC4` are internal development shorthand; full context is always in the surrounding text.
+
 ## Tests, scope, license
 
 A small Bash test suite (no extra dependencies) runs on every change across Linux, macOS, and
