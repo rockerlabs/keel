@@ -17,11 +17,20 @@ job: keep the event list honest.
 |---|---|---|
 | `--hold "…"` | keel **restrained the agent** from weakening/bypassing a rule or guardrail (its highest function — scores above guard) | what you tried to do + which rule/guardrail stopped you (e.g. a classifier that rejected your fix, the gate refusing a forged sentinel) |
 | `--guard "…"` | a guardrail **blocked/caught bad content** (secret-guard, pre-pr-gate, public-audit) | **usually auto-ingested** — see below; pass `--guard` only for a fire not written to the log |
-| `--fire "…"` | an always-loaded **rule/convention was concretely applied** | rule id + the diff line, **and** why a cold session would *not* have done it (the counterfactual — if it would have anyway, this is not a fire) |
+| `--fire "…"` | an always-loaded **rule/convention was concretely applied** | rule id + the diff line, **and** a counterfactual that passes the two-test fire bar below |
 | `--hit "…"` | a needed **fact was pre-loaded and used** | where it lived (`CLAUDE.md` / memory) + where you used it |
 | `--miss "…"` | you had to **hunt for a fact that should have been always-loaded** | what you hunted for — this is *cost*, it lowers the score (promote pressure) |
 | `--friction "…"` | a **stale/noisy rule got in the way** | the rule + how it misled — *cost*, lowers the score (demote pressure) |
 | `--silent N` | always-loaded rules that **did not fire** this session | a bare count (no citation); the demote-candidate list — recorded, **not** folded into the score |
+
+**The `--fire` bar — two tests, both must pass, or the event is not a fire:**
+1. **Reachable.** The claimed moment must be one a cold session actually reaches. A behavior that lives
+   behind a keel-only mechanism (a command's built-in fork, a wrap ritual) or past the point where a cold
+   session would have stopped is *capability*, not a counterfactual — if it mattered, name it in `--gap`
+   prose; do not score it.
+2. **Beyond orientation.** "A cold session would not have done this" must survive "any competent agent does
+   this while orienting anyway" — reading the files it is about to edit, listing branches, running the test
+   suite. Behavior indistinguishable from ordinary orientation is not a fire.
 
 **Guardrail fires are collected for you.** In a tracked repo (an enabled `.keel/` marker — `keel-impact.sh
 enable`, or `init-project` by default — or `$KEEL_IMPACT_LOG`), the guardrail hooks (`secret-guard`,
@@ -37,9 +46,9 @@ measure), not a fake 0. `conf` (none/low/med/high) comes from how many events ba
 ## Steps
 
 1. **Enumerate events with citations.** Walk what the session actually did — the diff, commands run,
-   decisions, any guardrail output — and write one citation per event. Be adversarial with `--fire`: drop any
-   where a cold session would have done the same. If nothing is citable, the honest result is `—` or a low
-   score — let it be low.
+   decisions, any guardrail output — and write one citation per event. Be adversarial with `--fire` — apply
+   the two-test bar above and drop any event that fails either test. If nothing is citable, the honest
+   result is `—` or a low score — let it be low.
 2. **List the silent rules.** Which always-loaded rules/facts did *not* earn their place this session? Count
    them for `--silent`, and name the top one in `--gap`. Note any `--miss` as a promote candidate too.
 3. **Append the row** — repeat a flag once per cited event; the tool counts, derives, and records:
@@ -70,4 +79,7 @@ signal.
 > **Calibration (the only real counterfactual):** cited events still lean on *your* guess of what a cold
 > session would do. To anchor that, occasionally run the same task twice — Keel-loaded vs cold — and compare
 > outcomes. That delta is the ground truth these scores only estimate; distrust a long high-score trend
-> until an A/B backs it.
+> until an A/B backs it. The first such A/B (2026-07) is what the two-test fire bar above encodes — and it
+> also found the run's largest real keel-vs-cold delta (branch discipline) unclaimed by any event: an event
+> list can over-claim at the margins and under-claim the core, so the score is a floor on the estimate's
+> honesty, not a ceiling on Keel's effect.
