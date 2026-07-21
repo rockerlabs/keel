@@ -54,6 +54,10 @@ commit → push → PR → merge → delete the branch. (Full flow + the solo kn
 
 **Never commit private AI context.** Add to every project's `.gitignore`: `CLAUDE.md` / `.claude/`
 (private AI context — default gitignored; choose public deliberately for OSS), plus IDE/OS/build artifacts.
+
+**Before every commit**, `git fetch --prune` + `git branch --show-current` — refresh refs and confirm
+you're on your own, expected branch at the moment a stale picture would do damage. Non-blocking: a
+failed fetch (offline/auth) never blocks a local commit — say so and reconcile at push.
 <!-- KEEL-GIT-END -->
 
 ## Secrets & personal data
