@@ -14,6 +14,9 @@ run "$install" --link --home "$HOME/.claude" --no-hooks
 check_status "fresh --link → exit 0" 0 "$STATUS"
 # (run overwrites $OUT — assert on the install output BEFORE the file-state runs below)
 check_contains "verify confirms the import line" "$OUT" "OK   CLAUDE.md imports keel/CORE.md"
+# S8 (backlog dir #4): install's own Verify asserts the onboarding command it tells you to run next
+# actually landed — linked mode too, not just the copy path.
+check_contains "verify confirms keel-setup.md is wired" "$OUT" "OK   commands/keel-setup.md"
 for f in CORE.md FRAMEWORK.md PRINCIPLES.md; do
   check_link "keel/$f is a symlink" "$HOME/.claude/keel/$f"
   run cmp -s "$HOME/.claude/keel/$f" "$REPO_ROOT/$f"

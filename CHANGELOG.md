@@ -51,6 +51,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `/review` (which mis-parses a review level as a PR number).
 
 ### Fixed
+- **Audit-consolidation NITs batch (S4/S6/S7/S8, backlog dir #4).** The last actionable remainder of
+  the audit-consolidation residue ticket (everything else in it is either already folded into other
+  tickets, or a maintainer-only philosophy call — see `BACKLOG.md` #4):
+  - **Pre-PR gate no longer misses a chained/prefixed `gh pr create` (S6).** `tools/pre-pr-gate.sh`'s
+    PreToolUse(Bash) hook matched `gh pr create` only as a leading prefix, so `cd repo && gh pr
+    create` or `FOO=bar gh pr create` fell through as "not our business" and skipped the /polish
+    gate entirely — now a substring match. Residual, documented gap: a `gh` global flag before the
+    subcommand (`gh --repo owner/name pr create`) still breaks contiguity and would still slip
+    through; this stays a workflow reminder, not the secret boundary (that's secret-guard).
+  - **CI's `shellcheck` job now pins an exact, checksum-verified version (S7)** instead of floating
+    with whatever the runner image happens to ship — mirrors the SHA-pinned `actions/checkout`
+    already used in every job.
+  - **`install.sh`'s own Verify section now asserts `commands/keel-setup.md` landed (S8)** — the
+    very command its closing summary tells the adopter to run next — instead of only `doctor.sh
+    --install`'s separate audit catching a silently-skipped wiring bug.
+  - **`bootstrap.sh` error paths gained regression coverage (S4):** missing git for `--link`,
+    `--link` over an existing non-Keel directory, missing git+curl+wget, and a missing `bash` itself
+    — each already failed loudly and correctly; now pinned by tests.
 - **`branch-cleanup.sh` no longer offers to delete a merged worktree that's still a live parallel
   session** (dir #51, felt 2026-07-20). A merged, git-clean worktree used to grade ASK purely on
   commit age/name — but a session between its PR merge and the end of its own `/wrap` is

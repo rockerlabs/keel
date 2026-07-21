@@ -39,8 +39,21 @@ jobs:
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-24.04
+    env:
+      # Pinned like actions/checkout above (S7, backlog dir #4) — the runner image's preinstalled
+      # shellcheck floats with whatever that image ships, so results could drift silently between
+      # runs even though nothing in this repo changed.
+      SHELLCHECK_VERSION: v0.11.0
+      SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned ShellCheck
+        run: |
+          asset="shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${asset}" -o "/tmp/$asset"
+          echo "${SHELLCHECK_SHA256}  /tmp/$asset" | sha256sum -c -
+          tar -xJf "/tmp/$asset" -C /tmp
+          sudo mv "/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
       - name: ShellCheck
         run: |
           shellcheck --version

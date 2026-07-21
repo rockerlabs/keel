@@ -77,6 +77,16 @@ check_status "no sentinel → exit 0 (hook always exits 0)" 0 "$STATUS"
 check_contains "no sentinel → deny decision" "$OUT" '"permissionDecision":"deny"'
 check_contains "no sentinel → tells the user to run /polish" "$OUT" "run /polish first"
 
+# 2b. S6 (backlog dir #4): `gh pr create` reached via a chain/prefix — not a bare leading-prefix
+# match — must still be caught, no sentinel required to prove it: a bare prefix match would have
+# let this straight through as a non-target command (test 1's shape) instead of denying it.
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+gate "cd /tmp && gh pr create --fill" "$d"
+check_contains "chained command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+gate "GH_TOKEN=x gh pr create --fill" "$d"
+check_contains "env-prefixed command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+
 # 3. THE bypass case: a bare `touch` (empty sentinel, current behaviour) must NOT unlock the gate.
 d="$(mkrepo)"
 : > "$(sentinel_for "$d")"            # the `touch` bypass attempt
