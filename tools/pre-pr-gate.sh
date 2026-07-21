@@ -121,7 +121,11 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 # WORKFLOW gate, not the secret boundary — that's secret-guard): `sh -c 'gh pr create'` / `eval "gh pr
 # create"` (quoted → stripped, invisible to the lexer — a conscious regression from the old substring
 # match, which DID catch these); `gh "pr" create` (quoting the bare subcommand splits it out of the
-# token stream); a `gh` alias/wrapper-script rename.
+# token stream); a `gh` alias/wrapper-script rename; `env -u VAR gh pr create` (an `env` flag that
+# takes its own separate value token, e.g. `-u VAR`, is not itself a flag or a `VAR=value` assignment,
+# so the skip-loop stops on the value token instead of reaching `gh` — a flag-arity table to handle
+# this generically is disproportionate for a workflow gate; the plain-prefix `VAR=value gh pr create`
+# and `env VAR=value gh pr create` shapes above remain caught).
 IFS= read -r -d '' PPG_AWK_PROG <<'PPG_AWK_EOF' || true
 function flush_tok() {
   if (buf != "") { ntok++; tok[ntok] = buf; buf = "" }
@@ -164,7 +168,7 @@ function end_segment() {
   }
   p = index(line, "<<")
   kept = line
-  if (p > 0) {
+  if (p > 0 && substr(line, p, 3) != "<<<") {
     rest = substr(line, p + 2)
     idx = 1
     strip = 0
@@ -182,7 +186,10 @@ function end_segment() {
     }
     delim = substr(rest, start, idx - start)
     if (delim != "") {
-      kept = substr(line, 1, p - 1)
+      if (quote != "") idx++
+      # Only the "<<[-]DELIM" token itself is heredoc syntax — trailing same-line content (e.g. a
+      # chained `&& real-command`) is NOT part of the heredoc and must stay in scope for scanning.
+      kept = substr(line, 1, p - 1) substr(rest, idx)
       in_hd = 1; hd_delim = delim; hd_strip = strip
     }
   }

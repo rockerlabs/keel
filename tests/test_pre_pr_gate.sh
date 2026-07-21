@@ -96,6 +96,12 @@ check_contains "multiline command still caught → deny decision" "$OUT" '"permi
 # that the substring match (S6/dir #4) documented as a known residual gap — flip that doc note here.
 gate "gh --repo owner/name pr create" "$d"
 check_contains "global-flag-before-subcommand bypass now caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+# inline /polish review catch: a real command chained AFTER a heredoc marker on the SAME line
+# (`cmd <<EOF && gh pr create`) is not heredoc body — only the "<<[-]DELIM" token itself is heredoc
+# syntax; the trailing `&& gh pr create` executes once the heredoc's own command finishes and must
+# stay in scope. An earlier draft of the lexer dropped everything after "<<" on the line, missing this.
+gate "cat <<EOF && gh pr create --fill" "$d"
+check_contains "command chained after a same-line heredoc marker still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
 
 # 2c. backlog dir #58: the lexer fast-exit must NOT false-fire on a command that merely CONTAINS the
 # phrase outside real command position (prose, a quoted/heredoc string) — the felt cost of the old
