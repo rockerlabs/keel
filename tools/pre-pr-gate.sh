@@ -105,19 +105,135 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat 2>/dev/null)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Fast-exit: only care about `gh pr create`. A substring match (not just a leading-prefix match,
-# S6/backlog dir #4) so a chained/prefixed invocation — `cd repo && gh pr create`, `GH_TOKEN=x gh pr
-# create`, `foo; gh pr create` — still gets caught instead of silently bypassing the gate. False
-# positives (e.g. an unrelated command that happens to mention the phrase) just force an unneeded
-# /polish reminder; a false negative is an actual bypass, so err toward catching more. Still lexical,
-# not a real command parse — e.g. `gh --repo owner/name pr create` (a global flag before the
-# subcommand) has no contiguous "gh pr create" substring and would still slip through. Closing that
-# needs real argv-aware parsing, disproportionate for what the header above calls a WORKFLOW gate (a
-# /polish reminder), not the secret boundary — left as a known residual gap, not a promise this is exhaustive.
-case "$cmd" in
-  *"gh pr create"*) ;;
-  *) exit 0 ;;
-esac
+# Fast-exit: only care about `gh pr create` in real command position (backlog dir #58 — replaces the
+# earlier substring match, S6/backlog dir #4, which false-fired on any command merely CONTAINING the
+# phrase: a KB write whose heredoc/quoted TEXT mentioned it, a commit message, a grep for the phrase
+# itself). A small lexer over $cmd: strips heredoc bodies, strips quoted spans, splits on command
+# separators (`;` `&` `|` `&&` `||` `(` `)` backtick, `$(`, newline), then per segment skips leading
+# `VAR=value` assignments and `env`/`command` wrappers (incl. their own flags/assignments) and matches
+# iff the first remaining token is exactly `gh`, followed later by `pr`, followed later by `create` —
+# any tokens in between. That also closes the `gh --repo owner/name pr create` bypass (a global flag
+# before the subcommand, no longer a residual gap) that the old substring match missed.
+#
+# Still lexical, not a real shell parse: within this model it errs toward catching — an unstripped
+# exotic heredoc form, or prose that happens to sit at a real command position, falls through as a
+# false positive (an unneeded /polish reminder, not a bypass). Known accepted residuals (this is a
+# WORKFLOW gate, not the secret boundary — that's secret-guard): `sh -c 'gh pr create'` / `eval "gh pr
+# create"` (quoted → stripped, invisible to the lexer — a conscious regression from the old substring
+# match, which DID catch these); `gh "pr" create` (quoting the bare subcommand splits it out of the
+# token stream); a `gh` alias/wrapper-script rename; `env -u VAR gh pr create` (an `env` flag that
+# takes its own separate value token, e.g. `-u VAR`, is not itself a flag or a `VAR=value` assignment,
+# so the skip-loop stops on the value token instead of reaching `gh` — a flag-arity table to handle
+# this generically is disproportionate for a workflow gate; the plain-prefix `VAR=value gh pr create`
+# and `env VAR=value gh pr create` shapes above remain caught).
+IFS= read -r -d '' PPG_AWK_PROG <<'PPG_AWK_EOF' || true
+function flush_tok() {
+  if (buf != "") { ntok++; tok[ntok] = buf; buf = "" }
+}
+function is_assign(t) {
+  return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
+}
+function check_segment(   i,j,found_pr) {
+  i = 1
+  while (i <= ntok) {
+    if (is_assign(tok[i])) { i++; continue }
+    if (tok[i] == "env" || tok[i] == "command") {
+      i++
+      while (i <= ntok && (substr(tok[i], 1, 1) == "-" || is_assign(tok[i]))) i++
+      continue
+    }
+    break
+  }
+  if (i <= ntok && tok[i] == "gh") {
+    found_pr = 0
+    for (j = i + 1; j <= ntok; j++) {
+      if (!found_pr) {
+        if (tok[j] == "pr") found_pr = 1
+      } else if (tok[j] == "create") { matched = 1; return }
+    }
+  }
+}
+function end_segment() {
+  flush_tok()
+  if (ntok > 0) check_segment()
+  ntok = 0
+}
+{
+  line = $0
+  if (in_hd) {
+    check = line
+    if (hd_strip) { while (substr(check, 1, 1) == "\t") check = substr(check, 2) }
+    if (check == hd_delim) { in_hd = 0 }
+    next
+  }
+  p = index(line, "<<")
+  kept = line
+  if (p > 0 && substr(line, p, 3) != "<<<") {
+    rest = substr(line, p + 2)
+    idx = 1
+    strip = 0
+    if (substr(rest, idx, 1) == "-") { strip = 1; idx++ }
+    while (substr(rest, idx, 1) == " ") idx++
+    q = substr(rest, idx, 1)
+    quote = ""
+    if (q == "'" || q == "\"") { quote = q; idx++ }
+    start = idx
+    rlen = length(rest)
+    while (idx <= rlen) {
+      c = substr(rest, idx, 1)
+      if (quote != "") { if (c == quote) break } else { if (c == " " || c == "\t") break }
+      idx++
+    }
+    delim = substr(rest, start, idx - start)
+    if (delim != "") {
+      if (quote != "") idx++
+      # Only the "<<[-]DELIM" token itself is heredoc syntax — trailing same-line content (e.g. a
+      # chained `&& real-command`) is NOT part of the heredoc and must stay in scope for scanning.
+      kept = substr(line, 1, p - 1) substr(rest, idx)
+      in_hd = 1; hd_delim = delim; hd_strip = strip
+    }
+  }
+  n = length(kept)
+  pos = 1
+  while (pos <= n) {
+    c = substr(kept, pos, 1)
+    if (c == "\\") {
+      if (pos < n) { buf = buf substr(kept, pos + 1, 1); pos += 2 } else { pos++ }
+      continue
+    }
+    if (c == "'") {
+      flush_tok(); pos++
+      while (pos <= n && substr(kept, pos, 1) != "'") pos++
+      pos++
+      continue
+    }
+    if (c == "\"") {
+      flush_tok(); pos++
+      while (pos <= n) {
+        cc = substr(kept, pos, 1)
+        if (cc == "\\" && pos < n) { pos += 2; continue }
+        if (cc == "\"") { pos++; break }
+        pos++
+      }
+      continue
+    }
+    if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")" || c == "`") {
+      end_segment()
+      pos++
+      continue
+    }
+    if (c == " " || c == "\t") { flush_tok(); pos++; continue }
+    buf = buf c
+    pos++
+  }
+  end_segment()
+}
+END { exit (matched ? 0 : 1) }
+PPG_AWK_EOF
+
+if ! awk "$PPG_AWK_PROG" <<< "$cmd"; then
+  exit 0
+fi
 
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"

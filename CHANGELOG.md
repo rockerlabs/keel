@@ -60,6 +60,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `/review` (which mis-parses a review level as a PR number).
 
 ### Fixed
+- **Pre-PR gate's `gh pr create` match no longer false-fires on commands that merely CONTAIN the
+  phrase** (dir #58, felt 2026-07-21 — hours after PR #125 merged, twice in one `/wrap`: two KB
+  writes whose heredoc/quoted TEXT mentioned the phrase were denied as PR-creation attempts, each
+  also swallowing the rest of its `&&` chain). The substring match added for dir #4/S6 (above) fixed
+  the chained/prefixed-invocation miss but over-corrected into matching the phrase anywhere in the
+  string. `tools/pre-pr-gate.sh`'s fast-exit is now a small awk lexer over the command: strips
+  heredoc bodies, strips quoted spans, splits on command separators, then per segment skips leading
+  `VAR=value` assignments and `env`/`command` wrappers and matches iff the first remaining token is
+  exactly `gh`, followed later by `pr`, followed later by `create` — in real command position, not
+  anywhere in the string. This also closes dir #4/S6's documented residual gap: `gh --repo owner/name
+  pr create` (a global flag before the subcommand) is now caught too. Accepted residuals (a WORKFLOW
+  gate, not the secret boundary): `sh -c 'gh pr create'` / `eval "gh pr create"` (quoted → stripped —
+  a conscious regression from the substring match, which did catch these), `gh "pr" create`, a `gh`
+  alias/wrapper-script rename, `env -u VAR gh pr create` (an `env` flag with its own separate value
+  token). Inline `/polish` review (no `/code-review` skill in-session, so a single high-depth pass ran
+  directly on the diff) caught one real gap before merge: a command chained AFTER a same-line heredoc
+  marker (`cat <<EOF && gh pr create`) was being dropped along with the heredoc body instead of staying
+  in scope — only the `<<[-]DELIM` token itself is heredoc syntax, not the rest of the line.
 - **Audit-consolidation NITs batch (S4/S6/S7/S8, backlog dir #4).** The last actionable remainder of
   the audit-consolidation residue ticket (everything else in it is either already folded into other
   tickets, or a maintainer-only philosophy call — see `BACKLOG.md` #4):

@@ -86,6 +86,41 @@ gate "cd /tmp && gh pr create --fill" "$d"
 check_contains "chained command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
 gate "GH_TOKEN=x gh pr create --fill" "$d"
 check_contains "env-prefixed command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+gate "foo; gh pr create" "$d"
+check_contains "semicolon-chained command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+gate "env GH_PAGER= gh pr create" "$d"
+check_contains "env-wrapped command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+gate "$(printf 'git push\ngh pr create --fill')" "$d"
+check_contains "multiline command still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+# backlog dir #58: the lexical (awk lexer) fast-exit closes the `gh <global-flag> pr create` bypass
+# that the substring match (S6/dir #4) documented as a known residual gap — flip that doc note here.
+gate "gh --repo owner/name pr create" "$d"
+check_contains "global-flag-before-subcommand bypass now caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+# inline /polish review catch: a real command chained AFTER a heredoc marker on the SAME line
+# (`cmd <<EOF && gh pr create`) is not heredoc body — only the "<<[-]DELIM" token itself is heredoc
+# syntax; the trailing `&& gh pr create` executes once the heredoc's own command finishes and must
+# stay in scope. An earlier draft of the lexer dropped everything after "<<" on the line, missing this.
+gate "cat <<EOF && gh pr create --fill" "$d"
+check_contains "command chained after a same-line heredoc marker still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+
+# 2c. backlog dir #58: the lexer fast-exit must NOT false-fire on a command that merely CONTAINS the
+# phrase outside real command position (prose, a quoted/heredoc string) — the felt cost of the old
+# substring match (S6/dir #4), which denied unrelated KB writes because their TEXT mentioned the
+# phrase and swallowed the rest of their `&&` chain. No sentinel required: these must allow outright.
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+gate "echo gh pr create" "$d"
+check_absent "prose after echo → allowed (no deny payload)" "$OUT" "deny"
+gate 'echo "gh pr create"' "$d"
+check_absent "quoted prose after echo → allowed (no deny payload)" "$OUT" "deny"
+gate 'git commit -m "wire gh pr create gate"' "$d"
+check_absent "phrase inside a commit message string → allowed" "$OUT" "deny"
+gate "grep -c 'gh pr create' f" "$d"
+check_absent "phrase inside a single-quoted grep pattern → allowed" "$OUT" "deny"
+gate "$(printf "cat >> notes.md <<'EOF'\nsome text mentioning gh pr create here\nEOF\n")" "$d"
+check_absent "phrase mid-prose inside a heredoc body → allowed" "$OUT" "deny"
+gate "$(printf "cat >> notes.md <<'EOF'\ngh pr create is a doc-snippet line\nEOF\n")" "$d"
+check_absent "phrase starting a heredoc body line → allowed (proves the heredoc strip, not just command position)" "$OUT" "deny"
 
 # 3. THE bypass case: a bare `touch` (empty sentinel, current behaviour) must NOT unlock the gate.
 d="$(mkrepo)"
