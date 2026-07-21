@@ -24,31 +24,43 @@ check_status "tag with an embedded quote -> exit 1" 1 "$STATUS"
 run "$stamp" "$(printf 'bad\ntag')"
 check_status "tag with an embedded newline -> exit 1" 1 "$STATUS"
 
+run "$stamp" 'bad\tag'
+check_status "tag with an embedded backslash -> exit 1" 1 "$STATUS"
+
 run "$stamp" v1.2.3
 check_status "stamp to stdout -> exit 0" 0 "$STATUS"
 check_contains "stdout carries the stamped default ref" "$OUT" 'KEEL_DEFAULT_REF="v1.2.3"'
+
+# regression: a tag containing a character that's special to sed's s/// (/, &) must be substituted
+# in literally, not reinterpreted as a delimiter or a whole-match backreference.
+run "$stamp" "release/1.0"
+check_status "stamp a tag with a slash -> exit 0" 0 "$STATUS"
+check_contains "slash in the tag is copied through literally" "$OUT" 'KEEL_DEFAULT_REF="release/1.0"'
+
+run "$stamp" "a&b"
+check_status "stamp a tag with an ampersand -> exit 0" 0 "$STATUS"
+check_contains "ampersand in the tag is copied through literally, not expanded to the whole match" \
+  "$OUT" 'KEEL_DEFAULT_REF="a&b"'
 
 outfile="$SANDBOX/bootstrap-stamped.sh"
 run "$stamp" v1.2.3 "$outfile"
 check_status "stamp to a file -> exit 0" 0 "$STATUS"
 check_file "stamped file created" "$outfile"
 check_contains "stamped file carries the tag" "$(cat "$outfile")" 'KEEL_DEFAULT_REF="v1.2.3"'
-check_contains "stamped file is still valid POSIX sh" "$(sh -n "$outfile" 2>&1; echo ok)" "ok"
+run sh -n "$outfile"
+check_status "stamped file is still valid POSIX sh" 0 "$STATUS"
 
 check_contains "tracked bootstrap.sh always ships an empty default ref" \
   "$(cat "$REPO_ROOT/bootstrap.sh")" 'KEEL_DEFAULT_REF=""'
 
 # a source file with no KEEL_DEFAULT_REF="" line (already stamped, or drifted) must refuse rather
-# than silently no-op or stamp twice
-already="$SANDBOX/already-stamped-bootstrap.sh"
-sed 's/KEEL_DEFAULT_REF=""/KEEL_DEFAULT_REF="v0.0.0"/' "$REPO_ROOT/bootstrap.sh" > "$already"
-# stamp-release-bootstrap.sh always reads its OWN repo's bootstrap.sh (../bootstrap.sh relative to the
-# tool), so exercise the guard by copying the tool into a throwaway "repo" whose bootstrap.sh is
-# already stamped/drifted.
+# than silently no-op or stamp twice. stamp-release-bootstrap.sh always reads its OWN repo's
+# bootstrap.sh (../bootstrap.sh relative to the tool), so exercise the guard by copying the tool into
+# a throwaway "repo" whose bootstrap.sh is already stamped/drifted.
 drifted_tools="$SANDBOX/drifted-repo/tools"
 mkdir -p "$drifted_tools"
 cp "$stamp" "$drifted_tools/stamp-release-bootstrap.sh"
-cp "$already" "$SANDBOX/drifted-repo/bootstrap.sh"
+sed 's/KEEL_DEFAULT_REF=""/KEEL_DEFAULT_REF="v0.0.0"/' "$REPO_ROOT/bootstrap.sh" > "$SANDBOX/drifted-repo/bootstrap.sh"
 run "$drifted_tools/stamp-release-bootstrap.sh" v2.0.0
 check_status "refuses to stamp a source with no bare KEEL_DEFAULT_REF=\"\" line" 1 "$STATUS"
 check_contains "explains the refusal" "$OUT" "already-stamped"

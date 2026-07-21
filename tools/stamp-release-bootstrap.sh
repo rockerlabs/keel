@@ -7,7 +7,7 @@
 # Usage:
 #   tools/stamp-release-bootstrap.sh <tag> [OUT]
 #
-#   <tag>   the release tag to stamp in, e.g. v0.6.0 (must be non-empty, no embedded quote/newline)
+#   <tag>   the release tag to stamp in, e.g. v0.6.0 (must be non-empty, no quote/backslash/newline)
 #   [OUT]   output path (default: stdout)
 #
 # Wire into a release:
@@ -19,8 +19,10 @@ tag="${1:?usage: stamp-release-bootstrap.sh <tag> [OUT]}"
 out="${2:-}"
 
 case "$tag" in
-  *\"*|*$'\n'*) echo "stamp-release-bootstrap: tag must not contain a quote or newline: $tag" >&2; exit 1 ;;
-  "") echo "stamp-release-bootstrap: tag must not be empty" >&2; exit 1 ;;
+  # \ is also rejected: it's not a legal git ref character (git-check-ref-format), and awk -v applies
+  # backslash-escape processing to its assignment value, so a literal \ in the tag would otherwise be
+  # silently reinterpreted (e.g. \b as backspace) rather than copied through.
+  *\"*|*$'\n'*|*\\*) echo "stamp-release-bootstrap: tag must not contain a quote, backslash, or newline: $tag" >&2; exit 1 ;;
 esac
 
 src="$(cd "$(dirname "$0")/.." && pwd)/bootstrap.sh"
@@ -31,7 +33,9 @@ if ! grep -q '^KEEL_DEFAULT_REF=""$' "$src"; then
   exit 1
 fi
 
-stamped="$(sed "s/^KEEL_DEFAULT_REF=\"\"\$/KEEL_DEFAULT_REF=\"$tag\"/" "$src")"
+# awk -v (not sed's regex substitution) so a tag containing sed-special characters (/, &, \ — all
+# legal in a git ref) can't break the delimiter or get re-interpreted as a match-group backreference.
+stamped="$(awk -v tag="$tag" '$0 == "KEEL_DEFAULT_REF=\"\"" { print "KEEL_DEFAULT_REF=\"" tag "\""; next } { print }' "$src")"
 
 if [ -n "$out" ]; then
   printf '%s\n' "$stamped" > "$out"
