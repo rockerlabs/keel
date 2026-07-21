@@ -112,7 +112,7 @@ Cited events (REPEAT a flag once per event; the count is the number of citations
 citation, no count). Each citation is archived to the evidence file so the score is a checkable trail:
   --hold "cite"      keel restrained the AGENT from weakening/bypassing a rule or guardrail (its highest function)
   --guard "cite"     guardrail blocked/caught bad content (usually auto-ingested; pass only for a log-missed fire)
-  --fire "cite"      an always-loaded rule/convention was concretely applied (cold session would not have)
+  --fire "cite"      an always-loaded rule/convention was concretely applied (must pass the two-test fire bar in commands/keel-score.md)
   --hit "cite"       a needed fact was pre-loaded and used
   --miss "cite"      had to hunt for a fact that should have been always-loaded (promote pressure)
   --friction "cite"  a stale/noisy rule got in the way (demote pressure)
