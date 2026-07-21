@@ -43,8 +43,10 @@ git -C "$repo" worktree add -q "$repo.wt-keep"  claude/wt-keep  >/dev/null
 : > "$repo.wt-dirty/wip.txt"                           # untracked, NOT ignored -> "dirty" (remove would refuse)
 mkdir -p "$repo.wt-keep/private"; : > "$repo.wt-keep/private/draft.txt"   # ignored + non-disposable -> keep
 
-# report, default --days 7: fresh branch is recent, old ones cross the age gate
-run_in "$repo" bash "$TOOL" --days 7
+# report, default --days 7: fresh branch is recent, old ones cross the age gate. --live-hours 0 disables the
+# liveness probe for these pre-existing assertions -- the worktree fixtures above were just created, so their
+# file mtimes are "now" and would otherwise all read as live; liveness itself gets its own scenario below.
+run_in "$repo" bash "$TOOL" --days 7 --live-hours 0
 check_status  "report exits 0" 0 "$STATUS"
 OUT_KEEP="$OUT"
 check_contains "old ephemeral merged -> AUTO"       "$(line_for claude/old-merged)"    "AUTO"
@@ -71,7 +73,7 @@ check_status "report mode is non-destructive (branch)" 0 "$STATUS"
 check_contains "report mode is non-destructive (worktree)" "$([ -d "$repo.wt-clean" ] && echo y)" "y"
 
 # --days 0 drops the age gate: fresh ephemeral + clean worktree join AUTO; keep-ignored/off-pattern stay ASK
-run_in "$repo" bash "$TOOL" --days 0
+run_in "$repo" bash "$TOOL" --days 0 --live-hours 0
 check_contains "days 0: fresh ephemeral merged -> AUTO"   "$(line_for feature/fresh-merged)" "AUTO"
 check_contains "days 0: clean worktree still AUTO"        "$(line_for claude/wt-clean)"      "AUTO"
 check_contains "days 0: keep-ignored still ASK (age-independent)" "$(line_for claude/wt-keep)" "keep-ignored"
@@ -81,7 +83,7 @@ check_contains "days 0: off-pattern name stays ASK"       "$(line_for staging)" 
 check_contains "days 0 summary" "$OUT" "3 auto-safe, 2 to confirm (ASK), 1 with live work (FLAG)"
 
 # --prune-safe (default --days 7) deletes ONLY the AUTO tier: the free branch AND the dead worktree
-run_in "$repo" bash "$TOOL" --prune-safe --days 7
+run_in "$repo" bash "$TOOL" --prune-safe --days 7 --live-hours 0
 check_status   "prune-safe run exits 0" 0 "$STATUS"
 check_contains "prune-safe deletes the AUTO free branch" "$(line_for claude/old-merged)" "deleted"
 check_contains "prune-safe removes the dead worktree"    "$(line_for claude/wt-clean)"   "removed"
@@ -107,6 +109,73 @@ check_contains "keep-ignored worktree dir survives prune"  "$([ -d "$repo.wt-kee
 check_contains "keep-ignored private/ content survives"    "$([ -f "$repo.wt-keep/private/draft.txt" ] && echo y)" "y"
 check_contains "dirty worktree dir survives prune"         "$([ -d "$repo.wt-dirty" ] && echo y)" "y"
 
+# --- liveness probe (backlog #51): a merged, git-clean worktree with recently-touched files is a possibly-
+# live parallel session, not a stale ASK candidate -- even though `git worktree remove` would happily take it.
+# `touch -t` backdates portably (BSD/GNU/busybox all accept the same [[CC]YY]MMDDhhmm[.SS] form), letting the
+# "old" half of the scenario be deterministic instead of racing the clock.
+liverepo="$(new_repo)"
+git -C "$liverepo" symbolic-ref HEAD refs/heads/main
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$liverepo" commit -q --allow-empty -m c1
+git -C "$liverepo" commit -q --allow-empty -m c2               # recent; main tip
+git -C "$liverepo" branch claude/wt-fresh HEAD                 # merged, ephemeral, recent (0d) -> would be ASK
+git -C "$liverepo" branch claude/wt-quiet HEAD                 # same shape, but its files get backdated
+git -C "$liverepo" worktree add -q "$liverepo.wt-fresh" claude/wt-fresh >/dev/null
+git -C "$liverepo" worktree add -q "$liverepo.wt-quiet" claude/wt-quiet >/dev/null
+find "$liverepo.wt-quiet" -exec touch -t 202001011200.00 {} + 2>/dev/null
+
+# both branches are 0d old (< default --days 7) and ephemeral -- absent the liveness probe both would be a
+# plain ASK-recent. The probe's job is to pull ONLY the fresh-mtime one out into FLAG.
+run_in "$liverepo" bash "$TOOL" --live-hours 6
+check_contains "fresh-mtime clean worktree -> FLAG (possibly live)" \
+  "$(line_for claude/wt-fresh)" "FLAG"
+check_contains "live FLAG names it a possible parallel session" \
+  "$(line_for claude/wt-fresh)" "possibly a live parallel session"
+check_absent   "live FLAG gives NO destructive command" \
+  "$(line_for claude/wt-fresh)" "git worktree remove"
+check_contains "old-mtime clean worktree stays ASK" \
+  "$(line_for claude/wt-quiet)" "ASK"
+check_absent   "old-mtime worktree is NOT flagged live" \
+  "$(line_for claude/wt-quiet)" "FLAG"
+
+# --live-hours 0 turns the probe off: the fresh-mtime worktree falls back to its ordinary ASK-recent grade.
+run_in "$liverepo" bash "$TOOL" --live-hours 0
+check_contains "live-hours 0 disables the probe: fresh-mtime worktree is ASK again" \
+  "$(line_for claude/wt-fresh)" "ASK"
+check_absent   "live-hours 0: fresh-mtime worktree no longer FLAGged" \
+  "$(line_for claude/wt-fresh)" "FLAG"
+
+run bash "$TOOL" --live-hours abc
+check_status "non-numeric --live-hours exits 2" 2 "$STATUS"
+
+# --- the felt incident itself: an OLD, ephemeral, clean worktree -- otherwise a plain AUTO -- that's been
+# touched recently must survive --prune-safe, not just report as FLAG. Commit age alone (what AUTO/ASK grade
+# on) says nothing about whether a worktree is still attached to a live session; only the probe does.
+oldliverepo="$(new_repo)"
+git -C "$oldliverepo" symbolic-ref HEAD refs/heads/main
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$oldliverepo" commit -q --allow-empty -m c1
+c1ol="$(git -C "$oldliverepo" rev-parse HEAD)"
+git -C "$oldliverepo" commit -q --allow-empty -m c2                     # main tip
+git -C "$oldliverepo" branch claude/wt-old-touched "$c1ol"              # old commit, ephemeral -> AUTO-eligible
+git -C "$oldliverepo" worktree add -q "$oldliverepo.wt-old-touched" claude/wt-old-touched >/dev/null
+# worktree files are freshly created by `worktree add` above -- naturally within the live window, no backdate
+
+run_in "$oldliverepo" bash "$TOOL" --prune-safe --days 7
+check_contains "old+touched worktree is FLAGged, not auto-removed" \
+  "$(line_for claude/wt-old-touched)" "FLAG"
+check_contains "prune-safe removed nothing this run" "$OUT" "0 removed"
+run git -C "$oldliverepo" rev-parse --verify -q refs/heads/claude/wt-old-touched
+check_status "the branch survives prune-safe" 0 "$STATUS"
+check_contains "the worktree dir survives prune-safe" \
+  "$([ -d "$oldliverepo.wt-old-touched" ] && echo y)" "y"
+
+# proof the probe -- not some other gate -- was what held it back: with --live-hours 0, the same fixture
+# (same age, same commit, same worktree) is provably safe again and prune-safe DOES remove it.
+run_in "$oldliverepo" bash "$TOOL" --prune-safe --days 7 --live-hours 0
+check_contains "live-hours 0 lets prune-safe remove the now-idle worktree" \
+  "$(line_for claude/wt-old-touched)" "removed"
+run git -C "$oldliverepo" rev-parse --verify -q refs/heads/claude/wt-old-touched
+check_status "branch is gone once the probe is disabled" 1 "$STATUS"
+
 # --- current branch is never a candidate, even if otherwise AUTO-eligible ----------------------
 repo2="$(new_repo)"
 git -C "$repo2" symbolic-ref HEAD refs/heads/main
@@ -131,14 +200,14 @@ git -C "$wtrepo" branch claude/session "$c1w"                  # merged, ephemer
 git -C "$wtrepo" worktree add -q "$wtrepo.session" claude/session >/dev/null
 git -C "$wtrepo" branch claude/other "$c1w"                    # a second merged worktree (clean)
 git -C "$wtrepo" worktree add -q "$wtrepo.other" claude/other >/dev/null
-run_in "$wtrepo.session" bash "$TOOL" --days 0
+run_in "$wtrepo.session" bash "$TOOL" --days 0 --live-hours 0
 check_absent   "own worktree is never listed to remove itself" "$OUT" "claude/session"
 check_contains "a different clean merged worktree is AUTO"     "$(line_for claude/other)" "AUTO"
 
 # KEEL_KEEP_WORKTREE shields a named worktree even when the tool runs from ELSEWHERE (wrap from main-top):
 # run from the main checkout but protect the session worktree by path.
 export KEEL_KEEP_WORKTREE="$wtrepo.session"
-run_in "$wtrepo" bash "$TOOL" --days 0
+run_in "$wtrepo" bash "$TOOL" --days 0 --live-hours 0
 unset KEEL_KEEP_WORKTREE
 check_absent   "KEEL_KEEP_WORKTREE shields the named worktree from a run elsewhere" "$OUT" "claude/session"
 check_contains "other worktree still surfaces (AUTO) under KEEL_KEEP_WORKTREE" "$(line_for claude/other)" "AUTO"

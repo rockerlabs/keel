@@ -18,9 +18,12 @@
 #   ASK    merged but not provably safe unattended: a free branch that's recent (< --days) or off-pattern
 #          (maybe long-lived like staging / release-*), OR a clean worktree that's recent/off-pattern/holds
 #          non-disposable gitignored content. Surfaced with the manual command -- never auto-removed.
-#   FLAG   merged worktree with LIVE work — uncommitted or untracked-non-ignored files, so `git worktree
-#          remove` would refuse without --force. Reported WITHOUT a destructive command (forcing it would
-#          discard that work); the human reviews first. This is the genuinely-alive case, not mere presence.
+#   FLAG   merged worktree with LIVE work — either uncommitted/untracked-non-ignored files (so `git worktree
+#          remove` would refuse without --force), OR clean but with a file (or the .git link file) touched
+#          within --live-hours: a worktree merged TODAY can be a parallel session still mid-wrap (ledger/
+#          backlog writes land AFTER the merge), not a stale leftover -- see backlog #51. Reported WITHOUT a
+#          destructive command (forcing it would discard that work, or race a live session); the human
+#          reviews first. This is the genuinely-alive case, not mere presence.
 #   (skip) not merged (unmerged work OR a squash-merge, which is indistinguishable from active work without
 #          gh -- left alone by design: zero-dep buys no false positives at the cost of not cleaning
 #          squash-merged branches), the default branch itself, and the current branch / worktree.
@@ -30,8 +33,8 @@
 # does NO network and NO deletion in report mode, so it is safe to run and unit-test offline.
 #
 # Usage:
-#   branch-cleanup.sh [--days N]               report AUTO/ASK/FLAG tiers; delete nothing (default)
-#   branch-cleanup.sh --prune-safe [--days N]  delete the AUTO tier, then report ASK/FLAG
+#   branch-cleanup.sh [--days N] [--live-hours N]  report AUTO/ASK/FLAG tiers; delete nothing (default)
+#   branch-cleanup.sh --prune-safe [--days N]      delete the AUTO tier, then report ASK/FLAG
 #   branch-cleanup.sh -h | --help
 #
 # Env: KEEL_CLEANUP_GLOBS overrides the ephemeral-name allowlist (space-separated globs).
@@ -46,8 +49,8 @@ usage() {
   cat <<'EOF'
 branch-cleanup.sh — classify local branches for post-merge cleanup (zero-dep, network-free).
 
-  branch-cleanup.sh [--days N]               report AUTO/ASK/FLAG tiers; delete nothing (default)
-  branch-cleanup.sh --prune-safe [--days N]  delete/remove the AUTO tier, then report ASK/FLAG
+  branch-cleanup.sh [--days N] [--live-hours N]  report AUTO/ASK/FLAG tiers; delete nothing (default)
+  branch-cleanup.sh --prune-safe [--days N]      delete/remove the AUTO tier, then report ASK/FLAG
   branch-cleanup.sh -h | --help
 
 AUTO = merged + >= N days old (default 7) + ephemeral name. A free branch is deleted; a worktree that is
@@ -55,7 +58,9 @@ AUTO = merged + >= N days old (default 7) + ephemeral name. A free branch is del
        branch deleted. Nothing of value is lost.
 ASK  = merged but not provably safe: recent/off-pattern free branch, or a clean worktree that's
        recent/off-pattern/holds non-disposable ignored content -> confirm before removing.
-FLAG = merged worktree with live (uncommitted/untracked) work -> reported for review, no destructive command.
+FLAG = merged worktree with live work -> reported for review, no destructive command. Either uncommitted/
+       untracked files, or (clean) a file touched within --live-hours (default 6) -- possibly a parallel
+       session still mid-wrap, not a stale leftover.
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
      KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
 EOF
@@ -67,6 +72,7 @@ EOF
 # it script-wide is safe (case-statement pattern matching is unaffected by -f).
 set -f
 DAYS=7
+LIVE_HOURS=6
 PRUNE=0
 GLOBS="${KEEL_CLEANUP_GLOBS:-claude/* feat/* feature/* fix/* bugfix/* hotfix/* docs/* chore/* refactor/* test/*}"
 
@@ -74,12 +80,18 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --days) DAYS="${2:-}"; shift 2 || shift ;;   # `|| shift` so a trailing `--days` doesn't abort under set -e
     --days=*) DAYS="${1#*=}"; shift ;;
+    --live-hours) LIVE_HOURS="${2:-}"; shift 2 || shift ;;
+    --live-hours=*) LIVE_HOURS="${1#*=}"; shift ;;
     --prune-safe) PRUNE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'branch-cleanup: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
-case "$DAYS" in ''|*[!0-9]*) printf 'branch-cleanup: --days must be a non-negative integer\n' >&2; exit 2 ;; esac
+require_nonneg_int() {
+  case "$2" in ''|*[!0-9]*) printf 'branch-cleanup: %s must be a non-negative integer\n' "$1" >&2; exit 2 ;; esac
+}
+require_nonneg_int --days "$DAYS"
+require_nonneg_int --live-hours "$LIVE_HOURS"
 
 git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
 
@@ -150,12 +162,49 @@ EOF
   printf 'clean\n'
 }
 
+# Portable file mtime, epoch seconds: GNU/busybox stat use -c '%Y'; BSD stat (macOS) uses -f '%m'. Detected
+# ONCE below (STAT_FMT) rather than trying both forms per file -- see the ticket note on stat -f/-c divergence.
+epoch_mtime() {
+  case "$STAT_FMT" in
+    c) stat -c '%Y' "$1" 2>/dev/null ;;
+    f) stat -f '%m' "$1" 2>/dev/null ;;
+  esac
+}
+# Probed against $0 (this script's own path), which relies on being invoked by path (`bash
+# tools/branch-cleanup.sh ...`, as wrap.md and every test do) rather than piped via stdin -- a stdin
+# invocation would make $0 unstat-able and silently pin STAT_FMT to the BSD form.
+STAT_FMT=c
+stat -c '%Y' "$0" >/dev/null 2>&1 || STAT_FMT=f
+
+# Is any file under the worktree (including its .git link file) touched within --live-hours? A merged,
+# git-clean worktree with fresh file activity is plausibly a parallel session still mid-wrap, not a dead
+# leftover (backlog #51). `find -newermt`/`-mmin` aren't reliably available on busybox, so this compares
+# mtimes directly instead of relying on find's own time predicates -- only -name/-prune/-type/-print, which
+# are portable across GNU, BSD, and busybox find. Heavy regenerable dirs are pruned to bound the walk (a
+# build having just run in one doesn't itself prove a live session, and scanning e.g. node_modules is slow);
+# .DS_Store is pruned too -- Finder/a cloud-sync watcher can refresh it well after a session ends, and
+# worktree_state already treats it as disposable, not evidence of work.
+worktree_live() {
+  [ "$LIVE_HOURS" -eq 0 ] && return 1   # probe disabled -- skip the walk entirely
+  local wtp="$1" threshold f m
+  threshold=$(( now - LIVE_HOURS * 3600 ))
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    m="$(epoch_mtime "$f")"
+    case "$m" in ''|*[!0-9]*) continue ;; esac
+    [ "$m" -gt "$threshold" ] && return 0
+  done < <(find "$wtp" \( -name node_modules -o -name target -o -name dist -o -name build -o -name .venv \
+    -o -name venv -o -name .next -o -name .gradle -o -name Pods -o -name DerivedData -o -name .build \
+    -o -name vendor -o -name .idea -o -name .DS_Store \) -prune -o -type f -print 2>/dev/null)
+  return 1
+}
+
 now="$(date +%s)"
 auto="";   n_auto=0          # free branches safe to delete (also carries worktree autos, see autowt)
 autowt=""                   # worktrees safe to auto-remove: name<TAB>age<TAB>path
 ask="";    n_ask=0           # free branches to confirm
 askwt=""                    # worktrees to confirm: name<TAB>age<TAB>path<TAB>reason
-flag="";   n_flag=0          # worktrees with live (dirty) work — never auto-touched
+flag="";   n_flag=0          # worktrees with live work (dirty OR recently-touched-but-clean) — never auto-touched
 
 # --merged="$base" does the "merged" gate in git itself (tip reachable from base — an unmerged or
 # squash-merged branch is simply not listed), replacing a per-branch `git merge-base` fork. The committer
@@ -172,7 +221,9 @@ while read -r b cd; do
     [ "$wtp" -ef "$current_wt" ] && continue                # the worktree we're standing in -> never touch
     state="$(worktree_state "$wtp")"
     if [ "$state" = dirty ]; then                          # live work -> remove would need --force. Never auto.
-      flag="${flag}${b}"$'\t'"${wtp}"$'\n'; n_flag=$((n_flag + 1))
+      flag="${flag}${b}"$'\t'"${wtp}"$'\t'"dirty"$'\n'; n_flag=$((n_flag + 1))
+    elif worktree_live "$wtp"; then                        # clean but recently touched -> possibly a live
+      flag="${flag}${b}"$'\t'"${wtp}"$'\t'"live"$'\n'; n_flag=$((n_flag + 1))   # parallel session, not dead
     elif [ "$state" = clean ] && [ "$age" -ge "$DAYS" ] && [ "$match" -eq 1 ]; then
       # provably safe: idle, ephemeral name, nothing of value on disk -> auto-remove like a confident branch
       autowt="${autowt}${b}"$'\t'"${age}"$'\t'"${wtp}"$'\n'; n_auto=$((n_auto + 1))
@@ -240,11 +291,17 @@ while IFS=$'\t' read -r b age wtp reason; do
   printf 'ASK   %-40s merged, %sd old (%s), worktree %s  ->  git worktree remove %s\n' "$b" "$age" "$reason" "$wtp" "$wtp"
 done < <(printf '%s' "$askwt")
 
-# FLAG is now only a worktree with LIVE (uncommitted/untracked) work — surfaced without a destructive
-# command on purpose: removing it needs --force and would discard that work, so the human reviews first.
-while IFS=$'\t' read -r b path; do
+# FLAG is a worktree with LIVE work — surfaced without a destructive command on purpose: removing it could
+# discard that work or race a live session, so the human reviews first. Two distinct reasons:
+#   dirty — uncommitted/untracked files; `git worktree remove` would refuse without --force.
+#   live  — clean, but touched within --live-hours; possibly a parallel session still mid-wrap (backlog #51).
+while IFS=$'\t' read -r b path reason; do
   [ -n "$b" ] || continue
-  printf 'FLAG  %-40s worktree %s has uncommitted/untracked work — review before removing\n' "$b" "$path"
+  if [ "$reason" = live ]; then
+    printf 'FLAG  %-40s worktree %s merged but recently active — possibly a live parallel session; leave it, re-run cleanup later\n' "$b" "$path"
+  else
+    printf 'FLAG  %-40s worktree %s has uncommitted/untracked work — review before removing\n' "$b" "$path"
+  fi
 done < <(printf '%s' "$flag")
 
 if [ "$PRUNE" -eq 1 ]; then

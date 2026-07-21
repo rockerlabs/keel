@@ -17,6 +17,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   Mirrored into `templates/CLAUDE.md` (byte-pinned by `test_core_wrapper_sync.sh`).
 
 ### Fixed
+- **`branch-cleanup.sh` no longer offers to delete a merged worktree that's still a live parallel
+  session** (dir #51, felt 2026-07-20). A merged, git-clean worktree used to grade ASK purely on
+  commit age/name — but a session between its PR merge and the end of its own `/wrap` is
+  clean-but-attached, invisible to that check, and got offered a destructive `git worktree remove`
+  command. A new `--live-hours` mtime probe (default 6h) grades any file (or the `.git` link file)
+  touched within the window as FLAG instead, regardless of age or cleanliness; `--live-hours 0`
+  disables it. Portable across GNU/BSD/busybox (`stat -c`/`-f` fallback, plain `find` predicates).
 - **`curl … | sh` copy-mode install no longer ships a dangling `keel` CLI** (v0.5.0's named known
   issue, the first public audit's one broken-functionality finding). Bootstrap's copy mode installs
   from a temp clone that is deleted right after the run, so the `bin/keel` symlink it used to wire
