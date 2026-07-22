@@ -163,14 +163,111 @@ check_contains "--no-ingest ignores the log" "$OUT" "from 1 event(s)"
 check_contains "--no-ingest preserves the log" "$(wc -l < "$LOG" | tr -d ' ')" "1"
 
 # a final log line with NO trailing newline (a producer appending directly, or a partial write) must still
-# be ingested — otherwise it is dropped and then lost when the log is truncated.
+# be ingested — otherwise it is dropped and then lost when the log is truncated. Timestamps are stamped
+# live (not a fixed past date) so the fixture stays inside the default age cap regardless of when this
+# test runs (backlog #59 — a hardcoded past date here would now read as stale and break this test).
 LEDGER="$SANDBOX/ledger-nonl.md"; LOG="$SANDBOX/events-nonl.log"; EVIDENCE="$SANDBOX/evidence-nonl.md"
 export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"
-printf '%s\tguard\tsecret-guard\tblocked\n' "2026-01-01T00:00:00Z" > "$LOG"
-printf '%s\tguard\tsecret-guard\tblocked'   "2026-01-01T00:00:01Z" >> "$LOG"   # no trailing newline
+_nonl_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s\tguard\tsecret-guard\tblocked\n' "$_nonl_ts" > "$LOG"
+printf '%s\tguard\tsecret-guard\tblocked'   "$_nonl_ts" >> "$LOG"   # no trailing newline
 run bash "$TOOL" add --gap "none"
 check_contains "unterminated final log line is still ingested" "$OUT" "2 auto-ingested"
 check_contains "both guards reach the score (none dropped)" "$(cat "$LEDGER")" "| 100 | low | 2 | 0 |"
+
+# --- auto-ingest age cap (backlog #59): a session that never called `add` leaves events unconsumed in the
+# log, where they'd otherwise mis-attribute to whichever session's row lands next -- anything strictly
+# older than the cutoff is stale: not counted, archived with a note instead of a citation, still consumed
+# (log truncated) so it never resurfaces. ------------------------------------------------------------
+LEDGER="$SANDBOX/ledger-agecap.md"; LOG="$SANDBOX/events-agecap.log"; EVIDENCE="$SANDBOX/evidence-agecap.md"
+export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"
+unset KEEL_INGEST_MAX_AGE_HOURS 2>/dev/null || true
+fresh_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+old_ts="2000-01-01T00:00:00Z"   # long past any sane cutoff -- the felt "unconsumed from a prior session" case
+
+# a lone fresh event: counted, and printed as an ingested line (visibility, spec item 3)
+printf '%s\tguard\tsecret-guard\tblocked\n' "$fresh_ts" > "$LOG"
+run bash "$TOOL" add --gap none
+check_status "fresh event add succeeds" 0 "$STATUS"
+check_contains "fresh event is counted" "$OUT" "derived score 100/100"
+check_contains "fresh event prints an ingested line" "$OUT" "ingested: $fresh_ts guard secret-guard | blocked"
+check_contains "log is truncated after a fresh ingest" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# a lone stale event (the felt scenario): NOT counted, printed as stale-skipped, archived with a note
+# (not a citation), and the log is still consumed
+printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts" > "$LOG"
+run bash "$TOOL" add --gap none
+check_status "stale-only add succeeds" 0 "$STATUS"
+check_contains "stale event derives an em-dash (nothing counted)" "$OUT" "derived score —/100"
+check_contains "stale event prints a stale-skipped line" "$OUT" "stale-skipped: $old_ts guard secret-guard | blocked"
+check_contains "stale event is archived with the skip note" "$(cat "$EVIDENCE")" "stale, unattributed — skipped by the 12h ingest cap"
+check_contains "stale event's original line is archived" "$(cat "$EVIDENCE")" "$(printf '%s\tguard\tsecret-guard\tblocked' "$old_ts")"
+check_contains "stale note carries the re-cite hint" "$(cat "$EVIDENCE")" "re-cite explicitly via flags if genuinely this session's"
+check_contains "log is truncated after a stale-only run (no resurfacing)" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# mixed fresh + stale in one log: only the fresh one counts; both print; both are consumed
+{
+  printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts"
+  printf '%s\tfire\tsession\trule applied\n' "$fresh_ts"
+} > "$LOG"
+run bash "$TOOL" add --gap none
+check_contains "mixed log: only the fresh event is counted" "$OUT" "from 1 event(s)"
+check_contains "mixed log: fresh prints ingested" "$OUT" "ingested: $fresh_ts fire session | rule applied"
+check_contains "mixed log: stale prints stale-skipped" "$OUT" "stale-skipped: $old_ts guard secret-guard | blocked"
+check_contains "mixed log: reports 1 auto-ingested" "$OUT" "1 auto-ingested"
+check_contains "mixed log: truncated after processing both" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# malformed/empty timestamp: treated as stale regardless of age (err toward NOT counting -- false credit
+# is the harm here, the mirror of pre-pr-gate's err-toward-catching)
+printf 'not-a-timestamp\tguard\tsecret-guard\tblocked\n' > "$LOG"
+run bash "$TOOL" add --gap none
+check_contains "malformed ts derives an em-dash" "$OUT" "derived score —/100"
+check_contains "malformed ts prints stale-skipped" "$OUT" "stale-skipped: not-a-timestamp guard secret-guard | blocked"
+
+# --since overrides the cutoff explicitly, in both directions
+printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts" > "$LOG"
+run bash "$TOOL" add --since 1999-01-01T00:00:00Z --gap none
+check_contains "--since before the event's ts counts it" "$OUT" "derived score 100/100"
+check_contains "--since (older cutoff) prints ingested" "$OUT" "ingested: $old_ts guard secret-guard | blocked"
+
+printf '%s\tguard\tsecret-guard\tblocked\n' "$fresh_ts" > "$LOG"
+run bash "$TOOL" add --since "2999-01-01T00:00:00Z" --gap none
+check_contains "--since after the event's ts stales it" "$OUT" "derived score —/100"
+check_contains "--since (future cutoff) prints stale-skipped" "$OUT" "stale-skipped: $fresh_ts guard secret-guard | blocked"
+
+run bash "$TOOL" add --since notadate --fire x
+check_status "malformed --since is rejected" 2 "$STATUS"
+check_contains "malformed --since explains itself" "$OUT" "ISO-UTC timestamp"
+
+# KEEL_INGEST_MAX_AGE_HOURS override is actually read: a huge window swallows the felt-scenario "old"
+# fixture as fresh (its cutoff falls back before the year 2000)
+printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts" > "$LOG"
+run env KEEL_INGEST_MAX_AGE_HOURS=999999 bash "$TOOL" add --gap none
+check_contains "a huge cap window counts the old fixture as fresh" "$OUT" "ingested: $old_ts guard secret-guard | blocked"
+check_contains "a huge cap window derives from it" "$OUT" "derived score 100/100"
+
+# date-conversion fail-open: if every fallback in the epoch->ISO chain fails, ingest everything uncapped
+# and warn -- never crash `add`. A stub `date` errors on -r/-d/-D (the three fallback flags this tool's
+# cutoff conversion uses) but passes every other invocation through to the real binary, so it forces this
+# path without breaking the row's own `today` timestamp (which uses none of those flags).
+real_date="$(command -v date)"
+mockbin="$SANDBOX/mockbin"; mkdir -p "$mockbin"
+cat > "$mockbin/date" <<MOCKEOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    -r|-d|-D) exit 1 ;;
+  esac
+done
+exec "$real_date" "\$@"
+MOCKEOF
+chmod +x "$mockbin/date"
+printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts" > "$LOG"
+run env PATH="$mockbin:$PATH" bash "$TOOL" add --gap none
+check_status "fail-open add still succeeds" 0 "$STATUS"
+check_contains "fail-open warns about the cutoff conversion" "$OUT" "could not convert the ingest age-cap cutoff"
+check_contains "fail-open ingests the old event anyway (uncapped)" "$OUT" "ingested: $old_ts guard secret-guard | blocked"
+check_contains "fail-open derives the score from it" "$OUT" "derived score 100/100"
 
 # --- hold event type: producer API + auto-ingest at weight 4 ------------------------------------
 LEDGER="$SANDBOX/ledger3.md"; LOG="$SANDBOX/events3.log"; EVIDENCE="$SANDBOX/evidence3.md"

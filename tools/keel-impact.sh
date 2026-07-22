@@ -93,7 +93,7 @@ keel-impact — derive a session's impact score from counted, cited events and a
 
 Usage:
   keel-impact.sh add [--guard "cite"]... --fire "cite"... --hit "cite"... --miss "cite"... \
-                     --friction "cite"... [--silent N] --gap "..."
+                     --friction "cite"... [--silent N] [--since ISO-TS] --gap "..."
   keel-impact.sh add ... --retro [--asof YYYY-MM-DD]   record a quarantined retrospective score (see below)
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh enable [dir]                    opt a repo into tracking (create .keel/ marker + gitignore)
@@ -107,6 +107,12 @@ guardrail fire in that repo records an event with no env needed; `add` auto-inge
 folds them into the counts — so objective events (e.g. a secret-guard block) reach the score
 deterministically, at zero token cost, without the model counting them. $KEEL_IMPACT_LOG overrides the
 default log path (.keel/impact-events.log); pass --no-ingest to skip ingestion. TYPE ∈ hold guard fire hit miss friction.
+
+Auto-ingest only counts events younger than $KEEL_INGEST_MAX_AGE_HOURS hours (default 12) — an event a
+session left unconsumed (no `add` ran) is stale past that: skipped from the counts, archived to the
+evidence trail with a note instead of a citation, and never re-surfaced. Every counted/skipped event prints
+to stdout (`ingested: ...` / `stale-skipped: ...`) so a false-fire guard DENY can be caught and re-cited
+honestly (see commands/keel-score.md). --since ISO-TS overrides the cutoff explicitly.
 
 Cited events (REPEAT a flag once per event; the count is the number of citations, never a bare integer — no
 citation, no count). Each citation is archived to the evidence file so the score is a checkable trail:
@@ -194,6 +200,30 @@ require_count() {
 # is $1 one of the recognized event types?
 is_event_type() {
   case " $EVENT_TYPES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
+# is $1 a well-formed ISO-UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)? Shared by --since's validation and the
+# per-event staleness check (backlog #59) so the shape is defined once, not copy-pasted at both call sites.
+_is_iso_ts() {
+  case "$1" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Portable epoch(seconds)->ISO-UTC, for the auto-ingest age-cap cutoff (backlog #59). Same portability
+# problem branch-cleanup.sh's epoch_mtime solves for mtimes; here the direction is reversed (epoch -> ISO,
+# not file -> epoch), so it's a fallback chain of `date` invocations rather than one `stat` format. Three
+# tiers, first one that succeeds wins: BSD/macOS `-r SECONDS`, GNU `-d @SECONDS`, busybox `-D %s -d SECONDS`
+# (TO VERIFY on the alpine CI leg — some busybox builds accept GNU's `@` form directly, in which case this
+# third branch never fires there). All three failing means an unrecognized `date` implementation; the
+# caller fails OPEN rather than crash or silently drop events.
+_epoch_to_iso() {
+  local epoch="$1" out
+  out="$(date -u -r "$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" && { printf '%s' "$out"; return 0; }
+  out="$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" && { printf '%s' "$out"; return 0; }
+  out="$(date -u -D '%s' -d "$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" && { printf '%s' "$out"; return 0; }
+  return 1
 }
 
 # Flatten a value to a single line (strip tabs + newlines). The "one event = one line" invariant is
@@ -370,7 +400,7 @@ add_cite() {
 }
 
 cmd_add() {
-  local silent="" gap="" ingest=1 retro=0 asof=""
+  local silent="" gap="" ingest=1 retro=0 asof="" since=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --hold)      _need_cite "${2:-}" --hold;     add_cite hold     "$2"; shift 2 ;;
@@ -384,6 +414,7 @@ cmd_add() {
       --no-ingest) ingest=0;                   shift 1 ;;
       --retro)     retro=1;                    shift 1 ;;
       --asof)      asof="${2:?}";              shift 2 ;;
+      --since)     since="${2:?}";              shift 2 ;;
       *) printf 'keel-impact: unknown flag %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
   done
@@ -398,21 +429,47 @@ cmd_add() {
       *) printf 'keel-impact: --asof must be a YYYY-MM-DD date\n' >&2; exit 2 ;;
     esac
   fi
+  if [ -n "$since" ] && ! _is_iso_ts "$since"; then
+    printf 'keel-impact: --since must be an ISO-UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)\n' >&2; exit 2
+  fi
 
   # --- auto-ingest deterministic events the shell layer recorded (zero-token, portable) -----------
   # Each logged event becomes a cited event too: its `source | detail` is the citation, so the objective
   # signal is auditable exactly like the model's. Consumed (log truncated) only after the row lands, so a
   # failed write never double-counts or loses events.
-  local ingested=0 _ts _ty _src _det _cite
+  #
+  # Age cap (backlog #59): a session that never calls `add` leaves its events unconsumed in the log, where
+  # they'd otherwise mis-attribute to whichever session's row lands next. Anything strictly older than the
+  # cutoff is stale: not counted, archived to the evidence trail with a note instead of a citation, and the
+  # log is still truncated so it never resurfaces on the next `add`. `--since` overrides the cutoff
+  # explicitly. Malformed/empty timestamps are treated as stale too — false credit is the harm here, so err
+  # toward NOT counting (the mirror of pre-pr-gate's err-toward-catching). If the portable epoch->ISO
+  # conversion fails outright, fail OPEN: ingest everything uncapped (today's behavior) rather than crash or
+  # silently drop events — the cap is a precision improvement, never a new way to lose data.
+  local ingested=0 stale=0 _ts _ty _src _det _cite cutoff_iso="" stale_lines=""
+  local max_age_h="${KEEL_INGEST_MAX_AGE_HOURS:-12}"
+  case "$max_age_h" in ''|*[!0-9]*) max_age_h=12 ;; esac
   if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
+    if [ -n "$since" ]; then
+      cutoff_iso="$since"
+    elif ! cutoff_iso="$(_epoch_to_iso "$(( $(date +%s) - max_age_h * 3600 ))")"; then
+      printf 'keel-impact: could not convert the ingest age-cap cutoff on this date implementation — ingesting all pending events uncapped this run\n' >&2
+    fi
     # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
     # still populates the vars) — otherwise that event would be dropped, then lost when the log is truncated.
     while IFS=$'\t' read -r _ts _ty _src _det || [ -n "$_ty" ]; do
       is_event_type "$_ty" || continue
       _cite="$_src"
       if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
+      if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
+        stale=$(( stale + 1 ))
+        stale_lines="${stale_lines}- ${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\n'
+        printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+        continue
+      fi
       add_cite "$_ty" "$_cite"
       ingested=$(( ingested + 1 ))
+      printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
     done < "$LOG"
   fi
 
@@ -468,12 +525,26 @@ cmd_add() {
     } >> "$EVIDENCE"
   fi
 
-  # Safe now that both the row and the evidence block are durably appended. Truncate (not delete) so the
-  # path and any producer's open append still work.
-  if [ "$ingested" -gt 0 ]; then : > "$LOG"; fi
+  # Stale ingest-cap skips get their own dated block — never silently dropped, and NOT mixed into the
+  # scored evidence above (they earned no citation, so they must not read as one). Reuses $today (the
+  # row's own date) rather than a fresh `date` call: they're always the same run, and this keeps the
+  # stale note's date in sync with the row even when --asof backdates it.
+  if [ "$stale" -gt 0 ]; then
+    ensure_evidence
+    { printf '\n## %s — stale, unattributed — skipped by the %sh ingest cap\n\n' "$today" "$max_age_h"
+      printf '%b' "$stale_lines"
+      printf '(re-cite explicitly via flags if genuinely this session'"'"'s)\n'
+    } >> "$EVIDENCE"
+  fi
+
+  # Safe now that the row and any evidence blocks are durably appended. Truncate (not delete) so the path
+  # and any producer's open append still work — covers a stale-only run too, so nothing resurfaces on the
+  # next `add`.
+  if [ "$ingested" -gt 0 ] || [ "$stale" -gt 0 ]; then : > "$LOG"; fi
 
   printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s)' "$score" "$conf" "$ev_count"
   if [ "$ingested" -gt 0 ]; then printf ' (%d auto-ingested from %s)' "$ingested" "$LOG"; fi
+  if [ "$stale" -gt 0 ]; then printf ' (%d stale-skipped)' "$stale"; fi
   printf ' — HELP=%d COST=%d; appended to %s\n' "$help" "$cost" "$LEDGER"
   if [ "$retro" -eq 1 ]; then rollup retro; else rollup; fi
 }

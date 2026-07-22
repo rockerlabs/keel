@@ -60,6 +60,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `/review` (which mis-parses a review level as a PR number).
 
 ### Fixed
+- **`keel-impact.sh add` no longer mis-attributes stale unconsumed log events to whoever's `add` runs
+  next, and no longer credits a false guardrail fire as help** (dir #59, felt 2026-07-22 — the #58
+  wrap's false-fire DENYs sat unconsumed in `.keel/impact-events.log` and silently landed in the next
+  session's row, inflating its counts and its confidence tier; hand-corrected once by editing the
+  ledger row + evidence note directly). Auto-ingest now age-caps: anything strictly older than
+  `KEEL_INGEST_MAX_AGE_HOURS` hours (default 12; portable epoch→ISO cutoff conversion, BSD/GNU/busybox
+  fallback chain, fails OPEN — ingests everything uncapped, with a warning — rather than crash or drop
+  events on an unrecognized `date`) is stale: excluded from every count, archived to the evidence trail
+  under a dated note instead of a citation, and still consumed (log truncated) so it never resurfaces.
+  `--since ISO-TS` overrides the cutoff explicitly. Every ingested/stale-skipped event now prints to
+  stdout, and `commands/keel-score.md`'s ritual gained the matching check: a foreign or falsely-fired
+  `ingested:` line does not stay counted as `--guard` — correct it by hand (a false fire this session
+  actually suffered is `--friction`, not `--guard`). Valence (whether a DENY was deserved) still isn't
+  machine-decidable at gate time, so that half of the fix is the visibility + ritual, not a formula
+  change.
 - **Pre-PR gate's `gh pr create` match no longer false-fires on commands that merely CONTAIN the
   phrase** (dir #58, felt 2026-07-21 — hours after PR #125 merged, twice in one `/wrap`: two KB
   writes whose heredoc/quoted TEXT mentioned the phrase were denied as PR-creation attempts, each
