@@ -36,7 +36,13 @@ job: keep the event list honest.
 enable`, or `init-project` by default — or `$KEEL_IMPACT_LOG`), the guardrail hooks (`secret-guard`,
 `pre-pr-gate`, `public-audit`) record each fire to a zero-token event log (metadata only, never the secret)
 and `add` auto-ingests it into `--guard` — so normally omit `--guard`, passing it only for a fire the log
-missed.
+missed. Collection is honest about *count*, not about *valence* — a gate DENY is auto-ingested as `--guard`
+even when it was a false fire, i.e. friction, not help (a fire only knows it blocked something, never whether
+the block was deserved). **Check the printed `ingested: ...` lines against what actually happened this
+session:** a foreign event (leaked in from another session's unconsumed log — `add` age-caps anything older
+than `$KEEL_INGEST_MAX_AGE_HOURS` hours, default 12, and reports it as `stale-skipped:` instead) or a false
+fire does NOT stay counted as guard — rerun `add --no-ingest` and pass the corrected flags by hand (a false
+fire this session actually suffered from is `--friction`, not `--guard`).
 
 **How the number falls out** (so you can predict it, not target it): `HELP = 4·hold + 3·guard + 2·fire + hit`,
 `COST = 2·miss + 2·friction`, `score = round(100·HELP/(HELP+COST))`. A hold (keel catching the agent) weighs
