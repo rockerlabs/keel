@@ -60,6 +60,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `/review` (which mis-parses a review level as a PR number).
 
 ### Fixed
+- **Pre-PR gate no longer false-denies a `/polish` run whose receipts were written from inside a
+  linked worktree** (dir #61, felt 2026-07-23). `tools/pre-pr-gate.sh` keyed its receipt sentinel and
+  its unlock-SHA check by the raw basename of a cwd — the receipt writer's own `$PWD` on one side, the
+  `gh pr create` hook event's reported cwd on the other. When the two disagreed (the harness's tracked
+  event cwd doesn't track an in-command `cd`, so it can report a different checkout of the same repo,
+  e.g. the main checkout while the actual polish work happened in a worktree), the hook looked at the
+  wrong sentinel file and compared against the wrong checkout's HEAD — denying every worktree-session
+  PR outright. Both sides now resolve the repo's main-checkout top first (mirrors the `dir #10`/PR #67
+  discipline already used for `.keel/` log resolution — logged in `dir #26` as a duplicated idiom with
+  no shared lib yet), so a receipt written in a worktree and a hook event reporting the main checkout
+  converge on one sentinel; an explicit `gh pr create --head <branch>` (or `-H`/`--head=`) is now
+  parsed by the same awk lexer that finds `gh pr create`, so the SHA check compares against that
+  branch's own tip (a ref shared across the repo's worktrees) instead of assuming the reported cwd is
+  that branch's checkout. Without `--head`, behavior is unchanged (bare HEAD of the reported cwd) — a
+  genuine ambiguity, correctly still denied. 14 new regression tests (worktree + main-checkout sentinel
+  convergence, `--head`/`-H`/`--head=` forms, the no-`--head` denial, and the ordinary same-cwd case
+  unaffected); existing 52 gate tests unchanged.
 - **`keel-impact.sh add` no longer mis-attributes stale unconsumed log events to whoever's `add` runs
   next, and no longer credits a false guardrail fire as help** (dir #59, felt 2026-07-22 — the #58
   wrap's false-fire DENYs sat unconsumed in `.keel/impact-events.log` and silently landed in the next

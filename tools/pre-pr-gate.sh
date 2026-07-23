@@ -34,7 +34,37 @@ set -u
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 
-sentinel_path() { printf '/tmp/pre-pr-gate-%s' "$(basename "$PWD")"; }
+# The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
+# resolve_impact_log() below (one file, two pre-dir-#61 and dir-#61 call sites) share the fragment
+# instead of each inlining it — the awk is identical; only the surrounding fallback order differs, so
+# only the fragment is extracted, not the two functions merged (dir #26 logs the wider idiom as
+# duplicated across 5 TOOLS by design, no shared lib yet — that's a cross-tool constraint, unrelated to
+# sharing one fragment within a single file).
+_worktree_main_entry() {
+  git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
+    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
+}
+
+# Resolve the main checkout's top for cwd $1 (dir #10/PR #67 discipline). Falls back to $1's own
+# canonicalized toplevel when the main worktree entry is bare (no working tree) — this does NOT unify
+# across a bare main's several worktrees (each still resolves to its own toplevel there); that's an
+# accepted limitation shared with the established `_keel_main_top` idiom elsewhere, and keel's own
+# worktrees are always cut from a non-bare checkout, so the dir #61 scenario below is unaffected. Falls
+# back to $1 itself when it isn't a repo at all.
+# dir #61: both the receipt writer (sentinel_path, below) and the hook reader key off THIS instead of
+# a raw dirname/basename, so a receipt written from inside a (non-bare-main) worktree and a `gh pr
+# create` hook event reporting a different checkout of the SAME repo (e.g. the harness's tracked
+# session-root cwd) agree on one sentinel file — they always resolve to the same main-checkout path.
+main_top_for() {
+  local cwd="${1:-.}" main top
+  main="$(_worktree_main_entry "$cwd")"
+  if [ -n "$main" ]; then printf '%s' "$main"; return; fi
+  top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ]; then printf '%s' "$top"; return; fi
+  printf '%s' "$cwd"
+}
+
+sentinel_path() { printf '/tmp/pre-pr-gate-%s' "$(basename "$(main_top_for "$PWD")")"; }
 
 # Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
 # (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
@@ -45,8 +75,7 @@ resolve_impact_log() {
   if [ -z "$klog" ]; then
     top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
-        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+      main="$(_worktree_main_entry "$cwd")"
       if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
     fi
     if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
@@ -133,7 +162,7 @@ function flush_tok() {
 function is_assign(t) {
   return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
 }
-function check_segment(   i,j,found_pr) {
+function check_segment(   i,j,k,found_pr) {
   i = 1
   while (i <= ntok) {
     if (is_assign(tok[i])) { i++; continue }
@@ -149,7 +178,17 @@ function check_segment(   i,j,found_pr) {
     for (j = i + 1; j <= ntok; j++) {
       if (!found_pr) {
         if (tok[j] == "pr") found_pr = 1
-      } else if (tok[j] == "create") { matched = 1; return }
+      } else if (tok[j] == "create") {
+        matched = 1
+        # dir #61: an explicit --head/-H names the branch the PR is actually FOR — the hook uses this
+        # (instead of a bare HEAD) so the SHA check still works when the event cwd isn't that branch's
+        # own checkout (e.g. `gh pr create --head <branch>` run from the main checkout's session root).
+        for (k = i + 1; k <= ntok; k++) {
+          if (tok[k] == "--head" || tok[k] == "-H") { if (k + 1 <= ntok) head_out = tok[k + 1] }
+          else if (tok[k] ~ /^--head=/) { head_out = substr(tok[k], 8) }
+        }
+        return
+      }
     }
   }
 }
@@ -228,16 +267,22 @@ function end_segment() {
   }
   end_segment()
 }
-END { exit (matched ? 0 : 1) }
+END { if (matched) { print head_out; exit 0 }; exit 1 }
 PPG_AWK_EOF
 
-if ! awk "$PPG_AWK_PROG" <<< "$cmd"; then
+awk_out="$(awk "$PPG_AWK_PROG" <<< "$cmd")"
+awk_status=$?
+if [ "$awk_status" -ne 0 ]; then
   exit 0
 fi
+head_branch="$awk_out"
 
+# dir #61: resolve the sentinel by the REPO's main checkout, not the raw event cwd — a receipt written
+# from inside a worktree and a hook event reporting a different checkout of the same repo (the
+# harness's tracked session-root cwd, which does not track an in-command `cd`) must land on one file.
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
-wt=$(basename "$cwd")
+wt=$(basename "$(main_top_for "$cwd")")
 sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
@@ -302,7 +347,12 @@ case "$status" in
     deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
     ;;
   PASS)
-    current_sha=$(git -C "$cwd" rev-parse HEAD 2>/dev/null)
+    # dir #61: an explicit --head/-H names the branch being PR'd — compare against ITS tip (a shared
+    # ref, resolvable from any checkout of the repo) rather than assuming $cwd is that branch's own
+    # checkout. No --head: unchanged, bare HEAD of $cwd (the pre-dir-#61 behaviour, still correct there).
+    target_ref="HEAD"
+    [ -n "$head_branch" ] && target_ref="${head_branch##*:}"
+    current_sha=$(git -C "$cwd" rev-parse "$target_ref" 2>/dev/null)
     if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
       rm -f "$sentinel"
       log_event receipt-deny "sha-mismatch" "$cwd"

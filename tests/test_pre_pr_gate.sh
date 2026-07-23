@@ -254,4 +254,64 @@ mkdir -p "$d/.keel"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" log receipt-verdict "true-catch polish.3-tests"
 check_contains "log subcommand appends the given type/detail" "$(cat "$d/.keel/impact-events.log" 2>/dev/null)" "	receipt-verdict	pre-pr-gate	true-catch polish.3-tests"
 
+# --- dir #61: worktree/event-cwd resolution ------------------------------------------------------
+# Felt bug: /polish writes receipts from inside a linked worktree, but the `gh pr create` hook event's
+# cwd can report a DIFFERENT checkout of the same repo (the harness's tracked session-root cwd does
+# not track an in-command `cd`) — e.g. the main checkout. Before the fix, the sentinel path (keyed by
+# raw basename) and the SHA check (bare `rev-parse HEAD` of that wrong cwd) both missed.
+
+# A main repo + a linked worktree on a fresh branch, with one commit in the worktree (so the
+# worktree's HEAD differs from the main checkout's). Sets MREPO/WT. $1 = worktree dir name (under
+# $SANDBOX), $2 = branch name.
+mkworktree() {
+  MREPO="$(mkrepo)"
+  WT="$SANDBOX/$1"
+  git -C "$MREPO" worktree add -q -b "$2" "$WT" >/dev/null 2>&1
+  git -C "$WT" commit --allow-empty -qm "feature work"
+}
+
+# 12. Receipt written from a worktree is found via a hook event whose cwd is the MAIN checkout, and an
+# explicit --head names the branch actually being PR'd, so the SHA check compares against ITS tip —
+# not the main checkout's own (different) HEAD.
+mkworktree dir61-wt dir61-feature
+check_dir "dir #61 worktree fixture exists" "$WT"
+write_full_receipt "$WT"
+check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "$(sentinel_for "$MREPO")"
+check_nofile "no stray sentinel under the worktree's own basename" "$(sentinel_for "$WT")"
+gate "gh pr create --head dir61-feature --fill" "$MREPO"
+check_status "worktree receipt + --head, hook cwd = main checkout → exit 0" 0 "$STATUS"
+check_absent "worktree receipt + --head → allowed (no deny payload)" "$OUT" "deny"
+check_nofile "the sentinel is consumed" "$(sentinel_for "$MREPO")"
+
+# 13. Same setup, but the command carries NO --head — the gate has no way to know which branch is
+# meant, so it falls back to bare HEAD of the reported cwd (the main checkout's OWN branch): a genuine
+# mismatch against the worktree-recorded SHA, correctly denied (not a false allow).
+mkworktree dir61-wt-nohead dir61-feature2
+write_full_receipt "$WT"
+gate "gh pr create --fill" "$MREPO"
+check_contains "worktree receipt, no --head, hook cwd = main checkout → denied (ambiguous branch)" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied as a SHA mismatch, not a missing receipt" "$OUT" "stale"
+
+# 14. -H (gh's short flag) and --head=BRANCH (the = form) are both recognized.
+mkworktree dir61-wt-short dir61-feature3
+write_full_receipt "$WT"
+gate "gh pr create -H dir61-feature3 --fill" "$MREPO"
+check_status "-H short flag resolves the branch → exit 0" 0 "$STATUS"
+check_absent "-H short flag → allowed" "$OUT" "deny"
+
+mkworktree dir61-wt-eq dir61-feature4
+write_full_receipt "$WT"
+gate "gh pr create --head=dir61-feature4 --fill" "$MREPO"
+check_status "--head=BRANCH form resolves the branch → exit 0" 0 "$STATUS"
+check_absent "--head=BRANCH form → allowed" "$OUT" "deny"
+
+# 15. A receipt written AND read from the SAME worktree cwd (the ordinary, non-split case) still works
+# unchanged — main_top_for resolves the same main checkout consistently regardless of which member of
+# the worktree set is used throughout, so this is not a regression against the pre-fix common case.
+mkworktree dir61-wt-same dir61-feature5
+write_full_receipt "$WT"
+gate "gh pr create --fill" "$WT"
+check_status "receipt + hook both from the worktree → exit 0" 0 "$STATUS"
+check_absent "receipt + hook both from the worktree → allowed" "$OUT" "deny"
+
 summary
