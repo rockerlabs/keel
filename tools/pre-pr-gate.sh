@@ -34,17 +34,30 @@ set -u
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 
-# Resolve the main checkout's top for cwd $1 (dir #10/PR #67 discipline — dir #26 logs this idiom as
-# duplicated across 5 tools by design, no shared lib yet). Falls back to $1's own toplevel when the
-# main worktree entry is bare (no working tree), or to $1 itself when it isn't a repo at all.
+# The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
+# resolve_impact_log() below (one file, two pre-dir-#61 and dir-#61 call sites) share the fragment
+# instead of each inlining it — the awk is identical; only the surrounding fallback order differs, so
+# only the fragment is extracted, not the two functions merged (dir #26 logs the wider idiom as
+# duplicated across 5 TOOLS by design, no shared lib yet — that's a cross-tool constraint, unrelated to
+# sharing one fragment within a single file).
+_worktree_main_entry() {
+  git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
+    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
+}
+
+# Resolve the main checkout's top for cwd $1 (dir #10/PR #67 discipline). Falls back to $1's own
+# canonicalized toplevel when the main worktree entry is bare (no working tree) — this does NOT unify
+# across a bare main's several worktrees (each still resolves to its own toplevel there); that's an
+# accepted limitation shared with the established `_keel_main_top` idiom elsewhere, and keel's own
+# worktrees are always cut from a non-bare checkout, so the dir #61 scenario below is unaffected. Falls
+# back to $1 itself when it isn't a repo at all.
 # dir #61: both the receipt writer (sentinel_path, below) and the hook reader key off THIS instead of
-# a raw dirname/basename, so a receipt written from inside a worktree and a `gh pr create` hook event
-# reporting a different checkout of the SAME repo (e.g. the harness's tracked session-root cwd) agree
-# on one sentinel file — they always resolve to the same main-checkout path either way.
+# a raw dirname/basename, so a receipt written from inside a (non-bare-main) worktree and a `gh pr
+# create` hook event reporting a different checkout of the SAME repo (e.g. the harness's tracked
+# session-root cwd) agree on one sentinel file — they always resolve to the same main-checkout path.
 main_top_for() {
   local cwd="${1:-.}" main top
-  main="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
-    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+  main="$(_worktree_main_entry "$cwd")"
   if [ -n "$main" ]; then printf '%s' "$main"; return; fi
   top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -n "$top" ]; then printf '%s' "$top"; return; fi
@@ -62,8 +75,7 @@ resolve_impact_log() {
   if [ -z "$klog" ]; then
     top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(git -C "$cwd" worktree list --porcelain 2>/dev/null |
-        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+      main="$(_worktree_main_entry "$cwd")"
       if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
     fi
     if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
