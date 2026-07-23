@@ -254,4 +254,69 @@ mkdir -p "$d/.keel"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" log receipt-verdict "true-catch polish.3-tests"
 check_contains "log subcommand appends the given type/detail" "$(cat "$d/.keel/impact-events.log" 2>/dev/null)" "	receipt-verdict	pre-pr-gate	true-catch polish.3-tests"
 
+# --- dir #61: worktree/event-cwd resolution ------------------------------------------------------
+# Felt bug: /polish writes receipts from inside a linked worktree, but the `gh pr create` hook event's
+# cwd can report a DIFFERENT checkout of the same repo (the harness's tracked session-root cwd does
+# not track an in-command `cd`) — e.g. the main checkout. Before the fix, the sentinel path (keyed by
+# raw basename) and the SHA check (bare `rev-parse HEAD` of that wrong cwd) both missed.
+
+# 12. Receipt written from a worktree is found via a hook event whose cwd is the MAIN checkout, and an
+# explicit --head names the branch actually being PR'd, so the SHA check compares against ITS tip —
+# not the main checkout's own (different) HEAD.
+mrepo="$(mkrepo)"
+wt="$SANDBOX/dir61-wt"
+git -C "$mrepo" worktree add -q -b dir61-feature "$wt" >/dev/null 2>&1
+check_dir "dir #61 worktree fixture exists" "$wt"
+git -C "$wt" commit --allow-empty -qm "feature work"
+write_full_receipt "$wt"
+check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "$(sentinel_for "$mrepo")"
+check_nofile "no stray sentinel under the worktree's own basename" "$(sentinel_for "$wt")"
+gate "gh pr create --head dir61-feature --fill" "$mrepo"
+check_status "worktree receipt + --head, hook cwd = main checkout → exit 0" 0 "$STATUS"
+check_absent "worktree receipt + --head → allowed (no deny payload)" "$OUT" "deny"
+check_nofile "the sentinel is consumed" "$(sentinel_for "$mrepo")"
+
+# 13. Same setup, but the command carries NO --head — the gate has no way to know which branch is
+# meant, so it falls back to bare HEAD of the reported cwd (the main checkout's OWN branch): a genuine
+# mismatch against the worktree-recorded SHA, correctly denied (not a false allow).
+mrepo="$(mkrepo)"
+wt="$SANDBOX/dir61-wt-nohead"
+git -C "$mrepo" worktree add -q -b dir61-feature2 "$wt" >/dev/null 2>&1
+git -C "$wt" commit --allow-empty -qm "feature work"
+write_full_receipt "$wt"
+gate "gh pr create --fill" "$mrepo"
+check_contains "worktree receipt, no --head, hook cwd = main checkout → denied (ambiguous branch)" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied as a SHA mismatch, not a missing receipt" "$OUT" "stale"
+
+# 14. -H (gh's short flag) and --head=BRANCH (the = form) are both recognized.
+mrepo="$(mkrepo)"
+wt="$SANDBOX/dir61-wt-short"
+git -C "$mrepo" worktree add -q -b dir61-feature3 "$wt" >/dev/null 2>&1
+git -C "$wt" commit --allow-empty -qm "feature work"
+write_full_receipt "$wt"
+gate "gh pr create -H dir61-feature3 --fill" "$mrepo"
+check_status "-H short flag resolves the branch → exit 0" 0 "$STATUS"
+check_absent "-H short flag → allowed" "$OUT" "deny"
+
+mrepo="$(mkrepo)"
+wt="$SANDBOX/dir61-wt-eq"
+git -C "$mrepo" worktree add -q -b dir61-feature4 "$wt" >/dev/null 2>&1
+git -C "$wt" commit --allow-empty -qm "feature work"
+write_full_receipt "$wt"
+gate "gh pr create --head=dir61-feature4 --fill" "$mrepo"
+check_status "--head=BRANCH form resolves the branch → exit 0" 0 "$STATUS"
+check_absent "--head=BRANCH form → allowed" "$OUT" "deny"
+
+# 15. A receipt written AND read from the SAME worktree cwd (the ordinary, non-split case) still works
+# unchanged — main_top_for resolves the same main checkout consistently regardless of which member of
+# the worktree set is used throughout, so this is not a regression against the pre-fix common case.
+mrepo="$(mkrepo)"
+wt="$SANDBOX/dir61-wt-same"
+git -C "$mrepo" worktree add -q -b dir61-feature5 "$wt" >/dev/null 2>&1
+git -C "$wt" commit --allow-empty -qm "feature work"
+write_full_receipt "$wt"
+gate "gh pr create --fill" "$wt"
+check_status "receipt + hook both from the worktree → exit 0" 0 "$STATUS"
+check_absent "receipt + hook both from the worktree → allowed" "$OUT" "deny"
+
 summary
