@@ -29,8 +29,7 @@ step may never materialize, and that's fine.)
   read `PRINCIPLES.md` / `ADAPTING.md` and decide whether (a) auto-draft-then-manually-refine is worth a
   `tools/` script (seed a first-pass CLAUDE.md from openwiki, hand off to Keel's normal flow), (b)
   CI-scheduled-upkeep or the Mermaid-diagram-map are worth borrowing standalone, or (c) the manual-only
-  stance is deliberate and this gets dropped with that reasoning recorded. Promote to `BACKLOG.md` once
-  one of these earns a real next step.
+  stance is deliberate and this gets dropped with that reasoning recorded.
   **Decided 2026-07-23 — (c): nothing ported; the manual-curation stance is deliberate. Entry closed.**
   Checked against `PRINCIPLES.md` and `ADAPTING.md`; four independent reasons, any one sufficient:
   (1) an auto-draft script would be the first model-calling tool in `tools/`, whose documented contract
@@ -49,10 +48,9 @@ step may never materialize, and that's fine.)
 - [2026-07-23] **Positioning: the derivable-context layer is commoditizing — sharpen the pitch around
   the non-derivable layer** — follow-up to the openwiki entry above. Auto-generation tools (openwiki
   and its kin) compete for the same `CLAUDE.md`/`AGENTS.md` slot and may teach the market that
-  "context" means scheduled auto-generation, making manual curation look archaic by association. Not a
-  functional threat — they fill the file with derivable-from-code description, while Keel banks
-  decisions, constraints, and felt incidents (what code cannot show), and the two even compose — but a
-  positioning one: the adopter who believes the generated wiki *is* their context never hears the
+  "context" means scheduled auto-generation. Not a functional threat — they fill the slot with the
+  derivable layer while Keel banks the non-derivable one (reason (4) above), and the two even compose —
+  but a positioning one: the adopter who believes the generated wiki *is* their context never hears the
   difference. By P0's own frame the trend is favorable — commoditizing the derivable layer raises the
   relative value of captured non-derivable capital — but only if the pitch says so out loud. Possible
   next step: make "Keel keeps what cannot be derived from the code" a load-bearing line in the README /
