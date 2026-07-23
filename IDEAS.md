@@ -20,10 +20,9 @@ step may never materialize, and that's fine.)
   (`ADAPTING.md` already tells tools without cwd-keyed auto-memory to drop it). Not actionable until a
   second real module shows demand.
 - [2026-07-23] **openwiki (langchain-ai/openwiki) — auto-generated CLAUDE.md/AGENTS.md, opposite bet from
-  Keel's manual curation** — surfaced while triaging 6 repos from an Instagram post; the only one that
-  overlapped with Keel's domain (the other 5 — claude-video, meetily, system_prompts_leaks, colibri,
-  pocket-tts — are out of domain: video/meeting/TTS tools, a leaked-prompts dump, an LLM runtime; no
-  action taken on those). OpenWiki synthesizes `CLAUDE.md`/`AGENTS.md` + a full wiki from the codebase and
+  Keel's manual curation** — surfaced while triaging six repos from an Instagram post; the only one
+  that overlapped with Keel's domain (the other five were out of domain, dropped without action).
+  OpenWiki synthesizes `CLAUDE.md`/`AGENTS.md` + a full wiki from the codebase and
   external sources (Notion, Gmail, X, HN) via an LLM agent, with CI-scheduled upkeep and Mermaid diagrams —
   vs. Keel's bet on deliberate human authorship (`PRINCIPLES.md` P0, accumulation). Possible next step:
   read `PRINCIPLES.md` / `ADAPTING.md` and decide whether (a) auto-draft-then-manually-refine is worth a
