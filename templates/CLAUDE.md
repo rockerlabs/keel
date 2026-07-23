@@ -9,7 +9,7 @@
 
 - **`FRAMEWORK.md`** — the reusable methodology/engine (no personal data). Read before: setting up or
   grooming a project's knowledge base / `CLAUDE.md` structure; applying engineering conventions; adding a changelog
-  entry; git worktree/branch mechanics.
+  entry; git worktree/branch mechanics; designing a completion/verify gate for an agentic workflow.
 - **`INSTANCE.md`** — this user/machine: the Projects registry, hardware, model access, backup remote. Read
   when you need the project registry or any environment fact. Check it before asking the user "do you have
   X?" — settled facts live there so sessions don't re-ask.

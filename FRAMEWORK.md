@@ -421,6 +421,42 @@ first real timer fire, after every manual run had been green.
 
 ---
 
+## Verify gates — mechanizing the done-claim
+
+A completion claim ("tests pass", "the bug's fixed", "PR's ready") is worth exactly as much as the
+evidence behind it. CORE's verify-discipline rail sets the baseline — prefer a narrow, deterministic
+check over eyeballing; this section names the mechanism for enforcing that once eyeballing genuinely
+isn't enough (an irreversible action, an unattended multi-step procedure).
+
+**Claim → record, not claim → trust.** A completion claim counts only when it points to a record
+written by the check itself — a command's exit code, a receipt line, a git SHA — never a record the
+claimant wrote about itself. Free-text claims aren't worth parsing (practitioners building
+agent-verification tooling report the same dead end after exhausting dozens of patterns); only a
+fixed-format declaration checked against independent state — git history, a session log — holds up.
+
+**The receipt mechanism.** A short-lived nonce is minted at the start of a multi-step procedure; each
+step appends its own receipt line under that nonce as it completes (`<run-id>\t<step-id>\t<outcome>`),
+written by the step, not narrated by the agent afterward. The gate guarding the final irreversible
+action (a merge, a release, a `gh pr create`) denies unless every expected step id is present under the
+CURRENT run's nonce AND the last step's recorded outcome matches live state (e.g. a SHA against HEAD) —
+closing the "checks passed, then one more fix landed unchecked" window. A bare `touch` of a sentinel
+file, a partial run, or a stale receipt from an earlier commit all fail by construction, not by
+convention.
+
+**Why this, not just a stop-and-ask.** A human stop-point before an irreversible step is one valid
+design (recent agent-verification tooling takes this shape); a content-checked receipt is another —
+mutation-tested coverage checks and fixed-format completion declarations verified against independent
+state are two more. Pick whichever fits the workflow's cost of a false pass; the receipt form earns its
+keep when the check has to run unattended between steps, not just once at the end.
+
+**Reference implementation.** `tools/pre-pr-gate.sh` + `commands/polish.md` implement this pattern for
+Keel's own pre-PR flow — maintainer-only tooling (`install.sh` deliberately doesn't ship either to
+adopters, so nobody gets a half-wired command); read them for the concrete receipt format, not this
+summary. See *Enforcement mechanics* below for the companion rule on what a gate's error text may and
+may not say.
+
+---
+
 ## Enforcement mechanics — never name the bypass in the error text
 
 An enforcement mechanism (commit hook, gate, guard, CI check) is read by an **agent**, not just a human — so
