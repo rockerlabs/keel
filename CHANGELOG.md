@@ -30,6 +30,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   installs the last tagged (audited) release, not whatever's on main — `KEEL_REF` still overrides it.
   `KEEL_REF` unset + no stamp keeps installing latest `main`, unchanged.
 
+- **FRAMEWORK.md "Verify gates" section** (dir #60, field-demand promotion — three independent
+  agent-tooling builders converged on done-claim verification the same week). Documents the
+  claim→record principle behind Keel's own practice and generalizes the receipt pattern from the dir
+  #49 entry above (per-step lines under a fresh nonce, gate denies on a missing id or a state mismatch)
+  — no new tool, doc-only, no CORE.md or tooling changes.
+
 ### Changed
 - **`/keel-score`'s `--fire` event now has an explicit two-test bar** (dir #24, anchored by the first
   A/B calibration run). A fire citation must name a counterfactual that is (1) *reachable* — a moment
