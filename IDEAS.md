@@ -46,3 +46,14 @@ step may never materialize, and that's fine.)
   incidents — exactly what code cannot show); the Mermaid map falls under the same rule, derivable on
   demand by any session that needs it. Reopen trigger: a real second consumer (P0) asking for cold-start
   bootstrap of a large existing codebase — that is felt friction; revisit option (a) then.
+- [2026-07-23] **Positioning: the derivable-context layer is commoditizing — sharpen the pitch around
+  the non-derivable layer** — follow-up to the openwiki entry above. Auto-generation tools (openwiki
+  and its kin) compete for the same `CLAUDE.md`/`AGENTS.md` slot and may teach the market that
+  "context" means scheduled auto-generation, making manual curation look archaic by association. Not a
+  functional threat — they fill the file with derivable-from-code description, while Keel banks
+  decisions, constraints, and felt incidents (what code cannot show), and the two even compose — but a
+  positioning one: the adopter who believes the generated wiki *is* their context never hears the
+  difference. By P0's own frame the trend is favorable — commoditizing the derivable layer raises the
+  relative value of captured non-derivable capital — but only if the pitch says so out loud. Possible
+  next step: make "Keel keeps what cannot be derived from the code" a load-bearing line in the README /
+  pitch surfaces. Promote to `BACKLOG.md` once a concrete pitch-surface edit is picked.
