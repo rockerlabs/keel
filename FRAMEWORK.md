@@ -330,6 +330,15 @@ still builds.
 named after domain concepts); write tests before or alongside implementation — no feature ships without
 tests.
 
+**Build identity — make it self-reporting, early.** Any app should surface its own build identity — a human
+version *plus* a per-build stamp (commit SHA + build date) — in its own UI/output (a menu line, an
+`--version` flag, a startup log), wired in from near the first ticket that produces a runnable artifact. The
+recurring failure it prevents: not being able to tell *which* build is actually running — a stale binary
+still serving old code, a cached artifact, an un-relaunched process — which turns a trivial "is this even the
+new code?" into a real debugging detour. A static marketing version alone is not enough: it can't
+distinguish two rebuilds, so the per-build stamp is the point. Cheap to add at the start, disproportionately
+painful to retrofit mid-incident.
+
 ---
 
 ## PR review
