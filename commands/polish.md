@@ -69,18 +69,33 @@ Steps, in order:
    Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>`.
 
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
-   `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings. For
+   `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings.
+   **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
+   skill can be installed and still refuse model invocation, and only the attempt returns the reason. For
    `ultra` you cannot launch it yourself (cloud, billed, user-triggered) — print the exact `/code-review
    ultra` command, stop before the sentinel/PR, and let the human run it (they re-invoke `/polish` after).
-   **If the `/code-review` skill is not available in this session** (missing from the skill list, or
-   present but blocked from model invocation), do not substitute `/review` or guess — instead perform
-   ONE inline review pass of the step-1 diff at the chosen depth (correctness-focused, same
-   single-terminal-pass rule as below), resolve any real findings, and say in the summary that the
-   review ran inline because the skill wasn't available.
+
+   **If `/code-review` is unavailable to you** — missing from the skill list, or present but refusing with
+   `disable-model-invocation` — do not substitute `/review` (a GitHub-PR command, not a working-diff
+   review) and do not guess. Instead:
+   - **(a)** Perform ONE inline review pass of the step-1 diff at the chosen depth (correctness-focused,
+     same single-terminal-pass rule as below) and resolve any real findings, so cheap issues never reach
+     the human.
+   - **(b) Then stop, exactly as for `ultra`.** Report that the real review could not be run, print the
+     exact `/code-review <level>` command, and ask whether to run it or to proceed without. Do NOT write
+     this step's receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. An
+     inline pass is a courtesy, never a substitute for the human's decision about review depth: it is one
+     pass, in the same context that wrote the code, with no independent reviewer. **The failure this
+     closes:** continuing to a merged-ready PR and disclosing the substitution only in the closing
+     summary, where the operator finds out by reading the transcript — or not at all.
+   - **(c)** On the human's answer, record it and continue: receipt `polish.5-review <level>-operator-run`
+     once they confirm they ran it, or `<level>-waived` if they explicitly choose to proceed without.
+     Without this, a re-invoked `/polish` would stop at this step forever.
+
    **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
    if `--fix` changes files.** No infinite cycle.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `ultra-deferred`, or
-   `skip`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `ultra-deferred`,
+   `medium-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. Show the
