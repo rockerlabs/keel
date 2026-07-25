@@ -60,13 +60,20 @@ Steps, in order:
    - **`high` or above → always open an `AskUserQuestion` dialog, never auto-run.** High+ is expensive
      (`ultra` is billed) and may be unwanted or out of budget — spend it only on an explicit yes. (A fixed
      cost rule, not a live budget check: there is no token-budget signal.)
-   - **`skip`/`low`/`medium` on a diff that sits clearly inside one bucket → run that level automatically**,
-     no dialog; state which level and why. Auto-**skip** only for a clearly pure-docs, reference-free
-     change — never auto-skip a diff that touches code or cross-references.
+   - **`skip` → also always ask, never auto-select.** The two ends of the scale are exactly where the
+     model's own judgement shouldn't be final: one spends the human's money, the other spends their
+     safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
+     leaving it auto-selectable gives back, in one word, the decision step 5 stops to obtain. Whenever
+     the review is expensive or unavailable, sizing the diff down is the cheapest way out of it, and
+     this step's sizing is the model's own and unchecked.
+   - **`low`/`medium` on a diff that sits clearly inside one bucket → run that level automatically**,
+     no dialog; state which level and why.
    - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
      the recommended level pre-selected and a **skip** option always present; let the human override.
 
-   Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>`.
+   Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>` — e.g.
+   `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
+   the evidence for it; the measurement is what makes a questionable call visible afterwards.
 
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
    `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings.
@@ -80,7 +87,9 @@ Steps, in order:
    - **(a)** In the *unavailable* case only, perform ONE inline review pass of the step-1 diff at the
      chosen depth (correctness-focused, same single-terminal-pass rule as below) and resolve any real
      findings, so cheap issues never reach the human. For `ultra`, go straight to (b) — that depth was
-     chosen precisely because a cheap pass isn't the answer.
+     chosen precisely because a cheap pass isn't the answer. **Say what you checked and what you found**,
+     the way step 3 has to show real test output: an assertion that a pass happened, with nothing to
+     inspect, is indistinguishable from one that didn't.
    - **(b) Then stop.** Report that the real review could not be run, print the exact
      `/code-review <level>` command, and ask whether to run it or to proceed without. Do NOT write this
      step's receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. An inline
@@ -105,7 +114,11 @@ Steps, in order:
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
-   `--no-test`-skipped), re-run the test command a single time — review fixes can break something. Show the
+   `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
+   changed during the hand-off count as step-5 changes** — whether the human's own `--fix` run edited them
+   or you did, resolving the findings their review reported. Those land between `/polish` invocations, so
+   "did step 5 change files" is otherwise easy to read as "no", and the retest gets skipped after exactly
+   the kind of edit it exists to cover. Show the
    real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.

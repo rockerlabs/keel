@@ -102,6 +102,15 @@ check_contains "global-flag-before-subcommand bypass now caught → deny decisio
 # stay in scope. An earlier draft of the lexer dropped everything after "<<" on the line, missing this.
 gate "cat <<EOF && gh pr create --fill" "$d"
 check_contains "command chained after a same-line heredoc marker still caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+# dir #63 sibling fix: `gh api` opens a PR without the `pr create` subcommand, so the token scan
+# never saw it — and it is exactly what gets reached for once `gh pr create` is denied. Caught only
+# when it is a genuine WRITE to a pulls collection (see 2c-bis for the reads that must stay allowed).
+gate "gh api repos/owner/name/pulls -f head=branch -f base=main" "$d"
+check_contains "gh api pulls with fields caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+gate "gh api --method POST repos/owner/name/pulls" "$d"
+check_contains "gh api pulls with explicit POST caught → deny decision" "$OUT" '"permissionDecision":"deny"'
+gate "gh api -X POST repos/owner/name/pulls --input body.json" "$d"
+check_contains "gh api pulls with -X POST caught → deny decision" "$OUT" '"permissionDecision":"deny"'
 
 # 2c. backlog dir #58: the lexer fast-exit must NOT false-fire on a command that merely CONTAINS the
 # phrase outside real command position (prose, a quoted/heredoc string) — the felt cost of the old
@@ -117,6 +126,15 @@ gate 'git commit -m "wire gh pr create gate"' "$d"
 check_absent "phrase inside a commit message string → allowed" "$OUT" "deny"
 gate "grep -c 'gh pr create' f" "$d"
 check_absent "phrase inside a single-quoted grep pattern → allowed" "$OUT" "deny"
+# 2c-bis (dir #63 sibling fix): the `gh api` catch above must not swallow READS. This gate blocks
+# opening a PR, not looking at one — a denied `gh api .../pulls/123` would break status checks and
+# teach the next session that the gate is noise.
+gate "gh api repos/owner/name/pulls" "$d"
+check_absent "gh api pulls list (no write flags) → allowed" "$OUT" "deny"
+gate "gh api repos/owner/name/pulls/123" "$d"
+check_absent "gh api single-PR read → allowed" "$OUT" "deny"
+gate "gh api repos/owner/name/pulls/123/comments -f body=hi" "$d"
+check_absent "gh api comment on an existing PR → allowed" "$OUT" "deny"
 gate "$(printf "cat >> notes.md <<'EOF'\nsome text mentioning gh pr create here\nEOF\n")" "$d"
 check_absent "phrase mid-prose inside a heredoc body → allowed" "$OUT" "deny"
 gate "$(printf "cat >> notes.md <<'EOF'\ngh pr create is a doc-snippet line\nEOF\n")" "$d"

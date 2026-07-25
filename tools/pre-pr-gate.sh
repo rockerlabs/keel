@@ -144,6 +144,14 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 # any tokens in between. That also closes the `gh --repo owner/name pr create` bypass (a global flag
 # before the subcommand, no longer a residual gap) that the old substring match missed.
 #
+# A second command shape opens a PR without that subcommand at all: `gh api repos/O/R/pulls -f head=…`
+# (found 2026-07-26 auditing the dir #57 rework — the natural reach once `gh pr create` is denied). It's
+# matched when it is a genuine WRITE to a pulls collection: an endpoint ending in `/pulls` PLUS an
+# explicit POST or any field/input flag. Reads stay allowed on purpose — `.../pulls` with no write flag
+# (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f body=…` (commenting on an existing PR):
+# this gate blocks OPENING a PR, not looking at or annotating one, and a gate that denies status checks
+# teaches the next session to route around it.
+#
 # Still lexical, not a real shell parse: within this model it errs toward catching — an unstripped
 # exotic heredoc form, or prose that happens to sit at a real command position, falls through as a
 # false positive (an unneeded /polish reminder, not a bypass). Known accepted residuals (this is a
@@ -162,7 +170,7 @@ function flush_tok() {
 function is_assign(t) {
   return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
 }
-function check_segment(   i,j,k,found_pr) {
+function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes) {
   i = 1
   while (i <= ntok) {
     if (is_assign(tok[i])) { i++; continue }
@@ -174,6 +182,25 @@ function check_segment(   i,j,k,found_pr) {
     break
   }
   if (i <= ntok && tok[i] == "gh") {
+    # dir #63 sibling fix: `gh api repos/O/R/pulls -f head=…` creates a PR without ever using the
+    # `pr create` subcommand, so the token scan below never saw it — the natural thing to reach for
+    # once `gh pr create` is denied. Matched only when it's genuinely a WRITE to a pulls collection:
+    # an endpoint ending in `/pulls` plus an explicit POST or any field/input flag. A plain
+    # `gh api repos/O/R/pulls` (list) or `.../pulls/123` (read) stays allowed — this gate blocks
+    # opening a PR, not looking at one.
+    found_api = 0; ep_pulls = 0; writes = 0
+    for (j = i + 1; j <= ntok; j++) {
+      if (tok[j] == "api") found_api = 1
+      else if (tok[j] ~ /(^|\/)pulls$/) ep_pulls = 1
+      else if (tok[j] == "-X" || tok[j] == "--method") {
+        if (j + 1 <= ntok && toupper(tok[j + 1]) == "POST") writes = 1
+      }
+      else if (tok[j] ~ /^--method=/) { if (toupper(substr(tok[j], 10)) == "POST") writes = 1 }
+      else if (tok[j] == "-f" || tok[j] == "-F" || tok[j] == "--field" ||
+               tok[j] == "--raw-field" || tok[j] == "--input") writes = 1
+    }
+    if (found_api && ep_pulls && writes) { matched = 1; return }
+
     found_pr = 0
     for (j = i + 1; j <= ntok; j++) {
       if (!found_pr) {

@@ -75,9 +75,33 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   the same step forever. Availability must also be established by *attempting* the call rather than
   inferred from the skill listing: the same session concluded "unavailable" from the listing and reached
   for the forbidden `/review` substitute anyway, and the unambiguous refusal surfaced only once the call
-  was finally tried. The gate needed no change — it checks step ids, and outcomes are free-form.
+  was finally tried.
+
+  **An adversarial pass over that rework found six more holes; four are fixed here, two are filed as
+  dir #63** (they can't be closed at the instruction layer: the step-5 receipt is a free-form string the
+  model writes about itself, and the hand-off's only exit depends on session memory that a context
+  compaction erases). Fixed: **`skip` is no longer auto-selectable** — it joins `high+` in always asking,
+  since the two ends of the scale are where the model's own judgement shouldn't be final, and `skip` was
+  the one depth that bypassed step 5 and its hand-off outright, so sizing the diff down was the cheapest
+  way out of being stopped. **Step 4's receipt now records what the depth was sized from**
+  (`low:+38-8,2f,docs`), because a bare level keeps the conclusion and discards the evidence.
+  **The inline pass must show what it checked and found**, the same bar step 3 sets for test output.
+  **Files changed during the hand-off count as step-5 changes** for step 6's retest trigger — they land
+  between `/polish` invocations, so "did step 5 change files" otherwise reads as "no" and the retest is
+  skipped after exactly the edits it exists to cover.
 
 ### Fixed
+- **Pre-PR gate now catches `gh api repos/O/R/pulls -f head=…`, which opened a PR without ever using
+  the `pr create` subcommand** (found 2026-07-26 while auditing the dir #57 rework). The command-position
+  lexer added in dir #58 scans for `gh` → `pr` → `create` tokens, so an `api` call carrying the REST
+  endpoint slipped past the fast-exit entirely — and it is precisely what gets reached for once
+  `gh pr create` is denied, which made it the highest-value remaining bypass rather than a theoretical
+  one. Matched only as a genuine write to a pulls collection: an endpoint ending in `/pulls` plus an
+  explicit `POST` or any field/input flag. Reads stay allowed by design and are pinned by tests —
+  `.../pulls` with no write flag (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f body=…`
+  (commenting on an existing PR): the gate blocks *opening* a PR, not looking at or annotating one, and
+  one that denied status checks would just teach the next session to route around it.
+
 - **Pre-PR gate no longer false-denies a `/polish` run whose receipts were written from inside a
   linked worktree** (dir #61, felt 2026-07-23). `tools/pre-pr-gate.sh` keyed its receipt sentinel and
   its unlock-SHA check by the raw basename of a cwd — the receipt writer's own `$PWD` on one side, the
