@@ -97,10 +97,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   endpoint slipped past the fast-exit entirely — and it is precisely what gets reached for once
   `gh pr create` is denied, which made it the highest-value remaining bypass rather than a theoretical
   one. Matched only as a genuine write to a pulls collection: an endpoint ending in `/pulls` plus an
-  explicit `POST` or any field/input flag. Reads stay allowed by design and are pinned by tests —
-  `.../pulls` with no write flag (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f body=…`
-  (commenting on an existing PR): the gate blocks *opening* a PR, not looking at or annotating one, and
-  one that denied status checks would just teach the next session to route around it.
+  explicit `POST` or — absent any named method — a field/input flag, since gh itself defaults to POST
+  once fields are supplied. An explicit method wins over that inference, so `-X GET …/pulls -f state=open`
+  stays a read: for a GET, fields are query parameters, and inferring "write" from the flag alone denied
+  exactly the listing this catch promises to leave alone. Reads stay allowed by design and are pinned by
+  tests — `.../pulls` with no write flag (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f
+  body=…` (commenting on an existing PR), and both explicit-GET forms: the gate blocks *opening* a PR, not
+  looking at or annotating one, and one that denied status checks would just teach the next session to
+  route around it. The branch is read out of `-f head=…` (owner prefix stripped for cross-fork heads) for
+  the same dir #61 reason the `pr create` path reads `--head` — without it a fully-polished worktree PR
+  opened this way would be denied as an ambiguous branch.
 
 - **Pre-PR gate no longer false-denies a `/polish` run whose receipts were written from inside a
   linked worktree** (dir #61, felt 2026-07-23). `tools/pre-pr-gate.sh` keyed its receipt sentinel and

@@ -146,11 +146,14 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 #
 # A second command shape opens a PR without that subcommand at all: `gh api repos/O/R/pulls -f head=…`
 # (found 2026-07-26 auditing the dir #57 rework — the natural reach once `gh pr create` is denied). It's
-# matched when it is a genuine WRITE to a pulls collection: an endpoint ending in `/pulls` PLUS an
-# explicit POST or any field/input flag. Reads stay allowed on purpose — `.../pulls` with no write flag
-# (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f body=…` (commenting on an existing PR):
-# this gate blocks OPENING a PR, not looking at or annotating one, and a gate that denies status checks
-# teaches the next session to route around it.
+# matched when it is a genuine WRITE to a pulls collection: an endpoint ending in `/pulls` PLUS either
+# an explicit `POST` or — absent any named method — a field/input flag, since gh itself defaults to POST
+# once fields are supplied. An explicit method always wins over that inference, so `-X GET …/pulls -f
+# state=open` (fields become query parameters on a GET) stays a read. Reads stay allowed on purpose —
+# `.../pulls` with no write flag (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f body=…`
+# (commenting on an existing PR): this gate blocks OPENING a PR, not looking at or annotating one, and a
+# gate that denies status checks teaches the next session to route around it. The branch is read out of
+# `-f head=…` for the same dir #61 reason the `pr create` path reads `--head`.
 #
 # Still lexical, not a real shell parse: within this model it errs toward catching — an unstripped
 # exotic heredoc form, or prose that happens to sit at a real command position, falls through as a
@@ -170,7 +173,7 @@ function flush_tok() {
 function is_assign(t) {
   return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
 }
-function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes) {
+function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes,has_field,method) {
   i = 1
   while (i <= ntok) {
     if (is_assign(tok[i])) { i++; continue }
@@ -188,18 +191,34 @@ function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes) {
     # an endpoint ending in `/pulls` plus an explicit POST or any field/input flag. A plain
     # `gh api repos/O/R/pulls` (list) or `.../pulls/123` (read) stays allowed — this gate blocks
     # opening a PR, not looking at one.
-    found_api = 0; ep_pulls = 0; writes = 0
+    found_api = 0; ep_pulls = 0; has_field = 0; method = ""
     for (j = i + 1; j <= ntok; j++) {
       if (tok[j] == "api") found_api = 1
       else if (tok[j] ~ /(^|\/)pulls$/) ep_pulls = 1
       else if (tok[j] == "-X" || tok[j] == "--method") {
-        if (j + 1 <= ntok && toupper(tok[j + 1]) == "POST") writes = 1
+        if (j + 1 <= ntok) method = toupper(tok[j + 1])
       }
-      else if (tok[j] ~ /^--method=/) { if (toupper(substr(tok[j], 10)) == "POST") writes = 1 }
+      else if (tok[j] ~ /^--method=/) { method = toupper(substr(tok[j], 10)) }
       else if (tok[j] == "-f" || tok[j] == "-F" || tok[j] == "--field" ||
-               tok[j] == "--raw-field" || tok[j] == "--input") writes = 1
+               tok[j] == "--raw-field" || tok[j] == "--input") has_field = 1
     }
-    if (found_api && ep_pulls && writes) { matched = 1; return }
+    # A field flag implies a write ONLY when no method was named — that's just gh's own default
+    # (fields present ⇒ POST). An explicit method always wins: `-X GET … -f state=open` sends the
+    # fields as query parameters and is a read, so inferring "write" from the flag alone would deny
+    # exactly the listing this gate promises to leave alone.
+    if (method != "") writes = (method == "POST")
+    else writes = has_field
+    if (found_api && ep_pulls && writes) {
+      # Same purpose as the --head scan in the pr-create branch below (dir #61): name the branch the
+      # PR is actually FOR, so the SHA check still resolves when the hook's event cwd isn't that
+      # branch's own checkout. Here the branch arrives as a field, `-f head=branch`; a cross-fork
+      # `head=owner:branch` carries an owner prefix that is not part of the ref.
+      for (k = i + 1; k <= ntok; k++) {
+        if (tok[k] ~ /^head=/) { head_out = substr(tok[k], 6); sub(/^[^:]*:/, "", head_out) }
+      }
+      matched = 1
+      return
+    }
 
     found_pr = 0
     for (j = i + 1; j <= ntok; j++) {

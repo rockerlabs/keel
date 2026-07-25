@@ -135,6 +135,13 @@ gate "gh api repos/owner/name/pulls/123" "$d"
 check_absent "gh api single-PR read → allowed" "$OUT" "deny"
 gate "gh api repos/owner/name/pulls/123/comments -f body=hi" "$d"
 check_absent "gh api comment on an existing PR → allowed" "$OUT" "deny"
+# An explicit method beats the fields-imply-POST inference: for a GET, `-f` sets query parameters,
+# so this is a listing, not a create. Inferring "write" from the flag alone denied exactly the read
+# the catch above promises to leave alone.
+gate "gh api -X GET repos/owner/name/pulls -f state=open -f per_page=50" "$d"
+check_absent "gh api -X GET pulls with fields → allowed" "$OUT" "deny"
+gate "gh api --method GET repos/owner/name/pulls -f state=open" "$d"
+check_absent "gh api --method GET pulls with fields → allowed" "$OUT" "deny"
 gate "$(printf "cat >> notes.md <<'EOF'\nsome text mentioning gh pr create here\nEOF\n")" "$d"
 check_absent "phrase mid-prose inside a heredoc body → allowed" "$OUT" "deny"
 gate "$(printf "cat >> notes.md <<'EOF'\ngh pr create is a doc-snippet line\nEOF\n")" "$d"
@@ -322,6 +329,21 @@ write_full_receipt "$WT"
 gate "gh pr create --head=dir61-feature4 --fill" "$MREPO"
 check_status "--head=BRANCH form resolves the branch → exit 0" 0 "$STATUS"
 check_absent "--head=BRANCH form → allowed" "$OUT" "deny"
+
+# The `gh api` create path carries its branch as a field, not a --head flag. It needs the same dir #61
+# resolution, or a fully-polished worktree PR opened that way is denied as an ambiguous branch.
+mkworktree dir61-wt-api dir61-feature5
+write_full_receipt "$WT"
+gate "gh api repos/owner/name/pulls -f head=dir61-feature5 -f base=main" "$MREPO"
+check_status "gh api -f head= resolves the branch → exit 0" 0 "$STATUS"
+check_absent "gh api -f head= → allowed" "$OUT" "deny"
+
+# Cross-fork head fields carry an `owner:` prefix that is not part of the ref name.
+mkworktree dir61-wt-apifork dir61-feature6
+write_full_receipt "$WT"
+gate "gh api repos/owner/name/pulls -f head=someone:dir61-feature6 -f base=main" "$MREPO"
+check_status "gh api cross-fork head= strips the owner prefix → exit 0" 0 "$STATUS"
+check_absent "gh api cross-fork head= → allowed" "$OUT" "deny"
 
 # 15. A receipt written AND read from the SAME worktree cwd (the ordinary, non-split case) still works
 # unchanged — main_top_for resolves the same main checkout consistently regardless of which member of
