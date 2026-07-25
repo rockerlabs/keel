@@ -60,30 +60,65 @@ Steps, in order:
    - **`high` or above → always open an `AskUserQuestion` dialog, never auto-run.** High+ is expensive
      (`ultra` is billed) and may be unwanted or out of budget — spend it only on an explicit yes. (A fixed
      cost rule, not a live budget check: there is no token-budget signal.)
-   - **`skip`/`low`/`medium` on a diff that sits clearly inside one bucket → run that level automatically**,
-     no dialog; state which level and why. Auto-**skip** only for a clearly pure-docs, reference-free
-     change — never auto-skip a diff that touches code or cross-references.
+   - **`skip` → also always ask, never auto-select.** The two ends of the scale are exactly where the
+     model's own judgement shouldn't be final: one spends the human's money, the other spends their
+     safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
+     leaving it auto-selectable gives back, in one word, the decision step 5 stops to obtain. Whenever
+     the review is expensive or unavailable, sizing the diff down is the cheapest way out of it, and
+     this step's sizing is the model's own and unchecked.
+   - **`low`/`medium` on a diff that sits clearly inside one bucket → run that level automatically**,
+     no dialog; state which level and why.
    - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
      the recommended level pre-selected and a **skip** option always present; let the human override.
 
-   Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>`.
+   Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>` — e.g.
+   `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
+   the evidence for it; the measurement is what makes a questionable call visible afterwards.
 
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
-   `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings. For
-   `ultra` you cannot launch it yourself (cloud, billed, user-triggered) — print the exact `/code-review
-   ultra` command, stop before the sentinel/PR, and let the human run it (they re-invoke `/polish` after).
-   **If the `/code-review` skill is not available in this session** (missing from the skill list, or
-   present but blocked from model invocation), do not substitute `/review` or guess — instead perform
-   ONE inline review pass of the step-1 diff at the chosen depth (correctness-focused, same
-   single-terminal-pass rule as below), resolve any real findings, and say in the summary that the
-   review ran inline because the skill wasn't available.
+   `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings.
+   **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
+   skill can be installed and still refuse model invocation, and only the attempt returns the reason.
+
+   **Two cases hand the review back to the human, and both follow the same hand-off below.** `ultra` you
+   cannot launch at all (cloud, billed, user-triggered). `/code-review` being unavailable to you —
+   missing from the skill list, or refusing with `disable-model-invocation` — is the other; there, do not
+   substitute `/review` (a GitHub-PR command, not a working-diff review) and do not guess.
+   - **(a)** In the *unavailable* case only, perform ONE inline review pass of the step-1 diff at the
+     chosen depth (correctness-focused, same single-terminal-pass rule as below) and resolve any real
+     findings, so cheap issues never reach the human. For `ultra`, go straight to (b) — that depth was
+     chosen precisely because a cheap pass isn't the answer. **Say what you checked and what you found**,
+     the way step 3 has to show real test output: an assertion that a pass happened, with nothing to
+     inspect, is indistinguishable from one that didn't.
+   - **(b) Then stop.** Report that the real review could not be run, print the exact
+     `/code-review <level>` command, and ask whether to run it or to proceed without. Do NOT write this
+     step's receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. An inline
+     pass is a courtesy, never a substitute for the human's decision about review depth: it is one pass,
+     in the same context that wrote the code, with no independent reviewer. **The failure this closes:**
+     continuing to a merged-ready PR and disclosing the substitution only in the closing summary, where
+     the operator finds out by reading the transcript — or not at all.
+   - **(c)** Once they answer — or, on a re-invocation, once the session already shows they ran it —
+     **resolve any findings their review reported** (same bar as the in-session path; a review nobody
+     acts on bought nothing), then record the outcome and continue: receipt
+     `polish.5-review <level>-operator-run`, or `<level>-waived` if they explicitly chose to proceed
+     without. **This is the branch's only exit.** `init` mints a fresh nonce that discards the previous
+     run's receipts, so a re-invoked `/polish` re-sizes the same diff and picks the same level — without
+     recognising the review the human already ran, it would defer again, and every time after that.
+   - **(d)** Both outcomes are load-bearing for step 10: the summary must say the real review did not run
+     in-session and name what stood in for it, never just the depth. "review: medium" reads identically
+     to a genuine in-session pass, which is how the substitution stays invisible.
+
    **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
    if `--fix` changes files.** No infinite cycle.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `ultra-deferred`, or
-   `skip`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`,
+   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
-   `--no-test`-skipped), re-run the test command a single time — review fixes can break something. Show the
+   `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
+   changed during the hand-off count as step-5 changes** — whether the human's own `--fix` run edited them
+   or you did, resolving the findings their review reported. Those land between `/polish` invocations, so
+   "did step 5 change files" is otherwise easy to read as "no", and the retest gets skipped after exactly
+   the kind of edit it exists to cover. Show the
    real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
@@ -112,4 +147,8 @@ Steps, in order:
    implementation context (what changed, why, a test plan). Return the PR URL.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
-    self-check result), which review depth ran (or that it was skipped), and the PR URL.
+    self-check result), which review depth ran (or that it was skipped), and the PR URL. **If step 5 took
+    the hand-off branch, say so explicitly** — that the real review did not run in-session, and whether
+    the human ran it (`-operator-run`) or waived it (`-waived`, leaving only the inline pass). A bare
+    depth is indistinguishable from a genuine in-session review, so reporting one here would re-hide
+    exactly what step 5 stops to surface.

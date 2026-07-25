@@ -57,15 +57,57 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   not inside, the existing reconcile-first rule, which stays the session-start/step-level check.
   Mirrored into `templates/CLAUDE.md` (byte-pinned by `test_core_wrapper_sync.sh`).
 
-- **`/polish` step 5 documents an inline-review fallback for when `/code-review` isn't in the
-  harness** (dir #57, felt 2026-07-21, 5th occurrence). The skill isn't always present or
-  invocable — missing from the session's skill list, or gated behind
-  `disable-model-invocation` — and each hit so far improvised the same fix (one inline review
-  pass at the chosen depth, no loop-back). That fallback is now spelled out in `commands/polish.md`
-  itself so future sessions don't have to reinvent it, and no longer guess a substitute like
-  `/review` (which mis-parses a review level as a PR number).
+- **`/polish` step 5 handles `/code-review` being unavailable — and now stops instead of carrying on**
+  (dir #57, felt 2026-07-21 as the 5th occurrence, reworked 2026-07-26 on the 6th). The skill isn't
+  always present or invocable — missing from the session's skill list, or gated behind
+  `disable-model-invocation` — and each hit improvised the same fix (one inline review pass at the
+  chosen depth, no loop-back). That fallback is spelled out in `commands/polish.md` itself so future
+  sessions don't have to reinvent it, and no longer guess a substitute like `/review` (which mis-parses
+  a review level as a PR number).
+
+  **The 6th occurrence showed documenting the fallback wasn't enough.** It read "do the inline pass and
+  continue", so the session went on to unlock the gate and open the PR by itself, disclosing that the
+  real review never ran only in the closing summary — the operator found out by reading the transcript,
+  and would not have otherwise. The unavailable case now behaves like `ultra` already did: inline pass
+  first (so cheap findings never reach the human), then **stop before the receipt, the sentinel and the
+  PR**, print the exact `/code-review <level>` command, and let the operator run it or explicitly waive
+  it — recorded as `<level>-operator-run` / `<level>-waived` so a re-invoked `/polish` doesn't stall at
+  the same step forever. Availability must also be established by *attempting* the call rather than
+  inferred from the skill listing: the same session concluded "unavailable" from the listing and reached
+  for the forbidden `/review` substitute anyway, and the unambiguous refusal surfaced only once the call
+  was finally tried.
+
+  **An adversarial pass over that rework found six more holes; four are fixed here, two are filed as
+  dir #63** (they can't be closed at the instruction layer: the step-5 receipt is a free-form string the
+  model writes about itself, and the hand-off's only exit depends on session memory that a context
+  compaction erases). Fixed: **`skip` is no longer auto-selectable** — it joins `high+` in always asking,
+  since the two ends of the scale are where the model's own judgement shouldn't be final, and `skip` was
+  the one depth that bypassed step 5 and its hand-off outright, so sizing the diff down was the cheapest
+  way out of being stopped. **Step 4's receipt now records what the depth was sized from**
+  (`low:+38-8,2f,docs`), because a bare level keeps the conclusion and discards the evidence.
+  **The inline pass must show what it checked and found**, the same bar step 3 sets for test output.
+  **Files changed during the hand-off count as step-5 changes** for step 6's retest trigger — they land
+  between `/polish` invocations, so "did step 5 change files" otherwise reads as "no" and the retest is
+  skipped after exactly the edits it exists to cover.
 
 ### Fixed
+- **Pre-PR gate now catches `gh api repos/O/R/pulls -f head=…`, which opened a PR without ever using
+  the `pr create` subcommand** (found 2026-07-26 while auditing the dir #57 rework). The command-position
+  lexer added in dir #58 scans for `gh` → `pr` → `create` tokens, so an `api` call carrying the REST
+  endpoint slipped past the fast-exit entirely — and it is precisely what gets reached for once
+  `gh pr create` is denied, which made it the highest-value remaining bypass rather than a theoretical
+  one. Matched only as a genuine write to a pulls collection: an endpoint ending in `/pulls` plus an
+  explicit `POST` or — absent any named method — a field/input flag, since gh itself defaults to POST
+  once fields are supplied. An explicit method wins over that inference, so `-X GET …/pulls -f state=open`
+  stays a read: for a GET, fields are query parameters, and inferring "write" from the flag alone denied
+  exactly the listing this catch promises to leave alone. Reads stay allowed by design and are pinned by
+  tests — `.../pulls` with no write flag (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f
+  body=…` (commenting on an existing PR), and both explicit-GET forms: the gate blocks *opening* a PR, not
+  looking at or annotating one, and one that denied status checks would just teach the next session to
+  route around it. The branch is read out of `-f head=…` (owner prefix stripped for cross-fork heads) for
+  the same dir #61 reason the `pr create` path reads `--head` — without it a fully-polished worktree PR
+  opened this way would be denied as an ambiguous branch.
+
 - **Pre-PR gate no longer false-denies a `/polish` run whose receipts were written from inside a
   linked worktree** (dir #61, felt 2026-07-23). `tools/pre-pr-gate.sh` keyed its receipt sentinel and
   its unlock-SHA check by the raw basename of a cwd — the receipt writer's own `$PWD` on one side, the
