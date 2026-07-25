@@ -71,31 +71,38 @@ Steps, in order:
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
    `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
-   skill can be installed and still refuse model invocation, and only the attempt returns the reason. For
-   `ultra` you cannot launch it yourself (cloud, billed, user-triggered) — print the exact `/code-review
-   ultra` command, stop before the sentinel/PR, and let the human run it (they re-invoke `/polish` after).
+   skill can be installed and still refuse model invocation, and only the attempt returns the reason.
 
-   **If `/code-review` is unavailable to you** — missing from the skill list, or present but refusing with
-   `disable-model-invocation` — do not substitute `/review` (a GitHub-PR command, not a working-diff
-   review) and do not guess. Instead:
-   - **(a)** Perform ONE inline review pass of the step-1 diff at the chosen depth (correctness-focused,
-     same single-terminal-pass rule as below) and resolve any real findings, so cheap issues never reach
-     the human.
-   - **(b) Then stop, exactly as for `ultra`.** Report that the real review could not be run, print the
-     exact `/code-review <level>` command, and ask whether to run it or to proceed without. Do NOT write
-     this step's receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. An
-     inline pass is a courtesy, never a substitute for the human's decision about review depth: it is one
-     pass, in the same context that wrote the code, with no independent reviewer. **The failure this
-     closes:** continuing to a merged-ready PR and disclosing the substitution only in the closing
-     summary, where the operator finds out by reading the transcript — or not at all.
-   - **(c)** On the human's answer, record it and continue: receipt `polish.5-review <level>-operator-run`
-     once they confirm they ran it, or `<level>-waived` if they explicitly choose to proceed without.
-     Without this, a re-invoked `/polish` would stop at this step forever.
+   **Two cases hand the review back to the human, and both follow the same hand-off below.** `ultra` you
+   cannot launch at all (cloud, billed, user-triggered). `/code-review` being unavailable to you —
+   missing from the skill list, or refusing with `disable-model-invocation` — is the other; there, do not
+   substitute `/review` (a GitHub-PR command, not a working-diff review) and do not guess.
+   - **(a)** In the *unavailable* case only, perform ONE inline review pass of the step-1 diff at the
+     chosen depth (correctness-focused, same single-terminal-pass rule as below) and resolve any real
+     findings, so cheap issues never reach the human. For `ultra`, go straight to (b) — that depth was
+     chosen precisely because a cheap pass isn't the answer.
+   - **(b) Then stop.** Report that the real review could not be run, print the exact
+     `/code-review <level>` command, and ask whether to run it or to proceed without. Do NOT write this
+     step's receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. An inline
+     pass is a courtesy, never a substitute for the human's decision about review depth: it is one pass,
+     in the same context that wrote the code, with no independent reviewer. **The failure this closes:**
+     continuing to a merged-ready PR and disclosing the substitution only in the closing summary, where
+     the operator finds out by reading the transcript — or not at all.
+   - **(c)** Once they answer — or, on a re-invocation, once the session already shows they ran it —
+     **resolve any findings their review reported** (same bar as the in-session path; a review nobody
+     acts on bought nothing), then record the outcome and continue: receipt
+     `polish.5-review <level>-operator-run`, or `<level>-waived` if they explicitly chose to proceed
+     without. **This is the branch's only exit.** `init` mints a fresh nonce that discards the previous
+     run's receipts, so a re-invoked `/polish` re-sizes the same diff and picks the same level — without
+     recognising the review the human already ran, it would defer again, and every time after that.
+   - **(d)** Both outcomes are load-bearing for step 10: the summary must say the real review did not run
+     in-session and name what stood in for it, never just the depth. "review: medium" reads identically
+     to a genuine in-session pass, which is how the substitution stays invisible.
 
    **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
    if `--fix` changes files.** No infinite cycle.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `ultra-deferred`,
-   `medium-operator-run`, `medium-waived`, or `skip`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`,
+   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. Show the
@@ -127,4 +134,8 @@ Steps, in order:
    implementation context (what changed, why, a test plan). Return the PR URL.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
-    self-check result), which review depth ran (or that it was skipped), and the PR URL.
+    self-check result), which review depth ran (or that it was skipped), and the PR URL. **If step 5 took
+    the hand-off branch, say so explicitly** — that the real review did not run in-session, and whether
+    the human ran it (`-operator-run`) or waived it (`-waived`, leaving only the inline pass). A bare
+    depth is indistinguishable from a genuine in-session review, so reporting one here would re-hide
+    exactly what step 5 stops to surface.
