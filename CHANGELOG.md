@@ -57,30 +57,27 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   not inside, the existing reconcile-first rule, which stays the session-start/step-level check.
   Mirrored into `templates/CLAUDE.md` (byte-pinned by `test_core_wrapper_sync.sh`).
 
-- **`/polish` step 5 documents an inline-review fallback for when `/code-review` isn't in the
-  harness** (dir #57, felt 2026-07-21, 5th occurrence). The skill isn't always present or
-  invocable — missing from the session's skill list, or gated behind
-  `disable-model-invocation` — and each hit so far improvised the same fix (one inline review
-  pass at the chosen depth, no loop-back). That fallback is now spelled out in `commands/polish.md`
-  itself so future sessions don't have to reinvent it, and no longer guess a substitute like
-  `/review` (which mis-parses a review level as a PR number).
+- **`/polish` step 5 handles `/code-review` being unavailable — and now stops instead of carrying on**
+  (dir #57, felt 2026-07-21 as the 5th occurrence, reworked 2026-07-26 on the 6th). The skill isn't
+  always present or invocable — missing from the session's skill list, or gated behind
+  `disable-model-invocation` — and each hit improvised the same fix (one inline review pass at the
+  chosen depth, no loop-back). That fallback is spelled out in `commands/polish.md` itself so future
+  sessions don't have to reinvent it, and no longer guess a substitute like `/review` (which mis-parses
+  a review level as a PR number).
+
+  **The 6th occurrence showed documenting the fallback wasn't enough.** It read "do the inline pass and
+  continue", so the session went on to unlock the gate and open the PR by itself, disclosing that the
+  real review never ran only in the closing summary — the operator found out by reading the transcript,
+  and would not have otherwise. The unavailable case now behaves like `ultra` already did: inline pass
+  first (so cheap findings never reach the human), then **stop before the receipt, the sentinel and the
+  PR**, print the exact `/code-review <level>` command, and let the operator run it or explicitly waive
+  it — recorded as `<level>-operator-run` / `<level>-waived` so a re-invoked `/polish` doesn't stall at
+  the same step forever. Availability must also be established by *attempting* the call rather than
+  inferred from the skill listing: the same session concluded "unavailable" from the listing and reached
+  for the forbidden `/review` substitute anyway, and the unambiguous refusal surfaced only once the call
+  was finally tried. The gate needed no change — it checks step ids, and outcomes are free-form.
 
 ### Fixed
-- **`/polish` no longer opens a PR on its own when `/code-review` is unavailable to the model**
-  (felt 2026-07-26). Step 5's fallback for an unavailable review skill said "do one
-  inline pass and continue", so a session whose `/code-review` refuses with `disable-model-invocation`
-  (operator-only by configuration) silently substituted its own single-context review and went on to
-  unlock the gate and open the PR — the operator learned the real review never ran only from the closing
-  summary, i.e. by reading the transcript. The unavailable case now behaves like `ultra` already did:
-  do the inline pass (so cheap findings never reach the human), then **stop before the receipt, the
-  sentinel and the PR**, print the exact `/code-review <level>` command, and let the operator choose to
-  run it or explicitly waive it — recorded as `polish.5-review <level>-operator-run` / `<level>-waived`
-  so a re-invoked `/polish` doesn't stall at the same step forever. Step 5 also now requires
-  *attempting* the invocation to establish availability rather than inferring it from the skill listing
-  (the same session concluded "not available" from the listing and reached for the forbidden `/review`
-  substitute; the unambiguous refusal only surfaced once the call was actually tried). The gate needed
-  no change — it checks step ids, and outcomes are free-form.
-
 - **Pre-PR gate no longer false-denies a `/polish` run whose receipts were written from inside a
   linked worktree** (dir #61, felt 2026-07-23). `tools/pre-pr-gate.sh` keyed its receipt sentinel and
   its unlock-SHA check by the raw basename of a cwd — the receipt writer's own `$PWD` on one side, the
