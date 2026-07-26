@@ -42,6 +42,27 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   beyond that — wiring the two new hooks into the maintainer's personal `~/.claude/settings.json`
   (documented in the script's own header) — since nothing in this repo edits that file automatically.
 
+  **`/code-review` was itself unavailable for this session (`disable-model-invocation`) — the exact felt
+  incident dir #63 exists to fix, reproducing live** — so an independent agent stood in for the real
+  `high`-depth pass per `commands/polish.md`'s step 5(a). It found two genuine bypasses in the first
+  draft, both fixed here: (1) the trusted outcomes (`skip`, `-operator-run`, `-waived`) were exempt from
+  the trace check by design, but nothing cross-checked them against what `polish.4-depth` actually
+  recorded — a session could size the diff `medium` and simply write `polish.5-review skip`, unlocking
+  the gate on one word regardless of the real depth; (2) the trace check matched only the commit SHA,
+  never the level, so a genuine `/code-review low` pass could vouch for a receipt claiming `max`. Both
+  closed by one cross-check: every `polish.5-review` outcome (trusted or bare) must now share `polish.4-
+  depth`'s own recorded level, and a bare-level trace match now requires the SAME level, not just the
+  same commit. The review also caught a second instance of the tab-collapse `read` bug (this time in the
+  PASS-branch's own result parsing) and a jq `join` that would throw — and lose the whole parsed row,
+  not just the bad field — on a non-string `args`/`command_args`; both hardened the same way as the
+  first fix. Two narrower, accepted limitations are now documented in the gate's own header rather than
+  silently left uncovered: the trace's SHA can be wrong under the same split main-checkout/worktree
+  pattern dir #61 hardened for the sentinel (fails closed — a false deny, not a bypass); the hand-off
+  file is repo- not worktree-scoped, same as the sentinel's own existing keying. The header's "the model
+  cannot author itself" framing was also overclaiming — softened to "a side channel the model isn't
+  expected to touch," since nothing stops the model writing to `/tmp` directly. 6 more test cases added
+  (101 total for this file); full suite + shellcheck + self-doctor green.
+
 - **`/polish` step-receipt gate** (dir #49, maintainer dev-tooling pilot). `tools/pre-pr-gate.sh` gained
   `init`/`receipt`/`log` CLI subcommands: each `/polish` step now appends a receipt line
   (`<run-nonce>\t<step-id>\t<outcome>`) instead of the gate trusting a bare HEAD-SHA sentinel. The

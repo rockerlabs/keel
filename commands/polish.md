@@ -81,8 +81,11 @@ Steps, in order:
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
 
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
-   directly by the operator typing it), a harness hook mechanically records a SHA-keyed trace the
-   receipt below can't fabricate — `tools/pre-pr-gate.sh`'s gate cross-checks it before unlocking.
+   directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
+   flow doesn't otherwise write to — `tools/pre-pr-gate.sh`'s gate cross-checks it (same commit, same
+   level) before unlocking. The gate also cross-checks EVERY outcome, including a hand-off's
+   `-operator-run`/`-waived`, against the level step 4 actually recorded — `skip`ping the review while
+   claiming a higher depth was sized doesn't unlock the gate either.
    **Residual limit:** the inline pass in (a) below still leaves no trace by construction — that path's
    outcome (`-operator-run`/`-waived`) stays self-reported; the trace only makes "claims the skill ran
    when it didn't" checkable, not the inline pass's own thoroughness.

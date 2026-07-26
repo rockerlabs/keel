@@ -48,9 +48,12 @@ gate() {
 # (`medium-operator-run`) — dir #63's trace cross-check only applies to a bare level, and these fixtures
 # are about the OTHER completeness/replay/worktree mechanics, not that check (which gets its own tests
 # below); a real caller can still override via write_full_receipt_review() when it needs a bare level.
+# polish.4-depth is derived to carry the SAME base level as the review outcome (dir #63's depth-mismatch
+# check requires this on every real receipt, trusted outcomes included).
 write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
 write_full_receipt_review() {
-  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s
+  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
+  depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
   run_in "$d" bash "$gate" init
   for s in $ALL_STEPS; do
     [ "$s" = "$omit" ] && continue
@@ -62,6 +65,8 @@ write_full_receipt_review() {
       run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
     elif [ "$s" = "polish.5-review" ]; then
       run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
+    elif [ "$s" = "polish.4-depth" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$depth_level:test-fixture"
     else
       run_in "$d" bash "$gate" receipt "$s"
     fi
@@ -372,17 +377,31 @@ rm -f "$(trace_for "$d")"
 write_full_receipt_review "$d" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "bare review outcome, no trace → denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "bare review outcome, no trace → names the trace as missing" "$OUT" "no matching trace"
+check_contains "bare review outcome, no trace → names the trace as missing" "$OUT" "no trace matching"
 check_nofile "denied-for-trace sentinel is removed" "$(sentinel_for "$d")"
 
 # 17. Same, but a trace file exists for a DIFFERENT (older) commit — still denied; a trace from a
-# past run must not vouch for a later, unreviewed commit.
+# past run must not vouch for a later, unreviewed commit. Asserts the SPECIFIC trace-missing reason,
+# not just "denied for some reason" — the fixture is otherwise a complete, matching receipt, so a
+# vaguer check here could pass even if the trace check silently stopped firing.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 printf '%s\tmedium\n' "0000000000000000000000000000000000000000" > "$tf"
 write_full_receipt_review "$d" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "stale-commit trace → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "stale-commit trace → denied for the trace, not some other reason" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 17b. A trace line for the RIGHT commit but the WRONG level — a cheap `low` review must not vouch
+# for a receipt claiming `max` (the exact-level-match half of the trace check).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tlow\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "max"
+gate "gh pr create --fill" "$d"
+check_contains "right commit, wrong trace level → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "right commit, wrong trace level → denied for the trace, not some other reason" "$OUT" "no trace matching"
 rm -f "$tf"
 
 # 18. A trace line matching the CURRENT HEAD SHA → the bare outcome is now trusted, gate passes.
@@ -394,6 +413,40 @@ gate "gh pr create --fill" "$d"
 check_status "matching-commit trace → exit 0" 0 "$STATUS"
 check_absent "matching-commit trace → allowed" "$OUT" "deny"
 rm -f "$tf"
+
+# --- dir #63: polish.5-review's outcome must match polish.4-depth's OWN recorded level -----------
+# 18b. The `skip` bypass: a session sizes the diff `medium` (polish.4-depth), then simply claims
+# `polish.5-review skip` — `skip` needs no trace, so without this cross-check it unlocks the gate on
+# one lied-about word regardless of what was actually sized.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
+run_in "$d" bash "$gate" receipt polish.5-review skip
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "review 'skip' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
+
+# 18c. Same shape for a trusted -operator-run outcome: claiming "low-operator-run" against a depth
+# actually sized "high" must not unlock the gate either — write_full_receipt_review always matches
+# polish.4-depth to the given outcome, so this one is built by hand to deliberately mismatch them.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "high:+900-50,15f,code"
+run_in "$d" bash "$gate" receipt polish.5-review low-operator-run
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "'low-operator-run' against a sized-high depth → denied" "$OUT" '"permissionDecision":"deny"'
 
 # 19. skill-trace subcommand: a PostToolUse(Skill) event for the code-review skill appends a trace
 # line keyed by the event's own HEAD SHA.
