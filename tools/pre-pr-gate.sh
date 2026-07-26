@@ -528,35 +528,39 @@ case "$status" in
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
     # dir #63/Hole A: cross-check step 5's review outcome against step 4's OWN recorded depth — without
-    # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check just below) were
+    # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
-    # skip` regardless — the depth-mismatch check below closes that whether or not a trace exists.
+    # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
+    # it both strips the suffix (to compare against step 4's level) and decides whether a trace is
+    # required, so a future third suffix only needs adding here, not kept in sync across two mechanisms.
     depth_level="${depth_outcome%%:*}"
-    outcome_level="${review_outcome%-operator-run}"
-    outcome_level="${outcome_level%-waived}"
+    trusted=0
+    case "$review_outcome" in
+      skip)             outcome_level="skip";                       trusted=1 ;;
+      *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1 ;;
+      *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1 ;;
+      *)                outcome_level="$review_outcome" ;;
+    esac
     if [ "$outcome_level" != "$depth_level" ]; then
       rm -f "$sentinel"
       log_event receipt-deny "review-depth-mismatch" "$cwd"
       deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
     fi
-    # A BARE review outcome (no -operator-run/-waived suffix, not skip) claims a real in-session
-    # /code-review run — cross-check the mechanically-written trace (skill-trace, above) so that claim
-    # can't be satisfied by self-report alone. The trace's OWN recorded level must match too — otherwise
-    # a genuine `/code-review low` pass would vouch for a receipt claiming `max`. Trusted outcomes (skip,
-    # *-operator-run, *-waived) need no trace — they already name a different, non-fabricable source (the
-    # human, or a deliberate no-review choice) and are covered by the depth check above instead.
-    case "$review_outcome" in
-      skip|*-operator-run|*-waived) ;;
-      *)
-        trace_path="$(trace_path_for "$cwd")"
-        if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$review_outcome" \
-            '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
-          rm -f "$sentinel"
-          log_event receipt-deny "review-trace-missing" "$cwd"
-          deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
-        fi
-        ;;
-    esac
+    # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real
+    # in-session /code-review run — cross-check the mechanically-written trace (skill-trace, above) so
+    # that claim can't be satisfied by self-report alone. The trace's OWN recorded level must match too
+    # — otherwise a genuine `/code-review low` pass would vouch for a receipt claiming `max`. Trusted
+    # outcomes need no trace — they already name a different, non-fabricable source (the human, or a
+    # deliberate no-review choice) and are covered by the depth check above instead.
+    if [ "$trusted" -eq 0 ]; then
+      trace_path="/tmp/pre-pr-gate-trace-$wt"
+      if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$review_outcome" \
+          '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
+        rm -f "$sentinel"
+        log_event receipt-deny "review-trace-missing" "$cwd"
+        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
+      fi
+    fi
     rm -f "$sentinel"
     log_event receipt-pass "" "$cwd"
     exit 0

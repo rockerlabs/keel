@@ -31,7 +31,11 @@ mkrepo() {
   printf '%s' "$d"
 }
 
-sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(basename "$1")"; }
+# Shared repo-key derivation (mirrors the production file's own _repo_key) — every per-repo /tmp
+# file this test drives (sentinel, trace, hand-off) keys off this one function instead of each
+# inlining `basename "$1"` separately.
+repo_key_for() { basename "$1"; }
+sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
 
 # Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS.
 gate() {
@@ -368,7 +372,7 @@ check_status "receipt + hook both from the worktree → exit 0" 0 "$STATUS"
 check_absent "receipt + hook both from the worktree → allowed" "$OUT" "deny"
 
 # --- dir #63: skill-invocation trace + nonce-surviving hand-off ----------------------------------
-trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(basename "$1")"; }
+trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
 
 # 16. A BARE review outcome (a real in-session level, no -operator-run/-waived suffix) with NO
 # matching trace at all → denied, naming the trace as the reason (not a generic completeness miss).
@@ -478,7 +482,7 @@ check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
-handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(basename "$1")"; }
+handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(repo_key_for "$1")"; }
 
 # 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
 # reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
@@ -516,5 +520,26 @@ run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" handoff medium "$sha"
 run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
 check_nofile "hand-off file removed once the real polish.5-review receipt lands" "$hf"
+
+# 25. dir #61 discipline extended to the trace/hand-off paths: both key off the MAIN checkout, not the
+# raw event/PWD cwd — a trace written for a Skill event whose cwd is a worktree, and a hand-off written
+# from inside that same worktree, must both land under the MAIN checkout's files, exactly like the
+# sentinel already does (tests 12-15). (The trace's SHA/level CONTENT can still be wrong under a split
+# session-root/worktree cwd — documented as an accepted residual limit in the gate's own header — this
+# test only proves the FILE ITSELF is the one the gate will actually look at.)
+mkworktree dir63-wt dir63-feature
+sha="$(git -C "$WT" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$WT" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "trace from a worktree event-cwd lands under the MAIN checkout's trace file" "$(trace_for "$MREPO")"
+check_nofile "no stray trace file under the worktree's own basename" "$(trace_for "$WT")"
+check_contains "the worktree-sourced trace carries the worktree's own SHA" "$(cat "$(trace_for "$MREPO")" 2>/dev/null)" "$sha"
+rm -f "$(trace_for "$MREPO")"
+
+run_in "$WT" bash "$gate" init
+run_in "$WT" bash "$gate" handoff high "$sha"
+check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(handoff_for "$MREPO")"
+check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
+rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
 
 summary

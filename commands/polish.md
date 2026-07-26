@@ -45,6 +45,14 @@ Steps, in order:
    clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly skipped).
    Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
 
+   **First check `tools/pre-pr-gate.sh handoff-check` — a match means step 5 already stopped to ask
+   about THIS exact commit on an earlier invocation.** Reuse its recorded level as-is rather than
+   re-sizing from scratch: the diff hasn't changed since the question was asked (same SHA), and a fresh
+   sizing pass can land on a different bucket than the original one did on a borderline diff, which
+   would make this step's own receipt disagree with the level the hand-off is about to resolve — the
+   gate now denies exactly that mismatch. No match (no pending hand-off, or a different commit): size
+   normally, below.
+
    Size the step-1 diff cheaply — lines changed, files touched, real logic vs docs/tests only, and whether
    it touches cross-references/links. From that, form a **recommended level**:
    - pure docs/wording, no cross-references → **skip**
