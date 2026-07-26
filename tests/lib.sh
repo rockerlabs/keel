@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # REPO_ROOT/OUT/STATUS are read by the sourcing test files, not here
+# shellcheck disable=SC2154  # $gate (pre-pr-gate.sh receipt fixtures) is set by the sourcing test file
 # Keel test harness — zero-dependency bash. Sourced by each tests/test_*.sh.
 #
 # Provides: an isolated sandbox HOME (so global git config / hooks never touch the real
@@ -80,6 +81,50 @@ new_repo() {
   d="$(mktemp -d "$SANDBOX/repo.XXXXXX")"
   git -C "$d" init -q
   printf '%s' "$d"
+}
+
+# --- pre-pr-gate.sh receipt fixtures -------------------------------------------------------------
+# Shared by test_pre_pr_gate.sh and test_pipeline_canary.sh (dir #64) — both drive the SAME gate CLI
+# subcommands to build a complete, matching receipt. Expects the CALLER to have already set a $gate
+# variable (the path to tools/pre-pr-gate.sh) before calling these.
+ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
+
+# Shared repo-key derivation (mirrors the production file's own _repo_key) — every per-repo /tmp
+# file these fixtures drive (sentinel, trace, hand-off) keys off this one function instead of each
+# caller inlining `basename "$1"` separately.
+repo_key_for() { basename "$1"; }
+sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
+
+# Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
+# both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
+# incomplete-receipt tests); $3 = optional step whose line should be re-tagged with a foreign nonce instead
+# of being written at all (for the replay tests). polish.5-review defaults to a TRUSTED outcome
+# (`medium-operator-run`) — dir #63's trace cross-check only applies to a bare level, and these fixtures
+# are about the OTHER completeness/replay/worktree mechanics, not that check; a real caller can still
+# override via write_full_receipt_review() when it needs a bare level. polish.4-depth is derived to carry
+# the SAME base level as the review outcome (dir #63's depth-mismatch check requires this on every real
+# receipt, trusted outcomes included).
+write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
+write_full_receipt_review() {
+  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
+  depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
+  run_in "$d" bash "$gate" init
+  for s in $ALL_STEPS; do
+    [ "$s" = "$omit" ] && continue
+    if [ "$s" = "$replay_step" ]; then
+      printf 'stale-nonce-from-a-previous-run\t%s\tdone\n' "$s" >> "$(sentinel_for "$d")"
+      continue
+    fi
+    if [ "$s" = "polish.8-unlock" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
+    elif [ "$s" = "polish.5-review" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
+    elif [ "$s" = "polish.4-depth" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$depth_level:test-fixture"
+    else
+      run_in "$d" bash "$gate" receipt "$s"
+    fi
+  done
 }
 
 # A PATH dir ($1) symlinking every executable currently on $PATH EXCEPT the names in $2.. — for

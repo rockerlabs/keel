@@ -68,9 +68,10 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
-# A repo-key derivation matching pre-pr-gate.sh's own _repo_key (basename of the toplevel), so `check`
-# can find the same /tmp/pre-pr-gate-* files the sandboxed session wrote.
-_repo_key_of() { basename "$1"; }
+# The authoritative repo-key resolution (worktree-aware — dir #61) lives in pre-pr-gate.sh itself;
+# calling its own `repo-key` subcommand instead of re-deriving the algorithm here means this stays
+# correct even if that resolution ever changes.
+_repo_key_of() { bash "$GATE" repo-key "$1"; }
 
 cmd_setup() {
   [ -f "$GATE" ] || { printf 'pipeline-canary: %s not found — run from a keel checkout\n' "$GATE" >&2; exit 1; }

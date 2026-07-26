@@ -63,16 +63,9 @@ check_contains "check before any run → FAILs the gh-reached assertion" "$OUT" 
 # then drive the gate's OWN hook mode (exactly what the real PreToolUse hook does before the harness
 # lets `gh pr create` actually execute) and only then invoke the sandbox's stub `gh` — two separate
 # steps, matching the real flow: the hook decides, the harness executes on ALLOW.
+# write_full_receipt_review lives in lib.sh (shared with test_pre_pr_gate.sh) — expects $gate set.
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
-run_in "$repo" bash "$gate" init
-run_in "$repo" bash "$gate" receipt polish.1-diff
-run_in "$repo" bash "$gate" receipt polish.2-simplify
-run_in "$repo" bash "$gate" receipt polish.3-tests
-run_in "$repo" bash "$gate" receipt polish.4-depth "low:test-fixture"
-run_in "$repo" bash "$gate" receipt polish.5-review "low-operator-run"
-run_in "$repo" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$repo" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$repo" bash "$gate" receipt polish.8-unlock "$(git -C "$repo" rev-parse HEAD)"
+write_full_receipt_review "$repo" "low-operator-run"
 # -u KEEL_IMPACT_LOG: lib.sh exports a sandbox-wide default for the whole test run, which would
 # otherwise outrank the toy repo's own .keel/ marker — unset it so the event lands where `check` reads.
 gate_decision="$(jq -n --arg c "gh pr create --fill" --arg d "$repo" '{tool_input:{command:$c}, cwd:$d}' | env -u KEEL_IMPACT_LOG bash "$gate")"

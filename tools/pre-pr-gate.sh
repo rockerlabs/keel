@@ -200,6 +200,14 @@ log_event() {
 }
 
 case "${1:-}" in
+  repo-key)
+    # Exposes _repo_key() (the worktree-aware basename(main_top_for(...)) dir #61 resolution every
+    # /tmp sentinel/trace/hand-off/rollout-state path is keyed by) to other tools — dir #64's own
+    # pipeline-canary.sh uses this instead of hand-copying the algorithm, which would silently drop
+    # the worktree resolution if it ever changes here.
+    printf '%s\n' "$(_repo_key "${2:-$PWD}")"
+    exit 0
+    ;;
   init)
     sentinel="$(sentinel_path)"
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
@@ -287,15 +295,19 @@ case "${1:-}" in
     # parse failure or missing jq is a silent no-op rather than a false warning.
     command -v jq >/dev/null 2>&1 || exit 0
     rc_input=$(cat 2>/dev/null)
-    rc_model=$(printf '%s' "$rc_input" | jq -r '.model // empty' 2>/dev/null)
-    rc_cwd=$(printf '%s' "$rc_input" | jq -r '.cwd // empty' 2>/dev/null)
+    # One jq call for both fields (same rationale as skill-trace's own field-parsing above — this fires
+    # on every session start, worth sparing the extra fork). \x1f: same bash-`read`-collapses-an-empty-
+    # tab-delimited-field pitfall skill-trace already documents, so a missing `.model` can't shift `.cwd`
+    # into the wrong variable.
+    IFS=$'\x1f' read -r rc_model rc_cwd <<<"$(printf '%s' "$rc_input" | jq -r '[(.model // ""), (.cwd // "")] | join("")' 2>/dev/null)"
     [ -n "$rc_cwd" ] || rc_cwd="$PWD"
     rc_version="$(claude --version 2>/dev/null | head -n1)"
     rc_state="$(rollout_state_path "$rc_cwd")"
     rc_prev_model=""; rc_prev_version=""
     if [ -f "$rc_state" ]; then
-      rc_prev_model="$(awk -F'\t' '$1=="model"{print $2}' "$rc_state" 2>/dev/null)"
-      rc_prev_version="$(awk -F'\t' '$1=="version"{print $2}' "$rc_state" 2>/dev/null)"
+      IFS=$'\x1f' read -r rc_prev_model rc_prev_version <<<"$(awk -F'\t' -v SEP=$'\x1f' '
+        $1=="model"{m=$2} $1=="version"{v=$2} END{print m SEP v}
+      ' "$rc_state" 2>/dev/null)"
     fi
     # Only compare a field when BOTH sides are known — an empty reading (jq/claude unavailable this
     # run, or a `model`-less SessionStart event) means "can't tell", not "changed".
@@ -639,15 +651,20 @@ case "$status" in
     # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
-    # it both strips the suffix (to compare against step 4's level) and decides whether a trace is
-    # required, so a future third suffix only needs adding here, not kept in sync across two mechanisms.
+    # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
+    # AND builds the dir #64 tier 2a provenance label (below) from the same match, so a future third
+    # suffix only needs adding here, not kept in sync across separate mechanisms.
     depth_level="${depth_outcome%%:*}"
     trusted=0
     case "$review_outcome" in
-      skip)             outcome_level="skip";                       trusted=1 ;;
-      *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1 ;;
-      *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1 ;;
-      *)                outcome_level="$review_outcome" ;;
+      skip)             outcome_level="skip";                       trusted=1
+                         prov_label="review: skip" ;;
+      *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1
+                         prov_label="review: $outcome_level, operator-run (self-reported)" ;;
+      *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
+                         prov_label="review: $outcome_level, waived (self-reported)" ;;
+      *)                outcome_level="$review_outcome"
+                         prov_label="review: $outcome_level, trace-confirmed in-session" ;;
     esac
     if [ "$outcome_level" != "$depth_level" ]; then
       rm -f "$sentinel"
@@ -669,14 +686,8 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
-    # dir #64 tier 2a: classify how step 5's review was actually established, so the substitution dir
-    # #63 makes checkable becomes VISIBLE at PR-creation time instead of only via transcript archaeology.
-    case "$review_outcome" in
-      skip)           prov_label="review: skip" ;;
-      *-operator-run) prov_label="review: ${review_outcome%-operator-run}, operator-run (self-reported)" ;;
-      *-waived)       prov_label="review: ${review_outcome%-waived}, waived (self-reported)" ;;
-      *)              prov_label="review: ${review_outcome}, trace-confirmed in-session" ;;
-    esac
+    # dir #64 tier 2a: $prov_label was already built above (the same case statement dir #63's cross-
+    # check uses) — visible at PR-creation time instead of only via transcript archaeology.
     rm -f "$sentinel"
     log_event receipt-pass "$prov_label" "$cwd"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"

@@ -22,8 +22,6 @@ if ! command -v jq >/dev/null 2>&1; then
   summary; exit $?
 fi
 
-ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
-
 # A git repo with one commit; prints its path.
 mkrepo() {
   local d; d="$(new_repo)"
@@ -31,50 +29,14 @@ mkrepo() {
   printf '%s' "$d"
 }
 
-# Shared repo-key derivation (mirrors the production file's own _repo_key) — every per-repo /tmp
-# file this test drives (sentinel, trace, hand-off) keys off this one function instead of each
-# inlining `basename "$1"` separately.
-repo_key_for() { basename "$1"; }
-sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
-
 # Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS.
+# (ALL_STEPS/repo_key_for/sentinel_for/write_full_receipt[_review] live in lib.sh, dir #64 — shared
+# with test_pipeline_canary.sh, which drives the same gate CLI subcommands against a sandbox repo.)
 gate() {
   local json
   json="$(jq -n --arg c "$1" --arg d "$2" '{tool_input:{command:$c}, cwd:$d}')"
   OUT="$(printf '%s' "$json" | bash "$gate" 2>&1)"
   STATUS=$?
-}
-
-# Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
-# both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
-# incomplete-receipt tests); $3 = optional step whose line should be re-tagged with a foreign nonce instead
-# of being written at all (for the replay tests). polish.5-review defaults to a TRUSTED outcome
-# (`medium-operator-run`) — dir #63's trace cross-check only applies to a bare level, and these fixtures
-# are about the OTHER completeness/replay/worktree mechanics, not that check (which gets its own tests
-# below); a real caller can still override via write_full_receipt_review() when it needs a bare level.
-# polish.4-depth is derived to carry the SAME base level as the review outcome (dir #63's depth-mismatch
-# check requires this on every real receipt, trusted outcomes included).
-write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
-write_full_receipt_review() {
-  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
-  depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
-  run_in "$d" bash "$gate" init
-  for s in $ALL_STEPS; do
-    [ "$s" = "$omit" ] && continue
-    if [ "$s" = "$replay_step" ]; then
-      printf 'stale-nonce-from-a-previous-run\t%s\tdone\n' "$s" >> "$(sentinel_for "$d")"
-      continue
-    fi
-    if [ "$s" = "polish.8-unlock" ]; then
-      run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
-    elif [ "$s" = "polish.5-review" ]; then
-      run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
-    elif [ "$s" = "polish.4-depth" ]; then
-      run_in "$d" bash "$gate" receipt "$s" "$depth_level:test-fixture"
-    else
-      run_in "$d" bash "$gate" receipt "$s"
-    fi
-  done
 }
 
 # 1. A command that is NOT `gh pr create` is none of the gate's business → allow (empty out, exit 0).
@@ -679,5 +641,17 @@ check_contains "sweep does not truncate the impact log" "$(cat "$ilog" 2>/dev/nu
 } >> "$ilog"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "a trace-confirmed pass within the window → exit 0 again" 0 "$STATUS"
+
+# --- dir #64: repo-key subcommand (so other tools reuse the worktree-aware resolution instead of
+# hand-copying it — pipeline-canary.sh calls this rather than re-deriving basename(toplevel) itself) ---
+d="$(mkrepo)"
+run "$gate" repo-key "$d"
+check_status "repo-key → exit 0" 0 "$STATUS"
+check_contains "repo-key of a plain repo is its own basename" "$OUT" "$(basename "$d")"
+
+mkworktree dir64-repokey-wt dir64-repokey-feature
+run "$gate" repo-key "$WT"
+check_contains "repo-key of a worktree resolves to the MAIN checkout's basename (dir #61 discipline), not its own" "$OUT" "$(basename "$MREPO")"
+check_absent "repo-key does not just basename the worktree itself" "$OUT" "$(basename "$WT")"
 
 summary
