@@ -65,6 +65,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   not inside, the existing reconcile-first rule, which stays the session-start/step-level check.
   Mirrored into `templates/CLAUDE.md` (byte-pinned by `test_core_wrapper_sync.sh`).
 
+- **`CORE.md`'s confirm-before-push rule no longer contradicts `/polish` step 9** (dir #65,
+  root-caused after the Opus 5 rollout: the general "confirm any outward-facing action (push,
+  merging a PR...)" rail and step 9's explicit "run `gh pr create`" instruction disagreed, and the
+  more literal-reading model started asking every time before opening a PR). The confirm-list now
+  names only the actions that genuinely need a fresh yes (merging a PR, release, deletion,
+  force-push, an ad-hoc push), with an explicit exception: when an invoked, documented flow's own
+  written steps instruct the push and PR-open (e.g. `/polish`'s final step), that instruction is
+  itself the authorization — the merge stays the operator's, unchanged. `commands/polish.md` step 9
+  states the same for its own step. An adversarial review of the first draft found the "invoked,
+  documented flow" carve-out was unscoped enough that a downstream project's agent could
+  self-servingly apply it to any task it considered "documented" — tightened to require the flow's
+  own written steps to instruct the push, not just resemble one. Mirrored into `templates/CLAUDE.md`
+  (byte-pinned by `test_core_wrapper_sync.sh`).
+
 - **`/polish` step 5 handles `/code-review` being unavailable — and now stops instead of carrying on**
   (dir #57, felt 2026-07-21 as the 5th occurrence, reworked 2026-07-26 on the 6th). The skill isn't
   always present or invocable — missing from the session's skill list, or gated behind

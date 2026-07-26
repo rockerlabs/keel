@@ -111,8 +111,10 @@ failure is a missing *cause*, not a missing attempt.
   wouldn't change what you do is friction, not diligence. Reserve a question for a real fork.
 - **Foundations — front-load** at project start (knowledge-base layout, memory approach, domain boundaries, stack, git
   workflow). Fix them explicitly with defaults right away, not mid-project.
-- Approval in one context does not carry to the next; confirm any irreversible/outward-facing action (push,
-  merging a PR, release, deletion).
+- Approval in one context does not carry to the next; confirm any irreversible/outward-facing action
+  (an ad-hoc push, merging a PR, release, deletion, force-push). Exception: when an invoked, documented
+  flow's own written steps instruct pushing a feature branch and opening its PR (e.g. `/polish`'s final
+  step), that instruction is pre-authorized by the invocation — the merge is not.
 
 ---
 
