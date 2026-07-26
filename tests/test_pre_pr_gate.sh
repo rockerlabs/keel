@@ -424,42 +424,44 @@ check_file "skill-trace(UserPromptExpansion code-review) writes a trace file" "$
 check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	ultra"
 rm -f "$tf"
 
-# --- dir #63: hand-off note (nonce-independent, same-SHA-only) -----------------------------------
-# 22. `init` preserves a `handoff` line across its nonce reset — everything else in the sentinel is
-# discarded on `init` (that's the dir #49 replay fix), but the hand-off question must survive it.
+# --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
+handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(basename "$1")"; }
+
+# 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
+# reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
 d="$(mkrepo)"
 sha="$(git -C "$d" rev-parse HEAD)"
+hf="$(handoff_for "$d")"; rm -f "$hf"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" handoff medium "$sha"
 run_in "$d" bash "$gate" init
-handoff_line="$(awk -F'\t' '$1=="handoff"' "$(sentinel_for "$d")")"
-check_contains "handoff line survives a re-run of init" "$handoff_line" "handoff	polish.5	medium	$sha"
+check_file "hand-off file survives a re-run of init" "$hf"
+check_contains "hand-off file carries the level and SHA" "$(cat "$hf" 2>/dev/null)" "polish.5	medium	$sha"
+rm -f "$hf"
 
-# 23. `handoff-check`: a handoff recorded for the CURRENT HEAD prints it and exits 0; one recorded
+# 23. `handoff-check`: a hand-off recorded for the CURRENT HEAD prints it and exits 0; one recorded
 # for a different (older) SHA is invisible — any new commit invalidates the replay window.
 d="$(mkrepo)"
 sha="$(git -C "$d" rev-parse HEAD)"
+hf="$(handoff_for "$d")"; rm -f "$hf"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" handoff high "$sha"
 run_in "$d" bash "$gate" handoff-check
 check_status "handoff-check matches current HEAD → exit 0" 0 "$STATUS"
-check_contains "handoff-check prints the matching line" "$OUT" "handoff	polish.5	high	$sha"
+check_contains "handoff-check prints the matching line" "$OUT" "polish.5	high	$sha"
 git -C "$d" commit --allow-empty -qm "moved on"
 run_in "$d" bash "$gate" handoff-check
 check_status "handoff-check on a NEW commit → exit 1 (replay window is same-SHA only)" 1 "$STATUS"
+rm -f "$hf"
 
-# 24. Writing the real `polish.5-review` receipt clears the handoff line — its job (recording that
+# 24. Writing the real `polish.5-review` receipt removes the hand-off file — its job (recording that
 # step 5(b) already asked) is done once the question is actually answered.
 d="$(mkrepo)"
 sha="$(git -C "$d" rev-parse HEAD)"
+hf="$(handoff_for "$d")"; rm -f "$hf"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" handoff medium "$sha"
 run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
-handoff_line="$(awk -F'\t' '$1=="handoff"' "$(sentinel_for "$d")")"
-if [ -z "$handoff_line" ]; then
-  pass "handoff line cleared once the real polish.5-review receipt lands"
-else
-  fail "handoff line cleared once the real polish.5-review receipt lands" "still present: $handoff_line"
-fi
+check_nofile "hand-off file removed once the real polish.5-review receipt lands" "$hf"
 
 summary

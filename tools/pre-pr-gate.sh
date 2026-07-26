@@ -59,10 +59,11 @@
 #
 # Hole B (the hand-off's only exit depended on session memory): step 5(c) used to exit only when "the
 # session already shows they ran it" — gone after a compaction or a fresh session on the same branch, so
-# a re-invocation would defer forever (`init` mints a fresh nonce by design, wiping that evidence, dir
-# #49's replay fix). Fix: `handoff` writes `handoff\tpolish.5\t<level>\t<HEAD-sha>` into the SAME
-# sentinel at step 5(b) stop time; `init` preserves any `handoff` line across its nonce reset (nothing
-# else survives `init`); `receipt polish.5-review <outcome>` clears it once the real receipt lands.
+# a re-invocation would defer forever (`init` mints a fresh nonce by design, wiping the receipt sentinel,
+# dir #49's replay fix). Fix: `handoff` writes `polish.5\t<level>\t<HEAD-sha>` to its OWN file
+# (`handoff_path()`, keyed like the sentinel) at step 5(b) stop time — a separate file, not a line folded
+# into the sentinel, so `init`'s nonce reset never has to know it exists: it survives by construction,
+# not by a special case. `receipt polish.5-review <outcome>` removes it once the real receipt lands.
 # `handoff-check` on a re-invocation tells step 5(c) whether the question was already asked for this
 # EXACT diff (same HEAD SHA) — a match means collect the answer without re-deferring; any new commit
 # invalidates the match (same-SHA-only replay window, not open-ended).
@@ -101,7 +102,19 @@ main_top_for() {
   printf '%s' "$cwd"
 }
 
-sentinel_path() { printf '/tmp/pre-pr-gate-%s' "$(basename "$(main_top_for "$PWD")")"; }
+# The basename-of-main-checkout key every per-repo /tmp file below shares, factored out once dir #63
+# added a second and third call site (skill-trace's own cwd, the hand-off note) beside the pre-existing
+# hook-mode one — same rationale as _worktree_main_entry's own extraction, above.
+_repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
+
+sentinel_path()  { printf '/tmp/pre-pr-gate-%s' "$(_repo_key "$PWD")"; }
+# dir #63: the review-invocation trace (skill-trace writes it, the gate's PASS branch reads it) and the
+# step-5(b) hand-off note (handoff/handoff-check) each get their OWN file, keyed the same way as the
+# sentinel — not lines folded into the sentinel itself. Keeping them separate means `init`'s nonce reset
+# (the sentinel's job: wipe the PREVIOUS run's receipts, dir #49) never has to know the hand-off note
+# exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
+trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
+handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
 
 # Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
 # (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
@@ -129,24 +142,11 @@ log_event() {
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" >> "$log" 2>/dev/null || true
 }
 
-# Strip any `handoff\t...` line from sentinel $1, in place (no-op if the file or the line is absent).
-_strip_handoff() {
-  local sentinel="$1" tmp
-  [ -f "$sentinel" ] || return 0
-  tmp="$sentinel.tmp.$$"
-  awk -F'\t' '$1!="handoff"' "$sentinel" > "$tmp" 2>/dev/null && mv "$tmp" "$sentinel"
-}
-
 case "${1:-}" in
   init)
     sentinel="$(sentinel_path)"
-    # dir #63/Hole B: a handoff line records that step 5(b) already stopped to ask about THIS diff;
-    # it must survive the nonce reset below (everything else — receipt lines from the prior run — is
-    # meant to be discarded, that's the replay fix dir #49 built `init` for in the first place).
-    handoff_line="$(awk -F'\t' '$1=="handoff"{print; exit}' "$sentinel" 2>/dev/null)"
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
     printf 'nonce\t%s\n' "$nonce" > "$sentinel"
-    [ -n "$handoff_line" ] && printf '%s\n' "$handoff_line" >> "$sentinel"
     printf 'pre-pr-gate: receipt started (nonce %s)\n' "$nonce"
     exit 0
     ;;
@@ -164,9 +164,9 @@ case "${1:-}" in
       exit 1
     fi
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
-    # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — the handoff's
-    # job is done, so clear it rather than let a stale line linger past the question it recorded.
-    [ "$step_id" = "polish.5-review" ] && _strip_handoff "$sentinel"
+    # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
+    # hand-off note rather than let it linger past the question it recorded.
+    [ "$step_id" = "polish.5-review" ] && rm -f "$(handoff_path)"
     exit 0
     ;;
   log)
@@ -178,17 +178,14 @@ case "${1:-}" in
   handoff)
     level="${2:?pre-pr-gate: handoff <level> <sha> — level required}"
     sha="${3:?pre-pr-gate: handoff <level> <sha> — sha required}"
-    sentinel="$(sentinel_path)"
-    [ -f "$sentinel" ] || : > "$sentinel"
-    _strip_handoff "$sentinel"
-    printf 'handoff\tpolish.5\t%s\t%s\n' "$level" "$sha" >> "$sentinel"
+    printf 'polish.5\t%s\t%s\n' "$level" "$sha" > "$(handoff_path)"
     exit 0
     ;;
   handoff-check)
-    sentinel="$(sentinel_path)"
-    if [ -f "$sentinel" ]; then
+    hp="$(handoff_path)"
+    if [ -f "$hp" ]; then
       sha="$(git rev-parse HEAD 2>/dev/null)"
-      line="$(awk -F'\t' -v sha="$sha" '$1=="handoff" && $4==sha{print}' "$sentinel")"
+      line="$(awk -F'\t' -v sha="$sha" '$3==sha{print}' "$hp")"
       if [ -n "$line" ]; then printf '%s\n' "$line"; exit 0; fi
     fi
     exit 1
@@ -196,22 +193,23 @@ case "${1:-}" in
   skill-trace)
     # PostToolUse(Skill) or UserPromptExpansion(code-review) hook — see the dir #63 header section.
     # Never blocks or alters anything: silently no-ops (exit 0) on anything it can't parse or that
-    # isn't a code-review invocation, since a missed trace is a residual limit, not a false deny.
+    # isn't a code-review invocation, since a missed trace is a residual limit, not a false deny. One
+    # jq call for every field this needs — it fires on every Skill/slash-command event in every
+    # session using this hook, so it's worth sparing the extra forks a call-per-field would cost.
+    # Joined with \x1f (NOT tab): bash `read` collapses an EMPTY field sitting between two tab
+    # delimiters regardless of IFS (the same class of bug the keel-impact log parser hit) — real here,
+    # since a UserPromptExpansion event has no `tool_name` field at all, an empty middle field.
     command -v jq >/dev/null 2>&1 || exit 0
     st_input=$(cat 2>/dev/null)
-    st_event=$(printf '%s' "$st_input" | jq -r '.hook_event_name // empty' 2>/dev/null)
-    st_cwd=$(printf '%s' "$st_input" | jq -r '.cwd // empty' 2>/dev/null)
+    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_level <<<"$(printf '%s' "$st_input" | jq -r '
+      [.hook_event_name, (.cwd // ""), (.tool_name // ""),
+       (if .hook_event_name == "PostToolUse" then .tool_input.skill else .command_name end // ""),
+       (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end // "")
+      ] | join("\u001f")' 2>/dev/null)"
     [ -n "$st_cwd" ] || st_cwd="$PWD"
     case "$st_event" in
-      PostToolUse)
-        [ "$(printf '%s' "$st_input" | jq -r '.tool_name // empty' 2>/dev/null)" = "Skill" ] || exit 0
-        st_skill=$(printf '%s' "$st_input" | jq -r '.tool_input.skill // empty' 2>/dev/null)
-        st_level=$(printf '%s' "$st_input" | jq -r '.tool_input.args // empty' 2>/dev/null)
-        ;;
-      UserPromptExpansion)
-        st_skill=$(printf '%s' "$st_input" | jq -r '.command_name // empty' 2>/dev/null)
-        st_level=$(printf '%s' "$st_input" | jq -r '.command_args // empty' 2>/dev/null)
-        ;;
+      PostToolUse) [ "$st_tool" = "Skill" ] || exit 0 ;;
+      UserPromptExpansion) ;;
       *) exit 0 ;;
     esac
     case "$st_skill" in
@@ -220,8 +218,7 @@ case "${1:-}" in
     esac
     st_sha=$(git -C "$st_cwd" rev-parse HEAD 2>/dev/null)
     [ -n "$st_sha" ] || exit 0
-    st_wt="$(basename "$(main_top_for "$st_cwd")")"
-    printf '%s\t%s\n' "$st_sha" "$st_level" >> "/tmp/pre-pr-gate-trace-$st_wt"
+    printf '%s\t%s\n' "$st_sha" "$st_level" >> "$(trace_path_for "$st_cwd")"
     exit 0
     ;;
 esac
@@ -430,7 +427,7 @@ head_branch="$awk_out"
 # harness's tracked session-root cwd, which does not track an in-command `cd`) must land on one file.
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
-wt=$(basename "$(main_top_for "$cwd")")
+wt=$(_repo_key "$cwd")
 sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
@@ -475,10 +472,7 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" '
   }
 ' "$sentinel")"
 
-status="${result%%$'\t'*}"
-rest="${result#*$'\t'}"
-detail="${rest%%$'\t'*}"
-review_outcome="${rest#*$'\t'}"
+IFS=$'\t' read -r status detail review_outcome <<<"$result"
 
 case "$status" in
   MALFORMED)
@@ -516,7 +510,7 @@ case "$status" in
     case "$review_outcome" in
       skip|*-operator-run|*-waived) ;;
       *)
-        trace_path="/tmp/pre-pr-gate-trace-$wt"
+        trace_path="$(trace_path_for "$cwd")"
         if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" '$1==sha{f=1} END{exit !f}' "$trace_path"; then
           rm -f "$sentinel"
           log_event receipt-deny "review-trace-missing" "$cwd"

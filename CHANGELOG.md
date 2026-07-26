@@ -26,15 +26,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   Second hole: the hand-off's only exit used to depend on session memory ("the session already shows
   they ran it"), gone after a context compaction or a fresh session on the same branch — a re-invoked
   `/polish` would defer forever, since `init` mints a fresh nonce by design (dir #49's replay fix). New
-  `handoff`/`handoff-check` subcommands write and read a `handoff\tpolish.5\t<level>\t<sha>` line in the
-  same sentinel; `init` now preserves that one line across its nonce reset (everything else is still
-  discarded), and it's cleared once the real `polish.5-review` receipt lands. The replay window is
-  same-SHA only — any new commit invalidates it. 16 new cases in `tests/test_pre_pr_gate.sh` cover both
-  mechanisms. The `handoff`/`handoff-check`/existing gate logic go live once this merges and the
-  maintainer's `~/.claude` pulls main (the gate's existing symlink-consumption trap); the trace side
-  needs one additional manual step beyond that — wiring the two new hooks into the maintainer's personal
-  `~/.claude/settings.json` (documented in the script's own header) — since nothing in this repo edits
-  that file automatically.
+  `handoff`/`handoff-check` subcommands write and read a `<level>\t<sha>` line to its OWN file (keyed
+  like the sentinel, per a new shared `_repo_key` helper factoring out a fragment the sentinel/trace/
+  hand-off paths all now share) rather than folding it into the sentinel — so `init`'s nonce reset never
+  has to special-case it at all; it's removed once the real `polish.5-review` receipt lands. The replay
+  window is same-SHA only — any new commit invalidates it. 17 new cases in `tests/test_pre_pr_gate.sh`
+  cover both mechanisms — an adversarial `/simplify` pass over the first draft caught a real bug in the
+  attempt to fan `skill-trace`'s field-parsing into one `jq` call: bash's `read` collapses an EMPTY field
+  sitting between two tab delimiters regardless of what `IFS` is set to (the same class of bug already
+  logged against the keel-impact log parser), which silently shifted every field for a
+  `UserPromptExpansion` event (no `tool_name` key to fill that slot) — fixed by joining on a `\u001f` unit separator
+  instead of a tab, a delimiter outside bash's hardcoded whitespace-collapse class. The `handoff`/
+  `handoff-check`/existing gate logic go live once this merges and the maintainer's `~/.claude` pulls
+  main (the gate's existing symlink-consumption trap); the trace side needs one additional manual step
+  beyond that — wiring the two new hooks into the maintainer's personal `~/.claude/settings.json`
+  (documented in the script's own header) — since nothing in this repo edits that file automatically.
 
 - **`/polish` step-receipt gate** (dir #49, maintainer dev-tooling pilot). `tools/pre-pr-gate.sh` gained
   `init`/`receipt`/`log` CLI subcommands: each `/polish` step now appends a receipt line

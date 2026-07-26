@@ -112,10 +112,10 @@ Steps, in order:
      resolve any findings their review reported** (same bar as the in-session path; a review nobody acts
      on bought nothing), then record the outcome and continue: receipt
      `polish.5-review <level>-operator-run`, or `<level>-waived` if they explicitly chose to proceed
-     without (this also clears the hand-off note). **This is the branch's only exit.** `init` mints a
-     fresh nonce that discards the previous run's receipts (but preserves the hand-off note), so a
-     re-invoked `/polish` re-sizes the same diff and picks the same level — without `handoff-check`, it
-     would defer again, and every time after that.
+     without (this also clears the hand-off note). **This is the branch's only exit.** The hand-off
+     note lives in its own file, untouched by `init`'s nonce reset (which only discards the previous
+     run's receipts), so a re-invoked `/polish` re-sizes the same diff and picks the same level —
+     without `handoff-check`, it would defer again, and every time after that.
    - **(d)** Both outcomes are load-bearing for step 10: the summary must say the real review did not run
      in-session and name what stood in for it, never just the depth. "review: medium" reads identically
      to a genuine in-session pass, which is how the substitution stays invisible.
