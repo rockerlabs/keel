@@ -36,6 +36,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   #49 entry above (per-step lines under a fresh nonce, gate denies on a missing id or a state mismatch)
   — no new tool, doc-only, no CORE.md or tooling changes.
 
+- **`docs/rollout-audit.md`** (dir #66, captured after a model rollout silently broke part of the
+  pipeline — see the dir #63/#65 entries elsewhere in this file). A public, tool-agnostic three-layer
+  checklist (mechanized floor → harness integration, verified by attempting the thing, never inferred
+  from a listing → model-behaviour scenario probes) for auditing a pipeline after any model or harness
+  rollout, including a plain upgrade — the doc's own generalizing point is that a stronger model
+  re-weights rule-following rather than uniformly helping, which turns pre-existing wording debt into a
+  visible behaviour change. Doc-only; linked from the README docs index.
+
 ### Changed
 - **`/keel-score`'s `--fire` event now has an explicit two-test bar** (dir #24, anchored by the first
   A/B calibration run). A fire citation must name a counterfactual that is (1) *reachable* — a moment
