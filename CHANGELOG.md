@@ -9,6 +9,76 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/polish` step 5's review outcome is now mechanically verifiable, closing the two holes dir #57's
+  rework filed** (dir #63, adversarial pass on that rework). The step-5 receipt used to be a free-form
+  string the model wrote about itself — a genuine in-session `/code-review <level>` pass and a session
+  that only *claimed* one were byte-identical. `tools/pre-pr-gate.sh` gained a `skill-trace` hook
+  subcommand, wired as a `PostToolUse(Skill)` + `UserPromptExpansion(code-review)` pair (documented in
+  the script's own header) — the former fires only when Claude's own `Skill(code-review)` call actually
+  succeeds (a refused/unavailable call never reaches `PostToolUse`, confirmed empirically and against
+  Claude Code's hooks reference), the latter when the operator types `/code-review <level>` directly
+  (a path that bypasses `PostToolUse` entirely). Both append a SHA-keyed trace line the model cannot
+  author itself. The gate's PASS branch now cross-checks that trace whenever `polish.5-review`'s
+  outcome is a bare level (not `skip`/`-operator-run`/`-waived`) — a fabricated claim, or a trace from
+  an older commit, is denied. **Residual limit, written into `commands/polish.md` and the gate header:**
+  the unavailable-skill → inline-pass hand-off still leaves no trace by construction; that path's
+  outcome stays self-reported.
+  Second hole: the hand-off's only exit used to depend on session memory ("the session already shows
+  they ran it"), gone after a context compaction or a fresh session on the same branch — a re-invoked
+  `/polish` would defer forever, since `init` mints a fresh nonce by design (dir #49's replay fix). New
+  `handoff`/`handoff-check` subcommands write and read a `<level>\t<sha>` line to its OWN file (keyed
+  like the sentinel, per a new shared `_repo_key` helper factoring out a fragment the sentinel/trace/
+  hand-off paths all now share) rather than folding it into the sentinel — so `init`'s nonce reset never
+  has to special-case it at all; it's removed once the real `polish.5-review` receipt lands. The replay
+  window is same-SHA only — any new commit invalidates it. 17 new cases in `tests/test_pre_pr_gate.sh`
+  cover both mechanisms — an adversarial `/simplify` pass over the first draft caught a real bug in the
+  attempt to fan `skill-trace`'s field-parsing into one `jq` call: bash's `read` collapses an EMPTY field
+  sitting between two tab delimiters regardless of what `IFS` is set to (the same class of bug already
+  logged against the keel-impact log parser), which silently shifted every field for a
+  `UserPromptExpansion` event (no `tool_name` key to fill that slot) — fixed by joining on a `\u001f` unit separator
+  instead of a tab, a delimiter outside bash's hardcoded whitespace-collapse class. The `handoff`/
+  `handoff-check`/existing gate logic go live once this merges and the maintainer's `~/.claude` pulls
+  main (the gate's existing symlink-consumption trap); the trace side needs one additional manual step
+  beyond that — wiring the two new hooks into the maintainer's personal `~/.claude/settings.json`
+  (documented in the script's own header) — since nothing in this repo edits that file automatically.
+
+  **`/code-review` was itself unavailable for this session (`disable-model-invocation`) — the exact felt
+  incident dir #63 exists to fix, reproducing live** — so an independent agent stood in for the real
+  `high`-depth pass per `commands/polish.md`'s step 5(a). It found two genuine bypasses in the first
+  draft, both fixed here: (1) the trusted outcomes (`skip`, `-operator-run`, `-waived`) were exempt from
+  the trace check by design, but nothing cross-checked them against what `polish.4-depth` actually
+  recorded — a session could size the diff `medium` and simply write `polish.5-review skip`, unlocking
+  the gate on one word regardless of the real depth; (2) the trace check matched only the commit SHA,
+  never the level, so a genuine `/code-review low` pass could vouch for a receipt claiming `max`. Both
+  closed by one cross-check: every `polish.5-review` outcome (trusted or bare) must now share `polish.4-
+  depth`'s own recorded level, and a bare-level trace match now requires the SAME level, not just the
+  same commit. The review also caught a second instance of the tab-collapse `read` bug (this time in the
+  PASS-branch's own result parsing) and a jq `join` that would throw — and lose the whole parsed row,
+  not just the bad field — on a non-string `args`/`command_args`; both hardened the same way as the
+  first fix. Two narrower, accepted limitations are now documented in the gate's own header rather than
+  silently left uncovered: the trace's SHA can be wrong under the same split main-checkout/worktree
+  pattern dir #61 hardened for the sentinel (fails closed — a false deny, not a bypass); the hand-off
+  file is repo- not worktree-scoped, same as the sentinel's own existing keying. The header's "the model
+  cannot author itself" framing was also overclaiming — softened to "a side channel the model isn't
+  expected to touch," since nothing stops the model writing to `/tmp` directly. 6 more test cases added
+  (101 total for this file); full suite + shellcheck + self-doctor green.
+
+  **The operator then typed `/code-review high` directly — confirming the `UserPromptExpansion` path
+  this same ticket relies on actually works, live.** The real pass (8 finder angles, 1-vote verify) found
+  five more issues, all fixed: a redundant repo-key recomputation in the trace check when the value was
+  already held from the sentinel resolution (efficiency); the test file's `trace_for`/`handoff_for`
+  duplicating the `basename` pattern `_repo_key` was factored out to consolidate (reuse); the trusted-
+  suffix set (`-operator-run`/`-waived`) encoded independently in the depth-check and the trace-exemption
+  case, now unified into one `case` that both strips the suffix and decides whether a trace is required
+  (altitude); `commands/polish.md` step 4 didn't check for a pending hand-off before re-sizing, so a
+  borderline diff sized differently across two invocations could trip the new depth-mismatch check on a
+  legitimate hand-off completion — step 4 now checks `handoff-check` first and reuses its frozen level
+  (correctness, narrow); and a missing worktree-split test for the new trace/hand-off paths, mirroring
+  dir #61's existing sentinel coverage. One reviewer-agent claim — that `UserPromptExpansion`'s real
+  field is `command_input`, not `command_args` — was checked against a fresh `curl` of the live Claude
+  Code hooks docs and refuted; `command_args` is correct. 106 test cases now; full suite + shellcheck +
+  self-doctor green.
+
 - **`/polish` step-receipt gate** (dir #49, maintainer dev-tooling pilot). `tools/pre-pr-gate.sh` gained
   `init`/`receipt`/`log` CLI subcommands: each `/polish` step now appends a receipt line
   (`<run-nonce>\t<step-id>\t<outcome>`) instead of the gate trusting a bare HEAD-SHA sentinel. The

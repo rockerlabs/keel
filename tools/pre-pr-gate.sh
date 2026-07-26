@@ -26,9 +26,63 @@
 #   pre-pr-gate.sh init                    mint a fresh nonce, start a new receipt (run from repo root)
 #   pre-pr-gate.sh receipt <step-id> [outcome]   append a receipt line for the current run (outcome default: done)
 #   pre-pr-gate.sh log <type> [detail]     append a line to the impact log (same resolution as the guard event)
+#   pre-pr-gate.sh handoff <level> <sha>   record step 5(b)'s stop so a re-invocation doesn't re-ask (dir #63)
+#   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
+#   pre-pr-gate.sh skill-trace             hook subcommand (see dir #63 section below) — not run by hand
 #
 # With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
 # decides allow/deny for `gh pr create`.
+#
+# --- dir #63: making step 5's review outcome verifiable -------------------------------------------
+# Hole A (a fabricated in-session review claim is unfalsifiable): `polish.5-review`'s receipt is a
+# free-form string the model writes about itself, so a real in-session `/code-review <level>` pass and
+# a session that only claims one are byte-identical. Fix: two ADDITIONAL hooks (same personal
+# ~/.claude/settings.json as the PreToolUse gate above) write a mechanical trace line to a HOOK-OWNED
+# side channel the model isn't expected to touch — a materially higher bar than getting one self-report
+# right, though not literally unfakeable (the model still has Bash; see the residual limit below):
+#   "PostToolUse":         [{ "matcher": "Skill",       "hooks": [{ "type": "command", "command": "bash ~/.claude/pre-pr-gate.sh skill-trace" }] }]
+#   "UserPromptExpansion": [{ "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash ~/.claude/pre-pr-gate.sh skill-trace" }] }]
+# The PostToolUse leg fires when Claude itself calls Skill(code-review) — PostToolUse only fires after
+# a tool call SUCCEEDS (a refused/unavailable call never reaches it, so an unavailable-skill run leaves
+# no trace by construction — see the residual limit below). The UserPromptExpansion leg fires when the
+# OPERATOR types `/code-review <level>` directly, which bypasses PostToolUse entirely (confirmed against
+# Claude Code's hooks reference: "a PreToolUse hook matching the Skill tool fires only when Claude calls
+# the tool, but typing /skillname directly bypasses PreToolUse" — PostToolUse matches the same tool-name
+# set). Both write the same trace line via `skill-trace`, keyed like the sentinel (main_top_for), to
+# /tmp/pre-pr-gate-trace-<repo>: "<HEAD-sha>\t<level-if-known>".
+# The gate's PASS branch (hook mode, below) cross-checks this trace whenever `polish.5-review`'s
+# outcome is a BARE level (no `-operator-run`/`-waived` suffix, not `skip`) — that shape claims a real
+# in-session run, so it must have left a trace for the SAME sha AND the SAME level, or the gate denies
+# (an honest `/code-review low` pass must not be able to vouch for a receipt claiming `max`). Separately,
+# EVERY outcome shape — including the trusted `skip`/`-operator-run`/`-waived` ones, which need no trace
+# — is cross-checked against `polish.4-depth`'s own recorded level: without this, a session could size
+# the diff `medium` and then simply write `polish.5-review skip`, since `skip` was trusted unconditionally.
+# **Residual limits** (write these into any doc referencing the mechanism):
+# (1) the unavailable→inline-pass hand-off (commands/polish.md step 5(a)/(b)/(c)) leaves no trace by
+#     construction — its outcome (`-operator-run`/`-waived`) stays self-reported; the trace only makes
+#     ONE dishonesty channel checkable — "claims the skill ran when it didn't" — not the inline pass's
+#     own thoroughness.
+# (2) the trace records `git -C <event-cwd> rev-parse HEAD` at invocation time — if the session's
+#     harness-tracked cwd for the Skill/slash-command event is a DIFFERENT checkout than the one the
+#     eventual `gh pr create --head <branch>` targets (the split main-checkout/worktree pattern dir #61
+#     hardened for the sentinel and gate-side SHA check), the trace can be keyed to the wrong commit —
+#     a genuine review then false-denies rather than false-passing. Not fixable at trace-write time (the
+#     eventual `--head` isn't known yet); same accepted trade-off as (3).
+# (3) the hand-off file is repo-scoped like the sentinel, so two worktrees of the SAME repo mid-`/polish`
+#     at the same time share one hand-off (and, if they land on the identical commit before either has
+#     diverged, could overwrite each other's note) — an existing limitation of the sentinel's own
+#     per-repo (not per-worktree) keying, not a new one this ticket introduces.
+#
+# Hole B (the hand-off's only exit depended on session memory): step 5(c) used to exit only when "the
+# session already shows they ran it" — gone after a compaction or a fresh session on the same branch, so
+# a re-invocation would defer forever (`init` mints a fresh nonce by design, wiping the receipt sentinel,
+# dir #49's replay fix). Fix: `handoff` writes `polish.5\t<level>\t<HEAD-sha>` to its OWN file
+# (`handoff_path()`, keyed like the sentinel) at step 5(b) stop time — a separate file, not a line folded
+# into the sentinel, so `init`'s nonce reset never has to know it exists: it survives by construction,
+# not by a special case. `receipt polish.5-review <outcome>` removes it once the real receipt lands.
+# `handoff-check` on a re-invocation tells step 5(c) whether the question was already asked for this
+# EXACT diff (same HEAD SHA) — a match means collect the answer without re-deferring; any new commit
+# invalidates the match (same-SHA-only replay window, not open-ended).
 
 set -u
 
@@ -64,7 +118,19 @@ main_top_for() {
   printf '%s' "$cwd"
 }
 
-sentinel_path() { printf '/tmp/pre-pr-gate-%s' "$(basename "$(main_top_for "$PWD")")"; }
+# The basename-of-main-checkout key every per-repo /tmp file below shares, factored out once dir #63
+# added a second and third call site (skill-trace's own cwd, the hand-off note) beside the pre-existing
+# hook-mode one — same rationale as _worktree_main_entry's own extraction, above.
+_repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
+
+sentinel_path()  { printf '/tmp/pre-pr-gate-%s' "$(_repo_key "$PWD")"; }
+# dir #63: the review-invocation trace (skill-trace writes it, the gate's PASS branch reads it) and the
+# step-5(b) hand-off note (handoff/handoff-check) each get their OWN file, keyed the same way as the
+# sentinel — not lines folded into the sentinel itself. Keeping them separate means `init`'s nonce reset
+# (the sentinel's job: wipe the PREVIOUS run's receipts, dir #49) never has to know the hand-off note
+# exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
+trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
+handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
 
 # Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
 # (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
@@ -114,12 +180,65 @@ case "${1:-}" in
       exit 1
     fi
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
+    # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
+    # hand-off note rather than let it linger past the question it recorded.
+    [ "$step_id" = "polish.5-review" ] && rm -f "$(handoff_path)"
     exit 0
     ;;
   log)
     ty="${2:?pre-pr-gate: log <type> [detail] — type required}"
     detail="${3:-}"
     log_event "$ty" "$detail" "$PWD"
+    exit 0
+    ;;
+  handoff)
+    level="${2:?pre-pr-gate: handoff <level> <sha> — level required}"
+    sha="${3:?pre-pr-gate: handoff <level> <sha> — sha required}"
+    printf 'polish.5\t%s\t%s\n' "$level" "$sha" > "$(handoff_path)"
+    exit 0
+    ;;
+  handoff-check)
+    hp="$(handoff_path)"
+    if [ -f "$hp" ]; then
+      sha="$(git rev-parse HEAD 2>/dev/null)"
+      line="$(awk -F'\t' -v sha="$sha" '$3==sha{print}' "$hp")"
+      if [ -n "$line" ]; then printf '%s\n' "$line"; exit 0; fi
+    fi
+    exit 1
+    ;;
+  skill-trace)
+    # PostToolUse(Skill) or UserPromptExpansion(code-review) hook — see the dir #63 header section.
+    # Never blocks or alters anything: silently no-ops (exit 0) on anything it can't parse or that
+    # isn't a code-review invocation, since a missed trace is a residual limit, not a false deny. One
+    # jq call for every field this needs — it fires on every Skill/slash-command event in every
+    # session using this hook, so it's worth sparing the extra forks a call-per-field would cost.
+    # Joined with \x1f (NOT tab): bash `read` collapses an EMPTY field sitting between two tab
+    # delimiters regardless of IFS (the same class of bug the keel-impact log parser hit) — real here,
+    # since a UserPromptExpansion event has no `tool_name` field at all, an empty middle field.
+    command -v jq >/dev/null 2>&1 || exit 0
+    st_input=$(cat 2>/dev/null)
+    # `str` coerces every field to a plain string first — an unexpected shape (args as an object/array,
+    # say) would otherwise make `join` throw and lose the WHOLE row, including the hook_event_name/skill
+    # fields that were perfectly fine, turning one malformed field into total silence from this hook.
+    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_level <<<"$(printf '%s' "$st_input" | jq -r '
+      def str: if . == null then "" elif type == "string" then . else tostring end;
+      [.hook_event_name, (.cwd|str), (.tool_name|str),
+       (if .hook_event_name == "PostToolUse" then .tool_input.skill else .command_name end|str),
+       (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str)
+      ] | join("\u001f")' 2>/dev/null)"
+    [ -n "$st_cwd" ] || st_cwd="$PWD"
+    case "$st_event" in
+      PostToolUse) [ "$st_tool" = "Skill" ] || exit 0 ;;
+      UserPromptExpansion) ;;
+      *) exit 0 ;;
+    esac
+    case "$st_skill" in
+      code-review|*:code-review|/code-review) ;;
+      *) exit 0 ;;
+    esac
+    st_sha=$(git -C "$st_cwd" rev-parse HEAD 2>/dev/null)
+    [ -n "$st_sha" ] || exit 0
+    printf '%s\t%s\n' "$st_sha" "$st_level" >> "$(trace_path_for "$st_cwd")"
     exit 0
     ;;
 esac
@@ -328,7 +447,7 @@ head_branch="$awk_out"
 # harness's tracked session-root cwd, which does not track an in-command `cd`) must land on one file.
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
-wt=$(basename "$(main_top_for "$cwd")")
+wt=$(_repo_key "$cwd")
 sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
@@ -348,7 +467,7 @@ fi
 # Parse the receipt: line 1 must be the nonce header; every later line is <nonce>\t<step-id>\t<outcome>.
 # Only lines whose nonce matches the header count toward completeness — a leftover line from an earlier
 # run (different nonce) neither counts nor is silently accepted, so it surfaces as a replay, not a pass.
-result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" '
+result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
   BEGIN { n = split(steps, want, " "); for (i = 1; i <= n; i++) need[want[i]] = 1 }
   NR == 1 {
     if ($1 == "nonce" && $2 != "") { nonce = $2; next }
@@ -359,7 +478,7 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" '
     else { foreign[$2] = 1 }
   }
   END {
-    if (malformed || nonce == "") { print "MALFORMED\t"; exit }
+    if (malformed || nonce == "") { print "MALFORMED" SEP; exit }
     missing = ""; replay = ""
     for (s in need) {
       if (!(s in got)) {
@@ -367,14 +486,18 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" '
         if (s in foreign) replay = (replay == "" ? s : replay "," s)
       }
     }
-    if (missing == "") { print "PASS\t" val["polish.8-unlock"]; exit }
-    if (replay != "") { print "REPLAY\t" missing; exit }
-    print "MISSING\t" missing
+    if (missing == "") {
+      print "PASS" SEP val["polish.8-unlock"] SEP val["polish.5-review"] SEP val["polish.4-depth"]; exit
+    }
+    if (replay != "") { print "REPLAY" SEP missing; exit }
+    print "MISSING" SEP missing
   }
 ' "$sentinel")"
 
-status="${result%%$'\t'*}"
-detail="${result#*$'\t'}"
+# \x1f (NOT tab) joins these fields: bash `read` collapses an EMPTY field sitting between two tab
+# delimiters regardless of what IFS is set to (the same bug fixed in skill-trace, above) — a genuinely
+# reachable shape here too (e.g. a malformed polish.8-unlock outcome), so use the same safe delimiter.
+IFS=$'\x1f' read -r status detail review_outcome depth_outcome <<<"$result"
 
 case "$status" in
   MALFORMED)
@@ -403,6 +526,40 @@ case "$status" in
       rm -f "$sentinel"
       log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
+    fi
+    # dir #63/Hole A: cross-check step 5's review outcome against step 4's OWN recorded depth — without
+    # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
+    # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
+    # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
+    # it both strips the suffix (to compare against step 4's level) and decides whether a trace is
+    # required, so a future third suffix only needs adding here, not kept in sync across two mechanisms.
+    depth_level="${depth_outcome%%:*}"
+    trusted=0
+    case "$review_outcome" in
+      skip)             outcome_level="skip";                       trusted=1 ;;
+      *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1 ;;
+      *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1 ;;
+      *)                outcome_level="$review_outcome" ;;
+    esac
+    if [ "$outcome_level" != "$depth_level" ]; then
+      rm -f "$sentinel"
+      log_event receipt-deny "review-depth-mismatch" "$cwd"
+      deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
+    fi
+    # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real
+    # in-session /code-review run — cross-check the mechanically-written trace (skill-trace, above) so
+    # that claim can't be satisfied by self-report alone. The trace's OWN recorded level must match too
+    # — otherwise a genuine `/code-review low` pass would vouch for a receipt claiming `max`. Trusted
+    # outcomes need no trace — they already name a different, non-fabricable source (the human, or a
+    # deliberate no-review choice) and are covered by the depth check above instead.
+    if [ "$trusted" -eq 0 ]; then
+      trace_path="/tmp/pre-pr-gate-trace-$wt"
+      if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$review_outcome" \
+          '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
+        rm -f "$sentinel"
+        log_event receipt-deny "review-trace-missing" "$cwd"
+        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
+      fi
     fi
     rm -f "$sentinel"
     log_event receipt-pass "" "$cwd"

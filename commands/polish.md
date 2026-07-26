@@ -45,6 +45,14 @@ Steps, in order:
    clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly skipped).
    Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
 
+   **First check `tools/pre-pr-gate.sh handoff-check` — a match means step 5 already stopped to ask
+   about THIS exact commit on an earlier invocation.** Reuse its recorded level as-is rather than
+   re-sizing from scratch: the diff hasn't changed since the question was asked (same SHA), and a fresh
+   sizing pass can land on a different bucket than the original one did on a borderline diff, which
+   would make this step's own receipt disagree with the level the hand-off is about to resolve — the
+   gate now denies exactly that mismatch. No match (no pending hand-off, or a different commit): size
+   normally, below.
+
    Size the step-1 diff cheaply — lines changed, files touched, real logic vs docs/tests only, and whether
    it touches cross-references/links. From that, form a **recommended level**:
    - pure docs/wording, no cross-references → **skip**
@@ -80,6 +88,16 @@ Steps, in order:
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
 
+   **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
+   directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
+   flow doesn't otherwise write to — `tools/pre-pr-gate.sh`'s gate cross-checks it (same commit, same
+   level) before unlocking. The gate also cross-checks EVERY outcome, including a hand-off's
+   `-operator-run`/`-waived`, against the level step 4 actually recorded — `skip`ping the review while
+   claiming a higher depth was sized doesn't unlock the gate either.
+   **Residual limit:** the inline pass in (a) below still leaves no trace by construction — that path's
+   outcome (`-operator-run`/`-waived`) stays self-reported; the trace only makes "claims the skill ran
+   when it didn't" checkable, not the inline pass's own thoroughness.
+
    **Two cases hand the review back to the human, and both follow the same hand-off below.** `ultra` you
    cannot launch at all (cloud, billed, user-triggered). `/code-review` being unavailable to you —
    missing from the skill list, or refusing with `disable-model-invocation` — is the other; there, do not
@@ -97,13 +115,18 @@ Steps, in order:
      in the same context that wrote the code, with no independent reviewer. **The failure this closes:**
      continuing to a merged-ready PR and disclosing the substitution only in the closing summary, where
      the operator finds out by reading the transcript — or not at all.
-   - **(c)** Once they answer — or, on a re-invocation, once the session already shows they ran it —
-     **resolve any findings their review reported** (same bar as the in-session path; a review nobody
-     acts on bought nothing), then record the outcome and continue: receipt
+     Before stopping, record the hand-off so a re-invocation doesn't have to rely on session memory:
+     `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"`.
+   - **(c)** Once they answer — or, on a re-invocation, check `tools/pre-pr-gate.sh handoff-check`: a
+     match means the question was already asked for this EXACT commit (the check is same-SHA-only — any
+     new commit invalidates it), so collect the operator's answer/evidence without re-deferring — **then
+     resolve any findings their review reported** (same bar as the in-session path; a review nobody acts
+     on bought nothing), then record the outcome and continue: receipt
      `polish.5-review <level>-operator-run`, or `<level>-waived` if they explicitly chose to proceed
-     without. **This is the branch's only exit.** `init` mints a fresh nonce that discards the previous
-     run's receipts, so a re-invoked `/polish` re-sizes the same diff and picks the same level — without
-     recognising the review the human already ran, it would defer again, and every time after that.
+     without (this also clears the hand-off note). **This is the branch's only exit.** The hand-off
+     note lives in its own file, untouched by `init`'s nonce reset (which only discards the previous
+     run's receipts), so a re-invoked `/polish` re-sizes the same diff and picks the same level —
+     without `handoff-check`, it would defer again, and every time after that.
    - **(d)** Both outcomes are load-bearing for step 10: the summary must say the real review did not run
      in-session and name what stood in for it, never just the depth. "review: medium" reads identically
      to a genuine in-session pass, which is how the substitution stays invisible.

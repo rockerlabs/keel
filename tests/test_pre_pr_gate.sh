@@ -31,7 +31,11 @@ mkrepo() {
   printf '%s' "$d"
 }
 
-sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(basename "$1")"; }
+# Shared repo-key derivation (mirrors the production file's own _repo_key) — every per-repo /tmp
+# file this test drives (sentinel, trace, hand-off) keys off this one function instead of each
+# inlining `basename "$1"` separately.
+repo_key_for() { basename "$1"; }
+sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
 
 # Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS.
 gate() {
@@ -44,9 +48,16 @@ gate() {
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
 # incomplete-receipt tests); $3 = optional step whose line should be re-tagged with a foreign nonce instead
-# of being written at all (for the replay tests).
-write_full_receipt() {
-  local d="$1" omit="${2:-}" replay_step="${3:-}" s
+# of being written at all (for the replay tests). polish.5-review defaults to a TRUSTED outcome
+# (`medium-operator-run`) — dir #63's trace cross-check only applies to a bare level, and these fixtures
+# are about the OTHER completeness/replay/worktree mechanics, not that check (which gets its own tests
+# below); a real caller can still override via write_full_receipt_review() when it needs a bare level.
+# polish.4-depth is derived to carry the SAME base level as the review outcome (dir #63's depth-mismatch
+# check requires this on every real receipt, trusted outcomes included).
+write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
+write_full_receipt_review() {
+  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
+  depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
   run_in "$d" bash "$gate" init
   for s in $ALL_STEPS; do
     [ "$s" = "$omit" ] && continue
@@ -56,6 +67,10 @@ write_full_receipt() {
     fi
     if [ "$s" = "polish.8-unlock" ]; then
       run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
+    elif [ "$s" = "polish.5-review" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
+    elif [ "$s" = "polish.4-depth" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$depth_level:test-fixture"
     else
       run_in "$d" bash "$gate" receipt "$s"
     fi
@@ -199,13 +214,15 @@ check_contains "stale-nonce replay → reported as a replay, not a plain miss" "
 check_nofile "replayed sentinel is removed" "$(sentinel_for "$d")"
 
 # 9. Conditional steps skipped-with-outcome still count as present (set-completeness, no order check).
+# polish.5-review uses a trusted (-operator-run) outcome here — this test is about the OTHER
+# skipped-with-outcome steps, not the dir #63 trace check, which gets its own tests below.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.1-diff
 run_in "$d" bash "$gate" receipt polish.2-simplify
 run_in "$d" bash "$gate" receipt polish.3-tests "skipped:--no-test"
 run_in "$d" bash "$gate" receipt polish.4-depth low
-run_in "$d" bash "$gate" receipt polish.5-review low
+run_in "$d" bash "$gate" receipt polish.5-review low-operator-run
 run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
 run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
 run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
@@ -353,5 +370,176 @@ write_full_receipt "$WT"
 gate "gh pr create --fill" "$WT"
 check_status "receipt + hook both from the worktree → exit 0" 0 "$STATUS"
 check_absent "receipt + hook both from the worktree → allowed" "$OUT" "deny"
+
+# --- dir #63: skill-invocation trace + nonce-surviving hand-off ----------------------------------
+trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
+
+# 16. A BARE review outcome (a real in-session level, no -operator-run/-waived suffix) with NO
+# matching trace at all → denied, naming the trace as the reason (not a generic completeness miss).
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "bare review outcome, no trace → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "bare review outcome, no trace → names the trace as missing" "$OUT" "no trace matching"
+check_nofile "denied-for-trace sentinel is removed" "$(sentinel_for "$d")"
+
+# 17. Same, but a trace file exists for a DIFFERENT (older) commit — still denied; a trace from a
+# past run must not vouch for a later, unreviewed commit. Asserts the SPECIFIC trace-missing reason,
+# not just "denied for some reason" — the fixture is otherwise a complete, matching receipt, so a
+# vaguer check here could pass even if the trace check silently stopped firing.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "0000000000000000000000000000000000000000" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "stale-commit trace → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "stale-commit trace → denied for the trace, not some other reason" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 17b. A trace line for the RIGHT commit but the WRONG level — a cheap `low` review must not vouch
+# for a receipt claiming `max` (the exact-level-match half of the trace check).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tlow\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "max"
+gate "gh pr create --fill" "$d"
+check_contains "right commit, wrong trace level → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "right commit, wrong trace level → denied for the trace, not some other reason" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 18. A trace line matching the CURRENT HEAD SHA → the bare outcome is now trusted, gate passes.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "matching-commit trace → exit 0" 0 "$STATUS"
+check_absent "matching-commit trace → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# --- dir #63: polish.5-review's outcome must match polish.4-depth's OWN recorded level -----------
+# 18b. The `skip` bypass: a session sizes the diff `medium` (polish.4-depth), then simply claims
+# `polish.5-review skip` — `skip` needs no trace, so without this cross-check it unlocks the gate on
+# one lied-about word regardless of what was actually sized.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
+run_in "$d" bash "$gate" receipt polish.5-review skip
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "review 'skip' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
+
+# 18c. Same shape for a trusted -operator-run outcome: claiming "low-operator-run" against a depth
+# actually sized "high" must not unlock the gate either — write_full_receipt_review always matches
+# polish.4-depth to the given outcome, so this one is built by hand to deliberately mismatch them.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "high:+900-50,15f,code"
+run_in "$d" bash "$gate" receipt polish.5-review low-operator-run
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "'low-operator-run' against a sized-high depth → denied" "$OUT" '"permissionDecision":"deny"'
+
+# 19. skill-trace subcommand: a PostToolUse(Skill) event for the code-review skill appends a trace
+# line keyed by the event's own HEAD SHA.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review) writes a trace file" "$tf"
+check_contains "trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
+# 20. skill-trace ignores a PostToolUse(Skill) event for any OTHER skill (no trace written).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"backlog"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_nofile "skill-trace ignores a non-code-review skill call" "$tf"
+
+# 21. skill-trace also fires on UserPromptExpansion (the operator typing `/code-review <level>`
+# directly) — the path that bypasses PostToolUse entirely per Claude Code's hooks reference.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"UserPromptExpansion", cwd:$cwd, expansion_type:"slash_command", command_name:"code-review", command_args:"ultra"}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(UserPromptExpansion code-review) writes a trace file" "$tf"
+check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	ultra"
+rm -f "$tf"
+
+# --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
+handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(repo_key_for "$1")"; }
+
+# 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
+# reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+hf="$(handoff_for "$d")"; rm -f "$hf"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" handoff medium "$sha"
+run_in "$d" bash "$gate" init
+check_file "hand-off file survives a re-run of init" "$hf"
+check_contains "hand-off file carries the level and SHA" "$(cat "$hf" 2>/dev/null)" "polish.5	medium	$sha"
+rm -f "$hf"
+
+# 23. `handoff-check`: a hand-off recorded for the CURRENT HEAD prints it and exits 0; one recorded
+# for a different (older) SHA is invisible — any new commit invalidates the replay window.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+hf="$(handoff_for "$d")"; rm -f "$hf"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" handoff high "$sha"
+run_in "$d" bash "$gate" handoff-check
+check_status "handoff-check matches current HEAD → exit 0" 0 "$STATUS"
+check_contains "handoff-check prints the matching line" "$OUT" "polish.5	high	$sha"
+git -C "$d" commit --allow-empty -qm "moved on"
+run_in "$d" bash "$gate" handoff-check
+check_status "handoff-check on a NEW commit → exit 1 (replay window is same-SHA only)" 1 "$STATUS"
+rm -f "$hf"
+
+# 24. Writing the real `polish.5-review` receipt removes the hand-off file — its job (recording that
+# step 5(b) already asked) is done once the question is actually answered.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+hf="$(handoff_for "$d")"; rm -f "$hf"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" handoff medium "$sha"
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+check_nofile "hand-off file removed once the real polish.5-review receipt lands" "$hf"
+
+# 25. dir #61 discipline extended to the trace/hand-off paths: both key off the MAIN checkout, not the
+# raw event/PWD cwd — a trace written for a Skill event whose cwd is a worktree, and a hand-off written
+# from inside that same worktree, must both land under the MAIN checkout's files, exactly like the
+# sentinel already does (tests 12-15). (The trace's SHA/level CONTENT can still be wrong under a split
+# session-root/worktree cwd — documented as an accepted residual limit in the gate's own header — this
+# test only proves the FILE ITSELF is the one the gate will actually look at.)
+mkworktree dir63-wt dir63-feature
+sha="$(git -C "$WT" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$WT" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "trace from a worktree event-cwd lands under the MAIN checkout's trace file" "$(trace_for "$MREPO")"
+check_nofile "no stray trace file under the worktree's own basename" "$(trace_for "$WT")"
+check_contains "the worktree-sourced trace carries the worktree's own SHA" "$(cat "$(trace_for "$MREPO")" 2>/dev/null)" "$sha"
+rm -f "$(trace_for "$MREPO")"
+
+run_in "$WT" bash "$gate" init
+run_in "$WT" bash "$gate" handoff high "$sha"
+check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(handoff_for "$MREPO")"
+check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
+rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
 
 summary
