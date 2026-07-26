@@ -63,6 +63,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   expected to touch," since nothing stops the model writing to `/tmp` directly. 6 more test cases added
   (101 total for this file); full suite + shellcheck + self-doctor green.
 
+  **The operator then typed `/code-review high` directly — confirming the `UserPromptExpansion` path
+  this same ticket relies on actually works, live.** The real pass (8 finder angles, 1-vote verify) found
+  five more issues, all fixed: a redundant repo-key recomputation in the trace check when the value was
+  already held from the sentinel resolution (efficiency); the test file's `trace_for`/`handoff_for`
+  duplicating the `basename` pattern `_repo_key` was factored out to consolidate (reuse); the trusted-
+  suffix set (`-operator-run`/`-waived`) encoded independently in the depth-check and the trace-exemption
+  case, now unified into one `case` that both strips the suffix and decides whether a trace is required
+  (altitude); `commands/polish.md` step 4 didn't check for a pending hand-off before re-sizing, so a
+  borderline diff sized differently across two invocations could trip the new depth-mismatch check on a
+  legitimate hand-off completion — step 4 now checks `handoff-check` first and reuses its frozen level
+  (correctness, narrow); and a missing worktree-split test for the new trace/hand-off paths, mirroring
+  dir #61's existing sentinel coverage. One reviewer-agent claim — that `UserPromptExpansion`'s real
+  field is `command_input`, not `command_args` — was checked against a fresh `curl` of the live Claude
+  Code hooks docs and refuted; `command_args` is correct. 106 test cases now; full suite + shellcheck +
+  self-doctor green.
+
 - **`/polish` step-receipt gate** (dir #49, maintainer dev-tooling pilot). `tools/pre-pr-gate.sh` gained
   `init`/`receipt`/`log` CLI subcommands: each `/polish` step now appends a receipt line
   (`<run-nonce>\t<step-id>\t<outcome>`) instead of the gate trusting a bare HEAD-SHA sentinel. The
