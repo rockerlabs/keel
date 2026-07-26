@@ -144,7 +144,9 @@ Steps, in order:
    #49), not a step of the happy path — skip it when the gate never denies.
 
 9. **Open the PR.** After the gate passes, run `gh pr create` — compose the title and body from the
-   implementation context (what changed, why, a test plan). Return the PR URL.
+   implementation context (what changed, why, a test plan). Return the PR URL. Invoking `/polish` IS
+   the standing authorization to push the branch and run `gh pr create` at this step; do not re-ask.
+   The merge stays the operator's.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **If step 5 took
