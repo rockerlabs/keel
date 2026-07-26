@@ -9,6 +9,33 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/polish` step 5's review outcome is now mechanically verifiable, closing the two holes dir #57's
+  rework filed** (dir #63, adversarial pass on that rework). The step-5 receipt used to be a free-form
+  string the model wrote about itself — a genuine in-session `/code-review <level>` pass and a session
+  that only *claimed* one were byte-identical. `tools/pre-pr-gate.sh` gained a `skill-trace` hook
+  subcommand, wired as a `PostToolUse(Skill)` + `UserPromptExpansion(code-review)` pair (documented in
+  the script's own header) — the former fires only when Claude's own `Skill(code-review)` call actually
+  succeeds (a refused/unavailable call never reaches `PostToolUse`, confirmed empirically and against
+  Claude Code's hooks reference), the latter when the operator types `/code-review <level>` directly
+  (a path that bypasses `PostToolUse` entirely). Both append a SHA-keyed trace line the model cannot
+  author itself. The gate's PASS branch now cross-checks that trace whenever `polish.5-review`'s
+  outcome is a bare level (not `skip`/`-operator-run`/`-waived`) — a fabricated claim, or a trace from
+  an older commit, is denied. **Residual limit, written into `commands/polish.md` and the gate header:**
+  the unavailable-skill → inline-pass hand-off still leaves no trace by construction; that path's
+  outcome stays self-reported.
+  Second hole: the hand-off's only exit used to depend on session memory ("the session already shows
+  they ran it"), gone after a context compaction or a fresh session on the same branch — a re-invoked
+  `/polish` would defer forever, since `init` mints a fresh nonce by design (dir #49's replay fix). New
+  `handoff`/`handoff-check` subcommands write and read a `handoff\tpolish.5\t<level>\t<sha>` line in the
+  same sentinel; `init` now preserves that one line across its nonce reset (everything else is still
+  discarded), and it's cleared once the real `polish.5-review` receipt lands. The replay window is
+  same-SHA only — any new commit invalidates it. 16 new cases in `tests/test_pre_pr_gate.sh` cover both
+  mechanisms. The `handoff`/`handoff-check`/existing gate logic go live once this merges and the
+  maintainer's `~/.claude` pulls main (the gate's existing symlink-consumption trap); the trace side
+  needs one additional manual step beyond that — wiring the two new hooks into the maintainer's personal
+  `~/.claude/settings.json` (documented in the script's own header) — since nothing in this repo edits
+  that file automatically.
+
 - **`/polish` step-receipt gate** (dir #49, maintainer dev-tooling pilot). `tools/pre-pr-gate.sh` gained
   `init`/`receipt`/`log` CLI subcommands: each `/polish` step now appends a receipt line
   (`<run-nonce>\t<step-id>\t<outcome>`) instead of the gate trusting a bare HEAD-SHA sentinel. The

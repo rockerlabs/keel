@@ -44,9 +44,13 @@ gate() {
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
 # incomplete-receipt tests); $3 = optional step whose line should be re-tagged with a foreign nonce instead
-# of being written at all (for the replay tests).
-write_full_receipt() {
-  local d="$1" omit="${2:-}" replay_step="${3:-}" s
+# of being written at all (for the replay tests). polish.5-review defaults to a TRUSTED outcome
+# (`medium-operator-run`) — dir #63's trace cross-check only applies to a bare level, and these fixtures
+# are about the OTHER completeness/replay/worktree mechanics, not that check (which gets its own tests
+# below); a real caller can still override via write_full_receipt_review() when it needs a bare level.
+write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
+write_full_receipt_review() {
+  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s
   run_in "$d" bash "$gate" init
   for s in $ALL_STEPS; do
     [ "$s" = "$omit" ] && continue
@@ -56,6 +60,8 @@ write_full_receipt() {
     fi
     if [ "$s" = "polish.8-unlock" ]; then
       run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
+    elif [ "$s" = "polish.5-review" ]; then
+      run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
     else
       run_in "$d" bash "$gate" receipt "$s"
     fi
@@ -199,13 +205,15 @@ check_contains "stale-nonce replay → reported as a replay, not a plain miss" "
 check_nofile "replayed sentinel is removed" "$(sentinel_for "$d")"
 
 # 9. Conditional steps skipped-with-outcome still count as present (set-completeness, no order check).
+# polish.5-review uses a trusted (-operator-run) outcome here — this test is about the OTHER
+# skipped-with-outcome steps, not the dir #63 trace check, which gets its own tests below.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.1-diff
 run_in "$d" bash "$gate" receipt polish.2-simplify
 run_in "$d" bash "$gate" receipt polish.3-tests "skipped:--no-test"
 run_in "$d" bash "$gate" receipt polish.4-depth low
-run_in "$d" bash "$gate" receipt polish.5-review low
+run_in "$d" bash "$gate" receipt polish.5-review low-operator-run
 run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
 run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
 run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
@@ -353,5 +361,105 @@ write_full_receipt "$WT"
 gate "gh pr create --fill" "$WT"
 check_status "receipt + hook both from the worktree → exit 0" 0 "$STATUS"
 check_absent "receipt + hook both from the worktree → allowed" "$OUT" "deny"
+
+# --- dir #63: skill-invocation trace + nonce-surviving hand-off ----------------------------------
+trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(basename "$1")"; }
+
+# 16. A BARE review outcome (a real in-session level, no -operator-run/-waived suffix) with NO
+# matching trace at all → denied, naming the trace as the reason (not a generic completeness miss).
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "bare review outcome, no trace → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "bare review outcome, no trace → names the trace as missing" "$OUT" "no matching trace"
+check_nofile "denied-for-trace sentinel is removed" "$(sentinel_for "$d")"
+
+# 17. Same, but a trace file exists for a DIFFERENT (older) commit — still denied; a trace from a
+# past run must not vouch for a later, unreviewed commit.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "0000000000000000000000000000000000000000" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "stale-commit trace → still denied" "$OUT" '"permissionDecision":"deny"'
+rm -f "$tf"
+
+# 18. A trace line matching the CURRENT HEAD SHA → the bare outcome is now trusted, gate passes.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "matching-commit trace → exit 0" 0 "$STATUS"
+check_absent "matching-commit trace → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 19. skill-trace subcommand: a PostToolUse(Skill) event for the code-review skill appends a trace
+# line keyed by the event's own HEAD SHA.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review) writes a trace file" "$tf"
+check_contains "trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
+# 20. skill-trace ignores a PostToolUse(Skill) event for any OTHER skill (no trace written).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"backlog"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_nofile "skill-trace ignores a non-code-review skill call" "$tf"
+
+# 21. skill-trace also fires on UserPromptExpansion (the operator typing `/code-review <level>`
+# directly) — the path that bypasses PostToolUse entirely per Claude Code's hooks reference.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"UserPromptExpansion", cwd:$cwd, expansion_type:"slash_command", command_name:"code-review", command_args:"ultra"}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(UserPromptExpansion code-review) writes a trace file" "$tf"
+check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	ultra"
+rm -f "$tf"
+
+# --- dir #63: hand-off note (nonce-independent, same-SHA-only) -----------------------------------
+# 22. `init` preserves a `handoff` line across its nonce reset — everything else in the sentinel is
+# discarded on `init` (that's the dir #49 replay fix), but the hand-off question must survive it.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" handoff medium "$sha"
+run_in "$d" bash "$gate" init
+handoff_line="$(awk -F'\t' '$1=="handoff"' "$(sentinel_for "$d")")"
+check_contains "handoff line survives a re-run of init" "$handoff_line" "handoff	polish.5	medium	$sha"
+
+# 23. `handoff-check`: a handoff recorded for the CURRENT HEAD prints it and exits 0; one recorded
+# for a different (older) SHA is invisible — any new commit invalidates the replay window.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" handoff high "$sha"
+run_in "$d" bash "$gate" handoff-check
+check_status "handoff-check matches current HEAD → exit 0" 0 "$STATUS"
+check_contains "handoff-check prints the matching line" "$OUT" "handoff	polish.5	high	$sha"
+git -C "$d" commit --allow-empty -qm "moved on"
+run_in "$d" bash "$gate" handoff-check
+check_status "handoff-check on a NEW commit → exit 1 (replay window is same-SHA only)" 1 "$STATUS"
+
+# 24. Writing the real `polish.5-review` receipt clears the handoff line — its job (recording that
+# step 5(b) already asked) is done once the question is actually answered.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" handoff medium "$sha"
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+handoff_line="$(awk -F'\t' '$1=="handoff"' "$(sentinel_for "$d")")"
+if [ -z "$handoff_line" ]; then
+  pass "handoff line cleared once the real polish.5-review receipt lands"
+else
+  fail "handoff line cleared once the real polish.5-review receipt lands" "still present: $handoff_line"
+fi
 
 summary
