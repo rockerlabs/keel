@@ -29,6 +29,9 @@
 #   pre-pr-gate.sh handoff <level> <sha>   record step 5(b)'s stop so a re-invocation doesn't re-ask (dir #63)
 #   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
 #   pre-pr-gate.sh skill-trace             hook subcommand (see dir #63 section below) — not run by hand
+#   pre-pr-gate.sh rollout-check           SessionStart hook subcommand (dir #64 tier 1) — not run by hand
+#   pre-pr-gate.sh sweep [K]               /wrap-time floor (dir #64 tier 2b): warn when the last K
+#                                           polish runs closed without a trace-confirmed review (default K=3)
 #
 # With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
 # decides allow/deny for `gh pr create`.
@@ -83,6 +86,41 @@
 # `handoff-check` on a re-invocation tells step 5(c) whether the question was already asked for this
 # EXACT diff (same HEAD SHA) — a match means collect the answer without re-deferring; any new commit
 # invalidates the match (same-SHA-only replay window, not open-ended).
+#
+# --- dir #64: a model/harness rollout must not break the pipeline silently ------------------------
+# Generalizes dir #63's root cause: the Opus 5 rollout silently removed /code-review's model-invokability
+# and nothing warned — the only way to learn it was reading a transcript. Three tiers, each independent:
+#
+# Tier 1 — rollout-check (this file, SessionStart hook, below). Wire as:
+#   "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": "bash ~/.claude/pre-pr-gate.sh rollout-check" }] }]
+# Records the session's `.model` (from the SessionStart hook JSON) + `claude --version` into a per-repo
+# state file; on either changing since the last recorded session, appends a `pipeline-drift` impact-log
+# event and emits a `systemMessage` banner. First-ever run for a repo just records a baseline (nothing to
+# compare against yet) — never a false warning.
+# **TO VERIFY, resolved 2026-07-27:** (1) the SessionStart hook JSON DOES carry a `model` field (per
+# code.claude.com/docs/en/hooks.md) — may be omitted after `/clear`/recovery, handled as "nothing to
+# compare" rather than "changed". (2) plain stdout from a SessionStart hook is NOT shown to the human
+# operator — the docs are explicit that for SessionStart (like UserPromptSubmit/UserPromptExpansion),
+# stdout is "added as context that Claude can see and act on", i.e. model-visible only. The
+# human-visible channel is the separate `systemMessage` JSON field, which is what `rollout-check` uses.
+#
+# Tier 2 — provenance surfacing (this file, PASS branch + `sweep` subcommand, below).
+#   (a) the gate's ALLOW decision now carries a `systemMessage`/`permissionDecisionReason` naming how
+#       step 5's review was actually established — "review: skip", "review: <level>, trace-confirmed
+#       in-session" (dir #63's mechanical trace matched), or "review: <level>, operator-run
+#       (self-reported)" / "review: <level>, waived (self-reported)" for the hand-off outcomes dir #63
+#       never traces. Visible at PR-creation time instead of only via transcript archaeology.
+#   (b) `sweep [K]` reads the impact log's `receipt-pass` rows (now carrying that same classification as
+#       their detail field) and warns when the last K (default 3) consecutive passes never read
+#       "trace-confirmed" — a run of self-reported-only reviews, the exact pre-#63 blind spot. Read-only,
+#       never blocks; wiring it into a `/wrap` step is a manual follow-up (same precedent as dir #63's
+#       hook wiring into ~/.claude/settings.json — see that section above).
+#
+# Tier 3 — tools/pipeline-canary.sh (separate file). A sandboxed operator ritual that builds a toy repo +
+# isolated HOME + stubbed `gh` + this file's hooks wired in, then either drives a real `/polish` run
+# (operator-triggered) or seeds a fabricated step-5 claim and asserts the gate still denies it (fully
+# scripted, no model needed — the canary's own proof that it CAN fail). Full design + the TO VERIFY
+# outcome on headless hook-firing → that file's own header.
 
 set -u
 
@@ -131,6 +169,9 @@ sentinel_path()  { printf '/tmp/pre-pr-gate-%s' "$(_repo_key "$PWD")"; }
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
 trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
 handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
+# dir #64 tier 1: the last-seen model/harness version per repo, keyed the same way — a fresh file, so
+# `init`'s nonce reset (the sentinel's job) never touches it, same rationale as the trace/hand-off files.
+rollout_state_path() { printf '/tmp/pre-pr-gate-rollout-%s' "$(_repo_key "${1:-$PWD}")"; }
 
 # Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
 # (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
@@ -239,6 +280,73 @@ case "${1:-}" in
     st_sha=$(git -C "$st_cwd" rev-parse HEAD 2>/dev/null)
     [ -n "$st_sha" ] || exit 0
     printf '%s\t%s\n' "$st_sha" "$st_level" >> "$(trace_path_for "$st_cwd")"
+    exit 0
+    ;;
+  rollout-check)
+    # SessionStart hook (dir #64 tier 1) — see the dir #64 header section above. Never blocks; any
+    # parse failure or missing jq is a silent no-op rather than a false warning.
+    command -v jq >/dev/null 2>&1 || exit 0
+    rc_input=$(cat 2>/dev/null)
+    rc_model=$(printf '%s' "$rc_input" | jq -r '.model // empty' 2>/dev/null)
+    rc_cwd=$(printf '%s' "$rc_input" | jq -r '.cwd // empty' 2>/dev/null)
+    [ -n "$rc_cwd" ] || rc_cwd="$PWD"
+    rc_version="$(claude --version 2>/dev/null | head -n1)"
+    rc_state="$(rollout_state_path "$rc_cwd")"
+    rc_prev_model=""; rc_prev_version=""
+    if [ -f "$rc_state" ]; then
+      rc_prev_model="$(awk -F'\t' '$1=="model"{print $2}' "$rc_state" 2>/dev/null)"
+      rc_prev_version="$(awk -F'\t' '$1=="version"{print $2}' "$rc_state" 2>/dev/null)"
+    fi
+    # Only compare a field when BOTH sides are known — an empty reading (jq/claude unavailable this
+    # run, or a `model`-less SessionStart event) means "can't tell", not "changed".
+    rc_changed=""
+    if [ -n "$rc_model" ] && [ -n "$rc_prev_model" ] && [ "$rc_model" != "$rc_prev_model" ]; then
+      rc_changed="model ($rc_prev_model -> $rc_model)"
+    fi
+    if [ -n "$rc_version" ] && [ -n "$rc_prev_version" ] && [ "$rc_version" != "$rc_prev_version" ]; then
+      [ -n "$rc_changed" ] && rc_changed="$rc_changed, "
+      rc_changed="${rc_changed}harness ($rc_prev_version -> $rc_version)"
+    fi
+    {
+      printf 'model\t%s\n' "$rc_model"
+      printf 'version\t%s\n' "$rc_version"
+    } > "$rc_state"
+    if [ -n "$rc_changed" ]; then
+      log_event pipeline-drift "$rc_changed" "$rc_cwd"
+      rc_msg="model/harness changed since last session ($rc_changed) - pipeline commands may have silently degraded; watch /polish step 5, consider tools/pipeline-canary.sh"
+      printf '{"systemMessage":"%s"}\n' "$rc_msg"
+    fi
+    exit 0
+    ;;
+  sweep)
+    # dir #64 tier 2b — read-only /wrap-time floor, never blocks. Warns when the last K consecutive
+    # receipt-pass rows in the impact log never read "trace-confirmed" (the pre-#63 blind spot: every
+    # recent /polish run closed on a self-reported review only). Not wired into any hook by design (a
+    # sweep needs to run once per /wrap, not per gate decision) — invoking it is a manual follow-up.
+    sw_k="${2:-3}"
+    case "$sw_k" in ''|*[!0-9]*) sw_k=3 ;; esac
+    sw_log="$(resolve_impact_log "$PWD")"
+    if [ -z "$sw_log" ] || [ ! -f "$sw_log" ]; then
+      printf 'pre-pr-gate: sweep - no impact log found, nothing to check\n'
+      exit 0
+    fi
+    sw_result="$(awk -F'\t' -v k="$sw_k" '
+      $2 == "receipt-pass" { rows[++n] = $4 }
+      END {
+        streak = 0
+        for (i = n; i >= 1; i--) {
+          if (rows[i] ~ /trace-confirmed/) break
+          streak++
+          if (streak >= k) { print "WARN"; exit }
+        }
+        print "OK"
+      }
+    ' "$sw_log")"
+    if [ "$sw_result" = "WARN" ]; then
+      printf 'pre-pr-gate: sweep - %s+ consecutive /polish runs closed without a trace-confirmed code-review (self-reported only). Consider tools/pipeline-canary.sh or an operator-run /code-review.\n' "$sw_k"
+      exit 1
+    fi
+    printf 'pre-pr-gate: sweep - recent runs look fine (a trace-confirmed review within the last %s)\n' "$sw_k"
     exit 0
     ;;
 esac
@@ -561,8 +669,17 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
+    # dir #64 tier 2a: classify how step 5's review was actually established, so the substitution dir
+    # #63 makes checkable becomes VISIBLE at PR-creation time instead of only via transcript archaeology.
+    case "$review_outcome" in
+      skip)           prov_label="review: skip" ;;
+      *-operator-run) prov_label="review: ${review_outcome%-operator-run}, operator-run (self-reported)" ;;
+      *-waived)       prov_label="review: ${review_outcome%-waived}, waived (self-reported)" ;;
+      *)              prov_label="review: ${review_outcome}, trace-confirmed in-session" ;;
+    esac
     rm -f "$sentinel"
-    log_event receipt-pass "" "$cwd"
+    log_event receipt-pass "$prov_label" "$cwd"
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"
     exit 0
     ;;
 esac

@@ -289,6 +289,7 @@ imp_log2="$SANDBOX/pprg-events-pass.log"; rm -f "$imp_log2"
 out="$(KEEL_IMPACT_LOG="$imp_log2" bash "$gate" <<<"$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}')" 2>&1)"
 check_absent "a clean pass emits no deny payload" "$out" "deny"
 check_contains "a clean pass records a receipt-pass event" "$(cat "$imp_log2" 2>/dev/null)" "	receipt-pass	pre-pr-gate	"
+check_contains "the receipt-pass event's detail carries the provenance classification (dir #64)" "$(cat "$imp_log2" 2>/dev/null)" "	receipt-pass	pre-pr-gate	review: medium, operator-run (self-reported)"
 
 # (e) `pre-pr-gate.sh log` appends an arbitrary verdict/friction line for the current run.
 d="$(mkrepo)"
@@ -541,5 +542,142 @@ run_in "$WT" bash "$gate" handoff high "$sha"
 check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(handoff_for "$MREPO")"
 check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
 rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
+
+# --- dir #64 tier 2a: provenance line on the gate's ALLOW decision -------------------------------
+# 26. A trusted "skip" outcome → the provenance line reads "review: skip", no trace involved.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:no-code-changes"
+run_in "$d" bash "$gate" receipt polish.5-review skip
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_status "skip outcome → exit 0" 0 "$STATUS"
+check_contains "skip outcome → provenance reads 'review: skip'" "$OUT" "review: skip"
+
+# 27. A trusted -operator-run outcome → provenance names it explicitly self-reported.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "medium-operator-run"
+gate "gh pr create --fill" "$d"
+check_contains "operator-run outcome → provenance names it self-reported" "$OUT" "review: medium, operator-run (self-reported)"
+
+# 28. A trusted -waived outcome → provenance names it explicitly self-reported/waived.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "high-waived"
+gate "gh pr create --fill" "$d"
+check_contains "waived outcome → provenance names it self-reported/waived" "$OUT" "review: high, waived (self-reported)"
+
+# 29. A bare outcome backed by a matching mechanical trace → provenance says so explicitly, the
+# whole point of dir #63's trace being visible at PR-creation time, not just transcript archaeology.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "trace-confirmed outcome → provenance names the mechanical trace" "$OUT" "review: medium, trace-confirmed in-session"
+rm -f "$tf"
+
+# --- dir #64 tier 1: rollout-check (SessionStart hook) --------------------------------------------
+rollout_state_for() { printf '/tmp/pre-pr-gate-rollout-%s' "$(repo_key_for "$1")"; }
+
+# A fake `claude` binary on PATH so version-drift assertions don't depend on whatever real Claude
+# Code build happens to be installed on the machine running these tests. $1 = version text to print.
+fake_claude_bin() {
+  local dir; dir="$(mktemp -d "$SANDBOX/fakeclaude.XXXXXX")"
+  printf '#!/bin/sh\nprintf "%s (Claude Code)\\n"\n' "$1" > "$dir/claude"
+  chmod +x "$dir/claude"
+  printf '%s' "$dir"
+}
+
+# Drive rollout-check: $1 = model (empty string = field omitted, simulating a model-less event),
+# $2 = cwd, $3 = a PATH-prepend dir holding the fake `claude` binary. Pins KEEL_IMPACT_LOG to $rimp
+# (set by the caller below) so the pipeline-drift assertions read a known file, not lib.sh's ambient
+# sandbox-wide default.
+rc_gate() {
+  local model="$1" cwd="$2" claudebin="$3" json
+  json="$(jq -n --arg m "$model" --arg d "$cwd" '{cwd:$d} + (if $m == "" then {} else {model:$m} end)')"
+  OUT="$(printf '%s' "$json" | PATH="$claudebin:$PATH" KEEL_IMPACT_LOG="$rimp" bash "$gate" rollout-check 2>&1)"
+  STATUS=$?
+}
+
+d="$(mkrepo)"
+rstate="$(rollout_state_for "$d")"; rm -f "$rstate"
+cb1="$(fake_claude_bin "1.0.0")"
+rimp="$SANDBOX/rollout-events.log"; rm -f "$rimp"
+
+# 30. First-ever session for a repo: nothing to compare against yet → records a baseline, no banner.
+rc_gate "claude-sonnet-5" "$d" "$cb1"
+check_status "rollout-check always exits 0" 0 "$STATUS"
+check_absent "first session for a repo → no drift banner (nothing to compare yet)" "$OUT" "systemMessage"
+check_file "first session records a baseline state file" "$rstate"
+check_contains "baseline records the model" "$(cat "$rstate" 2>/dev/null)" "model	claude-sonnet-5"
+check_contains "baseline records the harness version" "$(cat "$rstate" 2>/dev/null)" "version	1.0.0 (Claude Code)"
+
+# 31. Same model, same harness version next session → silent, no false positive.
+rc_gate "claude-sonnet-5" "$d" "$cb1"
+check_absent "unchanged model+version → no drift banner" "$OUT" "systemMessage"
+
+# 32. Model changed since the last session → banner fires, names old and new, and logs a
+# pipeline-drift event (metadata only, same log-file-not-stdout discipline as the other events).
+rc_gate "claude-opus-5" "$d" "$cb1"
+check_contains "model change → drift banner fires" "$OUT" "systemMessage"
+check_contains "banner names the old and new model" "$OUT" "model (claude-sonnet-5 -> claude-opus-5)"
+check_contains "model change logs a pipeline-drift event" "$(cat "$rimp" 2>/dev/null)" "	pipeline-drift	pre-pr-gate	model (claude-sonnet-5 -> claude-opus-5)"
+
+# 33. Having settled on the new model, the NEXT session with that same model is silent again.
+rc_gate "claude-opus-5" "$d" "$cb1"
+check_absent "settled on the new model → no repeat banner" "$OUT" "systemMessage"
+
+# 34. Harness version changed (same model) → banner fires for the version, not the model.
+cb2="$(fake_claude_bin "2.0.0")"
+rc_gate "claude-opus-5" "$d" "$cb2"
+check_contains "harness version change → drift banner fires" "$OUT" "systemMessage"
+check_contains "banner names the old and new harness version" "$OUT" "harness (1.0.0 (Claude Code) -> 2.0.0 (Claude Code))"
+
+# 35. A model-less SessionStart event (e.g. immediately after /clear, per the hooks reference) must
+# not be misread as "model changed to empty" — an unknown reading is "can't tell", not "changed".
+rc_gate "" "$d" "$cb2"
+check_absent "empty model field this run → no false drift (can't tell, not changed)" "$OUT" "systemMessage"
+rm -f "$rstate"
+
+# --- dir #64 tier 2b: sweep — warn on K consecutive self-reported-only passes --------------------
+d="$(mkrepo)"; mkdir -p "$d/.keel"
+ilog="$d/.keel/impact-events.log"; rm -f "$ilog"
+
+# 36. No impact log yet → nothing to check, exits clean.
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "sweep with no impact log → exit 0 (nothing to check)" 0 "$STATUS"
+
+# 37. Fewer than K consecutive self-reported passes (default K=3) → OK, exit 0.
+{
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, trace-confirmed in-session\n'
+  printf '2026-07-27T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\n'
+  printf '2026-07-27T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\n'
+} > "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "2 consecutive self-reported passes (K=3 default) → exit 0" 0 "$STATUS"
+
+# 38. K consecutive passes with NO trace-confirmed among them → warns, non-zero exit (advisory only —
+# the sweep never blocks anything itself, it's a /wrap-time read, not a gate).
+{
+  printf '2026-07-27T00:03:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\n'
+} >> "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "3 consecutive self-reported passes → non-zero (advisory warn)" 1 "$STATUS"
+check_contains "warns naming the threshold" "$OUT" "3+ consecutive"
+
+# 39. The sweep is read-only — the impact log is untouched (unlike `add`'s ingest-and-truncate).
+check_contains "sweep does not truncate the impact log" "$(cat "$ilog" 2>/dev/null)" "receipt-pass"
+
+# 40. A trace-confirmed pass anywhere in the last K breaks the streak → OK again.
+{
+  printf '2026-07-27T00:04:00Z\treceipt-pass\tpre-pr-gate\treview: high, trace-confirmed in-session\n'
+} >> "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "a trace-confirmed pass within the window → exit 0 again" 0 "$STATUS"
 
 summary

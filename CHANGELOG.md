@@ -9,6 +9,35 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **A model/harness rollout must not break the `/polish` pipeline silently — three independent guard
+  tiers** (dir #64, generalizing dir #63's root cause: the Opus 5 rollout silently removed
+  `/code-review`'s model-invokability and nothing warned). Prose commands can't be unit-tested, but a
+  rollout's *effect on them* can be watched three ways. **Tier 1** — `tools/pre-pr-gate.sh` gained a
+  `rollout-check` subcommand wired as a `SessionStart` hook: it records the session's model id (from the
+  hook's own JSON input) + `claude --version` per repo, and on either changing since the last recorded
+  session, prints a `systemMessage` banner and logs a `pipeline-drift` event. Two facts this needed
+  settling first, now written into the script's header: SessionStart's JSON *does* carry a `model`
+  field, but plain stdout from a SessionStart hook is model-visible only — the human-visible channel is
+  the separate `systemMessage` field, which is what the banner uses. **Tier 2** — the gate's ALLOW
+  decision now carries a one-line provenance classification of how step 5's review was actually
+  established ("review: skip" / "…, trace-confirmed in-session" / "…, operator-run (self-reported)" /
+  "…, waived (self-reported)"), visible at PR-creation time instead of only via transcript archaeology;
+  the same classification is now the `receipt-pass` impact-log event's detail field, which a new `sweep
+  [K]` subcommand reads to warn when the last K (default 3) consecutive `/polish` runs never closed on a
+  trace-confirmed review — read-only, never blocks. **Tier 3** — `tools/pipeline-canary.sh` (new):
+  `setup` builds an isolated sandbox (throwaway HOME, a toy repo, a stubbed `gh` that never touches the
+  network, this checkout's gate wired into a scratch `settings.json`) and prints the operator's command
+  to drive a real `/polish` run inside it; `check` then script-asserts what the run left behind; `clean`
+  tears it down. `demo-bypass` needs no model at all — it seeds a fabricated step-5 claim with no
+  matching trace and asserts the gate still denies it (a canary that has never failed proves nothing).
+  Whether a fully headless `claude -p` run reliably fires `PreToolUse`/`PostToolUse` hooks the same way
+  an interactive session does turned out to be under-documented (SessionStart/SessionEnd firing in print
+  mode is explicit; the other two are only inferred from "loads the same context an interactive session
+  would") — tier 3 ships as the ticket's own documented fallback, an interactive ritual rather than a
+  blind automated drive; the artifact assertions keep their value either way. 25 new cases in
+  `tests/test_pre_pr_gate.sh` (rollout-check, the provenance line, the sweep) and a new
+  `tests/test_pipeline_canary.sh` (29 cases) cover all three tiers. Wiring the new `SessionStart` hook
+  into `~/.claude/settings.json` is a manual follow-up, same precedent as dir #63's two hooks.
 - **`/polish` step 5's review outcome is now mechanically verifiable, closing the two holes dir #57's
   rework filed** (dir #63, adversarial pass on that rework). The step-5 receipt used to be a free-form
   string the model wrote about itself — a genuine in-session `/code-review <level>` pass and a session
