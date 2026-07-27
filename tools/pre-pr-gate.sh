@@ -299,7 +299,7 @@ case "${1:-}" in
     # on every session start, worth sparing the extra fork). \x1f: same bash-`read`-collapses-an-empty-
     # tab-delimited-field pitfall skill-trace already documents, so a missing `.model` can't shift `.cwd`
     # into the wrong variable.
-    IFS=$'\x1f' read -r rc_model rc_cwd <<<"$(printf '%s' "$rc_input" | jq -r '[(.model // ""), (.cwd // "")] | join("")' 2>/dev/null)"
+    IFS=$'\x1f' read -r rc_model rc_cwd <<<"$(printf '%s' "$rc_input" | jq -r '[(.model // ""), (.cwd // "")] | join("\u001f")' 2>/dev/null)"
     [ -n "$rc_cwd" ] || rc_cwd="$PWD"
     rc_version="$(claude --version 2>/dev/null | head -n1)"
     rc_state="$(rollout_state_path "$rc_cwd")"
