@@ -319,9 +319,13 @@ case "${1:-}" in
       [ -n "$rc_changed" ] && rc_changed="$rc_changed, "
       rc_changed="${rc_changed}harness ($rc_prev_version -> $rc_version)"
     fi
+    # Persist a field only when this run actually read it — an empty reading (e.g. a `model`-less
+    # SessionStart event) must NOT clobber the last-known-good baseline with "", or the NEXT session's
+    # genuine change would compare against an erased value and silently pass the "can't tell" guard
+    # above (found in the operator-run /code-review high pass on this ticket).
     {
-      printf 'model\t%s\n' "$rc_model"
-      printf 'version\t%s\n' "$rc_version"
+      printf 'model\t%s\n' "${rc_model:-$rc_prev_model}"
+      printf 'version\t%s\n' "${rc_version:-$rc_prev_version}"
     } > "$rc_state"
     if [ -n "$rc_changed" ]; then
       log_event pipeline-drift "$rc_changed" "$rc_cwd"
@@ -333,8 +337,11 @@ case "${1:-}" in
   sweep)
     # dir #64 tier 2b — read-only /wrap-time floor, never blocks. Warns when the last K consecutive
     # receipt-pass rows in the impact log never read "trace-confirmed" (the pre-#63 blind spot: every
-    # recent /polish run closed on a self-reported review only). Not wired into any hook by design (a
-    # sweep needs to run once per /wrap, not per gate decision) — invoking it is a manual follow-up.
+    # recent /polish run closed on a self-reported review only), OR when there are FEWER than K rows
+    # total and every one of them is non-trace-confirmed (a new/low-volume repo shouldn't read as
+    # "fine" just because it hasn't accumulated K runs yet — found in the operator-run /code-review
+    # high pass on this ticket). Not wired into any hook by design (a sweep needs to run once per
+    # /wrap, not per gate decision) — invoking it is a manual follow-up.
     sw_k="${2:-3}"
     case "$sw_k" in ''|*[!0-9]*) sw_k=3 ;; esac
     sw_log="$(resolve_impact_log "$PWD")"
@@ -342,15 +349,20 @@ case "${1:-}" in
       printf 'pre-pr-gate: sweep - no impact log found, nothing to check\n'
       exit 0
     fi
+    # $5, not a regex over $4: the receipt-pass detail field ($4, `prov_label`) is HUMAN-DISPLAY prose;
+    # $5 is the separate machine tag ("trace-confirmed"/"self-reported") the PASS branch now logs
+    # alongside it, so a future rewording of the display text can't silently break this classification
+    # (found in the same review pass — the tag/prose coupling was itself a finding).
     sw_result="$(awk -F'\t' -v k="$sw_k" '
-      $2 == "receipt-pass" { rows[++n] = $4 }
+      $2 == "receipt-pass" { rows[++n] = $5 }
       END {
         streak = 0
         for (i = n; i >= 1; i--) {
-          if (rows[i] ~ /trace-confirmed/) break
+          if (rows[i] == "trace-confirmed") break
           streak++
-          if (streak >= k) { print "WARN"; exit }
         }
+        if (streak >= k) { print "WARN"; exit }
+        if (n > 0 && streak == n) { print "WARN"; exit }
         print "OK"
       }
     ' "$sw_log")"
@@ -652,19 +664,22 @@ case "$status" in
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
-    # AND builds the dir #64 tier 2a provenance label (below) from the same match, so a future third
-    # suffix only needs adding here, not kept in sync across separate mechanisms.
+    # AND builds the dir #64 tier 2a provenance label + tag (below) from the same match, so a future
+    # third suffix only needs adding here, not kept in sync across separate mechanisms. $prov_tag is a
+    # STABLE machine value ("trace-confirmed"/"self-reported") separate from $prov_label's human prose,
+    # so `sweep` (below) can classify without depending on display wording (found in the operator-run
+    # /code-review high pass on this ticket — sweep used to regex-match the prose directly).
     depth_level="${depth_outcome%%:*}"
     trusted=0
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
-                         prov_label="review: skip" ;;
+                         prov_label="review: skip";  prov_tag="self-reported" ;;
       *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1
-                         prov_label="review: $outcome_level, operator-run (self-reported)" ;;
+                         prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
-                         prov_label="review: $outcome_level, waived (self-reported)" ;;
+                         prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
       *)                outcome_level="$review_outcome"
-                         prov_label="review: $outcome_level, trace-confirmed in-session" ;;
+                         prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
     if [ "$outcome_level" != "$depth_level" ]; then
       rm -f "$sentinel"
@@ -686,10 +701,12 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
-    # dir #64 tier 2a: $prov_label was already built above (the same case statement dir #63's cross-
-    # check uses) — visible at PR-creation time instead of only via transcript archaeology.
+    # dir #64 tier 2a: $prov_label/$prov_tag were already built above (the same case statement dir #63's
+    # cross-check uses) — visible at PR-creation time instead of only via transcript archaeology. The
+    # logged detail carries BOTH, tab-joined ($4 = prov_label prose, $5 = prov_tag) — `sweep` reads $5,
+    # never $4, so it never depends on the display wording.
     rm -f "$sentinel"
-    log_event receipt-pass "$prov_label" "$cwd"
+    log_event receipt-pass "$prov_label"$'\t'"$prov_tag" "$cwd"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"
     exit 0
     ;;

@@ -179,7 +179,12 @@ cmd_check() {
     printf 'PASS  no leftover receipt sentinel — consistent with a consumed, successful pass\n'
   fi
 
-  ilog="$repo/.keel/impact-events.log"
+  # resolve_impact_log() in pre-pr-gate.sh prefers $KEEL_IMPACT_LOG over a repo's own .keel/ marker —
+  # match that precedence here, or an operator with that env var set (plausible if they use it for
+  # their real repos, and it's inherited into the sandboxed `claude --settings ...` session) would see
+  # a fully successful canary run misreported as "no receipt-pass event recorded" (found in the
+  # operator-run /code-review high pass on this ticket).
+  ilog="${KEEL_IMPACT_LOG:-$repo/.keel/impact-events.log}"
   if [ -f "$ilog" ] && grep -q 'receipt-pass' "$ilog" 2>/dev/null; then
     printf 'PASS  a receipt-pass event was recorded: %s\n' "$(grep 'receipt-pass' "$ilog" | tail -n1)"
   else

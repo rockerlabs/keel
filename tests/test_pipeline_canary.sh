@@ -72,7 +72,11 @@ gate_decision="$(jq -n --arg c "gh pr create --fill" --arg d "$repo" '{tool_inpu
 check_contains "the gate itself allows the simulated run" "$gate_decision" '"permissionDecision":"allow"'
 "$sandbox/bin/gh" pr create --fill >/dev/null
 
-run env KEEL_CANARY_STATE="$STATE" bash "$canary" check
+# -u KEEL_IMPACT_LOG here too: cmd_check now follows the same $KEEL_IMPACT_LOG-outranks-.keel/-marker
+# precedence as resolve_impact_log() (the fix under test further below) — since the event above was
+# written with that env var unset (landing in the repo's own .keel/ marker), `check` must read it the
+# same way, or it would look at lib.sh's ambient sandbox-wide default instead and miss it.
+run env KEEL_CANARY_STATE="$STATE" env -u KEEL_IMPACT_LOG bash "$canary" check
 check_status "check after a completed run → exit 0" 0 "$STATUS"
 check_contains "check after a completed run → PASSes the gh-reached assertion" "$OUT" "PASS  gh pr create reached the stub"
 check_contains "check after a completed run → PASSes the sentinel-consumed assertion" "$OUT" "PASS  no leftover receipt sentinel"
@@ -86,5 +90,24 @@ check_nofile "clean removes the state file" "$STATE"
 if [ -d "$sandbox" ]; then fail "clean removes the sandbox dir" "still present: $sandbox"; else pass "clean removes the sandbox dir"; fi
 
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-2" bash "$canary" clean
+
+# --- dir #64/operator-run /code-review high fix: `check` must respect $KEEL_IMPACT_LOG precedence,
+# same as pre-pr-gate.sh's own resolve_impact_log() — an operator with that env var set (plausible for
+# their real repos) would otherwise see a fully successful run misreported as "no event recorded". ---
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" bash "$canary" setup
+sandbox3="$(awk -F'\t' '$1=="sandbox"{print $2}' "$SANDBOX/canary-state-3")"
+repo3="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-3")"
+extlog="$SANDBOX/external-impact.log"; rm -f "$extlog"
+write_full_receipt_review "$repo3" "low-operator-run"
+jq -n --arg c "gh pr create --fill" --arg d "$repo3" '{tool_input:{command:$c}, cwd:$d}' |
+  KEEL_IMPACT_LOG="$extlog" bash "$gate" >/dev/null
+"$sandbox3/bin/gh" pr create --fill >/dev/null
+
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" KEEL_IMPACT_LOG="$extlog" bash "$canary" check
+check_status "check with KEEL_IMPACT_LOG set → exit 0" 0 "$STATUS"
+check_contains "check follows KEEL_IMPACT_LOG precedence, finds the event in the external file" "$OUT" "PASS  a receipt-pass event was recorded"
+check_nofile "the repo's own .keel/ marker never got the event (env var outranked it, as production does)" "$repo3/.keel/impact-events.log"
+
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" bash "$canary" clean
 
 summary

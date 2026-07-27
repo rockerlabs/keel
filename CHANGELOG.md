@@ -34,10 +34,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   an interactive session does turned out to be under-documented (SessionStart/SessionEnd firing in print
   mode is explicit; the other two are only inferred from "loads the same context an interactive session
   would") — tier 3 ships as the ticket's own documented fallback, an interactive ritual rather than a
-  blind automated drive; the artifact assertions keep their value either way. 25 new cases in
-  `tests/test_pre_pr_gate.sh` (rollout-check, the provenance line, the sweep) and a new
-  `tests/test_pipeline_canary.sh` (29 cases) cover all three tiers. Wiring the new `SessionStart` hook
-  into `~/.claude/settings.json` is a manual follow-up, same precedent as dir #63's two hooks.
+  blind automated drive; the artifact assertions keep their value either way. `/code-review` was
+  genuinely unavailable in the building session (the exact felt trigger this ticket generalizes from),
+  so an inline pass caught one bug (a raw, invisible control byte in a jq call — fixed to match the
+  existing escaped-literal convention) before the operator ran `/code-review high` directly, which found
+  four more real ones: `rollout-check` was unconditionally overwriting its state file even when a field
+  came back empty, silently erasing the last-known-good baseline so a genuine NEXT-session model change
+  could go undetected; `sweep` fell through to "OK" whenever a repo had fewer than K total runs on
+  record, even if every one of them was self-reported-only — exactly the blind spot it exists to catch,
+  worst when there's least history; `sweep` classified "trace-confirmed" by regex-matching the
+  human-display provenance prose rather than a stable tag, so a future rewording could silently break it
+  (fixed by logging a separate machine tag alongside the prose); and `pipeline-canary.sh`'s `check`
+  ignored `$KEEL_IMPACT_LOG` precedence, so an operator with that env var set would see a fully
+  successful canary run misreported as "no event recorded". All four fixed, with new regression
+  coverage. 35 new cases in `tests/test_pre_pr_gate.sh` (rollout-check, the provenance line, the sweep,
+  the four fixes) and a new `tests/test_pipeline_canary.sh` (32 cases) cover all three tiers. Wiring the
+  new `SessionStart` hook into `~/.claude/settings.json` is a manual follow-up, same precedent as dir
+  #63's two hooks.
 - **`/polish` step 5's review outcome is now mechanically verifiable, closing the two holes dir #57's
   rework filed** (dir #63, adversarial pass on that rework). The step-5 receipt used to be a free-form
   string the model wrote about itself — a genuine in-session `/code-review <level>` pass and a session

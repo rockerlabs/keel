@@ -508,15 +508,7 @@ rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT"
 # --- dir #64 tier 2a: provenance line on the gate's ALLOW decision -------------------------------
 # 26. A trusted "skip" outcome → the provenance line reads "review: skip", no trace involved.
 d="$(mkrepo)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests
-run_in "$d" bash "$gate" receipt polish.4-depth "skip:no-code-changes"
-run_in "$d" bash "$gate" receipt polish.5-review skip
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+write_full_receipt_review "$d" "skip"
 gate "gh pr create --fill" "$d"
 check_status "skip outcome → exit 0" 0 "$STATUS"
 check_contains "skip outcome → provenance reads 'review: skip'" "$OUT" "review: skip"
@@ -604,6 +596,16 @@ check_contains "banner names the old and new harness version" "$OUT" "harness (1
 # not be misread as "model changed to empty" — an unknown reading is "can't tell", not "changed".
 rc_gate "" "$d" "$cb2"
 check_absent "empty model field this run → no false drift (can't tell, not changed)" "$OUT" "systemMessage"
+
+# 35b. dir #64/operator-run /code-review high fix: the model-less session above must NOT have erased
+# the last-known-good baseline — the state file should still read the LAST REAL model (opus), not "".
+check_contains "a model-less session preserves the last-known model in the state file" "$(cat "$rstate" 2>/dev/null)" "model	claude-opus-5"
+
+# 35c. Proof the baseline really survived: the NEXT session with a genuinely different model still
+# fires a drift banner comparing against the PRESERVED value, not against an erased "".
+rc_gate "claude-sonnet-5" "$d" "$cb2"
+check_contains "a real change after a model-less session still fires (baseline wasn't erased)" "$OUT" "systemMessage"
+check_contains "banner compares against the preserved prior model, not an erased blank" "$OUT" "model (claude-opus-5 -> claude-sonnet-5)"
 rm -f "$rstate"
 
 # --- dir #64 tier 2b: sweep — warn on K consecutive self-reported-only passes --------------------
@@ -614,11 +616,12 @@ ilog="$d/.keel/impact-events.log"; rm -f "$ilog"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "sweep with no impact log → exit 0 (nothing to check)" 0 "$STATUS"
 
-# 37. Fewer than K consecutive self-reported passes (default K=3) → OK, exit 0.
+# 37. Fewer than K consecutive self-reported passes (default K=3) → OK, exit 0. Rows carry a 5th
+# tab field ($5 = the stable machine tag `sweep` actually reads) alongside the human-display $4.
 {
-  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, trace-confirmed in-session\n'
-  printf '2026-07-27T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\n'
-  printf '2026-07-27T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\n'
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, trace-confirmed in-session\ttrace-confirmed\n'
+  printf '2026-07-27T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+  printf '2026-07-27T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
 } > "$ilog"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "2 consecutive self-reported passes (K=3 default) → exit 0" 0 "$STATUS"
@@ -626,7 +629,7 @@ check_status "2 consecutive self-reported passes (K=3 default) → exit 0" 0 "$S
 # 38. K consecutive passes with NO trace-confirmed among them → warns, non-zero exit (advisory only —
 # the sweep never blocks anything itself, it's a /wrap-time read, not a gate).
 {
-  printf '2026-07-27T00:03:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\n'
+  printf '2026-07-27T00:03:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
 } >> "$ilog"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "3 consecutive self-reported passes → non-zero (advisory warn)" 1 "$STATUS"
@@ -637,10 +640,35 @@ check_contains "sweep does not truncate the impact log" "$(cat "$ilog" 2>/dev/nu
 
 # 40. A trace-confirmed pass anywhere in the last K breaks the streak → OK again.
 {
-  printf '2026-07-27T00:04:00Z\treceipt-pass\tpre-pr-gate\treview: high, trace-confirmed in-session\n'
+  printf '2026-07-27T00:04:00Z\treceipt-pass\tpre-pr-gate\treview: high, trace-confirmed in-session\ttrace-confirmed\n'
 } >> "$ilog"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "a trace-confirmed pass within the window → exit 0 again" 0 "$STATUS"
+
+# 40b. dir #64/operator-run /code-review high fix: a repo with FEWER than K total receipt-pass rows,
+# every one of them non-trace-confirmed, must still warn — the pre-fix version fell through to "OK"
+# just because it hadn't yet accumulated K runs, exactly the blind spot sweep exists to catch.
+d2="$(mkrepo)"; mkdir -p "$d2/.keel"
+ilog2="$d2/.keel/impact-events.log"
+{
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+} > "$ilog2"
+run_in "$d2" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "1 self-reported pass, fewer than K total → still warns (all history is bad)" 1 "$STATUS"
+
+# 40c. Same short-history shape, but the only row IS trace-confirmed → OK (nothing bad to warn about).
+{
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, trace-confirmed in-session\ttrace-confirmed\n'
+} > "$ilog2"
+run_in "$d2" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "1 trace-confirmed pass, fewer than K total → exit 0" 0 "$STATUS"
+
+# 40d. An impact log with events but NO receipt-pass rows at all (e.g. only guard/deny events) → OK,
+# not a false warning — there is nothing to judge yet, not "everything so far is bad".
+d3="$(mkrepo)"; mkdir -p "$d3/.keel"
+printf '2026-07-27T00:00:00Z\tguard\tpre-pr-gate\tblocked\n' > "$d3/.keel/impact-events.log"
+run_in "$d3" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "no receipt-pass rows at all → exit 0 (nothing to judge yet)" 0 "$STATUS"
 
 # --- dir #64: repo-key subcommand (so other tools reuse the worktree-aware resolution instead of
 # hand-copying it — pipeline-canary.sh calls this rather than re-deriving basename(toplevel) itself) ---
