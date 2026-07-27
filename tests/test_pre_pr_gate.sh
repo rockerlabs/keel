@@ -22,8 +22,6 @@ if ! command -v jq >/dev/null 2>&1; then
   summary; exit $?
 fi
 
-ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
-
 # A git repo with one commit; prints its path.
 mkrepo() {
   local d; d="$(new_repo)"
@@ -31,50 +29,14 @@ mkrepo() {
   printf '%s' "$d"
 }
 
-# Shared repo-key derivation (mirrors the production file's own _repo_key) — every per-repo /tmp
-# file this test drives (sentinel, trace, hand-off) keys off this one function instead of each
-# inlining `basename "$1"` separately.
-repo_key_for() { basename "$1"; }
-sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
-
 # Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS.
+# (ALL_STEPS/repo_key_for/sentinel_for/write_full_receipt[_review] live in lib.sh, dir #64 — shared
+# with test_pipeline_canary.sh, which drives the same gate CLI subcommands against a sandbox repo.)
 gate() {
   local json
   json="$(jq -n --arg c "$1" --arg d "$2" '{tool_input:{command:$c}, cwd:$d}')"
   OUT="$(printf '%s' "$json" | bash "$gate" 2>&1)"
   STATUS=$?
-}
-
-# Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
-# both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
-# incomplete-receipt tests); $3 = optional step whose line should be re-tagged with a foreign nonce instead
-# of being written at all (for the replay tests). polish.5-review defaults to a TRUSTED outcome
-# (`medium-operator-run`) — dir #63's trace cross-check only applies to a bare level, and these fixtures
-# are about the OTHER completeness/replay/worktree mechanics, not that check (which gets its own tests
-# below); a real caller can still override via write_full_receipt_review() when it needs a bare level.
-# polish.4-depth is derived to carry the SAME base level as the review outcome (dir #63's depth-mismatch
-# check requires this on every real receipt, trusted outcomes included).
-write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
-write_full_receipt_review() {
-  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
-  depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
-  run_in "$d" bash "$gate" init
-  for s in $ALL_STEPS; do
-    [ "$s" = "$omit" ] && continue
-    if [ "$s" = "$replay_step" ]; then
-      printf 'stale-nonce-from-a-previous-run\t%s\tdone\n' "$s" >> "$(sentinel_for "$d")"
-      continue
-    fi
-    if [ "$s" = "polish.8-unlock" ]; then
-      run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
-    elif [ "$s" = "polish.5-review" ]; then
-      run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
-    elif [ "$s" = "polish.4-depth" ]; then
-      run_in "$d" bash "$gate" receipt "$s" "$depth_level:test-fixture"
-    else
-      run_in "$d" bash "$gate" receipt "$s"
-    fi
-  done
 }
 
 # 1. A command that is NOT `gh pr create` is none of the gate's business → allow (empty out, exit 0).
@@ -289,6 +251,7 @@ imp_log2="$SANDBOX/pprg-events-pass.log"; rm -f "$imp_log2"
 out="$(KEEL_IMPACT_LOG="$imp_log2" bash "$gate" <<<"$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}')" 2>&1)"
 check_absent "a clean pass emits no deny payload" "$out" "deny"
 check_contains "a clean pass records a receipt-pass event" "$(cat "$imp_log2" 2>/dev/null)" "	receipt-pass	pre-pr-gate	"
+check_contains "the receipt-pass event's detail carries the provenance classification (dir #64)" "$(cat "$imp_log2" 2>/dev/null)" "	receipt-pass	pre-pr-gate	review: medium, operator-run (self-reported)"
 
 # (e) `pre-pr-gate.sh log` appends an arbitrary verdict/friction line for the current run.
 d="$(mkrepo)"
@@ -541,5 +504,182 @@ run_in "$WT" bash "$gate" handoff high "$sha"
 check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(handoff_for "$MREPO")"
 check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
 rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
+
+# --- dir #64 tier 2a: provenance line on the gate's ALLOW decision -------------------------------
+# 26. A trusted "skip" outcome → the provenance line reads "review: skip", no trace involved.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_status "skip outcome → exit 0" 0 "$STATUS"
+check_contains "skip outcome → provenance reads 'review: skip'" "$OUT" "review: skip"
+
+# 27. A trusted -operator-run outcome → provenance names it explicitly self-reported.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "medium-operator-run"
+gate "gh pr create --fill" "$d"
+check_contains "operator-run outcome → provenance names it self-reported" "$OUT" "review: medium, operator-run (self-reported)"
+
+# 28. A trusted -waived outcome → provenance names it explicitly self-reported/waived.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "high-waived"
+gate "gh pr create --fill" "$d"
+check_contains "waived outcome → provenance names it self-reported/waived" "$OUT" "review: high, waived (self-reported)"
+
+# 29. A bare outcome backed by a matching mechanical trace → provenance says so explicitly, the
+# whole point of dir #63's trace being visible at PR-creation time, not just transcript archaeology.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "trace-confirmed outcome → provenance names the mechanical trace" "$OUT" "review: medium, trace-confirmed in-session"
+rm -f "$tf"
+
+# --- dir #64 tier 1: rollout-check (SessionStart hook) --------------------------------------------
+rollout_state_for() { printf '/tmp/pre-pr-gate-rollout-%s' "$(repo_key_for "$1")"; }
+
+# A fake `claude` binary on PATH so version-drift assertions don't depend on whatever real Claude
+# Code build happens to be installed on the machine running these tests. $1 = version text to print.
+fake_claude_bin() {
+  local dir; dir="$(mktemp -d "$SANDBOX/fakeclaude.XXXXXX")"
+  printf '#!/bin/sh\nprintf "%s (Claude Code)\\n"\n' "$1" > "$dir/claude"
+  chmod +x "$dir/claude"
+  printf '%s' "$dir"
+}
+
+# Drive rollout-check: $1 = model (empty string = field omitted, simulating a model-less event),
+# $2 = cwd, $3 = a PATH-prepend dir holding the fake `claude` binary. Pins KEEL_IMPACT_LOG to $rimp
+# (set by the caller below) so the pipeline-drift assertions read a known file, not lib.sh's ambient
+# sandbox-wide default.
+rc_gate() {
+  local model="$1" cwd="$2" claudebin="$3" json
+  json="$(jq -n --arg m "$model" --arg d "$cwd" '{cwd:$d} + (if $m == "" then {} else {model:$m} end)')"
+  OUT="$(printf '%s' "$json" | PATH="$claudebin:$PATH" KEEL_IMPACT_LOG="$rimp" bash "$gate" rollout-check 2>&1)"
+  STATUS=$?
+}
+
+d="$(mkrepo)"
+rstate="$(rollout_state_for "$d")"; rm -f "$rstate"
+cb1="$(fake_claude_bin "1.0.0")"
+rimp="$SANDBOX/rollout-events.log"; rm -f "$rimp"
+
+# 30. First-ever session for a repo: nothing to compare against yet → records a baseline, no banner.
+rc_gate "claude-sonnet-5" "$d" "$cb1"
+check_status "rollout-check always exits 0" 0 "$STATUS"
+check_absent "first session for a repo → no drift banner (nothing to compare yet)" "$OUT" "systemMessage"
+check_file "first session records a baseline state file" "$rstate"
+check_contains "baseline records the model" "$(cat "$rstate" 2>/dev/null)" "model	claude-sonnet-5"
+check_contains "baseline records the harness version" "$(cat "$rstate" 2>/dev/null)" "version	1.0.0 (Claude Code)"
+
+# 31. Same model, same harness version next session → silent, no false positive.
+rc_gate "claude-sonnet-5" "$d" "$cb1"
+check_absent "unchanged model+version → no drift banner" "$OUT" "systemMessage"
+
+# 32. Model changed since the last session → banner fires, names old and new, and logs a
+# pipeline-drift event (metadata only, same log-file-not-stdout discipline as the other events).
+rc_gate "claude-opus-5" "$d" "$cb1"
+check_contains "model change → drift banner fires" "$OUT" "systemMessage"
+check_contains "banner names the old and new model" "$OUT" "model (claude-sonnet-5 -> claude-opus-5)"
+check_contains "model change logs a pipeline-drift event" "$(cat "$rimp" 2>/dev/null)" "	pipeline-drift	pre-pr-gate	model (claude-sonnet-5 -> claude-opus-5)"
+
+# 33. Having settled on the new model, the NEXT session with that same model is silent again.
+rc_gate "claude-opus-5" "$d" "$cb1"
+check_absent "settled on the new model → no repeat banner" "$OUT" "systemMessage"
+
+# 34. Harness version changed (same model) → banner fires for the version, not the model.
+cb2="$(fake_claude_bin "2.0.0")"
+rc_gate "claude-opus-5" "$d" "$cb2"
+check_contains "harness version change → drift banner fires" "$OUT" "systemMessage"
+check_contains "banner names the old and new harness version" "$OUT" "harness (1.0.0 (Claude Code) -> 2.0.0 (Claude Code))"
+
+# 35. A model-less SessionStart event (e.g. immediately after /clear, per the hooks reference) must
+# not be misread as "model changed to empty" — an unknown reading is "can't tell", not "changed".
+rc_gate "" "$d" "$cb2"
+check_absent "empty model field this run → no false drift (can't tell, not changed)" "$OUT" "systemMessage"
+
+# 35b. dir #64/operator-run /code-review high fix: the model-less session above must NOT have erased
+# the last-known-good baseline — the state file should still read the LAST REAL model (opus), not "".
+check_contains "a model-less session preserves the last-known model in the state file" "$(cat "$rstate" 2>/dev/null)" "model	claude-opus-5"
+
+# 35c. Proof the baseline really survived: the NEXT session with a genuinely different model still
+# fires a drift banner comparing against the PRESERVED value, not against an erased "".
+rc_gate "claude-sonnet-5" "$d" "$cb2"
+check_contains "a real change after a model-less session still fires (baseline wasn't erased)" "$OUT" "systemMessage"
+check_contains "banner compares against the preserved prior model, not an erased blank" "$OUT" "model (claude-opus-5 -> claude-sonnet-5)"
+rm -f "$rstate"
+
+# --- dir #64 tier 2b: sweep — warn on K consecutive self-reported-only passes --------------------
+d="$(mkrepo)"; mkdir -p "$d/.keel"
+ilog="$d/.keel/impact-events.log"; rm -f "$ilog"
+
+# 36. No impact log yet → nothing to check, exits clean.
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "sweep with no impact log → exit 0 (nothing to check)" 0 "$STATUS"
+
+# 37. Fewer than K consecutive self-reported passes (default K=3) → OK, exit 0. Rows carry a 5th
+# tab field ($5 = the stable machine tag `sweep` actually reads) alongside the human-display $4.
+{
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, trace-confirmed in-session\ttrace-confirmed\n'
+  printf '2026-07-27T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+  printf '2026-07-27T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+} > "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "2 consecutive self-reported passes (K=3 default) → exit 0" 0 "$STATUS"
+
+# 38. K consecutive passes with NO trace-confirmed among them → warns, non-zero exit (advisory only —
+# the sweep never blocks anything itself, it's a /wrap-time read, not a gate).
+{
+  printf '2026-07-27T00:03:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+} >> "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "3 consecutive self-reported passes → non-zero (advisory warn)" 1 "$STATUS"
+check_contains "warns naming the threshold" "$OUT" "3+ consecutive"
+
+# 39. The sweep is read-only — the impact log is untouched (unlike `add`'s ingest-and-truncate).
+check_contains "sweep does not truncate the impact log" "$(cat "$ilog" 2>/dev/null)" "receipt-pass"
+
+# 40. A trace-confirmed pass anywhere in the last K breaks the streak → OK again.
+{
+  printf '2026-07-27T00:04:00Z\treceipt-pass\tpre-pr-gate\treview: high, trace-confirmed in-session\ttrace-confirmed\n'
+} >> "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "a trace-confirmed pass within the window → exit 0 again" 0 "$STATUS"
+
+# 40b. dir #64/operator-run /code-review high fix: a repo with FEWER than K total receipt-pass rows,
+# every one of them non-trace-confirmed, must still warn — the pre-fix version fell through to "OK"
+# just because it hadn't yet accumulated K runs, exactly the blind spot sweep exists to catch.
+d2="$(mkrepo)"; mkdir -p "$d2/.keel"
+ilog2="$d2/.keel/impact-events.log"
+{
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+} > "$ilog2"
+run_in "$d2" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "1 self-reported pass, fewer than K total → still warns (all history is bad)" 1 "$STATUS"
+
+# 40c. Same short-history shape, but the only row IS trace-confirmed → OK (nothing bad to warn about).
+{
+  printf '2026-07-27T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, trace-confirmed in-session\ttrace-confirmed\n'
+} > "$ilog2"
+run_in "$d2" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "1 trace-confirmed pass, fewer than K total → exit 0" 0 "$STATUS"
+
+# 40d. An impact log with events but NO receipt-pass rows at all (e.g. only guard/deny events) → OK,
+# not a false warning — there is nothing to judge yet, not "everything so far is bad".
+d3="$(mkrepo)"; mkdir -p "$d3/.keel"
+printf '2026-07-27T00:00:00Z\tguard\tpre-pr-gate\tblocked\n' > "$d3/.keel/impact-events.log"
+run_in "$d3" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "no receipt-pass rows at all → exit 0 (nothing to judge yet)" 0 "$STATUS"
+
+# --- dir #64: repo-key subcommand (so other tools reuse the worktree-aware resolution instead of
+# hand-copying it — pipeline-canary.sh calls this rather than re-deriving basename(toplevel) itself) ---
+d="$(mkrepo)"
+run "$gate" repo-key "$d"
+check_status "repo-key → exit 0" 0 "$STATUS"
+check_contains "repo-key of a plain repo is its own basename" "$OUT" "$(basename "$d")"
+
+mkworktree dir64-repokey-wt dir64-repokey-feature
+run "$gate" repo-key "$WT"
+check_contains "repo-key of a worktree resolves to the MAIN checkout's basename (dir #61 discipline), not its own" "$OUT" "$(basename "$MREPO")"
+check_absent "repo-key does not just basename the worktree itself" "$OUT" "$(basename "$WT")"
 
 summary

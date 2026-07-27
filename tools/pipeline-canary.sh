@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# tools/pipeline-canary.sh — operator-triggered sandbox ritual proving the /polish pipeline's artifacts
+# (receipts, trace, hand-off, gate decisions) still behave correctly after a model/harness rollout
+# (backlog dir #64 tier 3).
+#
+# MAINTAINER DEV-TOOLING — same scoping comment as tools/pre-pr-gate.sh: install.sh does NOT ship this to
+# adopters, nothing wires it into a hook, and it never runs automatically. Trigger it by hand when dir
+# #64 tier 1's rollout-check hook fires a drift banner, or before trusting the pipeline after any Claude
+# Code rollout.
+#
+# --- TO VERIFY outcome, resolved 2026-07-27 (dir #64) ---------------------------------------------
+# Whether a fully headless `claude -p` run reliably fires PreToolUse/PostToolUse/SessionStart hooks the
+# same way an interactive session does. Claude Code's docs confirm: (a) `claude -p` without --bare/
+# --safe-mode loads "the same context an interactive session would, including anything configured in ...
+# ~/.claude" (headless-mode docs), and --bare's own description explicitly lists "skipping auto-discovery
+# of hooks" as what it turns OFF, implying hooks fire by default otherwise; SessionStart/SessionEnd hook
+# firing in print mode is stated explicitly. PreToolUse/PostToolUse firing specifically in -p mode is NOT
+# explicitly confirmed anywhere in the docs — only inferred from the above. Given that residual gap, AND
+# that dir #63's own two new hooks (skill-trace's PostToolUse/UserPromptExpansion legs) are not yet wired
+# into this maintainer's own ~/.claude/settings.json (a separate manual follow-up noted in pre-pr-gate.sh's
+# own dir #63 section), this script does not attempt a blind fully-automated live drive of the real
+# /polish flow. It ships as the ticket's own documented fallback instead: an INTERACTIVE ritual — `setup`
+# builds the sandbox and prints the exact command for the OPERATOR to run /polish inside it for real;
+# `check` then script-asserts the resulting artifacts. The artifact assertions (the actual point of a
+# canary, not the automation) keep their full value either way. `demo-bypass` needs no model at all — see
+# below.
+#
+# Hard sandbox rule (memory `subagent-live-verification-risk`, felt PR #92): a prior live-verification run
+# once overwrote the REAL ~/.claude/githooks-global and broke git push machine-wide. This script never
+# touches the real HOME: `setup` builds a throwaway sandbox HOME and prints it explicitly in every
+# instruction; setting HOME alone is also not treated as sufficient by itself (dir #24 finding: a
+# user-level ~/.claude/CLAUDE.md can still leak into an "isolated" session) — the printed command also
+# passes `--setting-sources project,local` to exclude the user scope.
+#
+# Subcommands:
+#   pipeline-canary.sh setup          build a fresh sandbox (toy repo, isolated HOME, stub `gh`, hooks
+#                                      wired to THIS checkout's tools/pre-pr-gate.sh) and print the
+#                                      operator's next command
+#   pipeline-canary.sh check          script-assert the artifacts a completed sandbox run left behind
+#   pipeline-canary.sh demo-bypass    fully automated, no model/operator needed: seed a fabricated step-5
+#                                      claim and assert the gate still denies it — the canary's own proof
+#                                      that it CAN fail (a canary that has never failed proves nothing)
+#   pipeline-canary.sh clean          remove the sandbox and its state
+#
+# State: $KEEL_CANARY_STATE (default /tmp/pre-pr-gate-canary-state) records the sandbox path setup built,
+# so `check`/`clean` find the same sandbox without the operator re-typing it. A single canary sandbox at
+# a time — this is a one-operator dev ritual, not a concurrent-session mechanism.
+set -u
+
+CANARY_STATE="${KEEL_CANARY_STATE:-/tmp/pre-pr-gate-canary-state}"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GATE="$SELF_DIR/pre-pr-gate.sh"
+
+usage() {
+  cat <<'EOF'
+pipeline-canary.sh — sandbox ritual for the /polish pipeline (dir #64 tier 3).
+
+Usage:
+  pipeline-canary.sh setup          build the sandbox, print the operator's next command
+  pipeline-canary.sh check          assert the artifacts a completed sandbox run left behind
+  pipeline-canary.sh demo-bypass    fully automated seeded-bypass red demo (no model needed)
+  pipeline-canary.sh clean          remove the sandbox
+  pipeline-canary.sh -h | --help
+EOF
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
+# The authoritative repo-key resolution (worktree-aware — dir #61) lives in pre-pr-gate.sh itself;
+# calling its own `repo-key` subcommand instead of re-deriving the algorithm here means this stays
+# correct even if that resolution ever changes.
+_repo_key_of() { bash "$GATE" repo-key "$1"; }
+
+cmd_setup() {
+  [ -f "$GATE" ] || { printf 'pipeline-canary: %s not found — run from a keel checkout\n' "$GATE" >&2; exit 1; }
+  command -v git >/dev/null 2>&1 || { printf 'pipeline-canary: git is required\n' >&2; exit 1; }
+
+  sandbox="$(mktemp -d)"
+  home="$sandbox/home"; mkdir -p "$home"
+  bin="$sandbox/bin"; mkdir -p "$bin"
+  ghcalls="$sandbox/gh-calls.log"
+  # A unique basename (not the fixed literal "repo") — pre-pr-gate.sh keys its /tmp sentinel/trace/
+  # hand-off files off basename(toplevel), so a fixed name would collide across canary runs (and with
+  # any real repo that happens to be named "repo").
+  repo="$(mktemp -d "$sandbox/repo.XXXXXX")"
+
+  # Stub `gh`: records every invocation instead of touching the network. `pr create` "succeeds" with a
+  # fake URL so a real /polish run completes its final step; anything else is a harmless no-op success.
+  cat > "$bin/gh" <<GHEOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$ghcalls"
+case "\$*" in
+  *"pr create"*) printf 'https://example.invalid/keel-canary/pull/1\n' ;;
+esac
+exit 0
+GHEOF
+  chmod +x "$bin/gh"
+  : > "$ghcalls"
+
+  git init -q "$repo"
+  HOME="$home" git -C "$repo" config user.email canary@keel.invalid
+  HOME="$home" git -C "$repo" config user.name "Keel Canary"
+  printf 'canary toy project\n' > "$repo/README.md"
+  mkdir -p "$repo/.keel"   # so a real run's impact events land somewhere `check` can read without extra env
+  git -C "$repo" add README.md
+  HOME="$home" git -C "$repo" commit -q -m "init"
+
+  # A trivial, deliberately reviewable toy change — the "diff" a real /polish pass would size/simplify.
+  printf 'def add(a, b):\n    return a + b\n' > "$repo/toy.py"
+  git -C "$repo" add toy.py
+
+  key="$(_repo_key_of "$repo")"
+  settings="$sandbox/settings.json"
+  cat > "$settings" <<EOF
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash $GATE" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash $GATE skill-trace" }] }
+    ],
+    "UserPromptExpansion": [
+      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash $GATE skill-trace" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $GATE rollout-check" }] }
+    ]
+  }
+}
+EOF
+
+  {
+    printf 'sandbox\t%s\n' "$sandbox"
+    printf 'repo\t%s\n' "$repo"
+    printf 'key\t%s\n' "$key"
+  } > "$CANARY_STATE"
+
+  cat <<EOF
+pipeline-canary: sandbox ready at $sandbox
+
+Run the real /polish scenario yourself, isolated from your real HOME/hooks:
+
+  cd $repo
+  HOME=$home PATH=$bin:\$PATH claude --settings $settings --setting-sources project,local
+
+Then, inside that session: make a small edit (toy.py is already staged as a starter diff), run /polish
+for real through to \`gh pr create\` (the stubbed gh above accepts it without touching the network), and
+exit. Come back here and run:
+
+  $0 check
+
+to script-assert what the run actually left behind.
+EOF
+}
+
+cmd_check() {
+  [ -f "$CANARY_STATE" ] || { printf 'pipeline-canary: no sandbox — run "setup" first\n' >&2; exit 1; }
+  sandbox="$(awk -F'\t' '$1=="sandbox"{print $2}' "$CANARY_STATE")"
+  repo="$(awk -F'\t' '$1=="repo"{print $2}' "$CANARY_STATE")"
+  [ -d "$repo" ] || { printf 'pipeline-canary: sandbox repo missing (%s) — run "setup" again\n' "$repo" >&2; exit 1; }
+
+  fail=0
+  ghcalls="$sandbox/gh-calls.log"
+  if [ -f "$ghcalls" ] && grep -q 'pr create' "$ghcalls" 2>/dev/null; then
+    printf 'PASS  gh pr create reached the stub — the gate ALLOWED it (receipts complete, review outcome matched depth, trace check satisfied)\n'
+  else
+    printf 'FAIL  gh pr create never reached the stub — either /polish was not run to completion, or the gate denied it (re-run inside the sandbox session and check its transcript)\n'
+    fail=1
+  fi
+
+  key="$(_repo_key_of "$repo")"
+  sentinel="/tmp/pre-pr-gate-$key"
+  if [ -f "$sentinel" ]; then
+    printf 'INFO  a receipt sentinel is still present — the gate has not yet been asked to unlock (run gh pr create inside the sandbox session), or the last run was denied\n'
+  else
+    printf 'PASS  no leftover receipt sentinel — consistent with a consumed, successful pass\n'
+  fi
+
+  # resolve_impact_log() in pre-pr-gate.sh prefers $KEEL_IMPACT_LOG over a repo's own .keel/ marker —
+  # match that precedence here, or an operator with that env var set (plausible if they use it for
+  # their real repos, and it's inherited into the sandboxed `claude --settings ...` session) would see
+  # a fully successful canary run misreported as "no receipt-pass event recorded" (found in the
+  # operator-run /code-review high pass on this ticket).
+  ilog="${KEEL_IMPACT_LOG:-$repo/.keel/impact-events.log}"
+  if [ -f "$ilog" ] && grep -q 'receipt-pass' "$ilog" 2>/dev/null; then
+    printf 'PASS  a receipt-pass event was recorded: %s\n' "$(grep 'receipt-pass' "$ilog" | tail -n1)"
+  else
+    printf 'INFO  no receipt-pass event recorded yet in %s\n' "$ilog"
+  fi
+
+  trace="/tmp/pre-pr-gate-trace-$key"
+  if [ -f "$trace" ]; then
+    printf 'INFO  a code-review trace file exists (skill-trace fired at least once): %s\n' "$(tail -n1 "$trace")"
+  else
+    printf 'INFO  no trace file — either no in-session /code-review ran, or the hand-off/-operator-run path was used (expected, not a failure)\n'
+  fi
+
+  exit "$fail"
+}
+
+cmd_demo_bypass() {
+  # Fully automated, no live model needed: seeds a receipt that BARE-claims a real in-session review
+  # (no -operator-run/-waived suffix) with NO matching trace file, then asserts the gate still denies it.
+  # This is the canary's own proof that it can fail — a canary that has never failed proves nothing.
+  d="$(mktemp -d)"
+  git -C "$d" init -q
+  git -C "$d" config user.email canary@keel.invalid
+  git -C "$d" config user.name "Keel Canary"
+  git -C "$d" commit -q --allow-empty -m init
+
+  ( cd "$d" && bash "$GATE" init
+    bash "$GATE" receipt polish.1-diff
+    bash "$GATE" receipt polish.2-simplify
+    bash "$GATE" receipt polish.3-tests
+    bash "$GATE" receipt polish.4-depth "high:fabricated"
+    bash "$GATE" receipt polish.5-review high
+    bash "$GATE" receipt polish.6-retest "skipped:no-file-changes"
+    bash "$GATE" receipt polish.7-selfcheck "skipped:no-doctor"
+    bash "$GATE" receipt polish.8-unlock "$(git rev-parse HEAD)"
+  ) >/dev/null 2>&1
+  rm -f "/tmp/pre-pr-gate-trace-$(_repo_key_of "$d")"   # make certain no trace exists to (correctly) vouch for this
+
+  out="$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}' 2>/dev/null | bash "$GATE" 2>&1)"
+  status=$?
+
+  if [ "$status" -eq 0 ] && printf '%s' "$out" | grep -q '"permissionDecision":"deny"' && printf '%s' "$out" | grep -q 'no trace matching'; then
+    printf 'PASS  demo-bypass: a fabricated in-session review claim (no matching trace) was correctly DENIED\n'
+    ec=0
+  else
+    printf 'FAIL  demo-bypass: the fabricated claim was NOT denied — the gate is not doing its job, fix before trusting any other canary result\n'
+    printf '      gate output: %s\n' "$out"
+    ec=1
+  fi
+  rm -rf "$d"
+  exit "$ec"
+}
+
+cmd_clean() {
+  if [ -f "$CANARY_STATE" ]; then
+    sandbox="$(awk -F'\t' '$1=="sandbox"{print $2}' "$CANARY_STATE")"
+    [ -n "$sandbox" ] && [ -d "$sandbox" ] && rm -rf "$sandbox"
+    rm -f "$CANARY_STATE"
+    printf 'pipeline-canary: sandbox removed\n'
+  else
+    printf 'pipeline-canary: no sandbox to remove\n'
+  fi
+}
+
+case "${1:-}" in
+  setup)        cmd_setup ;;
+  check)        cmd_check ;;
+  demo-bypass)  cmd_demo_bypass ;;
+  clean)        cmd_clean ;;
+  *) usage >&2; exit 2 ;;
+esac
