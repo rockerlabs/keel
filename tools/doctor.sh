@@ -32,6 +32,8 @@
 #                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
 #   WARN  W-EMAIL-PUBLIC       publication-bound project committing with a non-noreply email
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
+#   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
+#                              PreToolUse/Bash one is missing (plain absence isn't flagged — opt-in)
 #   HINT  H-FOOTPRINT          CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
 #   HINT  H-MAP-DRIFT          CLAUDE.md map may be stale — a backtick-spanned path no longer on disk
 #                              (path-granular accept stays .keel/map-drift-baseline)
@@ -194,6 +196,40 @@ fp_find() {
 # rewrite this as `fp_find … | grep -q .`: that gates on the pipeline status and reintroduces the bug.
 fp_any() {
   [ -n "$(fp_find "$@" | head -n1)" ]
+}
+
+# gate_hook_wired SETTINGS_JSON — true iff the /polish pre-PR gate's load-bearing hook (PreToolUse
+# matcher "Bash" running pre-pr-gate.sh) is wired in SETTINGS_JSON. Shared by the --install-mode check
+# (machine-global scope) and the per-project loop (project scope) below, so the two structural checks
+# can never drift apart. jq gives a structural check — a bare substring grep would call it wired from
+# an unrelated mention (a comment, some other value) — falling back to the grep when jq isn't on PATH
+# (same fail-open posture the gate's own hook mode takes: it needs jq to function at all, so a missing
+# jq means "wired but inert" either way, not a doctor false negative worth hard-failing over).
+gate_hook_wired() {
+  local settings="$1"
+  [ -f "$settings" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '.hooks.PreToolUse // [] | any(.matcher == "Bash" and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
+      "$settings" >/dev/null 2>&1
+  else
+    grep -q 'pre-pr-gate.sh' "$settings" 2>/dev/null
+  fi
+}
+
+# gate_any_reference SETTINGS_JSON — true iff pre-pr-gate.sh is referenced ANYWHERE in SETTINGS_JSON
+# (any hook, any event), not just the load-bearing one. Used to tell "never wired" (silence — the gate
+# is opt-in, most projects legitimately skip it) apart from "partially wired" (a real finding — see the
+# per-project loop). Without jq this collapses to the same grep as gate_hook_wired, so the "partial"
+# distinction only exists when jq is available — consistent with the fail-open posture above.
+gate_any_reference() {
+  local settings="$1"
+  [ -f "$settings" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '[.hooks // {} | to_entries[] | .value[]? | .hooks[]? | .command // ""] | any(contains("pre-pr-gate.sh"))' \
+      "$settings" >/dev/null 2>&1
+  else
+    grep -q 'pre-pr-gate.sh' "$settings" 2>/dev/null
+  fi
 }
 
 global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
@@ -386,27 +422,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # .claude/settings.json and is invisible from here — expected, not a gap, so the message says so.
   if [ -f "$ihome/commands/polish.md" ] || [ -L "$ihome/commands/polish.md" ]; then
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
-    # other 3 (SessionStart/PostToolUse/UserPromptExpansion) are enhancements. Prefer a structural check
-    # via jq — a bare substring grep would call it OK from an unrelated mention (a comment, the sweep
-    # subcommand appearing in some other value, a settings.json that only has the enhancement hooks and
-    # not the gate itself) — falling back to the grep when jq isn't on PATH (same fail-open posture the
-    # gate's own hook mode takes: it needs jq to function at all, so a missing jq means "wired but
-    # inert" either way, not a doctor false negative worth hard-failing over).
-    gate_wired=0
-    if [ -f "$ihome/settings.json" ]; then
-      if command -v jq >/dev/null 2>&1; then
-        if jq -e '.hooks.PreToolUse // [] | any(.matcher == "Bash" and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
-             "$ihome/settings.json" >/dev/null 2>&1; then
-          gate_wired=1
-        fi
-      elif grep -q 'pre-pr-gate.sh' "$ihome/settings.json" 2>/dev/null; then
-        gate_wired=1
-      fi
-    fi
-    if [ "$gate_wired" = 1 ]; then
+    # other 3 (SessionStart/PostToolUse/UserPromptExpansion) are enhancements. gate_hook_wired (shared
+    # with the per-project loop's own half of this check, below) does the structural jq-else-grep test.
+    if gate_hook_wired "$ihome/settings.json"; then
       say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
     else
-      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run --global there for every repo, or ignore this if you're using project scope"
+      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run --global there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi
   fi
 
@@ -597,6 +618,22 @@ EOF
     fi
   else
     warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
+  fi
+
+  # dir #68 pairing check, project-scope half — mirrors the --install-mode check above, which only
+  # ever sees the machine-global settings.json and structurally cannot see this. The gate is opt-in
+  # per project (tools/install-pre-pr-gate.sh <repo>, the documented default), so plain absence is not
+  # a finding at any tier — most projects legitimately never wire it, same posture as the .keel/ marker
+  # checks (an unadopted optional feature isn't a gap). The one state worth flagging is the
+  # secret-guard-shaped one: SOME hook here already references pre-pr-gate.sh (this repo clearly ran
+  # the installer, or hand-wired part of it) but the load-bearing PreToolUse/Bash hook specifically is
+  # missing — a rail that looks engaged but doesn't actually enforce anything, same "looks wired but
+  # isn't" shape as W-GUARD-BYPASSED.
+  proj_settings="$d/.claude/settings.json"
+  if gate_hook_wired "$proj_settings"; then
+    say "  OK   /polish gate: wired (project scope, $proj_settings)"
+  elif gate_any_reference "$proj_settings"; then
+    warn W-GATE-PARTIAL "$proj_settings references pre-pr-gate.sh but the load-bearing PreToolUse/Bash hook isn't wired — gh pr create is NOT actually gated here; re-run tools/install-pre-pr-gate.sh $d (--force to replace a stale hook)"
   fi
 
   # Publication-bound projects (those with a .public-audit config) shouldn't commit with a real

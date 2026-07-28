@@ -166,6 +166,36 @@ EOF
 run "$doctor" --install "$dh_fake"
 check_contains "a mention with no PreToolUse/Bash hook is still WARN, not a false OK" "$OUT" "no machine-global gate is wired"
 
+# --- doctor.sh project-scope pairing check (dir #68 follow-up): --install mode only ever sees the
+# machine-global settings.json, so an adopter who correctly wired PROJECT scope (the documented
+# default) got a false "no gate wired" WARN on every run with no way to confirm they'd actually done
+# it right. The gate is opt-in per project, so plain absence must stay SILENT here (no finding at any
+# tier — most projects legitimately never wire it) — only a project that already touched pre-pr-gate.sh
+# wiring but left the load-bearing hook out gets flagged, same "looks wired but isn't" shape as the
+# secret-guard W-GUARD-BYPASSED check.
+clean_baseline() { printf '# ctx\n' > "$1/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$1/.gitignore"; }
+
+noagate="$(new_repo)"; clean_baseline "$noagate"
+run "$doctor" "$noagate"
+check_status "clean project, no gate wiring -> exit 0" 0 "$STATUS"
+check_absent "no .claude/settings.json at all -> no gate finding of any kind" "$OUT" "polish gate"
+
+fullgate="$(new_repo)"; clean_baseline "$fullgate"
+run "$installer" "$fullgate"
+check_status "wiring the project's own gate -> exit 0" 0 "$STATUS"
+run "$doctor" "$fullgate"
+check_status "fully wired at project scope -> still exit 0" 0 "$STATUS"
+check_contains "fully wired at project scope -> OK" "$OUT" "OK   /polish gate: wired (project scope"
+
+partgate="$(new_repo)"; clean_baseline "$partgate"
+mkdir -p "$partgate/.claude"
+cat > "$partgate/.claude/settings.json" <<EOF
+{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"bash $gate rollout-check"}]}]}}
+EOF
+run "$doctor" "$partgate"
+check_status "W-GATE-PARTIAL is advisory only -> exit 0" 0 "$STATUS"
+check_contains "referenced but load-bearing hook missing -> WARN W-GATE-PARTIAL" "$OUT" "W-GATE-PARTIAL"
+
 # --- regression: a checkout path containing a space still produces a working (single-token) command --
 sp_root="$(mktemp -d)/space checkout"
 mkdir -p "$sp_root/tools"
