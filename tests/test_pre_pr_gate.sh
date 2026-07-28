@@ -438,6 +438,9 @@ check_nofile "skill-trace ignores a non-code-review skill call" "$tf"
 # carries the full documented field set (expansion_type/command_name/command_args/command_source/prompt),
 # matching the literal JSON example at code.claude.com/docs/en/hooks.md#userpromptexpansion — see the
 # skill-trace case's own TO-VERIFY-resolved comment in tools/pre-pr-gate.sh for the citation.
+# `command_source`/`prompt` aren't read by the parser (it only extracts `command_name`/`command_args`) —
+# they're here so the fixture proves a real event's extra fields don't upset the extraction, not just
+# that the two consumed ones parse in isolation.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
