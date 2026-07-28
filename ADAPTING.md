@@ -94,6 +94,12 @@ keep them around and paste the one you need when you need it.
   code on any tool with a shell. Its **hard** form — `keel-check-gate.sh` *blocking* a commit while the
   check is red — is a Claude Code `PreToolUse` hook, so like the commands it's autopilot only where your
   tool has that hook feature; elsewhere the banner is the nudge you get.
+- **The `/polish` pre-PR gate** — the command (simplify, tests, a depth-matched review) is plain prose
+  and ports like any other command (see above). Its *enforcement* — `tools/pre-pr-gate.sh` hard-denying
+  `gh pr create` until `/polish` has run, with a mechanical trace closing the "claimed a review ran"
+  bypass — is built entirely on Claude Code `PreToolUse`/`PostToolUse`/`SessionStart`/`UserPromptExpansion`
+  hooks (`tools/install-pre-pr-gate.sh` wires them). It **does not port**: on another tool, `/polish`'s
+  steps are still worth running by hand or as a prompt, but nothing will block a PR if you skip them.
 - **Linked consumption of `CORE.md`** — on Claude Code the always-on file can *import* the rails live
   (an `@path` line pointing at the checkout's `CORE.md`), so `git pull` refreshes them without re-copying.
   `install.sh --link` mechanizes exactly this (plus command symlinks; `doctor.sh --install` audits the

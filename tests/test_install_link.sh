@@ -39,7 +39,8 @@ check_contains "template map names FRAMEWORK.md the way the re-pointer expects" 
 check_contains "template map names PRINCIPLES.md the way the re-pointer expects" "$tpl" '**`PRINCIPLES.md`**'
 check_nolink "INSTANCE.md is a real file, never a symlink into the checkout" "$HOME/.claude/INSTANCE.md"
 check_link "commands are wired as symlinks" "$HOME/.claude/commands/wrap.md"
-check_nofile "maintainer-only /polish is still not shipped" "$HOME/.claude/commands/polish.md"
+# dir #68: /polish now ships like every other command — its gate is the separate opt-in step instead.
+check_link "polish.md ships too (its gate is the opt-in step, not the command)" "$HOME/.claude/commands/polish.md"
 
 # --- idempotent re-run: nothing re-created, the ONE import line never duplicates ------------------
 run "$install" --link --home "$HOME/.claude" --no-hooks
@@ -52,8 +53,10 @@ check_status "exactly one import line after a re-run" 1 "$n"
 run "$doctor" --install "$HOME/.claude"
 check_status "doctor --install on a complete install → exit 0" 0 "$STATUS"
 # deliberate change-detector: shipping (or skipping) another command MUST consciously bump this count
-check_contains "doctor reports full command coverage" "$OUT" "commands: 8 of 8 shipped are wired"
+check_contains "doctor reports full command coverage" "$OUT" "commands: 9 of 9 shipped are wired"
 check_contains "doctor sees the linked core" "$OUT" "core rails: linked"
+# dir #68 pairing check: polish.md is wired but this install has no --no-hooks-skipped gate — WARN.
+check_contains "doctor flags the shipped-but-unwired gate" "$OUT" "no machine-global gate is wired"
 touch "$SANDBOX/empty-registry.md"
 run "$doctor" --install "$HOME/.claude" --registry "$SANDBOX/empty-registry.md"
 check_status "--install + --registry rejected → exit 2" 2 "$STATUS"

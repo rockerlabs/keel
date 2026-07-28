@@ -35,15 +35,17 @@ Every file, tool, and command — grouped, one line each.
 | [`tools/register-project.sh`](../tools/register-project.sh) | Adds existing project folder(s) to the `INSTANCE.md` list; safe to re-run. |
 | [`tools/keel-impact.sh`](../tools/keel-impact.sh) | Optional per-project tracker behind `/keel-score`: an auditable ledger of cited events. Projects scaffolded by `init-project` are tracked by default (`--no-impact` opts out); an existing repo is off until `keel-impact.sh enable <dir>`. |
 | [`tools/install-secret-guard.sh`](../tools/install-secret-guard.sh) | Wires the secret-guard hooks: `--global` sets a machine-wide `core.hooksPath`; `<repo-path>` vendors a self-contained copy into one repo. Never clobbers a non-Keel hook without `--force` (which backs it up). |
-| [`tools/keel-check.sh`](../tools/keel-check.sh) | The stop-mode floor: run a task's verification command through it and repeated failure of the same check prints a STOP-and-diagnose banner instead of letting an agent spiral. |
+| [`tools/keel-check.sh`](../tools/keel-check.sh) | The stop-mode floor: run a task's verification command through it and repeated failure of the same check prints a STOP-and-diagnose banner instead of letting an agent spiral. `tools/keel-check-gate.sh` is the opt-in hard-veto half — register it as a Claude Code `PreToolUse` hook (plus `KEEL_CHECK_VETO=1`) to *block* a commit while your declared check is still red, instead of only nudging. |
 | [`tools/branch-cleanup.sh`](../tools/branch-cleanup.sh) | Classifies local branches after merges into AUTO/ASK/FLAG confidence tiers so post-merge cleanup never blanket-deletes live work. |
+| [`tools/pre-pr-gate.sh`](../tools/pre-pr-gate.sh) | The `/polish` pre-PR gate: a Claude Code hook that blocks the agent's own `gh pr create` until `/polish` (simplify + tests + a depth-matched review) has run cleanly on the current commit. Ships with `commands/polish.md`, but is never auto-wired — see `install-pre-pr-gate.sh` below. |
+| [`tools/install-pre-pr-gate.sh`](../tools/install-pre-pr-gate.sh) | Wires the `/polish` gate's 4 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` (every repo). Opt-in and separate from `install.sh` on purpose: a hook changes what a session can do without asking each time. Same never-clobber discipline as `install-secret-guard.sh`. |
+| [`tools/pipeline-canary.sh`](../tools/pipeline-canary.sh) | A sandboxed operator ritual for auditing your own `/polish` → gate pipeline: drives a real dry run (or a scripted, no-model `demo-bypass`) in an isolated toy repo + `HOME`, so you can check the gate still denies a fabricated review claim. |
 
 *secret-guard is a safety net for known key shapes plus your listed literals — not a catch-all. It won't
 catch an arbitrary AWS secret key, a JWT, or a password.*
 
-*Maintainer dev-tooling, deliberately not shipped by `install.sh`: `tools/pre-pr-gate.sh` +
-`commands/polish.md` (the pre-PR polish→gate flow), `tools/keel-check-gate.sh` (opt-in hard-veto half of
-the stop-mode floor), and `tools/self/` (this repo's own structural self-checks).*
+*Maintainer-only, not shipped by `install.sh`: `tools/self/` (this repo's own structural self-checks —
+dead references, ship-skip-list sync, doc staleness).*
 
 ## Commands (`commands/`)
 
@@ -53,6 +55,7 @@ the stop-mode floor), and `tools/self/` (this repo's own structural self-checks)
 | `/init-project` | Sets up a new project. |
 | `/context-dump` | Onboards an existing, undocumented codebase by actually reading it. |
 | `/go` | Starts a backlog task on its own. |
+| `/polish` | Pre-PR pass — simplify, tests, a depth-matched review, then open the PR. Gated by `tools/pre-pr-gate.sh` once you've run `install-pre-pr-gate.sh` for the repo (optional; every step still runs without it). |
 | `/wrap` | Closes out a session: notes, changelog, backlog. |
 | `/global-review` | Reviews across all projects. |
 | `/backlog` | Shows the backlog. |

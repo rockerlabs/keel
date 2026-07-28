@@ -348,8 +348,6 @@ if [ "$INSTALL_MODE" = 1 ]; then
   for cmd in "$repo_root"/commands/*.md; do
     [ -f "$cmd" ] || continue
     cname="$(basename "$cmd")"
-    # maintainer-only by design — mirror of install.sh's ship-skip list; keep the two in sync
-    case "$cname" in polish.md) continue ;; esac
     total=$((total + 1))
     if [ -f "$ihome/commands/$cname" ] || [ -f "$ihome/commands/keel-$cname" ]; then
       wired=$((wired + 1))
@@ -377,6 +375,20 @@ if [ "$INSTALL_MODE" = 1 ]; then
       fi
     else
       warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh (or add an alias by hand)"
+    fi
+  fi
+
+  # dir #68 pairing check: /polish ships unconditionally now, but its gate is a separate, opt-in step
+  # (a hook changes what a session can do without asking each time, so install.sh never auto-wires it) —
+  # flag the shipped-but-inert state instead of letting an adopter discover it only when gh pr create
+  # doesn't unlock. This mode only sees the INSTALL's own machine-global settings.json; project-scope
+  # wiring (tools/install-pre-pr-gate.sh <repo>, the documented default) lives in each project's own
+  # .claude/settings.json and is invisible from here — expected, not a gap, so the message says so.
+  if [ -f "$ihome/commands/polish.md" ] || [ -L "$ihome/commands/polish.md" ]; then
+    if [ -f "$ihome/settings.json" ] && grep -q 'pre-pr-gate.sh' "$ihome/settings.json" 2>/dev/null; then
+      say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
+    else
+      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run --global there for every repo, or ignore this if you're using project scope"
     fi
   fi
 
