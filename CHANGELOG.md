@@ -41,6 +41,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   load-bearing `PreToolUse`/`Bash` hook specifically is missing — a rail that looks wired but doesn't
   actually enforce anything, same shape as `W-GUARD-BYPASSED`. 3 new cases in
   `tests/test_install_pre_pr_gate.sh` cover all three project-scope states (silent, OK, `W-GATE-PARTIAL`).
+- **`skill-trace`'s hook field-name assumptions, verified** (dir #68 follow-up — its own shipping-audit
+  flagged `tools/pre-pr-gate.sh`'s `skill-trace` subcommand as parsing Claude Code's `PostToolUse`/
+  `UserPromptExpansion` hook JSON on unverified field-name guesses, unlike its sibling `rollout-check`,
+  which already carried a resolved TO-VERIFY note). Checked against the current hooks reference:
+  `UserPromptExpansion`'s `command_name`/`command_args` fields are confirmed against the docs' own
+  literal example (and, live, against a real trace a genuine in-session `/code-review` run produced);
+  `PostToolUse(Skill)`'s `tool_input.skill`/`tool_input.args` have no dedicated worked example but follow
+  the same tool-input-mirrors-its-own-parameters convention every documented tool uses. No field names
+  needed changing — both held up. Written into the script's header as its own resolved TO-VERIFY block,
+  and the `UserPromptExpansion` test fixture now carries the full documented field set instead of a
+  partial guess.
 - **A model/harness rollout must not break the `/polish` pipeline silently — three independent guard
   tiers** (dir #64, generalizing dir #63's root cause: the Opus 5 rollout silently removed
   `/code-review`'s model-invokability and nothing warned). Prose commands can't be unit-tested, but a
