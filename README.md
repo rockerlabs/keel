@@ -149,8 +149,8 @@ This is the honest part. A file full of good advice does **not**, on its own, ch
 behaves — loaded text nudges it, but nothing forces it to follow.
 
 - **Runs by itself:** the tools — the **secret-guard** git hook, the **public-audit** go-public scan,
-  **install / doctor / init-project**. They fire whether or not anyone remembers them; what each does →
-  [`docs/reference.md`](docs/reference.md).
+  **install / doctor / init-project**, and, once you opt in, the **`/polish` gate** (Claude Code). They
+  fire whether or not anyone remembers them; what each does → [`docs/reference.md`](docs/reference.md).
 - **Up to you:** `PRINCIPLES.md`, `FRAMEWORK.md`, and the `CLAUDE.md` ground rules shape decisions
   *when read* — a lens you choose to look through, not an autopilot.
 
@@ -179,6 +179,30 @@ tools/install-secret-guard.sh --global   # every repo on this machine, from now 
 *One of the tools, ~40 seconds, nothing mocked: install the hook → an API key is blocked on commit →
 your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yourself:
 [`docs/demo/record-demo.sh`](docs/demo/record-demo.sh) (sandboxed, touches nothing).*
+
+## The pre-PR gate — the agent can't lie about review
+
+On Claude Code, `/polish` + its gate is the repo's other mechanized guarantee, alongside secret-guard.
+Once wired, the agent's own `gh pr create` is **hard-denied** until `/polish` — simplify, tests, a
+review depth matched to the diff — has run cleanly on the current commit. And the claim can't be faked:
+a hook writes a mechanical trace the moment a real `/code-review` pass runs, and the gate cross-checks it
+before unlocking — so "review: medium" in a PR's own history means a review actually ran, not that the
+model said so.
+
+```bash
+tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global covers every repo instead
+```
+
+- **Opt-in, separate from `install.sh`.** A hook changes what a session can do without asking each time,
+  so `/polish` ships with every install but wires nothing until you run this — same never-clobber
+  discipline as `install-secret-guard.sh` (refuses a foreign hook on the same slot; `--force` backs it up).
+- **Gates the agent, not you.** The hook fires on the assistant's own tool calls — your terminal, and a
+  human typing `gh pr create` by hand, are never blocked.
+- **Claude-Code-specific.** Hooks are a Claude Code mechanism; see [`ADAPTING.md`](ADAPTING.md) for the
+  honest boundary on other tools.
+
+Full walkthrough — what changes in your day, the receipts, the residual limits →
+[`docs/getting-started.md`](docs/getting-started.md).
 
 ## Good to know
 

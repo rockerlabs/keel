@@ -231,7 +231,46 @@ you*). You feel it instead: the assistant weighs options instead of charging at 
 rewriting a helper that already exists, won't hardcode a secret. If it doesn't, the file is loaded but the
 assistant didn't act on it — you're still the trigger.
 
-## 6. Another model or AI tool?
+## 6. The `/polish` pre-PR gate (Claude Code, opt-in)
+
+`/polish` — simplify, run tests, a review depth matched to the diff, then open the PR — ships with every
+install. Its enforcement (`tools/pre-pr-gate.sh`, a Claude Code hook) does **not**: wiring a hook changes
+what a session can do without asking each time, so it's a separate step you opt into per project:
+
+```bash
+tools/install-pre-pr-gate.sh <repo>     # project scope — only sessions IN this repo are gated
+tools/install-pre-pr-gate.sh --global   # every repo you open on this machine, instead
+```
+
+**What changes in your workflow, once wired:**
+
+- **The agent's `gh pr create` is hard-denied** until `/polish` has run cleanly on the current commit —
+  a bare `touch` of the receipt, a partial run, or a receipt from an earlier commit all still fail.
+  **Your own terminal is never gated** — the hook fires on the assistant's tool calls, not on you typing
+  `gh` yourself.
+- **The claim is checked, not just trusted.** A separate hook writes a mechanical trace the instant a
+  real `/code-review <level>` pass runs (whether the agent invoked it or you typed it directly); the gate
+  cross-checks that trace against the receipt before unlocking, so a session can't write "review: medium"
+  without one actually having happened. The one channel this can't close: if `/code-review` was genuinely
+  unavailable and `/polish`'s hand-off asked you to run — or waive — it yourself, that outcome stays
+  self-reported (visible in the receipt as `-operator-run` / `-waived`, not a bare level).
+- **A one-line banner at session start** (the `SessionStart` hook, `rollout-check`) if the model or
+  Claude Code version changed since your last session here — a silent rollout is exactly how a pipeline
+  step like `/code-review` can quietly stop being callable without anyone noticing.
+- **`tools/pre-pr-gate.sh sweep`** is a manual, read-only check (run it yourself, e.g. as part of your
+  own `/wrap` habit) that warns when the last few `/polish` runs all closed on a self-reported review
+  rather than a trace-confirmed one — the blind spot the trace mechanism exists to close.
+- **Costs:** `jq` on PATH (required — without it the installer prints the hooks JSON to paste in by hand
+  instead of writing anything), a few small `/tmp` state files per repo, and a few extra minutes per PR
+  for the review pass itself.
+
+Never clobbers a hook you already have on the same slot — same refuse/`--force`-backs-up discipline as
+`install-secret-guard.sh`. Health check any time: `tools/doctor.sh --install` (flags `/polish` shipped
+but no machine-global gate wired — expected if you used project scope instead, which is the default).
+This is a Claude Code hooks mechanism specifically — see [`ADAPTING.md`](../ADAPTING.md) for the honest
+boundary on other tools.
+
+## 7. Another model or AI tool?
 
 Most of Keel works with any AI tool. To run it under Cursor / Aider / Codex / Continue / a plain API agent,
 see [`../ADAPTING.md`](../ADAPTING.md) — what works as-is, what needs a small tweak, and where it stops.

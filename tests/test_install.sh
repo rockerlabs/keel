@@ -18,8 +18,10 @@ check_contains "verify confirms Keel's secret-guard is wired" "$OUT" "OK   secre
 # actually landed, instead of only doctor.sh --install catching a silently-skipped wiring bug.
 check_contains "verify confirms keel-setup.md is wired" "$OUT" "OK   commands/keel-setup.md"
 check_file "installs lifecycle commands as slash commands" "$HOME/.claude/commands/wrap.md"
-# polish.md is maintainer dev-tooling (its pre-pr-gate hook is never wired) — install must NOT ship it.
-check_nofile "does NOT install the maintainer-only /polish command" "$HOME/.claude/commands/polish.md"
+# dir #68: /polish now ships unconditionally — its gate (tools/install-pre-pr-gate.sh) is a separate,
+# opt-in step install.sh never runs by itself (a hook changes session behavior, so it needs an explicit yes).
+check_file "installs /polish (its gate is a separate opt-in step)" "$HOME/.claude/commands/polish.md"
+check_contains "summary points at the opt-in gate installer" "$OUT" "tools/install-pre-pr-gate.sh"
 check_absent "no foreign-core nag when install created CLAUDE.md" "$OUT" "NOT merged in"
 # a KEPT clone (this direct run) wires the CLI; the ephemeral-bootstrap case below must NOT
 check_link "kept-clone install wires bin/keel" "$HOME/.claude/bin/keel"
@@ -139,6 +141,9 @@ check_absent "verify does not WARN about the skipped CLI" "$OUT" "WARN keel CLI"
 check_absent "summary does not offer the CLI on the express path" "$OUT" "keel help"
 check_absent "summary does not tell the user to keep a reaped clone" "$OUT" "KEEP this keel clone"
 check_contains "summary points checkout-backed verbs at a kept checkout" "$OUT" "KEPT checkout"
+check_file "bootstrap ships /polish even from a reaped clone (it's just a file)" "$bhome/commands/polish.md"
+check_absent "ephemeral summary does not offer the gate installer as usable now" "$OUT" "opt in per project"
+check_contains "ephemeral summary folds the gate installer into the kept-checkout list" "$OUT" "install-pre-pr-gate.sh"
 
 # --- no-git copy install (2c): fetch a source tarball instead of cloning --------------------------
 # A tarball of the committed tree; `git archive --prefix=keel/` gives the single top dir bootstrap unwraps.

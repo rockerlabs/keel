@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Pre-PR gate — the enforcement half of the /polish → PR flow.
 #
-# MAINTAINER DEV-TOOLING — pairs with commands/polish.md. This is a Claude-Code-specific pre-PR workflow
-# gate for the maintainer's own use; install.sh deliberately does NOT ship it (or /polish) to adopters, so
-# nobody gets a half-wired command. It lives here for the maintainer + downstream consumers. (Intentional —
-# a future audit should read this as scoped, not as a half-shipped feature.)
+# Ships to adopters (dir #68) — pairs with commands/polish.md, which install.sh installs unconditionally.
+# This script itself is never auto-wired, though: it's a Claude-Code-specific hook, and a hook changes
+# what a session can do without asking each time, so wiring it is a separate, explicit, opt-in step —
+# tools/install-pre-pr-gate.sh <repo> (project scope, the default) or --global (every repo). Until that
+# runs, /polish's steps still work; only the gh pr create block (below) is inert.
 #
-# Wire it as a Claude Code PreToolUse(Bash) hook: it intercepts `gh pr create` and requires /polish
-# (simplify + inline review + tests) to have run on the current HEAD. The bypass path is closed by
+# Wired as a Claude Code PreToolUse(Bash) hook (tools/install-pre-pr-gate.sh does this for you): it
+# intercepts `gh pr create` and requires /polish (simplify + inline review + tests) to have run on the
+# current HEAD. The bypass path is closed by
 # content, not just presence: each polish step appends a receipt line (see below), and the gate denies
 # unless every expected step id is present AND the final step's recorded SHA matches live HEAD — so a
 # bare `touch` (empty file), a partial run, or a sentinel from an earlier commit all fail.
@@ -39,12 +41,13 @@
 # --- dir #63: making step 5's review outcome verifiable -------------------------------------------
 # Hole A (a fabricated in-session review claim is unfalsifiable): `polish.5-review`'s receipt is a
 # free-form string the model writes about itself, so a real in-session `/code-review <level>` pass and
-# a session that only claims one are byte-identical. Fix: two ADDITIONAL hooks (same personal
-# ~/.claude/settings.json as the PreToolUse gate above) write a mechanical trace line to a HOOK-OWNED
-# side channel the model isn't expected to touch — a materially higher bar than getting one self-report
-# right, though not literally unfakeable (the model still has Bash; see the residual limit below):
-#   "PostToolUse":         [{ "matcher": "Skill",       "hooks": [{ "type": "command", "command": "bash ~/.claude/pre-pr-gate.sh skill-trace" }] }]
-#   "UserPromptExpansion": [{ "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash ~/.claude/pre-pr-gate.sh skill-trace" }] }]
+# a session that only claims one are byte-identical. Fix: two ADDITIONAL hooks (same settings.json as
+# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all four together) write a mechanical
+# trace line to a HOOK-OWNED side channel the model isn't expected to touch — a materially higher bar
+# than getting one self-report right, though not literally unfakeable (the model still has Bash; see the
+# residual limit below):
+#   "PostToolUse":         [{ "matcher": "Skill",       "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh skill-trace" }] }]
+#   "UserPromptExpansion": [{ "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh skill-trace" }] }]
 # The PostToolUse leg fires when Claude itself calls Skill(code-review) — PostToolUse only fires after
 # a tool call SUCCEEDS (a refused/unavailable call never reaches it, so an unavailable-skill run leaves
 # no trace by construction — see the residual limit below). The UserPromptExpansion leg fires when the
@@ -92,7 +95,7 @@
 # and nothing warned — the only way to learn it was reading a transcript. Three tiers, each independent:
 #
 # Tier 1 — rollout-check (this file, SessionStart hook, below). Wire as:
-#   "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": "bash ~/.claude/pre-pr-gate.sh rollout-check" }] }]
+#   "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh rollout-check" }] }]
 # Records the session's `.model` (from the SessionStart hook JSON) + `claude --version` into a per-repo
 # state file; on either changing since the last recorded session, appends a `pipeline-drift` impact-log
 # event and emits a `systemMessage` banner. First-ever run for a repo just records a baseline (nothing to
@@ -114,7 +117,7 @@
 #       their detail field) and warns when the last K (default 3) consecutive passes never read
 #       "trace-confirmed" — a run of self-reported-only reviews, the exact pre-#63 blind spot. Read-only,
 #       never blocks; wiring it into a `/wrap` step is a manual follow-up (same precedent as dir #63's
-#       hook wiring into ~/.claude/settings.json — see that section above).
+#       hook wiring into settings.json — see that section above).
 #
 # Tier 3 — tools/pipeline-canary.sh (separate file). A sandboxed operator ritual that builds a toy repo +
 # isolated HOME + stubbed `gh` + this file's hooks wired in, then either drives a real `/polish` run

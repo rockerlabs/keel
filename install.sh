@@ -473,12 +473,6 @@ if [ -d "$root/commands" ]; then
     [ -f "$cmd" ] || continue
     name="$(basename "$cmd")"; alias_dest="$HOME_DIR/commands/keel-$name"
     case "$name" in
-      # polish.md is maintainer dev-tooling: a Claude-Code-specific pre-PR flow that pairs with
-      # tools/pre-pr-gate.sh, which install.sh deliberately does NOT wire. Shipping the command without
-      # its gate would hand adopters an inert feature, so skip it — it stays in the repo for the
-      # maintainer + downstream consumers. (Intentional; a future audit should read this as scoped, not
-      # half-shipped.) tools/doctor.sh --install mirrors this skip list — keep the two in sync.
-      polish.md) continue ;;
       # keel-* commands never get an alias (a keel-keel-* name would be noise) — plain drift handling.
       keel-*)    alias_dest="" ;;
     esac
@@ -656,6 +650,10 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     *) echo "    (add it to PATH:  export PATH=\"$HOME_DIR/bin:\$PATH\"  — or keep using the tools by path)" ;;
   esac
 fi
+if [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then
+  echo "  - /polish shipped, its gate did NOT — opt in per project:  tools/install-pre-pr-gate.sh <repo>"
+  echo "    (blocks the agent's own gh pr create until /polish runs clean; your own terminal is never gated)"
+fi
 if [ "$LINK" = 1 ]; then
   cat <<EOF
   - This clone IS the installation — everything points into it, so never delete it, and park it
@@ -674,10 +672,11 @@ elif [ "$EPHEMERAL" = 1 ]; then
   # uninstall.sh, no tools/ for the commands that shell out) — point checkout-backed verbs elsewhere.
   cat <<EOF
   - installed by the one-line bootstrap: the temporary clone it ran from is removed as it exits, so
-    the files above stand alone. The  keel  CLI,  keel uninstall , and the commands that shell out to
-    Keel's tools/ (/keel-setup project drafting, /init-project) need a KEPT checkout — either re-run
-    the one-liner with  --link  (keeps a checkout at ~/keel and wires everything to it), or
-    git clone the keel repo and run  ./install.sh  from it (re-runs never clobber your files).
+    the files above stand alone. The  keel  CLI,  keel uninstall , tools/install-pre-pr-gate.sh (the
+    /polish gate), and the commands that shell out to Keel's tools/ (/keel-setup project drafting,
+    /init-project) need a KEPT checkout — either re-run the one-liner with  --link  (keeps a checkout
+    at ~/keel and wires everything to it), or git clone the keel repo and run  ./install.sh  from it
+    (re-runs never clobber your files).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
   - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, the

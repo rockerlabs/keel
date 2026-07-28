@@ -2,13 +2,14 @@
 description: Pre-PR polish pass — simplify + tests + depth-matched code-review + gate + open the PR
 argument-hint: [--no-test]
 ---
-<!-- MAINTAINER DEV-TOOLING — not installed for adopters. This is a Claude-Code-specific pre-PR flow that
-pairs with tools/pre-pr-gate.sh; install.sh intentionally skips both (an adopter shouldn't get a command
-whose gate isn't wired). It lives in the repo for the maintainer's own workflow + downstream consumers. -->
+<!-- Installed by default (dir #68) — pairs with tools/pre-pr-gate.sh, a Claude-Code-specific hook that
+install.sh never auto-wires (a hook changes what a session can do without asking each time): run
+tools/install-pre-pr-gate.sh <repo> once, per project, to turn the gate below on. Without it, every
+step here still runs and is worth doing — only the gh pr create block is inert. -->
 
 The final pass over the diff before a PR — run between implementation and `/wrap`. Goal: hand a human
-reviewer an already-tidied diff and open the PR. It pairs with `tools/pre-pr-gate.sh`,
-which blocks `gh pr create` until this command has run cleanly on the current HEAD.
+reviewer an already-tidied diff and open the PR. Once `tools/install-pre-pr-gate.sh` has wired the gate
+for this repo, it also blocks `gh pr create` until this command has run cleanly on the current HEAD.
 
 Project context (test command, NFRs, conventions) lives in the project's `CLAUDE.md` — re-read only what you
 need, not a full onboarding.

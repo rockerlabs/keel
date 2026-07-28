@@ -9,6 +9,38 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **The `/polish` pre-PR gate pipeline ships to adopters, not just the maintainer** (dir #68 — the audit
+  behind it found this cluster the tree's only violator of the adopter/self-maintenance dichotomy).
+  `commands/polish.md` now installs unconditionally (`install.sh` dropped it from its skip list); its
+  enforcement stays opt-in on purpose, since a hook changes what a session can do without asking each
+  time. New `tools/install-pre-pr-gate.sh <repo>` (project scope, the default) or `--global` wires all
+  four Claude Code hooks (`PreToolUse`/`gh pr create`, `SessionStart`/rollout-check,
+  `PostToolUse`+`UserPromptExpansion`/skill-trace) into `.claude/settings.json`, pointing at the KEPT
+  checkout's `tools/pre-pr-gate.sh` directly — no copy, closing the stale-copy failure mode the
+  maintainer's own prior wiring had. Same never-clobber discipline as `install-secret-guard.sh`: a
+  foreign hook on the same event+matcher is refused and named, `--force` backs up `settings.json` first;
+  no `jq` on PATH degrades to a printed ready-to-paste snippet rather than a partial write.
+  `tools/doctor.sh --install` gained a pairing check (`W-GATE-UNWIRED`) so a shipped-but-inert gate is
+  visible instead of only discovered when `gh pr create` doesn't unlock. Docs: a new README section
+  (peer of secret-guard's), a `getting-started.md` walkthrough (what changes, costs, the residual
+  self-reported-hand-off limit), `reference.md` rows for the gate + installer + `pipeline-canary.sh` (now
+  documented as an adopter-usable diagnostic, not just maintainer tooling), an `ADAPTING.md` "does not
+  port" note (Claude-Code-hooks-specific), and a `loading-and-cost.md` actor-labeled full-loop
+  walkthrough making the "operator's whole loop is 3 real touches" claim concrete and honest for every
+  adopter, not just the maintainer. That `--install`-mode check only ever sees the machine-global
+  `settings.json`, so it structurally cannot see project-scope wiring (the documented default) — an
+  adopter who did exactly what the docs recommend got a `W-GATE-UNWIRED` WARN on every single run with
+  no way to confirm they'd actually wired it right (the message already conceded this, which was itself
+  the smell). Gave doctor the missing per-project half, mirroring how it already double-checks
+  secret-guard at both scopes: the per-project loop now inspects `$d/.claude/settings.json` for the same
+  load-bearing hook (`gate_hook_wired`, factored out and shared with the `--install` check so the two
+  structural tests can't drift apart). Plain absence stays silent at any tier — the gate is opt-in and
+  most projects legitimately never wire it, so nagging every project about it would trade one false
+  alarm for a noisier one. The one state that IS flagged (`W-GATE-PARTIAL`) is the secret-guard-shaped
+  one: some hook already references `pre-pr-gate.sh` (the repo engaged with the installer) but the
+  load-bearing `PreToolUse`/`Bash` hook specifically is missing — a rail that looks wired but doesn't
+  actually enforce anything, same shape as `W-GUARD-BYPASSED`. 3 new cases in
+  `tests/test_install_pre_pr_gate.sh` cover all three project-scope states (silent, OK, `W-GATE-PARTIAL`).
 - **A model/harness rollout must not break the `/polish` pipeline silently — three independent guard
   tiers** (dir #64, generalizing dir #63's root cause: the Opus 5 rollout silently removed
   `/code-review`'s model-invokability and nothing warned). Prose commands can't be unit-tested, but a

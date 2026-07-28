@@ -3,10 +3,9 @@
 # (receipts, trace, hand-off, gate decisions) still behave correctly after a model/harness rollout
 # (backlog dir #64 tier 3).
 #
-# MAINTAINER DEV-TOOLING — same scoping comment as tools/pre-pr-gate.sh: install.sh does NOT ship this to
-# adopters, nothing wires it into a hook, and it never runs automatically. Trigger it by hand when dir
-# #64 tier 1's rollout-check hook fires a drift banner, or before trusting the pipeline after any Claude
-# Code rollout.
+# Adopter-usable diagnostic (dir #68) — an advanced tool, not part of the everyday /polish flow: nothing
+# wires it into a hook, and it never runs automatically. Trigger it by hand when dir #64 tier 1's
+# rollout-check hook fires a drift banner, or before trusting the pipeline after any Claude Code rollout.
 #
 # --- TO VERIFY outcome, resolved 2026-07-27 (dir #64) ---------------------------------------------
 # Whether a fully headless `claude -p` run reliably fires PreToolUse/PostToolUse/SessionStart hooks the

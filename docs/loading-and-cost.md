@@ -95,6 +95,42 @@ agent ▸ greps net/ → finds the existing client, extends it
 Cost: ~2,280 fixed, cacheable tokens — and you **stop paying the re-explanation tax**. Outcomes are
 consistent across sessions.
 
+## The full loop — actor by actor (Claude Code, gate wired)
+
+The moment above is one exchange. Zoomed out to a whole session, here's who does each step —
+**agent** or **operator** — once you've wired the `/polish` gate
+(`tools/install-pre-pr-gate.sh <repo>`; see the [README](../README.md#the-pre-pr-gate--the-agent-cant-lie-about-review)):
+
+| Step | Actor | What happens |
+|---|---|---|
+| Session start | agent (mechanized) | the always-on rails load; `rollout-check` warns if the model/harness changed since last time |
+| Reconcile | agent | reads project context, greps for what already exists, checks in-flight branches |
+| Branch | agent | cuts a feature branch — never commits to the default branch |
+| Implementation | agent | does the work |
+| `/polish` | agent | simplify, tests, a review depth matched to the diff |
+| *(optional)* raise the bar | **operator** | `/code-review high` or the human-only `/code-review ultra` |
+| Gate-unlocked PR | agent (mechanized) | `gh pr create` stays denied until `/polish`'s receipt matches HEAD |
+| Review + merge | **operator** | the merge is never the agent's call (core rail) |
+| `/wrap` | agent | notes, changelog, backlog updated |
+
+**The operator's whole loop is 3 real touches, +1 optional:** (1) start it — `/go <n>` or a prompt;
+*(optional)* raise the review bar yourself; (2) review and merge the PR; (3) `/wrap`. Everything between
+is the agent's, and the gate is what makes that middle stretch trustworthy without a fourth touch — the
+agent can't skip straight to a PR, and can't fake having reviewed it either (the mechanical trace behind
+step 5 of `/polish` — see [`docs/getting-started.md`](getting-started.md#6-the-polish-pre-pr-gate-claude-code-opt-in)).
+
+**Without Keel, the same loop has no rails and no gate:**
+
+| Step | Actor | What happens |
+|---|---|---|
+| Session start | — | cold; nothing loaded |
+| Everything | operator | re-explain conventions, remember to branch, remember to test, remember to review, remember to write it down — every time |
+| PR | agent | opens whenever it decides to, reviewed or not — nothing checks |
+
+Both entry points here (`/go`, `/wrap`) already ship to every adopter, so the 3-touch claim holds for
+you, not just the maintainer — the gate is the one piece that's opt-in (see the README section linked
+above for why: a hook changes session behavior, so it's never wired without a yes).
+
 ## The honest boundary
 
 Keel is not magic, and this page won't pretend otherwise (see the README's *What runs by itself, what only nudges*):
