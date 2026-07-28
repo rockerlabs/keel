@@ -2,12 +2,24 @@
 # install-pre-pr-gate.sh — wires the /polish gate's 4 hooks into a project's (or the machine-global)
 # Claude Code settings.json. dir #68: this is the opt-in step that makes the gate real for an adopter,
 # separate from install.sh (which now ships polish.md unconditionally but never wires a hook itself).
+#
+# The installer edits settings.json with jq, so most of these tests need jq. The busybox/Alpine CI job
+# installs only bash+git (same convention as tests/test_pre_pr_gate.sh, tests/test_pipeline_canary.sh,
+# tests/test_keel_check_gate.sh) — there, skip cleanly. Without jq the installer degrades to printing a
+# ready-to-paste snippet instead of writing anything (an explicit, documented, already-tested choice —
+# see the "no jq" block below, which stays real coverage on the legs that DO have jq by hiding it via
+# PATH regardless of what's actually installed).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 
 installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
 FOUR_EVENTS='PreToolUse SessionStart PostToolUse UserPromptExpansion'
+
+if ! command -v jq >/dev/null 2>&1; then
+  pass "jq not available — install-pre-pr-gate tests skipped (the installer requires jq to edit settings.json)"
+  summary; exit $?
+fi
 
 # --- --help / bad args -----------------------------------------------------------------------------
 run "$installer" --help
