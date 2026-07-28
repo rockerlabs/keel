@@ -61,6 +61,10 @@ backup="$(find "$H" -maxdepth 1 -type d -name '.keel-uninstall-*' | head -1)"
 check_dir "a backup dir was created" "$backup"
 check_file "keel command backed up" "$backup/commands/go.md"
 check_file "CLAUDE.md backed up before edit" "$backup/CLAUDE.md"
+# regression (dir #68 code-review): polish.md ships like every other command now — uninstall must not
+# leave it behind as an orphan (it used to carry its own skip-list arm from when install.sh skipped it).
+if [ -e "$H/commands/polish.md" ]; then fail "polish.md removed too, not orphaned" "still present"; else pass "polish.md removed too, not orphaned"; fi
+check_file "polish.md backed up like any other shipped command" "$backup/commands/polish.md"
 
 # --- idempotent: a second run finds nothing -----------------------------------------------------
 unin --yes

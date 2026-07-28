@@ -459,10 +459,10 @@ state are two more. Pick whichever fits the workflow's cost of a false pass; the
 keep when the check has to run unattended between steps, not just once at the end.
 
 **Reference implementation.** `tools/pre-pr-gate.sh` + `commands/polish.md` implement this pattern for
-Keel's own pre-PR flow — maintainer-only tooling (`install.sh` deliberately doesn't ship either to
-adopters, so nobody gets a half-wired command); read them for the concrete receipt format, not this
-summary. See *Enforcement mechanics* below for the companion rule on what a gate's error text may and
-may not say.
+Keel's own pre-PR flow and ship to every adopter; the gate itself is a separate, explicit opt-in step
+(`tools/install-pre-pr-gate.sh <repo>` — a hook changes what a session can do without asking each time,
+so it's never auto-wired). Read them for the concrete receipt format, not this summary. See *Enforcement
+mechanics* below for the companion rule on what a gate's error text may and may not say.
 
 ---
 

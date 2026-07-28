@@ -385,7 +385,25 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # wiring (tools/install-pre-pr-gate.sh <repo>, the documented default) lives in each project's own
   # .claude/settings.json and is invisible from here — expected, not a gap, so the message says so.
   if [ -f "$ihome/commands/polish.md" ] || [ -L "$ihome/commands/polish.md" ]; then
-    if [ -f "$ihome/settings.json" ] && grep -q 'pre-pr-gate.sh' "$ihome/settings.json" 2>/dev/null; then
+    # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
+    # other 3 (SessionStart/PostToolUse/UserPromptExpansion) are enhancements. Prefer a structural check
+    # via jq — a bare substring grep would call it OK from an unrelated mention (a comment, the sweep
+    # subcommand appearing in some other value, a settings.json that only has the enhancement hooks and
+    # not the gate itself) — falling back to the grep when jq isn't on PATH (same fail-open posture the
+    # gate's own hook mode takes: it needs jq to function at all, so a missing jq means "wired but
+    # inert" either way, not a doctor false negative worth hard-failing over).
+    gate_wired=0
+    if [ -f "$ihome/settings.json" ]; then
+      if command -v jq >/dev/null 2>&1; then
+        if jq -e '.hooks.PreToolUse // [] | any(.matcher == "Bash" and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
+             "$ihome/settings.json" >/dev/null 2>&1; then
+          gate_wired=1
+        fi
+      elif grep -q 'pre-pr-gate.sh' "$ihome/settings.json" 2>/dev/null; then
+        gate_wired=1
+      fi
+    fi
+    if [ "$gate_wired" = 1 ]; then
       say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
     else
       warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run --global there for every repo, or ignore this if you're using project scope"

@@ -115,7 +115,6 @@ if [ -d "$root/commands" ]; then
   for cmd in "$root"/commands/*.md; do
     [ -f "$cmd" ] || continue
     name="$(basename "$cmd")"
-    case "$name" in polish.md) continue ;; esac   # maintainer-only; install never ships it
     slot="$HOME_DIR/commands/$name"
     if [ -L "$slot" ] || { [ -f "$slot" ] && cmp -s "$slot" "$cmd"; }; then
       take "$slot"

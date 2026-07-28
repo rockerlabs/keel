@@ -100,16 +100,16 @@ print_snippet() {
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash $gate" }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash '$gate'" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $gate rollout-check" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$gate' rollout-check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash $gate skill-trace" }] }
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
     ],
     "UserPromptExpansion": [
-      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash $gate skill-trace" }] }
+      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
     ]
   }
 }
@@ -133,26 +133,55 @@ if [ -f "$settings" ]; then
 fi
 
 # The 4 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
+# $gate is single-quoted WITHIN the command string itself (not just JSON-escaped, which jq already does
+# for the string as a whole) — a checkout path containing a space would otherwise split into two argv
+# tokens when Claude Code's hook runner passes this string to a shell, silently no-op'ing every hook.
 hook_specs="$(jq -n --arg gate "$gate" '[
-  {event: "PreToolUse",         matcher: "Bash",        command: ("bash " + $gate)},
-  {event: "SessionStart",       matcher: "startup",     command: ("bash " + $gate + " rollout-check")},
-  {event: "PostToolUse",        matcher: "Skill",       command: ("bash " + $gate + " skill-trace")},
-  {event: "UserPromptExpansion", matcher: "code-review", command: ("bash " + $gate + " skill-trace")}
+  {event: "PreToolUse",         matcher: "Bash",        command: ("bash '\''" + $gate + "'\''")},
+  {event: "SessionStart",       matcher: "startup",     command: ("bash '\''" + $gate + "'\'' rollout-check")},
+  {event: "PostToolUse",        matcher: "Skill",       command: ("bash '\''" + $gate + "'\'' skill-trace")},
+  {event: "UserPromptExpansion", matcher: "code-review", command: ("bash '\''" + $gate + "'\'' skill-trace")}
 ]')"
 
-# Dry-run classification per hook, against the CURRENT file — MISSING (not wired), SAME (already exactly
-# ours — idempotent), or CONFLICT (that event+matcher already runs a different command — someone else's).
-statuses="$(jq -r -n --argjson cur "$current" --argjson specs "$hook_specs" '
-  ($cur.hooks // {}) as $h |
-  $specs[] |
-  . as $s |
-  ($h[$s.event] // [] | map(select(.matcher == $s.matcher)) | .[0]) as $existing |
-  (if $existing == null then "MISSING"
-   elif ($existing.hooks // [] | map(.command) | index($s.command)) != null then "SAME"
-   else "CONFLICT"
-   end) as $status |
-  [$status, $s.event, $s.matcher] | @tsv
-')"
+# Valid JSON is not the same as the expected SHAPE — a hand-edited settings.json could have ".hooks" as
+# an array, or ".hooks.PreToolUse" as a string, and the merge below would otherwise crash with a raw jq
+# type error instead of the clean refusal every other bad-input path here gives.
+shape_ok="$(jq -r --argjson specs "$hook_specs" '
+  (.hooks // {}) as $h |
+  (($h | type) == "object") as $hooks_ok |
+  ($specs | map(.event) | unique | all(. as $e | (($h[$e] // []) | type) == "array")) as $events_ok |
+  ($hooks_ok and $events_ok)
+' <<<"$current")"
+if [ "$shape_ok" != "true" ]; then
+  echo "install-pre-pr-gate: $settings's \"hooks\" section has an unexpected shape (not the usual" >&2
+  echo "  Claude Code hooks object) — fix it by hand. Nothing was changed." >&2
+  exit 2
+fi
+
+# One pass computes BOTH the merged settings AND each hook's classification — MISSING (not wired), SAME
+# (already exactly ours — idempotent), or CONFLICT (that event+matcher already runs a different command,
+# someone else's) — from the same walk, so there's exactly one place that decides what "already wired"
+# means. Computing the merged (as-if-forced) result even on a CONFLICT is harmless: it's simply never
+# written unless the refuse/--force gate below clears it.
+merge_prog='
+{obj: (.hooks //= {}), report: []} |
+reduce $specs[] as $s (.;
+  .obj.hooks[$s.event] //= [] |
+  (.obj.hooks[$s.event] | map(.matcher == $s.matcher) | index(true)) as $idx |
+  if $idx == null then
+    .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
+    | .report += [["MISSING", $s.event, $s.matcher]]
+  elif (.obj.hooks[$s.event][$idx].hooks // [] | map(.command) | index($s.command)) != null then
+    .report += [["SAME", $s.event, $s.matcher]]
+  else
+    .obj.hooks[$s.event][$idx].hooks = [{type: "command", command: $s.command}]
+    | .report += [["CONFLICT", $s.event, $s.matcher]]
+  end
+) |
+{new: .obj, report: (.report | map(@tsv) | join("\n"))}
+'
+merged="$(jq --argjson specs "$hook_specs" "$merge_prog" <<<"$current")"
+statuses="$(jq -r '.report' <<<"$merged")"
 
 conflicts=""
 n_conflict=0
@@ -177,21 +206,7 @@ if [ "$n_conflict" -gt 0 ] && [ -f "$settings" ]; then
   echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$backup") (--force)"
 fi
 
-apply_prog='
-(.hooks //= {}) |
-reduce $specs[] as $s (.;
-  .hooks[$s.event] //= [] |
-  (.hooks[$s.event] | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
-    .hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
-  elif (.hooks[$s.event][$idx].hooks // [] | map(.command) | index($s.command)) != null then
-    .
-  else
-    .hooks[$s.event][$idx].hooks = [{type: "command", command: $s.command}]
-  end
-)
-'
-new_settings="$(jq --argjson specs "$hook_specs" "$apply_prog" <<<"$current")"
+new_settings="$(jq '.new' <<<"$merged")"
 printf '%s\n' "$new_settings" > "$settings.keeltmp.$$" && mv -f "$settings.keeltmp.$$" "$settings"
 
 while IFS=$'\t' read -r status event matcher; do

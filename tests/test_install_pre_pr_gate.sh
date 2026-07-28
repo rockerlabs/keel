@@ -30,9 +30,11 @@ for ev in $FOUR_EVENTS; do
   check_contains "wires $ev" "$OUT" "+    $ev"
 done
 sj="$(cat "$repo/.claude/settings.json")"
-check_contains "PreToolUse hook points at the gate (no copy)" "$sj" "\"command\": \"bash $gate\""
-check_contains "SessionStart hook is rollout-check" "$sj" "$gate rollout-check"
-check_contains "PostToolUse/UserPromptExpansion hooks are skill-trace" "$sj" "$gate skill-trace"
+# $gate is single-quoted WITHIN the command string (not just JSON-escaped) — a checkout path with a
+# space must still reach the hook runner as one token, not split on the space (regression below).
+check_contains "PreToolUse hook points at the gate (no copy)" "$sj" "\"command\": \"bash '$gate'\""
+check_contains "SessionStart hook is rollout-check" "$sj" "'$gate' rollout-check"
+check_contains "PostToolUse/UserPromptExpansion hooks are skill-trace" "$sj" "'$gate' skill-trace"
 check_contains "PreToolUse matcher is Bash" "$sj" '"matcher": "Bash"'
 check_contains "SessionStart matcher is startup" "$sj" '"matcher": "startup"'
 check_contains "PostToolUse matcher is Skill" "$sj" '"matcher": "Skill"'
@@ -116,6 +118,15 @@ check_status "invalid JSON settings.json -> exit 2" 2 "$STATUS"
 check_contains "names the file as invalid" "$OUT" "not valid JSON"
 check_contains "invalid settings.json left untouched" "$(cat "$brepo/.claude/settings.json")" "not json at all"
 
+# --- valid JSON but the wrong SHAPE (e.g. a hand-edit) -> clean refusal, not a raw jq crash -----------
+shrepo="$(new_repo)"
+mkdir -p "$shrepo/.claude"
+printf '{"hooks":{"PreToolUse":"not-an-array"}}' > "$shrepo/.claude/settings.json"
+run "$installer" "$shrepo"
+check_status "unexpected hooks shape -> exit 2 (not a jq crash)" 2 "$STATUS"
+check_contains "names the shape problem" "$OUT" "unexpected shape"
+check_contains "malformed-shape settings.json left untouched" "$(cat "$shrepo/.claude/settings.json")" "not-an-array"
+
 # --- doctor.sh --install pairing check: shipped polish.md + wired gate -> OK; unwired -> WARN --------
 doctor="$REPO_ROOT/tools/doctor.sh"
 dh_unwired="$SANDBOX/dh-unwired"
@@ -130,5 +141,34 @@ run env KEEL_HOME="$dh_wired" "$installer" --global
 check_status "wiring the freshly-installed home's own gate -> exit 0" 0 "$STATUS"
 run "$doctor" --install "$dh_wired"
 check_contains "wired gate -> OK" "$OUT" "OK   /polish gate: wired machine-global"
+
+# --- regression: doctor's gate check is structural, not a bare substring match ----------------------
+# A settings.json that only mentions pre-pr-gate.sh via an unrelated hook (no PreToolUse/Bash entry at
+# all — the one that actually blocks gh pr create) must NOT read as "wired".
+dh_fake="$SANDBOX/dh-fake-wired"
+run "$REPO_ROOT/install.sh" --home "$dh_fake" --no-hooks
+mkdir -p "$dh_fake"
+cat > "$dh_fake/settings.json" <<EOF
+{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"bash $gate rollout-check"}]}]}}
+EOF
+run "$doctor" --install "$dh_fake"
+check_contains "a mention with no PreToolUse/Bash hook is still WARN, not a false OK" "$OUT" "no machine-global gate is wired"
+
+# --- regression: a checkout path containing a space still produces a working (single-token) command --
+sp_root="$(mktemp -d)/space checkout"
+mkdir -p "$sp_root/tools"
+cp "$installer" "$sp_root/tools/install-pre-pr-gate.sh"
+cp "$gate" "$sp_root/tools/pre-pr-gate.sh"
+sp_repo="$(new_repo)"
+run "$sp_root/tools/install-pre-pr-gate.sh" "$sp_repo"
+check_status "install from a space-containing checkout path -> exit 0" 0 "$STATUS"
+# repo-key: a real, side-effect-free, stdin-free subcommand — safe to invoke directly in a test (unlike
+# hook mode, which blocks reading stdin for the tool-call JSON it expects when given no subcommand). The
+# argument must be concatenated INTO the command string (sh -c CMD ARGS sets $0/$1.., it does not append
+# to CMD) so it reaches pre-pr-gate.sh's own arg parsing, not the wrapping shell's positional params.
+sp_cmd="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$sp_repo/.claude/settings.json")"
+run sh -c "$sp_cmd repo-key"
+check_status "the generated command runs as ONE token despite the space" 0 "$STATUS"
+check_absent "no 'file not found' from the path splitting on the space" "$OUT" "No such file or directory"
 
 summary
