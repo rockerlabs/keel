@@ -434,11 +434,14 @@ printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
 check_nofile "skill-trace ignores a non-code-review skill call" "$tf"
 
 # 21. skill-trace also fires on UserPromptExpansion (the operator typing `/code-review <level>`
-# directly) — the path that bypasses PostToolUse entirely per Claude Code's hooks reference.
+# directly) — the path that bypasses PostToolUse entirely per Claude Code's hooks reference. Fixture
+# carries the full documented field set (expansion_type/command_name/command_args/command_source/prompt),
+# matching the literal JSON example at code.claude.com/docs/en/hooks.md#userpromptexpansion — see the
+# skill-trace case's own TO-VERIFY-resolved comment in tools/pre-pr-gate.sh for the citation.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
-json="$(jq -n --arg cwd "$d" '{hook_event_name:"UserPromptExpansion", cwd:$cwd, expansion_type:"slash_command", command_name:"code-review", command_args:"ultra"}')"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"UserPromptExpansion", cwd:$cwd, expansion_type:"slash_command", command_name:"code-review", command_args:"ultra", command_source:"user", prompt:"/code-review ultra"}')"
 printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
 check_file "skill-trace(UserPromptExpansion code-review) writes a trace file" "$tf"
 check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	ultra"

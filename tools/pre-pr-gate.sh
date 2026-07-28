@@ -56,6 +56,26 @@
 # the tool, but typing /skillname directly bypasses PreToolUse" — PostToolUse matches the same tool-name
 # set). Both write the same trace line via `skill-trace`, keyed like the sentinel (main_top_for), to
 # /tmp/pre-pr-gate-trace-<repo>: "<HEAD-sha>\t<level-if-known>".
+# **TO VERIFY, resolved 2026-07-28** (dir #68 flagged skill-trace's field-name assumptions as
+# unverified, unlike rollout-check's own TO-VERIFY block below — checked against the same source,
+# code.claude.com/docs/en/hooks.md):
+# (1) `UserPromptExpansion` IS a real, documented hook event ("runs when a user-typed command expands
+#     into a prompt before reaching Claude" — exactly the operator-typed-`/code-review` path this leg
+#     exists to catch), and its input carries `hook_event_name`, `expansion_type`, `command_name`,
+#     `command_args`, `command_source`, and `prompt` — CONFIRMED against the doc's own literal example:
+#     `{"hook_event_name":"UserPromptExpansion","expansion_type":"slash_command",
+#     "command_name":"example-skill","command_args":"arg1 arg2","command_source":"plugin",
+#     "prompt":"/example-skill arg1 arg2"}`. `command_name` is the BARE skill name (no leading `/`),
+#     matching the `st_skill` case pattern below (`code-review|*:code-review|/code-review` covers it).
+# (2) `.tool_input.skill` / `.tool_input.args` for a PostToolUse(Skill) event has no dedicated worked
+#     example in the docs (unlike Bash/Write/Edit/Agent/etc., which each get one) — the docs only give
+#     the general rule that `tool_input` is "the arguments sent to the tool" and "the exact schema...
+#     depends on the tool." PLAUSIBLE at high confidence, not literally doc-confirmed: every documented
+#     tool's `tool_input` mirrors its own call-parameter names 1:1 (Agent -> `prompt`/`subagent_type`/
+#     `model`; Write -> `file_path`/`content`), and the Skill tool's own declared parameters are named
+#     exactly `skill` and `args` — so the same convention should apply. A live sandboxed
+#     PostToolUse(Skill) capture would close this the rest of the way but was not run this pass (the
+#     operator declined the throwaway-sandbox probe that would have produced one).
 # The gate's PASS branch (hook mode, below) cross-checks this trace whenever `polish.5-review`'s
 # outcome is a BARE level (no `-operator-run`/`-waived` suffix, not `skip`) — that shape claims a real
 # in-session run, so it must have left a trace for the SAME sha AND the SAME level, or the gate denies
