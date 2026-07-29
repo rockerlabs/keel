@@ -9,6 +9,47 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/polish` step 5 spawns an independent subagent review when `/code-review` isn't model-invokable in
+  session, instead of falling back to a same-context self-review** (dir #70). `/code-review` ships
+  `disable-model-invocation: true`, so a session can never call it on its own; every unavailable-case
+  `/polish` run used to fall to an inline pass — the author reviewing its own diff — standing in for a
+  real review. Step 5 now spawns ONE fresh-context Agent-tool subagent (`subagent_type:
+  "general-purpose"`) with a correctness-focused mandate and an explicit read-only instruction (no file
+  edits, no live-environment reproduction — see memory `subagent-live-verification-risk`), resolves any
+  real findings, and receipts `agent:<level>` immediately — before any hand-off, since the review already
+  happened and is independently, mechanically verifiable. The hand-off dialog's purpose shifts from "the
+  real review couldn't run" to a REMINDER that the built-in multi-agent `/code-review` pipeline stays
+  stronger and is one command away; `ultra`, and the case where the Agent tool itself is also
+  unavailable, keep the original blocking hand-off. `tools/pre-pr-gate.sh` gained a fifth hook,
+  `SubagentStop`/`general-purpose`, wired by `tools/install-pre-pr-gate.sh` (now 5 hooks, idempotently
+  upgrading an already-wired repo) and by `tools/pipeline-canary.sh`'s sandbox. The design ticket assumed
+  a `PostToolUse` hook keyed on a "Task"/"Agent" tool name, mirroring the Skill leg — checked against
+  Claude Code's hooks reference at implementation time, no such tool-call hook exists for subagent
+  spawning (`TaskCreate` is a different, unrelated feature: the background-task queue). The real
+  mechanism is a dedicated `SubagentStop` lifecycle event, matched on `agent_type`, carrying
+  `last_assistant_message` — the ONLY field a subagent event exposes an outcome through, since unlike a
+  Skill call it has no `tool_input`/prompt field. The review subagent's prompt is required to end its
+  final response with a bare marker line, `KEEL-AGENT-REVIEW: level=<level>`; `skill-trace` parses it out
+  of `last_assistant_message` and writes `<sha>\tagent:<level>` to the same trace file the Skill/
+  UserPromptExpansion legs use — the sha is always the hook's own `git rev-parse HEAD` at fire time, never
+  self-reported. Found and fixed during implementation: bash `read` stops at the first embedded newline
+  regardless of `IFS`, so an early draft that joined `last_assistant_message` into the same
+  `IFS=$'\x1f' read` line as the other (single-line) fields silently truncated every real, multi-line
+  review write-up to its first line, above the marker — fetched via its own separate `jq` call instead.
+  The gate's PASS branch gained an `agent:*` outcome case (still `trusted=0`, cross-checked against the
+  trace and against `polish.4-depth`'s own recorded level, same bar as a bare in-session claim) and a
+  provenance label distinct from a genuine `/code-review` run — the PR body and closing summary must
+  name it "independent agent review", never presented as if the built-in reviewer ran. `sweep` (dir #64
+  tier 2b) now treats an `agent-confirmed` pass the same as `trace-confirmed` when judging a
+  self-reported-only streak. A pre-check confirmed the docs' `skillOverrides` setting only controls skill
+  *visibility* (on/name-only/user-invocable-only/off) — it cannot re-enable model invocation of a skill
+  whose frontmatter sets `disable-model-invocation: true`, so no simpler fix existed. New fixtures cover
+  trace parsing, marker validation, the multi-line-newline regression, the full PASS/deny matrix, and the
+  `sweep` classification (including a legacy-log regression: a pre-dir-64 `receipt-pass` row with no
+  5th field at all must still count toward `sweep`'s self-reported streak, not read as verified just
+  because it isn't literally `self-reported` — a real defect an adversarial review caught in an earlier
+  draft of the streak check above) in `tests/test_pre_pr_gate.sh`, plus `tests/test_install_pre_pr_gate.sh`
+  coverage for the fifth hook.
 - **The `/polish` pre-PR gate pipeline ships to adopters, not just the maintainer** (dir #68 — the audit
   behind it found this cluster the tree's only violator of the adopter/self-maintenance dichotomy).
   `commands/polish.md` now installs unconditionally (`install.sh` dropped it from its skip list); its

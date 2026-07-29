@@ -422,8 +422,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # .claude/settings.json and is invisible from here — expected, not a gap, so the message says so.
   if [ -f "$ihome/commands/polish.md" ] || [ -L "$ihome/commands/polish.md" ]; then
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
-    # other 3 (SessionStart/PostToolUse/UserPromptExpansion) are enhancements. gate_hook_wired (shared
-    # with the per-project loop's own half of this check, below) does the structural jq-else-grep test.
+    # other 4 (SessionStart/PostToolUse/UserPromptExpansion/SubagentStop — the last added dir #70) are
+    # enhancements. gate_hook_wired (shared with the per-project loop's own half of this check, below)
+    # does the structural jq-else-grep test.
     if gate_hook_wired "$ihome/settings.json"; then
       say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
     else

@@ -688,4 +688,141 @@ run "$gate" repo-key "$WT"
 check_contains "repo-key of a worktree resolves to the MAIN checkout's basename (dir #61 discipline), not its own" "$OUT" "$(basename "$MREPO")"
 check_absent "repo-key does not just basename the worktree itself" "$OUT" "$(basename "$WT")"
 
+# --- dir #70: the independent-agent-review leg (SubagentStop trace + agent:<level> outcome) -------
+# Feeds a synthetic SubagentStop event to skill-trace. $1 = repo dir, $2 = agent_type, $3 = the
+# last_assistant_message text (may be multi-line — real review write-ups are).
+subagentstop_trace() {
+  local d="$1" agent_type="$2" msg="$3" json
+  json="$(jq -n --arg cwd "$d" --arg at "$agent_type" --arg msg "$msg" \
+    '{hook_event_name:"SubagentStop", cwd:$cwd, agent_type:$at, agent_id:"test-agent-id", last_assistant_message:$msg}')"
+  OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
+  STATUS=$?
+}
+
+# 41. A SubagentStop(general-purpose) event whose final text carries the marker line (on its own
+# line, amid other prose — a real review write-up isn't just the marker) writes an `agent:<level>`
+# trace line keyed by the hook's OWN observed HEAD sha, never a self-reported one.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed the diff, no issues found.\nKEEL-AGENT-REVIEW: level=high\n')"
+check_status "SubagentStop(general-purpose) with marker → exit 0" 0 "$STATUS"
+check_file "SubagentStop(general-purpose) with marker writes a trace file" "$tf"
+check_contains "trace line carries the sha and the agent:<level> tag" "$(cat "$tf" 2>/dev/null)" "$sha	agent:high"
+rm -f "$tf"
+
+# 42. Regression guard for the newline-truncation bug found while building this leg: bash `read`
+# stops at the first embedded newline regardless of what IFS is set to, so a naive single-`read`
+# extraction of `last_assistant_message` alongside the other (single-line) fields would silently see
+# only the message's FIRST line — above the marker — and never find it. The marker line above is
+# NOT the first line, so this only passes if the multi-line message is read in full.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Line one.\nLine two.\nLine three.\nKEEL-AGENT-REVIEW: level=medium\n')"
+check_file "marker found even several lines into the message (no newline truncation)" "$tf"
+rm -f "$tf"
+
+# 43. A non-`general-purpose` agent_type is ignored (no trace) — the hook's own defense-in-depth
+# check, redundant with the install-time matcher but exercised directly here.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "Explore" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
+check_nofile "SubagentStop for a non-general-purpose agent_type is ignored" "$tf"
+
+# 44. A general-purpose SubagentStop with NO marker line at all is ignored — this fires on every
+# ordinary general-purpose subagent call in a session, not just polish's review, so silence here is
+# the common case, not an error.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "Just some unrelated subagent output, no marker here."
+check_nofile "SubagentStop with no marker line is ignored" "$tf"
+
+# 45. A marker naming a level outside the accepted set (skip/ultra never reach this leg — skip does
+# no review at all, ultra always hands off to the human) is ignored, not trusted verbatim.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=ultra\n')"
+check_nofile "SubagentStop marker with an out-of-set level (ultra) is ignored" "$tf"
+
+# 46. Gate PASS: an `agent:<level>` receipt backed by a matching SubagentStop trace at the SAME
+# commit and level unlocks the gate, with a provenance line naming the independent agent review
+# (never presented as if the built-in /code-review itself ran).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_status "agent:<level> receipt + matching trace → exit 0" 0 "$STATUS"
+check_absent "agent:<level> receipt + matching trace → allowed" "$OUT" "deny"
+check_contains "provenance names the independent agent review, not a built-in /code-review run" "$OUT" "review: high, independent agent review (Skill(code-review) not model-invokable in-session)"
+rm -f "$tf"
+
+# 47. Gate DENY: an `agent:<level>` receipt with NO matching trace at all — same bar as a bare-level
+# claim with no `/code-review` trace (test 16 above); an agent-review claim is just as fabricable by
+# self-report, so it earns no more trust.
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "agent:<level> receipt, no trace → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "agent:<level> receipt, no trace → names the trace as missing" "$OUT" "no trace matching"
+
+# 48. Gate DENY: a trace exists, but for a DIFFERENT level than the receipt claims — a real `agent:low`
+# review must not vouch for a receipt claiming `agent:max`.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tagent:low\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "agent:max"
+gate "gh pr create --fill" "$d"
+check_contains "agent:<level> receipt, trace at a different level → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the trace, not some other reason" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 49. Gate DENY: `agent:<level>` outcome cross-checked against polish.4-depth's OWN recorded level —
+# an agent review claiming `high` must not unlock a diff step 4 actually sized `medium` (same
+# depth-consistency cross-check dir #63 built for the bare-level case, extended to this leg).
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:high"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "'agent:high' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
+
+# 50. sweep: an "agent-confirmed" pass breaks a self-reported-only streak the same way a
+# "trace-confirmed" one does (dir #70: an independent agent review is just as independently
+# verifiable as a real in-session /code-review pass — not the self-reported blind spot sweep exists
+# to catch).
+d="$(mkrepo)"; mkdir -p "$d/.keel"
+ilog="$d/.keel/impact-events.log"
+{
+  printf '2026-07-29T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+  printf '2026-07-29T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium, operator-run (self-reported)\tself-reported\n'
+  printf '2026-07-29T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: high, independent agent review (Skill(code-review) not model-invokable in-session)\tagent-confirmed\n'
+} > "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "an agent-confirmed pass within the window → exit 0 (breaks the self-reported streak)" 0 "$STATUS"
+
+# 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
+# adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
+# be misread as "verified" just because it isn't literally "self-reported" — an early draft of the
+# `!= "self-reported"` streak check (found in this same review pass) treated a blank field as
+# verified, silently breaking sweep for exactly the legacy-log case it's supposed to keep catching.
+d="$(mkrepo)"; mkdir -p "$d/.keel"
+ilog="$d/.keel/impact-events.log"
+{
+  printf '2026-07-29T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium\n'
+  printf '2026-07-29T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium\n'
+  printf '2026-07-29T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: medium\n'
+} > "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "3 consecutive pre-dir-64 rows (no 5th field) → still warns, not misread as verified" 1 "$STATUS"
+
 summary

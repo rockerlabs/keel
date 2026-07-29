@@ -108,6 +108,10 @@ write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2
 write_full_receipt_review() {
   local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
   depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
+  # dir #70: an `agent:<level>` outcome (the independent-subagent-review leg) records step 4's depth as
+  # the bare level too — strip the prefix the same way the `-operator-run`/`-waived` suffixes are stripped
+  # above, so a caller can pass "agent:high" and still get a matching polish.4-depth of "high".
+  depth_level="${depth_level#agent:}"
   run_in "$d" bash "$gate" init
   for s in $ALL_STEPS; do
     [ "$s" = "$omit" ] && continue

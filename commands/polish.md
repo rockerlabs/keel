@@ -105,49 +105,100 @@ Steps, in order:
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
    directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
    flow doesn't otherwise write to — `tools/pre-pr-gate.sh`'s gate cross-checks it (same commit, same
-   level) before unlocking. The gate also cross-checks EVERY outcome, including a hand-off's
+   level) before unlocking. The independent-agent-review path below (a) leaves the same kind of mechanical
+   trace, via a different hook. The gate also cross-checks EVERY outcome, including a hand-off's
    `-operator-run`/`-waived`, against the level step 4 actually recorded — `skip`ping the review while
    claiming a higher depth was sized doesn't unlock the gate either.
-   **Residual limit:** the inline pass in (a) below still leaves no trace by construction — that path's
-   outcome (`-operator-run`/`-waived`) stays self-reported; the trace only makes "claims the skill ran
-   when it didn't" checkable, not the inline pass's own thoroughness.
+   **Residual limit:** only the LAST-resort inline pass — (a)'s own fallback, when the Agent tool itself is
+   unavailable — still leaves no trace by construction; that path's outcome (`-operator-run`/`-waived`)
+   stays self-reported. The trace only makes "claims a review ran when it didn't" checkable, not either
+   reviewer's own thoroughness.
 
-   **Two cases hand the review back to the human, and both follow the same hand-off below.** `ultra` you
-   cannot launch at all (cloud, billed, user-triggered). `/code-review` being unavailable to you —
-   missing from the skill list, or refusing with `disable-model-invocation` — is the other; there, do not
-   substitute `/review` (a GitHub-PR command, not a working-diff review) and do not guess.
-   - **(a)** In the *unavailable* case only, perform ONE inline review pass of the step-1 diff at the
-     chosen depth (correctness-focused, same single-terminal-pass rule as below) and resolve any real
-     findings, so cheap issues never reach the human. For `ultra`, go straight to (b) — that depth was
-     chosen precisely because a cheap pass isn't the answer. **Say what you checked and what you found**,
-     the way step 3 has to show real test output: an assertion that a pass happened, with nothing to
-     inspect, is indistinguishable from one that didn't.
-   - **(b) Then stop.** Report that the real review could not be run, print the exact
-     `/code-review <level>` command, and ask whether to run it or to proceed without. Do NOT write this
-     step's receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. An inline
-     pass is a courtesy, never a substitute for the human's decision about review depth: it is one pass,
-     in the same context that wrote the code, with no independent reviewer. **The failure this closes:**
-     continuing to a merged-ready PR and disclosing the substitution only in the closing summary, where
-     the operator finds out by reading the transcript — or not at all.
-     Before stopping, record the hand-off so a re-invocation doesn't have to rely on session memory:
-     `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"`.
+   `ultra` you cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no
+   automated alternative attempted. For `low|medium|high|max`, `/code-review` being unavailable to you —
+   missing from the skill list, or refusing with `disable-model-invocation` — no longer means falling
+   straight to the human: it means (a) below. Either way, do not substitute `/review` (a GitHub-PR
+   command, not a working-diff review) and do not guess.
+   - **(a) Unavailable case: an independent subagent reviews instead of you.** `/code-review` refusing
+     in-session doesn't mean no real review can happen — it means a DIFFERENT, independent reviewer has
+     to run it. Spawn ONE fresh-context Agent-tool subagent, `subagent_type: "general-purpose"`. Its
+     prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
+     mandate, and an explicit **read-only instruction** — review only, no file edits, no live-environment
+     reproduction (a prior incident: a full-Bash review subagent once overwrote real machine files while
+     "empirically verifying" a bug in-place; memory `subagent-live-verification-risk`). The prompt MUST
+     also require the subagent to end its final response with a line, alone, exactly
+     `KEEL-AGENT-REVIEW: level=<level>` (the chosen depth) — **plain text, no markdown formatting**: not
+     inside backticks, not inside a code fence, no trailing punctuation. The hook matches this line
+     literally, so a stray backtick a subagent adds out of habit is enough to leave no trace even after a
+     genuine review. A `SubagentStop` hook is the only way `tools/pre-pr-gate.sh` can observe this review
+     at all (unlike a Skill call, a subagent event carries no `prompt`/call-argument field to read from —
+     only the subagent's own final text), so an omitted or malformed marker line leaves no trace and the
+     gate denies later, at step 8. Resolve any real findings
+     the subagent reports, the same as a real `/code-review` pass, then receipt immediately:
+     `polish.5-review agent:<level>` — unlike the pre-dir-#70 inline fallback, this receipt is written
+     BEFORE any hand-off, because the review already happened and is independently, mechanically
+     verifiable (the trace).
+     **Then a REMINDER, not a stop.** The built-in `/code-review` is a multi-agent pipeline (parallel
+     reviewers plus adversarial verification of their findings); one subagent is a real independent
+     review, but likely stays weaker. Report what the subagent checked and found, print the exact
+     `/code-review <level>` command, and open an `AskUserQuestion` dialog — the same real, pausing
+     mechanism step 4 uses for its own dialog, not a rhetorical question the flow can talk itself past —
+     asking: proceed on the agent review, or run the stronger built-in pass first. Record the hand-off
+     exactly as (b) does — `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"` — so a
+     re-invocation doesn't have to rely on session memory (see (c)). On "proceed": re-run
+     `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same outcome, written again) —
+     idempotent, and its side effect is what clears the hand-off note; skipping this re-write leaves a
+     stale hand-off note on disk that can force a spurious re-ask on a later re-invocation of this same
+     commit. **On "run `/code-review <level>`": that command is the OPERATOR's to run, not yours — you
+     already tried and were refused.** Wait for them to run it (or report their findings), then resolve
+     what it reported and overwrite the receipt: `polish.5-review <level>-operator-run` (whichever receipt
+     is written LAST for this step wins — see (c)).
+     **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses (establish this
+     the same attempt-don't-infer way) does the pre-dir-#70 behavior apply — one inline review pass of the
+     step-1 diff yourself (correctness-focused, same single-terminal-pass rule as below), say what you
+     checked and found the way step 3 has to show real test output (an assertion with nothing to inspect
+     is indistinguishable from a pass that didn't happen), then go to (b) below for real: no independent
+     reviewer exists here at all, self-reported, in the same context that wrote the code.
+   - **(b) Stop for real** — `ultra`, or (a)'s own Agent-tool-unavailable fallback. Report that no real
+     review could be run in-session, print the exact `/code-review <level>` command, and open an
+     `AskUserQuestion` dialog asking whether to run it or to proceed without. Do NOT write this step's
+     receipt, do NOT write the sentinel, and do NOT open the PR on your own initiative. **The failure this
+     closes:** continuing to a merged-ready PR and disclosing the substitution only in the closing
+     summary, where the operator finds out by reading the transcript — or not at all. Record the hand-off
+     so a re-invocation doesn't have to rely on session memory: `tools/pre-pr-gate.sh handoff <level>
+     "$(git rev-parse HEAD)"`.
    - **(c)** Once they answer — or, on a re-invocation, check `tools/pre-pr-gate.sh handoff-check`: a
-     match means the question was already asked for this EXACT commit (the check is same-SHA-only — any
-     new commit invalidates it), so collect the operator's answer/evidence without re-deferring — **then
-     resolve any findings their review reported** (same bar as the in-session path; a review nobody acts
-     on bought nothing), then record the outcome and continue: receipt
-     `polish.5-review <level>-operator-run`, or `<level>-waived` if they explicitly chose to proceed
-     without (this also clears the hand-off note). **This is the branch's only exit.** The hand-off
-     note lives in its own file, untouched by `init`'s nonce reset (which only discards the previous
-     run's receipts), so a re-invoked `/polish` re-sizes the same diff and picks the same level —
-     without `handoff-check`, it would defer again, and every time after that.
-   - **(d)** Both outcomes are load-bearing for step 10: the summary must say the real review did not run
-     in-session and name what stood in for it, never just the depth. "review: medium" reads identically
-     to a genuine in-session pass, which is how the substitution stays invisible.
+     match means a question from (a)'s reminder or (b)'s real stop was already raised for this EXACT
+     commit (the check is same-SHA-only — any new commit invalidates it). The hand-off note carries only
+     the level and sha, not which of (a)/(b) raised it nor the prior pass's findings — `init`'s nonce reset
+     already discarded that receipt — so collect the operator's answer/evidence now (if not already given)
+     and:
+     - If they ran `/code-review <level>` themselves or explicitly waived it, **resolve any findings their
+       review reported** (same bar as the in-session path; a review nobody acts on bought nothing), then
+       receipt `polish.5-review <level>-operator-run` or `<level>-waived` (this also clears the hand-off
+       note).
+     - Otherwise, and **only when `level` is NOT `ultra`** (an `ultra` hand-off only ever came from (b) —
+       `ultra` never reaches (a), so there is no agent review to fall back to; keep waiting on the
+       operator's own decision instead), they want to proceed on an agent review, or the Agent tool is
+       available again now: first re-try the CHEAP path — `tools/pre-pr-gate.sh receipt polish.5-review
+       agent:<level>` — since the trace file (unlike the receipt sentinel) survives `init`'s nonce reset,
+       so a genuine trace the original (a) pass already wrote for this exact commit is very likely still
+       there and this bare receipt write may already satisfy the gate with no new subagent call. Only
+       redo (a) fresh (a subagent call is cheap and self-contained, but not free) if step 8 later denies
+       it as a missing/mismatched trace — meaning the original pass never actually produced one (e.g. a
+       malformed marker line).
+     **This is the branch's only exit.** The hand-off note lives in its own file, untouched by `init`'s
+     nonce reset (which only discards the previous run's receipts), so a re-invoked `/polish` re-sizes the
+     same diff and picks the same level — without `handoff-check`, it would defer again, and every time
+     after that.
+   - **(d)** Every outcome is load-bearing for step 10: the summary must name exactly which review
+     mechanism ran — a genuine in-session `/code-review <level>`, an independent agent review, or (a)'s
+     own last-resort inline self-review — never just the depth. "review: medium" reads identically to a
+     genuine in-session pass, which is how any substitution stays invisible.
 
    **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
-   if `--fix` changes files.** No infinite cycle.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`,
+   if `--fix`/the subagent's findings change files.** No infinite cycle.
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `agent:medium`,
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
@@ -181,13 +232,17 @@ Steps, in order:
    #49), not a step of the happy path — skip it when the gate never denies.
 
 9. **Open the PR.** After the gate passes, run `gh pr create` — compose the title and body from the
-   implementation context (what changed, why, a test plan). Return the PR URL. Invoking `/polish` IS
-   the standing authorization to push the branch and run `gh pr create` at this step; do not re-ask.
-   The merge stays the operator's.
+   implementation context (what changed, why, a test plan). **If step 5's outcome was `agent:<level>`,
+   the PR body must label the review as such** — e.g. "review: independent agent at `<level>` (built-in
+   `/code-review` not model-invokable in-session)" — never presented as if `/code-review` itself ran.
+   Return the PR URL. Invoking `/polish` IS the standing authorization to push the branch and run
+   `gh pr create` at this step; do not re-ask. The merge stays the operator's.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
-    self-check result), which review depth ran (or that it was skipped), and the PR URL. **If step 5 took
-    the hand-off branch, say so explicitly** — that the real review did not run in-session, and whether
-    the human ran it (`-operator-run`) or waived it (`-waived`, leaving only the inline pass). A bare
-    depth is indistinguishable from a genuine in-session review, so reporting one here would re-hide
-    exactly what step 5 stops to surface.
+    self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
+    review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
+    independent agent review (`review: <level>, independent agent review — built-in /code-review not
+    model-invokable in-session`, matching the PR body's own label); or, if step 5 took the (b) hand-off,
+    that no real review ran in-session and whether the human ran it (`-operator-run`) or waived it
+    (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is indistinguishable from a
+    genuine in-session review, so reporting one here would re-hide exactly what step 5 exists to surface.
