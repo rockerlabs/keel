@@ -251,9 +251,15 @@ tools/install-pre-pr-gate.sh --global   # every repo you open on this machine, i
 - **The claim is checked, not just trusted.** A separate hook writes a mechanical trace the instant a
   real `/code-review <level>` pass runs (whether the agent invoked it or you typed it directly); the gate
   cross-checks that trace against the receipt before unlocking, so a session can't write "review: medium"
-  without one actually having happened. The one channel this can't close: if `/code-review` was genuinely
-  unavailable and `/polish`'s hand-off asked you to run — or waive — it yourself, that outcome stays
-  self-reported (visible in the receipt as `-operator-run` / `-waived`, not a bare level).
+  without one actually having happened.
+- **When `/code-review` itself isn't callable in-session** (it ships `disable-model-invocation`, so a
+  session can never trigger it on its own — only you, typing it directly, can), `/polish` doesn't just
+  fall back to the agent reviewing its own diff: it spawns a second, independent Agent-tool subagent
+  (fresh context, no memory of the code it's reviewing) to do the review instead, traced the same
+  mechanical way. The PR body and the closing summary are always labeled honestly — "independent agent
+  review" is never presented as if `/code-review` itself ran. The one channel this can't close: if you're
+  asked to run — or waive — the built-in pass yourself instead, that outcome stays self-reported (visible
+  in the receipt as `-operator-run` / `-waived`, not a bare level or `agent:<level>`).
 - **A one-line banner at session start** (the `SessionStart` hook, `rollout-check`) if the model or
   Claude Code version changed since your last session here — a silent rollout is exactly how a pipeline
   step like `/code-review` can quietly stop being callable without anyone noticing.

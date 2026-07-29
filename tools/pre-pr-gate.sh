@@ -144,6 +144,47 @@
 # (operator-triggered) or seeds a fabricated step-5 claim and asserts the gate still denies it (fully
 # scripted, no model needed — the canary's own proof that it CAN fail). Full design + the TO VERIFY
 # outcome on headless hook-firing → that file's own header.
+#
+# --- dir #70: an independent SUBAGENT review when Skill(code-review) itself refuses --------------
+# Root cause: `/code-review` ships `disable-model-invocation: true`, so a session can never call it on
+# its own — every unavailable-case /polish run used to fall back to a same-context inline pass (the
+# author reviewing itself) standing in for a real review. commands/polish.md step 5(a) now spawns ONE
+# independent Agent-tool subagent (type `general-purpose`, fresh context — no memory of the code-writing
+# session) to do the review instead; this file's job is making THAT claim verifiable too, the same way
+# dir #63 made a real in-session `/code-review` call verifiable.
+#
+# **TO VERIFY, resolved at impl start (corrects the ticket's own original assumption):** the ticket
+# guessed a `PostToolUse` hook matched on a "Task"/"Agent" tool name, mirroring the Skill leg above.
+# Checked against code.claude.com/docs/en/hooks.md: no such tool-call hook exists for subagent spawning.
+# `TaskCreate`/`TaskCreated`/`TaskCompleted` are a DIFFERENT feature (the background-task queue, unrelated
+# to subagent review). The real, documented mechanism is a pair of DEDICATED lifecycle events,
+# `SubagentStart`/`SubagentStop`, matched on `agent_type` (not `tool_name`) — `general-purpose` is one of
+# the built-in values. `SubagentStop` additionally carries `last_assistant_message`: "the final assistant
+# text from the subagent's conversation." That is the ONLY place this hook can read the review's outcome
+# — unlike PostToolUse(Skill), a subagent event has no `tool_input`/`prompt` field to read a call argument
+# from — so the marker commands/polish.md's step 5(a) prompt requires (`KEEL-AGENT-REVIEW: level=<level>`,
+# alone on a line) must appear in the subagent's own returned text, not in its invocation.
+#
+# The sha is this hook's OWN `git … rev-parse HEAD` at fire time (never a self-reported field) — same
+# trust boundary as the Skill/UserPromptExpansion legs' `st_sha` below; a self-reported sha would let a
+# stale review vouch for a later commit. Trace line: `<sha>\tagent:<level>` (same file, same tab format as
+# the Skill/UserPromptExpansion legs, distinguished only by the `agent:` prefix on the level field) — the
+# gate's PASS branch (below) matches `$review_outcome` against it VERBATIM, so `polish.5-review`'s outcome
+# must be written as the same literal string (`agent:<level>`), not just the bare level.
+#
+# **Residual limit (write this into any doc referencing the mechanism, same discipline as dir #63):** the
+# marker lives in the subagent's OWN model-authored response — a materially higher bar than a bare
+# self-report (it requires a real, separate-context `SubagentStop` event to fire for the claimed
+# agent_type), but not literally unfakeable: a trivial, no-op subagent call that merely echoes the marker
+# line would still satisfy this leg. The depth-consistency check (dir #63's cross-check against
+# `polish.4-depth`'s own recorded level, unchanged and reused as-is below) is the compensating control —
+# it doesn't inspect the review's substance, but a fabricated marker still can't claim a DIFFERENT level
+# than what step 4 sized, narrowing the fabrication to "ran a real subagent and lied about doing the work,
+# at the correct level" rather than "claimed anything at all."
+#
+# `sweep` (dir #64 tier 2b, below) counts an `agent:`-confirmed pass the same as a `trace-confirmed` one —
+# both are independently-verifiable reviews, the pre-#63 blind spot `sweep` exists to catch is
+# self-reported-only runs, and this leg is not one of those.
 
 set -u
 
@@ -279,26 +320,52 @@ case "${1:-}" in
     exit 1
     ;;
   skill-trace)
-    # PostToolUse(Skill) or UserPromptExpansion(code-review) hook — see the dir #63 header section.
-    # Never blocks or alters anything: silently no-ops (exit 0) on anything it can't parse or that
-    # isn't a code-review invocation, since a missed trace is a residual limit, not a false deny. One
-    # jq call for every field this needs — it fires on every Skill/slash-command event in every
-    # session using this hook, so it's worth sparing the extra forks a call-per-field would cost.
+    # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — or SubagentStop(general-purpose)
+    # — dir #70, the independent-agent-review leg — hook. Never blocks or alters anything: silently
+    # no-ops (exit 0) on anything it can't parse or that isn't a code-review invocation/review, since a
+    # missed trace is a residual limit, not a false deny. One jq call for every field any of the three
+    # legs needs — it fires on every Skill/slash-command/subagent-stop event in every session using this
+    # hook, so it's worth sparing the extra forks a call-per-leg would cost.
     # Joined with \x1f (NOT tab): bash `read` collapses an EMPTY field sitting between two tab
     # delimiters regardless of IFS (the same class of bug the keel-impact log parser hit) — real here,
-    # since a UserPromptExpansion event has no `tool_name` field at all, an empty middle field.
+    # since a UserPromptExpansion event has no `tool_name` field at all, and a SubagentStop event has
+    # neither `tool_name` nor `command_name` — both empty fields sitting between populated ones.
+    # `last_assistant_message` (SubagentStop only) is deliberately NOT one of these joined fields: `read`
+    # stops at the first embedded newline regardless of what IFS is set to (IFS governs splitting WITHIN
+    # a line, not the line terminator itself) — a real review write-up is virtually guaranteed to be
+    # multi-line, so folding it into this join would silently truncate it to its first line, above the
+    # marker line this hook actually needs to see. Fetched separately, below, only on that branch.
     command -v jq >/dev/null 2>&1 || exit 0
     st_input=$(cat 2>/dev/null)
     # `str` coerces every field to a plain string first — an unexpected shape (args as an object/array,
     # say) would otherwise make `join` throw and lose the WHOLE row, including the hook_event_name/skill
     # fields that were perfectly fine, turning one malformed field into total silence from this hook.
-    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_level <<<"$(printf '%s' "$st_input" | jq -r '
+    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_level st_agent <<<"$(printf '%s' "$st_input" | jq -r '
       def str: if . == null then "" elif type == "string" then . else tostring end;
       [.hook_event_name, (.cwd|str), (.tool_name|str),
        (if .hook_event_name == "PostToolUse" then .tool_input.skill else .command_name end|str),
-       (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str)
+       (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str),
+       (.agent_type|str)
       ] | join("\u001f")' 2>/dev/null)"
     [ -n "$st_cwd" ] || st_cwd="$PWD"
+
+    if [ "$st_event" = "SubagentStop" ]; then
+      # dir #70: matcher "general-purpose" (install-pre-pr-gate.sh) already restricts which
+      # SubagentStop events reach this hook at all — checked again here in case a broader matcher is
+      # ever wired by hand (same double-check style as the PostToolUse/Skill leg below).
+      [ "$st_agent" = "general-purpose" ] || exit 0
+      st_msg="$(printf '%s' "$st_input" | jq -r '.last_assistant_message // ""' 2>/dev/null)"
+      sa_level="$(printf '%s' "$st_msg" | grep -Eo '^KEEL-AGENT-REVIEW: level=(low|medium|high|max)$' | tail -n1)"
+      sa_level="${sa_level#KEEL-AGENT-REVIEW: level=}"
+      [ -n "$sa_level" ] || exit 0
+      # The sha is this hook's OWN observation, never the subagent's self-report — same trust boundary
+      # as `st_sha` below.
+      sa_sha="$(git -C "$st_cwd" rev-parse HEAD 2>/dev/null)"
+      [ -n "$sa_sha" ] || exit 0
+      printf '%s\tagent:%s\n' "$sa_sha" "$sa_level" >> "$(trace_path_for "$st_cwd")"
+      exit 0
+    fi
+
     case "$st_event" in
       PostToolUse) [ "$st_tool" = "Skill" ] || exit 0 ;;
       UserPromptExpansion) ;;
@@ -381,7 +448,10 @@ case "${1:-}" in
       END {
         streak = 0
         for (i = n; i >= 1; i--) {
-          if (rows[i] == "trace-confirmed") break
+          # dir #70: an "agent-confirmed" pass (the independent-subagent review leg) breaks the streak
+          # the same way "trace-confirmed" does — both are independently-verifiable reviews, not the
+          # self-reported-only runs this sweep exists to catch.
+          if (rows[i] == "trace-confirmed" || rows[i] == "agent-confirmed") break
           streak++
         }
         if (streak >= k) { print "WARN"; exit }
@@ -701,6 +771,12 @@ case "$status" in
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
                          prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
+      agent:*)          # dir #70: an independent Agent-tool subagent reviewed (Skill(code-review) wasn't
+                         # model-invokable in-session) — trusted stays 0, same as the bare-level case
+                         # below: this outcome is just as self-report-fabricable, so it earns no more
+                         # trust and still needs the SubagentStop trace match (skill-trace, above).
+                         outcome_level="${review_outcome#agent:}"
+                         prov_label="review: $outcome_level, independent agent review (Skill(code-review) not model-invokable in-session)"; prov_tag="agent-confirmed" ;;
       *)                outcome_level="$review_outcome"
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
@@ -721,7 +797,7 @@ case "$status" in
           '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
         rm -f "$sentinel"
         log_event receipt-deny "review-trace-missing" "$cwd"
-        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome' as an in-session /code-review run, but no trace matching both this commit AND that level was found. If the skill was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
+        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
     # dir #64 tier 2a: $prov_label/$prov_tag were already built above (the same case statement dir #63's

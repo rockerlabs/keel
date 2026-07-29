@@ -126,6 +126,9 @@ GHEOF
     ],
     "SessionStart": [
       { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $GATE rollout-check" }] }
+    ],
+    "SubagentStop": [
+      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash $GATE skill-trace" }] }
     ]
   }
 }

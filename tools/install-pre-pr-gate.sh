@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-pre-pr-gate — wire the /polish pre-PR gate into a project's Claude Code hooks (opt-in, per repo).
 #
-#   install-pre-pr-gate.sh <repo-path>       wire 4 hooks into <repo-path>/.claude/settings.json (project
+#   install-pre-pr-gate.sh <repo-path>       wire 5 hooks into <repo-path>/.claude/settings.json (project
 #                                            scope — the default; only sessions IN this repo are gated)
 #   install-pre-pr-gate.sh --global          wire into ~/.claude/settings.json instead — EVERY repo you
 #                                            open on this machine gets the gate, not just this one
@@ -15,6 +15,10 @@
 # you run this. Once wired: the agent's own `gh pr create` is hard-denied until `/polish` (simplify +
 # tests + a depth-matched review) has run cleanly on the current commit — your own terminal is never
 # gated, only the agent's tool calls (a PreToolUse hook fires on THOSE, not on you typing `gh` yourself).
+#
+# The 5th hook (`SubagentStop`/`general-purpose`, dir #70) traces the independent-agent-review leg
+# `/polish` step 5 falls back to when `/code-review` itself refuses model invocation — see
+# tools/pre-pr-gate.sh's own dir #70 header section for the full mechanism.
 #
 # Requires a KEPT checkout: the hooks point at THIS checkout's tools/pre-pr-gate.sh by absolute path — no
 # copy (a stale copy silently going out of sync was a felt incident; see that file's own header). A
@@ -51,7 +55,7 @@ esac
 
 usage() {
   cat <<'EOF'
-install-pre-pr-gate — wire the /polish pre-PR gate's 4 hooks into Claude Code settings.json.
+install-pre-pr-gate — wire the /polish pre-PR gate's 5 hooks into Claude Code settings.json.
 
 Usage:
   install-pre-pr-gate.sh <repo-path>     wire into <repo-path>/.claude/settings.json (project scope)
@@ -110,6 +114,9 @@ print_snippet() {
     ],
     "UserPromptExpansion": [
       { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+    ],
+    "SubagentStop": [
+      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
     ]
   }
 }
@@ -132,15 +139,16 @@ if [ -f "$settings" ]; then
   fi
 fi
 
-# The 4 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
+# The 5 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
 # $gate is single-quoted WITHIN the command string itself (not just JSON-escaped, which jq already does
 # for the string as a whole) — a checkout path containing a space would otherwise split into two argv
 # tokens when Claude Code's hook runner passes this string to a shell, silently no-op'ing every hook.
 hook_specs="$(jq -n --arg gate "$gate" '[
-  {event: "PreToolUse",         matcher: "Bash",        command: ("bash '\''" + $gate + "'\''")},
-  {event: "SessionStart",       matcher: "startup",     command: ("bash '\''" + $gate + "'\'' rollout-check")},
-  {event: "PostToolUse",        matcher: "Skill",       command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "UserPromptExpansion", matcher: "code-review", command: ("bash '\''" + $gate + "'\'' skill-trace")}
+  {event: "PreToolUse",         matcher: "Bash",           command: ("bash '\''" + $gate + "'\''")},
+  {event: "SessionStart",       matcher: "startup",        command: ("bash '\''" + $gate + "'\'' rollout-check")},
+  {event: "PostToolUse",        matcher: "Skill",          command: ("bash '\''" + $gate + "'\'' skill-trace")},
+  {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash '\''" + $gate + "'\'' skill-trace")},
+  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash '\''" + $gate + "'\'' skill-trace")}
 ]')"
 
 # Valid JSON is not the same as the expected SHAPE — a hand-edited settings.json could have ".hooks" as

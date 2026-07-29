@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# install-pre-pr-gate.sh — wires the /polish gate's 4 hooks into a project's (or the machine-global)
+# install-pre-pr-gate.sh — wires the /polish gate's 5 hooks into a project's (or the machine-global)
 # Claude Code settings.json. dir #68: this is the opt-in step that makes the gate real for an adopter,
 # separate from install.sh (which now ships polish.md unconditionally but never wires a hook itself).
+# The 5th hook (SubagentStop/general-purpose, dir #70) traces the independent-agent-review leg.
 #
 # The installer edits settings.json with jq, so most of these tests need jq. The busybox/Alpine CI job
 # installs only bash+git (same convention as tests/test_pre_pr_gate.sh, tests/test_pipeline_canary.sh,
@@ -14,7 +15,7 @@
 
 installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
-FOUR_EVENTS='PreToolUse SessionStart PostToolUse UserPromptExpansion'
+FIVE_EVENTS='PreToolUse SessionStart PostToolUse UserPromptExpansion SubagentStop'
 
 if ! command -v jq >/dev/null 2>&1; then
   pass "jq not available — install-pre-pr-gate tests skipped (the installer requires jq to edit settings.json)"
@@ -33,12 +34,12 @@ run "$installer" --global /some/repo
 check_status "--global + a repo path -> exit 2 (rejected)" 2 "$STATUS"
 check_contains "rejection names the conflict" "$OUT" "doesn't take a repo path"
 
-# --- (a) fresh install: all 4 hooks land, pointing at THIS checkout's gate by absolute path ---------
+# --- (a) fresh install: all 5 hooks land, pointing at THIS checkout's gate by absolute path ---------
 repo="$(new_repo)"
 run "$installer" "$repo"
 check_status "fresh install -> exit 0" 0 "$STATUS"
 check_file "settings.json created" "$repo/.claude/settings.json"
-for ev in $FOUR_EVENTS; do
+for ev in $FIVE_EVENTS; do
   check_contains "wires $ev" "$OUT" "+    $ev"
 done
 sj="$(cat "$repo/.claude/settings.json")"
@@ -46,16 +47,17 @@ sj="$(cat "$repo/.claude/settings.json")"
 # space must still reach the hook runner as one token, not split on the space (regression below).
 check_contains "PreToolUse hook points at the gate (no copy)" "$sj" "\"command\": \"bash '$gate'\""
 check_contains "SessionStart hook is rollout-check" "$sj" "'$gate' rollout-check"
-check_contains "PostToolUse/UserPromptExpansion hooks are skill-trace" "$sj" "'$gate' skill-trace"
+check_contains "PostToolUse/UserPromptExpansion/SubagentStop hooks are skill-trace" "$sj" "'$gate' skill-trace"
 check_contains "PreToolUse matcher is Bash" "$sj" '"matcher": "Bash"'
 check_contains "SessionStart matcher is startup" "$sj" '"matcher": "startup"'
 check_contains "PostToolUse matcher is Skill" "$sj" '"matcher": "Skill"'
 check_contains "UserPromptExpansion matcher is code-review" "$sj" '"matcher": "code-review"'
+check_contains "SubagentStop matcher is general-purpose" "$sj" '"matcher": "general-purpose"'
 
 # --- (a2) idempotent re-run: same content, reported as already-wired, no duplicate entries ----------
 run "$installer" "$repo"
 check_status "re-run -> exit 0" 0 "$STATUS"
-for ev in $FOUR_EVENTS; do
+for ev in $FIVE_EVENTS; do
   check_contains "re-run reports $ev already wired" "$OUT" "=    $ev"
 done
 n="$(grep -c '"matcher": "Bash"' "$repo/.claude/settings.json")"
