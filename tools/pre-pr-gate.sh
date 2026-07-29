@@ -289,11 +289,28 @@ handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
 prev_sentinel_path() { printf '/tmp/pre-pr-gate-prev-%s' "$(_repo_key "${1:-$PWD}")"; }
 # $2 (cwd) matters in hook mode: the live sentinel there is keyed off the JSON event's `.cwd`, not this
 # script's own $PWD (dir #61 discipline) — defaulting to $PWD only serves the CLI subcommands, where
-# $PWD IS the repo by construction.
+# $PWD IS the repo by construction. A same-filesystem rename (both paths are /tmp) does the backup-then-
+# clear in one process instead of a copy plus a separate unlink.
 retire_sentinel() {
   local sentinel="$1" cwd="${2:-$PWD}"
-  [ -f "$sentinel" ] && cp -f "$sentinel" "$(prev_sentinel_path "$cwd")" 2>/dev/null
+  [ -f "$sentinel" ] && mv -f "$sentinel" "$(prev_sentinel_path "$cwd")" 2>/dev/null
   rm -f "$sentinel"
+}
+# dir #72: shared by `receipt --recover` and the ordinary `receipt <step-id>` path (both need "is there
+# an active receipt, and what's its nonce" before doing anything else) — sets $sentinel/$nonce in the
+# CALLER's shell (this runs inline, not in a `$(...)` subshell, so `exit 1` here ends the whole script
+# exactly like the two call sites' own inline checks used to).
+require_active_receipt() {
+  sentinel="$(sentinel_path)"
+  if [ ! -f "$sentinel" ]; then
+    printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
+    exit 1
+  fi
+  nonce="$(awk -F'\t' 'NR==1 && $1=="nonce"{print $2}' "$sentinel")"
+  if [ -z "$nonce" ]; then
+    printf 'pre-pr-gate: receipt file has no nonce header — run "pre-pr-gate.sh init" first\n' >&2
+    exit 1
+  fi
 }
 # dir #64 tier 1: the last-seen model/harness version per repo, keyed the same way — a fresh file, so
 # `init`'s nonce reset (the sentinel's job) never touches it, same rationale as the trace/hand-off files.
@@ -336,10 +353,10 @@ case "${1:-}" in
     ;;
   init)
     sentinel="$(sentinel_path)"
-    # dir #72: back up whatever this overwrite is about to discard — see retire_sentinel's own comment
-    # above — before minting the fresh nonce, so a re-`init` after a review-fix commit still leaves the
-    # PRIOR run's completed steps reachable via `receipt --recover`.
-    [ -f "$sentinel" ] && cp -f "$sentinel" "$(prev_sentinel_path)" 2>/dev/null
+    # dir #72: back up whatever this overwrite is about to discard (via the same retire_sentinel every
+    # deny/pass path uses below), before minting the fresh nonce — so a re-`init` after a review-fix
+    # commit still leaves the PRIOR run's completed steps reachable via `receipt --recover`.
+    retire_sentinel "$sentinel"
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
     printf 'nonce\t%s\n' "$nonce" > "$sentinel"
     printf 'pre-pr-gate: receipt started (nonce %s)\n' "$nonce"
@@ -353,16 +370,7 @@ case "${1:-}" in
       # AFTER this by the normal `receipt <step-id>` path and simply supersede the recovered line — the
       # gate's own completeness/sha/trace checks are untouched, so a recovered-but-now-stale value can
       # never itself unlock the gate.
-      sentinel="$(sentinel_path)"
-      if [ ! -f "$sentinel" ]; then
-        printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
-        exit 1
-      fi
-      nonce="$(awk -F'\t' 'NR==1 && $1=="nonce"{print $2}' "$sentinel")"
-      if [ -z "$nonce" ]; then
-        printf 'pre-pr-gate: receipt file has no nonce header — run "pre-pr-gate.sh init" first\n' >&2
-        exit 1
-      fi
+      require_active_receipt
       prev="$(prev_sentinel_path)"
       if [ ! -f "$prev" ]; then
         printf 'pre-pr-gate: nothing to recover — no receipt was retired since the last init\n' >&2
@@ -391,16 +399,7 @@ case "${1:-}" in
     fi
     step_id="${2:?pre-pr-gate: receipt <step-id> [outcome] — step id required}"
     outcome="${3:-done}"
-    sentinel="$(sentinel_path)"
-    if [ ! -f "$sentinel" ]; then
-      printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
-      exit 1
-    fi
-    nonce="$(awk -F'\t' 'NR==1 && $1=="nonce"{print $2}' "$sentinel")"
-    if [ -z "$nonce" ]; then
-      printf 'pre-pr-gate: receipt file has no nonce header — run "pre-pr-gate.sh init" first\n' >&2
-      exit 1
-    fi
+    require_active_receipt
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
     # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
     # hand-off note rather than let it linger past the question it recorded.
