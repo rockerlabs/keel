@@ -268,6 +268,39 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   skipped after exactly the edits it exists to cover.
 
 ### Fixed
+- **Static wording audit of the shipped command prose — seven literal-reading defects fixed** (dir #67,
+  the static counterpart to dir #66's dynamic rollout audit; scope: the always-on rails × the pipeline
+  commands, correctness only). The defect class is prose an older model resolved charitably and a
+  literal-reading one executes as written.
+  - **`tools/…` paths in `/polish`, `/wrap`, `/global-review`, `/keel-score` resolved nowhere for an
+    adopter.** The gate ships wired to the KEPT checkout by absolute path and is deliberately never
+    copied into the target repo — so `tools/pre-pr-gate.sh receipt …` "from the repo root", read
+    literally from any repo other than the Keel checkout, is a command-not-found on step 1. Each command
+    now says the paths are its checkout's and must be spelled `<keel-checkout>/tools/…`, while still
+    being *run from* the repo being polished/scored (both tools key their state off the cwd — the gate's
+    receipt, `keel-impact`'s `.keel/` marker — so calling from the wrong directory silently scores the
+    wrong project). `/global-review`'s `tools/doctor.sh --registry INSTANCE.md` was unresolvable at both
+    ends at once (tool in the checkout, registry in the knowledge base) and now spells out both.
+  - **`/wrap` step 8 instructed committing straight to the default branch, with the PR flow as a
+    trailing exception** — an inversion of CORE.md's mandatory git rail, in the one file most likely to
+    be read at the moment a session is about to push. The step now defers the branch choice to the rail
+    (feature branch → PR, always; direct-to-default only under a written carve-out) and its push-verify
+    compares against the branch actually pushed rather than always `origin/<default>`.
+  - **`/go`'s task-id lookup hard-coded one heading format** (`^### 34\.`), which the project's own
+    backlog has since outgrown (`### dir #34 —` and `### 34.` now sit in one file). A format miss is
+    indistinguishable from a missing ticket, so the not-found rule would stop a task that exists — felt
+    live while running this very audit. Matching is now by id across formats — loose on what decorates
+    the id, exact on the id itself; the in-flight branch scan got the same treatment (harnesses decorate
+    branch names, so `go-<n>-` missed `claude/go-issue-<n>-…`, while a bare substring match would have
+    fired that rule's hard STOP on the unrelated ticket `<n>0`).
+  - **`/backlog` didn't know the `⏳ IN FLIGHT` marker** that dir #40 taught `/go` to write, so a claimed
+    ticket rendered as an ordinary pickable Next-up — the display half of the double-pick guard was
+    missing. Added as its own status, ordered right after Active, carrying the claiming branch.
+  - **`/polish` step 2 invoked `/simplify` with no unavailability path** while step 5 mandates
+    attempt-don't-infer for `/code-review` — the dir #57/#63 lesson applied to one of the two skill
+    call-sites. Step 2 now attempts the call, degrades to a named inline pass, and receipts the
+    degradation (`inline:no-simplify-skill`) instead of a bare `done` that reads as a real run.
+  - **`/polish`'s preamble pointed "above" at receipt calls that are below it.**
 - **Pre-PR gate now catches `gh api repos/O/R/pulls -f head=…`, which opened a PR without ever using
   the `pr create` subcommand** (found 2026-07-26 while auditing the dir #57 rework). The command-position
   lexer added in dir #58 scans for `gh` → `pr` → `create` tokens, so an `api` call carrying the REST
