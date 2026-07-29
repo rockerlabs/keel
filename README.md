@@ -24,7 +24,7 @@ months-long horizon, and/or you're taking a private repo public. If that's you, 
 Four properties, independent of which model or tool you run — ordered from the most immediately
 felt to the reason the project exists:
 
-1. **Economy.** A thin, stable core (~2K tokens) instead of a context dump — the re-explanation
+1. **Economy.** A thin, stable core (~2.2K tokens) instead of a context dump — the re-explanation
    tax ("we branch off main… there's already a client in `net/`…") stops being paid every session.
 2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
    and the unchanged prefix is prime prompt-cache material.
@@ -119,7 +119,7 @@ Keel rests on three plain ideas:
 
 ```mermaid
 flowchart TD
-    subgraph always["Always loaded — every session (thin core ~2K tokens + your project file)"]
+    subgraph always["Always loaded — every session (thin core ~2.2K tokens + your project file)"]
         core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end

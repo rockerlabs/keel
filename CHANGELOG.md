@@ -278,7 +278,9 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   already-drifting figure out of tolerance, which is exactly what that guard is for. The
   `templates/CLAUDE.md` figure (~2,010 → ~2,210) and everything derived from it were refreshed in the
   same pass — the same +174 chars landed there too, leaving it 23 tokens inside its band, so the next
-  rails edit of any size would have red-lit CI on a figure this change had already made stale.
+  rails edit of any size would have red-lit CI on a figure this change had already made stale. `README.md`'s
+  own two `~2K` mentions of the same core (one of them separately guarded, down to 11 tokens of headroom)
+  went to `~2.2K` for the same reason.
 
 - **`/keel-score`'s `--fire` event now has an explicit two-test bar** (dir #24, anchored by the first
   A/B calibration run). A fire citation must name a counterfactual that is (1) *reachable* — a moment
