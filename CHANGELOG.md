@@ -289,9 +289,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   - **`/go`'s task-id lookup hard-coded one heading format** (`^### 34\.`), which the project's own
     backlog has since outgrown (`### dir #34 —` and `### 34.` now sit in one file). A format miss is
     indistinguishable from a missing ticket, so the not-found rule would stop a task that exists — felt
-    live while running this very audit. Matching is now by id, loosely, across formats; the in-flight
-    branch scan got the same treatment (harnesses decorate branch names, so `go-<n>-` missed
-    `claude/go-issue-<n>-…`).
+    live while running this very audit. Matching is now by id across formats — loose on what decorates
+    the id, exact on the id itself; the in-flight branch scan got the same treatment (harnesses decorate
+    branch names, so `go-<n>-` missed `claude/go-issue-<n>-…`, while a bare substring match would have
+    fired that rule's hard STOP on the unrelated ticket `<n>0`).
   - **`/backlog` didn't know the `⏳ IN FLIGHT` marker** that dir #40 taught `/go` to write, so a claimed
     ticket rendered as an ordinary pickable Next-up — the display half of the double-pick guard was
     missing. Added as its own status, ordered right after Active, carrying the claiming branch.
