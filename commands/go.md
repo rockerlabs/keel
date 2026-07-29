@@ -26,9 +26,11 @@ even from a worktree) → the inline open-work section of `<path>/CLAUDE.md`. Th
 
 **In-flight check (before picking, after resolving ticket N):** `git fetch --prune`, then scan
 `git branch -a` for a live branch already working this ticket — any name carrying `go` and the ticket id
-first, matched loosely (harnesses prefix and decorate their own branch names, so
-`claude/go-issue-34-ab12cd` is the same claim as `go-34-foo`), then a keyword grep of branch names
-against the ticket title. A match means another session is already on it (in progress, not closed — the
+first. Match the *decoration* loosely and the *id* exactly, the same way as the heading above: harnesses
+prefix and suffix their own branch names, so `claude/go-issue-34-ab12cd` is the same claim as
+`go-34-foo`, but `go-issue-340-…` is a different ticket and must not count — a substring hit fires the
+hard STOP below on a ticket nobody has claimed. Then a keyword grep of branch names against the ticket
+title. A match means another session is already on it (in progress, not closed — the
 "closed in a parallel session" rail above doesn't cover this case).
 **STOP: report "in flight on `<branch>`"** and do not re-pick; offer to continue that branch or pick a
 different ticket instead. This is advisory, not a lock — two sessions starting in the same minute can
