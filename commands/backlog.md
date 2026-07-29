@@ -26,13 +26,15 @@ found → say "no backlog found" and stop.
 |---|---|
 | `Active` / `Next up` / `OPEN = one step` | **Active** |
 | `DONE` / `✅` (in the open section, not the recently-closed buffer) | skip |
+| `⏳ IN FLIGHT` (a session already claimed it — don't offer it as pickable) | **In flight** |
 | `Gate:` / `gated` (condition not yet met) | **Parked** |
 | `parked` / `deferred` / `low priority` | **Parked** |
 | `blocked` / `waiting on <external>` | **Blocked** |
 | no marker | **Next-up** |
 
-Order rows **Active → Next-up → Parked → Blocked** within each section. For a `Gate:` item, append the gate
-to the gist.
+Order rows **Active → In flight → Next-up → Parked → Blocked** within each section. For a `Gate:` item,
+append the gate to the gist; for an **In flight** item, append the claiming branch the marker names —
+the point of showing it is that the next `/go` doesn't pick it twice.
 
 **4. Multi-section backlogs:** when the source uses `##` section headers, add a **Section** column and group
 rows under their section; order sections by actionability (most Active/Next-up first), items within a

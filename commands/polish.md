@@ -14,12 +14,18 @@ for this repo, it also blocks `gh pr create` until this command has run cleanly 
 Project context (test command, NFRs, conventions) lives in the project's `CLAUDE.md` — re-read only what you
 need, not a full onboarding.
 
+**Where `tools/…` lives:** in your **Keel checkout**, not in the repo you are polishing — nothing is
+copied into it (the hooks point at the checkout by absolute path, on purpose). So whenever the session's
+cwd is another project, spell the calls below `<keel-checkout>/tools/pre-pr-gate.sh …`, and run them
+**from the repo being polished** — the gate keys its receipt off the cwd, so the directory you call from
+is what identifies the run, and the script's own location is irrelevant to it.
+
 Each step below ends with a **receipt**: run `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the
 repo root (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>` instead —
 the skip is itself an executed decision, so the id is still written). This is a completeness record, not
 proof of work: `pre-pr-gate.sh` denies `gh pr create` unless every step id below is present for the current
 run (dir #49). Never skip a receipt write even on a step that "obviously" ran. **If any receipt/log call
-above triggers an unexpected permission prompt** (the harness's auto-mode classifier flagging a plain `Bash`
+in the steps below triggers an unexpected permission prompt** (the harness's auto-mode classifier flagging a plain `Bash`
 call it shouldn't), note it once per run with `tools/pre-pr-gate.sh log receipt-friction classifier` — this
 is friction data for the pilot's own keep/drop review, not a step to repeat per-occurrence.
 
@@ -34,7 +40,13 @@ Steps, in order:
 
 2. **Simplify.** Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify`.
+   **Establish availability by *attempting* the call, never by inferring it from the skill listing** —
+   same rule as step 5, and the same reason: a skill can be installed and still refuse model invocation.
+   If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff yourself, say what you
+   tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
+   `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
+   Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
+   inline:no-simplify-skill`).
 
 3. **Tests — run them by default.** Take the test command from the project's `CLAUDE.md` and run it. Show the
    real output (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains

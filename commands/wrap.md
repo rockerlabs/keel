@@ -21,7 +21,10 @@ as "waiting on PR". **Sync installed artifacts:** if a landed merge changed file
 from this repo into your environment (e.g. lifecycle commands copied into your agent's command dir), re-run
 the install/sync step so the installed copies aren't left running the old version. **Prune merged branches
 (graded, never a blanket delete):** merged local branches and their worktrees pile up at wrap (CORE.md: merge
-→ delete the branch). Run `tools/branch-cleanup.sh` (zero-dep, reuses the fetch above) — it grades each local
+→ delete the branch). Run `tools/branch-cleanup.sh` — as with every `tools/…` path in this file, that is your **Keel
+checkout's** copy, not one inside the project (nothing is copied in), so spell it
+`<keel-checkout>/tools/branch-cleanup.sh` when the session's cwd is elsewhere. Zero-dep, it reuses the
+fetch above and grades each local
 branch by how safe deletion provably is: **AUTO** (merged + older than `--days` + ephemeral name — a free
 branch is a redundant pointer, and a worktree that is provably *dead* (clean of tracked/untracked work and
 holding no valued gitignored content) is removed along with it; deletion is lossless), **ASK** (merged but
@@ -52,7 +55,7 @@ prominently rather than closing silently.
 **3. Memory** — only reusable invariants not present in code/git. One file = one topic; update the existing
 file, don't spawn duplicates; the index carries a one-line hook, not a copy of the content.
 
-**4. Footprint & drift-guard** — estimate `CLAUDE.md` size (or run `tools/doctor.sh <project>`); if it
+**4. Footprint & drift-guard** — estimate `CLAUDE.md` size (or run your checkout's `tools/doctor.sh <project>`); if it
 outgrew ~8–10K tokens, propose moving the on-demand tier out (the **demote** signal). Mirror half — the
 **promote** signal: did the session hit a *retrieval miss* (had to hunt for a fact that should have been
 always-loaded, or drowned in noise)? If so, lift that fact into the right tier. When placing always-loaded
@@ -76,7 +79,10 @@ judgment: run it if the session leaned on Keel in a citable way, skip silently o
 **8. Persist** — stage the **explicit paths** this session changed (never `git add -A` in a shared
 knowledge-base repo — it sweeps a sibling's in-flight work under your commit), re-run `git status` /
 `git diff --staged` and confirm the staged set matches your commit message, then commit. The `secret-guard`
-hook scans automatically on commit/push, so there's no manual scan step. Push, then **verify the push
-landed** — `git push` returned 0 AND `git rev-parse HEAD` equals `git rev-parse origin/<default>` — if not,
-the backup did NOT land (offline / auth / rejected): STOP and report it, don't claim it's backed up. For a
-project that uses PRs, follow the feature-branch → PR flow instead of committing to the default branch.
+hook scans automatically on commit/push, so there's no manual scan step. **Which branch is not this step's
+call — CORE.md's git rail decides:** feature branch → push → PR, in every project, at every change size.
+Committing straight to the default branch is only for a repo carrying an explicit, written carve-out (the
+solo knowledge-base case → `FRAMEWORK.md`); absent one, use the PR flow — "it's only a wrap commit" is not
+a carve-out. Then **verify the push landed** — `git push` returned 0 AND `git rev-parse HEAD` equals
+`git rev-parse origin/<the branch you pushed>` — if not, the backup did NOT land (offline / auth /
+rejected): STOP and report it, don't claim it's backed up.
