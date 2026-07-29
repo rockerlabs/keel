@@ -810,4 +810,19 @@ ilog="$d/.keel/impact-events.log"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "an agent-confirmed pass within the window → exit 0 (breaks the self-reported streak)" 0 "$STATUS"
 
+# 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
+# adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
+# be misread as "verified" just because it isn't literally "self-reported" — an early draft of the
+# `!= "self-reported"` streak check (found in this same review pass) treated a blank field as
+# verified, silently breaking sweep for exactly the legacy-log case it's supposed to keep catching.
+d="$(mkrepo)"; mkdir -p "$d/.keel"
+ilog="$d/.keel/impact-events.log"
+{
+  printf '2026-07-29T00:00:00Z\treceipt-pass\tpre-pr-gate\treview: medium\n'
+  printf '2026-07-29T00:01:00Z\treceipt-pass\tpre-pr-gate\treview: medium\n'
+  printf '2026-07-29T00:02:00Z\treceipt-pass\tpre-pr-gate\treview: medium\n'
+} > "$ilog"
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
+check_status "3 consecutive pre-dir-64 rows (no 5th field) → still warns, not misread as verified" 1 "$STATUS"
+
 summary

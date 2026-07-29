@@ -172,23 +172,41 @@
 # gate's PASS branch (below) matches `$review_outcome` against it VERBATIM, so `polish.5-review`'s outcome
 # must be written as the same literal string (`agent:<level>`), not just the bare level.
 #
-# **Residual limit (write this into any doc referencing the mechanism, same discipline as dir #63):** the
-# marker lives in the subagent's OWN model-authored response — a materially higher bar than a bare
-# self-report (it requires a real, separate-context `SubagentStop` event to fire for the claimed
+# **Residual limits (write these into any doc referencing the mechanism, same discipline as dir #63):**
+# (1) the marker lives in the subagent's OWN model-authored response — a materially higher bar than a
+# bare self-report (it requires a real, separate-context `SubagentStop` event to fire for the claimed
 # agent_type), but not literally unfakeable: a trivial, no-op subagent call that merely echoes the marker
 # line would still satisfy this leg. The depth-consistency check (dir #63's cross-check against
 # `polish.4-depth`'s own recorded level, unchanged and reused as-is below) is the compensating control —
 # it doesn't inspect the review's substance, but a fabricated marker still can't claim a DIFFERENT level
 # than what step 4 sized, narrowing the fabrication to "ran a real subagent and lied about doing the work,
 # at the correct level" rather than "claimed anything at all."
+# (2) the match itself is looser than the Skill/UserPromptExpansion legs': those require a SPECIFIC
+# structured field (`tool_input.skill == "code-review"`), so only an actual code-review invocation can
+# leave a trace. This leg matches on `agent_type == "general-purpose"` — the platform's default/catch-all
+# subagent type, used for arbitrary unrelated work in the SAME gated session, not only /polish's own
+# spawn — plus a free-text regex over that subagent's prose. ANY general-purpose subagent whose final
+# message happens to contain a line matching the marker exactly (an unrelated subagent asked to quote or
+# explain this very mechanism, say) writes a trace line for the CURRENT commit, even though it reviewed
+# nothing. Found in the operator-run /code-review high pass on this ticket. Not a new SECURITY hole (a
+# dishonest model already has Bash and could write the trace file directly, the same residual (1)
+# describes) — but it IS a real ACCIDENTAL-collision surface an honest session could hit by coincidence.
+# No structural fix exists today (no more-restricted, adopter-available subagent type ties an event back
+# to /polish's own spawn specifically) — named here so it isn't silently assumed away.
 #
 # `sweep` (dir #64 tier 2b, below) counts an `agent:`-confirmed pass the same as a `trace-confirmed` one —
 # both are independently-verifiable reviews, the pre-#63 blind spot `sweep` exists to catch is
-# self-reported-only runs, and this leg is not one of those.
+# self-reported-only runs, and this leg is not one of those. Its streak check tests `!= "self-reported"`
+# rather than enumerating each verified tag by name, so this leg didn't need to touch that logic at all.
 
 set -u
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
+
+# The hook's OWN observation of HEAD at fire time — never a self-reported field — shared by both
+# skill-trace legs (the SubagentStop leg and the Skill/UserPromptExpansion legs below) so the same
+# trust-boundary comment and the same one-liner aren't typed out twice in one case block.
+_head_sha() { git -C "${1:-.}" rev-parse HEAD 2>/dev/null; }
 
 # The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
 # resolve_impact_log() below (one file, two pre-dir-#61 and dir-#61 call sites) share the fragment
@@ -358,9 +376,7 @@ case "${1:-}" in
       sa_level="$(printf '%s' "$st_msg" | grep -Eo '^KEEL-AGENT-REVIEW: level=(low|medium|high|max)$' | tail -n1)"
       sa_level="${sa_level#KEEL-AGENT-REVIEW: level=}"
       [ -n "$sa_level" ] || exit 0
-      # The sha is this hook's OWN observation, never the subagent's self-report — same trust boundary
-      # as `st_sha` below.
-      sa_sha="$(git -C "$st_cwd" rev-parse HEAD 2>/dev/null)"
+      sa_sha="$(_head_sha "$st_cwd")"
       [ -n "$sa_sha" ] || exit 0
       printf '%s\tagent:%s\n' "$sa_sha" "$sa_level" >> "$(trace_path_for "$st_cwd")"
       exit 0
@@ -375,7 +391,7 @@ case "${1:-}" in
       code-review|*:code-review|/code-review) ;;
       *) exit 0 ;;
     esac
-    st_sha=$(git -C "$st_cwd" rev-parse HEAD 2>/dev/null)
+    st_sha=$(_head_sha "$st_cwd")
     [ -n "$st_sha" ] || exit 0
     printf '%s\t%s\n' "$st_sha" "$st_level" >> "$(trace_path_for "$st_cwd")"
     exit 0
@@ -448,10 +464,17 @@ case "${1:-}" in
       END {
         streak = 0
         for (i = n; i >= 1; i--) {
-          # dir #70: an "agent-confirmed" pass (the independent-subagent review leg) breaks the streak
-          # the same way "trace-confirmed" does — both are independently-verifiable reviews, not the
-          # self-reported-only runs this sweep exists to catch.
-          if (rows[i] == "trace-confirmed" || rows[i] == "agent-confirmed") break
+          # Any NON-EMPTY tag other than "self-reported" breaks the streak — testing the real
+          # distinction (independently verifiable vs self-reported) rather than enumerating each
+          # verified tag by name, so a future third verified tag (dir #70 added "agent-confirmed"
+          # alongside "trace-confirmed" without needing to touch this line) is covered automatically
+          # instead of silently reading as an unbroken self-reported-only streak until someone
+          # remembers to list it here too. The empty-string exclusion matters on its own: $5 (prov_tag)
+          # is a dir #64 addition — a `receipt-pass` row logged by a pre-dir-64 gate (real for any repo
+          # that adopted the gate between dir #49 and dir #64) has no 5th field at all, and treating a
+          # blank as "verified" would misclassify exactly the self-reported-only history this sweep
+          # exists to catch (found in the operator-run /code-review high pass on this ticket).
+          if (rows[i] != "" && rows[i] != "self-reported") break
           streak++
         }
         if (streak >= k) { print "WARN"; exit }

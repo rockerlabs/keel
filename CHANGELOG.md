@@ -43,10 +43,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   tier 2b) now treats an `agent-confirmed` pass the same as `trace-confirmed` when judging a
   self-reported-only streak. A pre-check confirmed the docs' `skillOverrides` setting only controls skill
   *visibility* (on/name-only/user-invocable-only/off) — it cannot re-enable model invocation of a skill
-  whose frontmatter sets `disable-model-invocation: true`, so no simpler fix existed. 24 new fixtures in
-  `tests/test_pre_pr_gate.sh` (trace parsing, marker validation, the multi-line-newline regression, the
-  full PASS/deny matrix, the sweep classification) plus `tests/test_install_pre_pr_gate.sh` coverage for
-  the fifth hook.
+  whose frontmatter sets `disable-model-invocation: true`, so no simpler fix existed. New fixtures cover
+  trace parsing, marker validation, the multi-line-newline regression, the full PASS/deny matrix, and the
+  `sweep` classification (including a legacy-log regression: a pre-dir-64 `receipt-pass` row with no
+  5th field at all must still count toward `sweep`'s self-reported streak, not read as verified just
+  because it isn't literally `self-reported` — a real defect an adversarial review caught in an earlier
+  draft of the streak check above) in `tests/test_pre_pr_gate.sh`, plus `tests/test_install_pre_pr_gate.sh`
+  coverage for the fifth hook.
 - **The `/polish` pre-PR gate pipeline ships to adopters, not just the maintainer** (dir #68 — the audit
   behind it found this cluster the tree's only violator of the adopter/self-maintenance dichotomy).
   `commands/polish.md` now installs unconditionally (`install.sh` dropped it from its skip list); its
