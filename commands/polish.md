@@ -37,12 +37,14 @@ Steps, in order:
    gate untouched (no receipt — nothing to unlock yet).
 
    Otherwise, start this run's receipt: `tools/pre-pr-gate.sh init` (mints a fresh nonce, discarding any
-   earlier run's leftover receipt). Then `tools/pre-pr-gate.sh receipt polish.1-diff`.
+   earlier run's leftover receipt — recoverable via `receipt --recover` if this is a review-fix-commit
+   round re-invoked on the same diff, see step 5's convergence rule). Then `tools/pre-pr-gate.sh receipt
+   polish.1-diff`.
 
 2. **Simplify.** Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
-   **Establish availability by *attempting* the call, never by inferring it from the skill listing** —
-   same rule as step 5, and the same reason: a skill can be installed and still refuse model invocation.
+   **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
+   skill can be installed and still refuse model invocation, and only the attempt returns the reason.
    If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff yourself, say what you
    tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
@@ -97,10 +99,17 @@ Steps, in order:
    `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
    the evidence for it; the measurement is what makes a questionable call visible afterwards.
 
-5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
-   `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings.
-   **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
-   skill can be installed and still refuse model invocation, and only the attempt returns the reason.
+5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. `ultra` you
+   cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
+   alternative attempted. For `low|medium|high|max`, do NOT attempt `Skill(code-review)`: the built-in
+   `/code-review` is not model-invokable in-session — a documented harness policy
+   (`disable-model-invocation`, verified 2026-07-29 against the Claude Code docs) — so the automated path
+   IS branch (a) directly, no attempt first. **Revisit trigger:** if a session ever observes the harness
+   accepting a model invocation of `/code-review` (a docs/policy change, or the `skillOverrides` mechanism
+   becoming applicable), restore attempt-first — the gate's Skill/UserPromptExpansion trace legs and the
+   bare-`<level>` receipt outcome already cover a genuine in-session run natively, so nothing else needs
+   rebuilding. Either way, do not substitute `/review` (a GitHub-PR command, not a working-diff review) and
+   do not guess.
 
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
    directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
@@ -114,14 +123,10 @@ Steps, in order:
    stays self-reported. The trace only makes "claims a review ran when it didn't" checkable, not either
    reviewer's own thoroughness.
 
-   `ultra` you cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no
-   automated alternative attempted. For `low|medium|high|max`, `/code-review` being unavailable to you —
-   missing from the skill list, or refusing with `disable-model-invocation` — no longer means falling
-   straight to the human: it means (a) below. Either way, do not substitute `/review` (a GitHub-PR
-   command, not a working-diff review) and do not guess.
-   - **(a) Unavailable case: an independent subagent reviews instead of you.** `/code-review` refusing
-     in-session doesn't mean no real review can happen — it means a DIFFERENT, independent reviewer has
-     to run it. Spawn ONE fresh-context Agent-tool subagent, `subagent_type: "general-purpose"`. Its
+   - **(a) Go straight here for `low|medium|high|max` — an independent subagent reviews instead of you.**
+     `/code-review` is not model-invokable in-session (the standing fact above, not a per-run refusal) — a
+     DIFFERENT, independent reviewer has to run it. Spawn ONE fresh-context Agent-tool subagent,
+     `subagent_type: "general-purpose"`. Its
      prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
      mandate, and an explicit **read-only instruction** — review only, no file edits, no live-environment
      reproduction (a prior incident: a full-Bash review subagent once overwrote real machine files while
@@ -149,8 +154,8 @@ Steps, in order:
      `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same outcome, written again) —
      idempotent, and its side effect is what clears the hand-off note; skipping this re-write leaves a
      stale hand-off note on disk that can force a spurious re-ask on a later re-invocation of this same
-     commit. **On "run `/code-review <level>`": that command is the OPERATOR's to run, not yours — you
-     already tried and were refused.** Wait for them to run it (or report their findings), then resolve
+     commit. **On "run `/code-review <level>`": that command is the OPERATOR's to run, not yours — it is
+     not model-invokable in-session.** Wait for them to run it (or report their findings), then resolve
      what it reported and overwrite the receipt: `polish.5-review <level>-operator-run` (whichever receipt
      is written LAST for this step wins — see (c)).
      **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses (establish this
@@ -196,9 +201,22 @@ Steps, in order:
      own last-resort inline self-review — never just the depth. "review: medium" reads identically to a
      genuine in-session pass, which is how any substitution stays invisible.
 
-   **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
-   if `--fix`/the subagent's findings change files.** No infinite cycle.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `agent:medium`,
+   **This review is a single terminal pass over its own findings: it must NOT re-invoke `/simplify` or
+   loop back to step 4.** No infinite cycle. **A fix-commit moving HEAD afterward is expected, not a rule
+   violation** — the gate's SHA/trace checks (step 8) are keyed to whatever HEAD ends up being, so fold a
+   real finding's fix into the same commit where practical, then **converge, don't restart**: re-review
+   only the DELTA the fix introduced, not the full step-1 diff again, and stop as soon as a pass needs no
+   further changes; park a non-blocking note (a style nit, a "consider later") in the step 10 summary
+   instead of chasing it into another round. Because `init` mints a fresh nonce on every `/polish`
+   invocation, a fix-commit round still needs its receipts rewritten under the new nonce — but steps 1–4
+   and 7 didn't change, so right after this run's `init`, run `tools/pre-pr-gate.sh receipt --recover`
+   once to re-stamp whatever the immediately-prior run already receipted for those steps onto the fresh
+   nonce, then only re-run and receipt what actually changed: this step's delta re-review, step 6 (retest,
+   already conditional on step 5 changing files), and step 8 (the new HEAD SHA). `--recover` restores only
+   the single most-recently-retired receipt — not a history — so recover right after the `init` that
+   follows the fix commit, before anything else invalidates it again.
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
+   automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't

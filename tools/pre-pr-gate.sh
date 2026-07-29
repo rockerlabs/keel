@@ -27,6 +27,9 @@
 # CLI subcommands (used by commands/polish.md, so a step never needs a raw `echo >>`):
 #   pre-pr-gate.sh init                    mint a fresh nonce, start a new receipt (run from repo root)
 #   pre-pr-gate.sh receipt <step-id> [outcome]   append a receipt line for the current run (outcome default: done)
+#   pre-pr-gate.sh receipt --recover       re-stamp the immediately-prior (retired) run's step receipts
+#                                           onto the current nonce — dir #72, the review-fix-commit
+#                                           convergence shortcut (see commands/polish.md step 5)
 #   pre-pr-gate.sh log <type> [detail]     append a line to the impact log (same resolution as the guard event)
 #   pre-pr-gate.sh handoff <level> <sha>   record step 5(b)'s stop so a re-invocation doesn't re-ask (dir #63)
 #   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
@@ -198,6 +201,30 @@
 # both are independently-verifiable reviews, the pre-#63 blind spot `sweep` exists to catch is
 # self-reported-only runs, and this leg is not one of those. Its streak check tests `!= "self-reported"`
 # rather than enumerating each verified tag by name, so this leg didn't need to touch that logic at all.
+#
+# --- dir #72: the review gate has no convergence rule for a review-fix commit -----------------------
+# Felt three times in one run (dir #69/PR #145): a real step-5 finding gets fixed and committed, which
+# moves HEAD — but dir #70's SubagentStop trace and dir #63's SHA check are both keyed to HEAD at fire
+# time, so the run that was just receipted no longer satisfies the gate, and `init` (run again at step 1
+# of the next /polish invocation) mints a fresh nonce that discards ALL eight step receipts, not just the
+# one (step 5) that actually needs redoing. Two ADDITIONAL fixes, both small and additive — nothing above
+# this section changes:
+#   (a) commands/polish.md step 5 now states the convergence rule in prose: fold a review fix into the
+#       same commit where practical, then re-review the DELTA only and stop once a pass needs no further
+#       changes — a fix-commit moving HEAD is expected, not a "loop back to step 4" violation.
+#   (b) `receipt --recover` (this file) makes re-receipting the UNCHANGED steps (1-4, 7) after that
+#       commit cost one command instead of eight manual `receipt <step-id> <outcome>` calls. It reads
+#       from a single-slot backup (`prev_sentinel_path()`) that `retire_sentinel()` now writes at every
+#       point that used to just `rm -f`/overwrite the live sentinel (every gate-deny branch, the PASS
+#       branch's own post-unlock cleanup, and `init`'s overwrite) — so whichever run was just retired,
+#       for whatever reason, is the one `--recover` restores. Only one slot: this is a convenience for the
+#       common one-fix-commit case, not a receipt history, and it recovers unconditionally (no step-id
+#       filtering) — safe because any step that genuinely changed (5, 6, 8) gets a fresh `receipt` call
+#       written AFTER the recovery, which simply supersedes the recovered line the same way a real re-run
+#       already would (last write for a given step id wins, per the gate's own parse below). The gate's
+#       completeness/sha/trace checks are entirely unchanged: a recovered-but-stale step-8 sha or a
+#       recovered `polish.5-review` outcome that no longer has a matching trace still denies exactly as
+#       before — `--recover` only removes the busywork of re-typing what didn't change.
 
 set -u
 
@@ -251,6 +278,23 @@ sentinel_path()  { printf '/tmp/pre-pr-gate-%s' "$(_repo_key "$PWD")"; }
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
 trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
 handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
+# dir #72: a single-slot backup of whatever receipt was just invalidated — by `init` minting a fresh
+# nonce, or by the gate denying and discarding the sentinel. `retire_sentinel` (below) is the ONE place
+# that both writes this and clears the live sentinel, so every invalidation path (there are several —
+# MALFORMED/MISSING/REPLAY/sha-mismatch/review-depth-mismatch/review-trace-missing denies, the PASS
+# branch's own post-unlock cleanup, and `init`'s overwrite) leaves the same recoverable trail. Only the
+# MOST RECENT retirement is kept (a plain overwrite, not a history) — matches the felt shape (dir #69/PR
+# #145): one review-fix commit invalidates the run that was just denied or just completed, and that is
+# exactly what `receipt --recover` needs to restore.
+prev_sentinel_path() { printf '/tmp/pre-pr-gate-prev-%s' "$(_repo_key "${1:-$PWD}")"; }
+# $2 (cwd) matters in hook mode: the live sentinel there is keyed off the JSON event's `.cwd`, not this
+# script's own $PWD (dir #61 discipline) — defaulting to $PWD only serves the CLI subcommands, where
+# $PWD IS the repo by construction.
+retire_sentinel() {
+  local sentinel="$1" cwd="${2:-$PWD}"
+  [ -f "$sentinel" ] && cp -f "$sentinel" "$(prev_sentinel_path "$cwd")" 2>/dev/null
+  rm -f "$sentinel"
+}
 # dir #64 tier 1: the last-seen model/harness version per repo, keyed the same way — a fresh file, so
 # `init`'s nonce reset (the sentinel's job) never touches it, same rationale as the trace/hand-off files.
 rollout_state_path() { printf '/tmp/pre-pr-gate-rollout-%s' "$(_repo_key "${1:-$PWD}")"; }
@@ -292,12 +336,59 @@ case "${1:-}" in
     ;;
   init)
     sentinel="$(sentinel_path)"
+    # dir #72: back up whatever this overwrite is about to discard — see retire_sentinel's own comment
+    # above — before minting the fresh nonce, so a re-`init` after a review-fix commit still leaves the
+    # PRIOR run's completed steps reachable via `receipt --recover`.
+    [ -f "$sentinel" ] && cp -f "$sentinel" "$(prev_sentinel_path)" 2>/dev/null
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
     printf 'nonce\t%s\n' "$nonce" > "$sentinel"
     printf 'pre-pr-gate: receipt started (nonce %s)\n' "$nonce"
     exit 0
     ;;
   receipt)
+    if [ "${2:-}" = "--recover" ]; then
+      # dir #72: re-stamp whatever the immediately-prior (now-retired) run already receipted onto the
+      # CURRENT nonce, in one call — the convergence-round shortcut commands/polish.md step 5 documents.
+      # Steps that genuinely need fresh values (the re-review, a retest, the new HEAD sha) are written
+      # AFTER this by the normal `receipt <step-id>` path and simply supersede the recovered line — the
+      # gate's own completeness/sha/trace checks are untouched, so a recovered-but-now-stale value can
+      # never itself unlock the gate.
+      sentinel="$(sentinel_path)"
+      if [ ! -f "$sentinel" ]; then
+        printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
+        exit 1
+      fi
+      nonce="$(awk -F'\t' 'NR==1 && $1=="nonce"{print $2}' "$sentinel")"
+      if [ -z "$nonce" ]; then
+        printf 'pre-pr-gate: receipt file has no nonce header — run "pre-pr-gate.sh init" first\n' >&2
+        exit 1
+      fi
+      prev="$(prev_sentinel_path)"
+      if [ ! -f "$prev" ]; then
+        printf 'pre-pr-gate: nothing to recover — no receipt was retired since the last init\n' >&2
+        exit 1
+      fi
+      recovered="$(awk -F'\t' '
+        NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
+        NF>=3 && pnonce!="" && $1==pnonce {
+          if (!($2 in val)) order[++n]=$2
+          val[$2]=$3
+        }
+        END { for (i=1;i<=n;i++) print order[i] "\t" val[order[i]] }
+      ' "$prev")"
+      if [ -z "$recovered" ]; then
+        printf 'pre-pr-gate: prior receipt had no completed steps to recover\n' >&2
+        exit 1
+      fi
+      count=0
+      while IFS=$'\t' read -r r_step r_outcome; do
+        [ -n "$r_step" ] || continue
+        printf '%s\t%s\t%s\n' "$nonce" "$r_step" "$r_outcome" >> "$sentinel"
+        count=$((count + 1))
+      done <<< "$recovered"
+      printf 'pre-pr-gate: recovered %s step receipt(s) from the prior run onto nonce %s\n' "$count" "$nonce"
+      exit 0
+    fi
     step_id="${2:?pre-pr-gate: receipt <step-id> [outcome] — step id required}"
     outcome="${3:-done}"
     sentinel="$(sentinel_path)"
@@ -749,17 +840,17 @@ IFS=$'\x1f' read -r status detail review_outcome depth_outcome <<<"$result"
 
 case "$status" in
   MALFORMED)
-    rm -f "$sentinel"
+    retire_sentinel "$sentinel" "$cwd"
     log_event receipt-deny "malformed" "$cwd"
     deny "Pre-PR gate: receipt is malformed or empty (no nonce). Run /polish again."
     ;;
   MISSING)
-    rm -f "$sentinel"
+    retire_sentinel "$sentinel" "$cwd"
     log_event receipt-deny "$detail" "$cwd"
     deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail. Run /polish again."
     ;;
   REPLAY)
-    rm -f "$sentinel"
+    retire_sentinel "$sentinel" "$cwd"
     log_event receipt-replay-deny "$detail" "$cwd"
     deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
     ;;
@@ -771,7 +862,7 @@ case "$status" in
     [ -n "$head_branch" ] && target_ref="${head_branch##*:}"
     current_sha=$(git -C "$cwd" rev-parse "$target_ref" 2>/dev/null)
     if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
-      rm -f "$sentinel"
+      retire_sentinel "$sentinel" "$cwd"
       log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
@@ -804,7 +895,7 @@ case "$status" in
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
     if [ "$outcome_level" != "$depth_level" ]; then
-      rm -f "$sentinel"
+      retire_sentinel "$sentinel" "$cwd"
       log_event receipt-deny "review-depth-mismatch" "$cwd"
       deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
     fi
@@ -818,7 +909,7 @@ case "$status" in
       trace_path="/tmp/pre-pr-gate-trace-$wt"
       if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$review_outcome" \
           '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
-        rm -f "$sentinel"
+        retire_sentinel "$sentinel" "$cwd"
         log_event receipt-deny "review-trace-missing" "$cwd"
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
@@ -827,7 +918,7 @@ case "$status" in
     # cross-check uses) — visible at PR-creation time instead of only via transcript archaeology. The
     # logged detail carries BOTH, tab-joined ($4 = prov_label prose, $5 = prov_tag) — `sweep` reads $5,
     # never $4, so it never depends on the display wording.
-    rm -f "$sentinel"
+    retire_sentinel "$sentinel" "$cwd"
     log_event receipt-pass "$prov_label"$'\t'"$prov_tag" "$cwd"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"
     exit 0
@@ -835,5 +926,5 @@ case "$status" in
 esac
 
 # Fail-safe: any unrecognized status denies rather than silently allowing.
-rm -f "$sentinel"
+retire_sentinel "$sentinel" "$cwd"
 deny "Pre-PR gate: could not verify the receipt. Run /polish again."

@@ -94,6 +94,9 @@ ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.
 # caller inlining `basename "$1"` separately.
 repo_key_for() { basename "$1"; }
 sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
+# dir #72: the single-slot backup `retire_sentinel()`/`init` write on every sentinel invalidation —
+# `receipt --recover` reads it.
+prev_sentinel_for() { printf '/tmp/pre-pr-gate-prev-%s' "$(repo_key_for "$1")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
