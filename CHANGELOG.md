@@ -251,9 +251,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   actions its own written steps specify — publishing a work branch and opening its PR being the ordinary
   case — and reaches no further: not to actions the steps don't name, and never past the safety rails
   above (a merge, release, deletion, force-push among them), which need an explicit human decision
-  whoever wrote the step. That last clause is what makes the general form safe where a precedence *rank*
-  for command prose would not have been: command files are the most-edited layer, so a shipped or
-  hand-edited command must not be able to authorize a gated action merely by writing it into a step.
+  no matter who wrote the step. That last clause is what keeps the general form from becoming a blank
+  cheque where a precedence *rank* for command prose would have been one: command files are the
+  most-edited layer, so no command can reach a **gated** action by writing it into a step. It is a
+  deliberate widening in the other direction, and worth naming: the permission half now covers any
+  outward-facing-but-reversible action a flow's steps specify (the old text pre-authorized exactly
+  push-a-branch + open-a-PR), which is what the ticket's chosen option asked for — the rails trade a
+  narrower grant for one that doesn't need a new carve-out per command.
   Both halves are deliberately concrete after an earlier draft failed review in each direction: a purely
   abstract carve-back ("anything irreversible") left a session free to class an ordinary branch push as
   irreversible and stop to ask — reinstating the every-run friction dir #65 existed to remove — while a
@@ -271,7 +275,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   checked and fails on zero, since an empty glob (`commands/` renamed or nested) would otherwise assert
   nothing and still report green — a guard that silently stops guarding. `docs/loading-and-cost.md`'s
   `CORE.md` figure re-stated ~1,540 → ~1,720: the guarded ±10% band caught the added clause pushing an
-  already-drifting figure out of tolerance, which is exactly what that guard is for.
+  already-drifting figure out of tolerance, which is exactly what that guard is for. The
+  `templates/CLAUDE.md` figure (~2,010 → ~2,210) and everything derived from it were refreshed in the
+  same pass — the same +174 chars landed there too, leaving it 23 tokens inside its band, so the next
+  rails edit of any size would have red-lit CI on a figure this change had already made stale.
 
 - **`/keel-score`'s `--fire` event now has an explicit two-test bar** (dir #24, anchored by the first
   A/B calibration run). A fire citation must name a counterfactual that is (1) *reachable* — a moment

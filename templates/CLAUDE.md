@@ -116,7 +116,7 @@ failure is a missing *cause*, not a missing attempt.
   pre-authorizes the outward-facing actions its own written steps specify — publishing a work branch and
   opening its PR is the ordinary case. It reaches no further: not to actions the steps don't name, and
   never past the safety rails above (a merge, release, deletion, force-push among them), which need an
-  explicit human decision whoever wrote the step.
+  explicit human decision, no matter who wrote the step.
 
 ---
 
