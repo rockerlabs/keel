@@ -84,9 +84,11 @@ failure is a missing *cause*, not a missing attempt.
 - **Foundations — front-load** at project start (knowledge-base layout, memory approach, domain boundaries, stack, git
   workflow). Fix them explicitly with defaults right away, not mid-project.
 - Approval in one context does not carry to the next; confirm any irreversible/outward-facing action
-  (an ad-hoc push, merging a PR, release, deletion, force-push). Exception: when an invoked, documented
-  flow's own written steps instruct pushing a feature branch and opening its PR (e.g. `/polish`'s final
-  step), that instruction is pre-authorized by the invocation — the merge is not.
+  (an ad-hoc push, merging a PR, release, deletion, force-push). Exception: invoking a documented flow
+  pre-authorizes the outward-facing actions its own written steps specify — publishing a work branch and
+  opening its PR is the ordinary case. It reaches no further: not to actions the steps don't name, and
+  never past the safety rails above (a merge, release, deletion, force-push among them), which need an
+  explicit human decision whoever wrote the step.
 
 ---
 

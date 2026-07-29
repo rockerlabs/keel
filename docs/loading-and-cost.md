@@ -25,7 +25,7 @@ the table above.
 | File | When it loads | Why / what it influences | ~Tokens |
 |---|---|---|---|
 | `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~2,010** |
-| `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. (On a machine with no git projects, `install.sh --link --no-git` trims the code/git rails out of the imported core — a couple hundred tokens lighter, and the trim leaves an always-on breadcrumb so the rails come back before git ever enters the workflow.) | ~1,540 |
+| `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. (On a machine with no git projects, `install.sh --link --no-git` trims the code/git rails out of the imported core — a couple hundred tokens lighter, and the trim leaves an always-on breadcrumb so the rails come back before git ever enters the workflow.) | ~1,720 |
 | `<project>/CLAUDE.md` (from `templates/project-CLAUDE.md`) | when you work **in that project** | Project context: stack, architecture, conventions, roadmap. Shapes decisions inside the project. | ~270 *(as filled)* |
 | `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~8,000 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,100 |
@@ -40,7 +40,7 @@ the table above.
 
 The only thing you pay **every** session is the always-loaded core:
 
-- **Globally, any session:** ~2,010 tokens (~1,540 if you import `CORE.md` and keep the
+- **Globally, any session:** ~2,010 tokens (~1,720 if you import `CORE.md` and keep the
   map/preferences in your own file).
 - **Working inside a project:** + ~270 → **~2,280 tokens** at session start.
 

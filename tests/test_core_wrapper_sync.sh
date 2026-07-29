@@ -69,4 +69,31 @@ for probe in "<your preference>" "(TEMPLATE)" "Copy this to your harness"; do
   check_absent "CORE.md is placeholder-free: $probe" "$core_content" "$probe"
 done
 
+# The rails state rules generally; they never name one shipped command as the carrier of a rule. A
+# named exception ("e.g. `/polish`'s final step") is a specific enumeration inside a general clause —
+# it forces a new bolt-on for every future command/rail collision, and it ties the tool-independent
+# core to one harness's command set. Derived from commands/ so a new command is covered automatically.
+# Matched as a whole slash-command token, not a substring: a plain `*/go*` would also fire on an
+# ordinary branch-name example (`claude/go-69-…`), which names no command at all.
+# Case-insensitive, but the leading slash stays required: a bare word match would fire on ordinary
+# English ("a final polish pass"). Counted at the end — an empty glob would otherwise assert nothing
+# at all and still report green, i.e. the guard silently stops guarding if commands/ is ever renamed
+# or nested.
+cmds_checked=0
+for cmd in "$REPO_ROOT"/commands/*.md; do
+  [ -f "$cmd" ] || continue
+  cmds_checked=$((cmds_checked + 1))
+  name="$(basename "$cmd" .md)"
+  if grep -qEi "(^|[^[:alnum:]_/-])/${name}([^[:alnum:]_-]|\$)" "$core"; then
+    fail "CORE.md names no specific command: /$name" "the rails must carry the rule generally, unnamed"
+  else
+    pass "CORE.md names no specific command: /$name"
+  fi
+done
+if [ "$cmds_checked" -ge 1 ]; then
+  pass "the command-name guard actually ran ($cmds_checked command(s) checked)"
+else
+  fail "the command-name guard actually ran" "no commands/*.md matched — the guard asserted nothing"
+fi
+
 summary
