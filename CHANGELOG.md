@@ -241,6 +241,47 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   visible behaviour change. Doc-only; linked from the README docs index.
 
 ### Changed
+- **`CORE.md`'s confirm-actions exception is now general prose instead of a named `/polish` carve-out**
+  (dir #69, found by dir #67's wording audit). The Decisions bullet's exception read "when an invoked,
+  documented flow's own written steps instruct pushing a feature branch and opening its PR (e.g.
+  `/polish`'s final step)" — a specific enumeration bolted onto a general clause, which is the exact
+  construct dir #65 (the ticket that added it) was itself filed about: every future command/rail
+  collision would need its own bolt-on, and the tool-independent rails named one harness's command. It
+  now states the rule once, generally: invoking a documented flow pre-authorizes the outward-facing
+  actions its own written steps specify — publishing a work branch and opening its PR being the ordinary
+  case — and reaches no further: not to actions the steps don't name, and never past the safety rails
+  above (a merge, release, deletion, force-push among them), which need an explicit human decision
+  no matter who wrote the step. That last clause is what keeps the general form from becoming a blank
+  cheque where a precedence *rank* for command prose would have been one: command files are the
+  most-edited layer, so no command can reach a **gated** action by writing it into a step. It is a
+  deliberate widening in the other direction, and worth naming: the permission half now covers any
+  outward-facing-but-reversible action a flow's steps specify (the old text pre-authorized exactly
+  push-a-branch + open-a-PR), which is what the ticket's chosen option asked for — the rails trade a
+  narrower grant for one that doesn't need a new carve-out per command.
+  Both halves are deliberately concrete after an earlier draft failed review in each direction: a purely
+  abstract carve-back ("anything irreversible") left a session free to class an ordinary branch push as
+  irreversible and stop to ask — reinstating the every-run friction dir #65 existed to remove — while a
+  bare closed list would quietly pre-authorize every outward-facing action nobody thought to enumerate,
+  the same enumeration failure one level down. Naming the permitted shape, and the gated set as instances
+  ("among them") of the open category the Precedence section already carries, closes both. `/polish`
+  step 9's own standing-authorization line is unchanged and still resolves — from the rails alone now,
+  with no exception naming it. `templates/CLAUDE.md` re-synced (byte-pinned).
+  `tests/test_core_wrapper_sync.sh` gained a guard that keeps the rails general: for every file in
+  `commands/`, `CORE.md` must not name that command — derived from the directory, so a new command is
+  covered automatically and a re-bolted enumeration fails the suite instead of shipping. Matched as a
+  whole slash-command token rather than a substring, so an ordinary branch-name example (`claude/go-69-…`)
+  can't false-fire the `/go` case; the leading slash stays required for the mirror-image reason (a bare
+  word match would fire on ordinary English — "a final polish pass"). The loop also counts what it
+  checked and fails on zero, since an empty glob (`commands/` renamed or nested) would otherwise assert
+  nothing and still report green — a guard that silently stops guarding. `docs/loading-and-cost.md`'s
+  `CORE.md` figure re-stated ~1,540 → ~1,720: the guarded ±10% band caught the added clause pushing an
+  already-drifting figure out of tolerance, which is exactly what that guard is for. The
+  `templates/CLAUDE.md` figure (~2,010 → ~2,210) and everything derived from it were refreshed in the
+  same pass — the same +174 chars landed there too, leaving it 23 tokens inside its band, so the next
+  rails edit of any size would have red-lit CI on a figure this change had already made stale. `README.md`'s
+  own two `~2K` mentions of the same core (one of them separately guarded, down to 11 tokens of headroom)
+  went to `~2.2K` for the same reason.
+
 - **`/keel-score`'s `--fire` event now has an explicit two-test bar** (dir #24, anchored by the first
   A/B calibration run). A fire citation must name a counterfactual that is (1) *reachable* — a moment
   a cold session actually gets to; behavior behind a keel-only mechanism or past the cold endpoint is
