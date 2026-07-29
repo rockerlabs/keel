@@ -19,9 +19,10 @@ Startup (cheap + correct — do NOT re-onboard):
 Then:
 - **No argument → review/survey mode:** reconcile state (Projects table vs reality, the knowledge-base
   repo's git status, open meta items) and run `<keel-checkout>/tools/doctor.sh --registry
-  <knowledge-base-root>/INSTANCE.md` to audit every project in the registry and surface baseline drift.
-  **Spell both paths out** — the tool lives in your Keel checkout and the registry in your knowledge
-  base, and those are two different directories from whichever one this session started in. **Principles pass:** re-read the tensions in `PRINCIPLES.md` and confirm each still has an
+  <knowledge-base-root>/INSTANCE.md` to audit every project in the registry and surface baseline drift —
+  spell both paths out, since the tool lives in your Keel checkout and the registry in your knowledge
+  base, two directories that are neither of them the one this session started in.
+  **Principles pass:** re-read the tensions in `PRINCIPLES.md` and confirm each still has an
   enforcement that runs — surface any that drifted to "unenforced — risk" (the deeper, periodic arm of the
   principles revision ritual). **Convergence check:** answer the four convergence signals — advisory-warning
   trend, stuck backlog items, prune-tier health, review-over-review improvement (full writeup:

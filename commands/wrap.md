@@ -21,11 +21,11 @@ as "waiting on PR". **Sync installed artifacts:** if a landed merge changed file
 from this repo into your environment (e.g. lifecycle commands copied into your agent's command dir), re-run
 the install/sync step so the installed copies aren't left running the old version. **Prune merged branches
 (graded, never a blanket delete):** merged local branches and their worktrees pile up at wrap (CORE.md: merge
-→ delete the branch). Run `tools/branch-cleanup.sh` — as with every `tools/…` path in this file, that is your **Keel
-checkout's** copy, not one inside the project (nothing is copied in), so spell it
+→ delete the branch). Run `tools/branch-cleanup.sh` — like every `tools/…` path in this file, that is
+your **Keel checkout's** copy, never one inside the project (nothing is copied in), so spell it
 `<keel-checkout>/tools/branch-cleanup.sh` when the session's cwd is elsewhere. Zero-dep, it reuses the
-fetch above and grades each local
-branch by how safe deletion provably is: **AUTO** (merged + older than `--days` + ephemeral name — a free
+fetch above and grades each local branch by how safe deletion provably is: **AUTO** (merged + older than
+`--days` + ephemeral name — a free
 branch is a redundant pointer, and a worktree that is provably *dead* (clean of tracked/untracked work and
 holding no valued gitignored content) is removed along with it; deletion is lossless), **ASK** (merged but
 not provably safe — a recent/off-pattern free branch, or a clean worktree that's recent/off-pattern or holds
@@ -55,8 +55,9 @@ prominently rather than closing silently.
 **3. Memory** — only reusable invariants not present in code/git. One file = one topic; update the existing
 file, don't spawn duplicates; the index carries a one-line hook, not a copy of the content.
 
-**4. Footprint & drift-guard** — estimate `CLAUDE.md` size (or run your checkout's `tools/doctor.sh <project>`); if it
-outgrew ~8–10K tokens, propose moving the on-demand tier out (the **demote** signal). Mirror half — the
+**4. Footprint & drift-guard** — estimate `CLAUDE.md` size (or run your checkout's
+`tools/doctor.sh <project>`); if it outgrew ~8–10K tokens, propose moving the on-demand tier out (the
+**demote** signal). Mirror half — the
 **promote** signal: did the session hit a *retrieval miss* (had to hunt for a fact that should have been
 always-loaded, or drowned in noise)? If so, lift that fact into the right tier. When placing always-loaded
 content, prefer cache-stability over raw minimality (P3): keep churning/mutable content behind an on-demand

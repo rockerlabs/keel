@@ -21,13 +21,14 @@ cwd is another project, spell the calls below `<keel-checkout>/tools/pre-pr-gate
 is what identifies the run, and the script's own location is irrelevant to it.
 
 Each step below ends with a **receipt**: run `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the
-repo root (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>` instead —
-the skip is itself an executed decision, so the id is still written). This is a completeness record, not
+repo root (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>` instead,
+and a step that ran only in a degraded form says so the same way, `<how>:<reason>` — a skip and a
+degradation are both executed decisions, so the id is still written). This is a completeness record, not
 proof of work: `pre-pr-gate.sh` denies `gh pr create` unless every step id below is present for the current
 run (dir #49). Never skip a receipt write even on a step that "obviously" ran. **If any receipt/log call
-in the steps below triggers an unexpected permission prompt** (the harness's auto-mode classifier flagging a plain `Bash`
-call it shouldn't), note it once per run with `tools/pre-pr-gate.sh log receipt-friction classifier` — this
-is friction data for the pilot's own keep/drop review, not a step to repeat per-occurrence.
+in the steps below triggers an unexpected permission prompt** (the harness's auto-mode classifier
+flagging a plain `Bash` call it shouldn't), note it once per run with `tools/pre-pr-gate.sh log
+receipt-friction classifier` — this is friction data for the pilot's own keep/drop review, not a step to repeat per-occurrence.
 
 Steps, in order:
 

@@ -57,11 +57,11 @@ measure), not a fake 0. `conf` (none/low/med/high) comes from how many events ba
    result is `—` or a low score — let it be low.
 2. **List the silent rules.** Which always-loaded rules/facts did *not* earn their place this session? Count
    them for `--silent`, and name the top one in `--gap`. Note any `--miss` as a promote candidate too.
-3. **Append the row** — repeat a flag once per cited event; the tool counts, derives, and records. As
-   everywhere in these commands, `tools/…` is your **Keel checkout's** copy, so spell it
-   `<keel-checkout>/tools/keel-impact.sh` when the session's cwd is the project being scored — and it
-   should be: the `.keel/` marker and ledger are resolved from the cwd's repo, and a call made from the
-   wrong directory silently lands its row in Keel's own dogfooding ledger instead:
+3. **Append the row** — repeat a flag once per cited event; the tool counts, derives, and records.
+   `tools/…` is your **Keel checkout's** copy, so spell it `<keel-checkout>/tools/keel-impact.sh` when
+   the session's cwd is the project being scored — and it should be: the `.keel/` marker and ledger
+   resolve from the cwd's repo, so a call made from the wrong directory silently scores that repo
+   instead (or, if it carries no marker, appends to Keel's own dogfooding ledger):
 
    ```bash
    tools/keel-impact.sh add \
