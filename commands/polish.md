@@ -37,27 +37,50 @@ Steps, in order:
    gate untouched (no receipt — nothing to unlock yet).
 
    Otherwise, start this run's receipt: `tools/pre-pr-gate.sh init` (mints a fresh nonce, discarding any
-   earlier run's leftover receipt). Then `tools/pre-pr-gate.sh receipt polish.1-diff`.
+   earlier run's leftover receipt).
 
-2. **Simplify.** Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
+   **Convergence round?** If this invocation exists ONLY because step 5's own review found a real
+   finding, you fixed it, committed it, and re-invoked `/polish` on the same branch — the step-1 diff
+   above is the same one a prior run already diffed/simplified/tested/sized/self-checked, plus that one
+   fix commit — run `tools/pre-pr-gate.sh receipt --recover` right now, before step 2. On success (it
+   reports how many steps it restored), that call has already re-stamped steps 1–4 and 7's receipts onto
+   this run's fresh nonce: **treat steps 2, 3, 4, and 7 below as DONE — do not invoke them again, and do
+   not write fresh receipts for them.** A fresh write would silently overwrite the just-recovered one
+   (last write for a given step id wins, per the gate's own parser) — pointless for 1/2/3/7 (their
+   receipted outcome is just a completion marker) and actively wrong for `polish.4-depth`, whose sized
+   level step 5 will be cross-checked against: overwriting it with a stale pre-fix-commit sizing would
+   compare this round's real review against the wrong baseline. Skip straight to step 5 for the delta
+   re-review (and steps 6/8, which always need a fresh value regardless). If `--recover` instead reports
+   nothing to recover, this is NOT a convergence round (a fresh repo, or nothing was retired since the
+   last `init`) — proceed normally from here.
+
+   Not a convergence round (the ordinary case): `tools/pre-pr-gate.sh receipt polish.1-diff`, then
+   continue through every step below in order.
+
+2. **Simplify.** *Skip entirely if step 1's convergence branch just recovered this step's receipt.*
+   Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
-   **Establish availability by *attempting* the call, never by inferring it from the skill listing** —
-   same rule as step 5, and the same reason: a skill can be installed and still refuse model invocation.
+   **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
+   skill can be installed and still refuse model invocation, and only the attempt returns the reason.
    If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff yourself, say what you
    tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`).
 
-3. **Tests — run them by default.** Take the test command from the project's `CLAUDE.md` and run it. Show the
+3. **Tests — run them by default.** *Skip entirely if step 1's convergence branch just recovered this
+   step's receipt.* Take the test command from the project's `CLAUDE.md` and run it. Show the
    real output (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains
    `--no-test`, skip the run and say explicitly that tests were skipped by request (the human runs them before
    the PR).
    Receipt: `tools/pre-pr-gate.sh receipt polish.3-tests` (or `... polish.3-tests skipped:--no-test`).
 
-4. **Pick a review depth — matched to the diff, mostly automatic.** Gate this on the steps above being
-   clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly skipped).
-   Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
+4. **Pick a review depth — matched to the diff, mostly automatic.** *Skip entirely if step 1's convergence
+   branch just recovered this step's receipt* — reuse the recovered level as-is; do not re-size (the
+   recovered `polish.4-depth` is the baseline step 5's delta re-review gets cross-checked against, and a
+   fresh sizing pass here would silently replace it, per step 1). Otherwise, gate this on the steps above
+   being clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly
+   skipped). Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
 
    **First check `tools/pre-pr-gate.sh handoff-check` — a match means step 5 already stopped to ask
    about THIS exact commit on an earlier invocation.** Reuse its recorded level as-is rather than
@@ -97,10 +120,17 @@ Steps, in order:
    `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
    the evidence for it; the measurement is what makes a questionable call visible afterwards.
 
-5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. For
-   `low|medium|high|max`, invoke the `/code-review <level>` skill once and resolve any real findings.
-   **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
-   skill can be installed and still refuse model invocation, and only the attempt returns the reason.
+5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing. `ultra` you
+   cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
+   alternative attempted. For `low|medium|high|max`, do NOT attempt `Skill(code-review)`: the built-in
+   `/code-review` is not model-invokable in-session — a documented harness policy
+   (`disable-model-invocation`, verified 2026-07-29 against the Claude Code docs) — so the automated path
+   IS branch (a) directly, no attempt first. **Revisit trigger:** if a session ever observes the harness
+   accepting a model invocation of `/code-review` (a docs/policy change, or the `skillOverrides` mechanism
+   becoming applicable), restore attempt-first — the gate's Skill/UserPromptExpansion trace legs and the
+   bare-`<level>` receipt outcome already cover a genuine in-session run natively, so nothing else needs
+   rebuilding. Either way, do not substitute `/review` (a GitHub-PR command, not a working-diff review) and
+   do not guess.
 
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
    directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
@@ -114,14 +144,10 @@ Steps, in order:
    stays self-reported. The trace only makes "claims a review ran when it didn't" checkable, not either
    reviewer's own thoroughness.
 
-   `ultra` you cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no
-   automated alternative attempted. For `low|medium|high|max`, `/code-review` being unavailable to you —
-   missing from the skill list, or refusing with `disable-model-invocation` — no longer means falling
-   straight to the human: it means (a) below. Either way, do not substitute `/review` (a GitHub-PR
-   command, not a working-diff review) and do not guess.
-   - **(a) Unavailable case: an independent subagent reviews instead of you.** `/code-review` refusing
-     in-session doesn't mean no real review can happen — it means a DIFFERENT, independent reviewer has
-     to run it. Spawn ONE fresh-context Agent-tool subagent, `subagent_type: "general-purpose"`. Its
+   - **(a) Go straight here for `low|medium|high|max` — an independent subagent reviews instead of you.**
+     `/code-review` is not model-invokable in-session (the standing fact above, not a per-run refusal) — a
+     DIFFERENT, independent reviewer has to run it. Spawn ONE fresh-context Agent-tool subagent,
+     `subagent_type: "general-purpose"`. Its
      prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
      mandate, and an explicit **read-only instruction** — review only, no file edits, no live-environment
      reproduction (a prior incident: a full-Bash review subagent once overwrote real machine files while
@@ -149,8 +175,8 @@ Steps, in order:
      `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same outcome, written again) —
      idempotent, and its side effect is what clears the hand-off note; skipping this re-write leaves a
      stale hand-off note on disk that can force a spurious re-ask on a later re-invocation of this same
-     commit. **On "run `/code-review <level>`": that command is the OPERATOR's to run, not yours — you
-     already tried and were refused.** Wait for them to run it (or report their findings), then resolve
+     commit. **On "run `/code-review <level>`": that command is the OPERATOR's to run, not yours — it is
+     not model-invokable in-session.** Wait for them to run it (or report their findings), then resolve
      what it reported and overwrite the receipt: `polish.5-review <level>-operator-run` (whichever receipt
      is written LAST for this step wins — see (c)).
      **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses (establish this
@@ -196,9 +222,16 @@ Steps, in order:
      own last-resort inline self-review — never just the depth. "review: medium" reads identically to a
      genuine in-session pass, which is how any substitution stays invisible.
 
-   **This review is a single final pass: it must NOT re-invoke `/simplify` or loop back to step 4 — even
-   if `--fix`/the subagent's findings change files.** No infinite cycle.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `low`, `high`, `agent:medium`,
+   **This review is a single terminal pass over its own findings: it must NOT re-invoke `/simplify` or
+   loop back to step 4.** No infinite cycle. **A fix-commit moving HEAD afterward is expected, not a rule
+   violation** — the gate's SHA/trace checks (step 8) are keyed to whatever HEAD ends up being, so fold a
+   real finding's fix into the same commit where practical, then **converge, don't restart**: on the
+   re-invocation this produces, step 1's own convergence branch (`receipt --recover`) already skipped
+   steps 2–4/7 for you — arriving here, re-review only the DELTA the fix introduced, not the full step-1
+   diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
+   a "consider later") in the step 10 summary instead of chasing it into another round.
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
+   automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
@@ -210,9 +243,16 @@ Steps, in order:
    real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest` (or `... polish.6-retest skipped:no-file-changes`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
+   polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
+   as step 8, not a bare `done`: unlike every other step here, step 6 is never skipped by step 1's
+   convergence branch (its whole job is to catch a fix-commit breaking something), so the gate now
+   cross-checks it against current HEAD the same way it already does for step 8 — a bare `done` would
+   mean a recovered, pre-fix-commit retest could otherwise satisfy completeness without the fix-commit
+   ever having been re-tested.
 
-7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it —
+7. **Self-check, if this repo ships one.** *Skip entirely if step 1's convergence branch just recovered
+   this step's receipt.* If `tools/self/doctor.sh` exists at the repo root, run it —
    it's the repo's own structural self-audit (dead references, ship-skip-list sync, tool wiring, doc
    staleness — distinct from the test suite). A GAP (non-zero exit) is treated the same as a red test: do
    NOT write this step's receipt or the sentinel, report what it flagged, and stop.

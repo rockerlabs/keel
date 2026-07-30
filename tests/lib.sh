@@ -94,6 +94,9 @@ ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.
 # caller inlining `basename "$1"` separately.
 repo_key_for() { basename "$1"; }
 sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(repo_key_for "$1")"; }
+# dir #72: the single-slot backup `retire_sentinel()`/`init` write on every sentinel invalidation —
+# `receipt --recover` reads it.
+prev_sentinel_for() { printf '/tmp/pre-pr-gate-prev-%s' "$(repo_key_for "$1")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
@@ -119,7 +122,9 @@ write_full_receipt_review() {
       printf 'stale-nonce-from-a-previous-run\t%s\tdone\n' "$s" >> "$(sentinel_for "$d")"
       continue
     fi
-    if [ "$s" = "polish.8-unlock" ]; then
+    if [ "$s" = "polish.8-unlock" ] || [ "$s" = "polish.6-retest" ]; then
+      # dir #72 finding #1: polish.6-retest's outcome is now sha-checked the same way polish.8-unlock's
+      # is — a bare "done" would no longer pass the gate.
       run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
     elif [ "$s" = "polish.5-review" ]; then
       run_in "$d" bash "$gate" receipt "$s" "$review_outcome"

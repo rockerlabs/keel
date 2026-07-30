@@ -825,4 +825,126 @@ ilog="$d/.keel/impact-events.log"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "3 consecutive pre-dir-64 rows (no 5th field) → still warns, not misread as verified" 1 "$STATUS"
 
+# 52. `receipt --recover`: no active receipt at all → error, exit 1, points back at `init`.
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")" "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover with no active receipt → exit 1" 1 "$STATUS"
+check_contains "recover with no active receipt → tells the user to init first" "$OUT" "no active receipt"
+
+# 53. `receipt --recover`: an active receipt exists, but nothing was ever retired since → error, exit 1
+# (a fresh repo's very first /polish run has nothing to recover from — this is not itself a failure).
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover with nothing retired yet → exit 1" 1 "$STATUS"
+check_contains "recover with nothing retired yet → says so" "$OUT" "nothing to recover"
+
+# 54. `receipt --recover`: the felt dir #72 shape end-to-end — a completed run passes the gate (which
+# retires its receipt to the single-slot backup), a review-fix commit moves HEAD, and `receipt --recover`
+# restores the UNCHANGED steps (1-4, 7) in one call; only the steps that actually changed (5, 6, 8) need a
+# fresh `receipt` call, which supersedes the recovered line for that step id (last write wins).
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "setup: initial run → exit 0" 0 "$STATUS"
+check_absent "setup: initial run → allowed" "$OUT" "deny"
+check_file "a successful pass still leaves a recoverable backup (single-slot, not just on deny)" "$(prev_sentinel_for "$d")"
+git -C "$d" commit --allow-empty -qm "review fix"    # HEAD moves — the review-fix commit
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover after the fix-commit's own init → exit 0" 0 "$STATUS"
+check_contains "recover reports how many steps it restored" "$OUT" "recovered 8 step receipt(s)"
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_status "recover + only-the-changed-steps rewritten → exit 0" 0 "$STATUS"
+check_absent "recover + only-the-changed-steps rewritten → allowed" "$OUT" "deny"
+rm -f "$(prev_sentinel_for "$d")"
+
+# 55. `receipt --recover` alone is NOT enough to unlock the gate — a recovered-but-unrefreshed
+# `polish.8-unlock` still names the OLD commit's sha, so the gate's own sha check (unchanged by this
+# ticket) still denies it. Recover removes the busywork of re-typing what didn't change; it does not
+# weaken what the gate actually verifies.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "setup: initial run → exit 0" 0 "$STATUS"
+git -C "$d" commit --allow-empty -qm "review fix"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+gate "gh pr create --fill" "$d"
+check_contains "recovered-but-unrefreshed receipt (stale sha) → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the stale sha, not silently accepted" "$OUT" "sentinel is stale"
+rm -f "$(prev_sentinel_for "$d")"
+
+# 56. Gate DENY: dir #72 finding #1's fix — polish.6-retest is no longer a trust-me completion marker.
+# A bare "done" (the pre-fix default outcome, not a sha, not skipped:*) must now be denied.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:test-fixture"
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest
+run_in "$d" bash "$gate" receipt polish.7-selfcheck
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "polish.6-retest bare 'done' → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the retest receipt, not some other reason" "$OUT" "retest receipt"
+
+# 57. Gate DENY: after `receipt --recover`, if step 8 gets a fresh sha but step 6 is left recovered
+# (stale, pre-fix-commit) rather than re-written, the gate now catches THAT too — dir #72 finding #1.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "setup: initial run → exit 0" 0 "$STATUS"
+git -C "$d" commit --allow-empty -qm "review fix"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.6-retest — it still carries the prior commit's sha via recovery
+gate "gh pr create --fill" "$d"
+check_contains "recovered-but-unrefreshed polish.6-retest sha → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the retest receipt specifically" "$OUT" "retest receipt"
+rm -f "$(prev_sentinel_for "$d")"
+
+# 58. `receipt --recover` refuses a backup whose base-sha is NOT an ancestor of current HEAD — dir #72
+# finding #3: an unrelated retirement (simulated here via an orphan branch, standing in for a different
+# worktree/branch or a rebase since retirement) must not be silently trusted.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "setup: initial run → exit 0" 0 "$STATUS"
+git -C "$d" checkout -q --orphan unrelated
+git -C "$d" commit --allow-empty -qm "totally unrelated history"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover refuses a non-ancestor backup → exit 1" 1 "$STATUS"
+check_contains "refusal names the lineage mismatch" "$OUT" "not a verified ancestor"
+rm -f "$(prev_sentinel_for "$d")"
+
+# 59. `receipt --recover` distinguishes a MALFORMED prior receipt (bad/missing nonce header) from a
+# genuinely-empty one — dir #72 finding #5.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "setup: initial run → exit 0" 0 "$STATUS"
+git -C "$d" commit --allow-empty -qm "review fix"
+printf 'not-a-nonce-header\tgarbage\n' > "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover on a malformed prior receipt → exit 1" 1 "$STATUS"
+check_contains "malformed prior receipt → distinct message" "$OUT" "malformed"
+rm -f "$(prev_sentinel_for "$d")"
+
 summary
