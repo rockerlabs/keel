@@ -4,7 +4,24 @@
 #
 # Sourced, not executed — no shebang, no set -e (inherits the caller's).
 
+# shellcheck disable=SC2034  # a 40-char zero-sha constant for ci-scan.sh's fallback reassignment
+# (`before="$SECRET_GUARD_ZERO_SHA"`) — the only remaining reader now that secret_guard_is_zero_sha()
+# below has replaced every exact-string comparison; shellcheck's cross-file -x pass doesn't look
+# backward from that other file to see the use.
 SECRET_GUARD_ZERO_SHA="0000000000000000000000000000000000000000"
+
+# secret_guard_is_zero_sha SHA — true if SHA is git's all-zero "no commit" sentinel. Pattern-matched
+# rather than compared against SECRET_GUARD_ZERO_SHA's fixed 40-char literal, because git's zero sha is
+# as long as the repo's object-hash format: 40 chars under SHA-1 (the fleet default), 64 under SHA-256
+# (`git init --object-format=sha256`). An exact-length compare would miss a SHA-256 repo's all-zero
+# sentinel, fall through to the "existing ref" branch, and hand secret-scan.sh an unresolvable range.
+secret_guard_is_zero_sha() {
+  case "$1" in
+    '') return 1 ;;
+    *[!0]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
 
 # resolve_range_local BEFORE AFTER — for the LOCAL pre-push hook. When the hook runs, git has not
 # updated the remote-tracking refs for THIS push yet, so they still reflect pre-push reality. BEFORE =
@@ -12,7 +29,7 @@ SECRET_GUARD_ZERO_SHA="0000000000000000000000000000000000000000"
 # against): scan everything reachable from AFTER that isn't already known on some remote.
 resolve_range_local() {
   local before="$1" after="$2"
-  if [ "$before" = "$SECRET_GUARD_ZERO_SHA" ]; then
+  if secret_guard_is_zero_sha "$before"; then
     printf '%s --not --remotes' "$after"
   else
     printf '%s..%s' "$before" "$after"
@@ -26,7 +43,7 @@ resolve_range_local() {
 # FULL history reachable from AFTER (no exclusion): correctness over cheapness on this rare edge.
 resolve_range_ci() {
   local before="$1" after="$2"
-  if [ "$before" = "$SECRET_GUARD_ZERO_SHA" ]; then
+  if secret_guard_is_zero_sha "$before"; then
     printf '%s' "$after"
   else
     printf '%s..%s' "$before" "$after"
