@@ -29,7 +29,8 @@
 #   pre-pr-gate.sh receipt <step-id> [outcome]   append a receipt line for the current run (outcome default: done)
 #   pre-pr-gate.sh receipt --recover       re-stamp the immediately-prior (retired) run's step receipts
 #                                           onto the current nonce — dir #72, the review-fix-commit
-#                                           convergence shortcut (see commands/polish.md step 5)
+#                                           convergence shortcut (see commands/polish.md step 1's
+#                                           convergence branch, and step 5's convergence rule)
 #   pre-pr-gate.sh log <type> [detail]     append a line to the impact log (same resolution as the guard event)
 #   pre-pr-gate.sh handoff <level> <sha>   record step 5(b)'s stop so a re-invocation doesn't re-ask (dir #63)
 #   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
@@ -211,7 +212,11 @@
 # this section changes:
 #   (a) commands/polish.md step 5 now states the convergence rule in prose: fold a review fix into the
 #       same commit where practical, then re-review the DELTA only and stop once a pass needs no further
-#       changes — a fix-commit moving HEAD is expected, not a "loop back to step 4" violation.
+#       changes — a fix-commit moving HEAD is expected, not a "loop back to step 4" violation. Step 1
+#       gained its own convergence branch that calls `receipt --recover` (below) right after `init` and
+#       explicitly skips steps 2-4/7 for the rest of that run — recovering at step 5 instead (the first
+#       draft's placement) would let stale values silently overwrite this round's genuinely fresh ones,
+#       found by an independent review during this same ticket's own /polish pass.
 #   (b) `receipt --recover` (this file) makes re-receipting the UNCHANGED steps (1-4, 7) after that
 #       commit cost one command instead of eight manual `receipt <step-id> <outcome>` calls. It reads
 #       from a single-slot backup (`prev_sentinel_path()`) that `retire_sentinel()` now writes at every
@@ -365,11 +370,11 @@ case "${1:-}" in
   receipt)
     if [ "${2:-}" = "--recover" ]; then
       # dir #72: re-stamp whatever the immediately-prior (now-retired) run already receipted onto the
-      # CURRENT nonce, in one call — the convergence-round shortcut commands/polish.md step 5 documents.
-      # Steps that genuinely need fresh values (the re-review, a retest, the new HEAD sha) are written
-      # AFTER this by the normal `receipt <step-id>` path and simply supersede the recovered line — the
-      # gate's own completeness/sha/trace checks are untouched, so a recovered-but-now-stale value can
-      # never itself unlock the gate.
+      # CURRENT nonce, in one call — the convergence-round shortcut commands/polish.md step 1's own
+      # convergence branch calls right after `init`. Steps that genuinely need fresh values (the
+      # re-review, a retest, the new HEAD sha) are written AFTER this by the normal `receipt <step-id>`
+      # path and simply supersede the recovered line — the gate's own completeness/sha/trace checks are
+      # untouched, so a recovered-but-now-stale value can never itself unlock the gate.
       require_active_receipt
       prev="$(prev_sentinel_path)"
       if [ ! -f "$prev" ]; then

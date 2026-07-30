@@ -37,11 +37,28 @@ Steps, in order:
    gate untouched (no receipt — nothing to unlock yet).
 
    Otherwise, start this run's receipt: `tools/pre-pr-gate.sh init` (mints a fresh nonce, discarding any
-   earlier run's leftover receipt — recoverable via `receipt --recover` if this is a review-fix-commit
-   round re-invoked on the same diff, see step 5's convergence rule). Then `tools/pre-pr-gate.sh receipt
-   polish.1-diff`.
+   earlier run's leftover receipt).
 
-2. **Simplify.** Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
+   **Convergence round?** If this invocation exists ONLY because step 5's own review found a real
+   finding, you fixed it, committed it, and re-invoked `/polish` on the same branch — the step-1 diff
+   above is the same one a prior run already diffed/simplified/tested/sized/self-checked, plus that one
+   fix commit — run `tools/pre-pr-gate.sh receipt --recover` right now, before step 2. On success (it
+   reports how many steps it restored), that call has already re-stamped steps 1–4 and 7's receipts onto
+   this run's fresh nonce: **treat steps 2, 3, 4, and 7 below as DONE — do not invoke them again, and do
+   not write fresh receipts for them.** A fresh write would silently overwrite the just-recovered one
+   (last write for a given step id wins, per the gate's own parser) — pointless for 1/2/3/7 (their
+   receipted outcome is just a completion marker) and actively wrong for `polish.4-depth`, whose sized
+   level step 5 will be cross-checked against: overwriting it with a stale pre-fix-commit sizing would
+   compare this round's real review against the wrong baseline. Skip straight to step 5 for the delta
+   re-review (and steps 6/8, which always need a fresh value regardless). If `--recover` instead reports
+   nothing to recover, this is NOT a convergence round (a fresh repo, or nothing was retired since the
+   last `init`) — proceed normally from here.
+
+   Not a convergence round (the ordinary case): `tools/pre-pr-gate.sh receipt polish.1-diff`, then
+   continue through every step below in order.
+
+2. **Simplify.** *Skip entirely if step 1's convergence branch just recovered this step's receipt.*
+   Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
@@ -51,15 +68,19 @@ Steps, in order:
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`).
 
-3. **Tests — run them by default.** Take the test command from the project's `CLAUDE.md` and run it. Show the
+3. **Tests — run them by default.** *Skip entirely if step 1's convergence branch just recovered this
+   step's receipt.* Take the test command from the project's `CLAUDE.md` and run it. Show the
    real output (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains
    `--no-test`, skip the run and say explicitly that tests were skipped by request (the human runs them before
    the PR).
    Receipt: `tools/pre-pr-gate.sh receipt polish.3-tests` (or `... polish.3-tests skipped:--no-test`).
 
-4. **Pick a review depth — matched to the diff, mostly automatic.** Gate this on the steps above being
-   clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly skipped).
-   Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
+4. **Pick a review depth — matched to the diff, mostly automatic.** *Skip entirely if step 1's convergence
+   branch just recovered this step's receipt* — reuse the recovered level as-is; do not re-size (the
+   recovered `polish.4-depth` is the baseline step 5's delta re-review gets cross-checked against, and a
+   fresh sizing pass here would silently replace it, per step 1). Otherwise, gate this on the steps above
+   being clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly
+   skipped). Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
 
    **First check `tools/pre-pr-gate.sh handoff-check` — a match means step 5 already stopped to ask
    about THIS exact commit on an earlier invocation.** Reuse its recorded level as-is rather than
@@ -204,17 +225,11 @@ Steps, in order:
    **This review is a single terminal pass over its own findings: it must NOT re-invoke `/simplify` or
    loop back to step 4.** No infinite cycle. **A fix-commit moving HEAD afterward is expected, not a rule
    violation** — the gate's SHA/trace checks (step 8) are keyed to whatever HEAD ends up being, so fold a
-   real finding's fix into the same commit where practical, then **converge, don't restart**: re-review
-   only the DELTA the fix introduced, not the full step-1 diff again, and stop as soon as a pass needs no
-   further changes; park a non-blocking note (a style nit, a "consider later") in the step 10 summary
-   instead of chasing it into another round. Because `init` mints a fresh nonce on every `/polish`
-   invocation, a fix-commit round still needs its receipts rewritten under the new nonce — but steps 1–4
-   and 7 didn't change, so right after this run's `init`, run `tools/pre-pr-gate.sh receipt --recover`
-   once to re-stamp whatever the immediately-prior run already receipted for those steps onto the fresh
-   nonce, then only re-run and receipt what actually changed: this step's delta re-review, step 6 (retest,
-   already conditional on step 5 changing files), and step 8 (the new HEAD SHA). `--recover` restores only
-   the single most-recently-retired receipt — not a history — so recover right after the `init` that
-   follows the fix commit, before anything else invalidates it again.
+   real finding's fix into the same commit where practical, then **converge, don't restart**: on the
+   re-invocation this produces, step 1's own convergence branch (`receipt --recover`) already skipped
+   steps 2–4/7 for you — arriving here, re-review only the DELTA the fix introduced, not the full step-1
+   diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
+   a "consider later") in the step 10 summary instead of chasing it into another round.
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
    automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
@@ -230,7 +245,8 @@ Steps, in order:
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
    Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest` (or `... polish.6-retest skipped:no-file-changes`).
 
-7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it —
+7. **Self-check, if this repo ships one.** *Skip entirely if step 1's convergence branch just recovered
+   this step's receipt.* If `tools/self/doctor.sh` exists at the repo root, run it —
    it's the repo's own structural self-audit (dead references, ship-skip-list sync, tool wiring, doc
    staleness — distinct from the test suite). A GAP (non-zero exit) is treated the same as a red test: do
    NOT write this step's receipt or the sentinel, report what it flagged, and stop.
