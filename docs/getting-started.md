@@ -259,7 +259,9 @@ tools/install-pre-pr-gate.sh --global   # every repo you open on this machine, i
   mechanical way. The PR body and the closing summary are always labeled honestly — "independent agent
   review" is never presented as if `/code-review` itself ran. The one channel this can't close: if you're
   asked to run — or waive — the built-in pass yourself instead, that outcome stays self-reported (visible
-  in the receipt as `-operator-run` / `-waived`, not a bare level or `agent:<level>`).
+  in the receipt as `-operator-run` / `-waived`, not a bare level or `agent:<level>`). If you choose to
+  run `/code-review` ON TOP of an agent review that already ran, the receipt records both — the agent half
+  stays trace-confirmed, only the operator half is self-reported (`agent:<level>+operator-run`).
 - **A one-line banner at session start** (the `SessionStart` hook, `rollout-check`) if the model or
   Claude Code version changed since your last session here — a silent rollout is exactly how a pipeline
   step like `/code-review` can quietly stop being callable without anyone noticing.
