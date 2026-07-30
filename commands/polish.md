@@ -163,14 +163,16 @@ Steps, in order:
      the subagent reports, the same as a real `/code-review` pass, then receipt immediately:
      `polish.5-review agent:<level>` — unlike the pre-dir-#70 inline fallback, this receipt is written
      BEFORE any hand-off, because the review already happened and is independently, mechanically
-     verifiable (the trace). **That receipt write is not this step's exit — nothing mechanically checks
-     what comes next, so it must not be skipped by momentum into step 6.**
+     verifiable (the trace).
 
-     **MANDATORY NEXT ACTION, before touching step 6: open an `AskUserQuestion` dialog.** This fires
-     every time execution reaches here — including a convergence-round re-review after a fix commit
-     (see the terminal-pass note below), since each such round moves HEAD and a hand-off note is
-     same-SHA-only (per (c)), so an earlier round's dialog doesn't cover a later commit. The built-in
-     `/code-review` is a multi-agent pipeline (parallel reviewers plus adversarial verification of
+     **MANDATORY NEXT ACTION — nothing mechanically checks this, so it's easy to skip by momentum:
+     open an `AskUserQuestion` dialog before touching step 6.** (A gate-level check is tracked
+     separately, dir #79 — until it lands, this instruction is the only thing standing between the
+     receipt above and a silently-skipped review.) This fires every time execution reaches here,
+     including a convergence-round re-review after a fix commit (see the terminal-pass note below).
+     Each such round moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's
+     dialog doesn't cover a later commit. The built-in `/code-review` is a multi-agent pipeline
+     (parallel reviewers plus adversarial verification of
      their findings); one subagent is a real independent review, but likely stays weaker. Report what
      the subagent checked and found, print the exact `/code-review <level>` command, and open the
      dialog — the same real, pausing mechanism step 4 uses for its own dialog, not a rhetorical
