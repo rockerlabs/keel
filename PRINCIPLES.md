@@ -233,9 +233,30 @@ which is why it's wired to the falsifiers: the success test (next threatening co
 changelog row, not a rewrite) and the transfer test *are* the operational definitions of "slow to devalue."
 If concepts kept forcing rewrites, this founding decision would stand refuted.
 
-*(This is the genesis example — a decision that produced the principles. A downstream example — the
-principles deciding something later — should be added the first time one occurs; fabricating one now would
-violate P1/P4.)*
+*(This is the genesis example — a decision that produced the principles. The downstream example below —
+the principles deciding something later — is the first occurrence, recorded 2026-07-23.)*
+
+## Worked example — the openwiki decision (first downstream example)
+
+**The friction.** Triaging six repos surfaced from an external post, only one overlapped Keel's domain:
+`openwiki`, a tool that auto-generates `CLAUDE.md`/`AGENTS.md` plus a full wiki from a codebase and
+external sources via an LLM agent, with CI-scheduled upkeep — the opposite bet from Keel's manual-curation
+stance. That forced a real fork: port something from it, or reject it.
+
+**The decision.** Reject, closed cheaply as a parked note rather than a redesign.
+
+**Which principles carried it.** The tools-contract/P0 seam (an auto-draft script would be the first
+`tools/` script to call a model, breaking the documented plain-Bash-and-git substrate-independence
+contract, and OpenWiki's product is derivable-from-code description — not the captured domain knowledge P0
+banks as capital); P4's felt-friction gate (no adopter has asked, and the same auto-draft-then-refine value
+already exists via `/init-project` plus session-drafting with a human in the loop); P3's stability claim
+together with P1 (CI-scheduled regeneration would make the always-loaded context volatile and remove the
+human verifier — a self-regenerating system can't be the sole judge of its own output). Full four-reason
+rationale: `IDEAS.md`, 2026-07-23 entry.
+
+**The outcome.** Rejected — the *success test* itself passing: a seemingly-threatening idea absorbed as a
+closed `IDEAS.md` entry, not a foundational rewrite. A reopen trigger is recorded there: a real second
+consumer asking for cold-start bootstrap of a large existing codebase.
 
 ---
 
@@ -250,6 +271,11 @@ knowledge work.*
 This is the "changelog row" the success test points to — the cheap place a new idea lands instead of
 triggering a foundational rewrite. Each row: date, what changed, the friction that justified it.
 
+- **2026-07-23** — Added the **openwiki worked example** (first downstream example — the principles
+  deciding something later) and retired the now-stale genesis parenthetical that called for it. *Friction:
+  the founding-decision example's own standing request ("should be added the first time one occurs")
+  became satisfiable once a real downstream fork (the openwiki auto-generation tool, evaluated and
+  rejected in `IDEAS.md`) actually occurred.*
 - **2026-07-14** — Added a **P1-enforcement row** to the tension table: the gate now names a *running*
   floor — an external pass/fail check the claim must clear, plus a repeated-failure *stop* that breaks the
   retry spiral and, in its strong form, refuses the artifact while the declared check is red. *Friction:
