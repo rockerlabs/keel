@@ -42,7 +42,29 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   level). Fixed by moving the recover call to step 1, immediately after `init`, with steps 2/3/4/7 made
   explicitly conditional on it. Filed dir #77 as a narrow follow-up: `--recover` restores every step id in
   the prior sentinel but doesn't report *which* ones, so a step that was never receipted upstream (an
-  aborted mid-run) can't be told apart from one genuinely recovered.
+  aborted mid-run) can't be told apart from one genuinely recovered. **An operator-run `/code-review high`
+  pass on this same PR found and fixed 7 further issues**, all in `tools/pre-pr-gate.sh` (`commands/polish.md`
+  step 6 updated to match): (1) `polish.6-retest`'s receipt was a bare completion marker with NO
+  value-level check — unlike step 5 (trace-matched) and step 8 (sha-matched) — so a recovered stale
+  retest receipt could satisfy completeness for a fix-commit that was never actually re-tested, making the
+  "any step that actually changed gets a fresh receipt" safety claim above false specifically for step 6;
+  it now records the sha it ran at (same convention as step 8) and is cross-checked the same way. (2) the
+  single backup slot had no history — ANY subsequent invalidation (a retried `gh pr create`, a second
+  `init`, a concurrent worktree of the same repo) silently overwrote a not-yet-recovered backup, in the
+  worst case with an unrelated run's receipts. (3) `receipt --recover` had no check tying the recovered
+  backup to the current diff's lineage at all. (2) and (3) are now addressed together: `retire_sentinel()`
+  stamps each backup with the cwd's HEAD sha at retirement time, and `--recover` refuses (fails closed)
+  unless that base sha is a verified ancestor of current HEAD — an unrelated worktree/branch's backup, or
+  one made stale by a rebase/amend, is now a loud refusal instead of a silent wrong recovery. (4) a failed
+  `mv` inside `retire_sentinel` was entirely silent (stderr discarded, exit status unchecked) — now logged.
+  (5) a malformed/corrupted backup and a genuinely-empty one reported the identical "nothing to recover"
+  message — now distinguished. (6)/(7) two lower-severity cleanups: the nonce/step parsing idiom shared
+  between `--recover` and the completeness parser is now cross-referenced in comments rather than silently
+  duplicated (kept as two blocks on purpose — reviewed and found that forcing a shared primitive would add
+  more complexity than the ~6 duplicated lines cost, since the completeness parser needs foreign-nonce
+  bookkeeping `--recover` has no use for); and `retire_sentinel`/`init`/`receipt --recover` no longer
+  re-derive the repo key (`_repo_key`, which forks `git worktree list`) when the caller already resolved
+  it moments earlier.
 - **`/polish` step 5 spawns an independent subagent review when `/code-review` isn't model-invokable in
   session, instead of falling back to a same-context self-review** (dir #70). `/code-review` ships
   `disable-model-invocation: true`, so a session can never call it on its own; every unavailable-case

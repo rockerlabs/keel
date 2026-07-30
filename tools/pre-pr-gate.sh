@@ -275,7 +275,16 @@ main_top_for() {
 # hook-mode one — same rationale as _worktree_main_entry's own extraction, above.
 _repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
 
-sentinel_path()  { printf '/tmp/pre-pr-gate-%s' "$(_repo_key "$PWD")"; }
+# dir #72 finding #7: plain string-building, no `_repo_key` fork of their own — callers that already
+# have a resolved key (hook mode's `$wt`, `init`/`require_active_receipt` below) build paths through
+# these instead of the `_repo_key`-calling wrappers, so a repo key already paid for once is never
+# re-derived (each `_repo_key` call forks `git worktree list --porcelain`). The wrappers below still
+# exist and still call `_repo_key` themselves — for callers that do NOT already have the key on hand,
+# nothing changes.
+_sentinel_path_for_key()      { printf '/tmp/pre-pr-gate-%s' "$1"; }
+_prev_sentinel_path_for_key() { printf '/tmp/pre-pr-gate-prev-%s' "$1"; }
+
+sentinel_path()  { _sentinel_path_for_key "$(_repo_key "$PWD")"; }
 # dir #63: the review-invocation trace (skill-trace writes it, the gate's PASS branch reads it) and the
 # step-5(b) hand-off note (handoff/handoff-check) each get their OWN file, keyed the same way as the
 # sentinel — not lines folded into the sentinel itself. Keeping them separate means `init`'s nonce reset
@@ -291,22 +300,48 @@ handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
 # MOST RECENT retirement is kept (a plain overwrite, not a history) — matches the felt shape (dir #69/PR
 # #145): one review-fix commit invalidates the run that was just denied or just completed, and that is
 # exactly what `receipt --recover` needs to restore.
-prev_sentinel_path() { printf '/tmp/pre-pr-gate-prev-%s' "$(_repo_key "${1:-$PWD}")"; }
+prev_sentinel_path() { _prev_sentinel_path_for_key "$(_repo_key "${1:-$PWD}")"; }
 # $2 (cwd) matters in hook mode: the live sentinel there is keyed off the JSON event's `.cwd`, not this
 # script's own $PWD (dir #61 discipline) — defaulting to $PWD only serves the CLI subcommands, where
 # $PWD IS the repo by construction. A same-filesystem rename (both paths are /tmp) does the backup-then-
-# clear in one process instead of a copy plus a separate unlink.
+# clear in one process instead of a copy plus a separate unlink. $3 (key) lets a caller that already
+# resolved the repo key (hook mode's `$wt`, `init` below) pass it straight through instead of paying
+# for a second `_repo_key` fork for the same repo (dir #72 finding #7) — omitted, it re-derives from
+# `$cwd` exactly as before.
 retire_sentinel() {
-  local sentinel="$1" cwd="${2:-$PWD}"
-  [ -f "$sentinel" ] && mv -f "$sentinel" "$(prev_sentinel_path "$cwd")" 2>/dev/null
+  local sentinel="$1" cwd="${2:-$PWD}" key="${3:-}" prev sha
+  [ -n "$key" ] || key="$(_repo_key "$cwd")"
+  if [ -f "$sentinel" ]; then
+    prev="$(_prev_sentinel_path_for_key "$key")"
+    if mv -f "$sentinel" "$prev" 2>/dev/null; then
+      # dir #72 finding #3 (verified review, high-effort code-review pass): stamp the backup with
+      # $cwd's HEAD sha AT RETIREMENT TIME, so `receipt --recover` can refuse to trust a backup that
+      # is not on the SAME lineage as the diff it is about to be recovered onto — an unrelated
+      # worktree/branch's retirement (the shared per-repo key is deliberate, dir #61), or a rebase/
+      # amend since retirement. 2 tab-separated fields, safely ignored by every existing 3+-field
+      # step parser over this file (both `receipt --recover`'s own step extraction below and, if ever
+      # pointed at this file, the completeness parser's `NF>=3` guard).
+      sha="$(git -C "$cwd" rev-parse HEAD 2>/dev/null)"
+      [ -n "$sha" ] && printf 'base-sha\t%s\n' "$sha" >> "$prev"
+    else
+      # dir #72 finding #4: a failed mv used to be entirely silent (stderr discarded, exit status
+      # never checked) — the live sentinel still gets cleared below (correct either way: it is
+      # invalid once retirement was attempted), but the loss is now at least recorded instead of
+      # masquerading as "nothing was ever retired" the next time `receipt --recover` runs.
+      log_event retire-sentinel-mv-failed "$cwd"
+    fi
+  fi
   rm -f "$sentinel"
 }
 # dir #72: shared by `receipt --recover` and the ordinary `receipt <step-id>` path (both need "is there
 # an active receipt, and what's its nonce" before doing anything else) — sets $sentinel/$nonce in the
 # CALLER's shell (this runs inline, not in a `$(...)` subshell, so `exit 1` here ends the whole script
-# exactly like the two call sites' own inline checks used to).
+# exactly like the two call sites' own inline checks used to). Also sets $receipt_key (dir #72 finding
+# #7) so `receipt --recover` can build its own prev-sentinel path from it directly instead of paying
+# for a second `_repo_key` fork of the same repo.
 require_active_receipt() {
-  sentinel="$(sentinel_path)"
+  receipt_key="$(_repo_key)"
+  sentinel="$(_sentinel_path_for_key "$receipt_key")"
   if [ ! -f "$sentinel" ]; then
     printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
     exit 1
@@ -357,11 +392,13 @@ case "${1:-}" in
     exit 0
     ;;
   init)
-    sentinel="$(sentinel_path)"
+    init_key="$(_repo_key)"
+    sentinel="$(_sentinel_path_for_key "$init_key")"
     # dir #72: back up whatever this overwrite is about to discard (via the same retire_sentinel every
     # deny/pass path uses below), before minting the fresh nonce — so a re-`init` after a review-fix
-    # commit still leaves the PRIOR run's completed steps reachable via `receipt --recover`.
-    retire_sentinel "$sentinel"
+    # commit still leaves the PRIOR run's completed steps reachable via `receipt --recover`. Passing
+    # $init_key through (dir #72 finding #7) skips a second `_repo_key` fork for the same repo.
+    retire_sentinel "$sentinel" "$PWD" "$init_key"
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
     printf 'nonce\t%s\n' "$nonce" > "$sentinel"
     printf 'pre-pr-gate: receipt started (nonce %s)\n' "$nonce"
@@ -376,11 +413,42 @@ case "${1:-}" in
       # path and simply supersede the recovered line — the gate's own completeness/sha/trace checks are
       # untouched, so a recovered-but-now-stale value can never itself unlock the gate.
       require_active_receipt
-      prev="$(prev_sentinel_path)"
+      prev="$(_prev_sentinel_path_for_key "$receipt_key")"
       if [ ! -f "$prev" ]; then
         printf 'pre-pr-gate: nothing to recover — no receipt was retired since the last init\n' >&2
         exit 1
       fi
+      # dir #72 finding #5: distinguish a genuinely-empty prior run (a real "nothing to recover") from
+      # a malformed/corrupted backup (bad or missing nonce header) — these used to report the identical
+      # message, masking a real parse failure as the normal case.
+      prev_header="$(awk -F'\t' 'NR==1{print; exit}' "$prev")"
+      case "$prev_header" in
+        nonce$'\t'*) : ;;
+        *)
+          printf 'pre-pr-gate: prior receipt (%s) is malformed (bad or missing nonce header) — not recovering. Investigate the file, or proceed as a fresh (non-convergence) run.\n' "$prev" >&2
+          exit 1
+          ;;
+      esac
+      # dir #72 finding #3: refuse to trust a backup that is not on the SAME lineage as current HEAD —
+      # the shared per-repo backup slot (dir #61's deliberate worktree-collapsing key) means an
+      # unrelated worktree/branch's retirement, or a rebase/amend since retirement, can otherwise look
+      # like a valid convergence-round backup. A missing base-sha (a retirement written before this
+      # check existed, or a cwd that was not a git repo at retirement time) fails closed, same direction
+      # as every other new-and-unverifiable condition in this file.
+      base_sha="$(awk -F'\t' '$1=="base-sha"{print $2; exit}' "$prev")"
+      if [ -z "$base_sha" ] || ! git merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null; then
+        printf 'pre-pr-gate: refusing to recover — the retired backup base commit (%s) is not a verified ancestor of current HEAD. Looks like an unrelated run (a different worktree/branch), or a rebase/amend since retirement. Proceed as a fresh (non-convergence) run instead.\n' "${base_sha:-<none>}" >&2
+        exit 1
+      fi
+      # dir #72 finding #6: this implements the same "header nonce, then last-write-wins per step id
+      # among lines matching it" idiom as the completeness parser below (search `EXPECTED_STEPS` in
+      # this file) — kept as its own awk block rather than a shared primitive: this one reads the
+      # RETIRED sentinel and needs no foreign-nonce/MISSING/REPLAY bookkeeping, while the completeness
+      # parser reads the LIVE one and needs exactly that extra state for its PASS/MISSING/REPLAY
+      # verdict. Forcing a shared helper would need mode parameters for that difference — reviewed as a
+      # net complexity cost, not a win, for ~6 lines of duplicated idiom (verified during this ticket's
+      # own /code-review pass). If the receipt line FORMAT itself ever changes (delimiter, field count),
+      # both this block and the completeness parser need the matching edit.
       recovered="$(awk -F'\t' '
         NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
         NF>=3 && pnonce!="" && $1==pnonce {
@@ -810,6 +878,10 @@ fi
 # Parse the receipt: line 1 must be the nonce header; every later line is <nonce>\t<step-id>\t<outcome>.
 # Only lines whose nonce matches the header count toward completeness — a leftover line from an earlier
 # run (different nonce) neither counts nor is silently accepted, so it surfaces as a replay, not a pass.
+# dir #72 finding #6: `receipt --recover` (search `pnonce` above) implements the same nonce-header +
+# last-write-wins-per-step idiom against the RETIRED sentinel — kept separate on purpose (this parser
+# additionally needs `foreign[]`/MISSING/REPLAY bookkeeping that `--recover` has no use for); a receipt
+# line FORMAT change needs the matching edit in both places.
 result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
   BEGIN { n = split(steps, want, " "); for (i = 1; i <= n; i++) need[want[i]] = 1 }
   NR == 1 {
@@ -830,7 +902,7 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
       }
     }
     if (missing == "") {
-      print "PASS" SEP val["polish.8-unlock"] SEP val["polish.5-review"] SEP val["polish.4-depth"]; exit
+      print "PASS" SEP val["polish.8-unlock"] SEP val["polish.5-review"] SEP val["polish.4-depth"] SEP val["polish.6-retest"]; exit
     }
     if (replay != "") { print "REPLAY" SEP missing; exit }
     print "MISSING" SEP missing
@@ -840,21 +912,21 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
 # \x1f (NOT tab) joins these fields: bash `read` collapses an EMPTY field sitting between two tab
 # delimiters regardless of what IFS is set to (the same bug fixed in skill-trace, above) — a genuinely
 # reachable shape here too (e.g. a malformed polish.8-unlock outcome), so use the same safe delimiter.
-IFS=$'\x1f' read -r status detail review_outcome depth_outcome <<<"$result"
+IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome <<<"$result"
 
 case "$status" in
   MALFORMED)
-    retire_sentinel "$sentinel" "$cwd"
+    retire_sentinel "$sentinel" "$cwd" "$wt"
     log_event receipt-deny "malformed" "$cwd"
     deny "Pre-PR gate: receipt is malformed or empty (no nonce). Run /polish again."
     ;;
   MISSING)
-    retire_sentinel "$sentinel" "$cwd"
+    retire_sentinel "$sentinel" "$cwd" "$wt"
     log_event receipt-deny "$detail" "$cwd"
     deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail. Run /polish again."
     ;;
   REPLAY)
-    retire_sentinel "$sentinel" "$cwd"
+    retire_sentinel "$sentinel" "$cwd" "$wt"
     log_event receipt-replay-deny "$detail" "$cwd"
     deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
     ;;
@@ -866,10 +938,26 @@ case "$status" in
     [ -n "$head_branch" ] && target_ref="${head_branch##*:}"
     current_sha=$(git -C "$cwd" rev-parse "$target_ref" 2>/dev/null)
     if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
-      retire_sentinel "$sentinel" "$cwd"
+      retire_sentinel "$sentinel" "$cwd" "$wt"
       log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
+    # dir #72 finding #1: `polish.6-retest` used to be a bare completion marker with NO value-level
+    # check — unlike step 5 (trace-matched) and step 8 (sha-matched), a `receipt --recover`-restored
+    # (pre-fix-commit) retest receipt could silently satisfy completeness for a fix-commit that was
+    # never actually re-tested, the exact case step 6 exists to catch. Same shape as step 8's own check:
+    # a genuine retest now records the sha it ran at, not a bare "done" — `skipped:*` (step 5 changed
+    # nothing, so step 6 legitimately never ran) is exempt, same as step 8 has no equivalent skip but
+    # step 6 always has.
+    case "$retest_outcome" in
+      skipped:*) : ;;
+      "$current_sha") : ;;
+      *)
+        retire_sentinel "$sentinel" "$cwd" "$wt"
+        log_event receipt-deny "retest-sha-mismatch" "$cwd"
+        deny "Pre-PR gate: step 6's retest receipt ('$retest_outcome') doesn't match current HEAD ($current_sha) and isn't a skip — the diff may have changed since tests last ran. Run /polish again."
+        ;;
+    esac
     # dir #63/Hole A: cross-check step 5's review outcome against step 4's OWN recorded depth — without
     # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
@@ -899,7 +987,7 @@ case "$status" in
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
     if [ "$outcome_level" != "$depth_level" ]; then
-      retire_sentinel "$sentinel" "$cwd"
+      retire_sentinel "$sentinel" "$cwd" "$wt"
       log_event receipt-deny "review-depth-mismatch" "$cwd"
       deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
     fi
@@ -913,7 +1001,7 @@ case "$status" in
       trace_path="/tmp/pre-pr-gate-trace-$wt"
       if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$review_outcome" \
           '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
-        retire_sentinel "$sentinel" "$cwd"
+        retire_sentinel "$sentinel" "$cwd" "$wt"
         log_event receipt-deny "review-trace-missing" "$cwd"
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
@@ -922,7 +1010,7 @@ case "$status" in
     # cross-check uses) — visible at PR-creation time instead of only via transcript archaeology. The
     # logged detail carries BOTH, tab-joined ($4 = prov_label prose, $5 = prov_tag) — `sweep` reads $5,
     # never $4, so it never depends on the display wording.
-    retire_sentinel "$sentinel" "$cwd"
+    retire_sentinel "$sentinel" "$cwd" "$wt"
     log_event receipt-pass "$prov_label"$'\t'"$prov_tag" "$cwd"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"
     exit 0
@@ -930,5 +1018,5 @@ case "$status" in
 esac
 
 # Fail-safe: any unrecognized status denies rather than silently allowing.
-retire_sentinel "$sentinel" "$cwd"
+retire_sentinel "$sentinel" "$cwd" "$wt"
 deny "Pre-PR gate: could not verify the receipt. Run /polish again."

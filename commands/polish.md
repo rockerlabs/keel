@@ -243,7 +243,13 @@ Steps, in order:
    real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest` (or `... polish.6-retest skipped:no-file-changes`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
+   polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
+   as step 8, not a bare `done`: unlike every other step here, step 6 is never skipped by step 1's
+   convergence branch (its whole job is to catch a fix-commit breaking something), so the gate now
+   cross-checks it against current HEAD the same way it already does for step 8 — a bare `done` would
+   mean a recovered, pre-fix-commit retest could otherwise satisfy completeness without the fix-commit
+   ever having been re-tested.
 
 7. **Self-check, if this repo ships one.** *Skip entirely if step 1's convergence branch just recovered
    this step's receipt.* If `tools/self/doctor.sh` exists at the repo root, run it —
