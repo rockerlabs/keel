@@ -171,22 +171,38 @@ Steps, in order:
      receipt above and a silently-skipped review.) This fires every time execution reaches here,
      including a convergence-round re-review after a fix commit (see the terminal-pass note below).
      Each such round moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's
-     dialog doesn't cover a later commit. The built-in `/code-review` is a multi-agent pipeline
-     (parallel reviewers plus adversarial verification of
-     their findings); one subagent is a real independent review, but likely stays weaker. Report what
-     the subagent checked and found, print the exact `/code-review <level>` command, and open the
-     dialog — the same real, pausing mechanism step 4 uses for its own dialog, not a rhetorical
-     question the flow can talk itself past — asking: proceed on the agent review, or run the stronger
-     built-in pass first. Record the hand-off exactly as (b) does — `tools/pre-pr-gate.sh handoff
-     <level> "$(git rev-parse HEAD)"` — so a re-invocation doesn't have to rely on session memory
-     (see (c)). On "proceed": re-run
-     `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same outcome, written again) —
-     idempotent, and its side effect is what clears the hand-off note; skipping this re-write leaves a
-     stale hand-off note on disk that can force a spurious re-ask on a later re-invocation of this same
-     commit. **On "run `/code-review <level>`": that command is the OPERATOR's to run, not yours — it is
-     not model-invokable in-session.** Wait for them to run it (or report their findings), then resolve
-     what it reported and overwrite the receipt: `polish.5-review <level>-operator-run` (whichever receipt
-     is written LAST for this step wins — see (c)).
+     dialog doesn't cover a later commit.
+
+     **Frame this as ONE additive yes/no question, never as a choice between mechanisms** (dir #81): the
+     agent review already ran and its receipt above already stands — nothing here reopens or discards it,
+     whatever the answer. Report what the agent review checked and found, state plainly that this review
+     already ran and stands regardless of the answer, then ask only whether to ADDITIONALLY run the
+     stronger built-in `/code-review <level>` on top — the built-in pass is a multi-agent pipeline
+     (parallel reviewers plus adversarial verification of their findings); one subagent is a real
+     independent review, but likely stays weaker, so there is a genuine reason to want both. Phrase the
+     options additively, never as accept-one-reject-the-other: "proceed — the agent review is enough for
+     this diff" / "I'll run `/code-review <level>` too". Print the exact `/code-review <level>` command
+     and open the dialog — the same real, pausing mechanism step 4 uses for its own dialog, not a
+     rhetorical question the flow can talk itself past. Record the hand-off exactly as (b) does —
+     `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"` — so a re-invocation doesn't have to
+     rely on session memory (see (c)).
+
+     **On "proceed":** re-run `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same
+     outcome, written again) — idempotent, and its side effect is what clears the hand-off note; skipping
+     this re-write leaves a stale hand-off note on disk that can force a spurious re-ask on a later
+     re-invocation of this same commit.
+
+     **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
+     not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
+     still waits for the operator, dir #81 fork 4), then resolve what it reported and write the COMBINED
+     outcome: `polish.5-review agent:<level>+operator-run` — a new, honest record naming BOTH reviews that
+     ran, not an overwrite that erases the agent review the receipt above already established (whichever
+     receipt is written LAST for this step wins — see (c)).
+
+     **Anti-rebundle rule:** if a future edit ever makes the agent review itself optional or something to
+     ask about, that must be its OWN separate question — never re-bundled with this one into a single
+     dialog. This ticket (dir #81) exists because those two concerns were bundled once already.
+
      **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses (establish this
      the same attempt-don't-infer way) does the pre-dir-#70 behavior apply — one inline review pass of the
      step-1 diff yourself (correctness-focused, same single-terminal-pass rule as below), say what you
@@ -207,10 +223,20 @@ Steps, in order:
      the level and sha, not which of (a)/(b) raised it nor the prior pass's findings — `init`'s nonce reset
      already discarded that receipt — so collect the operator's answer/evidence now (if not already given)
      and:
-     - If they ran `/code-review <level>` themselves or explicitly waived it, **resolve any findings their
-       review reported** (same bar as the in-session path; a review nobody acts on bought nothing), then
-       receipt `polish.5-review <level>-operator-run` or `<level>-waived` (this also clears the hand-off
-       note).
+     - If they ran `/code-review <level>` themselves, **resolve any findings their review reported** (same
+       bar as the in-session path; a review nobody acts on bought nothing). **If `level` is `ultra`, skip
+       straight to the plain outcome** — `polish.5-review <level>-operator-run` — an `ultra` hand-off only
+       ever came from (b) (same reasoning as the bullet below), so no agent review or trace can exist for
+       it and trying the combined outcome first would only buy a guaranteed step-8 denial before falling
+       back anyway. Otherwise, the common case is that this hand-off came from (a) — an agent review
+       already ran and was independently receipted before the dialog ever opened — so try the COMBINED
+       outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note).
+       Only if step 8 later denies it for a missing/mismatched agent trace — meaning this hand-off actually
+       came from (b), where no agent review ever ran — fall back to the plain outcome,
+       `polish.5-review <level>-operator-run`.
+     - If they explicitly waived the review instead of running it, receipt `polish.5-review <level>-waived`
+       (this also clears the hand-off note) — (a)'s dialog never offers a waive option, so this only ever
+       resolves a (b) hand-off.
      - Otherwise, and **only when `level` is NOT `ultra`** (an `ultra` hand-off only ever came from (b) —
        `ultra` never reaches (a), so there is no agent review to fall back to; keep waiting on the
        operator's own decision instead), they want to proceed on an agent review, or the Agent tool is
@@ -226,9 +252,10 @@ Steps, in order:
      same diff and picks the same level — without `handoff-check`, it would defer again, and every time
      after that.
    - **(d)** Every outcome is load-bearing for step 10: the summary must name exactly which review
-     mechanism ran — a genuine in-session `/code-review <level>`, an independent agent review, or (a)'s
-     own last-resort inline self-review — never just the depth. "review: medium" reads identically to a
-     genuine in-session pass, which is how any substitution stays invisible.
+     mechanism ran — a genuine in-session `/code-review <level>`, an independent agent review, both (the
+     combined outcome, dir #81), or (a)'s own last-resort inline self-review — never just the depth.
+     "review: medium" reads identically to a genuine in-session pass, which is how any substitution stays
+     invisible.
 
    **This review is a single terminal pass over its own findings: it must NOT re-invoke `/simplify` or
    loop back to step 4.** No infinite cycle. **A fix-commit moving HEAD afterward is expected, not a rule
@@ -242,7 +269,9 @@ Steps, in order:
    applies to this round's fresh receipt before moving to step 6, same as the first pass.
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
    automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
-   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
+   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip`, or `agent:medium+operator-run` —
+   the combined outcome (dir #81) when the operator additionally ran `/code-review` on top of an
+   already-standing agent review).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
@@ -285,6 +314,8 @@ Steps, in order:
    implementation context (what changed, why, a test plan). **If step 5's outcome was `agent:<level>`,
    the PR body must label the review as such** — e.g. "review: independent agent at `<level>` (built-in
    `/code-review` not model-invokable in-session)" — never presented as if `/code-review` itself ran.
+   **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the PR body must name BOTH**
+   — the independent agent review AND the operator-run `/code-review` — never collapsed into just one.
    Return the PR URL. Invoking `/polish` IS the standing authorization to push the branch and run
    `gh pr create` at this step; do not re-ask. The merge stays the operator's.
 
@@ -292,7 +323,10 @@ Steps, in order:
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
     review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
     independent agent review (`review: <level>, independent agent review — built-in /code-review not
-    model-invokable in-session`, matching the PR body's own label); or, if step 5 took the (b) hand-off,
+    model-invokable in-session`, matching the PR body's own label); **both, when the operator additionally
+    ran `/code-review` on top of an already-standing agent review (the combined `agent:<level>+operator-run`
+    outcome, dir #81)** — name BOTH mechanisms, e.g. `review: <level>, independent agent review +
+    operator-run /code-review`, never collapsed into just one of them; or, if step 5 took the (b) hand-off,
     that no real review ran in-session and whether the human ran it (`-operator-run`) or waived it
     (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is indistinguishable from a
     genuine in-session review, so reporting one here would re-hide exactly what step 5 exists to surface.

@@ -810,6 +810,58 @@ ilog="$d/.keel/impact-events.log"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "an agent-confirmed pass within the window → exit 0 (breaks the self-reported streak)" 0 "$STATUS"
 
+# 50a. dir #81: Gate PASS for the combined `agent:<level>+operator-run` outcome — the operator
+# additionally ran `/code-review` on top of an already-standing, trace-confirmed agent review. The
+# trace only ever records the bare `agent:<level>` shape (it predates the operator's pass and knows
+# nothing of it), so the gate must strip `+operator-run` before matching, not require the trace to
+# carry the suffix too. The provenance line must name BOTH mechanisms, never collapse into one.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+operator-run"
+gate "gh pr create --fill" "$d"
+check_status "combined agent:<level>+operator-run receipt + matching agent trace → exit 0" 0 "$STATUS"
+check_absent "combined receipt + matching trace → allowed" "$OUT" "deny"
+check_contains "provenance names BOTH the agent review and the operator-run /code-review" "$OUT" "review: high, independent agent review (trace-confirmed) + operator-run /code-review (self-reported)"
+rm -f "$tf"
+
+# 50b. dir #81: Gate DENY for the combined outcome when NO trace exists at all — the agent half is
+# still mechanically checked, the operator-run half riding along doesn't exempt it.
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high+operator-run"
+gate "gh pr create --fill" "$d"
+check_contains "combined receipt, no trace → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "combined receipt, no trace → names the trace as missing" "$OUT" "no trace matching"
+
+# 50c. dir #81: Gate DENY for the combined outcome when a trace exists but at a DIFFERENT level — a
+# real `agent:low` review must not vouch for a receipt claiming `agent:max+operator-run`.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tagent:low\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "agent:max+operator-run"
+gate "gh pr create --fill" "$d"
+check_contains "combined receipt, trace at a different level → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "combined-receipt denial names the trace, not some other reason" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 50d. dir #81: Gate DENY when the combined outcome's level doesn't match polish.4-depth's OWN
+# recorded level — same depth-consistency cross-check dir #63 built for the bare-level case and dir
+# #70 extended to the plain agent:<level> case, extended again to the combined shape.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:high+operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "'agent:high+operator-run' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
+
 # 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
 # adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
 # be misread as "verified" just because it isn't literally "self-reported" — an early draft of the
