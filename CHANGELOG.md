@@ -9,6 +9,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/polish` step 5(a)'s code-review reminder dialog restructured to be much harder to skip** (dir #62's
+  own `/polish` run, felt for the 3rd time). The `AskUserQuestion` reminder that must follow every
+  independent-agent review — "accept this agent review, or run the stronger built-in `/code-review`?" —
+  was silently skipped across three review rounds in production use before the operator flagged it. Root
+  causes: the step's only mechanically-checked artifact (the `polish.5-review` receipt) was written
+  BEFORE the reminder, so nothing forced a stop, and the reminder itself was buried mid-paragraph. The
+  reminder is now a standalone bolded "MANDATORY NEXT ACTION" line immediately after the receipt write,
+  styled after step 4's own dialog-trigger convention, with an explicit note that it fires every
+  convergence round (not just the first pass) since a hand-off note is same-SHA-only. A proper
+  gate-level check — denying the receipt without a recorded hand-off/waiver — is tracked separately as
+  dir #79; this fix is deliberately wording-only.
 - **`/polish` step 5 no longer attempts the doomed `Skill(code-review)` call before falling back to the
   independent-subagent review** (dir #71). Every `low|medium|high|max` run used to open with an attempt
   that failed every single time — `/code-review` ships `disable-model-invocation: true`, a documented
