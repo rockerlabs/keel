@@ -50,7 +50,7 @@ case "${GITHUB_EVENT_NAME:-}" in
       echo "ci-scan: GITHUB_EVENT_BEFORE and GITHUB_EVENT_AFTER required for a push event" >&2
       exit 2
     fi
-    if [ "$after" = "$SECRET_GUARD_ZERO_SHA" ]; then
+    if secret_guard_is_zero_sha "$after"; then
       echo "ci-scan: ref deleted (after is the zero sha) — nothing to scan"
       exit 0
     fi
@@ -58,9 +58,9 @@ case "${GITHUB_EVENT_NAME:-}" in
     # would then be a config error (secret-scan --range fails closed, exit 2) — but this is an
     # expected topology, not a misconfiguration: fall back to the zero-sha shape and scan the FULL
     # history reachable from "after" instead. Correctness over cheapness; never silently "clean".
-    if [ "$before" != "$SECRET_GUARD_ZERO_SHA" ] && ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+    if ! secret_guard_is_zero_sha "$before" && ! git cat-file -e "$before^{commit}" 2>/dev/null; then
       echo "ci-scan: before-sha $before not in this clone (force-push?) — scanning full history from after"
-      before="$SECRET_GUARD_ZERO_SHA"
+      before="0"
     fi
     range="$(resolve_range_ci "$before" "$after")"
     ;;
