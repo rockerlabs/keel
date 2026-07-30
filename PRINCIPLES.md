@@ -245,7 +245,7 @@ stance. That forced a real fork: port something from it, or reject it.
 
 **The decision.** Reject, closed cheaply as a parked note rather than a redesign.
 
-**Which principles carried it.** Four reasons, each anchored to a different principle:
+**Which principles carried it.** Four reasons across three principles:
 - the tools-contract/P0 seam — an auto-draft script would be the first `tools/` script to call a model,
   breaking the documented plain-Bash-and-git substrate-independence contract;
 - P0 again, on content — OpenWiki's product is derivable-from-code description, not the captured domain
