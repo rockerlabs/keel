@@ -9,6 +9,40 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/polish` step 5 no longer attempts the doomed `Skill(code-review)` call before falling back to the
+  independent-subagent review** (dir #71). Every `low|medium|high|max` run used to open with an attempt
+  that failed every single time — `/code-review` ships `disable-model-invocation: true`, a documented
+  harness policy (confirmed against the Claude Code docs during dir #70's design), not a per-session
+  accident — so the attempt only produced a visible error on every run with nothing learned from it. Step
+  5 now states the standing fact and goes straight to the dir #70 independent-subagent path; a revisit
+  trigger documents restoring attempt-first if the harness policy ever changes (the existing
+  Skill/UserPromptExpansion trace legs and bare-`<level>` receipt outcome already cover that case
+  natively). Step 2's own attempt-don't-infer rule (for `/simplify`) was made self-contained, dropping a
+  now-dangling cross-reference to step 5.
+- **`/polish`'s review gate gained a convergence rule for a review-fix commit, plus `receipt --recover`
+  to make re-receipting cheap** (dir #72, felt three times in one run closing dir #69/PR #145). dir #70's
+  `SubagentStop` trace and dir #63's SHA check are both keyed to HEAD at fire time, so fixing a real
+  step-5 finding and committing it moves the goalposts the gate checks against — but the flow never said
+  so, reading as a contradiction ("one terminal pass, no loop-back" vs. a SHA rule that demands another
+  pass). `commands/polish.md` step 5 now states the rule outright: fold the fix into the same commit
+  where practical, re-review the delta only, stop once a pass needs no further changes. Because `init`
+  mints a fresh nonce on every invocation, a fix-commit round still needs its receipts rewritten — but
+  steps 1-4 and 7 didn't change, so `tools/pre-pr-gate.sh` gained `receipt --recover`, which re-stamps
+  whatever the immediately-prior (now-retired) run already receipted for those steps onto the fresh nonce
+  in one call. Every sentinel-invalidating event (a gate deny, a successful unlock, or `init`'s own
+  overwrite) now routes through one `retire_sentinel()` helper that backs the live sentinel up to a
+  single-slot backup before clearing it, instead of the previous scattered `rm -f` calls — recover reads
+  from that backup. The gate's own completeness/SHA/trace checks are entirely unchanged: a
+  recovered-but-stale value (e.g. a stale `polish.8-unlock` sha) still denies exactly as before, since any
+  step that actually changed gets a fresh `receipt` call afterward that supersedes the recovered line for
+  that step id. An independent review of this ticket's own `/polish` pass caught a real ordering bug in
+  the first draft: the doc called `--recover` from step 5, by which point steps 1-4/7 had already written
+  FRESH receipts for the round — recovering afterward would have silently overwritten them with stale
+  ones (harmless for the completion-marker steps, actively wrong for `polish.4-depth`'s cross-checked
+  level). Fixed by moving the recover call to step 1, immediately after `init`, with steps 2/3/4/7 made
+  explicitly conditional on it. Filed dir #77 as a narrow follow-up: `--recover` restores every step id in
+  the prior sentinel but doesn't report *which* ones, so a step that was never receipted upstream (an
+  aborted mid-run) can't be told apart from one genuinely recovered.
 - **`/polish` step 5 spawns an independent subagent review when `/code-review` isn't model-invokable in
   session, instead of falling back to a same-context self-review** (dir #70). `/code-review` ships
   `disable-model-invocation: true`, so a session can never call it on its own; every unavailable-case
