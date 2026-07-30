@@ -970,6 +970,7 @@ case "$status" in
     # /code-review high pass on this ticket — sweep used to regex-match the prose directly).
     depth_level="${depth_outcome%%:*}"
     trusted=0
+    trace_match_outcome="$review_outcome"
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
                          prov_label="review: skip";  prov_tag="self-reported" ;;
@@ -977,6 +978,26 @@ case "$status" in
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
                          prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
+      agent:*+operator-run) # dir #81: the operator additionally ran `/code-review` ON TOP of an
+                         # already-standing agent review — an honest combined record, not the old
+                         # overwrite that erased the agent half. Placed BEFORE the broader `agent:*`
+                         # glob below (case is first-match-wins and this literal also matches that
+                         # pattern). The `+` separator (not `-`) is itself load-bearing, not cosmetic:
+                         # a hyphenated `agent:<level>-operator-run` would instead match the EARLIER
+                         # `*-operator-run)` arm above, which sets trusted=1 and skips the trace check
+                         # below entirely — silently downgrading a real agent review + operator pass
+                         # into a fully self-reported, untraced claim. Do not rename this to a hyphen
+                         # for naming "consistency" with `<level>-operator-run` — that would reopen
+                         # exactly this hole. trusted stays 0 here: the agent half is just as
+                         # self-report-fabricable as the plain agent:* case, so it still needs the
+                         # trace match below — but matched against the level WITHOUT the
+                         # `+operator-run` suffix, since the SubagentStop trace (skill-trace, above)
+                         # only ever writes the bare `agent:<level>` shape and knows nothing of a
+                         # later operator pass.
+                         outcome_level="${review_outcome#agent:}"
+                         outcome_level="${outcome_level%+operator-run}"
+                         trace_match_outcome="${review_outcome%+operator-run}"
+                         prov_label="review: $outcome_level, independent agent review (trace-confirmed) + operator-run /code-review (self-reported)"; prov_tag="agent-confirmed" ;;
       agent:*)          # dir #70: an independent Agent-tool subagent reviewed (Skill(code-review) wasn't
                          # model-invokable in-session) — trusted stays 0, same as the bare-level case
                          # below: this outcome is just as self-report-fabricable, so it earns no more
@@ -996,10 +1017,12 @@ case "$status" in
     # that claim can't be satisfied by self-report alone. The trace's OWN recorded level must match too
     # — otherwise a genuine `/code-review low` pass would vouch for a receipt claiming `max`. Trusted
     # outcomes need no trace — they already name a different, non-fabricable source (the human, or a
-    # deliberate no-review choice) and are covered by the depth check above instead.
+    # deliberate no-review choice) and are covered by the depth check above instead. $trace_match_outcome
+    # is $review_outcome verbatim UNLESS the combined-outcome branch above overrode it (dir #81) — the
+    # only shape where what's being depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
       trace_path="/tmp/pre-pr-gate-trace-$wt"
-      if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$review_outcome" \
+      if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$trace_match_outcome" \
           '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
         retire_sentinel "$sentinel" "$cwd" "$wt"
         log_event receipt-deny "review-trace-missing" "$cwd"
