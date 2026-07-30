@@ -60,7 +60,7 @@ case "${GITHUB_EVENT_NAME:-}" in
     # history reachable from "after" instead. Correctness over cheapness; never silently "clean".
     if ! secret_guard_is_zero_sha "$before" && ! git cat-file -e "$before^{commit}" 2>/dev/null; then
       echo "ci-scan: before-sha $before not in this clone (force-push?) — scanning full history from after"
-      before="$SECRET_GUARD_ZERO_SHA"
+      before="0"
     fi
     range="$(resolve_range_ci "$before" "$after")"
     ;;

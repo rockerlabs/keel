@@ -33,7 +33,7 @@ else pass "an empty string is NOT treated as zero"; fi
 
 # --- resolve_range_local: a SHA-256 repo's 64-zero BEFORE must resolve the same way a SHA-1 repo's
 # 40-zero BEFORE does — this is the bug this file was added to catch: an exact-length compare against
-# the 40-char SECRET_GUARD_ZERO_SHA literal would fall through to the else branch here and produce an
+# a fixed 40-char zero-sha literal would fall through to the else branch here and produce an
 # unresolvable "before..after" range on a SHA-256 repo's first push --------------------------------
 out="$(resolve_range_local "$zero64" "$sha64")"
 check_contains "resolve_range_local: 64-zero before -> the new-ref (--not --remotes) shape" "$out" "--not --remotes"
