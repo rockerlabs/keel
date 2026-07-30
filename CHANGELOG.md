@@ -1350,6 +1350,18 @@ unaffected.
   sandbox, so recording touches nothing on the machine). Closes the "the README asks to be believed" gap —
   the demonstrable tool is now demonstrated (project backlog #6, T2).
 
+### Fixed
+- **secret-guard's zero-sha detection is now length-agnostic (SHA-256 repos).** `tools/secret-guard/range-lib.sh`,
+  `ci-scan.sh`, and `pre-push` all detected git's all-zero "no commit" sentinel (a brand-new ref, or a
+  branch/ref deletion) by comparing a sha against a hardcoded 40-char `SECRET_GUARD_ZERO_SHA` literal. On a
+  repo using `git init --object-format=sha256`, that sentinel is 64 zero chars, so the exact-length compare
+  would miss it, fall through to the "existing ref" branch, and hand `secret-scan.sh` an unresolvable range
+  — a confusing blocked push rather than a correct scan (fail-closed, not a security bypass; no repo in the
+  fleet currently uses SHA-256). Replaced with a shared `secret_guard_is_zero_sha()` helper in
+  `range-lib.sh` that pattern-matches "all zero digits" regardless of length, used at all three call sites;
+  the now-vestigial `SECRET_GUARD_ZERO_SHA` constant was removed. New direct unit coverage in
+  `tests/test_range_lib.sh` for both the 40- and 64-zero cases.
+
 ## [0.4.0] — 2026-07-08
 
 "Personal-data guard" release. `secret-guard` grows a second detector class — your own personal data
