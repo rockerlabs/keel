@@ -163,15 +163,21 @@ Steps, in order:
      the subagent reports, the same as a real `/code-review` pass, then receipt immediately:
      `polish.5-review agent:<level>` — unlike the pre-dir-#70 inline fallback, this receipt is written
      BEFORE any hand-off, because the review already happened and is independently, mechanically
-     verifiable (the trace).
-     **Then a REMINDER, not a stop.** The built-in `/code-review` is a multi-agent pipeline (parallel
-     reviewers plus adversarial verification of their findings); one subagent is a real independent
-     review, but likely stays weaker. Report what the subagent checked and found, print the exact
-     `/code-review <level>` command, and open an `AskUserQuestion` dialog — the same real, pausing
-     mechanism step 4 uses for its own dialog, not a rhetorical question the flow can talk itself past —
-     asking: proceed on the agent review, or run the stronger built-in pass first. Record the hand-off
-     exactly as (b) does — `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"` — so a
-     re-invocation doesn't have to rely on session memory (see (c)). On "proceed": re-run
+     verifiable (the trace). **That receipt write is not this step's exit — nothing mechanically checks
+     what comes next, so it must not be skipped by momentum into step 6.**
+
+     **MANDATORY NEXT ACTION, before touching step 6: open an `AskUserQuestion` dialog.** This fires
+     every time execution reaches here — including a convergence-round re-review after a fix commit
+     (see the terminal-pass note below), since each such round moves HEAD and a hand-off note is
+     same-SHA-only (per (c)), so an earlier round's dialog doesn't cover a later commit. The built-in
+     `/code-review` is a multi-agent pipeline (parallel reviewers plus adversarial verification of
+     their findings); one subagent is a real independent review, but likely stays weaker. Report what
+     the subagent checked and found, print the exact `/code-review <level>` command, and open the
+     dialog — the same real, pausing mechanism step 4 uses for its own dialog, not a rhetorical
+     question the flow can talk itself past — asking: proceed on the agent review, or run the stronger
+     built-in pass first. Record the hand-off exactly as (b) does — `tools/pre-pr-gate.sh handoff
+     <level> "$(git rev-parse HEAD)"` — so a re-invocation doesn't have to rely on session memory
+     (see (c)). On "proceed": re-run
      `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same outcome, written again) —
      idempotent, and its side effect is what clears the hand-off note; skipping this re-write leaves a
      stale hand-off note on disk that can force a spurious re-ask on a later re-invocation of this same
@@ -229,7 +235,9 @@ Steps, in order:
    re-invocation this produces, step 1's own convergence branch (`receipt --recover`) already skipped
    steps 2–4/7 for you — arriving here, re-review only the DELTA the fix introduced, not the full step-1
    diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
-   a "consider later") in the step 10 summary instead of chasing it into another round.
+   a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
+   means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
+   applies to this round's fresh receipt before moving to step 6, same as the first pass.
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
    automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, or `skip`).
