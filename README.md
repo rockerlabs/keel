@@ -125,7 +125,7 @@ flowchart TD
     end
     subgraph demand["On demand — pulled only when a task needs it"]
         fw["FRAMEWORK.md (~8.1K)"]
-        prin["PRINCIPLES.md (~5.1K)"]
+        prin["PRINCIPLES.md (~5.9K)"]
         inst["INSTANCE.md"]
         cmd["commands/* (when invoked)"]
     end
