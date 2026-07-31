@@ -23,11 +23,11 @@ tok_of() { local c; c="$(wc -c < "$1" | tr -d ' ')"; echo $(( c / 4 )); }
 # drift is the one that restates the figure.
 assert_band() {
   local label="$1" fig="$2" actual="$3" srcdesc="$4"
-  local lo="" hi="" margin="" threshold=""   # init all (set -u safe on bash 3.2)
+  local lo="" hi="" edge="" margin="" threshold=""   # init all (set -u safe on bash 3.2)
   lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
   if [ "$fig" -ge "$lo" ] && [ "$fig" -le "$hi" ]; then
     pass "$label ($srcdesc ~$fig vs actual ~$actual)"
-    margin=$(( fig - lo )); [ $(( hi - fig )) -lt "$margin" ] && margin=$(( hi - fig ))
+    edge=$(( hi - fig )); margin=$(( fig - lo )); [ "$edge" -lt "$margin" ] && margin="$edge"
     threshold=$(( actual * 3 / 100 ))
     if [ "$margin" -lt "$threshold" ]; then
       printf '  note  %s: %s ~%s vs actual ~%s — only %s tok of headroom, restate the figure\n' \
