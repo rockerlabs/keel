@@ -524,11 +524,8 @@ if [ "$found" = 1 ]; then
   # the first `git worktree list` entry, skipped when bare; awk reads its whole input on purpose — no early exit, no
   # SIGPIPE); with neither, nothing is written and the hook's behaviour is unchanged.
   _klog="${KEEL_IMPACT_LOG:-}"
-  # dir #74: the claim key is THIS site's own toplevel, captured before the main-checkout fallback below
-  # (which only decides where the log FILE lives, not who fired the event) — empty outside a repo.
-  _kclaim="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -z "$_klog" ]; then
-    _ktop="$_kclaim"
+    _ktop="$(git rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
       _kmain="$(git worktree list --porcelain 2>/dev/null |
         awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
@@ -537,6 +534,10 @@ if [ "$found" = 1 ]; then
     if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
   fi
   if [ -n "$_klog" ]; then
+    # dir #74: the claim key is THIS site's own toplevel — not $_ktop above (which the main-checkout
+    # fallback may have overwritten; that fallback is only about where the log FILE lives, not who fired
+    # the event). Computed lazily, here, so a run with $_klog unset skips the subprocess entirely.
+    _kclaim="$(git rev-parse --show-toplevel 2>/dev/null || true)"
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard secret-guard blocked "$_kclaim" \
       >> "$_klog" 2>/dev/null || true
   fi
