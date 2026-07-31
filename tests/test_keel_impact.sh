@@ -269,6 +269,66 @@ check_contains "fail-open warns about the cutoff conversion" "$OUT" "could not c
 check_contains "fail-open ingests the old event anyway (uncapped)" "$OUT" "ingested: $old_ts guard secret-guard | blocked"
 check_contains "fail-open derives the score from it" "$OUT" "derived score 100/100"
 
+# --- dir #74: claim-key ingest filtering -- a shared multi-worktree log must not let one session's
+# `add` swallow another's fresh events. Each event line's 5th TSV field is its producer's own worktree
+# top; `add` only counts events carrying its OWN key, keeping any others in the log for their owner to
+# claim later. Resolve keys through git itself (not the raw mktemp path) so a macOS /tmp -> /private/tmp
+# symlink can't make an exact-string comparison fail. -------------------------------------------
+own_repo="$(new_repo)"
+foreign_repo="$(new_repo)"
+own_key="$(git -C "$own_repo" rev-parse --show-toplevel)"
+foreign_key="$(git -C "$foreign_repo" rev-parse --show-toplevel)"
+
+LEDGER="$SANDBOX/ledger-claim.md"; LOG="$SANDBOX/events-claim.log"; EVIDENCE="$SANDBOX/evidence-claim.md"
+export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"
+ts_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# (i) own-key fresh event -> ingested + removed
+printf '%s\tguard\tsecret-guard\tblocked\t%s\n' "$ts_now" "$own_key" > "$LOG"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "own-key fresh event is ingested" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
+check_contains "own-key event derives a score" "$OUT" "derived score 100/100"
+check_contains "own-key event is removed after ingest" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# (ii) foreign-key fresh event -> not counted, foreign-kept printed, line stays in the log; a later `add`
+# run from that key's OWN repo then ingests it (the acceptance case: two concurrent sessions each score
+# only their own guardrail fires)
+printf '%s\tguard\tsecret-guard\tblocked\t%s\n' "$ts_now" "$foreign_key" > "$LOG"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "foreign-key fresh event is not counted" "$OUT" "derived score —/100"
+check_contains "foreign-key fresh event prints foreign-kept" "$OUT" "foreign-kept: $ts_now guard secret-guard | blocked"
+check_contains "foreign-key event line survives in the log" "$(cat "$LOG")" "$(printf '%s\tguard\tsecret-guard\tblocked\t%s' "$ts_now" "$foreign_key")"
+run_in "$foreign_repo" bash "$TOOL" add --gap none
+check_contains "the owning key's own add ingests the kept-back event" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
+check_contains "the owning key's own add derives a score from it" "$OUT" "derived score 100/100"
+check_contains "the log is empty once its own key claims it" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# (iii) legacy 4-field line (no claim key) -> ingested as today, back-compat
+printf '%s\tguard\tsecret-guard\tblocked\n' "$ts_now" > "$LOG"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "legacy 4-field line is ingested (back-compat)" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
+
+# (iv) stale foreign event -> stale-skipped + removed regardless of key: dir #59's semantics are
+# unchanged by claim keys (past the age cap an event is unattributable either way)
+old_ts_claim="2000-01-01T00:00:00Z"
+printf '%s\tguard\tsecret-guard\tblocked\t%s\n' "$old_ts_claim" "$foreign_key" > "$LOG"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "stale foreign event is stale-skipped, not foreign-kept" "$OUT" "stale-skipped: $old_ts_claim guard secret-guard | blocked"
+check_absent "stale foreign event is never foreign-kept" "$OUT" "foreign-kept"
+check_contains "stale foreign event is removed from the log" "$(wc -l < "$LOG" | tr -d ' ')" "0"
+
+# (v) a 5-field line with an EMPTY detail parses collapse-proof: a foreign claim key must land in the key
+# position, never slide into detail — the promoted tab-collapse trap (LEARNINGS.md, 2nd hit dir #63).
+# Foreign + empty-detail is the sharpest check: if the collapse bug were present, the key would shift into
+# $_det and the (now-empty) key slot would read as "own", so the event would be WRONGLY ingested here.
+printf '%s\tfire\tsession\t\t%s\n' "$ts_now" "$foreign_key" > "$LOG"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "empty-detail line's claim key is not swallowed into detail" "$OUT" "foreign-kept: $ts_now fire session"
+check_absent "empty-detail line's citation does not leak the claim key as detail" "$OUT" "session | $foreign_key"
+check_contains "empty-detail foreign event derives no score (correctly not ingested)" "$OUT" "derived score —/100"
+run_in "$foreign_repo" bash "$TOOL" add --gap none
+check_contains "the owning key still ingests the empty-detail event correctly" "$OUT" "ingested: $ts_now fire session"
+
 # --- hold event type: producer API + auto-ingest at weight 4 ------------------------------------
 LEDGER="$SANDBOX/ledger3.md"; LOG="$SANDBOX/events3.log"; EVIDENCE="$SANDBOX/evidence3.md"
 export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"

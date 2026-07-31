@@ -373,13 +373,20 @@ resolve_impact_log() {
   printf '%s' "$klog"
 }
 
+# dir #74: the log's 5th TSV field — the claim key an event is stamped with, so a shared multi-worktree
+# log can tell "my event" from "someone else's" at ingest time. This is the site's OWN worktree top,
+# taken BEFORE resolve_impact_log's main-checkout fallback — the fallback is only about where the log
+# FILE lives, not who fired the event. Empty outside a repo (matches resolve_impact_log's own git call).
+_claim_key() { git -C "${1:-$PWD}" rev-parse --show-toplevel 2>/dev/null || true; }
+
 # Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —
 # never stdout, so a hook's JSON decision stays intact; with no log path resolved, this is a silent no-op.
 log_event() {
-  local ty="$1" detail="${2:-}" cwd="${3:-$PWD}" log
+  local ty="$1" detail="${2:-}" cwd="${3:-$PWD}" log key
   log="$(resolve_impact_log "$cwd")"
   [ -n "$log" ] || return 0
-  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" >> "$log" 2>/dev/null || true
+  key="$(_claim_key "$cwd")"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" "$key" >> "$log" 2>/dev/null || true
 }
 
 case "${1:-}" in

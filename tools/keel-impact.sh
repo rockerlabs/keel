@@ -49,6 +49,10 @@ _keel_main_top() {  # the main checkout's top; empty if not a repo or the main e
   git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
     awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
 }
+_claim_key() {  # dir #74: this producer's OWN worktree top, BEFORE _keel_top's main-checkout fallback —
+                 # that fallback only decides where the shared log FILE lives, not who fired the event.
+  git rev-parse --show-toplevel 2>/dev/null || true
+}
 _keel_top() {  # memoized: invariant within a run, and the resolvers below all call it at startup
   if [ -z "${_KEEL_TOP_CACHE+x}" ]; then
     local top main
@@ -237,13 +241,14 @@ _need_cite() { [ -n "$1" ] || { printf 'keel-impact: %s needs a non-empty citati
 # event TYPE [source] [detail] — append one deterministic event to the log. Producers (secret-guard et al.)
 # can also append the TSV line directly; this subcommand is the friendly, validated entry point.
 cmd_event() {
-  local type="${1:-}" source="${2:-}" detail="${3:-}"
+  local type="${1:-}" source="${2:-}" detail="${3:-}" key
   [ -n "$type" ] || { printf 'keel-impact: event needs a TYPE (%s)\n' "$EVENT_TYPES" >&2; exit 2 ; }
   is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
   # strip tabs/newlines so one event is always exactly one well-formed TSV line
   source="$(_flatten "$source")"; detail="$(_flatten "$detail")"
+  key="$(_claim_key)"
   mkdir -p "$(dirname "$LOG")"
-  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$source" "$detail" >> "$LOG"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$source" "$detail" "$key" >> "$LOG"
   printf 'keel-impact: recorded %s event to %s\n' "$type" "$LOG"
 }
 
@@ -446,7 +451,12 @@ cmd_add() {
   # toward NOT counting (the mirror of pre-pr-gate's err-toward-catching). If the portable epoch->ISO
   # conversion fails outright, fail OPEN: ingest everything uncapped (today's behavior) rather than crash or
   # silently drop events — the cap is a precision improvement, never a new way to lose data.
-  local ingested=0 stale=0 _ts _ty _src _det _cite cutoff_iso="" stale_lines=""
+  # dir #74: a fresh event with a claim key that ≠ our own is a foreign session's, stamped into this
+  # shared log by a different worktree — not ours to count. Keep it in the log (rewritten below) so the
+  # session that DOES own it can ingest it later; only a foreign event past the age cap is unattributable
+  # either way, so it stays on dir #59's stale-archive-and-remove path regardless of key.
+  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _cite cutoff_iso="" stale_lines="" kept_lines=""
+  local own_key; own_key="$(_claim_key)"
   local max_age_h="${KEEL_INGEST_MAX_AGE_HOURS:-12}"
   case "$max_age_h" in ''|*[!0-9]*) max_age_h=12 ;; esac
   if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
@@ -456,8 +466,11 @@ cmd_add() {
       printf 'keel-impact: could not convert the ingest age-cap cutoff on this date implementation — ingesting all pending events uncapped this run\n' >&2
     fi
     # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
-    # still populates the vars) — otherwise that event would be dropped, then lost when the log is truncated.
-    while IFS=$'\t' read -r _ts _ty _src _det || [ -n "$_ty" ]; do
+    # still populates the vars) — otherwise that event would be dropped, then lost when the log is rewritten.
+    # \x1f (NOT tab) re-joins the fields first: bash `read` collapses an EMPTY field sitting between two tab
+    # delimiters regardless of IFS (a genuinely reachable shape here — $_det can be empty on a 5-field
+    # line), the same trap fixed elsewhere in pre-pr-gate.sh — awk doesn't have that bug, so it does the split.
+    while IFS=$'\x1f' read -r _ts _ty _src _det _key || [ -n "$_ty" ]; do
       is_event_type "$_ty" || continue
       _cite="$_src"
       if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
@@ -467,10 +480,16 @@ cmd_add() {
         printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
         continue
       fi
+      if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
+        kept=$(( kept + 1 ))
+        kept_lines="${kept_lines}${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\t'"${_key}"$'\n'
+        printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+        continue
+      fi
       add_cite "$_ty" "$_cite"
       ingested=$(( ingested + 1 ))
       printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-    done < "$LOG"
+    done < <(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5}' "$LOG")
   fi
 
   # --- derive the score from the counted, cited events (computed, never asserted) -----------------
@@ -537,14 +556,18 @@ cmd_add() {
     } >> "$EVIDENCE"
   fi
 
-  # Safe now that the row and any evidence blocks are durably appended. Truncate (not delete) so the path
-  # and any producer's open append still work — covers a stale-only run too, so nothing resurfaces on the
-  # next `add`.
-  if [ "$ingested" -gt 0 ] || [ "$stale" -gt 0 ]; then : > "$LOG"; fi
+  # Safe now that the row and any evidence blocks are durably appended. Rewrite (not a bare truncate) so a
+  # foreign session's fresh, kept-back events survive: write whatever's left (possibly nothing) to a temp
+  # file and `mv` it over the log — atomic, and the path + any producer's open append still work. Covers a
+  # stale-only or foreign-only run too, so nothing resurfaces (or vanishes) on the next `add`.
+  if [ "$ingested" -gt 0 ] || [ "$stale" -gt 0 ] || [ "$kept" -gt 0 ]; then
+    printf '%s' "$kept_lines" > "${LOG}.tmp.$$" && mv "${LOG}.tmp.$$" "$LOG"
+  fi
 
   printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s)' "$score" "$conf" "$ev_count"
   if [ "$ingested" -gt 0 ]; then printf ' (%d auto-ingested from %s)' "$ingested" "$LOG"; fi
   if [ "$stale" -gt 0 ]; then printf ' (%d stale-skipped)' "$stale"; fi
+  if [ "$kept" -gt 0 ]; then printf ' (%d foreign-kept)' "$kept"; fi
   printf ' — HELP=%d COST=%d; appended to %s\n' "$help" "$cost" "$LEDGER"
   if [ "$retro" -eq 1 ]; then rollup retro; else rollup; fi
 }

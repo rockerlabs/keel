@@ -38,10 +38,15 @@ enable`, or `init-project` by default — or `$KEEL_IMPACT_LOG`), the guardrail 
 and `add` auto-ingests it into `--guard` — so normally omit `--guard`, passing it only for a fire the log
 missed. Collection is honest about *count*, not about *valence* — a gate DENY is auto-ingested as `--guard`
 even when it was a false fire, i.e. friction, not help (a fire only knows it blocked something, never whether
-the block was deserved). **Check the printed `ingested: ...` lines against what actually happened this
-session:** a foreign event (leaked in from another session's unconsumed log — `add` age-caps anything older
-than `$KEEL_INGEST_MAX_AGE_HOURS` hours, default 12, and reports it as `stale-skipped:` instead) or a false
-fire does NOT stay counted as guard — rerun `add --no-ingest` and pass the corrected flags by hand (a false
+the block was deserved). Each event is stamped with its producer's own worktree top (dir #74's claim key),
+so with several worktree sessions live on the repo at once, `add` only ingests events carrying ITS OWN
+key — a fresh event from another worktree is left in the log (printed as `foreign-kept: ...`, not counted)
+for that other session's own `add` to pick up later. **`foreign-kept:` lines are EXPECTED with parallel
+sessions — not a bug.** **Check the printed `ingested: ...` lines against what actually happened this
+session:** a same-directory residual (two sessions sharing one worktree, so the claim key can't tell them
+apart — the case the age cap is still the only guard for; anything older than
+`$KEEL_INGEST_MAX_AGE_HOURS` hours, default 12, is reported as `stale-skipped:` instead) or a false fire
+does NOT stay counted as guard — rerun `add --no-ingest` and pass the corrected flags by hand (a false
 fire this session actually suffered from is `--friction`, not `--guard`).
 
 **How the number falls out** (so you can predict it, not target it): `HELP = 4·hold + 3·guard + 2·fire + hit`,
