@@ -16,12 +16,23 @@ check_file "loading-and-cost.md exists" "$doc"
 tok_of() { local c; c="$(wc -c < "$1" | tr -d ' ')"; echo $(( c / 4 )); }
 
 # Shared ±10% verdict: the quoted figure FIG (from SRCDESC) vs the file's ACTUAL token estimate.
+# dir #73: a figure that still passes but has nearly drifted out of the band fails silently — the next
+# edit to the same file (by anyone, for any reason) red-lights CI on a figure it never touched. Warn
+# early instead: once the remaining margin (on the side being consumed) has shrunk to <~3% of actual —
+# i.e. drift has eaten >~70% of the ±10% half-band — print a non-failing note so the PR that caused the
+# drift is the one that restates the figure.
 assert_band() {
   local label="$1" fig="$2" actual="$3" srcdesc="$4"
-  local lo="" hi=""   # init all (set -u safe on bash 3.2)
+  local lo="" hi="" edge="" margin="" threshold=""   # init all (set -u safe on bash 3.2)
   lo=$(( actual * 9 / 10 )); hi=$(( actual * 11 / 10 ))
   if [ "$fig" -ge "$lo" ] && [ "$fig" -le "$hi" ]; then
     pass "$label ($srcdesc ~$fig vs actual ~$actual)"
+    edge=$(( hi - fig )); margin=$(( fig - lo )); [ "$edge" -lt "$margin" ] && margin="$edge"
+    threshold=$(( actual * 3 / 100 ))
+    if [ "$margin" -lt "$threshold" ]; then
+      printf '  note  %s: %s ~%s vs actual ~%s — only %s tok of headroom, restate the figure\n' \
+        "$label" "$srcdesc" "$fig" "$actual" "$margin"
+    fi
   else
     fail "$label" "$srcdesc says ~$fig but actual is ~$actual tok (allowed $lo..$hi)"
   fi

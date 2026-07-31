@@ -9,6 +9,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`tests/test_doc_figures.sh`'s ±10% guard now warns before it fails** (dir #73, felt in dir #69's
+  rails edit). A figure that has drifted to within ~3% of actual (i.e. consumed >~70% of the ±10%
+  half-band) used to pass silently — the next PR to touch that same file, for any reason, would then
+  red-lite CI on a figure it never touched, as happened to `templates/CLAUDE.md` and README's guarded
+  mermaid label in dir #69. `assert_band` now prints a one-line, non-failing `note` when a passing figure
+  is that close to its edge, naming the file and its remaining headroom so the PR causing the drift is
+  the one that restates the figure. New meta-test `tests/test_doc_figures_near_band.sh` pins both
+  directions on a real run of the guard, via a plain `cp`/`tar`-copied tree (no git clone, so the Alpine
+  `safe.directory` trap doesn't apply): a figure nudged into the warn zone (still inside ±10%) prints the
+  note, and an untouched tree stays note-free. Scoped to plain `~N,NNN` figure rows only — the
+  growth-tolerant `~N,NNN+` floor rows (CHANGELOG) and `assert_commands_range` are unaffected by design.
 - **`/polish` step 5(a)'s code-review reminder dialog restructured to be much harder to skip** (dir #62's
   own `/polish` run, felt for the 3rd time). The `AskUserQuestion` reminder that must follow every
   independent-agent review — "accept this agent review, or run the stronger built-in `/code-review`?" —
