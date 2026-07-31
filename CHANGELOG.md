@@ -20,6 +20,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   convergence round (not just the first pass) since a hand-off note is same-SHA-only. A proper
   gate-level check — denying the receipt without a recorded hand-off/waiver — is tracked separately as
   dir #79; this fix is deliberately wording-only.
+- **That same reminder dialog reframed as one additive yes/no question instead of an either/or choice**
+  (dir #81, operator-raised). The dialog used to read as "accept this agent review, OR run the stronger
+  `/code-review`" — and picking the operator pass **overwrote** the receipt, silently erasing the record
+  that an independent agent review had already run and been mechanically trace-confirmed. It's now framed
+  as: the agent review already ran and stands regardless of the answer; the only question is whether to
+  *additionally* run `/code-review` on top. `tools/pre-pr-gate.sh` gained a new combined outcome,
+  `agent:<level>+operator-run`, so both provenances are recorded honestly instead of one clobbering the
+  other — the agent half stays mechanically trace-checked even in the combined shape. An anti-rebundle
+  sentence guards against re-bundling this with a future "is the agent review itself optional" question.
 - **`/polish` step 5 no longer attempts the doomed `Skill(code-review)` call before falling back to the
   independent-subagent review** (dir #71). Every `low|medium|high|max` run used to open with an attempt
   that failed every single time — `/code-review` ships `disable-model-invocation: true`, a documented
