@@ -329,6 +329,23 @@ check_contains "empty-detail foreign event derives no score (correctly not inges
 run_in "$foreign_repo" bash "$TOOL" add --gap none
 check_contains "the owning key still ingests the empty-detail event correctly" "$OUT" "ingested: $ts_now fire session"
 
+# (vi) a line whose type isn't in EVENT_TYPES (pre-pr-gate.sh's own housekeeping lines — receipt-pass,
+# receipt-deny, pipeline-drift) is preserved through a rewrite instead of being silently dropped, both
+# when the rewrite is triggered by a co-existing own-key ingest...
+housekeeping_line="$(printf '%s\treceipt-pass\tpre-pr-gate\tsome-detail\t%s' "$ts_now" "$own_key")"
+printf '%s\n%s\tguard\tsecret-guard\tblocked\t%s\n' "$housekeeping_line" "$ts_now" "$own_key" > "$LOG"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "own-key ingest still fires alongside a housekeeping line" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
+check_contains "housekeeping line survives an ingest-triggered rewrite" "$(cat "$LOG")" "$housekeeping_line"
+
+# ...and when the ONLY scored activity is a foreign-kept event, the rewrite is skipped entirely (nothing
+# needed removing), so the housekeeping line survives simply because the file was never touched
+printf '%s\n%s\tguard\tsecret-guard\tblocked\t%s\n' "$housekeeping_line" "$ts_now" "$foreign_key" > "$LOG"
+_kept_only_before="$(cat "$LOG")"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "a kept-only run derives no score" "$OUT" "derived score —/100"
+check_contains "a kept-only run leaves the log byte-for-byte untouched (rewrite skipped)" "$(cat "$LOG")" "$_kept_only_before"
+
 # --- hold event type: producer API + auto-ingest at weight 4 ------------------------------------
 LEDGER="$SANDBOX/ledger3.md"; LOG="$SANDBOX/events3.log"; EVIDENCE="$SANDBOX/evidence3.md"
 export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"

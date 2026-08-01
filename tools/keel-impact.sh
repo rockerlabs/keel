@@ -49,14 +49,11 @@ _keel_main_top() {  # the main checkout's top; empty if not a repo or the main e
   git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
     awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
 }
-_claim_key() {  # dir #74: this producer's OWN worktree top, BEFORE _keel_top's main-checkout fallback —
-                 # that fallback only decides where the shared log FILE lives, not who fired the event.
-  git rev-parse --show-toplevel 2>/dev/null || true
-}
 _keel_top() {  # memoized: invariant within a run, and the resolvers below all call it at startup
   if [ -z "${_KEEL_TOP_CACHE+x}" ]; then
     local top main
     top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    _KEEL_CLAIM_CACHE="$top"  # dir #74: the raw pre-fallback value — _claim_key()'s answer too
     if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
       main="$(_keel_main_top)"
       if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
@@ -64,6 +61,12 @@ _keel_top() {  # memoized: invariant within a run, and the resolvers below all c
     _KEEL_TOP_CACHE="$top"
   fi
   printf '%s' "$_KEEL_TOP_CACHE"
+}
+_claim_key() {  # dir #74: this producer's OWN worktree top, BEFORE _keel_top's main-checkout fallback —
+                 # that fallback only decides where the shared log FILE lives, not who fired the event.
+                 # Reuses _keel_top's own memoized raw value instead of a second git rev-parse subprocess.
+  _keel_top > /dev/null
+  printf '%s' "$_KEEL_CLAIM_CACHE"
 }
 _resolve_ledger() {
   if [ -n "${KEEL_IMPACT_LEDGER:-}" ]; then printf '%s' "$KEEL_IMPACT_LEDGER"; return; fi
@@ -440,13 +443,13 @@ cmd_add() {
 
   # --- auto-ingest deterministic events the shell layer recorded (zero-token, portable) -----------
   # Each logged event becomes a cited event too: its `source | detail` is the citation, so the objective
-  # signal is auditable exactly like the model's. Consumed (log truncated) only after the row lands, so a
-  # failed write never double-counts or loses events.
+  # signal is auditable exactly like the model's. Consumed (log rewritten, dir #74) only after the row
+  # lands, so a failed write never double-counts or loses events.
   #
   # Age cap (backlog #59): a session that never calls `add` leaves its events unconsumed in the log, where
   # they'd otherwise mis-attribute to whichever session's row lands next. Anything strictly older than the
   # cutoff is stale: not counted, archived to the evidence trail with a note instead of a citation, and the
-  # log is still truncated so it never resurfaces on the next `add`. `--since` overrides the cutoff
+  # log is still rewritten (stale lines removed) so it never resurfaces on the next `add`. `--since` overrides the cutoff
   # explicitly. Malformed/empty timestamps are treated as stale too — false credit is the harm here, so err
   # toward NOT counting (the mirror of pre-pr-gate's err-toward-catching). If the portable epoch->ISO
   # conversion fails outright, fail OPEN: ingest everything uncapped (today's behavior) rather than crash or
@@ -454,42 +457,59 @@ cmd_add() {
   # dir #74: a fresh event with a claim key that ≠ our own is a foreign session's, stamped into this
   # shared log by a different worktree — not ours to count. Keep it in the log (rewritten below) so the
   # session that DOES own it can ingest it later; only a foreign event past the age cap is unattributable
-  # either way, so it stays on dir #59's stale-archive-and-remove path regardless of key.
-  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _cite cutoff_iso="" stale_lines="" kept_lines=""
-  local own_key; own_key="$(_claim_key)"
+  # either way, so it stays on dir #59's stale-archive-and-remove path regardless of key. A line whose
+  # type isn't in EVENT_TYPES (pre-pr-gate.sh's own housekeeping lines — receipt-pass, receipt-deny,
+  # pipeline-drift) is never ours to score either, but it's still preserved into kept_lines rather than
+  # silently dropped — this loop is the only place in the codebase that touches this shared file's
+  # content, so it's the only place that can avoid destroying a line nobody here understands.
+  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _cite cutoff_iso="" stale_lines="" kept_lines="" _awk_out
+  local own_key=""
   local max_age_h="${KEEL_INGEST_MAX_AGE_HOURS:-12}"
   case "$max_age_h" in ''|*[!0-9]*) max_age_h=12 ;; esac
   if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
+    own_key="$(_claim_key)"
     if [ -n "$since" ]; then
       cutoff_iso="$since"
     elif ! cutoff_iso="$(_epoch_to_iso "$(( $(date +%s) - max_age_h * 3600 ))")"; then
       printf 'keel-impact: could not convert the ingest age-cap cutoff on this date implementation — ingesting all pending events uncapped this run\n' >&2
     fi
-    # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
-    # still populates the vars) — otherwise that event would be dropped, then lost when the log is rewritten.
     # \x1f (NOT tab) re-joins the fields first: bash `read` collapses an EMPTY field sitting between two tab
     # delimiters regardless of IFS (a genuinely reachable shape here — $_det can be empty on a 5-field
     # line), the same trap fixed elsewhere in pre-pr-gate.sh — awk doesn't have that bug, so it does the split.
-    while IFS=$'\x1f' read -r _ts _ty _src _det _key || [ -n "$_ty" ]; do
-      is_event_type "$_ty" || continue
-      _cite="$_src"
-      if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
-      if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
-        stale=$(( stale + 1 ))
-        stale_lines="${stale_lines}- ${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\n'
-        printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-        continue
-      fi
-      if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
-        kept=$(( kept + 1 ))
-        kept_lines="${kept_lines}${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\t'"${_key}"$'\n'
-        printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-        continue
-      fi
-      add_cite "$_ty" "$_cite"
-      ingested=$(( ingested + 1 ))
-      printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-    done < <(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5}' "$LOG")
+    # Reading via `$(...)` (not `< <(awk ...)`) lets us check awk's own exit status: a bare process
+    # substitution is invisible to both `set -e` and `pipefail`, so a mid-run read failure on this shared,
+    # multi-worktree-written file (permission race, the file replaced, a concurrent rewrite) would
+    # otherwise silently look like "nothing to ingest" instead of the read failure it actually was.
+    if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5}' "$LOG")"; then
+      # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
+      # still populates the vars) — otherwise that event would be dropped, then lost when the log is rewritten.
+      while IFS=$'\x1f' read -r _ts _ty _src _det _key || [ -n "$_ty" ]; do
+        if ! is_event_type "$_ty"; then
+          [ -n "$_ty" ] || continue
+          kept_lines="${kept_lines}${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\t'"${_key}"$'\n'
+          continue
+        fi
+        _cite="$_src"
+        if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
+        if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
+          stale=$(( stale + 1 ))
+          stale_lines="${stale_lines}- ${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\n'
+          printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+          continue
+        fi
+        if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
+          kept=$(( kept + 1 ))
+          kept_lines="${kept_lines}${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\t'"${_key}"$'\n'
+          printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+          continue
+        fi
+        add_cite "$_ty" "$_cite"
+        ingested=$(( ingested + 1 ))
+        printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+      done <<< "$_awk_out"
+    else
+      printf 'keel-impact: could not read %s for ingest this run — leaving it untouched (nothing lost, nothing counted)\n' "$LOG" >&2
+    fi
   fi
 
   # --- derive the score from the counted, cited events (computed, never asserted) -----------------
@@ -557,11 +577,22 @@ cmd_add() {
   fi
 
   # Safe now that the row and any evidence blocks are durably appended. Rewrite (not a bare truncate) so a
-  # foreign session's fresh, kept-back events survive: write whatever's left (possibly nothing) to a temp
-  # file and `mv` it over the log — atomic, and the path + any producer's open append still work. Covers a
-  # stale-only or foreign-only run too, so nothing resurfaces (or vanishes) on the next `add`.
-  if [ "$ingested" -gt 0 ] || [ "$stale" -gt 0 ] || [ "$kept" -gt 0 ]; then
-    printf '%s' "$kept_lines" > "${LOG}.tmp.$$" && mv "${LOG}.tmp.$$" "$LOG"
+  # foreign session's fresh, kept-back events (and any unrecognized-type line) survive: write whatever's
+  # left to a temp file and `mv` it over the log — atomic, and the path + any producer's open append still
+  # work. Only fires when something actually needs REMOVING (ingested or stale) — a kept/preserved-only
+  # run changes nothing the file doesn't already contain, so skipping the rewrite there is a pure win: one
+  # less write, and one less window where a concurrent producer's append could race the read-modify-write
+  # (dir #82 tracks the deeper, still-open version of that race for the case a rewrite can't avoid).
+  if [ "$ingested" -gt 0 ] || [ "$stale" -gt 0 ]; then
+    # `if A && B` (not a bare `A && B` statement): under `set -e`, a command that is not the LAST element
+    # of an AND-OR list is exempt from triggering errexit (POSIX), so a bare `printf ... && mv ...` would
+    # let a write failure fall through silently — this run's ledger row (already appended above) would
+    # then claim events that are still sitting, unremoved, in $LOG for the next `add` to double-count.
+    # Fail loud instead: on failure, nothing was consumed, so say so and stop.
+    if ! { printf '%s' "$kept_lines" > "${LOG}.tmp.$$" && mv "${LOG}.tmp.$$" "$LOG"; }; then
+      printf 'keel-impact: failed to rewrite %s — this run'"'"'s ingested/stale-skipped events are still in it and will be reprocessed on the next add\n' "$LOG" >&2
+      exit 1
+    fi
   fi
 
   printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s)' "$score" "$conf" "$ev_count"

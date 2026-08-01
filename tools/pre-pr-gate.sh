@@ -377,6 +377,14 @@ resolve_impact_log() {
 # log can tell "my event" from "someone else's" at ingest time. This is the site's OWN worktree top,
 # taken BEFORE resolve_impact_log's main-checkout fallback — the fallback is only about where the log
 # FILE lives, not who fired the event. Empty outside a repo (matches resolve_impact_log's own git call).
+#
+# CAVEAT: "field 5 = claim key" only holds for a `detail` with no embedded tab. The receipt-pass call
+# below intentionally packs two values into `detail` via a literal tab (dir #63/#64's `sweep` provenance
+# trick), so its actual on-disk line has 6 tab fields, not 5, and $5 there is `prov_tag`, not the claim
+# key — currently harmless only because `keel-impact.sh` doesn't score receipt-pass (EVENT_TYPES excludes
+# it), so nothing ever reads that misplaced field. Don't extend EVENT_TYPES to cover a type whose detail
+# can carry an embedded tab without also sanitizing it here the way `keel-impact.sh cmd_event`'s
+# `_flatten` does for its own writes.
 _claim_key() { git -C "${1:-$PWD}" rev-parse --show-toplevel 2>/dev/null || true; }
 
 # Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —
