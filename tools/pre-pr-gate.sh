@@ -382,9 +382,11 @@ resolve_impact_log() {
 # below intentionally packs two values into `detail` via a literal tab (dir #63/#64's `sweep` provenance
 # trick), so its actual on-disk line has 6 tab fields, not 5, and $5 there is `prov_tag`, not the claim
 # key — currently harmless only because `keel-impact.sh` doesn't score receipt-pass (EVENT_TYPES excludes
-# it), so nothing ever reads that misplaced field. Don't extend EVENT_TYPES to cover a type whose detail
-# can carry an embedded tab without also sanitizing it here the way `keel-impact.sh cmd_event`'s
-# `_flatten` does for its own writes.
+# it), so nothing ever reads that misplaced field. `keel-impact.sh cmd_add`'s ingest loop round-trips such
+# a line VERBATIM (the original 6-field text, not a 5-field reconstruction) whenever a rewrite happens to
+# preserve it, so the extra field survives on disk even though nothing reads it yet — but don't extend
+# EVENT_TYPES to cover a type whose detail can carry an embedded tab without also sanitizing it here the
+# way `keel-impact.sh cmd_event`'s `_flatten` does for its own writes.
 _claim_key() { git -C "${1:-$PWD}" rev-parse --show-toplevel 2>/dev/null || true; }
 
 # Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —

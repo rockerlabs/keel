@@ -462,7 +462,7 @@ cmd_add() {
   # pipeline-drift) is never ours to score either, but it's still preserved into kept_lines rather than
   # silently dropped — this loop is the only place in the codebase that touches this shared file's
   # content, so it's the only place that can avoid destroying a line nobody here understands.
-  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _cite cutoff_iso="" stale_lines="" kept_lines="" _awk_out
+  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _raw _cite cutoff_iso="" stale_lines="" kept_lines="" _awk_out
   local own_key=""
   local max_age_h="${KEEL_INGEST_MAX_AGE_HOURS:-12}"
   case "$max_age_h" in ''|*[!0-9]*) max_age_h=12 ;; esac
@@ -480,13 +480,17 @@ cmd_add() {
     # substitution is invisible to both `set -e` and `pipefail`, so a mid-run read failure on this shared,
     # multi-worktree-written file (permission race, the file replaced, a concurrent rewrite) would
     # otherwise silently look like "nothing to ingest" instead of the read failure it actually was.
-    if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5}' "$LOG")"; then
+    # $0 (the untouched original line, appended as a 6th field) is what a KEPT line writes back —
+    # never the 5 split fields reassembled — so a line with more than 5 real tab fields (pre-pr-gate.sh's
+    # receipt-pass rows deliberately embed an extra one, see its own log_event/_claim_key comment) round-
+    # trips byte-for-byte through a rewrite instead of being silently truncated to 5 fields.
+    if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5 SEP $0}' "$LOG")"; then
       # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
       # still populates the vars) — otherwise that event would be dropped, then lost when the log is rewritten.
-      while IFS=$'\x1f' read -r _ts _ty _src _det _key || [ -n "$_ty" ]; do
+      while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
         if ! is_event_type "$_ty"; then
           [ -n "$_ty" ] || continue
-          kept_lines="${kept_lines}${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\t'"${_key}"$'\n'
+          kept_lines="${kept_lines}${_raw}"$'\n'
           continue
         fi
         _cite="$_src"
@@ -499,7 +503,7 @@ cmd_add() {
         fi
         if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
           kept=$(( kept + 1 ))
-          kept_lines="${kept_lines}${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\t'"${_key}"$'\n'
+          kept_lines="${kept_lines}${_raw}"$'\n'
           printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
           continue
         fi

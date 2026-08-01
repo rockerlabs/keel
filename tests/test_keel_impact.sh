@@ -330,13 +330,17 @@ run_in "$foreign_repo" bash "$TOOL" add --gap none
 check_contains "the owning key still ingests the empty-detail event correctly" "$OUT" "ingested: $ts_now fire session"
 
 # (vi) a line whose type isn't in EVENT_TYPES (pre-pr-gate.sh's own housekeeping lines — receipt-pass,
-# receipt-deny, pipeline-drift) is preserved through a rewrite instead of being silently dropped, both
-# when the rewrite is triggered by a co-existing own-key ingest...
-housekeeping_line="$(printf '%s\treceipt-pass\tpre-pr-gate\tsome-detail\t%s' "$ts_now" "$own_key")"
+# receipt-deny, pipeline-drift) is preserved VERBATIM through a rewrite instead of being silently dropped
+# OR truncated. Uses the REAL receipt-pass shape (pre-pr-gate.sh's own log_event call embeds a literal
+# tab in `detail`, packing prov_label+prov_tag) — a genuine 6-tab-field line, not a 5-field stand-in — so
+# this actually exercises the "preserve the raw line, don't reconstruct from 5 split fields" fix; an
+# earlier version of this fix looked right but silently truncated exactly this shape down to 5 fields.
+housekeeping_line="$(printf '%s\treceipt-pass\tpre-pr-gate\treview: high, trace-confirmed\ttrace-confirmed\t%s' "$ts_now" "$own_key")"
 printf '%s\n%s\tguard\tsecret-guard\tblocked\t%s\n' "$housekeeping_line" "$ts_now" "$own_key" > "$LOG"
 run_in "$own_repo" bash "$TOOL" add --gap none
 check_contains "own-key ingest still fires alongside a housekeeping line" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
 check_contains "housekeeping line survives an ingest-triggered rewrite" "$(cat "$LOG")" "$housekeeping_line"
+check_contains "the 6-field housekeeping line keeps all 6 fields (not truncated to 5)" "$(awk -F'\t' 'NR==1{print NF}' "$LOG")" "6"
 
 # ...and when the ONLY scored activity is a foreign-kept event, the rewrite is skipped entirely (nothing
 # needed removing), so the housekeeping line survives simply because the file was never touched

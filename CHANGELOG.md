@@ -26,10 +26,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `cmd_add`'s log-rewrite and its read loop both used constructs (`A && B` as a bare statement; a bare
   process-substitution read) that are silently exempt from bash's `set -e`, so a write or read failure
   on the shared log used to fall through instead of failing loud; and a foreign-kept-only rewrite was
-  silently dropping co-existing non-scored housekeeping lines (`receipt-pass` etc.) — now preserved, and
-  the rewrite is skipped entirely when nothing needs removing. The still-open gap — no locking around the
-  log's shared read-modify-write cycle, so two genuinely concurrent `add` runs can still race — is real
-  but out of scope for a portable (macOS/Alpine-safe) fix here, tracked separately as dir #82.
+  silently dropping co-existing non-scored housekeeping lines (`receipt-pass` etc.) — now preserved
+  verbatim (the raw original line, not a 5-field reconstruction, so a line with more than 5 real tab
+  fields — like `receipt-pass`'s own embedded-tab `detail` — round-trips intact instead of being quietly
+  truncated), and the rewrite is skipped entirely when nothing needs removing. A convergence-round delta
+  review caught the truncation risk the first pass at "preserve" introduced. The still-open gap — no
+  locking around the log's shared read-modify-write cycle, so two genuinely concurrent `add` runs can
+  still race — is real but out of scope for a portable (macOS/Alpine-safe) fix here, tracked separately
+  as dir #82.
 - **`tests/test_doc_figures.sh`'s ±10% guard now warns before it fails** (dir #73, felt in dir #69's
   rails edit). A figure that has drifted to within ~3% of actual (i.e. consumed >~70% of the ±10%
   half-band) used to pass silently — the next PR to touch that same file, for any reason, would then
