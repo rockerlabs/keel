@@ -9,6 +9,27 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **The shared, multi-worktree impact-event log is now claim-keyed, so parallel `/keel-score` sessions
+  don't steal each other's guardrail fires** (dir #74, felt in dir #69's wrap in both directions: a
+  session losing its own fire to another session's `add`, and a session inheriting fires it never
+  triggered). `tools/pre-pr-gate.sh`, `tools/secret-guard/secret-scan.sh`, `tools/public-audit.sh`, and
+  `tools/keel-impact.sh`'s own `event` subcommand now stamp a 5th TSV field — the producer's own
+  worktree top, captured before any main-checkout log-path fallback — on every logged event.
+  `keel-impact.sh add` only auto-ingests events carrying its own key; a fresh event from a different
+  worktree is left in the log (printed `foreign-kept:`) for that worktree's own `add` to claim later.
+  Legacy 4-field lines still ingest as before, and stale events keep dir #59's archive-and-remove
+  semantics regardless of key. The ingest loop's tab-collapse trap (an empty middle TSV field silently
+  swallowed by `IFS=$'\t' read`) is now reachable for real since detail can sit before the new key field,
+  fixed via the same awk-then-`\x1f`-read idiom already used elsewhere in `pre-pr-gate.sh`.
+  `commands/keel-score.md` documents that `foreign-kept:` lines are expected, not a bug, with parallel
+  sessions. A subsequent operator-run `/code-review high` pass found and fixed three further gaps:
+  `cmd_add`'s log-rewrite and its read loop both used constructs (`A && B` as a bare statement; a bare
+  process-substitution read) that are silently exempt from bash's `set -e`, so a write or read failure
+  on the shared log used to fall through instead of failing loud; and a foreign-kept-only rewrite was
+  silently dropping co-existing non-scored housekeeping lines (`receipt-pass` etc.) — now preserved, and
+  the rewrite is skipped entirely when nothing needs removing. The still-open gap — no locking around the
+  log's shared read-modify-write cycle, so two genuinely concurrent `add` runs can still race — is real
+  but out of scope for a portable (macOS/Alpine-safe) fix here, tracked separately as dir #82.
 - **`tests/test_doc_figures.sh`'s ±10% guard now warns before it fails** (dir #73, felt in dir #69's
   rails edit). A figure that has drifted to within ~3% of actual (i.e. consumed >~70% of the ±10%
   half-band) used to pass silently — the next PR to touch that same file, for any reason, would then
