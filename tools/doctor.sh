@@ -480,9 +480,11 @@ for d in "${DIRS[@]}"; do
   fi
 
   gi="$d/.gitignore"
+  claude_tracked=0
+  git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && claude_tracked=1
   if [ -f "$gi" ] && grep -qE '(^|/)(\.claude/?|CLAUDE\.md)' "$gi"; then
     :  # private AI context ignored — good
-  elif [ -f "$d/CLAUDE.md" ] && git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1; then
+  elif [ -f "$d/CLAUDE.md" ] && [ "$claude_tracked" = 1 ]; then
     say "       (CLAUDE.md is tracked — treating as a deliberate public fork; ensure no secrets/PII)"
   else
     gap G-GITIGNORE-CONTEXT ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
@@ -500,8 +502,6 @@ for d in "${DIRS[@]}"; do
     if [ "$agents_ignored" = 0 ] && [ "$agents_tracked" = 0 ]; then
       gap G-AGENTSMD-CONTEXT ".gitignore does not ignore AGENTS.md (vendor sibling of CLAUDE.md — private AI context)"
     elif [ -f "$d/CLAUDE.md" ]; then
-      claude_tracked=0
-      git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && claude_tracked=1
       if [ "$agents_tracked" != "$claude_tracked" ]; then
         gap G-AGENTSMD-INHERIT "AGENTS.md's tracked/ignored status does not match CLAUDE.md's — it should always inherit CLAUDE.md's git status"
       elif [ "$agents_tracked" = 1 ]; then
