@@ -497,7 +497,7 @@ for d in "${DIRS[@]}"; do
     agents_tracked=0
     git -C "$d" ls-files --error-unmatch AGENTS.md >/dev/null 2>&1 && agents_tracked=1
     agents_ignored=0
-    [ -f "$gi" ] && grep -qE '(^|/)AGENTS\.md$' "$gi" && agents_ignored=1
+    git -C "$d" check-ignore -q AGENTS.md 2>/dev/null && agents_ignored=1
 
     if [ "$agents_ignored" = 0 ] && [ "$agents_tracked" = 0 ]; then
       gap G-AGENTSMD-CONTEXT ".gitignore does not ignore AGENTS.md (vendor sibling of CLAUDE.md — private AI context)"

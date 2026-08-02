@@ -160,6 +160,35 @@ run "$doctor" "$d"
 check_status "drifted AGENTS.md copy → exit 0 (WARN, not GAP)" 0 "$STATUS"
 check_contains "warns about the drifted copy" "$OUT" "drifted from CLAUDE.md"
 
+# a broader glob (not the literal "AGENTS.md" line) still counts as ignored — the check uses
+# git check-ignore, not a literal-line grep, so a *.md-style pattern is recognized correctly
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf '*.md\n.claude/\n' > "$d/.gitignore"
+ln -s CLAUDE.md "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "AGENTS.md ignored via a broader glob → exit 0" 0 "$STATUS"
+check_absent "no AGENTS.md gitignore gap under a broader glob" "$OUT" "does not ignore AGENTS.md"
+
+# edge: AGENTS.md exists but CLAUDE.md is entirely absent — only the first GAP signal applies (nothing
+# to inherit from or drift against)
+d="$(mkproj)"; git -C "$d" init -q
+printf '.claude/\n' > "$d/.gitignore"   # ignores neither CLAUDE.md nor AGENTS.md
+printf '# ctx\n' > "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "AGENTS.md present, CLAUDE.md absent, unignored → GAP exit 1" 1 "$STATUS"
+check_contains "reports the AGENTS.md gitignore gap" "$OUT" "does not ignore AGENTS.md"
+check_absent "no inherit gap when there's no CLAUDE.md to inherit from" "$OUT" "does not match CLAUDE.md's"
+check_absent "no drift warn when there's no CLAUDE.md to drift against" "$OUT" "drifted from CLAUDE.md"
+
+# edge: AGENTS.md is a broken symlink (target CLAUDE.md missing) — never-clobber logic in init-project.sh
+# and doctor's existence check both key off `-e || -L`, so a broken symlink must still be picked up
+d="$(mkproj)"; git -C "$d" init -q
+printf 'CLAUDE.md\nAGENTS.md\n.claude/\n' > "$d/.gitignore"   # both ignored, no CLAUDE.md present
+ln -s CLAUDE.md "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "broken AGENTS.md symlink, both ignored → exit 0" 0 "$STATUS"
+check_absent "no AGENTS.md gitignore gap for a broken but ignored symlink" "$OUT" "does not ignore AGENTS.md"
+
 # footprint over budget is advisory: WARN but still exit 0
 d="$(mkproj)"; git -C "$d" init -q
 printf 'plenty of startup context goes here\n' > "$d/CLAUDE.md"

@@ -55,6 +55,17 @@ check_status "init with a pre-existing AGENTS.md → exit 0" 0 "$STATUS"
 check_nolink "pre-existing AGENTS.md stays a regular file" "$own/AGENTS.md"
 check_contains "pre-existing AGENTS.md content is preserved" "$(cat "$own/AGENTS.md")" "project-authored"
 
+# a pre-existing AGENTS.md that's a BROKEN symlink (dangling target) is also never clobbered — the
+# never-clobber check must key off `-e || -L`, not a plain `-e` that a broken symlink fails
+broken="$SANDBOX/broken-agents-proj"
+mkdir -p "$broken"
+ln -s does-not-exist.md "$broken/AGENTS.md"
+run "$init" "$broken"
+check_status "init with a broken AGENTS.md symlink → exit 0" 0 "$STATUS"
+check_contains "reports the broken symlink untouched" "$OUT" "AGENTS.md already exists"
+check_link "broken AGENTS.md symlink is left in place" "$broken/AGENTS.md"
+check_status "broken symlink's dangling target is unchanged" "does-not-exist.md" "$(readlink "$broken/AGENTS.md")"
+
 # --help prints usage and exits 0 (a newcomer's reflex must not look like a crash); an unknown flag
 # is a usage error, not silently treated as a directory to scaffold.
 run "$init" --help
