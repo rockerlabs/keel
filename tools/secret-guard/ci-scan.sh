@@ -30,7 +30,7 @@ if [ ! -x "$scan" ]; then
   echo "ci-scan: scanner not found next to this script ($scan)" >&2
   exit 2
 fi
-# shellcheck source=range-lib.sh
+# shellcheck source=tools/secret-guard/range-lib.sh
 . "$here/range-lib.sh"
 
 case "${GITHUB_EVENT_NAME:-}" in
