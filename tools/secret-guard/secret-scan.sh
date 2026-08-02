@@ -342,22 +342,21 @@ case "$mode" in
     # away and the push scans CLEAN. That was a real intermittent scanner hole (flaked on macOS CI,
     # buffer/timing-dependent). -c consumes the whole stream, so the status is deterministic.
     #
-    # rev-list writes to a file (not a pipe) so its own exit status is directly checkable — a
-    # typo'd/unfetched rev must be exit 2 (config error), not a silent "clean": piping straight into
-    # cat-file would discard rev-list's stderr/status and a bad range would scan zero blobs and fail
-    # OPEN. This also resolves the range only once (no separate --max-count=0 probe beforehand).
+    # rev-list's own exit status (via `set -o pipefail`, active file-wide) is checked directly on the
+    # SAME pipe that streams objects to cat-file — a typo'd/unfetched rev must be exit 2 (config
+    # error), not a silent "clean" that discards rev-list's stderr/status and scans zero blobs, fail
+    # OPEN. This also resolves the range only once (no separate --max-count=0 probe beforehand), and
+    # keeps the streaming pipe rather than materializing the object list to a temp file first.
     rangeerr="$(mktemp "$SCRATCH/blob.XXXXXX")"
-    objsfile="$(mktemp "$SCRATCH/blob.XXXXXX")"
     # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    if ! git rev-list --objects $rng > "$objsfile" 2>"$rangeerr"; then
+    if ! objs="$(git rev-list --objects $rng 2>"$rangeerr" \
+                   | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null)"; then
       echo "secret-scan: bad range '$rng' — not resolvable in this repo" >&2
       sed 's/^/  /' "$rangeerr" >&2
-      rm -f "$rangeerr" "$objsfile"
+      rm -f "$rangeerr"
       exit 2
     fi
     rm -f "$rangeerr"
-    objs="$(git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' < "$objsfile" 2>/dev/null || true)"
-    rm -f "$objsfile"
     blobs="$(printf '%s\n' "$objs" | awk '$1=="blob"')"
     range_hits=1                                    # default: run the detailed scan
     if [ -z "$blobs" ]; then
