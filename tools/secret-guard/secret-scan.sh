@@ -192,6 +192,14 @@ emit_stream() {  # $1 = record label (path)
 # an annotated tag's message body — everything after the first blank line of the raw tag object
 tag_body() { git cat-file tag "$1" 2>/dev/null | sed '1,/^$/d'; }
 
+# require_git_repo CALLER_LABEL — exit 2 (caller error) when not inside a git repo. Modes that scan
+# repo state (--staged, --tracked) must fail CLOSED here: the `|| true` guards further down would
+# otherwise read "not a repo" as "nothing found" and pass clean.
+require_git_repo() {
+  git rev-parse --git-dir >/dev/null 2>&1 \
+    || { echo "secret-scan: $1 needs a git repo" >&2; exit 2; }
+}
+
 # scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
 # not the file — a misleading figure. The path + matched content is what's actionable.
@@ -318,14 +326,6 @@ case "$mode" in
   --range)
     shift
     rng="${1:?--range needs A..B}"
-    # Validate the range up front — a typo'd/unfetched rev must be exit 2 (config error), not a
-    # silent "clean": the object walk below discards rev-list stderr, so a bad range would
-    # otherwise scan zero blobs and fail OPEN. --max-count=0 resolves the revs without walking.
-    # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    if ! git rev-list --max-count=0 $rng >/dev/null 2>&1; then
-      echo "secret-scan: bad range '$rng' — not resolvable in this repo" >&2
-      exit 2
-    fi
     # Scan every blob the push would INTRODUCE (objects reachable in the range), not the net endpoint
     # diff: a secret added in one pushed commit and removed in a later one is absent from both endpoint
     # trees yet its blob still ships and stays recoverable — `git diff A..B` would miss it. rng is a
@@ -341,9 +341,23 @@ case "$mode" in
     # takes SIGPIPE (141), and under `pipefail` the whole pipeline reads as failed — the hit is thrown
     # away and the push scans CLEAN. That was a real intermittent scanner hole (flaked on macOS CI,
     # buffer/timing-dependent). -c consumes the whole stream, so the status is deterministic.
+    #
+    # rev-list writes to a file (not a pipe) so its own exit status is directly checkable — a
+    # typo'd/unfetched rev must be exit 2 (config error), not a silent "clean": piping straight into
+    # cat-file would discard rev-list's stderr/status and a bad range would scan zero blobs and fail
+    # OPEN. This also resolves the range only once (no separate --max-count=0 probe beforehand).
+    rangeerr="$(mktemp "$SCRATCH/blob.XXXXXX")"
+    objsfile="$(mktemp "$SCRATCH/blob.XXXXXX")"
     # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    objs="$(git rev-list --objects $rng 2>/dev/null \
-              | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' 2>/dev/null || true)"
+    if ! git rev-list --objects $rng > "$objsfile" 2>"$rangeerr"; then
+      echo "secret-scan: bad range '$rng' — not resolvable in this repo" >&2
+      sed 's/^/  /' "$rangeerr" >&2
+      rm -f "$rangeerr" "$objsfile"
+      exit 2
+    fi
+    rm -f "$rangeerr"
+    objs="$(git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' < "$objsfile" 2>/dev/null || true)"
+    rm -f "$objsfile"
     blobs="$(printf '%s\n' "$objs" | awk '$1=="blob"')"
     range_hits=1                                    # default: run the detailed scan
     if [ -z "$blobs" ]; then
@@ -421,9 +435,7 @@ case "$mode" in
     fi
     ;;
   staged|--staged|"")
-    # Outside a git repo there is nothing staged to scan — that is a caller error (exit 2), not a
-    # clean result: the `|| true` guards below would otherwise read as "clean" and fail OPEN.
-    git rev-parse --git-dir >/dev/null 2>&1 || { echo "secret-scan: --staged needs a git repo" >&2; exit 2; }
+    require_git_repo --staged
     while IFS= read -r f; do
       [ -n "$f" ] && emit_diff "$f" --cached
     done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)

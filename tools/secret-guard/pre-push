@@ -9,7 +9,7 @@ if [ -z "${scan:-}" ] || [ ! -x "$scan" ]; then
   echo "secret-guard: scanner not found next to hook" >&2
   exit 1
 fi
-# shellcheck source=tools/secret-guard/range-lib.sh
+# shellcheck source=range-lib.sh
 . "$here/range-lib.sh"
 
 status=0
