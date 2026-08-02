@@ -89,12 +89,16 @@ else
 fi
 
 # 3b. AGENTS.md — vendor sibling of CLAUDE.md (dir #75): a symlink, so it can never drift from it.
-# Never-clobber, same idiom as the CLAUDE.md branch above.
+# Never-clobber, same idiom as the CLAUDE.md branch above. Only link if CLAUDE.md actually exists —
+# step 3 above can fail to create it (missing template), and a symlink to nothing would print a
+# success message for a dangling target.
 if [ -e AGENTS.md ] || [ -L AGENTS.md ]; then
   echo "  = AGENTS.md already exists (left untouched)"
-else
+elif [ -f CLAUDE.md ]; then
   ln -s CLAUDE.md AGENTS.md
   echo "  + AGENTS.md created (symlink to CLAUDE.md)"
+else
+  echo "  ! AGENTS.md skipped: no CLAUDE.md to link to" >&2
 fi
 
 # Auto-register in the INSTANCE.md Projects index (best-effort; --no-register to skip).

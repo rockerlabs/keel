@@ -189,6 +189,29 @@ run "$doctor" "$d"
 check_status "broken AGENTS.md symlink, both ignored → exit 0" 0 "$STATUS"
 check_absent "no AGENTS.md gitignore gap for a broken but ignored symlink" "$OUT" "does not ignore AGENTS.md"
 
+# WARN: AGENTS.md is a symlink, but NOT to CLAUDE.md — a symlink can't "drift" by content, but pointing
+# somewhere else entirely is just as wrong, so the drift check must inspect the target, not just -L
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\nAGENTS.md\n.claude/\n' > "$d/.gitignore"
+printf 'not claude content\n' > "$d/some-other-file.md"
+ln -s some-other-file.md "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "AGENTS.md symlinked to the wrong target → exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "warns the symlink doesn't point at CLAUDE.md" "$OUT" "does not point at CLAUDE.md"
+
+# no WARN: a permission-denied CLAUDE.md must not be misreported as a content drift (cmp's read-error
+# exit looks identical to a real diff unless guarded) — skipped on a root CI runner, where chmod 000 is
+# a no-op for the root reader (the project's own documented Alpine trap)
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mkproj)"; git -C "$d" init -q
+  printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\nAGENTS.md\n.claude/\n' > "$d/.gitignore"
+  printf '# ctx\n' > "$d/AGENTS.md"
+  chmod 000 "$d/CLAUDE.md"
+  run "$doctor" "$d"
+  chmod 644 "$d/CLAUDE.md"   # restore so cleanup can remove the sandbox
+  check_absent "unreadable CLAUDE.md is not misreported as AGENTS.md drift" "$OUT" "drifted from CLAUDE.md"
+fi
+
 # footprint over budget is advisory: WARN but still exit 0
 d="$(mkproj)"; git -C "$d" init -q
 printf 'plenty of startup context goes here\n' > "$d/CLAUDE.md"

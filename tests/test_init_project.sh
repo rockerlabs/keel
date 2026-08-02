@@ -66,6 +66,23 @@ check_contains "reports the broken symlink untouched" "$OUT" "AGENTS.md already 
 check_link "broken AGENTS.md symlink is left in place" "$broken/AGENTS.md"
 check_status "broken symlink's dangling target is unchanged" "does-not-exist.md" "$(readlink "$broken/AGENTS.md")"
 
+# a missing templates/project-CLAUDE.md means CLAUDE.md is never created — AGENTS.md must NOT be
+# symlinked to it either, or the "success" message would describe a dangling symlink. Copy just the
+# tool (no templates/ dir alongside it) so the template genuinely doesn't exist for this run.
+notpl="$SANDBOX/no-template-run"
+mkdir -p "$notpl/tools"
+cp "$REPO_ROOT/tools/init-project.sh" "$notpl/tools/init-project.sh"
+target="$SANDBOX/no-template-target"
+run "$notpl/tools/init-project.sh" --no-register --no-impact "$target"
+check_status "init with a missing template → exit 0" 0 "$STATUS"
+check_contains "reports the template-not-found warning" "$OUT" "template not found"
+check_contains "reports AGENTS.md skipped, not symlinked" "$OUT" "AGENTS.md skipped"
+if [ -e "$target/AGENTS.md" ] || [ -L "$target/AGENTS.md" ]; then
+  fail "no dangling AGENTS.md symlink when CLAUDE.md was never created" "AGENTS.md exists: $target/AGENTS.md"
+else
+  pass "no dangling AGENTS.md symlink when CLAUDE.md was never created"
+fi
+
 # --help prints usage and exits 0 (a newcomer's reflex must not look like a crash); an unknown flag
 # is a usage error, not silently treated as a directory to scaffold.
 run "$init" --help

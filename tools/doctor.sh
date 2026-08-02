@@ -27,8 +27,8 @@
 #   GAP   G-AGENTSMD-INHERIT  AGENTS.md's tracked/ignored status does not match CLAUDE.md's (dir #75:
 #                             AGENTS.md always inherits CLAUDE.md's git status)
 #   WARN  W-CLAUDEMD-GITIGNORED  CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
-#   WARN  W-AGENTSMD-DRIFT     AGENTS.md is a regular-file copy that has drifted from CLAUDE.md (should
-#                             be a symlink, or re-synced)
+#   WARN  W-AGENTSMD-DRIFT     AGENTS.md is a regular-file copy that has drifted from CLAUDE.md, or a
+#                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit)
@@ -509,9 +509,18 @@ for d in "${DIRS[@]}"; do
       fi
     fi
 
-    # Drift check: only meaningful for a regular-file copy against an existing CLAUDE.md — a symlink
-    # can't drift by construction, so skip the compare.
-    if [ -f "$d/CLAUDE.md" ] && [ ! -L "$d/AGENTS.md" ] && [ -f "$d/AGENTS.md" ] && ! cmp -s "$d/AGENTS.md" "$d/CLAUDE.md"; then
+    # Drift check: for a SYMLINK, verify it actually points at CLAUDE.md — a symlink to something
+    # else entirely (wrong copy-paste, stale backup) can't "drift" by content-compare, but it's just
+    # as wrong, so check the target name instead. For a REGULAR-FILE copy, compare content —
+    # skipped if either side isn't readable (a permission-denied CLAUDE.md would otherwise make
+    # `cmp`'s read-error exit look identical to a real content diff).
+    if [ -L "$d/AGENTS.md" ]; then
+      agents_target="$(readlink "$d/AGENTS.md")"
+      if [ "$agents_target" != "CLAUDE.md" ]; then
+        warn W-AGENTSMD-DRIFT "AGENTS.md is a symlink but does not point at CLAUDE.md (points at '$agents_target') — relink it"
+      fi
+    elif [ -f "$d/CLAUDE.md" ] && [ -r "$d/CLAUDE.md" ] && [ -f "$d/AGENTS.md" ] && [ -r "$d/AGENTS.md" ] \
+         && ! cmp -s "$d/AGENTS.md" "$d/CLAUDE.md"; then
       warn W-AGENTSMD-DRIFT "AGENTS.md is a regular-file copy that has drifted from CLAUDE.md — replace with a symlink, or re-sync"
     fi
   fi
