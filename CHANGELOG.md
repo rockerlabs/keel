@@ -462,6 +462,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   skipped after exactly the edits it exists to cover.
 
 ### Fixed
+- **`secret-scan.sh`'s `--range` mode validated a push range twice** — a throwaway
+  `git rev-list --max-count=0 $rng` probe purely to fail closed on a bad/unfetched range, then a second,
+  separate `git rev-list --objects $rng | git cat-file --batch-check=...` to do the real object walk,
+  discarding that pipe's own exit status. Now a single streaming pipe is used, with `set -o pipefail`
+  (already active file-wide) surfacing `rev-list`'s failure directly — same fail-closed guarantee, one
+  invocation instead of two. Also factored the `--staged` mode's "not a git repo" guard into a shared
+  `require_git_repo()` helper (`--tracked` keeps its own inline check — it needs the toplevel path, not
+  just a boolean, so the split is deliberate). An initial pass also "fixed" the `shellcheck source=`
+  comment in `pre-push`/`ci-scan.sh` from a repo-root-relative path to a bare filename; `/code-review
+  high` caught that this was backwards for this repo — shellcheck resolves `source=` relative to the
+  invoking CWD, not the referring script's directory, and this repo's CI runs it from the repo root with
+  repo-relative paths, so the original path was already correct (verified empirically both ways) — that
+  part was reverted.
+
 - **Static wording audit of the shipped command prose — seven literal-reading defects fixed** (dir #67,
   the static counterpart to dir #66's dynamic rollout audit; scope: the always-on rails × the pipeline
   commands, correctness only). The defect class is prose an older model resolved charitably and a
