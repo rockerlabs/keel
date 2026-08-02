@@ -1,5 +1,7 @@
 # Private AI context — never commit to this public repo. Root-anchored so templates/ stays tracked.
 /CLAUDE.md
+# vendor sibling of CLAUDE.md — always inherits CLAUDE.md's git status (dir #75)
+/AGENTS.md
 /BACKLOG.md
 /INSTANCE.md
 /.claude/

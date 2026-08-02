@@ -106,6 +106,60 @@ run "$doctor" "$d"
 check_status "public fork (tracked CLAUDE.md) → exit 0" 0 "$STATUS"
 check_absent "no gitignore GAP for public fork" "$OUT" "does not ignore"
 
+# AGENTS.md (dir #75): the vendor sibling of CLAUDE.md for Codex/Cursor — absent, it stays silent
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run "$doctor" "$d"
+check_status "no AGENTS.md → exit 0" 0 "$STATUS"
+check_absent "no AGENTS.md → no mention of it at all" "$OUT" "AGENTS.md"
+
+# GAP: AGENTS.md exists, untracked, and .gitignore does not ignore it
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+ln -s CLAUDE.md "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "unignored AGENTS.md → GAP exit 1" 1 "$STATUS"
+check_contains "reports the AGENTS.md gitignore gap" "$OUT" "does not ignore AGENTS.md"
+
+# clean: AGENTS.md symlinked to CLAUDE.md, both ignored → exit 0, no gap/warn
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\nAGENTS.md\n.claude/\n' > "$d/.gitignore"
+ln -s CLAUDE.md "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "symlinked + ignored AGENTS.md → exit 0" 0 "$STATUS"
+check_absent "no AGENTS.md gap" "$OUT" "does not ignore AGENTS.md"
+check_absent "no AGENTS.md inherit gap" "$OUT" "does not match CLAUDE.md's"
+check_absent "no AGENTS.md drift warn" "$OUT" "drifted from CLAUDE.md"
+
+# GAP: AGENTS.md's tracked/ignored status does not match CLAUDE.md's — CLAUDE.md ignored, AGENTS.md tracked
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf '# ctx\n' > "$d/AGENTS.md"
+git -C "$d" add AGENTS.md
+git -C "$d" commit -qm add
+run "$doctor" "$d"
+check_status "AGENTS.md/CLAUDE.md status mismatch → GAP exit 1" 1 "$STATUS"
+check_contains "reports the status-inheritance gap" "$OUT" "does not match CLAUDE.md's"
+
+# both tracked → deliberate public fork, no gap
+d="$(mkproj)"; git -C "$d" init -q
+printf '# public ctx\n' > "$d/CLAUDE.md"; printf '*.log\n' > "$d/.gitignore"
+printf '# public ctx\n' > "$d/AGENTS.md"
+git -C "$d" add CLAUDE.md AGENTS.md
+git -C "$d" commit -qm add
+run "$doctor" "$d"
+check_status "both CLAUDE.md and AGENTS.md tracked → exit 0" 0 "$STATUS"
+check_contains "reports the deliberate public fork" "$OUT" "AGENTS.md is tracked"
+check_absent "no status-mismatch gap for matching tracked status" "$OUT" "does not match CLAUDE.md's"
+
+# WARN (not GAP): AGENTS.md is a regular-file copy that has drifted from CLAUDE.md
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\nAGENTS.md\n.claude/\n' > "$d/.gitignore"
+printf '# a stale drifted copy\n' > "$d/AGENTS.md"
+run "$doctor" "$d"
+check_status "drifted AGENTS.md copy → exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "warns about the drifted copy" "$OUT" "drifted from CLAUDE.md"
+
 # footprint over budget is advisory: WARN but still exit 0
 d="$(mkproj)"; git -C "$d" init -q
 printf 'plenty of startup context goes here\n' > "$d/CLAUDE.md"

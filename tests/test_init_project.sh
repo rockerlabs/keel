@@ -17,8 +17,12 @@ claude="$(cat "$d/CLAUDE.md")"
 check_contains "CLAUDE.md is named for the project" "$claude" "fresh-proj"
 check_absent  "placeholder is substituted away" "$claude" "<Project name>"
 
+check_link "creates AGENTS.md as a symlink to CLAUDE.md" "$d/AGENTS.md"
+check_status "AGENTS.md symlink points at CLAUDE.md" "CLAUDE.md" "$(readlink "$d/AGENTS.md")"
+
 gi="$(cat "$d/.gitignore")"
 check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
+check_contains ".gitignore ignores AGENTS.md" "$gi" "AGENTS.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
 check_contains ".gitignore ignores the map-drift baseline" "$gi" "/.keel/map-drift-baseline"
 
@@ -38,8 +42,18 @@ run "$init" "$d"
 check_status "init re-run → exit 0" 0 "$STATUS"
 check_contains "re-run preserves the user edit" "$(cat "$d/CLAUDE.md")" "MY-EDIT"
 check_contains "re-run reports CLAUDE.md untouched" "$OUT" "already exists"
+check_contains "re-run reports AGENTS.md untouched" "$OUT" "AGENTS.md already exists"
 after_lines="$(wc -l < "$d/.gitignore")"
 check_status "re-run adds no duplicate .gitignore lines" "$before_lines" "$after_lines"
+
+# a pre-existing AGENTS.md (e.g. a deliberately-authored contributor-facing file) is never clobbered
+own="$SANDBOX/own-agents-proj"
+mkdir -p "$own"
+printf 'a project-authored AGENTS.md\n' > "$own/AGENTS.md"
+run "$init" "$own"
+check_status "init with a pre-existing AGENTS.md → exit 0" 0 "$STATUS"
+check_nolink "pre-existing AGENTS.md stays a regular file" "$own/AGENTS.md"
+check_contains "pre-existing AGENTS.md content is preserved" "$(cat "$own/AGENTS.md")" "project-authored"
 
 # --help prints usage and exits 0 (a newcomer's reflex must not look like a crash); an unknown flag
 # is a usage error, not silently treated as a directory to scaffold.

@@ -3,7 +3,8 @@
 #
 # Usage: init-project.sh [PROJECT_DIR]   (default: current dir)
 #
-# Idempotent: it never overwrites an existing CLAUDE.md or .gitignore — it only fills gaps and reports.
+# Idempotent: it never overwrites an existing CLAUDE.md, AGENTS.md, or .gitignore — it only fills gaps
+# and reports.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
@@ -24,9 +25,10 @@ Usage:
   init-project.sh -h | --help
 
 Idempotent: fills gaps (git, a .gitignore that hides private context, a project
-CLAUDE.md), opts the project into impact tracking (a .keel/ marker so guardrail
-fires get recorded; only its ephemeral event log is gitignored), auto-registers
-the project in your INSTANCE.md, and reports — it never overwrites a file you have.
+CLAUDE.md, an AGENTS.md vendor sibling symlinked to it for Codex/Cursor), opts the
+project into impact tracking (a .keel/ marker so guardrail fires get recorded; only
+its ephemeral event log is gitignored), auto-registers the project in your
+INSTANCE.md, and reports — it never overwrites a file you have.
 EOF
       exit 0 ;;
     --no-register) REGISTER=0 ;;
@@ -58,6 +60,7 @@ ensure_ignore() {
   grep -qxF "$pat" .gitignore || { echo "$pat" >> .gitignore; echo "  + .gitignore += $pat"; }
 }
 ensure_ignore "CLAUDE.md"
+ensure_ignore "AGENTS.md"
 ensure_ignore ".claude/"
 ensure_ignore ".DS_Store"
 ensure_ignore ".idea/"
@@ -85,6 +88,15 @@ else
   echo "  ! template not found: $tpl_project" >&2
 fi
 
+# 3b. AGENTS.md — vendor sibling of CLAUDE.md (dir #75): a symlink, so it can never drift from it.
+# Never-clobber, same idiom as the CLAUDE.md branch above.
+if [ -e AGENTS.md ] || [ -L AGENTS.md ]; then
+  echo "  = AGENTS.md already exists (left untouched)"
+else
+  ln -s CLAUDE.md AGENTS.md
+  echo "  + AGENTS.md created (symlink to CLAUDE.md)"
+fi
+
 # Auto-register in the INSTANCE.md Projects index (best-effort; --no-register to skip).
 registered=0
 instance="${KEEL_INSTANCE:-${KEEL_HOME:-${HOME:-}/.claude}/INSTANCE.md}"
@@ -94,7 +106,7 @@ fi
 
 echo ""
 echo "Next:"
-echo "  - fill in CLAUDE.md (overview, stack, conventions, roadmap)"
+echo "  - fill in CLAUDE.md (overview, stack, conventions, roadmap) — AGENTS.md mirrors it automatically"
 echo "  - wire secret-guard:  install-secret-guard.sh --global   (or vendor into this repo)"
 if [ "$registered" = 1 ]; then
   echo "  - added to your INSTANCE.md Projects registry — refine its Tag there"
