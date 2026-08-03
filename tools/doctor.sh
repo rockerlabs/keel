@@ -23,7 +23,12 @@
 #   GAP   G-GIT-MISSING        not a git repo
 #   GAP   G-CLAUDEMD-MISSING   no project CLAUDE.md
 #   GAP   G-GITIGNORE-CONTEXT  .gitignore does not ignore the private AI context — unless public fork
+#   GAP   G-AGENTSMD-CONTEXT  AGENTS.md exists but .gitignore does not ignore it — unless public fork
+#   GAP   G-AGENTSMD-INHERIT  AGENTS.md's tracked/ignored status does not match CLAUDE.md's (dir #75:
+#                             AGENTS.md always inherits CLAUDE.md's git status)
 #   WARN  W-CLAUDEMD-GITIGNORED  CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
+#   WARN  W-AGENTSMD-DRIFT     AGENTS.md is a regular-file copy that has drifted from CLAUDE.md, or a
+#                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit)
@@ -475,12 +480,49 @@ for d in "${DIRS[@]}"; do
   fi
 
   gi="$d/.gitignore"
+  claude_tracked=0
+  git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && claude_tracked=1
   if [ -f "$gi" ] && grep -qE '(^|/)(\.claude/?|CLAUDE\.md)' "$gi"; then
     :  # private AI context ignored — good
-  elif [ -f "$d/CLAUDE.md" ] && git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1; then
+  elif [ -f "$d/CLAUDE.md" ] && [ "$claude_tracked" = 1 ]; then
     say "       (CLAUDE.md is tracked — treating as a deliberate public fork; ensure no secrets/PII)"
   else
     gap G-GITIGNORE-CONTEXT ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
+  fi
+
+  # AGENTS.md — the vendor sibling of CLAUDE.md for Codex/Cursor (dir #75). It takes its CLAUDE.md's git
+  # status (status inheritance, not a fixed status): the check only fires when AGENTS.md actually exists
+  # (its absence is advice ADAPTING.md gives, not a nag — same philosophy as the .keel/ checks).
+  if [ -e "$d/AGENTS.md" ] || [ -L "$d/AGENTS.md" ]; then
+    agents_tracked=0
+    git -C "$d" ls-files --error-unmatch AGENTS.md >/dev/null 2>&1 && agents_tracked=1
+    agents_ignored=0
+    git -C "$d" check-ignore -q AGENTS.md 2>/dev/null && agents_ignored=1
+
+    if [ "$agents_ignored" = 0 ] && [ "$agents_tracked" = 0 ]; then
+      gap G-AGENTSMD-CONTEXT ".gitignore does not ignore AGENTS.md (vendor sibling of CLAUDE.md — private AI context)"
+    elif [ -f "$d/CLAUDE.md" ]; then
+      if [ "$agents_tracked" != "$claude_tracked" ]; then
+        gap G-AGENTSMD-INHERIT "AGENTS.md's tracked/ignored status does not match CLAUDE.md's — it should always inherit CLAUDE.md's git status"
+      elif [ "$agents_tracked" = 1 ]; then
+        say "       (AGENTS.md is tracked — treating as a deliberate public fork; ensure no secrets/PII)"
+      fi
+    fi
+
+    # Drift check: for a SYMLINK, verify it actually points at CLAUDE.md — a symlink to something
+    # else entirely (wrong copy-paste, stale backup) can't "drift" by content-compare, but it's just
+    # as wrong, so check the target name instead. For a REGULAR-FILE copy, compare content —
+    # skipped if either side isn't readable (a permission-denied CLAUDE.md would otherwise make
+    # `cmp`'s read-error exit look identical to a real content diff).
+    if [ -L "$d/AGENTS.md" ]; then
+      agents_target="$(readlink "$d/AGENTS.md")"
+      if [ "$agents_target" != "CLAUDE.md" ]; then
+        warn W-AGENTSMD-DRIFT "AGENTS.md is a symlink but does not point at CLAUDE.md (points at '$agents_target') — relink it"
+      fi
+    elif [ -f "$d/CLAUDE.md" ] && [ -r "$d/CLAUDE.md" ] && [ -f "$d/AGENTS.md" ] && [ -r "$d/AGENTS.md" ] \
+         && ! cmp -s "$d/AGENTS.md" "$d/CLAUDE.md"; then
+      warn W-AGENTSMD-DRIFT "AGENTS.md is a regular-file copy that has drifted from CLAUDE.md — replace with a symlink, or re-sync"
+    fi
   fi
 
   # Impact-tracking hygiene: a repo opted into impact tracking carries a .keel/ marker. Its event log is

@@ -17,8 +17,12 @@ claude="$(cat "$d/CLAUDE.md")"
 check_contains "CLAUDE.md is named for the project" "$claude" "fresh-proj"
 check_absent  "placeholder is substituted away" "$claude" "<Project name>"
 
+check_link "creates AGENTS.md as a symlink to CLAUDE.md" "$d/AGENTS.md"
+check_status "AGENTS.md symlink points at CLAUDE.md" "CLAUDE.md" "$(readlink "$d/AGENTS.md")"
+
 gi="$(cat "$d/.gitignore")"
 check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
+check_contains ".gitignore ignores AGENTS.md" "$gi" "AGENTS.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
 check_contains ".gitignore ignores the map-drift baseline" "$gi" "/.keel/map-drift-baseline"
 
@@ -38,8 +42,46 @@ run "$init" "$d"
 check_status "init re-run → exit 0" 0 "$STATUS"
 check_contains "re-run preserves the user edit" "$(cat "$d/CLAUDE.md")" "MY-EDIT"
 check_contains "re-run reports CLAUDE.md untouched" "$OUT" "already exists"
+check_contains "re-run reports AGENTS.md untouched" "$OUT" "AGENTS.md already exists"
 after_lines="$(wc -l < "$d/.gitignore")"
 check_status "re-run adds no duplicate .gitignore lines" "$before_lines" "$after_lines"
+
+# a pre-existing AGENTS.md (e.g. a deliberately-authored contributor-facing file) is never clobbered
+own="$SANDBOX/own-agents-proj"
+mkdir -p "$own"
+printf 'a project-authored AGENTS.md\n' > "$own/AGENTS.md"
+run "$init" "$own"
+check_status "init with a pre-existing AGENTS.md → exit 0" 0 "$STATUS"
+check_nolink "pre-existing AGENTS.md stays a regular file" "$own/AGENTS.md"
+check_contains "pre-existing AGENTS.md content is preserved" "$(cat "$own/AGENTS.md")" "project-authored"
+
+# a pre-existing AGENTS.md that's a BROKEN symlink (dangling target) is also never clobbered — the
+# never-clobber check must key off `-e || -L`, not a plain `-e` that a broken symlink fails
+broken="$SANDBOX/broken-agents-proj"
+mkdir -p "$broken"
+ln -s does-not-exist.md "$broken/AGENTS.md"
+run "$init" "$broken"
+check_status "init with a broken AGENTS.md symlink → exit 0" 0 "$STATUS"
+check_contains "reports the broken symlink untouched" "$OUT" "AGENTS.md already exists"
+check_link "broken AGENTS.md symlink is left in place" "$broken/AGENTS.md"
+check_status "broken symlink's dangling target is unchanged" "does-not-exist.md" "$(readlink "$broken/AGENTS.md")"
+
+# a missing templates/project-CLAUDE.md means CLAUDE.md is never created — AGENTS.md must NOT be
+# symlinked to it either, or the "success" message would describe a dangling symlink. Copy just the
+# tool (no templates/ dir alongside it) so the template genuinely doesn't exist for this run.
+notpl="$SANDBOX/no-template-run"
+mkdir -p "$notpl/tools"
+cp "$REPO_ROOT/tools/init-project.sh" "$notpl/tools/init-project.sh"
+target="$SANDBOX/no-template-target"
+run "$notpl/tools/init-project.sh" --no-register --no-impact "$target"
+check_status "init with a missing template → exit 0" 0 "$STATUS"
+check_contains "reports the template-not-found warning" "$OUT" "template not found"
+check_contains "reports AGENTS.md skipped, not symlinked" "$OUT" "AGENTS.md skipped"
+if [ -e "$target/AGENTS.md" ] || [ -L "$target/AGENTS.md" ]; then
+  fail "no dangling AGENTS.md symlink when CLAUDE.md was never created" "AGENTS.md exists: $target/AGENTS.md"
+else
+  pass "no dangling AGENTS.md symlink when CLAUDE.md was never created"
+fi
 
 # --help prints usage and exits 0 (a newcomer's reflex must not look like a crash); an unknown flag
 # is a usage error, not silently treated as a directory to scaffold.

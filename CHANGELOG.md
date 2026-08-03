@@ -9,6 +9,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`AGENTS.md` is now a first-class vendor sibling of `CLAUDE.md`, symlinked and status-inheriting**
+  (dir #75, found in dir #69's wrap: keel's own root `AGENTS.md` was an untracked, stale, unignored copy
+  of `CLAUDE.md`). `init-project.sh` now creates `AGENTS.md` as a symlink to `CLAUDE.md` (never-clobber,
+  same idiom as the `CLAUDE.md` branch) and gitignores it by default. `doctor.sh` gains three new checks,
+  firing only when `AGENTS.md` exists: `G-AGENTSMD-CONTEXT` (unignored + untracked — same treatment as
+  `CLAUDE.md`'s own gap), `G-AGENTSMD-INHERIT` (its tracked/ignored status doesn't match `CLAUDE.md`'s —
+  the rule is status inheritance, not a fixed status; both tracked is a deliberate public fork, not a
+  gap), and `W-AGENTSMD-DRIFT` (a regular-file copy, not a symlink, has drifted from `CLAUDE.md`). Keel's
+  own main-checkout `AGENTS.md` is now gitignored and a symlink to `CLAUDE.md`. Scope is per-project only
+  — the global `~/.codex/AGENTS.md` installer wrapper is split off to dir #76. Whether Codex/Cursor
+  resolve a *symlinked* `AGENTS.md` (validated only for a regular file in dirs #30/#31) is a carried
+  TO VERIFY; the symlink ships regardless since the fallback (a stale/absent file) is strictly worse.
 - **The shared, multi-worktree impact-event log is now claim-keyed, so parallel `/keel-score` sessions
   don't steal each other's guardrail fires** (dir #74, felt in dir #69's wrap in both directions: a
   session losing its own fire to another session's `add`, and a session inheriting fires it never
