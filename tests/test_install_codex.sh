@@ -42,6 +42,19 @@ check_contains "flags the drifted embedded rails" "$OUT" "AGENTS.md embeds rails
 check_contains "non-interactive path names the fix" "$OUT" "Refresh by hand"
 check_contains "the edited rail survives untouched" "$(cat "$dhome/AGENTS.md")" "MY EDITED RAIL"
 
+# --- a file carrying the heading but NO KEEL-CORE markers (hand-stripped, or coincidental reuse of
+# the phrase): routes to the same "left untouched" path as a foreign file, never a false "core block
+# refreshed" no-op (dir #76 independent review — core_block() on a markerless file is empty on both
+# sides of the comparison, so without this check drift-handling would fire on nothing to refresh) ---
+mkhome="$SANDBOX/codex-markerless"; mkdir -p "$mkhome"
+printf '# Global preferences — always-loaded core\n\nSome custom content, no markers here.\n' \
+  > "$mkhome/AGENTS.md"
+run "$install" --codex --home "$mkhome" --no-hooks
+check_status "heading-but-no-markers + --codex → exit 0" 0 "$STATUS"
+check_contains "routed to the left-untouched path, not a false refresh" "$OUT" "AGENTS.md exists (left untouched"
+check_absent "never claims a refresh that didn't happen" "$OUT" "core block refreshed"
+check_contains "content is completely unchanged" "$(cat "$mkhome/AGENTS.md")" "Some custom content, no markers here."
+
 # --- a foreign (non-Keel) AGENTS.md: left untouched, flagged instead of merged or clobbered --------
 fhome="$SANDBOX/codex-foreign"; mkdir -p "$fhome"
 printf '# My own Codex notes\nnothing keel here\n' > "$fhome/AGENTS.md"
