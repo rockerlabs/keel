@@ -218,6 +218,31 @@ So context files don't bloat and stay useful.
   `## Recently closed` buffer for a milestone or two before sweeping (a just-closed task often spawns a
   follow-up). Do NOT append an implementation chronicle into memory.
 - Open task / design fork → backlog in the project `CLAUDE.md` (detail → the on-demand file once it grows).
+- **A `/design` session's finished ticket, when its target backlog may have concurrent writers** (parallel
+  design sessions racing one shared `BACKLOG.md` — a project's on-demand backlog is gitignored and
+  resolved at the main-checkout root the same way `/go`/`/backlog` already resolve it, with no worktree
+  isolation of its own) → an unnumbered draft file in `BACKLOG.drafts/` (sibling of `BACKLOG.md`, same
+  residency), one file per in-flight ticket, `<kebab-slug>.md`, full ticket body, no number assigned;
+  in-session cross-references use the slug. If a file at that slug already exists when you go to write it,
+  don't overwrite it — that's either your own earlier partial write (safe to resume) or a genuine slug
+  collision with a different in-flight ticket; disambiguate (`-2` suffix) rather than clobbering. A draft
+  sits in `BACKLOG.drafts/` for the rest of the owning session's runtime, so it isn't necessarily a dead
+  session's leftover — fold idempotently: before appending, check whether a ticket for this slug already
+  exists in `BACKLOG.md` (its heading carries the same slug/title); if so, someone folded it first — skip
+  the append and just delete the draft, whichever side (your own session's wrap, or a `/backlog` run
+  reaching it before you) got there second. At the session's own wrap — the single serialization point —
+  re-read `BACKLOG.md` fresh, take the next free number (max existing + 1, scanned from `BACKLOG.md`
+  only), append the body, update the queue line if the backlog tracks one, and delete the own draft. Fold
+  only your own draft; leave foreign drafts for their owners. Two sessions folding in the same instant
+  still race — on a modified-since-read collision, re-read and retry rather than overwriting. Any draft
+  not yet folded when its own session ends — crashed mid-session, or simply still open elsewhere — is
+  folded idempotently by the next `/backlog` run instead; until then it's invisible to `/go`'s own backlog
+  resolution too, an accepted gap. There is no merge-bottleneck for parallel design over disjoint topics this
+  way — the output is backlog text, not code, so it never goes through a PR. The only genuine
+  serialization need is when two designs' future *implementations* would edit the same file/section or
+  depend on each other; that is handled by naming the ordering in the ticket body (e.g. "lands after
+  ticket X because
+  both edit section Y"), not by isolating the design output itself.
 - Reusable lesson/invariant NOT present in the code → a memory file, briefly.
 - **Anything surfaced but not yet handled** — an idea, a finding, a loose-end, a decision still owed →
   persist it immediately as a backlog ticket (or record the drop + reason). Never leave it chat-only: the
