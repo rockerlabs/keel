@@ -149,7 +149,13 @@ Steps, in order:
      DIFFERENT, independent reviewer has to run it. Spawn ONE fresh-context Agent-tool subagent,
      `subagent_type: "general-purpose"`. Its
      prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
-     mandate, and an explicit **read-only instruction** — review only, no file edits, no live-environment
+     mandate, the ticket or spec this diff implements — when the session knows it (an id, or the
+     done-criterion text itself) — with a **two-way conformance mandate**: the diff must realize that
+     done-criterion, AND nothing in the diff may silently exceed or contradict it; a correctness-only
+     review misses both directions of drift. **When no ticket exists** (an ad-hoc diff with no tracked
+     done-criterion), the prompt states that absence explicitly rather than leaving the reviewer to
+     assume a spec it was never given, and the review stays correctness-only. And an explicit
+     **read-only instruction** — review only, no file edits, no live-environment
      reproduction (a prior incident: a full-Bash review subagent once overwrote real machine files while
      "empirically verifying" a bug in-place; memory `subagent-live-verification-risk`). The prompt MUST
      also require the subagent to end its final response with a line, alone, exactly
