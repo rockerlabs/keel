@@ -25,9 +25,9 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   implementation and confirmed red first, the same grep-based idiom `test_doc_figures.sh` already uses.
   Scope is deliberately this pair only — the video's other three stages (frozen-spec semantics, parallel
   per-module executors, mutation testing) are explicitly rejected for keel per the ticket's resolved
-  forks. Also felt again: the shared `/tmp/pre-pr-gate-*` sentinel (dir #80) collided with a concurrent
-  session's own `/polish` run mid-pass; worked around the same way dir #81 did, by re-`init`+receipt+
-  `gh pr create` in one tight sequence.
+  forks. Also felt again: the shared `/tmp/pre-pr-gate-*` sentinel (still-open dir #80) collided with a
+  concurrent session's own `/polish` run mid-pass; recovered by re-`init`+receipt+`gh pr create` in one
+  tight sequence.
 - **`AGENTS.md` is now a first-class vendor sibling of `CLAUDE.md`, symlinked and status-inheriting**
   (dir #75, found in dir #69's wrap: keel's own root `AGENTS.md` was an untracked, stale, unignored copy
   of `CLAUDE.md`). `init-project.sh` now creates `AGENTS.md` as a symlink to `CLAUDE.md` (never-clobber,
