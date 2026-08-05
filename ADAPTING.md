@@ -22,7 +22,7 @@ the bottom to point at wherever you keep `FRAMEWORK.md`, `INSTANCE.md`, and `PRI
 | Tool | Where the always-on instructions live | Tested? |
 |---|---|---|
 | Claude Code | `~/.claude/CLAUDE.md` (what `install.sh` uses) | ✅ |
-| Codex (in the ChatGPT desktop app) | `~/.codex/AGENTS.md` | ✅ |
+| Codex (in the ChatGPT desktop app) | `~/.codex/AGENTS.md` (`./install.sh --codex` generates it) | ✅ |
 | Cursor | project-root **`AGENTS.md`** — **not** `.cursor/rules/*.mdc` (see the warning below) | ✅ |
 | Codex CLI (the standalone OpenAI tool) | an `AGENTS.md` file / the `~/.codex` config | — |
 | Windsurf | project "rules" file | — |
@@ -58,7 +58,8 @@ tools/init-project.sh <your-project>      # set up a new project
 ```
 
 (`./install.sh --home DIR` will also copy the always-on files into any folder you point it at, if your
-tool's config lives somewhere other than `~/.claude`.)
+tool's config lives somewhere other than `~/.claude`. For Codex specifically, `./install.sh --codex`
+generates `~/.codex/AGENTS.md` directly — no manual copy-and-edit needed.)
 
 **3. Wire up the commands.** The files in `commands/` (`/wrap`, `/init-project`, …) are just prompts in
 plain English. If your tool has a custom-command or snippet feature, point it at that folder. If it doesn't,
