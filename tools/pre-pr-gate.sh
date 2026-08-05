@@ -488,6 +488,20 @@ case "${1:-}" in
       exit 0
     fi
     step_id="${2:?pre-pr-gate: receipt <step-id> [outcome] — step id required}"
+    # KB.99 (2nd hit, affiliate-lab items #9 and #23 wraps): step-id and outcome are separate shell
+    # args — `receipt "polish.4-depth high:+261-27,..."` (one combined quoted string) used to write a
+    # malformed line whose step-id field was the whole string, so the completeness check's literal
+    # match on e.g. "polish.4-depth" silently failed later, denying `gh pr create` with a message
+    # indistinguishable from a real concurrent-write sentinel collision — costing several recovery
+    # cycles before the actual cause (a call-site quoting mistake, not concurrency) was found either
+    # time. No real step id ever contains whitespace, so failing loudly HERE turns a deferred,
+    # misleading "missing receipt" denial into an immediate, legible one.
+    case "$step_id" in
+      *[[:space:]]*)
+        printf 'pre-pr-gate: step-id %s contains whitespace — step-id and outcome must be SEPARATE arguments (e.g. receipt polish.4-depth "high:+261-27,..."), not one combined quoted string. Re-run with the two split apart.\n' "$(printf '%q' "$step_id")" >&2
+        exit 1
+        ;;
+    esac
     outcome="${3:-done}"
     require_active_receipt
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"

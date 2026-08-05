@@ -23,7 +23,10 @@ is what identifies the run, and the script's own location is irrelevant to it.
 Each step below ends with a **receipt**: run `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the
 repo root (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>` instead,
 and a step that ran only in a degraded form says so the same way, `<how>:<reason>` — a skip and a
-degradation are both executed decisions, so the id is still written). This is a completeness record, not
+degradation are both executed decisions, so the id is still written). **`<step-id>` and `[outcome]` are
+TWO separate shell arguments — never combine them into one quoted string** (e.g.
+`receipt polish.4-depth "high:+261-27,..."`, not `receipt "polish.4-depth high:+261-27,..."`); the script
+rejects a step-id containing whitespace for exactly this reason. This is a completeness record, not
 proof of work: `pre-pr-gate.sh` denies `gh pr create` unless every step id below is present for the current
 run (dir #49). Never skip a receipt write even on a step that "obviously" ran. **If any receipt/log call
 in the steps below triggers an unexpected permission prompt** (the harness's auto-mode classifier

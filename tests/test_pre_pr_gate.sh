@@ -201,6 +201,22 @@ check_status "receipt before init → non-zero exit" 1 "$STATUS"
 check_contains "receipt before init → tells the user to run init" "$OUT" "init"
 rm -f "$(sentinel_for "$d")"
 
+# 10b. KB.99 (2nd hit, affiliate-lab items #9 and #23 wraps): step-id and outcome combined into ONE
+# quoted argument (e.g. `receipt "polish.4-depth high:+1,1f,x"`) used to silently write a malformed
+# line that the completeness check could never match — must now be rejected outright, immediately,
+# rather than accepted and denied much later at `gh pr create` time.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt "polish.4-depth high:+1-1,1f,x"
+check_status "combined step-id+outcome in one arg → non-zero exit" 1 "$STATUS"
+check_contains "combined step-id+outcome → names the mistake" "$OUT" "SEPARATE arguments"
+check_absent "combined step-id+outcome → no malformed line written to the sentinel" \
+  "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depth high"
+# The correctly-split form still works.
+run_in "$d" bash "$gate" receipt polish.4-depth "high:+1-1,1f,x"
+check_status "step-id and outcome as separate args → exit 0" 0 "$STATUS"
+rm -f "$(sentinel_for "$d")"
+
 # 11. `init` mints a fresh nonce and discards a previous run's leftover lines.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
