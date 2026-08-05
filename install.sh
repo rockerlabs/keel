@@ -97,14 +97,12 @@ if [ "$CODEX" = 1 ] && [ "$LINK" = 1 ]; then
   exit 2
 fi
 
-# Default to $HOME/.claude only if neither KEEL_HOME nor --home was given — so those callers never
-# need $HOME (and `set -u` won't abort when it's unset). Require $HOME only when we actually fall back.
-# --codex's home is Codex's own global config dir instead — an explicit --home/KEEL_HOME still wins.
-if [ "$CODEX" = 1 ]; then
-  : "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/.codex}"
-else
-  : "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/.claude}"
-fi
+# Default to $HOME/.claude ($HOME/.codex under --codex) only if neither KEEL_HOME nor --home was
+# given — so those callers never need $HOME (and `set -u` won't abort when it's unset). Require
+# $HOME only when we actually fall back.
+default_home_leaf=".claude"
+[ "$CODEX" = 1 ] && default_home_leaf=".codex"
+: "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/$default_home_leaf}"
 
 # CONTEXT_FILE — the harness's global always-loaded file name. Everywhere copy mode below writes or
 # mentions "the global context file", it routes through this instead of a hardcoded CLAUDE.md.
@@ -227,7 +225,14 @@ refresh_core_block() {
     /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
     /KEEL-CORE-END/   { skip=0; next }
     !skip
-  ' "$file" > "$file.keeltmp.$$" && mv -f "$file.keeltmp.$$" "$file"
+  ' "$file" | atomic_write "$file"
+}
+# strip_template_prose — stdin → stdout, with the copy-path-only header prose removed: the
+# " (TEMPLATE)" tag suffix and the "> Copy this to your harness" line. Shared by both wrapper
+# generators below (linked mode's CLAUDE.md, --codex's AGENTS.md) — tests/test_install_link.sh pins
+# the exact source strings this targets, so a template reword fails loudly instead of no-oping here.
+strip_template_prose() {
+  sed -e 's/ (TEMPLATE)$//' -e '/^> Copy this to your harness/d'
 }
 # has_core_import FILE — THE definition of "the import line is wired". Claude Code treats an @path
 # anywhere in prose as an import, so the token may sit mid-line with text around it — an anchored
@@ -436,14 +441,13 @@ EOF
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
   gclaude="$HOME_DIR/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
-    # The sed strips/re-points TEMPLATE-only prose; tests/test_install_link.sh pins these exact
-    # strings in templates/CLAUDE.md, so a reword there fails loudly instead of no-oping here.
+    # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
+    # reword in templates/CLAUDE.md fails loudly instead of no-oping here.
     strip_core_block "$root/templates/CLAUDE.md" \
-      | sed -e 's/ (TEMPLATE)$//' \
-            -e '/^> Copy this to your harness/d' \
-            -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
+      | strip_template_prose \
+      | sed -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
             -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
-      > "$gclaude.keeltmp.$$" && mv -f "$gclaude.keeltmp.$$" "$gclaude"
+      | atomic_write "$gclaude"
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
     if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
@@ -493,15 +497,14 @@ else
   if [ "$CODEX" = 1 ]; then
     # --codex: generate an AGENTS.md wrapper instead of a plain copy_gap of templates/CLAUDE.md — the
     # (TEMPLATE) tag and "copy this" line are Claude-Code-copy-path prose that make no sense on a
-    # file install.sh itself generated (same two sed edits the linked-mode wrapper already makes;
-    # see header — no path-repoint needed here, FRAMEWORK.md/PRINCIPLES.md land at the same
-    # root-relative spot the template's map already names). User-owned outside the block (never
-    # clobbered past first install); the KEEL-CORE block itself gets a currency check on re-run —
-    # strictly better than copy-mode Claude gets today, but never a silent auto-refresh.
+    # file install.sh itself generated (same strip_template_prose the linked-mode wrapper uses; no
+    # path-repoint needed here, FRAMEWORK.md/PRINCIPLES.md land at the same root-relative spot the
+    # template's map already names). User-owned outside the block (never clobbered past first
+    # install); the KEEL-CORE block itself gets a currency check on re-run — strictly better than
+    # copy-mode Claude gets today, but never a silent auto-refresh.
     dest="$HOME_DIR/$CONTEXT_FILE"
     if [ ! -f "$dest" ]; then
-      sed -e 's/ (TEMPLATE)$//' -e '/^> Copy this to your harness/d' "$root/templates/CLAUDE.md" \
-        > "$dest.keeltmp.$$" && mv -f "$dest.keeltmp.$$" "$dest"
+      strip_template_prose < "$root/templates/CLAUDE.md" | atomic_write "$dest"
       echo "  +    $CONTEXT_FILE (generated — embedded core, refreshed on drift)"
     elif [ "$foreign_core" = 1 ]; then
       echo "  =    $CONTEXT_FILE exists (left untouched — predates Keel, see Verify below)"

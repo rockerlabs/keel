@@ -25,15 +25,11 @@ check_file "PRINCIPLES.md lands at the root" "$SANDBOX/codex-home/PRINCIPLES.md"
 check_nofile "no commands/ dir wired" "$SANDBOX/codex-home/commands/wrap.md"
 check_nofile "no CLAUDE.md — this is the AGENTS.md preset" "$SANDBOX/codex-home/CLAUDE.md"
 
-# --- idempotent re-run: block reported up to date, nothing rewritten ------------------------------
+# --- idempotent re-run: block reported up to date, a user edit OUTSIDE the block survives it -------
+printf '\nMY-CODEX-EDIT\n' >> "$SANDBOX/codex-home/AGENTS.md"
 run "$install" --codex --home "$SANDBOX/codex-home" --no-hooks
 check_status "codex re-run → exit 0" 0 "$STATUS"
 check_contains "re-run sees the block up to date" "$OUT" "AGENTS.md (up to date)"
-
-# --- re-run preserves a user edit OUTSIDE the block ------------------------------------------------
-printf '\nMY-CODEX-EDIT\n' >> "$SANDBOX/codex-home/AGENTS.md"
-run "$install" --codex --home "$SANDBOX/codex-home" --no-hooks
-check_status "re-run after a user edit → exit 0" 0 "$STATUS"
 check_contains "user edit outside the block survives" "$(cat "$SANDBOX/codex-home/AGENTS.md")" "MY-CODEX-EDIT"
 
 # --- a drifted KEEL-CORE block: non-interactive → WARN with the fix, never silently clobbered ------
