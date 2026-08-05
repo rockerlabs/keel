@@ -21,6 +21,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   — the global `~/.codex/AGENTS.md` installer wrapper is split off to dir #76. Whether Codex/Cursor
   resolve a *symlinked* `AGENTS.md` (validated only for a regular file in dirs #30/#31) is a carried
   TO VERIFY; the symlink ships regardless since the fallback (a stale/absent file) is strictly worse.
+- **`install.sh --codex` generates the global `~/.codex/AGENTS.md` wrapper Codex reads verbatim** (dir
+  #76, split from dir #75 — the global-level half of that ticket's scope). Copy mode only (Codex has no
+  `@import` mechanism; `--codex --link` is a usage error): a fresh install strips the `templates/CLAUDE.md`
+  `(TEMPLATE)`/"copy this" prose the same way the linked-mode wrapper already does and embeds the core
+  block directly (no new template file — the byte-pin in `test_core_wrapper_sync.sh` is untouched); a
+  re-run compares the installed `KEEL-CORE` block against the current `CORE.md` and offers to refresh
+  just the block on drift (interactive y/N, default no; non-interactive → WARN with the fix) — currency
+  copy-mode Claude Code doesn't get today. `commands/` is deliberately not wired (Codex reads skills from
+  `~/.codex/skills/<name>/SKILL.md`, converted per `ADAPTING.md`'s existing note); `doctor.sh --install`
+  stays Claude-home-scoped by design (the installer's own end-of-run verify covers the `--codex` result).
+  `ADAPTING.md` and `README.md` name the new one-liner.
 - **The shared, multi-worktree impact-event log is now claim-keyed, so parallel `/keel-score` sessions
   don't steal each other's guardrail fires** (dir #74, felt in dir #69's wrap in both directions: a
   session losing its own fire to another session's `add`, and a session inheriting fires it never
