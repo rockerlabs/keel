@@ -213,8 +213,10 @@ replace_core_block() {  # $1=file, optional $2 forwarded to strip_core_block
 # legitimately differs). Mirror of block_of() in tests/test_core_wrapper_sync.sh — keep in sync.
 core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 # refresh_core_block FILE — replace FILE's embedded KEEL-CORE block (markers included) with the
-# CURRENT shipped block from templates/CLAUDE.md, leaving everything outside it untouched. The
-# copy-mode analog of replace_core_block: that one migrates an embedded block to an @import line
+# CURRENT shipped block from CORE.md — the same source the caller's own drift check (core_block
+# "$root/CORE.md") already compares against, so there is exactly one file this "is it stale"/"refresh
+# it" pair depends on, not two kept in sync only by test_core_wrapper_sync.sh's byte-equality pin.
+# The copy-mode analog of replace_core_block: that one migrates an embedded block to an @import line
 # (linked mode); this one keeps the block embedded, just refreshed (--codex currency — see header).
 # resolve_file first, same as replace_core_block: a dotfiles-managed FILE is a symlink, and writing
 # straight to it (atomic_write's mv would replace the link itself) would sever it instead of updating
@@ -224,7 +226,7 @@ core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 refresh_core_block() {
   local file="$1" real fresh
   real="$(resolve_file "$file")"
-  fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/templates/CLAUDE.md")"
+  fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md")"
   KEEL_FRESH_BLOCK="$fresh" awk '
     /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
     /KEEL-CORE-END/   { skip=0; next }
@@ -356,15 +358,18 @@ sync_product() {
 # rails won't be merged in. Flag that in Verify instead of leaving it silent. Keel's core (and any file
 # derived from it) carries this heading; a foreign file won't.
 # (Copy mode only — linked mode has no such gap: the import line delivers the rails into any file.)
-# --codex also treats a file that carries the heading but NOT the KEEL-CORE-BEGIN marker as foreign:
-# codex_wrapper's drift check below only knows how to compare/refresh an actual embedded block, so a
-# heading with no block (hand-stripped, or a foreign file that happens to reuse the phrase) must route
-# to the same "left untouched" path as a genuinely foreign file, not a false "refreshed" no-op.
+# Also foreign if the heading is present but the KEEL-CORE-BEGIN marker isn't (hand-stripped, or a
+# foreign file that happens to reuse the phrase): a heading with no actual block is not Keel-managed
+# either — mode-agnostic, not just --codex, since codex_wrapper's drift check is the only caller that
+# currently acts on this (a heading-but-no-block CLAUDE.md would otherwise pass silently), but the
+# Verify WARN below should say so regardless of mode.
 foreign_core=0
-if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/$CONTEXT_FILE" ] \
-   && { ! grep -q 'always-loaded core' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null \
-        || { [ "$CODEX" = 1 ] && ! grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; }; }; then
-  foreign_core=1
+if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/$CONTEXT_FILE" ]; then
+  if ! grep -q 'always-loaded core' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+    foreign_core=1
+  elif ! grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+    foreign_core=1
+  fi
 fi
 
 if [ "$LINK" = 1 ]; then
