@@ -55,8 +55,8 @@ this with ✅ (existing convention) — don't leave both markers on the same hea
 
 **Acceptance tests first, when the ticket names a done-criterion.** Before writing implementation code,
 derive acceptance tests from the ticket's own acceptance/done-criterion (a groomed ticket names one by
-contract; others may too) and write them first — show them red, then implement to green. This turns the
-stated criterion into a falsifiable check instead of prose trusted on faith. Where test-first is
-genuinely infeasible for this ticket (pure-wording change, no runnable surface to test against), say so
-explicitly in one line before proceeding — an executed decision, the same spirit as `/polish`'s
-`skipped:<reason>` receipts, never a silent skip.
+contract; others may too) and write them first — show them red, then implement to green, per
+`FRAMEWORK.md`'s design-principles rail. Where test-first is genuinely infeasible for this ticket
+(pure-wording change, no runnable surface to test against), say so explicitly in one line before
+proceeding — an executed decision, the same spirit as `/polish`'s `skipped:<reason>` receipts, never a
+silent skip.
