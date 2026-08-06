@@ -228,6 +228,16 @@ printf '### dir #7 — some ticket — R1\n\nsee the shape below:\n\n```\n✅ CL
 run "$sd" "$d" --quiet
 check_status "fenced-code-block example text is not a false positive -> exit 0" 0 "$STATUS"
 
+# a second /code-review medium round found the inverse gap: a `##`/`###`-prefixed line living
+# INSIDE a fenced code block (a bash comment, a markdown snippet) was still read as a real section
+# boundary by heading/boundary detection (which scanned the raw file, not the fence-blanked copy),
+# truncating the body span before a genuinely stale heading's own closure marker was ever reached.
+d="$(mk_clean_repo)"
+printf '### dir #8 — some ticket — R1\n\nexample:\n\n```\n## this is a bash comment\n```\n\n✅ CLOSED (2026-01-01, PR #8) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a ##-prefixed line inside a fenced block isn't read as a real boundary" "$OUT" "dir #8's heading tag looks stale"
+
 # body text below an untagged heading must not leak past a `## ` section boundary into a LATER
 # heading's own body span.
 d="$(mk_clean_repo)"
