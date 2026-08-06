@@ -170,8 +170,9 @@
 # alone on a line) must appear in the subagent's own returned text, not in its invocation.
 #
 # The sha is this hook's OWN `git … rev-parse HEAD` at fire time (never a self-reported field) — same
-# trust boundary as the Skill/UserPromptExpansion legs' `st_sha` below; a self-reported sha would let a
-# stale review vouch for a later commit. Trace line: `<sha>\tagent:<level>` (same file, same tab format as
+# trust boundary as every other leg's own sha resolution below (all three now share `_append_trace_line`,
+# dir #88's own extraction); a self-reported sha would let a stale review vouch for a later commit. Trace
+# line: `<sha>\tagent:<level>` (same file, same tab format as
 # the Skill/UserPromptExpansion legs, distinguished only by the `agent:` prefix on the level field) — the
 # gate's PASS branch (below) matches `$review_outcome` against it VERBATIM, so `polish.5-review`'s outcome
 # must be written as the same literal string (`agent:<level>`), not just the bare level.
@@ -313,6 +314,16 @@
 set -u
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
+# dir #88 (found in the operator-run /code-review high pass on this ticket): the accepted review-depth
+# levels used to be hardcoded independently in the SubagentStop and AskUserQuestion marker-parsing
+# branches below — one shared source avoids a future tier addition/rename updating one and silently
+# leaving the other rejecting it. Space-separated (a case PATTERN LIST needs its `|` separators literal
+# in the script SOURCE — an unquoted `|`-joined variable expansion is matched as one literal string, not
+# split into alternatives at runtime; confirmed the hard way before shipping this). The regex use below
+# derives its own `|`-joined form from this via `${ACCEPTED_REVIEW_LEVELS// /|}`; the case-match use below
+# loops over the space-separated words instead. `ultra` deliberately excluded: it never reaches either
+# marker path (see commands/polish.md step 5).
+ACCEPTED_REVIEW_LEVELS='low medium high max'
 
 # The hook's OWN observation of HEAD at fire time — never a self-reported field — shared by both
 # skill-trace legs (the SubagentStop leg and the Skill/UserPromptExpansion legs below) so the same
@@ -363,10 +374,15 @@ _dialog_leg_armed() {
   command -v jq >/dev/null 2>&1 || return 1
   for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" "$HOME/.claude/settings.json"; do
     [ -f "$f" ] || continue
+    # `contains(...)`, not a regex `test(...)` — a plain substring check for this fixed literal, matching
+    # tools/doctor.sh's own `gate_hook_wired()` idiom for the identical "is this hook wired" shape (found
+    # in the operator-run /code-review high pass on this ticket — the two had drifted to different jq
+    # idioms with no behavioral difference; kept consistent so a future arming check copied from this one
+    # doesn't carry forward an unnecessary regex-escaping habit).
     if jq -e '
         (.hooks.PostToolUse // []) | any(
           .matcher == "AskUserQuestion" and
-          ((.hooks // []) | any(.command // "" | test("pre-pr-gate\\.sh")))
+          ((.hooks // []) | any(.command // "" | contains("pre-pr-gate.sh")))
         )
       ' "$f" >/dev/null 2>&1; then
       return 0
@@ -397,6 +413,19 @@ sentinel_path()  { _sentinel_path_for_key "$(_repo_key "$PWD")"; }
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
 trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
 handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
+# dir #88 (found in the operator-run /code-review high pass on this ticket): all three `skill-trace`
+# legs below (SubagentStop, PostToolUse/AskUserQuestion, Skill/UserPromptExpansion) share this exact
+# tail — resolve THIS hook's own observed sha, guard a missing one, append `<sha>\t<tag_level>` to the
+# trace file — factored out once dir #88's new leg turned a 2x duplicate into a 3x one (matches
+# `_trace_has_line`'s own read-side extraction above, same rule-of-three trigger). `exit 0` on a missing
+# sha exits the whole script, not just this function — safe and intended: every call site is a direct
+# call, never inside a subshell/pipeline, so this preserves each leg's own prior silent-no-op behavior.
+_append_trace_line() {
+  local cwd="$1" tag_level="$2" sha
+  sha="$(_head_sha "$cwd")"
+  [ -n "$sha" ] || exit 0
+  printf '%s\t%s\n' "$sha" "$tag_level" >> "$(trace_path_for "$cwd")"
+}
 # dir #88 simplify pass: the PASS branch's dir #63 trace check and its new dir #88 dialog check both
 # ask "does the trace file carry a line <sha>\t<level> for this repo key" — factored out once there
 # were two, so a future trace-file format change only needs one edit. Takes the repo KEY directly
@@ -669,12 +698,10 @@ case "${1:-}" in
       # ever wired by hand (same double-check style as the PostToolUse/Skill leg below).
       [ "$st_agent" = "general-purpose" ] || exit 0
       st_msg="$(printf '%s' "$st_input" | jq -r '.last_assistant_message // ""' 2>/dev/null)"
-      sa_level="$(printf '%s' "$st_msg" | grep -Eo '^KEEL-AGENT-REVIEW: level=(low|medium|high|max)$' | tail -n1)"
+      sa_level="$(printf '%s' "$st_msg" | grep -Eo "^KEEL-AGENT-REVIEW: level=(${ACCEPTED_REVIEW_LEVELS// /|})\$" | tail -n1)"
       sa_level="${sa_level#KEEL-AGENT-REVIEW: level=}"
       [ -n "$sa_level" ] || exit 0
-      sa_sha="$(_head_sha "$st_cwd")"
-      [ -n "$sa_sha" ] || exit 0
-      printf '%s\tagent:%s\n' "$sa_sha" "$sa_level" >> "$(trace_path_for "$st_cwd")"
+      _append_trace_line "$st_cwd" "agent:$sa_level"
       exit 0
     fi
 
@@ -683,14 +710,24 @@ case "${1:-}" in
       # ($st_input), not a parsed field — the questions-array schema for a hook event is the one
       # unverified detail (see the dir #88 header section's TO VERIFY), so grepping the raw text makes
       # the exact field name non-load-bearing, the same defensive move dir #63's own TO-VERIFY-resolved
-      # block already documents for a different field. Unanchored (no ^...$): the marker sits embedded
+      # block already documents for a different field. No `^...$` line anchor: the marker sits embedded
       # inside a JSON string, not alone on its own line the way a subagent's plain-text final message is.
-      dlg_level="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=(low|medium|high|max)' | tail -n1)"
-      dlg_level="${dlg_level#KEEL-REVIEW-DIALOG: level=}"
+      # Correctness fix (found in the operator-run /code-review high pass on this ticket): capture the
+      # FULL trailing word (greedy `[a-zA-Z]+`), then validate it against the exact accepted set with a
+      # loop over $ACCEPTED_REVIEW_LEVELS — matching `(low|medium|high|max)` directly here would let
+      # `grep -Eo`'s leftmost-longest match truncate a malformed `level=highest`/`level=maximum` down to
+      # a false-accepted `high`/`max`, the same right-side-anchor gap the SubagentStop marker avoids with
+      # its own `^...$` anchoring. A loop, not a `case` pattern list, deliberately: an unquoted `|`-joined
+      # variable in a case pattern is matched as ONE literal glob string, not split into alternatives at
+      # runtime — confirmed the hard way while building this fix, see $ACCEPTED_REVIEW_LEVELS's own comment.
+      dlg_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=[a-zA-Z]+' | tail -n1)"
+      dlg_word="${dlg_word#KEEL-REVIEW-DIALOG: level=}"
+      dlg_level=""
+      for lvl in $ACCEPTED_REVIEW_LEVELS; do
+        [ "$dlg_word" = "$lvl" ] && dlg_level="$lvl" && break
+      done
       [ -n "$dlg_level" ] || exit 0
-      dlg_sha="$(_head_sha "$st_cwd")"
-      [ -n "$dlg_sha" ] || exit 0
-      printf '%s\tdialog:%s\n' "$dlg_sha" "$dlg_level" >> "$(trace_path_for "$st_cwd")"
+      _append_trace_line "$st_cwd" "dialog:$dlg_level"
       exit 0
     fi
 
@@ -703,9 +740,7 @@ case "${1:-}" in
       code-review|*:code-review|/code-review) ;;
       *) exit 0 ;;
     esac
-    st_sha=$(_head_sha "$st_cwd")
-    [ -n "$st_sha" ] || exit 0
-    printf '%s\t%s\n' "$st_sha" "$st_level" >> "$(trace_path_for "$st_cwd")"
+    _append_trace_line "$st_cwd" "$st_level"
     exit 0
     ;;
   rollout-check)

@@ -1049,6 +1049,19 @@ tf="$(trace_for "$d")"; rm -f "$tf"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=ultra"
 check_nofile "PostToolUse(AskUserQuestion) marker with an out-of-set level (ultra) is ignored" "$tf"
 
+# 62a. Regression guard (found in the operator-run /code-review high pass on this ticket): a word that
+# merely STARTS WITH an accepted level ("highest", "maximum") must be rejected outright, not silently
+# truncated by grep's leftmost-longest match into a false-accepted "high"/"max" trace line — the same
+# right-side-anchor discipline the SubagentStop marker already enforces via its own `^...$` anchor.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=highest"
+check_nofile "PostToolUse(AskUserQuestion) marker with a near-miss level (highest) is rejected, not truncated to high" "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=maximum"
+check_nofile "PostToolUse(AskUserQuestion) marker with a near-miss level (maximum) is rejected, not truncated to max" "$tf"
+
 # 63. A non-AskUserQuestion PostToolUse tool never reaches this leg — the hook's own defense-in-depth
 # check, redundant with the install-time matcher but exercised directly here (same style as test 43's
 # SubagentStop equivalent).
