@@ -218,9 +218,18 @@ if [ -f "$backlog_file" ]; then
   while IFS= read -r ln; do boundary_lines+=("$ln"); done \
     < <(grep -nE '^#{2,3} ' "$backlog_file" | cut -d: -f1)
   total_lines="$(wc -l < "$backlog_file")"
+  # Strip inline-code spans ONCE for the whole file, not per heading (a several-thousand-line
+  # BACKLOG.md with dozens of headings would otherwise re-scan the file's tail from every heading's
+  # own sed call, O(headings x file length) instead of O(file length)). The stripped copy is what
+  # both the heading-tag check and the body-content check read below — the ticket that documents
+  # this very pattern (dir #87) quotes `✅ CLOSED (PR #…)` and `` `CLOSED`/`DONE`/`RETRACTED` `` as
+  # prose examples, not a real status, so without stripping the check would flag its own ticket.
+  stripped_lines=()
+  while IFS= read -r ln; do stripped_lines+=("$ln"); done \
+    < <(sed -E 's/`[^`]*`//g' "$backlog_file")
   if [ "${#heading_lines[@]}" -gt 0 ]; then
     for start in "${heading_lines[@]}"; do
-      heading_line="$(sed -n "${start}p" "$backlog_file")"
+      heading_line="${stripped_lines[$((start - 1))]}"
       # already carries its own status marker -> nothing to cross-check
       case "$heading_line" in
         *"✅"*|*"⏳"*|*RETRACTED*) continue ;;
@@ -236,12 +245,15 @@ if [ -f "$backlog_file" ]; then
       fi
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
-      # Strip inline-code spans first: the ticket that documents this very pattern (dir #87)
-      # quotes `✅ CLOSED (PR #…)` and `` `CLOSED`/`DONE`/`RETRACTED` `` as prose examples, not as
-      # a real status — without stripping, the check would flag its own ticket as stale.
-      body="$(sed -n "${body_start},${end}p" "$backlog_file" | sed -E 's/`[^`]*`//g')"
-      if printf '%s\n' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
-        id="$(printf '%s' "$heading_line" | grep -ohE 'dir #[0-9]+' | head -1)"
+      body=""
+      for ((k = body_start; k <= end; k++)); do body+="${stripped_lines[$((k - 1))]}"$'\n'; done
+      if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
+        # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
+        # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
+        # can't be misread as a comment start by anything re-parsing this word.
+        id_re='dir #[0-9]+'
+        id="dir #?"
+        [[ "$heading_line" =~ $id_re ]] && id="${BASH_REMATCH[0]}"
         gap "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
         stale=$((stale + 1))
       fi
