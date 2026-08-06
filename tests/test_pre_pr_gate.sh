@@ -1140,5 +1140,173 @@ d="$(mkrepo)"
 gate "gh pr create --head owner: --fill" "$d"
 check_contains "malformed --head (empty after owner-prefix strip) → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied naming the malformed --head, not silently falling back to cwd's branch" "$OUT" "has no branch name after stripping"
+# --- dir #88: step 5(a)'s review-reminder-dialog leg (PostToolUse(AskUserQuestion) trace + gate check) --
+# Feeds a synthetic PostToolUse(AskUserQuestion) event to skill-trace. $1 = repo dir, $2 = question text
+# (the marker, if present, lives inside this — mirrors the assumed-but-unverified tool_input.questions[]
+# shape; skill-trace greps the RAW event JSON, so the exact field name is not load-bearing here either,
+# same defensive posture as the production hook's own dir #88 header section documents).
+# Renumbered 68+ on merge with dir #80 (this file's own tests 60-67 above) — both branches independently
+# started their new tests at 60; test numbers are human labels only, nothing parses them.
+askuserquestion_trace() {
+  local d="$1" question="$2" json
+  json="$(jq -n --arg cwd "$d" --arg q "$question" \
+    '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+      tool_input:{questions:[{question:$q, header:"Review", options:[{label:"proceed"},{label:"run /code-review too"}]}]}}')"
+  OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
+  STATUS=$?
+}
+
+# Arms the dir #88 dialog-check leg for repo $1 by wiring a PostToolUse/AskUserQuestion matcher naming
+# this gate into its project settings.json — the shape tools/install-pre-pr-gate.sh itself writes,
+# reproduced directly here so this test doesn't depend on that installer running first.
+arm_dialog_leg() {
+  local d="$1"
+  mkdir -p "$d/.claude"
+  jq -n --arg gate "$gate" \
+    '{hooks:{PostToolUse:[{matcher:"AskUserQuestion", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+    > "$d/.claude/settings.json"
+}
+
+# 68. A PostToolUse(AskUserQuestion) event whose question text carries the marker (embedded in the JSON,
+# not alone on its own line the way the SubagentStop marker is) writes a `dialog:<level>` trace line
+# keyed by the hook's own observed HEAD sha, never a self-reported one.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+askuserquestion_trace "$d" "The agent review already ran and stands. KEEL-REVIEW-DIALOG: level=high Additionally run /code-review too?"
+check_status "PostToolUse(AskUserQuestion) with marker → exit 0" 0 "$STATUS"
+check_file "PostToolUse(AskUserQuestion) with marker writes a trace file" "$tf"
+check_contains "trace line carries the sha and the dialog:<level> tag" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:high"
+rm -f "$tf"
+
+# 69. No marker at all → ignored — the common case: most AskUserQuestion dialogs in a session (step 4's
+# own depth dialog, an unrelated clarifying question) are NOT this specific reminder.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "Should I use approach A or approach B for this refactor?"
+check_nofile "PostToolUse(AskUserQuestion) with no marker is ignored" "$tf"
+
+# 70. A marker naming a level outside the accepted set is ignored, not trusted verbatim.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=ultra"
+check_nofile "PostToolUse(AskUserQuestion) marker with an out-of-set level (ultra) is ignored" "$tf"
+
+# 70a. Regression guard (found in the operator-run /code-review high pass on this ticket): a word that
+# merely STARTS WITH an accepted level ("highest", "maximum") must be rejected outright, not silently
+# truncated by grep's leftmost-longest match into a false-accepted "high"/"max" trace line — the same
+# right-side-anchor discipline the SubagentStop marker already enforces via its own `^...$` anchor.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=highest"
+check_nofile "PostToolUse(AskUserQuestion) marker with a near-miss level (highest) is rejected, not truncated to high" "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=maximum"
+check_nofile "PostToolUse(AskUserQuestion) marker with a near-miss level (maximum) is rejected, not truncated to max" "$tf"
+
+# 71. A non-AskUserQuestion PostToolUse tool never reaches this leg — the hook's own defense-in-depth
+# check, redundant with the install-time matcher but exercised directly here (same style as test 43's
+# SubagentStop equivalent).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Write", tool_input:{content:"KEEL-REVIEW-DIALOG: level=high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_nofile "PostToolUse for a non-AskUserQuestion tool never reaches the dialog leg" "$tf"
+
+# 72. UNARMED (no .claude/settings.json wires the AskUserQuestion leg — the default for every repo these
+# tests build): an `agent:<level>` receipt with a matching SubagentStop trace but NO dialog line still
+# PASSES — the dialog check must not false-deny before an adopter re-runs the installer (the arming
+# rule's own rejected alternative (i), see tools/pre-pr-gate.sh's dir #88 header). This also locks in
+# that every earlier `agent:*` test in this file (46, 50a, etc.) keeps passing unmodified.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_status "UNARMED: agent:<level> receipt, no dialog line → still exit 0" 0 "$STATUS"
+check_absent "UNARMED: agent:<level> receipt, no dialog line → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 73. ARMED: an `agent:<level>` receipt + matching SubagentStop trace but NO dialog line → DENY
+# (review-dialog-missing) — the review claim is real, but step 5(a)'s MANDATORY reminder was never
+# opened/answered for this commit.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "ARMED: agent:<level> receipt, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "ARMED: denied for the missing dialog, not some other reason" "$OUT" "reminder dialog was never opened"
+rm -f "$tf"
+
+# 74. ARMED: the same receipt, this time with a matching dialog:<level> trace line at the current sha →
+# PASS.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=high Run /code-review too?"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_status "ARMED: agent:<level> receipt + matching dialog trace → exit 0" 0 "$STATUS"
+check_absent "ARMED: agent:<level> receipt + matching dialog trace → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 75. ARMED: a dialog trace line exists, but for a DIFFERENT (stale) commit — e.g. a fix-commit moved
+# HEAD after the dialog was answered for the PRIOR commit. dir #72's convergence-round fork: a fix-commit
+# moving HEAD is expected, but a prior round's dialog line must not vouch for the new commit.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\tdialog:high\n' > "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "ARMED: dialog trace at a STALE sha → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "ARMED: a stale-sha dialog line doesn't count as answered" "$OUT" "reminder dialog was never opened"
+rm -f "$tf"
+
+# 76a. ARMED: the combined `agent:<level>+operator-run` outcome (dir #81) requires the dialog line too —
+# the reminder fires identically for both agent:* shapes.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+operator-run"
+gate "gh pr create --fill" "$d"
+check_contains "ARMED: combined agent:<level>+operator-run, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "ARMED: combined outcome denied for the missing dialog too" "$OUT" "reminder dialog was never opened"
+rm -f "$tf"
+
+# 76b. ARMED: same combined outcome, this time with a matching dialog:<level> trace line → PASS.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high"
+write_full_receipt_review "$d" "agent:high+operator-run"
+gate "gh pr create --fill" "$d"
+check_status "ARMED: combined outcome + matching dialog trace → exit 0" 0 "$STATUS"
+check_absent "ARMED: combined outcome + matching dialog trace → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 77. ARMED: outcomes OTHER than `agent:*` (a trusted `-operator-run` outcome, and `skip`) are UNCHANGED
+# — the dialog check applies only to agent:*-shaped outcomes, since step 5(a)'s reminder doesn't exist on
+# any other path.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+write_full_receipt "$d"        # default outcome: medium-operator-run, no dialog line anywhere
+gate "gh pr create --fill" "$d"
+check_status "ARMED: <level>-operator-run outcome, no dialog line → still exit 0" 0 "$STATUS"
+check_absent "ARMED: <level>-operator-run outcome, no dialog line → allowed" "$OUT" "deny"
+
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_status "ARMED: skip outcome, no dialog line → still exit 0" 0 "$STATUS"
+check_absent "ARMED: skip outcome, no dialog line → allowed" "$OUT" "deny"
 
 summary

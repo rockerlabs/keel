@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# install-pre-pr-gate.sh — wires the /polish gate's 5 hooks into a project's (or the machine-global)
+# install-pre-pr-gate.sh — wires the /polish gate's 6 hooks into a project's (or the machine-global)
 # Claude Code settings.json. dir #68: this is the opt-in step that makes the gate real for an adopter,
 # separate from install.sh (which now ships polish.md unconditionally but never wires a hook itself).
-# The 5th hook (SubagentStop/general-purpose, dir #70) traces the independent-agent-review leg.
+# The 5th hook (SubagentStop/general-purpose, dir #70) traces the independent-agent-review leg. The 6th
+# hook (PostToolUse/AskUserQuestion, dir #88) traces step 5(a)'s MANDATORY review-reminder dialog —
+# shares the PostToolUse event with the Skill matcher, so FIVE_EVENTS below still names 5 distinct event
+# NAMES even though there are now 6 matcher entries across them.
 #
 # The installer edits settings.json with jq, so most of these tests need jq. The busybox/Alpine CI job
 # installs only bash+git (same convention as tests/test_pre_pr_gate.sh, tests/test_pipeline_canary.sh,
@@ -53,6 +56,9 @@ check_contains "SessionStart matcher is startup" "$sj" '"matcher": "startup"'
 check_contains "PostToolUse matcher is Skill" "$sj" '"matcher": "Skill"'
 check_contains "UserPromptExpansion matcher is code-review" "$sj" '"matcher": "code-review"'
 check_contains "SubagentStop matcher is general-purpose" "$sj" '"matcher": "general-purpose"'
+check_contains "PostToolUse matcher includes AskUserQuestion (dir #88)" "$sj" '"matcher": "AskUserQuestion"'
+n_ptu="$(jq '[.hooks.PostToolUse[].matcher] | length' "$repo/.claude/settings.json")"
+check_status "PostToolUse carries both matchers (Skill + AskUserQuestion), not a collision" 2 "$n_ptu"
 
 # --- (a2) idempotent re-run: same content, reported as already-wired, no duplicate entries ----------
 run "$installer" "$repo"
