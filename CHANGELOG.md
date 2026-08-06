@@ -9,6 +9,25 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`/go` now derives failing acceptance tests from a ticket's done-criterion before implementing, and
+  `/polish` step 5(a)'s independent-reviewer prompt now carries a two-way conformance mandate against
+  the ticket** (dir #78, found by comparing keel's `/design → /go → /polish` conveyor against the
+  operator's published workflow schema — two stages the video's schema had that keel's own pipeline was
+  missing). `commands/go.md` gains a step: when a ticket names a done-criterion, write acceptance tests
+  from it FIRST — show them red, then implement to green — with an explicit infeasible-say-so escape
+  hatch for pure-wording tickets with no runnable surface, in the same spirit as `/polish`'s
+  `skipped:<reason>` receipts. `commands/polish.md` step 5(a)'s subagent prompt now also carries the
+  ticket/spec the diff implements (id or done-criterion text) with a two-way mandate — the diff must
+  realize it, and must not silently exceed or contradict it — with an explicit no-ticket fallback for
+  ad-hoc diffs (stays correctness-only). `FRAMEWORK.md` gains one generic cross-link sentence on its
+  existing tests-before-or-alongside design principle (no keel-internal references — that doc is
+  adopter-facing). New `tests/test_conveyor_stages.sh` pins all three additions, written before the
+  implementation and confirmed red first, the same grep-based idiom `test_doc_figures.sh` already uses.
+  Scope is deliberately this pair only — the video's other three stages (frozen-spec semantics, parallel
+  per-module executors, mutation testing) are explicitly rejected for keel per the ticket's resolved
+  forks. Also felt again: the shared `/tmp/pre-pr-gate-*` sentinel (still-open dir #80) collided with a
+  concurrent session's own `/polish` run mid-pass; recovered by re-`init`+receipt+`gh pr create` in one
+  tight sequence.
 - **`BACKLOG.drafts/` isolates parallel `/design` sessions from racing a shared `BACKLOG.md`** (dir #83,
   felt 2026-08-02, affiliate-lab — several concurrent design sessions saw each other's half-written
   edits and collided on ticket numbers). A design session whose target backlog may have concurrent
