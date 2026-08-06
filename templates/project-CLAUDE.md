@@ -23,6 +23,10 @@
 
 <open work — inline here while small; a pointer to an on-demand backlog once it grows>
 
+<if this project runs parallel `/design` sessions against the on-demand backlog, note the
+`BACKLOG.drafts/` convention here (unnumbered draft tickets, folded at each design session's own wrap —
+see `FRAMEWORK.md`) so those sessions don't race a shared `BACKLOG.md`>
+
 ## Recently closed (cooldown buffer)
 
 <the last ≤2 closed tasks; sweep to the changelog/git log after a milestone or two>

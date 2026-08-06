@@ -28,6 +28,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   forks. Also felt again: the shared `/tmp/pre-pr-gate-*` sentinel (still-open dir #80) collided with a
   concurrent session's own `/polish` run mid-pass; recovered by re-`init`+receipt+`gh pr create` in one
   tight sequence.
+- **`BACKLOG.drafts/` isolates parallel `/design` sessions from racing a shared `BACKLOG.md`** (dir #83,
+  felt 2026-08-02, affiliate-lab — several concurrent design sessions saw each other's half-written
+  edits and collided on ticket numbers). A design session whose target backlog may have concurrent
+  writers now writes its finished ticket as an unnumbered draft file, keyed by slug, in `BACKLOG.drafts/`
+  and only folds it into `BACKLOG.md` (assigning a real number) at its own wrap — the single
+  serialization point; `/backlog` folds any draft still there idempotently — whether its owning session
+  crashed or just hasn't wrapped yet — and lists whatever it can't fold as an unnumbered "Draft" row.
+  Full convention, including the (separate, unaffected)
+  sequencing rule for two designs' *implementations* → `FRAMEWORK.md`'s backlog/persist section.
+  `commands/backlog.md` gains the fold/list step; `templates/CLAUDE.md` and `templates/project-CLAUDE.md`
+  point new projects at the convention.
 - **`AGENTS.md` is now a first-class vendor sibling of `CLAUDE.md`, symlinked and status-inheriting**
   (dir #75, found in dir #69's wrap: keel's own root `AGENTS.md` was an untracked, stale, unignored copy
   of `CLAUDE.md`). `init-project.sh` now creates `AGENTS.md` as a symlink to `CLAUDE.md` (never-clobber,
