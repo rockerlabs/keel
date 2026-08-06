@@ -230,6 +230,79 @@
 #       completeness/sha/trace checks are entirely unchanged: a recovered-but-stale step-8 sha or a
 #       recovered `polish.5-review` outcome that no longer has a matching trace still denies exactly as
 #       before — `--recover` only removes the busywork of re-typing what didn't change.
+#
+# --- dir #88: gate-checking step 5(a)'s MANDATORY review-reminder dialog ---------------------------
+# Root cause: the MANDATORY `AskUserQuestion` reminder in commands/polish.md step 5(a) ("agent review
+# already ran — additionally run the stronger built-in /code-review <level>?") was silently skipped 3x
+# (felt on dir #62/PR #147) — prose alone doesn't stop a session from writing the `agent:<level>`
+# receipt and moving straight to step 6. Same fix class as dir #63/#70: a THIRD trace leg, not a
+# hand-off check (the hand-off note is CLEARED before the gate ever runs — see step 5's own `receipt`
+# case above — so "hand-off present at gate time" would deny the honest flow, and "absent" is
+# indistinguishable from "dialog never opened").
+#   "PostToolUse": [{ "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh skill-trace" }] }]
+# PostToolUse fires only after the tool call SUCCEEDS — for AskUserQuestion that means the operator
+# ANSWERED it (any answer, including "Other", and per Claude Code's own docs on the tool's auto-continue
+# timeout, an unattended timeout also SUBMITS whatever was selected and counts as a completed call, not
+# a failure). That resolves the same fork dir #63/#70 already resolved for their own legs: the traced
+# event is "dialog opened AND answered", so it can never wedge an in-flight session (an unanswered
+# dialog means the flow is still sitting at it and hasn't reached `gh pr create` yet), and a session that
+# abandons the dialog and pushes on leaves no trace and denies right here — exactly the skip this ticket
+# closes.
+# **TO VERIFY, resolved at impl start** (same drill as dir #63/#70, checked against
+# code.claude.com/docs/en/hooks.md and .../tools-reference.md): (1) `AskUserQuestion` is confirmed as the
+# tool's exact `tool_name` string (tools-reference.md's own tool table lists it verbatim). (2) Neither
+# doc page gives a worked PostToolUse(AskUserQuestion) JSON example, so the exact field the question text
+# lands in (`tool_input` vs `tool_response`) is PLAUSIBLE, not doc-confirmed — same unresolved-schema
+# shape as dir #63's own point (2). Mitigated the same way design pt 3 below does it: `skill-trace` greps
+# the RAW event JSON for the marker rather than reading a named field, so the exact field name is not
+# load-bearing. (3) No documented cancel/interrupt path exists for `AskUserQuestion` separate from
+# "answered" or "timed out" (which itself submits) — nothing here currently distinguishes a hypothetical
+# future interrupt path from an ordinary miss, and none is assumed.
+#
+# **Marker** — the dialog's question text must carry, verbatim, the literal line
+# `KEEL-REVIEW-DIALOG: level=<level>` (same literal-match discipline as `KEEL-AGENT-REVIEW` above, same
+# reason: this hook greps for it, not the human-facing wording, which must stay free to change — dir #64's
+# tag-vs-prose lesson). Below, `skill-trace`'s new branch greps `$st_input` (the RAW event JSON, not a
+# parsed field — see TO VERIFY (2) above) for `KEEL-REVIEW-DIALOG: level=(low|medium|high|max)`, takes the
+# LAST match, and appends `<sha>\tdialog:<level>` to the same trace file the Skill/UserPromptExpansion/
+# SubagentStop legs already write (`trace_path_for`) — sha is this hook's OWN `git … rev-parse HEAD` at
+# fire time, never a self-reported field, same trust boundary as every other leg. No marker / no sha →
+# silent exit 0, same as the other legs.
+#
+# **Gate check** — in the PASS branch, immediately after the existing review-trace check: whenever
+# `$review_outcome` matches `agent:*` (BOTH shapes — bare `agent:<level>` and the combined
+# `agent:<level>+operator-run`, dir #81 — the dialog reminder fires identically for both), additionally
+# require a `dialog:<outcome_level>` line for `$current_sha` in the trace file; else deny naming the
+# dialog as missing. Per-SHA by construction (dir #72's convergence-round fork): a fix-commit moves HEAD,
+# so an earlier round's dialog line doesn't cover a later commit — a fresh answered dialog is required
+# per round, matching the MANDATORY paragraph's own "each such round moves HEAD" prose. Applies ONLY to
+# `agent:*`-shaped outcomes: `skip`, bare `<level>` (a genuine in-session /code-review run — step 5(a)'s
+# reminder doesn't exist on that path), `<level>-operator-run`/`<level>-waived` (the (b)/(c) hand-off
+# outcomes, already self-reported and covered by the depth-consistency check above), and `ultra` (never
+# reaches (a) at all) are all unaffected.
+#
+# **Arming rule (part of the spec, not optional):** the check above only fires when the AskUserQuestion
+# leg is actually WIRED — `_dialog_leg_armed` (below) greps the resolvable settings.json candidates
+# (project `.claude/settings.json`/`.claude/settings.local.json`, main-checkout-resolved per dir #61, and
+# `~/.claude/settings.json`) for a `PostToolUse` entry whose matcher is `AskUserQuestion` and whose hook
+# command names this script. Two rejected alternatives, same reasoning as dir #63/#70's own residual-limit
+# sections: (i) fail closed unconditionally — the gate CHECK ships in this file and goes live the instant
+# an adopter `git pull`s, but the TRACE leg needs a SEPARATE, explicit `tools/install-pre-pr-gate.sh`
+# re-run (dir #68's opt-in-wiring discipline) — an unconditional check would false-deny every `agent:*`
+# unlock in that window, open-ended for anyone who never re-runs the installer. (ii) arm once the trace
+# file contains any `dialog:` line — a flow that always skips the dialog would then never arm the check
+# at all, making it a permanent no-op, the exact failure mode this ticket exists to close.
+#
+# **Residual limits** (same discipline as dir #63/#70's own sections): (1) marker fabrication — any
+# `AskUserQuestion` whose text contains the marker traces, even an unrelated one, but uniquely among the
+# trace legs the faked artifact is ITSELF operator-visible (every dialog renders to the human), so the
+# silent-skip failure mode this ticket closes stays structurally closed even under fabrication; a
+# dishonest model with Bash could anyway write the trace file directly (the standing residual every leg
+# shares). (2) sha keyed to the event cwd, not the eventual `--head` — same split-checkout false-deny
+# trade-off as dir #63 limit (2). (3) per-repo trace file shared across worktrees — same as dir #63 limit
+# (3). (4) the arming grep is a structural presence check, not a liveness check — a matcher wired to a
+# STALE copy of this script (the felt incident that keeps `install-pre-pr-gate.sh` pointing at a kept
+# checkout by absolute path, never a copy) would still read as armed.
 
 set -u
 
@@ -268,6 +341,31 @@ main_top_for() {
   top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -n "$top" ]; then printf '%s' "$top"; return; fi
   printf '%s' "$cwd"
+}
+
+# dir #88: whether the AskUserQuestion -> skill-trace leg is actually wired into this session's Claude
+# Code hooks — the PASS branch's dialog check (below) only fires when this returns true. See that dir
+# #88 header section above for why an unconditional check would false-deny every `agent:*` unlock in
+# the window between `git pull` and the operator re-running the installer. Checks the same candidate
+# settings.json paths install-pre-pr-gate.sh itself writes to (project scope, resolved via
+# main_top_for per dir #61, and machine-global) — a repo/hook mismatch here means the installer's own
+# write-target resolution changed and this needs a matching update, not a silent drift.
+_dialog_leg_armed() {
+  local cwd="${1:-$PWD}" top f
+  command -v jq >/dev/null 2>&1 || return 1
+  top="$(main_top_for "$cwd")"
+  for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" "$HOME/.claude/settings.json"; do
+    [ -f "$f" ] || continue
+    if jq -e '
+        (.hooks.PostToolUse // []) | any(
+          .matcher == "AskUserQuestion" and
+          ((.hooks // []) | any(.command // "" | test("pre-pr-gate\\.sh")))
+        )
+      ' "$f" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # The basename-of-main-checkout key every per-repo /tmp file below shares, factored out once dir #63
@@ -518,12 +616,13 @@ case "${1:-}" in
     exit 1
     ;;
   skill-trace)
-    # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — or SubagentStop(general-purpose)
-    # — dir #70, the independent-agent-review leg — hook. Never blocks or alters anything: silently
-    # no-ops (exit 0) on anything it can't parse or that isn't a code-review invocation/review, since a
-    # missed trace is a residual limit, not a false deny. One jq call for every field any of the three
-    # legs needs — it fires on every Skill/slash-command/subagent-stop event in every session using this
-    # hook, so it's worth sparing the extra forks a call-per-leg would cost.
+    # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — SubagentStop(general-purpose)
+    # — dir #70, the independent-agent-review leg — or PostToolUse(AskUserQuestion) — dir #88, the
+    # step-5(a) review-reminder-dialog leg — hook. Never blocks or alters anything: silently no-ops
+    # (exit 0) on anything it can't parse or that isn't a code-review invocation/review/dialog, since a
+    # missed trace is a residual limit, not a false deny. One jq call for every field any of the four
+    # legs needs — it fires on every Skill/slash-command/subagent-stop/AskUserQuestion event in every
+    # session using this hook, so it's worth sparing the extra forks a call-per-leg would cost.
     # Joined with \x1f (NOT tab): bash `read` collapses an EMPTY field sitting between two tab
     # delimiters regardless of IFS (the same class of bug the keel-impact log parser hit) — real here,
     # since a UserPromptExpansion event has no `tool_name` field at all, and a SubagentStop event has
@@ -559,6 +658,22 @@ case "${1:-}" in
       sa_sha="$(_head_sha "$st_cwd")"
       [ -n "$sa_sha" ] || exit 0
       printf '%s\tagent:%s\n' "$sa_sha" "$sa_level" >> "$(trace_path_for "$st_cwd")"
+      exit 0
+    fi
+
+    if [ "$st_event" = "PostToolUse" ] && [ "$st_tool" = "AskUserQuestion" ]; then
+      # dir #88: unlike the Skill/SubagentStop legs, the marker is searched for in the RAW event JSON
+      # ($st_input), not a parsed field — the questions-array schema for a hook event is the one
+      # unverified detail (see the dir #88 header section's TO VERIFY), so grepping the raw text makes
+      # the exact field name non-load-bearing, the same defensive move dir #63's own TO-VERIFY-resolved
+      # block already documents for a different field. Unanchored (no ^...$): the marker sits embedded
+      # inside a JSON string, not alone on its own line the way a subagent's plain-text final message is.
+      dlg_level="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=(low|medium|high|max)' | tail -n1)"
+      dlg_level="${dlg_level#KEEL-REVIEW-DIALOG: level=}"
+      [ -n "$dlg_level" ] || exit 0
+      dlg_sha="$(_head_sha "$st_cwd")"
+      [ -n "$dlg_sha" ] || exit 0
+      printf '%s\tdialog:%s\n' "$dlg_sha" "$dlg_level" >> "$(trace_path_for "$st_cwd")"
       exit 0
     fi
 
@@ -1046,6 +1161,27 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
+    # dir #88: an `agent:*`-shaped outcome (BOTH plain `agent:<level>` and the combined
+    # `agent:<level>+operator-run`, dir #81 — the reminder fires identically for both) additionally
+    # requires a mechanically-traced, ANSWERED AskUserQuestion dialog for step 5(a)'s MANDATORY
+    # reminder — the review claim itself can be receipted honestly while that reminder is silently
+    # skipped by momentum (felt on dir #62/PR #147). Armed only when the AskUserQuestion leg is
+    # actually wired (`_dialog_leg_armed`, above) — see the dir #88 header section for why an
+    # unconditional check would false-deny every `agent:*` unlock between `git pull` and the operator
+    # re-running the installer.
+    case "$review_outcome" in
+      agent:*)
+        if _dialog_leg_armed "$cwd"; then
+          trace_path="/tmp/pre-pr-gate-trace-$wt"
+          if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="dialog:$outcome_level" \
+              '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
+            retire_sentinel "$sentinel" "$cwd" "$wt"
+            log_event receipt-deny "review-dialog-missing" "$cwd"
+            deny "Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."
+          fi
+        fi
+        ;;
+    esac
     # dir #64 tier 2a: $prov_label/$prov_tag were already built above (the same case statement dir #63's
     # cross-check uses) — visible at PR-creation time instead of only via transcript archaeology. The
     # logged detail carries BOTH, tab-joined ($4 = prov_label prose, $5 = prov_tag) — `sweep` reads $5,
