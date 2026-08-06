@@ -170,13 +170,16 @@ Steps, in order:
      BEFORE any hand-off, because the review already happened and is independently, mechanically
      verifiable (the trace).
 
-     **MANDATORY NEXT ACTION — nothing mechanically checks this, so it's easy to skip by momentum:
-     open an `AskUserQuestion` dialog before touching step 6.** (A gate-level check is tracked
-     separately, dir #79 — until it lands, this instruction is the only thing standing between the
-     receipt above and a silently-skipped review.) This fires every time execution reaches here,
-     including a convergence-round re-review after a fix commit (see the terminal-pass note below).
-     Each such round moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's
-     dialog doesn't cover a later commit.
+     **MANDATORY NEXT ACTION — open an `AskUserQuestion` dialog before touching step 6.** The gate now
+     denies an `agent:*` unlock with no answered dialog for this commit (dir #88, once
+     `tools/install-pre-pr-gate.sh` has wired the `AskUserQuestion` hook — see that file's own header):
+     the question text MUST carry, verbatim and somewhere in the question, the literal line
+     `KEEL-REVIEW-DIALOG: level=<level>` (the chosen depth) — plain text, no markdown formatting, same
+     literal-match discipline as the `KEEL-AGENT-REVIEW` marker above, since the gate greps for it, not
+     the human-facing wording. This fires every time execution reaches here, including a
+     convergence-round re-review after a fix commit (see the terminal-pass note below). Each such round
+     moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's dialog doesn't
+     cover a later commit.
 
      **Frame this as ONE additive yes/no question, never as a choice between mechanisms** (dir #81): the
      agent review already ran and its receipt above already stands — nothing here reopens or discards it,
@@ -238,7 +241,13 @@ Steps, in order:
        outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note).
        Only if step 8 later denies it for a missing/mismatched agent trace — meaning this hand-off actually
        came from (b), where no agent review ever ran — fall back to the plain outcome,
-       `polish.5-review <level>-operator-run`.
+       `polish.5-review <level>-operator-run`. **A `review-dialog-missing` denial is a DIFFERENT deny
+       (dir #88) and must NOT be treated as this fallback trigger:** it means the DIALOG, not the agent
+       trace, is what's missing — the agent review itself is fine. The fix is to open/answer (a)'s
+       `AskUserQuestion` dialog (with the `KEEL-REVIEW-DIALOG: level=<level>` marker) for current HEAD,
+       then re-write the same combined outcome — never fall back to the plain `-operator-run` outcome for
+       this deny, which would silently drop the agent review half (the exact dir #81 anti-pattern this
+       combined outcome exists to prevent).
      - If they explicitly waived the review instead of running it, receipt `polish.5-review <level>-waived`
        (this also clears the hand-off note) — (a)'s dialog never offers a waive option, so this only ever
        resolves a (b) hand-off.
