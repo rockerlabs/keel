@@ -27,6 +27,42 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `/code-review medium` (3 more fixed — the GAP/WARN severity mismatch, the fenced-code-block gap,
   the RETRACTED word-boundary gap).
 
+- **The pre-PR gate's receipt sentinel/prev-sentinel/hand-off files are now keyed by `(repo, branch)`
+  instead of repo alone, and `keel-impact.sh`'s shared event-log rewrite is now subtractive instead of
+  a snapshot write-back** (dir #80, dir #82). Concurrent `/polish` sessions on different branches of
+  the same repo used to race and wipe each other's receipts (felt on dir #62/#79's own `/polish` runs,
+  PRs #147 and #148) — `tools/pre-pr-gate.sh`'s `_require_receipt_key` now combines the repo key with
+  the invoking branch, hook mode resolving the branch via `--head`/`-f head=` first and falling back to
+  the event cwd's own checked-out branch, denying with an actionable message when neither resolves (a
+  malformed `--head` also now fails closed instead of silently keying onto the wrong branch).
+  `commands/polish.md` step 9 makes `--head <branch>` mandatory in `gh pr create`. Separately,
+  `tools/keel-impact.sh`'s `cmd_add` used to read the shared multi-worktree event log once, decide what
+  to ingest, then write back a snapshot of the survivors — blind to any line a concurrent producer
+  appended in between, silently discarding it. The rewrite is now subtractive: it re-reads the log
+  fresh at rewrite time and removes only the specific lines this run actually consumed, via a
+  byte-exact awk count-map, so a concurrent append now survives. Both an independent agent review and
+  an operator-run `/code-review high` pass ran on this diff; the operator pass found two critical,
+  empirically-verified bugs in the initial dir #80 implementation — a naive `"$repo-$branch"` string
+  join was ambiguous (two different `(repo, branch)` pairs could concatenate to the same key), and the
+  branch-name sanitizer collapsed distinct branches (`feature/foo` and `feature-foo` sanitized
+  identically) — both fixed by hashing the `(repo-key, raw branch)` pair via `cksum` (the same house
+  pattern `keel-check.sh`/`keel-check-gate.sh` already use) instead of naively joining sanitized
+  components.
+- **The pre-PR gate now mechanically checks step 5(a)'s MANDATORY review-reminder dialog, closing the
+  gap dir #79 left as wording-only** (dir #88). That dialog ("agent review already ran — additionally
+  run the stronger built-in `/code-review <level>`?") was silently skipped 3x in practice (felt on dir
+  #62/PR #147) because nothing enforced it beyond prose. `tools/pre-pr-gate.sh` gains a 3rd trace leg
+  (same class as dir #63/#70): a new `PostToolUse`/`AskUserQuestion` hook greps the dialog's raw event
+  JSON for a `KEEL-REVIEW-DIALOG: level=<level>` marker and writes a `dialog:<level>` trace line; the
+  gate's PASS branch now requires a matching, current-commit trace line whenever `polish.5-review`'s
+  outcome is `agent:*`-shaped (both the plain and dir #81 combined forms), denying with
+  `review-dialog-missing` otherwise. `tools/install-pre-pr-gate.sh` wires this as its 6th hook. The check
+  stays inert (armed) only once that hook is actually present in the resolvable settings.json — an
+  unconditional check would false-deny every `agent:*` unlock in the window between a `git pull` picking
+  up this gate logic and the next `tools/install-pre-pr-gate.sh` re-run. `commands/polish.md` step 5(a)
+  now states this and requires the marker; step 5(c)'s combined-outcome fallback gained a clause so a
+  `review-dialog-missing` deny is answered by opening the dialog, not by silently dropping the agent
+  review half (the exact dir #81 anti-pattern).
 - **`/go` now derives failing acceptance tests from a ticket's done-criterion before implementing, and
   `/polish` step 5(a)'s independent-reviewer prompt now carries a two-way conformance mandate against
   the ticket** (dir #78, found by comparing keel's `/design → /go → /polish` conveyor against the

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-pre-pr-gate — wire the /polish pre-PR gate into a project's Claude Code hooks (opt-in, per repo).
 #
-#   install-pre-pr-gate.sh <repo-path>       wire 5 hooks into <repo-path>/.claude/settings.json (project
+#   install-pre-pr-gate.sh <repo-path>       wire 6 hooks into <repo-path>/.claude/settings.json (project
 #                                            scope — the default; only sessions IN this repo are gated)
 #   install-pre-pr-gate.sh --global          wire into ~/.claude/settings.json instead — EVERY repo you
 #                                            open on this machine gets the gate, not just this one
@@ -19,6 +19,13 @@
 # The 5th hook (`SubagentStop`/`general-purpose`, dir #70) traces the independent-agent-review leg
 # `/polish` step 5 falls back to when `/code-review` itself refuses model invocation — see
 # tools/pre-pr-gate.sh's own dir #70 header section for the full mechanism.
+#
+# The 6th hook (`PostToolUse`/`AskUserQuestion`, dir #88) traces step 5(a)'s MANDATORY review-reminder
+# dialog — the "agent review already ran, additionally run /code-review too?" question — so the gate can
+# tell an answered dialog from a silently-skipped one on an `agent:*`-shaped review outcome. See
+# tools/pre-pr-gate.sh's own dir #88 header section for the full mechanism, including the arming rule
+# (the gate-side check stays inert until this hook is actually wired, avoiding a false-deny window
+# between a `git pull` picking up the check and this installer re-wiring the trace leg).
 #
 # Requires a KEPT checkout: the hooks point at THIS checkout's tools/pre-pr-gate.sh by absolute path — no
 # copy (a stale copy silently going out of sync was a felt incident; see that file's own header). A
@@ -55,7 +62,7 @@ esac
 
 usage() {
   cat <<'EOF'
-install-pre-pr-gate — wire the /polish pre-PR gate's 5 hooks into Claude Code settings.json.
+install-pre-pr-gate — wire the /polish pre-PR gate's 6 hooks into Claude Code settings.json.
 
 Usage:
   install-pre-pr-gate.sh <repo-path>     wire into <repo-path>/.claude/settings.json (project scope)
@@ -110,7 +117,8 @@ print_snippet() {
       { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$gate' rollout-check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] },
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
     ],
     "UserPromptExpansion": [
       { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
@@ -139,7 +147,7 @@ if [ -f "$settings" ]; then
   fi
 fi
 
-# The 5 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
+# The 6 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
 # $gate is single-quoted WITHIN the command string itself (not just JSON-escaped, which jq already does
 # for the string as a whole) — a checkout path containing a space would otherwise split into two argv
 # tokens when Claude Code's hook runner passes this string to a shell, silently no-op'ing every hook.
@@ -148,7 +156,8 @@ hook_specs="$(jq -n --arg gate "$gate" '[
   {event: "SessionStart",       matcher: "startup",        command: ("bash '\''" + $gate + "'\'' rollout-check")},
   {event: "PostToolUse",        matcher: "Skill",          command: ("bash '\''" + $gate + "'\'' skill-trace")},
   {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash '\''" + $gate + "'\'' skill-trace")}
+  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash '\''" + $gate + "'\'' skill-trace")},
+  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash '\''" + $gate + "'\'' skill-trace")}
 ]')"
 
 # Valid JSON is not the same as the expected SHAPE — a hand-edited settings.json could have ".hooks" as

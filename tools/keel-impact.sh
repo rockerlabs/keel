@@ -446,6 +446,17 @@ cmd_add() {
   # signal is auditable exactly like the model's. Consumed (log rewritten, dir #74) only after the row
   # lands, so a failed write never double-counts or loses events.
   #
+  # dir #82: the rewrite below is SUBTRACTIVE — it re-reads the CURRENT log at rewrite time and writes
+  # back current content minus exactly the CONSUMED lines (collected into $consumed_raws as the loop
+  # below decides ingested/stale), not a snapshot of what looked like "everything else" at T0. The old
+  # approach (`kept_lines`, accumulated during this loop from the T0 read) silently lost any line a
+  # concurrent producer appended between the T0 read and the eventual `mv` — invisible to the T0
+  # snapshot, so writing back "the survivors of what I saw" clobbered it. See the rewrite block's own
+  # comment (search `dir #82` below) for why subtractive-not-snapshot closes that. Consequence here:
+  # foreign-kept and unrecognized-type lines no longer need their own accumulator (kept_lines is gone)
+  # — they were never going to be removed, so under a subtractive rewrite they simply survive by NOT
+  # being in the consumed set, with no bookkeeping required.
+  #
   # Age cap (backlog #59): a session that never calls `add` leaves its events unconsumed in the log, where
   # they'd otherwise mis-attribute to whichever session's row lands next. Anything strictly older than the
   # cutoff is stale: not counted, archived to the evidence trail with a note instead of a citation, and the
@@ -455,14 +466,14 @@ cmd_add() {
   # conversion fails outright, fail OPEN: ingest everything uncapped (today's behavior) rather than crash or
   # silently drop events — the cap is a precision improvement, never a new way to lose data.
   # dir #74: a fresh event with a claim key that ≠ our own is a foreign session's, stamped into this
-  # shared log by a different worktree — not ours to count. Keep it in the log (rewritten below) so the
-  # session that DOES own it can ingest it later; only a foreign event past the age cap is unattributable
-  # either way, so it stays on dir #59's stale-archive-and-remove path regardless of key. A line whose
-  # type isn't in EVENT_TYPES (pre-pr-gate.sh's own housekeeping lines — receipt-pass, receipt-deny,
-  # pipeline-drift) is never ours to score either, but it's still preserved into kept_lines rather than
-  # silently dropped — this loop is the only place in the codebase that touches this shared file's
-  # content, so it's the only place that can avoid destroying a line nobody here understands.
-  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _raw _cite cutoff_iso="" stale_lines="" kept_lines="" _awk_out
+  # shared log by a different worktree — not ours to count. Never added to $consumed_raws (below) so
+  # the subtractive rewrite leaves it in place for the session that DOES own it to ingest later; only a
+  # foreign event past the age cap is unattributable either way, so it stays on dir #59's
+  # stale-archive-and-REMOVE path regardless of key. A line whose type isn't in EVENT_TYPES
+  # (pre-pr-gate.sh's own housekeeping lines — receipt-pass, receipt-deny, pipeline-drift) is never
+  # ours to score either, and is likewise never added to $consumed_raws — it survives the rewrite by
+  # construction, the same way a foreign-keyed line does, needing no dedicated accumulator either.
+  local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _raw _cite cutoff_iso="" stale_lines="" consumed_raws="" _awk_out
   local own_key=""
   local max_age_h="${KEEL_INGEST_MAX_AGE_HOURS:-12}"
   case "$max_age_h" in ''|*[!0-9]*) max_age_h=12 ;; esac
@@ -490,25 +501,25 @@ cmd_add() {
       while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
         if ! is_event_type "$_ty"; then
           [ -n "$_ty" ] || continue
-          kept_lines="${kept_lines}${_raw}"$'\n'
-          continue
+          continue    # never consumed — survives the subtractive rewrite by not being in $consumed_raws
         fi
         _cite="$_src"
         if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
         if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
           stale=$(( stale + 1 ))
           stale_lines="${stale_lines}- ${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\n'
+          consumed_raws="${consumed_raws}${_raw}"$'\n'
           printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
           continue
         fi
         if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
           kept=$(( kept + 1 ))
-          kept_lines="${kept_lines}${_raw}"$'\n'
           printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
           continue
         fi
         add_cite "$_ty" "$_cite"
         ingested=$(( ingested + 1 ))
+        consumed_raws="${consumed_raws}${_raw}"$'\n'
         printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
       done <<< "$_awk_out"
     else
@@ -580,23 +591,67 @@ cmd_add() {
     } >> "$EVIDENCE"
   fi
 
-  # Safe now that the row and any evidence blocks are durably appended. Rewrite (not a bare truncate) so a
-  # foreign session's fresh, kept-back events (and any unrecognized-type line) survive: write whatever's
-  # left to a temp file and `mv` it over the log — atomic, and the path + any producer's open append still
-  # work. Only fires when something actually needs REMOVING (ingested or stale) — a kept/preserved-only
-  # run changes nothing the file doesn't already contain, so skipping the rewrite there is a pure win: one
-  # less write, and one less window where a concurrent producer's append could race the read-modify-write
-  # (dir #82 tracks the deeper, still-open version of that race for the case a rewrite can't avoid).
+  # Safe now that the row and any evidence blocks are durably appended. Only fires when something
+  # actually needs REMOVING (ingested or stale) — a kept/preserved-only run changes nothing the file
+  # doesn't already contain, so skipping the rewrite there is a pure win: one less write, and one less
+  # window for a concurrent producer's append to land inside.
+  #
+  # dir #82: SUBTRACTIVE, not a snapshot write-back. The read-decide loop above ran against a
+  # SNAPSHOT of $LOG taken at the top of this function (T0) — between then and now, a concurrent
+  # producer (a guardrail hook in another session on this repo) may have appended a fresh event via
+  # plain `>>`. The old approach wrote back `kept_lines` — the T0 snapshot's survivors — which is
+  # blind to anything appended after T0: a `mv` over the CURRENT file would silently discard that
+  # fresh append along with the intentionally-removed ingested/stale lines. Fix: re-read the log FRESH
+  # right here, and remove ONLY the specific lines this run actually consumed ($consumed_raws, one
+  # raw line per ingested or stale event, collected in the loop above) — a per-line COUNT map (not a
+  # blanket "any line matching a consumed line's text"), so N byte-identical consumed lines remove
+  # exactly N occurrences, never more: a fresh, unrelated 3rd copy appended after T0 (never seen by
+  # this run, so never in $consumed_raws) is not in the count and survives. Consumed lines are fed to
+  # awk through a FILE (`getline < consumed`), not `-v` — `-v` mangles embedded backslashes/newlines
+  # and has command-line length limits a busy log could hit; a file has neither problem.
+  #
+  # This narrows the race window from the WHOLE ingest loop (T0 read through this mv — can span
+  # however long citation-matching/age-cap logic takes) down to just the fresh-read-here through mv
+  # gap, microseconds wide. Accepted residuals, not fixed by this (found by this ticket's own
+  # independent review pass): (a) an append landing inside THAT narrower gap can still be lost —
+  # revisit only if ever actually felt, not speculatively; (b) TWO CONCURRENT `add` invocations
+  # (any keys, not only the same one) racing their OWN fresh-read-then-mv against each other — dir
+  # #74's claim keys prevent cross-session MISATTRIBUTION (session B never scores session A's
+  # own-key events as its own), but they do NOT make this file's mutation safe under two independent
+  # rewrites: if B's fresh read happens before A's mv lands, B's own subtraction is computed against
+  # a log that still contains the lines A is about to remove; if B's mv then lands AFTER A's, it
+  # resurrects those already-consumed lines (a later `add`, by anyone, re-ingests them as new —
+  # genuine double-counting into a second ledger row, not just a scoring mixup). This is the
+  # "dominant part of add-vs-add" the resolved design (BACKLOG.md dir #82) already flagged as
+  # narrowed-not-closed by the subtractive approach alone; a real fix needs mutual exclusion around
+  # the whole read-decide-rewrite sequence (the lockdir option the design explicitly deferred, for
+  # the reasons given there) — out of scope for this ticket, revisit if ever actually felt.
+  # Test-only injection point (tests/test_keel_impact.sh): when set, append its value verbatim as one
+  # log line immediately before the rewrite's fresh read — simulating a concurrent producer's plain
+  # `>>` append landing in the T0-read-to-mv window this ticket exists to protect. Appended literally,
+  # never eval'd (house precedent: KEEL_INGEST_MAX_AGE_HOURS, KEEL_IMPACT_LOG — env knobs, not code).
+  if [ -n "${KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE:-}" ]; then
+    printf '%s\n' "$KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE" >> "$LOG"
+  fi
+
   if [ "$ingested" -gt 0 ] || [ "$stale" -gt 0 ]; then
-    # `if A && B` (not a bare `A && B` statement): under `set -e`, a command that is not the LAST element
-    # of an AND-OR list is exempt from triggering errexit (POSIX), so a bare `printf ... && mv ...` would
-    # let a write failure fall through silently — this run's ledger row (already appended above) would
-    # then claim events that are still sitting, unremoved, in $LOG for the next `add` to double-count.
-    # Fail loud instead: on failure, nothing was consumed, so say so and stop.
-    if ! { printf '%s' "$kept_lines" > "${LOG}.tmp.$$" && mv "${LOG}.tmp.$$" "$LOG"; }; then
+    # `if A && B && C` (not a bare statement): under `set -e`, a command that is not the LAST element
+    # of an AND-OR list is exempt from triggering errexit (POSIX), so any bare step here failing
+    # silently would let this run's ledger row (already appended above) claim events that are still
+    # sitting, unremoved, in $LOG for the next `add` to double-count. Fail loud instead: on failure,
+    # nothing was consumed, so say so and stop.
+    local consumed_file="${LOG}.consumed.$$"
+    if ! { printf '%s' "$consumed_raws" > "$consumed_file" &&
+           awk -F'\t' -v consumed="$consumed_file" '
+             BEGIN { while ((getline line < consumed) > 0) need[line]++; close(consumed) }
+             { if (($0 in need) && need[$0] > 0) { need[$0]--; next } print }
+           ' "$LOG" > "${LOG}.tmp.$$" &&
+           mv "${LOG}.tmp.$$" "$LOG"; }; then
+      rm -f "$consumed_file" "${LOG}.tmp.$$"
       printf 'keel-impact: failed to rewrite %s — this run'"'"'s ingested/stale-skipped events are still in it and will be reprocessed on the next add\n' "$LOG" >&2
       exit 1
     fi
+    rm -f "$consumed_file"
   fi
 
   printf 'keel-impact: derived score %s/100 (conf %s) from %d event(s)' "$score" "$conf" "$ev_count"

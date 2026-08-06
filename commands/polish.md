@@ -170,13 +170,16 @@ Steps, in order:
      BEFORE any hand-off, because the review already happened and is independently, mechanically
      verifiable (the trace).
 
-     **MANDATORY NEXT ACTION — nothing mechanically checks this, so it's easy to skip by momentum:
-     open an `AskUserQuestion` dialog before touching step 6.** (A gate-level check is tracked
-     separately, dir #79 — until it lands, this instruction is the only thing standing between the
-     receipt above and a silently-skipped review.) This fires every time execution reaches here,
-     including a convergence-round re-review after a fix commit (see the terminal-pass note below).
-     Each such round moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's
-     dialog doesn't cover a later commit.
+     **MANDATORY NEXT ACTION — open an `AskUserQuestion` dialog before touching step 6.** The gate now
+     denies an `agent:*` unlock with no answered dialog for this commit (dir #88, once
+     `tools/install-pre-pr-gate.sh` has wired the `AskUserQuestion` hook — see that file's own header):
+     the question text MUST carry, verbatim and somewhere in the question, the literal line
+     `KEEL-REVIEW-DIALOG: level=<level>` (the chosen depth) — plain text, no markdown formatting, same
+     literal-match discipline as the `KEEL-AGENT-REVIEW` marker above, since the gate greps for it, not
+     the human-facing wording. This fires every time execution reaches here, including a
+     convergence-round re-review after a fix commit (see the terminal-pass note below). Each such round
+     moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's dialog doesn't
+     cover a later commit.
 
      **Frame this as ONE additive yes/no question, never as a choice between mechanisms** (dir #81): the
      agent review already ran and its receipt above already stands — nothing here reopens or discards it,
@@ -238,7 +241,13 @@ Steps, in order:
        outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note).
        Only if step 8 later denies it for a missing/mismatched agent trace — meaning this hand-off actually
        came from (b), where no agent review ever ran — fall back to the plain outcome,
-       `polish.5-review <level>-operator-run`.
+       `polish.5-review <level>-operator-run`. **A `review-dialog-missing` denial is a DIFFERENT deny
+       (dir #88) and must NOT be treated as this fallback trigger:** it means the DIALOG, not the agent
+       trace, is what's missing — the agent review itself is fine. The fix is to open/answer (a)'s
+       `AskUserQuestion` dialog (with the `KEEL-REVIEW-DIALOG: level=<level>` marker) for current HEAD,
+       then re-write the same combined outcome — never fall back to the plain `-operator-run` outcome for
+       this deny, which would silently drop the agent review half (the exact dir #81 anti-pattern this
+       combined outcome exists to prevent).
      - If they explicitly waived the review instead of running it, receipt `polish.5-review <level>-waived`
        (this also clears the hand-off note) — (a)'s dialog never offers a waive option, so this only ever
        resolves a (b) hand-off.
@@ -313,16 +322,24 @@ Steps, in order:
    receipted, or was genuinely skipped — then log one verdict line: `tools/pre-pr-gate.sh log receipt-verdict
    "true-catch <step-id>"` (a real skip — the gate did its job) or `"false-fire <step-id>"` (the step ran,
    only the receipt write was missed). This is instrumentation for the pilot's own keep/drop review (dir
-   #49), not a step of the happy path — skip it when the gate never denies.
+   #49), not a step of the happy path — skip it when the gate never denies. **If the gate still denies
+   after one clean re-`init`+re-receipt pass on a busy repo** (dir #80: the gate's sentinel is keyed by
+   (repo, branch) — two worktrees of this repo on the SAME branch, or heavy concurrent `/polish` activity
+   right at `init` time, can still race one slot): hand the exact `gh pr create --head <branch>` command to
+   the operator to run from their own terminal — a manually-run command bypasses the PreToolUse hook
+   pipeline entirely, so it isn't subject to the race at all. Last resort, after one honest retry.
 
-9. **Open the PR.** After the gate passes, run `gh pr create` — compose the title and body from the
-   implementation context (what changed, why, a test plan). **If step 5's outcome was `agent:<level>`,
-   the PR body must label the review as such** — e.g. "review: independent agent at `<level>` (built-in
-   `/code-review` not model-invokable in-session)" — never presented as if `/code-review` itself ran.
-   **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the PR body must name BOTH**
-   — the independent agent review AND the operator-run `/code-review` — never collapsed into just one.
-   Return the PR URL. Invoking `/polish` IS the standing authorization to push the branch and run
-   `gh pr create` at this step; do not re-ask. The merge stays the operator's.
+9. **Open the PR.** After the gate passes, run `gh pr create --head <branch>` — **the `--head` flag is
+   mandatory, not optional**: the gate keys its receipt by branch (dir #80), and the hook's event cwd may
+   not be your worktree, so a bare `gh pr create` can resolve the wrong branch (or none) and false-deny.
+   Compose the title and body from the implementation context (what changed, why, a test plan). **If step
+   5's outcome was `agent:<level>`, the PR body must label the review as such** — e.g. "review: independent
+   agent at `<level>` (built-in `/code-review` not model-invokable in-session)" — never presented as if
+   `/code-review` itself ran. **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the
+   PR body must name BOTH** — the independent agent review AND the operator-run `/code-review` — never
+   collapsed into just one. Return the PR URL. Invoking `/polish` IS the standing authorization to push the
+   branch and run `gh pr create --head <branch>` at this step; do not re-ask. The merge stays the
+   operator's.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
