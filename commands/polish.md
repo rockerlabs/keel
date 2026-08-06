@@ -322,16 +322,24 @@ Steps, in order:
    receipted, or was genuinely skipped — then log one verdict line: `tools/pre-pr-gate.sh log receipt-verdict
    "true-catch <step-id>"` (a real skip — the gate did its job) or `"false-fire <step-id>"` (the step ran,
    only the receipt write was missed). This is instrumentation for the pilot's own keep/drop review (dir
-   #49), not a step of the happy path — skip it when the gate never denies.
+   #49), not a step of the happy path — skip it when the gate never denies. **If the gate still denies
+   after one clean re-`init`+re-receipt pass on a busy repo** (dir #80: the gate's sentinel is keyed by
+   (repo, branch) — two worktrees of this repo on the SAME branch, or heavy concurrent `/polish` activity
+   right at `init` time, can still race one slot): hand the exact `gh pr create --head <branch>` command to
+   the operator to run from their own terminal — a manually-run command bypasses the PreToolUse hook
+   pipeline entirely, so it isn't subject to the race at all. Last resort, after one honest retry.
 
-9. **Open the PR.** After the gate passes, run `gh pr create` — compose the title and body from the
-   implementation context (what changed, why, a test plan). **If step 5's outcome was `agent:<level>`,
-   the PR body must label the review as such** — e.g. "review: independent agent at `<level>` (built-in
-   `/code-review` not model-invokable in-session)" — never presented as if `/code-review` itself ran.
-   **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the PR body must name BOTH**
-   — the independent agent review AND the operator-run `/code-review` — never collapsed into just one.
-   Return the PR URL. Invoking `/polish` IS the standing authorization to push the branch and run
-   `gh pr create` at this step; do not re-ask. The merge stays the operator's.
+9. **Open the PR.** After the gate passes, run `gh pr create --head <branch>` — **the `--head` flag is
+   mandatory, not optional**: the gate keys its receipt by branch (dir #80), and the hook's event cwd may
+   not be your worktree, so a bare `gh pr create` can resolve the wrong branch (or none) and false-deny.
+   Compose the title and body from the implementation context (what changed, why, a test plan). **If step
+   5's outcome was `agent:<level>`, the PR body must label the review as such** — e.g. "review: independent
+   agent at `<level>` (built-in `/code-review` not model-invokable in-session)" — never presented as if
+   `/code-review` itself ran. **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the
+   PR body must name BOTH** — the independent agent review AND the operator-run `/code-review` — never
+   collapsed into just one. Return the PR URL. Invoking `/polish` IS the standing authorization to push the
+   branch and run `gh pr create --head <branch>` at this step; do not re-ask. The merge stays the
+   operator's.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact

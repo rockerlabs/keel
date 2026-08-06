@@ -350,6 +350,59 @@ run_in "$own_repo" bash "$TOOL" add --gap none
 check_contains "a kept-only run derives no score" "$OUT" "derived score —/100"
 check_contains "a kept-only run leaves the log byte-for-byte untouched (rewrite skipped)" "$(cat "$LOG")" "$_kept_only_before"
 
+# --- dir #82: the rewrite is SUBTRACTIVE, not a T0-snapshot write-back --------------------------
+# The old rewrite wrote back "the survivors of what I saw when I read the log", which is blind to
+# anything a concurrent producer appends between that read and the eventual `mv` — a real data-loss
+# race (found by dir #74's own independent review), not just a mis-attribution like dir #74 fixes.
+# KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE simulates exactly that: `cmd_add` appends its value as one
+# literal log line immediately before the fresh re-read the subtractive rewrite does, standing in for
+# a guardrail hook (or another session's `add`) firing in that window. Reuses own_repo/own_key/LOG
+# from the dir #74 claim-key block above.
+
+# (i) the ticket's own concrete loss scenario: one own-key event to ingest, a FOREIGN-key event
+# injected mid-add → own event ingested and removed, the injected line survives byte-for-byte (the
+# old snapshot write-back would have silently dropped it).
+inject_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+injected_line="$(printf '%s\tguard\tsecret-guard\tblocked-concurrently\t%s' "$inject_ts" "$foreign_key")"
+printf '%s\tguard\tsecret-guard\tblocked\t%s\n' "$ts_now" "$own_key" > "$LOG"
+export KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE="$injected_line"
+run_in "$own_repo" bash "$TOOL" add --gap none
+unset KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE
+check_contains "own-key event still ingested despite the concurrent injection" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
+check_contains "the concurrently-injected line survives the rewrite byte-for-byte" "$(cat "$LOG")" "$injected_line"
+check_contains "only the injected line remains (the consumed own-key line is gone)" "$(wc -l < "$LOG" | tr -d ' ')" "1"
+
+# (ii) an OWN-key event injected mid-add survives too (not consumed, not double-cited THIS run — it
+# wasn't in the T0 read this run decided from) — a later, separate `add` then ingests it normally.
+inject_ts2="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+injected_own_line="$(printf '%s\tguard\tsecret-guard\tinjected-own\t%s' "$inject_ts2" "$own_key")"
+printf '%s\tguard\tsecret-guard\tblocked\t%s\n' "$ts_now" "$own_key" > "$LOG"
+export KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE="$injected_own_line"
+run_in "$own_repo" bash "$TOOL" add --gap none
+unset KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE
+check_contains "the pre-existing own-key event is ingested this run" "$OUT" "ingested: $ts_now guard secret-guard | blocked"
+check_absent "the injected own-key event is NOT double-cited this run (never in this run's T0 read)" "$OUT" "injected-own"
+check_contains "the injected own-key event survives this run's rewrite" "$(cat "$LOG")" "$injected_own_line"
+run_in "$own_repo" bash "$TOOL" add --gap none
+check_contains "a second, separate add ingests the previously-injected event normally" "$OUT" "ingested: $inject_ts2 guard secret-guard | injected-own"
+
+# (iii) count-map correctness: two BYTE-IDENTICAL own-key lines at T0, both ingested → both removed;
+# a THIRD byte-identical line injected mid-run (never in this run's T0 read) must survive — proving
+# the rewrite deletes exactly as many occurrences as were consumed, not "any line matching this text".
+dup_line="$(printf '%s\tguard\tsecret-guard\tduplicate-event\t%s' "$ts_now" "$own_key")"
+printf '%s\n%s\n' "$dup_line" "$dup_line" > "$LOG"
+export KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE="$dup_line"
+run_in "$own_repo" bash "$TOOL" add --gap none
+unset KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE
+ingested_count="$(printf '%s' "$OUT" | grep -c '^ingested: ')"
+check_contains "both byte-identical T0 duplicates are ingested" "$ingested_count" "2"
+check_contains "exactly one copy remains — the mid-run-injected third, not a fourth phantom survivor" "$(grep -c -F "$dup_line" "$LOG")" "1"
+
+# (iv) unrecognized-type lines and foreign-kept lines round-trip byte-for-byte through the SUBTRACTIVE
+# rewrite too — already exercised above (dir #74 block, "housekeeping line survives an ingest-triggered
+# rewrite" / "a kept-only run leaves the log byte-for-byte untouched"), which now runs against this
+# rewrite's new code path; no new assertions needed here, those are this ticket's regression coverage.
+
 # --- hold event type: producer API + auto-ingest at weight 4 ------------------------------------
 LEDGER="$SANDBOX/ledger3.md"; LOG="$SANDBOX/events3.log"; EVIDENCE="$SANDBOX/evidence3.md"
 export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"

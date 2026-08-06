@@ -281,21 +281,26 @@ mkworktree() {
 mkworktree dir61-wt dir61-feature
 check_dir "dir #61 worktree fixture exists" "$WT"
 write_full_receipt "$WT"
-check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "$(sentinel_for "$MREPO")"
+# dir #80: the receipt's REAL key mixes the MAIN checkout's repo component with the WORKTREE's own
+# branch component (each worktree has an independently checked-out branch) — real_sentinel_for(MREPO,
+# WT), not sentinel_for(MREPO) (which would use MREPO's OWN branch, a different file that nothing wrote).
+check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "$(real_sentinel_for "$MREPO" "$WT")"
 check_nofile "no stray sentinel under the worktree's own basename" "$(sentinel_for "$WT")"
 gate "gh pr create --head dir61-feature --fill" "$MREPO"
 check_status "worktree receipt + --head, hook cwd = main checkout → exit 0" 0 "$STATUS"
 check_absent "worktree receipt + --head → allowed (no deny payload)" "$OUT" "deny"
-check_nofile "the sentinel is consumed" "$(sentinel_for "$MREPO")"
+check_nofile "the sentinel is consumed" "$(real_sentinel_for "$MREPO" "$WT")"
 
-# 13. Same setup, but the command carries NO --head — the gate has no way to know which branch is
-# meant, so it falls back to bare HEAD of the reported cwd (the main checkout's OWN branch): a genuine
-# mismatch against the worktree-recorded SHA, correctly denied (not a false allow).
+# 13. Same setup, but the command carries NO --head — dir #80: the sentinel is now keyed by (repo,
+# branch), so the hook (falling back to the MAIN checkout's OWN, different branch) doesn't even share
+# a sentinel FILE with the worktree-written receipt — denied as "no receipt", not a SHA mismatch (the
+# old repo-only keying's behavior, where both sides shared one file and only the SHA disagreed). Still
+# a deny either way — the ambiguity is now caught one step earlier, by key rather than by content.
 mkworktree dir61-wt-nohead dir61-feature2
 write_full_receipt "$WT"
 gate "gh pr create --fill" "$MREPO"
 check_contains "worktree receipt, no --head, hook cwd = main checkout → denied (ambiguous branch)" "$OUT" '"permissionDecision":"deny"'
-check_contains "denied as a SHA mismatch, not a missing receipt" "$OUT" "stale"
+check_contains "denied as no-receipt (repo+branch key doesn't match the worktree's), not a false allow" "$OUT" "run /polish first"
 
 # 14. -H (gh's short flag) and --head=BRANCH (the = form) are both recognized.
 mkworktree dir61-wt-short dir61-feature3
@@ -451,7 +456,9 @@ check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
-handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(repo_key_for "$1")"; }
+# handoff_for/real_handoff_for live in lib.sh, next to sentinel_for/real_sentinel_for (dir #80: this
+# ticket's own /code-review found they'd drifted apart — see lib.sh for the naive-vs-real distinction
+# the dir #61 worktree tests below need).
 
 # 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
 # reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
@@ -507,9 +514,11 @@ rm -f "$(trace_for "$MREPO")"
 
 run_in "$WT" bash "$gate" init
 run_in "$WT" bash "$gate" handoff high "$sha"
-check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(handoff_for "$MREPO")"
+# dir #80: same real-vs-naive-key distinction as the sentinel (test 12 above) — the hand-off note is
+# now (repo, branch)-keyed too.
+check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(real_handoff_for "$MREPO" "$WT")"
 check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
-rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
+rm -f "$(real_handoff_for "$MREPO" "$WT")" "$(real_sentinel_for "$MREPO" "$WT")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
 
 # --- dir #64 tier 2a: provenance line on the gate's ALLOW decision -------------------------------
 # 26. A trusted "skip" outcome → the provenance line reads "review: skip", no trace involved.
@@ -972,12 +981,17 @@ rm -f "$(prev_sentinel_for "$d")"
 # finding #3: an unrelated retirement (simulated here via an orphan branch, standing in for a different
 # worktree/branch or a rebase since retirement) must not be silently trusted.
 d="$(mkrepo)"
+orig_branch="$(git -C "$d" branch --show-current)"
 rm -f "$(prev_sentinel_for "$d")"
 write_full_receipt "$d"
 gate "gh pr create --fill" "$d"
 check_status "setup: initial run → exit 0" 0 "$STATUS"
 git -C "$d" checkout -q --orphan unrelated
 git -C "$d" commit --allow-empty -qm "totally unrelated history"
+# dir #80: rename back onto the ORIGINAL branch name — the receipt key now includes the branch, so
+# staying on a differently-NAMED branch would miss the prev-sentinel entirely (a "nothing to recover"
+# exit 1, not the ancestor-mismatch exit 1 this test wants) rather than reaching the lineage check.
+git -C "$d" branch -M "$orig_branch"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
 check_status "recover refuses a non-ancestor backup → exit 1" 1 "$STATUS"
@@ -999,11 +1013,140 @@ check_status "recover on a malformed prior receipt → exit 1" 1 "$STATUS"
 check_contains "malformed prior receipt → distinct message" "$OUT" "malformed"
 rm -f "$(prev_sentinel_for "$d")"
 
+# --- dir #80: (repo, branch) receipt keying --------------------------------------------------------
+# 60. `receipt-key` subcommand exposes the combined key other tools/tests reuse (pipeline-canary.sh's
+# own `_keys_of`) instead of hand-copying the branch-hash/sanitization algorithm.
+d="$(mkrepo)"
+run "$gate" receipt-key "$d"
+check_status "receipt-key → exit 0" 0 "$STATUS"
+check_contains "receipt-key matches the expected (repo, hash, branch) composition" "$OUT" "$(combined_key_for "$d")"
+
+# 61. The ticket's own acceptance test: two interleaved init+receipt sequences on TWO BRANCHES of ONE
+# repo (same repo key, different branch — worktrees so both can be "current" at once) never corrupt
+# each other. Under the old repo-only keying, branch B's `init` would wipe branch A's in-progress
+# receipt (the exact felt incident, dir #62/#79's own /polish runs); here each keeps its own slot.
+d="$(mkrepo)"
+git -C "$d" branch dir80-featA >/dev/null 2>&1
+git -C "$d" branch dir80-featB >/dev/null 2>&1
+da="$SANDBOX/dir80-a"; db="$SANDBOX/dir80-b"
+git -C "$d" worktree add -q "$da" dir80-featA >/dev/null 2>&1
+git -C "$d" worktree add -q "$db" dir80-featB >/dev/null 2>&1
+git -C "$da" commit --allow-empty -qm "feat A work"
+git -C "$db" commit --allow-empty -qm "feat B work"
+write_full_receipt "$da"
+write_full_receipt "$db"
+# dir #80: $da/$db are worktrees of $d — same real-vs-naive distinction as the dir #61 tests above
+# (real_sentinel_for mixes the MAIN checkout's repo component with each worktree's OWN branch); a
+# naive sentinel_for("$da") would basename the WORKTREE itself, a different (unwritten) file.
+check_file "branch A's sentinel exists" "$(real_sentinel_for "$d" "$da")"
+check_file "branch B's sentinel exists independently of branch A's (interleaved init didn't wipe it)" "$(real_sentinel_for "$d" "$db")"
+gate "gh pr create --head dir80-featA --fill" "$d"
+check_status "branch A's own complete receipt passes independently" 0 "$STATUS"
+check_absent "branch A pass → allowed" "$OUT" "deny"
+check_file "branch B's sentinel is untouched by branch A's consumption" "$(real_sentinel_for "$d" "$db")"
+gate "gh pr create --head dir80-featB --fill" "$d"
+check_status "branch B's own complete receipt (never touched by A's run) still passes" 0 "$STATUS"
+check_absent "branch B pass → allowed" "$OUT" "deny"
+rm -f "$(real_sentinel_for "$d" "$da")" "$(real_sentinel_for "$d" "$db")"
+
+# 62. Hook branch resolution priority: an explicit --head wins over the event cwd's own checked-out
+# branch (not just in the worktree shape tests 12-15 above — this isolates the same priority with a
+# single checkout switching branches, to prove it's the FLAG being read, not incidentally a worktree
+# property).
+d="$(mkrepo)"
+orig_branch="$(git -C "$d" branch --show-current)"
+git -C "$d" branch dir80-other >/dev/null 2>&1
+git -C "$d" checkout -q dir80-other
+write_full_receipt "$d"
+sp="$(sentinel_for "$d")"
+git -C "$d" checkout -q "$orig_branch"
+gate "gh pr create --head dir80-other --fill" "$d"
+check_status "--head names the receipted branch even though cwd checked out a different one → exit 0" 0 "$STATUS"
+check_absent "--head resolution wins over cwd's own (different) branch → allowed" "$OUT" "deny"
+rm -f "$sp"
+
+# 63. Hook branch resolution failure: a detached-HEAD cwd with no --head resolves no branch at all —
+# denied naming the actual problem (dir #80's fix message), not the old generic "run /polish again",
+# so the reader knows to pass --head rather than blindly re-running /polish (the felt incidents' 4-5
+# blind retries).
+d="$(mkrepo)"
+git -C "$d" checkout -q --detach >/dev/null 2>&1
+gate "gh pr create --fill" "$d"
+check_contains "detached HEAD cwd, no --head → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied with the branch-resolution message, not a generic run-/polish-again" "$OUT" "could not resolve the PR branch"
+
+# 64. Writer-side (init) hard-errors on a detached HEAD rather than silently keying onto an empty
+# branch slug.
+d="$(mkrepo)"
+git -C "$d" checkout -q --detach >/dev/null 2>&1
+run_in "$d" bash "$gate" init
+check_status "init on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "init on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+
+# 65. Every OTHER writer-side subcommand that keys off _require_receipt_key also hard-errors on a
+# detached HEAD — not just `init` (test 64). Each one is an independent call site to
+# `_require_receipt_key`; a future edit that accidentally wraps one of them in `$(...)` (the exact
+# footgun this ticket's own design comment warns about — an `exit 1` inside a captured subshell only
+# kills the subshell, silently leaving an empty key) would otherwise go uncaught (found by this
+# ticket's own independent review pass).
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+git -C "$d" checkout -q --detach >/dev/null 2>&1
+run_in "$d" bash "$gate" receipt polish.1-diff
+check_status "receipt on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "receipt on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run_in "$d" bash "$gate" receipt --recover
+check_status "receipt --recover on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "receipt --recover on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run_in "$d" bash "$gate" handoff medium "$sha"
+check_status "handoff on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "handoff on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run_in "$d" bash "$gate" handoff-check
+check_status "handoff-check on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "handoff-check on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run "$gate" receipt-key "$d"
+check_status "receipt-key on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "receipt-key on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run "$gate" keys "$d"
+check_status "keys on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "keys on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+
+# 66. Key-ambiguity regression (found by this ticket's own /code-review high pass): a naive
+# "$repo-$branch" join is ambiguous — repo "dir80hash-abc" + branch "def" and repo "dir80hash" +
+# branch "abc-def" both join to "dir80hash-abc-def". Construct both directly (not via mkrepo's
+# random mktemp suffix, which can't be forced onto an exact colliding basename) and confirm their
+# receipt-keys — now hash-based, not a plain join — differ.
+ra="$SANDBOX/dir80hash-abc"; mkdir -p "$ra"; git -C "$ra" init -q
+git -C "$ra" commit -q --allow-empty -m init
+git -C "$ra" checkout -q -b def
+rb="$SANDBOX/dir80hash"; mkdir -p "$rb"; git -C "$rb" init -q
+git -C "$rb" commit -q --allow-empty -m init
+git -C "$rb" checkout -q -b abc-def
+run "$gate" receipt-key "$ra"; key_a="$OUT"
+check_status "receipt-key(repo=dir80hash-abc, branch=def) → exit 0" 0 "$STATUS"
+run "$gate" receipt-key "$rb"; key_b="$OUT"
+check_status "receipt-key(repo=dir80hash, branch=abc-def) → exit 0" 0 "$STATUS"
+if [ "$key_a" != "$key_b" ]; then
+  pass "naive-join collision case now produces DIFFERENT keys"
+else
+  fail "naive-join collision case now produces DIFFERENT keys" "both resolved to: $key_a"
+fi
+
+# 67. A malformed --head that strips to EMPTY (e.g. "owner:" with nothing after the colon) denies
+# immediately with its own message, rather than silently falling back to the event cwd's own branch
+# (found by this ticket's own /code-review high pass — the old blanket fallback conflated "no --head
+# given" with "a broken --head given").
+d="$(mkrepo)"
+gate "gh pr create --head owner: --fill" "$d"
+check_contains "malformed --head (empty after owner-prefix strip) → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied naming the malformed --head, not silently falling back to cwd's branch" "$OUT" "has no branch name after stripping"
 # --- dir #88: step 5(a)'s review-reminder-dialog leg (PostToolUse(AskUserQuestion) trace + gate check) --
 # Feeds a synthetic PostToolUse(AskUserQuestion) event to skill-trace. $1 = repo dir, $2 = question text
 # (the marker, if present, lives inside this — mirrors the assumed-but-unverified tool_input.questions[]
 # shape; skill-trace greps the RAW event JSON, so the exact field name is not load-bearing here either,
 # same defensive posture as the production hook's own dir #88 header section documents).
+# Renumbered 68+ on merge with dir #80 (this file's own tests 60-67 above) — both branches independently
+# started their new tests at 60; test numbers are human labels only, nothing parses them.
 askuserquestion_trace() {
   local d="$1" question="$2" json
   json="$(jq -n --arg cwd "$d" --arg q "$question" \
@@ -1024,7 +1167,7 @@ arm_dialog_leg() {
     > "$d/.claude/settings.json"
 }
 
-# 60. A PostToolUse(AskUserQuestion) event whose question text carries the marker (embedded in the JSON,
+# 68. A PostToolUse(AskUserQuestion) event whose question text carries the marker (embedded in the JSON,
 # not alone on its own line the way the SubagentStop marker is) writes a `dialog:<level>` trace line
 # keyed by the hook's own observed HEAD sha, never a self-reported one.
 d="$(mkrepo)"
@@ -1036,20 +1179,20 @@ check_file "PostToolUse(AskUserQuestion) with marker writes a trace file" "$tf"
 check_contains "trace line carries the sha and the dialog:<level> tag" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:high"
 rm -f "$tf"
 
-# 61. No marker at all → ignored — the common case: most AskUserQuestion dialogs in a session (step 4's
+# 69. No marker at all → ignored — the common case: most AskUserQuestion dialogs in a session (step 4's
 # own depth dialog, an unrelated clarifying question) are NOT this specific reminder.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 askuserquestion_trace "$d" "Should I use approach A or approach B for this refactor?"
 check_nofile "PostToolUse(AskUserQuestion) with no marker is ignored" "$tf"
 
-# 62. A marker naming a level outside the accepted set is ignored, not trusted verbatim.
+# 70. A marker naming a level outside the accepted set is ignored, not trusted verbatim.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=ultra"
 check_nofile "PostToolUse(AskUserQuestion) marker with an out-of-set level (ultra) is ignored" "$tf"
 
-# 62a. Regression guard (found in the operator-run /code-review high pass on this ticket): a word that
+# 70a. Regression guard (found in the operator-run /code-review high pass on this ticket): a word that
 # merely STARTS WITH an accepted level ("highest", "maximum") must be rejected outright, not silently
 # truncated by grep's leftmost-longest match into a false-accepted "high"/"max" trace line — the same
 # right-side-anchor discipline the SubagentStop marker already enforces via its own `^...$` anchor.
@@ -1062,7 +1205,7 @@ tf="$(trace_for "$d")"; rm -f "$tf"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=maximum"
 check_nofile "PostToolUse(AskUserQuestion) marker with a near-miss level (maximum) is rejected, not truncated to max" "$tf"
 
-# 63. A non-AskUserQuestion PostToolUse tool never reaches this leg — the hook's own defense-in-depth
+# 71. A non-AskUserQuestion PostToolUse tool never reaches this leg — the hook's own defense-in-depth
 # check, redundant with the install-time matcher but exercised directly here (same style as test 43's
 # SubagentStop equivalent).
 d="$(mkrepo)"
@@ -1071,7 +1214,7 @@ json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_nam
 printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
 check_nofile "PostToolUse for a non-AskUserQuestion tool never reaches the dialog leg" "$tf"
 
-# 64. UNARMED (no .claude/settings.json wires the AskUserQuestion leg — the default for every repo these
+# 72. UNARMED (no .claude/settings.json wires the AskUserQuestion leg — the default for every repo these
 # tests build): an `agent:<level>` receipt with a matching SubagentStop trace but NO dialog line still
 # PASSES — the dialog check must not false-deny before an adopter re-runs the installer (the arming
 # rule's own rejected alternative (i), see tools/pre-pr-gate.sh's dir #88 header). This also locks in
@@ -1085,7 +1228,7 @@ check_status "UNARMED: agent:<level> receipt, no dialog line → still exit 0" 0
 check_absent "UNARMED: agent:<level> receipt, no dialog line → allowed" "$OUT" "deny"
 rm -f "$tf"
 
-# 65. ARMED: an `agent:<level>` receipt + matching SubagentStop trace but NO dialog line → DENY
+# 73. ARMED: an `agent:<level>` receipt + matching SubagentStop trace but NO dialog line → DENY
 # (review-dialog-missing) — the review claim is real, but step 5(a)'s MANDATORY reminder was never
 # opened/answered for this commit.
 d="$(mkrepo)"
@@ -1098,7 +1241,7 @@ check_contains "ARMED: agent:<level> receipt, no dialog line → denied" "$OUT" 
 check_contains "ARMED: denied for the missing dialog, not some other reason" "$OUT" "reminder dialog was never opened"
 rm -f "$tf"
 
-# 66. ARMED: the same receipt, this time with a matching dialog:<level> trace line at the current sha →
+# 74. ARMED: the same receipt, this time with a matching dialog:<level> trace line at the current sha →
 # PASS.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
@@ -1111,7 +1254,7 @@ check_status "ARMED: agent:<level> receipt + matching dialog trace → exit 0" 0
 check_absent "ARMED: agent:<level> receipt + matching dialog trace → allowed" "$OUT" "deny"
 rm -f "$tf"
 
-# 67. ARMED: a dialog trace line exists, but for a DIFFERENT (stale) commit — e.g. a fix-commit moved
+# 75. ARMED: a dialog trace line exists, but for a DIFFERENT (stale) commit — e.g. a fix-commit moved
 # HEAD after the dialog was answered for the PRIOR commit. dir #72's convergence-round fork: a fix-commit
 # moving HEAD is expected, but a prior round's dialog line must not vouch for the new commit.
 d="$(mkrepo)"
@@ -1125,7 +1268,7 @@ check_contains "ARMED: dialog trace at a STALE sha → denied" "$OUT" '"permissi
 check_contains "ARMED: a stale-sha dialog line doesn't count as answered" "$OUT" "reminder dialog was never opened"
 rm -f "$tf"
 
-# 68a. ARMED: the combined `agent:<level>+operator-run` outcome (dir #81) requires the dialog line too —
+# 76a. ARMED: the combined `agent:<level>+operator-run` outcome (dir #81) requires the dialog line too —
 # the reminder fires identically for both agent:* shapes.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
@@ -1137,7 +1280,7 @@ check_contains "ARMED: combined agent:<level>+operator-run, no dialog line → d
 check_contains "ARMED: combined outcome denied for the missing dialog too" "$OUT" "reminder dialog was never opened"
 rm -f "$tf"
 
-# 68b. ARMED: same combined outcome, this time with a matching dialog:<level> trace line → PASS.
+# 76b. ARMED: same combined outcome, this time with a matching dialog:<level> trace line → PASS.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
 tf="$(trace_for "$d")"; rm -f "$tf"
@@ -1149,7 +1292,7 @@ check_status "ARMED: combined outcome + matching dialog trace → exit 0" 0 "$ST
 check_absent "ARMED: combined outcome + matching dialog trace → allowed" "$OUT" "deny"
 rm -f "$tf"
 
-# 69. ARMED: outcomes OTHER than `agent:*` (a trusted `-operator-run` outcome, and `skip`) are UNCHANGED
+# 77. ARMED: outcomes OTHER than `agent:*` (a trusted `-operator-run` outcome, and `skip`) are UNCHANGED
 # — the dialog check applies only to agent:*-shaped outcomes, since step 5(a)'s reminder doesn't exist on
 # any other path.
 d="$(mkrepo)"
