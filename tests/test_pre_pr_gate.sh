@@ -281,21 +281,26 @@ mkworktree() {
 mkworktree dir61-wt dir61-feature
 check_dir "dir #61 worktree fixture exists" "$WT"
 write_full_receipt "$WT"
-check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "$(sentinel_for "$MREPO")"
+# dir #80: the receipt's REAL key mixes the MAIN checkout's repo component with the WORKTREE's own
+# branch component (each worktree has an independently checked-out branch) — real_key_for(MREPO, WT),
+# not sentinel_for(MREPO) (which would use MREPO's OWN branch, a different file that nothing wrote).
+check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "/tmp/pre-pr-gate-$(real_key_for "$MREPO" "$WT")"
 check_nofile "no stray sentinel under the worktree's own basename" "$(sentinel_for "$WT")"
 gate "gh pr create --head dir61-feature --fill" "$MREPO"
 check_status "worktree receipt + --head, hook cwd = main checkout → exit 0" 0 "$STATUS"
 check_absent "worktree receipt + --head → allowed (no deny payload)" "$OUT" "deny"
-check_nofile "the sentinel is consumed" "$(sentinel_for "$MREPO")"
+check_nofile "the sentinel is consumed" "/tmp/pre-pr-gate-$(real_key_for "$MREPO" "$WT")"
 
-# 13. Same setup, but the command carries NO --head — the gate has no way to know which branch is
-# meant, so it falls back to bare HEAD of the reported cwd (the main checkout's OWN branch): a genuine
-# mismatch against the worktree-recorded SHA, correctly denied (not a false allow).
+# 13. Same setup, but the command carries NO --head — dir #80: the sentinel is now keyed by (repo,
+# branch), so the hook (falling back to the MAIN checkout's OWN, different branch) doesn't even share
+# a sentinel FILE with the worktree-written receipt — denied as "no receipt", not a SHA mismatch (the
+# old repo-only keying's behavior, where both sides shared one file and only the SHA disagreed). Still
+# a deny either way — the ambiguity is now caught one step earlier, by key rather than by content.
 mkworktree dir61-wt-nohead dir61-feature2
 write_full_receipt "$WT"
 gate "gh pr create --fill" "$MREPO"
 check_contains "worktree receipt, no --head, hook cwd = main checkout → denied (ambiguous branch)" "$OUT" '"permissionDecision":"deny"'
-check_contains "denied as a SHA mismatch, not a missing receipt" "$OUT" "stale"
+check_contains "denied as no-receipt (repo+branch key doesn't match the worktree's), not a false allow" "$OUT" "run /polish first"
 
 # 14. -H (gh's short flag) and --head=BRANCH (the = form) are both recognized.
 mkworktree dir61-wt-short dir61-feature3
@@ -451,7 +456,9 @@ check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
-handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(repo_key_for "$1")"; }
+# dir #80: hand-off is now keyed by (repo, branch) too — see lib.sh's sentinel_for/real_key_for for
+# the naive-vs-real distinction the dir #61 worktree tests (below) need.
+handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$1")"; }
 
 # 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
 # reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
@@ -507,9 +514,11 @@ rm -f "$(trace_for "$MREPO")"
 
 run_in "$WT" bash "$gate" init
 run_in "$WT" bash "$gate" handoff high "$sha"
-check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(handoff_for "$MREPO")"
+# dir #80: same real-vs-naive-key distinction as the sentinel (test 12 above) — the hand-off note is
+# now (repo, branch)-keyed too.
+check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "/tmp/pre-pr-gate-handoff-$(real_key_for "$MREPO" "$WT")"
 check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
-rm -f "$(handoff_for "$MREPO")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
+rm -f "/tmp/pre-pr-gate-handoff-$(real_key_for "$MREPO" "$WT")" "/tmp/pre-pr-gate-$(real_key_for "$MREPO" "$WT")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
 
 # --- dir #64 tier 2a: provenance line on the gate's ALLOW decision -------------------------------
 # 26. A trusted "skip" outcome → the provenance line reads "review: skip", no trace involved.
@@ -972,12 +981,17 @@ rm -f "$(prev_sentinel_for "$d")"
 # finding #3: an unrelated retirement (simulated here via an orphan branch, standing in for a different
 # worktree/branch or a rebase since retirement) must not be silently trusted.
 d="$(mkrepo)"
+orig_branch="$(git -C "$d" branch --show-current)"
 rm -f "$(prev_sentinel_for "$d")"
 write_full_receipt "$d"
 gate "gh pr create --fill" "$d"
 check_status "setup: initial run → exit 0" 0 "$STATUS"
 git -C "$d" checkout -q --orphan unrelated
 git -C "$d" commit --allow-empty -qm "totally unrelated history"
+# dir #80: rename back onto the ORIGINAL branch name — the receipt key now includes the branch, so
+# staying on a differently-NAMED branch would miss the prev-sentinel entirely (a "nothing to recover"
+# exit 1, not the ancestor-mismatch exit 1 this test wants) rather than reaching the lineage check.
+git -C "$d" branch -M "$orig_branch"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
 check_status "recover refuses a non-ancestor backup → exit 1" 1 "$STATUS"
@@ -998,5 +1012,75 @@ run_in "$d" bash "$gate" receipt --recover
 check_status "recover on a malformed prior receipt → exit 1" 1 "$STATUS"
 check_contains "malformed prior receipt → distinct message" "$OUT" "malformed"
 rm -f "$(prev_sentinel_for "$d")"
+
+# --- dir #80: (repo, branch) receipt keying --------------------------------------------------------
+# 60. `receipt-key` subcommand exposes the combined key other tools/tests reuse (pipeline-canary.sh's
+# own `_receipt_key_of`) instead of hand-copying the branch-sanitization algorithm.
+d="$(mkrepo)"
+run "$gate" receipt-key "$d"
+check_status "receipt-key → exit 0" 0 "$STATUS"
+check_contains "receipt-key combines repo basename and branch" "$OUT" "$(basename "$d")-$(git -C "$d" branch --show-current)"
+
+# 61. The ticket's own acceptance test: two interleaved init+receipt sequences on TWO BRANCHES of ONE
+# repo (same repo key, different branch — worktrees so both can be "current" at once) never corrupt
+# each other. Under the old repo-only keying, branch B's `init` would wipe branch A's in-progress
+# receipt (the exact felt incident, dir #62/#79's own /polish runs); here each keeps its own slot.
+d="$(mkrepo)"
+git -C "$d" branch dir80-featA >/dev/null 2>&1
+git -C "$d" branch dir80-featB >/dev/null 2>&1
+da="$SANDBOX/dir80-a"; db="$SANDBOX/dir80-b"
+git -C "$d" worktree add -q "$da" dir80-featA >/dev/null 2>&1
+git -C "$d" worktree add -q "$db" dir80-featB >/dev/null 2>&1
+git -C "$da" commit --allow-empty -qm "feat A work"
+git -C "$db" commit --allow-empty -qm "feat B work"
+write_full_receipt "$da"
+write_full_receipt "$db"
+# dir #80: $da/$db are worktrees of $d — same real-vs-naive distinction as the dir #61 tests above
+# (real_key_for mixes the MAIN checkout's repo component with each worktree's OWN branch); a naive
+# sentinel_for("$da") would basename the WORKTREE itself, a different (unwritten) file.
+check_file "branch A's sentinel exists" "/tmp/pre-pr-gate-$(real_key_for "$d" "$da")"
+check_file "branch B's sentinel exists independently of branch A's (interleaved init didn't wipe it)" "/tmp/pre-pr-gate-$(real_key_for "$d" "$db")"
+gate "gh pr create --head dir80-featA --fill" "$d"
+check_status "branch A's own complete receipt passes independently" 0 "$STATUS"
+check_absent "branch A pass → allowed" "$OUT" "deny"
+check_file "branch B's sentinel is untouched by branch A's consumption" "/tmp/pre-pr-gate-$(real_key_for "$d" "$db")"
+gate "gh pr create --head dir80-featB --fill" "$d"
+check_status "branch B's own complete receipt (never touched by A's run) still passes" 0 "$STATUS"
+check_absent "branch B pass → allowed" "$OUT" "deny"
+rm -f "/tmp/pre-pr-gate-$(real_key_for "$d" "$da")" "/tmp/pre-pr-gate-$(real_key_for "$d" "$db")"
+
+# 62. Hook branch resolution priority: an explicit --head wins over the event cwd's own checked-out
+# branch (not just in the worktree shape tests 12-15 above — this isolates the same priority with a
+# single checkout switching branches, to prove it's the FLAG being read, not incidentally a worktree
+# property).
+d="$(mkrepo)"
+orig_branch="$(git -C "$d" branch --show-current)"
+git -C "$d" branch dir80-other >/dev/null 2>&1
+git -C "$d" checkout -q dir80-other
+write_full_receipt "$d"
+sp="$(sentinel_for "$d")"
+git -C "$d" checkout -q "$orig_branch"
+gate "gh pr create --head dir80-other --fill" "$d"
+check_status "--head names the receipted branch even though cwd checked out a different one → exit 0" 0 "$STATUS"
+check_absent "--head resolution wins over cwd's own (different) branch → allowed" "$OUT" "deny"
+rm -f "$sp"
+
+# 63. Hook branch resolution failure: a detached-HEAD cwd with no --head resolves no branch at all —
+# denied naming the actual problem (dir #80's fix message), not the old generic "run /polish again",
+# so the reader knows to pass --head rather than blindly re-running /polish (the felt incidents' 4-5
+# blind retries).
+d="$(mkrepo)"
+git -C "$d" checkout -q --detach >/dev/null 2>&1
+gate "gh pr create --fill" "$d"
+check_contains "detached HEAD cwd, no --head → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied with the branch-resolution message, not a generic run-/polish-again" "$OUT" "could not resolve the PR branch"
+
+# 64. Writer-side (init) hard-errors on a detached HEAD rather than silently keying onto an empty
+# branch slug.
+d="$(mkrepo)"
+git -C "$d" checkout -q --detach >/dev/null 2>&1
+run_in "$d" bash "$gate" init
+check_status "init on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "init on a detached HEAD → names the cause" "$OUT" "detached HEAD"
 
 summary

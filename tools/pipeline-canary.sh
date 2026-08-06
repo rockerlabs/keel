@@ -71,6 +71,10 @@ esac
 # calling its own `repo-key` subcommand instead of re-deriving the algorithm here means this stays
 # correct even if that resolution ever changes.
 _repo_key_of() { bash "$GATE" repo-key "$1"; }
+# dir #80: the sentinel/prev-sentinel/hand-off files are now keyed by (repo, branch), not repo alone
+# — same rationale, calling the gate's own `receipt-key` subcommand instead of hand-copying the
+# branch-sanitization algorithm here.
+_receipt_key_of() { bash "$GATE" receipt-key "$1"; }
 
 cmd_setup() {
   [ -f "$GATE" ] || { printf 'pipeline-canary: %s not found — run from a keel checkout\n' "$GATE" >&2; exit 1; }
@@ -174,7 +178,8 @@ cmd_check() {
   fi
 
   key="$(_repo_key_of "$repo")"
-  sentinel="/tmp/pre-pr-gate-$key"
+  receipt_key="$(_receipt_key_of "$repo")"
+  sentinel="/tmp/pre-pr-gate-$receipt_key"
   if [ -f "$sentinel" ]; then
     printf 'INFO  a receipt sentinel is still present — the gate has not yet been asked to unlock (run gh pr create inside the sandbox session), or the last run was denied\n'
   else

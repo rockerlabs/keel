@@ -230,6 +230,32 @@
 #       completeness/sha/trace checks are entirely unchanged: a recovered-but-stale step-8 sha or a
 #       recovered `polish.5-review` outcome that no longer has a matching trace still denies exactly as
 #       before — `--recover` only removes the busywork of re-typing what didn't change.
+#
+# --- dir #80: the sentinel is a single /tmp file shared by ALL worktrees of a repo -------------------
+# dir #61 deliberately keyed the sentinel off the repo's MAIN checkout (main_top_for -> basename), not
+# the raw event cwd, so a receipt written from worktree A and a `gh pr create` hook event reporting
+# worktree B still agree on one file. Correct for THAT problem, but with heavy concurrent activity on
+# the SAME repo (many worktrees active at once), the one shared sentinel becomes a single race point: a
+# different session's own `init` (or a denied `gh pr create`'s retire_sentinel()) can wipe the file
+# between one session's receipt-writes and its own `gh pr create` call. Fix: key the sentinel,
+# prev-sentinel, and hand-off note by (repo, branch) instead of repo alone — `_require_receipt_key`
+# (below) combines `_repo_key` with the invoking cwd's own sanitized current-branch slug
+# (`_branch_slug_for`). Two worktrees of the same repo on DIFFERENT branches now get separate slots;
+# two sessions on the SAME branch of the same repo still share one (arguably correct-to-deny — accepted
+# and documented in commands/polish.md's receipt-deny paragraph as a manual-fallback last resort, not
+# fixed here). NOT re-keyed: `trace_path_for` (append-only, matched by sha+level scan — concurrent
+# branches already interleave harmlessly) and `rollout_state_path` (genuinely per-repo, not per-run).
+# `_require_receipt_key` hard-errors on a detached HEAD (empty branch slug) — /polish never legitimately
+# runs detached (core rails), so err loud rather than key onto an empty string. Hook-side resolution
+# (hook mode, below) additionally tries an explicit `--head`/`-f head=` before falling back to the event
+# cwd's own branch, and DENIES (rather than crashing) when neither resolves — a workflow gate must
+# always emit a JSON decision, never die mid-hook.
+#
+# Related, not a duplicate: dir #82 (the keel-impact.sh event log's own concurrent-write race). Same
+# root-cause CLASS (shared, unlocked /tmp or .keel/ state, raced by concurrent worktree sessions on one
+# repo) hitting a different file with different semantics — this ticket's sentinel is a single-slot
+# completeness receipt (fixed by keying); dir #82's log is an append-only queue (fixed by a subtractive
+# rewrite). No shared mechanism; each keeps its own fix.
 
 set -u
 
@@ -275,23 +301,65 @@ main_top_for() {
 # hook-mode one — same rationale as _worktree_main_entry's own extraction, above.
 _repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
 
+# dir #80: sanitize a branch name into a flat-filename-safe slug — every char outside
+# [A-Za-z0-9._-] (branch names routinely contain '/') becomes '-'. LC_ALL=C keeps this a plain ASCII
+# whitelist regardless of the invoking locale's character classes. Takes the branch NAME as a string
+# (not a cwd) — hook mode already has one resolved (an explicit --head, or a fork it already paid for)
+# and must not re-derive it via a second git call just to sanitize it.
+_sanitize_branch() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '-'; }
+
+# The CURRENT branch of cwd $1, sanitized — empty on a detached HEAD (no current branch; a fresh
+# `git init` with no commits still reports its unborn default branch, so this is empty only on a true
+# detached checkout). Writer-side callers (_require_receipt_key, below) treat empty as fatal.
+_branch_slug_for() {
+  local cwd="${1:-.}" branch
+  branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
+  [ -n "$branch" ] || return 0
+  _sanitize_branch "$branch"
+}
+
+# dir #80: repo + branch, combined into the key every writer-side per-run file (sentinel,
+# prev-sentinel, hand-off) is now keyed by, so two worktrees of the same repo on DIFFERENT branches no
+# longer share one slot. Sets $RECEIPT_KEY in the CALLER's shell — same "call this inline, never via
+# $(...)" discipline as require_active_receipt below: a detached-HEAD exit here must kill the whole
+# script, not just a capturing subshell (which would silently leave $RECEIPT_KEY empty and let the
+# caller carry on keying onto "-"). NOT used for trace_path_for/rollout_state_path — those stay
+# per-repo, see their own definitions just below.
+_require_receipt_key() {
+  local cwd="${1:-$PWD}" bs
+  bs="$(_branch_slug_for "$cwd")"
+  if [ -z "$bs" ]; then
+    printf 'pre-pr-gate: cannot key the receipt — detached HEAD; check out the PR branch first\n' >&2
+    exit 1
+  fi
+  RECEIPT_KEY="$(_repo_key "$cwd")-$bs"
+}
+
 # dir #72 finding #7: plain string-building, no `_repo_key` fork of their own — callers that already
-# have a resolved key (hook mode's `$wt`, `init`/`require_active_receipt` below) build paths through
-# these instead of the `_repo_key`-calling wrappers, so a repo key already paid for once is never
-# re-derived (each `_repo_key` call forks `git worktree list --porcelain`). The wrappers below still
-# exist and still call `_repo_key` themselves — for callers that do NOT already have the key on hand,
-# nothing changes.
+# have a resolved key (hook mode's `$wt`/`$receipt_key`, `init`/`require_active_receipt` below) build
+# paths through these instead of the `_repo_key`-calling wrappers, so a repo key already paid for once
+# is never re-derived (each `_repo_key` call forks `git worktree list --porcelain`). The wrappers below
+# still exist and still call `_repo_key` themselves — for callers that do NOT already have the key on
+# hand, nothing changes.
 _sentinel_path_for_key()      { printf '/tmp/pre-pr-gate-%s' "$1"; }
 _prev_sentinel_path_for_key() { printf '/tmp/pre-pr-gate-prev-%s' "$1"; }
 
-sentinel_path()  { _sentinel_path_for_key "$(_repo_key "$PWD")"; }
+# dir #80: these three convenience wrappers read the already-resolved $RECEIPT_KEY (set by
+# _require_receipt_key, called inline by every CLI subcommand that uses them below) rather than
+# re-deriving it themselves — deriving it here would mean calling the detached-HEAD-checking
+# _require_receipt_key from inside a function that's itself invoked via `$(...)` everywhere below
+# (handoff_path in particular), where its `exit 1` would only kill the capturing subshell instead of
+# the whole script.
+sentinel_path()  { _sentinel_path_for_key "$RECEIPT_KEY"; }
 # dir #63: the review-invocation trace (skill-trace writes it, the gate's PASS branch reads it) and the
 # step-5(b) hand-off note (handoff/handoff-check) each get their OWN file, keyed the same way as the
 # sentinel — not lines folded into the sentinel itself. Keeping them separate means `init`'s nonce reset
 # (the sentinel's job: wipe the PREVIOUS run's receipts, dir #49) never has to know the hand-off note
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
+# dir #80: trace_path_for stays per-repo (NOT $RECEIPT_KEY) — see the dir #80 header section above for
+# why (append-only, matched by sha+level, concurrent branches already interleave harmlessly).
 trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
-handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
+handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$RECEIPT_KEY"; }
 # dir #72: a single-slot backup of whatever receipt was just invalidated — by `init` minting a fresh
 # nonce, or by the gate denying and discarding the sentinel. `retire_sentinel` (below) is the ONE place
 # that both writes this and clears the live sentinel, so every invalidation path (there are several —
@@ -300,17 +368,18 @@ handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
 # MOST RECENT retirement is kept (a plain overwrite, not a history) — matches the felt shape (dir #69/PR
 # #145): one review-fix commit invalidates the run that was just denied or just completed, and that is
 # exactly what `receipt --recover` needs to restore.
-prev_sentinel_path() { _prev_sentinel_path_for_key "$(_repo_key "${1:-$PWD}")"; }
+prev_sentinel_path() { _prev_sentinel_path_for_key "$RECEIPT_KEY"; }
 # $2 (cwd) matters in hook mode: the live sentinel there is keyed off the JSON event's `.cwd`, not this
 # script's own $PWD (dir #61 discipline) — defaulting to $PWD only serves the CLI subcommands, where
 # $PWD IS the repo by construction. A same-filesystem rename (both paths are /tmp) does the backup-then-
 # clear in one process instead of a copy plus a separate unlink. $3 (key) lets a caller that already
-# resolved the repo key (hook mode's `$wt`, `init` below) pass it straight through instead of paying
-# for a second `_repo_key` fork for the same repo (dir #72 finding #7) — omitted, it re-derives from
-# `$cwd` exactly as before.
+# resolved the (dir #80: repo+branch) key (hook mode's `$receipt_key`, `init` below) pass it straight
+# through instead of paying for a second fork of the same git commands (dir #72 finding #7) — every
+# real call site below passes it; the fallback (key derived fresh from `$cwd` when $3 is omitted) is a
+# defensive last resort, not a path any current caller exercises.
 retire_sentinel() {
   local sentinel="$1" cwd="${2:-$PWD}" key="${3:-}" prev sha
-  [ -n "$key" ] || key="$(_repo_key "$cwd")"
+  [ -n "$key" ] || key="$(_repo_key "$cwd")-$(_branch_slug_for "$cwd")"
   if [ -f "$sentinel" ]; then
     prev="$(_prev_sentinel_path_for_key "$key")"
     if mv -f "$sentinel" "$prev" 2>/dev/null; then
@@ -338,9 +407,12 @@ retire_sentinel() {
 # CALLER's shell (this runs inline, not in a `$(...)` subshell, so `exit 1` here ends the whole script
 # exactly like the two call sites' own inline checks used to). Also sets $receipt_key (dir #72 finding
 # #7) so `receipt --recover` can build its own prev-sentinel path from it directly instead of paying
-# for a second `_repo_key` fork of the same repo.
+# for a second fork of the same key-derivation commands. dir #80: calls `_require_receipt_key` inline
+# (same discipline — a detached-HEAD exit here must end the whole script too) so $receipt_key is now
+# the combined (repo, branch) key, and also sets $RECEIPT_KEY for handoff_path()'s benefit.
 require_active_receipt() {
-  receipt_key="$(_repo_key)"
+  _require_receipt_key
+  receipt_key="$RECEIPT_KEY"
   sentinel="$(_sentinel_path_for_key "$receipt_key")"
   if [ ! -f "$sentinel" ]; then
     printf 'pre-pr-gate: no active receipt — run "pre-pr-gate.sh init" first\n' >&2
@@ -401,21 +473,32 @@ log_event() {
 
 case "${1:-}" in
   repo-key)
-    # Exposes _repo_key() (the worktree-aware basename(main_top_for(...)) dir #61 resolution every
-    # /tmp sentinel/trace/hand-off/rollout-state path is keyed by) to other tools — dir #64's own
-    # pipeline-canary.sh uses this instead of hand-copying the algorithm, which would silently drop
-    # the worktree resolution if it ever changes here.
+    # Exposes _repo_key() (the worktree-aware basename(main_top_for(...)) dir #61 resolution the
+    # trace/rollout-state paths are keyed by) to other tools — dir #64's own pipeline-canary.sh uses
+    # this instead of hand-copying the algorithm, which would silently drop the worktree resolution
+    # if it ever changes here. dir #80: the sentinel/prev-sentinel/hand-off paths moved to the
+    # (repo, branch) key below — use `receipt-key`, not this, for those.
     printf '%s\n' "$(_repo_key "${2:-$PWD}")"
     exit 0
     ;;
+  receipt-key)
+    # dir #80: exposes _require_receipt_key()'s (repo, branch) key — the sentinel/prev-sentinel/
+    # hand-off keying — to other tools/tests, same rationale as `repo-key` above: a sanitization-
+    # algorithm change here never needs a matching hand-copied edit in tests/lib.sh or
+    # pipeline-canary.sh. Detached HEAD still hard-errors (same as every other writer-side use)
+    # rather than silently emitting a wrong/empty key.
+    _require_receipt_key "${2:-$PWD}"
+    printf '%s\n' "$RECEIPT_KEY"
+    exit 0
+    ;;
   init)
-    init_key="$(_repo_key)"
-    sentinel="$(_sentinel_path_for_key "$init_key")"
+    _require_receipt_key
+    sentinel="$(_sentinel_path_for_key "$RECEIPT_KEY")"
     # dir #72: back up whatever this overwrite is about to discard (via the same retire_sentinel every
     # deny/pass path uses below), before minting the fresh nonce — so a re-`init` after a review-fix
     # commit still leaves the PRIOR run's completed steps reachable via `receipt --recover`. Passing
-    # $init_key through (dir #72 finding #7) skips a second `_repo_key` fork for the same repo.
-    retire_sentinel "$sentinel" "$PWD" "$init_key"
+    # $RECEIPT_KEY through (dir #72 finding #7) skips a second fork for the same key.
+    retire_sentinel "$sentinel" "$PWD" "$RECEIPT_KEY"
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
     printf 'nonce\t%s\n' "$nonce" > "$sentinel"
     printf 'pre-pr-gate: receipt started (nonce %s)\n' "$nonce"
@@ -505,10 +588,12 @@ case "${1:-}" in
   handoff)
     level="${2:?pre-pr-gate: handoff <level> <sha> — level required}"
     sha="${3:?pre-pr-gate: handoff <level> <sha> — sha required}"
+    _require_receipt_key
     printf 'polish.5\t%s\t%s\n' "$level" "$sha" > "$(handoff_path)"
     exit 0
     ;;
   handoff-check)
+    _require_receipt_key
     hp="$(handoff_path)"
     if [ -f "$hp" ]; then
       sha="$(git rev-parse HEAD 2>/dev/null)"
@@ -876,7 +961,6 @@ head_branch="$awk_out"
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
 wt=$(_repo_key "$cwd")
-sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
   # Impact instrumentation (metadata only, opt-in per repo): record that this guardrail fired so keel-impact
@@ -886,6 +970,23 @@ deny() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
   exit 0
 }
+
+# dir #80: resolve the branch this PR is actually FOR — same priority order as the --head-aware SHA
+# check further down (dir #61), resolved here too since the sentinel/prev-sentinel key now needs it.
+# (a) an explicit --head/-H (or `gh api -f head=`) already named it — strip a cross-fork owner prefix,
+# same as the SHA check's own target_ref does; (b) else the event cwd's own current branch; (c) else
+# the hook cannot key the receipt at all — DENY naming the fix, rather than silently keying onto a
+# wrong/empty branch. The message names the actual problem (branch resolution), not "run /polish
+# again" — the old generic message sent the felt dir #80 incidents into 4-5 blind retries that never
+# addressed the real cause.
+resolved_branch="${head_branch##*:}"
+[ -n "$resolved_branch" ] || resolved_branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
+if [ -z "$resolved_branch" ]; then
+  log_event receipt-deny "no-branch-resolved" "$cwd"
+  deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+fi
+receipt_key="${wt}-$(_sanitize_branch "$resolved_branch")"
+sentinel="/tmp/pre-pr-gate-$receipt_key"
 
 if [ ! -f "$sentinel" ]; then
   log_event receipt-deny "no-run" "$cwd"
@@ -933,17 +1034,17 @@ IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome <<
 
 case "$status" in
   MALFORMED)
-    retire_sentinel "$sentinel" "$cwd" "$wt"
+    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
     log_event receipt-deny "malformed" "$cwd"
     deny "Pre-PR gate: receipt is malformed or empty (no nonce). Run /polish again."
     ;;
   MISSING)
-    retire_sentinel "$sentinel" "$cwd" "$wt"
+    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
     log_event receipt-deny "$detail" "$cwd"
     deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail. Run /polish again."
     ;;
   REPLAY)
-    retire_sentinel "$sentinel" "$cwd" "$wt"
+    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
     log_event receipt-replay-deny "$detail" "$cwd"
     deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
     ;;
@@ -955,7 +1056,7 @@ case "$status" in
     [ -n "$head_branch" ] && target_ref="${head_branch##*:}"
     current_sha=$(git -C "$cwd" rev-parse "$target_ref" 2>/dev/null)
     if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
-      retire_sentinel "$sentinel" "$cwd" "$wt"
+      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
       log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
@@ -970,7 +1071,7 @@ case "$status" in
       skipped:*) : ;;
       "$current_sha") : ;;
       *)
-        retire_sentinel "$sentinel" "$cwd" "$wt"
+        retire_sentinel "$sentinel" "$cwd" "$receipt_key"
         log_event receipt-deny "retest-sha-mismatch" "$cwd"
         deny "Pre-PR gate: step 6's retest receipt ('$retest_outcome') doesn't match current HEAD ($current_sha) and isn't a skip — the diff may have changed since tests last ran. Run /polish again."
         ;;
@@ -1025,7 +1126,7 @@ case "$status" in
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
     if [ "$outcome_level" != "$depth_level" ]; then
-      retire_sentinel "$sentinel" "$cwd" "$wt"
+      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
       log_event receipt-deny "review-depth-mismatch" "$cwd"
       deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
     fi
@@ -1038,10 +1139,12 @@ case "$status" in
     # is $review_outcome verbatim UNLESS the combined-outcome branch above overrode it (dir #81) — the
     # only shape where what's being depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
+      # dir #80: deliberately still $wt (repo-only), not $receipt_key — the trace stays per-repo, see
+      # the dir #80 header section above.
       trace_path="/tmp/pre-pr-gate-trace-$wt"
       if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$trace_match_outcome" \
           '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
-        retire_sentinel "$sentinel" "$cwd" "$wt"
+        retire_sentinel "$sentinel" "$cwd" "$receipt_key"
         log_event receipt-deny "review-trace-missing" "$cwd"
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
@@ -1050,7 +1153,7 @@ case "$status" in
     # cross-check uses) — visible at PR-creation time instead of only via transcript archaeology. The
     # logged detail carries BOTH, tab-joined ($4 = prov_label prose, $5 = prov_tag) — `sweep` reads $5,
     # never $4, so it never depends on the display wording.
-    retire_sentinel "$sentinel" "$cwd" "$wt"
+    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
     log_event receipt-pass "$prov_label"$'\t'"$prov_tag" "$cwd"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"
     exit 0
@@ -1058,5 +1161,5 @@ case "$status" in
 esac
 
 # Fail-safe: any unrecognized status denies rather than silently allowing.
-retire_sentinel "$sentinel" "$cwd" "$wt"
+retire_sentinel "$sentinel" "$cwd" "$receipt_key"
 deny "Pre-PR gate: could not verify the receipt. Run /polish again."
