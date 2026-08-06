@@ -353,7 +353,8 @@ still builds.
 
 **Design principles.** SOLID; model the domain explicitly (entities, value objects, repositories, services
 named after domain concepts); write tests before or alongside implementation — no feature ships without
-tests.
+tests. When a unit of work has a written done-criterion, derive failing acceptance tests from it before
+implementing — a red test converts the criterion into something falsifiable, not prose trusted on faith.
 
 **Build identity — make it self-reporting, early.** Any app should surface its own build identity — a human
 version *plus* a per-build stamp (commit SHA + build date) — in its own UI/output (a menu line, an
