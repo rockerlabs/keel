@@ -1,9 +1,9 @@
 ---
 description: Show a project's backlog as a table — current project by default, or pass a name
 ---
-Display a backlog as a compact table. **Read-only** — never edit the backlog or reconcile against git unless
-asked. Chat narration in the user's language; backlog items stay in their original language — quote their
-gist as-is.
+Display a backlog as a compact table. **Read-only, with one exception** (step 2b) — never edit the backlog
+or reconcile against git beyond that. Chat narration in the user's language; backlog items stay in their
+original language — quote their gist as-is.
 
 **1. Resolve the target project:**
 - **No argument** → the CURRENT project: read the `project-id:` marker from the current dir's `CLAUDE.md`
@@ -19,6 +19,20 @@ the separate on-demand backlog the `CLAUDE.md` map points to → the **inline op
 `## TODO`, …) — find it by meaning, not a fixed string (small projects keep the backlog inline until
 ~8–10K tokens). If open work is split across sections, show the primary one and note the others exist. None
 found → say "no backlog found" and stop.
+
+**2b. Fold leftover drafts:** if `<path>/BACKLOG.drafts/*.md` exists alongside a `BACKLOG.md` source,
+each file is a `/design` session's unnumbered draft ticket meant to be folded in at its own session's
+wrap (see `FRAMEWORK.md`'s backlog/persist section for the convention) — but a draft can also be one
+that just hasn't reached its own session's wrap yet, not necessarily a dead session's leftover. Do the
+whole pass off ONE read of `BACKLOG.md`, not one read per check: read it once, then for each draft check
+against that same read whether a ticket for its slug already exists (its heading carries the same
+slug/title) — if so, skip it (someone folded it already, just hasn't deleted their local draft yet) and
+mark it for deletion without appending. Assign each remaining draft a consecutive next-free number in
+file order, append all their bodies, update the queue line if the backlog tracks one, then write once
+and delete every drafted-or-skipped file. If the write hits a modified-since-read collision, re-read and
+retry the whole batch once (existence checks included, against the fresh read); on a second failure
+leave the remaining drafts in place rather than forcing it (they render as draft rows per step 5
+instead). Report what was folded (and what was skipped as already-folded) before rendering the table.
 
 **3. Infer status for each item** from inline markers — first match wins:
 
@@ -49,5 +63,7 @@ section by the order above. For a flat backlog, omit the Section column.
 - **ID** — only if items carry ids; omit the column otherwise.
 - **Item** — one-line gist; the file is the detail, do NOT dump full prose. Lead with the actionable state.
 - **Status** — per step 3.
+- **Any `BACKLOG.drafts/*.md` that step 2b could not fold** (persistent race) appends as its own row: ID
+  `draft` (no number assigned), Item = the draft's own gist, Status **Draft**. Order draft rows last.
 - Below the table, one line `Recently closed: <ids or count>` if the source carries a cooldown buffer (don't
   dump the buffer). Name the source (project + file) so it's clear what was shown.
