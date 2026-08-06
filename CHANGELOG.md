@@ -9,6 +9,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`tools/self/doctor.sh` gains a check for stale `BACKLOG.md` ticket headings** (dir #87, found 3×
+  by later sessions' own `/wrap` — a closed ticket's `### dir #N` heading kept its open-status tag
+  even after the ticket's own body already recorded `✅ CLOSED (PR #…)`). The new check flags any
+  `### dir #N` heading whose own line carries no `✅`/`⏳`/`RETRACTED` tag while the body below it
+  (up to the next `##`/`###` heading) already records `CLOSED`/`DONE`/`RETRACTED` next to a checkmark
+  — inline-code-quoted mentions of the pattern itself (as this very changelog entry's ticket does)
+  are stripped first so the check can't flag its own documentation. `BACKLOG.md` is gitignored and
+  not every checkout carries one (a worktree, a fresh clone, most consumer projects) — a missing file
+  is a clean pass, not a finding. New test coverage in `tests/test_self_doctor.sh` (5 cases: no file,
+  a real stale tag, an already-tagged heading, a backtick-quoted false positive, and a `##` section
+  boundary that must stop the body scan). Caught one real, still-live instance on this run: dir #75's
+  own heading.
+
 - **`/go` now derives failing acceptance tests from a ticket's done-criterion before implementing, and
   `/polish` step 5(a)'s independent-reviewer prompt now carries a two-way conformance mandate against
   the ticket** (dir #78, found by comparing keel's `/design → /go → /polish` conveyor against the

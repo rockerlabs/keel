@@ -17,6 +17,7 @@
 #   WARN  a tools/*.sh script has no reference anywhere (commands/, tests/, install.sh, docs/, CI)
 #   WARN  a tools/*.sh script has no test coverage in tests/
 #   WARN  CHANGELOG.md predates the most recent commands/, tools/, or install.sh change
+#   GAP   BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -194,6 +195,61 @@ if [ "$product_ts" -gt "$changelog_ts" ]; then
   warn "CHANGELOG.md predates the most recent commands/, tools/, or install.sh change — verify [Unreleased] covers it"
 else
   say "  OK   CHANGELOG.md is at least as recent as the last commands/, tools/, or install.sh change"
+fi
+
+# --- 5. BACKLOG.md heading/status drift -----------------------------------------------------------
+# `### dir #N` tickets carry their own status tag on the heading line itself (✅ DONE/CLOSED,
+# ⏳ IN FLIGHT, or RETRACTED). Three real hits (dirs #81, #75, #74 — see dir #87) left that tag
+# behind after the ticket's own body already recorded closure, caught only by a LATER session's
+# wrap. BACKLOG.md is gitignored/personal (not every checkout — worktree or consumer — carries one),
+# so a missing file is not itself a finding.
+say ""
+say "● BACKLOG.md heading/status drift"
+backlog_file="$repo_root/BACKLOG.md"
+if [ -f "$backlog_file" ]; then
+  stale=0
+  heading_lines=()
+  while IFS= read -r ln; do heading_lines+=("$ln"); done \
+    < <(grep -nE '^### dir #[0-9]+ ' "$backlog_file" | cut -d: -f1)
+  # Every ## or ### line, dir-heading or not — used to find where THIS heading's body ends (the
+  # next section boundary of either level), so a body span never bleeds past a `## ` section
+  # break (e.g. into the unrelated `## Recently closed` buffer that follows some dir tickets).
+  boundary_lines=()
+  while IFS= read -r ln; do boundary_lines+=("$ln"); done \
+    < <(grep -nE '^#{2,3} ' "$backlog_file" | cut -d: -f1)
+  total_lines="$(wc -l < "$backlog_file")"
+  if [ "${#heading_lines[@]}" -gt 0 ]; then
+    for start in "${heading_lines[@]}"; do
+      heading_line="$(sed -n "${start}p" "$backlog_file")"
+      # already carries its own status marker -> nothing to cross-check
+      case "$heading_line" in
+        *"✅"*|*"⏳"*|*RETRACTED*) continue ;;
+      esac
+      end="$total_lines"
+      if [ "${#boundary_lines[@]}" -gt 0 ]; then
+        for bl in "${boundary_lines[@]}"; do
+          if [ "$bl" -gt "$start" ]; then
+            end=$((bl - 1))
+            break
+          fi
+        done
+      fi
+      body_start=$((start + 1))
+      [ "$body_start" -gt "$end" ] && continue
+      # Strip inline-code spans first: the ticket that documents this very pattern (dir #87)
+      # quotes `✅ CLOSED (PR #…)` and `` `CLOSED`/`DONE`/`RETRACTED` `` as prose examples, not as
+      # a real status — without stripping, the check would flag its own ticket as stale.
+      body="$(sed -n "${body_start},${end}p" "$backlog_file" | sed -E 's/`[^`]*`//g')"
+      if printf '%s\n' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
+        id="$(printf '%s' "$heading_line" | grep -ohE 'dir #[0-9]+' | head -1)"
+        gap "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
+        stale=$((stale + 1))
+      fi
+    done
+  fi
+  [ "$stale" -eq 0 ] && say "  OK   no stale dir # heading tags in BACKLOG.md"
+else
+  say "  OK   no BACKLOG.md at $repo_root — skipping heading/status check"
 fi
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---

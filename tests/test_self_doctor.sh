@@ -177,4 +177,42 @@ check_contains "non-quiet shows OK lines" "$OUT" "  OK "
 run "$sd" "$d" --quiet
 check_absent "quiet suppresses OK lines" "$OUT" "  OK "
 
+# --- 6. BACKLOG.md heading/status drift (dir #87) ---------------------------------------------------
+# BACKLOG.md is gitignored — mk_clean_repo never creates one, so its absence must be a clean pass,
+# not a crash or a false GAP.
+d="$(mk_clean_repo)"
+run "$sd" "$d" --quiet
+check_status "no BACKLOG.md at all -> exit 0" 0 "$STATUS"
+
+# a heading with no ✅/⏳/RETRACTED tag whose own body already records closure -> GAP
+d="$(mk_clean_repo)"
+printf '### dir #1 — some ticket — R2\n\n✅ CLOSED (2026-01-01, PR #1) — done.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "stale heading tag -> exit 1" 1 "$STATUS"
+check_contains "reports the stale ticket id" "$OUT" "dir #1's heading tag looks stale"
+
+# the SAME heading already carrying its own tag (✅/⏳/RETRACTED) is not re-flagged even though the
+# body also says CLOSED — the tag is the thing being checked, not a ban on the word appearing twice.
+d="$(mk_clean_repo)"
+printf '### dir #2 — some ticket — R4 — ✅ CLOSED (2026-01-01, PR #2)\n\nCLOSED — done.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "already-tagged heading is clean -> exit 0" 0 "$STATUS"
+
+# an untagged heading whose body only mentions CLOSED/DONE/RETRACTED inside inline code (a prose
+# example of the pattern itself, not a real status note — dir #87's own body does exactly this)
+# must NOT be flagged.
+d="$(mk_clean_repo)"
+printf '### dir #3 — some ticket — R1\n\nsee `✅ CLOSED (PR #…)` for the shape; also `RETRACTED`.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "backtick-quoted example text is not a false positive -> exit 0" 0 "$STATUS"
+
+# body text below an untagged heading must not leak past a `## ` section boundary into a LATER
+# heading's own body span.
+d="$(mk_clean_repo)"
+printf '### dir #4 — untagged ticket — R1\n\nnothing closed here.\n\n## Recently closed\n\n- ✅ 2026-01-01 dir #4 CLOSED — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "a ## section boundary stops the body scan -> exit 0" 0 "$STATUS"
+
 summary
