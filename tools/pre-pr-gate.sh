@@ -264,8 +264,11 @@
 # `KEEL-REVIEW-DIALOG: level=<level>` (same literal-match discipline as `KEEL-AGENT-REVIEW` above, same
 # reason: this hook greps for it, not the human-facing wording, which must stay free to change — dir #64's
 # tag-vs-prose lesson). Below, `skill-trace`'s new branch greps `$st_input` (the RAW event JSON, not a
-# parsed field — see TO VERIFY (2) above) for `KEEL-REVIEW-DIALOG: level=(low|medium|high|max)`, takes the
-# LAST match, and appends `<sha>\tdialog:<level>` to the same trace file the Skill/UserPromptExpansion/
+# parsed field — see TO VERIFY (2) above) for `KEEL-REVIEW-DIALOG: level=<word>`, takes the LAST match,
+# then validates the captured word against `$ACCEPTED_REVIEW_LEVELS` exactly (not embedded in the regex
+# itself — found in the operator-run /code-review high pass: an in-regex alternation lets grep's
+# leftmost-longest match truncate a malformed `level=highest` down to a false-accepted `high`), and
+# appends `<sha>\tdialog:<level>` to the same trace file the Skill/UserPromptExpansion/
 # SubagentStop legs already write (`trace_path_for`) — sha is this hook's OWN `git … rev-parse HEAD` at
 # fire time, never a self-reported field, same trust boundary as every other leg. No marker / no sha →
 # silent exit 0, same as the other legs.
