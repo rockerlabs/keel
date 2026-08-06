@@ -125,6 +125,10 @@ prev_sentinel_for() { printf '/tmp/pre-pr-gate-prev-%s-%s' "$(repo_key_for "$1")
 # branch by git's own design, so _repo_key's worktree-redirection has no equivalent on the branch
 # side to undo).
 real_key_for() { printf '%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$2")"; }
+# dir #80: the real sentinel path for a (repo dir, branch-source dir) pair — wraps real_key_for the
+# same way sentinel_for wraps the single-dir key, so the dir #61 worktree tests build the path once
+# instead of re-typing the `/tmp/pre-pr-gate-` prefix at every call site.
+real_sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(real_key_for "$1" "$2")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the

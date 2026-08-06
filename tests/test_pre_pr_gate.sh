@@ -282,14 +282,14 @@ mkworktree dir61-wt dir61-feature
 check_dir "dir #61 worktree fixture exists" "$WT"
 write_full_receipt "$WT"
 # dir #80: the receipt's REAL key mixes the MAIN checkout's repo component with the WORKTREE's own
-# branch component (each worktree has an independently checked-out branch) — real_key_for(MREPO, WT),
-# not sentinel_for(MREPO) (which would use MREPO's OWN branch, a different file that nothing wrote).
-check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "/tmp/pre-pr-gate-$(real_key_for "$MREPO" "$WT")"
+# branch component (each worktree has an independently checked-out branch) — real_sentinel_for(MREPO,
+# WT), not sentinel_for(MREPO) (which would use MREPO's OWN branch, a different file that nothing wrote).
+check_file "receipt lands under the MAIN checkout's sentinel, not the worktree's" "$(real_sentinel_for "$MREPO" "$WT")"
 check_nofile "no stray sentinel under the worktree's own basename" "$(sentinel_for "$WT")"
 gate "gh pr create --head dir61-feature --fill" "$MREPO"
 check_status "worktree receipt + --head, hook cwd = main checkout → exit 0" 0 "$STATUS"
 check_absent "worktree receipt + --head → allowed (no deny payload)" "$OUT" "deny"
-check_nofile "the sentinel is consumed" "/tmp/pre-pr-gate-$(real_key_for "$MREPO" "$WT")"
+check_nofile "the sentinel is consumed" "$(real_sentinel_for "$MREPO" "$WT")"
 
 # 13. Same setup, but the command carries NO --head — dir #80: the sentinel is now keyed by (repo,
 # branch), so the hook (falling back to the MAIN checkout's OWN, different branch) doesn't even share
@@ -459,6 +459,9 @@ rm -f "$tf"
 # dir #80: hand-off is now keyed by (repo, branch) too — see lib.sh's sentinel_for/real_key_for for
 # the naive-vs-real distinction the dir #61 worktree tests (below) need.
 handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$1")"; }
+# dir #80: the real hand-off path for a (repo dir, branch-source dir) pair — same wrapping as
+# lib.sh's real_sentinel_for, for the same dir #61 worktree tests.
+real_handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(real_key_for "$1" "$2")"; }
 
 # 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
 # reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
@@ -516,9 +519,9 @@ run_in "$WT" bash "$gate" init
 run_in "$WT" bash "$gate" handoff high "$sha"
 # dir #80: same real-vs-naive-key distinction as the sentinel (test 12 above) — the hand-off note is
 # now (repo, branch)-keyed too.
-check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "/tmp/pre-pr-gate-handoff-$(real_key_for "$MREPO" "$WT")"
+check_file "hand-off written from a worktree lands under the MAIN checkout's hand-off file" "$(real_handoff_for "$MREPO" "$WT")"
 check_nofile "no stray hand-off file under the worktree's own basename" "$(handoff_for "$WT")"
-rm -f "/tmp/pre-pr-gate-handoff-$(real_key_for "$MREPO" "$WT")" "/tmp/pre-pr-gate-$(real_key_for "$MREPO" "$WT")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
+rm -f "$(real_handoff_for "$MREPO" "$WT")" "$(real_sentinel_for "$MREPO" "$WT")" "$(sentinel_for "$MREPO")" "$(sentinel_for "$WT")"
 
 # --- dir #64 tier 2a: provenance line on the gate's ALLOW decision -------------------------------
 # 26. A trusted "skip" outcome → the provenance line reads "review: skip", no trace involved.
@@ -1036,18 +1039,18 @@ git -C "$db" commit --allow-empty -qm "feat B work"
 write_full_receipt "$da"
 write_full_receipt "$db"
 # dir #80: $da/$db are worktrees of $d — same real-vs-naive distinction as the dir #61 tests above
-# (real_key_for mixes the MAIN checkout's repo component with each worktree's OWN branch); a naive
-# sentinel_for("$da") would basename the WORKTREE itself, a different (unwritten) file.
-check_file "branch A's sentinel exists" "/tmp/pre-pr-gate-$(real_key_for "$d" "$da")"
-check_file "branch B's sentinel exists independently of branch A's (interleaved init didn't wipe it)" "/tmp/pre-pr-gate-$(real_key_for "$d" "$db")"
+# (real_sentinel_for mixes the MAIN checkout's repo component with each worktree's OWN branch); a
+# naive sentinel_for("$da") would basename the WORKTREE itself, a different (unwritten) file.
+check_file "branch A's sentinel exists" "$(real_sentinel_for "$d" "$da")"
+check_file "branch B's sentinel exists independently of branch A's (interleaved init didn't wipe it)" "$(real_sentinel_for "$d" "$db")"
 gate "gh pr create --head dir80-featA --fill" "$d"
 check_status "branch A's own complete receipt passes independently" 0 "$STATUS"
 check_absent "branch A pass → allowed" "$OUT" "deny"
-check_file "branch B's sentinel is untouched by branch A's consumption" "/tmp/pre-pr-gate-$(real_key_for "$d" "$db")"
+check_file "branch B's sentinel is untouched by branch A's consumption" "$(real_sentinel_for "$d" "$db")"
 gate "gh pr create --head dir80-featB --fill" "$d"
 check_status "branch B's own complete receipt (never touched by A's run) still passes" 0 "$STATUS"
 check_absent "branch B pass → allowed" "$OUT" "deny"
-rm -f "/tmp/pre-pr-gate-$(real_key_for "$d" "$da")" "/tmp/pre-pr-gate-$(real_key_for "$d" "$db")"
+rm -f "$(real_sentinel_for "$d" "$da")" "$(real_sentinel_for "$d" "$db")"
 
 # 62. Hook branch resolution priority: an explicit --head wins over the event cwd's own checked-out
 # branch (not just in the worktree shape tests 12-15 above — this isolates the same priority with a
