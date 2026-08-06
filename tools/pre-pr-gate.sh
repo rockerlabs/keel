@@ -302,7 +302,13 @@
 # trade-off as dir #63 limit (2). (3) per-repo trace file shared across worktrees — same as dir #63 limit
 # (3). (4) the arming grep is a structural presence check, not a liveness check — a matcher wired to a
 # STALE copy of this script (the felt incident that keeps `install-pre-pr-gate.sh` pointing at a kept
-# checkout by absolute path, never a copy) would still read as armed.
+# checkout by absolute path, never a copy) would still read as armed. (5) dir #63/#70's OWN trace-required
+# checks (the `trusted==0` block above, unchanged by this ticket) have no equivalent arming guard — an
+# adopter who `git pull`s past dir #63/#70 without re-running `tools/install-pre-pr-gate.sh` hits the same
+# false-deny window this ticket's arming rule exists to close, just unguarded. Found auditing this ticket
+# (altitude review) but deliberately NOT retrofitted here — those checks and their own test coverage
+# predate this ticket and are out of its scope; named so it isn't silently assumed away, a candidate for
+# its own follow-up ticket if ever felt in practice.
 
 set -u
 
@@ -347,13 +353,14 @@ main_top_for() {
 # Code hooks — the PASS branch's dialog check (below) only fires when this returns true. See that dir
 # #88 header section above for why an unconditional check would false-deny every `agent:*` unlock in
 # the window between `git pull` and the operator re-running the installer. Checks the same candidate
-# settings.json paths install-pre-pr-gate.sh itself writes to (project scope, resolved via
-# main_top_for per dir #61, and machine-global) — a repo/hook mismatch here means the installer's own
-# write-target resolution changed and this needs a matching update, not a silent drift.
+# settings.json paths install-pre-pr-gate.sh itself writes to (project scope, and machine-global) — a
+# repo/hook mismatch here means the installer's own write-target resolution changed and this needs a
+# matching update, not a silent drift. Takes the main checkout's TOP PATH directly (already resolved via
+# main_top_for per dir #61 by the PASS branch's own $wt derivation, above) rather than a cwd, so this
+# doesn't re-fork `git worktree list --porcelain` a second time for the same answer.
 _dialog_leg_armed() {
-  local cwd="${1:-$PWD}" top f
+  local top="${1:?_dialog_leg_armed: main-checkout top path required}" f
   command -v jq >/dev/null 2>&1 || return 1
-  top="$(main_top_for "$cwd")"
   for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" "$HOME/.claude/settings.json"; do
     [ -f "$f" ] || continue
     if jq -e '
@@ -390,6 +397,16 @@ sentinel_path()  { _sentinel_path_for_key "$(_repo_key "$PWD")"; }
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
 trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
 handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$(_repo_key "$PWD")"; }
+# dir #88 simplify pass: the PASS branch's dir #63 trace check and its new dir #88 dialog check both
+# ask "does the trace file carry a line <sha>\t<level> for this repo key" — factored out once there
+# were two, so a future trace-file format change only needs one edit. Takes the repo KEY directly
+# (not a cwd) since both PASS-branch call sites already have `$wt` resolved (dir #72 finding #7's own
+# reasoning: don't re-fork `_repo_key` for a key already on hand).
+_trace_has_line() {
+  local wt_key="$1" sha="$2" lvl="$3" tp
+  tp="/tmp/pre-pr-gate-trace-$wt_key"
+  [ -f "$tp" ] && awk -F'\t' -v sha="$sha" -v lvl="$lvl" '$1==sha && $2==lvl{f=1} END{exit !f}' "$tp"
+}
 # dir #72: a single-slot backup of whatever receipt was just invalidated — by `init` minting a fresh
 # nonce, or by the gate denying and discarding the sentinel. `retire_sentinel` (below) is the ONE place
 # that both writes this and clears the live sentinel, so every invalidation path (there are several —
@@ -990,7 +1007,12 @@ head_branch="$awk_out"
 # harness's tracked session-root cwd, which does not track an in-command `cd`) must land on one file.
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
-wt=$(_repo_key "$cwd")
+# dir #88 simplify pass: resolve the main-checkout top ONCE and derive $wt from it — `_dialog_leg_armed`
+# (below, in the PASS branch) needs the full top path, not just its basename, and calling `_repo_key`
+# alone here would discard it, forcing `_dialog_leg_armed` to re-fork `main_top_for` a second time for
+# data this line already computed (dir #72 finding #7's own reuse-the-resolved-key discipline).
+main_top=$(main_top_for "$cwd")
+wt=$(basename "$main_top")
 sentinel="/tmp/pre-pr-gate-$wt"
 
 deny() {
@@ -1095,13 +1117,16 @@ case "$status" in
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
-    # AND builds the dir #64 tier 2a provenance label + tag (below) from the same match, so a future
-    # third suffix only needs adding here, not kept in sync across separate mechanisms. $prov_tag is a
-    # STABLE machine value ("trace-confirmed"/"self-reported") separate from $prov_label's human prose,
-    # so `sweep` (below) can classify without depending on display wording (found in the operator-run
-    # /code-review high pass on this ticket — sweep used to regex-match the prose directly).
+    # decides whether the dir #88 dialog check applies (`$needs_dialog`, both `agent:*` arms only — the
+    # ONLY outcomes step 5(a)'s reminder exists on), AND builds the dir #64 tier 2a provenance label +
+    # tag (below) from the same match, so a future third suffix only needs adding here, not kept in
+    # sync across separate mechanisms. $prov_tag is a STABLE machine value ("trace-confirmed"/
+    # "self-reported") separate from $prov_label's human prose, so `sweep` (below) can classify without
+    # depending on display wording (found in the operator-run /code-review high pass on this ticket —
+    # sweep used to regex-match the prose directly).
     depth_level="${depth_outcome%%:*}"
     trusted=0
+    needs_dialog=0
     trace_match_outcome="$review_outcome"
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
@@ -1129,12 +1154,14 @@ case "$status" in
                          outcome_level="${review_outcome#agent:}"
                          outcome_level="${outcome_level%+operator-run}"
                          trace_match_outcome="${review_outcome%+operator-run}"
+                         needs_dialog=1
                          prov_label="review: $outcome_level, independent agent review (trace-confirmed) + operator-run /code-review (self-reported)"; prov_tag="agent-confirmed" ;;
       agent:*)          # dir #70: an independent Agent-tool subagent reviewed (Skill(code-review) wasn't
                          # model-invokable in-session) — trusted stays 0, same as the bare-level case
                          # below: this outcome is just as self-report-fabricable, so it earns no more
                          # trust and still needs the SubagentStop trace match (skill-trace, above).
                          outcome_level="${review_outcome#agent:}"
+                         needs_dialog=1
                          prov_label="review: $outcome_level, independent agent review (Skill(code-review) not model-invokable in-session)"; prov_tag="agent-confirmed" ;;
       *)                outcome_level="$review_outcome"
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
@@ -1153,35 +1180,27 @@ case "$status" in
     # is $review_outcome verbatim UNLESS the combined-outcome branch above overrode it (dir #81) — the
     # only shape where what's being depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
-      trace_path="/tmp/pre-pr-gate-trace-$wt"
-      if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="$trace_match_outcome" \
-          '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
+      if ! _trace_has_line "$wt" "$current_sha" "$trace_match_outcome"; then
         retire_sentinel "$sentinel" "$cwd" "$wt"
         log_event receipt-deny "review-trace-missing" "$cwd"
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
     # dir #88: an `agent:*`-shaped outcome (BOTH plain `agent:<level>` and the combined
-    # `agent:<level>+operator-run`, dir #81 — the reminder fires identically for both) additionally
-    # requires a mechanically-traced, ANSWERED AskUserQuestion dialog for step 5(a)'s MANDATORY
-    # reminder — the review claim itself can be receipted honestly while that reminder is silently
-    # skipped by momentum (felt on dir #62/PR #147). Armed only when the AskUserQuestion leg is
-    # actually wired (`_dialog_leg_armed`, above) — see the dir #88 header section for why an
-    # unconditional check would false-deny every `agent:*` unlock between `git pull` and the operator
-    # re-running the installer.
-    case "$review_outcome" in
-      agent:*)
-        if _dialog_leg_armed "$cwd"; then
-          trace_path="/tmp/pre-pr-gate-trace-$wt"
-          if [ ! -f "$trace_path" ] || ! awk -F'\t' -v sha="$current_sha" -v lvl="dialog:$outcome_level" \
-              '$1==sha && $2==lvl{f=1} END{exit !f}' "$trace_path"; then
-            retire_sentinel "$sentinel" "$cwd" "$wt"
-            log_event receipt-deny "review-dialog-missing" "$cwd"
-            deny "Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."
-          fi
-        fi
-        ;;
-    esac
+    # `agent:<level>+operator-run`, dir #81 — the reminder fires identically for both, `$needs_dialog`
+    # set by the SAME case statement above) additionally requires a mechanically-traced, ANSWERED
+    # AskUserQuestion dialog for step 5(a)'s MANDATORY reminder — the review claim itself can be
+    # receipted honestly while that reminder is silently skipped by momentum (felt on dir #62/PR #147).
+    # Armed only when the AskUserQuestion leg is actually wired (`_dialog_leg_armed`, above) — see the
+    # dir #88 header section for why an unconditional check would false-deny every `agent:*` unlock
+    # between `git pull` and the operator re-running the installer.
+    if [ "$needs_dialog" -eq 1 ] && _dialog_leg_armed "$main_top"; then
+      if ! _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
+        retire_sentinel "$sentinel" "$cwd" "$wt"
+        log_event receipt-deny "review-dialog-missing" "$cwd"
+        deny "Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."
+      fi
+    fi
     # dir #64 tier 2a: $prov_label/$prov_tag were already built above (the same case statement dir #63's
     # cross-check uses) — visible at PR-creation time instead of only via transcript archaeology. The
     # logged detail carries BOTH, tab-joined ($4 = prov_label prose, $5 = prov_tag) — `sweep` reads $5,
