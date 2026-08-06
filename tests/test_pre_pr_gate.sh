@@ -456,12 +456,9 @@ check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
-# dir #80: hand-off is now keyed by (repo, branch) too — see lib.sh's sentinel_for/real_key_for for
-# the naive-vs-real distinction the dir #61 worktree tests (below) need.
-handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$1")"; }
-# dir #80: the real hand-off path for a (repo dir, branch-source dir) pair — same wrapping as
-# lib.sh's real_sentinel_for, for the same dir #61 worktree tests.
-real_handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(real_key_for "$1" "$2")"; }
+# handoff_for/real_handoff_for live in lib.sh, next to sentinel_for/real_sentinel_for (dir #80: this
+# ticket's own /code-review found they'd drifted apart — see lib.sh for the naive-vs-real distinction
+# the dir #61 worktree tests below need).
 
 # 22. The hand-off note lives in its OWN file — not a line inside the sentinel — so `init`'s nonce
 # reset (which discards everything in the sentinel, the dir #49 replay fix) never touches it at all.
@@ -1018,11 +1015,11 @@ rm -f "$(prev_sentinel_for "$d")"
 
 # --- dir #80: (repo, branch) receipt keying --------------------------------------------------------
 # 60. `receipt-key` subcommand exposes the combined key other tools/tests reuse (pipeline-canary.sh's
-# own `_receipt_key_of`) instead of hand-copying the branch-sanitization algorithm.
+# own `_keys_of`) instead of hand-copying the branch-hash/sanitization algorithm.
 d="$(mkrepo)"
 run "$gate" receipt-key "$d"
 check_status "receipt-key → exit 0" 0 "$STATUS"
-check_contains "receipt-key combines repo basename and branch" "$OUT" "$(basename "$d")-$(git -C "$d" branch --show-current)"
+check_contains "receipt-key matches the expected (repo, hash, branch) composition" "$OUT" "$(combined_key_for "$d")"
 
 # 61. The ticket's own acceptance test: two interleaved init+receipt sequences on TWO BRANCHES of ONE
 # repo (same repo key, different branch — worktrees so both can be "current" at once) never corrupt
@@ -1113,5 +1110,35 @@ check_contains "receipt-key on a detached HEAD → names the cause" "$OUT" "deta
 run "$gate" keys "$d"
 check_status "keys on a detached HEAD → exit 1" 1 "$STATUS"
 check_contains "keys on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+
+# 66. Key-ambiguity regression (found by this ticket's own /code-review high pass): a naive
+# "$repo-$branch" join is ambiguous — repo "dir80hash-abc" + branch "def" and repo "dir80hash" +
+# branch "abc-def" both join to "dir80hash-abc-def". Construct both directly (not via mkrepo's
+# random mktemp suffix, which can't be forced onto an exact colliding basename) and confirm their
+# receipt-keys — now hash-based, not a plain join — differ.
+ra="$SANDBOX/dir80hash-abc"; mkdir -p "$ra"; git -C "$ra" init -q
+git -C "$ra" commit -q --allow-empty -m init
+git -C "$ra" checkout -q -b def
+rb="$SANDBOX/dir80hash"; mkdir -p "$rb"; git -C "$rb" init -q
+git -C "$rb" commit -q --allow-empty -m init
+git -C "$rb" checkout -q -b abc-def
+run "$gate" receipt-key "$ra"; key_a="$OUT"
+check_status "receipt-key(repo=dir80hash-abc, branch=def) → exit 0" 0 "$STATUS"
+run "$gate" receipt-key "$rb"; key_b="$OUT"
+check_status "receipt-key(repo=dir80hash, branch=abc-def) → exit 0" 0 "$STATUS"
+if [ "$key_a" != "$key_b" ]; then
+  pass "naive-join collision case now produces DIFFERENT keys"
+else
+  fail "naive-join collision case now produces DIFFERENT keys" "both resolved to: $key_a"
+fi
+
+# 67. A malformed --head that strips to EMPTY (e.g. "owner:" with nothing after the colon) denies
+# immediately with its own message, rather than silently falling back to the event cwd's own branch
+# (found by this ticket's own /code-review high pass — the old blanket fallback conflated "no --head
+# given" with "a broken --head given").
+d="$(mkrepo)"
+gate "gh pr create --head owner: --fill" "$d"
+check_contains "malformed --head (empty after owner-prefix strip) → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied naming the malformed --head, not silently falling back to cwd's branch" "$OUT" "has no branch name after stripping"
 
 summary

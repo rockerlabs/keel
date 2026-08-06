@@ -71,16 +71,20 @@ esac
 # calling its own `repo-key` subcommand instead of re-deriving the algorithm here means this stays
 # correct even if that resolution ever changes.
 _repo_key_of() { bash "$GATE" repo-key "$1"; }
-# dir #80: the sentinel/prev-sentinel/hand-off files are now keyed by (repo, branch), not repo alone
-# — same rationale, calling the gate's own `receipt-key` subcommand instead of hand-copying the
-# branch-sanitization algorithm here.
-_receipt_key_of() { bash "$GATE" receipt-key "$1"; }
-# dir #80: a caller (cmd_check, below) needing BOTH keys for the same dir uses this instead of calling
-# _repo_key_of + _receipt_key_of separately — each forks this whole script AND independently re-runs
-# `git worktree list --porcelain`/`git branch --show-current`; `keys` returns both from one such run.
-# Sets $KEYS_REPO/$KEYS_RECEIPT in the caller's shell.
+# dir #80: a caller (cmd_check, below) needing BOTH the repo-only and the (repo,branch) receipt key
+# for the same dir uses this instead of calling the gate's `repo-key`/`receipt-key` subcommands
+# separately — each would fork this whole script AND independently re-run `git worktree list
+# --porcelain`/`git branch --show-current`; `keys` returns both from one such run. Sets
+# $KEYS_REPO/$KEYS_RECEIPT in the caller's shell. Unlike `repo-key` (which never fails), `keys` CAN
+# fail — the gate hard-errors on a detached HEAD (dir #80's writer-side discipline) — so this checks
+# the exit status explicitly and returns non-zero itself rather than silently leaving $KEYS_REPO/
+# $KEYS_RECEIPT empty (found by this ticket's own /code-review high pass: an unchecked failure here
+# used to make `cmd_check` compare against the bogus path `/tmp/pre-pr-gate-`, which never exists, so
+# it reported a false "PASS  no leftover receipt sentinel" instead of surfacing the real error).
 _keys_of() {
-  IFS=$'\t' read -r KEYS_REPO KEYS_RECEIPT <<< "$(bash "$GATE" keys "$1")"
+  local out
+  out="$(bash "$GATE" keys "$1")" || return 1
+  IFS=$'\t' read -r KEYS_REPO KEYS_RECEIPT <<< "$out"
 }
 
 cmd_setup() {
@@ -184,9 +188,17 @@ cmd_check() {
     fail=1
   fi
 
-  _keys_of "$repo"; key="$KEYS_REPO"; receipt_key="$KEYS_RECEIPT"
+  if ! _keys_of "$repo"; then
+    printf 'FAIL  could not resolve the sandbox repo'"'"'s keys (the gate hard-errors on a detached HEAD — check the sandbox repo has a branch checked out)\n'
+    fail=1
+    key=""; receipt_key=""
+  else
+    key="$KEYS_REPO"; receipt_key="$KEYS_RECEIPT"
+  fi
   sentinel="/tmp/pre-pr-gate-$receipt_key"
-  if [ -f "$sentinel" ]; then
+  if [ -z "$receipt_key" ]; then
+    : # already reported above; skip the sentinel/trace checks below, nothing meaningful to compare
+  elif [ -f "$sentinel" ]; then
     printf 'INFO  a receipt sentinel is still present — the gate has not yet been asked to unlock (run gh pr create inside the sandbox session), or the last run was denied\n'
   else
     printf 'PASS  no leftover receipt sentinel — consistent with a consumed, successful pass\n'

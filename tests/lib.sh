@@ -108,27 +108,52 @@ branch_key_for() {
   branch="$(git -C "$1" branch --show-current 2>/dev/null)"
   printf '%s' "$branch" | LC_ALL=C tr -c 'A-Za-z0-9._-' '-'
 }
+# dir #80: the RAW (unsanitized) current branch of dir $1 — mirrors the production file's own
+# `_branch_raw_for`. Needed separately from branch_key_for's sanitized slug because the hash below
+# must hash the RAW branch, not the (lossy) slug — see receipt_hash_for's own comment.
+branch_raw_for() { git -C "$1" branch --show-current 2>/dev/null; }
+# dir #80 (this ticket's own /code-review high finding): mirrors the production file's own
+# `_receipt_key_hash` byte-for-byte — a plain "$repo-$branch" string join is ambiguous (both halves
+# routinely contain '-'), and the sanitized branch slug alone is lossy (`branch_key_for`'s tr-to-'-'
+# collapses distinct branches like "feature/foo" and "feature-foo" to the same string) — hashing the
+# RAW (repo-key, branch) pair sidesteps both. Kept in sync manually with production, same rationale
+# as branch_key_for's own comment (these fixtures build the EXPECTED path independently of the code
+# under test, not by invoking it).
+receipt_hash_for() { printf '%s\x1f%s' "$1" "$2" | cksum | tr -cd '0-9'; }
 # dir #80: sentinel/prev-sentinel/hand-off are now keyed by (repo, branch), not repo alone — every
-# caller below keys off THIS pairing. For the dir #61 worktree tests, where the correct key mixes the
-# MAIN checkout's repo component with the WORKTREE's own branch component, use `real_key_for` instead
-# (below) — sentinel_for/prev_sentinel_for/handoff_for, called on a single dir, only ever combine that
-# SAME dir's own repo+branch, which is right for every non-worktree fixture but wrong for a worktree
-# one (see the dir #61 test section's own comments for why).
-sentinel_for() { printf '/tmp/pre-pr-gate-%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$1")"; }
+# caller below keys off THIS pairing (`<repo>-<hash>-<slug>`, matching production's `$RECEIPT_KEY`
+# format). For the dir #61 worktree tests, where the correct key mixes the MAIN checkout's repo
+# component with the WORKTREE's own branch component, use `real_key_for` instead (below) —
+# sentinel_for/prev_sentinel_for/handoff_for, called on a single dir, only ever combine that SAME
+# dir's own repo+branch, which is right for every non-worktree fixture but wrong for a worktree one
+# (see the dir #61 test section's own comments for why).
+combined_key_for() {
+  local rk; rk="$(repo_key_for "$1")"
+  printf '%s-%s-%s' "$rk" "$(receipt_hash_for "$rk" "$(branch_raw_for "$1")")" "$(branch_key_for "$1")"
+}
+sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(combined_key_for "$1")"; }
 # dir #72: the single-slot backup `retire_sentinel()`/`init` write on every sentinel invalidation —
 # `receipt --recover` reads it.
-prev_sentinel_for() { printf '/tmp/pre-pr-gate-prev-%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$1")"; }
+prev_sentinel_for() { printf '/tmp/pre-pr-gate-prev-%s' "$(combined_key_for "$1")"; }
 # dir #80: the REAL (repo, branch) key as production resolves it when the two halves come from
 # DIFFERENT checkouts of the same repo — $1 = the repo dir (pass the MAIN checkout when it differs
 # from where the branch was read), $2 = the dir whose OWN current branch is the branch component (a
 # worktree's own branch, not its main checkout's — each worktree has an independent checked-out
 # branch by git's own design, so _repo_key's worktree-redirection has no equivalent on the branch
 # side to undo).
-real_key_for() { printf '%s-%s' "$(repo_key_for "$1")" "$(branch_key_for "$2")"; }
+real_key_for() {
+  local rk; rk="$(repo_key_for "$1")"
+  printf '%s-%s-%s' "$rk" "$(receipt_hash_for "$rk" "$(branch_raw_for "$2")")" "$(branch_key_for "$2")"
+}
 # dir #80: the real sentinel path for a (repo dir, branch-source dir) pair — wraps real_key_for the
 # same way sentinel_for wraps the single-dir key, so the dir #61 worktree tests build the path once
 # instead of re-typing the `/tmp/pre-pr-gate-` prefix at every call site.
 real_sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(real_key_for "$1" "$2")"; }
+# dir #63/#80: the hand-off note's own file, keyed the same way as the sentinel. Lives here next to
+# sentinel_for/real_sentinel_for (this ticket's own /code-review found the naive handoff_for had
+# drifted into test_pre_pr_gate.sh instead, duplicating this same composition a third time).
+handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(combined_key_for "$1")"; }
+real_handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(real_key_for "$1" "$2")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the

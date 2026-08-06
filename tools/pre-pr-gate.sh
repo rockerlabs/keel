@@ -305,18 +305,37 @@ _repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
 # [A-Za-z0-9._-] (branch names routinely contain '/') becomes '-'. LC_ALL=C keeps this a plain ASCII
 # whitelist regardless of the invoking locale's character classes. Takes the branch NAME as a string
 # (not a cwd) — hook mode already has one resolved (an explicit --head, or a fork it already paid for)
-# and must not re-derive it via a second git call just to sanitize it.
+# and must not re-derive it via a second git call just to sanitize it. LOSSY by design (many branch
+# names can sanitize to the same slug, e.g. "feature/foo" and "feature-foo" both become
+# "feature-foo") — never used alone to key uniqueness on; see _receipt_key_hash below, which hashes
+# the RAW branch instead.
 _sanitize_branch() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '-'; }
 
-# The CURRENT branch of cwd $1, sanitized — empty on a detached HEAD (no current branch; a fresh
-# `git init` with no commits still reports its unborn default branch, so this is empty only on a true
-# detached checkout). Writer-side callers (_require_receipt_key, below) treat empty as fatal.
+# The CURRENT branch of cwd $1, RAW (unsanitized) — empty on a detached HEAD (no current branch; a
+# fresh `git init` with no commits still reports its unborn default branch, so this is empty only on
+# a true detached checkout).
+_branch_raw_for() { git -C "${1:-.}" branch --show-current 2>/dev/null; }
+
+# The CURRENT branch of cwd $1, sanitized — empty on a detached HEAD. Writer-side callers
+# (_require_receipt_key, below) treat empty as fatal.
 _branch_slug_for() {
-  local cwd="${1:-.}" branch
-  branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
-  [ -n "$branch" ] || return 0
-  _sanitize_branch "$branch"
+  local raw; raw="$(_branch_raw_for "$1")"
+  [ -n "$raw" ] || return 0
+  _sanitize_branch "$raw"
 }
+
+# dir #80 (found by this ticket's own /code-review high pass): an unambiguous fingerprint of the
+# (repo-key, RAW branch) pair $1/$2 — NOT a naive "$1-$2" string join, which is ambiguous: repo-key
+# "foo-bar" + branch "baz" and repo-key "foo" + branch "bar-baz" both join to the identical string
+# "foo-bar-baz" (both components routinely contain '-'). Hashing the RAW branch, not the sanitized
+# slug, also sidesteps _sanitize_branch's own collapse (see its comment) — two branches that sanitize
+# identically still hash differently as long as their raw names differ. \x1f (Unit Separator) joins
+# the two inputs before hashing: neither a directory basename nor a git branch name can contain a
+# control character, so this join is unambiguous even before the hash reduces it further. `cksum |
+# tr -cd '0-9'` is the SAME house pattern keel-check.sh/keel-check-gate.sh already use to turn an
+# arbitrary string into a filename-safe key — same 32-bit-CRC collision-risk tolerance this codebase
+# already accepts elsewhere for the identical purpose.
+_receipt_key_hash() { printf '%s\x1f%s' "$1" "$2" | cksum | tr -cd '0-9'; }
 
 # dir #80: repo + branch, combined into the key every writer-side per-run file (sentinel,
 # prev-sentinel, hand-off) is now keyed by, so two worktrees of the same repo on DIFFERENT branches no
@@ -326,16 +345,19 @@ _branch_slug_for() {
 # caller carry on keying onto "-"). NOT used for trace_path_for/rollout_state_path — those stay
 # per-repo, see their own definitions just below. Also sets $RECEIPT_REPO_KEY (the repo-only half it
 # already computed along the way) so a caller needing BOTH — the `keys` subcommand below — doesn't
-# pay for a second `_repo_key` fork just to get the piece this call already resolved.
+# pay for a second `_repo_key` fork just to get the piece this call already resolved. $RECEIPT_KEY
+# itself is `<repo-key>-<hash>-<branch-slug>`: only the hash is load-bearing for uniqueness (see
+# _receipt_key_hash above) — the surrounding repo-key/slug are cosmetic, kept so a human glancing at
+# /tmp can still tell which repo/branch a sentinel belongs to.
 _require_receipt_key() {
-  local cwd="${1:-$PWD}" bs
-  bs="$(_branch_slug_for "$cwd")"
-  if [ -z "$bs" ]; then
+  local cwd="${1:-$PWD}" raw
+  raw="$(_branch_raw_for "$cwd")"
+  if [ -z "$raw" ]; then
     printf 'pre-pr-gate: cannot key the receipt — detached HEAD; check out the PR branch first\n' >&2
     exit 1
   fi
   RECEIPT_REPO_KEY="$(_repo_key "$cwd")"
-  RECEIPT_KEY="${RECEIPT_REPO_KEY}-$bs"
+  RECEIPT_KEY="${RECEIPT_REPO_KEY}-$(_receipt_key_hash "$RECEIPT_REPO_KEY" "$raw")-$(_sanitize_branch "$raw")"
 }
 
 # dir #72 finding #7: plain string-building, no `_repo_key` fork of their own — callers that already
@@ -378,8 +400,12 @@ handoff_path()   { printf '/tmp/pre-pr-gate-handoff-%s' "$RECEIPT_KEY"; }
 # real call site below passes it; the fallback (key derived fresh from `$cwd` when $3 is omitted) is a
 # defensive last resort, not a path any current caller exercises.
 retire_sentinel() {
-  local sentinel="$1" cwd="${2:-$PWD}" key="${3:-}" prev sha
-  [ -n "$key" ] || key="$(_repo_key "$cwd")-$(_branch_slug_for "$cwd")"
+  local sentinel="$1" cwd="${2:-$PWD}" key="${3:-}" prev sha rk raw
+  if [ -z "$key" ]; then
+    rk="$(_repo_key "$cwd")"
+    raw="$(_branch_raw_for "$cwd")"
+    key="${rk}-$(_receipt_key_hash "$rk" "$raw")-$(_sanitize_branch "$raw")"
+  fi
   if [ -f "$sentinel" ]; then
     prev="$(_prev_sentinel_path_for_key "$key")"
     if mv -f "$sentinel" "$prev" 2>/dev/null; then
@@ -984,18 +1010,32 @@ deny() {
 # dir #80: resolve the branch this PR is actually FOR — same priority order as the --head-aware SHA
 # check further down (dir #61), resolved here too since the sentinel/prev-sentinel key now needs it.
 # (a) an explicit --head/-H (or `gh api -f head=`) already named it — strip a cross-fork owner prefix,
-# same as the SHA check's own target_ref does; (b) else the event cwd's own current branch; (c) else
-# the hook cannot key the receipt at all — DENY naming the fix, rather than silently keying onto a
-# wrong/empty branch. The message names the actual problem (branch resolution), not "run /polish
-# again" — the old generic message sent the felt dir #80 incidents into 4-5 blind retries that never
-# addressed the real cause.
-resolved_branch="${head_branch##*:}"
-[ -n "$resolved_branch" ] || resolved_branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
-if [ -z "$resolved_branch" ]; then
-  log_event receipt-deny "no-branch-resolved" "$cwd"
-  deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+# same as the SHA check's own target_ref does. A malformed --head that strips to EMPTY (a bare
+# "owner:" with nothing after the colon) denies immediately here rather than falling through to (b)
+# — an explicit-but-broken --head must not be silently reinterpreted as "no --head was given at all"
+# (found by this ticket's own /code-review high pass: a single blanket `[ -n "$x" ] || fallback`
+# used to conflate the two, so a malformed --head could key onto the WRONG branch — cwd's own —
+# instead of failing the way a bare `git rev-parse ""` used to fail closed before dir #80). (b) no
+# --head at all → the event cwd's own current branch. (c) either path finding nothing — DENY naming
+# the fix, rather than silently keying onto a wrong/empty branch. The message names the actual
+# problem (branch resolution), not "run /polish again" — the old generic message sent the felt dir
+# #80 incidents into 4-5 blind retries that never addressed the real cause.
+if [ -n "$head_branch" ]; then
+  resolved_branch="${head_branch##*:}"
+  if [ -z "$resolved_branch" ]; then
+    log_event receipt-deny "malformed-head" "$cwd"
+    deny "Pre-PR gate: --head value '$head_branch' has no branch name after stripping the owner prefix — check the gh pr create invocation."
+  fi
+else
+  resolved_branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
+  if [ -z "$resolved_branch" ]; then
+    log_event receipt-deny "no-branch-resolved" "$cwd"
+    deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+  fi
 fi
-receipt_key="${wt}-$(_sanitize_branch "$resolved_branch")"
+# dir #80 (code-review fix): hash the (repo, branch) pair rather than a naive '-' join — see
+# _receipt_key_hash's own comment (above) for why a plain string join is ambiguous.
+receipt_key="${wt}-$(_receipt_key_hash "$wt" "$resolved_branch")-$(_sanitize_branch "$resolved_branch")"
 sentinel="/tmp/pre-pr-gate-$receipt_key"
 
 if [ ! -f "$sentinel" ]; then
