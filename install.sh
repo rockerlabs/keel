@@ -21,6 +21,8 @@
 #   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
 #   install.sh --link          linked mode: symlinks + one @import line (Claude Code; keep this clone)
 #   install.sh --home DIR      bootstrap into DIR (for a non-Claude-Code harness)
+#   install.sh --codex         generate ~/.codex/AGENTS.md (copy mode; --home overrides the default
+#                              home; errors combined with --link — Codex reads no @import mechanism)
 #   install.sh --no-hooks      skip the global secret-guard step (wire it yourself)
 #   install.sh --no-git        linked mode: trim the code/git rails from the always-on core (for a
 #                              machine with NO git projects; sticky — plain re-runs keep the trim)
@@ -56,6 +58,8 @@ Usage:
   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
   install.sh --link          linked mode: symlinks + one @import line (Claude Code; keep this clone)
   install.sh --home DIR      bootstrap into DIR (for a non-Claude-Code harness)
+  install.sh --codex         generate ~/.codex/AGENTS.md — the global always-on file Codex reads
+                             verbatim (copy mode; --home overrides the default; --codex + --link errors)
   install.sh --no-hooks      skip the global secret-guard step (wire it yourself)
   install.sh --no-git        linked mode: trim the code/git rails from the always-on core (for a
                              machine with NO git projects; sticky — plain re-runs keep the trim)
@@ -69,6 +73,7 @@ DO_HOOKS=1
 LINK=0
 NOGIT=0
 WITHGIT=0
+CODEX=0
 EPHEMERAL="${KEEL_EPHEMERAL:-0}"   # env, not a flag: an internal bootstrap→install signal (see header)
 
 while [ "$#" -gt 0 ]; do
@@ -78,21 +83,37 @@ while [ "$#" -gt 0 ]; do
     --link) LINK=1 ;;
     --no-git) NOGIT=1 ;;
     --with-git) WITHGIT=1 ;;
+    --codex) CODEX=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "install: unknown argument '$1' (try --help)" >&2; exit 2 ;;
   esac
   shift
 done
 
-# Default to $HOME/.claude only if neither KEEL_HOME nor --home was given — so those callers never
-# need $HOME (and `set -u` won't abort when it's unset). Require $HOME only when we actually fall back.
-: "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/.claude}"
+# --codex is copy-mode only — the @import line is a Claude Code mechanism (see header), and Codex
+# has no equivalent. Check the RAW flags here, before the linked-home auto-detect below can flip LINK.
+if [ "$CODEX" = 1 ] && [ "$LINK" = 1 ]; then
+  echo "install: --codex only supports the copy path (Codex reads no @import mechanism) — drop --link" >&2
+  exit 2
+fi
+
+# Default to $HOME/.claude ($HOME/.codex under --codex) only if neither KEEL_HOME nor --home was
+# given — so those callers never need $HOME (and `set -u` won't abort when it's unset). Require
+# $HOME only when we actually fall back.
+default_home_leaf=".claude"
+[ "$CODEX" = 1 ] && default_home_leaf=".codex"
+: "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/$default_home_leaf}"
+
+# CONTEXT_FILE — the harness's global always-loaded file name. Everywhere copy mode below writes or
+# mentions "the global context file", it routes through this instead of a hardcoded CLAUDE.md.
+CONTEXT_FILE="CLAUDE.md"
+[ "$CODEX" = 1 ] && CONTEXT_FILE="AGENTS.md"
 
 # Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES
 # back in as stale shadows — "git pull && ./install.sh" is exactly the muscle-memory the copy-mode
 # docs teach, so detect the linked layout and stay in linked mode. (-L, not -f: even a dangling
 # CORE.md link marks the home as linked — the re-run then heals it.)
-if [ "$LINK" = 0 ] && [ -L "$HOME_DIR/keel/CORE.md" ]; then
+if [ "$CODEX" = 0 ] && [ "$LINK" = 0 ] && [ -L "$HOME_DIR/keel/CORE.md" ]; then
   LINK=1
   echo "install: this home is a LINKED install — continuing in linked mode (as if --link was passed)"
 fi
@@ -102,7 +123,7 @@ fi
 # itself sticky: a plain re-run KEEPS the trim and refreshes it from the current CORE.md, so the
 # muscle-memory "git pull && install.sh --link" heals a stale trim instead of silently restoring the
 # git rails. Restoring is explicit: --with-git.
-if [ -f "$HOME_DIR/keel/CORE.md" ] && [ ! -L "$HOME_DIR/keel/CORE.md" ] \
+if [ "$CODEX" = 0 ] && [ -f "$HOME_DIR/keel/CORE.md" ] && [ ! -L "$HOME_DIR/keel/CORE.md" ] \
    && grep -q 'KEEL-NOGIT' "$HOME_DIR/keel/CORE.md" 2>/dev/null; then
   [ "$LINK" = 1 ] || echo "install: this home is a LINKED install — continuing in linked mode (as if --link was passed)"
   LINK=1
@@ -191,6 +212,34 @@ replace_core_block() {  # $1=file, optional $2 forwarded to strip_core_block
 # core_block FILE → the lines strictly between the markers (markers excluded — their comment text
 # legitimately differs). Mirror of block_of() in tests/test_core_wrapper_sync.sh — keep in sync.
 core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
+# refresh_core_block FILE — replace FILE's embedded KEEL-CORE block (markers included) with the
+# CURRENT shipped block from CORE.md — the same source the caller's own drift check (core_block
+# "$root/CORE.md") already compares against, so there is exactly one file this "is it stale"/"refresh
+# it" pair depends on, not two kept in sync only by test_core_wrapper_sync.sh's byte-equality pin.
+# The copy-mode analog of replace_core_block: that one migrates an embedded block to an @import line
+# (linked mode); this one keeps the block embedded, just refreshed (--codex currency — see header).
+# resolve_file first, same as replace_core_block: a dotfiles-managed FILE is a symlink, and writing
+# straight to it (atomic_write's mv would replace the link itself) would sever it instead of updating
+# the real target through the link.
+# ENVIRON, not -v: a -v value goes through awk's own escape processing, which would mangle a
+# multi-line block containing backslashes (same reason strip_git_blocks uses ENVIRON below).
+refresh_core_block() {
+  local file="$1" real fresh
+  real="$(resolve_file "$file")"
+  fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md")"
+  KEEL_FRESH_BLOCK="$fresh" awk '
+    /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
+    /KEEL-CORE-END/   { skip=0; next }
+    !skip
+  ' "$file" | atomic_write "$real"
+}
+# strip_template_prose — stdin → stdout, with the copy-path-only header prose removed: the
+# " (TEMPLATE)" tag suffix and the "> Copy this to your harness" line. Shared by both wrapper
+# generators below (linked mode's CLAUDE.md, --codex's AGENTS.md) — tests/test_install_link.sh pins
+# the exact source strings this targets, so a template reword fails loudly instead of no-oping here.
+strip_template_prose() {
+  sed -e 's/ (TEMPLATE)$//' -e '/^> Copy this to your harness/d'
+}
 # has_core_import FILE — THE definition of "the import line is wired". Claude Code treats an @path
 # anywhere in prose as an import, so the token may sit mid-line with text around it — an anchored
 # ^@…$ would call a working import unwired (and then append a duplicate). Verify uses this too, and
@@ -305,13 +354,22 @@ sync_product() {
   fi
 }
 
-# Detect a pre-existing CLAUDE.md that ISN'T Keel's core: we never clobber it, so the always-loaded
+# Detect a pre-existing context file that ISN'T Keel's core: we never clobber it, so the always-loaded
 # rails won't be merged in. Flag that in Verify instead of leaving it silent. Keel's core (and any file
 # derived from it) carries this heading; a foreign file won't.
 # (Copy mode only — linked mode has no such gap: the import line delivers the rails into any file.)
+# Also foreign if the heading is present but the KEEL-CORE-BEGIN marker isn't (hand-stripped, or a
+# foreign file that happens to reuse the phrase): a heading with no actual block is not Keel-managed
+# either — mode-agnostic, not just --codex, since codex_wrapper's drift check is the only caller that
+# currently acts on this (a heading-but-no-block CLAUDE.md would otherwise pass silently), but the
+# Verify WARN below should say so regardless of mode.
 foreign_core=0
-if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/CLAUDE.md" ] && ! grep -q 'always-loaded core' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
-  foreign_core=1
+if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/$CONTEXT_FILE" ]; then
+  if ! grep -q 'always-loaded core' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+    foreign_core=1
+  elif ! grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+    foreign_core=1
+  fi
 fi
 
 if [ "$LINK" = 1 ]; then
@@ -398,14 +456,13 @@ EOF
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
   gclaude="$HOME_DIR/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
-    # The sed strips/re-points TEMPLATE-only prose; tests/test_install_link.sh pins these exact
-    # strings in templates/CLAUDE.md, so a reword there fails loudly instead of no-oping here.
+    # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
+    # reword in templates/CLAUDE.md fails loudly instead of no-oping here.
     strip_core_block "$root/templates/CLAUDE.md" \
-      | sed -e 's/ (TEMPLATE)$//' \
-            -e '/^> Copy this to your harness/d' \
-            -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
+      | strip_template_prose \
+      | sed -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
             -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
-      > "$gclaude.keeltmp.$$" && mv -f "$gclaude.keeltmp.$$" "$gclaude"
+      | atomic_write "$gclaude"
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
     if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
@@ -452,8 +509,38 @@ EOF
     fi
   done
 else
-  # User-owned (never clobber) …
-  copy_gap "$root/templates/CLAUDE.md"    "$HOME_DIR/CLAUDE.md"
+  if [ "$CODEX" = 1 ]; then
+    # --codex: generate an AGENTS.md wrapper instead of a plain copy_gap of templates/CLAUDE.md — the
+    # (TEMPLATE) tag and "copy this" line are Claude-Code-copy-path prose that make no sense on a
+    # file install.sh itself generated (same strip_template_prose the linked-mode wrapper uses; no
+    # path-repoint needed here, FRAMEWORK.md/PRINCIPLES.md land at the same root-relative spot the
+    # template's map already names). User-owned outside the block (never clobbered past first
+    # install); the KEEL-CORE block itself gets a currency check on re-run — strictly better than
+    # copy-mode Claude gets today, but never a silent auto-refresh.
+    dest="$HOME_DIR/$CONTEXT_FILE"
+    if [ ! -f "$dest" ]; then
+      strip_template_prose < "$root/templates/CLAUDE.md" | atomic_write "$dest"
+      echo "  +    $CONTEXT_FILE (generated — embedded core, refreshed on drift)"
+    elif [ "$foreign_core" = 1 ]; then
+      echo "  =    $CONTEXT_FILE exists (left untouched — predates Keel, see Verify below)"
+    elif [ "$(core_block "$dest")" = "$(core_block "$root/CORE.md")" ]; then
+      echo "  =    $CONTEXT_FILE (up to date)"
+    elif [ -t 0 ]; then
+      echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
+      printf "       Replace just the block with the current shipped rails? [y/N] "
+      read -r reply || reply=""
+      case "$reply" in
+        [yY]|[yY][eE][sS]) refresh_core_block "$dest"; echo "  +    $CONTEXT_FILE core block refreshed" ;;
+        *)                 echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)" ;;
+      esac
+    else
+      echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
+      echo "       Refresh by hand: replace the KEEL-CORE block using $root/CORE.md as the source."
+    fi
+  else
+    # User-owned (never clobber) …
+    copy_gap "$root/templates/CLAUDE.md"  "$HOME_DIR/CLAUDE.md"
+  fi
   # … Keel-owned (offered for update on a drifted re-run).
   sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
   sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
@@ -467,7 +554,9 @@ copy_gap "$root/templates/IDEAS.md"     "$HOME_DIR/IDEAS.md"
 
 # Lifecycle commands — Claude Code reads them from <home>/commands/, so wire them too (never clobber).
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
-if [ -d "$root/commands" ]; then
+# Skipped under --codex: commands/ is Claude-format files in a dir Codex never reads (its skills live
+# at ~/.codex/skills/<name>/SKILL.md and convert per ADAPTING.md's note — not mechanized here).
+if [ "$CODEX" = 0 ] && [ -d "$root/commands" ]; then
   mkdir -p "$HOME_DIR/commands"
   for cmd in "$root"/commands/*.md; do
     [ -f "$cmd" ] || continue
@@ -540,7 +629,7 @@ missing=0
 if [ "$LINK" = 1 ]; then
   vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md IDEAS.md keel/CORE.md keel/FRAMEWORK.md keel/PRINCIPLES.md)
 else
-  vfiles=(CLAUDE.md INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
+  vfiles=("$CONTEXT_FILE" INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
 for f in "${vfiles[@]}"; do
   if [ -f "$HOME_DIR/$f" ]; then
@@ -613,15 +702,17 @@ fi
 # catching a silently-skipped wiring bug. WARN, not a hard fail: like doctor's own command-coverage
 # check (tools/doctor.sh, "missing commands are advisory"), a declined interactive drift prompt is a
 # legitimate reason the file might be an older copy, not a broken install.
-if [ -f "$HOME_DIR/commands/keel-setup.md" ] || [ -L "$HOME_DIR/commands/keel-setup.md" ]; then
-  echo "  OK   commands/keel-setup.md (the onboarding command the summary below tells you to run)"
-else
-  echo "  WARN commands/keel-setup.md is missing — the 'run /keel-setup' step below won't work."
+if [ "$CODEX" = 0 ]; then
+  if [ -f "$HOME_DIR/commands/keel-setup.md" ] || [ -L "$HOME_DIR/commands/keel-setup.md" ]; then
+    echo "  OK   commands/keel-setup.md (the onboarding command the summary below tells you to run)"
+  else
+    echo "  WARN commands/keel-setup.md is missing — the 'run /keel-setup' step below won't work."
+  fi
 fi
 
 if [ "$foreign_core" = 1 ]; then
-  echo "  WARN $HOME_DIR/CLAUDE.md predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
-  echo "       Merge the rails you want by hand:  diff $HOME_DIR/CLAUDE.md $root/templates/CLAUDE.md"
+  echo "  WARN $HOME_DIR/$CONTEXT_FILE predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
+  echo "       Merge the rails you want by hand:  diff $HOME_DIR/$CONTEXT_FILE $root/templates/CLAUDE.md"
 fi
 
 [ "$missing" = 0 ] || { echo "install: verification FAILED — core file(s) missing" >&2; exit 1; }
@@ -629,7 +720,7 @@ fi
 # Shared opening — the mode-specific middle differs below (clone handling, update, removal).
 # The guard sentence must match reality: after --no-hooks, a refused foreign hooksPath, or a wiring
 # failure, claiming "already guards your commits" tells an unprotected user they are protected.
-if [ "$LINK" = 1 ]; then mode_tag=" (linked mode)"; else mode_tag=""; fi
+if [ "$CODEX" = 1 ]; then mode_tag=" (codex preset)"; elif [ "$LINK" = 1 ]; then mode_tag=" (linked mode)"; else mode_tag=""; fi
 if [ "$guard_ok" = 1 ]; then
   guard_note="secret-guard already guards your commits."
 else
@@ -638,11 +729,17 @@ fi
 cat <<EOF
 
 Done$mode_tag. $guard_note Next:
+EOF
+if [ "$CODEX" = 1 ]; then
+  echo "  - $CONTEXT_FILE is read by Codex verbatim — nothing else to wire, no restart needed."
+else
+  cat <<EOF
   - EASIEST — restart Claude Code (commands load only at session start), then run  /keel-setup
     Machine setup works from ANYWHERE — no projects needed yet: it fills your machine details and
     the always-on ground rules. Later, run /keel-setup again INSIDE each project you want Keel on —
     that part drafts the project's CLAUDE.md from its code (you review).
 EOF
+fi
 if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   echo "  - the  keel  CLI is on  $HOME_DIR/bin  →  keel help  (install · sync · doctor · audit · init · check · uninstall)"
   case ":${PATH:-}:" in
@@ -650,11 +747,22 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     *) echo "    (add it to PATH:  export PATH=\"$HOME_DIR/bin:\$PATH\"  — or keep using the tools by path)" ;;
   esac
 fi
-if [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then
+if [ "$CODEX" = 0 ] && [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then
   echo "  - /polish shipped, its gate did NOT — opt in per project:  tools/install-pre-pr-gate.sh <repo>"
   echo "    (blocks the agent's own gh pr create until /polish runs clean; your own terminal is never gated)"
 fi
-if [ "$LINK" = 1 ]; then
+if [ "$CODEX" = 1 ]; then
+  cat <<EOF
+  - $CONTEXT_FILE is a real file, edited in place — Codex reads it with no import mechanism (that's a
+    Claude Code thing). Update later: re-run the install (the one-liner, or  git pull && ./install.sh
+    --codex --home "$HOME_DIR"  from a kept checkout) — refreshes FRAMEWORK.md/PRINCIPLES.md and offers
+    to refresh the KEEL-CORE block if it drifted from a newer release; your edits outside the block are
+    always kept.
+  - commands/ was NOT wired — Codex reads skills from  ~/.codex/skills/<name>/SKILL.md  instead; see
+    ADAPTING.md for the (manual, 1:1) conversion note.
+  - edit  $HOME_DIR/$CONTEXT_FILE  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md  private.
+EOF
+elif [ "$LINK" = 1 ]; then
   cat <<EOF
   - This clone IS the installation — everything points into it, so never delete it, and park it
     somewhere permanent BEFORE re-running (moving it later dangles every link).
