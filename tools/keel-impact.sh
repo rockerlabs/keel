@@ -612,11 +612,20 @@ cmd_add() {
   #
   # This narrows the race window from the WHOLE ingest loop (T0 read through this mv — can span
   # however long citation-matching/age-cap logic takes) down to just the fresh-read-here through mv
-  # gap, microseconds wide. Accepted residuals, not fixed by this: (a) an append landing inside THAT
-  # narrower gap can still be lost — revisit only if ever actually felt, not speculatively; (b) two
-  # concurrent `add` runs from the SAME session/key can still double-count the same events —
-  # pre-existing, operator error, out of scope (cross-SESSION double-count is what dir #74's claim
-  # keys already prevent; this is a same-key race, a different problem).
+  # gap, microseconds wide. Accepted residuals, not fixed by this (found by this ticket's own
+  # independent review pass): (a) an append landing inside THAT narrower gap can still be lost —
+  # revisit only if ever actually felt, not speculatively; (b) TWO CONCURRENT `add` invocations
+  # (any keys, not only the same one) racing their OWN fresh-read-then-mv against each other — dir
+  # #74's claim keys prevent cross-session MISATTRIBUTION (session B never scores session A's
+  # own-key events as its own), but they do NOT make this file's mutation safe under two independent
+  # rewrites: if B's fresh read happens before A's mv lands, B's own subtraction is computed against
+  # a log that still contains the lines A is about to remove; if B's mv then lands AFTER A's, it
+  # resurrects those already-consumed lines (a later `add`, by anyone, re-ingests them as new —
+  # genuine double-counting into a second ledger row, not just a scoring mixup). This is the
+  # "dominant part of add-vs-add" the resolved design (BACKLOG.md dir #82) already flagged as
+  # narrowed-not-closed by the subtractive approach alone; a real fix needs mutual exclusion around
+  # the whole read-decide-rewrite sequence (the lockdir option the design explicitly deferred, for
+  # the reasons given there) — out of scope for this ticket, revisit if ever actually felt.
   # Test-only injection point (tests/test_keel_impact.sh): when set, append its value verbatim as one
   # log line immediately before the rewrite's fresh read — simulating a concurrent producer's plain
   # `>>` append landing in the T0-read-to-mv window this ticket exists to protect. Appended literally,

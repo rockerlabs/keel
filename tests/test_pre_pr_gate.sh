@@ -1086,4 +1086,32 @@ run_in "$d" bash "$gate" init
 check_status "init on a detached HEAD → exit 1" 1 "$STATUS"
 check_contains "init on a detached HEAD → names the cause" "$OUT" "detached HEAD"
 
+# 65. Every OTHER writer-side subcommand that keys off _require_receipt_key also hard-errors on a
+# detached HEAD — not just `init` (test 64). Each one is an independent call site to
+# `_require_receipt_key`; a future edit that accidentally wraps one of them in `$(...)` (the exact
+# footgun this ticket's own design comment warns about — an `exit 1` inside a captured subshell only
+# kills the subshell, silently leaving an empty key) would otherwise go uncaught (found by this
+# ticket's own independent review pass).
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+git -C "$d" checkout -q --detach >/dev/null 2>&1
+run_in "$d" bash "$gate" receipt polish.1-diff
+check_status "receipt on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "receipt on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run_in "$d" bash "$gate" receipt --recover
+check_status "receipt --recover on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "receipt --recover on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run_in "$d" bash "$gate" handoff medium "$sha"
+check_status "handoff on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "handoff on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run_in "$d" bash "$gate" handoff-check
+check_status "handoff-check on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "handoff-check on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run "$gate" receipt-key "$d"
+check_status "receipt-key on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "receipt-key on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+run "$gate" keys "$d"
+check_status "keys on a detached HEAD → exit 1" 1 "$STATUS"
+check_contains "keys on a detached HEAD → names the cause" "$OUT" "detached HEAD"
+
 summary
