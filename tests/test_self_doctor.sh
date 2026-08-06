@@ -184,11 +184,14 @@ d="$(mk_clean_repo)"
 run "$sd" "$d" --quiet
 check_status "no BACKLOG.md at all -> exit 0" 0 "$STATUS"
 
-# a heading with no ✅/⏳/RETRACTED tag whose own body already records closure -> GAP
+# a heading with no ✅/⏳/RETRACTED tag whose own body already records closure -> WARN, not GAP:
+# operator-run /code-review medium found this bug class is explicitly documented as low-severity
+# by the ticket that implements it (dir #87 itself), and a hard GAP would fail this very smoke
+# test (and block /polish step 7) the moment ANY dir-ticket heading anywhere goes stale.
 d="$(mk_clean_repo)"
 printf '### dir #1 — some ticket — R2\n\n✅ CLOSED (2026-01-01, PR #1) — done.\n' > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
-check_status "stale heading tag -> exit 1" 1 "$STATUS"
+check_status "stale heading tag is advisory only -> exit 0" 0 "$STATUS"
 check_contains "reports the stale ticket id" "$OUT" "dir #1's heading tag looks stale"
 
 # the SAME heading already carrying its own tag (✅/⏳/RETRACTED) is not re-flagged even though the
@@ -196,7 +199,16 @@ check_contains "reports the stale ticket id" "$OUT" "dir #1's heading tag looks 
 d="$(mk_clean_repo)"
 printf '### dir #2 — some ticket — R4 — ✅ CLOSED (2026-01-01, PR #2)\n\nCLOSED — done.\n' > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
-check_status "already-tagged heading is clean -> exit 0" 0 "$STATUS"
+check_absent "already-tagged heading is not flagged" "$OUT" "dir #2's heading tag looks stale"
+
+# operator-run /code-review medium: a heading whose TITLE merely contains "RETRACTED" as prose
+# (not a real status tag) must not be treated as already-tagged — the tag check needs the same
+# \b word boundary the body check already has, or it silently swallows a genuinely stale heading.
+d="$(mk_clean_repo)"
+printf '### dir #6 — investigate whether the RETRACTED ticket process needs revisiting — R1\n\n✅ CLOSED (2026-01-01, PR #6) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "RETRACTED as title prose doesn't count as a tag" "$OUT" "dir #6's heading tag looks stale"
 
 # an untagged heading whose body only mentions CLOSED/DONE/RETRACTED inside inline code (a prose
 # example of the pattern itself, not a real status note — dir #87's own body does exactly this)
@@ -207,13 +219,22 @@ printf '### dir #3 — some ticket — R1\n\nsee `✅ CLOSED (PR #…)` for the 
 run "$sd" "$d" --quiet
 check_status "backtick-quoted example text is not a false positive -> exit 0" 0 "$STATUS"
 
+# operator-run /code-review medium: the same false-positive guard must hold for a MULTI-LINE
+# fenced ``` code block quoting the pattern (a spec-heavy ticket documenting its own convention),
+# not just single-line backtick spans.
+d="$(mk_clean_repo)"
+printf '### dir #7 — some ticket — R1\n\nsee the shape below:\n\n```\n✅ CLOSED (PR #…)\n```\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "fenced-code-block example text is not a false positive -> exit 0" 0 "$STATUS"
+
 # body text below an untagged heading must not leak past a `## ` section boundary into a LATER
 # heading's own body span.
 d="$(mk_clean_repo)"
 printf '### dir #4 — untagged ticket — R1\n\nnothing closed here.\n\n## Recently closed\n\n- ✅ 2026-01-01 dir #4 CLOSED — done.\n' \
   > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
-check_status "a ## section boundary stops the body scan -> exit 0" 0 "$STATUS"
+check_absent "a ## section boundary stops the body scan" "$OUT" "dir #4's heading tag looks stale"
 
 # a BACKLOG.md with NO trailing newline on its last line must neither crash (an unguarded `while
 # read` drops an unterminated last line, desyncing the line-number and content arrays) nor silently
@@ -221,7 +242,7 @@ check_status "a ## section boundary stops the body scan -> exit 0" 0 "$STATUS"
 d="$(mk_clean_repo)"
 printf '### dir #5 — some ticket — R1\n\n✅ CLOSED (2026-01-01, PR #5) — done.' > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
-check_status "no trailing newline doesn't crash, still catches the stale heading -> exit 1" 1 "$STATUS"
-check_contains "reports the stale ticket id from the no-trailing-newline file" "$OUT" "dir #5's heading tag looks stale"
+check_status "no trailing newline doesn't crash -> exit 0" 0 "$STATUS"
+check_contains "still catches the stale heading from the no-trailing-newline file" "$OUT" "dir #5's heading tag looks stale"
 
 summary

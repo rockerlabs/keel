@@ -17,7 +17,7 @@
 #   WARN  a tools/*.sh script has no reference anywhere (commands/, tests/, install.sh, docs/, CI)
 #   WARN  a tools/*.sh script has no test coverage in tests/
 #   WARN  CHANGELOG.md predates the most recent commands/, tools/, or install.sh change
-#   GAP   BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
+#   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -223,25 +223,34 @@ if [ -f "$backlog_file" ]; then
   boundary_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do boundary_lines+=("$ln"); done \
     < <(grep -nE '^#{2,3} ' "$backlog_file" | cut -d: -f1)
-  # Strip inline-code spans ONCE for the whole file, not per heading (a several-thousand-line
-  # BACKLOG.md with dozens of headings would otherwise re-scan the file's tail from every heading's
-  # own sed call, O(headings x file length) instead of O(file length)). The stripped copy is what
-  # both the heading-tag check and the body-content check read below — the ticket that documents
-  # this very pattern (dir #87) quotes `✅ CLOSED (PR #…)` and `` `CLOSED`/`DONE`/`RETRACTED` `` as
-  # prose examples, not a real status, so without stripping the check would flag its own ticket.
+  # Strip inline-code spans (single-backtick AND fenced ``` blocks) ONCE for the whole file, not
+  # per heading (a several-thousand-line BACKLOG.md with dozens of headings would otherwise
+  # re-scan the file's tail from every heading's own sed call, O(headings x file length) instead
+  # of O(file length)). A fenced block's lines are blanked, not deleted, so line numbers stay
+  # aligned with heading_lines/boundary_lines (both found from the ORIGINAL file). The stripped
+  # copy is what both the heading-tag check and the body-content check read below — the ticket
+  # that documents this very pattern (dir #87) quotes `✅ CLOSED (PR #…)`, `` `CLOSED`/`DONE`/
+  # `RETRACTED` ``, and a fenced example of the whole convention as prose, not a real status, so
+  # without stripping BOTH forms the check would flag its own ticket.
   stripped_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do stripped_lines+=("$ln"); done \
-    < <(sed -E 's/`[^`]*`//g' "$backlog_file")
+    < <(awk '/^```/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$backlog_file" \
+        | sed -E 's/`[^`]*`//g')
   # Derived from the same array the check actually reads, not `wc -l` (which undercounts a file
   # with no trailing newline the same way an unguarded `while read` would).
   total_lines="${#stripped_lines[@]}"
   if [ "${#heading_lines[@]}" -gt 0 ]; then
     for start in "${heading_lines[@]}"; do
       heading_line="${stripped_lines[$((start - 1))]}"
-      # already carries its own status marker -> nothing to cross-check
-      case "$heading_line" in
-        *"✅"*|*"⏳"*|*RETRACTED*) continue ;;
-      esac
+      # already carries its own status marker -> nothing to cross-check. ✅/⏳ are unambiguous
+      # single-purpose glyphs, safe to match bare; RETRACTED is an ordinary word, so it only
+      # counts as a TAG when it follows the "— " separator every real tag does (`— RETRACTED
+      # (date, reason)`, `— R4 — RETRACTED`) — a bare `\bRETRACTED\b` would also match the word
+      # showing up as plain prose inside a heading's own title (e.g. a ticket titled "...whether
+      # the RETRACTED ticket process needs revisiting..."), wrongly treating it as already-tagged.
+      if printf '%s' "$heading_line" | grep -qE '✅|⏳|— RETRACTED\b'; then
+        continue
+      fi
       end="$total_lines"
       if [ "${#boundary_lines[@]}" -gt 0 ]; then
         for bl in "${boundary_lines[@]}"; do
@@ -253,8 +262,7 @@ if [ -f "$backlog_file" ]; then
       fi
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
-      body=""
-      for ((k = body_start; k <= end; k++)); do body+="${stripped_lines[$((k - 1))]}"$'\n'; done
+      body="$(printf '%s\n' "${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")"
       if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
         # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
         # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
@@ -262,7 +270,12 @@ if [ -f "$backlog_file" ]; then
         id_re='dir #[0-9]+'
         id="dir #?"
         [[ "$heading_line" =~ $id_re ]] && id="${BASH_REMATCH[0]}"
-        gap "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
+        # WARN, not GAP: the ticket this implements (dir #87) explicitly calls this bug class
+        # "Low-severity (cosmetic ... nobody re-opened stale work)" — a hard exit-1 would fail
+        # test_self_doctor.sh's real-checkout smoke test (and block /polish step 7) the moment
+        # ANY dir-ticket heading anywhere goes stale, for reasons unrelated to whatever diff is
+        # actually being polished.
+        warn "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
         stale=$((stale + 1))
       fi
     done
