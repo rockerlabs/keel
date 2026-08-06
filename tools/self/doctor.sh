@@ -208,16 +208,21 @@ say "● BACKLOG.md heading/status drift"
 backlog_file="$repo_root/BACKLOG.md"
 if [ -f "$backlog_file" ]; then
   stale=0
+  # `|| [ -n "$ln" ]` on every loop below: plain `while read` silently drops a final line that has
+  # no trailing newline — BACKLOG.md is a large, frequently hand/tool-edited file, so a future edit
+  # landing without one is realistic, not contrived. Without the guard, a heading on that dropped
+  # last line would either desync `stripped_lines` from `heading_lines` (an out-of-range array
+  # index — an unbound-variable abort under `set -u` on bash 3.2) or, more generally, just vanish
+  # from the content this check reads — a silent false negative on real staleness.
   heading_lines=()
-  while IFS= read -r ln; do heading_lines+=("$ln"); done \
+  while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
     < <(grep -nE '^### dir #[0-9]+ ' "$backlog_file" | cut -d: -f1)
   # Every ## or ### line, dir-heading or not — used to find where THIS heading's body ends (the
   # next section boundary of either level), so a body span never bleeds past a `## ` section
   # break (e.g. into the unrelated `## Recently closed` buffer that follows some dir tickets).
   boundary_lines=()
-  while IFS= read -r ln; do boundary_lines+=("$ln"); done \
+  while IFS= read -r ln || [ -n "$ln" ]; do boundary_lines+=("$ln"); done \
     < <(grep -nE '^#{2,3} ' "$backlog_file" | cut -d: -f1)
-  total_lines="$(wc -l < "$backlog_file")"
   # Strip inline-code spans ONCE for the whole file, not per heading (a several-thousand-line
   # BACKLOG.md with dozens of headings would otherwise re-scan the file's tail from every heading's
   # own sed call, O(headings x file length) instead of O(file length)). The stripped copy is what
@@ -225,8 +230,11 @@ if [ -f "$backlog_file" ]; then
   # this very pattern (dir #87) quotes `✅ CLOSED (PR #…)` and `` `CLOSED`/`DONE`/`RETRACTED` `` as
   # prose examples, not a real status, so without stripping the check would flag its own ticket.
   stripped_lines=()
-  while IFS= read -r ln; do stripped_lines+=("$ln"); done \
+  while IFS= read -r ln || [ -n "$ln" ]; do stripped_lines+=("$ln"); done \
     < <(sed -E 's/`[^`]*`//g' "$backlog_file")
+  # Derived from the same array the check actually reads, not `wc -l` (which undercounts a file
+  # with no trailing newline the same way an unguarded `while read` would).
+  total_lines="${#stripped_lines[@]}"
   if [ "${#heading_lines[@]}" -gt 0 ]; then
     for start in "${heading_lines[@]}"; do
       heading_line="${stripped_lines[$((start - 1))]}"

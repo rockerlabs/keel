@@ -215,4 +215,13 @@ printf '### dir #4 — untagged ticket — R1\n\nnothing closed here.\n\n## Rece
 run "$sd" "$d" --quiet
 check_status "a ## section boundary stops the body scan -> exit 0" 0 "$STATUS"
 
+# a BACKLOG.md with NO trailing newline on its last line must neither crash (an unguarded `while
+# read` drops an unterminated last line, desyncing the line-number and content arrays) nor silently
+# miss a stale heading whose own closure marker sits on that dropped last line.
+d="$(mk_clean_repo)"
+printf '### dir #5 — some ticket — R1\n\n✅ CLOSED (2026-01-01, PR #5) — done.' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "no trailing newline doesn't crash, still catches the stale heading -> exit 1" 1 "$STATUS"
+check_contains "reports the stale ticket id from the no-trailing-newline file" "$OUT" "dir #5's heading tag looks stale"
+
 summary
