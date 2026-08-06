@@ -9,6 +9,27 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **The pre-PR gate's receipt sentinel/prev-sentinel/hand-off files are now keyed by `(repo, branch)`
+  instead of repo alone, and `keel-impact.sh`'s shared event-log rewrite is now subtractive instead of
+  a snapshot write-back** (dir #80, dir #82). Concurrent `/polish` sessions on different branches of
+  the same repo used to race and wipe each other's receipts (felt on dir #62/#79's own `/polish` runs,
+  PRs #147 and #148) — `tools/pre-pr-gate.sh`'s `_require_receipt_key` now combines the repo key with
+  the invoking branch, hook mode resolving the branch via `--head`/`-f head=` first and falling back to
+  the event cwd's own checked-out branch, denying with an actionable message when neither resolves (a
+  malformed `--head` also now fails closed instead of silently keying onto the wrong branch).
+  `commands/polish.md` step 9 makes `--head <branch>` mandatory in `gh pr create`. Separately,
+  `tools/keel-impact.sh`'s `cmd_add` used to read the shared multi-worktree event log once, decide what
+  to ingest, then write back a snapshot of the survivors — blind to any line a concurrent producer
+  appended in between, silently discarding it. The rewrite is now subtractive: it re-reads the log
+  fresh at rewrite time and removes only the specific lines this run actually consumed, via a
+  byte-exact awk count-map, so a concurrent append now survives. Both an independent agent review and
+  an operator-run `/code-review high` pass ran on this diff; the operator pass found two critical,
+  empirically-verified bugs in the initial dir #80 implementation — a naive `"$repo-$branch"` string
+  join was ambiguous (two different `(repo, branch)` pairs could concatenate to the same key), and the
+  branch-name sanitizer collapsed distinct branches (`feature/foo` and `feature-foo` sanitized
+  identically) — both fixed by hashing the `(repo-key, raw branch)` pair via `cksum` (the same house
+  pattern `keel-check.sh`/`keel-check-gate.sh` already use) instead of naively joining sanitized
+  components.
 - **The pre-PR gate now mechanically checks step 5(a)'s MANDATORY review-reminder dialog, closing the
   gap dir #79 left as wording-only** (dir #88). That dialog ("agent review already ran — additionally
   run the stronger built-in `/code-review <level>`?") was silently skipped 3x in practice (felt on dir
