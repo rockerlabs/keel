@@ -8,6 +8,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **`tools/self/doctor.sh`'s CHANGELOG-staleness check no longer silently reports a false "OK" on a
+  repo with no commit history for `CHANGELOG.md`/`commands`/`tools`/`install.sh`.** `git log -1
+  --format=%ct -- <pathspec>` exits 0 with empty stdout (not an error) when no commit ever touched
+  that pathspec, so the existing `|| echo 0` fallback — which only catches a nonzero exit — never
+  fired, leaving the two timestamp variables empty and the `[ -gt ]` comparison throwing "integer
+  expression expected" to stderr while falling through to a false pass. Fixed via `${var:-0}`
+  parameter-expansion defaults, with a regression test covering an unhistoried repo. Low real-world
+  impact (the real keel checkout and CI both always have history for these paths) but a real
+  robustness gap for a fresh/partial checkout.
+
 ### Added
 - **The pre-PR gate's receipt sentinel/prev-sentinel/hand-off files are now keyed by `(repo, branch)`
   instead of repo alone, and `keel-impact.sh`'s shared event-log rewrite is now subtractive instead of
