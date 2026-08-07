@@ -22,18 +22,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   bare glyph/word showing up in a heading's own title text doesn't count as a tag. `BACKLOG.md` is
   gitignored and not every checkout carries one (a worktree, a fresh clone, most consumer
   projects) — a missing or unreadable file is a clean pass, not a finding. New test coverage in
-  `tests/test_self_doctor.sh` (13 scenarios). Caught one real, still-live instance on this run: dir
+  `tests/test_self_doctor.sh` (16 scenarios). Caught one real, still-live instance on this run: dir
   #75's own heading. **Documented, accepted residual limitations** (a cheap heuristic on free-form
   prose, not a parser): a body line cross-referencing a *different* ticket's status, or negating its
   own ("NOT DONE yet"), can still false-positive; a wrong tag (heading says `⏳ IN FLIGHT` while the
   body says `✅ CLOSED`) isn't flagged, only a missing one, per the ticket's own scope; an unbalanced
   fence marker blanks the rest of the file. Review: independent agent (`medium`, 1 real bug fixed —
   an unguarded `while read` silently dropping a file's final line if it lacked a trailing newline) +
-  6 rounds of operator-run `/code-review medium` (8 more real bugs found and fixed — the GAP/WARN
-  severity mismatch, a fenced-code-block content gap, a RETRACTED word-boundary gap, heading/
-  boundary detection reading the raw file instead of the fence-blanked copy, a too-narrow fence
-  regex, an unreadable-file crash, and an asymmetric ✅/⏳ tag-detection gap; one attempted fix — a
-  same-line cross-reference filter — was itself found to introduce two worse bugs and reverted
+  6 rounds of operator-run `/code-review medium` (7 more real bugs found and fixed across 4 of those
+  rounds — the GAP/WARN severity mismatch, a fenced-code-block content gap, a RETRACTED
+  word-boundary gap, heading/boundary detection reading the raw file instead of the fence-blanked
+  copy, a too-narrow fence regex, an unreadable-file crash, and an asymmetric ✅/⏳ tag-detection
+  gap; a separate attempted fix — a same-line cross-reference filter, tried in one round — was
+  itself found to introduce two worse bugs the very next round and reverted
   rather than patched further).
 
 - **The pre-PR gate's receipt sentinel/prev-sentinel/hand-off files are now keyed by `(repo, branch)`
