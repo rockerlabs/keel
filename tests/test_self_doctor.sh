@@ -197,4 +197,141 @@ check_contains "non-quiet shows OK lines" "$OUT" "  OK "
 run "$sd" "$d" --quiet
 check_absent "quiet suppresses OK lines" "$OUT" "  OK "
 
+# --- 6. BACKLOG.md heading/status drift (dir #87) ---------------------------------------------------
+# BACKLOG.md is gitignored — mk_clean_repo never creates one, so its absence must be a clean pass,
+# not a crash or a false GAP.
+d="$(mk_clean_repo)"
+run "$sd" "$d" --quiet
+check_status "no BACKLOG.md at all -> exit 0" 0 "$STATUS"
+
+# a sixth /code-review medium round found an unreadable (but present) BACKLOG.md aborted the
+# ENTIRE doctor.sh run under set -euo pipefail, not just this one check — root always reads
+# regardless of chmod, so this only proves anything as non-root (same guard this project's own
+# CLAUDE.md documents for a similar Alpine/root trap elsewhere).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mk_clean_repo)"
+  printf '### dir #16 — some ticket — R1\n\n✅ CLOSED (2026-01-01, PR #16) — done.\n' > "$d/BACKLOG.md"
+  chmod 000 "$d/BACKLOG.md"
+  run "$sd" "$d" --quiet
+  check_status "an unreadable BACKLOG.md doesn't abort the whole run -> exit 0" 0 "$STATUS"
+  chmod 644 "$d/BACKLOG.md"
+fi
+
+# a heading with no ✅/⏳/RETRACTED tag whose own body already records closure -> WARN, not GAP:
+# operator-run /code-review medium found this bug class is explicitly documented as low-severity
+# by the ticket that implements it (dir #87 itself), and a hard GAP would fail this very smoke
+# test (and block /polish step 7) the moment ANY dir-ticket heading anywhere goes stale.
+d="$(mk_clean_repo)"
+printf '### dir #1 — some ticket — R2\n\n✅ CLOSED (2026-01-01, PR #1) — done.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "stale heading tag is advisory only -> exit 0" 0 "$STATUS"
+check_contains "reports the stale ticket id" "$OUT" "dir #1's heading tag looks stale"
+
+# the SAME heading already carrying its own tag (✅/⏳/RETRACTED) is not re-flagged even though the
+# body also says CLOSED — the tag is the thing being checked, not a ban on the word appearing twice.
+d="$(mk_clean_repo)"
+printf '### dir #2 — some ticket — R4 — ✅ CLOSED (2026-01-01, PR #2)\n\nCLOSED — done.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "already-tagged heading is not flagged" "$OUT" "dir #2's heading tag looks stale"
+
+# operator-run /code-review medium: a heading whose TITLE merely contains "RETRACTED" as prose
+# (not a real status tag) must not be treated as already-tagged — the tag check needs the same
+# \b word boundary the body check already has, or it silently swallows a genuinely stale heading.
+d="$(mk_clean_repo)"
+printf '### dir #6 — investigate whether the RETRACTED ticket process needs revisiting — R1\n\n✅ CLOSED (2026-01-01, PR #6) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "RETRACTED as title prose doesn't count as a tag" "$OUT" "dir #6's heading tag looks stale"
+
+# a sixth /code-review medium round found the same gap was never extended to ✅/⏳: a heading
+# whose TITLE merely contains one of those glyphs as prose must not count as already-tagged either.
+d="$(mk_clean_repo)"
+printf '### dir #17 — decide on ✅ emoji conventions for status tags — R1\n\nRETRACTED (2026-01-01) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a bare ✅ in title prose doesn't count as a tag either" "$OUT" "dir #17's heading tag looks stale"
+
+# an untagged heading whose body only mentions CLOSED/DONE/RETRACTED inside inline code (a prose
+# example of the pattern itself, not a real status note — dir #87's own body does exactly this)
+# must NOT be flagged.
+d="$(mk_clean_repo)"
+printf '### dir #3 — some ticket — R1\n\nsee `✅ CLOSED (PR #…)` for the shape; also `RETRACTED`.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "backtick-quoted example text is not a false positive -> exit 0" 0 "$STATUS"
+
+# Documented, accepted limitation (a fifth /code-review medium round found the same-line "dir #N"
+# filter tried for this exact case introduced two worse bugs — a set -e abort when it filtered out
+# an entire body, and a false negative on a ticket's own closure note that legitimately co-cites a
+# sibling ticket it also closed — so the filter was reverted, not iterated on again). A body line
+# that merely cross-references a DIFFERENT ticket's status DOES produce a WARN; pinned here as
+# known/accepted rather than silently undocumented.
+d="$(mk_clean_repo)"
+printf '### dir #12 — some ticket, not closed — R1\n\nblocked by dir #40 (✅ CLOSED) for context; not related.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "cross-referencing another ticket's closed status is a known, accepted false positive" "$OUT" "dir #12's heading tag looks stale"
+
+# Locks in what the revert fixed: a body whose ONLY line mentions another ticket must not abort
+# the whole doctor.sh run (the reverted filter's `grep -v` matched nothing and, under set -e,
+# killed the script entirely rather than just this check).
+d="$(mk_clean_repo)"
+printf '### dir #13 — some ticket — R1\n\nSee dir #2 for full context.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "a body that's entirely a cross-reference doesn't abort the whole run" 0 "$STATUS"
+
+# Locks in the other half: a ticket's OWN closure note that also legitimately co-cites a sibling
+# ticket it closed together ("also closes dir #N" — a real, already-used convention in this
+# project's own BACKLOG.md) must still be detected, not silently dropped.
+d="$(mk_clean_repo)"
+printf '### dir #14 — some ticket — R2\n\n✅ CLOSED (2026-01-01, PR #14 merged; also closes dir #15).\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "own closure note co-citing a sibling ticket is still detected" "$OUT" "dir #14's heading tag looks stale"
+
+# operator-run /code-review medium: the same false-positive guard must hold for a MULTI-LINE
+# fenced ``` code block quoting the pattern (a spec-heavy ticket documenting its own convention),
+# not just single-line backtick spans.
+d="$(mk_clean_repo)"
+printf '### dir #7 — some ticket — R1\n\nsee the shape below:\n\n```\n✅ CLOSED (PR #…)\n```\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "fenced-code-block example text is not a false positive -> exit 0" 0 "$STATUS"
+
+# a second /code-review medium round found the inverse gap: a `##`/`###`-prefixed line living
+# INSIDE a fenced code block (a bash comment, a markdown snippet) was still read as a real section
+# boundary by heading/boundary detection (which scanned the raw file, not the fence-blanked copy),
+# truncating the body span before a genuinely stale heading's own closure marker was ever reached.
+d="$(mk_clean_repo)"
+printf '### dir #8 — some ticket — R1\n\nexample:\n\n```\n## this is a bash comment\n```\n\n✅ CLOSED (2026-01-01, PR #8) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a ##-prefixed line inside a fenced block isn't read as a real boundary" "$OUT" "dir #8's heading tag looks stale"
+
+# a third /code-review medium round found the same gap for an INDENTED fence marker (e.g. inside a
+# bulleted list item) — the fence regex must match tools/doctor.sh's own established
+# `^[[:space:]]*(\`\`\`|~~~)` pattern (indented + tilde fences too), not just column-0 backticks.
+d="$(mk_clean_repo)"
+printf '### dir #9 — some ticket — R1\n\n- example:\n\n  ```\n## this is a bash comment\n### dir #999 fake ticket\n  ```\n\n✅ CLOSED (2026-01-01, PR #9) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "an indented fence marker isn't read as a real boundary either" "$OUT" "dir #9's heading tag looks stale"
+
+# body text below an untagged heading must not leak past a `## ` section boundary into a LATER
+# heading's own body span.
+d="$(mk_clean_repo)"
+printf '### dir #4 — untagged ticket — R1\n\nnothing closed here.\n\n## Recently closed\n\n- ✅ 2026-01-01 dir #4 CLOSED — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "a ## section boundary stops the body scan" "$OUT" "dir #4's heading tag looks stale"
+
+# a BACKLOG.md with NO trailing newline on its last line must neither crash (an unguarded `while
+# read` drops an unterminated last line, desyncing the line-number and content arrays) nor silently
+# miss a stale heading whose own closure marker sits on that dropped last line.
+d="$(mk_clean_repo)"
+printf '### dir #5 — some ticket — R1\n\n✅ CLOSED (2026-01-01, PR #5) — done.' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "no trailing newline doesn't crash -> exit 0" 0 "$STATUS"
+check_contains "still catches the stale heading from the no-trailing-newline file" "$OUT" "dir #5's heading tag looks stale"
+
 summary

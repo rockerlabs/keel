@@ -17,6 +17,7 @@
 #   WARN  a tools/*.sh script has no reference anywhere (commands/, tests/, install.sh, docs/, CI)
 #   WARN  a tools/*.sh script has no test coverage in tests/
 #   WARN  CHANGELOG.md predates the most recent commands/, tools/, or install.sh change
+#   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -196,6 +197,131 @@ if [ "${product_ts:-0}" -gt "${changelog_ts:-0}" ]; then
   warn "CHANGELOG.md predates the most recent commands/, tools/, or install.sh change — verify [Unreleased] covers it"
 else
   say "  OK   CHANGELOG.md is at least as recent as the last commands/, tools/, or install.sh change"
+fi
+
+# --- 5. BACKLOG.md heading/status drift -----------------------------------------------------------
+# `### dir #N` tickets carry their own status tag on the heading line itself (✅ DONE/CLOSED,
+# ⏳ IN FLIGHT, or RETRACTED). Three real hits (dirs #81, #75, #74 — see dir #87) left that tag
+# behind after the ticket's own body already recorded closure, caught only by a LATER session's
+# wrap. BACKLOG.md is gitignored/personal (not every checkout — worktree or consumer — carries one),
+# so a missing file is not itself a finding.
+say ""
+say "● BACKLOG.md heading/status drift"
+backlog_file="$repo_root/BACKLOG.md"
+# `-r`, not just `-f`: an unreadable file (e.g. a stray chmod) would otherwise fail the awk pass
+# below and, under `set -euo pipefail`, abort the ENTIRE doctor.sh run rather than just this check.
+if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
+  stale=0
+  # `|| [ -n "$ln" ]` on every loop below: plain `while read` silently drops a final line that has
+  # no trailing newline — BACKLOG.md is a large, frequently hand/tool-edited file, so a future edit
+  # landing without one is realistic, not contrived. Without the guard, a heading on that dropped
+  # last line would either desync `stripped_lines` from `heading_lines` (an out-of-range array
+  # index — an unbound-variable abort under `set -u` on bash 3.2) or, more generally, just vanish
+  # from the content this check reads — a silent false negative on real staleness.
+  # Blank fenced code blocks ONCE, before anything else scans the file — not just before the
+  # backtick-strip below. A `##`/`###`-prefixed line living inside a fenced example (a bash
+  # comment, a markdown snippet) would otherwise still read as a real heading/section boundary to
+  # a scan over the RAW file, corrupting body-span detection for whatever real heading follows it.
+  # Blanked, not deleted, so line numbers stay aligned with the original file throughout. Fence
+  # marker regex matches the existing `^[[:space:]]*(```|~~~)` pattern tools/doctor.sh already uses
+  # 3x (indented AND tilde-style fences, not just column-0 backticks) — that pattern only needs to
+  # DROP fenced lines for its own callers, this one BLANKS them instead to keep line numbers intact.
+  # Accepted limitation, matching tools/doctor.sh's own identical toggle: an ODD number of fence
+  # markers (a forgotten closing fence — plausible in a large, hand-edited file) leaves the toggle
+  # stuck "in fence" for the rest of the file, blanking everything after it and missing whatever
+  # real staleness follows. Not fixed here — a WARN-only heuristic already trades recall for
+  # simplicity, and a malformed fence is a self-evident authoring mistake, unlike the silent drift
+  # this check exists to catch.
+  fence_blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$backlog_file")"
+  heading_lines=()
+  while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
+    < <(grep -nE '^### dir #[0-9]+ ' <<< "$fence_blanked" | cut -d: -f1)
+  # Every ## or ### line, dir-heading or not — used to find where THIS heading's body ends (the
+  # next section boundary of either level), so a body span never bleeds past a `## ` section
+  # break (e.g. into the unrelated `## Recently closed` buffer that follows some dir tickets).
+  boundary_lines=()
+  while IFS= read -r ln || [ -n "$ln" ]; do boundary_lines+=("$ln"); done \
+    < <(grep -nE '^#{2,3} ' <<< "$fence_blanked" | cut -d: -f1)
+  # Strip single-backtick inline-code spans ONCE for the whole file, not per heading (a
+  # several-thousand-line BACKLOG.md with dozens of headings would otherwise re-scan the file's
+  # tail from every heading's own sed call, O(headings x file length) instead of O(file length)).
+  # The stripped copy is what both the heading-tag check and the body-content check read below —
+  # the ticket that documents this very pattern (dir #87) quotes `✅ CLOSED (PR #…)`, ``
+  # `CLOSED`/`DONE`/`RETRACTED` ``, and a fenced example of the whole convention as prose, not a
+  # real status, so without stripping BOTH forms the check would flag its own ticket.
+  stripped_lines=()
+  while IFS= read -r ln || [ -n "$ln" ]; do stripped_lines+=("$ln"); done \
+    < <(sed -E 's/`[^`]*`//g' <<< "$fence_blanked")
+  # Derived from the same array the check actually reads, not `wc -l` (which undercounts a file
+  # with no trailing newline the same way an unguarded `while read` would).
+  total_lines="${#stripped_lines[@]}"
+  # A single cursor into boundary_lines, advanced forward only, never reset — both heading_lines
+  # and boundary_lines are sorted ascending (heading_lines is a strict subset of boundary_lines),
+  # so re-scanning boundary_lines from the start for every heading is pure re-work: O(headings x
+  # boundaries) instead of O(headings + boundaries). Measured at realistic accumulated scale
+  # (a few thousand tickets — this project's own numbering already runs past #90): the O(n^2) form
+  # goes from sub-second to tens of seconds, inside a check that runs on every /polish invocation.
+  bidx=0
+  nb="${#boundary_lines[@]}"
+  if [ "${#heading_lines[@]}" -gt 0 ]; then
+    for start in "${heading_lines[@]}"; do
+      while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
+        bidx=$((bidx + 1))
+      done
+      end="$total_lines"
+      [ "$bidx" -lt "$nb" ] && end=$(( boundary_lines[bidx] - 1 ))
+      heading_line="${stripped_lines[$((start - 1))]}"
+      # Scope, per the ticket this implements (dir #87): a MISSING tag (no ✅/⏳/RETRACTED at all)
+      # vs. a body that already records closure — not a WRONG tag (e.g. heading stuck on
+      # ⏳ IN FLIGHT while the body says ✅ CLOSED). Any existing tag short-circuits below,
+      # deliberately: telling "still legitimately in flight" apart from "actually closed, tag just
+      # never got updated" needs comparing tag semantics, not just presence — a materially harder
+      # problem than the stale-heading-tag pattern this check exists to catch.
+      # already carries its own status marker -> nothing to cross-check. Every marker (✅, ⏳,
+      # RETRACTED) only counts as a TAG when it follows the "— " separator every real tag does
+      # (`— ✅ CLOSED`, `— ⏳ IN FLIGHT`, `— RETRACTED (date, reason)`) — a bare match on any of
+      # them would also fire on the glyph/word showing up as plain prose inside a heading's own
+      # title (a ticket titled "...whether the RETRACTED ticket process needs revisiting..." or
+      # "decide on ✅ emoji conventions"), wrongly treating it as already-tagged. Verified against
+      # the real BACKLOG.md: no genuine tag there lacks the "— " prefix.
+      if printf '%s' "$heading_line" | grep -qE '— (✅|⏳|RETRACTED\b)'; then
+        continue
+      fi
+      body_start=$((start + 1))
+      [ "$body_start" -gt "$end" ] && continue
+      body="$(printf '%s\n' "${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")"
+      # Accepted gap, tried and reverted once already: a body line that cross-references a
+      # DIFFERENT ticket's status ("blocked by dir #62 (✅ CLOSED)") can false-positive here, same
+      # as bare prose discussing retraction with no ticket reference at all ("we discussed whether
+      # this should be RETRACTED"). A same-line filter on "dir #N" was tried to catch the first
+      # case, but real closure notes routinely co-reference a sibling ticket they also closed
+      # ("✅ CLOSED ... also closes dir #79" — a genuine, already-used convention), so the filter
+      # dropped exactly the closure lines this check exists to find — and under `set -euo
+      # pipefail`, a body with EVERY line filtered out made `grep -v`'s exit 1 abort the entire
+      # doctor.sh run. Both are worse than the false positive it was meant to fix. Same accepted
+      # class: a negated status word ("NOT DONE yet", "explicitly NOT RETRACTED") still matches —
+      # this is a cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a
+      # GAP.
+      if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
+        # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
+        # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
+        # can't be misread as a comment start by anything re-parsing this word.
+        id_re='dir #[0-9]+'
+        id="dir #?"
+        [[ "$heading_line" =~ $id_re ]] && id="${BASH_REMATCH[0]}"
+        # WARN, not GAP: the ticket this implements (dir #87) explicitly calls this bug class
+        # "Low-severity (cosmetic ... nobody re-opened stale work)" — a hard exit-1 would fail
+        # test_self_doctor.sh's real-checkout smoke test (and block /polish step 7) the moment
+        # ANY dir-ticket heading anywhere goes stale, for reasons unrelated to whatever diff is
+        # actually being polished.
+        warn "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
+        stale=$((stale + 1))
+      fi
+    done
+  fi
+  [ "$stale" -eq 0 ] && say "  OK   no stale dir # heading tags in BACKLOG.md"
+else
+  say "  OK   no readable BACKLOG.md at $repo_root — skipping heading/status check"
 fi
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---

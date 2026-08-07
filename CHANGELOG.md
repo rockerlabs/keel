@@ -20,6 +20,34 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   robustness gap for a fresh/partial checkout.
 
 ### Added
+- **`tools/self/doctor.sh` gains a WARN for stale `BACKLOG.md` ticket headings** (dir #87, found 3×
+  by later sessions' own `/wrap` — a closed ticket's `### dir #N` heading kept its open-status tag
+  even after the ticket's own body already recorded `✅ CLOSED (PR #…)`). The new check flags any
+  `### dir #N` heading whose own line carries no `✅`/`⏳`/`RETRACTED` tag while the body below it
+  (up to the next `##`/`###` heading) already records `CLOSED`/`DONE`/`RETRACTED` next to a checkmark
+  — a WARN, not a GAP, matching the ticket's own "low-severity/cosmetic" framing of this bug class.
+  Inline-code spans and fenced ` ``` `/`~~~` blocks (indented or not, matching `tools/doctor.sh`'s
+  own established fence regex) are blanked first so a prose example of the pattern (as this very
+  changelog entry's ticket does) can't flag its own documentation; the heading-tag match requires
+  every marker (`✅`, `⏳`, `RETRACTED`) to follow the `— ` separator every real tag uses, so the
+  bare glyph/word showing up in a heading's own title text doesn't count as a tag. `BACKLOG.md` is
+  gitignored and not every checkout carries one (a worktree, a fresh clone, most consumer
+  projects) — a missing or unreadable file is a clean pass, not a finding. New test coverage in
+  `tests/test_self_doctor.sh` (16 cases). Caught one real, still-live instance on this run: dir
+  #75's own heading. **Documented, accepted residual limitations** (a cheap heuristic on free-form
+  prose, not a parser): a body line cross-referencing a *different* ticket's status, or negating its
+  own ("NOT DONE yet"), can still false-positive; a wrong tag (heading says `⏳ IN FLIGHT` while the
+  body says `✅ CLOSED`) isn't flagged, only a missing one, per the ticket's own scope; an unbalanced
+  fence marker blanks the rest of the file. Review: independent agent (`medium`, 1 real bug fixed —
+  an unguarded `while read` silently dropping a file's final line if it lacked a trailing newline) +
+  6 rounds of operator-run `/code-review medium` (7 more real bugs found and fixed across 4 of those
+  rounds — the GAP/WARN severity mismatch, a fenced-code-block content gap, a RETRACTED
+  word-boundary gap, heading/boundary detection reading the raw file instead of the fence-blanked
+  copy, a too-narrow fence regex, an unreadable-file crash, and an asymmetric ✅/⏳ tag-detection
+  gap; a separate attempted fix — a same-line cross-reference filter, tried in one round — was
+  itself found to introduce two worse bugs the very next round and reverted
+  rather than patched further).
+
 - **The pre-PR gate's receipt sentinel/prev-sentinel/hand-off files are now keyed by `(repo, branch)`
   instead of repo alone, and `keel-impact.sh`'s shared event-log rewrite is now subtractive instead of
   a snapshot write-back** (dir #80, dir #82). Concurrent `/polish` sessions on different branches of
