@@ -22,7 +22,7 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   bare glyph/word showing up in a heading's own title text doesn't count as a tag. `BACKLOG.md` is
   gitignored and not every checkout carries one (a worktree, a fresh clone, most consumer
   projects) — a missing or unreadable file is a clean pass, not a finding. New test coverage in
-  `tests/test_self_doctor.sh` (16 scenarios). Caught one real, still-live instance on this run: dir
+  `tests/test_self_doctor.sh` (16 cases). Caught one real, still-live instance on this run: dir
   #75's own heading. **Documented, accepted residual limitations** (a cheap heuristic on free-form
   prose, not a parser): a body line cross-referencing a *different* ticket's status, or negating its
   own ("NOT DONE yet"), can still false-positive; a wrong tag (heading says `⏳ IN FLIGHT` while the

@@ -253,8 +253,21 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   # Derived from the same array the check actually reads, not `wc -l` (which undercounts a file
   # with no trailing newline the same way an unguarded `while read` would).
   total_lines="${#stripped_lines[@]}"
+  # A single cursor into boundary_lines, advanced forward only, never reset — both heading_lines
+  # and boundary_lines are sorted ascending (heading_lines is a strict subset of boundary_lines),
+  # so re-scanning boundary_lines from the start for every heading is pure re-work: O(headings x
+  # boundaries) instead of O(headings + boundaries). Measured at realistic accumulated scale
+  # (a few thousand tickets — this project's own numbering already runs past #90): the O(n^2) form
+  # goes from sub-second to tens of seconds, inside a check that runs on every /polish invocation.
+  bidx=0
+  nb="${#boundary_lines[@]}"
   if [ "${#heading_lines[@]}" -gt 0 ]; then
     for start in "${heading_lines[@]}"; do
+      while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
+        bidx=$((bidx + 1))
+      done
+      end="$total_lines"
+      [ "$bidx" -lt "$nb" ] && end=$(( boundary_lines[bidx] - 1 ))
       heading_line="${stripped_lines[$((start - 1))]}"
       # Scope, per the ticket this implements (dir #87): a MISSING tag (no ✅/⏳/RETRACTED at all)
       # vs. a body that already records closure — not a WRONG tag (e.g. heading stuck on
@@ -271,15 +284,6 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # the real BACKLOG.md: no genuine tag there lacks the "— " prefix.
       if printf '%s' "$heading_line" | grep -qE '— (✅|⏳|RETRACTED\b)'; then
         continue
-      fi
-      end="$total_lines"
-      if [ "${#boundary_lines[@]}" -gt 0 ]; then
-        for bl in "${boundary_lines[@]}"; do
-          if [ "$bl" -gt "$start" ]; then
-            end=$((bl - 1))
-            break
-          fi
-        done
       fi
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
