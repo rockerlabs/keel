@@ -222,6 +222,12 @@ if [ -f "$backlog_file" ]; then
   # marker regex matches the existing `^[[:space:]]*(```|~~~)` pattern tools/doctor.sh already uses
   # 3x (indented AND tilde-style fences, not just column-0 backticks) — that pattern only needs to
   # DROP fenced lines for its own callers, this one BLANKS them instead to keep line numbers intact.
+  # Accepted limitation, matching tools/doctor.sh's own identical toggle: an ODD number of fence
+  # markers (a forgotten closing fence — plausible in a large, hand-edited file) leaves the toggle
+  # stuck "in fence" for the rest of the file, blanking everything after it and missing whatever
+  # real staleness follows. Not fixed here — a WARN-only heuristic already trades recall for
+  # simplicity, and a malformed fence is a self-evident authoring mistake, unlike the silent drift
+  # this check exists to catch.
   fence_blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$backlog_file")"
   heading_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
@@ -248,6 +254,12 @@ if [ -f "$backlog_file" ]; then
   if [ "${#heading_lines[@]}" -gt 0 ]; then
     for start in "${heading_lines[@]}"; do
       heading_line="${stripped_lines[$((start - 1))]}"
+      # Scope, per the ticket this implements (dir #87): a MISSING tag (no ✅/⏳/RETRACTED at all)
+      # vs. a body that already records closure — not a WRONG tag (e.g. heading stuck on
+      # ⏳ IN FLIGHT while the body says ✅ CLOSED). Any existing tag short-circuits below,
+      # deliberately: telling "still legitimately in flight" apart from "actually closed, tag just
+      # never got updated" needs comparing tag semantics, not just presence — a materially harder
+      # problem than the stale-heading-tag pattern this check exists to catch.
       # already carries its own status marker -> nothing to cross-check. ✅/⏳ are unambiguous
       # single-purpose glyphs, safe to match bare; RETRACTED is an ordinary word, so it only
       # counts as a TAG when it follows the "— " separator every real tag does (`— RETRACTED
@@ -269,7 +281,15 @@ if [ -f "$backlog_file" ]; then
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
       body="$(printf '%s\n' "${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")"
-      if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
+      # Drop any line that names ANOTHER ticket ("dir #N") before matching a status word — a real
+      # closure note about THIS ticket doesn't repeat its own id on the same line (see the real
+      # `✅ CLOSED (date, PR #N)` convention in BACKLOG.md), while a cross-reference to a different
+      # ticket's status almost always does ("blocked by dir #62 (✅ CLOSED)", "as noted in dir #40").
+      # Residual, accepted gap: bare prose discussing retraction with no dir# nearby ("we discussed
+      # whether this should be RETRACTED") still isn't distinguishable from a real note — this is a
+      # cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a GAP.
+      body_no_xref="$(printf '%s' "$body" | grep -vE 'dir #[0-9]+')"
+      if printf '%s' "$body_no_xref" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
         # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
         # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
         # can't be misread as a comment start by anything re-parsing this word.

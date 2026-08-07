@@ -219,6 +219,17 @@ printf '### dir #3 — some ticket — R1\n\nsee `✅ CLOSED (PR #…)` for the 
 run "$sd" "$d" --quiet
 check_status "backtick-quoted example text is not a false positive -> exit 0" 0 "$STATUS"
 
+# a fourth /code-review medium round found a body-side false positive: a body line that merely
+# cross-references a DIFFERENT ticket's status ("as noted in dir #40 (✅ CLOSED)") must not read as
+# THIS ticket's own closure note. A real own-ticket closure note doesn't repeat its own id on the
+# same line, so filtering out any line naming a "dir #N" before matching fixes this without
+# breaking real detection.
+d="$(mk_clean_repo)"
+printf '### dir #12 — some ticket, not closed — R1\n\nblocked by dir #40 (✅ CLOSED) for context; not related.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "cross-referencing another ticket's closed status is not a false positive -> exit 0" 0 "$STATUS"
+
 # operator-run /code-review medium: the same false-positive guard must hold for a MULTI-LINE
 # fenced ``` code block quoting the pattern (a spec-heavy ticket documenting its own convention),
 # not just single-line backtick spans.
