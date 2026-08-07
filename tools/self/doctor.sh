@@ -191,7 +191,9 @@ fi
 say ""
 changelog_ts="$(git -C "$repo_root" log -1 --format=%ct -- CHANGELOG.md 2>/dev/null || echo 0)"
 product_ts="$(git -C "$repo_root" log -1 --format=%ct -- commands tools install.sh 2>/dev/null || echo 0)"
-if [ "$product_ts" -gt "$changelog_ts" ]; then
+# `git log -1` exits 0 with EMPTY stdout (not an error) when no commit ever touched the pathspec —
+# the `|| echo 0` above only catches a nonzero exit, so an untouched path needs this fallback too.
+if [ "${product_ts:-0}" -gt "${changelog_ts:-0}" ]; then
   warn "CHANGELOG.md predates the most recent commands/, tools/, or install.sh change — verify [Unreleased] covers it"
 else
   say "  OK   CHANGELOG.md is at least as recent as the last commands/, tools/, or install.sh change"

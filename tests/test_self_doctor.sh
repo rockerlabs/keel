@@ -36,6 +36,15 @@ check_status "the real keel checkout is clean (no GAP)" 0 "$STATUS"
 # will lint when auditing the sandbox. A fixed old commit date on the baseline keeps the
 # CHANGELOG-staleness check (timestamp-ordered) deterministic — a later commit in the same test
 # always lands after it, never in the same second.
+# doctor.sh's orchestrated checks (line ~214) unconditionally `bash`-exec these two files, so any
+# sandbox repo doctor.sh runs against needs them present or it GAPs on missing files.
+stub_orchestrated_tests() {
+  local d="$1" f
+  for f in test_doc_figures.sh test_core_wrapper_sync.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$d/tests/$f"
+  done
+}
+
 mk_clean_repo() {
   local d; d="$(new_repo)"
   mkdir -p "$d/commands" "$d/tools" "$d/tests"
@@ -54,9 +63,7 @@ mk_clean_repo() {
   printf '#!/usr/bin/env bash\n# smoke-references tools/doctor.sh and %s\n' "$fake_widget" \
     > "$d/tests/test_tools.sh"
 
-  for f in test_doc_figures.sh test_core_wrapper_sync.sh; do
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$d/tests/$f"
-  done
+  stub_orchestrated_tests "$d"
 
   printf '# Changelog\n\n## Unreleased\n- init\n' > "$d/CHANGELOG.md"
   ( cd "$d" && git add -A \
@@ -169,6 +176,19 @@ printf '# go (touched)\n' >> "$d/commands/go.md"
 run "$sd" "$d" --quiet
 check_status "changelog staleness is advisory only -> exit 0" 0 "$STATUS"
 check_contains "flags the stale CHANGELOG" "$OUT" "CHANGELOG.md predates"
+
+# a repo where CHANGELOG.md/commands/tools/install.sh were NEVER committed: `git log -1 -- <path>`
+# exits 0 with EMPTY stdout (not an error) for an untouched pathspec, so the `|| echo 0` fallback
+# never fires and the two _ts vars end up empty rather than "0" — `[ "" -gt "" ]` must not blow up
+# with a stray "integer expression expected" on stderr (which `run`'s 2>&1 would capture).
+d="$(new_repo)"
+mkdir -p "$d/tests"
+printf '# README\n' > "$d/README.md"
+stub_orchestrated_tests "$d"
+( cd "$d" && git add -A && git commit -qm "readme only, no changelog/commands/tools/install.sh ever" )
+run "$sd" "$d" --quiet
+check_absent "no 'integer expression expected' crash on unhistoried paths" "$OUT" "integer expression expected"
+check_status "unhistoried CHANGELOG/product paths don't crash -> exit 0" 0 "$STATUS"
 
 # --- 5. --quiet suppresses OK lines but keeps GAP/WARN -----------------------------------------------
 d="$(mk_clean_repo)"
