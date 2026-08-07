@@ -214,12 +214,15 @@ if [ -f "$backlog_file" ]; then
   # last line would either desync `stripped_lines` from `heading_lines` (an out-of-range array
   # index — an unbound-variable abort under `set -u` on bash 3.2) or, more generally, just vanish
   # from the content this check reads — a silent false negative on real staleness.
-  # Blank fenced ``` blocks ONCE, before anything else scans the file — not just before the
+  # Blank fenced code blocks ONCE, before anything else scans the file — not just before the
   # backtick-strip below. A `##`/`###`-prefixed line living inside a fenced example (a bash
   # comment, a markdown snippet) would otherwise still read as a real heading/section boundary to
   # a scan over the RAW file, corrupting body-span detection for whatever real heading follows it.
-  # Blanked, not deleted, so line numbers stay aligned with the original file throughout.
-  fence_blanked="$(awk '/^```/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$backlog_file")"
+  # Blanked, not deleted, so line numbers stay aligned with the original file throughout. Fence
+  # marker regex matches the existing `^[[:space:]]*(```|~~~)` pattern tools/doctor.sh already uses
+  # 3x (indented AND tilde-style fences, not just column-0 backticks) — that pattern only needs to
+  # DROP fenced lines for its own callers, this one BLANKS them instead to keep line numbers intact.
+  fence_blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$backlog_file")"
   heading_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
     < <(grep -nE '^### dir #[0-9]+ ' <<< "$fence_blanked" | cut -d: -f1)

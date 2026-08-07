@@ -238,6 +238,15 @@ printf '### dir #8 — some ticket — R1\n\nexample:\n\n```\n## this is a bash 
 run "$sd" "$d" --quiet
 check_contains "a ##-prefixed line inside a fenced block isn't read as a real boundary" "$OUT" "dir #8's heading tag looks stale"
 
+# a third /code-review medium round found the same gap for an INDENTED fence marker (e.g. inside a
+# bulleted list item) — the fence regex must match tools/doctor.sh's own established
+# `^[[:space:]]*(\`\`\`|~~~)` pattern (indented + tilde fences too), not just column-0 backticks.
+d="$(mk_clean_repo)"
+printf '### dir #9 — some ticket — R1\n\n- example:\n\n  ```\n## this is a bash comment\n### dir #999 fake ticket\n  ```\n\n✅ CLOSED (2026-01-01, PR #9) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "an indented fence marker isn't read as a real boundary either" "$OUT" "dir #9's heading tag looks stale"
+
 # body text below an untagged heading must not leak past a `## ` section boundary into a LATER
 # heading's own body span.
 d="$(mk_clean_repo)"
