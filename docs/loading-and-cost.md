@@ -32,7 +32,7 @@ the table above.
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
 | `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~3,400 |
-| `CHANGELOG.md` | on demand — release history | Reference. | ~25,000+ |
+| `CHANGELOG.md` | on demand — release history | Reference. | ~40,000+ |
 | `commands/*.md` | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–1,450+ each |
 | `install.sh`, `tools/*.sh`, `secret-guard/*` | **never loaded** — executed in the shell | The mechanized layer: blocks secrets, runs audits. Only their few lines of **output** reach the context. | **0** |
 
@@ -52,11 +52,16 @@ Put in perspective:
 - A ~200K-token context window means the core is **~1.1%** of it. Practically noise.
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
-- Over a month at ~50 sessions, the always-loaded core is ~100K input tokens total — cents, less with caching.
+- Over a month at ~50 sessions, the always-loaded core is ~110K input tokens total — cents, less with caching.
 - Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~12K for one decision.
 
-A guard against bloat ships with it: `doctor` raises a **WARN** if the always-loaded core exceeds **10,000
-tokens** (`KEEL_STARTUP_WARN_TOKENS`). The template core is ~2,210 — about 22% of that budget, with room.
+A guard against bloat ships with the **project** half of that: `doctor` raises a **HINT**
+(`H-FOOTPRINT`) when a project's own `CLAUDE.md` passes **10,000 tokens**
+(`KEEL_STARTUP_WARN_TOKENS`). Be precise about what that covers — it measures that one file, and the
+global core is never added in, so the number it prints is a floor on real startup cost rather than the
+whole of it. Against that budget the typical project file above (~330) has enormous room; the ceiling is
+set high on purpose, to catch a `CLAUDE.md` that has quietly grown into a roadmap, not to police a
+healthy one.
 
 ## With Keel vs without — a concrete moment
 

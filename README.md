@@ -173,7 +173,8 @@ tools/install-secret-guard.sh --global   # every repo on this machine, from now 
   leak shipped in practice: test fixtures generated from a real device carried their owner's name, and a
   plain-text scan couldn't see it.
 - **public-audit** (`tools/public-audit.sh <repo>`) scans a repo's files **and its git history** for
-  personal and secret leaks before you flip it public — committer identities, tokens, names, home paths.
+  personal and secret leaks before you flip it public — commit/tag identities, declared tokens, emails,
+  home paths.
 
 ![Real sandboxed run: secret-guard blocks an API key on commit, then the owner's own name hidden inside a UTF-16 binary fixture](docs/demo.gif)
 
@@ -225,9 +226,10 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 
 > **One command for the rest.** Install drops a `keel` CLI into `~/.claude/bin` (the summary prints a
 > one-line PATH hint if that dir isn't on your PATH) — `keel help` lists the verbs: `keel install`,
-> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`, and `keel uninstall`
-> (reverses the install, backing up anything it removes). It's a thin front-end over the same
-> `tools/*.sh`, so it works from any directory, not just the clone. The CLI needs a checkout it can
+> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`,
+> `keel uninstall` (reverses the install, backing up anything it removes), `keel version`, and
+> `keel help`. It's a thin front-end over the same `tools/*.sh`, so it works from any directory, not
+> just the clone. The CLI needs a checkout it can
 > point into, so the plain `curl | sh` copy install skips it (its temp clone is deleted right after —
 > the summary says so); the `--link` flow and manual-clone installs wire it.
 
