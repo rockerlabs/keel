@@ -219,16 +219,34 @@ printf '### dir #3 — some ticket — R1\n\nsee `✅ CLOSED (PR #…)` for the 
 run "$sd" "$d" --quiet
 check_status "backtick-quoted example text is not a false positive -> exit 0" 0 "$STATUS"
 
-# a fourth /code-review medium round found a body-side false positive: a body line that merely
-# cross-references a DIFFERENT ticket's status ("as noted in dir #40 (✅ CLOSED)") must not read as
-# THIS ticket's own closure note. A real own-ticket closure note doesn't repeat its own id on the
-# same line, so filtering out any line naming a "dir #N" before matching fixes this without
-# breaking real detection.
+# Documented, accepted limitation (a fifth /code-review medium round found the same-line "dir #N"
+# filter tried for this exact case introduced two worse bugs — a set -e abort when it filtered out
+# an entire body, and a false negative on a ticket's own closure note that legitimately co-cites a
+# sibling ticket it also closed — so the filter was reverted, not iterated on again). A body line
+# that merely cross-references a DIFFERENT ticket's status DOES produce a WARN; pinned here as
+# known/accepted rather than silently undocumented.
 d="$(mk_clean_repo)"
 printf '### dir #12 — some ticket, not closed — R1\n\nblocked by dir #40 (✅ CLOSED) for context; not related.\n' \
   > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
-check_status "cross-referencing another ticket's closed status is not a false positive -> exit 0" 0 "$STATUS"
+check_contains "cross-referencing another ticket's closed status is a known, accepted false positive" "$OUT" "dir #12's heading tag looks stale"
+
+# Locks in what the revert fixed: a body whose ONLY line mentions another ticket must not abort
+# the whole doctor.sh run (the reverted filter's `grep -v` matched nothing and, under set -e,
+# killed the script entirely rather than just this check).
+d="$(mk_clean_repo)"
+printf '### dir #13 — some ticket — R1\n\nSee dir #2 for full context.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_status "a body that's entirely a cross-reference doesn't abort the whole run" 0 "$STATUS"
+
+# Locks in the other half: a ticket's OWN closure note that also legitimately co-cites a sibling
+# ticket it closed together ("also closes dir #N" — a real, already-used convention in this
+# project's own BACKLOG.md) must still be detected, not silently dropped.
+d="$(mk_clean_repo)"
+printf '### dir #14 — some ticket — R2\n\n✅ CLOSED (2026-01-01, PR #14 merged; also closes dir #15).\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "own closure note co-citing a sibling ticket is still detected" "$OUT" "dir #14's heading tag looks stale"
 
 # operator-run /code-review medium: the same false-positive guard must hold for a MULTI-LINE
 # fenced ``` code block quoting the pattern (a spec-heavy ticket documenting its own convention),

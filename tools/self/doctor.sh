@@ -281,15 +281,17 @@ if [ -f "$backlog_file" ]; then
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
       body="$(printf '%s\n' "${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")"
-      # Drop any line that names ANOTHER ticket ("dir #N") before matching a status word — a real
-      # closure note about THIS ticket doesn't repeat its own id on the same line (see the real
-      # `✅ CLOSED (date, PR #N)` convention in BACKLOG.md), while a cross-reference to a different
-      # ticket's status almost always does ("blocked by dir #62 (✅ CLOSED)", "as noted in dir #40").
-      # Residual, accepted gap: bare prose discussing retraction with no dir# nearby ("we discussed
-      # whether this should be RETRACTED") still isn't distinguishable from a real note — this is a
-      # cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a GAP.
-      body_no_xref="$(printf '%s' "$body" | grep -vE 'dir #[0-9]+')"
-      if printf '%s' "$body_no_xref" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
+      # Accepted gap, tried and reverted once already: a body line that cross-references a
+      # DIFFERENT ticket's status ("blocked by dir #62 (✅ CLOSED)") can false-positive here, same
+      # as bare prose discussing retraction with no ticket reference at all ("we discussed whether
+      # this should be RETRACTED"). A same-line filter on "dir #N" was tried to catch the first
+      # case, but real closure notes routinely co-reference a sibling ticket they also closed
+      # ("✅ CLOSED ... also closes dir #79" — a genuine, already-used convention), so the filter
+      # dropped exactly the closure lines this check exists to find — and under `set -euo
+      # pipefail`, a body with EVERY line filtered out made `grep -v`'s exit 1 abort the entire
+      # doctor.sh run. Both are worse than the false positive it was meant to fix. This is a cheap
+      # heuristic on free-form prose, not a parser, and the check is a WARN, not a GAP.
+      if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
         # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
         # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
         # can't be misread as a comment start by anything re-parsing this word.
