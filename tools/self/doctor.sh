@@ -206,7 +206,9 @@ fi
 say ""
 say "● BACKLOG.md heading/status drift"
 backlog_file="$repo_root/BACKLOG.md"
-if [ -f "$backlog_file" ]; then
+# `-r`, not just `-f`: an unreadable file (e.g. a stray chmod) would otherwise fail the awk pass
+# below and, under `set -euo pipefail`, abort the ENTIRE doctor.sh run rather than just this check.
+if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   stale=0
   # `|| [ -n "$ln" ]` on every loop below: plain `while read` silently drops a final line that has
   # no trailing newline — BACKLOG.md is a large, frequently hand/tool-edited file, so a future edit
@@ -260,13 +262,14 @@ if [ -f "$backlog_file" ]; then
       # deliberately: telling "still legitimately in flight" apart from "actually closed, tag just
       # never got updated" needs comparing tag semantics, not just presence — a materially harder
       # problem than the stale-heading-tag pattern this check exists to catch.
-      # already carries its own status marker -> nothing to cross-check. ✅/⏳ are unambiguous
-      # single-purpose glyphs, safe to match bare; RETRACTED is an ordinary word, so it only
-      # counts as a TAG when it follows the "— " separator every real tag does (`— RETRACTED
-      # (date, reason)`, `— R4 — RETRACTED`) — a bare `\bRETRACTED\b` would also match the word
-      # showing up as plain prose inside a heading's own title (e.g. a ticket titled "...whether
-      # the RETRACTED ticket process needs revisiting..."), wrongly treating it as already-tagged.
-      if printf '%s' "$heading_line" | grep -qE '✅|⏳|— RETRACTED\b'; then
+      # already carries its own status marker -> nothing to cross-check. Every marker (✅, ⏳,
+      # RETRACTED) only counts as a TAG when it follows the "— " separator every real tag does
+      # (`— ✅ CLOSED`, `— ⏳ IN FLIGHT`, `— RETRACTED (date, reason)`) — a bare match on any of
+      # them would also fire on the glyph/word showing up as plain prose inside a heading's own
+      # title (a ticket titled "...whether the RETRACTED ticket process needs revisiting..." or
+      # "decide on ✅ emoji conventions"), wrongly treating it as already-tagged. Verified against
+      # the real BACKLOG.md: no genuine tag there lacks the "— " prefix.
+      if printf '%s' "$heading_line" | grep -qE '— (✅|⏳|RETRACTED\b)'; then
         continue
       fi
       end="$total_lines"
@@ -289,8 +292,10 @@ if [ -f "$backlog_file" ]; then
       # ("✅ CLOSED ... also closes dir #79" — a genuine, already-used convention), so the filter
       # dropped exactly the closure lines this check exists to find — and under `set -euo
       # pipefail`, a body with EVERY line filtered out made `grep -v`'s exit 1 abort the entire
-      # doctor.sh run. Both are worse than the false positive it was meant to fix. This is a cheap
-      # heuristic on free-form prose, not a parser, and the check is a WARN, not a GAP.
+      # doctor.sh run. Both are worse than the false positive it was meant to fix. Same accepted
+      # class: a negated status word ("NOT DONE yet", "explicitly NOT RETRACTED") still matches —
+      # this is a cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a
+      # GAP.
       if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
         # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
         # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
@@ -310,7 +315,7 @@ if [ -f "$backlog_file" ]; then
   fi
   [ "$stale" -eq 0 ] && say "  OK   no stale dir # heading tags in BACKLOG.md"
 else
-  say "  OK   no BACKLOG.md at $repo_root — skipping heading/status check"
+  say "  OK   no readable BACKLOG.md at $repo_root — skipping heading/status check"
 fi
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---

@@ -15,17 +15,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `### dir #N` heading whose own line carries no `✅`/`⏳`/`RETRACTED` tag while the body below it
   (up to the next `##`/`###` heading) already records `CLOSED`/`DONE`/`RETRACTED` next to a checkmark
   — a WARN, not a GAP, matching the ticket's own "low-severity/cosmetic" framing of this bug class.
-  Inline-code spans, including multi-line ` ``` ` fenced blocks, are stripped first so a prose
-  example of the pattern (as this very changelog entry's ticket does) can't flag its own
-  documentation; the heading-tag match requires RETRACTED to follow the `— ` separator every real
-  tag uses, so the bare word showing up in a heading's own title text doesn't count as a tag.
-  `BACKLOG.md` is gitignored and not every checkout carries one (a worktree, a fresh clone, most
-  consumer projects) — a missing file is a clean pass, not a finding. New test coverage in
-  `tests/test_self_doctor.sh` (8 cases). Caught one real, still-live instance on this run: dir #75's
-  own heading. Review: independent agent (`medium`, 1 real bug fixed — an unguarded `while read`
-  silently dropping a file's final line if it lacked a trailing newline) + operator-run
-  `/code-review medium` (3 more fixed — the GAP/WARN severity mismatch, the fenced-code-block gap,
-  the RETRACTED word-boundary gap).
+  Inline-code spans and fenced ` ``` `/`~~~` blocks (indented or not, matching `tools/doctor.sh`'s
+  own established fence regex) are blanked first so a prose example of the pattern (as this very
+  changelog entry's ticket does) can't flag its own documentation; the heading-tag match requires
+  every marker (`✅`, `⏳`, `RETRACTED`) to follow the `— ` separator every real tag uses, so the
+  bare glyph/word showing up in a heading's own title text doesn't count as a tag. `BACKLOG.md` is
+  gitignored and not every checkout carries one (a worktree, a fresh clone, most consumer
+  projects) — a missing or unreadable file is a clean pass, not a finding. New test coverage in
+  `tests/test_self_doctor.sh` (13 scenarios). Caught one real, still-live instance on this run: dir
+  #75's own heading. **Documented, accepted residual limitations** (a cheap heuristic on free-form
+  prose, not a parser): a body line cross-referencing a *different* ticket's status, or negating its
+  own ("NOT DONE yet"), can still false-positive; a wrong tag (heading says `⏳ IN FLIGHT` while the
+  body says `✅ CLOSED`) isn't flagged, only a missing one, per the ticket's own scope; an unbalanced
+  fence marker blanks the rest of the file. Review: independent agent (`medium`, 1 real bug fixed —
+  an unguarded `while read` silently dropping a file's final line if it lacked a trailing newline) +
+  6 rounds of operator-run `/code-review medium` (8 more real bugs found and fixed — the GAP/WARN
+  severity mismatch, a fenced-code-block content gap, a RETRACTED word-boundary gap, heading/
+  boundary detection reading the raw file instead of the fence-blanked copy, a too-narrow fence
+  regex, an unreadable-file crash, and an asymmetric ✅/⏳ tag-detection gap; one attempted fix — a
+  same-line cross-reference filter — was itself found to introduce two worse bugs and reverted
+  rather than patched further).
 
 - **The pre-PR gate's receipt sentinel/prev-sentinel/hand-off files are now keyed by `(repo, branch)`
   instead of repo alone, and `keel-impact.sh`'s shared event-log rewrite is now subtractive instead of

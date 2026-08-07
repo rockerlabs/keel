@@ -184,6 +184,19 @@ d="$(mk_clean_repo)"
 run "$sd" "$d" --quiet
 check_status "no BACKLOG.md at all -> exit 0" 0 "$STATUS"
 
+# a sixth /code-review medium round found an unreadable (but present) BACKLOG.md aborted the
+# ENTIRE doctor.sh run under set -euo pipefail, not just this one check — root always reads
+# regardless of chmod, so this only proves anything as non-root (same guard this project's own
+# CLAUDE.md documents for a similar Alpine/root trap elsewhere).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mk_clean_repo)"
+  printf '### dir #16 — some ticket — R1\n\n✅ CLOSED (2026-01-01, PR #16) — done.\n' > "$d/BACKLOG.md"
+  chmod 000 "$d/BACKLOG.md"
+  run "$sd" "$d" --quiet
+  check_status "an unreadable BACKLOG.md doesn't abort the whole run -> exit 0" 0 "$STATUS"
+  chmod 644 "$d/BACKLOG.md"
+fi
+
 # a heading with no ✅/⏳/RETRACTED tag whose own body already records closure -> WARN, not GAP:
 # operator-run /code-review medium found this bug class is explicitly documented as low-severity
 # by the ticket that implements it (dir #87 itself), and a hard GAP would fail this very smoke
@@ -209,6 +222,14 @@ printf '### dir #6 — investigate whether the RETRACTED ticket process needs re
   > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
 check_contains "RETRACTED as title prose doesn't count as a tag" "$OUT" "dir #6's heading tag looks stale"
+
+# a sixth /code-review medium round found the same gap was never extended to ✅/⏳: a heading
+# whose TITLE merely contains one of those glyphs as prose must not count as already-tagged either.
+d="$(mk_clean_repo)"
+printf '### dir #17 — decide on ✅ emoji conventions for status tags — R1\n\nRETRACTED (2026-01-01) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a bare ✅ in title prose doesn't count as a tag either" "$OUT" "dir #17's heading tag looks stale"
 
 # an untagged heading whose body only mentions CLOSED/DONE/RETRACTED inside inline code (a prose
 # example of the pattern itself, not a real status note — dir #87's own body does exactly this)
