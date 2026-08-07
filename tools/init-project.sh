@@ -57,7 +57,15 @@ fi
 ensure_ignore() {
   local pat="$1"
   touch .gitignore
-  grep -qxF "$pat" .gitignore || { echo "$pat" >> .gitignore; echo "  + .gitignore += $pat"; }
+  grep -qxF "$pat" .gitignore && return 0
+  # dir #85 (code audit, finding 5 — found in keel-impact.sh's own appender, fixed in BOTH): an
+  # adopter's pre-existing .gitignore whose last line lacks a trailing newline would otherwise get our
+  # rule GLUED onto it, silently destroying their rule and ours in one write. `tail -c1` returning
+  # anything means the file does not end in a newline (command substitution strips a trailing one).
+  # This helper runs against a brownfield .gitignore six times per init, so it is the likelier victim.
+  if [ -s .gitignore ] && [ -n "$(tail -c1 .gitignore 2>/dev/null)" ]; then printf '\n' >> .gitignore; fi
+  echo "$pat" >> .gitignore
+  echo "  + .gitignore += $pat"
 }
 ensure_ignore "CLAUDE.md"
 ensure_ignore "AGENTS.md"
@@ -82,7 +90,23 @@ fi
 if [ -f CLAUDE.md ]; then
   echo "  = CLAUDE.md already exists (left untouched)"
 elif [ -f "$tpl_project" ]; then
-  sed "s/<Project name>/$name/" "$tpl_project" > CLAUDE.md
+  # dir #85 (code audit, finding 20): NOT `sed "s/<Project name>/$name/"`. $name is a directory
+  # basename, so it can legally contain sed's replacement metacharacters — `&` splices the whole match
+  # back in ("AT&T-tools" → "AT<Project name>T-tools"), `\` starts an escape, `/` closes the s///
+  # command outright. Same class the project already solved once in stamp-release-bootstrap.sh. Here
+  # even `awk -v` is not enough: -v values go through awk's own escape processing (a `\t` in the name
+  # would become a literal tab), which is exactly why install.sh's neighbouring rewriters use ENVIRON.
+  # index/substr is a LITERAL scan — no regex, no replacement metacharacters — and terminates because
+  # $rest strictly shrinks each pass even if the name itself contains the placeholder.
+  KEEL_PROJECT_NAME="$name" awk '
+    BEGIN { ph = "<Project name>"; name = ENVIRON["KEEL_PROJECT_NAME"] }
+    { out = ""; rest = $0
+      while ((n = index(rest, ph)) > 0) {
+        out = out substr(rest, 1, n - 1) name
+        rest = substr(rest, n + length(ph))
+      }
+      print out rest }
+  ' "$tpl_project" > CLAUDE.md
   echo "  + CLAUDE.md created from template"
 else
   echo "  ! template not found: $tpl_project" >&2

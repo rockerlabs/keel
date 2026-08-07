@@ -272,4 +272,20 @@ run_in "$empty" bash "$TOOL"
 check_status   "no base branch exits 0 (nothing to do)" 0 "$STATUS"
 check_contains "no-base message hints at fetch" "$OUT" "to compare against"
 
+# dir #85 (code audit, finding 16): the JOINED forms (--days=N / --live-hours=N) were never exercised —
+# only the separated `--days 7`. A refactor of the case arms could break the `${1#*=}` extraction
+# silently. Assert both forms produce the identical report, and that a joined form with a bad value is
+# still validated by the same non-negative-integer guard the separated form goes through.
+run_in "$repo" bash "$TOOL" --days=0 --live-hours=0
+joined="$OUT"; joined_status="$STATUS"
+run_in "$repo" bash "$TOOL" --days 0 --live-hours 0
+check_status   "--days=N/--live-hours=N exit like their separated forms" "$STATUS" "$joined_status"
+check_status   "--days=N/--live-hours=N produce the identical report" "$joined" "$OUT"
+run_in "$repo" bash "$TOOL" --days=notanumber
+check_status   "--days=<non-numeric> is rejected" 2 "$STATUS"
+check_contains "--days=<non-numeric> explains itself" "$OUT" "non-negative integer"
+run_in "$repo" bash "$TOOL" --live-hours=-3
+check_status   "--live-hours=<negative> is rejected" 2 "$STATUS"
+check_contains "--live-hours=<negative> explains itself" "$OUT" "non-negative integer"
+
 summary

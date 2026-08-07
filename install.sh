@@ -596,10 +596,12 @@ elif [ -f "$root/keel" ]; then
 fi
 
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.
-# keel_hooks must match the path install-secret-guard.sh --global writes to (re-used by Verify below).
-# Resolved only when hooks are in play, so --no-hooks never needs $HOME; a clear message (not a bare
-# "unbound variable") if $HOME is unset while wiring hooks.
-keel_hooks=""
+# keel_hooks must match the path install-secret-guard.sh --global writes to. Derived ONCE, here, and
+# read by both the wiring block below and the Verify block further down — dir #85's finding 22 first
+# re-derived the same literal a second time near Verify, which is the very "consumer re-derives the
+# producer's path" shape finding 4 of the same audit was fixing elsewhere. Empty when HOME is unset:
+# --no-hooks must never need $HOME, and Verify reports that as unknown state rather than guessing.
+keel_hooks="${HOME:+$HOME/.config/git/keel-hooks}"
 if [ "$DO_HOOKS" = 1 ]; then
   # Plain-language heads-up first: felt (first fresh-adopter install, 2026-07-11) — when an AI tool
   # drives this install, its permission dialog for the git config change reads as "a bug" to a novice
@@ -607,7 +609,9 @@ if [ "$DO_HOOKS" = 1 ]; then
   echo "Next: wiring secret-guard — a git safety check that blocks key-shaped secrets (and, opt-in,"
   echo "      your personal data) from ever being committed. If an AI tool is running this install,"
   echo "      it may ask your permission for the git config change — expected, and safe to allow."
-  keel_hooks="${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}/.config/git/keel-hooks"
+  # Now an ASSERTION, not the derivation: wiring genuinely needs HOME, and a clear message here beats
+  # a bare "unbound variable" (or, worse, a hooks dir silently rooted at "/.config/git/keel-hooks").
+  : "${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}"
   existing="$(git config --global core.hooksPath 2>/dev/null || true)"
   if [ -z "$existing" ] || [ "$existing" = "$keel_hooks" ]; then
     # Non-fatal: a wiring failure must still fall through to the verify summary below
@@ -665,26 +669,42 @@ if [ "$LINK" = 1 ]; then
   fi
 fi
 
+# dir #85 (code audit, finding 22): the guard's REAL state is inspected on every run, not only when
+# this run was the one asked to wire it. Before, `--no-hooks` skipped the whole block, left guard_ok=0,
+# and the closing summary then told an already-protected user "secret-guard is NOT wired (see Verify
+# above)" — false, and pointing at a Verify section that had said nothing about the guard. The reverse
+# of the sentence this block's own comment guards against, and just as dishonest. Reading global git
+# config + a selftest is read-only, so it costs a re-run nothing; only the remediation advice below is
+# still gated on DO_HOOKS, since "run install-secret-guard.sh" is not the right next step for someone
+# who just explicitly asked this run not to touch hooks. $keel_hooks is empty only when HOME is unset,
+# in which case there is nothing to compare against and the branches below say so instead of guessing.
 guard_ok=0
-if [ "$DO_HOOKS" = 1 ]; then
-  hp="$(git config --global core.hooksPath 2>/dev/null || true)"
-  if [ "$hp" = "$keel_hooks" ] && [ -x "$hp/pre-commit" ] && grep -q 'Keel secret-guard' "$hp/pre-commit" 2>/dev/null; then
-    # Presence is not function: also run the installed scanner's selftest, so a wired-but-broken
-    # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
-    if [ -x "$hp/secret-scan.sh" ] && "$hp/secret-scan.sh" --selftest >/dev/null 2>&1; then
-      echo "  OK   secret-guard ($hp; selftest passed)"
-      guard_ok=1
-    else
-      echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
-      echo "       Inspect:  $hp/secret-scan.sh --selftest"
-    fi
-  elif [ -n "$hp" ]; then
-    # A foreign global hooksPath is set — we did NOT wire Keel's guard (and didn't clobber theirs).
-    echo "  WARN secret-guard NOT wired — a foreign global core.hooksPath ('$hp') is set."
-    echo "       Vendor per-repo instead: tools/install-secret-guard.sh <repo>"
+hp="$(git config --global core.hooksPath 2>/dev/null || true)"
+if [ -n "$keel_hooks" ] && [ "$hp" = "$keel_hooks" ] && [ -x "$hp/pre-commit" ] && grep -q 'Keel secret-guard' "$hp/pre-commit" 2>/dev/null; then
+  # Presence is not function: also run the installed scanner's selftest, so a wired-but-broken
+  # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
+  if [ -x "$hp/secret-scan.sh" ] && "$hp/secret-scan.sh" --selftest >/dev/null 2>&1; then
+    echo "  OK   secret-guard ($hp; selftest passed)"
+    guard_ok=1
   else
-    echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
+    echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
+    echo "       Inspect:  $hp/secret-scan.sh --selftest"
   fi
+elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp" != "$keel_hooks" ]; then
+  # A foreign global hooksPath is set — we did NOT wire Keel's guard (and didn't clobber theirs).
+  # Reported BEFORE the --no-hooks arm below, and regardless of DO_HOOKS: this is the reason the guard
+  # is not wired on ANY run, including one that does try to wire it (install.sh refuses to clobber).
+  # Ordered the other way round, a --no-hooks run blamed the flag and implied that re-running without
+  # it would fix things — it would not, and the user paid a full re-install to find that out.
+  # The `!=` guard matters too: $hp EQUAL to $keel_hooks but failing the marker check above is a broken
+  # or half-installed Keel hooks dir, not someone else's — it belongs in the generic arm below, whose
+  # "run install-secret-guard.sh --global" is the actually-correct advice for it.
+  echo "  WARN secret-guard NOT wired — a foreign global core.hooksPath ('$hp') is set."
+  echo "       Vendor per-repo instead: tools/install-secret-guard.sh <repo>"
+elif [ "$DO_HOOKS" = 0 ]; then
+  echo "  --   secret-guard not wired (--no-hooks: this run did not touch git hooks)"
+else
+  echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
 fi
 
 # The keel CLI: wired iff bin/keel resolves back into this checkout. Not graded in an ephemeral

@@ -13,9 +13,11 @@ INSTALL="$REPO_ROOT/install.sh"
 UNINSTALL="$REPO_ROOT/uninstall.sh"
 H="$HOME/.claude"                       # install's default home under the sandbox HOME (from lib.sh)
 
-# </dev/null on every call: neither script must block on a prompt when the suite runs in a terminal.
-inst()  { OUT="$("$INSTALL"   "$@" </dev/null 2>&1)"; STATUS=$?; }
-unin()  { OUT="$("$UNINSTALL" "$@" </dev/null 2>&1)"; STATUS=$?; }
+# Thin names over lib.sh's run() — which since dir #85 redirects stdin from /dev/null for every test
+# file, so neither script blocks on a prompt when the suite runs in a terminal. These used to hand-roll
+# that redirect (and run()'s whole capture body) here; they now inherit it.
+inst()  { run "$INSTALL"   "$@"; }
+unin()  { run "$UNINSTALL" "$@"; }
 
 # =================================================================================================
 # Linked mode
@@ -88,5 +90,30 @@ check_status "copy-mode uninstall exits 0" 0 "$STATUS"
 if [ -e "$H2/FRAMEWORK.md" ]; then fail "untouched FRAMEWORK copy removed" "still present"; else pass "untouched FRAMEWORK copy removed"; fi
 check_file "drifted PRINCIPLES copy kept (yours)" "$H2/PRINCIPLES.md"
 check_file "copy-mode INSTANCE.md kept" "$H2/INSTANCE.md"
+
+# =================================================================================================
+# dir #85 (code audit, finding 24): uninstall.sh's own usage + no-Keel-home paths
+# =================================================================================================
+# None of -h/--help, the unknown-argument exit-2 arm, or the very first branch (no $HOME_DIR at all)
+# were covered anywhere — including the one branch that decides whether the script does ANYTHING.
+unin --help
+check_status "--help → exit 0" 0 "$STATUS"
+check_contains "--help names the script" "$OUT" "uninstall"
+check_contains "--help lists --dry-run" "$OUT" "--dry-run"
+unin -h
+check_status "-h → exit 0" 0 "$STATUS"
+
+unin --not-a-real-flag
+check_status "unknown argument → exit 2" 2 "$STATUS"
+check_contains "unknown argument names the offending flag" "$OUT" "--not-a-real-flag"
+check_contains "unknown argument points at --help" "$OUT" "--help"
+
+# no Keel home at all → a clean, explicit no-op (exit 0), never an error and never a partial removal
+absent="$SANDBOX/no-keel-home-here"
+unin --home "$absent" --yes
+check_status "no Keel home → exit 0 (nothing to do)" 0 "$STATUS"
+check_contains "no Keel home says so explicitly" "$OUT" "nothing to do"
+check_contains "no Keel home names the path it looked at" "$OUT" "$absent"
+if [ -e "$absent" ]; then fail "no Keel home creates nothing" "path was created: $absent"; else pass "no Keel home creates nothing"; fi
 
 summary
