@@ -43,10 +43,34 @@ pass() { _pass=$((_pass + 1)); printf '  ok    %s\n' "$1"; }
 fail() { _fail=$((_fail + 1)); printf '  FAIL  %s\n        %s\n' "$1" "$2"; }
 
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
+#
+# dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always
+# non-interactive so this changes nothing there, but a developer running `bash tests/test_install.sh`
+# by hand from a terminal inherits that terminal as stdin — and install.sh's `[ -t 0 ]` interactive
+# branches (the drift re-run prompt) then genuinely block on `read`, hanging the suite with no
+# indication why. test_uninstall.sh had already been patched case-by-case with a `</dev/null` and a
+# comment explaining it; doing it once here covers the other three install-touching test files too.
+# The redirect is applied INSIDE the capture, so it wins over anything redirected onto the `run` call
+# itself: a test that must FEED stdin builds its own two-line capture instead (`gate()` in
+# test_pre_pr_gate.sh and test_keel_check_gate.sh already do exactly that, for exactly that reason).
 run() {
-  OUT="$("$@" 2>&1)"
+  OUT="$("$@" 2>&1 </dev/null)"
   STATUS=$?
 }
+
+# An isolated HOME *plus* its own global git config, for tools that must not see the shared sandbox
+# state. lib.sh pins GIT_CONFIG_GLOBAL to one sandbox-wide config (above), so a fresh HOME ALONE does
+# not isolate `git config --global` — a non-obvious invariant three separate dir #85 tests each had to
+# re-derive. Sets the ARRAY $FRESH_HOME_ENV rather than printing a string: callers expand it quoted, so
+# a sandbox path containing a space stays one argument (an earlier printf version relied on the caller
+# word-splitting it, which silently mangled `env`'s arguments on such a path — found by the
+# operator-run /code-review high pass on dir #85).
+# $FRESH_HOME_ENV is OVERWRITTEN by the next call, so expand it right away. If the value has to survive
+# later calls — a helper function that closes over it, say — copy it into your own array at the point
+# you set it (`fresh_home_env "$h"; my_env=("${FRESH_HOME_ENV[@]}")`); expanding $FRESH_HOME_ENV inside
+# a function body re-reads it at CALL time, silently following whatever home was set last.
+# Usage:  h="$SANDBOX/x"; mkdir -p "$h"; fresh_home_env "$h"; run env "${FRESH_HOME_ENV[@]}" some-tool
+fresh_home_env() { FRESH_HOME_ENV=("HOME=$1" "GIT_CONFIG_GLOBAL=$1/.gitconfig"); }
 
 # Like run, but execute in DIR (restoring cwd) — for tools that read a cwd-relative file.
 run_in() {
@@ -96,8 +120,8 @@ ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.
 # `_repo_key`; the dir #61 worktree tests below rely on this naive/redirected DIVERGENCE (a worktree's
 # own basename vs its main checkout's) to prove the redirection actually happens.
 repo_key_for() { basename "$1"; }
-# dir #80: sanitized current-branch slug, mirroring the production file's own `_sanitize_branch`/
-# `_branch_slug_for` byte-for-byte (kept in sync manually, not via a subcommand round-trip, so these
+# dir #80: sanitized current-branch slug, mirroring the production file's own `_sanitize_branch`
+# byte-for-byte (kept in sync manually, not via a subcommand round-trip, so these
 # fixtures work standalone the same way repo_key_for's naive basename does — see the same comment).
 # The branch name is captured into a variable FIRST (command substitution strips the trailing
 # newline `git branch --show-current` prints) before piping through `tr` — piping git's raw output

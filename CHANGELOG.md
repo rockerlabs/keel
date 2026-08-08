@@ -9,6 +9,80 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **Pre-v0.6.0 audit, code leg: ten correctness fixes plus the test coverage that pins them**
+  (dir #85). Found by a read-only sweep of `tools/*.sh`, `install.sh`, `bootstrap.sh`, `uninstall.sh`
+  and the suite itself, then dispositioned in a cross-module synthesis pass. Every fix that changes
+  observable behavior ships with a regression test, with two named exceptions: the two `trap` ones
+  (delivering a real SIGINT to a script mid-run is not something this suite can do portably) and the
+  two dead-code removals below, which by definition change nothing to assert on. Stated exactly rather
+  than left to look wholly covered. Four of the ten fixes were reproduced red-before-green — the
+  `KEEL_HOME` arming gap, the `printf '%b'` truncation, the `.gitignore` newline guard, and the
+  foreign-`core.hooksPath` attribution — as was the per-repo rollout-state invariant, which is a test
+  rather than a fix (no keying code changed).
+  - **`tools/pre-pr-gate.sh` — the dir #88 mandatory-review-dialog check silently no-op'd for any
+    adopter with a custom `KEEL_HOME`.** `_dialog_leg_armed` probed a hardcoded
+    `$HOME/.claude/settings.json` while `install-pre-pr-gate.sh --global` writes to
+    `${KEEL_HOME:-$HOME/.claude}/settings.json`, so a genuinely wired reminder hook read as *unarmed*
+    and the deny never fired — precisely the silent skip dir #88 exists to close. The function's own
+    comment declared this invariant ("this needs a matching update, not a silent drift") and had been
+    false since the two were written. A `KEEL_HOME`-resolved candidate is now **added** to the probe
+    list — never substituted for `$HOME/.claude/settings.json`, which is the file Claude Code itself
+    loads. (The first version of the fix did substitute, which re-opened the identical silent no-op
+    from a different precondition — a merely exported `KEEL_HOME` — and would also have made the probe
+    report ARMED for a file the harness never reads, denying `gh pr create` with no way to satisfy it.
+    Caught by this ticket's own independent review.) Every entry is a read-only probe and ARMED wins,
+    so extra candidates can only turn a false UNARMED into a correct ARMED, never the reverse.
+  - **`.gitignore` appends no longer corrupt a file whose last line lacks a trailing newline.**
+    `node_modules` (unterminated) plus an appended rule became one fused pattern
+    (`node_modules/.keel/impact-events.log`), silently destroying the adopter's rule and ours. Fixed in
+    both appenders that had the shape: `tools/keel-impact.sh`'s `enable`, and — the more exposed of the
+    two, since it runs six times per init and always against a pre-existing file —
+    `tools/init-project.sh`'s `ensure_ignore`.
+  - **`tools/keel-impact.sh` — the stale-event evidence block is written with `printf '%s'`, not
+    `'%b'`.** Event text is third-party and `_flatten` strips only literal tab/newline *bytes*, so a
+    two-character `\c` survived into a `%b` that truncated the rest of the output — swallowing every
+    stale row after it and quietly breaking the "no citation → no count" record that block exists to
+    keep honest.
+  - **`tools/public-audit.sh` — Ctrl-C now actually stops the run.** The `INT`/`TERM` handler did its
+    cleanup and then *resumed*, so an interrupted audit deleted the PR refs and tmpdir it was using and
+    kept auditing against the state it had just removed, while the operator believed it was cancelled.
+    `bootstrap.sh` carries the same `trap … EXIT INT TERM` shape and was split the same way — for
+    consistency, not because the bug is reachable there today: that script runs under `set -eu`, so an
+    interrupted command already aborts via errexit except in errexit-exempt positions.
+  - **`tools/doctor.sh` — `H-DEP-FLOATING` scans through `fp_find`** like every neighbouring per-stack
+    check, so a vendored dependency's own example `Dockerfile` no longer flags the adopter for code
+    they don't own.
+  - **`tools/init-project.sh` — a project name containing `&`, `\` or `/` reaches `CLAUDE.md`
+    verbatim.** The old `sed "s/<Project name>/$name/"` let `&` splice the whole match back in, so
+    `AT&T-tools` produced the literal `AT<Project name>T-tools`. Replaced with an `ENVIRON`-fed
+    `index`/`substr` scan — literal, no regex, and immune to the `awk -v` escape processing that would
+    still have mangled a backslash.
+  - **`install.sh` — the Verify section names a foreign global `core.hooksPath` as the reason the guard
+    isn't wired even under `--no-hooks`**, instead of blaming the flag. That path blocks wiring on
+    *every* run (the installer refuses to clobber it), so attributing it to `--no-hooks` implied a
+    re-run without the flag would help — it wouldn't, and the user paid a full re-install to find out.
+    The same condition now also requires the path to actually differ from Keel's own, so a broken or
+    half-installed Keel hooks dir is no longer mislabelled "foreign" and gets the advice that fits it.
+  - **`install.sh` — the closing secret-guard sentence reflects the guard's real state on every run.**
+    `--no-hooks` used to skip the check entirely and then tell an already-protected user "secret-guard
+    is NOT wired (see Verify above)", pointing at a Verify section that had said nothing about the
+    guard. Both directions are now pinned by tests: an unguarded run must not claim protection, and a
+    guarded `--no-hooks` run must not deny it.
+  - **`tools/pre-pr-gate.sh` — the receipt-key format is assembled in one place (`_receipt_key_for`)
+    instead of hand-copied into three**, and the dead `_branch_slug_for` (never called; a stale dir #80
+    comment claimed the key was built through it) is gone.
+  - **`tools/keel-impact.sh`** — a refactor-leftover guarded `continue` that could never change control
+    flow, removed.
+  - **Test coverage** for paths that had none: `install.sh`/`uninstall.sh` `-h`/`--help` and their
+    unknown-argument exits, `uninstall.sh`'s no-Keel-home early exit, `install.sh`'s "HOME unset while
+    wiring hooks" guard (both prior unset-HOME tests paired it with `--no-hooks`, so it had never
+    fired), `install-secret-guard.sh --global --force` replacing a foreign machine-global
+    `core.hooksPath`, `keel-check.sh`'s threshold sanitizer (non-numeric/empty/negative/zero),
+    `branch-cleanup.sh`'s joined `--days=N`/`--live-hours=N` forms, and — as an explicit invariant
+    guard — that the review trace and rollout state stay **per-repo**, never re-keyed by branch the way
+    dir #80 re-keyed the sentinel (both halves exercise the writing subcommand first, so neither
+    assertion can pass vacuously). `tests/lib.sh`'s `run()` now redirects stdin from `/dev/null`, so
+    running a test file by hand from a terminal no longer hangs on `install.sh`'s interactive branches.
 - **Pre-v0.6.0 audit, docs leg: shipped prose that described behavior the code doesn't have**
   (dir #85). Each was found by checking a doc claim against the code behind it; all are wording
   corrections, with one one-word message change in `doctor.sh` so the tool and the rail now say the

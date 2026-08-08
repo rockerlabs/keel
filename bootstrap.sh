@@ -82,7 +82,17 @@ if [ "$LINK" = 1 ]; then
 else
   # Copy mode (default): a temp clone/extract is enough — install.sh copies the files out, then we reap it.
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"
-  trap 'rm -rf "$tmp"' EXIT INT TERM
+  # dir #85 (code audit, finding 11): the same `trap … EXIT INT TERM` shape public-audit.sh was fixed
+  # for — a shell runs the handler for a caught signal and then RESUMES, so the cleanup can reap $tmp
+  # out from under work that keeps going. Hardened here for consistency, NOT because the bug is
+  # reachable at the clone below: this script is `set -eu` (unlike public-audit.sh's `set -uo
+  # pipefail`), so an interrupted clone already aborted via errexit. Errexit-exempt positions
+  # (if/case/&&-conditions) are where the resume would still bite, and splitting the traps closes that
+  # without depending on which position a future edit lands in. The EXIT trap still fires after these,
+  # so the teardown itself stays written once.
+  trap 'rm -rf "$tmp"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   src="$tmp/keel"
 
   if have git && [ -z "${KEEL_TARBALL:-}" ]; then

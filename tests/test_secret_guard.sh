@@ -451,6 +451,43 @@ check_contains "Keel guard now installed (marker present)" "$(cat "$frepo/.git/h
 run "$isg" "$frepo"
 check_status "re-vendor over Keel's own hook → exit 0 (no false refusal)" 0 "$STATUS"
 
+# --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
+# The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
+# replacing a FOREIGN global core.hooksPath via --force was not, even though it is the one path that
+# rewrites a machine-wide git setting. fresh_home_env gives this case its own HOME *and* global git
+# config (lib.sh pins the latter to the shared sandbox config, so HOME alone would not isolate it).
+gh_home="$SANDBOX/gforce-home"; mkdir -p "$gh_home"
+# COPY the helper's output into this block's own array, so the function below is bound to $gh_home for
+# good — expanding $FRESH_HOME_ENV inside the function would re-read it at every call, and a later test
+# calling fresh_home_env for a different home would silently redirect every in_gh_home below it.
+fresh_home_env "$gh_home"; gh_env=("${FRESH_HOME_ENV[@]}")
+# NOT named `gh` — a file-scope function by that name would shadow the GitHub CLI for every later test
+# in this file, and a silently-rewritten `gh` in a repo whose whole subject is gating `gh pr create`
+# is a trap worth not setting. (Both points: operator-run /code-review high passes on dir #85.)
+in_gh_home() { env "${gh_env[@]}" "$@"; }
+foreign_hooks="$SANDBOX/gforce-foreign-hooks"; mkdir -p "$foreign_hooks"
+printf '#!/bin/sh\n# someone elses global hook\nexit 0\n' > "$foreign_hooks/pre-commit"
+chmod +x "$foreign_hooks/pre-commit"
+in_gh_home git config --global core.hooksPath "$foreign_hooks"
+
+run in_gh_home "$isg" --global
+check_status "--global refuses a foreign global hooksPath → exit 3" 3 "$STATUS"
+check_contains "--global refusal names the existing path" "$OUT" "$foreign_hooks"
+check_status "--global refusal leaves the foreign hooksPath in place" \
+  "$foreign_hooks" "$(in_gh_home git config --global core.hooksPath)"
+check_contains "--global refusal leaves the foreign hook untouched" \
+  "$(cat "$foreign_hooks/pre-commit")" "someone elses global hook"
+
+run in_gh_home "$isg" --global --force
+check_status "--global --force replaces the foreign hooksPath → exit 0" 0 "$STATUS"
+check_status "--global --force repoints core.hooksPath at Keel's dir" \
+  "$gh_home/.config/git/keel-hooks" "$(in_gh_home git config --global core.hooksPath)"
+check_contains "--global --force installs Keel's own hook there" \
+  "$(cat "$gh_home/.config/git/keel-hooks/pre-commit")" "Keel secret-guard"
+# --force repoints the SETTING; it never deletes the hooks dir the user pointed at before.
+check_contains "--global --force never touches the foreign hooks dir it displaced" \
+  "$(cat "$foreign_hooks/pre-commit")" "someone elses global hook"
+
 # --- vendoring honors an ABSOLUTE local core.hooksPath (2026-07-21 audit): joining it under $repo
 # put the hooks in a junk dir while the real hooks dir stayed empty — guard reported success, inactive.
 ahrepo="$(new_repo)"

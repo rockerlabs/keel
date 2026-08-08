@@ -58,18 +58,27 @@ check_contains "keel-setup drift still flagged" "$OUT" "keel-setup.md differs"
 run cmp -s "$REPO_ROOT/commands/go.md" "$HOME/.claude/commands/keel-go.md"
 check_status "keel-go.md content is Keel's shipped go.md" 0 "$STATUS"
 
-# --no-hooks into a custom --home
+# --no-hooks into a custom --home, run from a genuinely UNGUARDED environment so the same single
+# install covers both the copy assertions and the summary-honesty one below (each extra installer run
+# costs a full core copy + Verify pass on a 3-OS CI matrix).
+# The closing summary must not tell an unguarded user they are guarded (2026-07-21 audit). dir #85
+# (code audit, finding 22) split that assertion in two: it used to run against THIS sandbox HOME, where
+# the first install above had already wired the guard — so it was pinning the mirror-image lie ("NOT
+# wired" to a protected user). Both directions are covered now: an unguarded run must not claim
+# protection (here), and a guarded --no-hooks run must not deny it (the finding-22 block near the end).
 alt="$SANDBOX/alt-home"
-run "$install" --home "$alt" --no-hooks
+unguarded="$SANDBOX/unguarded-home"; mkdir -p "$unguarded"
+fresh_home_env "$unguarded"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$alt" --no-hooks
 check_status "--no-hooks --home → exit 0" 0 "$STATUS"
 check_file "custom home gets CLAUDE.md" "$alt/CLAUDE.md"
 check_contains "secret-guard step skipped" "$OUT" "skipped"
-# the closing summary must not tell an unguarded user they are guarded (2026-07-21 audit)
 case "$OUT" in
   *"secret-guard already guards"*) fail "--no-hooks summary must NOT claim the guard is active" "found the claim in output" ;;
   *) pass "--no-hooks summary does not claim the guard is active" ;;
 esac
 check_contains "--no-hooks summary says the guard is NOT wired" "$OUT" "secret-guard is NOT wired"
+check_contains "--no-hooks Verify section explains WHY it isn't wired" "$OUT" "this run did not touch git hooks"
 
 # never clobbers a pre-existing foreign global hooksPath — and, with a real (foreign) pre-commit
 # present there, must NOT then falsely report it as Keel's secret-guard (the old verify did).
@@ -199,5 +208,55 @@ farm_nobash="$SANDBOX/nobash-bin"; path_farm "$farm_nobash" bash
 run env PATH="$farm_nobash" HOME="$HOME" sh "$boot" --home "$SANDBOX/nobash-home"
 check_status "bash missing → exit 1" 1 "$STATUS"
 check_contains "bash missing → names bash as the missing dependency" "$OUT" "'bash' is required but not found"
+
+# --- dir #85 (code audit, findings 23/25/22): install.sh's own usage + guard-summary honesty --------
+# 23. Neither the -h/--help path nor the unknown-argument path was covered by ANY of the three
+# install-test files, so a regression in usage() or in the exit-2 arm would reach a release unnoticed.
+run "$install" --help
+check_status "--help → exit 0" 0 "$STATUS"
+check_contains "--help prints the usage line" "$OUT" "install.sh"
+check_contains "--help lists the flags" "$OUT" "--no-hooks"
+run "$install" -h
+check_status "-h → exit 0" 0 "$STATUS"
+run "$install" --not-a-real-flag
+check_status "unknown argument → exit 2" 2 "$STATUS"
+check_contains "unknown argument names the offending flag" "$OUT" "--not-a-real-flag"
+check_contains "unknown argument points at --help" "$OUT" "--help"
+
+# 25. HOME unset WITH hooks enabled must fail with the written message, not a bare unbound-variable
+# trace. Both pre-existing unset-HOME tests paired it with --no-hooks, so this guard had never fired
+# under test at all.
+run env -u HOME "$install" --home "$SANDBOX/nohome-withhooks"
+check_status "HOME unset + hooks enabled → nonzero exit" 1 "$STATUS"
+check_contains "HOME unset + hooks enabled names HOME as the reason" "$OUT" "wiring hooks needs HOME set"
+check_contains "HOME unset + hooks enabled offers --no-hooks" "$OUT" "--no-hooks"
+
+# 22. The closing guard sentence must reflect the guard's REAL state, not just whether THIS run wired
+# it. A --no-hooks re-run over an ALREADY-guarded machine used to report "secret-guard is NOT wired
+# (see Verify above)" to a protected user — false, and pointing at a Verify section that had said
+# nothing about the guard at all. Wired here directly via install-secret-guard.sh rather than a second
+# full install.sh run (each one costs a guard install + selftest across the 3-OS CI matrix).
+guarded="$SANDBOX/guarded-home"; mkdir -p "$guarded"
+fresh_home_env "$guarded"
+run env "${FRESH_HOME_ENV[@]}" "$REPO_ROOT/tools/install-secret-guard.sh" --global
+check_status "wiring the guard into a fresh home → exit 0" 0 "$STATUS"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$SANDBOX/alt-home-guarded" --no-hooks
+check_status "--no-hooks over an already-guarded home → exit 0" 0 "$STATUS"
+check_contains "--no-hooks still verifies the already-wired guard" "$OUT" "OK   secret-guard"
+check_absent "--no-hooks does not claim the guard is NOT wired" "$OUT" "secret-guard is NOT wired"
+check_contains "--no-hooks summary tells the protected user they are protected" "$OUT" "already guards your commits"
+
+# A FOREIGN global hooksPath is the reason the guard isn't wired on ANY run — install.sh refuses to
+# clobber it — so Verify must say so even under --no-hooks, rather than blaming the flag and implying a
+# re-run without it would help. Ordering regression guard (operator-run /code-review high, dir #85).
+foreign_home="$SANDBOX/foreign-hp-home"; mkdir -p "$foreign_home"
+fresh_home_env "$foreign_home"
+mkdir -p "$SANDBOX/someone-elses-hooks"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$SANDBOX/someone-elses-hooks"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$SANDBOX/alt-home-foreign" --no-hooks
+check_status "--no-hooks over a foreign hooksPath → exit 0" 0 "$STATUS"
+check_contains "--no-hooks still names the foreign hooksPath as the reason" "$OUT" "foreign global core.hooksPath"
+check_contains "…and names the path itself" "$OUT" "$SANDBOX/someone-elses-hooks"
+check_absent "…instead of blaming --no-hooks for it" "$OUT" "this run did not touch git hooks"
 
 summary

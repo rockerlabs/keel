@@ -198,6 +198,13 @@
 # describes) — but it IS a real ACCIDENTAL-collision surface an honest session could hit by coincidence.
 # No structural fix exists today (no more-restricted, adopter-available subagent type ties an event back
 # to /polish's own spawn specifically) — named here so it isn't silently assumed away.
+# (3) dir #85 (rails audit M2-6): commands/polish.md step 5(a) mandates that the subagent prompt carry
+# the ticket/spec the diff implements, with a two-way conformance mandate (dir #78). NOTHING here can
+# check that. A `SubagentStop` event carries no prompt/call-argument field (same absence residual (1)
+# is built around), so the spec hand-off is verifiable only by the subagent's own prose — i.e. it is
+# not verified at all. The prose sits one line away from claims that ARE trace-backed, so it reads as
+# gated when it is not; recorded here rather than reworded, because the mandate is worth keeping even
+# unenforced. Mechanization candidate, not a defect in this file.
 #
 # `sweep` (dir #64 tier 2b, below) counts an `agent:`-confirmed pass the same as a `trace-confirmed` one —
 # both are independently-verifiable reviews, the pre-#63 blind spot `sweep` exists to catch is
@@ -240,8 +247,9 @@
 # different session's own `init` (or a denied `gh pr create`'s retire_sentinel()) can wipe the file
 # between one session's receipt-writes and its own `gh pr create` call. Fix: key the sentinel,
 # prev-sentinel, and hand-off note by (repo, branch) instead of repo alone — `_require_receipt_key`
-# (below) combines `_repo_key` with the invoking cwd's own sanitized current-branch slug
-# (`_branch_slug_for`). Two worktrees of the same repo on DIFFERENT branches now get separate slots;
+# (below) resolves the invoking cwd's own current branch and hands it, with `_repo_key`, to
+# `_receipt_key_for`, which owns the key FORMAT for every writer site. Two worktrees of the same repo
+# on DIFFERENT branches now get separate slots;
 # two sessions on the SAME branch of the same repo still share one (arguably correct-to-deny — accepted
 # and documented in commands/polish.md's receipt-deny paragraph as a manual-fallback last resort, not
 # fixed here). NOT re-keyed: `trace_path_for` (append-only, matched by sha+level scan — concurrent
@@ -397,10 +405,50 @@ main_top_for() {
 # matching update, not a silent drift. Takes the main checkout's TOP PATH directly (already resolved via
 # main_top_for per dir #61 by the PASS branch's own $wt derivation, above) rather than a cwd, so this
 # doesn't re-fork `git worktree list --porcelain` a second time for the same answer.
+#
+# dir #85 (code audit, finding 4 + rails audit M2-7): the invariant that comment declares had ALREADY
+# drifted. `install-pre-pr-gate.sh --global` writes to `${KEEL_HOME:-$HOME/.claude}/settings.json`,
+# while this probed a hardcoded `$HOME/.claude/settings.json` — so an adopter with a non-default
+# KEEL_HOME got a genuinely wired reminder hook that this read as UNARMED, and the dir #88
+# mandatory-dialog deny then silently no-op'd: exactly the silent skip dir #88 exists to close.
+#
+# The KEEL_HOME-resolved path is ADDED to the candidate list, never substituted for `$HOME/.claude`
+# (found by this ticket's own independent review, which caught the first fix doing exactly that).
+# The two are not interchangeable: `$HOME/.claude/settings.json` is the file Claude Code loads by
+# default, so a `KEEL_HOME` merely exported in the gate's environment must not stop this from probing
+# it — that would re-open the same silent no-op from a different precondition. `settings.local.json` is
+# in the list on the same basis (a hand-wired or harness-managed local override arms the leg just as
+# well, even though the installer never writes it).
+#
+# **Residual limit** (raised by the operator-run /code-review high pass on this ticket, kept rather
+# than engineered away): ARMED wins, so an extra candidate can only ever turn a false UNARMED into a
+# correct ARMED — but if it matches a settings.json the HARNESS never loads, the wired-there hook never
+# fires, no `dialog:` trace can ever be written, and the deny below becomes unsatisfiable. The escape
+# is the same one commands/polish.md step 8 documents — an operator running `gh pr create` in their own
+# terminal bypasses this PreToolUse hook entirely, since it fires on the AGENT's tool calls, not on a
+# human typing. Note step 8 scopes that instruction to the dir #80 sentinel race, not to this deny;
+# the mechanism is general, the written procedure for reaching for it is not. Why this is accepted: a
+# KEEL_HOME-based install puts Keel's COMMANDS in the same directory this reads, so if `/polish` is
+# running at all, the harness is loading it — the inert-file case and the "`/polish` is executing"
+# precondition largely exclude each other. Erring toward deny in what is left is the deliberate choice:
+# this leg guards a MANDATORY review step, and its failure mode is a loud block with a documented
+# manual escape, versus a silent skip with none.
+#
+# That argument covers KEEL_HOME, NOT `install.sh --home DIR`, which retargets the install WITHOUT
+# exporting KEEL_HOME. Nothing about the HOOKS moves with it: `install.sh` never writes settings.json
+# at all (wiring the gate is the separate, explicit opt-in `install-pre-pr-gate.sh` run — see its
+# header), and that script has no `--home` of its own, so its `--global` target stays
+# `${KEEL_HOME:-$HOME/.claude}` — exactly what this probe reads. Gate installer and probe therefore
+# still agree under `--home`; they just agree about a directory the harness may not be loading, so the
+# leg is never armed there — a silent skip, the pre-existing behavior, not a new deny. Named because it
+# is the case that most weakens the paragraph above; the `--home`/`--global` target disagreement
+# between the two installers is its own defect, not this one's.
 _dialog_leg_armed() {
   local top="${1:?_dialog_leg_armed: main-checkout top path required}" f
   command -v jq >/dev/null 2>&1 || return 1
-  for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" "$HOME/.claude/settings.json"; do
+  for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" \
+           "${HOME:-}/.claude/settings.json" \
+           "${KEEL_HOME:-${HOME:-}/.claude}/settings.json"; do
     [ -f "$f" ] || continue
     # `contains(...)`, not a regex `test(...)` — a plain substring check for this fixed literal, matching
     # tools/doctor.sh's own `gate_hook_wired()` idiom for the identical "is this hook wired" shape (found
@@ -439,14 +487,6 @@ _sanitize_branch() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '-'; }
 # a true detached checkout).
 _branch_raw_for() { git -C "${1:-.}" branch --show-current 2>/dev/null; }
 
-# The CURRENT branch of cwd $1, sanitized — empty on a detached HEAD. Writer-side callers
-# (_require_receipt_key, below) treat empty as fatal.
-_branch_slug_for() {
-  local raw; raw="$(_branch_raw_for "$1")"
-  [ -n "$raw" ] || return 0
-  _sanitize_branch "$raw"
-}
-
 # dir #80 (found by this ticket's own /code-review high pass): an unambiguous fingerprint of the
 # (repo-key, RAW branch) pair $1/$2 — NOT a naive "$1-$2" string join, which is ambiguous: repo-key
 # "foo-bar" + branch "baz" and repo-key "foo" + branch "bar-baz" both join to the identical string
@@ -459,6 +499,14 @@ _branch_slug_for() {
 # arbitrary string into a filename-safe key — same 32-bit-CRC collision-risk tolerance this codebase
 # already accepts elsewhere for the identical purpose.
 _receipt_key_hash() { printf '%s\x1f%s' "$1" "$2" | cksum | tr -cd '0-9'; }
+
+# dir #85 (code audit, findings 1+2): the ONE place the receipt-key FORMAT is assembled. dir #80
+# factored out the primitives (_repo_key, _receipt_key_hash, _sanitize_branch) but left the three-part
+# join itself hand-copied into three call sites — _require_receipt_key, retire_sentinel's key fallback,
+# and hook mode's own inline build — so a format change (say a version prefix) meant three synchronized
+# edits, one of them (the retire fallback) with no test of its own. Takes the repo key $1 and the RAW
+# branch $2, exactly the two inputs every site already had on hand.
+_receipt_key_for() { printf '%s-%s-%s' "$1" "$(_receipt_key_hash "$1" "$2")" "$(_sanitize_branch "$2")"; }
 
 # dir #80: repo + branch, combined into the key every writer-side per-run file (sentinel,
 # prev-sentinel, hand-off) is now keyed by, so two worktrees of the same repo on DIFFERENT branches no
@@ -480,7 +528,7 @@ _require_receipt_key() {
     exit 1
   fi
   RECEIPT_REPO_KEY="$(_repo_key "$cwd")"
-  RECEIPT_KEY="${RECEIPT_REPO_KEY}-$(_receipt_key_hash "$RECEIPT_REPO_KEY" "$raw")-$(_sanitize_branch "$raw")"
+  RECEIPT_KEY="$(_receipt_key_for "$RECEIPT_REPO_KEY" "$raw")"
 }
 
 # dir #72 finding #7: plain string-building, no `_repo_key` fork of their own — callers that already
@@ -550,7 +598,7 @@ retire_sentinel() {
   if [ -z "$key" ]; then
     rk="$(_repo_key "$cwd")"
     raw="$(_branch_raw_for "$cwd")"
-    key="${rk}-$(_receipt_key_hash "$rk" "$raw")-$(_sanitize_branch "$raw")"
+    key="$(_receipt_key_for "$rk" "$raw")"
   fi
   if [ -f "$sentinel" ]; then
     prev="$(_prev_sentinel_path_for_key "$key")"
@@ -1209,9 +1257,7 @@ else
     deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
   fi
 fi
-# dir #80 (code-review fix): hash the (repo, branch) pair rather than a naive '-' join — see
-# _receipt_key_hash's own comment (above) for why a plain string join is ambiguous.
-receipt_key="${wt}-$(_receipt_key_hash "$wt" "$resolved_branch")-$(_sanitize_branch "$resolved_branch")"
+receipt_key="$(_receipt_key_for "$wt" "$resolved_branch")"
 sentinel="/tmp/pre-pr-gate-$receipt_key"
 
 if [ ! -f "$sentinel" ]; then
