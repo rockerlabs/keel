@@ -126,4 +126,34 @@ check_status "init from a linked worktree → exit 0" 0 "$STATUS"
 check_dir "marker lands at the main checkout's top" "$wbase/.keel"
 if [ -d "$wt/.keel" ]; then fail "no stray local marker in the worktree" "dir exists: $wt/.keel"; else pass "no stray local marker in the worktree"; fi
 
+# dir #85 (code audit, finding 20): a project name carrying sed/awk replacement metacharacters must
+# reach CLAUDE.md verbatim. Under the old `sed "s/<Project name>/$name/"`, `&` spliced the whole match
+# back in, so "AT&T-tools" produced the literal "AT<Project name>T-tools" — placeholder and all.
+for meta in 'AT&T-tools' 'back\slash-proj' 'a\tb-proj'; do
+  d="$SANDBOX/meta-$(printf '%s' "$meta" | tr -c 'A-Za-z0-9' '-')"
+  rm -rf "$d"
+  run "$init" --no-register "$d/$meta"
+  check_status "metachar name '$meta' → exit 0" 0 "$STATUS"
+  head1="$(head -1 "$d/$meta/CLAUDE.md" 2>/dev/null || true)"
+  check_status "metachar name '$meta' lands verbatim in the heading" "# $meta" "$head1"
+  check_absent "metachar name '$meta' leaves no placeholder behind" "$head1" "<Project name>"
+done
+
+# dir #85 (code audit, finding 5): ensure_ignore() must not glue its rule onto an unterminated last
+# line. This is the MORE exposed half of that fix — it runs six times per init and always against the
+# adopter's PRE-EXISTING .gitignore, where keel-impact's appender (pinned in test_keel_impact.sh)
+# usually meets a file Keel wrote itself. Found untested by an operator-run /code-review high pass.
+bf="$SANDBOX/brownfield-proj"; mkdir -p "$bf"; git -C "$bf" init -q
+printf 'node_modules' > "$bf/.gitignore"        # deliberately no trailing newline
+run "$init" --no-register --no-impact "$bf"
+check_status "init over an unterminated .gitignore → exit 0" 0 "$STATUS"
+check_status "the adopter's unterminated rule survives as its own line" \
+  "1" "$(grep -c '^node_modules$' "$bf/.gitignore")"
+check_status "our first rule lands on its own line" \
+  "1" "$(grep -c '^CLAUDE\.md$' "$bf/.gitignore")"
+check_absent "the two rules are never concatenated" "$(cat "$bf/.gitignore")" "node_modulesCLAUDE.md"
+# ...and only ONE separator is added: the remaining five ensure_ignore calls must not each insert a
+# blank line, which is what a guard testing the wrong end of the file would do.
+check_status "no blank line is introduced between rules" "0" "$(grep -c '^$' "$bf/.gitignore")"
+
 summary

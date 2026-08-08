@@ -273,6 +273,12 @@ cmd_enable() {
   mkdir -p "$top/.keel"
   local gi="$top/.gitignore"
   if ! { [ -f "$gi" ] && grep -qxF '/.keel/impact-events.log' "$gi"; }; then
+    # dir #85 (code audit, finding 5): a .gitignore whose last line has no trailing newline would
+    # otherwise get our rule GLUED onto it — `node_modules` + `/.keel/impact-events.log` becomes the
+    # single pattern `node_modules/.keel/impact-events.log`, silently breaking the adopter's existing
+    # ignore AND ours. `tail -c1` is the portable "does it end in a newline" test (an empty read means
+    # the file is empty or ended in one); the missing newline is written first, never in place of ours.
+    if [ -s "$gi" ] && [ -n "$(tail -c1 "$gi" 2>/dev/null)" ]; then printf '\n' >> "$gi"; fi
     printf '/.keel/impact-events.log\n' >> "$gi"
     printf 'keel-impact: gitignored /.keel/impact-events.log in %s\n' "$gi"
   fi
@@ -499,10 +505,8 @@ cmd_add() {
       # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
       # still populates the vars) — otherwise that event would be dropped, then lost when the log is rewritten.
       while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
-        if ! is_event_type "$_ty"; then
-          [ -n "$_ty" ] || continue
-          continue    # never consumed — survives the subtractive rewrite by not being in $consumed_raws
-        fi
+        # never consumed — survives the subtractive rewrite by not being in $consumed_raws
+        is_event_type "$_ty" || continue
         _cite="$_src"
         if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
         if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
@@ -586,7 +590,13 @@ cmd_add() {
   if [ "$stale" -gt 0 ]; then
     ensure_evidence
     { printf '\n## %s — stale, unattributed — skipped by the %sh ingest cap\n\n' "$today" "$max_age_h"
-      printf '%b' "$stale_lines"
+      # dir #85 (code audit, finding 6): '%s', never '%b'. $stale_lines carries third-party event text
+      # (a source/detail field the session wrote), and _flatten only strips literal tab/newline BYTES —
+      # a two-character `\c` or `\n` sequence survives it verbatim. Under '%b' those get INTERPRETED:
+      # `\c` truncates the rest of the output outright, silently swallowing the remaining stale rows and
+      # undermining the exact "no citation → no count" honesty this block exists to record. The row
+      # separators are real newline bytes already built into the string, so '%s' needs no escapes.
+      printf '%s' "$stale_lines"
       printf '(re-cite explicitly via flags if genuinely this session'"'"'s)\n'
     } >> "$EVIDENCE"
   fi

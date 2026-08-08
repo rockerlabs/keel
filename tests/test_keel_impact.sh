@@ -205,6 +205,25 @@ check_contains "stale event's original line is archived" "$(cat "$EVIDENCE")" "$
 check_contains "stale note carries the re-cite hint" "$(cat "$EVIDENCE")" "re-cite explicitly via flags if genuinely this session's"
 check_contains "log is truncated after a stale-only run (no resurfacing)" "$(wc -l < "$LOG" | tr -d ' ')" "0"
 
+# dir #85 (code audit, finding 6): the stale block is written with printf '%s', never '%b'. The event
+# text is third-party (whatever the firing session wrote) and _flatten only strips literal tab/newline
+# BYTES — a two-character `\c` survives it. Under '%b' that `\c` TRUNCATED the rest of the printf,
+# swallowing every stale row after it and quietly breaking the "no citation → no count" record this
+# block exists to keep honest. Two stale events, the first carrying `\c`: both must be archived.
+: > "$EVIDENCE"
+{
+  printf '%s\tguard\tsecret-guard\tblocked \\c mid-detail\n' "$old_ts"
+  printf '%s\tfire\tsecond-source\tsecond-detail\n' "$old_ts"
+} > "$LOG"
+run bash "$TOOL" add --gap none
+check_status "stale run with a backslash escape in the text succeeds" 0 "$STATUS"
+ev="$(cat "$EVIDENCE")"
+check_contains "the escape sequence is archived literally, not interpreted" "$ev" 'blocked \c mid-detail'
+check_contains "the stale row AFTER the escape still reaches the trail" "$ev" "second-source"
+# (No assertion on the closing re-cite hint: it is a SEPARATE printf in the same redirect group, so
+# `\c` never reached it and it survived even unfixed — it would have advertised coverage it didn't
+# have. The two assertions above are the red-before-green ones.)
+
 # mixed fresh + stale in one log: only the fresh one counts; both print; both are consumed
 {
   printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts"
@@ -459,6 +478,20 @@ run bash "$TOOL" enable "$erepo"
 check_status "second enable succeeds" 0 "$STATUS"
 check_contains "gitignore has exactly one event-log line" "$(grep -c '^/\.keel/impact-events\.log$' "$erepo/.gitignore")" "1"
 check_contains "second enable reports already-enabled, not newly-enabled" "$OUT" "impact tracking already enabled"
+
+# dir #85 (code audit, finding 5): a .gitignore whose last line has no trailing newline must not get
+# our rule glued onto it. Before the fix, `node_modules` (unterminated) + our append produced the
+# single pattern `node_modules/.keel/impact-events.log`, silently destroying BOTH rules.
+nlrepo="$(new_repo)"
+printf 'node_modules' > "$nlrepo/.gitignore"     # deliberately no trailing newline
+run bash "$TOOL" enable "$nlrepo"
+check_status "enable on an unterminated .gitignore succeeds" 0 "$STATUS"
+check_contains "the pre-existing unterminated rule survives intact" \
+  "$(grep -c '^node_modules$' "$nlrepo/.gitignore")" "1"
+check_contains "our rule lands on its own line" \
+  "$(grep -c '^/\.keel/impact-events\.log$' "$nlrepo/.gitignore")" "1"
+check_absent "the two rules are never concatenated" \
+  "$(cat "$nlrepo/.gitignore")" "node_modules/.keel/impact-events.log"
 
 # end-to-end: an enabled repo records a guard event with NO env, and the ledger resolves to .keel/ledger.md
 run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" event guard secret-guard blocked

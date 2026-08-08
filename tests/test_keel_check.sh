@@ -82,4 +82,27 @@ n2="$(grep -c keel-check "$log" 2>/dev/null || true)"
 check_status "STOP appends exactly one friction event" 1 "$n2"
 check_contains "the event is typed friction" "$(cat "$log")" "friction"
 
+# --- dir #85 (code audit, finding 27): a hostile KEEL_CHECK_THRESHOLD degrades gracefully ---------
+# The sanitizer exists precisely so a non-numeric or negative value falls back instead of crashing the
+# `[ "$n" -ge "$threshold" ]` arithmetic — but nothing exercised it, so a regression there would surface
+# as a crashed shim rather than a caught test. Each case: the shim still runs the check and passes its
+# exit code through, and the fallback threshold still behaves (banner on the 2nd failure, or the 1st
+# where the value clamps to 1).
+# All three land on the SAME fallback of 2 — including the negative one, which the non-numeric arm
+# catches first (a leading '-' is not [0-9]), never reaching the `-lt 1` clamp. Pinned as a set:
+# either route is a graceful degrade, and this records which one actually fires for each.
+for bad in abc '' -5; do
+  fresh_sd
+  KEEL_CHECK_THRESHOLD="$bad" run "$TOOL" "false"
+  check_status "threshold '$bad': exit code still passes through" 1 "$STATUS"
+  check_absent "threshold '$bad' falls back to 2 (no STOP on the 1st failure)" "$OUT" "keel-check: STOP"
+  KEEL_CHECK_THRESHOLD="$bad" run "$TOOL" "false"
+  check_contains "threshold '$bad' still STOPs on the 2nd failure" "$OUT" "keel-check: STOP"
+done
+
+# 0 IS numeric, so it reaches the `-lt 1` clamp and becomes 1 → the banner fires immediately.
+fresh_sd
+KEEL_CHECK_THRESHOLD=0 run "$TOOL" "false"
+check_contains "zero threshold clamps to 1 → STOP on the very first failure" "$OUT" "keel-check: STOP"
+
 summary

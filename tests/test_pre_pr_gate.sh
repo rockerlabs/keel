@@ -32,12 +32,16 @@ mkrepo() {
 # Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS.
 # (ALL_STEPS/repo_key_for/sentinel_for/write_full_receipt[_review] live in lib.sh, dir #64 — shared
 # with test_pipeline_canary.sh, which drives the same gate CLI subcommands against a sandbox repo.)
-gate() {
+# gate_env is the general form ($3... are extra `env` assignments); gate is it with none. One place
+# builds the event JSON and captures OUT/STATUS, so a change to the gate's input shape lands once.
+gate_env() {
   local json
   json="$(jq -n --arg c "$1" --arg d "$2" '{tool_input:{command:$c}, cwd:$d}')"
-  OUT="$(printf '%s' "$json" | bash "$gate" 2>&1)"
+  shift 2
+  OUT="$(printf '%s' "$json" | env "$@" bash "$gate" 2>&1)"
   STATUS=$?
 }
+gate() { gate_env "$1" "$2"; }
 
 # 1. A command that is NOT `gh pr create` is none of the gate's business → allow (empty out, exit 0).
 d="$(mkrepo)"
@@ -1308,5 +1312,87 @@ write_full_receipt_review "$d" "skip"
 gate "gh pr create --fill" "$d"
 check_status "ARMED: skip outcome, no dialog line → still exit 0" 0 "$STATUS"
 check_absent "ARMED: skip outcome, no dialog line → allowed" "$OUT" "deny"
+
+# 78. dir #85 (code audit, finding 4 + rails audit M2-7): the arming probe must follow KEEL_HOME the
+# same way install-pre-pr-gate.sh --global does. It used to read a hardcoded $HOME/.claude/settings.json,
+# so an adopter whose global install lives at a custom $KEEL_HOME had a genuinely WIRED reminder hook
+# read as unarmed — and the mandatory-dialog deny then silently no-op'd, which is precisely the silent
+# skip dir #88 exists to close. Arm ONLY via $KEEL_HOME (project scope deliberately left unarmed, and
+# HOME pointed at an empty dir so the old code path cannot accidentally satisfy this).
+# Armed by running the REAL installer under KEEL_HOME rather than hand-writing settings.json: that
+# makes this a test of the two files agreeing, not of this test file's copy of the installer's
+# convention — which would keep passing if the installer's write target moved again.
+d="$(mkrepo)"
+kh="$SANDBOX/custom-keel-home"; mkdir -p "$kh"
+empty_home="$SANDBOX/empty-home"; mkdir -p "$empty_home"
+run env HOME="$empty_home" KEEL_HOME="$kh" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
+check_status "install-pre-pr-gate.sh --global under a custom KEEL_HOME → exit 0" 0 "$STATUS"
+check_file "…and it wrote settings.json inside KEEL_HOME, not \$HOME/.claude" "$kh/settings.json"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$kh"
+check_contains "KEEL_HOME-armed dialog leg is seen as ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
+check_contains "KEEL_HOME-armed leg denies for the missing dialog specifically" "$OUT" "reminder dialog was never opened"
+# ...and with no arming anywhere (same empty HOME, no KEEL_HOME) the same receipt still passes, so the
+# assertion above really is about the KEEL_HOME file and not about some unrelated deny.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$SANDBOX/no-such-keel-home"
+check_status "no arming anywhere → the same receipt still passes" 0 "$STATUS"
+check_absent "no arming anywhere → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 78b. The KEEL_HOME candidate is ADDED, never SUBSTITUTED for $HOME/.claude — regression guard from
+# this ticket's own independent review, which caught the first version of the fix doing exactly that.
+# $HOME/.claude/settings.json is the file Claude Code itself loads, so a merely EXPORTED KEEL_HOME
+# (pointing anywhere, existing or not) must not stop the probe from finding a hook wired there — that
+# would re-open dir #88's silent no-op from a different precondition.
+d="$(mkrepo)"
+home_armed="$SANDBOX/home-armed"; mkdir -p "$home_armed/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{PostToolUse:[{matcher:"AskUserQuestion", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$home_armed/.claude/settings.json"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high"
+gate_env "gh pr create --fill" "$d" "HOME=$home_armed" "KEEL_HOME=$SANDBOX/some-unrelated-keel-home"
+check_contains "an unrelated KEEL_HOME does not hide a hook wired in \$HOME/.claude" "$OUT" '"permissionDecision":"deny"'
+check_contains "…and it denies for the missing dialog, not some other reason" "$OUT" "reminder dialog was never opened"
+rm -f "$tf"
+
+# 79. dir #85 (code audit, finding 3): dir #80 re-keyed the sentinel/prev-sentinel/hand-off by
+# (repo, branch) but DELIBERATELY left the review trace and the rollout state per-repo. Nothing pinned
+# that deliberate asymmetry, so a copy-paste switch of trace_path_for to $RECEIPT_KEY — the obvious
+# "finish the job" edit — would pass the whole suite while quietly breaking the design. Assert it
+# directly: a trace written while on branch A is still the trace the gate reads on branch B.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
+check_file "trace is written on the starting branch" "$tf"
+trace_before="$(cat "$tf")"
+git -C "$d" checkout -q -b other-branch
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed again.\nKEEL-AGENT-REVIEW: level=high\n')"
+check_status "the second branch appends to the SAME per-repo trace file" 2 "$(wc -l < "$tf" | tr -d ' ')"
+check_contains "the first branch's trace line is still there" "$(cat "$tf")" "$trace_before"
+# Same assertion for the OTHER deliberately-per-repo file, rollout state. The rollout-check subcommand
+# is the only thing that ever writes it, so it has to actually run here — a bare check_nofile without
+# it would pass under either keying (caught by this ticket's own independent review, where the first
+# version of this block did exactly that and pinned nothing).
+rs="$(rollout_state_for "$d")"; rm -f "$rs"
+rc_gate "rollout-model-a" "$d" "$(fake_claude_bin "1.0.0")"
+check_file "rollout state is written on the starting branch" "$rs"
+git -C "$d" checkout -q -b third-branch
+rc_gate "rollout-model-b" "$d" "$(fake_claude_bin "1.0.0")"
+check_contains "the second branch reads back the FIRST branch's recorded model" "$OUT" "rollout-model-a"
+# The negative half: no (repo,branch)-keyed sibling exists for either file. Both paths are the
+# repo-keyed helpers' own prefixes with combined_key_for's key swapped in — the one composition no
+# helper builds, precisely because production must never build it either.
+bk="$(combined_key_for "$d")"
+check_nofile "no branch-keyed trace file is created"            "/tmp/pre-pr-gate-trace-$bk"
+check_nofile "no branch-keyed rollout-state file is created"    "/tmp/pre-pr-gate-rollout-$bk"
+rm -f "$tf" "$rs"
 
 summary

@@ -696,8 +696,11 @@ EOF
   # is NOT flagged — a managed alias, not a pinnable artifact.
   # find+grep, not `grep -r --include=…`: busybox grep (Alpine) has no --include, so the option errored
   # and this check silently never fired there. find's -name globs are portable across GNU/BSD/busybox.
-  dep="$(find "$d" -type f \( -name 'Dockerfile*' -o -name '*compose*.yml' -o -name '*compose*.yaml' \) \
-           -exec grep -InE '^[^#]*(FROM|image:)[[:space:]]+[^[:space:]]+:latest' {} + 2>/dev/null | head -1 || true)"
+  # dir #85 (code audit, finding 12): fp_find, not a bare find — every per-stack check around this one
+  # prunes build-output/vendored trees (see fp_find's own comment) and this one silently didn't, so a
+  # vendored dependency shipping its own example Dockerfile flagged the adopter for code they don't own.
+  dep="$(fp_find "$d" -type f \( -name 'Dockerfile*' -o -name '*compose*.yml' -o -name '*compose*.yaml' \) \
+           -exec grep -InE '^[^#]*(FROM|image:)[[:space:]]+[^[:space:]]+:latest' {} + | head -1 || true)"
   if [ -z "$dep" ] && [ -d "$d/.github/workflows" ]; then
     dep="$(grep -rInE 'uses:[[:space:]]+[^[:space:]]+@v[0-9]+([[:space:]]|$)' "$d/.github/workflows" 2>/dev/null | head -1 || true)"
   fi

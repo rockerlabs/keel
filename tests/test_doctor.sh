@@ -672,7 +672,23 @@ check_contains "suppressed finding is counted in the summary" "$OUT" "(1 accepte
 run "$doctor" --all "$d"
 check_contains "--all reveals the accepted finding" "$OUT" "[H-DEP-FLOATING]"
 check_contains "--all marks it as accepted" "$OUT" "(accepted)"
+
 check_absent   "--all hides nothing" "$OUT" "accepted hidden"
+
+# dir #85 (code audit, finding 12): H-DEP-FLOATING scans through fp_find like every neighbouring
+# per-stack check, so a VENDORED dependency's own example Dockerfile never flags the adopter for code
+# they don't own. The bare `find` it used before had no pruning at all. (Placed AFTER the accept-file
+# assertions above — inserting it between them would have left the `--all hides nothing` check reading
+# this block's $OUT, where it can no longer fail for any reason.)
+d="$(newbase)"
+mkdir -p "$d/node_modules/some-dep"
+printf 'FROM postgres:latest\n' > "$d/node_modules/some-dep/Dockerfile"
+run "$doctor" --all "$d"
+check_absent "a vendored dependency's Dockerfile does not flag a floating dep" "$OUT" "[H-DEP-FLOATING]"
+# ...and the check still fires for a first-party one, so the pruning didn't just disable it
+printf 'FROM postgres:latest\n' > "$d/Dockerfile"
+run "$doctor" --all "$d"
+check_contains "a first-party Dockerfile still flags the floating dep" "$OUT" "[H-DEP-FLOATING]"
 
 # accepting a GAP ID is ignored — a hard failure can't be waved away into a green exit
 d="$(mkproj)"; git -C "$d" init -q

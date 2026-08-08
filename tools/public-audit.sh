@@ -140,7 +140,14 @@ cleanup_pr_refs() {
     | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
 }
 audit_tmp="$(mktemp -d)"
-trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT INT TERM
+# dir #85 (code audit, finding 11): the INT/TERM handler must EXIT. Bash runs a trap handler for a
+# caught signal and then RESUMES the script — so Ctrl-C used to tear down the fetched PR refs and the
+# tmpdir and then keep auditing against the state it had just deleted, while the operator believed the
+# run was cancelled. `exit 130` is the conventional 128+SIGINT status; the EXIT trap still fires after
+# it (that is what actually performs cleanup), so the teardown is written once, not per-signal.
+trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- binary-blob decode scan (shared by sections 5b and 6) ----------------------------------------
 # The text passes cannot see INSIDE a binary: tree_grep's -I skips binary files, and `git log -p`
