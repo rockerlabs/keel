@@ -84,9 +84,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     assertion can pass vacuously). `tests/lib.sh`'s `run()` now redirects stdin from `/dev/null`, so
     running a test file by hand from a terminal no longer hangs on `install.sh`'s interactive branches.
 - **Pre-v0.6.0 audit, docs leg: shipped prose that described behavior the code doesn't have**
-  (dir #85). Each was found by checking a doc claim against the code behind it; all are wording
-  corrections, with one one-word message change in `doctor.sh` so the tool and the rail now say the
-  same thing.
+  (dir #85). Each was found by checking a doc claim against the code behind it. Almost all are wording
+  corrections. The two exceptions, both detailed below: the word `project` added in two places in
+  `doctor.sh` — its `H-FOOTPRINT` legend and the finding text it emits, so the tool and the rail now say
+  the same thing — and the `tests/test_doctor.sh` assertions that pin that tier and string.
   - **`FRAMEWORK.md`'s reusability boundary claimed "`doctor` hard-fails if a host/user identifier
     leaks in here".** No such check exists — nothing in doctor's finding set reads this file's content.
     Replaced with what is actually true, which is a good deal less than the old promise: out of the

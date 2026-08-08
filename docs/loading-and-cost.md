@@ -59,9 +59,9 @@ A guard against bloat ships with the **project** half of that: `doctor` raises a
 (`H-FOOTPRINT`) when a project's own `CLAUDE.md` passes **10,000 tokens**
 (`KEEL_STARTUP_WARN_TOKENS`). Be precise about what that covers — it measures that one file, and the
 global core is never added in, so the number it prints is a floor on real startup cost rather than the
-whole of it. Against that budget the typical project file above (~330) has enormous room; the ceiling is
-set high on purpose, to catch a `CLAUDE.md` that has quietly grown into a roadmap, not to police a
-healthy one.
+whole of it. For scale, the typical project file above is ~330 — roughly 3% of the budget — so the hint
+fires only for a `CLAUDE.md` that has grown into a roadmap, which is exactly what it then tells you to
+move to the on-demand tier.
 
 ## With Keel vs without — a concrete moment
 
