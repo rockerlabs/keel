@@ -109,17 +109,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   - **The `keel` CLI verb list was short in two places.** `docs/reference.md` listed 7 of the
     dispatcher's 9 arms and `README.md` listed 7 as well; `version` and `help` were undocumented in
     both. Both lists now match `keel`'s actual `case` arms.
-  - **`docs/loading-and-cost.md` put `CHANGELOG.md` at "~25,000+" tokens; it is ~44,600.** The `+`
-    makes it an open floor, so the mechanized figure guard correctly passed it — but the real file is
-    ~78% larger than the quoted floor, which materially misleads a reader sizing it. Raised to
-    `~40,000+`, still a true floor with headroom, so ordinary growth doesn't force a bump every
-    release.
+  - **`docs/loading-and-cost.md` put `CHANGELOG.md` at "~25,000+" tokens; the real file is well over
+    40,000.** The `+` makes it an open floor, so the mechanized figure guard correctly passed it — but
+    a floor that far under actual materially misleads a reader sizing the file. Raised to `~40,000+`:
+    still a true floor, with enough headroom that ordinary growth doesn't force a bump every release.
+    Deliberately no exact figure here — this file gains an entry on nearly every PR (it grew twice
+    while this one was in review), which is precisely the drift that rotted the original number.
 
   - **`docs/loading-and-cost.md` carried the *same* WARN/scope claim** — "`doctor` raises a **WARN** if
     the always-loaded core exceeds 10,000 tokens" — and was initially missed even though this PR edits
     that file. Corrected the same way as the rail (HINT, project file only, number is a floor), which
     matters more here: this is the document whose entire subject is startup cost. Its "~50 sessions
-    ≈ ~100K tokens" figure was also ~14% low against its own per-session number; now ~110K.
+    ≈ ~100K tokens" figure was also ~10% low against its own per-session number; now ~110K.
   - **`README.md` and `docs/reference.md` both credited `public-audit.sh` with catching "names".**
     A bare personal name has no built-in pattern — it is found only via a declared `token:`/`--token`,
     or by the separate secret-guard's personal-literal file. Same overclaim shape as the boundary rail
