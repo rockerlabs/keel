@@ -1308,22 +1308,15 @@ check_status "ARMED: combined outcome + matching dialog trace → exit 0" 0 "$ST
 check_absent "ARMED: combined outcome + matching dialog trace → allowed" "$OUT" "deny"
 rm -f "$tf"
 
-# 77. ARMED: outcomes OTHER than `agent:*` (a trusted `-operator-run` outcome, and `skip`) are UNCHANGED
-# — the dialog check applies only to agent:*-shaped outcomes, since step 5(a)'s reminder doesn't exist on
-# any other path.
+# 77. ARMED: trusted `-operator-run`/`-waived` outcomes are UNCHANGED — the dialog check applies only to
+# agent:*-shaped outcomes (step 5(a)'s reminder) and, since dir #116, to `skip` (step 4's mandatory skip
+# dialog — see tests 93-96); it never applies to an outcome that names the operator as its source.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
 write_full_receipt "$d"        # default outcome: medium-operator-run, no dialog line anywhere
 gate "gh pr create --fill" "$d"
 check_status "ARMED: <level>-operator-run outcome, no dialog line → still exit 0" 0 "$STATUS"
 check_absent "ARMED: <level>-operator-run outcome, no dialog line → allowed" "$OUT" "deny"
-
-d="$(mkrepo)"
-arm_dialog_leg "$d"
-write_full_receipt_review "$d" "skip"
-gate "gh pr create --fill" "$d"
-check_status "ARMED: skip outcome, no dialog line → still exit 0" 0 "$STATUS"
-check_absent "ARMED: skip outcome, no dialog line → allowed" "$OUT" "deny"
 
 # 78. dir #85 (code audit, finding 4 + rails audit M2-7): the arming probe must follow KEEL_HOME the
 # same way install-pre-pr-gate.sh --global does. It used to read a hardcoded $HOME/.claude/settings.json,
@@ -1661,5 +1654,233 @@ run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
 check_contains "dir #96: the note names step 5" "$OUT" "polish.5-review NOT recovered by design"
 check_absent "dir #96: ...and its tail doesn't tell it to bind a step 3 nobody withheld" "$OUT" "step 3 bound to"
+
+# 93. dir #116: `--recover` must not restore a SKIP-level `polish.4-depth`. `skip` is the one depth that
+# bypasses step 5 outright, and commands/polish.md step 4 tells a convergence round to reuse the recovered
+# level as-is — so an inherited skip is a review bypass the operator never chose for the new commit. A
+# non-skip depth still recovers (dir #72's convenience: it doesn't bypass review; step 5 still has to
+# produce a fresh, HEAD-keyed outcome against it).
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"                # prior run chose skip
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "dir #116: recover with a skip-level step 4 → exit 0" 0 "$STATUS"
+check_contains "dir #116: skip-level polish.4-depth is named as withheld" "$OUT" "polish.4-depth NOT recovered by design"
+check_contains "dir #116: the instruction says to re-size fresh" "$OUT" "step 4 re-sized fresh"
+check_absent "dir #116: the skip-level depth line was not re-stamped" "$(cat "$(sentinel_for "$d")")" "polish.4-depth"
+
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "low:+38-8,2f,docs"                 # prior run: non-skip
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_contains "dir #116: a non-skip polish.4-depth still recovers" "$(cat "$(sentinel_for "$d")")" "polish.4-depth"
+check_absent "dir #116: no withheld note for a non-skip depth" "$OUT" "polish.4-depth NOT recovered by design"
+
+# A skip-level step 4 this run already wrote itself needs no note — same shape as test 92's step-5 case.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"                # this round wrote it itself
+run_in "$d" bash "$gate" receipt --recover
+check_absent "dir #116: no withheld note when this round already wrote step 4" "$OUT" "polish.4-depth NOT recovered by design"
+
+# 94. dir #116: step 4's mandatory skip dialog carries its OWN token (KEEL-DEPTH-DIALOG: level=skip),
+# which must leave a `dialog:skip` trace the gate can check. The token is deliberately distinct from
+# step 5(a)'s KEEL-REVIEW-DIALOG: the trace leg accepts only `skip` on it, so a sizing dialog can never
+# pre-satisfy step 5(a)'s dir #88 check — and the review token conversely rejects `skip` (it validates
+# against $ACCEPTED_REVIEW_LEVELS, which the SubagentStop leg shares: an agent review "at skip" would
+# vouch for no review at all).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+askuserquestion_trace "$d" "This diff sized as pure docs. Confirm skipping the review? KEEL-DEPTH-DIALOG: level=skip"
+check_status "dir #116: depth-dialog marker level=skip → exit 0" 0 "$STATUS"
+check_contains "dir #116: dialog:skip trace line written at the observed sha" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+rm -f "$tf"
+# The depth token accepts ONLY skip — a review level on it must be inert (this is what keeps a sizing
+# dialog from pre-satisfying step 5(a)'s check), and a near-miss word must not truncate to skip (same
+# right-anchor discipline as test 70a).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "Sized as ordinary code. KEEL-DEPTH-DIALOG: level=high"
+check_nofile "dir #116: depth-dialog token with a review level (high) is inert" "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skipped"
+check_nofile "dir #116: depth-dialog near-miss (skipped) is rejected, not truncated to skip" "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skip2"
+check_nofile "dir #116: depth-dialog near-miss (skip2) is rejected too" "$tf"
+# The review token still rejects skip, on both legs that share the accepted set.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=skip"
+check_nofile "dir #116: the review-dialog token rejects level=skip" "$tf"
+# Digit near-miss on the REVIEW token (operator-run /code-review high on this ticket): a letters-only
+# capture class truncated `level=high2` to a false-accepted `high` — the same leftmost-longest gap
+# test 70a closed for alphabetic near-misses only. Underscore too, on both tokens.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high2"
+check_nofile "dir #116: review-dialog near-miss (high2) is rejected, not truncated to high" "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skip_x"
+check_nofile "dir #116: depth-dialog near-miss (skip_x) is rejected, not truncated to skip" "$tf"
+# Hyphen is the separator this file's own outcome vocabulary uses (skip-waived, high-operator-run) —
+# found by the operator's second-opinion /code-review pass: a hyphen-less class truncated
+# `level=skip-waived` (the exact string the receipt path denies) into a minted `dialog:skip`.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skip-waived"
+check_nofile "dir #116: depth-dialog near-miss (skip-waived) is rejected, not truncated to skip" "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high-ish"
+check_nofile "dir #116: review-dialog near-miss (high-ish) is rejected, not truncated to high" "$tf"
+# BOTH tokens in one event write BOTH lines (operator-run /code-review high on this ticket): the first
+# cut exit-0'd on the depth match, so a review-reminder dialog merely QUOTING the depth token lost its
+# own dialog:<level> line and false-denied a genuine agent unlock. The parses are now independent.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+askuserquestion_trace "$d" "Agent review ran. KEEL-REVIEW-DIALOG: level=high (step 4's own dialog would carry KEEL-DEPTH-DIALOG: level=skip instead)"
+check_contains "dir #116: dual-token event still writes the review line" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:high"
+check_contains "dir #116: dual-token event writes the depth line too" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+rm -f "$tf"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed nothing.\nKEEL-AGENT-REVIEW: level=skip\n')"
+check_nofile "dir #116: the SubagentStop leg still rejects level=skip" "$tf"
+
+# 95-pre. dir #116: ARMED, bare skip, and NO trace file at all — the commonest real deny shape (fresh
+# repo, dialog never opened). Distinct from 95's deny fixture, which has a trace file present with a
+# stale line: a `_trace_has_line` regression treating a MISSING file as a match would false-allow every
+# no-dialog skip unlock and only this case would go red.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: ARMED, skip with no trace file → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #116: ...for the missing step-4 skip dialog" "$OUT" "no step-4 skip dialog"
+
+# 95. dir #116: ARMED, the reproduction from the ticket must not reach allow. Round 1 sizes a trivial
+# diff `skip` with an answered skip dialog and passes; a substantial commit lands (HEAD moves); the
+# convergence round inherits the skip (simulated by writing the same receipts fresh — recovery is closed
+# by test 93, so this pins the gate-side floor against ANY path that re-asserts skip: a manual receipt,
+# an older polish.md, a copied sentinel) — the old dialog line is at the OLD sha, so the gate denies.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "Pure docs diff. Skip the review? KEEL-DEPTH-DIALOG: level=skip"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_status "dir #116: ARMED round 1, skip + answered skip dialog → exit 0" 0 "$STATUS"
+check_absent "dir #116: ARMED round 1, skip + answered skip dialog → allowed" "$OUT" "deny"
+git -C "$d" commit --allow-empty -qm "substantial follow-up commit"                # HEAD moves
+write_full_receipt_review "$d" "skip"                                              # skip re-asserted, no fresh dialog
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: ARMED, inherited skip on a new commit → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #116: denied naming step 4's skip dialog, not 5(a)'s reminder" "$OUT" "no step-4 skip dialog"
+
+# Same repo, fresh dialog answered for the NEW commit → allow again: the deny above is a missing
+# choice, not a ban — and proving it on the exact repo that was just denied is the per-SHA claim
+# end-to-end (the stale round-1 dialog line is still sitting in the trace file, and doesn't count).
+askuserquestion_trace "$d" "Still docs-only after the fix. Skip? KEEL-DEPTH-DIALOG: level=skip"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_status "dir #116: ARMED, skip re-chosen via dialog for the new commit → exit 0" 0 "$STATUS"
+check_absent "dir #116: ARMED, skip re-chosen via dialog for the new commit → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 95b. dir #116 (found by this change's own high review): a SUFFIXED route to outcome_level=skip must
+# not dodge the dialog check via the trusted `*-waived`/`*-operator-run` arms — `skip-waived` used to
+# set trusted=1, leave needs_dialog=0, and unlock an ARMED gate with no dialog ever answered. skip has
+# no review to waive or hand off, so the shape is invented by construction and denies outright — on
+# BOTH arms, and regardless of arming (the deny sits before the dialog check, which stays
+# armed-gated; this one is unconditional).
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+write_full_receipt_review "$d" "skip-waived"
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: ARMED, skip-waived with no dialog → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #116: ...as an invalid suffixed skip, not a generic miss" "$OUT" "suffixed 'skip' is not a valid outcome"
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip-operator-run"
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: UNARMED, skip-operator-run still denied (the deny is not arming-gated)" "$OUT" "suffixed 'skip' is not a valid outcome"
+
+# 95c. Operator-run /code-review high on this ticket: the LEVEL itself is now allowlisted — an
+# invented level used to dodge every value check (`none-waived` + depth `none:x` matched each other,
+# hit the trusted *-waived arm, and unlocked with no review, dialog, or trace), and a NESTED suffix
+# (`skip-waived-waived`, outcome_level `skip-waived`) rode the same hole past 95b's single-layer deny.
+# Both now die on the depth-level allowlist, armed or not.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+write_full_receipt_review "$d" "none-waived"
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: invented level none-waived → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #116: ...named as an invalid depth level" "$OUT" "not one of the real depths"
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip-waived-waived"
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: nested suffix skip-waived-waived → denied" "$OUT" "not one of the real depths"
+# Every legitimate depth still passes the allowlist: ultra (the (b) hand-off level) is the one real
+# depth that never reaches the marker legs, so pin it explicitly.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "ultra-operator-run"
+gate "gh pr create --fill" "$d"
+check_status "dir #116: ultra-operator-run still allowed → exit 0" 0 "$STATUS"
+check_absent "dir #116: ultra passes the depth allowlist" "$OUT" "deny"
+
+# 95d. dir #116 (operator's third /code-review pass): the skip deny must not contain its own key. The
+# hook greps raw question text, so a deny message spelling the composed marker would let a session
+# recapping the deny inside an AskUserQuestion mint the very trace line the deny asks for — reproduced
+# end-to-end before the fix (DENY → dialog quoting the deny → dialog:skip → ALLOW). Feed the actual
+# deny output through the dialog leg and assert it is inert; same for the instruction file, which
+# spells the marker only in step 5(a)'s placeholder form.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_contains "dir #116: setup — armed skip with no dialog denies" "$OUT" '"permissionDecision":"deny"'
+deny_out="$OUT"    # capture before the trace call below overwrites $OUT with skill-trace's own output
+askuserquestion_trace "$d" "The gate denied with: $deny_out — how should we proceed?"
+check_nofile "dir #116: the skip deny message recapped in a dialog mints NO trace" "$tf"
+check_absent "dir #116: ...because the deny never spells the composed marker" "$deny_out" "DIALOG: level=skip"
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/polish.md")"
+check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$tf"
+# The mechanized floor for the whole class: NO tracked file outside tests/ may contain a composed
+# marker (token + ': level=' + an accepted word) — any such string, quoted into a dialog, is a minted
+# credential. The installer header was the instance the per-file sweeps kept missing (found by the
+# operator's third /code-review pass verification). Sweep the whole worktree rather than a root list
+# (the fourth pass found a root list quietly omits docs/ and the root scripts — exactly where the
+# next marker mention will land); tests/ stays excluded by necessity (fixtures must spell composed
+# markers), .git/.claude/private are not shipped content.
+composed="$(grep -rlE '(KEEL-DEPTH-DIALOG|KEEL-REVIEW-DIALOG): level=(skip|low|medium|high|max|ultra)' \
+  --exclude-dir=tests --exclude-dir=.git --exclude-dir=.claude --exclude-dir=private \
+  "$REPO_ROOT" 2>/dev/null || true)"
+if [ -z "$composed" ]; then
+  pass "dir #116: no tracked non-test file spells a composed marker"
+else
+  fail "dir #116: no tracked non-test file spells a composed marker" "composed marker found in: $composed"
+fi
+
+# 96. dir #116: UNARMED (no AskUserQuestion leg wired — the default), skip stays self-reported and
+# passes without a dialog line — same no-false-deny-before-reinstall rule as dir #88's test 72.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+write_full_receipt_review "$d" "skip"
+gate "gh pr create --fill" "$d"
+check_status "dir #116: UNARMED, skip with no dialog line → still exit 0" 0 "$STATUS"
+check_absent "dir #116: UNARMED, skip with no dialog line → allowed" "$OUT" "deny"
 
 summary

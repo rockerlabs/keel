@@ -9,6 +9,64 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **A convergence round can no longer inherit a `skip` review depth the operator chose for a different
+  diff** (dir #116, found by dir #96's own closing review). `polish.4-depth` had the same property that
+  got steps 3 and 5 excluded from `receipt --recover`: an arm whose value silently stays true across a
+  commit. Reproduced end-to-end: round 1 sizes a trivial diff `skip` (with the operator's blessing, per
+  step 4's own always-ask rule), a substantial fix commit lands, `--recover` restores the `skip` depth,
+  `commands/polish.md` step 4 says "reuse the recovered level as-is; do not re-size", the round writes a
+  fresh `polish.5-review skip` — which *matches* the recovered depth, satisfying dir #63's cross-check —
+  and the gate answered `allow` with no review ever seeing the commit. Four changes — the first
+  narrow, the second mechanical-but-armed, the last two unconditional:
+  - `receipt --recover` never restores a **`skip`-level** `polish.4-depth` (named in its closing note,
+    same shape as steps 3/5); non-skip depths keep recovering — they bypass nothing, since step 5 still
+    owes a fresh HEAD-keyed outcome against them.
+  - The gate now requires a `skip` unlock to name an **answered step-4 skip dialog for the exact commit
+    being shipped**: the `KEEL-DEPTH-DIALOG` skip marker lives ONLY in a follow-up confirm
+    dialog opened after the operator's answer already landed on skip — never in a sizing dialog's own
+    question, where it would write the trace at answer time regardless of what was answered (an
+    operator overriding to `medium` would have left a skip credential at that sha; found by the
+    operator's second-opinion review). The check is per-SHA like the dir #88 agent arms, so a fix
+    commit invalidates the prior diff's answer by construction. What the trace proves is that the skip
+    confirm question was put to a human and answered for this commit — it records the question's
+    marker, not the chosen answer (reading the answer itself is filed as dir #118). Same arming rule
+    as dir #88:
+    inert until the installer wires the dialog hook. **Upgrade note for installs already armed by dir
+    #88 with a copied (non-linked) `commands/polish.md`:** the gate side goes live on `git pull`, but
+    the marker comes from `polish.md` — until `install.sh` refreshes the copy, an honestly-answered
+    marker-less skip dialog still denies (the deny names the marker, so the fix is discoverable).
+  - **A suffixed `skip` is denied outright, on all arms and independent of arming** — this change's own
+    high review broke its first cut: `skip-waived` (and `skip-operator-run`) reached
+    `outcome_level=skip` through the trusted suffix arms with the dialog check never firing, reproduced
+    unlocking an armed gate with no dialog answered. skip has no review to waive or hand off, so its
+    only honest receipt is the bare `skip`.
+  - **The depth level itself is now allowlisted** (low/medium/high/max/ultra/skip) — the operator-run
+    `/code-review high` pass on this change found the remaining dodge: an INVENTED level
+    (`polish.4-depth none:x` + `polish.5-review none-waived`, or a nested suffix like
+    `skip-waived-waived`) matched itself through the trusted arms and unlocked with no review, no
+    dialog, no trace. dir #116 made this class load-bearing — before it, bare `skip` was free, so an
+    invented level bought nothing. One check on step 4's stripped level closes it; the existing
+    outcome-vs-depth equality transitively constrains step 5.
+  The `KEEL-DEPTH-DIALOG` token is deliberately distinct from step 5(a)'s `KEEL-REVIEW-DIALOG`, and
+  the trace leg accepts only `skip` on it — so a sizing dialog can never pre-satisfy step 5(a)'s own
+  dialog check, by construction rather than by prose rule; conversely the review token (and the
+  SubagentStop marker, which shares its accepted set) still rejects `skip`, since an "agent review at
+  skip" would vouch for no review at all. The two token parses are independent — an event carrying
+  both writes both trace lines; the first cut's exclusive-exit lost a genuine review dialog's line
+  whenever its question merely quoted the depth token. Both capture classes now include digits,
+  underscore and hyphen, closing the `level=high2`/`level=skip_x`/`level=skip-waived` truncation
+  near-misses (the alphabetic cousins of dir #88's own `level=highest` guard — the hyphen one found
+  by the operator's second-opinion `/code-review` pass, and the sharpest: hyphen is the separator the
+  receipt vocabulary itself uses, so the exact string the receipt path denies would have minted a
+  trace). Every step-4 dialog whose ANSWER lands on skip — the borderline dialog and the high+/ultra
+  dialog alike — gets one follow-up confirm dialog carrying the token; reading the answer itself,
+  which would collapse the two dialogs into one, is filed as dir #118. The third second-opinion pass
+  then found the sharpest self-reference: the skip DENY message spelled the composed marker, so a
+  session recapping the deny inside a dialog handed the hook exactly the line it greps for — DENY →
+  quote → trace → ALLOW, reproduced end-to-end. The deny and every instruction now describe the
+  marker without spelling its composed form (`polish.md` uses the same `<level>` placeholder
+  discipline that protects dir #88's own marker), and a meta-test feeds the gate's actual deny output
+  and all of `polish.md` through the dialog leg, asserting both are inert.
 - **The pre-PR gate could unlock `gh pr create` for a commit no test had ever run against** (dir #96).
   The convergence round was the hole. Sequence: `/polish` runs, tests pass at sha1, step 5's review
   finds a real bug, the fix is committed (HEAD → sha2), `/polish` is re-invoked, and step 1's
