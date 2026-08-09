@@ -212,13 +212,17 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_absent "unreadable CLAUDE.md is not misreported as AGENTS.md drift" "$OUT" "drifted from CLAUDE.md"
 fi
 
-# footprint over budget is advisory: WARN but still exit 0
+# footprint over budget is advisory: a HINT (dir #45 retiered it from WARN), still exit 0
 d="$(mkproj)"; git -C "$d" init -q
 printf 'plenty of startup context goes here\n' > "$d/CLAUDE.md"
 printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
 run env KEEL_STARTUP_WARN_TOKENS=1 "$doctor" "$d"
 check_status "footprint over budget → still exit 0" 0 "$STATUS"
-check_contains "reports footprint WARN" "$OUT" "footprint"
+check_contains "reports the footprint finding" "$OUT" "footprint"
+# The TIER is a separate leading token from the ID (flush_notes prints "  HINT [ID] msg"), so asserting
+# on "[H-FOOTPRINT]" alone would pass under WARN too — it has to carry the tier word.
+check_contains "footprint is a HINT, not a WARN" "$OUT" "HINT [H-FOOTPRINT]"
+check_contains "footprint names the PROJECT file it measured" "$OUT" "project CLAUDE.md startup footprint"
 
 # a non-numeric token budget falls back to the default instead of leaking a `[: integer expected`
 d="$(mkproj)"; git -C "$d" init -q

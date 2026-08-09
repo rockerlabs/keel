@@ -39,7 +39,7 @@
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
 #                              PreToolUse/Bash one is missing (plain absence isn't flagged — opt-in)
-#   HINT  H-FOOTPRINT          CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
+#   HINT  H-FOOTPRINT          project CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
 #   HINT  H-MAP-DRIFT          CLAUDE.md map may be stale — a backtick-spanned path no longer on disk
 #                              (path-granular accept stays .keel/map-drift-baseline)
 #   HINT  H-DEP-FLOATING       floating dependency version (image :latest / Action @vN)
@@ -475,7 +475,7 @@ for d in "${DIRS[@]}"; do
     [ -n "$chars" ] || chars=0
     est=$(( chars / 4 ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
-      hint H-FOOTPRINT "CLAUDE.md startup footprint ~${est} tokens > budget ${WARN_TOKENS} — move detail to the on-demand tier (P2/P3)"
+      hint H-FOOTPRINT "project CLAUDE.md startup footprint ~${est} tokens > budget ${WARN_TOKENS} — move detail to the on-demand tier (P2/P3)"
     fi
   fi
 
