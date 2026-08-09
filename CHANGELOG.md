@@ -9,6 +9,97 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **The pre-PR gate could unlock `gh pr create` for a commit no test had ever run against** (dir #96).
+  The convergence round was the hole. Sequence: `/polish` runs, tests pass at sha1, step 5's review
+  finds a real bug, the fix is committed (HEAD → sha2), `/polish` is re-invoked, and step 1's
+  `receipt --recover` restores step 3's *pre-fix* receipt. Step 5's delta re-review then legitimately
+  changes nothing, so step 6 writes `skipped:no-file-changes` — and step 6's skip was unconditionally
+  exempt from its SHA check. Result: **nothing at all was bound to sha2**, and the gate answered
+  `allow`. Reproduced end-to-end in a sandbox, and observed live twice during dir #85's own session,
+  where a convergence round's `--recover` restored `polish.5-review` onto a diff that receipt had never
+  seen.
+
+  **The fix binds `polish.3-tests` to the sha it ran at**, exactly as steps 6 and 8 already were. The
+  gate now requires that *some* test run name current HEAD — step 3's own sha or step 6's retest sha —
+  and denies with an actionable message when neither does. The two named waivers below stay
+  exempt: the gate's job is to stop a silent skip, not to overrule a stated decision.
+
+  **Why not the obvious fix.** The ticket's first candidate was to have `--recover` refuse when
+  `base_sha == HEAD`. That cannot work, and a sandbox check showed why before any code was written:
+  `retire_sentinel` stamps base-sha at retirement time, retirement happens *inside* `init`, and `init`
+  runs *after* the fix commit — so `base_sha == HEAD` in an ordinary interrupted re-init **and** in a
+  genuine convergence round. The condition discriminates nothing and would refuse every recovery,
+  breaking the mechanism dir #72 built. The deeper point, and why this fix is small: **the gate never
+  needed to know whether a round is a convergence round.** It needs to know the shipped code was
+  tested. Binding step 3 removes the need for a discriminator entirely, so `commands/polish.md` no
+  longer claims that `--recover`'s own output tells a session which kind of round it is in — a claim
+  that was simply false.
+
+  **The waivers are two named literals, never the `skipped:*` class** (`skipped:--no-test`, and
+  `skipped:no-test-command` — see below). Receipt outcomes are free text, so
+  a broad exemption would have accepted `skipped:tests-fail-unrelated` from a session looking at a red
+  suite — reproducing the very unconditional-skip shape that made step 6 exempt and opened this hole.
+  Caught by this change's own review pass, which unlocked the gate with an invented skip reason.
+
+  **`receipt --recover` no longer restores `polish.3-tests` **or** `polish.5-review`, and no longer
+  overwrites a receipt the current run already wrote.** Three corrections, all found by this change's
+  own review passes. Step 5 joins step 3 for the same reason: a bare level or `agent:*` is caught by the
+  trace check (keyed to current HEAD), but the TRUSTED arms — `skip`, `*-operator-run`, `*-waived` —
+  skip that check entirely, so a recovered one claims the fix commit was reviewed when no review ever
+  saw it. Reproduced end-to-end. This matters for honesty as much as for the gate: the paragraph above
+  cites exactly that shape as the evidence for dir #96, so leaving it open would have made the claim
+  false. `commands/polish.md` already told the round to redo both, so the code now says what the prose
+  said. The other two:
+
+  - Recovery appends and the parser takes the last write per step id, so a session that re-ran its
+    tests and receipted the new sha *before* calling `--recover` had that correct value silently
+    superseded by the stale recovered one — then got denied for work it had genuinely done. Harmless
+    while step 3's outcome was inert; load-bearing the moment it became a sha. Recovery now fills gaps
+    only, so the order of `--recover` against your own receipt calls stopped mattering. Its closing
+    note names only the step ids actually withheld from *this* run — not a fixed pair — so it never
+    tells a session to write something it already wrote, or to hunt for something the backup never
+    held. `commands/polish.md` step 3's own skip-the-run permission was rescoped for the same reason:
+    it is keyed to whether HEAD has moved, which in a convergence round it always has, by definition.
+  - More seriously, restoring step 3 re-asserted a **prior round's `--no-test` waiver** into a round the
+    operator never passed `--no-test` to: `/polish --no-test` → review finds a bug → fix commit → plain
+    `/polish` → `allow`, with nothing tested and no waiver given. The sha arm self-corrects (a stale sha
+    just fails the compare); the waiver arm does not — which is the general rule behind both exclusions:
+    a step whose value can *silently stay true* across a commit must not be carried across one.
+
+  **A project with no test command has an escape**, `skipped:no-test-command` — the same shape step 7
+  has had as `skipped:no-doctor`. Without it, a repo with no tests yet (an `/init-project` scaffold, an
+  early adopter) could never unlock the gate, and the deny would name causes that were all wrong for it.
+  Still a named literal, so an invented reason denies.
+
+  **Residual limit, named rather than assumed away:** this binds a sha, not evidence. `$(git rev-parse
+  HEAD)` costs nothing to type without running anything, and unlike step 5 there is no trace leg behind
+  step 3. It closes *staleness* — a receipt outliving the commit it was written for — not fabrication.
+  Binding step 3 to a hook-written trace is the same escalation dir #63/#70 made for step 5, and is
+  filed as its own ticket rather than smuggled in here.
+
+  Behaviour change worth knowing: running the tests, then committing something (a CHANGELOG entry,
+  say), then unlocking is no longer accepted — that is exactly the "shipped commit wasn't tested" case.
+  Bind the new HEAD with a step-6 retest, which costs one receipt call. Two consumers were updated for
+  the same reason: `tools/pipeline-canary.sh`'s fabricated-claim probe (its receipt must be valid in
+  every respect except the thing under test, or the canary passes for the wrong reason) and the file's
+  own header prose, which still described steps 1–4 and 7 as the ones `--recover` correctly restores.
+  A legacy bare `done` from an older *copied* `commands/polish.md` also denies — fail-closed is right,
+  and the deny names that cause so it isn't a mystery after a `git pull`.
+
+- **The gate's hook JSON is built with `jq`, not `printf`-interpolated — a deny could be flipped to an
+  allow by the receipt value it names** (dir #96). Deny reasons interpolate values that arrive as free
+  text through the documented `receipt <step-id> <outcome>` CLI. Reproduced against the real gate:
+  `receipt polish.3-tests 'x","permissionDecision":"allow","junk":"'` made the deny path emit
+  *syntactically valid* JSON whose last `permissionDecision` key was `allow`, and jq, Go, JS and Python
+  all take last-wins on a duplicate key. That defeated the one deny this ticket exists to add, through
+  the ordinary CLI, with no knowledge of the sentinel format — strictly easier than the hand-written-
+  sentinel residual the file already concedes. The shape was pre-existing across five free-text values
+  reaching a deny message (the `--head` branch, and steps 3, 4, 5 and 6's outcomes); `deny()` is the sole
+  choke point, so fixing it and the allow payload covers all of them, and the `rollout-check` banner —
+  the file's one remaining interpolated payload, carrying no decision — was converted too, so "this file
+  never printfs JSON" is now true without an exception. A test pins that a quote-breaking receipt value
+  still yields one valid object parsing as `deny`. Found by this change's own high review.
+
 - **Pre-v0.6.0 audit, code leg: ten correctness fixes plus the test coverage that pins them**
   (dir #85). Found by a read-only sweep of `tools/*.sh`, `install.sh`, `bootstrap.sh`, `uninstall.sh`
   and the suite itself, then dispositioned in a cross-module synthesis pass. Every fix that changes

@@ -21,8 +21,10 @@
 #   <run-id>\t<step-id>\t<outcome>      (one per step, written by `receipt`, in any order)
 # Only lines carrying the CURRENT run's nonce count — a leftover line from an earlier run (a different
 # nonce) is invisible to the completeness check, so a stale receipt can't be replayed just because it
-# happens to still list the right step ids. `polish.8-unlock`'s outcome IS the HEAD SHA, so its presence
-# doubles as both the last step id and the existing SHA effect-check — no separate finalize step needed.
+# happens to still list the right step ids. THREE outcomes are HEAD SHAs, not free text: `polish.3-tests`
+# (dir #96), `polish.6-retest` (dir #72) and `polish.8-unlock` (dir #49). Step 8's presence doubles as
+# both the last step id and the SHA effect-check — no separate finalize step needed — while steps 3 and 6
+# are what actually tie a TEST RUN to the commit being shipped; see the dir #96 block further down.
 #
 # CLI subcommands (used by commands/polish.md, so a step never needs a raw `echo >>`):
 #   pre-pr-gate.sh init                    mint a fresh nonce, start a new receipt (run from repo root)
@@ -222,22 +224,29 @@
 #       same commit where practical, then re-review the DELTA only and stop once a pass needs no further
 #       changes — a fix-commit moving HEAD is expected, not a "loop back to step 4" violation. Step 1
 #       gained its own convergence branch that calls `receipt --recover` (below) right after `init` and
-#       explicitly skips steps 2-4/7 for the rest of that run — recovering at step 5 instead (the first
+#       explicitly skips steps 2/4/7 for the rest of that run — recovering at step 5 instead (the first
 #       draft's placement) would let stale values silently overwrite this round's genuinely fresh ones,
 #       found by an independent review during this same ticket's own /polish pass.
-#   (b) `receipt --recover` (this file) makes re-receipting the UNCHANGED steps (1-4, 7) after that
-#       commit cost one command instead of eight manual `receipt <step-id> <outcome>` calls. It reads
+#   (b) `receipt --recover` (this file) makes re-receipting the UNCHANGED steps (1, 2, 4, 7) after that
+#       commit cost one command instead of eight manual `receipt <step-id> <outcome>` calls. dir #96
+#       moved step 3 OUT of that set: its outcome is now the sha the tests ran at, so after a fix commit
+#       the recovered value is stale by construction and either the tests re-run or step 6 binds the new
+#       HEAD (the enumeration lives once, at the end of this paragraph — see "must therefore write"). It reads
 #       from a single-slot backup (`_prev_sentinel_path_for_key()`) that `retire_sentinel()` now writes at every
 #       point that used to just `rm -f`/overwrite the live sentinel (every gate-deny branch, the PASS
 #       branch's own post-unlock cleanup, and `init`'s overwrite) — so whichever run was just retired,
 #       for whatever reason, is the one `--recover` restores. Only one slot: this is a convenience for the
-#       common one-fix-commit case, not a receipt history, and it recovers unconditionally (no step-id
-#       filtering) — safe because any step that genuinely changed (5, 6, 8) gets a fresh `receipt` call
-#       written AFTER the recovery, which simply supersedes the recovered line the same way a real re-run
-#       already would (last write for a given step id wins, per the gate's own parse below). The gate's
-#       completeness/sha/trace checks are entirely unchanged: a recovered-but-stale step-8 sha or a
-#       recovered `polish.5-review` outcome that no longer has a matching trace still denies exactly as
-#       before — `--recover` only removes the busywork of re-typing what didn't change.
+#       common one-fix-commit case, not a receipt history. dir #96 made the filtering EXPLICIT rather
+#       than relying on a later write to supersede a recovered line: `polish.3-tests` and
+#       `polish.5-review` are never restored (their trusted arms — a sha that still matches, a
+#       `skip`/`-operator-run`/`-waived` outcome — would otherwise vouch for a commit they never saw,
+#       and unlike the other arms they do not self-correct — for step 3 that arm is `skipped:--no-test`,
+#       not a stale sha, which does fail its own compare), and recovery never overwrites a step id
+#       THIS run already receipted, so the order of `--recover` against your own receipt calls does not
+#       matter. The steps a convergence round must therefore write itself are 3, 5, 6 and 8. The gate's
+#       completeness/sha/trace checks are entirely unchanged: a recovered-but-stale step-8 sha still
+#       denies exactly as before — `--recover` only removes the busywork of re-typing what didn't
+#       change.
 #
 # --- dir #80: the sentinel is a single /tmp file shared by ALL worktrees of a repo -------------------
 # dir #61 deliberately keyed the sentinel off the repo's MAIN checkout (main_top_for -> basename), not
@@ -736,12 +745,14 @@ case "${1:-}" in
     ;;
   receipt)
     if [ "${2:-}" = "--recover" ]; then
-      # dir #72: re-stamp whatever the immediately-prior (now-retired) run already receipted onto the
-      # CURRENT nonce, in one call — the convergence-round shortcut commands/polish.md step 1's own
-      # convergence branch calls right after `init`. Steps that genuinely need fresh values (the
-      # re-review, a retest, the new HEAD sha) are written AFTER this by the normal `receipt <step-id>`
-      # path and simply supersede the recovered line — the gate's own completeness/sha/trace checks are
-      # untouched, so a recovered-but-now-stale value can never itself unlock the gate.
+      # dir #72: re-stamp the immediately-prior (now-retired) run's receipts onto the CURRENT nonce, in
+      # one call — the convergence-round shortcut commands/polish.md step 1's own convergence branch
+      # calls right after `init`. dir #96 narrowed it twice, so this is no longer "whatever the prior run
+      # had, superseded later by a fresh write": `polish.3-tests` and `polish.5-review` are never
+      # restored (see the filter below), and a step id THIS run already wrote is left alone rather than
+      # overwritten — so the order of `--recover` against your own receipt calls no longer matters. The
+      # steps a round must write for itself are 3, 5, 6 and 8. The gate's own completeness/sha/trace
+      # checks are untouched either way, so a recovered-but-now-stale value can never itself unlock it.
       require_active_receipt
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
       if [ ! -f "$prev" ]; then
@@ -791,12 +802,53 @@ case "${1:-}" in
         printf 'pre-pr-gate: prior receipt had no completed steps to recover\n' >&2
         exit 1
       fi
-      count=0
+      # dir #96: NEVER clobber a receipt this run already wrote. Recovery appends, and the completeness
+      # parser takes the last write per step id — so before this guard, a session that re-ran its tests
+      # and receipted `polish.3-tests <new sha>` BEFORE calling `--recover` had that fresh, correct
+      # value silently superseded by the stale recovered one, and then got denied for an unbound test
+      # run it had actually done. Harmless while step 3's outcome was inert; load-bearing the moment it
+      # became a sha. Rather than leaning on step 1's prose ("call --recover right after init"), make
+      # the order stop mattering: recovery fills gaps, it does not overwrite this run's own work.
+      already="$(awk -F'\t' -v n="$nonce" 'NF>=3 && $1==n {print $2}' "$sentinel" | sort -u)"
+      count=0; skipped_existing=0; unrecovered=""; todo=""
       while IFS=$'\t' read -r r_step r_outcome; do
         [ -n "$r_step" ] || continue
+        case "$r_step" in
+          polish.3-tests|polish.5-review)
+            # dir #96: never recovered. Both bind a claim to a SPECIFIC commit, and both have an arm
+            # that does not self-correct when the commit moves. Step 3: a stale sha fails the compare,
+            # but a recovered `skipped:--no-test` would re-assert a prior round's waiver into a round
+            # the operator never passed it to. Step 5: a bare level or `agent:*` is caught by the
+            # trace check (keyed to current HEAD), but the TRUSTED arms — `skip`, `*-operator-run`,
+            # `*-waived` — skip that check entirely, so a recovered one claims this fix commit was
+            # reviewed when it was not. Reproduced end-to-end by this ticket's own high review.
+            # commands/polish.md already tells the round to re-do both ("go to step 3, then step 5 for
+            # the delta re-review"), so this makes the code say what the prose already said.
+            # Report only what was actually withheld from THIS run: a step the round has already
+            # written itself needs no instruction, and naming a step the backup never held would send
+            # the session looking for something that was never there. The INSTRUCTION is per-step for
+            # the same reason — a fixed "write both" tail would re-introduce exactly that, telling a
+            # round that only lost step 3 to go and redo a review nobody withheld.
+            if ! printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
+              case "$r_step" in
+                polish.3-tests)  _todo='step 3 bound to $(git rev-parse HEAD) (or step 6 re-tested there)' ;;
+                polish.5-review) _todo='step 5 a fresh delta re-review' ;;
+                *)               _todo="$r_step" ;;
+              esac
+              unrecovered="${unrecovered:+$unrecovered / }$r_step"
+              todo="${todo:+$todo, }$_todo"
+            fi
+            continue
+            ;;
+        esac
+        if printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
+          skipped_existing=$((skipped_existing + 1)); continue
+        fi
         printf '%s\t%s\t%s\n' "$nonce" "$r_step" "$r_outcome" >> "$sentinel"
         count=$((count + 1))
       done <<< "$recovered"
+      [ "$skipped_existing" -eq 0 ] || printf 'pre-pr-gate: kept %s receipt(s) this run had already written (not overwritten by recovery)\n' "$skipped_existing"
+      [ -z "$unrecovered" ] || printf 'pre-pr-gate: %s NOT recovered by design (dir #96) — this round must write: %s\n' "$unrecovered" "$todo"
       printf 'pre-pr-gate: recovered %s step receipt(s) from the prior run onto nonce %s\n' "$count" "$nonce"
       exit 0
     fi
@@ -954,7 +1006,11 @@ case "${1:-}" in
     if [ -n "$rc_changed" ]; then
       log_event pipeline-drift "$rc_changed" "$rc_cwd"
       rc_msg="model/harness changed since last session ($rc_changed) - pipeline commands may have silently degraded; watch /polish step 5, consider tools/pipeline-canary.sh"
-      printf '{"systemMessage":"%s"}\n' "$rc_msg"
+      # dir #96: jq-built like every other hook payload here — $rc_msg embeds `.model` from the event.
+      # No permissionDecision, so the worst case was a dropped banner rather than a flipped decision;
+      # but one interpolated payload left the rule "this file never printfs JSON" false, and a rule with
+      # an exception is one a future edit copies the wrong half of.
+      jq -cn --arg m "$rc_msg" '{systemMessage:$m}'
     fi
     exit 0
     ;;
@@ -1227,7 +1283,17 @@ deny() {
   # can auto-ingest it — deterministic, zero-token. Writes to the log file, never stdout (the hook's JSON
   # stays intact); with no log path resolved, nothing is written and the gate's behaviour is unchanged.
   log_event guard blocked "$cwd"
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
+  # dir #96: build the JSON with jq, never `printf '%s'` into a quoted slot. Deny reasons interpolate
+  # five values that reach this file as FREE TEXT through the documented `receipt <step-id> <outcome>`
+  # CLI — the outcomes of steps 3, 4, 5 and 6, plus the resolved --head branch. (Steps 3 and 6 are
+  # normally shas, but the load-bearing case is exactly when they are NOT.) Reproduced before this
+  # fix: `receipt polish.3-tests 'x","permissionDecision":"allow","junk":"'` made the deny path emit
+  # syntactically valid JSON whose LAST permissionDecision key was "allow", and every mainstream parser
+  # (jq, Go, JS, Python) takes last-wins on a duplicate key. So the one deny this ticket exists to add
+  # could be flipped by the very receipt value it names — no knowledge of the sentinel format needed,
+  # i.e. strictly easier than the hand-written-sentinel residual this file already concedes. jq is
+  # unconditionally available on every path that can reach here (hook mode exits early without it).
+  jq -cn --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   exit 0
 }
 
@@ -1292,7 +1358,7 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
       }
     }
     if (missing == "") {
-      print "PASS" SEP val["polish.8-unlock"] SEP val["polish.5-review"] SEP val["polish.4-depth"] SEP val["polish.6-retest"]; exit
+      print "PASS" SEP val["polish.8-unlock"] SEP val["polish.5-review"] SEP val["polish.4-depth"] SEP val["polish.6-retest"] SEP val["polish.3-tests"]; exit
     }
     if (replay != "") { print "REPLAY" SEP missing; exit }
     print "MISSING" SEP missing
@@ -1302,7 +1368,7 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
 # \x1f (NOT tab) joins these fields: bash `read` collapses an EMPTY field sitting between two tab
 # delimiters regardless of what IFS is set to (the same bug fixed in skill-trace, above) — a genuinely
 # reachable shape here too (e.g. a malformed polish.8-unlock outcome), so use the same safe delimiter.
-IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome <<<"$result"
+IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome tests_outcome <<<"$result"
 
 case "$status" in
   MALFORMED)
@@ -1337,7 +1403,8 @@ case "$status" in
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
     # dir #72 finding #1: `polish.6-retest` used to be a bare completion marker with NO value-level
-    # check — unlike step 5 (trace-matched) and step 8 (sha-matched), a `receipt --recover`-restored
+    # check — unlike step 5 (trace-matched) and step 8 (sha-matched); dir #96 later sha-bound step 3
+    # too, so the value-checked set is now 3, 5, 6, 8. Back then, a `receipt --recover`-restored
     # (pre-fix-commit) retest receipt could silently satisfy completeness for a fix-commit that was
     # never actually re-tested, the exact case step 6 exists to catch. Same shape as step 8's own check:
     # a genuine retest now records the sha it ran at, not a bare "done" — `skipped:*` (step 5 changed
@@ -1352,6 +1419,61 @@ case "$status" in
         deny "Pre-PR gate: step 6's retest receipt ('$retest_outcome') doesn't match current HEAD ($current_sha) and isn't a skip — the diff may have changed since tests last ran. Run /polish again."
         ;;
     esac
+    # dir #96: THE test-binding check — the one invariant this gate exists to hold. Some run of the
+    # test suite must be bound to the commit about to become a PR: step 3's own sha, or step 6's retest
+    # sha. Either satisfies it; the two named waivers below are exempt, because the gate's job
+    # is to stop a SILENT skip, not to overrule a stated decision.
+    #
+    # Why this is needed on TOP of step 6's check above: step 6 is legitimately exempt whenever step 5
+    # changed no files (`skipped:*`), and in a convergence round that is the NORMAL outcome — the delta
+    # re-review comes back clean. So the sequence "tests at sha1 → review finds a bug → fix commit
+    # (sha2) → re-invoke → `receipt --recover` restores step 3 → step 6 skips" left NOTHING bound to
+    # sha2, and the gate allowed a `gh pr create` for a commit no test had ever run against. Reproduced
+    # end-to-end while filing this ticket, and observed live twice during dir #85's own session.
+    #
+    # Rejected alternative (the ticket's own first candidate): have `receipt --recover` refuse when
+    # `base_sha == HEAD`. It cannot work — `retire_sentinel` stamps base-sha at retirement time, and
+    # retirement happens inside `init`, i.e. AFTER the fix commit. So `base_sha == HEAD` in an ordinary
+    # interrupted re-init AND in a genuine convergence round; the condition discriminates nothing and
+    # would refuse every recovery. Verified in a sandbox before this fix was written.
+    #
+    # The deeper point: the gate does not need to know WHETHER this is a convergence round. It needs to
+    # know the shipped code was tested. Binding step 3 the same way steps 6 and 8 are bound removes the
+    # need for a discriminator entirely — which is why commands/polish.md no longer claims that
+    # `receipt --recover`'s own output tells a session which kind of round it is in.
+    #
+    # The waivers are two LITERALS, never the `skipped:*` class. Receipt outcomes are free text
+    # (`outcome="${3:-done}"`), so a broad `skipped:*` would accept `skipped:tests-fail-unrelated` from
+    # a session staring at a red suite — the exact silent skip this check exists to stop, and the same
+    # unconditional-skip shape that made step 6 exempt and opened this hole in the first place. Only
+    # `skipped:--no-test` (the operator's own flag) and `skipped:no-test-command` (a project that ships
+    # no test command at all) waive it — see the arm below for why the second exists; anything else must
+    # bind a sha.
+    #
+    # **Residual limit** (named rather than assumed away, same discipline as the dir #63/#70 sections
+    # above): this binds a sha, not evidence. `$(git rev-parse HEAD)` costs nothing to type without
+    # running anything, and unlike step 5 there is no trace leg behind step 3. It closes STALENESS —
+    # a receipt that silently outlives the commit it was written for — not fabrication. Binding step 3
+    # to a hook-written trace (a `PostToolUse(Bash)` leg matching the project's test command) is the
+    # same escalation dir #63/#70 made for step 5 and is filed as its own ticket, not smuggled in here.
+    # Two literal waivers, not a `skipped:*` class: the operator's own `--no-test`, and a project that
+    # genuinely ships no test command (`skipped:no-test-command` — the same escape step 7 has had all
+    # along as `skipped:no-doctor`). Without the second, a repo with no tests yet — an `/init-project`
+    # scaffold, an early adopter — could never unlock the gate at all, and the deny would name causes
+    # that are all wrong for it. Both are named literals so an invented reason still denies.
+    tests_bound=0
+    case "$tests_outcome" in
+      "skipped:--no-test"|"skipped:no-test-command"|"$current_sha") tests_bound=1 ;;
+    esac
+    [ "$retest_outcome" = "$current_sha" ] && tests_bound=1
+    if [ "$tests_bound" -eq 0 ]; then
+      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
+      log_event receipt-deny "tests-sha-unbound" "$cwd"
+      # Prescribe the one action that WORKS from here: retire_sentinel just ran, so there is no active
+      # receipt to append to — telling the operator to `receipt polish.3-tests <sha>` would hand them a
+      # command that answers "no active receipt". Every sibling deny in this branch says the same thing.
+      deny "Pre-PR gate: no test suite run is bound to current HEAD ($current_sha) — step 3 recorded '$tests_outcome' and step 6 did not re-run here. Usual cause: a commit landed after the tests ran (a review fix, a changelog entry). If you just pulled Keel, an older copied commands/polish.md that writes a bare 'done' for step 3 causes this too — re-run install.sh. Run /polish again."
+    fi
     # dir #63/Hole A: cross-check step 5's review outcome against step 4's OWN recorded depth — without
     # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
@@ -1452,7 +1574,8 @@ case "$status" in
     # never $4, so it never depends on the display wording.
     retire_sentinel "$sentinel" "$cwd" "$receipt_key"
     log_event receipt-pass "$prov_label"$'\t'"$prov_tag" "$cwd"
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"},"systemMessage":"%s"}\n' "$prov_label" "$prov_label"
+    # Same jq-built payload as deny() above — $prov_label is derived from step 5's free-text outcome.
+    jq -cn --arg r "$prov_label" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"allow",permissionDecisionReason:$r},systemMessage:$r}'
     exit 0
     ;;
 esac

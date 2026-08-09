@@ -239,7 +239,11 @@ cmd_demo_bypass() {
   ( cd "$d" && bash "$GATE" init
     bash "$GATE" receipt polish.1-diff
     bash "$GATE" receipt polish.2-simplify
-    bash "$GATE" receipt polish.3-tests
+    # dir #96: sha-bound like steps 6 and 8 — this receipt must be valid in every respect EXCEPT the
+    # one thing under test (the fabricated review claim with no trace to back it). A bare `done` here
+    # would make the gate deny for an unbound test run instead, i.e. the canary would pass for the
+    # wrong reason and stop probing what it exists to probe.
+    bash "$GATE" receipt polish.3-tests "$(git rev-parse HEAD)"
     bash "$GATE" receipt polish.4-depth "high:fabricated"
     bash "$GATE" receipt polish.5-review high
     bash "$GATE" receipt polish.6-retest "skipped:no-file-changes"
