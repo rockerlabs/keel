@@ -203,16 +203,19 @@ write_full_receipt_review() {
   # above, so a caller can pass "agent:high" and still get a matching polish.4-depth of "high".
   depth_level="${depth_level#agent:}"
   run_in "$d" bash "$gate" init
+  # Hoisted: nothing in the loop commits, so HEAD is invariant across it — one fork instead of three.
+  local head_sha; head_sha="$(git -C "$d" rev-parse HEAD)"
   for s in $ALL_STEPS; do
     [ "$s" = "$omit" ] && continue
     if [ "$s" = "$replay_step" ]; then
       printf 'stale-nonce-from-a-previous-run\t%s\tdone\n' "$s" >> "$(sentinel_for "$d")"
       continue
     fi
-    if [ "$s" = "polish.8-unlock" ] || [ "$s" = "polish.6-retest" ]; then
+    if [ "$s" = "polish.8-unlock" ] || [ "$s" = "polish.6-retest" ] || [ "$s" = "polish.3-tests" ]; then
       # dir #72 finding #1: polish.6-retest's outcome is now sha-checked the same way polish.8-unlock's
-      # is — a bare "done" would no longer pass the gate.
-      run_in "$d" bash "$gate" receipt "$s" "$(git -C "$d" rev-parse HEAD)"
+      # is — a bare "done" would no longer pass the gate. dir #96 added polish.3-tests to the same set:
+      # some test run must be bound to the shipped commit, and step 3 is where that normally comes from.
+      run_in "$d" bash "$gate" receipt "$s" "$head_sha"
     elif [ "$s" = "polish.5-review" ]; then
       run_in "$d" bash "$gate" receipt "$s" "$review_outcome"
     elif [ "$s" = "polish.4-depth" ]; then

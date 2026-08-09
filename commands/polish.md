@@ -43,16 +43,32 @@ Steps, in order:
    finding, you fixed it, committed it, and re-invoked `/polish` on the same branch — the step-1 diff
    above is the same one a prior run already diffed/simplified/tested/sized/self-checked, plus that one
    fix commit — run `tools/pre-pr-gate.sh receipt --recover` right now, before step 2. On success (it
-   reports how many steps it restored), that call has already re-stamped steps 1–4 and 7's receipts onto
-   this run's fresh nonce: **treat steps 2, 3, 4, and 7 below as DONE — do not invoke them again, and do
+   reports how many steps it restored) that call has re-stamped the prior run's receipts onto this run's
+   fresh nonce, without overwriting anything this run already wrote (dir #96 — so the order of
+   `--recover` against your own receipt calls does not matter):
+   **treat steps 2, 4, and 7 below as DONE — do not invoke them again, and do
    not write fresh receipts for them.** A fresh write would silently overwrite the just-recovered one
-   (last write for a given step id wins, per the gate's own parser) — pointless for 1/2/3/7 (their
+   (last write for a given step id wins, per the gate's own parser) — pointless for 1/2/7 (their
    receipted outcome is just a completion marker) and actively wrong for `polish.4-depth`, whose sized
    level step 5 will be cross-checked against: overwriting it with a stale pre-fix-commit sizing would
-   compare this round's real review against the wrong baseline. Skip straight to step 5 for the delta
-   re-review (and steps 6/8, which always need a fresh value regardless). If `--recover` instead reports
-   nothing to recover, this is NOT a convergence round (a fresh repo, or nothing was retired since the
-   last `init`) — proceed normally from here.
+   compare this round's real review against the wrong baseline.
+
+   **Step 3 is NOT in that recovered-and-done set** (dir #96): its receipt names the sha the tests ran
+   at, which after your fix commit is no longer the commit being shipped. **You always WRITE step 3's
+   receipt** — it stays in the completeness set, so omitting it denies for a missing step id and costs
+   you the whole round, and it must carry the new HEAD's sha: re-run the tests there. Don't plan on
+   step 6's retest carrying the binding for you — it does satisfy the gate when it happens (a later
+   commit, say a CHANGELOG entry, legitimately rebinds through step 6), but the normal convergence
+   outcome is a clean delta re-review that changes no files, and step 6 then writes
+   `skipped:no-file-changes`, which binds nothing. So: go to step 3, then step 5 for the delta
+   re-review, then 6 and 8, which always need a fresh value. Only steps 2, 4 and 7 are genuinely done.
+
+   **Do NOT use `--recover`'s own output to decide whether this is a convergence round.** It reports
+   success for any retired prior run — an interrupted run, a denied `gh pr create`, any second `init` —
+   because `retire_sentinel` backs up on every invalidation path and its lineage guard compares a
+   base-sha stamped at retirement time, which is *inside* `init` and therefore already past your fix
+   commit. Only you know why you re-invoked. If nothing was retired at all it will say so, and that
+   does tell you this is a fresh run — but the converse carries no information.
 
    Not a convergence round (the ordinary case): `tools/pre-pr-gate.sh receipt polish.1-diff`, then
    continue through every step below in order.
@@ -68,12 +84,23 @@ Steps, in order:
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`).
 
-3. **Tests — run them by default.** *Skip entirely if step 1's convergence branch just recovered this
-   step's receipt.* Take the test command from the project's `CLAUDE.md` and run it. Show the
+3. **Tests — run them by default.** *You may skip the RUN only if HEAD has not moved since the tests
+   last passed — which in a convergence round it has, by definition (step 1's branch includes a fix
+   commit); the case where this applies is an interrupted re-run. Either way you always WRITE this
+   receipt: `--recover` never restores it.* Take the
+   test command from the project's `CLAUDE.md` and run it. Show the
    real output (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains
    `--no-test`, skip the run and say explicitly that tests were skipped by request (the human runs them before
    the PR).
-   Receipt: `tools/pre-pr-gate.sh receipt polish.3-tests` (or `... polish.3-tests skipped:--no-test`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"` (or `...
+   polish.3-tests skipped:--no-test`, or `... polish.3-tests skipped:no-test-command` when the project
+   genuinely ships no test command — the same escape step 7 has as `skipped:no-doctor`) — **the sha is
+   the point** (dir #96): the gate unlocks only when
+   some test run is bound to the commit being shipped, via this receipt or step 6's retest. After a fix
+   commit the previous round's sha is no longer that commit, so either the tests re-run here or step 6
+   binds the new HEAD. Only those two named literals waive it; an
+   invented `skipped:<anything-else>` is denied, and a prior round's waiver is never carried over —
+   `--recover` does not restore this step at all.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** *Skip entirely if step 1's convergence
    branch just recovered this step's receipt* — reuse the recovered level as-is; do not re-size (the
@@ -276,7 +303,7 @@ Steps, in order:
    violation** — the gate's SHA/trace checks (step 8) are keyed to whatever HEAD ends up being, so fold a
    real finding's fix into the same commit where practical, then **converge, don't restart**: on the
    re-invocation this produces, step 1's own convergence branch (`receipt --recover`) already skipped
-   steps 2–4/7 for you — arriving here, re-review only the DELTA the fix introduced, not the full step-1
+   steps 2/4/7 for you (NOT step 3 — it must bind this commit, see step 1) — arriving here, re-review only the DELTA the fix introduced, not the full step-1
    diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
    a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
    means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
@@ -298,11 +325,11 @@ Steps, in order:
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
    Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
-   as step 8, not a bare `done`: unlike every other step here, step 6 is never skipped by step 1's
-   convergence branch (its whole job is to catch a fix-commit breaking something), so the gate now
-   cross-checks it against current HEAD the same way it already does for step 8 — a bare `done` would
-   mean a recovered, pre-fix-commit retest could otherwise satisfy completeness without the fix-commit
-   ever having been re-tested.
+   as step 8, not a bare `done`: step 6 is one of the four steps a convergence round must write itself
+   (3, 5, 6, 8 — step 1's branch hands back only 2, 4 and 7), and its whole job is to catch a fix-commit
+   breaking something. So the gate cross-checks it against current HEAD the same way it does steps 3 and
+   8 — a bare `done` would mean a recovered, pre-fix-commit retest could otherwise satisfy completeness
+   without the fix-commit ever having been re-tested.
 
 7. **Self-check, if this repo ships one.** *Skip entirely if step 1's convergence branch just recovered
    this step's receipt.* If `tools/self/doctor.sh` exists at the repo root, run it —
