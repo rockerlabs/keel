@@ -112,6 +112,44 @@ printf '#!/usr/bin/env bash\nfor x in "$@"; do case "$x" in polish.md) continue 
 run "$sd" "$d" --quiet
 check_status "an unrelated bare continue arm doesn't corrupt the match -> exit 0" 0 "$STATUS"
 
+# --- 1b. the core-@import pattern, hand-copied into three standalone scripts ----------------------
+# The mutation standard: the check must FAIL when a copy drifts, not merely pass on today's tree.
+core_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
+plant_import_re() {   # plant_import_re DIR PATTERN-FOR-UNINSTALL
+  printf "has_core_import() { grep -qE '%s' \"\$1\"; }\n" "$core_re" >> "$1/install.sh"
+  printf "grep -qE '%s' x\n" "$core_re" >> "$1/tools/doctor.sh"
+  # the variable is read on the next line so self/doctor.sh's own shellcheck leg stays clean (SC2034)
+  printf "#!/usr/bin/env bash\ncore_import_re='%s'\ngrep -qE \"\$core_import_re\" x\n" "$2" \
+    > "$1/uninstall.sh"
+}
+
+d="$(mk_clean_repo)"; plant_import_re "$d" "$core_re"
+( cd "$d" && git add -A && git commit -qm "import re in all three" )
+run "$sd" "$d" --quiet
+check_status "three identical copies -> exit 0" 0 "$STATUS"
+
+# one copy silently loses its end boundary — the exact widening dir #108 was
+d="$(mk_clean_repo)"; plant_import_re "$d" '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md'
+( cd "$d" && git add -A && git commit -qm "drifted import re" )
+run "$sd" "$d" --quiet
+check_status "a drifted copy -> exit 1" 1 "$STATUS"
+check_contains "names the drift" "$OUT" "core-@import pattern differs"
+
+# a copy deleted outright, rather than edited
+d="$(mk_clean_repo)"; plant_import_re "$d" "$core_re"
+printf '#!/usr/bin/env bash\necho no pattern here\n' > "$d/uninstall.sh"
+( cd "$d" && git add -A && git commit -qm "import re dropped from uninstall" )
+run "$sd" "$d" --quiet
+check_status "a missing copy -> exit 1" 1 "$STATUS"
+check_contains "names the file that lost it" "$OUT" "missing from: uninstall.sh"
+
+# a repo that defines it nowhere has no rule to keep in sync — silent, not a GAP (mirrors check 1's
+# empty-skip-list arm; mk_clean_repo's fixtures carry no pattern at all)
+d="$(mk_clean_repo)"
+run "$sd" "$d" --quiet
+check_status "no copies anywhere -> exit 0" 0 "$STATUS"
+check_absent "and says nothing about the pattern" "$OUT" "core-@import"
+
 # --- 2. dead internal reference -> GAP -------------------------------------------------------------
 d="$(mk_clean_repo)"
 printf 'See `%s` for details.\n' "$fake_dead" > "$d/README.md"

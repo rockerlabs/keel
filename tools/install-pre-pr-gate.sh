@@ -86,21 +86,20 @@ EOF
 }
 
 force=0
-global=0
 home_dir=""
-scope_flag="--global"
+scope_flag=""   # empty = project scope (a repo path); set = machine-global, and names the flag that asked
 rest=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) force=1 ;;
-    --global) global=1 ;;
+    --global) scope_flag="--global" ;;
     --home)
       shift
       [ "$#" -gt 0 ] || { echo "install-pre-pr-gate.sh: --home needs a DIR" >&2; exit 2; }
-      home_dir="$1"; global=1; scope_flag="--home" ;;
+      home_dir="$1"; scope_flag="--home" ;;
     -h|--help) usage; exit 0 ;;
     *) if [ -n "$rest" ]; then
-         echo "install-pre-pr-gate.sh: unexpected extra argument '$1' — one repo path (or --global) per run" >&2
+         echo "install-pre-pr-gate.sh: unexpected extra argument '$1' — one repo path (or --global/--home DIR) per run" >&2
          exit 2
        fi
        rest="$1" ;;
@@ -109,18 +108,15 @@ while [ "$#" -gt 0 ]; do
 done
 set -- ${rest:+"$rest"}
 
-if [ "$global" = 1 ]; then
+if [ -n "$scope_flag" ]; then
   [ -z "${1:-}" ] || { echo "install-pre-pr-gate.sh: $scope_flag doesn't take a repo path" >&2; exit 2; }
-  if [ -n "$home_dir" ]; then
-    settings_dir="$home_dir"
-  else
-    settings_dir="${KEEL_HOME:-${HOME:?install-pre-pr-gate: --global needs HOME set, or pass --home DIR}/.claude}"
-  fi
+  # Precedence, in one expression: --home DIR > $KEEL_HOME > $HOME/.claude. The ${HOME:?} is evaluated
+  # only if both earlier candidates are empty, so --home still works with HOME unset.
+  settings_dir="${home_dir:-${KEEL_HOME:-${HOME:?install-pre-pr-gate: --global needs HOME set, or pass --home DIR}/.claude}}"
   echo "install-pre-pr-gate: $scope_flag wires EVERY repo on this machine — the agent's gh pr create is" >&2
   echo "  hard-denied without a matching /polish receipt in every project you open here, not just this one." >&2
-  # A retargeted home is Keel's idea of global, not necessarily the harness's — say so rather than
-  # letting a hook land in a settings.json nothing reads (dir #98's residual, which no flag can close:
-  # where the harness looks for its global settings is the harness's decision, not this installer's).
+  # dir #98's residual, which no flag can close: where the harness looks for its global settings is the
+  # harness's decision, not this installer's. Stated, not engineered away.
   if [ "$settings_dir" != "${HOME:-}/.claude" ]; then
     echo "  NOTE Claude Code reads ${HOME:-\$HOME}/.claude/settings.json as its global scope; this run targets" >&2
     echo "  $settings_dir (matching an install.sh --home / KEEL_HOME install). If your harness isn't" >&2

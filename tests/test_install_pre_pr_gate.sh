@@ -135,14 +135,9 @@ check_status "--home with no DIR -> exit 2" 2 "$STATUS"
 run "$installer" --home "$hhome" "$repo"
 check_status "--home + a repo path -> exit 2 (rejected)" 2 "$STATUS"
 check_contains "the --home+path rejection names the conflict" "$OUT" "doesn't take a repo path"
-
-# install.sh --home says so at the point of install, so the adopter never has to find this out later.
-ih="$SANDBOX/install-home-note"
-run "$REPO_ROOT/install.sh" --home "$ih" --no-hooks
-check_status "install.sh --home -> exit 0" 0 "$STATUS"
-check_contains "install.sh --home tells you the gate needs the same home" "$OUT" "install-pre-pr-gate.sh --home"
-run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
-check_absent "a default-home install does not carry the retarget note" "$OUT" "install-pre-pr-gate.sh --home"
+# The other half of dir #98 — install.sh naming this flag in its own summary — is asserted in
+# tests/test_install.sh, on installs that file already runs (each extra install.sh run costs a full
+# copy pass + verify across the CI matrix, and neither assertion involves this installer).
 
 # --- a temp bootstrap-shaped clone refuses to wire (hooks would point at a path about to vanish) ----
 btmp="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"

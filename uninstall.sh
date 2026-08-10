@@ -56,21 +56,26 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
-# Home + context-file resolution mirrors install.sh's, flag for flag: --codex installs land in
-# $HOME/.codex and write AGENTS.md, so their reversal has to look in the same place for the same file.
-default_home_leaf=".claude"
-[ "$CODEX" = 1 ] && default_home_leaf=".codex"
-: "${HOME_DIR:=${HOME:?uninstall: set HOME, or pass --home DIR}/$default_home_leaf}"
-CONTEXT_FILE="CLAUDE.md"
-[ "$CODEX" = 1 ] && CONTEXT_FILE="AGENTS.md"
+# Home + context-file resolution mirrors install.sh's, flag for flag: a --codex install lands in
+# $HOME/.codex and writes AGENTS.md, so its reversal has to look in the same place for the same file.
+# The two constants are named because codex_hint below needs the same pair for the home this run is
+# NOT operating on.
+CODEX_LEAF=".codex"
+CODEX_CONTEXT="AGENTS.md"
+if [ "$CODEX" = 1 ]; then leaf="$CODEX_LEAF"; CONTEXT_FILE="$CODEX_CONTEXT"
+else                      leaf=".claude";     CONTEXT_FILE="CLAUDE.md"; fi
+: "${HOME_DIR:=${HOME:?uninstall: set HOME, or pass --home DIR}/$leaf}"
 
 # codex_hint — a plain (Claude-scope) run never touches ~/.codex, so an adopter who ran
 # `install.sh --codex` would otherwise be told "done"/"nothing to do" with a full set of Keel rails
-# still loading into every Codex session. Called before every exit path, not just the happy one:
-# "no Keel home at ~/.claude" is exactly the run a Codex-only adopter makes first (dir #109).
+# still loading into every Codex session. Called explicitly at each of the three reporting exits
+# rather than from an EXIT trap: the trap would also fire on the refusal paths (no --yes on a
+# non-terminal, an unknown flag), where a leftover-install hint is noise attached to a run that did
+# nothing. The one that matters most is the earliest — "no Keel home at ~/.claude" is exactly the run
+# a Codex-only adopter makes first (dir #109).
 codex_hint() {
   [ "$CODEX" = 0 ] || return 0
-  local cx="${HOME:-}/.codex/AGENTS.md"
+  local cx="${HOME:-}/$CODEX_LEAF/$CODEX_CONTEXT"
   [ -n "${HOME:-}" ] && [ -f "$cx" ] || return 0
   grep -q 'KEEL-CORE-BEGIN' "$cx" 2>/dev/null || return 0
   echo "  • A Codex install is still in place ($cx) — this run did not touch it."

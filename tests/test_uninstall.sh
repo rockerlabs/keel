@@ -19,6 +19,9 @@ H="$HOME/.claude"                       # install's default home under the sandb
 inst()  { run "$INSTALL"   "$@"; }
 unin()  { run "$UNINSTALL" "$@"; }
 
+# The timestamped backup dir uninstall creates under a home, for asserting what it moved there.
+latest_backup() { find "$1" -maxdepth 1 -type d -name '.keel-uninstall-*' | sort | tail -1; }
+
 # =================================================================================================
 # Linked mode
 # =================================================================================================
@@ -59,7 +62,7 @@ check_file "LEARNINGS.md (user data) kept" "$H/LEARNINGS.md"
 
 # a Keel command is gone, and its backup exists
 if [ -e "$H/commands/go.md" ]; then fail "Keel command go.md removed" "still present"; else pass "Keel command go.md removed"; fi
-backup="$(find "$H" -maxdepth 1 -type d -name '.keel-uninstall-*' | head -1)"
+backup="$(latest_backup "$H")"
 check_dir "a backup dir was created" "$backup"
 check_file "keel command backed up" "$backup/commands/go.md"
 check_file "CLAUDE.md backed up before edit" "$backup/CLAUDE.md"
@@ -134,8 +137,11 @@ check_status "uninstall over the prose mention exits 0" 0 "$STATUS"
 c4="$(cat "$H4/CLAUDE.md")"
 check_contains "a prose mention of the core path survives (not an import)" "$c4" "keep this line."
 # The REAL import line is still gone — the boundary fix must not turn into "never strip anything".
-n_import="$(grep -cE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$H4/CLAUDE.md" || true)"
-check_status "the real import line is still stripped" 0 "$n_import"
+# Asserted against the literal import install wrote (@$H4/keel/CORE.md), NOT by re-running the
+# production regex here: a test that validates the pattern with the pattern passes just as happily
+# when both are wrong. The surviving prose names a different path (~/.claude/...), so a plain
+# substring check separates the two.
+check_absent "the real import line is still stripped" "$c4" "@$H4/keel/CORE.md"
 
 # =================================================================================================
 # dir #109: --codex / AGENTS.md — install.sh --codex has a mirror image
@@ -157,10 +163,9 @@ check_file "AGENTS.md itself is kept (user-owned outside the block)" "$CX/AGENTS
 cx_txt="$(cat "$CX/AGENTS.md")"
 check_absent "the KEEL-CORE rails block is stripped from AGENTS.md" "$cx_txt" "KEEL-CORE-BEGIN"
 check_contains "the user's own note outside the block survives" "$cx_txt" "MY-OWN-CODEX-NOTE"
-if [ -e "$CX/FRAMEWORK.md" ]; then fail "codex FRAMEWORK.md copy removed" "still present"; else pass "codex FRAMEWORK.md copy removed"; fi
+check_nofile "codex FRAMEWORK.md copy removed" "$CX/FRAMEWORK.md"
 check_file "codex INSTANCE.md (user data) kept" "$CX/INSTANCE.md"
-cxbak="$(find "$CX" -maxdepth 1 -type d -name '.keel-uninstall-*' | head -1)"
-check_file "AGENTS.md backed up before the edit" "$cxbak/AGENTS.md"
+check_file "AGENTS.md backed up before the edit" "$(latest_backup "$CX")/AGENTS.md"
 
 # --codex is discoverable and its default home is ~/.codex, not ~/.claude
 unin --help
