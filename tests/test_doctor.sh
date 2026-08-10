@@ -450,9 +450,13 @@ check_contains "warns the vendored engine drifted" "$OUT" "differs from the engi
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
 mkdir -p "$d/vhooks"; cp "$shipped" "$d/vhooks/secret-scan.sh"
+# a real hook here too — without it the dir is inert, doctor stops at W-GUARD-BYPASSED and never reaches
+# the drift cmp, so the assertion below would pass without exercising anything (dir #97)
+printf '#!/bin/sh\nexit 0\n' > "$d/vhooks/pre-commit"; chmod +x "$d/vhooks/pre-commit"
 git -C "$d" config core.hooksPath vhooks
 run "$doctor" "$d"
 check_absent "up-to-date local-override guard → no drift WARN" "$OUT" "differs from the engine"
+check_absent "...and it counts as wired, so no bypass WARN either" "$OUT" "[W-GUARD-BYPASSED]"
 
 # a vendored copy in the REAL hooks dir (no override, no global) that drifted
 d="$(mkproj)"; git -C "$d" init -q

@@ -34,7 +34,8 @@
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
 #                              carrying no executable pre-commit) and no local hook. Sensitive to a
 #                              redirected global git config, so it names its source (dir #97)
-#   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
+#   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no executable pre-commit — this
+#                              repo's commits run nothing, and any global guard is bypassed (dir #97)
 #   WARN  W-GUARD-STALE        a wired per-repo secret-guard copy differs from the engine this checkout
 #                              ships — vendored, or reached through a RELATIVE global core.hooksPath,
 #                              which names a different dir in every repo (dir #97). An ABSOLUTE

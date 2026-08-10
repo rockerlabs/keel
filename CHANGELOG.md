@@ -48,14 +48,6 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     against, so a relative `core.hooksPath` is reported as per-repo wiring rather than judged from
     whatever sits under `doctor`'s own working directory — which had one unchanged machine reporting
     `OK secret-guard: machine-global` or `W-GUARD-UNWIRED` depending on where the operator stood.
-- **A repo whose local `core.hooksPath` carried only *parts* of the guard audited clean while every
-  commit ran nothing** (dir #97, found by the operator's `/code-review` on it). The override was
-  accepted as cover if the directory held `secret-scan.sh` **or** a `pre-commit` **or** a `pre-push` —
-  so an engine file on its own, a `pre-commit` that was deleted, or one that lost its executable bit,
-  all read as wired. Reproduced: a planted key committed straight through a `0 gap, 0 warn` audit. An
-  executable `pre-commit` is now the whole test, the same bar the global branch uses, and
-  `W-GUARD-BYPASSED` says what is actually true — commits here run nothing — without asserting a
-  machine-global guard that may not exist.
     **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
@@ -65,6 +57,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     Residual: the *silent* halves of the same resolution carry no message to append to —
     `W-GUARD-GLOBAL-STALE` simply never runs under a redirected global config, and its absence reads as
     "fresh". Filed separately.
+- **A repo whose local `core.hooksPath` carried only *parts* of the guard audited clean while every
+  commit ran nothing** (dir #97, found by the operator's `/code-review` on it). The override was
+  accepted as cover if the directory held `secret-scan.sh` **or** a `pre-commit` **or** a `pre-push` —
+  so an engine file on its own, a `pre-commit` that was deleted, or one that lost its executable bit,
+  all read as wired. Reproduced: a planted key committed straight through a `0 gap, 0 warn` audit. An
+  executable `pre-commit` is now the whole test, the same bar the global branch uses, and
+  `W-GUARD-BYPASSED` says what is actually true — commits here run nothing — without asserting a
+  machine-global guard that may not exist.
 - **Two stale statements about `receipt --recover`'s behavior, left behind by dir #96 and dir #116**
   (dir #117, found by dir #96's own closing high review). `tools/pre-pr-gate.sh`'s `--recover` runtime
   message named step 6's retest as an unqualified alternative binding for step 3 — reworded, since the
