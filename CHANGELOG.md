@@ -37,9 +37,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     hardcoded `CLAUDE.md`, so install-then-uninstall left the whole thing in place without a word.
     It now mirrors install's mode flags: **`--codex`** resolves the same default home (`~/.codex`) and
     the same always-loaded file (`AGENTS.md`), stripping the rails block while keeping the file and the
-    user's own content outside it. A plain Claude-scope run **names** a Codex install it finds instead
-    of leaving it silently behind — including on the "nothing to do — no Keel home at `~/.claude`" path,
-    which is exactly the run a Codex-only adopter makes first.
+    user's own content outside it. A run **names** an install of the other mode it finds instead of
+    leaving it silently behind — in both directions, and including on the "nothing to do — no Keel home
+    at `~/.claude`" path, which is exactly the run a Codex-only adopter makes first. It also **refuses
+    outright** when the home it was pointed at holds the other mode: an explicit target (`--home`, else
+    `$KEEL_HOME`) outranks the mode's default leaf, exactly as in `install.sh`, so
+    `KEEL_HOME=<claude-home> uninstall.sh --codex` resolves a `CLAUDE.md` home while looking for
+    `AGENTS.md`. Four of uninstall's five removal steps are mode-agnostic, so that run used to strip the
+    shared half — the commands, the `keel` CLI symlink, the `FRAMEWORK`/`PRINCIPLES` copies — and report
+    a clean success while `CLAUDE.md`'s rails kept loading forever. Found by the operator's own
+    `/code-review` pass, which reproduced the half-dismantled install; the one-directional hint above was
+    what let it print "done".
 - **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
   finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
   nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the

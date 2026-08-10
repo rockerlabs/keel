@@ -173,10 +173,43 @@ check_contains "--help documents --codex" "$OUT" "--codex"
 
 # A plain (Claude) uninstall must at least NAME a Codex install it isn't touching — the silent
 # leftover is exactly dir #109's complaint.
+rails() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$REPO_ROOT/templates/CLAUDE.md" > "$1"; }
 mkdir -p "$HOME/.codex"
-sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$REPO_ROOT/templates/CLAUDE.md" > "$HOME/.codex/AGENTS.md"
+rails "$HOME/.codex/AGENTS.md"
 unin --yes
 check_contains "a Claude-scope uninstall names the leftover Codex install" "$OUT" "--codex"
 check_file "and does not touch it" "$HOME/.codex/AGENTS.md"
+
+# ...and symmetrically: a --codex run must name a leftover CLAUDE.md install. The guard used to
+# short-circuit on CODEX=1, so dir #109's silent-leftover fix worked in one direction only — and that
+# asymmetry is what let the mis-target below report a clean "done" (operator-run /code-review).
+rails "$HOME/.claude/CLAUDE.md"
+unin --codex --yes
+check_contains "a --codex uninstall names the leftover Claude install" "$OUT" "$HOME/.claude/CLAUDE.md"
+check_contains "and points at the command that removes it" "$OUT" "Remove it too:  uninstall.sh"
+check_file "and does not touch it" "$HOME/.claude/CLAUDE.md"
+
+# --- a mode aimed at the OTHER mode's home: refuse, don't half-dismantle -------------------------
+# An explicit target outranks the mode's default leaf (mirroring install.sh), so
+# `KEEL_HOME=<claude-home> uninstall.sh --codex` resolves a CLAUDE.md home while looking for AGENTS.md.
+# Steps 1-4 are mode-agnostic and would strip the shared half — commands, bin/keel, FRAMEWORK/
+# PRINCIPLES — while CLAUDE.md's rails kept loading forever, all reported as success.
+MM="$SANDBOX/mismatch/.claude"
+inst --home "$MM" --no-hooks
+check_status "install for the mode-mismatch case succeeds" 0 "$STATUS"
+run env KEEL_HOME="$MM" "$UNINSTALL" --codex --yes
+check_status "--codex aimed at a Claude home → exit 2 (refused)" 2 "$STATUS"
+check_contains "the refusal names the file it did not find" "$OUT" "no AGENTS.md"
+check_contains "the refusal points at the right command" "$OUT" "uninstall.sh --home"
+check_file "nothing was removed — the CLI symlink survives" "$MM/bin/keel"
+check_file "nothing was removed — a shipped command survives" "$MM/commands/go.md"
+check_contains "and CLAUDE.md's rails are still there" "$(cat "$MM/CLAUDE.md")" "KEEL-CORE-BEGIN"
+# The reverse aim is refused the same way: a plain run pointed at a Codex home.
+CM="$SANDBOX/mismatch-codex/.codex"
+inst --codex --home "$CM" --no-hooks
+unin --home "$CM" --yes
+check_status "a plain run aimed at a Codex home → exit 2 (refused)" 2 "$STATUS"
+check_contains "the reverse refusal points at --codex" "$OUT" "uninstall.sh --codex --home"
+check_file "and the Codex home is untouched" "$CM/AGENTS.md"
 
 summary
