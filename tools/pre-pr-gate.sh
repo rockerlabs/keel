@@ -321,11 +321,15 @@
 # require a `dialog:<outcome_level>` line for `$current_sha` in the trace file; else deny naming the
 # dialog as missing. Per-SHA by construction (dir #72's convergence-round fork): a fix-commit moves HEAD,
 # so an earlier round's dialog line doesn't cover a later commit — a fresh answered dialog is required
-# per round, matching the MANDATORY paragraph's own "each such round moves HEAD" prose. Applies ONLY to
-# `agent:*`-shaped outcomes: `skip`, bare `<level>` (a genuine in-session /code-review run — step 5(a)'s
-# reminder doesn't exist on that path), `<level>-operator-run`/`<level>-waived` (the (b)/(c) hand-off
-# outcomes, already self-reported and covered by the depth-consistency check above), and `ultra` (never
-# reaches (a) at all) are all unaffected.
+# per round, matching the MANDATORY paragraph's own "each such round moves HEAD" prose. Applies to
+# `agent:*`-shaped outcomes and — since dir #116 — to `skip`, whose required dialog is a DIFFERENT one
+# (step 4's mandatory skip dialog, its own `KEEL-DEPTH-DIALOG` skip marker — a distinct token, so
+# a sizing dialog can never pre-satisfy this reminder check — and its own deny message):
+# skip bypasses step 5 outright, so the sizing dialog that chose it is the only dialog there is.
+# Unaffected: bare `<level>` (a genuine in-session /code-review run — step 5(a)'s reminder doesn't
+# exist on that path), `<level>-operator-run`/`<level>-waived` (the (b)/(c) hand-off outcomes, already
+# self-reported and covered by the depth-consistency check above), and `ultra` (never reaches (a) at
+# all).
 #
 # **Arming rule (part of the spec, not optional):** the check above only fires when the AskUserQuestion
 # leg is actually WIRED — `_dialog_leg_armed` (below) greps the resolvable settings.json candidates
@@ -840,6 +844,24 @@ case "${1:-}" in
             fi
             continue
             ;;
+          polish.4-depth)
+            # dir #116: a SKIP-level depth is never recovered — the other depth with an arm that stays
+            # silently true across a commit. `skip` is the one level that bypasses step 5 outright, and
+            # commands/polish.md step 4 tells a convergence round to reuse the recovered level AS-IS
+            # ("do not re-size") — so recovering it hands the new commit a review bypass the operator
+            # chose for a DIFFERENT diff. Reproduced end-to-end by dir #96's own review: trivial diff →
+            # skip → substantial fix commit → recovered skip + fresh `polish.5-review skip` matched the
+            # depth cross-check and the gate answered allow with no review ever seeing the commit.
+            # Non-skip levels keep recovering (dir #72's convenience): they bypass nothing — step 5
+            # still has to produce a fresh outcome for them, HEAD-keyed by trace or named-source arms.
+            if [ "${r_outcome%%:*}" = "skip" ]; then
+              if ! printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
+                unrecovered="${unrecovered:+$unrecovered / }$r_step"
+                todo="${todo:+$todo, }step 4 re-sized fresh (an inherited skip is never carried — a skip must be chosen for THIS diff)"
+              fi
+              continue
+            fi
+            ;;
         esac
         if printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
           skipped_existing=$((skipped_existing + 1)); continue
@@ -848,7 +870,10 @@ case "${1:-}" in
         count=$((count + 1))
       done <<< "$recovered"
       [ "$skipped_existing" -eq 0 ] || printf 'pre-pr-gate: kept %s receipt(s) this run had already written (not overwritten by recovery)\n' "$skipped_existing"
-      [ -z "$unrecovered" ] || printf 'pre-pr-gate: %s NOT recovered by design (dir #96) — this round must write: %s\n' "$unrecovered" "$todo"
+      # No ticket number in this shared note: it now reports two exclusions with different origins
+      # (steps 3/5 — dir #96; a skip-level step 4 — dir #116), and a single hardcoded reference sent
+      # readers to the wrong ticket for the other one. The per-arm comments above carry the attribution.
+      [ -z "$unrecovered" ] || printf 'pre-pr-gate: %s NOT recovered by design — this round must write: %s\n' "$unrecovered" "$todo"
       printf 'pre-pr-gate: recovered %s step receipt(s) from the prior run onto nonce %s\n' "$count" "$nonce"
       exit 0
     fi
@@ -936,21 +961,50 @@ case "${1:-}" in
       # block already documents for a different field. No `^...$` line anchor: the marker sits embedded
       # inside a JSON string, not alone on its own line the way a subagent's plain-text final message is.
       # Correctness fix (found in the operator-run /code-review high pass on this ticket): capture the
-      # FULL trailing word (greedy `[a-zA-Z]+`), then validate it against the exact accepted set with a
+      # FULL trailing word (greedy `[a-zA-Z0-9_-]+` — digits, underscore AND hyphen in the class:
+      # dir #116's own reviews found `level=high2` truncating to a false-accepted `high` under a
+      # letters-only class, `level=skip_x` under a letters-digits one, and `level=skip-waived` under a
+      # hyphen-less one — hyphen being the one separator this file's own outcome vocabulary uses, so
+      # exactly the string the receipt path rejects would have minted a trace), then
+      # validate it against the exact accepted set with a
       # loop over $ACCEPTED_REVIEW_LEVELS — matching `(low|medium|high|max)` directly here would let
       # `grep -Eo`'s leftmost-longest match truncate a malformed `level=highest`/`level=maximum` down to
       # a false-accepted `high`/`max`, the same right-side-anchor gap the SubagentStop marker avoids with
       # its own `^...$` anchoring. A loop, not a `case` pattern list, deliberately: an unquoted `|`-joined
       # variable in a case pattern is matched as ONE literal glob string, not split into alternatives at
       # runtime — confirmed the hard way while building this fix, see $ACCEPTED_REVIEW_LEVELS's own comment.
-      dlg_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=[a-zA-Z]+' | tail -n1)"
+      # dir #116: step 4's mandatory skip dialog carries its OWN `KEEL-DEPTH-DIALOG` skip marker
+      # — never the review marker below. A distinct token keeps the namespaces mechanically separate:
+      # a sizing dialog cannot pre-satisfy step 5(a)'s dir #88 check (its token never yields a
+      # `dialog:<review-level>` line), and the review marker cannot vouch for a skip (skip stays out of
+      # $ACCEPTED_REVIEW_LEVELS — the SubagentStop leg shares that set, and an agent review "at skip"
+      # would vouch for no review at all). Only `skip` is accepted on this token, parsed by the SAME
+      # extract-then-exact-compare idiom as the review token (one discipline, one word class); both
+      # tokens converge on the same `dialog:<level>` trace shape, so the PASS-branch check reads them
+      # uniformly. The two parses are INDEPENDENT, not exclusive — an event carrying both tokens writes
+      # both lines. Exclusivity was the first cut and produced a real false-deny: a step 5(a) reminder
+      # dialog merely QUOTING the depth token lost its own `dialog:<level>` line and denied a genuine
+      # agent unlock. The residual this direction accepts instead — one deliberately dual-marked dialog
+      # satisfying both checks — needs the model to compose both literals into one question against
+      # commands/polish.md's explicit one-marker-per-dialog instructions: fabrication-class, not the
+      # momentum-class miss these dialog checks exist to stop, and every dialog renders to the human.
+      # Common case first: most AskUserQuestion events (step 4's own sizing dialog, ordinary clarifying
+      # questions) carry NO marker — one builtin glob check keeps that dominant path fork-free.
+      case "$st_input" in
+        *KEEL-*-DIALOG:*) : ;;
+        *) exit 0 ;;
+      esac
+      dpt_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-DEPTH-DIALOG: level=[a-zA-Z0-9_-]+' | tail -n1)"
+      if [ "${dpt_word#KEEL-DEPTH-DIALOG: level=}" = "skip" ]; then
+        _append_trace_line "$st_cwd" "dialog:skip"
+      fi
+      dlg_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=[a-zA-Z0-9_-]+' | tail -n1)"
       dlg_word="${dlg_word#KEEL-REVIEW-DIALOG: level=}"
       dlg_level=""
       for lvl in $ACCEPTED_REVIEW_LEVELS; do
         [ "$dlg_word" = "$lvl" ] && dlg_level="$lvl" && break
       done
-      [ -n "$dlg_level" ] || exit 0
-      _append_trace_line "$st_cwd" "dialog:$dlg_level"
+      [ -n "$dlg_level" ] && _append_trace_line "$st_cwd" "dialog:$dlg_level"
       exit 0
     fi
 
@@ -1479,19 +1533,49 @@ case "$status" in
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
-    # decides whether the dir #88 dialog check applies (`$needs_dialog`, both `agent:*` arms only — the
-    # ONLY outcomes step 5(a)'s reminder exists on), AND builds the dir #64 tier 2a provenance label +
+    # decides whether the dir #88 dialog check applies (`$needs_dialog`: both `agent:*` arms — the
+    # outcomes step 5(a)'s reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
+    # own skip dialog instead), AND builds the dir #64 tier 2a provenance label +
     # tag (below) from the same match, so a future third suffix only needs adding here, not kept in
     # sync across separate mechanisms. $prov_tag is a STABLE machine value ("trace-confirmed"/
     # "self-reported") separate from $prov_label's human prose, so `sweep` (below) can classify without
     # depending on display wording (found in the operator-run /code-review high pass on this ticket —
     # sweep used to regex-match the prose directly).
     depth_level="${depth_outcome%%:*}"
+    # dir #116 (operator-run /code-review high on this ticket): the level itself is now allowlisted.
+    # Receipt outcomes are free text, and before this check an INVENTED level dodged every value check:
+    # `polish.4-depth none:x` + `polish.5-review none-waived` matched each other, hit the trusted
+    # `*-waived` arm, and unlocked with no review, no dialog, no trace — reproduced empirically; nested
+    # suffixes (`skip-waived-waived`, whose outcome_level strips to `skip-waived`) rode the same hole
+    # past the single-layer suffixed-skip deny below. Validating step 4's stripped level closes the
+    # whole class in one place: the `outcome_level != depth_level` equality check below transitively
+    # constrains step 5's level to the same set. `ultra` is a real depth here (the (b) hand-off path)
+    # even though it never reaches the marker legs; `skip` is a real depth with its own dialog check.
+    depth_level_ok=0
+    for lvl in $ACCEPTED_REVIEW_LEVELS ultra skip; do
+      [ "$depth_level" = "$lvl" ] && depth_level_ok=1 && break
+    done
+    if [ "$depth_level_ok" -eq 0 ]; then
+      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
+      log_event receipt-deny "depth-level-invalid" "$cwd"
+      deny "Pre-PR gate: step 4 recorded depth level '$depth_level', which is not one of the real depths (low/medium/high/max/ultra/skip) — an invented level cannot size a review. Run /polish again."
+    fi
     trusted=0
     needs_dialog=0
     trace_match_outcome="$review_outcome"
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
+                         # dir #116: needs_dialog here reads step 4's mandatory skip dialog (its
+                         # `KEEL-DEPTH-DIALOG` skip marker), not step 5(a)'s reminder — skip is the one
+                         # depth that bypasses step 5 outright, so that ANSWERED dialog is the only
+                         # mechanical evidence the skip question was put to a human for THIS commit
+                         # (the trace records the question's marker, not the chosen answer — reading
+                         # the answer itself is dir #118). Per-SHA like the agent
+                         # arms: a fix commit moves HEAD, and an inherited/re-asserted skip must not
+                         # coast on the prior diff's answer. prov_label stays "self-reported": unarmed
+                         # installs still pass with no dialog line, so the label describes the floor,
+                         # not the best case.
+                         needs_dialog=1
                          prov_label="review: skip";  prov_tag="self-reported" ;;
       *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
@@ -1528,6 +1612,18 @@ case "$status" in
       *)                outcome_level="$review_outcome"
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
+    # dir #116 (found by this change's own review): `skip` is only ever a BARE outcome. There is no
+    # review to waive, operator-run, or agent-run at skip — commands/polish.md's hand-off paths exist
+    # only for real review levels — so any suffixed/prefixed route to outcome_level=skip is an invented
+    # shape, not a hand-off result. Deny it outright rather than let a trusted-arm suffix dodge the
+    # skip-dialog check below: reproduced in a sandbox, `skip-waived` + a matching `polish.4-depth
+    # skip:*` unlocked an ARMED gate with no dialog ever answered, because `*-waived` sets trusted=1
+    # and leaves needs_dialog=0 — the same unconditional-trust shape dir #96 closed for step 6.
+    if [ "$outcome_level" = "skip" ] && [ "$review_outcome" != "skip" ]; then
+      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
+      log_event receipt-deny "skip-suffixed-outcome" "$cwd"
+      deny "Pre-PR gate: step 5 recorded '$review_outcome' — a suffixed 'skip' is not a valid outcome (skip has no review to waive or hand off; its only honest receipt is the bare 'skip', chosen via step 4's dialog). Run /polish again."
+    fi
     if [ "$outcome_level" != "$depth_level" ]; then
       retire_sentinel "$sentinel" "$cwd" "$receipt_key"
       log_event receipt-deny "review-depth-mismatch" "$cwd"
@@ -1564,8 +1660,28 @@ case "$status" in
         # dir #80: $receipt_key (branch-aware), not $wt (repo-only) — this retires the SENTINEL,
         # keyed the same way every other retire_sentinel call in this branch already is.
         retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-        log_event receipt-deny "review-dialog-missing" "$cwd"
-        deny "Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."
+        # dir #116: skip's missing dialog is a DIFFERENT one than the agent arms' — step 4's own skip
+        # dialog, not step 5(a)'s reminder. Named separately in both the log reason and the message so
+        # a convergence round doesn't mis-read this as the dir #88 deny and go re-answer the wrong
+        # dialog. An explicit if/else (not two deny calls relying on deny()'s own exit): the same
+        # duplicate-JSON hazard the dir #96 comment in deny() documents would reappear the day deny
+        # ever stopped being terminal.
+        if [ "$outcome_level" = "skip" ]; then
+          dlg_deny_reason="skip-dialog-missing"
+          # This message must NEVER contain the matchable marker string itself (the token followed by
+          # ': level=' and the word skip): a session recapping this deny inside an AskUserQuestion
+          # would hand the hook exactly the line it greps for, and the deny would unlock itself —
+          # reproduced end-to-end by the operator's third /code-review pass (DENY → dialog quoting
+          # the deny → trace line → ALLOW). Same discipline as dir #88's deny, which describes its
+          # marker without spelling it. A meta-test feeds this very message through the dialog leg
+          # and asserts no trace is written.
+          dlg_deny_msg="Pre-PR gate: step 5 recorded 'skip', but no step-4 skip dialog was answered for this commit — the confirm dialog's KEEL-DEPTH-DIALOG skip marker (spelled in polish.md step 4; if your step 4 doesn't mention the marker, your polish.md is a stale copy — re-run install.sh to refresh it) was never traced for current HEAD. An inherited or auto-selected skip doesn't count; a fix commit needs the skip dialog re-answered for ITS diff. Re-run step 4's confirm dialog for current HEAD, or size a real review. Run /polish again."
+        else
+          dlg_deny_reason="review-dialog-missing"
+          dlg_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."
+        fi
+        log_event receipt-deny "$dlg_deny_reason" "$cwd"
+        deny "$dlg_deny_msg"
       fi
     fi
     # dir #64 tier 2a: $prov_label/$prov_tag were already built above (the same case statement dir #63's

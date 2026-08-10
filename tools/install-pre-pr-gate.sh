@@ -22,7 +22,9 @@
 #
 # The 6th hook (`PostToolUse`/`AskUserQuestion`, dir #88) traces step 5(a)'s MANDATORY review-reminder
 # dialog — the "agent review already ran, additionally run /code-review too?" question — so the gate can
-# tell an answered dialog from a silently-skipped one on an `agent:*`-shaped review outcome. See
+# tell an answered dialog from a silently-skipped one on an `agent:*`-shaped review outcome. The same
+# hook also traces step 4's mandatory skip dialog (its own `KEEL-DEPTH-DIALOG` skip marker,
+# dir #116), which a `skip` unlock is checked against. See
 # tools/pre-pr-gate.sh's own dir #88 header section for the full mechanism, including the arming rule
 # (the gate-side check stays inert until this hook is actually wired, avoiding a false-deny window
 # between a `git pull` picking up the check and this installer re-wiring the trace leg).
