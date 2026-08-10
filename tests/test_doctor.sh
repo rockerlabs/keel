@@ -816,6 +816,12 @@ check_contains "unset HOME → named as unset, never as the XDG dir" "$OUT" "glo
 run env -u GIT_CONFIG_GLOBAL "HOME=" "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
 check_contains "empty HOME → XDG is named, since git falls through to it" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
 
+# ...and with no XDG file to fall through to, the else branch must still not collapse an empty HOME into
+# "<unset>": git ran fine there, probing /.gitconfig, so claiming HOME was unset misreports what happened
+run env -u GIT_CONFIG_GLOBAL -u XDG_CONFIG_HOME "HOME=" "$doctor" "$d"
+check_contains "empty HOME, no XDG → reported as empty, not as unset" "$OUT" "global config read via HOME="
+check_absent   "empty HOME, no XDG → never claims HOME was unset" "$OUT" "global config read via HOME=<unset>"
+
 # ...and an UNREADABLE ~/.gitconfig makes git fall through to XDG too — git tests access(R_OK), not mere
 # existence. `chmod 000` is a no-op for root (the CI alpine leg runs as root), so only assert the
 # content half under a real unprivileged user; the no-crash half runs everywhere.

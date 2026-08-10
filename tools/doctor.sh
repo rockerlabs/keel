@@ -283,7 +283,7 @@ if [ -n "${GIT_CONFIG_GLOBAL+x}" ]; then
 elif [ -n "${HOME+x}" ] && [ ! -r "$HOME/.gitconfig" ] && [ -n "${XDG_CONFIG_HOME:-}" ] && [ -f "${XDG_CONFIG_HOME}/git/config" ]; then
   guard_cfg_src="XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
 else
-  guard_cfg_src="HOME=${HOME:-<unset>}"
+  guard_cfg_src="HOME=${HOME-<unset>}"   # `-`, not `:-`: an EMPTY HOME is set, and git did read /.gitconfig
 fi
 guard_home_note=" [global config read via $guard_cfg_src — a redirected one reports a guarded machine as unwired]"
 
