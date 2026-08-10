@@ -884,6 +884,22 @@ check_contains "hooksPath set but no hook → still flagged in --install mode" "
 check_contains "...and the message names the actual state" "$OUT" "core.hooksPath is set to $hi/hooks"
 check_contains "...and still names the config source, since a redirect explains it too" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$hi/.gitconfig"
 
+# ...and the project audit must name that same shape rather than trusting a bare core.hooksPath. Before
+# dir #97 this branch read "machine-global secret-guard covers it" on the strength of the setting alone,
+# so a hooksPath pointing at an empty dir printed a clean 0 gap / 0 warn / 0 hint while commits went
+# through completely unguarded — a false negative of exactly the class dir #97 is about.
+hp="$SANDBOX/guardhome.projhookless.$$"; mkdir -p "$hp/hooks"
+fresh_home_env "$hp"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hp/hooks" >/dev/null 2>&1
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_contains "hooksPath at a hookless dir → project audit flags it, not a clean run" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...naming the dir that carries no hook" "$OUT" "core.hooksPath is set to $hp/hooks"
+# ...and it goes quiet again as soon as that dir actually carries the hook, so the check didn't just
+# become unconditional
+printf '#!/bin/sh\nexit 0\n' > "$hp/hooks/pre-commit"; chmod +x "$hp/hooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_absent "...and a real hook there draws no finding" "$OUT" "[W-GUARD-UNWIRED]"
+
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents
 # would both pass on empty output, so a doctor that crashed before printing anything would look green.

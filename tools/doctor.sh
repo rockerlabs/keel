@@ -499,8 +499,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # fixes (dir #97, operator's own /code-review pass). The provenance clause still rides along: a
     # successful read proves *a* config was read, not the RIGHT one, and a redirected GIT_CONFIG_GLOBAL
     # whose config points at a hookless dir lands exactly here while the real machine is guarded — the
-    # systematic false negative this whole clause exists to signal. The project-scope half below can't
-    # reach this shape: it is only reached with $global_hooks empty.
+    # systematic false negative this whole clause exists to signal. The project-scope half below now
+    # names the same shape in its own branch (it used to swallow it as "covered by global").
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   else
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
@@ -712,8 +712,14 @@ EOF
     else
       warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
     fi
-  elif [ -n "$global_hooks" ]; then
+  elif [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
     :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
+  elif [ -n "$global_hooks" ]; then
+    # core.hooksPath SET but carrying no executable pre-commit — the same shape --install mode names
+    # above, and until dir #97 this branch swallowed it as "covered by global": a hooksPath pointing at
+    # an empty dir left commits guarded by nothing while the audit printed a clean 0/0/0. Found by the
+    # operator's own /code-review pass on dir #97 and reproduced (a planted key committed through).
+    warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit, so commits here are guarded by nothing (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
   elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
     # vendored into the real hooks dir (a worktree/submodule isn't .git/hooks) — same drift check
     vh="$(git -C "$d" rev-parse --git-path hooks 2>/dev/null)"

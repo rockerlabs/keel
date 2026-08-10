@@ -29,9 +29,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     variable is unset, the ordinary layout, so the clause names that file rather than a variable. Each
     can be redirected without touching the others, so naming `HOME` flatly would point a reader at an
     untouched `~/.gitconfig` that carries the very `hooksPath` they were just told is missing.
-    `--install` mode additionally distinguishes "`core.hooksPath` is set but that dir has no executable
-    hook" from "nothing wired at all" — different states, different fixes — and carries the clause on
-    both, since a successful read proves *a* config was read, not the right one.
+    Both modes additionally distinguish "`core.hooksPath` is set but that dir has no executable hook"
+    from "nothing wired at all" — different states, different fixes — and carry the clause on both,
+    since a successful read proves *a* config was read, not the right one. **The project audit used to
+    swallow that first state entirely**, reading a bare `core.hooksPath` as "machine-global secret-guard
+    covers it": a `hooksPath` pointing at an empty directory printed a clean `0 gap, 0 warn, 0 hint`
+    while commits went through completely unguarded (reproduced — a planted key committed straight
+    through). Same class of false negative as the one this ticket is about, found by the operator's own
+    `/code-review` pass on it.
     **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
