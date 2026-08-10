@@ -24,8 +24,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   - `W-GUARD-UNWIRED` now names the global-config source it was actually resolved through, the same way
     `--install` mode's findings name their install home. What the check reads is `git config --global`,
     a scope selector that collapses to exactly one file: `GIT_CONFIG_GLOBAL` when that variable is
-    **set** (an empty value silences the global config outright), else `~/.gitconfig` when it exists,
-    else `$XDG_CONFIG_HOME/git/config`. Each can be redirected without touching the others, so naming
+    **set** (an empty value silences the global config outright), else `~/.gitconfig` when it is
+    readable, else `$XDG_CONFIG_HOME/git/config`. Each can be redirected without touching the others, so naming
     `HOME` flatly would point a reader at an untouched `~/.gitconfig` that carries the very `hooksPath`
     they were just told is missing. **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable

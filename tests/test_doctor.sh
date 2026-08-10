@@ -810,6 +810,23 @@ check_contains "an existing ~/.gitconfig takes over the slot → HOME is named" 
 run env -u GIT_CONFIG_GLOBAL -u HOME "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
 check_contains "unset HOME → named as unset, never as the XDG dir" "$OUT" "global config read via HOME=<unset>"
 
+# ...but HOME set-to-EMPTY is NOT the same case: git builds "/.gitconfig", cannot read it, and falls
+# through to the XDG file, so XDG is the honest answer there. (Set-ness vs non-emptiness again — the
+# same distinction the GIT_CONFIG_GLOBAL branch makes.)
+run env -u GIT_CONFIG_GLOBAL "HOME=" "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
+check_contains "empty HOME → XDG is named, since git falls through to it" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+
+# ...and an UNREADABLE ~/.gitconfig makes git fall through to XDG too — git tests access(R_OK), not mere
+# existence. `chmod 000` is a no-op for root (the CI alpine leg runs as root), so only assert the
+# content half under a real unprivileged user; the no-crash half runs everywhere.
+chmod 000 "$h/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
+check_status "unreadable ~/.gitconfig → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable ~/.gitconfig → XDG is named, not HOME" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+fi
+chmod 644 "$h/.gitconfig"
+
 # ...and the finding this clause hangs off is not blind to a hooksPath that only git's EFFECTIVE config
 # can see. `git config --global` cannot read an XDG file behind an existing ~/.gitconfig, but the
 # project audit falls through to `git rev-parse --git-path hooks/pre-commit`, which uses git's own
