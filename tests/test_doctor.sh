@@ -795,15 +795,33 @@ run env "GIT_CONFIG_GLOBAL=" "HOME=$h" "$doctor" "$d"
 check_contains "empty GIT_CONFIG_GLOBAL still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "empty GIT_CONFIG_GLOBAL is named as the source, not HOME" "$OUT" "global config read via GIT_CONFIG_GLOBAL=<empty>"
 
-# XDG_CONFIG_HOME is the source only when ~/.gitconfig does NOT exist — git resolves --global to one
-# file and does not merge the XDG one in behind an existing ~/.gitconfig
+# XDG_CONFIG_HOME is the source `git config --global` lands on only when ~/.gitconfig does NOT exist —
+# the selector takes one file, it does not merge the XDG one in behind an existing ~/.gitconfig
 h="$SANDBOX/guardhome.xdg.$$"; mkdir -p "$h" "$h/xdg/git"
-: > "$h/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$h/xdg/git/config"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
-check_contains "XDG config with no ~/.gitconfig → XDG_CONFIG_HOME is named" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+check_contains "XDG config, no ~/.gitconfig → XDG_CONFIG_HOME is named" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
 printf '[user]\n\tname = Keel Test\n' > "$h/.gitconfig"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
-check_contains "an existing ~/.gitconfig wins → HOME is named instead" "$OUT" "global config read via HOME=$h"
+check_contains "an existing ~/.gitconfig takes over the slot → HOME is named" "$OUT" "global config read via HOME=$h"
+
+# HOME unset: `git config --global` fails outright ($HOME not set) whatever XDG_CONFIG_HOME says, so
+# naming XDG would point at a file the probe never reached
+run env -u GIT_CONFIG_GLOBAL -u HOME "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
+check_contains "unset HOME → named as unset, never as the XDG dir" "$OUT" "global config read via HOME=<unset>"
+
+# ...and the finding this clause hangs off is not blind to a hooksPath that only git's EFFECTIVE config
+# can see. `git config --global` cannot read an XDG file behind an existing ~/.gitconfig, but the
+# project audit falls through to `git rev-parse --git-path hooks/pre-commit`, which uses git's own
+# resolution — so a guard wired that way draws no finding at all. (--install mode has no such fallback;
+# that gap is dir #121, and this case is the pin that keeps project scope out of it.)
+hx="$SANDBOX/guardhome.xdgwired.$$"; mkdir -p "$hx/xdg/git" "$hx/hooks"
+printf '#!/bin/sh\nexit 0\n' > "$hx/hooks/pre-commit"; chmod +x "$hx/hooks/pre-commit"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hx" > "$hx/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$hx/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hx/xdg" "HOME=$hx" "$doctor" "$d"
+check_status "XDG-wired guard behind a ~/.gitconfig → the run completed (exit 0)" 0 "$STATUS"
+check_absent "XDG-wired guard behind a ~/.gitconfig → project scope still sees it" "$OUT" "[W-GUARD-UNWIRED]"
 
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents

@@ -251,16 +251,22 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # provenance — the finding names the source it was resolved through, the same way --install mode's
 # findings name their $ihome.
 #
-# Name the source ACTUALLY consulted, not $HOME flatly. `git config --global` resolves to exactly ONE
-# file, and NOT in the merge order the git-config(1) FILES section lists — verified against git 2.52:
+# Name the source ACTUALLY consulted, not $HOME flatly. What the check above reads is `git config
+# --global`, a SCOPE SELECTOR that collapses to exactly one file — verified against git 2.52:
 # $GIT_CONFIG_GLOBAL when that variable is SET (even to the empty string, which silences the global
-# config entirely); else ~/.gitconfig when it exists; else $XDG_CONFIG_HOME/git/config. An XDG file is
-# not merged in when ~/.gitconfig exists. Each of those can be redirected without touching the others —
-# `GIT_CONFIG_GLOBAL=/dev/null` is a standard hermetic-CI idiom — and a note pointing at an unredirected
-# ~/.gitconfig where core.hooksPath *is* set reads as a doctor bug: the very confusion this exists to
-# remove, displaced one variable over. Hence set-ness (`+x`), not non-emptiness, and an XDG branch that
-# fires only when that variable is set (with it unset, the fallback file lives under HOME anyway, so
-# naming HOME stays honest).
+# config entirely); else ~/.gitconfig when it exists; else $XDG_CONFIG_HOME/git/config. Each of those can
+# be redirected without touching the others — `GIT_CONFIG_GLOBAL=/dev/null` is a standard hermetic-CI
+# idiom — and a note pointing at an unredirected ~/.gitconfig where core.hooksPath *is* set reads as a
+# doctor bug: the very confusion this exists to remove, displaced one variable over. Hence set-ness
+# (`+x`) rather than non-emptiness, and an XDG branch narrowed to the case where that file is the one
+# `--global` actually lands on. HOME unset is not that case: `git config --global` then fails outright
+# ($HOME not set) no matter what XDG_CONFIG_HOME says, so the honest answer stays HOME.
+# This selector is NOT git's effective config resolution: git's own lookup merges
+# $XDG_CONFIG_HOME/git/config (default ~/.config/git/config) BEHIND an existing ~/.gitconfig, so a
+# hooksPath set only in the XDG file genuinely governs commits while `--global` cannot see it. The
+# project audit below survives that by falling through to `git rev-parse --git-path hooks/pre-commit`,
+# which does use git's own resolution — so it still finds such a guard. --install mode has no equivalent
+# fallback and would report it unwired; that gap predates this note and is filed as dir #121.
 #
 # Unconditional on purpose. The tempting narrower trigger — "no global git config readable here" — is a
 # proxy for a question that cannot be answered from inside: any sandbox that ran `git config --global
@@ -272,7 +278,7 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # "fresh" (dir #120).
 if [ -n "${GIT_CONFIG_GLOBAL+x}" ]; then
   guard_cfg_src="GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-<empty>}"
-elif [ ! -f "${HOME:-}/.gitconfig" ] && [ -n "${XDG_CONFIG_HOME:-}" ] && [ -f "${XDG_CONFIG_HOME}/git/config" ]; then
+elif [ -n "${HOME:-}" ] && [ ! -f "$HOME/.gitconfig" ] && [ -n "${XDG_CONFIG_HOME:-}" ] && [ -f "${XDG_CONFIG_HOME}/git/config" ]; then
   guard_cfg_src="XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
 else
   guard_cfg_src="HOME=${HOME:-<unset>}"
