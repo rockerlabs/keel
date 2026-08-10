@@ -502,8 +502,16 @@ if [ "$INSTALL_MODE" = 1 ]; then
   fi
 
   # Secret-guard: machine-global wiring (per-repo vendoring is checked by the project audit).
-  if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
+  # Absolute hooksPath only, same ownership split as the drift check above: this mode audits the MACHINE
+  # and has no repo to resolve against, so testing a relative path here would answer from whatever
+  # happens to sit under doctor's own cwd — the verdict then flips between "OK machine-global" and
+  # W-GUARD-UNWIRED depending on where the operator stood, on one unchanged machine (reproduced). A
+  # relative core.hooksPath names a different dir in every repo and is not a machine-global install at
+  # all; the project audit is where it can be judged.
+  if [ "$global_hooks_abs" = 1 ] && [ -x "$global_hooks/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($global_hooks)"
+  elif [ "$global_hooks_abs" = 0 ] && [ -n "$global_hooks" ]; then
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to the RELATIVE path '$global_hooks', which names a different directory in every repo — that is per-repo wiring, not a machine-global install (install-secret-guard.sh --global for a machine-wide one; tools/doctor.sh <repo> judges the relative one)$guard_home_note"
   elif [ -n "$global_hooks" ]; then
     # A DIFFERENT shape from the else below: core.hooksPath is set, it just points somewhere with no
     # executable pre-commit. Say that, rather than the generic "not wired" — the two need different
@@ -715,13 +723,18 @@ EOF
   local_hooks="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
   if [ -n "$local_hooks" ]; then
     case "$local_hooks" in /*) lhd="$local_hooks" ;; *) lhd="$d/$local_hooks" ;; esac
-    if [ -f "$lhd/secret-scan.sh" ] || [ -x "$lhd/pre-commit" ] || [ -x "$lhd/pre-push" ]; then
+    # An EXECUTABLE pre-commit is the whole test, same bar as the global branch below (dir #97). The
+    # older `secret-scan.sh OR pre-commit OR pre-push` reading counted an engine file, or a push-only
+    # hook, as cover: a dir holding just secret-scan.sh — a pre-commit deleted, or one that lost its +x
+    # bit — left every commit running nothing while doctor printed a clean 0/0/0 (reproduced: a planted
+    # key committed straight through). Presence of parts is not a wired guard.
+    if [ -x "$lhd/pre-commit" ]; then
       # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection
       if [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
         warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
       fi
     else
-      warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
+      warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') takes over this repo's hooks but carries no executable pre-commit, so commits here run nothing — and any machine-global guard is silently bypassed (vendor the guard into the override dir, or unset it)"
     fi
   elif [ -n "$global_hooks" ]; then
     # A machine-global core.hooksPath is only cover if the dir it names actually carries an executable

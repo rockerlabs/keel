@@ -437,6 +437,10 @@ shipped="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
 mkdir -p "$d/vhooks"; cp "$shipped" "$d/vhooks/secret-scan.sh"; printf '\n# stale\n' >> "$d/vhooks/secret-scan.sh"
+# an executable pre-commit too, or the dir isn't wired at all and the honest finding is W-GUARD-BYPASSED
+# rather than drift (dir #97 — the engine file alone used to count as cover, which is what let a repo
+# running no hook at all audit clean)
+printf '#!/bin/sh\nexit 0\n' > "$d/vhooks/pre-commit"; chmod +x "$d/vhooks/pre-commit"
 git -C "$d" config core.hooksPath vhooks
 run "$doctor" "$d"
 check_status "drifted local-override guard → exit 0 (WARN)" 0 "$STATUS"
@@ -884,6 +888,20 @@ check_contains "hooksPath set but no hook → still flagged in --install mode" "
 check_contains "...and the message names the actual state" "$OUT" "core.hooksPath is set to $hi/hooks"
 check_contains "...and still names the config source, since a redirect explains it too" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$hi/.gitconfig"
 
+# --install audits the MACHINE and has no repo to resolve against, so a RELATIVE hooksPath is not a
+# machine-global install and must never be judged from doctor's own cwd — that made one unchanged
+# machine report "OK machine-global" or W-GUARD-UNWIRED depending on where the operator happened to
+# stand. The verdict must be identical from both.
+hrel="$SANDBOX/guardhome.instrel.$$"; mkdir -p "$hrel/claude" "$hrel/here/.githooks" "$hrel/elsewhere"
+printf '#!/bin/sh\nexit 0\n' > "$hrel/here/.githooks/pre-commit"; chmod +x "$hrel/here/.githooks/pre-commit"
+fresh_home_env "$hrel"; instrel_env=("${FRESH_HOME_ENV[@]}")
+env "${instrel_env[@]}" git config --global core.hooksPath .githooks >/dev/null 2>&1
+run_in "$hrel/here" env "${instrel_env[@]}" "$doctor" --install "$hrel/claude"
+check_contains "--install, relative hooksPath, cwd HAS a matching dir → not called machine-global" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and the message says why: a relative path is per-repo wiring" "$OUT" "RELATIVE path '.githooks'"
+run_in "$hrel/elsewhere" env "${instrel_env[@]}" "$doctor" --install "$hrel/claude"
+check_contains "--install, same machine from another cwd → the same verdict" "$OUT" "RELATIVE path '.githooks'"
+
 # ...and the project audit must name that same shape rather than trusting a bare core.hooksPath. Before
 # dir #97 this branch read "machine-global secret-guard covers it" on the strength of the setting alone,
 # so a hooksPath pointing at an empty dir printed a clean 0 gap / 0 warn / 0 hint while commits went
@@ -940,6 +958,29 @@ run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
 check_contains "relative core.hooksPath, hook missing → flagged" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "...and the message shows where it resolved to" "$OUT" "resolves to $d/.githooks for this repo"
 rm -rf "$d/.githooks"
+
+# A local core.hooksPath takes over this repo's hooks, so an executable pre-commit there is the whole
+# test — parts are not a guard. A dir holding only secret-scan.sh (a pre-commit deleted, or one that
+# lost its +x bit) used to count as cover, leaving every commit running nothing behind a clean audit.
+hl="$SANDBOX/guardhome.localparts.$$"; mkdir -p "$hl"
+fresh_home_env "$hl"; local_env=("${FRESH_HOME_ENV[@]}")
+mkdir -p "$d/.local-hooks"
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$d/.local-hooks/secret-scan.sh"
+git -C "$d" config --local core.hooksPath .local-hooks
+run env "${local_env[@]}" "$doctor" "$d"
+check_contains "local hooksPath with the engine but no pre-commit → flagged, not silent" "$OUT" "[W-GUARD-BYPASSED]"
+check_contains "...and the message says commits run nothing" "$OUT" "commits here run nothing"
+check_absent   "...without asserting a machine-global guard that may not exist" "$OUT" "overrides the machine-global secret-guard"
+# ...and a real executable pre-commit there is cover again, with drift still checked underneath it
+printf '#!/bin/sh\nexit 0\n' > "$d/.local-hooks/pre-commit"; chmod +x "$d/.local-hooks/pre-commit"
+run env "${local_env[@]}" "$doctor" "$d"
+check_absent   "a real pre-commit there → no bypass finding" "$OUT" "[W-GUARD-BYPASSED]"
+check_absent   "...and the shipped-identical engine draws no drift finding" "$OUT" "[W-GUARD-STALE]"
+printf '\n# drifted\n' >> "$d/.local-hooks/secret-scan.sh"
+run env "${local_env[@]}" "$doctor" "$d"
+check_contains "...but a drifted one still does" "$OUT" "[W-GUARD-STALE]"
+git -C "$d" config --local --unset core.hooksPath
+rm -rf "$d/.local-hooks"
 
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents

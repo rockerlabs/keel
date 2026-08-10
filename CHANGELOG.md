@@ -43,7 +43,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     `W-GUARD-STALE`. The two domains are disjoint, so one drift is still reported exactly once — and by
     the check whose advice works, which matters here: the machine-wide finding's remediation
     (`install-secret-guard.sh --global`) exits 3 rather than clobber a `core.hooksPath` it didn't set,
-    while the per-repo one vendors into the directory git actually runs hooks from.
+    while the per-repo one vendors into the directory git actually runs hooks from. `--install` mode
+    applies the same rule to the wiring check itself: it audits the machine and has no repo to resolve
+    against, so a relative `core.hooksPath` is reported as per-repo wiring rather than judged from
+    whatever sits under `doctor`'s own working directory — which had one unchanged machine reporting
+    `OK secret-guard: machine-global` or `W-GUARD-UNWIRED` depending on where the operator stood.
+- **A repo whose local `core.hooksPath` carried only *parts* of the guard audited clean while every
+  commit ran nothing** (dir #97, found by the operator's `/code-review` on it). The override was
+  accepted as cover if the directory held `secret-scan.sh` **or** a `pre-commit` **or** a `pre-push` —
+  so an engine file on its own, a `pre-commit` that was deleted, or one that lost its executable bit,
+  all read as wired. Reproduced: a planted key committed straight through a `0 gap, 0 warn` audit. An
+  executable `pre-commit` is now the whole test, the same bar the global branch uses, and
+  `W-GUARD-BYPASSED` says what is actually true — commits here run nothing — without asserting a
+  machine-global guard that may not exist.
     **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
