@@ -25,9 +25,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     `--install` mode's findings name their install home. What the check reads is `git config --global`,
     a scope selector that collapses to exactly one file: `GIT_CONFIG_GLOBAL` when that variable is
     **set** (an empty value silences the global config outright), else `~/.gitconfig` when it is
-    readable, else `$XDG_CONFIG_HOME/git/config`. Each can be redirected without touching the others, so naming
-    `HOME` flatly would point a reader at an untouched `~/.gitconfig` that carries the very `hooksPath`
-    they were just told is missing. **Unconditionally, on purpose:** the tempting narrower
+    readable, else `$XDG_CONFIG_HOME/git/config` — which exists as `~/.config/git/config` even when that
+    variable is unset, the ordinary layout, so the clause names that file rather than a variable. Each
+    can be redirected without touching the others, so naming `HOME` flatly would point a reader at an
+    untouched `~/.gitconfig` that carries the very `hooksPath` they were just told is missing. The clause
+    is attached only where a redirect could actually explain the finding: `--install` mode's
+    hooksPath-set-but-no-hook case reads the config successfully, so it names that state instead.
+    **Unconditionally otherwise, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
     (Keel's own test harness and `examples/tour.sh` both do), so that predicate goes silent on the

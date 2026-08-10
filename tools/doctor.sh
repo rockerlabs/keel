@@ -262,7 +262,14 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # variables, and an XDG branch narrowed to the case where that file is the one `--global` actually lands
 # on. HOME UNSET is not that case — `git config --global` then fails outright ($HOME not set) whatever
 # XDG_CONFIG_HOME says — but HOME set-to-EMPTY is: git builds "/.gitconfig", can't read it, and falls
-# through to XDG exactly as the branch below does.
+# through to XDG exactly as the branch below does. That branch names the FILE, not a variable, because
+# the XDG location exists whether or not XDG_CONFIG_HOME is set (unset → ~/.config/git/config, the
+# ordinary case): keying it on the variable sent every default-layout machine to the `HOME=` arm and so
+# pointed the reader at a ~/.gitconfig that isn't there.
+# The two fall-through tests are deliberately asymmetric — `-r` for ~/.gitconfig, `-f` for the XDG file —
+# because git's behaviour is: unreadable ~/.gitconfig means it moves ON to XDG (so naming HOME would name
+# a file git rejected), while an unreadable XDG file has nothing after it (git warns, returns empty, and
+# that file is still the last one it touched — naming it is the useful answer).
 # This selector is NOT git's effective config resolution: git's own lookup merges
 # $XDG_CONFIG_HOME/git/config (default ~/.config/git/config) BEHIND an existing ~/.gitconfig, so a
 # hooksPath set only in the XDG file genuinely governs commits while `--global` cannot see it. The
@@ -280,8 +287,8 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # "fresh" (dir #120).
 if [ -n "${GIT_CONFIG_GLOBAL+x}" ]; then
   guard_cfg_src="GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-<empty>}"
-elif [ -n "${HOME+x}" ] && [ ! -r "$HOME/.gitconfig" ] && [ -n "${XDG_CONFIG_HOME:-}" ] && [ -f "${XDG_CONFIG_HOME}/git/config" ]; then
-  guard_cfg_src="XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+elif [ -n "${HOME+x}" ] && [ ! -r "$HOME/.gitconfig" ] && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ]; then
+  guard_cfg_src="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
 else
   guard_cfg_src="HOME=${HOME-<unset>}"   # `-`, not `:-`: an EMPTY HOME is set, and git did read /.gitconfig
 fi
@@ -486,6 +493,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # Secret-guard: machine-global wiring (per-repo vendoring is checked by the project audit).
   if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($global_hooks)"
+  elif [ -n "$global_hooks" ]; then
+    # core.hooksPath WAS read, so the global config is plainly visible from here — the provenance clause
+    # would only send the reader off to investigate a redirect that demonstrably didn't happen. Name the
+    # actual state instead (dir #97, operator's own /code-review pass). The project-scope half below
+    # can't reach this shape: it is only reached with $global_hooks empty.
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)"
   else
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   fi

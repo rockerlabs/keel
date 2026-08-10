@@ -800,10 +800,18 @@ check_contains "empty GIT_CONFIG_GLOBAL is named as the source, not HOME" "$OUT"
 h="$SANDBOX/guardhome.xdg.$$"; mkdir -p "$h" "$h/xdg/git"
 printf '[user]\n\tname = Keel Test\n' > "$h/xdg/git/config"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
-check_contains "XDG config, no ~/.gitconfig → XDG_CONFIG_HOME is named" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+check_contains "XDG config, no ~/.gitconfig → the XDG file is named" "$OUT" "global config read via $h/xdg/git/config"
 printf '[user]\n\tname = Keel Test\n' > "$h/.gitconfig"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
 check_contains "an existing ~/.gitconfig takes over the slot → HOME is named" "$OUT" "global config read via HOME=$h"
+
+# ...and the XDG location exists whether or not XDG_CONFIG_HOME is set: unset means ~/.config/git/config,
+# which is the ORDINARY layout. Keying the branch on the variable sent every such machine to the `HOME=`
+# arm, pointing the reader at a ~/.gitconfig that isn't there.
+hd="$SANDBOX/guardhome.xdgdefault.$$"; mkdir -p "$hd/.config/git"
+printf '[user]\n\tname = Keel Test\n' > "$hd/.config/git/config"
+run env -u GIT_CONFIG_GLOBAL -u XDG_CONFIG_HOME "HOME=$hd" "$doctor" "$d"
+check_contains "default XDG path, no ~/.gitconfig → that file is named, not HOME" "$OUT" "global config read via $hd/.config/git/config"
 
 # HOME unset: `git config --global` fails outright ($HOME not set) whatever XDG_CONFIG_HOME says, so
 # naming XDG would point at a file the probe never reached
@@ -814,7 +822,7 @@ check_contains "unset HOME → named as unset, never as the XDG dir" "$OUT" "glo
 # through to the XDG file, so XDG is the honest answer there. (Set-ness vs non-emptiness again — the
 # same distinction the GIT_CONFIG_GLOBAL branch makes.)
 run env -u GIT_CONFIG_GLOBAL "HOME=" "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
-check_contains "empty HOME → XDG is named, since git falls through to it" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+check_contains "empty HOME → the XDG file is named, since git falls through to it" "$OUT" "global config read via $h/xdg/git/config"
 
 # ...and with no XDG file to fall through to, the else branch must still not collapse an empty HOME into
 # "<unset>": git ran fine there, probing /.gitconfig, so claiming HOME was unset misreports what happened
@@ -829,9 +837,22 @@ chmod 000 "$h/.gitconfig"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
 check_status "unreadable ~/.gitconfig → doesn't crash (exit 0)" 0 "$STATUS"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
-  check_contains "unreadable ~/.gitconfig → XDG is named, not HOME" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+  check_contains "unreadable ~/.gitconfig → the XDG file is named, not HOME" "$OUT" "global config read via $h/xdg/git/config"
 fi
 chmod 644 "$h/.gitconfig"
+
+# The two fall-through tests are asymmetric on purpose (`-r` for ~/.gitconfig, `-f` for the XDG file):
+# an unreadable ~/.gitconfig makes git move ON, but an unreadable XDG file has nothing after it — git
+# warns, returns empty, and that file is still the last one it touched, so naming it beats naming a
+# ~/.gitconfig git already rejected. Pinning it here so the asymmetry doesn't read as an oversight.
+hu="$SANDBOX/guardhome.xdgunread.$$"; mkdir -p "$hu" "$hu/xdg/git"
+printf '[user]\n\tname = Keel Test\n' > "$hu/xdg/git/config"; chmod 000 "$hu/xdg/git/config"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hu/xdg" "HOME=$hu" "$doctor" "$d"
+check_status "unreadable XDG config → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable XDG config → still named, since git stops there" "$OUT" "global config read via $hu/xdg/git/config"
+fi
+chmod 644 "$hu/xdg/git/config"
 
 # ...and the finding this clause hangs off is not blind to a hooksPath that only git's EFFECTIVE config
 # can see. `git config --global` cannot read an XDG file behind an existing ~/.gitconfig, but the
@@ -845,6 +866,19 @@ printf '[user]\n\tname = Keel Test\n' > "$hx/.gitconfig"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hx/xdg" "HOME=$hx" "$doctor" "$d"
 check_status "XDG-wired guard behind a ~/.gitconfig → the run completed (exit 0)" 0 "$STATUS"
 check_absent "XDG-wired guard behind a ~/.gitconfig → project scope still sees it" "$OUT" "[W-GUARD-UNWIRED]"
+
+# --install mode: a core.hooksPath that IS set but carries no executable pre-commit still draws the
+# finding — but the provenance clause must NOT ride along there. The config was plainly readable (its
+# hooksPath is what we're quoting back), so pointing the reader at a redirect that demonstrably didn't
+# happen sends them off investigating the wrong thing. The project-scope half can't reach this shape:
+# it is only reached with an empty global_hooks.
+hi="$SANDBOX/guardhome.hookless.$$"; mkdir -p "$hi/hooks" "$hi/claude"
+fresh_home_env "$hi"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hi/hooks" >/dev/null 2>&1
+run env "${FRESH_HOME_ENV[@]}" "$doctor" --install "$hi/claude"
+check_contains "hooksPath set but no hook → still flagged in --install mode" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and the message names the actual state" "$OUT" "core.hooksPath is set to $hi/hooks"
+check_absent   "...with no provenance clause: the config was read fine" "$OUT" "global config read via"
 
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents
