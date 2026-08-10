@@ -875,7 +875,7 @@ check_absent "XDG-wired guard behind a ~/.gitconfig → project scope still sees
 # from "nothing wired at all" and says so — the two need different fixes. The provenance clause still
 # rides along: a successful read proves *a* config was read, not the right one, and a redirected
 # GIT_CONFIG_GLOBAL pointing at a hookless dir lands here on a machine that is genuinely guarded. The
-# project-scope half can't reach this shape: it is only reached with an empty global_hooks.
+# project-scope half names the same shape in its own branch — see the case below.
 hi="$SANDBOX/guardhome.hookless.$$"; mkdir -p "$hi/hooks" "$hi/claude"
 fresh_home_env "$hi"
 env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hi/hooks" >/dev/null 2>&1
@@ -895,10 +895,28 @@ run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
 check_contains "hooksPath at a hookless dir → project audit flags it, not a clean run" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "...naming the dir that carries no hook" "$OUT" "core.hooksPath is set to $hp/hooks"
 # ...and it goes quiet again as soon as that dir actually carries the hook, so the check didn't just
-# become unconditional
+# become unconditional. Anchored on a positive line too — a bare check_absent passes on empty output.
 printf '#!/bin/sh\nexit 0\n' > "$hp/hooks/pre-commit"; chmod +x "$hp/hooks/pre-commit"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
-check_absent "...and a real hook there draws no finding" "$OUT" "[W-GUARD-UNWIRED]"
+check_status   "...a real hook there → the run completed (exit 0)" 0 "$STATUS"
+check_contains "...a real hook there → doctor reached its verdict" "$OUT" "baseline OK"
+check_absent   "...and a real hook there draws no finding" "$OUT" "[W-GUARD-UNWIRED]"
+
+# A RELATIVE core.hooksPath is resolved by git against the repo, not against doctor's cwd. Testing it
+# from the wrong base both invents findings for genuinely guarded repos and misses real ones — the
+# local_hooks branch has always resolved it this way; this branch now does too.
+hr="$SANDBOX/guardhome.relhooks.$$"; mkdir -p "$hr"
+fresh_home_env "$hr"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath .githooks >/dev/null 2>&1
+mkdir -p "$d/.githooks"
+printf '#!/bin/sh\nexit 0\n' > "$d/.githooks/pre-commit"; chmod +x "$d/.githooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_absent "relative core.hooksPath with a real hook in the repo → no finding" "$OUT" "[W-GUARD-UNWIRED]"
+rm -f "$d/.githooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_contains "relative core.hooksPath, hook missing → flagged" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and the message shows where it resolved to" "$OUT" "resolves to $d/.githooks for this repo"
+rm -rf "$d/.githooks"
 
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents

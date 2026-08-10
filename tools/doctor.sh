@@ -712,14 +712,23 @@ EOF
     else
       warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
     fi
-  elif [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
-    :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
   elif [ -n "$global_hooks" ]; then
-    # core.hooksPath SET but carrying no executable pre-commit — the same shape --install mode names
-    # above, and until dir #97 this branch swallowed it as "covered by global": a hooksPath pointing at
-    # an empty dir left commits guarded by nothing while the audit printed a clean 0/0/0. Found by the
-    # operator's own /code-review pass on dir #97 and reproduced (a planted key committed through).
-    warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit, so commits here are guarded by nothing (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
+    # A machine-global core.hooksPath is only cover if the dir it names actually carries an executable
+    # pre-commit — until dir #97 this branch trusted the setting alone and swallowed the hookless case
+    # as "covered by global": a hooksPath pointing at an empty dir left commits guarded by nothing while
+    # the audit printed a clean 0/0/0. Found by the operator's own /code-review pass on dir #97 and
+    # reproduced (a planted key committed through). The dir is resolved PER REPO, the same way the
+    # local_hooks branch above does it: a relative core.hooksPath (`.githooks`) is resolved by git
+    # against the repo, so testing it from doctor's own cwd would both miss real guards and invent
+    # absent ones — the `~/` form is already expanded where $global_hooks is read.
+    case "$global_hooks" in /*) ghd="$global_hooks" ;; *) ghd="$d/$global_hooks" ;; esac
+    if [ -x "$ghd/pre-commit" ]; then
+      :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
+    else
+      ghd_note=""
+      [ "$ghd" = "$global_hooks" ] || ghd_note=" (relative — resolves to $ghd for this repo)"
+      warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $global_hooks$ghd_note but that dir carries no executable pre-commit, so commits here are guarded by nothing (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
+    fi
   elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
     # vendored into the real hooks dir (a worktree/submodule isn't .git/hooks) — same drift check
     vh="$(git -C "$d" rev-parse --git-path hooks 2>/dev/null)"
