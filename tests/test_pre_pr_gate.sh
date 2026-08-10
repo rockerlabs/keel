@@ -344,7 +344,7 @@ check_status "receipt + hook both from the worktree → exit 0" 0 "$STATUS"
 check_absent "receipt + hook both from the worktree → allowed" "$OUT" "deny"
 
 # --- dir #63: skill-invocation trace + nonce-surviving hand-off ----------------------------------
-trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
+# trace_for() lives in lib.sh (shared with test_pipeline_canary.sh).
 
 # 16. A BARE review outcome (a real in-session level, no -operator-run/-waived suffix) with NO
 # matching trace at all → denied, naming the trace as the reason (not a generic completeness miss).

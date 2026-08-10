@@ -83,8 +83,8 @@ check_contains "the gate itself allows the simulated run" "$gate_decision" '"per
 
 # dir #102: a trace file present (skill-trace fired at least once) → the "trace file exists" INFO
 # branch, otherwise never exercised (every other fixture in this suite leaves no trace behind).
-_repo_key_for_check="$(bash "$gate" repo-key "$repo")"
-printf '2026-01-01T00:00:00Z\tcode-review\thigh\n' > "/tmp/pre-pr-gate-trace-$_repo_key_for_check"
+# trace_for() lives in lib.sh (shared with test_pre_pr_gate.sh).
+printf '2026-01-01T00:00:00Z\tcode-review\thigh\n' > "$(trace_for "$repo")"
 
 # -u KEEL_IMPACT_LOG here too: cmd_check now follows the same $KEEL_IMPACT_LOG-outranks-.keel/-marker
 # precedence as resolve_impact_log() (the fix under test further below) — since the event above was
@@ -97,7 +97,7 @@ check_contains "check after a completed run → PASSes the sentinel-consumed ass
 check_contains "check after a completed run → reports the receipt-pass provenance" "$OUT" "PASS  a receipt-pass event was recorded"
 check_contains "check after a completed run → provenance names it self-reported" "$OUT" "review: low, operator-run (self-reported)"
 check_contains "check after a completed run → reports the trace file (dir #102)" "$OUT" "INFO  a code-review trace file exists"
-rm -f "/tmp/pre-pr-gate-trace-$_repo_key_for_check"
+rm -f "$(trace_for "$repo")"
 
 # --- clean: removes the sandbox and the state file --------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" clean

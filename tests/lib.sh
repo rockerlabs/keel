@@ -178,6 +178,10 @@ real_sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(real_key_for "$1" "$2")"; 
 # drifted into test_pre_pr_gate.sh instead, duplicating this same composition a third time).
 handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(combined_key_for "$1")"; }
 real_handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(real_key_for "$1" "$2")"; }
+# dir #63: the code-review skill-trace file, keyed by repo only (not repo+branch, unlike the
+# sentinel/handoff above — see pre-pr-gate.sh's own trace_path_for). Shared by test_pre_pr_gate.sh and
+# test_pipeline_canary.sh, same rationale as repo_key_for/sentinel_for above.
+trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the
