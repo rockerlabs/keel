@@ -835,7 +835,7 @@ case "${1:-}" in
             # round that only lost step 3 to go and redo a review nobody withheld.
             if ! printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
               case "$r_step" in
-                polish.3-tests)  _todo='step 3 bound to $(git rev-parse HEAD) (or step 6 re-tested there)' ;;
+                polish.3-tests)  _todo='step 3 bound to $(git rev-parse HEAD) (step 6 rebinds it too, but only if a later commit still changes files)' ;;
                 polish.5-review) _todo='step 5 a fresh delta re-review' ;;
                 *)               _todo="$r_step" ;;
               esac
