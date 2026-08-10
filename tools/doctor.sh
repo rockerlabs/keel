@@ -242,20 +242,26 @@ global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
 # shellcheck disable=SC2088  # matching a LITERAL ~ a user wrote into git config (git returns it verbatim)
 case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; esac
 
-# dir #97: the machine-global half above resolves through $HOME (git reads the global config at
-# $GIT_CONFIG_GLOBAL, else $XDG_CONFIG_HOME/git/config, else ~/.gitconfig). Under a REDIRECTED HOME —
-# an audit probe isolating itself, a test harness, a container — a guarded machine reads as unguarded,
-# turning W-GUARD-UNWIRED, doctor's highest-stakes finding, into a systematic false negative; dir #85's
-# drift audit nearly filed one as real drift. The resolution stays as it is: reading a global git config
-# is read-only and cannot damage the machine, so isolation rules were never meant to cover it
-# (docs/rollout-audit.md now carves that out explicitly). What is added is provenance — the finding names
-# the source it was resolved through, the same way --install mode's findings name their $ihome.
-# Name the source ACTUALLY consulted, not $HOME flatly: `GIT_CONFIG_GLOBAL=/dev/null` is a standard
-# hermetic-CI idiom that redirects the config without touching HOME, and a note pointing at an
-# unredirected ~/.gitconfig where core.hooksPath *is* set reads as a doctor bug — the same unexplained
-# finding this exists to remove, displaced one variable over. (XDG_CONFIG_HOME needs no branch: when
-# GIT_CONFIG_GLOBAL is unset, ~/.gitconfig is still read and still wins, so HOME remains the honest
-# answer.)
+# dir #97: the machine-global half above resolves through whatever global git config the environment
+# points at. Under a REDIRECTED one — an audit probe isolating itself, a test harness, a container — a
+# guarded machine reads as unguarded, turning W-GUARD-UNWIRED, doctor's highest-stakes finding, into a
+# systematic false negative; dir #85's drift audit nearly filed one as real drift. The resolution stays
+# as it is: reading a global git config is read-only and cannot damage the machine, so isolation rules
+# were never meant to cover it (docs/rollout-audit.md now carves that out explicitly). What is added is
+# provenance — the finding names the source it was resolved through, the same way --install mode's
+# findings name their $ihome.
+#
+# Name the source ACTUALLY consulted, not $HOME flatly. `git config --global` resolves to exactly ONE
+# file, and NOT in the merge order the git-config(1) FILES section lists — verified against git 2.52:
+# $GIT_CONFIG_GLOBAL when that variable is SET (even to the empty string, which silences the global
+# config entirely); else ~/.gitconfig when it exists; else $XDG_CONFIG_HOME/git/config. An XDG file is
+# not merged in when ~/.gitconfig exists. Each of those can be redirected without touching the others —
+# `GIT_CONFIG_GLOBAL=/dev/null` is a standard hermetic-CI idiom — and a note pointing at an unredirected
+# ~/.gitconfig where core.hooksPath *is* set reads as a doctor bug: the very confusion this exists to
+# remove, displaced one variable over. Hence set-ness (`+x`), not non-emptiness, and an XDG branch that
+# fires only when that variable is set (with it unset, the fallback file lives under HOME anyway, so
+# naming HOME stays honest).
+#
 # Unconditional on purpose. The tempting narrower trigger — "no global git config readable here" — is a
 # proxy for a question that cannot be answered from inside: any sandbox that ran `git config --global
 # user.email` in order to commit has one (this repo's own tests/lib.sh and examples/tour.sh both do), so
@@ -264,12 +270,14 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # lets the reader judge. Residual: the SILENT halves of the same resolution carry no message to append
 # to — W-GUARD-GLOBAL-STALE simply never runs under a redirected config, and its absence reads as
 # "fresh" (dir #120).
-if [ -n "${GIT_CONFIG_GLOBAL:-}" ]; then
-  guard_home_src="GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+if [ -n "${GIT_CONFIG_GLOBAL+x}" ]; then
+  guard_cfg_src="GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-<empty>}"
+elif [ ! -f "${HOME:-}/.gitconfig" ] && [ -n "${XDG_CONFIG_HOME:-}" ] && [ -f "${XDG_CONFIG_HOME}/git/config" ]; then
+  guard_cfg_src="XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
 else
-  guard_home_src="HOME=${HOME:-<unset>}"
+  guard_cfg_src="HOME=${HOME:-<unset>}"
 fi
-guard_home_note=" [global config read via $guard_home_src — a redirected one reports a guarded machine as unwired]"
+guard_home_note=" [global config read via $guard_cfg_src — a redirected one reports a guarded machine as unwired]"
 
 # The engine THIS checkout ships — the drift reference for every installed secret-guard copy. An
 # installed copy that differs runs old (or unknown) detection while looking wired; presence is not

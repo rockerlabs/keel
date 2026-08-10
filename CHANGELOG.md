@@ -16,20 +16,25 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   under the mandated sandbox it reports `W-GUARD-UNWIRED` for a machine where the guard is demonstrably
   wired and firing. Two halves, prose and code:
   - The rule is carved, not the resolution. `docs/rollout-audit.md`'s Layer 0 now states that isolation
-    governs **writes**, and that a probe which only *reads* the machine's own configuration is exempt and
-    must run against the real environment — isolating such a read doesn't merely weaken the answer, it
-    inverts it. `tools/pipeline-canary.sh`'s hard-sandbox comment points at that carve-out rather than
-    restating it.
-  - `W-GUARD-UNWIRED` now names the global-config source it was resolved through — `GIT_CONFIG_GLOBAL`
-    when the environment sets it, `HOME` otherwise — the same way `--install` mode's findings name their
-    install home. **Unconditionally, on purpose:** the tempting narrower trigger
-    ("only when no global git config is readable here") is a proxy for a question undecidable from
-    inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
+    governs **writes**, and that a probe which only *reads* the machine's own configuration is exempt —
+    when you intend to act on its verdict, run it against the real environment, since isolating such a
+    read doesn't merely weaken the answer, it inverts it. (Running the same diagnostic sandboxed for a
+    demo or a fixture stays fine, as `examples/tour.sh` does; it just isn't an audit verdict.)
+    `tools/pipeline-canary.sh`'s hard-sandbox comment points at that carve-out rather than restating it.
+  - `W-GUARD-UNWIRED` now names the global-config source it was actually resolved through, the same way
+    `--install` mode's findings name their install home. `git config --global` reads exactly one file,
+    and not in the merge order `git-config(1)`'s FILES section lists: `GIT_CONFIG_GLOBAL` when that
+    variable is **set** (an empty value silences the global config outright), else `~/.gitconfig` when it
+    exists, else `$XDG_CONFIG_HOME/git/config`. Each can be redirected without touching the others, so
+    naming `HOME` flatly would point a reader at an untouched `~/.gitconfig` that carries the very
+    `hooksPath` they were just told is missing. **Unconditionally, on purpose:** the tempting narrower
+    trigger ("only when no global git config is readable here") is a proxy for a question undecidable
+    from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
     (Keel's own test harness and `examples/tour.sh` both do), so that predicate goes silent on the
     commonest sandbox shape while appending an excuse to a perfectly correct finding on a bare real
-    machine. Naming the `HOME` is decidable, and leaves the judgement to the reader.
+    machine. Naming the source is decidable, and leaves the judgement to the reader.
     Residual: the *silent* halves of the same resolution carry no message to append to —
-    `W-GUARD-GLOBAL-STALE` simply never runs under a redirected `HOME`, and its absence reads as
+    `W-GUARD-GLOBAL-STALE` simply never runs under a redirected global config, and its absence reads as
     "fresh". Filed separately.
 - **Two stale statements about `receipt --recover`'s behavior, left behind by dir #96 and dir #116**
   (dir #117, found by dir #96's own closing high review). `tools/pre-pr-gate.sh`'s `--recover` runtime

@@ -786,6 +786,25 @@ h="$SANDBOX/guardhome.nocfgvar.$$"; mkdir -p "$h"
 run env -u GIT_CONFIG_GLOBAL "HOME=$h" "$doctor" "$d"   # -u before assignments: BSD env is order-strict
 check_contains "no GIT_CONFIG_GLOBAL → the finding falls back to naming HOME" "$OUT" "global config read via HOME=$h"
 
+# GIT_CONFIG_GLOBAL SET BUT EMPTY silences the global config entirely (git tests set-ness, not
+# emptiness — verified against git 2.52), so a `-n` test here would name an untouched HOME whose
+# ~/.gitconfig may well carry the hooksPath the reader is about to be told doesn't exist
+h="$SANDBOX/guardhome.emptyvar.$$"; mkdir -p "$h"
+printf '[core]\n\thooksPath = %s/hooks\n' "$h" > "$h/.gitconfig"
+run env "GIT_CONFIG_GLOBAL=" "HOME=$h" "$doctor" "$d"
+check_contains "empty GIT_CONFIG_GLOBAL still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "empty GIT_CONFIG_GLOBAL is named as the source, not HOME" "$OUT" "global config read via GIT_CONFIG_GLOBAL=<empty>"
+
+# XDG_CONFIG_HOME is the source only when ~/.gitconfig does NOT exist — git resolves --global to one
+# file and does not merge the XDG one in behind an existing ~/.gitconfig
+h="$SANDBOX/guardhome.xdg.$$"; mkdir -p "$h" "$h/xdg/git"
+: > "$h/xdg/git/config"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
+check_contains "XDG config with no ~/.gitconfig → XDG_CONFIG_HOME is named" "$OUT" "global config read via XDG_CONFIG_HOME=$h/xdg"
+printf '[user]\n\tname = Keel Test\n' > "$h/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
+check_contains "an existing ~/.gitconfig wins → HOME is named instead" "$OUT" "global config read via HOME=$h"
+
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents
 # would both pass on empty output, so a doctor that crashed before printing anything would look green.

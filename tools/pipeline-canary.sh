@@ -30,8 +30,9 @@
 # instruction; setting HOME alone is also not treated as sufficient by itself (dir #24 finding: a
 # user-level ~/.claude/CLAUDE.md can still leak into an "isolated" session) — the printed command also
 # passes `--setting-sources project,local` to exclude the user scope.
-# The rule governs WRITES: a probe that only READS the machine's own configuration is exempt and must
-# run against the real environment — see docs/rollout-audit.md's Layer 0 carve-out (dir #97).
+# The rule governs WRITES: a probe that only READS the machine's own configuration is exempt — see
+# docs/rollout-audit.md's Layer 0 carve-out for when that read has to face the real environment
+# (dir #97).
 #
 # Subcommands:
 #   pipeline-canary.sh setup          build a fresh sandbox (toy repo, isolated HOME, stub `gh`, hooks
