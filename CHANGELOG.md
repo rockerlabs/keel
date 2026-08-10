@@ -38,9 +38,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     through). Same class of false negative as the one this ticket is about, found by the operator's own
     `/code-review` pass on it. The dir is resolved **per repo**, since git resolves a relative
     `core.hooksPath` against the repo rather than against `doctor`'s own working directory — and because
-    a relative path is per-repo by construction, the once-per-machine engine-drift comparison cannot
-    cover it, so that case now gets its own `W-GUARD-STALE` check (suppressed when the machine-wide pass
-    already compared the same file, so one drift is never reported twice).
+    a relative path is per-repo by construction, the once-per-machine engine-drift comparison no longer
+    claims it at all: that pass is now **absolute-only**, and the relative case gets its own per-repo
+    `W-GUARD-STALE`. The two domains are disjoint, so one drift is still reported exactly once — and by
+    the check whose advice works, which matters here: the machine-wide finding's remediation
+    (`install-secret-guard.sh --global`) exits 3 rather than clobber a `core.hooksPath` it didn't set,
+    while the per-repo one vendors into the directory git actually runs hooks from.
     **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first

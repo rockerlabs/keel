@@ -922,13 +922,17 @@ cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$d/.githooks/secret-scan.sh"
 printf '\n# drifted\n' >> "$d/.githooks/secret-scan.sh"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
 check_contains "drifted engine at a relative core.hooksPath is still flagged" "$OUT" "[W-GUARD-STALE]"
-# ...but NOT twice. Invoked with no arguments, doctor's cwd is the audited repo (DIRS defaults to "."),
-# and the machine-scope pass then resolved this very file — so the per-repo cmp must stand down. That is
-# what the `-ef` (same-file) guard is for; a string comparison of the raw setting reports the one drift
-# under two IDs whose remediations disagree.
+check_absent   "...and not ALSO as the machine-wide finding: one drift, one report" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+# ...including when doctor is invoked with no arguments, where its cwd IS the audited repo (DIRS
+# defaults to "."). That used to be the shape where both fired. The per-repo check must be the one that
+# survives, not merely one of them: the machine-wide finding's remediation is
+# `install-secret-guard.sh --global`, which exits 3 refusing to clobber a hooksPath it didn't set, so
+# winning that race would leave the operator with advice that cannot fix the drift it names.
 run_in "$d" env "${FRESH_HOME_ENV[@]}" "$doctor"
-check_contains "cwd == the repo → the machine-scope pass reports the drift" "$OUT" "[W-GUARD-GLOBAL-STALE]"
-check_absent   "...and the per-repo cmp stands down, so it isn't reported twice" "$OUT" "[W-GUARD-STALE]"
+check_contains "cwd == the repo → still the per-repo finding" "$OUT" "[W-GUARD-STALE]"
+check_contains "...carrying the per-repo remediation, not the --global one" "$OUT" "re-vendor: install-secret-guard.sh"
+check_absent   "...and never advising --global, which refuses this shape" "$OUT" "install-secret-guard.sh --global"
+check_absent   "...and not the machine-wide one, whose fix exits 3 on this shape" "$OUT" "[W-GUARD-GLOBAL-STALE]"
 rm -f "$d/.githooks/secret-scan.sh"
 
 rm -f "$d/.githooks/pre-commit"

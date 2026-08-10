@@ -300,9 +300,17 @@ guard_home_note=" [global config read via $guard_cfg_src — a redirected one re
 # per-repo vendored copies are checked inside the loop.
 # BASH_SOURCE, not $0: resolves this script's real location even when invoked as `bash doctor.sh`
 # from another cwd — a drift check that can't find its own reference would silently never fire.
+# ABSOLUTE hooksPath only (dir #97). A RELATIVE core.hooksPath names a different directory in every
+# repo, so it is not a machine-wide install and this check has no business claiming it: resolving it
+# here would silently compare whatever happens to sit under doctor's own cwd, and the finding's
+# remediation (`install-secret-guard.sh --global`) exits 3 refusing to clobber that very setting — a
+# dead end. The per-repo loop owns that shape instead, with the fix that actually works. The two
+# domains are disjoint by construction, so one drift is still never reported twice. ~/ was already
+# expanded above, so a tilde spelling counts as absolute here.
 tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
-if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+case "$global_hooks" in /*) global_hooks_abs=1 ;; *) global_hooks_abs=0 ;; esac
+if [ "$global_hooks_abs" = 1 ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
    && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
   warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
 fi
@@ -723,15 +731,12 @@ EOF
     # absent ones — the `~/` form is already expanded where $global_hooks is read.
     case "$global_hooks" in /*) ghd="$global_hooks" ;; *) ghd="$d/$global_hooks" ;; esac
     if [ -x "$ghd/pre-commit" ]; then
-      # Covered. Drift is normally checked once, machine-wide, where $global_hooks is read — but that
-      # check resolves the path from DOCTOR's cwd, so for a RELATIVE setting it compares whatever dir
-      # happens to sit under the cwd, not this repo's. A relative hooksPath is per-repo by construction,
-      # so the machine-scope pass cannot cover it in general and this branch runs the same cmp itself,
-      # phrased like the local_hooks branch above. `-ef` (same file), not string inequality: when doctor
-      # is invoked with no arguments its cwd IS the audited repo (DIRS defaults to "."), and there the
-      # machine pass already compared this very file — a string test would report the one drift twice,
-      # under two IDs carrying different remediations.
-      if ! [ "$ghd" -ef "$global_hooks" ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+      # Covered. Engine drift for an ABSOLUTE hooksPath was checked once, machine-wide, above; a
+      # RELATIVE one is per-repo by construction, so that pass deliberately skips it and this branch
+      # owns it — with the remediation that actually works here (the machine one exits 3 rather than
+      # touch a hooksPath it didn't set). The two domains are disjoint, so one drift is reported once,
+      # by whichever check can fix it. Phrased like the local_hooks branch above.
+      if [ "$global_hooks_abs" = 0 ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
          && ! cmp -s "$ghd/secret-scan.sh" "$shipped_scan"; then
         warn W-GUARD-STALE "secret-guard at the global core.hooksPath '$global_hooks' ($ghd) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh $d"
       fi
