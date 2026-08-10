@@ -145,8 +145,10 @@ check_contains "names the file that lost it" "$OUT" "missing from: uninstall.sh"
 
 # a repo that defines it nowhere has no rule to keep in sync — silent, not a GAP (mirrors check 1's
 # empty-skip-list arm; mk_clean_repo's fixtures carry no pattern at all)
+# Deliberately NOT --quiet: the silent-when-absent branch is invisible under --quiet (it suppresses
+# `say`), so the assertion below would pass no matter what the check did.
 d="$(mk_clean_repo)"
-run "$sd" "$d" --quiet
+run "$sd" "$d"
 check_status "no copies anywhere -> exit 0" 0 "$STATUS"
 check_absent "and says nothing about the pattern" "$OUT" "core-@import"
 

@@ -132,6 +132,22 @@ check_contains "--home flags that Claude Code reads its own default home" "$OUT"
 
 run "$installer" --home
 check_status "--home with no DIR -> exit 2" 2 "$STATUS"
+# An EMPTY DIR must refuse as loudly as a missing one — `--home "$KEEL_HOME"` with KEEL_HOME unset
+# would otherwise fall through to $HOME/.claude, silently re-creating dir #98's split install (and
+# skipping the NOTE, since the resolved dir then equals the default). Nothing may be written.
+run "$installer" --home ""
+check_status "--home with an EMPTY DIR -> exit 2" 2 "$STATUS"
+check_contains "the empty-DIR refusal says what was missing" "$OUT" "got nothing"
+check_nofile "empty --home wrote nothing to the default home" "$HOME/.claude/settings.json"
+# A following flag is a swallowed argument, not a directory named "--force".
+run "$installer" --home --force
+check_status "--home swallowing a flag -> exit 2" 2 "$STATUS"
+check_contains "the swallowed-flag refusal names it" "$OUT" "--force"
+# --home + --global: --home is the more specific flag and decides the target, so it is also the one
+# every message names — otherwise the banner blames a flag that isn't governing.
+run "$installer" --home "$hhome" --global "$repo"
+check_status "--home + --global + a repo path -> exit 2" 2 "$STATUS"
+check_contains "the rejection names --home, the flag that governs" "$OUT" "--home doesn't take a repo path"
 run "$installer" --home "$hhome" "$repo"
 check_status "--home + a repo path -> exit 2 (rejected)" 2 "$STATUS"
 check_contains "the --home+path rejection names the conflict" "$OUT" "doesn't take a repo path"

@@ -92,10 +92,20 @@ rest=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) force=1 ;;
-    --global) scope_flag="--global" ;;
+    # --home is --global with an explicit target, so it stays the flag every message names when both
+    # are passed — it's the one that actually decides where the hooks land.
+    --global) [ -n "$home_dir" ] || scope_flag="--global" ;;
     --home)
       shift
-      [ "$#" -gt 0 ] || { echo "install-pre-pr-gate.sh: --home needs a DIR" >&2; exit 2; }
+      # An EMPTY DIR is rejected as loudly as a missing one: `--home "$KEEL_HOME"` in a shell where
+      # KEEL_HOME was never exported is exactly the situation dir #98 describes (install.sh --home
+      # does not export it), and falling through to $HOME/.claude there would silently re-create the
+      # split install this flag exists to close — including skipping the NOTE below, since the
+      # resolved dir would then equal the default. A leading dash is a swallowed flag, not a path.
+      case "${1:-}" in
+        "")  echo "install-pre-pr-gate.sh: --home needs a DIR (got nothing)" >&2; exit 2 ;;
+        -*)  echo "install-pre-pr-gate.sh: --home needs a DIR, got the flag '$1'" >&2; exit 2 ;;
+      esac
       home_dir="$1"; scope_flag="--home" ;;
     -h|--help) usage; exit 0 ;;
     *) if [ -n "$rest" ]; then
