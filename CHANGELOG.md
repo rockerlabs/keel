@@ -36,7 +36,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     covers it": a `hooksPath` pointing at an empty directory printed a clean `0 gap, 0 warn, 0 hint`
     while commits went through completely unguarded (reproduced — a planted key committed straight
     through). Same class of false negative as the one this ticket is about, found by the operator's own
-    `/code-review` pass on it.
+    `/code-review` pass on it. The dir is resolved **per repo**, since git resolves a relative
+    `core.hooksPath` against the repo rather than against `doctor`'s own working directory — and because
+    a relative path is per-repo by construction, the once-per-machine engine-drift comparison cannot
+    cover it, so that case now gets its own `W-GUARD-STALE` check (suppressed when the machine-wide pass
+    already compared the same file, so one drift is never reported twice).
     **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
