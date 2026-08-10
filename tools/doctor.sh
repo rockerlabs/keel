@@ -494,11 +494,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($global_hooks)"
   elif [ -n "$global_hooks" ]; then
-    # core.hooksPath WAS read, so the global config is plainly visible from here — the provenance clause
-    # would only send the reader off to investigate a redirect that demonstrably didn't happen. Name the
-    # actual state instead (dir #97, operator's own /code-review pass). The project-scope half below
-    # can't reach this shape: it is only reached with $global_hooks empty.
-    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)"
+    # A DIFFERENT shape from the else below: core.hooksPath is set, it just points somewhere with no
+    # executable pre-commit. Say that, rather than the generic "not wired" — the two need different
+    # fixes (dir #97, operator's own /code-review pass). The provenance clause still rides along: a
+    # successful read proves *a* config was read, not the RIGHT one, and a redirected GIT_CONFIG_GLOBAL
+    # whose config points at a hookless dir lands exactly here while the real machine is guarded — the
+    # systematic false negative this whole clause exists to signal. The project-scope half below can't
+    # reach this shape: it is only reached with $global_hooks empty.
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   else
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   fi

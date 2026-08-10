@@ -812,6 +812,10 @@ hd="$SANDBOX/guardhome.xdgdefault.$$"; mkdir -p "$hd/.config/git"
 printf '[user]\n\tname = Keel Test\n' > "$hd/.config/git/config"
 run env -u GIT_CONFIG_GLOBAL -u XDG_CONFIG_HOME "HOME=$hd" "$doctor" "$d"
 check_contains "default XDG path, no ~/.gitconfig → that file is named, not HOME" "$OUT" "global config read via $hd/.config/git/config"
+# ...and git treats a set-but-EMPTY XDG_CONFIG_HOME as unset (unlike GIT_CONFIG_GLOBAL/HOME, where
+# set-ness is what counts), so this one branch genuinely wants `:-` rather than `+x`
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=" "HOME=$hd" "$doctor" "$d"
+check_contains "empty XDG_CONFIG_HOME → falls back to the default path, as git does" "$OUT" "global config read via $hd/.config/git/config"
 
 # HOME unset: `git config --global` fails outright ($HOME not set) whatever XDG_CONFIG_HOME says, so
 # naming XDG would point at a file the probe never reached
@@ -867,18 +871,18 @@ run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hx/xdg" "HOME=$hx" "$doctor" "$d"
 check_status "XDG-wired guard behind a ~/.gitconfig → the run completed (exit 0)" 0 "$STATUS"
 check_absent "XDG-wired guard behind a ~/.gitconfig → project scope still sees it" "$OUT" "[W-GUARD-UNWIRED]"
 
-# --install mode: a core.hooksPath that IS set but carries no executable pre-commit still draws the
-# finding — but the provenance clause must NOT ride along there. The config was plainly readable (its
-# hooksPath is what we're quoting back), so pointing the reader at a redirect that demonstrably didn't
-# happen sends them off investigating the wrong thing. The project-scope half can't reach this shape:
-# it is only reached with an empty global_hooks.
+# --install mode: a core.hooksPath that IS set but carries no executable pre-commit is a DIFFERENT state
+# from "nothing wired at all" and says so — the two need different fixes. The provenance clause still
+# rides along: a successful read proves *a* config was read, not the right one, and a redirected
+# GIT_CONFIG_GLOBAL pointing at a hookless dir lands here on a machine that is genuinely guarded. The
+# project-scope half can't reach this shape: it is only reached with an empty global_hooks.
 hi="$SANDBOX/guardhome.hookless.$$"; mkdir -p "$hi/hooks" "$hi/claude"
 fresh_home_env "$hi"
 env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hi/hooks" >/dev/null 2>&1
 run env "${FRESH_HOME_ENV[@]}" "$doctor" --install "$hi/claude"
 check_contains "hooksPath set but no hook → still flagged in --install mode" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "...and the message names the actual state" "$OUT" "core.hooksPath is set to $hi/hooks"
-check_absent   "...with no provenance clause: the config was read fine" "$OUT" "global config read via"
+check_contains "...and still names the config source, since a redirect explains it too" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$hi/.gitconfig"
 
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents

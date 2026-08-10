@@ -28,10 +28,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     readable, else `$XDG_CONFIG_HOME/git/config` — which exists as `~/.config/git/config` even when that
     variable is unset, the ordinary layout, so the clause names that file rather than a variable. Each
     can be redirected without touching the others, so naming `HOME` flatly would point a reader at an
-    untouched `~/.gitconfig` that carries the very `hooksPath` they were just told is missing. The clause
-    is attached only where a redirect could actually explain the finding: `--install` mode's
-    hooksPath-set-but-no-hook case reads the config successfully, so it names that state instead.
-    **Unconditionally otherwise, on purpose:** the tempting narrower
+    untouched `~/.gitconfig` that carries the very `hooksPath` they were just told is missing.
+    `--install` mode additionally distinguishes "`core.hooksPath` is set but that dir has no executable
+    hook" from "nothing wired at all" — different states, different fixes — and carries the clause on
+    both, since a successful read proves *a* config was read, not the right one.
+    **Unconditionally, on purpose:** the tempting narrower
     trigger ("only when no global git config is readable here") is a proxy for a question undecidable
     from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
     (Keel's own test harness and `examples/tour.sh` both do), so that predicate goes silent on the
