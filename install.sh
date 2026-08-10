@@ -770,6 +770,13 @@ fi
 if [ "$CODEX" = 0 ] && [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then
   echo "  - /polish shipped, its gate did NOT — opt in per project:  tools/install-pre-pr-gate.sh <repo>"
   echo "    (blocks the agent's own gh pr create until /polish runs clean; your own terminal is never gated)"
+  # dir #98: --home/KEEL_HOME retargets THIS install, but the gate installer is a separate run with its
+  # own default home — say the matching flag here, at the one moment the retargeted path is on screen,
+  # rather than letting the two installers quietly describe different machines.
+  if [ "$HOME_DIR" != "${HOME:-}/.claude" ]; then
+    echo "    This install is retargeted to $HOME_DIR — machine-global gate wiring needs the same home:"
+    echo "      tools/install-pre-pr-gate.sh --home \"$HOME_DIR\"     (per-repo wiring is unaffected)"
+  fi
 fi
 if [ "$CODEX" = 1 ]; then
   cat <<EOF

@@ -117,6 +117,33 @@ check_status "--global -> exit 0" 0 "$STATUS"
 check_file "wires \$KEEL_HOME/settings.json" "$ghome/settings.json"
 check_contains "warns about the wider blast radius" "$OUT" "EVERY repo"
 
+# --- dir #98: --home DIR follows install.sh --home DIR (the two installers agree on the home) --------
+# install.sh --home retargets the whole install without exporting KEEL_HOME; before this flag the gate
+# had no way to follow it and silently wired ~/.claude instead — two installers describing different
+# machines, with nothing said at either install.
+hhome="$SANDBOX/gate-home-flag"
+run "$installer" --home "$hhome"
+check_status "--home DIR -> exit 0" 0 "$STATUS"
+check_file "--home DIR wires DIR/settings.json" "$hhome/settings.json"
+check_contains "the confirmation names the retargeted home" "$OUT" "$hhome/settings.json"
+# A retargeted home is machine-global in blast radius, and the harness may not read it — say both.
+check_contains "--home warns about the wider blast radius too" "$OUT" "EVERY repo"
+check_contains "--home flags that Claude Code reads its own default home" "$OUT" "$HOME/.claude"
+
+run "$installer" --home
+check_status "--home with no DIR -> exit 2" 2 "$STATUS"
+run "$installer" --home "$hhome" "$repo"
+check_status "--home + a repo path -> exit 2 (rejected)" 2 "$STATUS"
+check_contains "the --home+path rejection names the conflict" "$OUT" "doesn't take a repo path"
+
+# install.sh --home says so at the point of install, so the adopter never has to find this out later.
+ih="$SANDBOX/install-home-note"
+run "$REPO_ROOT/install.sh" --home "$ih" --no-hooks
+check_status "install.sh --home -> exit 0" 0 "$STATUS"
+check_contains "install.sh --home tells you the gate needs the same home" "$OUT" "install-pre-pr-gate.sh --home"
+run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
+check_absent "a default-home install does not carry the retarget note" "$OUT" "install-pre-pr-gate.sh --home"
+
 # --- a temp bootstrap-shaped clone refuses to wire (hooks would point at a path about to vanish) ----
 btmp="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"
 mkdir -p "$btmp/keel/tools"

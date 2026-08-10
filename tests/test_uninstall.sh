@@ -116,4 +116,62 @@ check_contains "no Keel home says so explicitly" "$OUT" "nothing to do"
 check_contains "no Keel home names the path it looked at" "$OUT" "$absent"
 if [ -e "$absent" ]; then fail "no Keel home creates nothing" "path was created: $absent"; else pass "no Keel home creates nothing"; fi
 
+# =================================================================================================
+# dir #108: what counts as a real core @import must be the SAME definition install.sh uses
+# =================================================================================================
+# install.sh's has_core_import requires whitespace/start/end boundaries around the token; uninstall
+# used to match by bare substring, so a line that merely MENTIONS the path in prose — the classic
+# markdown backtick-quoted `@~/.claude/keel/CORE.md` — was deleted along with the real import line,
+# contradicting uninstall's own promise that the rest of your file is untouched.
+H4="$SANDBOX/home4/.claude"
+inst --link --home "$H4" --no-hooks
+check_status "link install for the import-boundary case succeeds" 0 "$STATUS"
+prose='Note: the rails arrive via `@~/.claude/keel/CORE.md` — keep this line.'
+printf '%s\n' "$prose" >> "$H4/CLAUDE.md"
+
+unin --home "$H4" --yes
+check_status "uninstall over the prose mention exits 0" 0 "$STATUS"
+c4="$(cat "$H4/CLAUDE.md")"
+check_contains "a prose mention of the core path survives (not an import)" "$c4" "keep this line."
+# The REAL import line is still gone — the boundary fix must not turn into "never strip anything".
+n_import="$(grep -cE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$H4/CLAUDE.md" || true)"
+check_status "the real import line is still stripped" 0 "$n_import"
+
+# =================================================================================================
+# dir #109: --codex / AGENTS.md — install.sh --codex has a mirror image
+# =================================================================================================
+CX="$SANDBOX/codex-home/.codex"
+inst --codex --home "$CX" --no-hooks
+check_status "codex install succeeds" 0 "$STATUS"
+check_file "codex install placed AGENTS.md" "$CX/AGENTS.md"
+check_file "codex install placed FRAMEWORK.md" "$CX/FRAMEWORK.md"
+printf 'MY-OWN-CODEX-NOTE\n' >> "$CX/AGENTS.md"
+
+unin --codex --home "$CX" --dry-run
+check_status "codex dry-run exits 0" 0 "$STATUS"
+check_contains "codex dry-run names AGENTS.md, not CLAUDE.md" "$OUT" "AGENTS.md"
+
+unin --codex --home "$CX" --yes
+check_status "codex uninstall exits 0" 0 "$STATUS"
+check_file "AGENTS.md itself is kept (user-owned outside the block)" "$CX/AGENTS.md"
+cx_txt="$(cat "$CX/AGENTS.md")"
+check_absent "the KEEL-CORE rails block is stripped from AGENTS.md" "$cx_txt" "KEEL-CORE-BEGIN"
+check_contains "the user's own note outside the block survives" "$cx_txt" "MY-OWN-CODEX-NOTE"
+if [ -e "$CX/FRAMEWORK.md" ]; then fail "codex FRAMEWORK.md copy removed" "still present"; else pass "codex FRAMEWORK.md copy removed"; fi
+check_file "codex INSTANCE.md (user data) kept" "$CX/INSTANCE.md"
+cxbak="$(find "$CX" -maxdepth 1 -type d -name '.keel-uninstall-*' | head -1)"
+check_file "AGENTS.md backed up before the edit" "$cxbak/AGENTS.md"
+
+# --codex is discoverable and its default home is ~/.codex, not ~/.claude
+unin --help
+check_contains "--help documents --codex" "$OUT" "--codex"
+
+# A plain (Claude) uninstall must at least NAME a Codex install it isn't touching — the silent
+# leftover is exactly dir #109's complaint.
+mkdir -p "$HOME/.codex"
+sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$REPO_ROOT/templates/CLAUDE.md" > "$HOME/.codex/AGENTS.md"
+unin --yes
+check_contains "a Claude-scope uninstall names the leftover Codex install" "$OUT" "--codex"
+check_file "and does not touch it" "$HOME/.codex/AGENTS.md"
+
 summary

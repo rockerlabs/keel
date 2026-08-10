@@ -9,6 +9,37 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **The three installers disagreed about where an install lives and what counts as its artifact**
+  (dir #98, #108, #109 — one surface, three ways it drifted apart). Each half is covered by a
+  red-before-green test.
+  - **`install.sh --home DIR` and `install-pre-pr-gate.sh --global` described different machines**
+    (dir #98). `--home` retargets the whole install *without* exporting `KEEL_HOME`, and the gate
+    installer had no `--home` of its own — its `--global` resolved `${KEEL_HOME:-$HOME/.claude}`. So
+    after `install.sh --home /opt/keel-home`, the commands lived in `/opt/keel-home` while the gate's
+    hooks were written to `~/.claude`, and nothing said so at either install. The gate installer now
+    takes **`--home DIR`** (global scope, targeting `DIR/settings.json`), and `install.sh`'s own closing
+    summary names the matching flag whenever this install is retargeted — at the one moment the
+    retargeted path is on screen. The residual no flag can close is stated rather than papered over:
+    which global `settings.json` the *harness* reads is the harness's decision (Claude Code reads
+    `$HOME/.claude`), so a retargeted home prints a `NOTE` pointing at per-repo wiring as the
+    alternative.
+  - **`uninstall.sh` deleted a line that merely *mentioned* the core path** (dir #108). `install.sh`'s
+    `has_core_import` is the definition of "the import line is wired" and requires whitespace/start/end
+    boundaries around the token; `uninstall.sh` matched the same token by bare substring, so an
+    ordinary backtick-quoted `` `@~/.claude/keel/CORE.md` `` in the user's own prose was removed along
+    with the real import — contradicting the promise printed on the very next line, that the rest of
+    your file is untouched. Both now use one boundary-anchored definition (byte-identical to
+    `install.sh`'s and to the mirror in `tools/doctor.sh --install`), handed to `awk` through the
+    environment rather than `-v`, since `-v` applies escape processing to the assignment and would
+    quietly widen the pattern back out — the exact drift a shared definition exists to prevent.
+  - **`uninstall.sh` had never heard of `--codex`** (dir #109). `install.sh --codex` (dir #76) writes
+    `~/.codex/AGENTS.md`, which for a Codex adopter carries essentially all of Keel's rails; uninstall
+    hardcoded `CLAUDE.md`, so install-then-uninstall left the whole thing in place without a word.
+    It now mirrors install's mode flags: **`--codex`** resolves the same default home (`~/.codex`) and
+    the same always-loaded file (`AGENTS.md`), stripping the rails block while keeping the file and the
+    user's own content outside it. A plain Claude-scope run **names** a Codex install it finds instead
+    of leaving it silently behind — including on the "nothing to do — no Keel home at `~/.claude`" path,
+    which is exactly the run a Codex-only adopter makes first.
 - **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
   finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
   nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the
