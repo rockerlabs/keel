@@ -22,14 +22,17 @@ fi
 # Shared state dir so the shim (marker writer) and the gate (marker reader) agree on paths.
 export KEEL_CHECK_STATE_DIR; KEEL_CHECK_STATE_DIR="$(mktemp -d "$SANDBOX/kcgate.XXXXXX")"
 
-# Drive the gate: $1=command, $2=cwd, $3=veto ("1" to enable). KEEL_CHECK_VETO is set only as a prefix on
-# the external `bash` (never on a shell function — that would leak into later scenarios).
+# Drive the gate: $1=command, $2=cwd, $3=veto ("1" to enable), $4=optional PATH override (for the
+# jq-absent scenario below — the JSON event is always built with the REAL jq; only the gate's OWN PATH
+# is swapped). KEEL_CHECK_VETO is set only as a prefix on the external `bash` (never on a shell
+# function — that would leak into later scenarios).
 gate() {
-  local json; json="$(jq -n --arg c "$1" --arg w "$2" '{tool_input:{command:$c}, cwd:$w}')"
+  local json path_override="${4:-$PATH}"
+  json="$(jq -n --arg c "$1" --arg w "$2" '{tool_input:{command:$c}, cwd:$w}')"
   if [ "${3:-}" = "1" ]; then
-    OUT="$(printf '%s' "$json" | KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; STATUS=$?
+    OUT="$(printf '%s' "$json" | PATH="$path_override" KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; STATUS=$?
   else
-    OUT="$(printf '%s' "$json" | env -u KEEL_CHECK_VETO bash "$GATE" 2>&1)"; STATUS=$?
+    OUT="$(printf '%s' "$json" | PATH="$path_override" env -u KEEL_CHECK_VETO bash "$GATE" 2>&1)"; STATUS=$?
   fi
 }
 
@@ -90,9 +93,8 @@ check_contains "deny records a guard event when opted in" "$(cat "$imp" 2>/dev/n
 # is a genuine fail-OPEN (a real veto that would otherwise fire), not just "nothing to gate here".
 rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1     # red again
 nojq="$SANDBOX/nojq-path"; path_farm "$nojq" jq
-json="$(jq -n --arg c "git commit -m done" --arg w "$d" '{tool_input:{command:$c}, cwd:$w}')"
-out="$(printf '%s' "$json" | PATH="$nojq" KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; st=$?
-check_status "jq missing from PATH → hook still exits 0" 0 "$st"
-check_absent "jq missing → fails OPEN (no deny), even with veto on + a red check" "$out" "deny"
+gate "git commit -m done" "$d" 1 "$nojq"
+check_status "jq missing from PATH → hook still exits 0" 0 "$STATUS"
+check_absent "jq missing → fails OPEN (no deny), even with veto on + a red check" "$OUT" "deny"
 
 summary

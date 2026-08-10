@@ -351,6 +351,7 @@ check_contains "--quiet still prints the WARN itself" "$OUT" "absolute home path
 d="$(repo_by person@corp.com)"
 run bash "$pa" --quiet "$d"
 check_status "--quiet, GAP run → exit 1" 1 "$STATUS"
+check_absent "--quiet drops the header line on the GAP path too" "$OUT" "● public-audit"
 check_contains "--quiet still prints the GAP itself" "$OUT" "person@corp.com"
 
 # --- --config FILE: reads config from an explicit path instead of DIR/.public-audit (dir #101) -----
