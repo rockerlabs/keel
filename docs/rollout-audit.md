@@ -35,13 +35,15 @@ Everything here is a script or a test run; none of it depends on model behaviour
   evidence it requires and confirm it's denied. A guard that only "passes its own test file" hasn't been
   shown to fire against the real integration point. Isolate the probe's environment — a throwaway `HOME`,
   a throwaway repo — so a live-verification run can't write over the machine's own tooling.
-- **Isolation governs writes: a check that only *reads* the machine's own configuration is exempt, and
-  must run against the real environment.** Reading `git config --global core.hooksPath` to see whether a
-  guard is wired has nothing to damage — and isolating it doesn't merely weaken the answer, it inverts
-  it: under a redirected `HOME` the check reads the sandbox's empty config and reports "not wired" for a
-  machine that is fully guarded. Treat a wired-or-not verdict produced under an isolated `HOME` as no
-  verdict at all, and make your own diagnostics name the `HOME` such a finding was resolved through, so
-  a sandboxed run reads as explicable instead of as fresh drift.
+- **Isolation governs writes: a check that only *reads* the machine's own configuration is exempt —
+  when you intend to act on its verdict, run it against the real environment.** Reading `git config
+  --global core.hooksPath` to see whether a guard is wired has nothing to damage, and isolating it
+  doesn't merely weaken the answer, it inverts it: under a redirected config the check reads the
+  sandbox's empty one and reports "not wired" for a machine that is fully guarded. (Running the same
+  diagnostic inside a sandbox for a *demo* or a fixture is fine — it just isn't an audit verdict.)
+  So treat a wired-or-not verdict produced under a redirected config as no verdict at all, and make
+  your own diagnostics name the config source such a finding was resolved through, so a sandboxed run
+  reads as explicable instead of as fresh drift.
 
 A clean Layer 0 narrows the search: anything actually broken lives above this floor, not in it.
 

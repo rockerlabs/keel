@@ -20,8 +20,9 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     must run against the real environment — isolating such a read doesn't merely weaken the answer, it
     inverts it. `tools/pipeline-canary.sh`'s hard-sandbox comment points at that carve-out rather than
     restating it.
-  - `W-GUARD-UNWIRED` now names the `HOME` it was resolved through, the same way `--install` mode's
-    findings name their install home. **Unconditionally, on purpose:** the tempting narrower trigger
+  - `W-GUARD-UNWIRED` now names the global-config source it was resolved through — `GIT_CONFIG_GLOBAL`
+    when the environment sets it, `HOME` otherwise — the same way `--install` mode's findings name their
+    install home. **Unconditionally, on purpose:** the tempting narrower trigger
     ("only when no global git config is readable here") is a proxy for a question undecidable from
     inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
     (Keel's own test harness and `examples/tour.sh` both do), so that predicate goes silent on the

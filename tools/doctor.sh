@@ -32,7 +32,7 @@
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit);
-#                             HOME-sensitive, so it names the HOME it read (dir #97)
+#                             sensitive to a redirected global git config, so it names its source (dir #97)
 #   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
 #   WARN  W-GUARD-STALE        a wired vendored secret-guard copy differs from the engine this checkout
 #                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
@@ -249,16 +249,27 @@ case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; e
 # drift audit nearly filed one as real drift. The resolution stays as it is: reading a global git config
 # is read-only and cannot damage the machine, so isolation rules were never meant to cover it
 # (docs/rollout-audit.md now carves that out explicitly). What is added is provenance — the finding names
-# the HOME it was resolved through, the same way --install mode's findings name their $ihome.
+# the source it was resolved through, the same way --install mode's findings name their $ihome.
+# Name the source ACTUALLY consulted, not $HOME flatly: `GIT_CONFIG_GLOBAL=/dev/null` is a standard
+# hermetic-CI idiom that redirects the config without touching HOME, and a note pointing at an
+# unredirected ~/.gitconfig where core.hooksPath *is* set reads as a doctor bug — the same unexplained
+# finding this exists to remove, displaced one variable over. (XDG_CONFIG_HOME needs no branch: when
+# GIT_CONFIG_GLOBAL is unset, ~/.gitconfig is still read and still wins, so HOME remains the honest
+# answer.)
 # Unconditional on purpose. The tempting narrower trigger — "no global git config readable here" — is a
 # proxy for a question that cannot be answered from inside: any sandbox that ran `git config --global
 # user.email` in order to commit has one (this repo's own tests/lib.sh and examples/tour.sh both do), so
 # that predicate stays silent on the commonest sandbox shape while appending an excuse to a perfectly
-# correct finding on a bare real machine — wrong in both directions. Naming the HOME is decidable, and
+# correct finding on a bare real machine — wrong in both directions. Naming the source is decidable, and
 # lets the reader judge. Residual: the SILENT halves of the same resolution carry no message to append
-# to — W-GUARD-GLOBAL-STALE simply never runs under a redirected HOME, and its absence reads as "fresh"
-# (dir #120).
-guard_home_note=" [read via HOME=${HOME:-<unset>} — a redirected HOME reports a guarded machine as unwired]"
+# to — W-GUARD-GLOBAL-STALE simply never runs under a redirected config, and its absence reads as
+# "fresh" (dir #120).
+if [ -n "${GIT_CONFIG_GLOBAL:-}" ]; then
+  guard_home_src="GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+else
+  guard_home_src="HOME=${HOME:-<unset>}"
+fi
+guard_home_note=" [global config read via $guard_home_src — a redirected one reports a guarded machine as unwired]"
 
 # The engine THIS checkout ships — the drift reference for every installed secret-guard copy. An
 # installed copy that differs runs old (or unknown) detection while looking wired; presence is not

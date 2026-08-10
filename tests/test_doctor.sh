@@ -748,14 +748,15 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 chmod 644 "$d/.keel/map-drift-baseline"
 
-# --- dir #97: W-GUARD-UNWIRED names the HOME it was resolved through -------------------------------
-# The machine-global half resolves through `git config --global core.hooksPath`, i.e. through $HOME, so
-# under a redirected HOME (an audit probe isolating itself, this very harness, a container) it reports
-# "not wired" for a machine that demonstrably IS guarded — dir #85's drift audit nearly filed that false
-# negative as real drift. The fix is provenance, not a different resolution: the finding names its HOME
-# unconditionally. Case (b) is the regression test for the "unconditionally" — the narrower "only when
-# no global config is readable here" trigger would go silent on exactly the sandbox shape that is most
-# common, since a sandbox that intends to commit anything has to write a global user.email first.
+# --- dir #97: W-GUARD-UNWIRED names the config source it was resolved through ----------------------
+# The machine-global half resolves through `git config --global core.hooksPath`, i.e. through whatever
+# global config the environment points at, so under a redirected one (an audit probe isolating itself,
+# this very harness, a container) it reports "not wired" for a machine that demonstrably IS guarded —
+# dir #85's drift audit nearly filed that false negative as real drift. The fix is provenance, not a
+# different resolution: the finding names its source unconditionally. Case (b) is the regression test
+# for the "unconditionally" — the narrower "only when no global config is readable here" trigger would
+# go silent on exactly the sandbox shape that is most common, since a sandbox that intends to commit
+# anything has to write a global user.email first.
 d="$(newbase)"
 guard_run() {  # run doctor against $d under a throwaway HOME; $1 = that HOME
   fresh_home_env "$1"
@@ -767,7 +768,7 @@ h="$SANDBOX/guardhome.empty.$$"; mkdir -p "$h"
 guard_run "$h"
 check_status   "sandboxed HOME → still exit 0 (WARN, not GAP)" 0 "$STATUS"
 check_contains "sandboxed HOME still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
-check_contains "sandboxed HOME → the finding names the HOME it read" "$OUT" "read via HOME=$h"
+check_contains "sandboxed HOME → the finding names the config it read" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$h/.gitconfig"
 
 # (b) a sandbox HOME that DOES carry a global git config (no hooksPath) — the shape a narrower,
 # readability-triggered note would have stayed silent on
@@ -776,16 +777,26 @@ fresh_home_env "$h"
 env "${FRESH_HOME_ENV[@]}" git config --global user.name "Keel Test" >/dev/null 2>&1
 guard_run "$h"
 check_contains "readable global config → the unwired guard is still reported" "$OUT" "[W-GUARD-UNWIRED]"
-check_contains "readable global config → still names the HOME it read" "$OUT" "read via HOME=$h"
+check_contains "readable global config → still names the config it read" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$h/.gitconfig"
+
+# ...and with GIT_CONFIG_GLOBAL unset it falls back to naming HOME, rather than reporting a source the
+# environment never set (regression: the clause used to name $HOME flatly, which points a reader at an
+# unredirected ~/.gitconfig whenever a hermetic runner redirects only GIT_CONFIG_GLOBAL)
+h="$SANDBOX/guardhome.nocfgvar.$$"; mkdir -p "$h"
+run env -u GIT_CONFIG_GLOBAL "HOME=$h" "$doctor" "$d"   # -u before assignments: BSD env is order-strict
+check_contains "no GIT_CONFIG_GLOBAL → the finding falls back to naming HOME" "$OUT" "global config read via HOME=$h"
 
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
-# the path it exists to explain away)
+# the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents
+# would both pass on empty output, so a doctor that crashed before printing anything would look green.
 h="$SANDBOX/guardhome.wired.$$"; mkdir -p "$h/hooks"
 printf '#!/bin/sh\nexit 0\n' > "$h/hooks/pre-commit"; chmod +x "$h/hooks/pre-commit"
 fresh_home_env "$h"
 env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$h/hooks" >/dev/null 2>&1
 guard_run "$h"
-check_absent "a wired machine-global guard draws no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
-check_absent "a wired machine-global guard draws no provenance clause" "$OUT" "read via HOME="
+check_status   "a wired machine-global guard → the run completed (exit 0)" 0 "$STATUS"
+check_contains "a wired machine-global guard → doctor reached its verdict" "$OUT" "baseline OK"
+check_absent   "a wired machine-global guard draws no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+check_absent   "a wired machine-global guard draws no provenance clause" "$OUT" "global config read via"
 
 summary
