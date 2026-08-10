@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **Two stale statements about `receipt --recover`'s behavior, left behind by dir #96 and dir #116**
+  (dir #117, found by dir #96's own closing high review). `tools/pre-pr-gate.sh`'s `--recover` runtime
+  message named step 6's retest as an unqualified alternative binding for step 3 — reworded, since the
+  normal convergence outcome is `skipped:no-file-changes`, which binds nothing. `commands/polish.md`
+  step 6's receipt rationale said step 1's convergence branch hands back steps 2, 4 and 7 with no dir
+  #116 carve-out for a `skip`-level step 4 (never recovered) — the carve-out is now named there too,
+  matching the fuller description already in step 1. A third statement this ticket named, the dir #72
+  CHANGELOG entry below still describing `--recover`'s original steps-1-4-and-7 restore set, is left
+  as-is: it's a historical record of what dir #72 shipped, and the dir #96 entry above it already
+  narrates the correction — editing it would misrepresent what dir #72 itself shipped.
 - **A convergence round can no longer inherit a `skip` review depth the operator chose for a different
   diff** (dir #116, found by dir #96's own closing review). `polish.4-depth` had the same property that
   got steps 3 and 5 excluded from `receipt --recover`: an arm whose value silently stays true across a
