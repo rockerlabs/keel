@@ -31,11 +31,14 @@
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
-#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit);
-#                             sensitive to a redirected global git config, so it names its source (dir #97)
+#   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
+#                              carrying no executable pre-commit) and no local hook. Sensitive to a
+#                              redirected global git config, so it names its source (dir #97)
 #   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
-#   WARN  W-GUARD-STALE        a wired vendored secret-guard copy differs from the engine this checkout
-#                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
+#   WARN  W-GUARD-STALE        a wired per-repo secret-guard copy differs from the engine this checkout
+#                              ships — vendored, or reached through a RELATIVE global core.hooksPath,
+#                              which names a different dir in every repo (dir #97). An ABSOLUTE
+#                              machine-global copy is W-GUARD-GLOBAL-STALE instead, checked once
 #   WARN  W-EMAIL-PUBLIC       publication-bound project committing with a non-noreply email
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
