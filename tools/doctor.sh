@@ -31,10 +31,8 @@
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
-#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit).
-#                             HOME-sensitive (dir #97): the global half is resolved through $HOME, so a
-#                             sandboxed/redirected HOME can produce it on a guarded machine — the finding
-#                             says so itself when no global git config is readable there.
+#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit);
+#                             HOME-sensitive, so it names the HOME it read (dir #97)
 #   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
 #   WARN  W-GUARD-STALE        a wired vendored secret-guard copy differs from the engine this checkout
 #                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
@@ -244,20 +242,23 @@ global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
 # shellcheck disable=SC2088  # matching a LITERAL ~ a user wrote into git config (git returns it verbatim)
 case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; esac
 
-# dir #97: the machine-global guard is resolved through $HOME — git reads the global config at
-# $GIT_CONFIG_GLOBAL, else $XDG_CONFIG_HOME/git/config, else ~/.gitconfig. So under a REDIRECTED HOME
-# (an audit probe isolating itself, a test harness, a container) a guarded machine reads as unguarded,
-# and W-GUARD-UNWIRED — doctor's highest-stakes finding — becomes a systematic false negative; dir #85's
-# drift audit nearly filed one as real drift. The resolution itself stays as it is (reading the global
-# config is read-only and cannot damage the machine, so isolation rules were never meant to cover it);
-# what is added is disclosure. The signature of the false-negative case is narrow: NO global git config
-# readable AT ALL under this HOME (git exits non-zero only when the file is absent — an existing but
-# empty one still lists cleanly). When a config IS readable and simply carries no hooksPath, the finding
-# is genuine and gets no excuse clause appended.
-guard_home_note=""
-if ! git config --global --list >/dev/null 2>&1; then
-  guard_home_note=" [HOME-sensitive: no global git config is readable under HOME=${HOME:-<unset>}, so this check cannot see a machine-global guard at all — if this HOME is sandboxed or redirected, re-check against the real one before believing it]"
-fi
+# dir #97: the machine-global half above resolves through $HOME (git reads the global config at
+# $GIT_CONFIG_GLOBAL, else $XDG_CONFIG_HOME/git/config, else ~/.gitconfig). Under a REDIRECTED HOME —
+# an audit probe isolating itself, a test harness, a container — a guarded machine reads as unguarded,
+# turning W-GUARD-UNWIRED, doctor's highest-stakes finding, into a systematic false negative; dir #85's
+# drift audit nearly filed one as real drift. The resolution stays as it is: reading a global git config
+# is read-only and cannot damage the machine, so isolation rules were never meant to cover it
+# (docs/rollout-audit.md now carves that out explicitly). What is added is provenance — the finding names
+# the HOME it was resolved through, the same way --install mode's findings name their $ihome.
+# Unconditional on purpose. The tempting narrower trigger — "no global git config readable here" — is a
+# proxy for a question that cannot be answered from inside: any sandbox that ran `git config --global
+# user.email` in order to commit has one (this repo's own tests/lib.sh and examples/tour.sh both do), so
+# that predicate stays silent on the commonest sandbox shape while appending an excuse to a perfectly
+# correct finding on a bare real machine — wrong in both directions. Naming the HOME is decidable, and
+# lets the reader judge. Residual: the SILENT halves of the same resolution carry no message to append
+# to — W-GUARD-GLOBAL-STALE simply never runs under a redirected HOME, and its absence reads as "fresh"
+# (dir #120).
+guard_home_note=" [read via HOME=${HOME:-<unset>} — a redirected HOME reports a guarded machine as unwired]"
 
 # The engine THIS checkout ships — the drift reference for every installed secret-guard copy. An
 # installed copy that differs runs old (or unknown) detection while looking wired; presence is not

@@ -748,45 +748,44 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 chmod 644 "$d/.keel/map-drift-baseline"
 
-# --- dir #97: W-GUARD-UNWIRED is HOME-sensitive, and says so when it cannot rule a sandbox out ------
-# The check resolves the machine-global guard through `git config --global core.hooksPath`, i.e. through
-# $HOME. Run under a redirected HOME (an audit probe following dir #64's isolation rule, this very test
-# harness, a container) it reports "not wired" for a machine that demonstrably IS guarded — dir #85's
-# drift audit nearly filed that false negative as real drift. The operator's fix is disclosure, not a
-# different resolution: when NO global git config is readable at all under the current HOME, the finding
-# carries an explaining clause; when one is readable and simply has no hooksPath, the finding is real
-# and stays clean.
-guard_home_note="no global git config is readable under HOME="
-
-# (a) no global git config visible → the finding explains that a redirected HOME produces it
+# --- dir #97: W-GUARD-UNWIRED names the HOME it was resolved through -------------------------------
+# The machine-global half resolves through `git config --global core.hooksPath`, i.e. through $HOME, so
+# under a redirected HOME (an audit probe isolating itself, this very harness, a container) it reports
+# "not wired" for a machine that demonstrably IS guarded — dir #85's drift audit nearly filed that false
+# negative as real drift. The fix is provenance, not a different resolution: the finding names its HOME
+# unconditionally. Case (b) is the regression test for the "unconditionally" — the narrower "only when
+# no global config is readable here" trigger would go silent on exactly the sandbox shape that is most
+# common, since a sandbox that intends to commit anything has to write a global user.email first.
 d="$(newbase)"
+guard_run() {  # run doctor against $d under a throwaway HOME; $1 = that HOME
+  fresh_home_env "$1"
+  run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+}
+
+# (a) a bare sandbox HOME, no global git config at all
 h="$SANDBOX/guardhome.empty.$$"; mkdir -p "$h"
-fresh_home_env "$h"
-run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+guard_run "$h"
 check_status   "sandboxed HOME → still exit 0 (WARN, not GAP)" 0 "$STATUS"
 check_contains "sandboxed HOME still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
-check_contains "sandboxed HOME → the finding explains itself" "$OUT" "$guard_home_note"
+check_contains "sandboxed HOME → the finding names the HOME it read" "$OUT" "read via HOME=$h"
 
-# (b) a readable global git config without core.hooksPath → a genuine finding, no sandbox excuse
-d="$(newbase)"
+# (b) a sandbox HOME that DOES carry a global git config (no hooksPath) — the shape a narrower,
+# readability-triggered note would have stayed silent on
 h="$SANDBOX/guardhome.cfg.$$"; mkdir -p "$h"
 fresh_home_env "$h"
 env "${FRESH_HOME_ENV[@]}" git config --global user.name "Keel Test" >/dev/null 2>&1
-fresh_home_env "$h"
-run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+guard_run "$h"
 check_contains "readable global config → the unwired guard is still reported" "$OUT" "[W-GUARD-UNWIRED]"
-check_absent   "readable global config → no HOME-sensitivity clause" "$OUT" "$guard_home_note"
+check_contains "readable global config → still names the HOME it read" "$OUT" "read via HOME=$h"
 
-# (c) a wired machine-global guard under that same HOME → no finding at all (the note never fires on
+# (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away)
-d="$(newbase)"
 h="$SANDBOX/guardhome.wired.$$"; mkdir -p "$h/hooks"
 printf '#!/bin/sh\nexit 0\n' > "$h/hooks/pre-commit"; chmod +x "$h/hooks/pre-commit"
 fresh_home_env "$h"
 env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$h/hooks" >/dev/null 2>&1
-fresh_home_env "$h"
-run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+guard_run "$h"
 check_absent "a wired machine-global guard draws no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
-check_absent "a wired machine-global guard draws no HOME-sensitivity clause" "$OUT" "$guard_home_note"
+check_absent "a wired machine-global guard draws no provenance clause" "$OUT" "read via HOME="
 
 summary

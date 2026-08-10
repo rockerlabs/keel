@@ -50,7 +50,7 @@ $ sed -n 1,10p /tmp/demo/my-project/CLAUDE.md
 
 $ ./tools/doctor.sh /tmp/demo/my-project
 ● my-project (/tmp/demo/my-project)
-  WARN [W-GUARD-UNWIRED] secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)
+  WARN [W-GUARD-UNWIRED] secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo) [read via HOME=/tmp/demo/home — a redirected HOME reports a guarded machine as unwired]
   HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
 doctor: structural baseline OK
 doctor: 0 gap, 1 warn, 1 hint

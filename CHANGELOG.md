@@ -15,16 +15,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   machine-global secret guard through `git config --global core.hooksPath`, i.e. through `$HOME`, so
   under the mandated sandbox it reports `W-GUARD-UNWIRED` for a machine where the guard is demonstrably
   wired and firing. Two halves, prose and code:
-  - The rule is now carved, not the resolution: `docs/rollout-audit.md`'s Layer 0 and
-    `tools/pipeline-canary.sh`'s hard-sandbox comment both state that isolation governs **writes**, and
-    that a probe which only *reads* the machine's own configuration is exempt and must run against the
-    real environment — isolating it doesn't just weaken the answer, it inverts it. Reading a global git
-    config is read-only and cannot damage the machine, which is precisely the case the isolation rule
-    was never meant to cover.
-  - `W-GUARD-UNWIRED` now labels itself `HOME`-sensitive **when it cannot rule a redirected `HOME`
-    out** — i.e. when no global git config is readable there at all (git exits non-zero only when the
-    file is absent; an existing-but-empty one still lists cleanly). A machine that genuinely has a
-    global config without a `hooksPath` keeps the finding clean, with no excuse clause to dilute it.
+  - The rule is carved, not the resolution. `docs/rollout-audit.md`'s Layer 0 now states that isolation
+    governs **writes**, and that a probe which only *reads* the machine's own configuration is exempt and
+    must run against the real environment — isolating such a read doesn't merely weaken the answer, it
+    inverts it. `tools/pipeline-canary.sh`'s hard-sandbox comment points at that carve-out rather than
+    restating it.
+  - `W-GUARD-UNWIRED` now names the `HOME` it was resolved through, the same way `--install` mode's
+    findings name their install home. **Unconditionally, on purpose:** the tempting narrower trigger
+    ("only when no global git config is readable here") is a proxy for a question undecidable from
+    inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
+    (Keel's own test harness and `examples/tour.sh` both do), so that predicate goes silent on the
+    commonest sandbox shape while appending an excuse to a perfectly correct finding on a bare real
+    machine. Naming the `HOME` is decidable, and leaves the judgement to the reader.
+    Residual: the *silent* halves of the same resolution carry no message to append to —
+    `W-GUARD-GLOBAL-STALE` simply never runs under a redirected `HOME`, and its absence reads as
+    "fresh". Filed separately.
 - **Two stale statements about `receipt --recover`'s behavior, left behind by dir #96 and dir #116**
   (dir #117, found by dir #96's own closing high review). `tools/pre-pr-gate.sh`'s `--recover` runtime
   message named step 6's retest as an unqualified alternative binding for step 3 — reworded, since the
