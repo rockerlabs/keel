@@ -83,4 +83,16 @@ check_contains "deny still emits the deny payload on stdout" "$out" '"permission
 check_absent "stdout is not polluted by the event line" "$out" "keel-check-gate	blocked"
 check_contains "deny records a guard event when opted in" "$(cat "$imp" 2>/dev/null)" "	guard	keel-check-gate	blocked"
 
+# 8. dir #103: jq-absent fail-open — simulated with path_farm (the same technique the bootstrap tests
+# use to hide git/curl) rather than skipping the whole suite when the machine happens to have jq. Build
+# the JSON event with the REAL jq first (path_farm only strips jq from the PATH the gate itself runs
+# under), then re-arm the SAME red check + veto-on shape that denied in scenario 2 above — proving this
+# is a genuine fail-OPEN (a real veto that would otherwise fire), not just "nothing to gate here".
+rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1     # red again
+nojq="$SANDBOX/nojq-path"; path_farm "$nojq" jq
+json="$(jq -n --arg c "git commit -m done" --arg w "$d" '{tool_input:{command:$c}, cwd:$w}')"
+out="$(printf '%s' "$json" | PATH="$nojq" KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; st=$?
+check_status "jq missing from PATH → hook still exits 0" 0 "$st"
+check_absent "jq missing → fails OPEN (no deny), even with veto on + a red check" "$out" "deny"
+
 summary

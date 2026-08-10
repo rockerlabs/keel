@@ -329,4 +329,51 @@ run env KEEL_AUDIT_BLOB_MAX=10 bash "$pa" --token 'SeekritCorpName' "$d"
 check_status "oversized blob skipped → its token NOT found (exit 0)" 0 "$STATUS"
 check_contains "skipped blob is surfaced as UN-audited" "$OUT" "UN-audited"
 
+# --- CLI surface: unknown option, non-directory DIR (dir #101) -----------------------------------
+run bash "$pa" --bogus
+check_status "unknown option → exit 2" 2 "$STATUS"
+check_contains "names the bad flag" "$OUT" "unknown option '--bogus'"
+
+run bash "$pa" "$SANDBOX/no-such-audit-dir"
+check_status "DIR not a directory → exit 2" 2 "$STATUS"
+check_contains "names the missing dir" "$OUT" "not a directory"
+
+# --- --quiet: suppresses the header/note lines, never the GAP/WARN findings themselves (dir #101) --
+d="$(repo_by dev@example.com)"
+printf 'path = /Users/alice/keys\n' > "$d/p.txt"; commit_in "$d" path
+run bash "$pa" --no-history "$d"
+check_contains "without --quiet, the header line prints" "$OUT" "● public-audit"
+run bash "$pa" --no-history --quiet "$d"
+check_status "--quiet, WARN-only run → exit 0" 0 "$STATUS"
+check_absent "--quiet drops the header line" "$OUT" "● public-audit"
+check_contains "--quiet still prints the WARN itself" "$OUT" "absolute home path"
+
+d="$(repo_by person@corp.com)"
+run bash "$pa" --quiet "$d"
+check_status "--quiet, GAP run → exit 1" 1 "$STATUS"
+check_contains "--quiet still prints the GAP itself" "$OUT" "person@corp.com"
+
+# --- --config FILE: reads config from an explicit path instead of DIR/.public-audit (dir #101) -----
+d="$(repo_by dev@example.com)"
+printf 'internal codename ACME-X\n' > "$d/notes.txt"; commit_in "$d" notes
+cfg="$SANDBOX/external.public-audit"
+printf 'token: ACME-X\n' > "$cfg"
+run bash "$pa" --no-history "$d"
+check_absent "no DIR/.public-audit → the token isn't hunted yet" "$OUT" "private token"
+run bash "$pa" --no-history --config "$cfg" "$d"
+check_status "--config FILE token hit → GAP exit 1" 1 "$STATUS"
+check_contains "the externally-configured token is found" "$OUT" "private token /ACME-X/ in tracked tree"
+
+# --- allow-path: a tracked path glob excluded from content scanning (dir #101) ---------------------
+d="$(repo_by dev@example.com)"
+mkdir -p "$d/vendor"
+printf 'contact dev@corp.io\n' > "$d/vendor/third-party.txt"
+commit_in "$d" "vendor file"
+run bash "$pa" --no-history "$d"
+check_contains "without allow-path, the vendored email still WARNs" "$OUT" "email in tracked content"
+printf 'allow-path: vendor/*\n' > "$d/.public-audit"
+commit_in "$d" "add allow-path config"
+run bash "$pa" --no-history "$d"
+check_absent "allow-path excludes the vendored file from content scanning" "$OUT" "email in tracked content"
+
 summary

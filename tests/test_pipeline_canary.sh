@@ -58,6 +58,8 @@ check_absent "two setup runs get different toy-repo basenames (no shared /tmp se
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" check
 check_status "check before any run → non-zero (nothing happened yet)" 1 "$STATUS"
 check_contains "check before any run → FAILs the gh-reached assertion" "$OUT" "FAIL  gh pr create never reached the stub"
+check_contains "check before any run → no receipt-pass event yet (dir #102)" "$OUT" "INFO  no receipt-pass event recorded yet"
+check_contains "check before any run → no trace file yet (dir #102)" "$OUT" "INFO  no trace file"
 
 # --- simulate a completed /polish run through the CLI subcommands (same calls /polish itself makes),
 # then drive the gate's OWN hook mode (exactly what the real PreToolUse hook does before the harness
@@ -66,11 +68,23 @@ check_contains "check before any run → FAILs the gh-reached assertion" "$OUT" 
 # write_full_receipt_review lives in lib.sh (shared with test_pre_pr_gate.sh) — expects $gate set.
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
 write_full_receipt_review "$repo" "low-operator-run"
+
+# dir #102: with a full receipt written but the gate not yet asked to unlock, the sentinel is still
+# on disk — `check`'s "still present" branch (as opposed to the "no leftover sentinel" PASS it asserts
+# further below, once the hook run below has consumed it via retire_sentinel).
+run env KEEL_CANARY_STATE="$STATE" env -u KEEL_IMPACT_LOG bash "$canary" check
+check_contains "check with a not-yet-consumed sentinel → INFO, not PASS/FAIL" "$OUT" "INFO  a receipt sentinel is still present"
+
 # -u KEEL_IMPACT_LOG: lib.sh exports a sandbox-wide default for the whole test run, which would
 # otherwise outrank the toy repo's own .keel/ marker — unset it so the event lands where `check` reads.
 gate_decision="$(jq -n --arg c "gh pr create --fill" --arg d "$repo" '{tool_input:{command:$c}, cwd:$d}' | env -u KEEL_IMPACT_LOG bash "$gate")"
 check_contains "the gate itself allows the simulated run" "$gate_decision" '"permissionDecision":"allow"'
 "$sandbox/bin/gh" pr create --fill >/dev/null
+
+# dir #102: a trace file present (skill-trace fired at least once) → the "trace file exists" INFO
+# branch, otherwise never exercised (every other fixture in this suite leaves no trace behind).
+_repo_key_for_check="$(bash "$gate" repo-key "$repo")"
+printf '2026-01-01T00:00:00Z\tcode-review\thigh\n' > "/tmp/pre-pr-gate-trace-$_repo_key_for_check"
 
 # -u KEEL_IMPACT_LOG here too: cmd_check now follows the same $KEEL_IMPACT_LOG-outranks-.keel/-marker
 # precedence as resolve_impact_log() (the fix under test further below) — since the event above was
@@ -82,6 +96,8 @@ check_contains "check after a completed run → PASSes the gh-reached assertion"
 check_contains "check after a completed run → PASSes the sentinel-consumed assertion" "$OUT" "PASS  no leftover receipt sentinel"
 check_contains "check after a completed run → reports the receipt-pass provenance" "$OUT" "PASS  a receipt-pass event was recorded"
 check_contains "check after a completed run → provenance names it self-reported" "$OUT" "review: low, operator-run (self-reported)"
+check_contains "check after a completed run → reports the trace file (dir #102)" "$OUT" "INFO  a code-review trace file exists"
+rm -f "/tmp/pre-pr-gate-trace-$_repo_key_for_check"
 
 # --- clean: removes the sandbox and the state file --------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" clean
@@ -109,5 +125,34 @@ check_contains "check follows KEEL_IMPACT_LOG precedence, finds the event in the
 check_nofile "the repo's own .keel/ marker never got the event (env var outranked it, as production does)" "$repo3/.keel/impact-events.log"
 
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" bash "$canary" clean
+
+# --- dir #102: cmd_check's "sandbox repo missing" branch — the state file survives but the repo dir
+# it points at was removed out from under it (a stale canary-state from an earlier, since-wiped sandbox).
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-4" bash "$canary" setup
+sandbox4="$(awk -F'\t' '$1=="sandbox"{print $2}' "$SANDBOX/canary-state-4")"
+repo4="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-4")"
+rm -rf "$repo4"
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-4" bash "$canary" check
+check_status "check with the sandbox repo dir gone → exit 1" 1 "$STATUS"
+check_contains "check names the missing repo and points at setup again" "$OUT" 'sandbox repo missing'
+rm -rf "$sandbox4" "$SANDBOX/canary-state-4"
+
+# --- dir #102: _keys_of's own failure path (its own /code-review high finding: an unchecked failure
+# here used to leave $receipt_key empty and report a false PASS instead of surfacing the real error).
+# Reproduced the same way the gate itself hard-errors: a detached HEAD, so `bash "$GATE" keys` fails.
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-5" bash "$canary" setup
+repo5="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-5")"
+git -C "$repo5" checkout -q --detach HEAD
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-5" bash "$canary" check
+check_status "check against a detached-HEAD sandbox repo → exit 1" 1 "$STATUS"
+check_contains "check surfaces the _keys_of failure, not a false PASS" "$OUT" "FAIL  could not resolve the sandbox repo's keys"
+check_absent "a false PASS never slips through for the unresolved sentinel/trace checks" "$OUT" "PASS  no leftover receipt sentinel"
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-5" bash "$canary" clean
+
+# --- dir #102: cmd_clean's "no sandbox to remove" branch — no state file at all (never set up, or
+# already cleaned) is a normal, harmless call, not an error.
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-never-existed" bash "$canary" clean
+check_status "clean with no state file → exit 0" 0 "$STATUS"
+check_contains "clean reports nothing to remove" "$OUT" "no sandbox to remove"
 
 summary
