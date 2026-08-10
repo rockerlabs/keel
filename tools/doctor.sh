@@ -723,7 +723,14 @@ EOF
     # absent ones — the `~/` form is already expanded where $global_hooks is read.
     case "$global_hooks" in /*) ghd="$global_hooks" ;; *) ghd="$d/$global_hooks" ;; esac
     if [ -x "$ghd/pre-commit" ]; then
-      :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
+      # Covered. Drift is normally checked once, machine-wide, where $global_hooks is read — but that
+      # check resolves the path from DOCTOR's cwd, which is only the same dir for an absolute setting.
+      # A relative one is per-repo by construction and no machine-scope check can cover it, so it gets
+      # the same cmp here, phrased like the local_hooks branch above.
+      if [ "$ghd" != "$global_hooks" ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+         && ! cmp -s "$ghd/secret-scan.sh" "$shipped_scan"; then
+        warn W-GUARD-STALE "secret-guard at core.hooksPath '$global_hooks' ($ghd) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh $d"
+      fi
     else
       ghd_note=""
       [ "$ghd" = "$global_hooks" ] || ghd_note=" (relative — resolves to $ghd for this repo)"

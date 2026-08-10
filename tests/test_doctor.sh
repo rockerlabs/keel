@@ -911,7 +911,19 @@ env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath .githooks >/dev/nu
 mkdir -p "$d/.githooks"
 printf '#!/bin/sh\nexit 0\n' > "$d/.githooks/pre-commit"; chmod +x "$d/.githooks/pre-commit"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
-check_absent "relative core.hooksPath with a real hook in the repo → no finding" "$OUT" "[W-GUARD-UNWIRED]"
+check_status   "relative core.hooksPath with a real hook → the run completed (exit 0)" 0 "$STATUS"
+check_contains "relative core.hooksPath with a real hook → doctor reached its verdict" "$OUT" "baseline OK"
+check_absent   "relative core.hooksPath with a real hook in the repo → no finding" "$OUT" "[W-GUARD-UNWIRED]"
+
+# ...and a relative path is per-repo by construction, so the machine-scope drift check — which resolves
+# from doctor's OWN cwd — structurally cannot cover it. This branch does its own cmp instead, or a
+# drifted engine wired that way would sit unflagged behind a silent "covered by global".
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$d/.githooks/secret-scan.sh"
+printf '\n# drifted\n' >> "$d/.githooks/secret-scan.sh"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_contains "drifted engine at a relative core.hooksPath is still flagged" "$OUT" "[W-GUARD-STALE]"
+rm -f "$d/.githooks/secret-scan.sh"
+
 rm -f "$d/.githooks/pre-commit"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
 check_contains "relative core.hooksPath, hook missing → flagged" "$OUT" "[W-GUARD-UNWIRED]"
