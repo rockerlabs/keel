@@ -922,6 +922,13 @@ cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$d/.githooks/secret-scan.sh"
 printf '\n# drifted\n' >> "$d/.githooks/secret-scan.sh"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
 check_contains "drifted engine at a relative core.hooksPath is still flagged" "$OUT" "[W-GUARD-STALE]"
+# ...but NOT twice. Invoked with no arguments, doctor's cwd is the audited repo (DIRS defaults to "."),
+# and the machine-scope pass then resolved this very file — so the per-repo cmp must stand down. That is
+# what the `-ef` (same-file) guard is for; a string comparison of the raw setting reports the one drift
+# under two IDs whose remediations disagree.
+run_in "$d" env "${FRESH_HOME_ENV[@]}" "$doctor"
+check_contains "cwd == the repo → the machine-scope pass reports the drift" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent   "...and the per-repo cmp stands down, so it isn't reported twice" "$OUT" "[W-GUARD-STALE]"
 rm -f "$d/.githooks/secret-scan.sh"
 
 rm -f "$d/.githooks/pre-commit"

@@ -724,12 +724,16 @@ EOF
     case "$global_hooks" in /*) ghd="$global_hooks" ;; *) ghd="$d/$global_hooks" ;; esac
     if [ -x "$ghd/pre-commit" ]; then
       # Covered. Drift is normally checked once, machine-wide, where $global_hooks is read — but that
-      # check resolves the path from DOCTOR's cwd, which is only the same dir for an absolute setting.
-      # A relative one is per-repo by construction and no machine-scope check can cover it, so it gets
-      # the same cmp here, phrased like the local_hooks branch above.
-      if [ "$ghd" != "$global_hooks" ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+      # check resolves the path from DOCTOR's cwd, so for a RELATIVE setting it compares whatever dir
+      # happens to sit under the cwd, not this repo's. A relative hooksPath is per-repo by construction,
+      # so the machine-scope pass cannot cover it in general and this branch runs the same cmp itself,
+      # phrased like the local_hooks branch above. `-ef` (same file), not string inequality: when doctor
+      # is invoked with no arguments its cwd IS the audited repo (DIRS defaults to "."), and there the
+      # machine pass already compared this very file — a string test would report the one drift twice,
+      # under two IDs carrying different remediations.
+      if ! [ "$ghd" -ef "$global_hooks" ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
          && ! cmp -s "$ghd/secret-scan.sh" "$shipped_scan"; then
-        warn W-GUARD-STALE "secret-guard at core.hooksPath '$global_hooks' ($ghd) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh $d"
+        warn W-GUARD-STALE "secret-guard at the global core.hooksPath '$global_hooks' ($ghd) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh $d"
       fi
     else
       ghd_note=""
