@@ -22,14 +22,17 @@ fi
 # Shared state dir so the shim (marker writer) and the gate (marker reader) agree on paths.
 export KEEL_CHECK_STATE_DIR; KEEL_CHECK_STATE_DIR="$(mktemp -d "$SANDBOX/kcgate.XXXXXX")"
 
-# Drive the gate: $1=command, $2=cwd, $3=veto ("1" to enable). KEEL_CHECK_VETO is set only as a prefix on
-# the external `bash` (never on a shell function — that would leak into later scenarios).
+# Drive the gate: $1=command, $2=cwd, $3=veto ("1" to enable), $4=optional PATH override (for the
+# jq-absent scenario below — the JSON event is always built with the REAL jq; only the gate's OWN PATH
+# is swapped). KEEL_CHECK_VETO is set only as a prefix on the external `bash` (never on a shell
+# function — that would leak into later scenarios).
 gate() {
-  local json; json="$(jq -n --arg c "$1" --arg w "$2" '{tool_input:{command:$c}, cwd:$w}')"
+  local json path_override="${4:-$PATH}"
+  json="$(jq -n --arg c "$1" --arg w "$2" '{tool_input:{command:$c}, cwd:$w}')"
   if [ "${3:-}" = "1" ]; then
-    OUT="$(printf '%s' "$json" | KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; STATUS=$?
+    OUT="$(printf '%s' "$json" | PATH="$path_override" KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; STATUS=$?
   else
-    OUT="$(printf '%s' "$json" | env -u KEEL_CHECK_VETO bash "$GATE" 2>&1)"; STATUS=$?
+    OUT="$(printf '%s' "$json" | PATH="$path_override" env -u KEEL_CHECK_VETO bash "$GATE" 2>&1)"; STATUS=$?
   fi
 }
 
@@ -82,5 +85,16 @@ out="$(printf '%s' "$json" | KEEL_CHECK_VETO=1 KEEL_IMPACT_LOG="$imp" bash "$GAT
 check_contains "deny still emits the deny payload on stdout" "$out" '"permissionDecision":"deny"'
 check_absent "stdout is not polluted by the event line" "$out" "keel-check-gate	blocked"
 check_contains "deny records a guard event when opted in" "$(cat "$imp" 2>/dev/null)" "	guard	keel-check-gate	blocked"
+
+# 8. dir #103: jq-absent fail-open — simulated with path_farm (the same technique the bootstrap tests
+# use to hide git/curl) rather than skipping the whole suite when the machine happens to have jq. Build
+# the JSON event with the REAL jq first (path_farm only strips jq from the PATH the gate itself runs
+# under), then re-arm the SAME red check + veto-on shape that denied in scenario 2 above — proving this
+# is a genuine fail-OPEN (a real veto that would otherwise fire), not just "nothing to gate here".
+rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1     # red again
+nojq="$SANDBOX/nojq-path"; path_farm "$nojq" jq
+gate "git commit -m done" "$d" 1 "$nojq"
+check_status "jq missing from PATH → hook still exits 0" 0 "$STATUS"
+check_absent "jq missing → fails OPEN (no deny), even with veto on + a red check" "$OUT" "deny"
 
 summary

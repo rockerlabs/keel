@@ -279,4 +279,51 @@ check_contains "rejection points at the copy-path trim" "$OUT" "keel-setup"
 run "$install" --link --no-git --with-git --home "$SANDBOX/ng-both" --no-hooks
 check_status "--no-git + --with-git → exit 2" 2 "$STATUS"
 
+# --- doctor --install: the remaining findings dir #100 found untested (mutation standard — each
+# fires only when the check it guards is genuinely broken, not merely "the suite is still green") --
+# Each mutation starts from its OWN fresh linked home (a literal name, same convention as fhome/mhome/
+# dhome above) so one test's damage can't bleed into the next, then asserts via one shared helper.
+assert_doctor_warn() {  # $1 = finding ID, $2 = scenario description (for the exit-0 assertion)
+  run "$doctor" --install "$h"
+  check_status "$2 → exit 0 (WARN)" 0 "$STATUS"
+  check_contains "doctor flags it" "$OUT" "[$1]"
+}
+
+# W-CORE-UNLINKED: keel/CORE.md replaced by a plain-copy regular file (no KEEL-NOGIT breadcrumb) —
+# the import line still resolves, but the target is no longer a live link into the checkout.
+h="$SANDBOX/w-core-unlinked"; run "$install" --link --home "$h" --no-hooks
+rm "$h/keel/CORE.md"
+cp "$REPO_ROOT/CORE.md" "$h/keel/CORE.md"
+assert_doctor_warn W-CORE-UNLINKED "keel/CORE.md as a plain copy"
+
+# W-RAILS-DOUBLE: the import line AND a leftover embedded KEEL-CORE block both present — rails load twice.
+h="$SANDBOX/w-rails-double"; run "$install" --link --home "$h" --no-hooks
+printf '\n<!-- KEEL-CORE-BEGIN -->\nstray leftover block\n<!-- KEEL-CORE-END -->\n' >> "$h/CLAUDE.md"
+assert_doctor_warn W-RAILS-DOUBLE "import line + embedded block"
+
+# W-RAILS-UNWIRED: neither the @import line nor the embedded block survives — rails not wired at all.
+h="$SANDBOX/w-rails-unwired"; run "$install" --link --home "$h" --no-hooks
+grep -v '^@' "$h/CLAUDE.md" > "$h/CLAUDE.md.tmp" && mv "$h/CLAUDE.md.tmp" "$h/CLAUDE.md"
+assert_doctor_warn W-RAILS-UNWIRED "no import, no embedded block"
+
+# W-TIER-MISSING: FRAMEWORK.md reachable neither at keel/FRAMEWORK.md nor as a root copy.
+h="$SANDBOX/w-tier-missing"; run "$install" --link --home "$h" --no-hooks
+rm "$h/keel/FRAMEWORK.md"
+assert_doctor_warn W-TIER-MISSING "FRAMEWORK.md missing from both locations"
+
+# W-TIER-SHADOW: FRAMEWORK.md linked AND a stale root copy left beside it.
+h="$SANDBOX/w-tier-shadow"; run "$install" --link --home "$h" --no-hooks
+cp "$REPO_ROOT/FRAMEWORK.md" "$h/FRAMEWORK.md"
+assert_doctor_warn W-TIER-SHADOW "linked + stale root copy"
+
+# W-CLI-FOREIGN: bin/keel resolves to something other than this checkout's keel CLI.
+h="$SANDBOX/w-cli-foreign"; run "$install" --link --home "$h" --no-hooks
+ln -sfn "$REPO_ROOT/README.md" "$h/bin/keel"
+assert_doctor_warn W-CLI-FOREIGN "bin/keel points outside this checkout"
+
+# W-CLI-UNWIRED: bin/keel not wired at all.
+h="$SANDBOX/w-cli-unwired"; run "$install" --link --home "$h" --no-hooks
+rm "$h/bin/keel"
+assert_doctor_warn W-CLI-UNWIRED "bin/keel missing"
+
 summary
