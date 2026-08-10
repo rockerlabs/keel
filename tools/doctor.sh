@@ -31,10 +31,15 @@
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
-#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit)
-#   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
-#   WARN  W-GUARD-STALE        a wired vendored secret-guard copy differs from the engine this checkout
-#                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
+#   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
+#                              carrying no executable pre-commit) and no local hook. Sensitive to a
+#                              redirected global git config, so it names its source (dir #97)
+#   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no executable pre-commit — this
+#                              repo's commits run nothing, and any global guard is bypassed (dir #97)
+#   WARN  W-GUARD-STALE        a wired per-repo secret-guard copy differs from the engine this checkout
+#                              ships — vendored, or reached through a RELATIVE global core.hooksPath,
+#                              which names a different dir in every repo (dir #97). An ABSOLUTE
+#                              machine-global copy is W-GUARD-GLOBAL-STALE instead, checked once
 #   WARN  W-EMAIL-PUBLIC       publication-bound project committing with a non-noreply email
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
@@ -241,15 +246,75 @@ global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
 # shellcheck disable=SC2088  # matching a LITERAL ~ a user wrote into git config (git returns it verbatim)
 case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; esac
 
+# dir #97: the machine-global half above resolves through whatever global git config the environment
+# points at. Under a REDIRECTED one — an audit probe isolating itself, a test harness, a container — a
+# guarded machine reads as unguarded, turning W-GUARD-UNWIRED, doctor's highest-stakes finding, into a
+# systematic false negative; dir #85's drift audit nearly filed one as real drift. The resolution stays
+# as it is: reading a global git config is read-only and cannot damage the machine, so isolation rules
+# were never meant to cover it (docs/rollout-audit.md now carves that out explicitly). What is added is
+# provenance — the finding names the source it was resolved through, the same way --install mode's
+# findings name their $ihome.
+#
+# Name the source ACTUALLY consulted, not $HOME flatly. What the check above reads is `git config
+# --global`, a SCOPE SELECTOR that collapses to exactly one file — verified against git 2.52:
+# $GIT_CONFIG_GLOBAL when that variable is SET (even to the empty string, which silences the global
+# config entirely); else ~/.gitconfig when it is READABLE (git falls through on access(R_OK), not merely
+# on absence); else $XDG_CONFIG_HOME/git/config. Each of those can be redirected without touching the
+# others — `GIT_CONFIG_GLOBAL=/dev/null` is a standard hermetic-CI idiom — and a note pointing at an
+# unredirected ~/.gitconfig where core.hooksPath *is* set reads as a doctor bug: the very confusion this
+# exists to remove, displaced one variable over. Hence set-ness (`+x`) rather than non-emptiness on BOTH
+# variables, and an XDG branch narrowed to the case where that file is the one `--global` actually lands
+# on. HOME UNSET is not that case — `git config --global` then fails outright ($HOME not set) whatever
+# XDG_CONFIG_HOME says — but HOME set-to-EMPTY is: git builds "/.gitconfig", can't read it, and falls
+# through to XDG exactly as the branch below does. That branch names the FILE, not a variable, because
+# the XDG location exists whether or not XDG_CONFIG_HOME is set (unset → ~/.config/git/config, the
+# ordinary case): keying it on the variable sent every default-layout machine to the `HOME=` arm and so
+# pointed the reader at a ~/.gitconfig that isn't there.
+# The two fall-through tests are deliberately asymmetric — `-r` for ~/.gitconfig, `-f` for the XDG file —
+# because git's behaviour is: unreadable ~/.gitconfig means it moves ON to XDG (so naming HOME would name
+# a file git rejected), while an unreadable XDG file has nothing after it (git warns, returns empty, and
+# that file is still the last one it touched — naming it is the useful answer).
+# This selector is NOT git's effective config resolution: git's own lookup merges
+# $XDG_CONFIG_HOME/git/config (default ~/.config/git/config) BEHIND an existing ~/.gitconfig, so a
+# hooksPath set only in the XDG file genuinely governs commits while `--global` cannot see it. The
+# project audit below survives that by falling through to `git rev-parse --git-path hooks/pre-commit`,
+# which does use git's own resolution — so it still finds such a guard. --install mode has no equivalent
+# fallback and would report it unwired; that gap predates this note and is filed as dir #121.
+#
+# Unconditional on purpose. The tempting narrower trigger — "no global git config readable here" — is a
+# proxy for a question that cannot be answered from inside: any sandbox that ran `git config --global
+# user.email` in order to commit has one (this repo's own tests/lib.sh and examples/tour.sh both do), so
+# that predicate stays silent on the commonest sandbox shape while appending an excuse to a perfectly
+# correct finding on a bare real machine — wrong in both directions. Naming the source is decidable, and
+# lets the reader judge. Residual: the SILENT halves of the same resolution carry no message to append
+# to — W-GUARD-GLOBAL-STALE simply never runs under a redirected config, and its absence reads as
+# "fresh" (dir #120).
+if [ -n "${GIT_CONFIG_GLOBAL+x}" ]; then
+  guard_cfg_src="GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-<empty>}"
+elif [ -n "${HOME+x}" ] && [ ! -r "$HOME/.gitconfig" ] && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" ]; then
+  guard_cfg_src="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
+else
+  guard_cfg_src="HOME=${HOME-<unset>}"   # `-`, not `:-`: an EMPTY HOME is set, and git did read /.gitconfig
+fi
+guard_home_note=" [global config read via $guard_cfg_src — a redirected one reports a guarded machine as unwired]"
+
 # The engine THIS checkout ships — the drift reference for every installed secret-guard copy. An
 # installed copy that differs runs old (or unknown) detection while looking wired; presence is not
 # freshness. Machine-global is checked ONCE here (not per project — it covers the whole machine);
 # per-repo vendored copies are checked inside the loop.
 # BASH_SOURCE, not $0: resolves this script's real location even when invoked as `bash doctor.sh`
 # from another cwd — a drift check that can't find its own reference would silently never fire.
+# ABSOLUTE hooksPath only (dir #97). A RELATIVE core.hooksPath names a different directory in every
+# repo, so it is not a machine-wide install and this check has no business claiming it: resolving it
+# here would silently compare whatever happens to sit under doctor's own cwd, and the finding's
+# remediation (`install-secret-guard.sh --global`) exits 3 refusing to clobber that very setting — a
+# dead end. The per-repo loop owns that shape instead, with the fix that actually works. The two
+# domains are disjoint by construction, so one drift is still never reported twice. ~/ was already
+# expanded above, so a tilde spelling counts as absolute here.
 tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
-if [ -n "$global_hooks" ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+case "$global_hooks" in /*) global_hooks_abs=1 ;; *) global_hooks_abs=0 ;; esac
+if [ "$global_hooks_abs" = 1 ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
    && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
   warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
 fi
@@ -438,10 +503,27 @@ if [ "$INSTALL_MODE" = 1 ]; then
   fi
 
   # Secret-guard: machine-global wiring (per-repo vendoring is checked by the project audit).
-  if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
+  # Absolute hooksPath only, same ownership split as the drift check above: this mode audits the MACHINE
+  # and has no repo to resolve against, so testing a relative path here would answer from whatever
+  # happens to sit under doctor's own cwd — the verdict then flips between "OK machine-global" and
+  # W-GUARD-UNWIRED depending on where the operator stood, on one unchanged machine (reproduced). A
+  # relative core.hooksPath names a different dir in every repo and is not a machine-global install at
+  # all; the project audit is where it can be judged.
+  if [ "$global_hooks_abs" = 1 ] && [ -x "$global_hooks/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($global_hooks)"
+  elif [ "$global_hooks_abs" = 0 ] && [ -n "$global_hooks" ]; then
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to the RELATIVE path '$global_hooks', which names a different directory in every repo — that is per-repo wiring, not a machine-global install (install-secret-guard.sh --global for a machine-wide one; tools/doctor.sh <repo> judges the relative one)$guard_home_note"
+  elif [ -n "$global_hooks" ]; then
+    # A DIFFERENT shape from the else below: core.hooksPath is set, it just points somewhere with no
+    # executable pre-commit. Say that, rather than the generic "not wired" — the two need different
+    # fixes (dir #97, operator's own /code-review pass). The provenance clause still rides along: a
+    # successful read proves *a* config was read, not the RIGHT one, and a redirected GIT_CONFIG_GLOBAL
+    # whose config points at a hookless dir lands exactly here while the real machine is guarded — the
+    # systematic false negative this whole clause exists to signal. The project-scope half below now
+    # names the same shape in its own branch (it used to swallow it as "covered by global").
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   else
-    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)"
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   fi
 
   flush_notes "$ihome/.keel/doctor-accept"
@@ -642,16 +724,44 @@ EOF
   local_hooks="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
   if [ -n "$local_hooks" ]; then
     case "$local_hooks" in /*) lhd="$local_hooks" ;; *) lhd="$d/$local_hooks" ;; esac
-    if [ -f "$lhd/secret-scan.sh" ] || [ -x "$lhd/pre-commit" ] || [ -x "$lhd/pre-push" ]; then
+    # An EXECUTABLE pre-commit is the whole test, same bar as the global branch below (dir #97). The
+    # older `secret-scan.sh OR pre-commit OR pre-push` reading counted an engine file, or a push-only
+    # hook, as cover: a dir holding just secret-scan.sh — a pre-commit deleted, or one that lost its +x
+    # bit — left every commit running nothing while doctor printed a clean 0/0/0 (reproduced: a planted
+    # key committed straight through). Presence of parts is not a wired guard.
+    if [ -x "$lhd/pre-commit" ]; then
       # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection
       if [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
         warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
       fi
     else
-      warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') overrides the machine-global secret-guard but carries no hook — the global guard is silently bypassed for this repo (vendor the guard into the override dir, or unset it)"
+      warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') takes over this repo's hooks but carries no executable pre-commit, so commits here run nothing — and any machine-global guard is silently bypassed (vendor the guard into the override dir, or unset it)"
     fi
   elif [ -n "$global_hooks" ]; then
-    :  # machine-global secret-guard covers it (no local override; global drift is checked once, above)
+    # A machine-global core.hooksPath is only cover if the dir it names actually carries an executable
+    # pre-commit — until dir #97 this branch trusted the setting alone and swallowed the hookless case
+    # as "covered by global": a hooksPath pointing at an empty dir left commits guarded by nothing while
+    # the audit printed a clean 0/0/0. Found by the operator's own /code-review pass on dir #97 and
+    # reproduced (a planted key committed through). The dir is resolved PER REPO, the same way the
+    # local_hooks branch above does it: a relative core.hooksPath (`.githooks`) is resolved by git
+    # against the repo, so testing it from doctor's own cwd would both miss real guards and invent
+    # absent ones — the `~/` form is already expanded where $global_hooks is read.
+    case "$global_hooks" in /*) ghd="$global_hooks" ;; *) ghd="$d/$global_hooks" ;; esac
+    if [ -x "$ghd/pre-commit" ]; then
+      # Covered. Engine drift for an ABSOLUTE hooksPath was checked once, machine-wide, above; a
+      # RELATIVE one is per-repo by construction, so that pass deliberately skips it and this branch
+      # owns it — with the remediation that actually works here (the machine one exits 3 rather than
+      # touch a hooksPath it didn't set). The two domains are disjoint, so one drift is reported once,
+      # by whichever check can fix it. Phrased like the local_hooks branch above.
+      if [ "$global_hooks_abs" = 0 ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+         && ! cmp -s "$ghd/secret-scan.sh" "$shipped_scan"; then
+        warn W-GUARD-STALE "secret-guard at the global core.hooksPath '$global_hooks' ($ghd) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh $d"
+      fi
+    else
+      ghd_note=""
+      [ "$ghd" = "$global_hooks" ] || ghd_note=" (relative — resolves to $ghd for this repo)"
+      warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $global_hooks$ghd_note but that dir carries no executable pre-commit, so commits here are guarded by nothing (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
+    fi
   elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
     # vendored into the real hooks dir (a worktree/submodule isn't .git/hooks) — same drift check
     vh="$(git -C "$d" rev-parse --git-path hooks 2>/dev/null)"
@@ -660,7 +770,7 @@ EOF
       warn W-GUARD-STALE "vendored secret-guard ($vh) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
     fi
   else
-    warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
+    warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
   fi
 
   # dir #68 pairing check, project-scope half — mirrors the --install-mode check above, which only

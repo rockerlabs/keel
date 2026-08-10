@@ -9,6 +9,62 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
+  finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
+  nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the
+  machine-global secret guard through `git config --global core.hooksPath`, i.e. through `$HOME`, so
+  under the mandated sandbox it reports `W-GUARD-UNWIRED` for a machine where the guard is demonstrably
+  wired and firing. Two halves, prose and code:
+  - The rule is carved, not the resolution. `docs/rollout-audit.md`'s Layer 0 now states that isolation
+    governs **writes**, and that a probe which only *reads* the machine's own configuration is exempt —
+    when you intend to act on its verdict, run it against the real environment, since isolating such a
+    read doesn't merely weaken the answer, it inverts it. (Running the same diagnostic sandboxed for a
+    demo or a fixture stays fine, as `examples/tour.sh` does; it just isn't an audit verdict.)
+    `tools/pipeline-canary.sh`'s hard-sandbox comment points at that carve-out rather than restating it.
+  - `W-GUARD-UNWIRED` now names the global-config source it was actually resolved through, the same way
+    `--install` mode's findings name their install home. What the check reads is `git config --global`,
+    a scope selector that collapses to exactly one file: `GIT_CONFIG_GLOBAL` when that variable is
+    **set** (an empty value silences the global config outright), else `~/.gitconfig` when it is
+    readable, else `$XDG_CONFIG_HOME/git/config` — which exists as `~/.config/git/config` even when that
+    variable is unset, the ordinary layout, so the clause names that file rather than a variable. Each
+    can be redirected without touching the others, so naming `HOME` flatly would point a reader at an
+    untouched `~/.gitconfig` that carries the very `hooksPath` they were just told is missing.
+    Both modes additionally distinguish "`core.hooksPath` is set but that dir has no executable hook"
+    from "nothing wired at all" — different states, different fixes — and carry the clause on both,
+    since a successful read proves *a* config was read, not the right one. **The project audit used to
+    swallow that first state entirely**, reading a bare `core.hooksPath` as "machine-global secret-guard
+    covers it": a `hooksPath` pointing at an empty directory printed a clean `0 gap, 0 warn, 0 hint`
+    while commits went through completely unguarded (reproduced — a planted key committed straight
+    through). Same class of false negative as the one this ticket is about, found by the operator's own
+    `/code-review` pass on it. The dir is resolved **per repo**, since git resolves a relative
+    `core.hooksPath` against the repo rather than against `doctor`'s own working directory — and because
+    a relative path is per-repo by construction, the once-per-machine engine-drift comparison no longer
+    claims it at all: that pass is now **absolute-only**, and the relative case gets its own per-repo
+    `W-GUARD-STALE`. The two domains are disjoint, so one drift is still reported exactly once — and by
+    the check whose advice works, which matters here: the machine-wide finding's remediation
+    (`install-secret-guard.sh --global`) exits 3 rather than clobber a `core.hooksPath` it didn't set,
+    while the per-repo one vendors into the directory git actually runs hooks from. `--install` mode
+    applies the same rule to the wiring check itself: it audits the machine and has no repo to resolve
+    against, so a relative `core.hooksPath` is reported as per-repo wiring rather than judged from
+    whatever sits under `doctor`'s own working directory — which had one unchanged machine reporting
+    `OK secret-guard: machine-global` or `W-GUARD-UNWIRED` depending on where the operator stood.
+    **Unconditionally, on purpose:** the tempting narrower
+    trigger ("only when no global git config is readable here") is a proxy for a question undecidable
+    from inside the sandbox — any sandbox that means to commit has to write a global `user.email` first
+    (Keel's own test harness and `examples/tour.sh` both do), so that predicate goes silent on the
+    commonest sandbox shape while appending an excuse to a perfectly correct finding on a bare real
+    machine. Naming the source is decidable, and leaves the judgement to the reader.
+    Residual: the *silent* halves of the same resolution carry no message to append to —
+    `W-GUARD-GLOBAL-STALE` simply never runs under a redirected global config, and its absence reads as
+    "fresh". Filed separately.
+- **A repo whose local `core.hooksPath` carried only *parts* of the guard audited clean while every
+  commit ran nothing** (dir #97, found by the operator's `/code-review` on it). The override was
+  accepted as cover if the directory held `secret-scan.sh` **or** a `pre-commit` **or** a `pre-push` —
+  so an engine file on its own, a `pre-commit` that was deleted, or one that lost its executable bit,
+  all read as wired. Reproduced: a planted key committed straight through a `0 gap, 0 warn` audit. An
+  executable `pre-commit` is now the whole test, the same bar the global branch uses, and
+  `W-GUARD-BYPASSED` says what is actually true — commits here run nothing — without asserting a
+  machine-global guard that may not exist.
 - **Two stale statements about `receipt --recover`'s behavior, left behind by dir #96 and dir #116**
   (dir #117, found by dir #96's own closing high review). `tools/pre-pr-gate.sh`'s `--recover` runtime
   message named step 6's retest as an unqualified alternative binding for step 3 — reworded, since the

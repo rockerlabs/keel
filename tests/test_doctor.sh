@@ -437,6 +437,10 @@ shipped="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
 mkdir -p "$d/vhooks"; cp "$shipped" "$d/vhooks/secret-scan.sh"; printf '\n# stale\n' >> "$d/vhooks/secret-scan.sh"
+# an executable pre-commit too, or the dir isn't wired at all and the honest finding is W-GUARD-BYPASSED
+# rather than drift (dir #97 — the engine file alone used to count as cover, which is what let a repo
+# running no hook at all audit clean)
+printf '#!/bin/sh\nexit 0\n' > "$d/vhooks/pre-commit"; chmod +x "$d/vhooks/pre-commit"
 git -C "$d" config core.hooksPath vhooks
 run "$doctor" "$d"
 check_status "drifted local-override guard → exit 0 (WARN)" 0 "$STATUS"
@@ -446,9 +450,13 @@ check_contains "warns the vendored engine drifted" "$OUT" "differs from the engi
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
 mkdir -p "$d/vhooks"; cp "$shipped" "$d/vhooks/secret-scan.sh"
+# a real hook here too — without it the dir is inert, doctor stops at W-GUARD-BYPASSED and never reaches
+# the drift cmp, so the assertion below would pass without exercising anything (dir #97)
+printf '#!/bin/sh\nexit 0\n' > "$d/vhooks/pre-commit"; chmod +x "$d/vhooks/pre-commit"
 git -C "$d" config core.hooksPath vhooks
 run "$doctor" "$d"
 check_absent "up-to-date local-override guard → no drift WARN" "$OUT" "differs from the engine"
+check_absent "...and it counts as wired, so no bypass WARN either" "$OUT" "[W-GUARD-BYPASSED]"
 
 # a vendored copy in the REAL hooks dir (no override, no global) that drifted
 d="$(mkproj)"; git -C "$d" init -q
@@ -747,5 +755,248 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_contains "unreadable map-drift-baseline → treated as empty, drift still flagged" "$OUT" "map may be stale"
 fi
 chmod 644 "$d/.keel/map-drift-baseline"
+
+# --- dir #97: W-GUARD-UNWIRED names the config source it was resolved through ----------------------
+# The machine-global half resolves through `git config --global core.hooksPath`, i.e. through whatever
+# global config the environment points at, so under a redirected one (an audit probe isolating itself,
+# this very harness, a container) it reports "not wired" for a machine that demonstrably IS guarded —
+# dir #85's drift audit nearly filed that false negative as real drift. The fix is provenance, not a
+# different resolution: the finding names its source unconditionally. Case (b) is the regression test
+# for the "unconditionally" — the narrower "only when no global config is readable here" trigger would
+# go silent on exactly the sandbox shape that is most common, since a sandbox that intends to commit
+# anything has to write a global user.email first.
+d="$(newbase)"
+guard_run() {  # run doctor against $d under a throwaway HOME; $1 = that HOME
+  fresh_home_env "$1"
+  run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+}
+
+# (a) a bare sandbox HOME, no global git config at all
+h="$SANDBOX/guardhome.empty.$$"; mkdir -p "$h"
+guard_run "$h"
+check_status   "sandboxed HOME → still exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "sandboxed HOME still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "sandboxed HOME → the finding names the config it read" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$h/.gitconfig"
+
+# (b) a sandbox HOME that DOES carry a global git config (no hooksPath) — the shape a narrower,
+# readability-triggered note would have stayed silent on
+h="$SANDBOX/guardhome.cfg.$$"; mkdir -p "$h"
+fresh_home_env "$h"
+env "${FRESH_HOME_ENV[@]}" git config --global user.name "Keel Test" >/dev/null 2>&1
+guard_run "$h"
+check_contains "readable global config → the unwired guard is still reported" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "readable global config → still names the config it read" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$h/.gitconfig"
+
+# ...and with GIT_CONFIG_GLOBAL unset it falls back to naming HOME, rather than reporting a source the
+# environment never set (regression: the clause used to name $HOME flatly, which points a reader at an
+# unredirected ~/.gitconfig whenever a hermetic runner redirects only GIT_CONFIG_GLOBAL)
+h="$SANDBOX/guardhome.nocfgvar.$$"; mkdir -p "$h"
+run env -u GIT_CONFIG_GLOBAL "HOME=$h" "$doctor" "$d"   # -u before assignments: BSD env is order-strict
+check_contains "no GIT_CONFIG_GLOBAL → the finding falls back to naming HOME" "$OUT" "global config read via HOME=$h"
+
+# GIT_CONFIG_GLOBAL SET BUT EMPTY silences the global config entirely (git tests set-ness, not
+# emptiness — verified against git 2.52), so a `-n` test here would name an untouched HOME whose
+# ~/.gitconfig may well carry the hooksPath the reader is about to be told doesn't exist
+h="$SANDBOX/guardhome.emptyvar.$$"; mkdir -p "$h"
+printf '[core]\n\thooksPath = %s/hooks\n' "$h" > "$h/.gitconfig"
+run env "GIT_CONFIG_GLOBAL=" "HOME=$h" "$doctor" "$d"
+check_contains "empty GIT_CONFIG_GLOBAL still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "empty GIT_CONFIG_GLOBAL is named as the source, not HOME" "$OUT" "global config read via GIT_CONFIG_GLOBAL=<empty>"
+
+# XDG_CONFIG_HOME is the source `git config --global` lands on only when ~/.gitconfig does NOT exist —
+# the selector takes one file, it does not merge the XDG one in behind an existing ~/.gitconfig
+h="$SANDBOX/guardhome.xdg.$$"; mkdir -p "$h" "$h/xdg/git"
+printf '[user]\n\tname = Keel Test\n' > "$h/xdg/git/config"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
+check_contains "XDG config, no ~/.gitconfig → the XDG file is named" "$OUT" "global config read via $h/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$h/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
+check_contains "an existing ~/.gitconfig takes over the slot → HOME is named" "$OUT" "global config read via HOME=$h"
+
+# ...and the XDG location exists whether or not XDG_CONFIG_HOME is set: unset means ~/.config/git/config,
+# which is the ORDINARY layout. Keying the branch on the variable sent every such machine to the `HOME=`
+# arm, pointing the reader at a ~/.gitconfig that isn't there.
+hd="$SANDBOX/guardhome.xdgdefault.$$"; mkdir -p "$hd/.config/git"
+printf '[user]\n\tname = Keel Test\n' > "$hd/.config/git/config"
+run env -u GIT_CONFIG_GLOBAL -u XDG_CONFIG_HOME "HOME=$hd" "$doctor" "$d"
+check_contains "default XDG path, no ~/.gitconfig → that file is named, not HOME" "$OUT" "global config read via $hd/.config/git/config"
+# ...and git treats a set-but-EMPTY XDG_CONFIG_HOME as unset (unlike GIT_CONFIG_GLOBAL/HOME, where
+# set-ness is what counts), so this one branch genuinely wants `:-` rather than `+x`
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=" "HOME=$hd" "$doctor" "$d"
+check_contains "empty XDG_CONFIG_HOME → falls back to the default path, as git does" "$OUT" "global config read via $hd/.config/git/config"
+
+# HOME unset: `git config --global` fails outright ($HOME not set) whatever XDG_CONFIG_HOME says, so
+# naming XDG would point at a file the probe never reached
+run env -u GIT_CONFIG_GLOBAL -u HOME "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
+check_contains "unset HOME → named as unset, never as the XDG dir" "$OUT" "global config read via HOME=<unset>"
+
+# ...but HOME set-to-EMPTY is NOT the same case: git builds "/.gitconfig", cannot read it, and falls
+# through to the XDG file, so XDG is the honest answer there. (Set-ness vs non-emptiness again — the
+# same distinction the GIT_CONFIG_GLOBAL branch makes.)
+run env -u GIT_CONFIG_GLOBAL "HOME=" "XDG_CONFIG_HOME=$h/xdg" "$doctor" "$d"
+check_contains "empty HOME → the XDG file is named, since git falls through to it" "$OUT" "global config read via $h/xdg/git/config"
+
+# ...and with no XDG file to fall through to, the else branch must still not collapse an empty HOME into
+# "<unset>": git ran fine there, probing /.gitconfig, so claiming HOME was unset misreports what happened
+run env -u GIT_CONFIG_GLOBAL -u XDG_CONFIG_HOME "HOME=" "$doctor" "$d"
+check_contains "empty HOME, no XDG → reported as empty, not as unset" "$OUT" "global config read via HOME="
+check_absent   "empty HOME, no XDG → never claims HOME was unset" "$OUT" "global config read via HOME=<unset>"
+
+# ...and an UNREADABLE ~/.gitconfig makes git fall through to XDG too — git tests access(R_OK), not mere
+# existence. `chmod 000` is a no-op for root (the CI alpine leg runs as root), so only assert the
+# content half under a real unprivileged user; the no-crash half runs everywhere.
+chmod 000 "$h/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$h/xdg" "HOME=$h" "$doctor" "$d"
+check_status "unreadable ~/.gitconfig → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable ~/.gitconfig → the XDG file is named, not HOME" "$OUT" "global config read via $h/xdg/git/config"
+fi
+chmod 644 "$h/.gitconfig"
+
+# The two fall-through tests are asymmetric on purpose (`-r` for ~/.gitconfig, `-f` for the XDG file):
+# an unreadable ~/.gitconfig makes git move ON, but an unreadable XDG file has nothing after it — git
+# warns, returns empty, and that file is still the last one it touched, so naming it beats naming a
+# ~/.gitconfig git already rejected. Pinning it here so the asymmetry doesn't read as an oversight.
+hu="$SANDBOX/guardhome.xdgunread.$$"; mkdir -p "$hu" "$hu/xdg/git"
+printf '[user]\n\tname = Keel Test\n' > "$hu/xdg/git/config"; chmod 000 "$hu/xdg/git/config"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hu/xdg" "HOME=$hu" "$doctor" "$d"
+check_status "unreadable XDG config → doesn't crash (exit 0)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "unreadable XDG config → still named, since git stops there" "$OUT" "global config read via $hu/xdg/git/config"
+fi
+chmod 644 "$hu/xdg/git/config"
+
+# ...and the finding this clause hangs off is not blind to a hooksPath that only git's EFFECTIVE config
+# can see. `git config --global` cannot read an XDG file behind an existing ~/.gitconfig, but the
+# project audit falls through to `git rev-parse --git-path hooks/pre-commit`, which uses git's own
+# resolution — so a guard wired that way draws no finding at all. (--install mode has no such fallback;
+# that gap is dir #121, and this case is the pin that keeps project scope out of it.)
+hx="$SANDBOX/guardhome.xdgwired.$$"; mkdir -p "$hx/xdg/git" "$hx/hooks"
+printf '#!/bin/sh\nexit 0\n' > "$hx/hooks/pre-commit"; chmod +x "$hx/hooks/pre-commit"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hx" > "$hx/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$hx/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hx/xdg" "HOME=$hx" "$doctor" "$d"
+check_status "XDG-wired guard behind a ~/.gitconfig → the run completed (exit 0)" 0 "$STATUS"
+check_absent "XDG-wired guard behind a ~/.gitconfig → project scope still sees it" "$OUT" "[W-GUARD-UNWIRED]"
+
+# --install mode: a core.hooksPath that IS set but carries no executable pre-commit is a DIFFERENT state
+# from "nothing wired at all" and says so — the two need different fixes. The provenance clause still
+# rides along: a successful read proves *a* config was read, not the right one, and a redirected
+# GIT_CONFIG_GLOBAL pointing at a hookless dir lands here on a machine that is genuinely guarded. The
+# project-scope half names the same shape in its own branch — see the case below.
+hi="$SANDBOX/guardhome.hookless.$$"; mkdir -p "$hi/hooks" "$hi/claude"
+fresh_home_env "$hi"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hi/hooks" >/dev/null 2>&1
+run env "${FRESH_HOME_ENV[@]}" "$doctor" --install "$hi/claude"
+check_contains "hooksPath set but no hook → still flagged in --install mode" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and the message names the actual state" "$OUT" "core.hooksPath is set to $hi/hooks"
+check_contains "...and still names the config source, since a redirect explains it too" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$hi/.gitconfig"
+
+# --install audits the MACHINE and has no repo to resolve against, so a RELATIVE hooksPath is not a
+# machine-global install and must never be judged from doctor's own cwd — that made one unchanged
+# machine report "OK machine-global" or W-GUARD-UNWIRED depending on where the operator happened to
+# stand. The verdict must be identical from both.
+hrel="$SANDBOX/guardhome.instrel.$$"; mkdir -p "$hrel/claude" "$hrel/here/.githooks" "$hrel/elsewhere"
+printf '#!/bin/sh\nexit 0\n' > "$hrel/here/.githooks/pre-commit"; chmod +x "$hrel/here/.githooks/pre-commit"
+fresh_home_env "$hrel"; instrel_env=("${FRESH_HOME_ENV[@]}")
+env "${instrel_env[@]}" git config --global core.hooksPath .githooks >/dev/null 2>&1
+run_in "$hrel/here" env "${instrel_env[@]}" "$doctor" --install "$hrel/claude"
+check_contains "--install, relative hooksPath, cwd HAS a matching dir → not called machine-global" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and the message says why: a relative path is per-repo wiring" "$OUT" "RELATIVE path '.githooks'"
+run_in "$hrel/elsewhere" env "${instrel_env[@]}" "$doctor" --install "$hrel/claude"
+check_contains "--install, same machine from another cwd → the same verdict" "$OUT" "RELATIVE path '.githooks'"
+
+# ...and the project audit must name that same shape rather than trusting a bare core.hooksPath. Before
+# dir #97 this branch read "machine-global secret-guard covers it" on the strength of the setting alone,
+# so a hooksPath pointing at an empty dir printed a clean 0 gap / 0 warn / 0 hint while commits went
+# through completely unguarded — a false negative of exactly the class dir #97 is about.
+hp="$SANDBOX/guardhome.projhookless.$$"; mkdir -p "$hp/hooks"
+fresh_home_env "$hp"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hp/hooks" >/dev/null 2>&1
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_contains "hooksPath at a hookless dir → project audit flags it, not a clean run" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...naming the dir that carries no hook" "$OUT" "core.hooksPath is set to $hp/hooks"
+# ...and it goes quiet again as soon as that dir actually carries the hook, so the check didn't just
+# become unconditional. Anchored on a positive line too — a bare check_absent passes on empty output.
+printf '#!/bin/sh\nexit 0\n' > "$hp/hooks/pre-commit"; chmod +x "$hp/hooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_status   "...a real hook there → the run completed (exit 0)" 0 "$STATUS"
+check_contains "...a real hook there → doctor reached its verdict" "$OUT" "baseline OK"
+check_absent   "...and a real hook there draws no finding" "$OUT" "[W-GUARD-UNWIRED]"
+
+# A RELATIVE core.hooksPath is resolved by git against the repo, not against doctor's cwd. Testing it
+# from the wrong base both invents findings for genuinely guarded repos and misses real ones — the
+# local_hooks branch has always resolved it this way; this branch now does too.
+hr="$SANDBOX/guardhome.relhooks.$$"; mkdir -p "$hr"
+fresh_home_env "$hr"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath .githooks >/dev/null 2>&1
+mkdir -p "$d/.githooks"
+printf '#!/bin/sh\nexit 0\n' > "$d/.githooks/pre-commit"; chmod +x "$d/.githooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_status   "relative core.hooksPath with a real hook → the run completed (exit 0)" 0 "$STATUS"
+check_contains "relative core.hooksPath with a real hook → doctor reached its verdict" "$OUT" "baseline OK"
+check_absent   "relative core.hooksPath with a real hook in the repo → no finding" "$OUT" "[W-GUARD-UNWIRED]"
+
+# ...and a relative path is per-repo by construction, so the machine-scope drift check — which resolves
+# from doctor's OWN cwd — structurally cannot cover it. This branch does its own cmp instead, or a
+# drifted engine wired that way would sit unflagged behind a silent "covered by global".
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$d/.githooks/secret-scan.sh"
+printf '\n# drifted\n' >> "$d/.githooks/secret-scan.sh"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_contains "drifted engine at a relative core.hooksPath is still flagged" "$OUT" "[W-GUARD-STALE]"
+check_absent   "...and not ALSO as the machine-wide finding: one drift, one report" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+# ...including when doctor is invoked with no arguments, where its cwd IS the audited repo (DIRS
+# defaults to "."). That used to be the shape where both fired. The per-repo check must be the one that
+# survives, not merely one of them: the machine-wide finding's remediation is
+# `install-secret-guard.sh --global`, which exits 3 refusing to clobber a hooksPath it didn't set, so
+# winning that race would leave the operator with advice that cannot fix the drift it names.
+run_in "$d" env "${FRESH_HOME_ENV[@]}" "$doctor"
+check_contains "cwd == the repo → still the per-repo finding" "$OUT" "[W-GUARD-STALE]"
+check_contains "...carrying the per-repo remediation, not the --global one" "$OUT" "re-vendor: install-secret-guard.sh"
+check_absent   "...and never advising --global, which refuses this shape" "$OUT" "install-secret-guard.sh --global"
+check_absent   "...and not the machine-wide one, whose fix exits 3 on this shape" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+rm -f "$d/.githooks/secret-scan.sh"
+
+rm -f "$d/.githooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
+check_contains "relative core.hooksPath, hook missing → flagged" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and the message shows where it resolved to" "$OUT" "resolves to $d/.githooks for this repo"
+rm -rf "$d/.githooks"
+
+# A local core.hooksPath takes over this repo's hooks, so an executable pre-commit there is the whole
+# test — parts are not a guard. A dir holding only secret-scan.sh (a pre-commit deleted, or one that
+# lost its +x bit) used to count as cover, leaving every commit running nothing behind a clean audit.
+hl="$SANDBOX/guardhome.localparts.$$"; mkdir -p "$hl"
+fresh_home_env "$hl"; local_env=("${FRESH_HOME_ENV[@]}")
+mkdir -p "$d/.local-hooks"
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$d/.local-hooks/secret-scan.sh"
+git -C "$d" config --local core.hooksPath .local-hooks
+run env "${local_env[@]}" "$doctor" "$d"
+check_contains "local hooksPath with the engine but no pre-commit → flagged, not silent" "$OUT" "[W-GUARD-BYPASSED]"
+check_contains "...and the message says commits run nothing" "$OUT" "commits here run nothing"
+check_absent   "...without asserting a machine-global guard that may not exist" "$OUT" "overrides the machine-global secret-guard"
+# ...and a real executable pre-commit there is cover again, with drift still checked underneath it
+printf '#!/bin/sh\nexit 0\n' > "$d/.local-hooks/pre-commit"; chmod +x "$d/.local-hooks/pre-commit"
+run env "${local_env[@]}" "$doctor" "$d"
+check_absent   "a real pre-commit there → no bypass finding" "$OUT" "[W-GUARD-BYPASSED]"
+check_absent   "...and the shipped-identical engine draws no drift finding" "$OUT" "[W-GUARD-STALE]"
+printf '\n# drifted\n' >> "$d/.local-hooks/secret-scan.sh"
+run env "${local_env[@]}" "$doctor" "$d"
+check_contains "...but a drifted one still does" "$OUT" "[W-GUARD-STALE]"
+git -C "$d" config --local --unset core.hooksPath
+rm -rf "$d/.local-hooks"
+
+# (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
+# the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents
+# would both pass on empty output, so a doctor that crashed before printing anything would look green.
+h="$SANDBOX/guardhome.wired.$$"; mkdir -p "$h/hooks"
+printf '#!/bin/sh\nexit 0\n' > "$h/hooks/pre-commit"; chmod +x "$h/hooks/pre-commit"
+fresh_home_env "$h"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$h/hooks" >/dev/null 2>&1
+guard_run "$h"
+check_status   "a wired machine-global guard → the run completed (exit 0)" 0 "$STATUS"
+check_contains "a wired machine-global guard → doctor reached its verdict" "$OUT" "baseline OK"
+check_absent   "a wired machine-global guard draws no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+check_absent   "a wired machine-global guard draws no provenance clause" "$OUT" "global config read via"
 
 summary
