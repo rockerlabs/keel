@@ -33,7 +33,16 @@ Everything here is a script or a test run; none of it depends on model behaviour
 - **Live-probe your enforcement guards in a sandbox**, not just their unit tests: feed a fake secret
   through the commit path and confirm it's blocked; feed a gate-guarded action through without the
   evidence it requires and confirm it's denied. A guard that only "passes its own test file" hasn't been
-  shown to fire against the real integration point.
+  shown to fire against the real integration point. Isolate the probe's environment (a throwaway `HOME`,
+  a throwaway repo) — a live-verification run that writes into the real one can break the machine's own
+  tooling, which is exactly what this rule exists to prevent.
+- **Carve-out: a read-only read of the machine's own configuration is exempt from that isolation** — run
+  it against the real environment. Isolation is there so a live probe cannot *write* over real state; a
+  check that only *reads* (`git config --global core.hooksPath`, to see whether a guard is wired at all)
+  has nothing to damage. Worse, isolating it inverts the answer: under a redirected `HOME` the check
+  reads the sandbox's empty config and reports "not wired" for a machine that is fully guarded. Treat a
+  wired-or-not verdict produced under an isolated `HOME` as no verdict at all, and expect your own
+  diagnostics to say when a finding is `HOME`-sensitive.
 
 A clean Layer 0 narrows the search: anything actually broken lives above this floor, not in it.
 

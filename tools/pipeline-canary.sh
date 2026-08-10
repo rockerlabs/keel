@@ -31,6 +31,13 @@
 # user-level ~/.claude/CLAUDE.md can still leak into an "isolated" session) — the printed command also
 # passes `--setting-sources project,local` to exclude the user scope.
 #
+# Carve-out (dir #97): the rule above is about not WRITING over real state. A probe that only READS the
+# machine's own configuration — `git config --global core.hooksPath`, to learn whether the secret guard
+# is wired at all — is exempt and must run against the REAL environment: under a throwaway HOME it reads
+# the sandbox's empty config and reports a fully guarded machine as unguarded. tools/doctor.sh keeps
+# resolving that check through $HOME for exactly this reason, and labels the finding HOME-sensitive when
+# it cannot rule a redirected HOME out.
+#
 # Subcommands:
 #   pipeline-canary.sh setup          build a fresh sandbox (toy repo, isolated HOME, stub `gh`, hooks
 #                                      wired to THIS checkout's tools/pre-pr-gate.sh) and print the

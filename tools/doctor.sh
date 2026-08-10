@@ -31,7 +31,10 @@
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's
-#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit)
+#   WARN  W-GUARD-UNWIRED      secret-guard not wired (no global core.hooksPath and no local pre-commit).
+#                             HOME-sensitive (dir #97): the global half is resolved through $HOME, so a
+#                             sandboxed/redirected HOME can produce it on a guarded machine — the finding
+#                             says so itself when no global git config is readable there.
 #   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no guard — global silently bypassed
 #   WARN  W-GUARD-STALE        a wired vendored secret-guard copy differs from the engine this checkout
 #                              ships (machine-global copy: W-GUARD-GLOBAL-STALE, checked once)
@@ -241,6 +244,21 @@ global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
 # shellcheck disable=SC2088  # matching a LITERAL ~ a user wrote into git config (git returns it verbatim)
 case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; esac
 
+# dir #97: the machine-global guard is resolved through $HOME — git reads the global config at
+# $GIT_CONFIG_GLOBAL, else $XDG_CONFIG_HOME/git/config, else ~/.gitconfig. So under a REDIRECTED HOME
+# (an audit probe isolating itself, a test harness, a container) a guarded machine reads as unguarded,
+# and W-GUARD-UNWIRED — doctor's highest-stakes finding — becomes a systematic false negative; dir #85's
+# drift audit nearly filed one as real drift. The resolution itself stays as it is (reading the global
+# config is read-only and cannot damage the machine, so isolation rules were never meant to cover it);
+# what is added is disclosure. The signature of the false-negative case is narrow: NO global git config
+# readable AT ALL under this HOME (git exits non-zero only when the file is absent — an existing but
+# empty one still lists cleanly). When a config IS readable and simply carries no hooksPath, the finding
+# is genuine and gets no excuse clause appended.
+guard_home_note=""
+if ! git config --global --list >/dev/null 2>&1; then
+  guard_home_note=" [HOME-sensitive: no global git config is readable under HOME=${HOME:-<unset>}, so this check cannot see a machine-global guard at all — if this HOME is sandboxed or redirected, re-check against the real one before believing it]"
+fi
+
 # The engine THIS checkout ships — the drift reference for every installed secret-guard copy. An
 # installed copy that differs runs old (or unknown) detection while looking wired; presence is not
 # freshness. Machine-global is checked ONCE here (not per project — it covers the whole machine);
@@ -441,7 +459,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ -n "$global_hooks" ] && [ -x "$global_hooks/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($global_hooks)"
   else
-    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)"
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
   fi
 
   flush_notes "$ihome/.keel/doctor-accept"
@@ -660,7 +678,7 @@ EOF
       warn W-GUARD-STALE "vendored secret-guard ($vh) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
     fi
   else
-    warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)"
+    warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
   fi
 
   # dir #68 pairing check, project-scope half — mirrors the --install-mode check above, which only

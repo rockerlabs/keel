@@ -9,6 +9,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
+  finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
+  nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the
+  machine-global secret guard through `git config --global core.hooksPath`, i.e. through `$HOME`, so
+  under the mandated sandbox it reports `W-GUARD-UNWIRED` for a machine where the guard is demonstrably
+  wired and firing. Two halves, prose and code:
+  - The rule is now carved, not the resolution: `docs/rollout-audit.md`'s Layer 0 and
+    `tools/pipeline-canary.sh`'s hard-sandbox comment both state that isolation governs **writes**, and
+    that a probe which only *reads* the machine's own configuration is exempt and must run against the
+    real environment — isolating it doesn't just weaken the answer, it inverts it. Reading a global git
+    config is read-only and cannot damage the machine, which is precisely the case the isolation rule
+    was never meant to cover.
+  - `W-GUARD-UNWIRED` now labels itself `HOME`-sensitive **when it cannot rule a redirected `HOME`
+    out** — i.e. when no global git config is readable there at all (git exits non-zero only when the
+    file is absent; an existing-but-empty one still lists cleanly). A machine that genuinely has a
+    global config without a `hooksPath` keeps the finding clean, with no excuse clause to dilute it.
 - **Two stale statements about `receipt --recover`'s behavior, left behind by dir #96 and dir #116**
   (dir #117, found by dir #96's own closing high review). `tools/pre-pr-gate.sh`'s `--recover` runtime
   message named step 6's retest as an unqualified alternative binding for step 3 — reworded, since the
