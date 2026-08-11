@@ -578,4 +578,29 @@ check_contains "grand total sums the honest guard signal" "$OUT" "1 guard fire(s
 run bash "$TOOL" rollup --registry "$SANDBOX/nope.md"
 check_status "missing registry → exit 2" 2 "$STATUS"
 
+# --- dir #107: rollup and _ledger_stats must share ONE ledger-column parser, not re-derive it ------
+# The file's own header comment (LEDGER_HEADER + _ledger_parse) says the column indices must stay in
+# sync; pin that at the SOURCE level (dir #126: an output-level check can't tell "shares a parser"
+# from "two parsers that happen to agree today"). Both callers should delegate to _ledger_parse, and
+# no second awk block should independently match the ledger's date-column regex.
+if grep -qE '_ledger_parse "\$LEDGER" "\$mode"' "$TOOL"; then
+  pass "rollup delegates to _ledger_parse"
+else
+  fail "rollup delegates to _ledger_parse" "rollup no longer calls _ledger_parse — re-duplicated?"
+fi
+if grep -qE '_ledger_stats\(\) \{' "$TOOL" && sed -n '/^_ledger_stats() {/,/^}/p' "$TOOL" | grep -q '_ledger_parse'; then
+  pass "_ledger_stats delegates to _ledger_parse"
+else
+  fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
+fi
+# The date-column regex from LEDGER_HEADER's cols comment should appear in exactly ONE awk block —
+# _ledger_parse's own. A second hit means a new reader re-derived the column indices instead of
+# calling the shared parser.
+date_regex_hits="$(grep -cE '\$2 ~ /\^ \*\[0-9\]\[0-9\]\[0-9\]\[0-9\]-' "$TOOL")"
+if [ "$date_regex_hits" -eq 1 ]; then
+  pass "ledger date-column regex appears exactly once (in _ledger_parse)"
+else
+  fail "ledger date-column regex appears exactly once (in _ledger_parse)" "found $date_regex_hits occurrences — a parser was re-duplicated"
+fi
+
 summary

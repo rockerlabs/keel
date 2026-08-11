@@ -290,16 +290,23 @@ cmd_enable() {
   fi
 }
 
-# --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
-# A data row is a table line whose first cell is an ISO date. Explicit digit classes (not {n} intervals)
-# so busybox awk matches this too. A "—" score row still counts as a session but is skipped from the mean.
-# mode: "live" (default) skips quarantined retro rows; "retro" shows only them (a conf cell tagged `-retro`).
-rollup() {
-  local mode="${1:-live}"
-  ensure_ledger
+# --- shared ledger parser: the ONE place that indexes the table's columns -------------------------
+# dir #107: rollup and the cross-project _ledger_stats used to re-derive these column indices and
+# regexes independently, against the file's own "keep all three in sync" warning at cmd_add's printf.
+# Both now delegate here instead. A data row is a table line whose first cell is an ISO date. Explicit
+# digit classes (not {n} intervals) so busybox awk matches this too. A "—" score row still counts as a
+# session but is skipped from the mean. mode: "live" excludes quarantined retro rows (conf tagged
+# `-retro`); "retro" shows only them.
+#
+# Emits ONE line: "sessions scored sum guard hold miss recent" — recent is a comma-joined list of the
+# last up-to-5 numeric scores in ledger order ("-" if none), used only by rollup's trend line.
+# cols: date=2 score=3 conf=4 guard=5 hold=6 fire=7 hit=8 miss=9 (keep in sync with LEDGER_HEADER +
+# cmd_add's printf — this awk block is now the ONLY reader that indexes them).
+_ledger_parse() {
+  local file="$1" mode="${2:-live}"
   awk -F'|' -v mode="$mode" '
     $2 ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
-      is_retro = ($4 ~ /retro/)                  # cols: date=2 score=3 conf=4 guard=5 hold=6 fire=7 hit=8 miss=9
+      is_retro = ($4 ~ /retro/)
       if (mode == "retro" && !is_retro) next
       if (mode != "retro" && is_retro) next
       sessions++
@@ -308,40 +315,49 @@ rollup() {
       if (s ~ /^[0-9]+$/) { n++; sum += s + 0; order[n] = s + 0 }
     }
     END {
-      label = (mode == "retro" ? "retro impact ledger" : "impact ledger")
-      if (sessions == 0) {
-        if (mode == "retro") print "retro impact ledger: no retrospective sessions yet."
-        else                 print "impact ledger: no scored sessions yet."
-        exit 0
-      }
-      if (n > 0) printf "%s: %d session(s), mean score %.1f/100 over %d scored\n", label, sessions, sum / n, n
-      else       printf "%s: %d session(s), no numeric scores yet (all inert)\n", label, sessions
+      recent = ""
       if (n > 0) {
         start = (n > 5 ? n - 4 : 1)
-        line = "  recent: "
-        for (i = start; i <= n; i++) line = line order[i] (i < n ? " → " : "")
-        print line
+        for (i = start; i <= n; i++) recent = recent (i > start ? "," : "") order[i]
       }
-      # the honest cumulative signals, straight from counted events (not judged)
-      printf "  cumulative: %d guardrail fire(s), %d agent-hold(s), %d retrieval miss(es) — the standing promote pressure\n", guard, hold, miss
+      printf "%d %d %d %d %d %d %s\n", sessions+0, n+0, sum+0, guard+0, hold+0, miss+0, (recent == "" ? "-" : recent)
     }
-  ' "$LEDGER"
+  ' "$file" 2>/dev/null
+}
+
+# --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
+rollup() {
+  local mode="${1:-live}"
+  ensure_ledger
+  local sessions n sum guard hold miss recent
+  read -r sessions n sum guard hold miss recent <<EOF
+$(_ledger_parse "$LEDGER" "$mode")
+EOF
+  local label="impact ledger"; [ "$mode" = "retro" ] && label="retro impact ledger"
+  if [ "$sessions" -eq 0 ]; then
+    if [ "$mode" = "retro" ]; then printf 'retro impact ledger: no retrospective sessions yet.\n'
+    else                           printf 'impact ledger: no scored sessions yet.\n'
+    fi
+    return
+  fi
+  if [ "$n" -gt 0 ]; then
+    awk -v label="$label" -v sessions="$sessions" -v sum="$sum" -v n="$n" \
+      'BEGIN{ printf "%s: %d session(s), mean score %.1f/100 over %d scored\n", label, sessions, sum/n, n }'
+    printf '  recent: %s\n' "$(printf '%s' "$recent" | sed 's/,/ → /g')"
+  else
+    printf '%s: %d session(s), no numeric scores yet (all inert)\n' "$label" "$sessions"
+  fi
+  # the honest cumulative signals, straight from counted events (not judged)
+  printf '  cumulative: %d guardrail fire(s), %d agent-hold(s), %d retrieval miss(es) — the standing promote pressure\n' \
+    "$guard" "$hold" "$miss"
 }
 
 # Emit "sessions scored sum guard hold miss" for one ledger file (all zeros if absent/empty). The single
 # source of the per-ledger tally, shared by the cross-project rollup. Quarantined retro rows are excluded —
-# the cross-project view is the live usefulness signal.
+# the cross-project view is the live usefulness signal. Thin wrapper over _ledger_parse, dropping its
+# trailing "recent" field that only rollup's trend line needs.
 _ledger_stats() {
-  # cols: date=2 score=3 conf=4 guard=5 hold=6 fire=7 hit=8 miss=9 (keep in sync with LEDGER_HEADER + cmd_add's printf)
-  awk -F'|' '
-    $2 ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
-      if ($4 ~ /retro/) next
-      sess++; g += $5 + 0; ho += $6 + 0; m += $9 + 0
-      s = $3; gsub(/ /, "", s)
-      if (s ~ /^[0-9]+$/) { nsc++; sum += s + 0 }
-    }
-    END { printf "%d %d %d %d %d %d", sess+0, nsc+0, sum+0, g+0, ho+0, m+0 }
-  ' "$1" 2>/dev/null
+  _ledger_parse "$1" live | cut -d' ' -f1-6
 }
 
 # rollup --registry FILE — sweep every project in an INSTANCE.md Projects table (same parser as doctor) and

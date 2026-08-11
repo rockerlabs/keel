@@ -105,4 +105,30 @@ cxhome_p="$(cd "$cxhome" && pwd -P)"
 run "$cxhome/bin/keel" doctor
 check_contains "a Codex home gets --codex too" "$OUT" "install.sh --codex --home \"$cxhome_p\""
 
+# --- dir #104: the verb list docs quote must not drift from the dispatcher's own case arms ------
+# The dispatcher's `case "$cmd" in ... esac` block is the one source of truth for what verbs exist
+# (dir #85 found docs/reference.md and README.md each missing 2 of 9 verbs, undetected). Enumerate
+# the arms from the REAL keel script (not the fake stub), then assert every verb is still quoted in
+# both docs — same shape as test_doc_figures.sh pinning doc prose against template headings.
+verbs="$(awk '/^case "\$cmd" in/,/^esac/' "$REPO_ROOT/keel" | grep -oE '^  [a-zA-Z][a-zA-Z0-9_|-]*\)' | sed 's/)$//' | cut -d'|' -f1)"
+[ -n "$verbs" ] || fail "extracted verb list from keel's case block" "no arms found — did the case syntax change?"
+
+ref_line="$(grep -F '](../keel)' "$REPO_ROOT/docs/reference.md")"
+readme_block="$(awk '/lists the verbs:/{f=1} f{print; if (/`keel help`\./) exit}' "$REPO_ROOT/README.md")"
+[ -n "$ref_line" ] || fail "found the keel row in docs/reference.md" "no line links to ../keel"
+[ -n "$readme_block" ] || fail "found the verb-list paragraph in README.md" "no line matches 'lists the verbs:'"
+
+for v in $verbs; do
+  if printf '%s' "$ref_line" | grep -qw "$v"; then
+    pass "docs/reference.md quotes verb: $v"
+  else
+    fail "docs/reference.md quotes verb: $v" "missing from the keel row — dispatcher has it, doc doesn't"
+  fi
+  if printf '%s' "$readme_block" | grep -qw "$v"; then
+    pass "README.md quotes verb: $v"
+  else
+    fail "README.md quotes verb: $v" "missing from the verb-list paragraph — dispatcher has it, doc doesn't"
+  fi
+done
+
 summary

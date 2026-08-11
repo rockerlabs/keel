@@ -60,6 +60,15 @@ assert_figure() {
   if printf '%s' "$row" | grep -qE '~[0-9,]+\+'; then
     if [ "$actual" -ge "$doc_fig" ]; then
       pass "$label (doc ~$doc_fig+ floor vs actual ~$actual)"
+      # dir #105: an open floor has no failing upper bound BY DESIGN (raising it resets the clock
+      # without closing the hole — CHANGELOG.md sat at a ~25,000+ floor while the real file reached
+      # ~44,600, passing CI the whole time). Once actual has drifted to 25%+ above the floor, print a
+      # non-failing note — same shape as assert_band's near-band note — so the drift becomes visible
+      # without turning the floor back into a bump-every-PR ceiling.
+      if [ "$actual" -gt "$(( doc_fig * 5 / 4 ))" ]; then
+        printf '  note  %s: doc floor ~%s+ is now %s%% below actual ~%s — consider raising the floor\n' \
+          "$label" "$doc_fig" "$(( (actual - doc_fig) * 100 / doc_fig ))" "$actual"
+      fi
     else
       fail "$label" "doc floor ~$doc_fig+ but actual is only ~$actual tok — lower the floor"
     fi
@@ -121,6 +130,63 @@ assert_readme_figure() {
 
   assert_band "$label" "$fig" "$actual" "README"
 }
+
+# dir #105 (2nd instance): docs/loading-and-cost.md DERIVES two prose figures from its own quoted
+# "Globally, any session" core figure rather than from a file — "~50 sessions ... ~110K input tokens
+# total" (50x the core) and "~200K-token context window means the core is ~1.1%" (core / 200K). The
+# guards above check quoted-vs-actual for FILE SIZES and know nothing about a derivation, so if the
+# core figure is ever bumped, both sentences go stale silently (drift is bounded — the core row is
+# itself guarded at +-10% — but not zero). Pin the derivation itself: read the SAME quoted core figure
+# the prose is computed from, recompute, and assert the printed figures still track it.
+assert_derived_core_figures() {
+  local core_line="" core_fig=""   # init all (set -u safe on bash 3.2)
+  core_line="$(grep -E 'Globally, any session:' "$doc" | head -1)"
+  if [ -z "$core_line" ]; then
+    fail "loading-and-cost.md derived figures" "no 'Globally, any session:' line to derive from"
+    return
+  fi
+  core_fig="$(printf '%s' "$core_line" | grep -oE '~[0-9,]+' | head -1 | tr -d '~, ')"
+  if [ -z "$core_fig" ]; then
+    fail "loading-and-cost.md derived figures" "no ~figure on the 'Globally, any session' line"
+    return
+  fi
+
+  # ~N sessions x core -> ~NNNK input tokens total
+  local sess_line="" n_sessions="" fig_raw="" fig="" expected=""
+  sess_line="$(grep -E 'always-loaded core is ~[0-9]+(\.[0-9]+)?K input tokens total' "$doc" | head -1)"
+  if [ -z "$sess_line" ]; then
+    fail "loading-and-cost.md ~N-sessions total tracks the core figure" "no '~NK input tokens total' line found"
+  else
+    n_sessions="$(printf '%s' "$sess_line" | grep -oE '~[0-9]+ sessions' | grep -oE '[0-9]+')"
+    fig_raw="$(printf '%s' "$sess_line" | grep -oE '~[0-9]+(\.[0-9]+)?K input tokens total' | grep -oE '~[0-9]+(\.[0-9]+)?K')"
+    fig="$(printf '%s' "$fig_raw" | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}')"
+    if [ -z "$n_sessions" ] || [ -z "$fig" ]; then
+      fail "loading-and-cost.md ~N-sessions total tracks the core figure" "couldn't parse: $sess_line"
+    else
+      expected=$(( core_fig * n_sessions ))
+      assert_band "loading-and-cost.md ~$n_sessions-sessions total tracks ~$core_fig x $n_sessions" "$fig" "$expected" "doc"
+    fi
+  fi
+
+  # core / 200K window -> ~N.N% (compared in permille so the check stays integer-only)
+  local win_line="" window_tokens="" pct_raw="" pct_permille="" expected_permille=""
+  win_line="$(grep -E 'context window means the core is' "$doc" | head -1)"
+  if [ -z "$win_line" ]; then
+    fail "loading-and-cost.md window-% tracks the core figure" "no 'context window means the core is' line found"
+  else
+    window_tokens="$(printf '%s' "$win_line" | grep -oE '~[0-9]+K-token' | grep -oE '[0-9]+')"
+    pct_raw="$(printf '%s' "$win_line" | grep -oE '~[0-9]+(\.[0-9]+)?%' | tr -d '~%')"
+    if [ -z "$window_tokens" ] || [ -z "$pct_raw" ]; then
+      fail "loading-and-cost.md window-% tracks the core figure" "couldn't parse: $win_line"
+    else
+      pct_permille="$(printf '%s' "$pct_raw" | LC_ALL=C awk '{printf "%d", $1*10 + 0.5}')"
+      expected_permille=$(( core_fig * 1000 / (window_tokens * 1000) ))
+      assert_band "loading-and-cost.md ~$pct_raw% tracks ~$core_fig / ~${window_tokens}K" \
+        "$pct_permille" "$expected_permille" "doc (permille)"
+    fi
+  fi
+}
+assert_derived_core_figures
 
 # Every file with a quoted per-file figure in the table. Keep this list in sync with the table:
 # a new figure-bearing row should get a line here (the table itself is the source of truth for sizes).
