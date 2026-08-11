@@ -183,6 +183,15 @@ plant_advice 'echo "run keel uninstall --home \"$ihome\" to remove it"' "$d"
 run "$sd" "$d" --quiet
 check_status "an explicit --home also satisfies it -> exit 0" 0 "$STATUS"
 
+# uninstall.sh must not match install.sh as a substring — it would be reported as advice about a
+# command the line never gave. (An earlier `[^u]install\.sh` spelling of this guard excluded nothing:
+# the character before `install.sh` inside `uninstall.sh` is `n`.)
+d="$(mk_clean_repo)"
+plant_advice 'echo "  Re-run uninstall.sh --yes to confirm."' "$d"
+( cd "$d" && git add -A && git commit -qm "advice naming uninstall.sh" )
+run "$sd" "$d" --quiet
+check_status "uninstall.sh is not reported as install.sh advice -> exit 0" 0 "$STATUS"
+
 # Structural scope, not a phrase list: a comment or a usage line naming the same command is not advice.
 d="$(mk_clean_repo)"
 printf '#!/usr/bin/env bash\n# re-run install.sh to fix\ncat <<EOF\n  install.sh --home DIR   bootstrap into DIR\nEOF\n' >> "$d/install.sh"

@@ -43,7 +43,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     flag appears exactly where it is load-bearing. Mode is the half a home flag cannot see, so
     `--codex` installs carry that too: at the *default* home the home flag is correctly empty, yet a
     bare re-run is Claude copy mode and would land in `~/.claude`. Every such advice string across the four
-    tools (the CLI included) now routes through it, including the `keel/README.md` generated into the home —
+    tools now carries it — the `keel` CLI reads the mode off the home it finds itself in, since it has
+    no other record of one — including the `keel/README.md` generated into the home —
     advice read long after the install, and the only one an adopter meets with no terminal output
     around it. **What pins the class is a source check, not an output sweep** (`tools/self/doctor.sh`
     1c): most of `doctor`'s advice sits in findings that only fire on a *broken* install, so sweeping a

@@ -51,10 +51,27 @@ if [ ! -f "$CHECKOUT/install.sh" ] || [ ! -d "$CHECKOUT/tools" ]; then
   # home_flag and doctor's ihome_flag — dir #98's defect class is "advice that can't reach the install
   # it is about", and a broken CLI in a retargeted home is exactly that case.
   keel_home="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd -P)" || keel_home=""
-  home_flag=""
-  [ -n "$keel_home" ] && [ "$keel_home" != "${KEEL_HOME:-${HOME:-}/.claude}" ] && home_flag=" --home \"$keel_home\""
+  home_flag=""; mode_flag=""; default_leaf=".claude"
+  if [ -n "$keel_home" ]; then
+    # MODE as well as home — the half a home flag can't see. The bin/keel wiring is not mode-gated,
+    # so a --codex install has this CLI too; advising a bare `install.sh --home <codex-home>` would
+    # re-run Claude copy mode into it and write the wrong context file. The mode is read off the home
+    # itself, since the CLI has no other record of it: a --codex install writes AGENTS.md and no
+    # CLAUDE.md. The default it compares against moves with the mode for the same reason.
+    if [ -f "$keel_home/AGENTS.md" ] && [ ! -f "$keel_home/CLAUDE.md" ]; then
+      mode_flag=" --codex"; default_leaf=".codex"
+    fi
+    # Compare against the default BOTH raw and physically resolved: $keel_home came from `pwd -P`, so
+    # a $HOME reached through a symlink (/tmp → /private/tmp on macOS) would otherwise differ from an
+    # identical default and print a --home nobody needs.
+    default_home="${KEEL_HOME:-${HOME:-}/$default_leaf}"
+    default_home_p="$(cd "$default_home" 2>/dev/null && pwd -P)" || default_home_p="$default_home"
+    if [ "$keel_home" != "$default_home" ] && [ "$keel_home" != "$default_home_p" ]; then
+      home_flag=" --home \"$keel_home\""
+    fi
+  fi
   echo "$prog: cannot find the Keel checkout next to me ($CHECKOUT has no install script or tools/)." >&2
-  echo "      keel must stay a symlink into its checkout — re-run install.sh$home_flag to re-wire it." >&2
+  echo "      keel must stay a symlink into its checkout — re-run install.sh$mode_flag$home_flag to re-wire it." >&2
   exit 1
 fi
 

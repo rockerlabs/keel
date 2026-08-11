@@ -145,17 +145,16 @@ fi
 # Checked at the SOURCE, not by running the tools: most of doctor's advice lives in findings that only
 # fire on a broken install, so an output sweep cannot reach them (an earlier output-based version of
 # this check was vacuous for doctor entirely, and its phrase list pinned today's wording rather than
-# the class — found by this ticket's own review). Two exclusions, both structural rather than
-# per-string: comment lines, and usage/help text (indented two spaces under a `Usage:` heredoc), which
-# documents the flags generically instead of advising about a specific install.
-# Scope: lines that are an actual output CALL (echo/say/warn/gap/hint), plus INDENTED text — the
-# summary heredocs, whose bullets wrap onto continuation lines that carry commands of their own (the
-# first version of this scope matched only "  - " bullets and was blind to exactly those wraps, which
-# is where the codex advice lives). Structural, not a phrase list, so usage/help text and variable
-# assignments stay out — the marker is legitimately added at the print site for the latter.
+# the class — found by this ticket's own review).
 #
-# `[^u]install\.sh` so `uninstall.sh` doesn't match as a substring and get reported as the wrong
-# command. Three things this deliberately does NOT cover, named rather than silently missed:
+# Scope: an actual output CALL (echo/say/warn/gap/hint) or a summary bullet ("  - "). Structural, not
+# a phrase list, so usage/help text, prose and variable assignments stay out — for assignments the
+# marker is legitimately added at the print site instead.
+#
+# `[^a-z]install\.sh` so `uninstall.sh` doesn't match as a substring and get reported as advice about
+# the wrong command — note the character before `install.sh` inside `uninstall.sh` is `n`, so an
+# earlier `[^u]` spelling of this excluded nothing at all. Three things this deliberately does NOT
+# cover, named rather than silently missed:
 #   - the --no-git breadcrumb generated into the core (a constant string on purpose, so doctor's
 #     staleness comparison stays stable);
 #   - CONTINUATION lines inside the summary heredocs — a bullet that wraps puts its command on an
@@ -164,7 +163,7 @@ fi
 #     one plus a growing allowlist. The wrapped sites that exist today were routed through the
 #     variables by hand, and the end-to-end test in tests/test_install_pre_pr_gate.sh covers them;
 #   - any tool not in the list below.
-advice_re='(^|[^u])install\.sh|keel uninstall|doctor\.sh --install'
+advice_re='(^|[^a-z])install\.sh|keel uninstall|doctor\.sh --install'
 marker_re='home_flag|ihome_flag|doctor_arg|advise_install|advise_uninstall|--home'
 advice_bad=""
 for f in install.sh uninstall.sh keel tools/doctor.sh tools/install-pre-pr-gate.sh; do

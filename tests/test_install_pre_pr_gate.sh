@@ -315,8 +315,9 @@ check_status "retargeted codex install -> exit 0" 0 "$STATUS"
 check_contains "codex advice carries the mode as well as the home" "$OUT" "install.sh --codex --home \"$cx_home\""
 # The mode half alone, at the DEFAULT codex home — where the home flag is correctly empty and only
 # --codex stands between the advice and a re-run that lands in ~/.claude.
-cx_default="$SANDBOX/codex-default-home"
-run env HOME="$cx_default" GIT_CONFIG_GLOBAL="$cx_default/.gitconfig" "$REPO_ROOT/install.sh" --codex --no-hooks
+cx_default="$SANDBOX/codex-default-home"; mkdir -p "$cx_default"
+fresh_home_env "$cx_default"
+run env "${FRESH_HOME_ENV[@]}" "$REPO_ROOT/install.sh" --codex --no-hooks
 check_status "default-home codex install -> exit 0" 0 "$STATUS"
 check_contains "its advice still carries --codex" "$OUT" "install.sh --codex"
 check_absent "and no home flag, which would be noise there" "$OUT" "--codex --home"
