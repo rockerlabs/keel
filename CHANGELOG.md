@@ -8,6 +8,33 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-12
+
+The audit release. A global pre-release audit (dir #85) swept the whole project in four modules —
+code, rails, docs, drift — and produced ~73 findings: 16 were fixed inline during the sweep and 20
+were filed as tickets, all of which are closed, their fixes being the entries below. Two arcs carry
+most of the weight. The `/polish` pre-PR gate got much harder to fool: a convergence round can no
+longer open a PR whose fix commit no test and no review ever saw (dir #96, dir #116). And the three
+installers stopped disagreeing with each other — `install.sh`, `install-pre-pr-gate.sh`, and
+`uninstall.sh` now share one answer to "where does an install live" and "what counts as its
+artifact" (dir #98, dir #108, dir #109). The rest is the audit's long tail: honest rails wording,
+checks built for guarantees that had only been claimed, and test coverage for four modules the
+audit found under-tested (`doctor.sh --install` had none at all).
+
+Known issues: `doctor` still doesn't understand every install shape — it has no `--codex` mode
+(a healthy codex install gets a false GAP), `--install`'s machine-global guard check can't see a
+`hooksPath` set in the XDG config file, and under a redirected `HOME` the silent halves of its
+`$HOME`-resolved checks disclose nothing, so an absent finding reads as a clean verdict.
+`uninstall.sh` has no reverse operation for `install-pre-pr-gate.sh`, so the gate's hooks are left
+behind without a word, and a home holding BOTH install modes escapes its mode-mismatch refusal.
+Those two share one root cause, and the structural fix is planned: an install manifest, so
+installers/uninstall/doctor read one recorded state instead of re-deriving it heuristically at
+every site. The hardened gate has residuals of its own: its skip-dialog trace matches the
+QUESTION's marker rather than the operator's actual answer, so declining a skip still leaves a skip
+credential for that commit; it never checks that HEAD was pushed before unlocking `gh pr create`;
+and the review loop has no round budget — a convergence round re-runs the whole suite to re-bind a
+sha (~1h of wall clock measured on one PR).
+
 ### Fixed
 - **`H-MAP-DRIFT` false-HINTed in every keel worktree, on paths this project's own convention keeps out
   of a worktree on purpose** (dir #113, found by dir #85's drift audit). `BACKLOG.md` lives only at the
