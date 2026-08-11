@@ -21,7 +21,7 @@ the separate on-demand backlog the `CLAUDE.md` map points to → the **inline op
 found → say "no backlog found" and stop.
 
 **2b. Fold leftover drafts:** if `<path>/BACKLOG.drafts/*.md` exists alongside a `BACKLOG.md` source,
-each file is a `/design` session's unnumbered draft ticket meant to be folded in at its own session's
+each file is a design/planning session's unnumbered draft ticket meant to be folded in at its own session's
 wrap (see `FRAMEWORK.md`'s backlog/persist section for the convention) — but a draft can also be one
 that just hasn't reached its own session's wrap yet, not necessarily a dead session's leftover. Do the
 whole pass off ONE read of `BACKLOG.md`, not one read per check: read it once, then for each draft check

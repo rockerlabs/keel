@@ -51,12 +51,21 @@ Never rely on the implicit shell cwd as proof of which working tree you are in.
 **Claim step (right after cutting/confirming the feature branch):** write `⏳ IN FLIGHT (YYYY-MM-DD,
 branch <name>)` onto the ticket's own heading line in the project's backlog file, resolved at the
 **main checkout root** (per the `dir #34` worktree rule above). On merge, the closing sweep replaces
-this with ✅ (existing convention) — don't leave both markers on the same heading.
+this with ✅ (existing convention) — don't leave both markers on the same heading. **Come back and
+extend this marker** once the next rail decides — `, tests: first` or `, tests: infeasible — <reason>`:
+the decision doesn't exist yet at claim time, so writing the field now would leave a placeholder
+standing for the ticket's whole life, which is worse than the missing field.
 
 **Acceptance tests first, when the ticket names a done-criterion.** Before writing implementation code,
 derive acceptance tests from the ticket's own acceptance/done-criterion (a groomed ticket names one by
 contract; others may too) and write them first — show them red, then implement to green, per
 `FRAMEWORK.md`'s design-principles rail. Where test-first is genuinely infeasible for this ticket
 (pure-wording change, no runnable surface to test against), say so explicitly in one line before
-proceeding — an executed decision, the same spirit as `/polish`'s `skipped:<reason>` receipts, never a
-silent skip.
+proceeding — an executed decision, never a silent skip.
+
+**Write that decision down twice, and don't call it checked.** In the PR body's test plan —
+`tests: first` or `tests: infeasible — <reason>` — which is the copy that outlives the ticket, and on
+the claim marker above while the ticket is open, so a parallel session sees it. Why the writing matters:
+this rail is in the spirit of `/polish`'s `skipped:<reason>` receipts but has none of the mechanism —
+`/go` has no receipt, no gate, no trace, so an autonomous run can skip the tests AND the disclosure with
+nothing noticing. Self-reported is the honest status; report it that way, never as gate-checked.

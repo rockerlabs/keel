@@ -50,8 +50,8 @@ user pick the tier.
 ## Interview loops — eliciting a multi-question decision
 
 CORE's "Decisions & forks" rail covers a single fork; this is the operational elaboration for a genuine
-multi-question **interview** — a decision tree, not one isolated choice (`/design`'s process step 2 runs
-one informally today).
+multi-question **interview** — a decision tree, not one isolated choice (a design session's fork-resolution
+step runs one informally).
 
 - **Fact-vs-decision split first.** Before putting anything to the user, check whether the answer is
   discoverable by reading code, docs, or the environment (`INSTANCE.md` included) — ask only what needs
@@ -229,22 +229,27 @@ So context files don't bloat and stay useful.
   `## Recently closed` buffer for a milestone or two before sweeping (a just-closed task often spawns a
   follow-up). Do NOT append an implementation chronicle into memory.
 - Open task / design fork → backlog in the project `CLAUDE.md` (detail → the on-demand file once it grows).
-- **A `/design` session's finished ticket, when its target backlog may have concurrent writers** (parallel
-  design sessions racing one shared `BACKLOG.md` — a project's on-demand backlog is gitignored and
+- **A design/planning session's finished ticket, when its target backlog may have concurrent writers**
+  (parallel design sessions racing one shared `BACKLOG.md` — a project's on-demand backlog is gitignored and
   resolved at the main-checkout root the same way `/go`/`/backlog` already resolve it, with no worktree
   isolation of its own) → an unnumbered draft file in `BACKLOG.drafts/` (sibling of `BACKLOG.md`, same
   residency), one file per in-flight ticket, `<kebab-slug>.md`, full ticket body, no number assigned;
-  in-session cross-references use the slug. If a file at that slug already exists when you go to write it,
+  in-session cross-references use the slug. **Keel ships the fold side of this convention only** — the
+  drafts are written by whatever design/planning flow you run, since no shipped command creates one; if
+  you have no such flow, nothing here fires and the directory never appears. If a file at that slug
+  already exists when you go to write it,
   don't overwrite it — that's either your own earlier partial write (safe to resume) or a genuine slug
   collision with a different in-flight ticket; disambiguate (`-2` suffix) rather than clobbering. A draft
   sits in `BACKLOG.drafts/` for the rest of the owning session's runtime, so it isn't necessarily a dead
   session's leftover — fold idempotently: before appending, check whether a ticket for this slug already
   exists in `BACKLOG.md` (its heading carries the same slug/title); if so, someone folded it first — skip
   the append and just delete the draft, whichever side (your own session's wrap, or a `/backlog` run
-  reaching it before you) got there second. At the session's own wrap — the single serialization point —
-  re-read `BACKLOG.md` fresh, take the next free number (max existing + 1, scanned from `BACKLOG.md`
-  only), append the body, update the queue line if the backlog tracks one, and delete the own draft. Fold
-  only your own draft; leave foreign drafts for their owners. Two sessions folding in the same instant
+  reaching it before you) got there second. At the session's own wrap — the single serialization point,
+  carried by `/wrap` step 2 — re-read `BACKLOG.md` fresh, take the next free number (max existing + 1,
+  scanned from `BACKLOG.md` only), append the body, update the queue line if the backlog tracks one, and
+  delete the own draft. At *your own wrap* fold only your own draft and leave foreign ones for their
+  owners; the `/backlog` sweep below is the path that folds anything, whoever wrote it. Two sessions
+  folding in the same instant
   still race — on a modified-since-read collision, re-read and retry rather than overwriting. Any draft
   not yet folded when its own session ends — crashed mid-session, or simply still open elsewhere — is
   folded idempotently by the next `/backlog` run instead; until then it's invisible to `/go`'s own backlog

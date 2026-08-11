@@ -25,7 +25,8 @@ This page is the **procedure** to fix what it finds and flip without churn.
 2. **Scrub history** — only if `public-audit` flags identities/tokens.
 3. **Purge host PR refs** — if the repo has any closed PRs, their old commits survive a `main`
    force-push in `refs/pull/*`. The only fix is **delete-and-recreate** (see below).
-4. **Flip** visibility to public — only after steps 2–3 are done AND `public-audit` is exit 0.
+4. **Flip** visibility to public — only after steps 2–3 are done, `public-audit` is exit 0, **and you
+   have read its WARNs** (exit 0 clears the GAP tier only; personal data lives in the WARN tier).
 5. **Trigger** one CI run.
 6. **Share** the probe.
 
@@ -35,7 +36,9 @@ This page is the **procedure** to fix what it finds and flip without churn.
 tools/public-audit.sh --token <private-name> .
 ```
 GAP on non-public-safe identities and private tokens; WARN on heuristics (home paths, content emails,
-Cyrillic, agent/session metadata). **Clear every GAP before flipping.** Re-run after each fix.
+Cyrillic, agent/session metadata). **Clear every GAP before flipping — then read the WARNs yourself**,
+because they do not move the exit code: a run can print real personal data and still exit 0. Re-run
+after each fix.
 
 ## 1. Stop the bleed — identity (do this FIRST)
 
@@ -70,7 +73,7 @@ git filter-repo --mailmap /tmp/mailmap --replace-message /tmp/msg --replace-text
 # --- gates: all three must hold before any push ---
 git log --all --format='%ae' | sort -u                     # only noreply addresses
 [ "$(git rev-parse HEAD^{tree})" = "$before" ] && echo OK   # tree UNCHANGED — rewrite touches history, not content
-<keel>/tools/public-audit.sh --token <private-name> .        # exit 0  (<keel> = your Keel checkout; the auditor lives there, not in this scrub clone)
+<keel>/tools/public-audit.sh --token <private-name> .        # exit 0 AND its WARNs read (they do not move the exit code) — <keel> = your Keel checkout, not this scrub clone
 
 git remote add origin <url>                                 # filter-repo drops origin
 git push origin --force <default>:<default>                 # a NAMED branch — never --all
@@ -102,7 +105,10 @@ git push origin <tag> ; gh release create <tag> --notes-from-tag   # re-push tag
 ## 4. Flip visibility
 
 Flip to public **only after** steps 2–3 are done **and** a fresh `public-audit` (with network, so it covers
-host PR refs) is exit 0 — history, tree, and PR refs all clean.
+host PR refs) is exit 0 across history, tree and PR refs — **and you have read the WARNs it printed.**
+Exit 0 clears the GAP tier: identities and declared tokens. The personal-data heuristics are WARN-tier and
+do not move the exit code, so "exit 0" is not the same claim as "clean" — that second claim is yours to
+make, after reading the list.
 
 ## 5. Trigger one CI run
 
