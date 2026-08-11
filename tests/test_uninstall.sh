@@ -185,9 +185,29 @@ check_file "and does not touch it" "$HOME/.codex/AGENTS.md"
 # asymmetry is what let the mis-target below report a clean "done" (operator-run /code-review).
 rails "$HOME/.claude/CLAUDE.md"
 unin --codex --yes
-check_contains "a --codex uninstall names the leftover Claude install" "$OUT" "$HOME/.claude/CLAUDE.md"
+check_contains "a --codex uninstall names the leftover Claude install" "$OUT" "$HOME/.claude"
 check_contains "and points at the command that removes it" "$OUT" "Remove it too:  uninstall.sh"
 check_file "and does not touch it" "$HOME/.claude/CLAUDE.md"
+
+# ...and the hint must fire on a FOREIGN-CORE install too, where the kept CLAUDE.md carries no rails
+# at all. Keying the hint on rails repeated, here, the exact miss the mismatch refusal below had already
+# been re-keyed away from: a Claude home holding bin/keel, commands/ and both product copies went
+# unmentioned entirely (operator-run /code-review, 3rd pass). Uses a HOME of its own so the rails
+# fixtures written above can't supply the answer.
+FH="$SANDBOX/foreign-hint"
+mkdir -p "$FH/.claude" "$FH/.codex"
+printf '# My own global notes\nnothing keel here\n' > "$FH/.claude/CLAUDE.md"
+fresh_home_env "$FH"; fh_env=("${FRESH_HOME_ENV[@]}")
+run env "${fh_env[@]}" "$INSTALL" --no-hooks
+check_status "foreign-core install into a fresh HOME succeeds" 0 "$STATUS"
+check_absent "it wrote no rails into the kept CLAUDE.md" "$(cat "$FH/.claude/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_link "but it did wire the CLI there" "$FH/.claude/bin/keel"
+run env "${fh_env[@]}" "$INSTALL" --codex --no-hooks
+check_status "codex install into the same HOME succeeds" 0 "$STATUS"
+run env "${fh_env[@]}" "$UNINSTALL" --codex --yes
+check_status "codex uninstall exits 0" 0 "$STATUS"
+check_contains "and names the rails-less Claude install it left behind" "$OUT" "$FH/.claude"
+check_link "which is indeed still wired" "$FH/.claude/bin/keel"
 
 # --- a mode aimed at the OTHER mode's home: refuse, don't half-dismantle -------------------------
 # An explicit target outranks the mode's default leaf (mirroring install.sh), so

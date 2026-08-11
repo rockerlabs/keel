@@ -89,31 +89,6 @@ has_keel_rails() {
   grep -q 'KEEL-CORE-BEGIN' "$1" 2>/dev/null || grep -qE "$core_import_re" "$1" 2>/dev/null
 }
 
-# other_mode_hint — this run only ever touches ONE home, and the two install modes live in different
-# ones. Without this an adopter who ran both is told "done"/"nothing to do" with a full set of Keel
-# rails still loading into every session of the other harness. Symmetric on purpose: a --codex run
-# names a leftover Claude install exactly as a plain run names a leftover Codex one (an asymmetric
-# version of this guard was what let the mis-target refused below print a clean "done").
-# Called explicitly at each of the three reporting exits rather than from an EXIT trap: the trap would
-# also fire on the refusal paths (no --yes on a non-terminal, an unknown flag, the mismatch below),
-# where a leftover-install hint is noise attached to a run that did nothing. The exit that matters most
-# is the earliest — "no Keel home at ~/.claude" is exactly the run a Codex-only adopter makes first
-# (dir #109).
-other_mode_hint() {
-  [ -n "${HOME:-}" ] || return 0
-  local other="$HOME/$other_leaf"
-  [ "$other" != "$HOME_DIR" ] || return 0
-  has_keel_rails "$other/$other_context" || return 0
-  echo "  • A Keel install is still in place at $other/$other_context — this run did not touch it."
-  echo "    Remove it too:  $other_cmd"
-}
-
-if [ ! -d "$HOME_DIR" ]; then
-  echo "uninstall: nothing to do — no Keel home at $HOME_DIR"
-  other_mode_hint
-  exit 0
-fi
-
 # is_keel_owned PATH SHIPPED — the removal steps' own rule for "this slot is Keel's, not yours": a
 # symlink we wired, or a regular file byte-identical to what this checkout ships. A drifted copy is
 # yours. Factored out here because home_has_keel_content asks the same question the steps do.
@@ -123,26 +98,62 @@ is_keel_owned() {
   return 1
 }
 
-# home_has_keel_content — did an install ever run against THIS home? Deliberately independent of the
+# home_has_keel_content DIR — did an install ever run against DIR? Deliberately independent of the
 # rails: an install over a pre-existing, foreign CLAUDE.md leaves that file untouched (install.sh's
 # foreign_core path) while still wiring commands, bin/keel and the FRAMEWORK/PRINCIPLES copies, so
-# "carries Keel's rails" is not the same question and answering it here read a real Keel home as empty.
+# "carries Keel's rails" is not the same question and answering it that way reads a real Keel home as
+# empty. Takes the dir rather than closing over $HOME_DIR: BOTH callers below ask this about a home —
+# the mismatch guard about the one being uninstalled, other_mode_hint about the one it is leaving
+# alone — and the second is where keying on rails hid the same foreign-core case a THIRD time.
 home_has_keel_content() {
-  [ -d "$HOME_DIR/keel" ] && return 0
-  [ -L "$HOME_DIR/bin/keel" ] && return 0
-  local f slot
+  local home="$1" f slot
+  if [ -d "$home/keel" ] || [ -L "$home/bin/keel" ]; then return 0; fi
   for f in FRAMEWORK.md PRINCIPLES.md; do
-    is_keel_owned "$HOME_DIR/$f" "$root/$f" && return 0
+    if is_keel_owned "$home/$f" "$root/$f"; then return 0; fi
   done
-  if [ -d "$root/commands" ] && [ -d "$HOME_DIR/commands" ]; then
+  if [ -d "$root/commands" ] && [ -d "$home/commands" ]; then
     for f in "$root"/commands/*.md; do
       [ -f "$f" ] || continue
-      slot="$HOME_DIR/commands/$(basename "$f")"
-      is_keel_owned "$slot" "$f" && return 0
+      slot="$home/commands/$(basename "$f")"
+      if is_keel_owned "$slot" "$f"; then return 0; fi
     done
   fi
   return 1
 }
+
+# other_mode_hint — this run only ever touches ONE home, and the two install modes live in different
+# ones. Without this an adopter who ran both is told "done"/"nothing to do" with a full set of Keel
+# rails still loading into every session of the other harness. Symmetric on purpose: a --codex run
+# names a leftover Claude install exactly as a plain run names a leftover Codex one (an asymmetric
+# version of this was what let the mis-target refused below print a clean "done").
+#
+# The test is content OR rails, not rails alone: rails alone repeats, here, the exact miss the mismatch
+# guard below was re-keyed away from — a foreign-core install writes no rails into the file it kept, so
+# a Claude home holding bin/keel, commands/ and both product copies went unmentioned (found by the
+# operator's third /code-review pass, after the same defect had already been fixed 40 lines down). The
+# union is right rather than merely wider: content catches an install, rails catch a home migrated by
+# hand to nothing but an import line, and the hint is advisory — it removes nothing, so a false mention
+# costs a sentence while a missed one costs a silently-live set of rails.
+#
+# Called explicitly at each of the three reporting exits rather than from an EXIT trap: the trap would
+# also fire on the refusal paths (no --yes on a non-terminal, an unknown flag, the mismatch below),
+# where a leftover-install hint is noise attached to a run that did nothing. The exit that matters most
+# is the earliest — "no Keel home at ~/.claude" is exactly the run a Codex-only adopter makes first
+# (dir #109).
+other_mode_hint() {
+  [ -n "${HOME:-}" ] || return 0
+  local other="$HOME/$other_leaf"
+  [ "$other" != "$HOME_DIR" ] || return 0
+  home_has_keel_content "$other" || has_keel_rails "$other/$other_context" || return 0
+  echo "  • A Keel install is still in place at $other — this run did not touch it."
+  echo "    Remove it too:  $other_cmd"
+}
+
+if [ ! -d "$HOME_DIR" ]; then
+  echo "uninstall: nothing to do — no Keel home at $HOME_DIR"
+  other_mode_hint
+  exit 0
+fi
 
 # Mode/home mismatch — refuse rather than half-dismantle. Steps 1-4 below (the linked keel/ dir, the
 # CLI symlink, the commands, the FRAMEWORK/PRINCIPLES copies) are mode-AGNOSTIC and would fire happily
@@ -168,7 +179,7 @@ home_has_keel_content() {
 #     it, that case falls through to the honest "no Keel-owned content" no-op below.
 # A home with NEITHER context file is an ordinary empty/foreign dir, or a Keel home whose own context
 # file you deleted — neither is a mismatch, and both go on to uninstall (or no-op) normally.
-if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content; then
+if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content "$HOME_DIR"; then
   echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has $other_context instead." >&2
   echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
   echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context sitting there." >&2

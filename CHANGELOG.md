@@ -39,7 +39,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     the same always-loaded file (`AGENTS.md`), stripping the rails block while keeping the file and the
     user's own content outside it. A run **names** an install of the other mode it finds instead of
     leaving it silently behind — in both directions, and including on the "nothing to do — no Keel home
-    at `~/.claude`" path, which is exactly the run a Codex-only adopter makes first. It also **refuses
+    at `~/.claude`" path, which is exactly the run a Codex-only adopter makes first. That hint asks
+    whether an install is *there* — Keel content, or rails in the context file — not whether the context
+    file carries rails: keying it on rails alone hid the foreign-core case a third time, in a third
+    place, leaving a Claude home with `bin/keel`, `commands/` and both product copies entirely
+    unmentioned. Both callers now share one `home_has_keel_content`. It also **refuses
     outright** when the home it was pointed at holds the other mode: an explicit target (`--home`, else
     `$KEEL_HOME`) outranks the mode's default leaf, exactly as in `install.sh`, so
     `KEEL_HOME=<claude-home> uninstall.sh --codex` resolves a `CLAUDE.md` home while looking for
