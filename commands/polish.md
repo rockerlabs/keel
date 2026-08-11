@@ -39,15 +39,18 @@ Steps, in order:
    Otherwise, start this run's receipt: `tools/pre-pr-gate.sh init` (mints a fresh nonce, discarding any
    earlier run's leftover receipt).
 
-   **Convergence round?** If this invocation exists ONLY because step 5's own review found a real
-   finding, you fixed it, committed it, and re-invoked `/polish` on the same branch — the step-1 diff
-   above is the same one a prior run already diffed/simplified/tested/sized/self-checked, plus that one
+   **Convergence round?** If this invocation exists ONLY because a later step of a prior run found a
+   real finding — step 5's review, or step 7's self-check (dir #119: a WARN you chose to fix, or a GAP
+   that stopped that run) — and you fixed it, committed it, and re-invoked `/polish` on the same branch,
+   then the step-1 diff above is the same one a prior run already
+   diffed/simplified/tested/sized/self-checked, plus that one
    fix commit — run `tools/pre-pr-gate.sh receipt --recover` right now, before step 2. On success (it
    reports how many steps it restored) that call has re-stamped the prior run's receipts onto this run's
    fresh nonce, without overwriting anything this run already wrote (dir #96 — so the order of
    `--recover` against your own receipt calls does not matter):
    **treat steps 2, 4, and 7 below as DONE — do not invoke them again, and do
-   not write fresh receipts for them.** A fresh write would silently overwrite the just-recovered one
+   not write fresh receipts for them** (step 4 minus the `skip` exception below, step 7 minus the GAP
+   exception at the end of this branch). A fresh write would silently overwrite the just-recovered one
    (last write for a given step id wins, per the gate's own parser) — pointless for 1/2/7 (their
    receipted outcome is just a completion marker) and actively wrong for `polish.4-depth`, whose sized
    level step 5 will be cross-checked against: overwriting it with a stale pre-fix-commit sizing would
@@ -67,7 +70,19 @@ Steps, in order:
    outcome is a clean delta re-review that changes no files, and step 6 then writes
    `skipped:no-file-changes`, which binds nothing. So: go to step 3, then step 5 for the delta
    re-review, then 6 and 8, which always need a fresh value. Only steps 2, 4 and 7 are genuinely done
-   (step 4 minus the withheld-`skip` exception above).
+   (step 4 minus the withheld-`skip` exception above; step 7 minus the GAP exception just below).
+
+   **When step 7 was the trigger (dir #119), which of its two triggers it was decides one thing.** A
+   WARN you chose to fix left the prior run's `polish.7-selfcheck` receipt written, so it recovers and
+   step 7 stays done. **A GAP did not** — step 7 stops the run *before* writing its receipt, so the
+   backup never held it and `--recover` cannot restore it (its count won't mention a step that was never
+   there): in that case go run step 7 again this round and write the receipt fresh, or step 8 denies for
+   a missing step id. So the round is 3 → 5 (delta) → 6 → 8 after a WARN trigger, and
+   3 → 5 (delta) → 6 → **7** → 8 after a GAP one — the sequence is the only thing the two differ in. And
+   even where the receipt does recover, it attests the *prior* run's self-check, taken before your fix
+   existed: re-run `tools/self/doctor.sh` by hand and confirm the finding is gone before unlocking. That
+   hand-run is verification, not a step — no receipt, no change to the sequence. If it surfaces something
+   new needing another fix commit, that is simply the next convergence round, entered here again.
 
    **Do NOT use `--recover`'s own output to decide whether this is a convergence round.** It reports
    success for any retired prior run — an interrupted run, a denied `gh pr create`, any second `init` —
@@ -341,8 +356,10 @@ Steps, in order:
    violation** — the gate's SHA/trace checks (step 8) are keyed to whatever HEAD ends up being, so fold a
    real finding's fix into the same commit where practical, then **converge, don't restart**: on the
    re-invocation this produces, step 1's own convergence branch (`receipt --recover`) already skipped
-   steps 2 and 7 for you, and step 4 unless the prior round's depth was `skip` (never carried — dir
-   #116, see step 1; NOT step 3 — it must bind this commit, see step 1) — arriving here, re-review only the DELTA the fix introduced, not the full step-1
+   steps 2 and 7 for you (step 7 unless a GAP stopped that run before its receipt — dir #119), and
+   step 4 unless the prior round's depth was `skip` (never carried — dir
+   #116, see step 1; NOT step 3 — it must bind this commit, see step 1) — arriving here, re-review only
+   the DELTA the fix introduced, not the full step-1
    diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
    a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
    means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
@@ -366,7 +383,8 @@ Steps, in order:
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
    as step 8, not a bare `done`: step 6 is one of the four steps a convergence round must write itself
    (3, 5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth was `skip` — dir
-   #116, never carried) and 7), and its whole job is to catch a fix-commit
+   #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its receipt — dir #119,
+   never written, so never recovered)), and its whole job is to catch a fix-commit
    breaking something. So the gate cross-checks it against current HEAD the same way it does steps 3 and
    8 — a bare `done` would mean a recovered, pre-fix-commit retest could otherwise satisfy completeness
    without the fix-commit ever having been re-tested.
@@ -378,6 +396,12 @@ Steps, in order:
    NOT write this step's receipt or the sentinel, report what it flagged, and stop.
    Receipt: `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or, if the project has no `tools/self/doctor.sh`,
    `... polish.7-selfcheck skipped:no-doctor`).
+
+   **If fixing what it flagged takes a commit, you are in a convergence round** (dir #119) — a GAP that
+   stopped the run and a WARN you decide to act on both move HEAD after steps 3/5/6/8 were receipted
+   against the old commit. Fold the fix into the same commit where practical, then re-invoke `/polish`
+   and take step 1's convergence branch, which carries the mechanics — including what a step-7 trigger
+   changes.
 
 8. **Unlock the gate.** Now that the diff is final (reviewed and re-tested), finalize the receipt with the
    current HEAD SHA: `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. That releases

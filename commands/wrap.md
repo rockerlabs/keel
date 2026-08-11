@@ -44,6 +44,13 @@ Don't retell details (they live in git/PR); keep only the last few here, older o
 **2. Backlog** — update open items to one line each; mutable state (tests / PR / version) stays here only,
 never in memory. **Archive with a cooldown:** a just-closed task goes into a small `## Recently closed`
 buffer (≤2 one-liners with ✅), not straight to the archive — a just-closed task often spawns a follow-up.
+**Fold this session's own draft tickets — this wrap is their serialization point** (dir #111): if the
+session wrote unnumbered drafts into `BACKLOG.drafts/` — a sibling of `BACKLOG.md`, so it has the same
+residency, at the **main checkout root**; a worktree session must look there, not at its own
+`./BACKLOG.drafts/`, which will simply not exist — fold **your own** into `BACKLOG.md` here, by the
+procedure in `FRAMEWORK.md`'s backlog/persist section (numbering, the already-folded check, the
+collision retry — one copy, there). Leave foreign drafts alone: a `/backlog` run catches whatever is
+left, which makes it the leftover-catcher, not the primary path.
 **Red-flag sweep (P0 "capture is checked"):** scan THIS session for any idea / finding / decision /
 loose-end that surfaced but isn't persisted — **including incident signals**: a `git push --force`, a
 `git revert` / `reset --hard`, a history rewrite, or a command that failed and was redone differently are

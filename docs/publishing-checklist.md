@@ -13,8 +13,12 @@ step). Skip nothing silently — if you decide an item doesn't apply, say so (se
 ## 0. Safety gate — do this first
 
 - [ ] **No secrets or personal data** in the tree *or* git history. Run [`public-audit`](../tools/public-audit.sh)
-      → it must exit 0. Full fix procedure: [`going-public.md`](going-public.md). **[auto]** Don't flip until
-      this is clean — a leak in history survives a later delete.
+      → it must exit 0, **and read every WARN it printed**. Full fix procedure:
+      [`going-public.md`](going-public.md). Don't flip until this is clean — a leak in history survives a
+      later delete. **[auto]** for the exit code, **[you]** for the WARNs, and the split is the point:
+      every personal-data heuristic (home paths, content emails, Cyrillic, agent/session metadata) is a
+      WARN and leaves the exit code at 0. A clean exit is not a clean tree — only your read of the WARN
+      list closes this item.
 
 ## 1. The files a stranger expects
 
@@ -75,5 +79,6 @@ it is just ceremony.
 ## How fast this should go
 
 Sections 2–4 are mostly one `gh` session. Sections 1 and 5 (a real README and a preview image) are the only
-parts that take real thought. With `public-audit` covering the §0 safety gate and `gh repo edit` covering
-the metadata, a clean repo goes from private to presentable in well under an hour.
+parts that take real thought. With `public-audit` doing the §0 legwork (its blockers automatically, its
+WARNs for you to read) and `gh repo edit` covering the metadata, a clean repo goes from private to
+presentable in well under an hour.

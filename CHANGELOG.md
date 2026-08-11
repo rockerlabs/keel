@@ -9,6 +9,44 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **Five rails described guarantees they don't give, or mechanisms nothing carries** (dir #99, #110,
+  #111, #112, #119 — wording only, no behaviour change; each fix pinned by a grep assertion in the new
+  `tests/test_rails_honesty.sh`, red against the prior wording before it was written).
+  - **`publishing-checklist.md` sold `public-audit` exit 0 as a machine-checked "no personal data"**
+    (dir #99). Every personal-data heuristic in that tool — home paths, content emails, Cyrillic,
+    agent/session metadata — is WARN-tier and leaves the exit code at 0, so the §0 gate now splits its
+    tag (`[auto]` for the exit code, `[you]` for the WARNs) and says plainly that a clean exit is not a
+    clean tree. Swept rather than patched at the one site: `going-public.md` said the same thing in three
+    more places — its summary step 4, its §0 detect block, and the scrub-verification gate that a
+    force-push depends on — and all three now name the WARN read. With `README.md` and `docs/reference.md`
+    (PR #166), that is the whole class as it stands in the tree.
+  - **The always-loaded rails routed draft tickets through `/design`, which Keel does not ship**
+    (dir #110). Swept as a class rather than a site: `templates/CLAUDE.md`, `templates/project-CLAUDE.md`,
+    `FRAMEWORK.md` (twice) and `commands/backlog.md` now say "a design/planning session", naming no
+    command. The new test generalizes it — every backticked slash command in the rails, templates,
+    commands **and docs** (`docs/reference.md` is the command catalogue; getting-started is the
+    onboarding path), in every citation style the tree actually uses — bare, with arguments, bold-wrapped,
+    or slash-joined — must have a `commands/<name>.md`, or sit in one of two separately-named allowlists:
+    harness-provided commands whose call sites handle their absence, and tokens that aren't commands at
+    all. One level deeper, `FRAMEWORK.md` now also says what the rename alone left implicit — Keel ships
+    the *fold* side of the drafts convention only; the drafts themselves come from whatever
+    design/planning flow the adopter runs, and without one the directory never appears.
+  - **`/wrap` never folded the drafts `FRAMEWORK.md` calls it the single serialization point for**
+    (dir #111). Step 2 now carries the fold — own drafts only, idempotent against a fresh `BACKLOG.md`
+    read — and `FRAMEWORK.md` names the step that implements it, leaving `/backlog` 2b as what it was
+    always described as: the leftover-catcher, not the whole mechanism.
+  - **`/go`'s acceptance-tests-first rail cited `/polish`'s receipts while supplying none** (dir #112).
+    The analogy now states the actual status — self-reported, no receipt, no gate, no trace — and asks
+    for the one thing that outlives the chat: `tests: first` / `tests: infeasible — <reason>` in the PR's
+    test plan, which survives the ticket close, plus the same line on the IN FLIGHT marker while the
+    ticket is open (the closing sweep replaces that one with ✅, so it cannot be the durable copy).
+  - **`commands/polish.md` described the convergence round as a step-5-only event** (dir #119). A step-7
+    self-check finding that takes a fix commit moves HEAD exactly the same way; step 1's convergence
+    branch and step 7 itself now both say so, with the two places a step-7 trigger differs: a GAP stops
+    the run *before* its receipt is written, so that one never recovers and must be re-run and receipted
+    fresh (the review caught this — the first draft claimed it always recovers), and even a recovered
+    receipt attests the pre-fix run, so re-run the self-check by hand before unlocking. Gate semantics
+    unchanged.
 - **The three installers disagreed about where an install lives and what counts as its artifact**
   (dir #98, #108, #109 — one surface, three ways it drifted apart). Each half is covered by a
   red-before-green test.

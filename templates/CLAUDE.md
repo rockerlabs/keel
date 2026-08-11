@@ -20,9 +20,9 @@
 - **`IDEAS.md`** — staging tier for raw, not-yet-actionable ideas (Ideas != Backlog: no next step
   required). Append freely; promote to `BACKLOG.md`/`LEARNINGS.md` once it earns one, or drop it.
 - **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
-- **A `/design` session's output, for a project `BACKLOG.md` with concurrent writers** — an unnumbered
-  draft in that project's `BACKLOG.drafts/` (sibling of `BACKLOG.md`), folded at the design session's own
-  wrap. See `FRAMEWORK.md`'s backlog/persist section for the full convention.
+- **A design/planning session's ticket output, for a project `BACKLOG.md` with concurrent writers** — an
+  unnumbered draft in that project's `BACKLOG.drafts/` (sibling of `BACKLOG.md`), folded at that session's
+  own wrap. See `FRAMEWORK.md`'s backlog/persist section for the full convention.
 
 ## Communication preferences
 

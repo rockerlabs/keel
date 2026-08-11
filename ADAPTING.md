@@ -149,8 +149,9 @@ suite with **zero cross-task interference**. Here is what made it work, and what
   single conflict. This is the cheapest concurrency control there is: partition, don't lock.
 - **One isolated working copy per tool** (worktree or clone — see the gotcha below), each branch cut
   from fresh `main` before launch.
-- **Claim markers in the shared backlog.** Each session stamps `⏳ IN FLIGHT (date, branch)` onto its
-  ticket at session start. Advisory, not a lock — but combined with the branch scan it's enough.
+- **Claim markers in the shared backlog.** Each session stamps an `⏳ IN FLIGHT` marker onto its ticket
+  at session start — date and branch at the time of this run, plus the test-first decision `/go`'s rail
+  has asked for since. Advisory, not a lock — but combined with the branch scan it's enough.
 - **The rails themselves.** Branch-first held on all three tools. Best moment of the run: a session
   hit a git state it didn't expect (the coordinator had renamed branches mid-flight — our mistake,
   see below), re-checked git, and **stopped and asked instead of guessing** — "a blank beats a wrong

@@ -24,6 +24,10 @@ else
     "expected an 'acceptance tests' + 'done-criterion' paragraph"
 fi
 
+# The `skipped:<reason>` reference is deliberately KEPT rather than dropped (dir #112): the analogy was
+# the problem only while it was unqualified, so go.md now names it *and* says it has none of /polish's
+# mechanism. test_rails_honesty.sh pins that second half; this pin holds the first. Deleting the analogy
+# outright fails here — qualify it instead.
 if grep -qi 'infeasible' "$go" && grep -qi 'skipped:<reason>' "$go"; then
   pass "go.md: names the test-infeasible escape hatch (executed decision, not a silent skip)"
 else
