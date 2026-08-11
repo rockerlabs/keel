@@ -47,7 +47,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     shared half — the commands, the `keel` CLI symlink, the `FRAMEWORK`/`PRINCIPLES` copies — and report
     a clean success while `CLAUDE.md`'s rails kept loading forever. Found by the operator's own
     `/code-review` pass, which reproduced the half-dismantled install; the one-directional hint above was
-    what let it print "done".
+    what let it print "done". The refusal keys on **"an install ran against this home"** — `keel/`,
+    `bin/keel`, a shipped command, or a product copy — and not on "the other mode's file carries Keel's
+    rails", which a second `/code-review` pass showed misses the whole foreign-core case: an install over
+    someone's own pre-existing `CLAUDE.md` never writes rails into it, so that home read as empty and got
+    taken apart anyway. All three of the refusal's conditions are mutation-proven, and a directory that
+    holds no Keel content at all is still not refused — it falls through to the honest "nothing to
+    remove", rather than sending the user to a `--codex` run that would find nothing either. One case
+    stays open as **dir #124**: a home deliberately holding *both* modes, where this mode's context file
+    is present so refusing would be wrong and a post-removal warning is the right shape.
 - **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
   finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
   nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the

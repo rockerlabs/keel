@@ -204,6 +204,30 @@ check_contains "the refusal points at the right command" "$OUT" "uninstall.sh --
 check_file "nothing was removed — the CLI symlink survives" "$MM/bin/keel"
 check_file "nothing was removed — a shipped command survives" "$MM/commands/go.md"
 check_contains "and CLAUDE.md's rails are still there" "$(cat "$MM/CLAUDE.md")" "KEEL-CORE-BEGIN"
+# The signal is "an install ran here", NOT "this file carries Keel's rails". An install over someone's
+# own pre-Keel CLAUDE.md leaves that file untouched (install.sh's foreign_core path) while still wiring
+# commands, bin/keel and the product copies — so a rails-based guard read a real Keel home as empty and
+# let the whole foreign-core case through (operator-run /code-review, 2nd pass).
+FC="$SANDBOX/mismatch-foreign/.claude"; mkdir -p "$FC"
+printf '# My own global notes\nnothing keel here\n' > "$FC/CLAUDE.md"
+inst --home "$FC" --no-hooks
+check_status "install over a foreign CLAUDE.md succeeds" 0 "$STATUS"
+check_absent "and never writes rails into it" "$(cat "$FC/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_link "but it did wire the CLI" "$FC/bin/keel"
+run env KEEL_HOME="$FC" "$UNINSTALL" --codex --yes
+check_status "--codex aimed at a foreign-core Claude home → exit 2 (refused)" 2 "$STATUS"
+check_contains "the refusal says the home holds an install" "$OUT" "does hold a Keel install"
+check_link "the CLI symlink survives" "$FC/bin/keel"
+check_file "the shipped commands survive" "$FC/commands/go.md"
+check_contains "and the user's own CLAUDE.md is untouched" "$(cat "$FC/CLAUDE.md")" "My own global notes"
+# ...while a home that is NOT Keel's at all is not refused — it falls through to the honest no-op,
+# rather than sending the user round to a --codex run that would also find nothing.
+NK="$SANDBOX/not-keel-at-all/.claude"; mkdir -p "$NK"
+printf '# just my notes\n' > "$NK/CLAUDE.md"
+unin --codex --home "$NK" --yes
+check_status "a non-Keel dir holding only your own CLAUDE.md → exit 0, not a refusal" 0 "$STATUS"
+check_contains "and says there was nothing of Keel's to remove" "$OUT" "no Keel-owned content"
+
 # The reverse aim is refused the same way: a plain run pointed at a Codex home.
 CM="$SANDBOX/mismatch-codex/.codex"
 inst --codex --home "$CM" --no-hooks

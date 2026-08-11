@@ -114,18 +114,60 @@ if [ ! -d "$HOME_DIR" ]; then
   exit 0
 fi
 
+# is_keel_owned PATH SHIPPED — the removal steps' own rule for "this slot is Keel's, not yours": a
+# symlink we wired, or a regular file byte-identical to what this checkout ships. A drifted copy is
+# yours. Factored out here because home_has_keel_content asks the same question the steps do.
+is_keel_owned() {
+  [ -L "$1" ] && return 0
+  [ -f "$1" ] && [ -n "${2:-}" ] && cmp -s "$1" "$2" && return 0
+  return 1
+}
+
+# home_has_keel_content — did an install ever run against THIS home? Deliberately independent of the
+# rails: an install over a pre-existing, foreign CLAUDE.md leaves that file untouched (install.sh's
+# foreign_core path) while still wiring commands, bin/keel and the FRAMEWORK/PRINCIPLES copies, so
+# "carries Keel's rails" is not the same question and answering it here read a real Keel home as empty.
+home_has_keel_content() {
+  [ -d "$HOME_DIR/keel" ] && return 0
+  [ -L "$HOME_DIR/bin/keel" ] && return 0
+  local f slot
+  for f in FRAMEWORK.md PRINCIPLES.md; do
+    is_keel_owned "$HOME_DIR/$f" "$root/$f" && return 0
+  done
+  if [ -d "$root/commands" ] && [ -d "$HOME_DIR/commands" ]; then
+    for f in "$root"/commands/*.md; do
+      [ -f "$f" ] || continue
+      slot="$HOME_DIR/commands/$(basename "$f")"
+      is_keel_owned "$slot" "$f" && return 0
+    done
+  fi
+  return 1
+}
+
 # Mode/home mismatch — refuse rather than half-dismantle. Steps 1-4 below (the linked keel/ dir, the
 # CLI symlink, the commands, the FRAMEWORK/PRINCIPLES copies) are mode-AGNOSTIC and would fire happily
 # on any Keel home, while only step 5 is mode-specific. So a --codex run aimed at a Claude home strips
-# the shared half and leaves CLAUDE.md's rails loading forever — a half-dismantled install reported as
-# a clean success. Reachable because an explicit target outranks the mode leaf (above):
+# the shared half and leaves CLAUDE.md loading its rails forever — a half-dismantled install reported
+# as a clean success. Reachable because an explicit target outranks the mode leaf (above):
 # `KEEL_HOME=<claude-home> uninstall.sh --codex` is the felt case, and the reverse is just as possible.
-# Narrow on purpose: only when this mode's context file is ABSENT and the other mode's is there with
-# Keel's rails in it — a home missing both is an ordinary empty/foreign dir the steps below handle.
-if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && has_keel_rails "$HOME_DIR/$other_context"; then
-  echo "uninstall: $HOME_DIR has no $CONTEXT_FILE, but it does hold a Keel-wired $other_context." >&2
+#
+# The three conditions are each load-bearing:
+#   - this mode's context file ABSENT — its presence is what says an install of THIS mode ran here
+#     (install always leaves one, whether it wrote the file or kept yours);
+#   - the other mode's context file PRESENT — plain existence, NOT "carries Keel's rails". Requiring
+#     rails was the first version of this guard and it let the whole foreign-core case through: an
+#     install over someone's own pre-Keel CLAUDE.md never writes rails into it, so a --codex run aimed
+#     there sailed past the guard and removed the commands, the CLI and both product copies of an
+#     install nobody asked it to touch (found by the operator's second /code-review pass);
+#   - the home holding Keel content — without it, a bare dir containing only the user's own AGENTS.md
+#     would be refused with advice to re-run under --codex, which would then find nothing to do. With
+#     it, that case falls through to the honest "no Keel-owned content" no-op below.
+# A home with NEITHER context file is an ordinary empty/foreign dir, and one the user emptied of their
+# own context file still uninstalls normally — neither is a mismatch.
+if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content; then
+  echo "uninstall: $HOME_DIR has no $CONTEXT_FILE, but it does hold a Keel install and an $other_context." >&2
   echo "  That's the other install mode — removing it from here would take the shared half (commands," >&2
-  echo "  the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context's rails loading forever." >&2
+  echo "  the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context in place as its own install." >&2
   echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$HOME_DIR\"" >&2
   exit 2
 fi
@@ -191,7 +233,7 @@ if [ -d "$root/commands" ]; then
     [ -f "$cmd" ] || continue
     name="$(basename "$cmd")"
     slot="$HOME_DIR/commands/$name"
-    if [ -L "$slot" ] || { [ -f "$slot" ] && cmp -s "$slot" "$cmd"; }; then
+    if is_keel_owned "$slot" "$cmd"; then
       take "$slot"
     elif [ -e "$slot" ]; then
       echo "  =    commands/$name differs from Keel's — kept (yours)"
@@ -201,7 +243,7 @@ if [ -d "$root/commands" ]; then
       *)
         if [ ! -f "$root/commands/keel-$name" ]; then
           alias_slot="$HOME_DIR/commands/keel-$name"
-          if [ -L "$alias_slot" ] || { [ -f "$alias_slot" ] && cmp -s "$alias_slot" "$cmd"; }; then
+          if is_keel_owned "$alias_slot" "$cmd"; then
             take "$alias_slot"
           fi
         fi ;;
@@ -214,7 +256,7 @@ fi
 # byte-identical to the shipped file). A drifted copy is treated as yours and left.
 for f in FRAMEWORK.md PRINCIPLES.md; do
   slot="$HOME_DIR/$f"
-  if [ -L "$slot" ] || { [ -f "$slot" ] && cmp -s "$slot" "$root/$f"; }; then
+  if is_keel_owned "$slot" "$root/$f"; then
     take "$slot"
   elif [ -e "$slot" ]; then
     echo "  =    $f differs from Keel's — kept (yours)"
