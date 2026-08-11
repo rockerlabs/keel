@@ -209,6 +209,7 @@ check_contains "it names the untouched codex home" "$OUT" "$KH/.codex"
 run env "${kh_env[@]}" KEEL_HOME="$KH/.claude" "$UNINSTALL" --codex --home "$KH/.codex" --yes
 check_status "the advised command exits 0" 0 "$STATUS"
 check_contains "and actually removes it" "$OUT" "item(s) removed"
+check_file "AGENTS.md is kept, not deleted" "$KH/.codex/AGENTS.md"   # else the next check is vacuous
 check_absent "the codex rails are gone" "$(cat "$KH/.codex/AGENTS.md")" "KEEL-CORE-BEGIN"
 check_file "and does not touch it" "$HOME/.claude/CLAUDE.md"
 

@@ -498,11 +498,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
     if gate_hook_wired "$ihome/settings.json"; then
       say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
     else
-      # The advised flag must be able to reach the home this finding just NAMED. `--global` resolves
-      # ${KEEL_HOME:-$HOME/.claude}, and install.sh --home retargets without exporting KEEL_HOME
-      # (dir #98's whole premise), so on a retargeted home `--global` writes to ~/.claude and this
-      # warning would never clear no matter how many times it was followed. Name --home there instead.
-      if [ "$ihome" = "${HOME:-}/.claude" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
+      # The advised flag must be able to reach the home this finding just NAMED, so the test is
+      # literally "does --global resolve to $ihome" — i.e. compare against ${KEEL_HOME:-$HOME/.claude},
+      # the expression install-pre-pr-gate.sh's own --global evaluates. Comparing against $HOME/.claude
+      # alone is the same defect mirrored: with KEEL_HOME set elsewhere and doctor pointed at
+      # $HOME/.claude, --global would wire $KEEL_HOME and the warning would never clear (reproduced by
+      # the operator's fifth /code-review pass). install.sh --home retargets WITHOUT exporting
+      # KEEL_HOME — dir #98's whole premise — so both halves of this really happen.
+      if [ "$ihome" = "${KEEL_HOME:-${HOME:-}/.claude}" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
       warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi
   fi

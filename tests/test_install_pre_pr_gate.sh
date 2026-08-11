@@ -211,6 +211,13 @@ check_absent "and does not advise --global there" "$OUT" "run --global"
 run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
 run "$doctor" --install "$HOME/.claude"
 check_contains "on the default home the WARN still advises --global" "$OUT" "run --global"
+# ...and "default home" means whatever --global RESOLVES to, not $HOME/.claude literally: with
+# KEEL_HOME pointing elsewhere, --global would wire KEEL_HOME and leave $HOME/.claude — the home this
+# finding names — untouched, so the warning could never clear. Same defect as the retargeted case,
+# mirrored (operator-run /code-review, 5th pass).
+run env KEEL_HOME="$SANDBOX/elsewhere-home" "$doctor" --install "$HOME/.claude"
+check_contains "with KEEL_HOME set elsewhere, the default home gets --home too" "$OUT" "--home \"$HOME/.claude\""
+check_absent "and not --global, which would wire KEEL_HOME instead" "$OUT" "run --global"
 
 dh_wired="$SANDBOX/dh-wired"
 run "$REPO_ROOT/install.sh" --home "$dh_wired" --no-hooks
