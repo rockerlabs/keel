@@ -9,6 +9,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **`H-MAP-DRIFT` false-HINTed in every keel worktree, on paths this project's own convention keeps out
+  of a worktree on purpose** (dir #113, found by dir #85's drift audit). `BACKLOG.md` lives only at the
+  main-checkout root and `private/` is gitignored, so a live `doctor.sh` run against any worktree
+  reported both as stale — and `.keel/map-drift-baseline` couldn't suppress it either, since that file
+  also resolves at the main checkout, not the worktree. `doctor.sh` now re-checks a candidate against
+  the already-resolved main-checkout top (`unit_top`, the same redirection the map-drift baseline and
+  the impact-tracking split-brain check already use) before flagging drift, so a path genuinely absent
+  everywhere still warns, but one that only lives at the main checkout no longer does.
+- **Two rails claimed a mechanized guarantee neither had a check behind** (dir #114, the code half of
+  dir #85's M4-1/M4-2 — PR #166 corrected the prose, this builds the checks it promised).
+  - **`FRAMEWORK.md` said `doctor` hard-fails on a leaked host/user identifier in itself; no such check
+    existed anywhere** (M4-1). `tools/self/doctor.sh` — which runs in CI, unlike `public-audit.sh`,
+    which is a tool you remember to run — now GAPs if `FRAMEWORK.md` or `PRINCIPLES.md` contains a
+    home-directory path or a non-safe-listed email, reusing the same patterns and shared allowlist
+    (`tools/lib/safe-emails.sh`) `public-audit.sh` already uses for the rest of the tracked tree.
+  - **`H-FOOTPRINT` measured only the project's own `CLAUDE.md`, so the number it printed was a floor
+    on real startup cost, not the session's actual one** (M4-2). `tools/doctor.sh` now also resolves
+    the global `CLAUDE.md` (following its `@…/keel/CORE.md` import when linked-mode wires one) and
+    sums both into the budget comparison, reporting the project and global figures separately in the
+    HINT text.
 - **Five rails described guarantees they don't give, or mechanisms nothing carries** (dir #99, #110,
   #111, #112, #119 — wording only, no behaviour change; each fix pinned by a grep assertion in the new
   `tests/test_rails_honesty.sh`, red against the prior wording before it was written).

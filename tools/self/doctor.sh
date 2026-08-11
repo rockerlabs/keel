@@ -13,6 +13,7 @@
 #
 # Native checks (logic lives only here):
 #   GAP   install.sh's command ship-skip list disagrees with doctor.sh --install's mirror of it
+#   GAP   FRAMEWORK.md / PRINCIPLES.md contain a leaked host path or non-safe email (dir #114)
 #   GAP   a tools/commands/templates path referenced in tracked docs/scripts doesn't exist on disk
 #   WARN  a tools/*.sh script has no reference anywhere (commands/, tests/, install.sh, docs/, CI)
 #   WARN  a tools/*.sh script has no test coverage in tests/
@@ -181,6 +182,41 @@ if [ -n "$advice_bad" ]; then
 else
   say "  OK   advised commands all carry the home they are about"
 fi
+
+# --- 1d. FRAMEWORK.md / PRINCIPLES.md must not carry a leaked host/user identifier ---------------
+# dir #114 (M4-1): FRAMEWORK.md's own reusability-boundary rule says these two files must never
+# contain an absolute host path, a username, hardware, a model provider, or a project name — those
+# belong in INSTANCE.md. Only two of those are pattern-detectable at all (the rest need a declared
+# token, which is what public-audit.sh's --token/.public-audit path is for), so this check covers
+# exactly that pair: the same HOME_RE/EMAIL_RE public-audit.sh uses for its own tree scan, run here
+# too so the rule is enforced somewhere that's actually a CI gate (public-audit.sh is a tool you
+# remember to run; this file already runs in ci.yml). Same safe-email allowlist as doctor.sh's
+# advisory nudge, so a legitimate `noreply@…` co-author line doesn't false-GAP.
+say ""
+say "● FRAMEWORK.md / PRINCIPLES.md identifier leak"
+# This checkout's OWN copies of these libs, not $repo_root's (the audited target — a synthetic
+# sandbox in tests, which need not carry tools/lib/ at all) — same convention tools/doctor.sh uses
+# for the same libs a few lines up (see its $tools_dir comment).
+# shellcheck source=tools/lib/safe-emails.sh
+. "$self_dir/../lib/safe-emails.sh"
+# HOME_RE / EMAIL_RE: shared with public-audit.sh's own tree scan (tools/lib/leak-patterns.sh)
+# shellcheck source=tools/lib/leak-patterns.sh
+. "$self_dir/../lib/leak-patterns.sh"
+id_leak=0
+for f in FRAMEWORK.md PRINCIPLES.md; do
+  [ -f "$repo_root/$f" ] || continue
+  hit="$(grep -noE "$HOME_RE" "$repo_root/$f" 2>/dev/null | head -1 || true)"
+  if [ -n "$hit" ]; then
+    gap "$f:$hit — looks like a leaked host path (dir #114)"
+    id_leak=$((id_leak + 1))
+  fi
+  hit="$(grep -noE "$EMAIL_RE" "$repo_root/$f" 2>/dev/null | grep -vE "$safe_email_re" | head -1 || true)"
+  if [ -n "$hit" ]; then
+    gap "$f:$hit — looks like a leaked personal/corporate email (dir #114)"
+    id_leak=$((id_leak + 1))
+  fi
+done
+[ "$id_leak" -eq 0 ] && say "  OK   no leaked host path or non-safe email in FRAMEWORK.md / PRINCIPLES.md"
 
 # --- 2. dead internal references ----------------------------------------------------------------
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must

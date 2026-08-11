@@ -222,7 +222,46 @@ check_contains "reports the footprint finding" "$OUT" "footprint"
 # The TIER is a separate leading token from the ID (flush_notes prints "  HINT [ID] msg"), so asserting
 # on "[H-FOOTPRINT]" alone would pass under WARN too — it has to carry the tier word.
 check_contains "footprint is a HINT, not a WARN" "$OUT" "HINT [H-FOOTPRINT]"
-check_contains "footprint names the PROJECT file it measured" "$OUT" "project CLAUDE.md startup footprint"
+check_contains "footprint names the session startup footprint" "$OUT" "session startup footprint"
+check_contains "footprint breaks out the project figure" "$OUT" "project ~"
+check_contains "footprint breaks out the global figure" "$OUT" "global ~"
+
+# --- H-FOOTPRINT sums in the resolved global CLAUDE.md, not just the project's own (dir #114, M4-2) -
+# no global install at all → global contributes 0, budget compares the project figure alone
+d="$(mkproj)"; git -C "$d" init -q
+printf 'plenty of startup context goes here\n' > "$d/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$SANDBOX/no-such-home" "$doctor" "$d"
+check_contains "no global install → global figure is 0" "$OUT" "global ~0"
+
+# a global CLAUDE.md with no @import (copy/embedded mode) contributes its own size, nothing extra
+ghome="$SANDBOX/ghome1"; mkdir -p "$ghome"
+printf '%0.sX' $(seq 1 400) > "$ghome/CLAUDE.md"   # ~100 tokens
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$ghome" "$doctor" "$d"
+check_contains "embedded-mode global CLAUDE.md counted" "$OUT" "global ~100"
+
+# a linked global CLAUDE.md (@import line) resolves and adds the target's size too. The import
+# line's own byte count depends on $SANDBOX's path length, so the expected figure is computed here
+# rather than hardcoded — the assertion is still an exact number, not a loose "> 0".
+ghome="$SANDBOX/ghome2"; mkdir -p "$ghome/keel"
+import_line="@$ghome/keel/CORE.md"$'\n'
+printf '%s' "$import_line" > "$ghome/CLAUDE.md"
+printf '%0.sY' $(seq 1 800) > "$ghome/keel/CORE.md"   # 800 bytes, exactly
+expected_global_est=$(( (${#import_line} + 800) / 4 ))
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$ghome" "$doctor" "$d"
+check_contains "linked-mode global sums CLAUDE.md + the resolved keel/CORE.md import" "$OUT" "global ~${expected_global_est}"
+
+# an @import line with a dangling target degrades to the CLAUDE.md line's own size, no crash
+ghome="$SANDBOX/ghome3"; mkdir -p "$ghome"
+printf '@%s/keel/CORE.md\n' "$ghome" > "$ghome/CLAUDE.md"
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$ghome" "$doctor" "$d"
+check_status "dangling @import target → no crash" 0 "$STATUS"
 
 # a non-numeric token budget falls back to the default instead of leaking a `[: integer expected`
 d="$(mkproj)"; git -C "$d" init -q
@@ -617,6 +656,24 @@ mkdir -p "$base/.keel"; printf 'scripts/ghost.sh\n' > "$base/.keel/map-drift-bas
 run "$doctor" "$wtd"
 check_absent "main-checkout baseline suppresses the WARN from the worktree" "$OUT" "map may be stale"
 check_absent "no worktree-local .keel/ was created just to look up the baseline" "$OUT" "coexists with the main checkout"
+
+# a path that exists only at the MAIN checkout (e.g. BACKLOG.md, absent from a worktree by a project's
+# own documented convention) resolves against unit_top before flagging — no baseline entry needed
+# (dir #113)
+base="$(mkproj)"; git -C "$base" init -q
+printf '# ctx\nSee `BACKLOG.md` for the backlog.\n' > "$base/CLAUDE.md"
+printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
+: > "$base/BACKLOG.md"
+git -C "$base" add .gitignore
+git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init
+wtm="$SANDBOX/wtmain.$$"
+git -C "$base" worktree add -q "$wtm" >/dev/null 2>&1
+ln -s "$base/CLAUDE.md" "$wtm/CLAUDE.md"
+run "$doctor" "$wtm"
+check_absent "path present only at the main checkout → no map-drift WARN from the worktree" "$OUT" "map may be stale"
+rm -f "$base/BACKLOG.md"
+run "$doctor" "$wtm"
+check_contains "same path genuinely absent everywhere → WARN still fires from the worktree" "$OUT" "map may be stale"
 
 # report cap: more than 5 missing paths → top 5 named plus a "and K more" tail
 d="$(newbase)"

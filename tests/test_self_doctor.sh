@@ -199,6 +199,39 @@ printf '#!/usr/bin/env bash\n# re-run install.sh to fix\ncat <<EOF\n  install.sh
 run "$sd" "$d" --quiet
 check_status "a comment / usage line naming the command is not advice -> exit 0" 0 "$STATUS"
 
+# --- 1d. FRAMEWORK.md / PRINCIPLES.md identifier leak -> GAP (dir #114, M4-1) ----------------------
+# Absence of both files is the sandbox's default (mk_clean_repo creates neither) and must stay clean.
+d="$(mk_clean_repo)"
+run "$sd" "$d" --quiet
+check_status "neither file present -> exit 0" 0 "$STATUS"
+
+d="$(mk_clean_repo)"
+printf '# Framework\nNothing personal here.\n' > "$d/FRAMEWORK.md"
+( cd "$d" && git add -A && git commit -qm "clean FRAMEWORK.md" )
+run "$sd" "$d" --quiet
+check_status "clean FRAMEWORK.md -> exit 0" 0 "$STATUS"
+
+d="$(mk_clean_repo)"
+printf '# Framework\nSee /Users/exampleuser/repo for the layout.\n' > "$d/FRAMEWORK.md"
+( cd "$d" && git add -A && git commit -qm "leaked home path" )
+run "$sd" "$d" --quiet
+check_status "leaked home path in FRAMEWORK.md -> exit 1" 1 "$STATUS"
+check_contains "names the leak" "$OUT" "leaked host path"
+
+d="$(mk_clean_repo)"
+printf '# Principles\nContact person@example-corp.com with questions.\n' > "$d/PRINCIPLES.md"
+( cd "$d" && git add -A && git commit -qm "leaked email" )
+run "$sd" "$d" --quiet
+check_status "leaked non-safe email in PRINCIPLES.md -> exit 1" 1 "$STATUS"
+check_contains "names the leak" "$OUT" "leaked personal/corporate email"
+
+# a safe-listed email (the shared allowlist) must not false-GAP
+d="$(mk_clean_repo)"
+printf '# Principles\nCo-Authored-By: Claude <noreply@anthropic.com>\n' > "$d/PRINCIPLES.md"
+( cd "$d" && git add -A && git commit -qm "safe-listed email" )
+run "$sd" "$d" --quiet
+check_status "safe-listed email -> exit 0" 0 "$STATUS"
+
 # --- 2. dead internal reference -> GAP -------------------------------------------------------------
 d="$(mk_clean_repo)"
 printf 'See `%s` for details.\n' "$fake_dead" > "$d/README.md"
