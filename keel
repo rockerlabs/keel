@@ -46,8 +46,15 @@ CHECKOUT="$(cd "$(dirname "$self")" && pwd -P)"
 # Sanity: the checkout must carry the scripts we dispatch to. Guards against a stray `keel` COPIED
 # (not symlinked) somewhere its siblings don't exist — a clear error beats a confusing "no such file".
 if [ ! -f "$CHECKOUT/install.sh" ] || [ ! -d "$CHECKOUT/tools" ]; then
-  echo "$prog: cannot find the Keel checkout next to me ($CHECKOUT has no install.sh/tools)." >&2
-  echo "      keel must stay a symlink into its checkout — re-run install.sh to re-wire it." >&2
+  # The re-wire has to target the home this CLI was installed into, not wherever a bare re-run would
+  # land: bin/keel sits one level under it, so $0's grandparent names it. Same rule as install.sh's
+  # home_flag and doctor's ihome_flag — dir #98's defect class is "advice that can't reach the install
+  # it is about", and a broken CLI in a retargeted home is exactly that case.
+  keel_home="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd -P)" || keel_home=""
+  home_flag=""
+  [ -n "$keel_home" ] && [ "$keel_home" != "${KEEL_HOME:-${HOME:-}/.claude}" ] && home_flag=" --home \"$keel_home\""
+  echo "$prog: cannot find the Keel checkout next to me ($CHECKOUT has no install script or tools/)." >&2
+  echo "      keel must stay a symlink into its checkout — re-run install.sh$home_flag to re-wire it." >&2
   exit 1
 fi
 

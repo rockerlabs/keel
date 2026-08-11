@@ -148,16 +148,26 @@ fi
 # the class — found by this ticket's own review). Two exclusions, both structural rather than
 # per-string: comment lines, and usage/help text (indented two spaces under a `Usage:` heredoc), which
 # documents the flags generically instead of advising about a specific install.
-# Scope: lines that are an actual output CALL (echo/say/warn/gap/hint), plus the summary's own
-# "  - " bullets. That is a structural rule, not a phrase list — it takes in every finding and every
-# summary line while leaving out usage/help heredocs, prose, and variable assignments (where the
-# marker is legitimately added at the print site instead). What it does NOT cover, stated rather than
-# silently missed: the --no-git breadcrumb generated into the core, which is deliberately a constant
-# string so doctor's staleness comparison stays stable.
-advice_re='install\.sh|keel uninstall|doctor\.sh --install'
-marker_re='home_flag|ihome_flag|doctor_arg|advise_install|advise_uninstall|--home|<repo>|<dir>'
+# Scope: lines that are an actual output CALL (echo/say/warn/gap/hint), plus INDENTED text — the
+# summary heredocs, whose bullets wrap onto continuation lines that carry commands of their own (the
+# first version of this scope matched only "  - " bullets and was blind to exactly those wraps, which
+# is where the codex advice lives). Structural, not a phrase list, so usage/help text and variable
+# assignments stay out — the marker is legitimately added at the print site for the latter.
+#
+# `[^u]install\.sh` so `uninstall.sh` doesn't match as a substring and get reported as the wrong
+# command. Three things this deliberately does NOT cover, named rather than silently missed:
+#   - the --no-git breadcrumb generated into the core (a constant string on purpose, so doctor's
+#     staleness comparison stays stable);
+#   - CONTINUATION lines inside the summary heredocs — a bullet that wraps puts its command on an
+#     unindented-by-"- " line. Widening the scope to all indented text was tried and swallowed the
+#     usage blocks and prose wholesale, so the choice is a narrow check plus this note over a broad
+#     one plus a growing allowlist. The wrapped sites that exist today were routed through the
+#     variables by hand, and the end-to-end test in tests/test_install_pre_pr_gate.sh covers them;
+#   - any tool not in the list below.
+advice_re='(^|[^u])install\.sh|keel uninstall|doctor\.sh --install'
+marker_re='home_flag|ihome_flag|doctor_arg|advise_install|advise_uninstall|--home'
 advice_bad=""
-for f in install.sh uninstall.sh tools/doctor.sh tools/install-pre-pr-gate.sh; do
+for f in install.sh uninstall.sh keel tools/doctor.sh tools/install-pre-pr-gate.sh; do
   [ -f "$repo_root/$f" ] || continue
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue

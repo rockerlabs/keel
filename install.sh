@@ -800,8 +800,8 @@ fi
 if [ "$CODEX" = 1 ]; then
   cat <<EOF
   - $CONTEXT_FILE is a real file, edited in place — Codex reads it with no import mechanism (that's a
-    Claude Code thing). Update later: re-run the install (the one-liner, or  git pull && ./install.sh
-    --codex --home "$HOME_DIR"  from a kept checkout) — refreshes FRAMEWORK.md/PRINCIPLES.md and offers
+    Claude Code thing). Update later: re-run the install (the one-liner, or  git pull && ./$advise_install
+    from a kept checkout) — refreshes FRAMEWORK.md/PRINCIPLES.md and offers
     to refresh the KEEL-CORE block if it drifted from a newer release; your edits outside the block are
     always kept.
   - commands/ was NOT wired — Codex reads skills from  ~/.codex/skills/<name>/SKILL.md  instead; see
@@ -829,7 +829,7 @@ elif [ "$EPHEMERAL" = 1 ]; then
     the files above stand alone. The  keel  CLI,  keel uninstall , tools/install-pre-pr-gate.sh (the
     /polish gate), and the commands that shell out to Keel's tools/ (/keel-setup project drafting,
     /init-project) need a KEPT checkout — either re-run the one-liner with  --link  (keeps a checkout
-    at ~/keel and wires everything to it), or git clone the keel repo and run  ./install.sh  from it
+    at ~/keel and wires everything to it), or git clone the keel repo and run  ./$advise_install  from it
     (re-runs never clobber your files).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
