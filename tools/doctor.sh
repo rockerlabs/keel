@@ -122,24 +122,33 @@ exit_code=0
 # install.sh's own copy).
 core_import_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
 
+# Byte-count-or-0: `wc -c` an existing file, degrading to 0 on any read failure instead of aborting
+# the whole run under `set -euo pipefail` (an unreadable CLAUDE.md must not take down findings already
+# buffered for this unit — dir #45). Used 3x below (the global core's own size, its resolved @import
+# target, and each project's own CLAUDE.md) — one definition instead of three hand-copies.
+_char_count() {
+  local n
+  n="$(wc -c < "$1" 2>/dev/null | tr -d ' ')" || n=0
+  [ -n "$n" ] || n=0
+  printf '%s' "$n"
+}
+
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
 # printed was a floor on real startup cost, not the whole of it — the global core is the OTHER half
 # of every session's always-loaded set. Resolved once here (machine-invariant across every $d in the
-# loop below), same default-home chain --install mode already uses for $ihome, so a plain `doctor.sh`
-# run (no --install) finds the SAME global CLAUDE.md that install audits.
+# loop below) — same default-home expression --install mode's own $ihome/$ihome_flag/$gate_flag
+# comparisons already hand-copied twice further down; those now reuse $ghome too instead of a third
+# copy, so a plain `doctor.sh` run (no --install) finds the SAME global CLAUDE.md that install audits.
 ghome="${KEEL_HOME:-${HOME:-}/.claude}"
 global_chars=0
 if [ -f "$ghome/CLAUDE.md" ]; then
-  global_chars="$(wc -c < "$ghome/CLAUDE.md" 2>/dev/null | tr -d ' ')" || global_chars=0
-  [ -n "$global_chars" ] || global_chars=0
+  global_chars="$(_char_count "$ghome/CLAUDE.md")"
   # Linked mode: the global CLAUDE.md carries one `@…/keel/CORE.md` line, and Claude Code loads that
   # target's own bytes at session start — so an honest sum must resolve it and add its size in too.
   # Copy mode (or --no-git) embeds the core's content directly inside CLAUDE.md instead (no @import
   # line), so its bytes are already counted by the read above — nothing extra to add there.
   if grep -qE "$core_import_re" "$ghome/CLAUDE.md" 2>/dev/null && [ -f "$ghome/keel/CORE.md" ]; then
-    core_chars="$(wc -c < "$ghome/keel/CORE.md" 2>/dev/null | tr -d ' ')" || core_chars=0
-    [ -n "$core_chars" ] || core_chars=0
-    global_chars=$(( global_chars + core_chars ))
+    global_chars=$(( global_chars + $(_char_count "$ghome/keel/CORE.md") ))
   fi
 fi
 global_est=$(( global_chars / 4 ))
@@ -385,8 +394,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # where a bare re-run would land. Same rule, and the same reason, as install.sh's home_flag: an
   # instruction that re-resolves the home from scratch cannot fix the install this audit is about, so
   # the finding would never clear however faithfully it was followed (dir #98, found to be a class).
-  if [ "$ihome" = "${KEEL_HOME:-${HOME:-}/.claude}" ]; then ihome_flag=""
-  else                                                      ihome_flag=" --home \"$ihome\""; fi
+  if [ "$ihome" = "$ghome" ]; then ihome_flag=""
+  else                              ihome_flag=" --home \"$ihome\""; fi
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
@@ -537,13 +546,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
     else
       # The advised flag must be able to reach the home this finding just NAMED, so the test is
-      # literally "does --global resolve to $ihome" — i.e. compare against ${KEEL_HOME:-$HOME/.claude},
-      # the expression install-pre-pr-gate.sh's own --global evaluates. Comparing against $HOME/.claude
-      # alone is the same defect mirrored: with KEEL_HOME set elsewhere and doctor pointed at
-      # $HOME/.claude, --global would wire $KEEL_HOME and the warning would never clear (reproduced by
-      # the operator's fifth /code-review pass). install.sh --home retargets WITHOUT exporting
-      # KEEL_HOME — dir #98's whole premise — so both halves of this really happen.
-      if [ "$ihome" = "${KEEL_HOME:-${HOME:-}/.claude}" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
+      # literally "does --global resolve to $ihome" — i.e. compare against $ghome (the same
+      # ${KEEL_HOME:-$HOME/.claude} expression install-pre-pr-gate.sh's own --global evaluates,
+      # resolved once near the top of this file). Comparing against $HOME/.claude alone is the same
+      # defect mirrored: with KEEL_HOME set elsewhere and doctor pointed at $HOME/.claude, --global
+      # would wire $KEEL_HOME and the warning would never clear (reproduced by the operator's fifth
+      # /code-review pass). install.sh --home retargets WITHOUT exporting KEEL_HOME — dir #98's whole
+      # premise — so both halves of this really happen.
+      if [ "$ihome" = "$ghome" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
       warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi
   fi
@@ -596,12 +606,10 @@ for d in "${DIRS[@]}"; do
       gap G-CLAUDEMD-MISSING "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
     fi
   else
-    # `|| true` + empty fallback: findings are now buffered until this unit's flush_notes (dir #45),
-    # so an unguarded read failure here (e.g. a permission-denied CLAUDE.md) would abort under
-    # set -e before anything already recorded for this unit — including a GAP — ever printed.
-    chars="$(wc -c < "$d/CLAUDE.md" 2>/dev/null | tr -d ' ')" || chars=0
-    [ -n "$chars" ] || chars=0
-    proj_est=$(( chars / 4 ))
+    # _char_count degrades to 0 on an unreadable file instead of aborting under set -e (dir #45):
+    # findings are buffered until this unit's flush_notes, so a read failure here must not take down
+    # anything already recorded for this unit — including a GAP — before it ever prints.
+    proj_est=$(( $(_char_count "$d/CLAUDE.md") / 4 ))
     est=$(( proj_est + global_est ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
       hint H-FOOTPRINT "session startup footprint ~${est} tokens (project ~${proj_est} + global ~${global_est}) > budget ${WARN_TOKENS} — move project detail to the on-demand tier (P2/P3)"
