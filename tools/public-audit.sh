@@ -95,9 +95,10 @@ if [ -f "$cfg" ]; then
   done < "$cfg"
 fi
 
-# combined safe-email regex (built-ins + configured allow-email)
-safe_re=""
-for e in "${SAFE_EMAILS[@]}"; do safe_re="${safe_re:+$safe_re|}$e"; done
+# combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
+# safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern
+# LIST; re-deriving the joiner would leave that half still duplicated by eyeball.
+safe_re="$safe_email_re"
 # A configured allow-email is user input — a broken ERE would make every later `grep -E "$safe_re"`
 # spew "bad regex" and silently drop the content-leak WARNs. Validate each before trusting it; collect
 # the bad ones to report once the WARN helper is defined below.

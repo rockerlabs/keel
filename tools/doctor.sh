@@ -312,6 +312,10 @@ guard_home_note=" [global config read via $guard_cfg_src — a redirected one re
 # domains are disjoint by construction, so one drift is still never reported twice. ~/ was already
 # expanded above, so a tilde spelling counts as absolute here.
 tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# dir #106: sourced once here, not per-project below — the allowlist is invariant across every
+# scanned project, so re-sourcing it inside the loop would just rebuild the same regex N times.
+# shellcheck source=tools/lib/safe-emails.sh
+. "$tools_dir/lib/safe-emails.sh"
 shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
 case "$global_hooks" in /*) global_hooks_abs=1 ;; *) global_hooks_abs=0 ;; esac
 if [ "$global_hooks_abs" = 1 ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
@@ -805,10 +809,8 @@ EOF
 
   # Publication-bound projects (those with a .public-audit config) shouldn't commit with a real
   # personal/corporate email — it ends up in public history. Nudge toward a noreply address.
-  # Public-safe set: dir #106, sourced from tools/lib/safe-emails.sh — public-audit.sh (the GAP gate)
-  # sources the same file, so this advisory mirror can't silently disagree with it on an address.
-  # shellcheck source=tools/lib/safe-emails.sh
-  . "$tools_dir/lib/safe-emails.sh"
+  # Public-safe set: $safe_email_re, sourced once above from tools/lib/safe-emails.sh — public-audit.sh
+  # (the GAP gate) sources the same file, so this advisory mirror can't silently disagree with it.
   if [ -f "$d/.public-audit" ]; then
     email="$(git -C "$d" config user.email 2>/dev/null || true)"
     if [ -n "$email" ] && ! printf '%s' "$email" | grep -qE "$safe_email_re"; then
