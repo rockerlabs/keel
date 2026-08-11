@@ -209,6 +209,23 @@ check_status "codex uninstall exits 0" 0 "$STATUS"
 check_contains "and names the rails-less Claude install it left behind" "$OUT" "$FH/.claude"
 check_link "which is indeed still wired" "$FH/.claude/bin/keel"
 
+# The SAME hint on the no-such-home exit — the earliest one, and the run a Codex-only adopter makes
+# first. Covered separately because that exit runs before everything else: a regression that moved the
+# helpers back below it would leave the hint calling an undefined function, whose 127 the `||` swallows
+# silently (exit stays 0, only a stray "command not found" on stderr), degrading this path back to
+# rails-only with the suite still green. Hence the second assertion.
+NH="$SANDBOX/no-codex-home"
+mkdir -p "$NH/.claude"
+printf '# My own global notes\nnothing keel here\n' > "$NH/.claude/CLAUDE.md"
+fresh_home_env "$NH"; nh_env=("${FRESH_HOME_ENV[@]}")
+run env "${nh_env[@]}" "$INSTALL" --no-hooks
+check_status "foreign-core install for the no-such-home case succeeds" 0 "$STATUS"
+run env "${nh_env[@]}" "$UNINSTALL" --codex --yes
+check_status "--codex with no ~/.codex at all → exit 0" 0 "$STATUS"
+check_contains "says there is nothing to do" "$OUT" "nothing to do"
+check_contains "and still names the Claude install left behind" "$OUT" "$NH/.claude"
+check_absent "with no undefined-function fallout" "$OUT" "command not found"
+
 # --- a mode aimed at the OTHER mode's home: refuse, don't half-dismantle -------------------------
 # An explicit target outranks the mode's default leaf (mirroring install.sh), so
 # `KEEL_HOME=<claude-home> uninstall.sh --codex` resolves a CLAUDE.md home while looking for AGENTS.md.
