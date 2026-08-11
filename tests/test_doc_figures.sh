@@ -66,8 +66,11 @@ assert_figure() {
       # non-failing note — same shape as assert_band's near-band note — so the drift becomes visible
       # without turning the floor back into a bump-every-PR ceiling.
       if [ "$actual" -gt "$(( doc_fig * 5 / 4 ))" ]; then
-        printf '  note  %s: doc floor ~%s+ is now %s%% below actual ~%s — consider raising the floor\n' \
-          "$label" "$doc_fig" "$(( (actual - doc_fig) * 100 / doc_fig ))" "$actual"
+        # The computed percentage is (actual-floor)/floor — i.e. "actual exceeds the floor by X%",
+        # not "the floor is X% below actual" (that would need actual, not the floor, as the
+        # denominator — a different number; found in review). Word it to match what's computed.
+        printf '  note  %s: actual ~%s is now %s%% above the doc floor ~%s+ — consider raising the floor\n' \
+          "$label" "$actual" "$(( (actual - doc_fig) * 100 / doc_fig ))" "$doc_fig"
       fi
     else
       fail "$label" "doc floor ~$doc_fig+ but actual is only ~$actual tok — lower the floor"

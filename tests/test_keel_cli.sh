@@ -128,12 +128,31 @@ else
   fail "every case arm was extracted as a verb" "found $arm_count total arms but only extracted $verb_count verbs — one was silently dropped (non-standard indentation?)"
 fi
 
+# dir #104 originally scoped this to the two EXTERNAL docs; the tool's own internal usage()/header
+# comment can drift the same way and wasn't covered at all — a verb added to the case block with
+# neither doc touched AND `keel help`/the header comment left stale would pass silently (found in
+# review). Same source of truth, same check, extended to the tool's own --help surface.
+usage_block="$(awk '/^usage\(\) \{/,/^}/' "$REPO_ROOT/keel")"
+header_block="$(awk '/^# Verbs:/,/^# *$/' "$REPO_ROOT/keel")"
+[ -n "$usage_block" ] || fail "found keel's own usage() function" "no usage() { ... } block found"
+[ -n "$header_block" ] || fail "found keel's own header '# Verbs:' comment block" "no '# Verbs:' section found"
+
 ref_line="$(grep -F '](../keel)' "$REPO_ROOT/docs/reference.md")"
 readme_block="$(awk '/lists the verbs:/{f=1} f{print; if (/`keel help`\./) exit}' "$REPO_ROOT/README.md")"
 [ -n "$ref_line" ] || fail "found the keel row in docs/reference.md" "no line links to ../keel"
 [ -n "$readme_block" ] || fail "found the verb-list paragraph in README.md" "no line matches 'lists the verbs:'"
 
 for v in $verbs; do
+  if printf '%s' "$usage_block" | grep -qw "$v"; then
+    pass "keel's usage() lists verb: $v"
+  else
+    fail "keel's usage() lists verb: $v" "missing from usage() — dispatcher has it, --help doesn't"
+  fi
+  if printf '%s' "$header_block" | grep -qw "$v"; then
+    pass "keel's header comment lists verb: $v"
+  else
+    fail "keel's header comment lists verb: $v" "missing from the '# Verbs:' header comment"
+  fi
   if printf '%s' "$ref_line" | grep -qw "$v"; then
     pass "docs/reference.md quotes verb: $v"
   else

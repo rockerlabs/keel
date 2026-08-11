@@ -704,7 +704,13 @@ cmd_add() {
   if [ "$stale" -gt 0 ]; then printf ' (%d stale-skipped)' "$stale"; fi
   if [ "$kept" -gt 0 ]; then printf ' (%d foreign-kept)' "$kept"; fi
   printf ' — HELP=%d COST=%d; appended to %s\n' "$help" "$cost" "$LEDGER"
-  if [ "$retro" -eq 1 ]; then rollup retro; else rollup; fi
+  # rollup can now fail (a genuinely unreadable ledger — round-2 review fix above), but the row this
+  # command exists to write is already appended and the success message above is already printed by
+  # this point; rollup here is only a trailing trend display, and under `set -e` letting IT fail
+  # would turn an already-successful `add` into a nonzero exit (found in review). `|| true` keeps
+  # rollup's own stderr message visible (it prints one before returning 1) without masking the add's
+  # own success.
+  if [ "$retro" -eq 1 ]; then rollup retro || true; else rollup || true; fi
 }
 
 case "${1:-}" in
