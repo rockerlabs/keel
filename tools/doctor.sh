@@ -431,7 +431,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
                   | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
       fi
       if [ "$git_projects" -gt 0 ]; then
-        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link --with-git"
+        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link$ihome_flag --with-git"
       fi
     elif [ ! -L "$ihome/keel/CORE.md" ]; then
       warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link$ihome_flag"
@@ -439,7 +439,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    say "  OK   core rails: embedded copy (copy mode; install.sh re-runs check drift)"
+    say "  OK   core rails: embedded copy (copy mode; a re-run checks for drift)"
   else
     warn W-RAILS-UNWIRED "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$ihome_flag, or migrate: install.sh --link)"
   fi

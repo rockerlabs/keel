@@ -152,6 +152,44 @@ run "$sd" "$d"
 check_status "no copies anywhere -> exit 0" 0 "$STATUS"
 check_absent "and says nothing about the pattern" "$OUT" "core-@import"
 
+# --- 1c. advised commands must carry the home they are about -------------------------------------
+# Source-level on purpose: most of doctor's advice lives in findings that only fire on a BROKEN
+# install, so an output sweep can't reach them.
+# Appends one advice line to the fixture's install.sh. The variables are assigned first so the
+# sandbox stays shellcheck-clean — self/doctor.sh lints it, and an SC2154 would GAP for the wrong
+# reason and make every assertion below read as a pass or fail of this check when it isn't.
+plant_advice() {   # plant_advice ADVICE-LINE DIR
+  { printf 'home_flag=""; ihome=""; echo "$ihome$home_flag" >/dev/null\n'   # both read → no SC2034
+    printf '%s\n' "$1"; } >> "$2/install.sh"
+}
+
+d="$(mk_clean_repo)"
+plant_advice 'echo "re-run install.sh$home_flag to fix"' "$d"
+( cd "$d" && git add -A && git commit -qm "advice carrying the marker" )
+run "$sd" "$d" --quiet
+check_status "advice carrying the home marker -> exit 0" 0 "$STATUS"
+
+d="$(mk_clean_repo)"
+plant_advice 'echo "re-run install.sh to fix"' "$d"
+( cd "$d" && git add -A && git commit -qm "advice without the marker" )
+run "$sd" "$d" --quiet
+check_status "advice missing the home marker -> exit 1" 1 "$STATUS"
+check_contains "names the offending line" "$OUT" "re-run install.sh to fix"
+
+# An explicit --home counts as its own marker — the rule is "reaches the home", not "uses a variable".
+d="$(mk_clean_repo)"
+plant_advice 'echo "run keel uninstall --home \"$ihome\" to remove it"' "$d"
+( cd "$d" && git add -A && git commit -qm "advice with an explicit --home" )
+run "$sd" "$d" --quiet
+check_status "an explicit --home also satisfies it -> exit 0" 0 "$STATUS"
+
+# Structural scope, not a phrase list: a comment or a usage line naming the same command is not advice.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\n# re-run install.sh to fix\ncat <<EOF\n  install.sh --home DIR   bootstrap into DIR\nEOF\n' >> "$d/install.sh"
+( cd "$d" && git add -A && git commit -qm "comment and usage text only" )
+run "$sd" "$d" --quiet
+check_status "a comment / usage line naming the command is not advice -> exit 0" 0 "$STATUS"
+
 # --- 2. dead internal reference -> GAP -------------------------------------------------------------
 d="$(mk_clean_repo)"
 printf 'See `%s` for details.\n' "$fake_dead" > "$d/README.md"

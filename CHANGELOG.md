@@ -40,12 +40,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     advice needs **once**, from the same expression a bare re-run evaluates (`home_flag` in
     `install.sh`, `ihome_flag` in `tools/doctor.sh`, the closing health-check line in
     `install-pre-pr-gate.sh`), so the ordinary install still reads with the short friendly form and the
-    flag appears exactly where it is load-bearing. Eleven advice strings across the three tools were
-    routed through it. And rather than pin those six by name — which would say nothing about a seventh
-    — a test sweeps the **real output** of a retargeted install and its audit and fails if any line
-    telling the operator to run `install.sh`, `keel uninstall` or `doctor.sh --install` omits the home,
-    naming the offending line. Verified by mutation: dropping the flag from a single summary line fails
-    it with that line quoted.
+    flag appears exactly where it is load-bearing. Mode is the half a home flag cannot see, so
+    `--codex` installs carry that too: at the *default* home the home flag is correctly empty, yet a
+    bare re-run is Claude copy mode and would land in `~/.claude`. Fifteen advice strings across the
+    three tools now route through this, including the `keel/README.md` generated into the home —
+    advice read long after the install, and the only one an adopter meets with no terminal output
+    around it. **What pins the class is a source check, not an output sweep** (`tools/self/doctor.sh`
+    1c): most of `doctor`'s advice sits in findings that only fire on a *broken* install, so sweeping a
+    healthy run reaches none of them. The first version of this check was written that way — vacuous
+    for `doctor` entirely, and pinning today's phrasing rather than the class; its own review caught
+    that, along with a seventh site (`W-NOGIT-GIT-PROJECTS`) it had missed. The source check scopes
+    structurally — output calls and summary bullets, not a phrase list — so a comment or a usage line
+    naming the same command is correctly not advice, and no per-string allowlist is needed. A smaller
+    end-to-end test still asserts the mechanism *renders* in a real retargeted run, which a source
+    check cannot: it cannot tell an expanded flag from a literal `$home_flag` left in the text.
   - **`uninstall.sh` deleted a line that merely *mentioned* the core path** (dir #108). `install.sh`'s
     `has_core_import` is the definition of "the import line is wired" and requires whitespace/start/end
     boundaries around the token; `uninstall.sh` matched the same token by bare substring, so an

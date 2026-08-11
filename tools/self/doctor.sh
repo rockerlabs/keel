@@ -133,6 +133,46 @@ else
   say "  OK   core-@import pattern identical in install.sh / uninstall.sh / doctor.sh"
 fi
 
+# --- 1c. advised commands must be able to reach the home they are about --------------------------
+# dir #98's defect class: a tool prints "run install.sh" / "keel uninstall" / "doctor.sh --install"
+# while talking about a home that is NOT where a bare re-run lands, so following the advice cannot fix
+# what the message just described. Seven sites shipped it, each found only after the previous was
+# fixed. Each tool now derives its own suffix once (install.sh: $home_flag / $mode_flag /
+# $advise_install / $advise_uninstall / $doctor_arg; doctor.sh: $ihome_flag), so the rule this check
+# enforces is simply: any user-facing line naming one of those commands must carry one of those
+# markers, or an explicit --home.
+#
+# Checked at the SOURCE, not by running the tools: most of doctor's advice lives in findings that only
+# fire on a broken install, so an output sweep cannot reach them (an earlier output-based version of
+# this check was vacuous for doctor entirely, and its phrase list pinned today's wording rather than
+# the class — found by this ticket's own review). Two exclusions, both structural rather than
+# per-string: comment lines, and usage/help text (indented two spaces under a `Usage:` heredoc), which
+# documents the flags generically instead of advising about a specific install.
+# Scope: lines that are an actual output CALL (echo/say/warn/gap/hint), plus the summary's own
+# "  - " bullets. That is a structural rule, not a phrase list — it takes in every finding and every
+# summary line while leaving out usage/help heredocs, prose, and variable assignments (where the
+# marker is legitimately added at the print site instead). What it does NOT cover, stated rather than
+# silently missed: the --no-git breadcrumb generated into the core, which is deliberately a constant
+# string so doctor's staleness comparison stays stable.
+advice_re='install\.sh|keel uninstall|doctor\.sh --install'
+marker_re='home_flag|ihome_flag|doctor_arg|advise_install|advise_uninstall|--home|<repo>|<dir>'
+advice_bad=""
+for f in install.sh uninstall.sh tools/doctor.sh tools/install-pre-pr-gate.sh; do
+  [ -f "$repo_root/$f" ] || continue
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    advice_bad="$advice_bad
+    $f:$hit"
+  done < <(grep -nE '^ *(echo|say|warn|gap|hint) |^ *- ' "$repo_root/$f" 2>/dev/null \
+             | grep -E "$advice_re" \
+             | grep -vE "$marker_re" || true)
+done
+if [ -n "$advice_bad" ]; then
+  gap "advised command(s) cannot reach a retargeted home — add the tool's own home marker (dir #98):$advice_bad"
+else
+  say "  OK   advised commands all carry the home they are about"
+fi
+
 # --- 2. dead internal references ----------------------------------------------------------------
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must
 # resolve on disk. CHANGELOG.md is deliberately excluded — it documents history, and a renamed or

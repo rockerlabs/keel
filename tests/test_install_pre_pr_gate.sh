@@ -285,42 +285,36 @@ run sh -c "$sp_cmd repo-key"
 check_status "the generated command runs as ONE token despite the space" 0 "$STATUS"
 check_absent "no 'file not found' from the path splitting on the space" "$OUT" "No such file or directory"
 
-# --- dir #98 as a CLASS: no advised command may be unable to reach a retargeted home ---------------
-# Six separate sites shipped this same defect, each found only after the previous was fixed: an
-# instruction that re-resolves the home from scratch, printed by a tool talking about a home that is
-# not where a bare re-run lands. Rather than assert those six by name — which pins today's sites and
-# nothing about the seventh — sweep the REAL output of a retargeted install and its audit: every keel
-# command they tell the operator to run must name the home, or following it cannot fix what the message
-# just described.
+# --- dir #98 as a CLASS: end-to-end, on the output an adopter actually sees -----------------------
+# The exhaustive half of this lives in tools/self/doctor.sh check 1c, which reads the SOURCE — most of
+# doctor's advice sits in findings that only fire on a broken install, so no output sweep can reach
+# them (an earlier output-only version of this check was vacuous for doctor entirely). What is worth
+# asserting HERE is the other half: that the mechanism actually renders, in a real retargeted run,
+# rather than merely being present in the source.
 sweep_home="$SANDBOX/advice-sweep"
 run "$REPO_ROOT/install.sh" --home "$sweep_home" --no-hooks
 check_status "retargeted install for the advice sweep -> exit 0" 0 "$STATUS"
-sweep_out="$OUT"
-run "$doctor" --install "$sweep_home"
-sweep_out="$sweep_out
-$OUT"
-
-bad=""
-while IFS= read -r line; do
-  # Only lines that spell a runnable keel invocation are instructions; a usage line or prose that
-  # merely mentions a tool is not. Anything already naming the home (or any --home) is fine.
-  case "$line" in
-    *"install.sh"*|*"keel uninstall"*|*"doctor.sh --install"*) : ;;
-    *) continue ;;
-  esac
-  case "$line" in
-    *"--home"*|*"$sweep_home"*) continue ;;
-    *"install-pre-pr-gate.sh <repo>"*|*install-secret-guard*) continue ;;   # not home-scoped
-    *"re-run "*|*"run install.sh"*|*"remove Keel"*|*"health check"*|*"Update:"*|*"git pull && ./install.sh"*)
-      bad="$bad|$line" ;;
-  esac
-done <<EOF
-$sweep_out
-EOF
-if [ -n "$bad" ]; then
-  fail "every advised command reaches the retargeted home" "these do not name it: $bad"
-else
-  pass "every advised command reaches the retargeted home"
-fi
+check_contains "the summary's uninstall advice names the home" "$OUT" "keel uninstall --home \"$sweep_home\""
+check_absent "and no literal, unexpanded flag variable leaked into the text" "$OUT" '$home_flag'
+# The health-check and pull-then-rewire lines live in the LINKED summary, so assert them there.
+link_home="$SANDBOX/advice-sweep-link"
+run "$REPO_ROOT/install.sh" --link --home "$link_home" --no-hooks
+check_status "retargeted linked install -> exit 0" 0 "$STATUS"
+check_contains "the health-check advice names the home" "$OUT" "doctor.sh --install \"$link_home\""
+check_contains "the pull-then-rewire advice names the home" "$OUT" "./install.sh --link --home \"$link_home\""
+check_absent "no unexpanded doctor arg" "$OUT" '$doctor_arg'
+# The generated keel/README is advice too — it is read long after the install, in the home itself.
+check_contains "the generated keel/README names the home" "$(cat "$link_home/keel/README.md")" "--home \"$link_home\""
+check_absent "and its backticks survived as markdown, not command substitution" "$(cat "$link_home/keel/README.md")" "no such file"
+check_contains "README markdown intact" "$(cat "$link_home/keel/README.md")" '`readlink CORE.md`'
+# A --codex install needs --codex on its advice even at the DEFAULT home, where the home flag is
+# correctly empty: a bare re-run is Claude copy mode and would land in ~/.claude.
+cx_home="$SANDBOX/advice-codex/.codex"
+run "$REPO_ROOT/install.sh" --codex --home "$cx_home" --no-hooks
+check_status "retargeted codex install -> exit 0" 0 "$STATUS"
+check_contains "codex advice carries the mode as well as the home" "$OUT" "--codex --home \"$cx_home\""
+# ...and the ordinary install keeps the short, friendly form — the flag appears only where it earns it.
+run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
+check_contains "a default-home install still advises the bare command" "$OUT" "keel uninstall  (reverses"
 
 summary

@@ -291,8 +291,8 @@ echo "Restart Claude Code (hooks load only at session start) — then /polish un
 # Same rule as install.sh's home_flag and doctor's ihome_flag: a bare `doctor.sh --install` audits
 # ${KEEL_HOME:-$HOME/.claude}, so on a retargeted home it would report on a different install than the
 # one just wired (dir #98, found to be a class rather than a site).
+doctor_arg=""
 if [ -n "$scope_flag" ] && [ "$settings_dir" != "${KEEL_HOME:-${HOME:-}/.claude}" ]; then
-  echo "Health check any time: tools/doctor.sh --install \"$settings_dir\""
-else
-  echo "Health check any time: tools/doctor.sh --install"
+  doctor_arg=" \"$settings_dir\""
 fi
+echo "Health check any time: tools/doctor.sh --install$doctor_arg"
