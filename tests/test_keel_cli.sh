@@ -85,4 +85,24 @@ run "$orphan/keel" doctor
 check_status "orphaned keel (no siblings) -> exit 1" 1 "$STATUS"
 check_contains "orphaned keel explains itself" "$OUT" "cannot find the Keel checkout"
 
+# dir #98: the re-wire it advises must reach the home this CLI was installed into, not wherever a
+# bare re-run would land — bin/keel sits one level under that home, so $0's grandparent names it.
+rehome="$SANDBOX/rewire-home"; mkdir -p "$rehome/bin"
+cp "$REPO_ROOT/keel" "$rehome/bin/keel"; chmod +x "$rehome/bin/keel"
+printf '# ctx\n' > "$rehome/CLAUDE.md"
+rehome_p="$(cd "$rehome" && pwd -P)"   # keel resolves the home physically; /tmp is a symlink on macOS
+run "$rehome/bin/keel" doctor
+check_status "severed keel in a retargeted home -> exit 1" 1 "$STATUS"
+check_contains "and its re-wire advice names that home" "$OUT" "install.sh --home \"$rehome_p\""
+check_absent "no --codex on a CLAUDE.md home" "$OUT" "--codex"
+
+# ...and the MODE travels with it: bin/keel is wired in both modes, so a Codex home must not be told
+# to re-run Claude copy mode into itself. The mode is read off the home's own always-loaded file.
+cxhome="$SANDBOX/rewire-codex"; mkdir -p "$cxhome/bin"
+cp "$REPO_ROOT/keel" "$cxhome/bin/keel"; chmod +x "$cxhome/bin/keel"
+printf '# ctx\n' > "$cxhome/AGENTS.md"
+cxhome_p="$(cd "$cxhome" && pwd -P)"
+run "$cxhome/bin/keel" doctor
+check_contains "a Codex home gets --codex too" "$OUT" "install.sh --codex --home \"$cxhome_p\""
+
 summary

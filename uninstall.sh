@@ -11,9 +11,16 @@
 # hard-deleted. Refuse-to-clobber in reverse: a file that differs from what Keel shipped is treated as
 # yours and left in place.
 #
+# Mirrors install.sh's mode flags too: --codex reverses `install.sh --codex` (default home ~/.codex, the
+# always-loaded file is AGENTS.md instead of CLAUDE.md). Any one run touches ONE home, so it NAMES an
+# install of the other mode it finds rather than leaving it silently behind — and REFUSES outright when
+# the home it was pointed at holds the other mode, since most of what it removes is shared between the
+# two and it would otherwise half-dismantle that install (dir #109).
+#
 # Usage:
 #   uninstall.sh                 remove from ${KEEL_HOME:-$HOME/.claude} (prompts on a terminal)
 #   uninstall.sh --home DIR      remove from DIR
+#   uninstall.sh --codex         reverse an  install.sh --codex  (default home ~/.codex, AGENTS.md)
 #   uninstall.sh --yes           don't prompt (required when not run from a terminal)
 #   uninstall.sh --dry-run       show what WOULD be removed, change nothing
 #   uninstall.sh -h | --help
@@ -29,6 +36,7 @@ everything it takes out. Leaves your own files and the machine-global secret-gua
 Usage:
   uninstall.sh                 remove from ${KEEL_HOME:-$HOME/.claude} (prompts on a terminal)
   uninstall.sh --home DIR      remove from DIR
+  uninstall.sh --codex         reverse an  install.sh --codex  (default home ~/.codex, AGENTS.md)
   uninstall.sh --yes           don't prompt (required when not run from a terminal)
   uninstall.sh --dry-run       show what WOULD be removed, change nothing
   uninstall.sh -h | --help
@@ -38,9 +46,11 @@ EOF
 HOME_DIR="${KEEL_HOME:-}"
 ASSUME_YES=0
 DRY_RUN=0
+CODEX=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --home) shift; HOME_DIR="${1:?--home needs a DIR}" ;;
+    --codex) CODEX=1 ;;
     --yes|-y) ASSUME_YES=1 ;;
     --dry-run|-n) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -48,11 +58,145 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
-: "${HOME_DIR:=${HOME:?uninstall: set HOME, or pass --home DIR}/.claude}"
+# Home + context-file resolution mirrors install.sh's, flag for flag: a --codex install lands in
+# $HOME/.codex and writes AGENTS.md, so its reversal has to look in the same place for the same file.
+# The pairs are named because the mode checks below need the OTHER mode's pair — the one this run is
+# not operating on.
+CODEX_LEAF=".codex";  CODEX_CONTEXT="AGENTS.md"
+CLAUDE_LEAF=".claude"; CLAUDE_CONTEXT="CLAUDE.md"
+if [ "$CODEX" = 1 ]; then
+  leaf="$CODEX_LEAF";  CONTEXT_FILE="$CODEX_CONTEXT";  other_leaf="$CLAUDE_LEAF"; other_context="$CLAUDE_CONTEXT"; other_cmd="uninstall.sh"
+else
+  leaf="$CLAUDE_LEAF"; CONTEXT_FILE="$CLAUDE_CONTEXT"; other_leaf="$CODEX_LEAF";  other_context="$CODEX_CONTEXT";  other_cmd="uninstall.sh --codex"
+fi
+# Exactly install.sh's precedence: an explicit target (--home, else $KEEL_HOME) outranks the mode's
+# default leaf, so an install placed with `KEEL_HOME=X install.sh --codex` is reversed by
+# `KEEL_HOME=X uninstall.sh --codex`. The mode/home mismatch that precedence makes possible is caught
+# below rather than papered over here — see the refusal.
+: "${HOME_DIR:=${HOME:?uninstall: set HOME, or pass --home DIR}/$leaf}"
+
+# core_import_re — THE definition of "this line IS the core @import", byte-identical to install.sh's
+# has_core_import (which tools/doctor.sh --install mirrors too); tools/self/doctor.sh's check 1b holds
+# the three to it. The boundaries are load-bearing, not decoration: matching by bare substring, as this
+# used to, also hits a line that merely MENTIONS the path in prose — a backtick-quoted
+# `@~/.claude/keel/CORE.md` in someone's own notes — and silently deletes it, contradicting the promise
+# printed with the strip below, that the rest of your file is untouched (dir #108).
+core_import_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
+
+# has_keel_rails FILE — the file carries Keel's always-on rails, embedded or imported.
+has_keel_rails() {
+  [ -f "$1" ] || return 1
+  grep -q 'KEEL-CORE-BEGIN' "$1" 2>/dev/null || grep -qE "$core_import_re" "$1" 2>/dev/null
+}
+
+# is_keel_owned PATH SHIPPED — the removal steps' own rule for "this slot is Keel's, not yours": a
+# symlink we wired, or a regular file byte-identical to what this checkout ships. A drifted copy is
+# yours. Factored out here because home_has_keel_content asks the same question the steps do.
+is_keel_owned() {
+  [ -L "$1" ] && return 0
+  [ -f "$1" ] && [ -n "${2:-}" ] && cmp -s "$1" "$2" && return 0
+  return 1
+}
+
+# home_has_keel_content DIR — did an install ever run against DIR? Deliberately independent of the
+# rails: an install over a pre-existing, foreign CLAUDE.md leaves that file untouched (install.sh's
+# foreign_core path) while still wiring commands, bin/keel and the FRAMEWORK/PRINCIPLES copies, so
+# "carries Keel's rails" is not the same question and answering it that way reads a real Keel home as
+# empty. Takes the dir rather than closing over $HOME_DIR: BOTH callers below ask this about a home —
+# the mismatch guard about the one being uninstalled, other_mode_hint about the one it is leaving
+# alone — and the second is where keying on rails hid the same foreign-core case a THIRD time.
+home_has_keel_content() {
+  local home="$1" f slot
+  if [ -d "$home/keel" ] || [ -L "$home/bin/keel" ]; then return 0; fi
+  for f in FRAMEWORK.md PRINCIPLES.md; do
+    if is_keel_owned "$home/$f" "$root/$f"; then return 0; fi
+  done
+  if [ -d "$root/commands" ] && [ -d "$home/commands" ]; then
+    for f in "$root"/commands/*.md; do
+      [ -f "$f" ] || continue
+      slot="$home/commands/$(basename "$f")"
+      if is_keel_owned "$slot" "$f"; then return 0; fi
+    done
+  fi
+  return 1
+}
+
+# other_mode_hint — this run only ever touches ONE home, and the two install modes live in different
+# ones. Without this an adopter who ran both is told "done"/"nothing to do" with a full set of Keel
+# rails still loading into every session of the other harness. Symmetric on purpose: a --codex run
+# names a leftover Claude install exactly as a plain run names a leftover Codex one (an asymmetric
+# version of this was what let the mis-target refused below print a clean "done").
+#
+# The test is content OR rails, not rails alone: rails alone repeats, here, the exact miss the mismatch
+# guard below was re-keyed away from — a foreign-core install writes no rails into the file it kept, so
+# a Claude home holding bin/keel, commands/ and both product copies went unmentioned (found by the
+# operator's third /code-review pass, after the same defect had already been fixed 40 lines down). The
+# union is right rather than merely wider: content catches an install, rails catch a home migrated by
+# hand to nothing but an import line, and the hint is advisory — it removes nothing, so a false mention
+# costs a sentence while a missed one costs a silently-live set of rails.
+#
+# Called explicitly at each of the three reporting exits rather than from an EXIT trap: the trap would
+# also fire on the refusal paths (no --yes on a non-terminal, an unknown flag, the mismatch below),
+# where a leftover-install hint is noise attached to a run that did nothing. The exit that matters most
+# is the earliest — "no Keel home at ~/.claude" is exactly the run a Codex-only adopter makes first
+# (dir #109).
+#
+# The advised command always carries --home, exactly as the mismatch refusal below does, and for the
+# same reason: a bare `$other_cmd` re-resolves the home from scratch, and an explicit target outranks
+# the mode leaf (see the precedence above). So under KEEL_HOME the advice would send the operator BACK
+# to the home they just uninstalled — where it finds nothing, exits 0, and prints no hint of its own
+# (its `other` is now this home), leaving the install this hint exists to name still fully wired.
+# Reproduced by the operator's fourth /code-review pass. The probe itself still looks at $HOME/<leaf>:
+# an explicit target names THIS mode's home and says nothing about where the other mode's lives, so the
+# conventional location is the only thing there is to go on — but naming it in the command means the
+# advice reaches whatever it did find.
+other_mode_hint() {
+  [ -n "${HOME:-}" ] || return 0
+  local other="$HOME/$other_leaf"
+  [ "$other" != "$HOME_DIR" ] || return 0
+  home_has_keel_content "$other" || has_keel_rails "$other/$other_context" || return 0
+  echo "  • A Keel install is still in place at $other — this run did not touch it."
+  echo "    Remove it too:  $other_cmd --home \"$other\""
+}
 
 if [ ! -d "$HOME_DIR" ]; then
   echo "uninstall: nothing to do — no Keel home at $HOME_DIR"
+  other_mode_hint
   exit 0
+fi
+
+# Mode/home mismatch — refuse rather than half-dismantle. Steps 1-4 below (the linked keel/ dir, the
+# CLI symlink, the commands, the FRAMEWORK/PRINCIPLES copies) are mode-AGNOSTIC and would fire happily
+# on any Keel home, while only step 5 is mode-specific. So a --codex run aimed at a Claude home strips
+# the shared half and leaves CLAUDE.md loading its rails forever — a half-dismantled install reported
+# as a clean success. Reachable because an explicit target outranks the mode leaf (above):
+# `KEEL_HOME=<claude-home> uninstall.sh --codex` is the felt case, and the reverse is just as possible.
+#
+# The three conditions are each load-bearing:
+#   - this mode's context file ABSENT — its presence is what says an install of THIS mode ran here
+#     (install always leaves one, whether it wrote the file or kept yours);
+#   - the other mode's context file PRESENT — plain existence, NOT "carries Keel's rails". Requiring
+#     rails was the first version of this guard and it let the whole foreign-core case through: an
+#     install over someone's own pre-Keel CLAUDE.md never writes rails into it, so a --codex run aimed
+#     there sailed past the guard and removed the commands, the CLI and both product copies of an
+#     install nobody asked it to touch (found by the operator's second /code-review pass). The cost of
+#     dropping the rails test is that this arm can't tell the other mode's context file from a file of
+#     yours that happens to share its name — hence the hedge in the message below. Removing this
+#     condition instead would DEADLOCK a Keel home with neither context file: each mode would refuse and
+#     point at the other, leaving the install unremovable;
+#   - the home holding Keel content — without it, a bare dir containing only the user's own AGENTS.md
+#     would be refused with advice to re-run under --codex, which would then find nothing to do. With
+#     it, that case falls through to the honest "no Keel-owned content" no-op below.
+# A home with NEITHER context file is an ordinary empty/foreign dir, or a Keel home whose own context
+# file you deleted — neither is a mismatch, and both go on to uninstall (or no-op) normally.
+if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content "$HOME_DIR"; then
+  echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has $other_context instead." >&2
+  echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
+  echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context sitting there." >&2
+  echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$HOME_DIR\"" >&2
+  echo "  (If that $other_context is your own file and not Keel's, this run is what you wanted —" >&2
+  echo "   rename it, or point --home at the right home.)" >&2
+  exit 2
 fi
 
 echo "Keel uninstall ← $HOME_DIR"
@@ -116,7 +260,7 @@ if [ -d "$root/commands" ]; then
     [ -f "$cmd" ] || continue
     name="$(basename "$cmd")"
     slot="$HOME_DIR/commands/$name"
-    if [ -L "$slot" ] || { [ -f "$slot" ] && cmp -s "$slot" "$cmd"; }; then
+    if is_keel_owned "$slot" "$cmd"; then
       take "$slot"
     elif [ -e "$slot" ]; then
       echo "  =    commands/$name differs from Keel's — kept (yours)"
@@ -126,7 +270,7 @@ if [ -d "$root/commands" ]; then
       *)
         if [ ! -f "$root/commands/keel-$name" ]; then
           alias_slot="$HOME_DIR/commands/keel-$name"
-          if [ -L "$alias_slot" ] || { [ -f "$alias_slot" ] && cmp -s "$alias_slot" "$cmd"; }; then
+          if is_keel_owned "$alias_slot" "$cmd"; then
             take "$alias_slot"
           fi
         fi ;;
@@ -139,35 +283,39 @@ fi
 # byte-identical to the shipped file). A drifted copy is treated as yours and left.
 for f in FRAMEWORK.md PRINCIPLES.md; do
   slot="$HOME_DIR/$f"
-  if [ -L "$slot" ] || { [ -f "$slot" ] && cmp -s "$slot" "$root/$f"; }; then
+  if is_keel_owned "$slot" "$root/$f"; then
     take "$slot"
   elif [ -e "$slot" ]; then
     echo "  =    $f differs from Keel's — kept (yours)"
   fi
 done
 
-# 5. The global CLAUDE.md — never deleted (it may hold your edits): only the Keel-delivered rails come
-# out, i.e. the @import line and/or the embedded KEEL-CORE block. Backed up before the edit.
-gclaude="$HOME_DIR/CLAUDE.md"
-if [ -f "$gclaude" ] \
-   && { grep -q 'KEEL-CORE-BEGIN' "$gclaude" \
-        || grep -qE '@[^[:space:]]*keel/CORE\.md' "$gclaude"; }; then
+# 5. The global always-loaded file (CLAUDE.md; AGENTS.md under --codex) — never deleted (it may hold
+# your edits): only the Keel-delivered rails come out, i.e. the @import line and/or the embedded
+# KEEL-CORE block. Backed up before the edit.
+# (core_import_re / has_keel_rails — and why the boundaries matter — are defined near the top.)
+gclaude="$HOME_DIR/$CONTEXT_FILE"
+if has_keel_rails "$gclaude"; then
   if [ "$DRY_RUN" = 1 ]; then
-    echo "  would strip the Keel rails (import line / KEEL-CORE block) from CLAUDE.md"
+    echo "  would strip the Keel rails (import line / KEEL-CORE block) from $CONTEXT_FILE"
     removed=$((removed + 1))
   else
     _ensure_backup
     mkdir -p "$backup"
-    cp "$gclaude" "$backup/CLAUDE.md"
-    # Drop the embedded block (markers inclusive) and any line carrying the keel/CORE.md import token.
-    awk '
+    cp "$gclaude" "$backup/$CONTEXT_FILE"
+    # Drop the embedded block (markers inclusive) and any line carrying the core import. The regex
+    # arrives through ENVIRON, not -v: awk applies escape processing to a -v assignment, which would
+    # eat the `\.` and quietly widen the pattern — the exact class of drift this shared definition exists
+    # to prevent.
+    KEEL_IMPORT_RE="$core_import_re" awk '
+      BEGIN             { re = ENVIRON["KEEL_IMPORT_RE"] }
       /KEEL-CORE-BEGIN/ { skip=1; next }
       /KEEL-CORE-END/   { skip=0; next }
       skip              { next }
-      /@[^[:space:]]*keel\/CORE\.md/ { next }
+      $0 ~ re           { next }
       { print }
     ' "$gclaude" > "$gclaude.keeltmp.$$" && mv -f "$gclaude.keeltmp.$$" "$gclaude"
-    echo "  stripped the Keel rails from CLAUDE.md (backup: $backup/CLAUDE.md; the rest of your file is untouched)"
+    echo "  stripped the Keel rails from $CONTEXT_FILE (backup: $backup/$CONTEXT_FILE; the rest of your file is untouched)"
     removed=$((removed + 1))
   fi
 fi
@@ -176,14 +324,17 @@ fi
 echo
 if [ "$removed" = 0 ]; then
   echo "uninstall: found no Keel-owned content at $HOME_DIR — nothing removed."
+  other_mode_hint
   exit 0
 fi
 if [ "$DRY_RUN" = 1 ]; then
   echo "uninstall: dry run — $removed item(s) would be removed. Re-run without --dry-run to apply."
+  other_mode_hint
   exit 0
 fi
 echo "uninstall: done — $removed item(s) removed (backed up in $backup)."
 echo "  • Your INSTANCE.md / LEARNINGS.md / IDEAS.md and any command you authored were left in place."
+other_mode_hint
 
 # The machine-global secret-guard is deliberately NOT removed: it's a shared safety net that may guard
 # repos beyond Keel, and dropping it silently would weaken protection. Report it as an opt-in manual step.

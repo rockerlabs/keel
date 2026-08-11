@@ -104,6 +104,25 @@ default_home_leaf=".claude"
 [ "$CODEX" = 1 ] && default_home_leaf=".codex"
 : "${HOME_DIR:=${HOME:?install: set HOME, or pass --home DIR}/$default_home_leaf}"
 
+# home_flag — the ` --home "DIR"` suffix every command this script ADVISES has to carry when this
+# install is retargeted, and nothing when it isn't. dir #98 turned out to be a class, not a site: five
+# separate places across install.sh/uninstall.sh/doctor.sh/install-pre-pr-gate.sh told the operator to
+# run a command that re-resolves the home from scratch and therefore could not reach the install being
+# talked about. Deriving the suffix ONCE, from the same expression a bare re-run would evaluate, is what
+# stops the next advice string from re-opening it: if the two agree the flag is empty, so the friendly
+# short form survives for the ordinary install, and it appears exactly when it is load-bearing.
+if [ "$HOME_DIR" = "${KEEL_HOME:-${HOME:-}/$default_home_leaf}" ]; then home_flag=""; doctor_arg=""
+else home_flag=" --home \"$HOME_DIR\""; doctor_arg=" \"$HOME_DIR\""; fi   # doctor takes the home positionally
+# The MODE is half of "can this command reach the install", and the half home_flag can't see: a bare
+# re-run is Claude copy mode, so a --codex install needs --codex on every advised command even when the
+# home is the default one (there, home_flag is correctly empty and would have left the advice pointing
+# at ~/.claude). Kept a separate variable rather than folded into home_flag because the two answer
+# different questions and a --codex install can be retargeted as well, needing both.
+mode_flag=""
+[ "$CODEX" = 1 ] && mode_flag=" --codex"
+advise_install="install.sh$mode_flag$home_flag"      # re-run THIS install
+advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
+
 # CONTEXT_FILE — the harness's global always-loaded file name. Everywhere copy mode below writes or
 # mentions "the global context file", it routes through this instead of a hardcoded CLAUDE.md.
 CONTEXT_FILE="CLAUDE.md"
@@ -129,7 +148,7 @@ if [ "$CODEX" = 0 ] && [ -f "$HOME_DIR/keel/CORE.md" ] && [ ! -L "$HOME_DIR/keel
   LINK=1
   if [ "$NOGIT" = 0 ] && [ "$WITHGIT" = 0 ]; then
     NOGIT=1
-    echo "install: this home is a --no-git install — keeping the trim (restore the git rails: install.sh --link --with-git)"
+    echo "install: this home is a --no-git install — keeping the trim (restore the git rails: install.sh --link$home_flag --with-git)"
   fi
 fi
 
@@ -428,20 +447,20 @@ if [ "$LINK" = 1 ]; then
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
   # moves — the symlinks themselves are the live pointer (readlink shows where).
   if [ ! -f "$link_dir/README.md" ]; then
-    atomic_write "$link_dir/README.md" <<'EOF'
+    atomic_write "$link_dir/README.md" <<EOF
 # keel/ — the Keel consumption point (linked install)
 
-Everything here is a symlink into the Keel checkout — `readlink CORE.md` shows where that is.
-`git pull` in the checkout refreshes them all; a running session keeps what it loaded at start.
-After a pull, re-run `install.sh --link` once — a pull refreshes content, not composition
+Everything here is a symlink into the Keel checkout — \`readlink CORE.md\` shows where that is.
+\`git pull\` in the checkout refreshes them all; a running session keeps what it loaded at start.
+After a pull, re-run \`install.sh --link$home_flag\` once — a pull refreshes content, not composition
 (a newly shipped file doesn't wire itself).
 
-- `CORE.md` — the always-on rails, @imported by the global `CLAUDE.md` one level up
-  (a `--no-git` install generates a trimmed copy here instead of the symlink — re-runs refresh it)
-- `FRAMEWORK.md`, `PRINCIPLES.md` — read on demand via the map in that `CLAUDE.md`
+- \`CORE.md\` — the always-on rails, @imported by the global \`CLAUDE.md\` one level up
+  (a \`--no-git\` install generates a trimmed copy here instead of the symlink — re-runs refresh it)
+- \`FRAMEWORK.md\`, \`PRINCIPLES.md\` — read on demand via the map in that \`CLAUDE.md\`
 
-To remove Keel: delete this dir, the one `@` import line in the global `CLAUDE.md`, and any
-`commands/` symlinks (one level up) into the checkout. Health check: `tools/doctor.sh --install`
+To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUDE.md\`, and any
+\`commands/\` symlinks (one level up) into the checkout. Health check: \`tools/doctor.sh --install$doctor_arg\`
 (run from the checkout).
 EOF
     echo "  +    keel/README.md"
@@ -639,7 +658,7 @@ for f in "${vfiles[@]}"; do
   if [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
   elif [ -L "$HOME_DIR/$f" ]; then
-    echo "  MISS $f (dangling symlink — did the checkout move? re-run install.sh --link from its new home)" >&2; missing=1
+    echo "  MISS $f (dangling symlink — did the checkout move? re-run install.sh --link$home_flag from its new home)" >&2; missing=1
   else
     echo "  MISS $f" >&2; missing=1
   fi
@@ -665,7 +684,7 @@ if [ "$LINK" = 1 ]; then
   fi
   if [ "$NOGIT" = 1 ]; then
     echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
-    echo "       (if git enters this machine's workflow, restore them first:  install.sh --link --with-git)"
+    echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
   fi
 fi
 
@@ -713,7 +732,7 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   if [ -L "$HOME_DIR/bin/keel" ] && [ "$HOME_DIR/bin/keel" -ef "$root/keel" ]; then
     echo "  OK   keel CLI (bin/keel)"
   else
-    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — run 'install.sh' again, or add an alias by hand."
+    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — run '$advise_install' again, or add an alias by hand."
   fi
 fi
 
@@ -770,12 +789,19 @@ fi
 if [ "$CODEX" = 0 ] && [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then
   echo "  - /polish shipped, its gate did NOT — opt in per project:  tools/install-pre-pr-gate.sh <repo>"
   echo "    (blocks the agent's own gh pr create until /polish runs clean; your own terminal is never gated)"
+  # dir #98: --home/KEEL_HOME retargets THIS install, but the gate installer is a separate run with its
+  # own default home — say the matching flag here, at the one moment the retargeted path is on screen,
+  # rather than letting the two installers quietly describe different machines.
+  if [ "$HOME_DIR" != "${HOME:-}/.claude" ]; then
+    echo "    This install is retargeted to $HOME_DIR — machine-global gate wiring needs the same home:"
+    echo "      tools/install-pre-pr-gate.sh --home \"$HOME_DIR\"     (per-repo wiring is unaffected)"
+  fi
 fi
 if [ "$CODEX" = 1 ]; then
   cat <<EOF
   - $CONTEXT_FILE is a real file, edited in place — Codex reads it with no import mechanism (that's a
-    Claude Code thing). Update later: re-run the install (the one-liner, or  git pull && ./install.sh
-    --codex --home "$HOME_DIR"  from a kept checkout) — refreshes FRAMEWORK.md/PRINCIPLES.md and offers
+    Claude Code thing). Update later: re-run the install (the one-liner, or  git pull && ./$advise_install
+    from a kept checkout) — refreshes FRAMEWORK.md/PRINCIPLES.md and offers
     to refresh the KEEL-CORE block if it drifted from a newer release; your edits outside the block are
     always kept.
   - commands/ was NOT wired — Codex reads skills from  ~/.codex/skills/<name>/SKILL.md  instead; see
@@ -786,11 +812,11 @@ elif [ "$LINK" = 1 ]; then
   cat <<EOF
   - This clone IS the installation — everything points into it, so never delete it, and park it
     somewhere permanent BEFORE re-running (moving it later dangles every link).
-    Update:  git pull  — rails/docs/commands refresh in place; then  ./install.sh --link  once, to
+    Update:  git pull  — rails/docs/commands refresh in place; then  ./install.sh --link$home_flag  once, to
     wire anything a release ADDED (a pull refreshes content, not composition).
     A pull changes your next session's rails without review — pull deliberately, or pin a tag.
-  - health check:  tools/doctor.sh --install     (everything shipped is wired, nothing dangles)
-  - remove Keel:  keel uninstall  (reverses this, backing up what it removes) — or by hand: delete
+  - health check:  tools/doctor.sh --install$doctor_arg     (everything shipped is wired, nothing dangles)
+  - remove Keel:  $advise_uninstall  (reverses this, backing up what it removes) — or by hand: delete
     $HOME_DIR/keel/ , the @import line in  $HOME_DIR/CLAUDE.md , the  $HOME_DIR/commands/  symlinks,
     and  $HOME_DIR/bin/keel .
   - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md  private.
@@ -803,23 +829,23 @@ elif [ "$EPHEMERAL" = 1 ]; then
     the files above stand alone. The  keel  CLI,  keel uninstall , tools/install-pre-pr-gate.sh (the
     /polish gate), and the commands that shell out to Keel's tools/ (/keel-setup project drafting,
     /init-project) need a KEPT checkout — either re-run the one-liner with  --link  (keeps a checkout
-    at ~/keel and wires everything to it), or git clone the keel repo and run  ./install.sh  from it
+    at ~/keel and wires everything to it), or git clone the keel repo and run  ./$advise_install  from it
     (re-runs never clobber your files).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
   - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, the
-    commands/ entries) — CLAUDE.md and INSTANCE.md are yours; or get a checkout and run  keel uninstall .
+    commands/ entries) — CLAUDE.md and INSTANCE.md are yours; or get a checkout and run  $advise_uninstall .
 EOF
 else
   cat <<EOF
   - KEEP this keel clone — /keel-setup and /init-project run its tools/. Park it anywhere out of the
     way (e.g. ~/keel); it's Keel itself, not one of your projects, so don't register it. To update
-    later:  git pull && ./install.sh
+    later:  git pull && ./$advise_install
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, /init-project, …
   - prefer to do it by hand? edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md
     private, and scaffold/audit a project:  tools/init-project.sh <dir>  ;  tools/doctor.sh <dir>
   - measure Keel's impact: new projects (init-project) are tracked by default; for an existing repo run
     tools/keel-impact.sh enable <dir>  then score a session with  /keel-score
-  - remove Keel later:  keel uninstall  (reverses this install, backing up what it removes)
+  - remove Keel later:  $advise_uninstall  (reverses this install, backing up what it removes)
 EOF
 fi

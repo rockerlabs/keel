@@ -348,10 +348,16 @@ if [ "$INSTALL_MODE" = 1 ]; then
     echo "doctor: --install takes at most one HOME dir" >&2; exit 2
   fi
   ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/.claude}}"
+  # ihome_flag — the ` --home "DIR"` every command this mode ADVISES must carry when $ihome is not
+  # where a bare re-run would land. Same rule, and the same reason, as install.sh's home_flag: an
+  # instruction that re-resolves the home from scratch cannot fix the install this audit is about, so
+  # the finding would never clear however faithfully it was followed (dir #98, found to be a class).
+  if [ "$ihome" = "${KEEL_HOME:-${HOME:-}/.claude}" ]; then ihome_flag=""
+  else                                                      ihome_flag=" --home \"$ihome\""; fi
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
-    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh)"
+    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh$ihome_flag)"
     flush_notes ""
     finish
   fi
@@ -363,7 +369,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     if [ ! -e "$l" ]; then
-      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link from its home)"
+      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link$ihome_flag from its home)"
       continue
     fi
     b="$(basename "$l")"
@@ -381,7 +387,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         case "$b" in FRAMEWORK.md|PRINCIPLES.md) tgt="$repo_root/$b" ;; *) tgt="" ;; esac ;;
     esac
     if [ -n "$tgt" ] && [ -f "$tgt" ] && [ ! "$l" -ef "$tgt" ]; then
-      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link from here if this is the live one"
+      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link$ihome_flag from here if this is the live one"
     fi
   done
 
@@ -390,11 +396,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # purpose: an embedded block is legitimate copy mode here, an un-migrated WARN there.)
   gclaude="$ihome/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
-    gap G-RAILS-MISSING "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh)"
+    gap G-RAILS-MISSING "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh$ihome_flag)"
   # (import-line regex: mirror of install.sh's has_core_import() — keep the two in sync)
   elif grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
-      gap G-RAILS-IMPORT-BROKEN "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link)"
+      gap G-RAILS-IMPORT-BROKEN "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link$ihome_flag)"
     elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
       warn W-RAILS-DOUBLE "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
     elif [ ! -L "$ihome/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$ihome/keel/CORE.md"; then
@@ -411,7 +417,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$ref_trim" = "$inst_trim" ]; then
         say "  OK   core rails: linked, trimmed (--no-git — code/git rails not installed)"
       else
-        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh --link (a re-run keeps the trim and refreshes it)"
+        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh --link$ihome_flag (a re-run keeps the trim and refreshes it)"
       fi
       git_projects=0
       if [ -f "$ihome/INSTANCE.md" ]; then
@@ -425,17 +431,17 @@ if [ "$INSTALL_MODE" = 1 ]; then
                   | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
       fi
       if [ "$git_projects" -gt 0 ]; then
-        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link --with-git"
+        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link$ihome_flag --with-git"
       fi
     elif [ ! -L "$ihome/keel/CORE.md" ]; then
-      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link"
+      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link$ihome_flag"
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    say "  OK   core rails: embedded copy (copy mode; install.sh re-runs check drift)"
+    say "  OK   core rails: embedded copy (copy mode; a re-run checks for drift)"
   else
-    warn W-RAILS-UNWIRED "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh, or migrate: install.sh --link)"
+    warn W-RAILS-UNWIRED "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$ihome_flag, or migrate: install.sh --link)"
   fi
 
   # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
@@ -443,7 +449,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # pointing at the root name would silently keep reading.
   for f in FRAMEWORK.md PRINCIPLES.md; do
     if [ ! -f "$ihome/keel/$f" ] && [ ! -f "$ihome/$f" ]; then
-      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh)"
+      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh$ihome_flag)"
     elif [ -f "$ihome/keel/$f" ] && [ -e "$ihome/$f" ] && [ ! -L "$ihome/$f" ]; then
       warn W-TIER-SHADOW "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your CLAUDE.md map at keel/$f, then remove the copy"
     fi
@@ -464,7 +470,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ "$wired" = "$total" ]; then
     say "  OK   commands: $wired of $total shipped are wired"
   else
-    warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh; or ignore this if declined deliberately)"
+    warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
   fi
 
   # The keel CLI: install wires bin/keel as a symlink into the checkout. Only flag it when this
@@ -477,10 +483,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$kl" -ef "$repo_root/keel" ]; then
         say "  OK   keel CLI: wired ($kl)"
       else
-        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh from here if this is the live one"
+        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh$ihome_flag from here if this is the live one"
       fi
     else
-      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh (or add an alias by hand)"
+      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$ihome_flag (or add an alias by hand)"
     fi
   fi
 
@@ -498,7 +504,15 @@ if [ "$INSTALL_MODE" = 1 ]; then
     if gate_hook_wired "$ihome/settings.json"; then
       say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
     else
-      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run --global there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
+      # The advised flag must be able to reach the home this finding just NAMED, so the test is
+      # literally "does --global resolve to $ihome" — i.e. compare against ${KEEL_HOME:-$HOME/.claude},
+      # the expression install-pre-pr-gate.sh's own --global evaluates. Comparing against $HOME/.claude
+      # alone is the same defect mirrored: with KEEL_HOME set elsewhere and doctor pointed at
+      # $HOME/.claude, --global would wire $KEEL_HOME and the warning would never clear (reproduced by
+      # the operator's fifth /code-review pass). install.sh --home retargets WITHOUT exporting
+      # KEEL_HOME — dir #98's whole premise — so both halves of this really happen.
+      if [ "$ihome" = "${KEEL_HOME:-${HOME:-}/.claude}" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
+      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi
   fi
 

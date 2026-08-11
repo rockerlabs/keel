@@ -5,8 +5,18 @@
 #                                            scope — the default; only sessions IN this repo are gated)
 #   install-pre-pr-gate.sh --global          wire into ~/.claude/settings.json instead — EVERY repo you
 #                                            open on this machine gets the gate, not just this one
+#   install-pre-pr-gate.sh --home DIR        --global, but into DIR/settings.json — the flag that lets
+#                                            this follow an  install.sh --home DIR  install (dir #98)
 #   install-pre-pr-gate.sh --force …         overwrite a pre-existing, DIFFERENT hook on the same
 #                                            event+matcher (backs up settings.json first; default: refuse)
+#
+# --home exists because `install.sh --home DIR` retargets the whole install WITHOUT exporting KEEL_HOME:
+# without it, the commands lived in DIR while this installer's --global wrote hooks to ~/.claude — two
+# installers internally consistent but describing different machines, with nothing said at either
+# install. They now take the same flag, and install.sh's own summary names it. The caveat --home can't
+# engineer away is stated at the point of install: which global settings.json the HARNESS reads is the
+# harness's decision (Claude Code reads $HOME/.claude), so a retargeted home is only really global if
+# your harness is pointed there too.
 #
 # Ships `/polish` (commands/polish.md) + its enforcement (tools/pre-pr-gate.sh) to adopters, not just the
 # maintainer (dir #68). `install.sh` now drops `polish.md` from its skip list unconditionally, but wires
@@ -69,33 +79,72 @@ install-pre-pr-gate — wire the /polish pre-PR gate's 6 hooks into Claude Code 
 Usage:
   install-pre-pr-gate.sh <repo-path>     wire into <repo-path>/.claude/settings.json (project scope)
   install-pre-pr-gate.sh --global        wire into ~/.claude/settings.json (every repo on this machine)
+  install-pre-pr-gate.sh --home DIR      --global, but into DIR/settings.json (follows install.sh --home)
   install-pre-pr-gate.sh --force …       replace a pre-existing, different hook on the same event+matcher
   install-pre-pr-gate.sh -h | --help
 EOF
 }
 
 force=0
-global=0
+home_dir=""
+scope_flag=""   # empty = project scope (a repo path); set = machine-global, and names the flag that asked
 rest=""
-for a in "$@"; do
-  case "$a" in
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --force) force=1 ;;
-    --global) global=1 ;;
+    # --home is --global with an explicit target, so it stays the flag every message names when both
+    # are passed — it's the one that actually decides where the hooks land.
+    --global) [ -n "$home_dir" ] || scope_flag="--global" ;;
+    --home)
+      shift
+      # An EMPTY DIR is rejected as loudly as a missing one: `--home "$KEEL_HOME"` in a shell where
+      # KEEL_HOME was never exported is exactly the situation dir #98 describes (install.sh --home
+      # does not export it), and falling through to $HOME/.claude there would silently re-create the
+      # split install this flag exists to close — including skipping the NOTE below, since the
+      # resolved dir would then equal the default. A leading dash is a swallowed flag, not a path.
+      case "${1:-}" in
+        "")  echo "install-pre-pr-gate.sh: --home needs a DIR (got nothing)" >&2; exit 2 ;;
+        -*)  echo "install-pre-pr-gate.sh: --home needs a DIR, got the flag '$1'" >&2; exit 2 ;;
+      esac
+      home_dir="$1"; scope_flag="--home" ;;
     -h|--help) usage; exit 0 ;;
     *) if [ -n "$rest" ]; then
-         echo "install-pre-pr-gate.sh: unexpected extra argument '$a' — one repo path (or --global) per run" >&2
+         echo "install-pre-pr-gate.sh: unexpected extra argument '$1' — one repo path (or --global/--home DIR) per run" >&2
          exit 2
        fi
-       rest="$a" ;;
+       rest="$1" ;;
   esac
+  shift
 done
 set -- ${rest:+"$rest"}
 
-if [ "$global" = 1 ]; then
-  [ -z "${1:-}" ] || { echo "install-pre-pr-gate.sh: --global doesn't take a repo path" >&2; exit 2; }
-  settings_dir="${KEEL_HOME:-${HOME:?install-pre-pr-gate: --global needs HOME set}/.claude}"
-  echo "install-pre-pr-gate: --global wires EVERY repo on this machine — the agent's gh pr create is" >&2
+if [ -n "$scope_flag" ]; then
+  [ -z "${1:-}" ] || { echo "install-pre-pr-gate.sh: $scope_flag doesn't take a repo path" >&2; exit 2; }
+  # Precedence, in one expression: --home DIR > $KEEL_HOME > $HOME/.claude. The ${HOME:?} is evaluated
+  # only if both earlier candidates are empty, so --home still works with HOME unset.
+  settings_dir="${home_dir:-${KEEL_HOME:-${HOME:?install-pre-pr-gate: --global needs HOME set, or pass --home DIR}/.claude}}"
+  # An explicitly-typed --home DIR must EXIST. The flag's whole purpose is to follow an
+  # `install.sh --home DIR` install, so the dir is there by construction — while `mkdir -p` below would
+  # happily accept a typo, write a complete settings.json into a brand-new directory nothing reads,
+  # print "wired into …" and exit 0. The adopter then believes the gate is on and it is nowhere
+  # (`--home ~/.keel-hom` reproduced exactly that). The project-scope arm below validates its target
+  # with `git rev-parse` for the same reason. Deliberately NOT applied to the $KEEL_HOME/$HOME fallback:
+  # that path is a documented default this ticket didn't open, and creating it is its existing contract.
+  if [ -n "$home_dir" ] && [ ! -d "$home_dir" ]; then
+    echo "install-pre-pr-gate.sh: --home $home_dir does not exist (or is not a directory)." >&2
+    echo "  --home names a home an install already created; it is not a place to create one. Nothing" >&2
+    echo "  was changed. Check the path, or run install.sh --home \"$home_dir\" first." >&2
+    exit 2
+  fi
+  echo "install-pre-pr-gate: $scope_flag wires EVERY repo on this machine — the agent's gh pr create is" >&2
   echo "  hard-denied without a matching /polish receipt in every project you open here, not just this one." >&2
+  # dir #98's residual, which no flag can close: where the harness looks for its global settings is the
+  # harness's decision, not this installer's. Stated, not engineered away.
+  if [ "$settings_dir" != "${HOME:-}/.claude" ]; then
+    echo "  NOTE Claude Code reads ${HOME:-\$HOME}/.claude/settings.json as its global scope; this run targets" >&2
+    echo "  $settings_dir (matching an install.sh --home / KEEL_HOME install). If your harness isn't" >&2
+    echo "  pointed at that home, wire per repo instead:  install-pre-pr-gate.sh <repo>" >&2
+  fi
 elif [ -n "${1:-}" ]; then
   repo="$1"
   git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
@@ -239,4 +288,11 @@ done <<<"$statuses"
 
 echo "install-pre-pr-gate: wired into $settings"
 echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."
-echo "Health check any time: tools/doctor.sh --install"
+# Same rule as install.sh's home_flag and doctor's ihome_flag: a bare `doctor.sh --install` audits
+# ${KEEL_HOME:-$HOME/.claude}, so on a retargeted home it would report on a different install than the
+# one just wired (dir #98, found to be a class rather than a site).
+doctor_arg=""
+if [ -n "$scope_flag" ] && [ "$settings_dir" != "${KEEL_HOME:-${HOME:-}/.claude}" ]; then
+  doctor_arg=" \"$settings_dir\""
+fi
+echo "Health check any time: tools/doctor.sh --install$doctor_arg"

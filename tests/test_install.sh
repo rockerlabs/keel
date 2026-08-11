@@ -22,6 +22,10 @@ check_file "installs lifecycle commands as slash commands" "$HOME/.claude/comman
 # opt-in step install.sh never runs by itself (a hook changes session behavior, so it needs an explicit yes).
 check_file "installs /polish (its gate is a separate opt-in step)" "$HOME/.claude/commands/polish.md"
 check_contains "summary points at the opt-in gate installer" "$OUT" "tools/install-pre-pr-gate.sh"
+# dir #98: the gate installer has its own default home, so a RETARGETED install must name the
+# matching --home flag — and a default-home install must not (it would be noise). Negative half here,
+# positive half on the --home run further down.
+check_absent "a default-home install carries no gate-retarget note" "$OUT" "install-pre-pr-gate.sh --home"
 check_absent "no foreign-core nag when install created CLAUDE.md" "$OUT" "NOT merged in"
 # a KEPT clone (this direct run) wires the CLI; the ephemeral-bootstrap case below must NOT
 check_link "kept-clone install wires bin/keel" "$HOME/.claude/bin/keel"
@@ -127,6 +131,9 @@ check_status "foreign CLAUDE.md → exit 0" 0 "$STATUS"
 check_contains "flags that rails were not merged in" "$OUT" "NOT merged in"
 check_contains "foreign CLAUDE.md left untouched" "$(cat "$fhome/CLAUDE.md")" "My own global notes"
 check_file "still wires commands into a foreign home" "$fhome/commands/wrap.md"
+# dir #98, positive half (see the default-home run above): --home retargets this install without
+# exporting KEEL_HOME, so the summary names the flag that makes the gate installer follow it.
+check_contains "a --home install tells you the gate needs the same home" "$OUT" "install-pre-pr-gate.sh --home"
 
 # bootstrap.sh: the one-line install path — clone (here a local repo, no network) + run install.sh,
 # into an isolated home. Verifies the curl|sh entry point wires the core + commands end to end.

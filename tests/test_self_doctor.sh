@@ -112,6 +112,93 @@ printf '#!/usr/bin/env bash\nfor x in "$@"; do case "$x" in polish.md) continue 
 run "$sd" "$d" --quiet
 check_status "an unrelated bare continue arm doesn't corrupt the match -> exit 0" 0 "$STATUS"
 
+# --- 1b. the core-@import pattern, hand-copied into three standalone scripts ----------------------
+# The mutation standard: the check must FAIL when a copy drifts, not merely pass on today's tree.
+core_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
+plant_import_re() {   # plant_import_re DIR PATTERN-FOR-UNINSTALL
+  printf "has_core_import() { grep -qE '%s' \"\$1\"; }\n" "$core_re" >> "$1/install.sh"
+  printf "grep -qE '%s' x\n" "$core_re" >> "$1/tools/doctor.sh"
+  # the variable is read on the next line so self/doctor.sh's own shellcheck leg stays clean (SC2034)
+  printf "#!/usr/bin/env bash\ncore_import_re='%s'\ngrep -qE \"\$core_import_re\" x\n" "$2" \
+    > "$1/uninstall.sh"
+}
+
+d="$(mk_clean_repo)"; plant_import_re "$d" "$core_re"
+( cd "$d" && git add -A && git commit -qm "import re in all three" )
+run "$sd" "$d" --quiet
+check_status "three identical copies -> exit 0" 0 "$STATUS"
+
+# one copy silently loses its end boundary — the exact widening dir #108 was
+d="$(mk_clean_repo)"; plant_import_re "$d" '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md'
+( cd "$d" && git add -A && git commit -qm "drifted import re" )
+run "$sd" "$d" --quiet
+check_status "a drifted copy -> exit 1" 1 "$STATUS"
+check_contains "names the drift" "$OUT" "core-@import pattern differs"
+
+# a copy deleted outright, rather than edited
+d="$(mk_clean_repo)"; plant_import_re "$d" "$core_re"
+printf '#!/usr/bin/env bash\necho no pattern here\n' > "$d/uninstall.sh"
+( cd "$d" && git add -A && git commit -qm "import re dropped from uninstall" )
+run "$sd" "$d" --quiet
+check_status "a missing copy -> exit 1" 1 "$STATUS"
+check_contains "names the file that lost it" "$OUT" "missing from: uninstall.sh"
+
+# a repo that defines it nowhere has no rule to keep in sync — silent, not a GAP (mirrors check 1's
+# empty-skip-list arm; mk_clean_repo's fixtures carry no pattern at all)
+# Deliberately NOT --quiet: the silent-when-absent branch is invisible under --quiet (it suppresses
+# `say`), so the assertion below would pass no matter what the check did.
+d="$(mk_clean_repo)"
+run "$sd" "$d"
+check_status "no copies anywhere -> exit 0" 0 "$STATUS"
+check_absent "and says nothing about the pattern" "$OUT" "core-@import"
+
+# --- 1c. advised commands must carry the home they are about -------------------------------------
+# Source-level on purpose: most of doctor's advice lives in findings that only fire on a BROKEN
+# install, so an output sweep can't reach them.
+# Appends one advice line to the fixture's install.sh. The variables are assigned first so the
+# sandbox stays shellcheck-clean — self/doctor.sh lints it, and an SC2154 would GAP for the wrong
+# reason and make every assertion below read as a pass or fail of this check when it isn't.
+plant_advice() {   # plant_advice ADVICE-LINE DIR
+  { printf 'home_flag=""; ihome=""; echo "$ihome$home_flag" >/dev/null\n'   # both read → no SC2034
+    printf '%s\n' "$1"; } >> "$2/install.sh"
+}
+
+d="$(mk_clean_repo)"
+plant_advice 'echo "re-run install.sh$home_flag to fix"' "$d"
+( cd "$d" && git add -A && git commit -qm "advice carrying the marker" )
+run "$sd" "$d" --quiet
+check_status "advice carrying the home marker -> exit 0" 0 "$STATUS"
+
+d="$(mk_clean_repo)"
+plant_advice 'echo "re-run install.sh to fix"' "$d"
+( cd "$d" && git add -A && git commit -qm "advice without the marker" )
+run "$sd" "$d" --quiet
+check_status "advice missing the home marker -> exit 1" 1 "$STATUS"
+check_contains "names the offending line" "$OUT" "re-run install.sh to fix"
+
+# An explicit --home counts as its own marker — the rule is "reaches the home", not "uses a variable".
+d="$(mk_clean_repo)"
+plant_advice 'echo "run keel uninstall --home \"$ihome\" to remove it"' "$d"
+( cd "$d" && git add -A && git commit -qm "advice with an explicit --home" )
+run "$sd" "$d" --quiet
+check_status "an explicit --home also satisfies it -> exit 0" 0 "$STATUS"
+
+# uninstall.sh must not match install.sh as a substring — it would be reported as advice about a
+# command the line never gave. (An earlier `[^u]install\.sh` spelling of this guard excluded nothing:
+# the character before `install.sh` inside `uninstall.sh` is `n`.)
+d="$(mk_clean_repo)"
+plant_advice 'echo "  Re-run uninstall.sh --yes to confirm."' "$d"
+( cd "$d" && git add -A && git commit -qm "advice naming uninstall.sh" )
+run "$sd" "$d" --quiet
+check_status "uninstall.sh is not reported as install.sh advice -> exit 0" 0 "$STATUS"
+
+# Structural scope, not a phrase list: a comment or a usage line naming the same command is not advice.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\n# re-run install.sh to fix\ncat <<EOF\n  install.sh --home DIR   bootstrap into DIR\nEOF\n' >> "$d/install.sh"
+( cd "$d" && git add -A && git commit -qm "comment and usage text only" )
+run "$sd" "$d" --quiet
+check_status "a comment / usage line naming the command is not advice -> exit 0" 0 "$STATUS"
+
 # --- 2. dead internal reference -> GAP -------------------------------------------------------------
 d="$(mk_clean_repo)"
 printf 'See `%s` for details.\n' "$fake_dead" > "$d/README.md"

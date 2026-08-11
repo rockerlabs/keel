@@ -117,6 +117,54 @@ check_status "--global -> exit 0" 0 "$STATUS"
 check_file "wires \$KEEL_HOME/settings.json" "$ghome/settings.json"
 check_contains "warns about the wider blast radius" "$OUT" "EVERY repo"
 
+# --- dir #98: --home DIR follows install.sh --home DIR (the two installers agree on the home) --------
+# install.sh --home retargets the whole install without exporting KEEL_HOME; before this flag the gate
+# had no way to follow it and silently wired ~/.claude instead — two installers describing different
+# machines, with nothing said at either install.
+hhome="$SANDBOX/gate-home-flag"
+mkdir -p "$hhome"   # --home names a home an install already created; it must exist (see the typo case below)
+run "$installer" --home "$hhome"
+check_status "--home DIR -> exit 0" 0 "$STATUS"
+check_file "--home DIR wires DIR/settings.json" "$hhome/settings.json"
+check_contains "the confirmation names the retargeted home" "$OUT" "$hhome/settings.json"
+# A retargeted home is machine-global in blast radius, and the harness may not read it — say both.
+check_contains "--home warns about the wider blast radius too" "$OUT" "EVERY repo"
+check_contains "--home flags that Claude Code reads its own default home" "$OUT" "$HOME/.claude"
+
+run "$installer" --home
+check_status "--home with no DIR -> exit 2" 2 "$STATUS"
+# An EMPTY DIR must refuse as loudly as a missing one — `--home "$KEEL_HOME"` with KEEL_HOME unset
+# would otherwise fall through to $HOME/.claude, silently re-creating dir #98's split install (and
+# skipping the NOTE, since the resolved dir then equals the default). Nothing may be written.
+run "$installer" --home ""
+check_status "--home with an EMPTY DIR -> exit 2" 2 "$STATUS"
+check_contains "the empty-DIR refusal says what was missing" "$OUT" "got nothing"
+check_nofile "empty --home wrote nothing to the default home" "$HOME/.claude/settings.json"
+# A MISTYPED home must not be created. mkdir -p would happily accept `--home ~/.keel-hom`, write a
+# complete settings.json into a directory nothing reads, print "wired into …" and exit 0 — leaving the
+# adopter certain the gate is on while it is nowhere (operator-run /code-review, 4th pass).
+typo="$SANDBOX/keel-hom-typo"
+run "$installer" --home "$typo"
+check_status "--home at a nonexistent DIR -> exit 2" 2 "$STATUS"
+check_contains "the refusal says the DIR does not exist" "$OUT" "does not exist"
+check_contains "and points at install.sh as the thing that creates a home" "$OUT" "install.sh --home"
+if [ -e "$typo" ]; then fail "the mistyped home was not created" "it exists: $typo"; else pass "the mistyped home was not created"; fi
+# A following flag is a swallowed argument, not a directory named "--force".
+run "$installer" --home --force
+check_status "--home swallowing a flag -> exit 2" 2 "$STATUS"
+check_contains "the swallowed-flag refusal names it" "$OUT" "--force"
+# --home + --global: --home is the more specific flag and decides the target, so it is also the one
+# every message names — otherwise the banner blames a flag that isn't governing.
+run "$installer" --home "$hhome" --global "$repo"
+check_status "--home + --global + a repo path -> exit 2" 2 "$STATUS"
+check_contains "the rejection names --home, the flag that governs" "$OUT" "--home doesn't take a repo path"
+run "$installer" --home "$hhome" "$repo"
+check_status "--home + a repo path -> exit 2 (rejected)" 2 "$STATUS"
+check_contains "the --home+path rejection names the conflict" "$OUT" "doesn't take a repo path"
+# The other half of dir #98 — install.sh naming this flag in its own summary — is asserted in
+# tests/test_install.sh, on installs that file already runs (each extra install.sh run costs a full
+# copy pass + verify across the CI matrix, and neither assertion involves this installer).
+
 # --- a temp bootstrap-shaped clone refuses to wire (hooks would point at a path about to vanish) ----
 btmp="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"
 mkdir -p "$btmp/keel/tools"
@@ -154,6 +202,22 @@ run "$REPO_ROOT/install.sh" --home "$dh_unwired" --no-hooks
 run "$doctor" --install "$dh_unwired"
 check_contains "unwired gate -> WARN, names the opt-in installer" "$OUT" "no machine-global gate is wired"
 check_contains "unwired gate WARN points at the installer" "$OUT" "install-pre-pr-gate.sh"
+# dir #98: the advised flag has to be able to reach the home the finding just named. `--global`
+# resolves ${KEEL_HOME:-$HOME/.claude}, so on a RETARGETED home it writes somewhere else entirely and
+# the warning never clears however many times it is followed (operator-run /code-review, 4th pass).
+check_contains "on a retargeted home the WARN advises --home, not --global" "$OUT" "--home \"$dh_unwired\""
+check_absent "and does not advise --global there" "$OUT" "run --global"
+# ...while on the default home --global is exactly right, and stays the advice.
+run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
+run "$doctor" --install "$HOME/.claude"
+check_contains "on the default home the WARN still advises --global" "$OUT" "run --global"
+# ...and "default home" means whatever --global RESOLVES to, not $HOME/.claude literally: with
+# KEEL_HOME pointing elsewhere, --global would wire KEEL_HOME and leave $HOME/.claude — the home this
+# finding names — untouched, so the warning could never clear. Same defect as the retargeted case,
+# mirrored (operator-run /code-review, 5th pass).
+run env KEEL_HOME="$SANDBOX/elsewhere-home" "$doctor" --install "$HOME/.claude"
+check_contains "with KEEL_HOME set elsewhere, the default home gets --home too" "$OUT" "--home \"$HOME/.claude\""
+check_absent "and not --global, which would wire KEEL_HOME instead" "$OUT" "run --global"
 
 dh_wired="$SANDBOX/dh-wired"
 run "$REPO_ROOT/install.sh" --home "$dh_wired" --no-hooks
@@ -220,5 +284,45 @@ sp_cmd="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$sp_repo/.claude/settin
 run sh -c "$sp_cmd repo-key"
 check_status "the generated command runs as ONE token despite the space" 0 "$STATUS"
 check_absent "no 'file not found' from the path splitting on the space" "$OUT" "No such file or directory"
+
+# --- dir #98 as a CLASS: end-to-end, on the output an adopter actually sees -----------------------
+# The exhaustive half of this lives in tools/self/doctor.sh check 1c, which reads the SOURCE — most of
+# doctor's advice sits in findings that only fire on a broken install, so no output sweep can reach
+# them (an earlier output-only version of this check was vacuous for doctor entirely). What is worth
+# asserting HERE is the other half: that the mechanism actually renders, in a real retargeted run,
+# rather than merely being present in the source.
+sweep_home="$SANDBOX/advice-sweep"
+run "$REPO_ROOT/install.sh" --home "$sweep_home" --no-hooks
+check_status "retargeted install for the advice sweep -> exit 0" 0 "$STATUS"
+check_contains "the summary's uninstall advice names the home" "$OUT" "keel uninstall --home \"$sweep_home\""
+check_absent "and no literal, unexpanded flag variable leaked into the text" "$OUT" '$home_flag'
+# The health-check and pull-then-rewire lines live in the LINKED summary, so assert them there.
+link_home="$SANDBOX/advice-sweep-link"
+run "$REPO_ROOT/install.sh" --link --home "$link_home" --no-hooks
+check_status "retargeted linked install -> exit 0" 0 "$STATUS"
+check_contains "the health-check advice names the home" "$OUT" "doctor.sh --install \"$link_home\""
+check_contains "the pull-then-rewire advice names the home" "$OUT" "./install.sh --link --home \"$link_home\""
+check_absent "no unexpanded doctor arg" "$OUT" '$doctor_arg'
+# The generated keel/README is advice too — it is read long after the install, in the home itself.
+check_contains "the generated keel/README names the home" "$(cat "$link_home/keel/README.md")" "--home \"$link_home\""
+check_absent "and its backticks survived as markdown, not command substitution" "$(cat "$link_home/keel/README.md")" "no such file"
+check_contains "README markdown intact" "$(cat "$link_home/keel/README.md")" '`readlink CORE.md`'
+# A --codex install needs --codex on its advice even at the DEFAULT home, where the home flag is
+# correctly empty: a bare re-run is Claude copy mode and would land in ~/.claude.
+cx_home="$SANDBOX/advice-codex/.codex"
+run "$REPO_ROOT/install.sh" --codex --home "$cx_home" --no-hooks
+check_status "retargeted codex install -> exit 0" 0 "$STATUS"
+check_contains "codex advice carries the mode as well as the home" "$OUT" "install.sh --codex --home \"$cx_home\""
+# The mode half alone, at the DEFAULT codex home — where the home flag is correctly empty and only
+# --codex stands between the advice and a re-run that lands in ~/.claude.
+cx_default="$SANDBOX/codex-default-home"; mkdir -p "$cx_default"
+fresh_home_env "$cx_default"
+run env "${FRESH_HOME_ENV[@]}" "$REPO_ROOT/install.sh" --codex --no-hooks
+check_status "default-home codex install -> exit 0" 0 "$STATUS"
+check_contains "its advice still carries --codex" "$OUT" "install.sh --codex"
+check_absent "and no home flag, which would be noise there" "$OUT" "--codex --home"
+# ...and the ordinary install keeps the short, friendly form — the flag appears only where it earns it.
+run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
+check_contains "a default-home install still advises the bare command" "$OUT" "keel uninstall  (reverses"
 
 summary

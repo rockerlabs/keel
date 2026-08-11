@@ -242,6 +242,10 @@ tools/install-pre-pr-gate.sh <repo>     # project scope — only sessions IN thi
 tools/install-pre-pr-gate.sh --global   # every repo you open on this machine, instead
 ```
 
+If you installed into a non-default home (`install.sh --home DIR`), pass the same home here —
+`tools/install-pre-pr-gate.sh --home DIR` — or the machine-global hooks land in `~/.claude` while the
+rest of the install lives in `DIR`. Per-repo wiring is unaffected.
+
 **What changes in your workflow, once wired:**
 
 - **The agent's `gh pr create` is hard-denied** until `/polish` has run cleanly on the current commit —

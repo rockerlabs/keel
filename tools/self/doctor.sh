@@ -98,6 +98,90 @@ else
   say "  OK   install.sh / doctor.sh --install ship-skip lists agree (${install_skips:-none})"
 fi
 
+# --- 1b. the core-@import definition, hand-copied into three standalone scripts -------------------
+# install.sh (has_core_import), uninstall.sh (core_import_re) and tools/doctor.sh --install each
+# carry the same boundary-anchored pattern, and each promises in a comment to keep the others in
+# sync. Same shape as check 1, and the same answer: verify the promise. The anchoring is
+# load-bearing — the bare-substring version uninstall.sh used to carry deleted a user's own prose
+# line that merely mentioned the path (dir #108) — so a silent widening in any one copy re-opens a
+# data-loss bug, not a cosmetic drift. These three scripts source no shared lib on purpose (each
+# must run standalone: bootstrap installs from a tarball, install-secret-guard vendors copies into
+# foreign repos), so a mechanized check is the alternative to extraction, not a step toward it.
+# Absence is graded the same way check 1 grades an empty ship-skip list: a repo where NONE of the
+# three carry the pattern simply doesn't have this rule (valid — that's the state before dir #108),
+# but a repo where SOME do and some don't has lost a copy, which is the drift itself.
+import_re_files=(install.sh uninstall.sh tools/doctor.sh)
+import_re_found=""
+import_re_missing=""
+for f in "${import_re_files[@]}"; do
+  # The pattern as it appears in source, from the opening (^| up to the closing quote.
+  hit="$(grep -ohE "\(\^\|\[\[:space:\]\]\)@\[\^\[:space:\]\]\*keel/CORE[^']*" "$repo_root/$f" 2>/dev/null | sort -u || true)"
+  if [ -z "$hit" ]; then
+    import_re_missing="$import_re_missing${import_re_missing:+, }$f"
+  else
+    import_re_found="$import_re_found$hit"$'\n'
+  fi
+done
+n_unique="$(printf '%s' "$import_re_found" | sort -u | grep -c . || true)"
+if [ -z "$import_re_found" ]; then
+  :   # none of the three define it — no rule to keep in sync here
+elif [ -n "$import_re_missing" ]; then
+  gap "the core-@import pattern is defined in some of install.sh / uninstall.sh / tools/doctor.sh but missing from: $import_re_missing"
+elif [ "$n_unique" != 1 ]; then
+  gap "the core-@import pattern differs across install.sh / uninstall.sh / tools/doctor.sh ($n_unique variants) — keep them byte-identical"
+else
+  say "  OK   core-@import pattern identical in install.sh / uninstall.sh / doctor.sh"
+fi
+
+# --- 1c. advised commands must be able to reach the home they are about --------------------------
+# dir #98's defect class: a tool prints "run install.sh" / "keel uninstall" / "doctor.sh --install"
+# while talking about a home that is NOT where a bare re-run lands, so following the advice cannot fix
+# what the message just described. Seven sites shipped it, each found only after the previous was
+# fixed. Each tool now derives its own suffix once (install.sh: $home_flag / $mode_flag /
+# $advise_install / $advise_uninstall / $doctor_arg; doctor.sh: $ihome_flag), so the rule this check
+# enforces is simply: any user-facing line naming one of those commands must carry one of those
+# markers, or an explicit --home.
+#
+# Checked at the SOURCE, not by running the tools: most of doctor's advice lives in findings that only
+# fire on a broken install, so an output sweep cannot reach them (an earlier output-based version of
+# this check was vacuous for doctor entirely, and its phrase list pinned today's wording rather than
+# the class — found by this ticket's own review).
+#
+# Scope: an actual output CALL (echo/say/warn/gap/hint) or a summary bullet ("  - "). Structural, not
+# a phrase list, so usage/help text, prose and variable assignments stay out — for assignments the
+# marker is legitimately added at the print site instead.
+#
+# `[^a-z]install\.sh` so `uninstall.sh` doesn't match as a substring and get reported as advice about
+# the wrong command — note the character before `install.sh` inside `uninstall.sh` is `n`, so an
+# earlier `[^u]` spelling of this excluded nothing at all. Three things this deliberately does NOT
+# cover, named rather than silently missed:
+#   - the --no-git breadcrumb generated into the core (a constant string on purpose, so doctor's
+#     staleness comparison stays stable);
+#   - CONTINUATION lines inside the summary heredocs — a bullet that wraps puts its command on an
+#     unindented-by-"- " line. Widening the scope to all indented text was tried and swallowed the
+#     usage blocks and prose wholesale, so the choice is a narrow check plus this note over a broad
+#     one plus a growing allowlist. The wrapped sites that exist today were routed through the
+#     variables by hand, and the end-to-end test in tests/test_install_pre_pr_gate.sh covers them;
+#   - any tool not in the list below.
+advice_re='(^|[^a-z])install\.sh|keel uninstall|doctor\.sh --install'
+marker_re='home_flag|ihome_flag|doctor_arg|advise_install|advise_uninstall|--home'
+advice_bad=""
+for f in install.sh uninstall.sh keel tools/doctor.sh tools/install-pre-pr-gate.sh; do
+  [ -f "$repo_root/$f" ] || continue
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    advice_bad="$advice_bad
+    $f:$hit"
+  done < <(grep -nE '^ *(echo|say|warn|gap|hint) |^ *- ' "$repo_root/$f" 2>/dev/null \
+             | grep -E "$advice_re" \
+             | grep -vE "$marker_re" || true)
+done
+if [ -n "$advice_bad" ]; then
+  gap "advised command(s) cannot reach a retargeted home — add the tool's own home marker (dir #98):$advice_bad"
+else
+  say "  OK   advised commands all carry the home they are about"
+fi
+
 # --- 2. dead internal references ----------------------------------------------------------------
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must
 # resolve on disk. CHANGELOG.md is deliberately excluded — it documents history, and a renamed or

@@ -9,6 +9,93 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **The three installers disagreed about where an install lives and what counts as its artifact**
+  (dir #98, #108, #109 — one surface, three ways it drifted apart). Each half is covered by a
+  red-before-green test.
+  - **`install.sh --home DIR` and `install-pre-pr-gate.sh --global` described different machines**
+    (dir #98). `--home` retargets the whole install *without* exporting `KEEL_HOME`, and the gate
+    installer had no `--home` of its own — its `--global` resolved `${KEEL_HOME:-$HOME/.claude}`. So
+    after `install.sh --home /opt/keel-home`, the commands lived in `/opt/keel-home` while the gate's
+    hooks were written to `~/.claude`, and nothing said so at either install. The gate installer now
+    takes **`--home DIR`** (global scope, targeting `DIR/settings.json`), and `install.sh`'s own closing
+    summary names the matching flag whenever this install is retargeted — at the one moment the
+    retargeted path is on screen. The residual no flag can close is stated rather than papered over:
+    which global `settings.json` the *harness* reads is the harness's decision (Claude Code reads
+    `$HOME/.claude`), so a retargeted home prints a `NOTE` pointing at per-repo wiring as the
+    alternative. Three further sites where a retargeted home was ignored, all found by the operator's
+    fourth `/code-review` pass and each one an instruction that could not reach the home it named:
+    `uninstall.sh`'s leftover-install hint advised a **bare** `uninstall.sh --codex`, which re-resolves
+    the home from scratch and under `KEEL_HOME` sends you back to the home you just uninstalled — it
+    finds nothing, exits 0, and prints no hint of its own, leaving the named install fully wired; it now
+    carries `--home`, as the mismatch refusal already did. `tools/doctor.sh`'s `W-GATE-UNWIRED` advised
+    `--global` even when reporting on a retargeted install home, so following the advice wrote hooks
+    elsewhere and the warning could never clear; it names `--home` there and keeps `--global` for the
+    default home. And `install-pre-pr-gate.sh --home` did not check that DIR exists — `mkdir -p` would
+    accept `~/.keel-hom`, write a complete `settings.json` into a directory nothing reads, print "wired
+    into …" and exit 0, leaving the adopter certain a gate was on that was nowhere. It now refuses, the
+    way the project-scope arm already validated its target with `git rev-parse`.
+  - **dir #98 was a class, not a site — so the last pass over it was a sweep, not another sample.**
+    Six places had shipped the same defect, and each was found only after the previous one was fixed,
+    including one *inside* the fix for its predecessor. Every tool now derives the ` --home "DIR"` its
+    advice needs **once**, from the same expression a bare re-run evaluates (`home_flag` in
+    `install.sh`, `ihome_flag` in `tools/doctor.sh`, the closing health-check line in
+    `install-pre-pr-gate.sh`), so the ordinary install still reads with the short friendly form and the
+    flag appears exactly where it is load-bearing. Mode is the half a home flag cannot see, so
+    `--codex` installs carry that too: at the *default* home the home flag is correctly empty, yet a
+    bare re-run is Claude copy mode and would land in `~/.claude`. Every such advice string across the four
+    tools now carries it — the `keel` CLI reads the mode off the home it finds itself in, since it has
+    no other record of one — including the `keel/README.md` generated into the home —
+    advice read long after the install, and the only one an adopter meets with no terminal output
+    around it. **What pins the class is a source check, not an output sweep** (`tools/self/doctor.sh`
+    1c): most of `doctor`'s advice sits in findings that only fire on a *broken* install, so sweeping a
+    healthy run reaches none of them. The first version of this check was written that way — vacuous
+    for `doctor` entirely, and pinning today's phrasing rather than the class; its own review caught
+    that, along with a seventh site (`W-NOGIT-GIT-PROJECTS`) it had missed. The source check scopes
+    structurally — output calls and summary bullets, not a phrase list — so a comment or a usage line
+    naming the same command is correctly not advice, and no per-string allowlist is needed. A smaller
+    end-to-end test still asserts the mechanism *renders* in a real retargeted run, which a source
+    check cannot: it cannot tell an expanded flag from a literal `$home_flag` left in the text.
+  - **`uninstall.sh` deleted a line that merely *mentioned* the core path** (dir #108). `install.sh`'s
+    `has_core_import` is the definition of "the import line is wired" and requires whitespace/start/end
+    boundaries around the token; `uninstall.sh` matched the same token by bare substring, so an
+    ordinary backtick-quoted `` `@~/.claude/keel/CORE.md` `` in the user's own prose was removed along
+    with the real import — contradicting the promise printed on the very next line, that the rest of
+    your file is untouched. Both now use one boundary-anchored definition (byte-identical to
+    `install.sh`'s and to the mirror in `tools/doctor.sh --install`), handed to `awk` through the
+    environment rather than `-v`, since `-v` applies escape processing to the assignment and would
+    quietly widen the pattern back out — the exact drift a shared definition exists to prevent.
+  - **`uninstall.sh` had never heard of `--codex`** (dir #109). `install.sh --codex` (dir #76) writes
+    `~/.codex/AGENTS.md`, which for a Codex adopter carries essentially all of Keel's rails; uninstall
+    hardcoded `CLAUDE.md`, so install-then-uninstall left the whole thing in place without a word.
+    It now mirrors install's mode flags: **`--codex`** resolves the same default home (`~/.codex`) and
+    the same always-loaded file (`AGENTS.md`), stripping the rails block while keeping the file and the
+    user's own content outside it. A run **names** an install of the other mode it finds instead of
+    leaving it silently behind — in both directions, and including on the "nothing to do — no Keel home
+    at `~/.claude`" path, which is exactly the run a Codex-only adopter makes first. That hint asks
+    whether an install is *there* — Keel content, or rails in the context file — not whether the context
+    file carries rails: keying it on rails alone hid the foreign-core case a third time, in a third
+    place, leaving a Claude home with `bin/keel`, `commands/` and both product copies entirely
+    unmentioned. Both callers now share one `home_has_keel_content`. It also **refuses
+    outright** when the home it was pointed at holds the other mode: an explicit target (`--home`, else
+    `$KEEL_HOME`) outranks the mode's default leaf, exactly as in `install.sh`, so
+    `KEEL_HOME=<claude-home> uninstall.sh --codex` resolves a `CLAUDE.md` home while looking for
+    `AGENTS.md`. Four of uninstall's five removal steps are mode-agnostic, so that run used to strip the
+    shared half — the commands, the `keel` CLI symlink, the `FRAMEWORK`/`PRINCIPLES` copies — and report
+    a clean success while `CLAUDE.md`'s rails kept loading forever. Found by the operator's own
+    `/code-review` pass, which reproduced the half-dismantled install; the one-directional hint above was
+    what let it print "done". The refusal keys on **"an install ran against this home"** — `keel/`,
+    `bin/keel`, a shipped command, or a product copy — and not on "the other mode's file carries Keel's
+    rails", which a second `/code-review` pass showed misses the whole foreign-core case: an install over
+    someone's own pre-existing `CLAUDE.md` never writes rails into it, so that home read as empty and got
+    taken apart anyway. Two of the refusal's three conditions are mutation-proven, each against the failure
+    it prevents: dropping the Keel-content test wrongly refuses a bare directory holding only the user's
+    own `CLAUDE.md` (which should simply report nothing to remove, not send them round to a `--codex` run
+    that would also find nothing), and dropping the other-mode-file test **deadlocks** a Keel home whose
+    own context file the user deleted — each mode would then refuse and point at the other, leaving the
+    install unremovable. The third, "this mode's context file is absent", is only exercised by the
+    both-modes home that **dir #124** deliberately leaves open, and is stated here as unpinned rather
+    than counted as covered. Because the other-mode test is plain existence, it cannot tell that file
+    from one of yours that happens to share the name; the refusal says so and names the way out.
 - **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
   finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
   nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the
