@@ -593,14 +593,31 @@ if grep -qE '_ledger_stats\(\) \{' "$TOOL" && sed -n '/^_ledger_stats() {/,/^}/p
 else
   fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
 fi
-# The date-column regex from LEDGER_HEADER's cols comment should appear in exactly ONE awk block —
-# _ledger_parse's own. A second hit means a new reader re-derived the column indices instead of
-# calling the shared parser.
-date_regex_hits="$(grep -cE '\$2 ~ /\^ \*\[0-9\]\[0-9\]\[0-9\]\[0-9\]-' "$TOOL")"
-if [ "$date_regex_hits" -eq 1 ]; then
-  pass "ledger date-column regex appears exactly once (in _ledger_parse)"
+# A second ledger-column reader should be caught even if it re-derives the date regex in a
+# DIFFERENT spelling than _ledger_parse's own (different escaping, {4} vs explicit digit classes,
+# reordered/newline-separated instead of semicolon-separated assignments) — a literal-string /
+# fixed-concatenation match was mutation-tested twice and found to miss both an escaping variant and
+# a reordering/separator variant (found in review). Match on the SEMANTIC signature instead, per
+# FUNCTION BLOCK rather than the whole file: does this function assign all three of guard/hold/miss
+# from columns 5/6/9 (the actual invariant LEDGER_HEADER's "keep in sync" warning is about — the
+# column POSITIONS, not any one spelling of the date regex or the order/separator between
+# assignments)? guard/hold/miss are standing variable names used throughout this file (see
+# add_cite's _n_guard etc.), so a copy-pasted second reader would very likely keep them regardless of
+# how its own date regex or statement layout was rewritten.
+sig_blocks="$(awk '
+  /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{/ { buf=""; in_fn=1; next }
+  in_fn && /^\}[[:space:]]*$/ {
+    gsub(/[ \t]/, "", buf)
+    if (index(buf, "guard+=$5+0") && index(buf, "hold+=$6+0") && index(buf, "miss+=$9+0")) hits++
+    in_fn=0; next
+  }
+  in_fn { buf = buf $0 }
+  END { print hits+0 }
+' "$TOOL")"
+if [ "$sig_blocks" -eq 1 ]; then
+  pass "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function"
 else
-  fail "ledger date-column regex appears exactly once (in _ledger_parse)" "found $date_regex_hits occurrences — a parser was re-duplicated"
+  fail "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function" "found in $sig_blocks function(s) — a parser was re-duplicated"
 fi
 
 summary

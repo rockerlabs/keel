@@ -322,22 +322,33 @@ _ledger_parse() {
       }
       printf "%d %d %d %d %d %d %s\n", sessions+0, n+0, sum+0, guard+0, hold+0, miss+0, (recent == "" ? "-" : recent)
     }
-  ' "$file" 2>/dev/null
+  ' "$file"
+  # No stderr suppression: both callers already gate existence (rollup via ensure_ledger,
+  # rollup_registry via its own `[ -f "$ledger" ]` before calling _ledger_stats) — an existing-but-
+  # unreadable ledger should surface awk's error and this function's non-zero exit, not be silently
+  # reported as "0 sessions" (a real regression this refactor introduced: rollup() used to run this
+  # awk with no stderr redirect at all).
 }
 
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
 rollup() {
   local mode="${1:-live}"
   ensure_ledger
+  # A heredoc always supplies a trailing newline, so `read <<EOF $(cmd) EOF` reads an empty line
+  # and "succeeds" even when cmd failed and printed nothing — the command substitution's own exit
+  # status is invisible to it. Capture into a variable instead: `parsed="$(cmd)" || ...` DOES carry
+  # the real exit status, so a failed ledger read surfaces here instead of masquerading as 0 sessions.
+  local parsed=""
+  if ! parsed="$(_ledger_parse "$LEDGER" "$mode")"; then
+    printf 'keel-impact: failed to read ledger: %s\n' "$LEDGER" >&2
+    return 1
+  fi
   local sessions n sum guard hold miss recent
-  read -r sessions n sum guard hold miss recent <<EOF
-$(_ledger_parse "$LEDGER" "$mode")
-EOF
+  read -r sessions n sum guard hold miss recent <<<"$parsed"
   local label="impact ledger"; [ "$mode" = "retro" ] && label="retro impact ledger"
   if [ "$sessions" -eq 0 ]; then
-    if [ "$mode" = "retro" ]; then printf 'retro impact ledger: no retrospective sessions yet.\n'
-    else                           printf 'impact ledger: no scored sessions yet.\n'
-    fi
+    local what="scored"; [ "$mode" = "retro" ] && what="retrospective"
+    printf '%s: no %s sessions yet.\n' "$label" "$what"
     return
   fi
   if [ "$n" -gt 0 ]; then

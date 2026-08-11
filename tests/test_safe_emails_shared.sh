@@ -12,21 +12,30 @@ lib="$REPO_ROOT/tools/lib/safe-emails.sh"
 check_file "tools/lib/safe-emails.sh exists" "$lib"
 
 # --- both known consumers source the shared lib, not a private copy -----------------------------
-if grep -qF 'lib/safe-emails.sh' "$REPO_ROOT/tools/doctor.sh"; then
-  pass "doctor.sh sources tools/lib/safe-emails.sh"
-else
-  fail "doctor.sh sources tools/lib/safe-emails.sh" "no reference to lib/safe-emails.sh found"
-fi
-if grep -qF 'lib/safe-emails.sh' "$REPO_ROOT/tools/public-audit.sh"; then
-  pass "public-audit.sh sources tools/lib/safe-emails.sh"
-else
-  fail "public-audit.sh sources tools/lib/safe-emails.sh" "no reference to lib/safe-emails.sh found"
-fi
+check_contains "doctor.sh sources tools/lib/safe-emails.sh" \
+  "$(cat "$REPO_ROOT/tools/doctor.sh")" 'lib/safe-emails.sh'
+check_contains "public-audit.sh sources tools/lib/safe-emails.sh" \
+  "$(cat "$REPO_ROOT/tools/public-audit.sh")" 'lib/safe-emails.sh'
 
 # --- no re-duplicated copy of the pattern set anywhere else under tools/ -------------------------
-# A marker pattern from the set, unlikely to appear for any other reason. If it shows up outside the
-# lib file, someone pasted a private copy instead of sourcing — the exact regression dir #106 fixes.
-hits="$(grep -rlF 'users\.noreply\.github\.com' "$REPO_ROOT/tools" 2>/dev/null | grep -vF "$lib")"
+# A marker substring from the set, unlikely to appear for any other reason. If it shows up outside
+# the lib file, someone pasted a private copy instead of sourcing — the exact regression dir #106
+# fixes. Backslashes are stripped from BOTH sides before matching (`tr -d '\\'`), so a re-duplicated
+# copy that merely escapes its dots differently (`@users.noreply.github.com`, `@users\\.noreply...`,
+# vs. the lib's own `@users\.noreply\.github\.com`) can't dodge this by re-spelling the same ERE —
+# a plain literal-string grep on the lib's exact escaping was mutation-tested and found to miss
+# exactly that (found in review). Two independent markers, not one, so a rewrite dropping/reordering
+# a single pattern still gets caught by the other.
+marker1="usersnoreplygithubcom"      # from '@users\.noreply\.github\.com'
+marker2="noreplyanthropiccom"        # from 'noreply@anthropic\.com'
+hits=""
+while IFS= read -r -d '' f; do
+  [ "$f" = "$lib" ] && continue
+  norm="$(tr -d '\\.@' < "$f" 2>/dev/null | tr -d '[:space:]')"
+  if printf '%s' "$norm" | grep -qF "$marker1" || printf '%s' "$norm" | grep -qF "$marker2"; then
+    hits="${hits:+$hits }$f"
+  fi
+done < <(find "$REPO_ROOT/tools" -type f -print0)
 if [ -z "$hits" ]; then
   pass "no duplicated safe-email pattern outside tools/lib/safe-emails.sh"
 else
