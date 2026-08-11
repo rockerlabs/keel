@@ -22,7 +22,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     retargeted path is on screen. The residual no flag can close is stated rather than papered over:
     which global `settings.json` the *harness* reads is the harness's decision (Claude Code reads
     `$HOME/.claude`), so a retargeted home prints a `NOTE` pointing at per-repo wiring as the
-    alternative.
+    alternative. Three further sites where a retargeted home was ignored, all found by the operator's
+    fourth `/code-review` pass and each one an instruction that could not reach the home it named:
+    `uninstall.sh`'s leftover-install hint advised a **bare** `uninstall.sh --codex`, which re-resolves
+    the home from scratch and under `KEEL_HOME` sends you back to the home you just uninstalled — it
+    finds nothing, exits 0, and prints no hint of its own, leaving the named install fully wired; it now
+    carries `--home`, as the mismatch refusal already did. `tools/doctor.sh`'s `W-GATE-UNWIRED` advised
+    `--global` even when reporting on a retargeted install home, so following the advice wrote hooks
+    elsewhere and the warning could never clear; it names `--home` there and keeps `--global` for the
+    default home. And `install-pre-pr-gate.sh --home` did not check that DIR exists — `mkdir -p` would
+    accept `~/.keel-hom`, write a complete `settings.json` into a directory nothing reads, print "wired
+    into …" and exit 0, leaving the adopter certain a gate was on that was nowhere. It now refuses, the
+    way the project-scope arm already validated its target with `git rev-parse`.
   - **`uninstall.sh` deleted a line that merely *mentioned* the core path** (dir #108). `install.sh`'s
     `has_core_import` is the definition of "the import line is wired" and requires whitespace/start/end
     boundaries around the token; `uninstall.sh` matched the same token by bare substring, so an

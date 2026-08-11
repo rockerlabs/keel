@@ -122,6 +122,7 @@ check_contains "warns about the wider blast radius" "$OUT" "EVERY repo"
 # had no way to follow it and silently wired ~/.claude instead — two installers describing different
 # machines, with nothing said at either install.
 hhome="$SANDBOX/gate-home-flag"
+mkdir -p "$hhome"   # --home names a home an install already created; it must exist (see the typo case below)
 run "$installer" --home "$hhome"
 check_status "--home DIR -> exit 0" 0 "$STATUS"
 check_file "--home DIR wires DIR/settings.json" "$hhome/settings.json"
@@ -139,6 +140,15 @@ run "$installer" --home ""
 check_status "--home with an EMPTY DIR -> exit 2" 2 "$STATUS"
 check_contains "the empty-DIR refusal says what was missing" "$OUT" "got nothing"
 check_nofile "empty --home wrote nothing to the default home" "$HOME/.claude/settings.json"
+# A MISTYPED home must not be created. mkdir -p would happily accept `--home ~/.keel-hom`, write a
+# complete settings.json into a directory nothing reads, print "wired into …" and exit 0 — leaving the
+# adopter certain the gate is on while it is nowhere (operator-run /code-review, 4th pass).
+typo="$SANDBOX/keel-hom-typo"
+run "$installer" --home "$typo"
+check_status "--home at a nonexistent DIR -> exit 2" 2 "$STATUS"
+check_contains "the refusal says the DIR does not exist" "$OUT" "does not exist"
+check_contains "and points at install.sh as the thing that creates a home" "$OUT" "install.sh --home"
+if [ -e "$typo" ]; then fail "the mistyped home was not created" "it exists: $typo"; else pass "the mistyped home was not created"; fi
 # A following flag is a swallowed argument, not a directory named "--force".
 run "$installer" --home --force
 check_status "--home swallowing a flag -> exit 2" 2 "$STATUS"
@@ -192,6 +202,15 @@ run "$REPO_ROOT/install.sh" --home "$dh_unwired" --no-hooks
 run "$doctor" --install "$dh_unwired"
 check_contains "unwired gate -> WARN, names the opt-in installer" "$OUT" "no machine-global gate is wired"
 check_contains "unwired gate WARN points at the installer" "$OUT" "install-pre-pr-gate.sh"
+# dir #98: the advised flag has to be able to reach the home the finding just named. `--global`
+# resolves ${KEEL_HOME:-$HOME/.claude}, so on a RETARGETED home it writes somewhere else entirely and
+# the warning never clears however many times it is followed (operator-run /code-review, 4th pass).
+check_contains "on a retargeted home the WARN advises --home, not --global" "$OUT" "--home \"$dh_unwired\""
+check_absent "and does not advise --global there" "$OUT" "run --global"
+# ...while on the default home --global is exactly right, and stays the advice.
+run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
+run "$doctor" --install "$HOME/.claude"
+check_contains "on the default home the WARN still advises --global" "$OUT" "run --global"
 
 dh_wired="$SANDBOX/dh-wired"
 run "$REPO_ROOT/install.sh" --home "$dh_wired" --no-hooks

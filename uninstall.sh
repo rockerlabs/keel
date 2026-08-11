@@ -140,13 +140,23 @@ home_has_keel_content() {
 # where a leftover-install hint is noise attached to a run that did nothing. The exit that matters most
 # is the earliest — "no Keel home at ~/.claude" is exactly the run a Codex-only adopter makes first
 # (dir #109).
+#
+# The advised command always carries --home, exactly as the mismatch refusal below does, and for the
+# same reason: a bare `$other_cmd` re-resolves the home from scratch, and an explicit target outranks
+# the mode leaf (see the precedence above). So under KEEL_HOME the advice would send the operator BACK
+# to the home they just uninstalled — where it finds nothing, exits 0, and prints no hint of its own
+# (its `other` is now this home), leaving the install this hint exists to name still fully wired.
+# Reproduced by the operator's fourth /code-review pass. The probe itself still looks at $HOME/<leaf>:
+# an explicit target names THIS mode's home and says nothing about where the other mode's lives, so the
+# conventional location is the only thing there is to go on — but naming it in the command means the
+# advice reaches whatever it did find.
 other_mode_hint() {
   [ -n "${HOME:-}" ] || return 0
   local other="$HOME/$other_leaf"
   [ "$other" != "$HOME_DIR" ] || return 0
   home_has_keel_content "$other" || has_keel_rails "$other/$other_context" || return 0
   echo "  • A Keel install is still in place at $other — this run did not touch it."
-  echo "    Remove it too:  $other_cmd"
+  echo "    Remove it too:  $other_cmd --home \"$other\""
 }
 
 if [ ! -d "$HOME_DIR" ]; then

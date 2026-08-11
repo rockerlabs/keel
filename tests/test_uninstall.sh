@@ -187,6 +187,29 @@ rails "$HOME/.claude/CLAUDE.md"
 unin --codex --yes
 check_contains "a --codex uninstall names the leftover Claude install" "$OUT" "$HOME/.claude"
 check_contains "and points at the command that removes it" "$OUT" "Remove it too:  uninstall.sh"
+# The advised command must carry --home naming that home. A bare `uninstall.sh --codex` re-resolves
+# from scratch, and an explicit target outranks the mode leaf — so under KEEL_HOME the advice sent the
+# operator BACK to the home they just uninstalled, where it finds nothing, exits 0 and prints no hint
+# of its own (its own `other` is now that home), leaving the named install fully wired
+# (operator-run /code-review, 4th pass).
+check_contains "the advised command names the home it is about" "$OUT" "--home \"$HOME/.claude\""
+
+# The same, reproduced through KEEL_HOME rather than asserted on wording alone: with a Codex install in
+# place and KEEL_HOME pointing at the Claude home, the hint's command must actually reach ~/.codex.
+KH="$SANDBOX/keel-home-hint"
+mkdir -p "$KH/.claude" "$KH/.codex"
+fresh_home_env "$KH"; kh_env=("${FRESH_HOME_ENV[@]}")
+run env "${kh_env[@]}" "$INSTALL" --no-hooks
+run env "${kh_env[@]}" "$INSTALL" --codex --no-hooks
+check_file "codex home wired alongside the claude one" "$KH/.codex/AGENTS.md"
+run env "${kh_env[@]}" KEEL_HOME="$KH/.claude" "$UNINSTALL" --yes
+check_status "uninstall under KEEL_HOME exits 0" 0 "$STATUS"
+check_contains "it names the untouched codex home" "$OUT" "$KH/.codex"
+# Take the advised command at its word: the --home it prints must remove the codex install for real.
+run env "${kh_env[@]}" KEEL_HOME="$KH/.claude" "$UNINSTALL" --codex --home "$KH/.codex" --yes
+check_status "the advised command exits 0" 0 "$STATUS"
+check_contains "and actually removes it" "$OUT" "item(s) removed"
+check_absent "the codex rails are gone" "$(cat "$KH/.codex/AGENTS.md")" "KEEL-CORE-BEGIN"
 check_file "and does not touch it" "$HOME/.claude/CLAUDE.md"
 
 # ...and the hint must fire on a FOREIGN-CORE install too, where the kept CLAUDE.md carries no rails

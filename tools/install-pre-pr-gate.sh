@@ -123,6 +123,19 @@ if [ -n "$scope_flag" ]; then
   # Precedence, in one expression: --home DIR > $KEEL_HOME > $HOME/.claude. The ${HOME:?} is evaluated
   # only if both earlier candidates are empty, so --home still works with HOME unset.
   settings_dir="${home_dir:-${KEEL_HOME:-${HOME:?install-pre-pr-gate: --global needs HOME set, or pass --home DIR}/.claude}}"
+  # An explicitly-typed --home DIR must EXIST. The flag's whole purpose is to follow an
+  # `install.sh --home DIR` install, so the dir is there by construction — while `mkdir -p` below would
+  # happily accept a typo, write a complete settings.json into a brand-new directory nothing reads,
+  # print "wired into …" and exit 0. The adopter then believes the gate is on and it is nowhere
+  # (`--home ~/.keel-hom` reproduced exactly that). The project-scope arm below validates its target
+  # with `git rev-parse` for the same reason. Deliberately NOT applied to the $KEEL_HOME/$HOME fallback:
+  # that path is a documented default this ticket didn't open, and creating it is its existing contract.
+  if [ -n "$home_dir" ] && [ ! -d "$home_dir" ]; then
+    echo "install-pre-pr-gate.sh: --home $home_dir does not exist (or is not a directory)." >&2
+    echo "  --home names a home an install already created; it is not a place to create one. Nothing" >&2
+    echo "  was changed. Check the path, or run install.sh --home \"$home_dir\" first." >&2
+    exit 2
+  fi
   echo "install-pre-pr-gate: $scope_flag wires EVERY repo on this machine — the agent's gh pr create is" >&2
   echo "  hard-denied without a matching /polish receipt in every project you open here, not just this one." >&2
   # dir #98's residual, which no flag can close: where the harness looks for its global settings is the
