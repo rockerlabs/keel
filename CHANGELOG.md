@@ -34,6 +34,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     accept `~/.keel-hom`, write a complete `settings.json` into a directory nothing reads, print "wired
     into …" and exit 0, leaving the adopter certain a gate was on that was nowhere. It now refuses, the
     way the project-scope arm already validated its target with `git rev-parse`.
+  - **dir #98 was a class, not a site — so the last pass over it was a sweep, not another sample.**
+    Six places had shipped the same defect, and each was found only after the previous one was fixed,
+    including one *inside* the fix for its predecessor. Every tool now derives the ` --home "DIR"` its
+    advice needs **once**, from the same expression a bare re-run evaluates (`home_flag` in
+    `install.sh`, `ihome_flag` in `tools/doctor.sh`, the closing health-check line in
+    `install-pre-pr-gate.sh`), so the ordinary install still reads with the short friendly form and the
+    flag appears exactly where it is load-bearing. Eleven advice strings across the three tools were
+    routed through it. And rather than pin those six by name — which would say nothing about a seventh
+    — a test sweeps the **real output** of a retargeted install and its audit and fails if any line
+    telling the operator to run `install.sh`, `keel uninstall` or `doctor.sh --install` omits the home,
+    naming the offending line. Verified by mutation: dropping the flag from a single summary line fails
+    it with that line quoted.
   - **`uninstall.sh` deleted a line that merely *mentioned* the core path** (dir #108). `install.sh`'s
     `has_core_import` is the definition of "the import line is wired" and requires whitespace/start/end
     boundaries around the token; `uninstall.sh` matched the same token by bare substring, so an

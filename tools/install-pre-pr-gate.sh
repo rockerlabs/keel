@@ -288,4 +288,11 @@ done <<<"$statuses"
 
 echo "install-pre-pr-gate: wired into $settings"
 echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."
-echo "Health check any time: tools/doctor.sh --install"
+# Same rule as install.sh's home_flag and doctor's ihome_flag: a bare `doctor.sh --install` audits
+# ${KEEL_HOME:-$HOME/.claude}, so on a retargeted home it would report on a different install than the
+# one just wired (dir #98, found to be a class rather than a site).
+if [ -n "$scope_flag" ] && [ "$settings_dir" != "${KEEL_HOME:-${HOME:-}/.claude}" ]; then
+  echo "Health check any time: tools/doctor.sh --install \"$settings_dir\""
+else
+  echo "Health check any time: tools/doctor.sh --install"
+fi
