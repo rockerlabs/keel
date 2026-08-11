@@ -486,6 +486,34 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   impact (the real keel checkout and CI both always have history for these paths) but a real
   robustness gap for a fresh/partial checkout.
 
+- **Four duplicated-without-a-guard invariants, each closed with a source-level test that pins the
+  class, not just today's instance** (dir #104-107). An independent agent review plus an operator-run
+  `/code-review high` caught a real regression in the fix for the last one, since fixed.
+  - **The `keel` CLI's dispatcher verb list could drift from `docs/reference.md` and `README.md` with
+    nothing to catch it** (dir #104). `tests/test_keel_cli.sh` now extracts the verbs straight from
+    the dispatcher's own `case` block and asserts each is still quoted in both docs.
+  - **`assert_figure`'s open-floor branch (an intentional no-ceiling design, dir #3) had no way to
+    notice drift once it happened** — `CHANGELOG.md`'s own figure sat 37% above its floor, passing CI
+    the whole time (dir #105). Mirrors `assert_band`'s existing near-band note: a non-failing note once
+    actual drifts 25%+ past the floor. Raised this file's own floor (~40,000+ → ~50,000+) since the new
+    note caught the drift live. Also pins the two prose figures in `docs/loading-and-cost.md` that are
+    arithmetically derived from the quoted core token figure (a "~50 sessions" total, a "~1.1% of a
+    ~200K window" line), so a bumped core row can't leave them stale silently.
+  - **`doctor.sh` and `public-audit.sh` each hand-maintained a copy of the public-safe email
+    allowlist behind "keep in sync" comments nothing enforced** — already re-diverged once before, per
+    PR #43 (dir #106). Extracted to `tools/lib/safe-emails.sh`, sourced by both (`doctor.sh` once,
+    before its per-project scan loop, not per-iteration; `public-audit.sh` reuses the lib's own
+    pre-joined regex instead of rebuilding it).
+  - **`keel-impact.sh`'s `rollup` and the cross-project `_ledger_stats` each re-derived the ledger
+    table's column indices independently, against the file's own "keep in sync" warning** (dir #107).
+    Extracted to a shared `_ledger_parse`; both now delegate to it. The review caught a real regression
+    in this refactor: `rollup()`'s new `read -r ... <<EOF $(_ledger_parse ...) EOF` pattern discarded
+    the command substitution's exit status (a heredoc always supplies a trailing newline, so `read`
+    "succeeds" on an empty line even when the substitution failed silently) — a genuinely unreadable
+    ledger was reported as "0 session(s), no numeric scores yet" at exit 0 instead of surfacing the
+    read failure, a regression the old, un-refactored `rollup()` did not have. Fixed by capturing into
+    a variable (`parsed="$(...)" ||`, which does carry the real exit status).
+
 ### Added
 - **`tools/self/doctor.sh` gains a WARN for stale `BACKLOG.md` ticket headings** (dir #87, found 3×
   by later sessions' own `/wrap` — a closed ticket's `### dir #N` heading kept its open-status tag

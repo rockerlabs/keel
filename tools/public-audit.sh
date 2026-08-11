@@ -67,14 +67,12 @@ DIR="${DIR:-.}"
 [ -d "$DIR" ] || { echo "public-audit: not a directory: $DIR" >&2; exit 2; }
 
 # Built-in public-safe email patterns (ERE). Real personal/corporate emails are deliberately absent.
-# Canonical set — doctor.sh mirrors it ($safe_email_re, its advisory commit-email nudge); update both together.
-SAFE_EMAILS=(
-  '@users\.noreply\.github\.com'
-  'noreply@anthropic\.com'
-  'noreply@github\.com'
-  '@example\.(com|org|net)'
-  '@[A-Za-z0-9.-]*\.invalid'
-)
+# dir #106: the set lives in tools/lib/safe-emails.sh — doctor.sh sources the same file for its
+# advisory commit-email nudge, so the two can't silently re-diverge.
+_pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/safe-emails.sh
+. "$_pa_dir/lib/safe-emails.sh"
+unset _pa_dir
 EMAIL_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 HOME_RE='/(Users|home)/[A-Za-z0-9._-]+'
 
@@ -97,9 +95,10 @@ if [ -f "$cfg" ]; then
   done < "$cfg"
 fi
 
-# combined safe-email regex (built-ins + configured allow-email)
-safe_re=""
-for e in "${SAFE_EMAILS[@]}"; do safe_re="${safe_re:+$safe_re|}$e"; done
+# combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
+# safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern
+# LIST; re-deriving the joiner would leave that half still duplicated by eyeball.
+safe_re="$safe_email_re"
 # A configured allow-email is user input — a broken ERE would make every later `grep -E "$safe_re"`
 # spew "bad regex" and silently drop the content-leak WARNs. Validate each before trusting it; collect
 # the bad ones to report once the WARN helper is defined below.

@@ -578,4 +578,46 @@ check_contains "grand total sums the honest guard signal" "$OUT" "1 guard fire(s
 run bash "$TOOL" rollup --registry "$SANDBOX/nope.md"
 check_status "missing registry → exit 2" 2 "$STATUS"
 
+# --- dir #107: rollup and _ledger_stats must share ONE ledger-column parser, not re-derive it ------
+# The file's own header comment (LEDGER_HEADER + _ledger_parse) says the column indices must stay in
+# sync; pin that at the SOURCE level (dir #126: an output-level check can't tell "shares a parser"
+# from "two parsers that happen to agree today"). Both callers should delegate to _ledger_parse, and
+# no second awk block should independently match the ledger's date-column regex.
+if grep -qE '_ledger_parse "\$LEDGER" "\$mode"' "$TOOL"; then
+  pass "rollup delegates to _ledger_parse"
+else
+  fail "rollup delegates to _ledger_parse" "rollup no longer calls _ledger_parse — re-duplicated?"
+fi
+if grep -qE '_ledger_stats\(\) \{' "$TOOL" && sed -n '/^_ledger_stats() {/,/^}/p' "$TOOL" | grep -q '_ledger_parse'; then
+  pass "_ledger_stats delegates to _ledger_parse"
+else
+  fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
+fi
+# A second ledger-column reader should be caught even if it re-derives the date regex in a
+# DIFFERENT spelling than _ledger_parse's own (different escaping, {4} vs explicit digit classes,
+# reordered/newline-separated instead of semicolon-separated assignments) — a literal-string /
+# fixed-concatenation match was mutation-tested twice and found to miss both an escaping variant and
+# a reordering/separator variant (found in review). Match on the SEMANTIC signature instead, per
+# FUNCTION BLOCK rather than the whole file: does this function assign all three of guard/hold/miss
+# from columns 5/6/9 (the actual invariant LEDGER_HEADER's "keep in sync" warning is about — the
+# column POSITIONS, not any one spelling of the date regex or the order/separator between
+# assignments)? guard/hold/miss are standing variable names used throughout this file (see
+# add_cite's _n_guard etc.), so a copy-pasted second reader would very likely keep them regardless of
+# how its own date regex or statement layout was rewritten.
+sig_blocks="$(awk '
+  /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{/ { buf=""; in_fn=1; next }
+  in_fn && /^\}[[:space:]]*$/ {
+    gsub(/[ \t]/, "", buf)
+    if (index(buf, "guard+=$5+0") && index(buf, "hold+=$6+0") && index(buf, "miss+=$9+0")) hits++
+    in_fn=0; next
+  }
+  in_fn { buf = buf $0 }
+  END { print hits+0 }
+' "$TOOL")"
+if [ "$sig_blocks" -eq 1 ]; then
+  pass "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function"
+else
+  fail "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function" "found in $sig_blocks function(s) — a parser was re-duplicated"
+fi
+
 summary
