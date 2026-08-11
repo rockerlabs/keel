@@ -24,17 +24,30 @@ check_contains "public-audit.sh sources tools/lib/safe-emails.sh" \
 # copy that merely escapes its dots differently (`@users.noreply.github.com`, `@users\\.noreply...`,
 # vs. the lib's own `@users\.noreply\.github\.com`) can't dodge this by re-spelling the same ERE —
 # a plain literal-string grep on the lib's exact escaping was mutation-tested and found to miss
-# exactly that (found in review). Two independent markers, not one, so a rewrite dropping/reordering
-# a single pattern still gets caught by the other.
+# exactly that (found in review). Four independent markers (of the array's 5 patterns — see below),
+# not one, so a rewrite dropping/reordering any single pattern still gets caught by the others.
+# The last pattern ('@[A-Za-z0-9.-]*\.invalid') has no marker: the only stable literal fragment in
+# it is "invalid", which is an ordinary English word that already appears, unrelated to this array,
+# in several other tools/ scripts (pre-pr-gate.sh, pipeline-canary.sh, secret-scan.sh) — a marker
+# there would false-positive-fail on unrelated code. Accepted gap: a re-duplication of ONLY that one
+# pattern in isolation goes uncaught; the far more likely failure mode (copy-pasting the whole array,
+# per PR #43's actual history) is caught by any of the other four.
 marker1="usersnoreplygithubcom"      # from '@users\.noreply\.github\.com'
 marker2="noreplyanthropiccom"        # from 'noreply@anthropic\.com'
+marker3="noreplygithubcom"           # from 'noreply@github\.com' (distinct from marker1: no "users" prefix)
+marker4="examplecom"                 # from '@example\.(com|org|net)' — the "com" branch only; "org"/"net"
+                                      # would need their own markers to close fully, not worth the added
+                                      # false-positive surface for a partial-alternation duplication
 hits=""
 while IFS= read -r -d '' f; do
   [ "$f" = "$lib" ] && continue
   norm="$(tr -d '\\.@' < "$f" 2>/dev/null | tr -d '[:space:]')"
-  if printf '%s' "$norm" | grep -qF "$marker1" || printf '%s' "$norm" | grep -qF "$marker2"; then
-    hits="${hits:+$hits }$f"
-  fi
+  for m in "$marker1" "$marker2" "$marker3" "$marker4"; do
+    if printf '%s' "$norm" | grep -qF "$m"; then
+      hits="${hits:+$hits }$f"
+      break
+    fi
+  done
 done < <(find "$REPO_ROOT/tools" -type f -print0)
 if [ -z "$hits" ]; then
   pass "no duplicated safe-email pattern outside tools/lib/safe-emails.sh"

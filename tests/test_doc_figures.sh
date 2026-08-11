@@ -180,7 +180,10 @@ assert_derived_core_figures() {
       fail "loading-and-cost.md window-% tracks the core figure" "couldn't parse: $win_line"
     else
       pct_permille="$(printf '%s' "$pct_raw" | LC_ALL=C awk '{printf "%d", $1*10 + 0.5}')"
-      expected_permille=$(( core_fig * 1000 / (window_tokens * 1000) ))
+      # permille = core_fig*1000 / (window_tokens*1000); window_tokens is already in K (parsed from
+      # "~200K-token"), so the two *1000s cancel algebraically to plain division — written that way,
+      # not as the no-op-looking multiply/divide, so it doesn't read as a scaling step that matters.
+      expected_permille=$(( core_fig / window_tokens ))
       assert_band "loading-and-cost.md ~$pct_raw% tracks ~$core_fig / ~${window_tokens}K" \
         "$pct_permille" "$expected_permille" "doc (permille)"
     fi

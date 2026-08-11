@@ -110,8 +110,23 @@ check_contains "a Codex home gets --codex too" "$OUT" "install.sh --codex --home
 # (dir #85 found docs/reference.md and README.md each missing 2 of 9 verbs, undetected). Enumerate
 # the arms from the REAL keel script (not the fake stub), then assert every verb is still quoted in
 # both docs — same shape as test_doc_figures.sh pinning doc prose against template headings.
-verbs="$(awk '/^case "\$cmd" in/,/^esac/' "$REPO_ROOT/keel" | grep -oE '^  [a-zA-Z][a-zA-Z0-9_|-]*\)' | sed 's/)$//' | cut -d'|' -f1)"
+case_block="$(awk '/^case "\$cmd" in/,/^esac/' "$REPO_ROOT/keel")"
+# Leading whitespace is `[[:space:]]+`, not a fixed two spaces — a case arm re-indented with a tab
+# or a different width wouldn't match a fixed prefix, silently dropping that ONE verb from the list
+# below (a false PASS, since a never-extracted verb is never checked against the docs at all; found
+# in review). A total-arm cross-check catches that class even when the specific-arm regex still
+# fails to future drift: count case arms independently via a much looser pattern (any non-comment,
+# non-blank line ending in `)`, minus the `*)` catch-all) and assert it matches how many verbs were
+# actually extracted.
+verbs="$(printf '%s' "$case_block" | grep -oE '^[[:space:]]+[a-zA-Z][a-zA-Z0-9_|-]*\)' | sed 's/^[[:space:]]*//;s/)$//' | cut -d'|' -f1)"
 [ -n "$verbs" ] || fail "extracted verb list from keel's case block" "no arms found — did the case syntax change?"
+arm_count="$(printf '%s' "$case_block" | grep -vE '^[[:space:]]*(#|case|esac|$)' | grep -cE '^[[:space:]]*[^[:space:]#]*\)')"
+verb_count="$(printf '%s\n' $verbs | wc -w | tr -d ' ')"
+if [ "$arm_count" -eq $(( verb_count + 1 )) ]; then   # +1 for the `*)` catch-all, never a real verb
+  pass "every case arm was extracted as a verb ($verb_count verbs + 1 catch-all = $arm_count arms)"
+else
+  fail "every case arm was extracted as a verb" "found $arm_count total arms but only extracted $verb_count verbs — one was silently dropped (non-standard indentation?)"
+fi
 
 ref_line="$(grep -F '](../keel)' "$REPO_ROOT/docs/reference.md")"
 readme_block="$(awk '/lists the verbs:/{f=1} f{print; if (/`keel help`\./) exit}' "$REPO_ROOT/README.md")"

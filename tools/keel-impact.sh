@@ -390,10 +390,18 @@ rollup_registry() {
       printf '  %-28s —  (tracking off or no sessions scored)\n' "$(basename "$path")"
       continue
     fi
-    local sess scored sum g ho m
-    read -r sess scored sum g ho m <<EOF
-$(_ledger_stats "$ledger")
-EOF
+    local sess scored sum g ho m stats=""
+    # Same class of bug rollup() had (dir #107 review, round 2): a heredoc always supplies a
+    # trailing newline, so `read <<EOF $(cmd) EOF` "succeeds" on an empty line even when cmd failed
+    # and printed nothing. Capture into a variable instead so a genuinely unreadable ledger (exists,
+    # but e.g. permission-denied) is reported honestly rather than silently counted as 0 sessions —
+    # skip just this one project and keep sweeping the rest, since one broken ledger shouldn't abort
+    # the whole cross-project report.
+    if ! stats="$(_ledger_stats "$ledger")"; then
+      printf '  %-28s !  (failed to read ledger — check permissions)\n' "$(basename "$path")"
+      continue
+    fi
+    read -r sess scored sum g ho m <<<"$stats"
     t_sess=$(( t_sess + sess )); t_scored=$(( t_scored + scored )); t_sum=$(( t_sum + sum ))
     t_guard=$(( t_guard + g )); t_hold=$(( t_hold + ho )); t_miss=$(( t_miss + m ))
     if [ "$scored" -gt 0 ]; then
