@@ -169,7 +169,7 @@ home_has_keel_content() {
 # A home with NEITHER context file is an ordinary empty/foreign dir, or a Keel home whose own context
 # file you deleted — neither is a mismatch, and both go on to uninstall (or no-op) normally.
 if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content; then
-  echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has an $other_context instead." >&2
+  echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has $other_context instead." >&2
   echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
   echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context sitting there." >&2
   echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$HOME_DIR\"" >&2

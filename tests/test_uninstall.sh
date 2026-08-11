@@ -236,7 +236,9 @@ inst --home "$NC" --no-hooks
 rm -f "$NC/CLAUDE.md"
 unin --home "$NC" --yes
 check_status "a Keel home with no context file at all → exit 0, not a refusal" 0 "$STATUS"
-check_contains "and actually removes Keel's content" "$OUT" "removed"
+# "item(s) removed", not a bare "removed": the no-op summary reads "nothing removed.", so the loose
+# substring would survive exactly the fall-through-to-no-op regression this asserts against.
+check_contains "and actually removes Keel's content" "$OUT" "item(s) removed"
 check_nolink "the CLI symlink is gone" "$NC/bin/keel"
 
 # The reverse aim is refused the same way: a plain run pointed at a Codex home.
