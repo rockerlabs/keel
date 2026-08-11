@@ -216,7 +216,7 @@ check_absent "and never writes rails into it" "$(cat "$FC/CLAUDE.md")" "KEEL-COR
 check_link "but it did wire the CLI" "$FC/bin/keel"
 run env KEEL_HOME="$FC" "$UNINSTALL" --codex --yes
 check_status "--codex aimed at a foreign-core Claude home → exit 2 (refused)" 2 "$STATUS"
-check_contains "the refusal says the home holds an install" "$OUT" "does hold a Keel install"
+check_contains "the refusal says the home holds an install" "$OUT" "holds a Keel install"
 check_link "the CLI symlink survives" "$FC/bin/keel"
 check_file "the shipped commands survive" "$FC/commands/go.md"
 check_contains "and the user's own CLAUDE.md is untouched" "$(cat "$FC/CLAUDE.md")" "My own global notes"
@@ -227,6 +227,17 @@ printf '# just my notes\n' > "$NK/CLAUDE.md"
 unin --codex --home "$NK" --yes
 check_status "a non-Keel dir holding only your own CLAUDE.md → exit 0, not a refusal" 0 "$STATUS"
 check_contains "and says there was nothing of Keel's to remove" "$OUT" "no Keel-owned content"
+
+# ...and a real Keel home holding NEITHER context file must still uninstall. Without the "other mode's
+# file is present" condition this deadlocks: each mode refuses and points at the other, so the install
+# can never be removed at all. Reachable by deleting your own CLAUDE.md, which is yours to delete.
+NC="$SANDBOX/no-context-file/.claude"
+inst --home "$NC" --no-hooks
+rm -f "$NC/CLAUDE.md"
+unin --home "$NC" --yes
+check_status "a Keel home with no context file at all → exit 0, not a refusal" 0 "$STATUS"
+check_contains "and actually removes Keel's content" "$OUT" "removed"
+check_nolink "the CLI symlink is gone" "$NC/bin/keel"
 
 # The reverse aim is refused the same way: a plain run pointed at a Codex home.
 CM="$SANDBOX/mismatch-codex/.codex"

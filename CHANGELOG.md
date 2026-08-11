@@ -51,11 +51,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     `bin/keel`, a shipped command, or a product copy — and not on "the other mode's file carries Keel's
     rails", which a second `/code-review` pass showed misses the whole foreign-core case: an install over
     someone's own pre-existing `CLAUDE.md` never writes rails into it, so that home read as empty and got
-    taken apart anyway. All three of the refusal's conditions are mutation-proven, and a directory that
-    holds no Keel content at all is still not refused — it falls through to the honest "nothing to
-    remove", rather than sending the user to a `--codex` run that would find nothing either. One case
-    stays open as **dir #124**: a home deliberately holding *both* modes, where this mode's context file
-    is present so refusing would be wrong and a post-removal warning is the right shape.
+    taken apart anyway. Two of the refusal's three conditions are mutation-proven, each against the failure
+    it prevents: dropping the Keel-content test wrongly refuses a bare directory holding only the user's
+    own `CLAUDE.md` (which should simply report nothing to remove, not send them round to a `--codex` run
+    that would also find nothing), and dropping the other-mode-file test **deadlocks** a Keel home whose
+    own context file the user deleted — each mode would then refuse and point at the other, leaving the
+    install unremovable. The third, "this mode's context file is absent", is only exercised by the
+    both-modes home that **dir #124** deliberately leaves open, and is stated here as unpinned rather
+    than counted as covered. Because the other-mode test is plain existence, it cannot tell that file
+    from one of yours that happens to share the name; the refusal says so and names the way out.
 - **The audit rule that mandates an isolated `HOME` for live probes turned `doctor`'s highest-stakes
   finding into a systematic false negative** (dir #97, found by dir #85's drift audit — that module
   nearly filed the false negative as real drift before cross-checking). `tools/doctor.sh` resolves the

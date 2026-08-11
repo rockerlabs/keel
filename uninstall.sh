@@ -158,17 +158,23 @@ home_has_keel_content() {
 #     rails was the first version of this guard and it let the whole foreign-core case through: an
 #     install over someone's own pre-Keel CLAUDE.md never writes rails into it, so a --codex run aimed
 #     there sailed past the guard and removed the commands, the CLI and both product copies of an
-#     install nobody asked it to touch (found by the operator's second /code-review pass);
+#     install nobody asked it to touch (found by the operator's second /code-review pass). The cost of
+#     dropping the rails test is that this arm can't tell the other mode's context file from a file of
+#     yours that happens to share its name — hence the hedge in the message below. Removing this
+#     condition instead would DEADLOCK a Keel home with neither context file: each mode would refuse and
+#     point at the other, leaving the install unremovable;
 #   - the home holding Keel content — without it, a bare dir containing only the user's own AGENTS.md
 #     would be refused with advice to re-run under --codex, which would then find nothing to do. With
 #     it, that case falls through to the honest "no Keel-owned content" no-op below.
-# A home with NEITHER context file is an ordinary empty/foreign dir, and one the user emptied of their
-# own context file still uninstalls normally — neither is a mismatch.
+# A home with NEITHER context file is an ordinary empty/foreign dir, or a Keel home whose own context
+# file you deleted — neither is a mismatch, and both go on to uninstall (or no-op) normally.
 if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content; then
-  echo "uninstall: $HOME_DIR has no $CONTEXT_FILE, but it does hold a Keel install and an $other_context." >&2
-  echo "  That's the other install mode — removing it from here would take the shared half (commands," >&2
-  echo "  the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context in place as its own install." >&2
+  echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has an $other_context instead." >&2
+  echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
+  echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context sitting there." >&2
   echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$HOME_DIR\"" >&2
+  echo "  (If that $other_context is your own file and not Keel's, this run is what you wanted —" >&2
+  echo "   rename it, or point --home at the right home.)" >&2
   exit 2
 fi
 
