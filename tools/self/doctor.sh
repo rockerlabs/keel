@@ -13,6 +13,7 @@
 #
 # Native checks (logic lives only here):
 #   GAP   install.sh's command ship-skip list disagrees with doctor.sh --install's mirror of it
+#   GAP   FRAMEWORK.md / PRINCIPLES.md contain a leaked host path or non-safe email (dir #114)
 #   GAP   a tools/commands/templates path referenced in tracked docs/scripts doesn't exist on disk
 #   WARN  a tools/*.sh script has no reference anywhere (commands/, tests/, install.sh, docs/, CI)
 #   WARN  a tools/*.sh script has no test coverage in tests/
