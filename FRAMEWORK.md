@@ -7,18 +7,18 @@ unconditional safety rails + a map, and points here on demand.
 
 - **On demand — NOT auto-loaded.** The always-loaded `CLAUDE.md` map says when to read this: knowledge-base structure /
   engineering conventions / changelog format / git mechanics.
-- **Reusability boundary:** this file must never contain an absolute host path, a username, hardware, a
-  specific model provider, or a project name — those live in `INSTANCE.md`. Only part of that is
-  mechanized, and less than you'd hope. `tools/public-audit.sh` scans the tracked tree (this file
-  included), but of its built-in patterns only two bear on the list above: a **home directory** path
-  (`/Users/…`, `/home/…`) and a real-looking email. So a username is caught only where it sits inside
-  one of those two, and any other absolute path (`/opt/…`, `/Volumes/…`, `/srv/…`) is not caught at
-  all. **Hardware, model
-  provider and project name have no built-in heuristic**: they are found only if you declare them
-  yourself — a `token:` pattern in `.public-audit`, or a personal literal in
-  `~/.claude/secret-scan-personal` that the machine-global secret-guard then blocks at commit time.
-  And `public-audit.sh` is a tool you run, not a CI gate. So treat this as authoring discipline with a
-  partial, largely opt-in net beneath it: anonymize as you write, don't scrub before a release.
+- **Reusability boundary:** this file (and `PRINCIPLES.md`) must never contain an absolute host path, a
+  username, hardware, a specific model provider, or a project name — those live in `INSTANCE.md`. Only
+  part of that is mechanized, and less than you'd hope. `tools/self/doctor.sh` — which runs in CI, not
+  just on demand — hard-fails (GAP) if either file contains a home-directory path (`/Users/…`,
+  `/home/…`) or a real-looking, non-safe-listed email; `tools/public-audit.sh` runs the same two
+  patterns across the rest of the tracked tree, but only when you remember to run it. So a username is
+  caught only where it sits inside a home path, and any other absolute path (`/opt/…`, `/Volumes/…`,
+  `/srv/…`) is not caught at all. **Hardware, model provider and project name have no built-in
+  heuristic**: they are found only if you declare them yourself — a `token:` pattern in `.public-audit`,
+  or a personal literal in `~/.claude/secret-scan-personal` that the machine-global secret-guard then
+  blocks at commit time. So treat this as authoring discipline with a partial net beneath it, gated for
+  this pair of files and opt-in everywhere else: anonymize as you write, don't scrub before a release.
 - Foundation under everything here: `PRINCIPLES.md` (P0–P4).
 
 ---
@@ -131,10 +131,10 @@ The three tiers keep on-demand and on-recall content out of startup; this keeps 
 honest. Two signals drive placement, not intuition:
 
 - **Footprint drift = the demote signal.** `doctor` estimates the token count of the project's own
-  `CLAUDE.md` and emits a HINT (`H-FOOTPRINT`) once it exceeds `KEEL_STARTUP_WARN_TOKENS` (default
-  10,000). That hint means: trim — move roadmap/changelog detail to the on-demand tier. **Known gap:**
-  the *global* `CLAUDE.md` is never measured, so read the number as a floor, not the session's real
-  startup cost.
+  `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (following its `@…/keel/CORE.md` import when one is
+  wired) and emits a HINT (`H-FOOTPRINT`) once the sum exceeds `KEEL_STARTUP_WARN_TOKENS` (default
+  10,000), reporting both figures. That hint means: trim — move roadmap/changelog detail to the
+  on-demand tier.
 - **Retrieval miss = the promote signal.** A footprint too *small* fails silently — a needed fact wasn't
   loaded and the session ran on a guess. There's no automated hook for this, so capture it by a light
   ritual at session wrap: did the session have to hunt for a fact that should have been in startup? A logged

@@ -72,9 +72,11 @@ DIR="${DIR:-.}"
 _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/safe-emails.sh
 . "$_pa_dir/lib/safe-emails.sh"
+# EMAIL_RE / HOME_RE: the leaked-identifier content patterns, shared with self/doctor.sh's narrower
+# GAP over FRAMEWORK.md/PRINCIPLES.md (dir #114) — same reuse reason as safe-emails.sh above.
+# shellcheck source=tools/lib/leak-patterns.sh
+. "$_pa_dir/lib/leak-patterns.sh"
 unset _pa_dir
-EMAIL_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-HOME_RE='/(Users|home)/[A-Za-z0-9._-]+'
 
 # --- gather config -------------------------------------------------------------------------------
 tokens=()

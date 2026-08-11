@@ -44,7 +44,8 @@
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
 #                              PreToolUse/Bash one is missing (plain absence isn't flagged — opt-in)
-#   HINT  H-FOOTPRINT          project CLAUDE.md startup footprint over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
+#   HINT  H-FOOTPRINT          session startup footprint (project CLAUDE.md + resolved global
+#                              CLAUDE.md/keel/CORE.md) over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
 #   HINT  H-MAP-DRIFT          CLAUDE.md map may be stale — a backtick-spanned path no longer on disk
 #                              (path-granular accept stays .keel/map-drift-baseline)
 #   HINT  H-DEP-FLOATING       floating dependency version (image :latest / Action @vN)
@@ -114,6 +115,34 @@ fi
 WARN_TOKENS="${KEEL_STARTUP_WARN_TOKENS:-10000}"
 case "$WARN_TOKENS" in ''|*[!0-9]*) WARN_TOKENS=10000 ;; esac   # non-numeric → default (no `[: integer expected`)
 exit_code=0
+
+# The @import line's own detection regex — mirror of install.sh's has_core_import() — used twice
+# below (H-FOOTPRINT's global-core resolution, and the --install rails check further down): one
+# definition instead of two hand-copies of the same literal in this file (keep the two in sync with
+# install.sh's own copy).
+core_import_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
+
+# dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
+# printed was a floor on real startup cost, not the whole of it — the global core is the OTHER half
+# of every session's always-loaded set. Resolved once here (machine-invariant across every $d in the
+# loop below), same default-home chain --install mode already uses for $ihome, so a plain `doctor.sh`
+# run (no --install) finds the SAME global CLAUDE.md that install audits.
+ghome="${KEEL_HOME:-${HOME:-}/.claude}"
+global_chars=0
+if [ -f "$ghome/CLAUDE.md" ]; then
+  global_chars="$(wc -c < "$ghome/CLAUDE.md" 2>/dev/null | tr -d ' ')" || global_chars=0
+  [ -n "$global_chars" ] || global_chars=0
+  # Linked mode: the global CLAUDE.md carries one `@…/keel/CORE.md` line, and Claude Code loads that
+  # target's own bytes at session start — so an honest sum must resolve it and add its size in too.
+  # Copy mode (or --no-git) embeds the core's content directly inside CLAUDE.md instead (no @import
+  # line), so its bytes are already counted by the read above — nothing extra to add there.
+  if grep -qE "$core_import_re" "$ghome/CLAUDE.md" 2>/dev/null && [ -f "$ghome/keel/CORE.md" ]; then
+    core_chars="$(wc -c < "$ghome/keel/CORE.md" 2>/dev/null | tr -d ' ')" || core_chars=0
+    [ -n "$core_chars" ] || core_chars=0
+    global_chars=$(( global_chars + core_chars ))
+  fi
+fi
+global_est=$(( global_chars / 4 ))
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 
@@ -401,8 +430,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   gclaude="$ihome/CLAUDE.md"
   if [ ! -f "$gclaude" ]; then
     gap G-RAILS-MISSING "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh$ihome_flag)"
-  # (import-line regex: mirror of install.sh's has_core_import() — keep the two in sync)
-  elif grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$gclaude"; then
+  elif grep -qE "$core_import_re" "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
       gap G-RAILS-IMPORT-BROKEN "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link$ihome_flag)"
     elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
@@ -573,9 +601,10 @@ for d in "${DIRS[@]}"; do
     # set -e before anything already recorded for this unit — including a GAP — ever printed.
     chars="$(wc -c < "$d/CLAUDE.md" 2>/dev/null | tr -d ' ')" || chars=0
     [ -n "$chars" ] || chars=0
-    est=$(( chars / 4 ))
+    proj_est=$(( chars / 4 ))
+    est=$(( proj_est + global_est ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
-      hint H-FOOTPRINT "project CLAUDE.md startup footprint ~${est} tokens > budget ${WARN_TOKENS} — move detail to the on-demand tier (P2/P3)"
+      hint H-FOOTPRINT "session startup footprint ~${est} tokens (project ~${proj_est} + global ~${global_est}) > budget ${WARN_TOKENS} — move project detail to the on-demand tier (P2/P3)"
     fi
   fi
 
@@ -721,6 +750,10 @@ EOF
         fi
       fi
       [ -e "$d/$tok" ] && continue
+      # A worktree legitimately lacks paths that live only at the main checkout by this project's own
+      # convention (BACKLOG.md, private/ — see this project's CLAUDE.md). unit_top already resolves to
+      # the main checkout (never worktree-local), so re-check there before flagging drift (dir #113).
+      [ "$unit_top" != "$d" ] && [ -e "$unit_top/$tok" ] && continue
       in_token_set "$baseline_set" "$tok" && continue
       drift_count=$((drift_count + 1))
       [ "$drift_count" -le "$max_show" ] && drift_list="${drift_list}${drift_list:+, }$tok"
