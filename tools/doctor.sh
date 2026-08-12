@@ -145,6 +145,19 @@ _char_count() {
   printf '%s' "$n"
 }
 
+# manifest_field FILE KEY — the value of a top-level `key=value` line in an install manifest (dir
+# #125), first match, "" on any read failure. Used 3x below reading install-manifest.<mode> — one
+# definition instead of three hand-copied sed pipelines. `|| true` at the end: an EXISTING but
+# unreadable manifest (permission-denied) makes `sed` exit non-zero even with stderr silenced, and
+# under this file's own `set -euo pipefail` an unguarded pipeline failure here would abort the WHOLE
+# run mid-unit — losing every finding already buffered in $NOTES and printing no summary line at all
+# (found by an independent /code-review high pass). The manifest-versioning contract says exactly
+# this case degrades to "treated as absent", never a crash — same `|| true` degradation the file's
+# own load_token_set() already uses for the identical unreadable-file risk.
+manifest_field() {
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true
+}
+
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
 # printed was a floor on real startup cost, not the whole of it — the global core is the OTHER half
 # of every session's always-loaded set. Resolved once here (machine-invariant across every $d in the
@@ -649,6 +662,49 @@ if [ "$INSTALL_MODE" = 1 ]; then
       fi
     else
       warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$imode_flag$ihome_flag (or add an alias by hand)"
+    fi
+  fi
+
+  # Install manifest (dir #125): read-only in this PR — uninstall doesn't consume it yet, so both
+  # findings are advisory. A missing manifest just means the legacy heuristics above are still doing
+  # the work (KEEL-LEGACY-NOMANIFEST); a present-but-corrupt/unversioned one degrades to the same
+  # thing (the versioning contract: an unknown/unparsable manifest is treated as absent, never a
+  # crash). A present, well-formed manifest that CONTRADICTS the filesystem names both sides rather
+  # than trusting either — install.sh's own $manifest_mode/$manifest_layout naming, mirrored here.
+  imanifest_mode="claude"; [ "$CODEX_MODE" = 1 ] && imanifest_mode="codex"
+  imanifest="$ihome/.keel/install-manifest.$imanifest_mode"
+  if [ ! -f "$imanifest" ]; then
+    warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — uninstall/doctor fall back to today's heuristics (KEEL-LEGACY-NOMANIFEST); record one: install.sh$imode_flag$ihome_flag"
+  else
+    iman_version="$(manifest_field "$imanifest" keel_manifest_version)"
+    if [ "$iman_version" != "1" ]; then
+      warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest (KEEL-LEGACY-NOMANIFEST); re-run install.sh$imode_flag$ihome_flag to record a fresh one"
+    else
+      iman_layout="$(manifest_field "$imanifest" layout)"
+      iman_home="$(manifest_field "$imanifest" home)"
+      iman_drift=""
+      case "$iman_layout" in
+        link)
+          if [ -e "$ihome/keel/CORE.md" ] && [ ! -L "$ihome/keel/CORE.md" ]; then
+            iman_drift="manifest says layout=link but $ihome/keel/CORE.md is a regular file, not a symlink"
+          fi ;;
+        link-nogit)
+          if [ -L "$ihome/keel/CORE.md" ]; then
+            iman_drift="manifest says layout=link-nogit but $ihome/keel/CORE.md is a symlink (the --no-git trim looks restored)"
+          fi ;;
+      esac
+      # Canonicalize $ihome for this ONE comparison only (never reassign the shared $ihome — every
+      # other advice line in this mode still names the home the way the operator typed it): the
+      # manifest's own home= is always resolved absolute (install.sh's home_resolved), so a
+      # cosmetic difference — a trailing slash, a relative path — would otherwise false-fire this
+      # WARN on a perfectly healthy install (found by an independent /code-review high pass).
+      ihome_canon="$(cd "$ihome" 2>/dev/null && pwd || printf '%s' "$ihome")"
+      if [ -z "$iman_drift" ] && [ -n "$iman_home" ] && [ "$iman_home" != "$ihome_canon" ]; then
+        iman_drift="manifest recorded home=$iman_home, but this audit is auditing $ihome"
+      fi
+      if [ -n "$iman_drift" ]; then
+        warn W-MANIFEST-DRIFT "$iman_drift — re-run install.sh$imode_flag$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
+      fi
     fi
   fi
 
