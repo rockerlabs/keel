@@ -555,6 +555,54 @@ run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
 check_absent "a PR # in title prose discussing the convention isn't treated as a real tag either" "$OUT" \
   "dir #26's heading cites"
 
+# a heading whose TITLE names an earlier, unrelated PR before the real ⏳/IN REVIEW tag must check
+# the PR the TAG actually cites, not the leftmost "PR #N" anywhere on the line (found by /code-review
+# medium's own line-by-line pass — `[[ =~ ]]` against the whole line grabs the first match
+# regardless of where the real tag sits). PR #100 (open, per fake_gh_bin) precedes the tag; the tag
+# itself cites PR #99 (merged) — the correct, tag-scoped extraction must catch PR #99.
+d="$(mk_clean_repo)"
+printf '### dir #27 — follow-up to PR #100 — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_contains "checks the tag's own PR (#99), not the earlier title reference (#100)" "$OUT" \
+  "dir #27's heading cites PR #99 as ⏳/IN REVIEW but gh reports it MERGED"
+
+# the inverse, which is what would actually go WRONG under the leftmost-match bug: an earlier,
+# unrelated MERGED PR in the title (#99) precedes the tag, but the tag itself cites a still-OPEN PR
+# (#100) — the leftmost-match bug would wrongly warn about #99; the fix must stay silent, since the
+# PR the tag actually names is still open.
+d="$(mk_clean_repo)"
+printf '### dir #28 — follow-up to PR #99 — R2 — ⏳ IN REVIEW (PR #100)\n\nstill waiting.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "an earlier merged PR in the title doesn't cause a false flag for the tag's own open PR" \
+  "$OUT" "dir #28's heading cites"
+
+# `gh pr view` must run from the repo being audited, not wherever self/doctor.sh's own caller
+# happens to sit — unlike every `git` call in this file, `gh` has no `-C` flag; it infers the target
+# GitHub repo from the process's OWN cwd (found by /code-review medium's own line-by-line pass, which
+# flagged the bare call as querying the wrong repo under a REPO_ARG invocation). This stub only
+# answers MERGED when invoked with $PWD == $EXPECTED_PWD, so a bare (unscoped) `gh pr view` call —
+# which would run from wherever this TEST FILE's own process cwd is, not `$d` — fails the PWD check
+# and the warning never fires; only a genuinely `cd`'d call passes.
+fake_gh_pwd_bin="$SANDBOX/fakebin-gh-pwd"
+mkdir -p "$fake_gh_pwd_bin"
+cat > "$fake_gh_pwd_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "pr" ] && [ "$2" = "view" ] && [ "$PWD" = "$EXPECTED_PWD" ]; then
+  echo MERGED
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$fake_gh_pwd_bin/gh"
+
+d="$(mk_clean_repo)"
+printf '### dir #29 — some ticket — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting.\n' > "$d/BACKLOG.md"
+run env PATH="$fake_gh_pwd_bin:$PATH" EXPECTED_PWD="$(cd "$d" && pwd)" "$sd" "$d" --quiet
+check_contains "gh runs from the repo under audit, not the caller's own cwd" "$OUT" \
+  "dir #29's heading cites PR #99 as ⏳/IN REVIEW but gh reports it MERGED"
+
 # --- 9. CHANGELOG.md <-> git release-tag reconciliation (dir #139) ---------------------------------
 # Each fixture builds its own small CHANGELOG.md + tag history directly, independent of this repo's
 # OWN real release history.
@@ -622,6 +670,21 @@ rm "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "no changelog" )
 run "$sd" "$d" --quiet
 check_status "no CHANGELOG.md at all -> exit 0" 0 "$STATUS"
+
+# an UNREADABLE (but present) CHANGELOG.md must not abort the whole doctor.sh run either — the same
+# `-r` guard check 5's BACKLOG.md read already carries, which this check's condition was found to be
+# missing (found by /code-review medium's own line-by-line pass: it only inherited the `-f` half).
+# root always reads regardless of chmod, so this only proves anything as non-root (same guard this
+# project's own CLAUDE.md documents for the identical Alpine/root trap elsewhere).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mk_clean_repo)"
+  printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+  ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+  chmod 000 "$d/CHANGELOG.md"
+  run "$sd" "$d" --quiet
+  check_status "an unreadable CHANGELOG.md doesn't abort the whole run -> exit 0" 0 "$STATUS"
+  chmod 644 "$d/CHANGELOG.md"
+fi
 
 # a shallow clone must degrade to a silent skip, not a false GAP — the whole point of dir #139's own
 # `is-shallow-repository` guard: a shallow checkout (CI's own default, absent the fetch-depth: 0 this

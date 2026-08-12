@@ -330,6 +330,18 @@ heading_dir_id() {
   [[ "$line" =~ $re ]] && printf '%s' "${BASH_REMATCH[0]}" || printf '%s' "dir #?"
 }
 
+# Blank (not delete, so line numbers stay aligned) fenced ```/~~~ code-block regions of a file,
+# same convention `tools/doctor.sh` already uses elsewhere (indented AND tilde-style fences). Shared
+# by check 5's BACKLOG.md scan and check 6's CHANGELOG.md scan below (found duplicated verbatim
+# between them by /code-review medium's own reuse/altitude passes) — both need it for the identical
+# reason: a `##`/`###`-shaped line living inside a fenced example must not be misread as a real
+# heading/section. Accepted limitation, same as both former call sites carried individually: an ODD
+# number of fence markers (a forgotten closing fence) leaves the toggle stuck "in fence" for the rest
+# of the file.
+blank_fenced_blocks() {
+  awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$1"
+}
+
 # --- 5. BACKLOG.md heading/status drift -----------------------------------------------------------
 # `### dir #N` tickets carry their own status tag on the heading line itself (✅ DONE/CLOSED,
 # ⏳ IN FLIGHT, or RETRACTED). Three real hits (dirs #81, #75, #74 — see dir #87) left that tag
@@ -382,7 +394,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   # real staleness follows. Not fixed here — a WARN-only heuristic already trades recall for
   # simplicity, and a malformed fence is a self-evident authoring mistake, unlike the silent drift
   # this check exists to catch.
-  fence_blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$backlog_file")"
+  fence_blanked="$(blank_fenced_blocks "$backlog_file")"
   heading_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
     < <(grep -nE '^### dir #[0-9]+ ' <<< "$fence_blanked" | cut -d: -f1)
@@ -458,7 +470,12 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
         # "Low-severity (cosmetic ... nobody re-opened stale work)" — a hard exit-1 would fail
         # test_self_doctor.sh's real-checkout smoke test (and block /polish step 7) the moment
         # ANY dir-ticket heading anywhere goes stale, for reasons unrelated to whatever diff is
-        # actually being polished.
+        # actually being polished. This now matters beyond this file too (found by /code-review
+        # medium's cross-file pass): since dir #135 made this check resolve BACKLOG.md at the main
+        # checkout even from a worktree, that smoke test genuinely reads the live, personal
+        # BACKLOG.md now, whose content changes over time — safe today only because this check (and
+        # 5b below) stays WARN-only. Promoting either to a hard GAP would make the smoke test flaky
+        # against a file outside the test's own control.
         warn "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
         stale=$((stale + 1))
       fi
@@ -485,15 +502,30 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   # `continue`s past that heading, no crash, no false WARN. That single `|| continue` is the whole
   # "degrade gracefully offline/no-gh" contract; there is deliberately no separate `command -v gh`
   # gate; `gh` missing hits the exact same fallback a live-but-unreachable `gh` does.
+  say ""
+  say "● BACKLOG.md ⏳/IN REVIEW heading vs. gh's live PR state"
   pr_stale=0
   if [ "${#heading_lines[@]}" -gt 0 ]; then
+    tag_re='— (⏳|IN REVIEW)'
+    pr_re='PR #[0-9]+'
     for start in "${heading_lines[@]}"; do
       heading_line="${stripped_lines[$((start - 1))]}"
-      printf '%s' "$heading_line" | grep -qE -- '— (⏳|IN REVIEW)' || continue
-      pr_re='PR #[0-9]+'
-      [[ "$heading_line" =~ $pr_re ]] || continue
+      [[ "$heading_line" =~ $tag_re ]] || continue
+      # Only the text AFTER the matched tag: the real convention puts the cited PR right after the
+      # tag ("— ⏳ IN REVIEW (PR #99)"), but `[[ =~ ]]` on the WHOLE line would instead grab the
+      # LEFTMOST "PR #N" anywhere — including an earlier, unrelated PR the ticket's own TITLE
+      # references (e.g. "follow-up to PR #12 — R2 — ⏳ IN REVIEW (PR #85)"), silently checking the
+      # wrong PR (found by /code-review medium's own line-by-line pass).
+      after_tag="${heading_line#*"${BASH_REMATCH[0]}"}"
+      [[ "$after_tag" =~ $pr_re ]] || continue
       pr_num="${BASH_REMATCH[0]#PR #}"
-      pr_state="$(gh pr view "$pr_num" --json state -q .state 2>/dev/null)" || continue
+      # `-C "$repo_root"`-equivalent for `gh`: unlike every `git` call in this file, `gh` has no `-C`
+      # flag — it infers which GitHub repo to query from the process's OWN cwd (or $GH_REPO), not
+      # from any path argument. A bare call here would query whatever repo the invoking shell
+      # happens to sit in, not the one being audited (a REPO_ARG sandbox, or self/doctor.sh run from
+      # elsewhere) — silently wrong or empty, and swallowed by the `|| continue` below with no sign
+      # anything was off (found by /code-review medium's own line-by-line pass).
+      pr_state="$(cd "$repo_root" && gh pr view "$pr_num" --json state -q .state 2>/dev/null)" || continue
       [ "$pr_state" = "MERGED" ] || continue
       id="$(heading_dir_id "$heading_line")"
       warn "BACKLOG.md:$start: $id's heading cites PR #$pr_num as ⏳/IN REVIEW but gh reports it MERGED — stale regardless of heading-vs-body agreement"
@@ -526,7 +558,11 @@ changelog_file="$repo_root/CHANGELOG.md"
 # shallow one; `|| true` covers a REPO_ARG sandbox dir that isn't a git repo at all (rev-parse then
 # just fails, same treatment as "can't tell, skip" — this check is advisory, not a hard requirement
 # to be inside a full git checkout).
-if [ -f "$changelog_file" ] \
+# `-r`, not just `-f`: same reason check 5's BACKLOG.md read requires it — an unreadable file
+# (e.g. a stray chmod) would otherwise fail the awk pass below and, under `set -euo pipefail`, abort
+# the ENTIRE doctor.sh run rather than just this check (found by /code-review medium's own
+# line-by-line pass: this condition had only inherited the `-f` half).
+if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
    && [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
   # `v[0-9]*.[0-9]*.[0-9]*`: this project's own tagging convention (v0.1.0 .. v0.6.0) — sort -u so a
   # re-tagged/duplicate ref can't inflate the count. `git tag -l` itself always exits 0 (even with zero
@@ -535,12 +571,12 @@ if [ -f "$changelog_file" ] \
   # assignment's own exit status, which under `set -e` would abort the whole doctor.sh run — `|| true`
   # below on every such assignment, same guard check 4's CHANGELOG-staleness timestamps already use.
   tags="$(git -C "$repo_root" tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -u)"
-  # Same fence-blanking as check 5's BACKLOG.md scan, and for the identical reason (found by
-  # /polish's own independent review — this check shipped without it at first): a `## [x.y.z]`-shaped
-  # line living inside a fenced example — this very file documents its own release-note conventions,
-  # and an illustrative snippet is a realistic future entry — must not be misread as a real release
-  # section. Blanked, not deleted, so line content changes but nothing here depends on line numbers.
-  changelog_blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$changelog_file")"
+  # Same `blank_fenced_blocks` fence-blanking as check 5's BACKLOG.md scan, and for the identical
+  # reason (found by /polish's own independent review — this check shipped without it at first): a
+  # `## [x.y.z]`-shaped line living inside a fenced example — this very file documents its own
+  # release-note conventions, and an illustrative snippet is a realistic future entry — must not be
+  # misread as a real release section.
+  changelog_blanked="$(blank_fenced_blocks "$changelog_file")"
   sections="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' <<< "$changelog_blanked" \
     | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u || true)"
   unreleased_count="$(grep -cE '^## \[Unreleased\]' <<< "$changelog_blanked" || true)"
