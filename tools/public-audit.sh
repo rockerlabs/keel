@@ -114,8 +114,11 @@ valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pa
 
 # Personal literals from the secret-guard's local file double as private tokens for this audit —
 # they are precisely what must not ship when a repo goes public. Case-INSENSITIVE (unlike tokens).
-# Invalid lines are counted and warned about (without echoing them — the file's whole point is that
-# its content stays off any pasteable output).
+# Invalid lines are counted and reported as a GAP, not just a WARN (without echoing them — the file's
+# whole point is that its content stays off any pasteable output): unlike a bad allow-email entry
+# (which fails open safely — worst case one extra false WARN), a bad personal-literal line means that
+# literal goes completely unscanned, which is a detection-accuracy failure this audit's own GAP bar
+# ("high-confidence leaks... painful to scrub after publishing") exists to catch, not just advise on.
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
@@ -227,7 +230,7 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
       for t in "${tokens[@]}"; do
         [ -z "$t" ] && continue
         case "$reported_toks" in *"|$t|"*) continue ;; esac       # one GAP per token per pass
-        if [ -n "$(grep -aE "$t" "$dec" 2>/dev/null | head -n1 || true)" ]; then
+        if [ -n "$(grep -aE -- "$t" "$dec" 2>/dev/null | head -n1 || true)" ]; then
           gap "private token /$t/ in a binary blob in $label — ${opath:-$osha}"
           reported_toks="$reported_toks|$t|"
         fi
@@ -270,11 +273,11 @@ say "● public-audit ($DIR)"
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
-[ "$bad_personal" -gt 0 ] && warn "ignoring $bad_personal invalid regex line(s) in $PERSONAL_FILE"
+[ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
 [ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
 
 # helper: first matching line of a tracked-tree grep, or empty
-tree_grep() { git -C "$DIR" grep -nIE "$1" -- . "${excludes[@]}" 2>/dev/null; }
+tree_grep() { git -C "$DIR" grep -nIE -- "$1" -- . "${excludes[@]}" 2>/dev/null; }
 
 # --- 1. identities in git history (GAP) ----------------------------------------------------------
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
@@ -411,14 +414,14 @@ EOF
         # Capture-then-test, not `grep -qE … && gap`: with a token that matches EARLY in a large
         # pr_hist, `printf | grep -q` SIGPIPEs printf, and `pipefail` makes the pipeline 141 — so the
         # `&& gap` never fires and a real leak passes clean. The captured hit can't be lost to SIGPIPE.
-        if [ -n "$(printf '%s\n' "$pr_hist" | grep -E "$t" | head -n1 || true)" ]; then
+        if [ -n "$(printf '%s\n' "$pr_hist" | grep -E -- "$t" | head -n1 || true)" ]; then
           gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
         fi
       done
     fi
     if [ -n "$personal_re" ]; then
       ph="$(printf '%s\n' "$pr_hist" | grep -aniE -- "$personal_re" | head -1 || true)"
-      [ -n "$ph" ] && gap "personal literal (secret-scan-personal) in a host PR ref (refs/pull/*) — e.g. $ph"
+      [ -n "$ph" ] && gap "personal literal (secret-scan-personal) in a host PR ref (refs/pull/*) — e.g. $ph — purge via delete-and-recreate"
     fi
     # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
     ph="$(printf '%s\n' "$pr_hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"

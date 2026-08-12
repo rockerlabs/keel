@@ -47,8 +47,9 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   scanning (dir #101) landed independently — its own value was the missing piece: a real name in the
   local `~/.claude/secret-scan-personal` file (override with `$SECRET_SCAN_PERSONAL_FILE`) is now hunted
   case-insensitively in the tracked tree, git history, and binary blobs, the same three surfaces
-  declared tokens already cover. A bad regex line in the personal file is WARNed about, not silently
-  dropped or fatal.
+  declared tokens already cover. A bad regex line in the personal file is a GAP, not a silent drop — the
+  literal it would have hunted goes unscanned, and unlike a bad `allow-email` entry (which fails open
+  safely) that's a detection-accuracy failure this audit's own bar exists to catch.
 
 ### Fixed
 - **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose
