@@ -359,7 +359,7 @@ blank_fenced_blocks() {
 # entry is bare — a plain single-checkout repo's own porcelain output has exactly one such line
 # naming itself, so this is a no-op there. This makes self/doctor.sh the 7th tool carrying its own
 # copy of this same awk fragment (dir #26 — a tracked, deliberate "capture only, do not pre-build a
-# shared lib" decision, since the five prior sites don't all want the same projection); bump that
+# shared lib" decision, since the six prior sites don't all want the same projection); bump that
 # ticket's site count rather than extracting one here against its own recorded call. `|| true`: outside
 # a repo (or a REPO_ARG sandbox dir the
 # test suite points at a non-repo path) git exits non-zero, and pipefail must not abort the whole run
@@ -591,7 +591,12 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   sections="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' <<< "$changelog_blanked" \
     | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u || true)"
   unreleased_count="$(grep -cE '^## \[Unreleased\]' <<< "$changelog_blanked" || true)"
-  total_sections="$(grep -cE '^## \[' <<< "$changelog_blanked" || true)"
+  # Only the two heading SHAPES this check actually understands — `[Unreleased]` and a bare semver
+  # bracket — not a bare `grep -cE '^## \['`, which would also count any OTHER legitimate `## [...]`
+  # heading a CHANGELOG.md might carry (found by an independent reviewer's own pass, empirically
+  # reproduced: a lone `## [Deprecated]`-style heading false-GAPed an otherwise perfectly healthy
+  # repo, since it inflates this count without a matching tag or an Unreleased bump to balance it).
+  total_sections="$(grep -cE '^## (\[Unreleased\]|\[[0-9]+\.[0-9]+\.[0-9]+\])' <<< "$changelog_blanked" || true)"
   n_tags="$(printf '%s\n' "$tags" | grep -c . || true)"
 
   missing_section=""
@@ -613,6 +618,19 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   fi
   if [ -n "$missing_tag" ]; then
     gap "CHANGELOG.md '## [x.y.z]' section(s) with no matching release tag: $missing_tag"
+    changelog_bad=1
+  fi
+  # A DUPLICATED `[Unreleased]` heading evades the count invariant below entirely: both
+  # `total_sections` and `unreleased_count` increment together on the extra copy, so the two sides
+  # of the comparison stay balanced (found by an independent reviewer's own pass, empirically
+  # reproduced — no GAP fired). Needs its own explicit check, not folded into the general invariant.
+  # `-gt 1`, not `!= 1`: a CHANGELOG.md that never adopted the bracketed `[Unreleased]` convention at
+  # all (0 matches — not this project's own file, but a legitimate state elsewhere, and the shape the
+  # test suite's own minimal sandbox fixture uses) is a separate, softer question this check doesn't
+  # take a position on; only a genuine DUPLICATE — the bug actually found — is unambiguous enough to
+  # GAP on.
+  if [ "$unreleased_count" -gt 1 ]; then
+    gap "CHANGELOG.md has $unreleased_count '## [Unreleased]' headings, expected at most 1"
     changelog_bad=1
   fi
   expected_sections=$((n_tags + unreleased_count))

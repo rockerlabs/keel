@@ -687,6 +687,40 @@ check_absent "the directional checks alone see no missing name (dedup hides the 
   "no matching CHANGELOG.md"
 check_absent "and no missing tag either" "$OUT" "no matching release tag"
 
+# a DUPLICATED `[Unreleased]` heading evades the general count invariant entirely: both sides of the
+# comparison (total sections, and the Unreleased count baked into "expected") increment together on
+# the extra copy, staying balanced (found by an independent reviewer's own pass, empirically
+# reproduced against the pre-fix code — no GAP fired). Needs its own explicit "at most 1" check.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [Unreleased]\n- duplicate, different accident\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, duplicate Unreleased heading" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a duplicated [Unreleased] heading -> exit 1" 1 "$STATUS"
+check_contains "names the Unreleased-count mismatch" "$OUT" "'## [Unreleased]' headings, expected at most 1"
+
+# ZERO bracketed `[Unreleased]` headings (this repo's own base sandbox fixture is exactly this shape
+# — a plain "## Unreleased" with no brackets) must NOT false-GAP: "at most 1", not "exactly 1" — a
+# CHANGELOG.md that never adopted the bracket convention at all is a separate, softer question this
+# check takes no position on; only a genuine duplicate is unambiguous enough to flag.
+d="$(mk_clean_repo)"
+run "$sd" "$d" --quiet
+check_status "zero bracketed Unreleased headings doesn't false-GAP -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the missing bracket convention" "$OUT" "GAP"
+
+# a legitimate, non-version `## [...]` heading (this project's CHANGELOG.md never uses one, but
+# nothing stops a future entry from doing so) must not inflate the section count and false-GAP an
+# otherwise perfectly healthy repo (found by an independent reviewer's own pass, empirically
+# reproduced against the pre-fix code — a bare `grep -cE '^## \['` counted it, with no tag or
+# Unreleased bump to balance it against).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [Deprecated]\n- some non-version bracket heading\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, plus a non-version bracket heading" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a non-version bracket heading doesn't false-GAP a healthy repo -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the non-version heading" "$OUT" "GAP"
+
 # no CHANGELOG.md at all -> clean skip, not a crash or a GAP
 d="$(mk_clean_repo)"
 rm "$d/CHANGELOG.md"
