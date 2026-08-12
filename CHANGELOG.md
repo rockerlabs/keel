@@ -8,6 +8,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **`docs/release-audit.md`: the v0.6.0 campaign's release-readiness process, written down as a
+  repeatable seven-phase flow** (dir #140). Module audit sweeps, synthesis-time dedupe with an
+  up-front blocker-vs-tail ranking, batching by file-affinity, a model tier per batch, a review-round
+  budget, a narrow three-point RC-pass mandate (cross-PR seams, whole-delta stale-phrase sweep,
+  residual-ledger check), then tag — each phase citing the felt incident from v0.6.0 that shaped it,
+  so the next release runs off the doc instead of re-deriving the process live.
+- **A target-release label for backlog tickets, and `/backlog` support for it** (dir #143). A
+  ticket's heading can carry a trailing `→ 0.6.1` (or `→ next`) tag, assigned at synthesis time
+  (`docs/release-audit.md` phase 2); `commands/backlog.md` reads it (step 3b) and renders one grouped
+  "Release tail" table per target value (step 6), so "what's slated for X?" is answerable without a
+  re-read of every ticket the way v0.6.0's ~20-ticket tail needed one. New test coverage in
+  `tests/test_release_audit_doc.sh` pins the doc/command cross-references against drift.
+
 ## [0.6.0] — 2026-08-12
 
 The audit release. A global pre-release audit (dir #85) swept the whole project in four modules —
