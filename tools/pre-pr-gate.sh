@@ -819,6 +819,19 @@ case "${1:-}" in
       count=0; skipped_existing=0; unrecovered=""; todo=""
       while IFS=$'\t' read -r r_step r_outcome; do
         [ -n "$r_step" ] || continue
+        # dir #144 (operator-run /code-review medium finding): the direct `receipt <step-id>` write path
+        # rejects a whitespace-carrying step_id, but this recovery path reads r_step from a RETIRED
+        # sentinel that could predate that guard (or was hand-edited) — without this check, recovering it
+        # would silently reintroduce the exact malformed-line bug the guard exists to close, just through
+        # a second entry point. Skip (not abort) so one bad historical line doesn't block recovering the
+        # rest of an otherwise-good backup.
+        case "$r_step" in
+          *[[:space:]]*)
+            unrecovered="${unrecovered:+$unrecovered / }$r_step (malformed — carries whitespace)"
+            todo="${todo:+$todo, }a prior receipt for this step was malformed and could not be recovered; re-run it fresh"
+            continue
+            ;;
+        esac
         case "$r_step" in
           polish.3-tests|polish.5-review)
             # dir #96: never recovered. Both bind a claim to a SPECIFIC commit, and both have an arm
@@ -880,7 +893,29 @@ case "${1:-}" in
       exit 0
     fi
     step_id="${2:?pre-pr-gate: receipt <step-id> [outcome] — step id required}"
+    # dir #144 (stranded fix/pre-pr-gate-malformed-receipt-guard, re-derived onto current main): step-id
+    # and outcome are separate shell args — `receipt "polish.4-depth high:+261-27,..."` (one combined
+    # quoted string) used to write a malformed line whose step-id field was the whole string, so the
+    # completeness check's literal match on e.g. "polish.4-depth" silently failed later, denying
+    # `gh pr create` with a message indistinguishable from a real concurrent-write sentinel collision —
+    # see [[pre-pr-gate-receipt-needs-two-args]]. No real step id ever contains whitespace, so failing
+    # loudly HERE turns a deferred, misleading "missing receipt" denial into an immediate, legible one.
+    case "$step_id" in
+      *[[:space:]]*)
+        printf 'pre-pr-gate: step-id %q contains whitespace — step-id and outcome must be SEPARATE arguments (e.g. receipt polish.4-depth "high:+261-27,..."), not one combined quoted string. Re-run with the two split apart.\n' "$step_id" >&2
+        exit 1
+        ;;
+    esac
     outcome="${3:-done}"
+    # A real outcome routinely contains SPACES (e.g. "medium:+412-96,10f,code"), so it can't reuse
+    # step_id's own [[:space:]] guard — only a TAB or newline actually corrupts the TSV sentinel (an
+    # extra field, the same malformed-line failure mode this dir #144 fix exists to close for step_id).
+    case "$outcome" in
+      *[$'\t\n']*)
+        printf 'pre-pr-gate: outcome %q contains a tab or newline — that would corrupt the sentinel'\''s tab-separated format. Re-run with a plain-text outcome (spaces are fine).\n' "$outcome" >&2
+        exit 1
+        ;;
+    esac
     require_active_receipt
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
     # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the

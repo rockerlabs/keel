@@ -220,6 +220,46 @@ else
 fi
 rm -f "$(sentinel_for "$d")"
 
+# 11b. dir #144: a step-id carrying whitespace (the felt call-site mistake — `receipt` and its outcome
+# quoted together as ONE arg, e.g. `receipt "polish.4-depth high:+412-96"`) is rejected loudly at write
+# time instead of silently writing a malformed line the completeness check later fails on with a
+# misleading "missing receipt" denial. See [[pre-pr-gate-receipt-needs-two-args]].
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt "polish.4-depth high:+412-96,10f,code"
+check_status "whitespace-carrying step-id → non-zero exit" 1 "$STATUS"
+check_contains "whitespace-carrying step-id → actionable error" "$OUT" "contains whitespace"
+check_absent "whitespace-carrying step-id → nothing written to the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depth high"
+rm -f "$(sentinel_for "$d")"
+
+# 11c. A normal, correctly-split receipt call is unaffected by the new guard.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
+check_status "ordinary receipt call still succeeds" 0 "$STATUS"
+check_contains "ordinary receipt call is recorded in the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depth	medium:+412-96,10f,code"
+rm -f "$(sentinel_for "$d")"
+
+# 11d. dir #144 (operator-run /code-review medium finding): the sibling `outcome` field is just as
+# capable of corrupting the sentinel's tab-separated format as step-id was — a tab embedded in outcome
+# adds a 4th field the completeness parser never expects. Only TAB/newline are rejected, not plain
+# spaces (a real outcome routinely contains them, e.g. "medium:+412-96,10f,code").
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "$(printf 'high\tbad')"
+check_status "tab-carrying outcome → non-zero exit" 1 "$STATUS"
+check_contains "tab-carrying outcome → actionable error" "$OUT" "contains a tab or newline"
+check_absent "tab-carrying outcome → nothing written to the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depth"
+rm -f "$(sentinel_for "$d")"
+
+# 11e. A space-carrying outcome (the common, legitimate shape) is still accepted.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run, findings resolved"
+check_status "space-carrying outcome still succeeds" 0 "$STATUS"
+check_contains "space-carrying outcome is recorded in the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.5-review	medium-operator-run, findings resolved"
+rm -f "$(sentinel_for "$d")"
+
 # --- impact instrumentation: guardrail-fire event on deny ---------------------------------------
 # A deny (here: no sentinel → run /polish first) records ONE metadata-only guard event when tracking is on
 # (via $KEEL_IMPACT_LOG or the target repo's .keel/ marker), on the log file only — never on stdout, so the
@@ -1081,6 +1121,22 @@ run_in "$d" bash "$gate" receipt --recover
 check_status "recover on a malformed prior receipt → exit 1" 1 "$STATUS"
 check_contains "malformed prior receipt → distinct message" "$OUT" "malformed"
 rm -f "$(prev_sentinel_for "$d")"
+
+# 59b. dir #144 (operator-run /code-review medium finding): `--recover` skips a whitespace-carrying
+# step-id line in the retired backup instead of silently reintroducing it — the same malformed-line bug
+# class the direct `receipt <step-id>` write path guards against (dir #144), reached through the OTHER
+# entry point (a retired sentinel predating that guard, or hand-edited). Other, well-formed lines in the
+# same backup still recover normally.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+printf 'nonce\tprior-nonce\nbase-sha\t%s\nprior-nonce\tpolish.1-diff\tdone\nprior-nonce\tpolish.4-depth high\tbad\nprior-nonce\tpolish.2-simplify\tdone\n' "$(git -C "$d" rev-parse HEAD)" > "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover with one malformed step-id line among good ones → exit 0" 0 "$STATUS"
+check_contains "recover names the malformed step as unrecovered" "$OUT" "malformed"
+check_contains "recover still restores the well-formed lines" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.1-diff	done"
+check_absent "the malformed step-id is never written to the live sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depth high"
+rm -f "$(prev_sentinel_for "$d")" "$(sentinel_for "$d")"
 
 # --- dir #80: (repo, branch) receipt keying --------------------------------------------------------
 # 60. `receipt-key` subcommand exposes the combined key other tools/tests reuse (pipeline-canary.sh's
