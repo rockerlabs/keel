@@ -9,6 +9,9 @@
 #                                            this follow an  install.sh --home DIR  install (dir #98)
 #   install-pre-pr-gate.sh --force …         overwrite a pre-existing, DIFFERENT hook on the same
 #                                            event+matcher (backs up settings.json first; default: refuse)
+#   install-pre-pr-gate.sh --uninstall …     the reverse: remove exactly the 6 hooks this installer
+#                                            wired (byte-identical match only — a hook you or something
+#                                            else has since changed is left in place, named as kept)
 #
 # --home exists because `install.sh --home DIR` retargets the whole install WITHOUT exporting KEEL_HOME:
 # without it, the commands lived in DIR while this installer's --global wrote hooks to ~/.claude — two
@@ -51,6 +54,14 @@
 # backs up settings.json (a timestamped sibling) first, then replaces just that matcher's hooks.
 # Everything else already in settings.json (other hooks, other keys) is left exactly as it was. A hook
 # that's already exactly ours is left alone (idempotent — safe to re-run after every `git pull`).
+#
+# --uninstall (dir #136) mirrors that same discipline in reverse: it removes an event+matcher entry
+# ONLY when its command is byte-identical to what this installer would wire right now — a hook you (or
+# a --force run) later pointed somewhere else is left in place and named as kept, never silently taken
+# out along with the rest. Backs up settings.json first, same as --force does. This is what
+# uninstall.sh's own closing summary now points adopters at when it finds leftover gate hooks — a
+# whole-home uninstall never removes them itself (it doesn't know whether other repos still need
+# tools/pre-pr-gate.sh to exist).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
@@ -81,17 +92,20 @@ Usage:
   install-pre-pr-gate.sh --global        wire into ~/.claude/settings.json (every repo on this machine)
   install-pre-pr-gate.sh --home DIR      --global, but into DIR/settings.json (follows install.sh --home)
   install-pre-pr-gate.sh --force …       replace a pre-existing, different hook on the same event+matcher
+  install-pre-pr-gate.sh --uninstall …   remove exactly the hooks this installer wired (same target flags)
   install-pre-pr-gate.sh -h | --help
 EOF
 }
 
 force=0
+uninstall=0
 home_dir=""
 scope_flag=""   # empty = project scope (a repo path); set = machine-global, and names the flag that asked
 rest=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) force=1 ;;
+    --uninstall) uninstall=1 ;;
     # --home is --global with an explicit target, so it stays the flag every message names when both
     # are passed — it's the one that actually decides where the hooks land.
     --global) [ -n "$home_dir" ] || scope_flag="--global" ;;
@@ -118,6 +132,15 @@ while [ "$#" -gt 0 ]; do
 done
 set -- ${rest:+"$rest"}
 
+# --force's whole meaning (overwrite a conflicting hook) doesn't exist on the removal path — --uninstall
+# already never touches a hook that differs from ours, unconditionally. Reject the combination instead
+# of silently ignoring one flag.
+if [ "$uninstall" = 1 ] && [ "$force" = 1 ]; then
+  echo "install-pre-pr-gate.sh: --uninstall and --force don't combine (--uninstall never touches a" >&2
+  echo "  hook that differs from ours, with or without --force)" >&2
+  exit 2
+fi
+
 if [ -n "$scope_flag" ]; then
   [ -z "${1:-}" ] || { echo "install-pre-pr-gate.sh: $scope_flag doesn't take a repo path" >&2; exit 2; }
   # Precedence, in one expression: --home DIR > $KEEL_HOME > $HOME/.claude. The ${HOME:?} is evaluated
@@ -136,8 +159,13 @@ if [ -n "$scope_flag" ]; then
     echo "  was changed. Check the path, or run install.sh --home \"$home_dir\" first." >&2
     exit 2
   fi
-  echo "install-pre-pr-gate: $scope_flag wires EVERY repo on this machine — the agent's gh pr create is" >&2
-  echo "  hard-denied without a matching /polish receipt in every project you open here, not just this one." >&2
+  if [ "$uninstall" = 1 ]; then
+    echo "install-pre-pr-gate: $scope_flag reaches EVERY repo on this machine — removing here lifts the" >&2
+    echo "  gate everywhere it was machine-global, not just one project." >&2
+  else
+    echo "install-pre-pr-gate: $scope_flag wires EVERY repo on this machine — the agent's gh pr create is" >&2
+    echo "  hard-denied without a matching /polish receipt in every project you open here, not just this one." >&2
+  fi
   # dir #98's residual, which no flag can close: where the harness looks for its global settings is the
   # harness's decision, not this installer's. Stated, not engineered away.
   if [ "$settings_dir" != "${HOME:-}/.claude" ]; then
@@ -154,6 +182,14 @@ else
   exit 2
 fi
 settings="$settings_dir/settings.json"
+
+# Nothing was ever wired here — say so and stop before creating anything. Checked before the jq
+# requirement below too: an adopter uninstalling on a machine with no jq and no gate ever wired
+# shouldn't be told jq is required for a removal that has nothing to do.
+if [ "$uninstall" = 1 ] && [ ! -f "$settings" ]; then
+  echo "install-pre-pr-gate: nothing to remove — no $settings"
+  exit 0
+fi
 
 # print_snippet — the raw hooks JSON, ready to paste into settings.json's "hooks" key by hand. Must work
 # WITHOUT jq (it's the fallback for exactly that case), so it's a plain heredoc, not jq -n.
@@ -184,8 +220,14 @@ EOF
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "install-pre-pr-gate: jq is required to safely edit settings.json (not found on PATH)." >&2
-  echo "Nothing was changed. Merge this into the \"hooks\" key of $settings by hand:" >&2
-  print_snippet
+  if [ "$uninstall" = 1 ]; then
+    echo "Nothing was changed. Remove the gate's hook entries from $settings by hand — look for the" >&2
+    echo "  \"command\" values containing '$gate' under hooks.PreToolUse/SessionStart/PostToolUse/" >&2
+    echo "  UserPromptExpansion/SubagentStop and delete just those matcher entries." >&2
+  else
+    echo "Nothing was changed. Merge this into the \"hooks\" key of $settings by hand:" >&2
+    print_snippet
+  fi
   exit 1
 fi
 
@@ -211,6 +253,18 @@ hook_specs="$(jq -n --arg gate "$gate" '[
   {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash '\''" + $gate + "'\'' skill-trace")}
 ]')"
 
+# _backup_settings SETTINGS — a timestamped copy before any destructive edit; sets $backup. Shared by
+# the merge path's --force overwrite and the --uninstall removal path below (previously duplicated).
+_backup_settings() {
+  backup="$1.$(date -u +%Y%m%dT%H%M%SZ).bak"
+  cp "$1" "$backup"
+}
+# _atomic_write SETTINGS CONTENT — write CONTENT to SETTINGS via a same-dir temp file + rename, so a
+# reader never observes a partially-written file. Shared by the same two call sites.
+_atomic_write() {
+  printf '%s\n' "$2" > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
+}
+
 # Valid JSON is not the same as the expected SHAPE — a hand-edited settings.json could have ".hooks" as
 # an array, or ".hooks.PreToolUse" as a string, and the merge below would otherwise crash with a raw jq
 # type error instead of the clean refusal every other bad-input path here gives.
@@ -224,6 +278,77 @@ if [ "$shape_ok" != "true" ]; then
   echo "install-pre-pr-gate: $settings's \"hooks\" section has an unexpected shape (not the usual" >&2
   echo "  Claude Code hooks object) — fix it by hand. Nothing was changed." >&2
   exit 2
+fi
+
+# --uninstall: the mirror image of the merge below, same one-pass-tagged-report shape (REMOVED/KEPT
+# instead of MISSING/SAME/CONFLICT — reconcile the two on drift, per this file's own header). An
+# event+matcher entry comes out ONLY when its hooks array is byte-identical to the single
+# {type, command} entry this installer would wire right now — anything else on that same event+matcher
+# (yours, or a --force run's replacement of something else entirely) is left in place and reported KEPT,
+# never swept out along with the rest.
+if [ "$uninstall" = 1 ]; then
+  remove_prog='
+{obj: (.hooks //= {}), report: []} |
+reduce $specs[] as $s (.;
+  (.obj.hooks[$s.event] // []) as $arr |
+  ($arr | map(.matcher == $s.matcher) | index(true)) as $idx |
+  if $idx == null then
+    .
+  elif $arr[$idx].hooks == [{type: "command", command: $s.command}] then
+    .obj.hooks[$s.event] = (.obj.hooks[$s.event] | del(.[$idx]))
+    | .report += [["REMOVED", $s.event, $s.matcher]]
+  else
+    .report += [["KEPT", $s.event, $s.matcher]]
+  end
+) |
+.obj.hooks = (.obj.hooks | with_entries(select(.value | length > 0))) |
+{new: .obj, report: (.report | map(@tsv) | join("\n"))}
+'
+  removal="$(jq --argjson specs "$hook_specs" "$remove_prog" <<<"$current")"
+  statuses="$(jq -r '.report' <<<"$removal")"
+
+  # One definition of each status's print line, reused by both the early "nothing removed" exit (KEPT
+  # only) and the normal completion path (REMOVED + KEPT) below — previously duplicated between them.
+  print_removal_status() {
+    case "$1" in
+      REMOVED) echo "  -    $2/$3 removed" ;;
+      KEPT)    echo "  =    $2/$3 differs from ours — kept (yours)" ;;
+    esac
+  }
+
+  n_removed=0; n_kept=0
+  while IFS=$'\t' read -r status event matcher; do
+    [ -n "$status" ] || continue
+    case "$status" in
+      REMOVED) n_removed=$((n_removed + 1)) ;;
+      KEPT)    n_kept=$((n_kept + 1)) ;;
+    esac
+  done <<<"$statuses"
+
+  if [ "$n_removed" = 0 ]; then
+    echo "install-pre-pr-gate: nothing to remove — no wired hook at $settings matches what this installer would wire"
+    if [ "$n_kept" -gt 0 ]; then
+      echo "  ($n_kept hook(s) present on the same event+matcher, but differing from ours — left in place)"
+      while IFS=$'\t' read -r status event matcher; do
+        [ "$status" = "KEPT" ] || continue
+        print_removal_status "$status" "$event" "$matcher"
+      done <<<"$statuses"
+    fi
+    exit 0
+  fi
+
+  _backup_settings "$settings"
+  new_settings="$(jq '.new' <<<"$removal")"
+  _atomic_write "$settings" "$new_settings"
+  echo "install-pre-pr-gate: backed up settings.json → $(basename "$backup")"
+
+  while IFS=$'\t' read -r status event matcher; do
+    [ -n "$status" ] || continue
+    print_removal_status "$status" "$event" "$matcher"
+  done <<<"$statuses"
+
+  echo "install-pre-pr-gate: $n_removed of 6 hook(s) removed from $settings"
+  exit 0
 fi
 
 # One pass computes BOTH the merged settings AND each hook's classification — MISSING (not wired), SAME
@@ -269,13 +394,12 @@ if [ "$n_conflict" -gt 0 ] && [ "$force" != 1 ]; then
 fi
 
 if [ "$n_conflict" -gt 0 ] && [ -f "$settings" ]; then
-  backup="$settings.$(date -u +%Y%m%dT%H%M%SZ).bak"
-  cp "$settings" "$backup"
+  _backup_settings "$settings"
   echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$backup") (--force)"
 fi
 
 new_settings="$(jq '.new' <<<"$merged")"
-printf '%s\n' "$new_settings" > "$settings.keeltmp.$$" && mv -f "$settings.keeltmp.$$" "$settings"
+_atomic_write "$settings" "$new_settings"
 
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue

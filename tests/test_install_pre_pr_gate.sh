@@ -325,4 +325,88 @@ check_absent "and no home flag, which would be noise there" "$OUT" "--codex --ho
 run "$REPO_ROOT/install.sh" --home "$HOME/.claude" --no-hooks
 check_contains "a default-home install still advises the bare command" "$OUT" "keel uninstall  (reverses"
 
+# =================================================================================================
+# dir #136: --uninstall — the reverse operation uninstall.sh's own summary now points adopters at.
+# Never clobbers your data: only a hook byte-identical to what THIS installer would wire comes out; a
+# foreign hook on the same event+matcher, or any other settings.json content, is left exactly alone.
+# =================================================================================================
+run "$installer" --help
+check_contains "--help documents --uninstall" "$OUT" "--uninstall"
+
+# --- (a) nothing wired yet -> nothing to do, exit 0, no file created --------------------------------
+urepo="$(new_repo)"
+run "$installer" --uninstall "$urepo"
+check_status "--uninstall with nothing wired -> exit 0" 0 "$STATUS"
+check_contains "says there's nothing to remove" "$OUT" "nothing to remove"
+check_nofile "no settings.json was created by an uninstall run" "$urepo/.claude/settings.json"
+
+# --- (b) a full install, then --uninstall removes exactly the 6 hooks it wired ----------------------
+run "$installer" "$urepo"
+check_status "wiring the fixture -> exit 0" 0 "$STATUS"
+run "$installer" --uninstall "$urepo"
+check_status "--uninstall over a full install -> exit 0" 0 "$STATUS"
+for ev in $FIVE_EVENTS; do
+  check_contains "removes $ev" "$OUT" "-    $ev"
+done
+usj="$(cat "$urepo/.claude/settings.json")"
+check_absent "the gate command is gone from PreToolUse/Bash" "$usj" "\"command\": \"bash '$gate'\""
+check_absent "the gate command is gone everywhere" "$usj" "$gate"
+
+# --- (c) idempotent: a second --uninstall finds nothing left to remove ------------------------------
+run "$installer" --uninstall "$urepo"
+check_status "second --uninstall -> exit 0" 0 "$STATUS"
+check_contains "second run reports nothing to remove" "$OUT" "nothing to remove"
+
+# --- (d) a foreign hook on the same event+matcher is NEVER removed — only an exact match is ours ----
+frepo2="$(new_repo)"
+run "$installer" "$frepo2"
+check_status "wiring the foreign-hook fixture -> exit 0" 0 "$STATUS"
+tmp_foreign="$(mktemp)"
+jq '.hooks.PreToolUse[0].hooks[0].command = "echo not-the-gate-anymore"' \
+  "$frepo2/.claude/settings.json" > "$tmp_foreign"
+mv "$tmp_foreign" "$frepo2/.claude/settings.json"
+run "$installer" --uninstall "$frepo2"
+check_status "--uninstall over a partly-foreign settings.json -> exit 0" 0 "$STATUS"
+check_contains "the foreign PreToolUse/Bash hook is reported as kept, not removed" "$OUT" "PreToolUse/Bash"
+check_contains "the still-wired command survives" "$(cat "$frepo2/.claude/settings.json")" "not-the-gate-anymore"
+# The other 5, untouched by the foreign edit, ARE exact matches and do come out.
+check_absent "the untouched SessionStart hook is still removed" "$(cat "$frepo2/.claude/settings.json")" "rollout-check"
+
+# --- (e) foreign top-level content (e.g. permissions) survives untouched ----------------------------
+prepo="$(new_repo)"
+run "$installer" "$prepo"
+tmp_perm2="$(mktemp)"
+jq '. + {permissions: {allow: ["Bash(ls:*)"]}}' "$prepo/.claude/settings.json" > "$tmp_perm2"
+mv "$tmp_perm2" "$prepo/.claude/settings.json"
+run "$installer" --uninstall "$prepo"
+check_status "--uninstall over settings.json with foreign top-level keys -> exit 0" 0 "$STATUS"
+check_contains "the foreign key survives" "$(cat "$prepo/.claude/settings.json")" '"permissions"'
+
+# --- (f) --global / --home target the same way --uninstall does the same way install does ----------
+ughome="$SANDBOX/uninstall-global-gate-home"
+run env KEEL_HOME="$ughome" "$installer" --global
+run env KEEL_HOME="$ughome" "$installer" --uninstall --global
+check_status "--uninstall --global -> exit 0" 0 "$STATUS"
+check_absent "the machine-global settings.json no longer carries the gate" "$(cat "$ughome/settings.json")" "$gate"
+
+uhhome="$SANDBOX/uninstall-home-flag"; mkdir -p "$uhhome"
+run "$installer" --home "$uhhome"
+run "$installer" --uninstall --home "$uhhome"
+check_status "--uninstall --home DIR -> exit 0" 0 "$STATUS"
+check_absent "the retargeted settings.json no longer carries the gate" "$(cat "$uhhome/settings.json")" "$gate"
+
+# --- (g) no jq -> instructions printed, nothing changed ----------------------------------------------
+farm2="$(mktemp -d)"; path_farm "$farm2" jq
+njrepo2="$(new_repo)"
+run "$installer" "$njrepo2"
+before_nj="$(cat "$njrepo2/.claude/settings.json")"
+run env PATH="$farm2" "$installer" --uninstall "$njrepo2"
+check_status "no jq -> non-zero (nothing removed)" 1 "$STATUS"
+check_contains "explains jq is required" "$OUT" "jq is required"
+check_status "settings.json is untouched without jq" "$before_nj" "$(cat "$njrepo2/.claude/settings.json")"
+
+# --- (h) --uninstall + --force don't combine — different, unrelated operations ----------------------
+run "$installer" --uninstall --force "$urepo"
+check_status "--uninstall + --force -> exit 2 (rejected)" 2 "$STATUS"
+
 summary

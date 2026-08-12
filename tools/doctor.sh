@@ -70,6 +70,9 @@ Usage:
   doctor.sh --install [HOME]   audit the Keel INSTALL instead: everything this checkout ships
                                is wired (or deliberately declined), nothing dangles
                                (default HOME: \$KEEL_HOME, else ~/.claude)
+  doctor.sh --install --codex [HOME]
+                               audit a  install.sh --codex  install instead (AGENTS.md is the
+                               rails carrier, commands/ is never wired — default HOME: ~/.codex)
   doctor.sh --quiet            print only GAP/WARN lines (+ the tail summary)
   doctor.sh --all              also show findings suppressed by .keel/doctor-accept
   doctor.sh -h | --help
@@ -79,18 +82,27 @@ EOF
 }
 INSTALL_MODE=0
 SHOW_ALL=0
+CODEX_MODE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1 ;;
     --all) SHOW_ALL=1 ;;
     --registry) shift; REGISTRY="${1:?--registry needs a FILE}" ;;
     --install) INSTALL_MODE=1 ;;
+    --codex) CODEX_MODE=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "doctor: unknown option '$1' (try --help)" >&2; exit 2 ;;
     *) DIRS+=("$1") ;;
   esac
   shift
 done
+
+# --codex only makes sense against --install: it is install.sh's own mode flag (dir #134, mirroring
+# uninstall.sh's dir #109), not a per-project audit concept — a project's CLAUDE.md/AGENTS.md pairing
+# is already covered by the AGENTS.md drift checks in the per-project loop below.
+if [ "$CODEX_MODE" = 1 ] && [ "$INSTALL_MODE" = 0 ]; then
+  echo "doctor: --codex only applies to --install" >&2; exit 2
+fi
 
 # Pull project paths from the Path column of an INSTANCE.md Projects table.
 # Skips the header, the separator, and unfilled placeholder rows; expands a leading ~.
@@ -139,16 +151,49 @@ _char_count() {
 # loop below) — same default-home expression --install mode's own $ihome/$ihome_flag/$gate_flag
 # comparisons already hand-copied twice further down; those now reuse $ghome too instead of a third
 # copy, so a plain `doctor.sh` run (no --install) finds the SAME global CLAUDE.md that install audits.
+#
+# _rails_file DIR — which of CLAUDE.md/AGENTS.md actually carries the rails at DIR, so a --codex
+# adopter's real startup cost (AGENTS.md, not CLAUDE.md — dir #134) is summed instead of silently
+# read as "no global install" (a --codex home has no CLAUDE.md at all). CLAUDE.md wins when a home
+# holds both (dir #124's shape): this is a plain per-project audit with no --codex context of its
+# own to disambiguate with, so it defaults to the harness doctor otherwise assumes throughout. Prints
+# "CLAUDE.md" when NEITHER exists too — the caller's own -f check then simply finds nothing, same as
+# before this existed.
+_rails_file() {
+  if   [ -f "$1/CLAUDE.md" ]; then printf 'CLAUDE.md'
+  elif [ -f "$1/AGENTS.md" ]; then printf 'AGENTS.md'
+  else                             printf 'CLAUDE.md'
+  fi
+}
 ghome="${KEEL_HOME:-${HOME:-}/.claude}"
+ghome_context="$(_rails_file "$ghome")"
+# footprint_home/footprint_context — where H-FOOTPRINT actually looks. Same as $ghome UNLESS
+# $KEEL_HOME is unset AND nothing lives at the Claude default — then also try the codex default
+# (~/.codex): a bare `doctor.sh <project>` on a machine with ONLY a default-leaf codex install (no
+# KEEL_HOME override at all) otherwise still summed a footprint of 0, since $ghome itself never
+# resolves anywhere near ~/.codex (found by a second operator-run /code-review pass; the first version
+# of this fix only auto-detected BETWEEN CLAUDE.md/AGENTS.md AT $ghome's own path, not across the two
+# possible default homes). Kept separate from $ghome itself — used elsewhere (the --install mode's own
+# gate_flag comparison) for a DIFFERENT purpose that must keep meaning "the Claude default" specifically
+# — so this fallback doesn't change what THAT comparison means. With KEEL_HOME set, precedence stops
+# here deliberately: it names ONE harness location the same way install.sh's own precedence does, and
+# guessing past an explicit override is not this HINT's business.
+footprint_home="$ghome"; footprint_context="$ghome_context"
+if [ ! -f "$footprint_home/$footprint_context" ] && [ -z "${KEEL_HOME:-}" ] \
+   && [ -f "${HOME:-}/.codex/AGENTS.md" ]; then
+  footprint_home="${HOME:-}/.codex"; footprint_context="AGENTS.md"
+fi
 global_chars=0
-if [ -f "$ghome/CLAUDE.md" ]; then
-  global_chars="$(_char_count "$ghome/CLAUDE.md")"
+if [ -f "$footprint_home/$footprint_context" ]; then
+  global_chars="$(_char_count "$footprint_home/$footprint_context")"
   # Linked mode: the global CLAUDE.md carries one `@…/keel/CORE.md` line, and Claude Code loads that
   # target's own bytes at session start — so an honest sum must resolve it and add its size in too.
   # Copy mode (or --no-git) embeds the core's content directly inside CLAUDE.md instead (no @import
-  # line), so its bytes are already counted by the read above — nothing extra to add there.
-  if grep -qE "$core_import_re" "$ghome/CLAUDE.md" 2>/dev/null && [ -f "$ghome/keel/CORE.md" ]; then
-    global_chars=$(( global_chars + $(_char_count "$ghome/keel/CORE.md") ))
+  # line), so its bytes are already counted by the read above — nothing extra to add there. AGENTS.md
+  # (--codex, copy-mode only) never carries an @import line either, so this never fires for it.
+  if grep -qE "$core_import_re" "$footprint_home/$footprint_context" 2>/dev/null \
+     && [ -f "$footprint_home/keel/CORE.md" ]; then
+    global_chars=$(( global_chars + $(_char_count "$footprint_home/keel/CORE.md") ))
   fi
 fi
 global_est=$(( global_chars / 4 ))
@@ -389,17 +434,53 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ "${#DIRS[@]}" -gt 1 ]; then
     echo "doctor: --install takes at most one HOME dir" >&2; exit 2
   fi
-  ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/.claude}}"
+  # Mode is EXPLICIT (--codex), never auto-detected — same reason uninstall.sh's dir #109 flag is
+  # explicit: a home holding BOTH context files (dir #124's shape) has no content-based answer, and
+  # auto-detecting on "which file happens to be there" is exactly what produced the false GAP this
+  # ticket closes (a codex-only home has no CLAUDE.md at all, so guessing from CLAUDE.md's absence
+  # alone can't tell "not installed" from "installed the other mode").
+  if [ "$CODEX_MODE" = 1 ]; then idefault_leaf=".codex"; iother_leaf=".claude"; icontext="AGENTS.md"; imode_flag=" --codex"; iother_context="CLAUDE.md"
+  else                            idefault_leaf=".claude"; iother_leaf=".codex"; icontext="CLAUDE.md"; imode_flag="";        iother_context="AGENTS.md"
+  fi
+  ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/$idefault_leaf}}"
   # ihome_flag — the ` --home "DIR"` every command this mode ADVISES must carry when $ihome is not
   # where a bare re-run would land. Same rule, and the same reason, as install.sh's home_flag: an
   # instruction that re-resolves the home from scratch cannot fix the install this audit is about, so
   # the finding would never clear however faithfully it was followed (dir #98, found to be a class).
-  if [ "$ihome" = "$ghome" ]; then ihome_flag=""
-  else                              ihome_flag=" --home \"$ihome\""; fi
+  # Compared against THIS mode's own default (not $ghome unconditionally, which is always the Claude
+  # default) — a bare `doctor.sh --install --codex` at the default ~/.codex must get the short, friendly
+  # advice too, the same way a bare `doctor.sh --install` does at ~/.claude. $idefault_leaf already
+  # encodes which mode this is, so one formula covers both — no branch needed here.
+  idefault="${KEEL_HOME:-${HOME:-}/$idefault_leaf}"
+  if [ "$ihome" = "$idefault" ]; then ihome_flag=""
+  else                                 ihome_flag=" --home \"$ihome\""; fi
+  # iother_home_flag — the SAME home-reaching suffix, but computed against the OTHER mode's default
+  # (via $iother_leaf, the mirror of $idefault_leaf), for the one advice site (the mode-mismatch
+  # redirect below) that recommends switching modes. Using plain $ihome_flag there was a real bug
+  # (operator-run /code-review, step 5 of /polish): $ihome_flag is relative to THIS mode's default, so
+  # on a home placed at the OTHER mode's default leaf via an explicit `--home` (e.g. a Claude-mode
+  # install put at ~/.codex with `install.sh --home ~/.codex`), $ihome_flag comes out empty even though
+  # the redirect's advised command switches modes and therefore needs an explicit --home to still reach
+  # $ihome — reproducing exactly the dir #98 class this file's own ihome_flag comment says it closes,
+  # just for the redirect branch specifically.
+  iother_default="${KEEL_HOME:-${HOME:-}/$iother_leaf}"
+  if [ "$ihome" = "$iother_default" ]; then iother_home_flag=""
+  else                                        iother_home_flag=" --home \"$ihome\""; fi
+  # irelink_mode — the re-wiring MODE for a dangling/foreign symlink (bin/keel is wired in BOTH modes,
+  # so this is reachable under --codex too, code-review found live): under Claude mode that's `--link`
+  # (recreates the linked layout); under --codex it's just $imode_flag itself, a bare re-run of --codex
+  # (copy mode has no --link equivalent, and `install.sh --codex --link` is a hard usage error) — never
+  # `--link`, which would wire a full second, Claude-mode install into the same codex home. $imode_flag
+  # is non-empty exactly when CODEX_MODE=1, so `${imode_flag:- --link}` picks it out without a branch:
+  # falls to the literal `--link` default only when $imode_flag is empty (non-codex). Kept as ITS OWN
+  # variable rather than folded into $ihome_flag (appended at each print site below) so
+  # tools/self/doctor.sh's check 1c — which greps advice lines for the LITERAL substring `ihome_flag`,
+  # not just its expanded value — still recognizes these as home-aware (dir #98).
+  irelink_mode="${imode_flag:- --link}"
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
-    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh$ihome_flag)"
+    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh$imode_flag$ihome_flag)"
     flush_notes ""
     finish
   fi
@@ -410,8 +491,18 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
   for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
+    # this_relink — the re-wiring mode that can actually restore THIS SPECIFIC slot (found by a second
+    # independent code-review pass): bin/keel is the ONLY slot wired in BOTH modes, so $irelink_mode's
+    # --codex-awareness only makes sense there. Every other slot (commands/*, keel/*, top-level
+    # FRAMEWORK/PRINCIPLES) is Claude/linked-mode-only by construction — `install.sh --codex` never
+    # creates any of them — so one dangling under a --codex audit is a leftover from an UNRELATED
+    # Claude-mode install sharing this home (dir #124's shape), not something a --codex re-run could
+    # ever fix; it keeps advising `--link` unconditionally, same as before --codex existed.
+    if [ "$l" = "$ihome/bin/keel" ]; then this_relink="$irelink_mode"
+    else                                    this_relink=" --link"
+    fi
     if [ ! -e "$l" ]; then
-      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh --link$ihome_flag from its home)"
+      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh$this_relink$ihome_flag from its home)"
       continue
     fi
     b="$(basename "$l")"
@@ -429,21 +520,43 @@ if [ "$INSTALL_MODE" = 1 ]; then
         case "$b" in FRAMEWORK.md|PRINCIPLES.md) tgt="$repo_root/$b" ;; *) tgt="" ;; esac ;;
     esac
     if [ -n "$tgt" ] && [ -f "$tgt" ] && [ ! "$l" -ef "$tgt" ]; then
-      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh --link$ihome_flag from here if this is the live one"
+      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh$this_relink$ihome_flag from here if this is the live one"
     fi
   done
 
   # Always-on rails: delivered by the @import line (linked) or the embedded block (copy mode).
   # (Trichotomy parallel to install.sh's linked-mode Verify — keep in sync. Severities differ on
   # purpose: an embedded block is legitimate copy mode here, an un-migrated WARN there.)
-  gclaude="$ihome/CLAUDE.md"
+  gclaude="$ihome/$icontext"
   if [ ! -f "$gclaude" ]; then
-    gap G-RAILS-MISSING "no global CLAUDE.md at $ihome — the always-on rails are not wired (run install.sh$ihome_flag)"
+    # dir #134: before falling to the generic "not installed" advice, check whether the OTHER mode's
+    # context file is sitting right there — the exact shape of the false GAP this ticket closes. The
+    # generic advice ("run install.sh$imode_flag$ihome_flag") is safe on a genuinely empty/foreign dir,
+    # but on an other-mode home it would wire the missing context file ALONGSIDE the one already there,
+    # producing dir #124's both-modes-in-one-home rather than fixing anything — so redirect to the
+    # correctly-moded re-run instead. is_accepted() flow untouched: this still records a real GAP (the
+    # mode this audit was asked about genuinely isn't installed here), just with advice that leads
+    # somewhere useful.
+    if [ -f "$ihome/$iother_context" ]; then
+      # Stop here, the same way the "no install found" branch above does (flush + finish): every check
+      # below this point is written for THIS mode and would cascade wrong-mode noise on top of the one
+      # real finding (dir #134 code-review: W-CMDS-MISSING's own "re-run install.sh$ihome_flag" advice
+      # is exactly as dangerous as this GAP's used to be, and it fires unless the audit stops here).
+      if [ "$CODEX_MODE" = 1 ]; then
+        gap G-RAILS-MISSING "no $icontext at $ihome — but $iother_context is there: this looks like a Claude Code install, not --codex. Re-run without --codex: doctor.sh --install$iother_home_flag (running install.sh$imode_flag$ihome_flag here would create a second mode in the same home)"
+      else
+        gap G-RAILS-MISSING "no $icontext at $ihome — but $iother_context is there: this looks like a --codex install. Re-run: doctor.sh --install --codex$iother_home_flag (running install.sh$imode_flag$ihome_flag here would create a second mode in the same home)"
+      fi
+      flush_notes "$ihome/.keel/doctor-accept"
+      finish
+    else
+      gap G-RAILS-MISSING "no global $icontext at $ihome — the always-on rails are not wired (run install.sh$imode_flag$ihome_flag)"
+    fi
   elif grep -qE "$core_import_re" "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
-      gap G-RAILS-IMPORT-BROKEN "CLAUDE.md imports keel/CORE.md but the target does not resolve (re-run install.sh --link$ihome_flag)"
+      gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (re-run install.sh$irelink_mode$ihome_flag)"
     elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-      warn W-RAILS-DOUBLE "CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
+      warn W-RAILS-DOUBLE "$icontext imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
     elif [ ! -L "$ihome/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$ihome/keel/CORE.md"; then
       # A --no-git install: keel/CORE.md is a GENERATED trimmed copy, not a symlink — `git pull`
       # refreshes the checkout but never this file. Two risks only this check notices:
@@ -458,7 +571,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$ref_trim" = "$inst_trim" ]; then
         say "  OK   core rails: linked, trimmed (--no-git — code/git rails not installed)"
       else
-        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh --link$ihome_flag (a re-run keeps the trim and refreshes it)"
+        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh$irelink_mode$ihome_flag (a re-run keeps the trim and refreshes it)"
       fi
       git_projects=0
       if [ -f "$ihome/INSTANCE.md" ]; then
@@ -472,17 +585,17 @@ if [ "$INSTALL_MODE" = 1 ]; then
                   | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
       fi
       if [ "$git_projects" -gt 0 ]; then
-        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link$ihome_flag --with-git"
+        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh$irelink_mode$ihome_flag --with-git"
       fi
     elif [ ! -L "$ihome/keel/CORE.md" ]; then
-      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh --link$ihome_flag"
+      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh$irelink_mode$ihome_flag"
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
     say "  OK   core rails: embedded copy (copy mode; a re-run checks for drift)"
   else
-    warn W-RAILS-UNWIRED "CLAUDE.md carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$ihome_flag, or migrate: install.sh --link)"
+    warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$imode_flag$ihome_flag$([ "$CODEX_MODE" = 1 ] || echo ", or migrate: install.sh --link"))"
   fi
 
   # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
@@ -490,28 +603,36 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # pointing at the root name would silently keep reading.
   for f in FRAMEWORK.md PRINCIPLES.md; do
     if [ ! -f "$ihome/keel/$f" ] && [ ! -f "$ihome/$f" ]; then
-      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh$ihome_flag)"
+      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh$imode_flag$ihome_flag)"
     elif [ -f "$ihome/keel/$f" ] && [ -e "$ihome/$f" ] && [ ! -L "$ihome/$f" ]; then
-      warn W-TIER-SHADOW "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your CLAUDE.md map at keel/$f, then remove the copy"
+      warn W-TIER-SHADOW "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your $icontext map at keel/$f, then remove the copy"
     fi
   done
 
   # Commands: X of Y shipped are wired (under their own name, or as a keel-<name> collision alias).
-  wired=0; total=0; missing_cmds=""
-  for cmd in "$repo_root"/commands/*.md; do
-    [ -f "$cmd" ] || continue
-    cname="$(basename "$cmd")"
-    total=$((total + 1))
-    if [ -f "$ihome/commands/$cname" ] || [ -f "$ihome/commands/keel-$cname" ]; then
-      wired=$((wired + 1))
-    else
-      missing_cmds="$missing_cmds $cname"
-    fi
-  done
-  if [ "$wired" = "$total" ]; then
-    say "  OK   commands: $wired of $total shipped are wired"
+  # dir #134: install.sh --codex never wires commands/ at all — it's a Claude-format dir a codex home
+  # never reads (Codex's own skills live at ~/.codex/skills/<name>/SKILL.md instead, per ADAPTING.md) —
+  # so counting "0 of N wired" here would be a permanent, un-clearable W-CMDS-MISSING on every healthy
+  # codex install, not a real gap.
+  if [ "$CODEX_MODE" = 1 ]; then
+    say "  =    commands: not applicable under --codex (Codex reads skills, not commands — see ADAPTING.md)"
   else
-    warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+    wired=0; total=0; missing_cmds=""
+    for cmd in "$repo_root"/commands/*.md; do
+      [ -f "$cmd" ] || continue
+      cname="$(basename "$cmd")"
+      total=$((total + 1))
+      if [ -f "$ihome/commands/$cname" ] || [ -f "$ihome/commands/keel-$cname" ]; then
+        wired=$((wired + 1))
+      else
+        missing_cmds="$missing_cmds $cname"
+      fi
+    done
+    if [ "$wired" = "$total" ]; then
+      say "  OK   commands: $wired of $total shipped are wired"
+    else
+      warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+    fi
   fi
 
   # The keel CLI: install wires bin/keel as a symlink into the checkout. Only flag it when this
@@ -524,10 +645,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$kl" -ef "$repo_root/keel" ]; then
         say "  OK   keel CLI: wired ($kl)"
       else
-        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh$ihome_flag from here if this is the live one"
+        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh$imode_flag$ihome_flag from here if this is the live one"
       fi
     else
-      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$ihome_flag (or add an alias by hand)"
+      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$imode_flag$ihome_flag (or add an alias by hand)"
     fi
   fi
 

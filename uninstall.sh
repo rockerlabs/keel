@@ -320,16 +320,51 @@ if has_keel_rails "$gclaude"; then
   fi
 fi
 
+# The /polish pre-PR gate's hooks, if wired machine-global at THIS home (tools/install-pre-pr-gate.sh
+# --global / --home, a separate opt-in step install.sh never runs itself), are shared, deliberately-not-
+# removed content: this uninstall doesn't know whether other repos still rely on the checkout's
+# tools/pre-pr-gate.sh existing, so it leaves the hooks in place rather than guessing — but says so, with
+# a tested removal path, instead of silently leaving 6 settings.json entries pointing at a script that
+# may no longer exist once the checkout itself is deleted (dir #136).
+#
+# Called at every summary exit (removed=0, dry-run, done), the same way other_mode_hint is: the hooks
+# don't depend on whether THIS run found anything else to remove, so a plain "did it work?" re-run must
+# still see them — code-review found that gating this on `removed > 0` silently dropped the note on
+# exactly that check-in (operator-run /code-review).
+#
+# A bare `grep -q 'pre-pr-gate.sh'` (the first version of this check) would false-fire on ANY mention —
+# a permissions rule allowlisting `bash …/tools/pre-pr-gate.sh:*`, a comment, some unrelated value —
+# not just an actually-wired hook (a second operator-run /code-review pass). Mirrors
+# tools/doctor.sh's own `gate_hook_wired` structural jq query byte-for-byte (independent copy, not
+# sourced — this file has no established cross-sourcing convention with tools/doctor.sh, same as
+# core_import_re/has_keel_rails just above; keep the two in sync on drift), with the same fail-open
+# fallback when jq isn't on PATH: a missing jq means "wired but inert" either way for the REAL gate, so
+# this advisory hint degrading to the loose grep there is no worse than doctor's own posture.
+gate_hooks_hint() {
+  local settings="$HOME_DIR/settings.json"
+  [ -f "$settings" ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '.hooks.PreToolUse // [] | any(.matcher == "Bash" and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
+      "$settings" >/dev/null 2>&1 || return 0
+  else
+    grep -q 'pre-pr-gate.sh' "$settings" 2>/dev/null || return 0
+  fi
+  echo "  • The /polish pre-PR gate hooks are still wired in $settings — kept on purpose."
+  echo "    To remove them too:  $root/tools/install-pre-pr-gate.sh --uninstall --home \"$HOME_DIR\""
+}
+
 # --- summary ------------------------------------------------------------------------------------
 echo
 if [ "$removed" = 0 ]; then
   echo "uninstall: found no Keel-owned content at $HOME_DIR — nothing removed."
   other_mode_hint
+  gate_hooks_hint
   exit 0
 fi
 if [ "$DRY_RUN" = 1 ]; then
   echo "uninstall: dry run — $removed item(s) would be removed. Re-run without --dry-run to apply."
   other_mode_hint
+  gate_hooks_hint
   exit 0
 fi
 echo "uninstall: done — $removed item(s) removed (backed up in $backup)."
@@ -345,3 +380,5 @@ case "$hp" in
     echo "    To remove it too:  git config --global --unset core.hooksPath && rm -rf \"$hp\""
     ;;
 esac
+
+gate_hooks_hint

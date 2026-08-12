@@ -8,6 +8,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose
+  advice would have installed a second mode into the same home** (dir #134, one of 0.6.0's own known
+  issues). It gets an explicit `--codex` flag, mirroring `uninstall.sh`'s own (dir #109): the rails file
+  checked is mode-aware (`AGENTS.md` vs `CLAUDE.md`), the commands-wired check is skipped under `--codex`
+  (Codex never gets Keel's `commands/` dir), a mode/home mismatch redirects to the correctly-moded
+  re-run — with the redirect's `--home` flag computed against the OTHER mode's default, not this one's,
+  a second bug an independent review caught before this shipped — instead of cascading wrong-mode advice
+  on top, and `H-FOOTPRINT`'s global-footprint sum now auto-detects `CLAUDE.md`/`AGENTS.md` instead of
+  assuming `CLAUDE.md` only.
+- **`uninstall.sh` left the 6 `/polish` pre-PR-gate hooks dangling in `settings.json` with no word and
+  no reverse operation** (dir #136, the other known issue). `tools/install-pre-pr-gate.sh` gets a mirror
+  `--uninstall` flag that removes only a hook byte-identical to what it would currently wire, never a
+  differing/foreign one; `uninstall.sh`'s closing summary now names any leftover gate hooks and the
+  removal command, the same treatment the secret-guard note already gets, at every summary exit.
+
 ## [0.6.0] — 2026-08-12
 
 The audit release. A global pre-release audit (dir #85) swept the whole project in four modules —
