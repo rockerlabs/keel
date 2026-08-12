@@ -263,6 +263,46 @@ printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitigno
 run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$ghome" "$doctor" "$d"
 check_status "dangling @import target → no crash" 0 "$STATUS"
 
+# dir #134: a --codex home has no CLAUDE.md at all — its rails live in AGENTS.md instead. Before the
+# fix, the global-footprint resolution was hardcoded to CLAUDE.md, so this counted as "no global
+# install" (global ~0), silently undercounting a real codex adopter's session footprint.
+ghome="$SANDBOX/ghome-codex"; mkdir -p "$ghome"
+printf '%0.sZ' $(seq 1 400) > "$ghome/AGENTS.md"   # ~100 tokens, no CLAUDE.md present
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$ghome" "$doctor" "$d"
+check_contains "AGENTS.md-only home is summed into the footprint, not silently skipped" "$OUT" "global ~100"
+
+# ...and when BOTH exist (a dir #124-shaped home), CLAUDE.md is the one Claude Code itself loads for a
+# doctor run with no --codex context of its own, so it wins the tie-break.
+ghome="$SANDBOX/ghome-both"; mkdir -p "$ghome"
+printf '%0.sX' $(seq 1 400) > "$ghome/CLAUDE.md"   # ~100 tokens
+printf '%0.sZ' $(seq 1 4000) > "$ghome/AGENTS.md"  # a much larger AGENTS.md — would change the figure if picked
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+run env KEEL_STARTUP_WARN_TOKENS=1 KEEL_HOME="$ghome" "$doctor" "$d"
+check_contains "CLAUDE.md wins over AGENTS.md when a home holds both" "$OUT" "global ~100"
+
+# regression (2nd operator-run /code-review pass): a DEFAULT-LEAF codex-only machine — no KEEL_HOME set
+# at all, so $ghome itself resolves to the (nonexistent) ~/.claude, never anywhere near ~/.codex. The
+# first version of this fix only auto-detected BETWEEN CLAUDE.md/AGENTS.md AT $ghome's own path, so a
+# bare `doctor.sh <project>` on a machine with only a default codex install still summed 0.
+codex_only_home="$SANDBOX/codex-only-default"; mkdir -p "$codex_only_home/.codex"
+printf '%0.sZ' $(seq 1 400) > "$codex_only_home/.codex/AGENTS.md"   # ~100 tokens
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+fresh_home_env "$codex_only_home"; co_env=("${FRESH_HOME_ENV[@]}")
+run env "${co_env[@]}" KEEL_STARTUP_WARN_TOKENS=1 "$doctor" "$d"
+check_contains "a default-leaf codex-only machine (no KEEL_HOME) is still summed, not silently 0" \
+  "$OUT" "global ~100"
+# ...and an explicit KEEL_HOME override still names ONE location, same precedence as install.sh's own —
+# no codex fallback once the adopter has already pinned it themselves.
+kh_home="$SANDBOX/keel-home-pinned-empty"; mkdir -p "$kh_home"
+d2="$(mkproj)"; git -C "$d2" init -q
+printf 'plenty of startup context goes here\n' > "$d2/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d2/.gitignore"
+run env "${co_env[@]}" KEEL_HOME="$kh_home" KEEL_STARTUP_WARN_TOKENS=1 "$doctor" "$d2"
+check_contains "an explicit KEEL_HOME still wins over the codex-default fallback" "$OUT" "global ~0"
+
 # a non-numeric token budget falls back to the default instead of leaking a `[: integer expected`
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"

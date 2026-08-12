@@ -310,4 +310,67 @@ check_status "a plain run aimed at a Codex home → exit 2 (refused)" 2 "$STATUS
 check_contains "the reverse refusal points at --codex" "$OUT" "uninstall.sh --codex --home"
 check_file "and the Codex home is untouched" "$CM/AGENTS.md"
 
+# =================================================================================================
+# dir #136: the closing summary names any leftover /polish pre-PR gate hooks, same treatment the
+# machine-global secret-guard already gets — no more silently dangling settings.json entries pointing
+# at a tools/pre-pr-gate.sh that may no longer exist once the checkout itself is deleted.
+# =================================================================================================
+if command -v jq >/dev/null 2>&1; then
+  gate_installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
+
+  GH="$SANDBOX/gate-leftover/.claude"
+  inst --home "$GH" --no-hooks
+  check_status "install for the gate-leftover fixture succeeds" 0 "$STATUS"
+  run env KEEL_HOME="$GH" "$gate_installer" --global
+  check_status "wiring the gate at this home succeeds" 0 "$STATUS"
+  check_file "gate hooks are wired at this home" "$GH/settings.json"
+
+  unin --home "$GH" --yes
+  check_status "uninstall over a home with a wired gate exits 0" 0 "$STATUS"
+  check_contains "the summary names the leftover gate hooks" "$OUT" "pre-pr-gate"
+  check_contains "and points at the tested removal path" "$OUT" "install-pre-pr-gate.sh --uninstall"
+  check_file "settings.json itself is left in place (uninstall.sh doesn't touch it)" "$GH/settings.json"
+  check_contains "and the hooks are still really there (nothing silently stripped)" "$(cat "$GH/settings.json")" "pre-pr-gate.sh"
+
+  # regression (operator-run /code-review, round 1): the note must fire on EVERY summary exit, not just
+  # the "did something else" path — a bare re-run (nothing left of the REST of the install to remove) is
+  # exactly the "did it work?" check-in where a user would want to be reminded the gate hooks are still
+  # there, and gating the note on `removed > 0` silently dropped it right there.
+  unin --home "$GH" --yes
+  check_status "second uninstall over the same home exits 0" 0 "$STATUS"
+  check_contains "second run still reports nothing (else) to remove" "$OUT" "nothing removed"
+  check_contains "and STILL names the leftover gate hooks" "$OUT" "pre-pr-gate"
+
+  GH2="$SANDBOX/gate-leftover-dryrun/.claude"
+  inst --home "$GH2" --no-hooks
+  run env KEEL_HOME="$GH2" "$gate_installer" --global
+  check_status "wiring the gate for the dry-run fixture succeeds" 0 "$STATUS"
+  unin --home "$GH2" --dry-run
+  check_status "dry-run over a home with a wired gate exits 0" 0 "$STATUS"
+  check_contains "a dry-run preview also names the leftover gate hooks" "$OUT" "pre-pr-gate"
+
+  # No gate ever wired at this home → no leftover-hooks note (nothing to report).
+  NG="$SANDBOX/no-gate-leftover/.claude"
+  inst --home "$NG" --no-hooks
+  unin --home "$NG" --yes
+  check_status "uninstall over a home with no gate exits 0" 0 "$STATUS"
+  check_absent "no leftover-hooks note when nothing was ever wired" "$OUT" "pre-pr-gate"
+
+  # regression (2nd operator-run /code-review pass): an UNRELATED mention of "pre-pr-gate.sh" (e.g. a
+  # permissions rule allowlisting it) must NOT trigger the leftover-hooks note — only a real wired
+  # PreToolUse/Bash hook should. A bare grep can't tell the two apart; the structural jq check can.
+  FP="$SANDBOX/gate-false-positive/.claude"
+  inst --home "$FP" --no-hooks
+  mkdir -p "$FP"
+  cat > "$FP/settings.json" <<EOF
+{"permissions":{"allow":["Bash(bash $FP/../keel/tools/pre-pr-gate.sh:*)"]}}
+EOF
+  unin --home "$FP" --yes
+  check_status "uninstall over a settings.json that only MENTIONS pre-pr-gate.sh exits 0" 0 "$STATUS"
+  check_absent "no false leftover-hooks note from an unrelated mention (permissions rule, not a hook)" \
+    "$OUT" "pre-pr-gate"
+else
+  pass "jq not available — gate-leftover summary tests skipped (install-pre-pr-gate.sh requires jq)"
+fi
+
 summary
