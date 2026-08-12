@@ -50,6 +50,12 @@ Order rows **Active → In flight → Next-up → Parked → Blocked** within ea
 append the gate to the gist; for an **In flight** item, append the claiming branch the marker names —
 the point of showing it is that the next `/go` doesn't pick it twice.
 
+**3b. Read the target-release label, if any.** A heading's status tail can end in a trailing `→ 0.6.1`
+(or `→ next`) — a target-release tag appended at triage time (see
+[`docs/release-audit.md`](../docs/release-audit.md) phase 2), orthogonal to the status markers above: it
+says *which release this item is slated for*, not what state it's in. An item with no such tag simply
+has no target yet — that's not itself a finding, and every status in the table above can carry one.
+
 **4. Multi-section backlogs:** when the source uses `##` section headers, add a **Section** column and group
 rows under their section; order sections by actionability (most Active/Next-up first), items within a
 section by the order above. For a flat backlog, omit the Section column.
@@ -67,3 +73,18 @@ section by the order above. For a flat backlog, omit the Section column.
   `draft` (no number assigned), Item = the draft's own gist, Status **Draft**. Order draft rows last.
 - Below the table, one line `Recently closed: <ids or count>` if the source carries a cooldown buffer (don't
   dump the buffer). Name the source (project + file) so it's clear what was shown.
+
+**6. Group by target release, if any item carries the label from step 3b.** Render one additional table
+per distinct target value, titled `Release tail — <target>` (e.g. `Release tail — 0.6.1`), same ID/Item/
+Status columns as step 5, ordered by the target's own natural order (a version string ascending, `next`
+last) then by the step-3 status order within each group. This is what answers "what's slated for `X`?" in
+one glance instead of a re-read of every heading — the reason the label exists at all (see
+[`docs/release-audit.md`](../docs/release-audit.md) phase 2). Skip this step entirely when nothing in the
+source carries the label; don't render an empty grouped section.
+
+**Personal-fork note (not a Keel mechanic, recorded here because a Keel change to this file doesn't reach
+it automatically):** an adopter running a personal, KB-forked copy of this command (diverged from Keel's
+shipped `commands/backlog.md` on purpose, e.g. to add workflow-specific columns) does not get step 3b/6 for
+free from a Keel upgrade — a forked file is edited independently by design, so porting a Keel-side change
+like this one into the fork is a manual, deliberate step, not something a `git pull` of the Keel checkout
+performs.

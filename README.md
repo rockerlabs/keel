@@ -244,6 +244,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 - [`docs/going-public.md`](docs/going-public.md) — a safe step-by-step for making a private repo public.
 - [`docs/rollout-audit.md`](docs/rollout-audit.md) — checklist for verifying a model/harness upgrade
   didn't silently break your pipeline.
+- [`docs/release-audit.md`](docs/release-audit.md) — a repeatable flow for a project's own
+  release-readiness sweep, before tagging.
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
 - [`PRINCIPLES.md`](PRINCIPLES.md) · [`FRAMEWORK.md`](FRAMEWORK.md) — the foundation and the reusable how-to.
 
