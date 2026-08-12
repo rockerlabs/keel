@@ -19,3 +19,18 @@ ledger_append() {
     printf '%s\n' "$home" >> "$ledger"
   fi
 }
+
+# ledger_remove LEDGER_FILE HOME_RESOLVED — the prune counterpart (dir #125): drop HOME_RESOLVED's
+# line from LEDGER_FILE, atomically (temp-sibling + rename, matching install.sh's own atomic_write
+# discipline — a mid-write crash must never leave a half-written ledger). A no-op, not an error, when
+# the file or the line is already absent (`|| : > "$tmp"` covers both a missing ledger and a grep that
+# finds nothing to keep). Callers decide WHEN to prune (uninstall.sh and install-pre-pr-gate.sh
+# --uninstall both do it only once no install-manifest.* remains at the home) — this function only
+# knows how to remove one line safely, the same division ledger_append already draws for appends.
+ledger_remove() {
+  local ledger="$1" home="$2" tmp
+  [ -f "$ledger" ] || return 0
+  tmp="$ledger.keeltmp.$$"
+  grep -vxF "$home" "$ledger" > "$tmp" 2>/dev/null || : > "$tmp"
+  mv -f "$tmp" "$ledger"
+}

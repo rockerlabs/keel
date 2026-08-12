@@ -260,7 +260,7 @@ inst --home "$MM" --no-hooks
 check_status "install for the mode-mismatch case succeeds" 0 "$STATUS"
 run env KEEL_HOME="$MM" "$UNINSTALL" --codex --yes
 check_status "--codex aimed at a Claude home → exit 2 (refused)" 2 "$STATUS"
-check_contains "the refusal names the file it did not find" "$OUT" "no AGENTS.md"
+check_contains "the refusal names the recorded mode (dir #125: manifest-driven)" "$OUT" "claude mode, not codex"
 check_contains "the refusal points at the right command" "$OUT" "uninstall.sh --home"
 check_file "nothing was removed — the CLI symlink survives" "$MM/bin/keel"
 check_file "nothing was removed — a shipped command survives" "$MM/commands/go.md"
@@ -372,5 +372,372 @@ EOF
 else
   pass "jq not available — gate-leftover summary tests skipped (install-pre-pr-gate.sh requires jq)"
 fi
+
+# =================================================================================================
+# dir #125 PR2 — uninstall consumes the install manifest (acceptance tests B7-B14). install.sh now
+# always writes a manifest (PR1), so most fixtures above already exercise the manifest-driven paths
+# below implicitly; these tests pin the NEW capabilities directly and by name.
+# =================================================================================================
+
+# --- B7: the manifest itself is backed up on removal; the checkout ledger is pruned once no
+# install-manifest.* remains; .keel/ is removed only when nothing else lives there [0a1e15b, dir #109] -
+B7="$SANDBOX/b7-manifest-backup/.claude"
+inst --home "$B7" --no-hooks
+check_status "B7 install succeeds" 0 "$STATUS"
+b7man="$B7/.keel/install-manifest.claude"
+check_file "B7 manifest recorded" "$b7man"
+check_contains "B7 home is in the ledger before uninstall" "$(cat "$KEEL_LEDGER_FILE")" "$B7"
+
+unin --home "$B7" --yes
+check_status "B7 uninstall exits 0" 0 "$STATUS"
+b7backup="$(latest_backup "$B7")"
+check_file "B7 manifest moved into the backup dir" "$b7backup/.keel/install-manifest.claude"
+check_nofile "B7 manifest gone from its live location" "$b7man"
+check_absent "B7 home pruned from the ledger (no manifest left)" "$(cat "$KEEL_LEDGER_FILE" 2>/dev/null)" "$B7"
+if [ -e "$B7/.keel" ]; then fail "B7 .keel/ removed (nothing else lived there)" "still present"; else pass "B7 .keel/ removed (nothing else lived there)"; fi
+
+# .keel/ survives uninstall when something else (e.g. a doctor-accept file) still lives there.
+B7B="$SANDBOX/b7b-keel-survives/.claude"
+inst --home "$B7B" --no-hooks
+printf 'W-SOME-FINDING\n' > "$B7B/.keel/doctor-accept"
+unin --home "$B7B" --yes
+check_status "B7b uninstall exits 0" 0 "$STATUS"
+check_dir "B7b .keel/ survives (doctor-accept file still there)" "$B7B/.keel"
+check_file "B7b doctor-accept file untouched" "$B7B/.keel/doctor-accept"
+
+# --- B8: dir #124 reproduction — THE headline test -------------------------------------------------
+B8="$SANDBOX/b8-dir124/.claude"
+inst --home "$B8" --no-hooks
+check_status "B8 claude install succeeds" 0 "$STATUS"
+run env KEEL_HOME="$B8" "$INSTALL" --codex --no-hooks
+check_status "B8 codex install over the SAME home succeeds (dir #124's coherent both-modes shape)" 0 "$STATUS"
+b8_claude_man="$B8/.keel/install-manifest.claude"
+b8_codex_man="$B8/.keel/install-manifest.codex"
+check_file "B8 both manifests coexist (claude)" "$b8_claude_man"
+check_file "B8 both manifests coexist (codex)" "$b8_codex_man"
+
+run env KEEL_HOME="$B8" "$UNINSTALL" --codex --yes
+check_status "B8 codex uninstall exits 0" 0 "$STATUS"
+check_nofile "B8 codex manifest gone" "$b8_codex_man"
+if [ -e "$B8/AGENTS.md" ]; then
+  check_absent "B8 codex AGENTS.md rails gone" "$(cat "$B8/AGENTS.md")" "KEEL-CORE-BEGIN"
+else
+  pass "B8 AGENTS.md itself absent (nothing left to keep)"
+fi
+check_file "B8 shared bin/keel survives (claude install still needs it)" "$B8/bin/keel"
+check_link "B8 shared bin/keel is still the real symlink" "$B8/bin/keel"
+check_file "B8 shared FRAMEWORK.md survives" "$B8/FRAMEWORK.md"
+check_file "B8 shared PRINCIPLES.md survives" "$B8/PRINCIPLES.md"
+check_dir "B8 commands/ (claude-only; codex manifest never listed it) survives" "$B8/commands"
+check_file "B8 a shipped command survives" "$B8/commands/go.md"
+check_file "B8 claude manifest still there" "$b8_claude_man"
+check_contains "B8 CLAUDE.md rails intact" "$(cat "$B8/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_contains "B8 summary names bin/keel as shared" "$OUT" "bin/keel is shared with the claude install"
+check_contains "B8 summary names FRAMEWORK.md as shared" "$OUT" "FRAMEWORK.md is shared with the claude install"
+# other_mode_hint's ledger-loop must exclude THIS run's own (just-touched) home — the shared half is
+# already named above via the removal summary; a self-referential hint would confusingly point the
+# operator back at the home they're standing in (independent operator-run /code-review high pass).
+check_absent "B8 no confusing self-referential hint about its own home" "$OUT" "still in place at $B8 —"
+
+# Symmetric: uninstalling claude FIRST from a fresh both-modes home must equally spare what the
+# surviving codex install still needs — not a one-direction fix.
+B8R="$SANDBOX/b8-dir124-reverse/.claude"
+inst --home "$B8R" --no-hooks
+run env KEEL_HOME="$B8R" "$INSTALL" --codex --no-hooks
+check_status "B8R codex install succeeds" 0 "$STATUS"
+run env KEEL_HOME="$B8R" "$UNINSTALL" --yes
+check_status "B8R claude uninstall exits 0" 0 "$STATUS"
+check_file "B8R shared bin/keel survives (codex still needs it)" "$B8R/bin/keel"
+check_file "B8R shared FRAMEWORK.md survives" "$B8R/FRAMEWORK.md"
+check_file "B8R codex manifest still there" "$B8R/.keel/install-manifest.codex"
+check_contains "B8R AGENTS.md rails intact" "$(cat "$B8R/AGENTS.md")" "KEEL-CORE-BEGIN"
+check_absent "B8R no confusing self-referential hint about its own home" "$OUT" "still in place at $B8R —"
+
+# --- B9: mode/home mismatch — manifest-driven refusal, exit 2, nothing touched, advice quotes the
+# recorded home [e399d16] ----------------------------------------------------------------------------
+B9="$SANDBOX/b9-mismatch/.claude"
+inst --home "$B9" --no-hooks
+check_status "B9 install succeeds" 0 "$STATUS"
+run env KEEL_HOME="$B9" "$UNINSTALL" --codex --yes
+check_status "B9 --codex aimed at a claude-manifested home -> exit 2" 2 "$STATUS"
+check_contains "B9 refusal names the recorded mode" "$OUT" "claude mode, not codex"
+check_contains "B9 refusal quotes the recorded home" "$OUT" "--home \"$B9\""
+check_file "B9 nothing removed — CLI symlink survives" "$B9/bin/keel"
+check_file "B9 nothing removed — a shipped command survives" "$B9/commands/go.md"
+check_contains "B9 CLAUDE.md rails untouched" "$(cat "$B9/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_file "B9 the manifest itself is untouched" "$B9/.keel/install-manifest.claude"
+
+# --- B10: user-deleted context file on a manifested home — uninstall still works, no two-mode
+# deadlock [287642e] ---------------------------------------------------------------------------------
+B10="$SANDBOX/b10-no-context/.claude"
+inst --home "$B10" --no-hooks
+check_status "B10 install succeeds" 0 "$STATUS"
+rm -f "$B10/CLAUDE.md"
+unin --home "$B10" --yes
+check_status "B10 uninstall over a manifested home with no context file at all -> exit 0" 0 "$STATUS"
+check_contains "B10 actually removes Keel's content" "$OUT" "item(s) removed"
+check_nolink "B10 the CLI symlink is gone" "$B10/bin/keel"
+
+# --- B11: upgrade precision, both directions — an old-release file matching the RECORDED cksum is
+# removed even though it no longer matches the CURRENT checkout; a user-edited file mismatching the
+# recorded cksum is kept [never-clobber; new capability; replaces cmp-to-current-checkout] ------------
+B11="$SANDBOX/b11-upgrade-precision/.claude"
+inst --home "$B11" --no-hooks
+check_status "B11 install succeeds" 0 "$STATUS"
+b11man="$B11/.keel/install-manifest.claude"
+# Simulate an OLDER release: FRAMEWORK.md on disk becomes some other content — no longer identical to
+# $REPO_ROOT/FRAMEWORK.md (today's checkout) — but the manifest's recorded cksum is rewritten to match
+# it, exactly as if install.sh itself had written this content (an earlier release's bytes).
+printf 'old-release FRAMEWORK.md content, not this checkout at all\n' > "$B11/FRAMEWORK.md"
+read -r b11_sum b11_size _ < <(cksum "$B11/FRAMEWORK.md")
+awk -F'\t' -v sum="$b11_sum" -v size="$b11_size" 'BEGIN{OFS="\t"} $1=="artifact=file" && $2=="FRAMEWORK.md" {$3="cksum:"sum":"size} {print}' \
+  "$b11man" > "$b11man.testtmp" && mv "$b11man.testtmp" "$b11man"
+
+unin --home "$B11" --yes
+check_status "B11 uninstall exits 0" 0 "$STATUS"
+if [ -e "$B11/FRAMEWORK.md" ]; then
+  fail "B11 old-release file removed (cksum precision)" "still present — cmp-to-checkout would have wrongly kept it"
+else
+  pass "B11 old-release file removed (cksum precision)"
+fi
+
+# Reverse direction: a user-edited file whose bytes now differ from the RECORDED cksum is kept.
+B11B="$SANDBOX/b11b-user-edit/.claude"
+inst --home "$B11B" --no-hooks
+printf '\nmy own edit at the end\n' >> "$B11B/PRINCIPLES.md"
+unin --home "$B11B" --yes
+check_status "B11b uninstall exits 0" 0 "$STATUS"
+check_file "B11b user-edited PRINCIPLES.md kept (cksum mismatch)" "$B11B/PRINCIPLES.md"
+check_contains "B11b the edit survives" "$(cat "$B11B/PRINCIPLES.md")" "my own edit at the end"
+
+# --- B12: ledger-driven other_mode_hint names an other-mode install at a NON-DEFAULT home
+# (impossible under the old $HOME/<leaf>-only probe); a foreign-core other-mode install is still
+# named too; and it fires cleanly on the earliest "no such home" exit, with no undefined-function
+# fallout on stderr [e3ca502, a87381a] -----------------------------------------------------------
+B12H="$SANDBOX/b12-home"
+mkdir -p "$B12H/.claude"
+B12_ODD="$SANDBOX/b12-somewhere-else/.codex"   # NOT the conventional $HOME/.codex leaf
+fresh_home_env "$B12H"; b12_env=("${FRESH_HOME_ENV[@]}")
+run env "${b12_env[@]}" "$INSTALL" --no-hooks
+check_status "B12 claude install at the conventional home succeeds" 0 "$STATUS"
+run "$INSTALL" --codex --home "$B12_ODD" --no-hooks
+check_status "B12 codex install at a NON-default home succeeds" 0 "$STATUS"
+
+run env "${b12_env[@]}" "$UNINSTALL" --yes
+check_status "B12 claude uninstall exits 0" 0 "$STATUS"
+check_contains "B12 names the non-default codex home exactly" "$OUT" "$B12_ODD"
+check_absent "B12 no undefined-function fallout" "$OUT" "command not found"
+
+# Foreign-core other-mode install (no rails written, but a manifest IS recorded — dir #125 A3) must
+# still be named, same as before this PR.
+B12F="$SANDBOX/b12-foreign"
+mkdir -p "$B12F/.claude" "$B12F/.codex"
+printf '# My own global notes\nnothing keel here\n' > "$B12F/.codex/AGENTS.md"
+fresh_home_env "$B12F"; b12f_env=("${FRESH_HOME_ENV[@]}")
+run env "${b12f_env[@]}" "$INSTALL" --no-hooks
+check_status "B12F claude install succeeds" 0 "$STATUS"
+run env "${b12f_env[@]}" "$INSTALL" --codex --no-hooks
+check_status "B12F foreign-core codex install succeeds" 0 "$STATUS"
+check_absent "B12F it wrote no rails into the kept AGENTS.md" "$(cat "$B12F/.codex/AGENTS.md")" "KEEL-CORE-BEGIN"
+run env "${b12f_env[@]}" "$UNINSTALL" --yes
+check_status "B12F claude uninstall exits 0" 0 "$STATUS"
+check_contains "B12F still names the rails-less (foreign-core) codex install" "$OUT" "$B12F/.codex"
+
+# The SAME hint fires on the earliest exit — "no Keel home at all" — the run a Codex-only adopter
+# makes first.
+B12N="$SANDBOX/b12-no-such-home"
+run "$INSTALL" --codex --home "$SANDBOX/b12-noexist-codex" --no-hooks
+check_status "B12N codex install (for the hint to find) succeeds" 0 "$STATUS"
+run "$UNINSTALL" --home "$B12N" --yes
+check_status "B12N no-such-home -> exit 0" 0 "$STATUS"
+check_contains "B12N says nothing to do" "$OUT" "nothing to do"
+check_contains "B12N still names the ledger-recorded codex install" "$OUT" "$SANDBOX/b12-noexist-codex"
+check_absent "B12N no undefined-function fallout" "$OUT" "command not found"
+
+# --- B13: gate hint quotes the gate manifest's RECORDED settings path, not a re-derived one
+# [dir #136] --------------------------------------------------------------------------------------
+if command -v jq >/dev/null 2>&1; then
+  B13="$SANDBOX/b13-gate-hint/.claude"
+  inst --home "$B13" --no-hooks
+  run env KEEL_HOME="$B13" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
+  check_status "B13 gate wire succeeds" 0 "$STATUS"
+  b13gman="$B13/.keel/install-manifest.gate"
+  check_file "B13 gate manifest recorded" "$b13gman"
+
+  # Prove the hint reads settings= from the manifest, not a re-derived $HOME_DIR/settings.json: point
+  # the recorded field at a distinguishing (still-real) copy and confirm the printed hint follows it.
+  cp "$B13/settings.json" "$B13/settings-recorded.json"
+  sed "s|^settings=.*|settings=$B13/settings-recorded.json|" "$b13gman" > "$b13gman.testtmp" && mv "$b13gman.testtmp" "$b13gman"
+
+  unin --home "$B13" --yes
+  check_status "B13 uninstall exits 0" 0 "$STATUS"
+  check_contains "B13 hint quotes the manifest's RECORDED settings path" "$OUT" "settings-recorded.json"
+  check_contains "B13 hint points at the tested removal command" "$OUT" "install-pre-pr-gate.sh --uninstall"
+else
+  pass "jq not available — B13 gate-hint test skipped (installer requires jq)"
+fi
+
+# --- B14: dir #108 regression guard, reconfirmed under a manifested link install — only the real
+# token-bounded import line is stripped, a prose mention survives [existing tests stay green] --------
+B14="$SANDBOX/b14-import-boundary/.claude"
+inst --link --home "$B14" --no-hooks
+check_status "B14 link install succeeds" 0 "$STATUS"
+b14_prose='Note: the rails arrive via `@~/.claude/keel/CORE.md` — keep this line.'
+printf '%s\n' "$b14_prose" >> "$B14/CLAUDE.md"
+unin --home "$B14" --yes
+check_status "B14 uninstall exits 0" 0 "$STATUS"
+b14_txt="$(cat "$B14/CLAUDE.md")"
+check_contains "B14 a prose mention of the core path survives" "$b14_txt" "keep this line."
+check_absent "B14 the real import line is stripped" "$b14_txt" "@$B14/keel/CORE.md"
+
+# =================================================================================================
+# dir #125 PR2 — KEEL-LEGACY-NOMANIFEST branch coverage (B15-B17). Since install.sh always writes a
+# manifest now (PR1), every fixture above that goes through `inst` exercises the NEW manifest-driven
+# paths, not the legacy fallbacks — these three tests reach the legacy branches directly (found by an
+# independent operator-run /code-review high pass: mutating each of these three branches away left the
+# suite green, meaning they were unreachable dead code as far as any test could tell).
+# =================================================================================================
+
+# --- B15: the legacy artifact-removal branch (kept for a home whose manifest is absent/corrupt/
+# pre-dir-125) still correctly finds and removes real Keel content via cmp-to-checkout -----------
+B15="$SANDBOX/b15-legacy-removal/.claude"
+inst --home "$B15" --no-hooks
+check_status "B15 install succeeds" 0 "$STATUS"
+rm -f "$B15/.keel/install-manifest.claude"   # simulate a pre-dir-125 (manifest-less) home
+check_nofile "B15 fixture: no manifest for this mode" "$B15/.keel/install-manifest.claude"
+
+unin --home "$B15" --yes
+check_status "B15 uninstall over a manifest-less home exits 0" 0 "$STATUS"
+check_nolink "B15 legacy path removed the CLI symlink" "$B15/bin/keel"
+if [ -e "$B15/commands/go.md" ]; then fail "B15 legacy path removed a shipped command" "still present"; else pass "B15 legacy path removed a shipped command"; fi
+check_nofile "B15 legacy path removed FRAMEWORK.md" "$B15/FRAMEWORK.md"
+check_file "B15 INSTANCE.md (user data) kept" "$B15/INSTANCE.md"
+if [ -e "$B15/.keel" ]; then fail "B15 .keel/ removed (nothing left there)" "still present"; else pass "B15 .keel/ removed (nothing left there)"; fi
+
+# --- B16: the legacy mode/home mismatch refusal (kept for a home where NEITHER mode ever recorded a
+# manifest) still fires, using the original context-file heuristic — built entirely by hand, with
+# install.sh never invoked, so no manifest exists anywhere at this home -----------------------------
+B16="$SANDBOX/b16-legacy-mismatch/.claude"
+mkdir -p "$B16/bin"
+ln -s "$REPO_ROOT/keel" "$B16/bin/keel"
+printf '# Just a personal AGENTS.md, no install.sh involved\n' > "$B16/AGENTS.md"
+run env KEEL_HOME="$B16" "$UNINSTALL" --yes
+check_status "B16 legacy mismatch refusal fires -> exit 2" 2 "$STATUS"
+check_contains "B16 legacy refusal uses the original context-file wording" "$OUT" "no CLAUDE.md — it has AGENTS.md instead"
+check_link "B16 nothing removed — the hand-built CLI symlink survives" "$B16/bin/keel"
+
+# --- B17: gate_hooks_hint's legacy settings.json probe still fires when settings.json is genuinely
+# wired but no gate manifest was ever recorded (a pre-dir-125 gate wire, or one whose manifest was
+# lost) --------------------------------------------------------------------------------------------
+if command -v jq >/dev/null 2>&1; then
+  B17="$SANDBOX/b17-legacy-gate-hint/.claude"
+  inst --home "$B17" --no-hooks
+  run env KEEL_HOME="$B17" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
+  check_status "B17 gate wire succeeds" 0 "$STATUS"
+  rm -f "$B17/.keel/install-manifest.gate"
+  check_nofile "B17 fixture: no gate manifest recorded" "$B17/.keel/install-manifest.gate"
+  check_file "B17 fixture: settings.json really is wired" "$B17/settings.json"
+
+  unin --home "$B17" --yes
+  check_status "B17 uninstall exits 0" 0 "$STATUS"
+  check_contains "B17 legacy probe still names the wired settings.json" "$OUT" "$B17/settings.json"
+  check_contains "B17 legacy probe points at the removal command" "$OUT" "install-pre-pr-gate.sh --uninstall"
+else
+  pass "jq not available — B17 legacy gate-hint test skipped (installer requires jq)"
+fi
+
+# =================================================================================================
+# dir #125 PR2 — mixed-generation / staleness coverage (B18-B21), pinning 4 findings from an
+# operator-run /code-review high pass on the manifest-consumer diff.
+# =================================================================================================
+
+# --- B18: a MIXED-generation both-modes home (one mode installed by an old, pre-dir-125 checkout —
+# real content, no manifest — the other by the current one) must neither falsely refuse a same-mode
+# uninstall, nor let the manifested mode's own uninstall strip content the unmanifested mode still
+# needs (the refcount can't see a manifest that was never written) --------------------------------
+B18="$SANDBOX/b18-mixed-gen/.claude"
+inst --home "$B18" --no-hooks
+run env KEEL_HOME="$B18" "$INSTALL" --codex --no-hooks
+check_status "B18 codex install over the same home succeeds" 0 "$STATUS"
+rm -f "$B18/.keel/install-manifest.claude"   # simulate a pre-dir-125 claude half: real content, no manifest
+check_nofile "B18 fixture: claude manifest absent (simulated pre-dir-125 half)" "$B18/.keel/install-manifest.claude"
+check_file "B18 fixture: codex manifest present" "$B18/.keel/install-manifest.codex"
+check_contains "B18 fixture: claude content still carries rails" "$(cat "$B18/CLAUDE.md")" "KEEL-CORE-BEGIN"
+
+run env KEEL_HOME="$B18" "$UNINSTALL" --codex --yes
+check_status "B18 codex uninstall on a mixed-generation home does not falsely refuse" 0 "$STATUS"
+check_absent "B18 no mode-mismatch refusal printed" "$OUT" "recorded manifest is"
+check_file "B18 shared bin/keel survives (the un-migrated claude half still needs it)" "$B18/bin/keel"
+check_link "B18 shared bin/keel is still the real symlink" "$B18/bin/keel"
+check_file "B18 shared FRAMEWORK.md survives" "$B18/FRAMEWORK.md"
+check_file "B18 shared PRINCIPLES.md survives" "$B18/PRINCIPLES.md"
+check_contains "B18 CLAUDE.md rails (the un-migrated half) still intact" "$(cat "$B18/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_nofile "B18 codex manifest removed" "$B18/.keel/install-manifest.codex"
+
+# The reverse direction: a plain (claude) uninstall on this SAME mixed-generation home must not be
+# falsely refused either — claude's own rails are independent evidence it's genuinely (if unmanifested)
+# installed here, not a mismatch.
+B18B="$SANDBOX/b18b-mixed-gen-reverse/.claude"
+inst --home "$B18B" --no-hooks
+run env KEEL_HOME="$B18B" "$INSTALL" --codex --no-hooks
+rm -f "$B18B/.keel/install-manifest.claude"
+run env KEEL_HOME="$B18B" "$UNINSTALL" --yes
+check_status "B18B a plain (claude) uninstall on a mixed-generation home is not falsely refused" 0 "$STATUS"
+check_absent "B18B does not print the mode-mismatch refusal" "$OUT" "recorded manifest is"
+
+# --- B19: other_mode_hint is a UNION of the ledger scan and the legacy default-leaf probe, not
+# either-or — two genuinely different other-mode installs (one pre-dir-125 at the conventional
+# default leaf, one ledger-recorded elsewhere) must BOTH be named, not just whichever the ledger
+# scan happens to hit first -------------------------------------------------------------------------
+B19H="$SANDBOX/b19-home"
+mkdir -p "$B19H/.claude"
+fresh_home_env "$B19H"; b19_env=("${FRESH_HOME_ENV[@]}")
+run env "${b19_env[@]}" "$INSTALL" --no-hooks
+check_status "B19 claude install at the conventional home succeeds" 0 "$STATUS"
+mkdir -p "$B19H/.codex"
+rails "$B19H/.codex/AGENTS.md"   # a pre-dir-125 codex install AT the conventional default leaf: no manifest
+run "$INSTALL" --codex --home "$SANDBOX/b19-elsewhere-codex" --no-hooks
+check_status "B19 a SEPARATE, ledger-recorded codex install elsewhere succeeds" 0 "$STATUS"
+
+run env "${b19_env[@]}" "$UNINSTALL" --yes
+check_status "B19 claude uninstall exits 0" 0 "$STATUS"
+check_contains "B19 names the ledger-recorded elsewhere codex install" "$OUT" "$SANDBOX/b19-elsewhere-codex"
+check_contains "B19 ALSO names the pre-dir-125 codex install at the default leaf" "$OUT" "$B19H/.codex"
+
+# --- B20: gate_hooks_hint must not trust a stale gate manifest — if the hooks were actually removed
+# (or settings.json deleted) without going through install-pre-pr-gate.sh --uninstall, the hint must
+# say nothing, not repeat what the manifest alone claims [dir #136] ---------------------------------
+if command -v jq >/dev/null 2>&1; then
+  B20="$SANDBOX/b20-stale-gate/.claude"
+  inst --home "$B20" --no-hooks
+  run env KEEL_HOME="$B20" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
+  check_status "B20 gate wire succeeds" 0 "$STATUS"
+  check_file "B20 gate manifest recorded" "$B20/.keel/install-manifest.gate"
+  rm -f "$B20/settings.json"   # hooks removed by hand, manifest left behind — now stale
+  check_file "B20 fixture: gate manifest still there (stale)" "$B20/.keel/install-manifest.gate"
+
+  unin --home "$B20" --yes
+  check_status "B20 uninstall exits 0" 0 "$STATUS"
+  check_absent "B20 no false gate hint for hooks that are actually gone" "$OUT" "pre-PR gate hooks are still wired"
+else
+  pass "jq not available — B20 stale-gate-hint test skipped (installer requires jq)"
+fi
+
+# --- B21: a manifest whose version this script doesn't understand is treated as ABSENT for every
+# read — and must ALSO be left completely untouched, not backed up/consumed, which would silently
+# destroy a newer install's own record -------------------------------------------------------------
+B21="$SANDBOX/b21-future-manifest/.claude"
+inst --home "$B21" --no-hooks
+check_status "B21 install succeeds" 0 "$STATUS"
+b21man="$B21/.keel/install-manifest.claude"
+awk '{sub(/^keel_manifest_version=1$/, "keel_manifest_version=2")}1' "$b21man" > "$b21man.testtmp" && mv "$b21man.testtmp" "$b21man"
+check_contains "B21 fixture: manifest carries an unknown future version" "$(cat "$b21man")" "keel_manifest_version=2"
+
+unin --home "$B21" --yes
+check_status "B21 uninstall over a future-version manifest exits 0" 0 "$STATUS"
+check_file "B21 the future-version manifest survives, untouched" "$b21man"
+check_contains "B21 its content is unchanged" "$(cat "$b21man")" "keel_manifest_version=2"
+check_contains "B21 the ledger entry survives (manifest still counts as present)" "$(cat "$KEEL_LEDGER_FILE")" "$B21"
+check_dir "B21 .keel/ survives (the manifest still lives there)" "$B21/.keel"
 
 summary
