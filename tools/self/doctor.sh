@@ -266,31 +266,32 @@ fi
 # does cross '/', matching what the dead-reference scan above already (correctly) relies on.
 say ""
 say "● tool wiring (reference + test coverage)"
+# 'keel' is added as one more pathspec below, alongside the tools/*.sh glob: the one executable
+# install.sh itself INSTALLS (a symlink, via make_link) rather than a tools/*.sh glob match. dir #142
+# defines "shipped executable" as install.sh's own installs plus tools/*.sh, so the ratchet further
+# down must see it too. ls-files never lists an untracked file regardless of pathspec, so a REPO_ARG
+# sandbox with a stray untracked file of that name is still correctly excluded, with one git
+# invocation rather than a second, separate ls-files call.
 tool_files=()
 while IFS= read -r f; do tool_files+=("$f"); done < <(
-  git -C "$repo_root" ls-files -- 'tools/*.sh' 'tools/self/*.sh'
+  git -C "$repo_root" ls-files -- 'tools/*.sh' 'tools/self/*.sh' 'keel'
 )
-# 'keel' — the one executable install.sh itself INSTALLS (a symlink, via make_link) rather than a
-# tools/*.sh glob match. dir #142 defines "shipped executable" as install.sh's own installs plus
-# tools/*.sh, so the ratchet below must see it too, not just the glob. `ls-files --error-unmatch`
-# rather than `[ -f ]`: only a TRACKED keel counts (a REPO_ARG sandbox with a stray untracked file of
-# that name must not be swept in).
-if git -C "$repo_root" ls-files --error-unmatch keel >/dev/null 2>&1; then
-  tool_files+=("keel")
-fi
 # tools/self/legacy-untested.txt — dir #142's soft-debt allowlist: shipped scripts with zero test
 # coverage BEFORE the ratchet below existed. One relative path per line (matching the `rel` values
-# this loop computes, e.g. `tools/branch-cleanup.sh` or `keel`); `#`-comments and blank lines are ignored. A
-# script's AGE is not what exempts it — only that it predates this check — so this is a named list a
-# human diff can review, never a heuristic (git blame / commit date) that would silently grandfather
-# whatever happens to be old. Read from $repo_root (the audited checkout), not $self_dir, so a
-# REPO_ARG sandbox in the test suite carries its own independent list.
+# this loop computes, e.g. `tools/branch-cleanup.sh` or `keel`); `#`-comments and blank lines are
+# ignored. A script's AGE is not what exempts it — only that it predates this check — so this is a
+# named list a human diff can review, never a heuristic (git blame / commit date) that would
+# silently grandfather whatever happens to be old. Read from $repo_root (the audited checkout), not
+# $self_dir, so a REPO_ARG sandbox in the test suite carries its own independent list.
 legacy_file="$repo_root/tools/self/legacy-untested.txt"
 legacy_list=()
 if [ -f "$legacy_file" ] && [ -r "$legacy_file" ]; then
   while IFS= read -r ln || [ -n "$ln" ]; do
     ln="${ln%%#*}"
-    ln="$(printf '%s' "$ln" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    # Parameter-expansion trim, not a printf|sed subshell: this loop already runs on every doctor.sh
+    # invocation (CI + every /polish), and a per-line fork pair is wasted work a pure-bash trim skips.
+    ln="${ln#"${ln%%[![:space:]]*}"}"
+    ln="${ln%"${ln##*[![:space:]]}"}"
     [ -n "$ln" ] && legacy_list+=("$ln")
   done < "$legacy_file"
 fi
@@ -337,11 +338,11 @@ if [ "${#tool_files[@]}" -gt 0 ]; then
         # debt — soft, WARN-only, burned down deliberately. Anything NOT on that list is either brand
         # new or slipped past whoever should have listed it — either way, a hard GAP, not a WARN a
         # release can quietly sail past the way dir #100's whole class did.
+        # Exact-line membership test, same idiom check 6's tag/section cross-check already uses
+        # (`printf | grep -qxF`) rather than a hand-rolled loop.
         legacy_hit=0
-        if [ "${#legacy_list[@]}" -gt 0 ]; then
-          for l in "${legacy_list[@]}"; do
-            [ "$l" = "$rel" ] && { legacy_hit=1; break; }
-          done
+        if [ "${#legacy_list[@]}" -gt 0 ] && printf '%s\n' "${legacy_list[@]}" | grep -qxF "$rel"; then
+          legacy_hit=1
         fi
         if [ "$legacy_hit" -eq 1 ]; then
           warn "listed debt (dir #142, tools/self/legacy-untested.txt): $rel has no test coverage"
