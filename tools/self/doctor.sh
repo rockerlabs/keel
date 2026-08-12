@@ -15,8 +15,12 @@
 #   GAP   install.sh's command ship-skip list disagrees with doctor.sh --install's mirror of it
 #   GAP   FRAMEWORK.md / PRINCIPLES.md contain a leaked host path or non-safe email (dir #114)
 #   GAP   a tools/commands/templates path referenced in tracked docs/scripts doesn't exist on disk
-#   WARN  a tools/*.sh script has no reference anywhere (commands/, tests/, install.sh, docs/, CI)
-#   WARN  a tools/*.sh script has no test coverage in tests/
+#   WARN  a tools/*.sh script (or the installed `keel` CLI) has no reference anywhere (commands/,
+#         tests/, install.sh, docs/, CI)
+#   GAP   a NEW tools/*.sh script (or the installed `keel` CLI) has zero test coverage in tests/ —
+#         the coverage ratchet (dir #142)
+#   WARN  a PRE-EXISTING such script listed in tools/self/legacy-untested.txt has zero test coverage
+#         (soft debt, dir #142 — burned down deliberately, never a retroactive block)
 #   WARN  CHANGELOG.md predates the most recent commands/, tools/, or install.sh change
 #   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #   WARN  BACKLOG.md: a `⏳`/`IN REVIEW` heading cites a PR that `gh` reports MERGED (dir #135)
@@ -266,6 +270,30 @@ tool_files=()
 while IFS= read -r f; do tool_files+=("$f"); done < <(
   git -C "$repo_root" ls-files -- 'tools/*.sh' 'tools/self/*.sh'
 )
+# 'keel' — the one executable install.sh itself INSTALLS (a symlink, via make_link) rather than a
+# tools/*.sh glob match. dir #142 defines "shipped executable" as install.sh's own installs plus
+# tools/*.sh, so the ratchet below must see it too, not just the glob. `ls-files --error-unmatch`
+# rather than `[ -f ]`: only a TRACKED keel counts (a REPO_ARG sandbox with a stray untracked file of
+# that name must not be swept in).
+if git -C "$repo_root" ls-files --error-unmatch keel >/dev/null 2>&1; then
+  tool_files+=("keel")
+fi
+# tools/self/legacy-untested.txt — dir #142's soft-debt allowlist: shipped scripts with zero test
+# coverage BEFORE the ratchet below existed. One relative path per line (matching the `rel` values
+# this loop computes, e.g. `tools/branch-cleanup.sh` or `keel`); `#`-comments and blank lines are ignored. A
+# script's AGE is not what exempts it — only that it predates this check — so this is a named list a
+# human diff can review, never a heuristic (git blame / commit date) that would silently grandfather
+# whatever happens to be old. Read from $repo_root (the audited checkout), not $self_dir, so a
+# REPO_ARG sandbox in the test suite carries its own independent list.
+legacy_file="$repo_root/tools/self/legacy-untested.txt"
+legacy_list=()
+if [ -f "$legacy_file" ] && [ -r "$legacy_file" ]; then
+  while IFS= read -r ln || [ -n "$ln" ]; do
+    ln="${ln%%#*}"
+    ln="$(printf '%s' "$ln" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$ln" ] && legacy_list+=("$ln")
+  done < "$legacy_file"
+fi
 ref_files=()
 while IFS= read -r f; do ref_files+=("$f"); done < <(
   git -C "$repo_root" ls-files -- \
@@ -304,7 +332,23 @@ if [ "${#tool_files[@]}" -gt 0 ]; then
       say "  OK   $rel — referenced and test-covered"
     else
       [ "$ref_hit" -eq 1 ] || warn "orphan tool: no reference to $rel in commands/, tests/, install.sh, docs/, or CI"
-      [ "$test_hit" -eq 1 ] || warn "no test coverage: $rel isn't mentioned in any tests/*.sh"
+      if [ "$test_hit" -eq 0 ]; then
+        # The ratchet (dir #142): a script already listed in legacy-untested.txt is known, visible
+        # debt — soft, WARN-only, burned down deliberately. Anything NOT on that list is either brand
+        # new or slipped past whoever should have listed it — either way, a hard GAP, not a WARN a
+        # release can quietly sail past the way dir #100's whole class did.
+        legacy_hit=0
+        if [ "${#legacy_list[@]}" -gt 0 ]; then
+          for l in "${legacy_list[@]}"; do
+            [ "$l" = "$rel" ] && { legacy_hit=1; break; }
+          done
+        fi
+        if [ "$legacy_hit" -eq 1 ]; then
+          warn "listed debt (dir #142, tools/self/legacy-untested.txt): $rel has no test coverage"
+        else
+          gap "ratchet (dir #142): $rel is a NEW shipped script with zero test coverage — add a tests/test_*.sh covering it, or list it in tools/self/legacy-untested.txt if this is pre-existing debt"
+        fi
+      fi
     fi
   done
 fi
