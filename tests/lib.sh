@@ -33,6 +33,14 @@ export KEEL_IMPACT_LOG="$SANDBOX/harness-impact.log"
 export KEEL_IMPACT_LEDGER="$SANDBOX/harness-ledger.md"
 export KEEL_IMPACT_EVIDENCE="$SANDBOX/harness-evidence.md"
 
+# Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
+# both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS
+# the real $REPO_ROOT — without this override every install.sh/install-pre-pr-gate.sh call across the
+# whole suite would append this run's throwaway sandbox homes into the real, tracked-by-nothing but
+# still-real $REPO_ROOT/.keel/installed-homes (found by an independent /code-review high pass, which
+# reproduced hundreds of stale entries left behind by exactly this).
+export KEEL_LEDGER_FILE="$SANDBOX/harness-installed-homes"
+
 trap 'rm -rf "$SANDBOX"' EXIT
 
 # --- assertions ---------------------------------------------------------------------------------

@@ -363,7 +363,7 @@ reduce $specs[] as $s (.;
     for m in "$gate_home_resolved"/.keel/install-manifest.*; do
       [ -e "$m" ] && manifests_left=1
     done
-    ledger="$repo_root/.keel/installed-homes"
+    ledger="${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}"
     if [ "$manifests_left" = 0 ] && [ -f "$ledger" ]; then
       ledger_tmp="$ledger.keeltmp.$$"
       grep -vxF "$gate_home_resolved" "$ledger" > "$ledger_tmp" 2>/dev/null || : > "$ledger_tmp"
@@ -452,10 +452,14 @@ wired_at=$wired_at"
   _atomic_write "$gate_manifest_file" "$gate_manifest_content"
   echo "install-pre-pr-gate: gate manifest ($gate_manifest_file)"
 
-  # Checkout-side ledger — the same discovery index install.sh writes to (tools/lib/ledger.sh).
+  # Checkout-side ledger — the same discovery index install.sh writes to (tools/lib/ledger.sh),
+  # respecting the same KEEL_LEDGER_FILE test-isolation override install.sh does. Non-fatal: the hook
+  # wiring above already fully succeeded, so a read-only checkout must not abort the run (found by an
+  # independent /code-review high pass on install.sh's own equivalent site).
   # shellcheck source=tools/lib/ledger.sh
   . "$here/lib/ledger.sh"
-  ledger_append "$repo_root/.keel/installed-homes" "$gate_home_resolved"
+  ledger_append "${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}" "$gate_home_resolved" \
+    || echo "install-pre-pr-gate: ledger write failed (non-fatal) — $repo_root/.keel not writable?" >&2
 fi
 
 echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."

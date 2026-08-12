@@ -146,10 +146,16 @@ _char_count() {
 }
 
 # manifest_field FILE KEY — the value of a top-level `key=value` line in an install manifest (dir
-# #125), first match. Used 3x below reading install-manifest.<mode> — one definition instead of three
-# hand-copied sed pipelines.
+# #125), first match, "" on any read failure. Used 3x below reading install-manifest.<mode> — one
+# definition instead of three hand-copied sed pipelines. `|| true` at the end: an EXISTING but
+# unreadable manifest (permission-denied) makes `sed` exit non-zero even with stderr silenced, and
+# under this file's own `set -euo pipefail` an unguarded pipeline failure here would abort the WHOLE
+# run mid-unit — losing every finding already buffered in $NOTES and printing no summary line at all
+# (found by an independent /code-review high pass). The manifest-versioning contract says exactly
+# this case degrades to "treated as absent", never a crash — same `|| true` degradation the file's
+# own load_token_set() already uses for the identical unreadable-file risk.
 manifest_field() {
-  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true
 }
 
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it

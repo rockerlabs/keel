@@ -45,6 +45,19 @@ check_contains "linked edit artifact is import-line" "$(cat "$lman")" "artifact=
 run bash -c "find '$link_home' -name '*.keeltmp.*'"
 check_status "no .keeltmp litter after a fresh link install" "" "$OUT"
 
+# Regression (independent /code-review high pass): a home upgrading straight from a pre-dir-125
+# install — keel/README.md already on disk, no manifest ever recorded before — must still get
+# README.md into its first-ever manifest. record_placed() was previously only called inside the
+# write-once "doesn't exist yet" guard, so it silently and permanently missed this artifact on any
+# home where the file already existed at manifest-recording time.
+readme_upgrade_home="$SANDBOX/readme-upgrade-home"; mkdir -p "$readme_upgrade_home/keel"
+printf '# pre-existing README, not Keel-generated this run\n' > "$readme_upgrade_home/keel/README.md"
+fresh_home_env "$readme_upgrade_home"
+run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-hooks
+check_status "link install over a pre-existing keel/README.md -> exit 0" 0 "$STATUS"
+rman="$readme_upgrade_home/.claude/.keel/install-manifest.claude"
+check_contains "pre-existing keel/README.md still lands in the first manifest" "$(cat "$rman")" "artifact=file	keel/README.md	cksum:"
+
 nogit_home="$SANDBOX/nogit-home"; mkdir -p "$nogit_home"
 fresh_home_env "$nogit_home"
 run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-git --no-hooks
@@ -91,7 +104,7 @@ check_absent "foreign-core: no edit artifact recorded" "$(cat "$fman")" "artifac
 
 # --- A4: an ephemeral (bootstrap temp-clone) run — manifest carries ephemeral=1, NO ledger write ------
 ehome="$SANDBOX/ephemeral-home"; mkdir -p "$ehome"
-ledger="$REPO_ROOT/.keel/installed-homes"
+ledger="$KEEL_LEDGER_FILE"
 ledger_before="$(cat "$ledger" 2>/dev/null || true)"
 run env KEEL_EPHEMERAL=1 "$install" --home "$ehome" --no-hooks
 check_status "ephemeral run -> exit 0" 0 "$STATUS"
@@ -189,5 +202,17 @@ sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$dman.orig" > "$dman
 run "$doctor" --install "$dhome"
 check_contains "unknown manifest version -> treated as absent (W-MANIFEST-MISSING)" "$OUT" "W-MANIFEST-MISSING"
 mv "$dman.orig" "$dman"
+
+# Regression (independent /code-review high pass): an EXISTING but unreadable manifest must degrade
+# to "treated as absent" (a WARN + full summary), never abort the whole audit under set -euo
+# pipefail and silently drop every finding already buffered for this unit. Skipped as root (chmod 000
+# is a no-op for the root reader — the project's own documented Alpine trap).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  chmod 000 "$dman"
+  run "$doctor" --install "$dhome"
+  chmod 644 "$dman"   # restore so cleanup can remove the sandbox
+  check_contains "unreadable manifest degrades to absent, not a crash" "$OUT" "W-MANIFEST-MISSING"
+  check_contains "unreadable manifest: the run still prints its summary line" "$OUT" "doctor:"
+fi
 
 summary

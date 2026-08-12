@@ -502,9 +502,14 @@ To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUD
 \`commands/\` symlinks (one level up) into the checkout. Health check: \`tools/doctor.sh --install$doctor_arg\`
 (run from the checkout).
 EOF
-    record_placed "$link_dir/README.md"
     echo "  +    keel/README.md"
   fi
+  # record_placed OUTSIDE the guard above — the file is written once, but a manifest re-derives
+  # state EVERY run: a home that already had keel/README.md before its first manifest (a pre-dir-125
+  # install upgrading straight into this version) must still get it listed, not permanently miss it
+  # because the write-once guard skipped the record too (found by an independent /code-review high
+  # pass). By this point the file exists either way.
+  record_placed "$link_dir/README.md"
 
   # The global CLAUDE.md — exactly ONE @import line delivers the rails, whatever was there before:
   #   absent            → generate a thin wrapper: the template minus the embedded core, import line instead
@@ -817,6 +822,15 @@ installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # than threaded through every wrapper/migration branch above: there's no cksum-precision to lose here
 # (extra is a fixed "import-line"/"core-block" tag, not a byte fingerprint), so re-inspecting the
 # result is just as correct and far simpler. `foreign_core=1` → context_created=0, no edit artifact.
+# NAMING NOTE for PR2's uninstall consumer (raised by an independent /code-review high pass): in
+# linked mode, context_created=1 covers BOTH "Keel generated a brand-new CLAUDE.md" AND "Keel appended
+# one @import line to your pre-existing global CLAUDE.md" — foreign_core is a copy-mode-only concept
+# (install.sh:~385), so linked mode has no separate signal for the second case. This is intentional
+# per the field's own definition ("0 = pre-existing/foreign — install never wrote rails into it"; here
+# it DID), but it means context_created=1 must NEVER be read as "safe to delete the whole file" — only
+# the `edit` artifact (a single import line or core block) is ever a removal candidate, never the file
+# itself. The manifest already reflects this: there is no `file`-kind artifact for CLAUDE.md/AGENTS.md
+# anywhere in this script, by design.
 context_created=0
 edit_kind="" edit_extra=""
 if [ "$foreign_core" != 1 ]; then
@@ -879,10 +893,19 @@ echo "  +    install manifest ($manifest_file)"
 # checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own
 # ledger write, dir #125). Skipped when EPHEMERAL: the checkout is a temp clone about to be reaped, so
 # a ledger entry pointing back at it would be pointing at nothing.
+# KEEL_LEDGER_FILE overrides the path — same escape hatch as KEEL_IMPACT_LOG/LEDGER/EVIDENCE
+# (tools/keel-impact.sh) for a script that would otherwise always write into $root/.keel regardless
+# of the caller's own HOME sandbox; the test harness points this at a throwaway file so a test run
+# never pollutes the real checkout's ledger with stale sandbox homes.
 if [ "$EPHEMERAL" != 1 ]; then
   # shellcheck source=tools/lib/ledger.sh
   . "$root/tools/lib/ledger.sh"
-  ledger_append "$root/.keel/installed-homes" "$home_resolved"
+  # Non-fatal, like the secret-guard wiring above: the home install above already fully succeeded,
+  # so a checkout that happens to be read-only (a different write target than $HOME_DIR — every
+  # other write in this script lands there, not here) must not abort the run and swallow the Verify
+  # summary below (found by an independent /code-review high pass).
+  ledger_append "${KEEL_LEDGER_FILE:-$root/.keel/installed-homes}" "$home_resolved" \
+    || echo "  !    ledger write failed (non-fatal) — $root/.keel not writable?" >&2
 fi
 
 # Shared opening — the mode-specific middle differs below (clone handling, update, removal).
