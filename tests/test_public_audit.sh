@@ -428,4 +428,31 @@ d="$(repo_by dev@example.com)"
 run bash "$pa" --no-history "$d"
 check_absent "no personal file → no personal-literal note" "$OUT" "secret-scan-personal literals"
 
+# a personal literal reachable ONLY from a refs/pull/* text ref → GAP (same false-clean class as
+# declared tokens: git log --all doesn't see it)
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q \
+  -m "$(printf 'fix\n\nauthor: jane q public')"
+git -C "$d" push -q origin HEAD:refs/pull/1/head     # leak lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                    # ...not in main / any local ref
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal only in a refs/pull ref → GAP exit 1" 1 "$STATUS"
+check_contains "PR-ref personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a host PR ref"
+
+# a personal literal inside a binary blob reachable ONLY from a refs/pull/* ref → GAP
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+{ utf16le "made by Jane Q Public"; } > "$d/pr-fixture.bin"
+commit_in "$d" "add pr binary fixture"
+git -C "$d" push -q origin HEAD:refs/pull/2/head     # binary leak lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                    # ...not in main / any local ref
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal in a binary blob only in a refs/pull ref → GAP exit 1" 1 "$STATUS"
+check_contains "PR-ref binary personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
+
 summary
