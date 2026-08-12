@@ -249,7 +249,10 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
 - [`PRINCIPLES.md`](PRINCIPLES.md) · [`FRAMEWORK.md`](FRAMEWORK.md) — the foundation and the reusable how-to.
 
-> **Note on code comments:** References like `dir #N`, `KB.n`, and `SEC4` are internal development shorthand; full context is always in the surrounding text.
+> **Note on internal ticket references:** References like `dir #N`, `KB.n`, and `SEC4` — in code comments,
+> `CHANGELOG.md`, or a doc like [`docs/release-audit.md`](docs/release-audit.md) — are internal development
+> shorthand for a private backlog this repo doesn't ship; you don't need to resolve one to use the
+> surrounding instructions, since full context is always in the prose around it.
 
 ## Tests, scope, license
 

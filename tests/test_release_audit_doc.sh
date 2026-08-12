@@ -74,11 +74,13 @@ fi
 # --- dir #140's own acceptance: every phase names its felt incident (a "Felt incident" tag), so a
 # future edit can't quietly turn a phase back into unmotivated prose. Phase 0 is the one documented
 # exemption (dir #140's own spec: it goes in near-verbatim, operator-ratified — a definition, not a
-# design choice a felt incident shaped) — count it separately and require exactly one, rather than
-# folding it into the felt-incident tally where its absence would be indistinguishable from a bug. ---
+# design choice a felt incident shaped) — count it separately and require exactly one. Scoped PER
+# PHASE SECTION, not as an aggregate count: an earlier version compared total "Felt incident" tags
+# against total phase headings, which a phase with two tags and a phase with zero would both satisfy
+# (found by review) — this walks each phase's own text, up to the next "## " heading, so a phase
+# missing its own tag can't hide behind another phase's extra one.
 phase0_count="$(grep -c '^## Phase 0 ' "$audit")"
 numbered_phase_count="$(grep -c '^## Phase [1-9]' "$audit")"
-felt_count="$(grep -c 'Felt incident' "$audit")"
 
 if [ "$phase0_count" -eq 1 ]; then
   pass "release-audit.md: phase 0 (the ratified state definition) is present"
@@ -87,11 +89,18 @@ else
     "found $phase0_count '## Phase 0' headings, expected exactly 1"
 fi
 
-if [ "$numbered_phase_count" -ge 7 ] && [ "$felt_count" -ge "$numbered_phase_count" ]; then
-  pass "release-audit.md: every numbered phase (of $numbered_phase_count) names a felt incident ($felt_count tags)"
+bare_phases="$(awk '
+  /^## Phase [1-9]/ { if (phase != "" && !seen) print phase; phase = $0; seen = 0; next }
+  /^## /            { if (phase != "" && !seen) print phase; phase = ""; next }
+  /Felt incident/   { if (phase != "") seen = 1 }
+  END               { if (phase != "" && !seen) print phase }
+' "$audit")"
+
+if [ "$numbered_phase_count" -ge 7 ] && [ -z "$bare_phases" ]; then
+  pass "release-audit.md: every numbered phase (of $numbered_phase_count) names its OWN felt incident"
 else
-  fail "release-audit.md: every numbered phase names a felt incident" \
-    "found $numbered_phase_count phase headings (excluding phase 0) but only $felt_count 'Felt incident' tags — dir #140's acceptance requires one per phase"
+  fail "release-audit.md: every numbered phase names its own felt incident" \
+    "phase(s) with no 'Felt incident' tag in their own section: ${bare_phases:-<none found — check numbered_phase_count=$numbered_phase_count>}"
 fi
 
 summary
