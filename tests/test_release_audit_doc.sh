@@ -19,15 +19,6 @@ check_file "FRAMEWORK.md exists" "$framework"
 check_file "docs/publishing-checklist.md exists" "$checklist"
 check_file "README.md exists" "$readme"
 
-# pin LABEL FILE PATTERN HINT — fixed-string, same helper shape as test_rails_honesty.sh's pin().
-pin() {
-  if grep -qF -- "$3" "$2"; then
-    pass "$1"
-  else
-    fail "$1" "$4"
-  fi
-}
-
 # --- README discoverability: a new adopter-usable doc that isn't linked from the Docs index is as
 # good as unshipped (same class dir #85's docs layer would have flagged). ------------------------
 pin "README Docs section links docs/release-audit.md" \
@@ -66,12 +57,9 @@ pin "release-audit.md phase 2 names backlog.md step 6" \
 pin "release-audit.md phase 4 cites FRAMEWORK.md's model-selection heading" \
   "$audit" 'Model & reasoning-effort selection' \
   "phase 4 names this heading; if FRAMEWORK.md renamed it the citation is now stale"
-if grep -qF '## Model & reasoning-effort selection' "$framework"; then
-  pass "FRAMEWORK.md still carries the heading release-audit.md cites"
-else
-  fail "FRAMEWORK.md still carries the heading release-audit.md cites" \
-    "renamed in FRAMEWORK.md? update docs/release-audit.md phase 4 too"
-fi
+pin "FRAMEWORK.md still carries the heading release-audit.md cites" \
+  "$framework" '## Model & reasoning-effort selection' \
+  "renamed in FRAMEWORK.md? update docs/release-audit.md phase 4 too"
 
 pin "release-audit.md phase 7 cites publishing-checklist.md section 4" \
   "$audit" 'publishing-checklist.md`](publishing-checklist.md) §4' \
@@ -88,14 +76,8 @@ fi
 # exemption (dir #140's own spec: it goes in near-verbatim, operator-ratified — a definition, not a
 # design choice a felt incident shaped) — count it separately and require exactly one, rather than
 # folding it into the felt-incident tally where its absence would be indistinguishable from a bug. ---
-phase0_count=0
-numbered_phase_count=0
-while IFS= read -r line; do
-  case "$line" in
-    "## Phase 0 "*) phase0_count=$((phase0_count + 1)) ;;
-    "## Phase "*) numbered_phase_count=$((numbered_phase_count + 1)) ;;
-  esac
-done < "$audit"
+phase0_count="$(grep -c '^## Phase 0 ' "$audit")"
+numbered_phase_count="$(grep -c '^## Phase [1-9]' "$audit")"
 felt_count="$(grep -c 'Felt incident' "$audit")"
 
 if [ "$phase0_count" -eq 1 ]; then

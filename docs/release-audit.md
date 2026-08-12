@@ -117,9 +117,16 @@ release nobody checked.
 
 ## Deliverable
 
-Log a dated entry in your own review-history log (or equivalent) — surfaces checked per module, the
-findings table, the tickets filed — the same durable-record convention dir #85's own run follows. An audit
-with no inventory of what it checked reads as "checked everything," even when it didn't.
+Log a dated entry in your own review-history log (or equivalent): surfaces checked per module, the
+findings table, the tickets filed — the same discipline [`docs/rollout-audit.md`](rollout-audit.md)'s
+own "Running the audit" section states for a harness-upgrade sweep, applied here to a release. dir #85's
+own run followed it.
+
+**This doc is itself subject to phase 0's rule: not a fixed verdict, a checklist to re-evaluate.** If a
+real run's findings don't fit these seven phases or phase 6's three-point mandate — a new recurring class
+of RC finding, a batching shape that didn't hold — revise this doc as part of that audit's own synthesis
+phase, the same way any other drift gets ticketed. A process doc that only one campaign ever shaped stops
+being reusable the moment a second campaign's lessons don't fit it.
 
 ## See also
 
