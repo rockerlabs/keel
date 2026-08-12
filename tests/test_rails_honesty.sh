@@ -12,16 +12,6 @@ go="$REPO_ROOT/commands/go.md"
 wrap="$REPO_ROOT/commands/wrap.md"
 polish="$REPO_ROOT/commands/polish.md"
 
-# pin LABEL FILE PATTERN HINT — one fixed-string grep, reported under one label. Fixed-string on
-# purpose: every pin here is literal prose, so nothing needs regex escaping to stay readable.
-pin() {
-  if grep -qF -- "$3" "$2"; then
-    pass "$1"
-  else
-    fail "$1" "$4"
-  fi
-}
-
 check_file "docs/publishing-checklist.md exists" "$checklist"
 check_file "docs/going-public.md exists" "$going"
 check_file "commands/go.md exists" "$go"

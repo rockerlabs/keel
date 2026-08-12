@@ -42,6 +42,19 @@ _fail=0
 pass() { _pass=$((_pass + 1)); printf '  ok    %s\n' "$1"; }
 fail() { _fail=$((_fail + 1)); printf '  FAIL  %s\n        %s\n' "$1" "$2"; }
 
+# pin LABEL FILE PATTERN HINT — assert FILE contains PATTERN as a fixed string (grep -F), reporting
+# under LABEL with HINT on failure. Promoted here (dir #143) once a second test file
+# (test_release_audit_doc.sh) needed the exact same prose-citation-pin idiom
+# test_rails_honesty.sh had defined for itself — the "second use = promote" signal this file's own
+# earlier comments already apply to run()/fresh_home_env()/etc.
+pin() {
+  if grep -qF -- "$3" "$2"; then
+    pass "$1"
+  else
+    fail "$1" "$4"
+  fi
+}
+
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
 #
 # dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always
@@ -202,6 +215,11 @@ write_full_receipt_review() {
   # here keeps every suffix-strip grouped together), so a caller can pass "agent:high+operator-run" and
   # still get a matching polish.4-depth of "high".
   depth_level="${depth_level%+operator-run}"
+  # dir #141: the combined `agent:<level>+second-opinion` outcome (an in-session cross-model
+  # second-opinion subagent, dir #81's `+operator-run` pattern mirrored for a different suffix) records
+  # step 4's depth as the bare level too — same strip, same reasoning, so a caller can pass
+  # "agent:high+second-opinion" and still get a matching polish.4-depth of "high".
+  depth_level="${depth_level%+second-opinion}"
   # dir #70: an `agent:<level>` outcome (the independent-subagent-review leg) records step 4's depth as
   # the bare level too — strip the prefix the same way the `-operator-run`/`-waived` suffixes are stripped
   # above, so a caller can pass "agent:high" and still get a matching polish.4-depth of "high".

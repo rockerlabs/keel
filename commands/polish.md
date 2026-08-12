@@ -261,24 +261,67 @@ Steps, in order:
      moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's dialog doesn't
      cover a later commit.
 
-     **Frame this as ONE additive yes/no question, never as a choice between mechanisms** (dir #81): the
+     **Frame this as ONE additive question, never as a choice between mechanisms** (dir #81): the
      agent review already ran and its receipt above already stands — nothing here reopens or discards it,
      whatever the answer. Report what the agent review checked and found, state plainly that this review
-     already ran and stands regardless of the answer, then ask only whether to ADDITIONALLY run the
-     stronger built-in `/code-review <level>` on top — the built-in pass is a multi-agent pipeline
-     (parallel reviewers plus adversarial verification of their findings); one subagent is a real
-     independent review, but likely stays weaker, so there is a genuine reason to want both. Phrase the
-     options additively, never as accept-one-reject-the-other: "proceed — the agent review is enough for
-     this diff" / "I'll run `/code-review <level>` too". Print the exact `/code-review <level>` command
-     and open the dialog — the same real, pausing mechanism step 4 uses for its own dialog, not a
-     rhetorical question the flow can talk itself past. Record the hand-off exactly as (b) does —
-     `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"` — so a re-invocation doesn't have to
-     rely on session memory (see (c)).
+     already ran and stands regardless of the answer, then ask only whether to ADDITIONALLY run one thing
+     on top of it: the stronger built-in `/code-review <level>` (a multi-agent pipeline — parallel
+     reviewers plus adversarial verification of their findings) or an in-session **cross-model second
+     opinion** — one more Agent-tool subagent, pinned to a materially different model tier, reviewing the
+     same diff at the same depth (dir #141; see the dedicated bullet below for the model pin and the
+     subagent's own requirements). One subagent review is real and independent, but likely stays weaker
+     than the built-in pipeline, so there is a genuine reason to want either add-on. Phrase the options
+     additively, never as accept-one-reject-the-other: "proceed — the agent review is enough for this
+     diff" / "run an in-session cross-model second opinion too" / "I'll run `/code-review <level>` too".
+     Print the exact `/code-review <level>` command and open the dialog — the same real, pausing mechanism
+     step 4 uses for its own dialog, not a rhetorical question the flow can talk itself past. **This is
+     the anti-rebundle rule in practice** (below): a second add-on option extends this SAME dialog rather
+     than opening a new one. Record the hand-off exactly as (b) does —
+     `tools/pre-pr-gate.sh handoff <level> "$(git rev-parse HEAD)"` — only when the operator picks the
+     built-in-review add-on, so a re-invocation doesn't have to rely on session memory (see (c)); the
+     cross-model add-on needs no hand-off note, since it resolves immediately, in this same session, below.
 
      **On "proceed":** re-run `tools/pre-pr-gate.sh receipt polish.5-review agent:<level>` (the same
      outcome, written again) — idempotent, and its side effect is what clears the hand-off note; skipping
      this re-write leaves a stale hand-off note on disk that can force a spurious re-ask on a later
      re-invocation of this same commit.
+
+     **On "run an in-session cross-model second opinion too" (dir #141):** spawn ONE fresh-context
+     Agent-tool subagent, `subagent_type: "general-purpose"`, built the same way (a)'s own standing-review
+     subagent was, with one deliberate difference — pin its `model` parameter to a tier materially
+     different from the running session's own resolved model (visible in this session's own environment
+     context; the Agent tool defaults to the session's tier when `model` is omitted, which is exactly what
+     (a)'s own subagent did). Default mapping, simplest first: session on `opus` → pin `sonnet`; session
+     on `sonnet` (or anything else) → pin `opus`. Skip `haiku`/`fable` for this role — the point is an
+     independently-reasoning peer, not a cheaper or narrower one. Its prompt carries the SAME requirements
+     as (a)'s own subagent prompt — the step-1 diff scope, the step-4 chosen depth, the correctness-focused
+     mandate, the read-only/no-live-reproduction instruction, the ticket/done-criterion conformance mandate
+     (or its explicit absence) — and the SAME literal `KEEL-AGENT-REVIEW: level=<level>` closing-line
+     requirement, plain text, no markdown formatting (see (a) for the full list; nothing about the marker
+     or the mandate changes here, only the model pin and the fact that a genuine independent review already
+     stands before this second one even starts). **Verified against `tools/pre-pr-gate.sh`, not assumed
+     (dir #141):** the `SubagentStop` trace leg matches on `agent_type == general-purpose` and the marker
+     text alone — it has no way to see which subagent, prompt, or model tier produced a given trace line,
+     so this second subagent's own marker line satisfies the exact same trace check (a)'s did; the trace
+     mechanism itself needed no change. What DID need a small change is the receipt shape: an honest record
+     must say a second, cross-model pass happened rather than silently reuse the bare `agent:<level>`
+     outcome that already means "one agent review ran" — so `tools/pre-pr-gate.sh` gained one new outcome
+     literal for this, `agent:<level>+second-opinion` (dir #81's own `+operator-run` pattern, mirrored).
+     **Its provenance label marks the second-opinion half "(self-reported)", not "(trace-confirmed)"**
+     (found by the operator's own `/code-review high` pass on this ticket): the trace only proves SOME
+     general-purpose subagent wrote the marker for this commit+level, not that it happened TWICE — a
+     receipt claiming this combined outcome after only the standing review's one real subagent run would
+     pass the same trace check, the same ambiguity dir #81's own arm already resolves honestly for its
+     operator-run half. Resolve any real findings this second subagent reports the same bar as (a)'s own findings — the SAME
+     dir #127 budget/delta/trend rules govern the whole review cycle from here, not a fresh allowance per
+     mechanism: a finding here is just this round's finding, folded into the same round count and the same
+     trend line. On a later convergence round, re-engage this SAME second-opinion subagent with a
+     follow-up message scoped to the fix delta — never a fresh spawn, per dir #127's "same reviewer" rule,
+     extended to this subagent too. Once resolved (or if it reported nothing), receipt the combined
+     outcome: `polish.5-review agent:<level>+second-opinion`. **Residual, named rather than silently
+     dropped:** this dialog is single-select, so choosing the cross-model add-on and the operator-run
+     add-on together in the SAME round isn't supported today — wanting both means a later `/polish`
+     invocation on this branch, which is a fork for a future ticket, not this one.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
@@ -289,7 +332,9 @@ Steps, in order:
 
      **Anti-rebundle rule:** if a future edit ever makes the agent review itself optional or something to
      ask about, that must be its OWN separate question — never re-bundled with this one into a single
-     dialog. This ticket (dir #81) exists because those two concerns were bundled once already.
+     dialog. This ticket (dir #81) exists because those two concerns were bundled once already; dir #141's
+     cross-model add-on above follows the same discipline by extending this dialog's options rather than
+     opening a second one.
 
      **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses (establish this
      the same attempt-don't-infer way) does the pre-dir-#70 behavior apply — one inline review pass of the
@@ -360,15 +405,50 @@ Steps, in order:
    step 4 unless the prior round's depth was `skip` (never carried — dir
    #116, see step 1; NOT step 3 — it must bind this commit, see step 1) — arriving here, re-review only
    the DELTA the fix introduced, not the full step-1
-   diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
+   diff again, and stop as soon as a pass needs no further changes (dir #127 below gives this "stop" a
+   budget and a terminal condition; read the rest of this paragraph together with that block, not as two
+   separate rules); park a non-blocking note (a style nit,
    a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
    means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
    applies to this round's fresh receipt before moving to step 6, same as the first pass.
+
+   **Delta-review protocol, round budget, and terminal state (dir #127) — refines the "converge, don't
+   restart" paragraph above, same rule, three added specifics:**
+   - **Same reviewer, not a fresh spawn.** "Re-review only the DELTA" (above) means: for the agent path
+     (a), a follow-up message to the SAME Agent-tool subagent that ran the original pass, scoped to only
+     the fix commit's diff — never a new spawn; for an operator-run `/code-review` hand-off, the operator
+     re-running it on the delta the same way; for a cross-model second opinion (dir #141), a follow-up
+     message to that SAME pinned-model subagent, same discipline. A fresh full pass is justified only when
+     the fix touched surface the original review never examined (dir #126 signal 1) — name that reason if
+     it happens.
+   - **Budget: the full review runs once; after it, at most TWO delta rounds.** If a SECOND consecutive
+     delta round still returns substantive findings (not a style nit — those still just park in step 10),
+     stop fix-forward and do not attempt a third round. File the residual as a numbered backlog ticket,
+     name it honestly in the PR body's own words (not just a code comment), and open the PR as-is — an
+     executed decision, recorded the same deliberate way a `skipped:<reason>` receipt outcome is, never a
+     silent abandon. **The step 5 receipt itself does not change shape for this exit**: write whatever
+     outcome literal actually describes the review mechanism that ran this round (e.g. `agent:<level>`,
+     same as any other round, per the Receipt line below) — the residual-ticket decision lives in the PR
+     body and the backlog, not as a new gate-recognized outcome, so it carries no separate receipt syntax
+     and needs no `pre-pr-gate.sh` change. If the two rounds' findings instead say "missing contract" (the
+     same shape recurring, not shrinking), escalate to redesign instead of a third fix-forward attempt.
+   - **Terminal condition, precisely: zero findings in a DELTA round** (not "a pass needs no further
+     changes" read loosely) **— and a fresh FULL re-review returning zero is explicitly NOT this signal.**
+     A full review is sampling and will always find something to say if repeated; treating a clean full
+     re-review as done is what produced the 7- and 13-round loops this ticket closes. Only a clean delta
+     round ends the cycle.
+   - **Per-round trend line:** at the end of every convergence round (after its delta re-review
+     completes, before deciding whether another round is needed), report one line to the operator:
+     `round N: <count> findings, max severity <sev>, surface: same|new — <what>, class: named|exhausted,
+     forecast: <1 more delta round | stop-rule triggers next round | done>` — visible progress instead of
+     a silent count climbing toward a dreaded double-digit round.
+
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
    automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
-   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip`, or `agent:medium+operator-run` —
-   the combined outcome (dir #81) when the operator additionally ran `/code-review` on top of an
-   already-standing agent review).
+   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip`, `agent:medium+operator-run` — the
+   combined outcome (dir #81) when the operator additionally ran `/code-review` on top of an already-standing
+   agent review — or `agent:medium+second-opinion` — the combined outcome (dir #141) when an in-session
+   cross-model subagent additionally reviewed on top of an already-standing agent review).
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
@@ -381,10 +461,11 @@ Steps, in order:
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
    Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
-   as step 8, not a bare `done`: step 6 is one of the four steps a convergence round must write itself
-   (3, 5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth was `skip` — dir
-   #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its receipt — dir #119,
-   never written, so never recovered)), and its whole job is to catch a fix-commit
+   as step 8, not a bare `done`: step 6 is one of the steps a convergence round must write itself —
+   four ordinarily (3, 5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth
+   was `skip` — dir #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its
+   receipt — dir #119, never written, so never recovered)), five when that GAP forces a re-run (7
+   joins the set, dir #138) — and its whole job is to catch a fix-commit
    breaking something. So the gate cross-checks it against current HEAD the same way it does steps 3 and
    8 — a bare `done` would mean a recovered, pre-fix-commit retest could otherwise satisfy completeness
    without the fix-commit ever having been re-tested.
@@ -428,7 +509,10 @@ Steps, in order:
    agent at `<level>` (built-in `/code-review` not model-invokable in-session)" — never presented as if
    `/code-review` itself ran. **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the
    PR body must name BOTH** — the independent agent review AND the operator-run `/code-review` — never
-   collapsed into just one. Return the PR URL. Invoking `/polish` IS the standing authorization to push the
+   collapsed into just one. **If the outcome was the combined `agent:<level>+second-opinion` (dir #141),
+   the PR body must name BOTH** — the standing independent agent review AND the in-session cross-model
+   second opinion (naming its pinned model tier) — never collapsed into just one. Return the PR URL.
+   Invoking `/polish` IS the standing authorization to push the
    branch and run `gh pr create --head <branch>` at this step; do not re-ask. The merge stays the
    operator's.
 
@@ -439,7 +523,11 @@ Steps, in order:
     model-invokable in-session`, matching the PR body's own label); **both, when the operator additionally
     ran `/code-review` on top of an already-standing agent review (the combined `agent:<level>+operator-run`
     outcome, dir #81)** — name BOTH mechanisms, e.g. `review: <level>, independent agent review +
-    operator-run /code-review`, never collapsed into just one of them; or, if step 5 took the (b) hand-off,
-    that no real review ran in-session and whether the human ran it (`-operator-run`) or waived it
-    (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is indistinguishable from a
-    genuine in-session review, so reporting one here would re-hide exactly what step 5 exists to surface.
+    operator-run /code-review`, never collapsed into just one of them; **both, when an in-session
+    cross-model subagent additionally reviewed on top of an already-standing agent review (the combined
+    `agent:<level>+second-opinion` outcome, dir #141)** — name BOTH mechanisms and the pinned model tier,
+    e.g. `review: <level>, independent agent review + in-session cross-model second opinion (<model>)`;
+    or, if step 5 took the (b) hand-off, that no real review ran in-session and whether the human ran it
+    (`-operator-run`) or waived it (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is
+    indistinguishable from a genuine in-session review, so reporting one here would re-hide exactly what
+    step 5 exists to surface.
