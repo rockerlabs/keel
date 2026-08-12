@@ -106,10 +106,16 @@ if [ -f "$cfg" ]; then
   done < "$cfg"
 fi
 
+# Bad ERE? Detect by stderr, not exit code: a valid pattern on empty input exits 1 (no match) with no
+# stderr; a broken one prints an error. (busybox grep doesn't use exit 2 for a bad regex, so an
+# exit-code check would pass a broken regex through.) Shared by the allow-email and personal-literal
+# validation below — same idiom, only the case-sensitivity flag differs.
+valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pat" 2>&1 >/dev/null)" ]; }
+
 # Personal literals from the secret-guard's local file double as private tokens for this audit —
 # they are precisely what must not ship when a repo goes public. Case-INSENSITIVE (unlike tokens).
-# Each line is validated like allow-email below; invalid lines are counted and warned about (without
-# echoing them — the file's whole point is that its content stays off any pasteable output).
+# Invalid lines are counted and warned about (without echoing them — the file's whole point is that
+# its content stays off any pasteable output).
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
@@ -118,9 +124,11 @@ if [ -f "$PERSONAL_FILE" ]; then
     line="${line%$'\r'}"
     line="$(printf '%s' "$line" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
     case "$line" in ''|\#*) continue ;; esac
-    gerr="$(printf '' | grep -iE -- "$line" 2>&1 >/dev/null)"
-    [ -z "$gerr" ] || { bad_personal=$((bad_personal + 1)); continue; }
-    personal_re="${personal_re:+$personal_re|}$line"
+    if valid_ere -iE "$line"; then
+      personal_re="${personal_re:+$personal_re|}$line"
+    else
+      bad_personal=$((bad_personal + 1))
+    fi
   done < "$PERSONAL_FILE"
 fi
 
@@ -135,12 +143,11 @@ bad_allow_emails=()
 if [ "${#allow_emails[@]}" -gt 0 ]; then
   for e in "${allow_emails[@]}"; do
     [ -n "$e" ] || continue
-    # Bad ERE? Detect by stderr, not exit code: a valid pattern on empty input exits 1 (no match) with
-    # no stderr; a broken one prints an error. (busybox grep doesn't use exit 2 for a bad regex, so the
-    # old `[ $? -lt 2 ]` check passed broken regexes through there.)
-    gerr="$(printf '' | grep -E -- "$e" 2>&1 >/dev/null)"
-    [ -z "$gerr" ] || { bad_allow_emails+=("$e"); continue; }
-    safe_re="${safe_re:+$safe_re|}$e"
+    if valid_ere -E "$e"; then
+      safe_re="${safe_re:+$safe_re|}$e"
+    else
+      bad_allow_emails+=("$e")
+    fi
   done
 fi
 
@@ -354,10 +361,12 @@ if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   [ -n "$h" ] && warn "email in git history content — e.g. $h"
   h="$(printf '%s\n' "$hist" | LC_ALL=C grep -n "$cyr_pat" | head -1 || true)"
   [ -n "$h" ] && warn "Cyrillic text in git history — e.g. $h"
-  if [ -n "$personal_re" ]; then
-    h="$(printf '%s\n' "$hist" | grep -aniE -- "$personal_re" | head -1 || true)"
-    [ -n "$h" ] && gap "personal literal (secret-scan-personal) in git history — e.g. $h"
-  fi
+fi
+
+# --- 5a. personal literals (local secret-scan-personal), in git history text (GAP) ----------------
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ] && [ -n "$personal_re" ]; then
+  h="$(printf '%s\n' "$hist" | grep -aniE -- "$personal_re" | head -1 || true)"
+  [ -n "$h" ] && gap "personal literal (secret-scan-personal) in git history — e.g. $h"
 fi
 
 # --- 5b. binary blobs — the decoded scan of what sections 3/5 cannot see (tree + history) ---------
