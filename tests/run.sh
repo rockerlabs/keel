@@ -23,6 +23,11 @@ case "$jobs_cap" in (*[!0-9]*|'') jobs_cap=4 ;; esac
 
 logdir="$(mktemp -d)"
 trap 'rm -rf "$logdir"' EXIT
+# Concurrency amplifies the blast radius of an interrupt: an orphaned `bash "$t"` leaves its own
+# sandbox HOME (tests/lib.sh) behind uncleaned. Kill whatever's still in active_pids on Ctrl-C/TERM.
+# ${active_pids[@]+...} guards an empty array under `set -u` (bash 3.2 treats an empty array's [@]
+# expansion as unbound), same idiom reap_finished already uses below.
+trap 'kill "${active_pids[@]+"${active_pids[@]}"}" 2>/dev/null; exit 130' INT TERM
 
 failed=0
 active_pids=()
@@ -30,11 +35,11 @@ active_files=()
 active_logs=()
 
 # Wait for and report every job in active_* whose process has already exited, compacting the
-# arrays down to only the ones still running. Called both to throttle launches (loop until a slot
-# frees) and, at the end, to drain everything that's left.
+# arrays down to only the ones still running. Prints how many it reaped (as $?) so a caller can
+# skip the poll sleep on a pass that just freed a slot instead of idling out the rest of it.
 reap_finished() {
   local new_pids=() new_files=() new_logs=()
-  local i pid rc
+  local i pid rc reaped=0
   for i in "${!active_pids[@]}"; do
     pid="${active_pids[$i]}"
     if kill -0 "$pid" 2>/dev/null; then
@@ -48,10 +53,20 @@ reap_finished() {
     printf '\n=== %s ===\n' "${active_files[$i]}"
     cat "${active_logs[$i]}"
     [ "$rc" -eq 0 ] || failed=$((failed + 1))
+    reaped=$((reaped + 1))
   done
   active_pids=("${new_pids[@]+"${new_pids[@]}"}")
   active_files=("${new_files[@]+"${new_files[@]}"}")
   active_logs=("${new_logs[@]+"${new_logs[@]}"}")
+  return "$reaped"
+}
+
+# Block until at most $1 jobs remain active, reaping (and printing) each as it finishes. Used both
+# to throttle launches (wait for a free slot) and, with 0, to drain everything at the end.
+wait_until_at_most() {
+  while [ "${#active_pids[@]}" -gt "$1" ]; do
+    reap_finished && sleep 0.1  # reap_finished's $? is how many it reaped — 0 means still full, poll again
+  done
 }
 
 for t in "$here"/test_*.sh; do
@@ -61,15 +76,9 @@ for t in "$here"/test_*.sh; do
   active_pids+=("$!")
   active_files+=("$base")
   active_logs+=("$log")
-  while [ "${#active_pids[@]}" -ge "$jobs_cap" ]; do
-    reap_finished
-    [ "${#active_pids[@]}" -ge "$jobs_cap" ] && sleep 0.1
-  done
+  wait_until_at_most "$jobs_cap"
 done
-while [ "${#active_pids[@]}" -gt 0 ]; do
-  reap_finished
-  [ "${#active_pids[@]}" -gt 0 ] && sleep 0.1
-done
+wait_until_at_most 0
 
 printf '\n========================================\n'
 if [ "$failed" -eq 0 ]; then
