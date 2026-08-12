@@ -58,6 +58,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `--uninstall` flag that removes only a hook byte-identical to what it would currently wire, never a
   differing/foreign one; `uninstall.sh`'s closing summary now names any leftover gate hooks and the
   removal command, the same treatment the secret-guard note already gets, at every summary exit.
+- **`tools/pre-pr-gate.sh`'s `receipt <step-id> <outcome>` silently accepted a step-id or outcome with
+  the two combined into one quoted string, writing a malformed sentinel line that only surfaced later as
+  a misleading "missing receipt" deny** (dir #144, re-derived from a stranded 2026-08-05 branch that was
+  never PR'd). Both fields now reject an embedded TAB/newline at write time with an actionable message —
+  step-id rejects any whitespace (no real step id contains any), outcome only TAB/newline (a real outcome
+  routinely contains spaces).
 
 ## [0.6.0] — 2026-08-12
 
