@@ -754,7 +754,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
         warn W-GATE-MANIFEST-MISSING "gate hooks are wired at $igate_settings but no gate manifest is recorded (KEEL-LEGACY-NOMANIFEST) — re-run install-pre-pr-gate.sh $gate_flag to record one (the B2 ledger-based dialog-arming check in tools/pre-pr-gate.sh relies on it for a retargeted --home)"
       fi
     elif [ "$igate_manifest_usable" = 1 ]; then
-      warn W-MANIFEST-DRIFT "gate manifest at $igate_manifest recorded settings=$igate_settings, but no load-bearing hook is present there — hooks removed by hand? re-run install-pre-pr-gate.sh $gate_flag to rewire, or remove the stale manifest if this was deliberate"
+      # A DISTINCT id from the install-manifest drift check above (W-MANIFEST-DRIFT), not a reuse: found
+      # by an operator-run /code-review high pass — .keel/doctor-accept matches by bare id, so an
+      # adopter who accepted the install-manifest drift finding once (a deliberate re-home, say) would
+      # silently swallow this unrelated gate-manifest drift too, collapsing "hooks removed by hand" into
+      # the same anonymous accepted-hidden count. Paired with W-GATE-MANIFEST-MISSING above.
+      warn W-GATE-MANIFEST-DRIFT "gate manifest at $igate_manifest recorded settings=$igate_settings, but no load-bearing hook is present there — hooks removed by hand? re-run install-pre-pr-gate.sh $gate_flag to rewire, or remove the stale manifest if this was deliberate"
     else
       warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $igate_settings — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi

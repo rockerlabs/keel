@@ -357,9 +357,20 @@
 # (3). (4) the arming grep is a structural presence check, not a liveness check — a matcher wired to a
 # STALE copy of this script (the felt incident that keeps `install-pre-pr-gate.sh` pointing at a kept
 # checkout by absolute path, never a copy) would still read as armed. Since dir #125/B2 this ALSO covers
-# the ledger-derived candidates: a home the checkout-side ledger (`<checkout>/.keel/installed-homes`)
-# lists is trusted once its gate manifest is present and version-1, never re-verified against the
-# harness's actual loaded hooks. (5) dir #63/#70's OWN trace-required
+# the ledger-derived candidates, in a STRICTLY WIDER way than the four static ones: a home the
+# checkout-side ledger (`<checkout>/.keel/installed-homes`) lists is trusted once its gate manifest is
+# present and version-1, never re-verified against the harness's actual loaded hooks — AND, unlike the
+# four static candidates (each scoped to THIS invocation's own `$top`/`$HOME`/`$KEEL_HOME`), a ledger
+# candidate is never scoped to the current session's environment at all: any `--home DIR` install ever
+# recorded anywhere on the machine arms every later `gh pr create` in every repo, whether or not that
+# session's own harness has anything to do with the recorded home (flagged by this ticket's own
+# operator-run/independent review passes). Deliberately not narrowed to intersect the ledger against
+# `$HOME`/`$KEEL_HOME`: the same "erring toward deny" reasoning the KEEL_HOME residual above already
+# accepts applies with equal force here — a false ARM degrades to the documented manual-terminal escape,
+# while narrowing scope risks recreating exactly the false-UNARMED silent skip this ticket exists to
+# close, for a `--home DIR` whose relationship to the current session isn't reliably determinable from
+# env vars alone (that's the whole reason B2 needed the ledger instead of another env-var guess). (5)
+# dir #63/#70's OWN trace-required
 # checks (the `trusted==0` block above, unchanged by this ticket) have no equivalent arming guard — an
 # adopter who `git pull`s past dir #63/#70 without re-running `tools/install-pre-pr-gate.sh` hits the same
 # false-deny window this ticket's arming rule exists to close, just unguarded. Found auditing this ticket
@@ -543,17 +554,23 @@ _gate_checkout_root() {
 # home's gate-manifest `settings=` path — but only when the manifest is still actually there and at a
 # `keel_manifest_version` this reads (an unversioned/corrupt/removed manifest is silently skipped, never
 # a crash: same versioning contract as every other dir #125 consumer, via `manifest_usable`/
-# `manifest_field` — tools/lib/ledger.sh, sourced below; this used to be a THIRD hand-copy of the
+# `manifest_field` — tools/lib/manifest.sh, sourced below; this used to be a THIRD hand-copy of the
 # `key=value` reader tools/doctor.sh and uninstall.sh each already carry (found by an independent
-# /simplify pass — all four review angles converged on the same duplication), now the first shared home
-# for it instead). `KEEL_LEDGER_FILE` is the same test-isolation override `install.sh`/
-# `install-pre-pr-gate.sh` respect. ARMED still wins (residual limit above), so a candidate this prints
-# that turns out not to match is harmless — it just never matches.
+# /simplify pass — all four review angles converged on the same duplication). A first draft shared it
+# via tools/lib/ledger.sh instead, which uninstall.sh/install.sh/install-pre-pr-gate.sh ALSO source (for
+# ledger_append/ledger_remove) and which each ALSO defines its own local manifest_field/manifest_usable
+# for — that draft would have silently redefined those files' own functions mid-run the moment their
+# existing ledger.sh source line executed (found by an operator-run /code-review high pass, reproduced
+# at uninstall.sh's own conditional source inside its `manifests_left = 0` branch). A separate,
+# single-consumer lib file avoids the collision instead of documenting around it. `KEEL_LEDGER_FILE` is
+# the same test-isolation override `install.sh`/`install-pre-pr-gate.sh` respect. ARMED still wins
+# (residual limit above), so a candidate this prints that turns out not to match is harmless — it just
+# never matches.
 _gate_ledger_candidates() {
   local checkout_root ledger home manifest settings
   checkout_root="$(_gate_checkout_root)" || return 0
-  # shellcheck source=tools/lib/ledger.sh
-  . "$checkout_root/tools/lib/ledger.sh" 2>/dev/null || return 0
+  # shellcheck source=tools/lib/manifest.sh
+  . "$checkout_root/tools/lib/manifest.sh" 2>/dev/null || return 0
   ledger="${KEEL_LEDGER_FILE:-$checkout_root/.keel/installed-homes}"
   [ -f "$ledger" ] || return 0
   while IFS= read -r home; do

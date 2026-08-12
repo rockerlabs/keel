@@ -245,14 +245,18 @@ check_contains "wired gate, no manifest -> W-GATE-MANIFEST-MISSING nudge (KEEL-L
 check_contains "...naming the installer re-run" "$OUT" "install-pre-pr-gate.sh"
 
 # A gate manifest recorded, but the hooks it claims are wired are gone (hand-edited/stripped settings.json
-# outside this installer's own --uninstall) — W-MANIFEST-DRIFT, not a silent OK or the plain-unwired WARN.
+# outside this installer's own --uninstall) — its OWN id, W-GATE-MANIFEST-DRIFT, not a reuse of the
+# install-manifest drift check's W-MANIFEST-DRIFT (an operator-run /code-review high pass found the
+# reuse would let .keel/doctor-accept's bare-id matching silently swallow both findings on one accept),
+# and not a silent OK or the plain-unwired WARN either.
 dh_gate_drift="$SANDBOX/dh-gate-drift"
 run "$REPO_ROOT/install.sh" --home "$dh_gate_drift" --no-hooks
 run env KEEL_HOME="$dh_gate_drift" "$installer" --global
 check_status "wiring dh_gate_drift's gate -> exit 0" 0 "$STATUS"
 printf '{}' > "$dh_gate_drift/settings.json"
 run "$doctor" --install "$dh_gate_drift"
-check_contains "manifest says wired, hooks gone -> W-MANIFEST-DRIFT" "$OUT" "W-MANIFEST-DRIFT"
+check_contains "manifest says wired, hooks gone -> W-GATE-MANIFEST-DRIFT" "$OUT" "W-GATE-MANIFEST-DRIFT"
+check_absent "...and NOT the install-manifest drift id (bare-id accept collision)" "$OUT" "W-MANIFEST-DRIFT"
 check_contains "...naming the recorded settings path" "$OUT" "$dh_gate_drift/settings.json"
 
 # --- regression: doctor's gate check is structural, not a bare substring match ----------------------
