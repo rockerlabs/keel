@@ -1609,6 +1609,22 @@ case "$status" in
       log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
+    # dir #133: every check above is against the LOCAL repo — nothing confirms $current_sha was ever
+    # pushed. A convergence-round commit made after the branch's last `git push` passes every sha-binding
+    # check here and would open a PR that silently omits it (live-hit: dir #113/#114's own PR, recovered
+    # via cherry-pick as PR #177 after the operator had already merged the truncated one). Same layer the
+    # sha-binding checks above already operate at: HEAD must be reachable from `origin/$resolved_branch`.
+    # Skipped (not denied) when the repo has no `origin` remote at all — deliberately NOT this file's
+    # usual fail-closed-on-ambiguity convention (contrast the dir #80 branch-resolution DENY above): a
+    # real `gh pr create` invocation cannot exist without an `origin` (`gh` itself infers owner/repo from
+    # the remote and refuses without one), so this arm is unreachable in production and exists solely so
+    # a bare/offline test fixture with no remote configured isn't false-denied.
+    if git -C "$cwd" remote get-url origin >/dev/null 2>&1 &&
+       ! git -C "$cwd" merge-base --is-ancestor "$current_sha" "origin/$resolved_branch" 2>/dev/null; then
+      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
+      log_event receipt-deny "head-not-pushed" "$cwd"
+      deny "Pre-PR gate: current HEAD ($current_sha) is not reachable on origin/$resolved_branch — push the branch (git push) before opening the PR."
+    fi
     # dir #72 finding #1: `polish.6-retest` used to be a bare completion marker with NO value-level
     # check — unlike step 5 (trace-matched) and step 8 (sha-matched); dir #96 later sha-bound step 3
     # too, so the value-checked set is now 3, 5, 6, 8. Back then, a `receipt --recover`-restored

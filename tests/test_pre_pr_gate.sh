@@ -2113,4 +2113,50 @@ gate "gh pr create --fill" "$d"
 check_status "dir #116: UNARMED, skip with no dialog line → still exit 0" 0 "$STATUS"
 check_absent "dir #116: UNARMED, skip with no dialog line → allowed" "$OUT" "deny"
 
+# --- dir #133: HEAD must be reachable on origin/<branch> before unlocking `gh pr create` ---------
+# Every sha-binding check above (steps 3/6/8) is against the LOCAL repo only — nothing confirms
+# $current_sha was actually pushed. Push $1 (repo dir)'s CURRENT branch to a fresh, colocated bare
+# "origin" remote. Local-only bare remote, no network — stays fast and offline like the rest of the
+# suite. Every caller below passes a freshly-`mkrepo()`'d dir and calls this at most once per dir, so
+# there is no "origin already configured" case to guard against — branch_raw_for (lib.sh) is reused for
+# the branch lookup, same as every other fixture in this file.
+push_origin() {
+  local d="$1" bare
+  bare="$SANDBOX/origin-$(basename "$d").git"
+  git init -q --bare "$bare"
+  git -C "$d" remote add origin "$bare"
+  git -C "$d" push -q origin "$(branch_raw_for "$d")" >/dev/null 2>&1
+}
+
+# 97. A genuine pass: HEAD was actually pushed to origin/<branch> before /polish's receipt was written
+# — the new check must not block the ordinary case.
+d="$(mkrepo)"
+push_origin "$d"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #133: HEAD pushed to origin → exit 0" 0 "$STATUS"
+check_absent "dir #133: HEAD pushed to origin → allowed" "$OUT" "deny"
+
+# 98. The live-hit shape itself: a convergence-round commit made AFTER the branch's last push. Every
+# sha-binding check above still passes (steps 3/6/8 all bind to THIS commit), but the commit was never
+# pushed — the exact gap dir #113/#114's own PR fell into (recovered via cherry-pick as PR #177 only
+# after the operator had already merged the truncated PR).
+d="$(mkrepo)"
+push_origin "$d"                                        # push the FIRST commit only
+git -C "$d" commit --allow-empty -qm "convergence-round fix, never pushed"
+write_full_receipt "$d"                                 # receipts all bind to the NEW (unpushed) sha
+gate "gh pr create --fill" "$d"
+check_contains "dir #133: HEAD not reachable on origin → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #133: denied naming the actual cause (push first)" "$OUT" "not reachable on origin"
+
+# 99. A repo with NO origin remote at all is not false-denied: `gh pr create` itself cannot run
+# against such a repo (it infers owner/repo from the remote), so this check is N/A there by design —
+# a bare/offline test fixture (or any repo that never configured origin) must still pass on the merits
+# of its receipt alone.
+d="$(mkrepo)"                                            # a plain mkrepo() has no origin remote at all
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #133: no origin remote → exit 0 (check is N/A, not a deny)" 0 "$STATUS"
+check_absent "dir #133: no origin remote → allowed" "$OUT" "deny"
+
 summary
