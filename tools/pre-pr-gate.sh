@@ -333,9 +333,10 @@
 #
 # **Arming rule (part of the spec, not optional):** the check above only fires when the AskUserQuestion
 # leg is actually WIRED — `_dialog_leg_armed` (below) greps the resolvable settings.json candidates
-# (project `.claude/settings.json`/`.claude/settings.local.json`, main-checkout-resolved per dir #61, and
-# `~/.claude/settings.json`) for a `PostToolUse` entry whose matcher is `AskUserQuestion` and whose hook
-# command names this script. Two rejected alternatives, same reasoning as dir #63/#70's own residual-limit
+# (project `.claude/settings.json`/`.claude/settings.local.json`, main-checkout-resolved per dir #61,
+# `~/.claude/settings.json`, and `${KEEL_HOME:-~/.claude}/settings.json` — four paths, dir #137) for a
+# `PostToolUse` entry whose matcher is `AskUserQuestion` and whose hook command names this script. Two
+# rejected alternatives, same reasoning as dir #63/#70's own residual-limit
 # sections: (i) fail closed unconditionally — the gate CHECK ships in this file and goes live the instant
 # an adopter `git pull`s, but the TRACE leg needs a SEPARATE, explicit `tools/install-pre-pr-gate.sh`
 # re-run (dir #68's opt-in-wiring discipline) — an unconditional check would false-deny every `agent:*`
