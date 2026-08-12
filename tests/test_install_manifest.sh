@@ -4,7 +4,8 @@
 # heuristically at every site; a checkout-side ledger (<checkout>/.keel/installed-homes) indexes every
 # recorded home. This PR is schema + writers + doctor's two new READ-ONLY findings — uninstall does not
 # consume the manifest yet (PR 2). Covers acceptance tests A1-A6 + C's new-this-PR half (test 17), plus
-# the gate manifest's own write/uninstall path.
+# the gate manifest's own write/uninstall path. The ledger-append assertions below (dedup, ephemeral
+# skip, prune-on-uninstall) exercise tools/lib/ledger.sh's ledger_append(), shared by both writers.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 
