@@ -129,9 +129,26 @@ artifact_cksum() {
 # artifact in the OTHER mode's manifest at this SAME home. Presence, not cksum agreement — the question
 # is "does the other install still need this file to exist", not "do the two installs agree on its
 # bytes" (they always do for a genuinely shared file: both wrote it from the same checkout).
+#
+# When the other manifest is UNUSABLE, this used to answer "not shared" — correct for a home where the
+# other mode genuinely never ran, wrong for a MIXED-generation home where it ran once, under an OLD
+# (pre-dir-125) checkout that never wrote a manifest at all (independent operator-run /code-review high
+# pass: reproduced via `install.sh` + `install.sh --codex` at the same home, then deleting one mode's
+# manifest to simulate its pre-migration state — the other mode's uninstall silently stripped bin/keel,
+# FRAMEWORK.md and PRINCIPLES.md still needed by the un-migrated half). Falling back to "not shared"
+# there means the manifest, which by the ticket's own contract may only ever narrow a removal — never
+# widen it past what a filesystem check confirms — ends up authorizing exactly the blind strip that
+# contract forbids, just because its evidence for the other mode happens to be missing rather than
+# absent. Conservative instead: an unusable other manifest treats REL as shared whenever the other
+# mode's OWN context file still carries Keel's rails — direct, mode-agnostic evidence that install is
+# still real here, unmanifested or not. Costs an occasional over-wide keep (a stale rails-bearing file
+# nobody reads); the alternative costs a live install's shared files.
 artifact_shared_with_other() {
-  [ "$other_usable" = 1 ] || return 1
-  awk -F'\t' -v rel="$1" '$1 ~ /^artifact=/ && $2 == rel { found=1 } END { exit !found }' "$other_manifest"
+  if [ "$other_usable" = 1 ]; then
+    awk -F'\t' -v rel="$1" '$1 ~ /^artifact=/ && $2 == rel { found=1 } END { exit !found }' "$other_manifest"
+    return
+  fi
+  has_keel_rails "$HOME_DIR/$other_context"
 }
 
 # core_import_re — THE definition of "this line IS the core @import", byte-identical to install.sh's
@@ -204,8 +221,16 @@ home_has_keel_content() {
 # target outranks the mode leaf (see the precedence above), so under KEEL_HOME the advice would
 # otherwise send the operator BACK to the home they just uninstalled (reproduced by the operator's
 # fourth /code-review pass, pre-dir-125).
+#
+# The ledger scan and the legacy $HOME/<leaf> probe below are a UNION, not an either-or (independent
+# operator-run /code-review high pass): a pre-dir-125 install at the conventional default leaf can
+# NEVER be ledger-recorded (the ledger didn't exist yet), so an unrelated ledger hit for some OTHER
+# home must never suppress checking the default leaf too — two genuinely different other-mode installs
+# (one migrated, one not) can coexist, and an early `return 0` after the first ledger hit silently drops
+# the second. The only thing skipped is a DUPLICATE mention of the exact same home.
 other_mode_hint() {
-  local hinted=0 h om rh rm
+  local h om rh rm other="" other_already_hinted=0
+  [ -n "${HOME:-}" ] && other="$HOME/$other_leaf"
   if [ -f "$ledger_file" ]; then
     while IFS= read -r h; do
       [ -n "$h" ] && [ "$h" != "$home_canon" ] || continue
@@ -215,15 +240,12 @@ other_mode_hint() {
       rm="$(manifest_recorded_mode "$om" "$other_manifest_mode")"
       echo "  • A Keel install ($rm mode) is still in place at $rh — this run did not touch it."
       echo "    Remove it too:  $other_cmd --home \"$rh\""
-      hinted=1
+      [ -n "$other" ] && [ "$h" = "$other" ] && other_already_hinted=1
     done < "$ledger_file"
   fi
-  [ "$hinted" = 1 ] && return 0
-  # KEEL-LEGACY-NOMANIFEST: no ledger entry named the other mode (a home that predates any manifest,
-  # or was hand-migrated) — fall back to today's $HOME/<leaf> probe, unchanged.
-  [ -n "${HOME:-}" ] || return 0
-  local other="$HOME/$other_leaf"
-  [ "$other" != "$HOME_DIR" ] || return 0
+  # KEEL-LEGACY-NOMANIFEST: the conventional default-leaf location, checked independently of the
+  # ledger above (unless it already covered this exact home) — unchanged probe.
+  [ -n "$other" ] && [ "$other" != "$HOME_DIR" ] && [ "$other_already_hinted" = 0 ] || return 0
   home_has_keel_content "$other" || has_keel_rails "$other/$other_context" || return 0
   echo "  • A Keel install is still in place at $other — this run did not touch it."
   echo "    Remove it too:  $other_cmd --home \"$other\""
@@ -268,7 +290,19 @@ fi
 # dir #124's coherent both-modes home) — the removal loop below leans on cross-manifest refcount to
 # keep the shared half instead of a bare refusal. Only when NEITHER mode has ever recorded a manifest
 # here does this fall to the KEEL-LEGACY-NOMANIFEST block: today's context-file heuristic, unchanged.
-if [ "$other_usable" = 1 ] && [ "$this_usable" = 0 ]; then
+#
+# `! has_keel_rails "$HOME_DIR/$CONTEXT_FILE"` guards a MIXED-generation home the manifest-only test
+# alone reads wrong (independent operator-run /code-review high pass): one mode installed by an OLD
+# (pre-dir-125) checkout — real content, no manifest — the other by the current one. Manifest-only
+# would refuse here and advise the OTHER mode's uninstall — which the removal loop's own refcount
+# (below) can't yet see this mode's unmanifested-but-real content through, so following that advice
+# would strip the shared half out from under it. THIS mode's own context file still carrying Keel's
+# rails is independent, direct evidence it's genuinely (if unmanifested) installed here too — not a
+# mismatch, just an unmigrated half — so skip the refusal and let it fall through to the removal
+# loop's `else` (KEEL-LEGACY-NOMANIFEST removal), where artifact_shared_with_other()'s own conservative
+# fallback (defined near the top of this file) protects the SAME shared content from the other
+# direction, once the loop is actually running under the OTHER mode.
+if [ "$other_usable" = 1 ] && [ "$this_usable" = 0 ] && ! has_keel_rails "$HOME_DIR/$CONTEXT_FILE"; then
   other_home_recorded="$(manifest_recorded_home "$other_manifest" "$HOME_DIR")"
   other_mode_recorded="$(manifest_recorded_mode "$other_manifest" "$other_manifest_mode")"
   echo "uninstall: $HOME_DIR holds a Keel install, but its recorded manifest is $other_mode_recorded mode, not $manifest_mode." >&2
@@ -456,7 +490,15 @@ fi
 # the same glob install-pre-pr-gate.sh's own uninstall path prunes on), the checkout ledger entry is
 # stale and pruned, and .keel/ comes out too, but ONLY if nothing else lives there (a doctor-accept
 # file, or a surviving manifest, keeps it).
-[ -f "$this_manifest" ] && take "$this_manifest"
+#
+# Gated on $this_usable, NOT bare file existence (independent operator-run /code-review high pass): a
+# manifest this run itself treated as ABSENT — an unknown/future keel_manifest_version, per the
+# versioning contract — was still being backed up and its home pruned from the ledger, silently
+# destroying a newer install's own record the moment an OLDER uninstall.sh ran against it. "Treated as
+# absent" has to mean untouched, not "ignored for reads, consumed for writes": leaving it in place also
+# correctly keeps it counted by the $manifests_left glob just below, so the ledger entry and .keel/
+# survive right along with it.
+[ "$this_usable" = 1 ] && take "$this_manifest"
 if [ "$DRY_RUN" = 0 ]; then
   manifests_left=0
   for m in "$HOME_DIR"/.keel/install-manifest.*; do
@@ -491,22 +533,26 @@ fi
 # fallback when jq isn't on PATH: a missing jq means "wired but inert" either way for the REAL gate, so
 # this advisory hint degrading to the loose grep there is no worse than doctor's own posture.
 #
-# dir #125: a usable gate manifest is the precise source now — its own settings= is quoted verbatim
-# (ground truth from the wire itself, not a re-derived $HOME_DIR/settings.json guess). Note this runs
+# dir #125: a usable gate manifest supplies the precise PATH now — its own settings= is quoted verbatim
+# (ground truth from the wire itself, not a re-derived $HOME_DIR/settings.json guess) — but the manifest
+# is never trusted for the WIRED fact itself: it's owned by a separate installer this uninstall never
+# touches, so it can go stale (hooks stripped by hand, or settings.json deleted outright) while the
+# manifest lingers (independent operator-run /code-review high pass: a stale gate manifest made this
+# print "still wired" — and the removal command it then advised — for hooks that were already gone).
+# The structural jq/grep check below still runs against whichever settings= this resolves to, manifest
+# or legacy default, so the hint is precise about WHERE but never blind about WHETHER. Note this runs
 # AFTER the manifest housekeeping step above moves $gate_manifest's SIBLING (this mode's own
 # install-manifest) into the backup — the gate manifest itself is untouched by this uninstall (a
 # separate opt-in installer owns it), so it's still there to read.
 gate_hooks_hint() {
+  local settings
   if manifest_usable "$gate_manifest"; then
-    local gset
-    gset="$(manifest_field "$gate_manifest" settings)"
-    [ -n "$gset" ] || gset="$HOME_DIR/settings.json"
-    echo "  • The /polish pre-PR gate hooks are still wired in $gset — kept on purpose."
-    echo "    To remove them too:  $root/tools/install-pre-pr-gate.sh --uninstall --home \"$HOME_DIR\""
-    return 0
+    settings="$(manifest_field "$gate_manifest" settings)"
+    [ -n "$settings" ] || settings="$HOME_DIR/settings.json"
+  else
+    # KEEL-LEGACY-NOMANIFEST: no gate manifest recorded — the only source is the default path.
+    settings="$HOME_DIR/settings.json"
   fi
-  # KEEL-LEGACY-NOMANIFEST: no gate manifest recorded — probe settings.json directly, unchanged.
-  local settings="$HOME_DIR/settings.json"
   [ -f "$settings" ] || return 0
   if command -v jq >/dev/null 2>&1; then
     jq -e '.hooks.PreToolUse // [] | any(.matcher == "Bash" and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \

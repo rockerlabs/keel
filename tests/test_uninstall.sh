@@ -646,4 +646,98 @@ else
   pass "jq not available — B17 legacy gate-hint test skipped (installer requires jq)"
 fi
 
+# =================================================================================================
+# dir #125 PR2 — mixed-generation / staleness coverage (B18-B21), pinning 4 findings from an
+# operator-run /code-review high pass on the manifest-consumer diff.
+# =================================================================================================
+
+# --- B18: a MIXED-generation both-modes home (one mode installed by an old, pre-dir-125 checkout —
+# real content, no manifest — the other by the current one) must neither falsely refuse a same-mode
+# uninstall, nor let the manifested mode's own uninstall strip content the unmanifested mode still
+# needs (the refcount can't see a manifest that was never written) --------------------------------
+B18="$SANDBOX/b18-mixed-gen/.claude"
+inst --home "$B18" --no-hooks
+run env KEEL_HOME="$B18" "$INSTALL" --codex --no-hooks
+check_status "B18 codex install over the same home succeeds" 0 "$STATUS"
+rm -f "$B18/.keel/install-manifest.claude"   # simulate a pre-dir-125 claude half: real content, no manifest
+check_nofile "B18 fixture: claude manifest absent (simulated pre-dir-125 half)" "$B18/.keel/install-manifest.claude"
+check_file "B18 fixture: codex manifest present" "$B18/.keel/install-manifest.codex"
+check_contains "B18 fixture: claude content still carries rails" "$(cat "$B18/CLAUDE.md")" "KEEL-CORE-BEGIN"
+
+run env KEEL_HOME="$B18" "$UNINSTALL" --codex --yes
+check_status "B18 codex uninstall on a mixed-generation home does not falsely refuse" 0 "$STATUS"
+check_absent "B18 no mode-mismatch refusal printed" "$OUT" "recorded manifest is"
+check_file "B18 shared bin/keel survives (the un-migrated claude half still needs it)" "$B18/bin/keel"
+check_link "B18 shared bin/keel is still the real symlink" "$B18/bin/keel"
+check_file "B18 shared FRAMEWORK.md survives" "$B18/FRAMEWORK.md"
+check_file "B18 shared PRINCIPLES.md survives" "$B18/PRINCIPLES.md"
+check_contains "B18 CLAUDE.md rails (the un-migrated half) still intact" "$(cat "$B18/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_nofile "B18 codex manifest removed" "$B18/.keel/install-manifest.codex"
+
+# The reverse direction: a plain (claude) uninstall on this SAME mixed-generation home must not be
+# falsely refused either — claude's own rails are independent evidence it's genuinely (if unmanifested)
+# installed here, not a mismatch.
+B18B="$SANDBOX/b18b-mixed-gen-reverse/.claude"
+inst --home "$B18B" --no-hooks
+run env KEEL_HOME="$B18B" "$INSTALL" --codex --no-hooks
+rm -f "$B18B/.keel/install-manifest.claude"
+run env KEEL_HOME="$B18B" "$UNINSTALL" --yes
+check_status "B18B a plain (claude) uninstall on a mixed-generation home is not falsely refused" 0 "$STATUS"
+check_absent "B18B does not print the mode-mismatch refusal" "$OUT" "recorded manifest is"
+
+# --- B19: other_mode_hint is a UNION of the ledger scan and the legacy default-leaf probe, not
+# either-or — two genuinely different other-mode installs (one pre-dir-125 at the conventional
+# default leaf, one ledger-recorded elsewhere) must BOTH be named, not just whichever the ledger
+# scan happens to hit first -------------------------------------------------------------------------
+B19H="$SANDBOX/b19-home"
+mkdir -p "$B19H/.claude"
+fresh_home_env "$B19H"; b19_env=("${FRESH_HOME_ENV[@]}")
+run env "${b19_env[@]}" "$INSTALL" --no-hooks
+check_status "B19 claude install at the conventional home succeeds" 0 "$STATUS"
+mkdir -p "$B19H/.codex"
+rails "$B19H/.codex/AGENTS.md"   # a pre-dir-125 codex install AT the conventional default leaf: no manifest
+run "$INSTALL" --codex --home "$SANDBOX/b19-elsewhere-codex" --no-hooks
+check_status "B19 a SEPARATE, ledger-recorded codex install elsewhere succeeds" 0 "$STATUS"
+
+run env "${b19_env[@]}" "$UNINSTALL" --yes
+check_status "B19 claude uninstall exits 0" 0 "$STATUS"
+check_contains "B19 names the ledger-recorded elsewhere codex install" "$OUT" "$SANDBOX/b19-elsewhere-codex"
+check_contains "B19 ALSO names the pre-dir-125 codex install at the default leaf" "$OUT" "$B19H/.codex"
+
+# --- B20: gate_hooks_hint must not trust a stale gate manifest — if the hooks were actually removed
+# (or settings.json deleted) without going through install-pre-pr-gate.sh --uninstall, the hint must
+# say nothing, not repeat what the manifest alone claims [dir #136] ---------------------------------
+if command -v jq >/dev/null 2>&1; then
+  B20="$SANDBOX/b20-stale-gate/.claude"
+  inst --home "$B20" --no-hooks
+  run env KEEL_HOME="$B20" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
+  check_status "B20 gate wire succeeds" 0 "$STATUS"
+  check_file "B20 gate manifest recorded" "$B20/.keel/install-manifest.gate"
+  rm -f "$B20/settings.json"   # hooks removed by hand, manifest left behind — now stale
+  check_file "B20 fixture: gate manifest still there (stale)" "$B20/.keel/install-manifest.gate"
+
+  unin --home "$B20" --yes
+  check_status "B20 uninstall exits 0" 0 "$STATUS"
+  check_absent "B20 no false gate hint for hooks that are actually gone" "$OUT" "pre-PR gate hooks are still wired"
+else
+  pass "jq not available — B20 stale-gate-hint test skipped (installer requires jq)"
+fi
+
+# --- B21: a manifest whose version this script doesn't understand is treated as ABSENT for every
+# read — and must ALSO be left completely untouched, not backed up/consumed, which would silently
+# destroy a newer install's own record -------------------------------------------------------------
+B21="$SANDBOX/b21-future-manifest/.claude"
+inst --home "$B21" --no-hooks
+check_status "B21 install succeeds" 0 "$STATUS"
+b21man="$B21/.keel/install-manifest.claude"
+awk '{sub(/^keel_manifest_version=1$/, "keel_manifest_version=2")}1' "$b21man" > "$b21man.testtmp" && mv "$b21man.testtmp" "$b21man"
+check_contains "B21 fixture: manifest carries an unknown future version" "$(cat "$b21man")" "keel_manifest_version=2"
+
+unin --home "$B21" --yes
+check_status "B21 uninstall over a future-version manifest exits 0" 0 "$STATUS"
+check_file "B21 the future-version manifest survives, untouched" "$b21man"
+check_contains "B21 its content is unchanged" "$(cat "$b21man")" "keel_manifest_version=2"
+check_contains "B21 the ledger entry survives (manifest still counts as present)" "$(cat "$KEEL_LEDGER_FILE")" "$B21"
+check_dir "B21 .keel/ survives (the manifest still lives there)" "$B21/.keel"
+
 summary
