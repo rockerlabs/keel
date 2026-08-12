@@ -83,6 +83,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   never PR'd). Both fields now reject an embedded TAB/newline at write time with an actionable message —
   step-id rejects any whitespace (no real step id contains any), outcome only TAB/newline (a real outcome
   routinely contains spaces).
+- **`tools/pre-pr-gate.sh`'s `receipt <step-id>` guard (dir #144, above) only caught a whitespace-carrying
+  step-id — a typo'd but space-free one (e.g. `polish.4-depht`) still wrote silently, the same deferred,
+  misleading "missing receipt" deny for a different malformation shape** (dir #149). A step-id is now
+  checked against the complete `EXPECTED_STEPS` list at write time, at both entry points that append to
+  the sentinel — `receipt`'s own write and `receipt --recover`'s replay of a retired sentinel.
 
 ## [0.6.0] — 2026-08-12
 
