@@ -202,6 +202,11 @@ write_full_receipt_review() {
   # here keeps every suffix-strip grouped together), so a caller can pass "agent:high+operator-run" and
   # still get a matching polish.4-depth of "high".
   depth_level="${depth_level%+operator-run}"
+  # dir #141: the combined `agent:<level>+second-opinion` outcome (an in-session cross-model
+  # second-opinion subagent, dir #81's `+operator-run` pattern mirrored for a different suffix) records
+  # step 4's depth as the bare level too — same strip, same reasoning, so a caller can pass
+  # "agent:high+second-opinion" and still get a matching polish.4-depth of "high".
+  depth_level="${depth_level%+second-opinion}"
   # dir #70: an `agent:<level>` outcome (the independent-subagent-review leg) records step 4's depth as
   # the bare level too — strip the prefix the same way the `-operator-run`/`-waived` suffixes are stripped
   # above, so a caller can pass "agent:high" and still get a matching polish.4-depth of "high".
