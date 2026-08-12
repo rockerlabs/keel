@@ -1,0 +1,11 @@
+# dir #142's coverage-ratchet allowlist: shipped scripts (tools/*.sh, or the installed `keel` CLI)
+# that had zero test coverage BEFORE tools/self/doctor.sh's ratchet check existed. Listed here they
+# stay a visible WARN, burned down deliberately; a script NOT listed here with zero test coverage is
+# a hard GAP instead (see tools/self/doctor.sh, "tool wiring" check).
+#
+# One relative path per line (e.g. tools/branch-cleanup.sh, or bare `keel`); `#`-comments and blank
+# lines are ignored. Adding a NEW entry needs a reason and, per dir #143's target-release convention,
+# a line in BACKLOG.md's dir #142 ticket — never a bare add to silence the ratchet.
+#
+# Empty as of dir #142 (2026-08-12): every shipped tools/*.sh script and the installed `keel` CLI
+# already carry at least one tests/test_*.sh reference.
