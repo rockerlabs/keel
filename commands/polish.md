@@ -360,38 +360,41 @@ Steps, in order:
    step 4 unless the prior round's depth was `skip` (never carried — dir
    #116, see step 1; NOT step 3 — it must bind this commit, see step 1) — arriving here, re-review only
    the DELTA the fix introduced, not the full step-1
-   diff again, and stop as soon as a pass needs no further changes; park a non-blocking note (a style nit,
+   diff again, and stop as soon as a pass needs no further changes (dir #127 below gives this "stop" a
+   budget and a terminal condition; read the rest of this paragraph together with that block, not as two
+   separate rules); park a non-blocking note (a style nit,
    a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
    means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
    applies to this round's fresh receipt before moving to step 6, same as the first pass.
 
-   **Delta-review protocol (dir #127):** a convergence round never re-runs a fresh full-diff review in a
-   new context. Re-engage the SAME reviewer — for the agent path (a), a follow-up message to the same
-   Agent-tool subagent that ran the original pass, not a new spawn; for an operator-run `/code-review`
-   hand-off, the operator re-running it on the delta — scoped to only the fix commit's own diff. A fresh
-   full pass is justified only when the fix touched surface the original review never examined (dir
-   #126 signal 1) — name that reason if it happens.
-
-   **Round budget (dir #127):** the full review (this step's first pass) runs once. After it, at most TWO
-   delta rounds. If a SECOND consecutive delta round still returns substantive findings (not a style nit),
-   stop fix-forward: do not attempt a third round. File the residual as a numbered backlog ticket, name it
-   honestly in the PR body's own words (not just in a code comment), and open the PR as-is — this is an
-   executed decision, written down like a `skipped:<reason>` receipt outcome, never a silent abandon. If
-   the two rounds' findings instead say "missing contract" (the same shape recurring, not shrinking),
-   escalate to redesign instead of a third fix-forward attempt.
-
-   **Terminal state (dir #127):** a convergence round is DONE when its delta re-review returns ZERO
-   findings. Zero findings on a fresh FULL re-review is explicitly NOT the goal and is not a stopping
-   signal by itself — a full review is sampling and will always find something to say if repeated; chasing
-   that produced the 7- and 13-round loops this ticket exists to close. Only a clean delta round ends the
-   cycle.
-
-   **Per-round trend line (dir #127):** at the end of EVERY convergence round (after the delta re-review
-   completes, before deciding whether another round is needed), report one line to the operator:
-   `round N: <count> findings, max severity <sev>, surface: same|new — <what>, class: named|exhausted,
-   forecast: <1 more delta round | stop-rule triggers next round | done>`. This makes the budget's
-   progress visible as it happens instead of only in a final summary — a 14-round loop with no visible
-   trend is the felt failure this line exists to prevent.
+   **Delta-review protocol, round budget, and terminal state (dir #127) — refines the "converge, don't
+   restart" paragraph above, same rule, three added specifics:**
+   - **Same reviewer, not a fresh spawn.** "Re-review only the DELTA" (above) means: for the agent path
+     (a), a follow-up message to the SAME Agent-tool subagent that ran the original pass, scoped to only
+     the fix commit's diff — never a new spawn; for an operator-run `/code-review` hand-off, the operator
+     re-running it on the delta the same way. A fresh full pass is justified only when the fix touched
+     surface the original review never examined (dir #126 signal 1) — name that reason if it happens.
+   - **Budget: the full review runs once; after it, at most TWO delta rounds.** If a SECOND consecutive
+     delta round still returns substantive findings (not a style nit — those still just park in step 10),
+     stop fix-forward and do not attempt a third round. File the residual as a numbered backlog ticket,
+     name it honestly in the PR body's own words (not just a code comment), and open the PR as-is — an
+     executed decision, recorded the same deliberate way a `skipped:<reason>` receipt outcome is, never a
+     silent abandon. **The step 5 receipt itself does not change shape for this exit**: write whatever
+     outcome literal actually describes the review mechanism that ran this round (e.g. `agent:<level>`,
+     same as any other round, per the Receipt line below) — the residual-ticket decision lives in the PR
+     body and the backlog, not as a new gate-recognized outcome, so it carries no separate receipt syntax
+     and needs no `pre-pr-gate.sh` change. If the two rounds' findings instead say "missing contract" (the
+     same shape recurring, not shrinking), escalate to redesign instead of a third fix-forward attempt.
+   - **Terminal condition, precisely: zero findings in a DELTA round** (not "a pass needs no further
+     changes" read loosely) **— and a fresh FULL re-review returning zero is explicitly NOT this signal.**
+     A full review is sampling and will always find something to say if repeated; treating a clean full
+     re-review as done is what produced the 7- and 13-round loops this ticket closes. Only a clean delta
+     round ends the cycle.
+   - **Per-round trend line:** at the end of every convergence round (after its delta re-review
+     completes, before deciding whether another round is needed), report one line to the operator:
+     `round N: <count> findings, max severity <sev>, surface: same|new — <what>, class: named|exhausted,
+     forecast: <1 more delta round | stop-rule triggers next round | done>` — visible progress instead of
+     a silent count climbing toward a dreaded double-digit round.
 
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
    automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
