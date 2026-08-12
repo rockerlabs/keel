@@ -661,12 +661,12 @@ else
 
   # _ledger_parse's comment gives 1-based table positions (column 1 is the empty cell before the
   # first "|"); the printf's argument N fills table position N+1, so position P is args[P-2] (0-indexed).
-  # Parallel arrays, not `declare -A`, so this runs under bash 3.2 (macOS's default) too.
-  expect_pos=(2 3 4 5 6 9)
-  expect_var=(today score conf _n_guard _n_hold _n_miss)
-  for i in "${!expect_pos[@]}"; do
-    pos="${expect_pos[$i]}"
-    want="${expect_var[$i]}"
+  # One "pos:var" array, not `declare -A` (bash 3.2 — macOS's default — has no associative arrays) and
+  # not two parallel arrays (index-aligned by convention only, so a row could silently mis-pair).
+  expect=(2:today 3:score 4:conf 5:_n_guard 6:_n_hold 9:_n_miss)
+  for pair in "${expect[@]}"; do
+    pos="${pair%%:*}"
+    want="${pair#*:}"
     idx=$((pos - 2))
     got="${args[$idx]:-}"
     if [ "$got" = "$want" ]; then
