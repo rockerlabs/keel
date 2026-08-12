@@ -36,6 +36,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   either falsely refusing or letting the manifested mode's uninstall strip content the unmanifested
   mode still needs, and never backs up/consumes a manifest whose `keel_manifest_version` it doesn't
   understand — treated as absent for reads, left untouched on disk either way.
+- **`_dialog_leg_armed`/gate-manifest consumers close the install manifest's B2 gap** (dir #125, PR
+  3/3, the final leg). `tools/pre-pr-gate.sh`'s `_dialog_leg_armed` (the check gating the dir #88
+  mandatory-review-dialog deny) now also walks the checkout-side ledger and, for every home whose gate
+  manifest is present and at `keel_manifest_version=1`, adds that manifest's recorded `settings=` path
+  to its arming candidates — closing B2: an `install-pre-pr-gate.sh --home DIR` wire wasn't among the
+  four static candidates, so a genuinely wired mandatory-dialog hook there silently read as UNARMED and
+  the deny silently no-op'd, the same class PR #165 closed for `KEEL_HOME` and PR #173's `--home` flag
+  reopened. `tools/doctor.sh`'s gate-wired check now agrees with the gate manifest (a new
+  `W-GATE-MANIFEST-MISSING`/`W-GATE-MANIFEST-DRIFT` pair, deliberately distinct ids from the
+  install-manifest's own `W-MANIFEST-DRIFT` so `.keel/doctor-accept`'s bare-id matching can't collapse
+  an accepted install-manifest drift into silently swallowing an unrelated gate one) instead of blindly
+  assuming `$ihome/settings.json`, mirroring `uninstall.sh`'s own `gate_hooks_hint`. `keel`'s
+  severed-checkout advice now prefers the recorded install manifest for mode detection over sniffing
+  `AGENTS.md`/`CLAUDE.md`. Every `KEEL-LEGACY-NOMANIFEST` fallback across the ticket's consumers is
+  marked consistently, closing the ticket; the fallback removal itself ships as its own `→ 0.7` ticket.
 - **A test-coverage ratchet in `tools/self/doctor.sh`** (dir #142). Its "tool wiring" check now maps
   every shipped `tools/*.sh` script (already crossing subdirectories, so `tools/secret-guard/*.sh`
   and `tools/lib/*.sh` were already in scope) plus the installed `keel` CLI against `tests/test_*.sh`

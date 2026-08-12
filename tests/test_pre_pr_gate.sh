@@ -1489,13 +1489,18 @@ check_absent "ARMED: <level>-operator-run outcome, no dialog line → allowed" "
 d="$(mkrepo)"
 kh="$SANDBOX/custom-keel-home"; mkdir -p "$kh"
 empty_home="$SANDBOX/empty-home"; mkdir -p "$empty_home"
-run env HOME="$empty_home" KEEL_HOME="$kh" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
+# dir #125: an isolated ledger file, never the suite-wide $KEEL_LEDGER_FILE — this run's
+# install-pre-pr-gate.sh --global write would otherwise register $kh in the SHARED ledger, and every
+# later test in this file that checks "no arming anywhere" (itself included, just below) would then
+# find $kh armed via the ledger regardless of its own KEEL_HOME, since the ledger doesn't depend on it.
+t78_ledger="$SANDBOX/t78-ledger"
+run env HOME="$empty_home" KEEL_HOME="$kh" "KEEL_LEDGER_FILE=$t78_ledger" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
 check_status "install-pre-pr-gate.sh --global under a custom KEEL_HOME → exit 0" 0 "$STATUS"
 check_file "…and it wrote settings.json inside KEEL_HOME, not \$HOME/.claude" "$kh/settings.json"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
 write_full_receipt_review "$d" "agent:high"
-gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$kh"
+gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$kh" "KEEL_LEDGER_FILE=$t78_ledger"
 check_contains "KEEL_HOME-armed dialog leg is seen as ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
 check_contains "KEEL_HOME-armed leg denies for the missing dialog specifically" "$OUT" "reminder dialog was never opened"
 # ...and with no arming anywhere (same empty HOME, no KEEL_HOME) the same receipt still passes, so the
@@ -1526,6 +1531,71 @@ gate_env "gh pr create --fill" "$d" "HOME=$home_armed" "KEEL_HOME=$SANDBOX/some-
 check_contains "an unrelated KEEL_HOME does not hide a hook wired in \$HOME/.claude" "$OUT" '"permissionDecision":"deny"'
 check_contains "…and it denies for the missing dialog, not some other reason" "$OUT" "reminder dialog was never opened"
 rm -f "$tf"
+
+# 78c. dir #125/B2 reproduction (acceptance test 18): `install-pre-pr-gate.sh --home DIR` wires the
+# dialog leg at DIR/settings.json, a path none of the four static candidates above ever probe — before
+# the ledger-based fix this read as UNARMED even though the hook was genuinely wired, silently skipping
+# the dir #88 mandatory-dialog deny. Armed by running the REAL installers under a sandboxed HOME (never
+# a hand-built settings.json), so this tests the ledger/manifest and the arming probe agreeing, not a
+# copy of either installer's own convention. A DEDICATED ledger file (never the suite-wide
+# $KEEL_LEDGER_FILE) is threaded through every call below — restoring a mutated copy of the shared
+# ledger would otherwise leak this fixture's home into every later test in this file (found the hard
+# way: an earlier draft restored $KEEL_LEDGER_FILE itself and turned "no arming anywhere" red for the
+# rest of the suite).
+# One helper for the four checks below: writes a fresh SubagentStop trace + full agent:high receipt on
+# repo $1, drives the gate under the given extra env assignments, and asserts ARMED (deny, missing
+# dialog) or UNARMED (receipt just passes) per $2, labeling every assertion with $3. Collapses what was
+# 4 copies of the same 6-line arm/check sequence, varying only the label/env/expected outcome, into one
+# call per case (found by an independent /simplify pass).
+assert_dialog_arming() {
+  local d="$1" expect="$2" label="$3" tf; shift 3
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+  write_full_receipt_review "$d" "agent:high"
+  gate_env "gh pr create --fill" "$d" "$@"
+  if [ "$expect" = "armed" ]; then
+    check_contains "$label: ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
+    check_contains "$label: denied for the missing dialog specifically" "$OUT" "reminder dialog was never opened"
+  else
+    check_status "$label: UNARMED, receipt passes" 0 "$STATUS"
+    check_absent "$label: UNARMED, allowed" "$OUT" "deny"
+  fi
+  rm -f "$tf"
+}
+
+d="$(mkrepo)"
+b2_home="$SANDBOX/b2-home"; mkdir -p "$b2_home"
+b2_empty_home="$SANDBOX/b2-empty-home"; mkdir -p "$b2_empty_home"
+b2_ledger="$SANDBOX/b2-ledger"
+fresh_home_env "$b2_empty_home"
+run env "${FRESH_HOME_ENV[@]}" "KEEL_LEDGER_FILE=$b2_ledger" "$REPO_ROOT/install.sh" --home "$b2_home" --no-hooks
+check_status "B2 fixture: install.sh --home DIR -> exit 0" 0 "$STATUS"
+run env "${FRESH_HOME_ENV[@]}" "KEEL_LEDGER_FILE=$b2_ledger" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --home "$b2_home"
+check_status "B2 fixture: install-pre-pr-gate.sh --home DIR -> exit 0" 0 "$STATUS"
+b2_gate_manifest="$b2_home/.keel/install-manifest.gate"
+check_file "B2 fixture: gate manifest recorded" "$b2_gate_manifest"
+check_contains "B2 fixture: ledger lists the --home DIR" "$(cat "$b2_ledger" 2>/dev/null)" "$b2_home"
+
+assert_dialog_arming "$d" armed "B2" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
+
+# Mutation 1: delete the ledger's line for this home -> UNARMED again (same empty HOME, so this isolates
+# the assertion to the ledger entry itself). Only ever touches $b2_ledger — the shared one is untouched.
+: > "$b2_ledger"
+assert_dialog_arming "$d" unarmed "B2 mutation: ledger entry removed" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
+
+# Mutation 2: restore the ledger line, but delete the gate manifest -> UNARMED again — a stale ledger
+# line whose manifest is gone must contribute nothing (the read contract: verify before trusting).
+printf '%s\n' "$b2_home" > "$b2_ledger"
+mv "$b2_gate_manifest" "$b2_gate_manifest.bak"
+assert_dialog_arming "$d" unarmed "B2 mutation: gate manifest removed" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
+mv "$b2_gate_manifest.bak" "$b2_gate_manifest"
+
+# 78d. dir #125 (acceptance test 21, gate side): a corrupt/unknown-version gate manifest listed in the
+# ledger must be silently skipped as a candidate — never a crash, never a false ARM.
+cp "$b2_gate_manifest" "$b2_gate_manifest.orig"
+sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$b2_gate_manifest.orig" > "$b2_gate_manifest"
+assert_dialog_arming "$d" unarmed "unknown gate-manifest version" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
+mv "$b2_gate_manifest.orig" "$b2_gate_manifest"
 
 # 79. dir #85 (code audit, finding 3): dir #80 re-keyed the sentinel/prev-sentinel/hand-off by
 # (repo, branch) but DELIBERATELY left the review trace and the rollout state per-repo. Nothing pinned

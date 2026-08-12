@@ -715,23 +715,53 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # wiring (tools/install-pre-pr-gate.sh <repo>, the documented default) lives in each project's own
   # .claude/settings.json and is invisible from here — expected, not a gap, so the message says so.
   if [ -f "$ihome/commands/polish.md" ] || [ -L "$ihome/commands/polish.md" ]; then
+    # The advised flag must be able to reach the home this finding just NAMED, so the test is
+    # literally "does --global resolve to $ihome" — i.e. compare against $ghome (the same
+    # ${KEEL_HOME:-$HOME/.claude} expression install-pre-pr-gate.sh's own --global evaluates,
+    # resolved once near the top of this file). Comparing against $HOME/.claude alone is the same
+    # defect mirrored: with KEEL_HOME set elsewhere and doctor pointed at $HOME/.claude, --global
+    # would wire $KEEL_HOME and the warning would never clear (reproduced by the operator's fifth
+    # /code-review pass). install.sh --home retargets WITHOUT exporting KEEL_HOME — dir #98's whole
+    # premise — so both halves of this really happen. Computed up front now (dir #125): more than one
+    # branch below names it.
+    if [ "$ihome" = "$ghome" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
+
+    # dir #125: agree with the gate manifest instead of assuming $ihome/settings.json. A usable
+    # manifest's own settings= is ground truth from the wire itself (mirrors uninstall.sh's
+    # gate_hooks_hint, dir #136) — for a global/home install the two always name the same file today,
+    # but resolving through the manifest catches a future retargeting bug the same way W-MANIFEST-DRIFT
+    # catches one for the install manifest, instead of silently trusting a re-derived guess.
+    igate_manifest="$ihome/.keel/install-manifest.gate"
+    igate_manifest_usable=0
+    if [ -f "$igate_manifest" ] && [ "$(manifest_field "$igate_manifest" keel_manifest_version)" = "1" ]; then
+      igate_manifest_usable=1
+      igate_settings="$(manifest_field "$igate_manifest" settings)"
+      [ -n "$igate_settings" ] || igate_settings="$ihome/settings.json"
+    else
+      # KEEL-LEGACY-NOMANIFEST: no usable gate manifest — the only source is the default path.
+      igate_settings="$ihome/settings.json"
+    fi
+
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
     # other 5 (SessionStart/PostToolUse x2/UserPromptExpansion/SubagentStop — the newest, PostToolUse's
     # AskUserQuestion matcher, added dir #88) are enhancements. gate_hook_wired (shared with the
     # per-project loop's own half of this check, below) does the structural jq-else-grep test.
-    if gate_hook_wired "$ihome/settings.json"; then
-      say "  OK   /polish gate: wired machine-global ($ihome/settings.json)"
+    if gate_hook_wired "$igate_settings"; then
+      if [ "$igate_manifest_usable" = 1 ]; then
+        say "  OK   /polish gate: wired machine-global ($igate_settings; manifest confirms)"
+      else
+        say "  OK   /polish gate: wired machine-global ($igate_settings)"
+        warn W-GATE-MANIFEST-MISSING "gate hooks are wired at $igate_settings but no gate manifest is recorded (KEEL-LEGACY-NOMANIFEST) — re-run install-pre-pr-gate.sh $gate_flag to record one (the B2 ledger-based dialog-arming check in tools/pre-pr-gate.sh relies on it for a retargeted --home)"
+      fi
+    elif [ "$igate_manifest_usable" = 1 ]; then
+      # A DISTINCT id from the install-manifest drift check above (W-MANIFEST-DRIFT), not a reuse: found
+      # by an operator-run /code-review high pass — .keel/doctor-accept matches by bare id, so an
+      # adopter who accepted the install-manifest drift finding once (a deliberate re-home, say) would
+      # silently swallow this unrelated gate-manifest drift too, collapsing "hooks removed by hand" into
+      # the same anonymous accepted-hidden count. Paired with W-GATE-MANIFEST-MISSING above.
+      warn W-GATE-MANIFEST-DRIFT "gate manifest at $igate_manifest recorded settings=$igate_settings, but no load-bearing hook is present there — hooks removed by hand? re-run install-pre-pr-gate.sh $gate_flag to rewire, or remove the stale manifest if this was deliberate"
     else
-      # The advised flag must be able to reach the home this finding just NAMED, so the test is
-      # literally "does --global resolve to $ihome" — i.e. compare against $ghome (the same
-      # ${KEEL_HOME:-$HOME/.claude} expression install-pre-pr-gate.sh's own --global evaluates,
-      # resolved once near the top of this file). Comparing against $HOME/.claude alone is the same
-      # defect mirrored: with KEEL_HOME set elsewhere and doctor pointed at $HOME/.claude, --global
-      # would wire $KEEL_HOME and the warning would never clear (reproduced by the operator's fifth
-      # /code-review pass). install.sh --home retargets WITHOUT exporting KEEL_HOME — dir #98's whole
-      # premise — so both halves of this really happen.
-      if [ "$ihome" = "$ghome" ]; then gate_flag="--global"; else gate_flag="--home \"$ihome\""; fi
-      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $ihome/settings.json — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
+      warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $igate_settings — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi
   fi
 

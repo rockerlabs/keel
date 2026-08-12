@@ -160,6 +160,22 @@ if command -v jq >/dev/null 2>&1; then
   check_status "gate --global uninstall -> exit 0" 0 "$STATUS"
   check_nofile "gate uninstall removes install-manifest.gate" "$gman"
   check_absent "gate uninstall prunes the ledger entry" "$(cat "$ledger" 2>/dev/null)" "$ghome/.claude"
+
+  # --- acceptance test 19: --uninstall removes the gate manifest only when n_removed > 0 -------------
+  # A hand-stripped settings.json (hooks already gone, e.g. removed by hand outside this installer)
+  # leaves nothing for --uninstall to remove — the manifest must survive, since it wasn't THIS run that
+  # took the hooks down.
+  g2home="$SANDBOX/gate-home-2"; mkdir -p "$g2home"
+  fresh_home_env "$g2home"
+  run env "${FRESH_HOME_ENV[@]}" "$gate_installer" --global
+  check_status "g2 gate --global wire -> exit 0" 0 "$STATUS"
+  g2man="$g2home/.claude/.keel/install-manifest.gate"
+  check_file "g2 gate manifest recorded" "$g2man"
+  printf '{}' > "$g2home/.claude/settings.json"   # simulate hooks stripped by hand
+  run env "${FRESH_HOME_ENV[@]}" "$gate_installer" --global --uninstall
+  check_status "g2 uninstall with nothing to remove -> exit 0" 0 "$STATUS"
+  check_contains "g2 uninstall reports nothing removed (n_removed=0)" "$OUT" "nothing to remove"
+  check_file "g2 manifest survives an n_removed=0 uninstall" "$g2man"
 else
   pass "jq not available — gate manifest tests skipped (installer requires jq)"
 fi
@@ -214,5 +230,46 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_contains "unreadable manifest degrades to absent, not a crash" "$OUT" "W-MANIFEST-MISSING"
   check_contains "unreadable manifest: the run still prints its summary line" "$OUT" "doctor:"
 fi
+
+# --- acceptance test 21 (gate side): corrupt/unknown-version/unreadable GATE manifest degrades to
+# absent — named warning + legacy fallback, exit behavior unchanged, no set -euo pipefail crash --------
+if command -v jq >/dev/null 2>&1; then
+  g21home="$SANDBOX/gate-home-21/.claude"
+  run "$install" --home "$g21home" --no-hooks
+  check_status "g21 install -> exit 0" 0 "$STATUS"
+  run env KEEL_HOME="$g21home" "$gate_installer" --global
+  check_status "g21 gate wire -> exit 0" 0 "$STATUS"
+  g21man="$g21home/.keel/install-manifest.gate"
+  check_file "g21 gate manifest recorded" "$g21man"
+
+  cp "$g21man" "$g21man.orig"
+  sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$g21man.orig" > "$g21man"
+  run "$doctor" --install "$g21home"
+  check_contains "unknown gate-manifest version -> treated as absent, still OK (hooks really are there)" "$OUT" "OK   /polish gate: wired machine-global"
+  check_contains "...and nudges a re-record (KEEL-LEGACY-NOMANIFEST)" "$OUT" "W-GATE-MANIFEST-MISSING"
+  mv "$g21man.orig" "$g21man"
+
+  if [ "$(id -u 2>/dev/null)" != 0 ]; then
+    chmod 000 "$g21man"
+    run "$doctor" --install "$g21home"
+    chmod 644 "$g21man"   # restore so cleanup can remove the sandbox
+    check_contains "unreadable gate manifest degrades to absent, not a crash" "$OUT" "W-GATE-MANIFEST-MISSING"
+    check_contains "unreadable gate manifest: the run still prints its summary line" "$OUT" "doctor:"
+  fi
+else
+  pass "jq not available — gate manifest robustness tests skipped (installer requires jq)"
+fi
+
+# --- acceptance test 20: every KEEL-LEGACY-NOMANIFEST fallback block is still marked, across every
+# consumer this ticket (dir #125) touches — a plain grep so the eventual -> 0.7 removal sweep is
+# mechanical (delete every marked block, not a re-audit from scratch) -------------------------------
+legacy_sites="$REPO_ROOT/uninstall.sh $REPO_ROOT/tools/doctor.sh $REPO_ROOT/tools/pre-pr-gate.sh $REPO_ROOT/keel $REPO_ROOT/install.sh"
+for site in $legacy_sites; do
+  if grep -q 'KEEL-LEGACY-NOMANIFEST' "$site"; then
+    pass "legacy sweep: $site carries the KEEL-LEGACY-NOMANIFEST token"
+  else
+    fail "legacy sweep: $site carries the KEEL-LEGACY-NOMANIFEST token" "no match found"
+  fi
+done
 
 summary
