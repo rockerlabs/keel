@@ -454,4 +454,307 @@ run "$sd" "$d" --quiet
 check_status "no trailing newline doesn't crash -> exit 0" 0 "$STATUS"
 check_contains "still catches the stale heading from the no-trailing-newline file" "$OUT" "dir #5's heading tag looks stale"
 
+# --- 7. BACKLOG.md heading check resolves the MAIN checkout from a worktree invocation (dir #135) ---
+# BACKLOG.md is gitignored and lives ONLY at the main checkout root (this project's own convention) —
+# a linked worktree never gets its own copy. Before this fix, self_dir/../.. (repo_root) was whatever
+# checkout self/doctor.sh was INVOKED against, so a worktree invocation resolved repo_root to the
+# WORKTREE and silently "skipped, no readable BACKLOG.md" every time — exactly where /polish's step 7
+# self-check actually runs. `git worktree add` only checks out TRACKED content, so writing BACKLOG.md
+# into the main checkout $d before adding the worktree reproduces the real split precisely: $d has it,
+# $wt does not.
+d="$(mk_clean_repo)"
+printf '### dir #1 — some ticket — R2\n\n✅ CLOSED (2026-01-01, PR #1) — done.\n' > "$d/BACKLOG.md"
+wt="$SANDBOX/wt135"
+( cd "$d" && git worktree add -q -b wt135-branch "$wt" )
+run "$sd" "$wt" --quiet
+check_status "a worktree invocation is still advisory-only when it finds the main checkout's stale heading -> exit 0" 0 "$STATUS"
+check_contains "a worktree invocation finds the main checkout's BACKLOG.md, not silently skipped" "$OUT" "dir #1's heading tag looks stale"
+
+# --- 8. a ⏳/IN REVIEW BACKLOG.md heading citing a MERGED PR (dir #135) ---------------------------
+# `gh` is stubbed via PATH so these tests never make a real network call. `pr view <n> --json state
+# -q .state` is the only invocation self/doctor.sh makes; the stub just echoes a canned state per PR
+# number and ignores the rest of the arguments.
+fake_gh_bin="$SANDBOX/fakebin-gh"
+mkdir -p "$fake_gh_bin"
+cat > "$fake_gh_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  case "$3" in
+    99)  echo MERGED ;;
+    100) echo OPEN ;;
+    101) exit 1 ;;   # simulates gh failing: offline, no auth, no such PR
+    *)   echo OPEN ;;
+  esac
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$fake_gh_bin/gh"
+
+d="$(mk_clean_repo)"
+printf '### dir #20 — some ticket — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting on review.\n' > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_status "a merged PR cited as still IN REVIEW is advisory only -> exit 0" 0 "$STATUS"
+check_contains "flags the heading citing the merged PR" "$OUT" \
+  "dir #20's heading cites PR #99 as ⏳/IN REVIEW but gh reports it MERGED"
+
+# a PR that's still genuinely open must not be flagged
+d="$(mk_clean_repo)"
+printf '### dir #21 — some ticket — R2 — ⏳ IN REVIEW (PR #100)\n\nstill waiting on review.\n' > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "an open PR is not flagged" "$OUT" "dir #21's heading cites"
+
+# gh failing (offline / no auth / unknown PR) must degrade gracefully — no crash, no false flag
+d="$(mk_clean_repo)"
+printf '### dir #22 — some ticket — R2 — ⏳ IN REVIEW (PR #101)\n\nstill waiting on review.\n' > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_status "a failing gh call doesn't crash the run -> exit 0" 0 "$STATUS"
+check_absent "and doesn't false-flag" "$OUT" "dir #22's heading cites"
+
+# gh entirely absent from PATH must also degrade gracefully. A non-executable shim does NOT prove
+# this (bash's `command -v` skips a non-executable match and keeps searching PATH) — build a PATH
+# that genuinely never resolves `gh` at all, carrying only the tools self/doctor.sh itself invokes.
+no_gh_bin="$SANDBOX/fakebin-nogh"
+mkdir -p "$no_gh_bin"
+for tool in awk basename bash cat chmod cut dirname git grep head printf sed sort tail wc env true false; do
+  t="$(command -v "$tool" 2>/dev/null)" && ln -sf "$t" "$no_gh_bin/$tool"
+done
+d="$(mk_clean_repo)"
+printf '### dir #23 — some ticket — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting on review.\n' > "$d/BACKLOG.md"
+run env PATH="$no_gh_bin" "$sd" "$d" --quiet
+check_status "no gh on PATH at all doesn't crash the run -> exit 0" 0 "$STATUS"
+check_absent "and doesn't false-flag" "$OUT" "dir #23's heading cites"
+
+# a tagged heading with no PR # at all (e.g. the ⏳ IN FLIGHT claim marker `/go` writes) must not
+# attempt a gh call, let alone flag anything.
+d="$(mk_clean_repo)"
+printf '### dir #24 — some ticket — R2 — ⏳ IN FLIGHT (2026-01-01, branch foo)\n\nclaimed.\n' > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_status "an IN FLIGHT claim marker with no PR # is untouched -> exit 0" 0 "$STATUS"
+check_absent "no gap/warn for it" "$OUT" "dir #24's heading cites"
+
+# an IN FLIGHT claim marker that DOES mention a (merged) PR in its own tail — e.g. "blocked by
+# PR #99" — must not be mistaken for an IN REVIEW tag either. An earlier regex, `— (⏳|IN REVIEW)`,
+# matched the bare ⏳ glyph alone, which every real ⏳ IN FLIGHT heading also starts with — so it
+# would conflate the two DIFFERENT statuses this project actually uses, ⏳ IN FLIGHT (claimed, being
+# worked) and ⏳ IN REVIEW (this check's own target) (found by an independent reviewer's own pass).
+d="$(mk_clean_repo)"
+printf '### dir #30 — some ticket — R2 — ⏳ IN FLIGHT (2026-01-01, branch foo, blocked by PR #99)\n\nclaimed.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "an IN FLIGHT heading citing a merged PR isn't conflated with IN REVIEW" "$OUT" \
+  "dir #30's heading cites"
+
+# "IN REVIEW" or "⏳" appearing only as heading TITLE prose (not after the "— " tag separator) must
+# not count as a real tag — same false-positive guard the tag-staleness loop already relies on
+# (dir #17's own test case for that loop).
+d="$(mk_clean_repo)"
+printf '### dir #25 — decide whether IN REVIEW should replace ⏳ — R1\n\n✅ CLOSED (2026-01-01, PR #99) — done.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "title prose mentioning IN REVIEW/⏳ isn't treated as a real tag" "$OUT" "dir #25's heading cites"
+
+# a second, stricter false-positive shape (found by /polish's own independent review): the PR # AND
+# the ⏳ glyph BOTH live in the heading line, but as title prose describing the convention, not as a
+# real tag — the loose `— .*(⏳|IN REVIEW)` an earlier draft used would bridge an unrelated "— "
+# elsewhere in the title across to this ⏳, treating discussion-about-the-convention as a real tag.
+# The PR # has to be IN THE HEADING LINE for this to exercise the bug at all — dir #25 above puts its
+# PR # in the body, which never reaches this code path.
+d="$(mk_clean_repo)"
+printf '### dir #26 — clarify whether ⏳ tickets citing PR #99 should auto-close — R1\n\nno status yet.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "a PR # in title prose discussing the convention isn't treated as a real tag either" "$OUT" \
+  "dir #26's heading cites"
+
+# a heading whose TITLE names an earlier, unrelated PR before the real ⏳/IN REVIEW tag must check
+# the PR the TAG actually cites, not the leftmost "PR #N" anywhere on the line (found by /code-review
+# medium's own line-by-line pass — `[[ =~ ]]` against the whole line grabs the first match
+# regardless of where the real tag sits). PR #100 (open, per fake_gh_bin) precedes the tag; the tag
+# itself cites PR #99 (merged) — the correct, tag-scoped extraction must catch PR #99.
+d="$(mk_clean_repo)"
+printf '### dir #27 — follow-up to PR #100 — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_contains "checks the tag's own PR (#99), not the earlier title reference (#100)" "$OUT" \
+  "dir #27's heading cites PR #99 as ⏳/IN REVIEW but gh reports it MERGED"
+
+# the inverse, which is what would actually go WRONG under the leftmost-match bug: an earlier,
+# unrelated MERGED PR in the title (#99) precedes the tag, but the tag itself cites a still-OPEN PR
+# (#100) — the leftmost-match bug would wrongly warn about #99; the fix must stay silent, since the
+# PR the tag actually names is still open.
+d="$(mk_clean_repo)"
+printf '### dir #28 — follow-up to PR #99 — R2 — ⏳ IN REVIEW (PR #100)\n\nstill waiting.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "an earlier merged PR in the title doesn't cause a false flag for the tag's own open PR" \
+  "$OUT" "dir #28's heading cites"
+
+# `gh pr view` must run from the repo being audited, not wherever self/doctor.sh's own caller
+# happens to sit — unlike every `git` call in this file, `gh` has no `-C` flag; it infers the target
+# GitHub repo from the process's OWN cwd (found by /code-review medium's own line-by-line pass, which
+# flagged the bare call as querying the wrong repo under a REPO_ARG invocation). This stub only
+# answers MERGED when invoked with $PWD == $EXPECTED_PWD, so a bare (unscoped) `gh pr view` call —
+# which would run from wherever this TEST FILE's own process cwd is, not `$d` — fails the PWD check
+# and the warning never fires; only a genuinely `cd`'d call passes.
+fake_gh_pwd_bin="$SANDBOX/fakebin-gh-pwd"
+mkdir -p "$fake_gh_pwd_bin"
+cat > "$fake_gh_pwd_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "pr" ] && [ "$2" = "view" ] && [ "$PWD" = "$EXPECTED_PWD" ]; then
+  echo MERGED
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$fake_gh_pwd_bin/gh"
+
+d="$(mk_clean_repo)"
+printf '### dir #29 — some ticket — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting.\n' > "$d/BACKLOG.md"
+run env PATH="$fake_gh_pwd_bin:$PATH" EXPECTED_PWD="$(cd "$d" && pwd)" "$sd" "$d" --quiet
+check_contains "gh runs from the repo under audit, not the caller's own cwd" "$OUT" \
+  "dir #29's heading cites PR #99 as ⏳/IN REVIEW but gh reports it MERGED"
+
+# --- 9. CHANGELOG.md <-> git release-tag reconciliation (dir #139) ---------------------------------
+# Each fixture builds its own small CHANGELOG.md + tag history directly, independent of this repo's
+# OWN real release history.
+
+# a clean repo where every tag has a section and every section has a tag -> exit 0, no GAP
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "every tag has a section and vice versa -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP" "$OUT" "GAP"
+
+# `git tag -l` takes a GLOB, not a regex — a naive `v[0-9]*.[0-9]*.[0-9]*` pattern also matches a
+# suffixed pre-release tag (`*` swallows the suffix too), which then can't match any CHANGELOG
+# section and false-GAPs an otherwise-healthy repo (found by an independent reviewer's own pass; no
+# real tag like this exists in this project yet, so it was latent, not yet triggered).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, plus an RC tag" && git tag v1.0.0 && git tag v1.1.0-rc1 )
+run "$sd" "$d" --quiet
+check_status "a suffixed pre-release tag doesn't false-GAP a healthy repo -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the RC tag" "$OUT" "GAP"
+
+# a `## [x.y.z]`-shaped line inside a FENCED example (this file documents its own conventions, and an
+# illustrative snippet is realistic future content) must not be misread as a real release section —
+# same false-positive class check 5's BACKLOG.md scan already guards against, found here by /polish's
+# own independent review when check 6 first shipped without the equivalent fence-blanking.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n\nExample of how a section header looks:\n```\n## [9.9.9] — example\n- not a real release\n```\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, plus a fenced illustrative example" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a fenced-block example section isn't mistaken for a real one -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the fenced example" "$OUT" "GAP"
+
+# the exact PR #118 accident: a released section gets deleted by a LATER commit, its tag still exists
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n\n## [1.1.0] — 2026-01-02\n- second release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0 and 1.1.0" && git tag v1.0.0 && git tag v1.1.0 )
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.1.0] — 2026-01-02\n- second release\n' > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "PR #118: accidentally clobbers the 1.0.0 heading" )
+run "$sd" "$d" --quiet
+check_status "a tag whose section got clobbered by a later commit -> exit 1" 1 "$STATUS"
+check_contains "names the orphaned tag" "$OUT" "release tag(s) with no matching CHANGELOG.md"
+check_contains "and names it specifically" "$OUT" "1.0.0"
+
+# the inverse: a CHANGELOG section with no matching tag (a version cut in the file but never tagged)
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n\n## [1.1.0] — 2026-01-02\n- never actually tagged\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "1.0.0 tagged, 1.1.0 written but not" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a section with no matching tag -> exit 1" 1 "$STATUS"
+check_contains "names the untagged section" "$OUT" "section(s) with no matching release tag"
+check_contains "and names it specifically" "$OUT" "1.1.0"
+
+# section-count invariant: a DUPLICATED heading (e.g. a bad merge). Both directional checks pass —
+# every tag NAME has a matching section and vice versa, since `sort -u` dedupes the name lists — so
+# only the raw section-count invariant, comparing sections found to tags + Unreleased, catches the
+# extra copy at all.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n\n## [1.0.0] — 2026-01-01\n- duplicated by a bad merge\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, duplicated by a bad merge" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a duplicated heading -> exit 1" 1 "$STATUS"
+check_contains "names the count mismatch" "$OUT" "CHANGELOG.md section count"
+check_absent "the directional checks alone see no missing name (dedup hides the duplicate)" "$OUT" \
+  "no matching CHANGELOG.md"
+check_absent "and no missing tag either" "$OUT" "no matching release tag"
+
+# a DUPLICATED `[Unreleased]` heading evades the general count invariant entirely: both sides of the
+# comparison (total sections, and the Unreleased count baked into "expected") increment together on
+# the extra copy, staying balanced (found by an independent reviewer's own pass, empirically
+# reproduced against the pre-fix code — no GAP fired). Needs its own explicit "at most 1" check.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [Unreleased]\n- duplicate, different accident\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, duplicate Unreleased heading" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a duplicated [Unreleased] heading -> exit 1" 1 "$STATUS"
+check_contains "names the Unreleased-count mismatch" "$OUT" "'## [Unreleased]' headings, expected at most 1"
+
+# ZERO bracketed `[Unreleased]` headings (this repo's own base sandbox fixture is exactly this shape
+# — a plain "## Unreleased" with no brackets) must NOT false-GAP: "at most 1", not "exactly 1" — a
+# CHANGELOG.md that never adopted the bracket convention at all is a separate, softer question this
+# check takes no position on; only a genuine duplicate is unambiguous enough to flag.
+d="$(mk_clean_repo)"
+run "$sd" "$d" --quiet
+check_status "zero bracketed Unreleased headings doesn't false-GAP -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the missing bracket convention" "$OUT" "GAP"
+
+# a legitimate, non-version `## [...]` heading (this project's CHANGELOG.md never uses one, but
+# nothing stops a future entry from doing so) must not inflate the section count and false-GAP an
+# otherwise perfectly healthy repo (found by an independent reviewer's own pass, empirically
+# reproduced against the pre-fix code — a bare `grep -cE '^## \['` counted it, with no tag or
+# Unreleased bump to balance it against).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [Deprecated]\n- some non-version bracket heading\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, plus a non-version bracket heading" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a non-version bracket heading doesn't false-GAP a healthy repo -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the non-version heading" "$OUT" "GAP"
+
+# no CHANGELOG.md at all -> clean skip, not a crash or a GAP
+d="$(mk_clean_repo)"
+rm "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "no changelog" )
+run "$sd" "$d" --quiet
+check_status "no CHANGELOG.md at all -> exit 0" 0 "$STATUS"
+
+# an UNREADABLE (but present) CHANGELOG.md must not abort the whole doctor.sh run either — the same
+# `-r` guard check 5's BACKLOG.md read already carries, which this check's condition was found to be
+# missing (found by /code-review medium's own line-by-line pass: it only inherited the `-f` half).
+# root always reads regardless of chmod, so this only proves anything as non-root (same guard this
+# project's own CLAUDE.md documents for the identical Alpine/root trap elsewhere).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mk_clean_repo)"
+  printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+  ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+  chmod 000 "$d/CHANGELOG.md"
+  run "$sd" "$d" --quiet
+  check_status "an unreadable CHANGELOG.md doesn't abort the whole run -> exit 0" 0 "$STATUS"
+  chmod 644 "$d/CHANGELOG.md"
+fi
+
+# a shallow clone must degrade to a silent skip, not a false GAP — the whole point of dir #139's own
+# `is-shallow-repository` guard: a shallow checkout (CI's own default, absent the fetch-depth: 0 this
+# same ticket adds to ci.yml) has few or none of the tags this check needs even though the working
+# tree itself is perfectly fine.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n\n## [1.1.0] — 2026-01-02\n- second release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0 and 1.1.0" && git tag v1.0.0 && git tag v1.1.0 )
+shallow="$SANDBOX/shallow139"
+git clone -q --depth 1 "file://$d" "$shallow"
+run "$sd" "$shallow" --quiet
+check_status "a shallow clone skips the reconciliation rather than false-GAPing -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP on a shallow clone" "$OUT" "CHANGELOG.md section"
+
 summary
