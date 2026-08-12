@@ -620,4 +620,62 @@ else
   fail "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function" "found in $sig_blocks function(s) — a parser was re-duplicated"
 fi
 
+# --- dir #131: cmd_add's row-printf (the ledger WRITER) must stay mechanically in sync with
+# LEDGER_HEADER's column count and with the specific columns _ledger_parse (the READER, dir #107)
+# indexes by position (date=2 score=3 conf=4 guard=5 hold=6 miss=9) --------------------------------
+# dir #107 unified the two readers behind _ledger_parse so a column reorder can no longer desync them
+# from EACH OTHER. But the writer still hand-indexes the same columns one hop further out, with
+# nothing checking it against _ledger_parse's own comment or LEDGER_HEADER's table header. Pin this at
+# the SOURCE level, same shape as the signature check above: an output-level check on one row can't
+# tell "this printf argument is the variable the reader assumes" from "an unrelated variable that
+# happens to print the same value today".
+fmt_line_no="$(grep -n "^  printf '| %s" "$TOOL" | head -1 | cut -d: -f1)"
+if [ -z "$fmt_line_no" ]; then
+  fail "cmd_add's row-printf located" "no line matching \"printf '| %s\" found in $TOOL"
+else
+  fmt_line="$(sed -n "${fmt_line_no}p" "$TOOL")"
+  args_line="$(sed -n "$((fmt_line_no + 1))p" "$TOOL")"
+  args_str="${args_line%%>>*}"   # drop the trailing `>> "$LEDGER"` so it isn't read as an argument
+  n_placeholders="$(grep -o '%s' <<<"$fmt_line" | wc -l | tr -d ' ')"
+
+  header_line_no="$(grep -n '^| date | score | conf |' "$TOOL" | head -1 | cut -d: -f1)"
+  header_str="$(sed -n "${header_line_no}p" "$TOOL")"
+  n_header_cols="$(( $(grep -o '|' <<<"$header_str" | wc -l | tr -d ' ') - 1 ))"
+
+  if [ "$n_placeholders" -eq "$n_header_cols" ]; then
+    pass "row-printf's field count matches LEDGER_HEADER's column count ($n_header_cols)"
+  else
+    fail "row-printf's field count matches LEDGER_HEADER's column count" \
+      "printf has $n_placeholders %s placeholders, header has $n_header_cols columns"
+  fi
+
+  args=()
+  while IFS= read -r tok; do args+=("$tok"); done < <(grep -oE '"\$[A-Za-z_][A-Za-z0-9_]*"' <<<"$args_str" | tr -d '"$')
+
+  if [ "${#args[@]}" -eq "$n_placeholders" ]; then
+    pass "row-printf's argument count matches its own placeholder count (${#args[@]})"
+  else
+    fail "row-printf's argument count matches its own placeholder count" \
+      "printf has $n_placeholders %s placeholders but ${#args[@]} arguments follow"
+  fi
+
+  # _ledger_parse's comment gives 1-based table positions (column 1 is the empty cell before the
+  # first "|"); the printf's argument N fills table position N+1, so position P is args[P-2] (0-indexed).
+  # Parallel arrays, not `declare -A`, so this runs under bash 3.2 (macOS's default) too.
+  expect_pos=(2 3 4 5 6 9)
+  expect_var=(today score conf _n_guard _n_hold _n_miss)
+  for i in "${!expect_pos[@]}"; do
+    pos="${expect_pos[$i]}"
+    want="${expect_var[$i]}"
+    idx=$((pos - 2))
+    got="${args[$idx]:-}"
+    if [ "$got" = "$want" ]; then
+      pass "row-printf's field for _ledger_parse's column $pos (\$$want) lands where the reader expects"
+    else
+      fail "row-printf's field for _ledger_parse's column $pos (\$$want) lands where the reader expects" \
+        "found \$${got:-<missing>} at that position instead — _ledger_parse would misread this column"
+    fi
+  done
+fi
+
 summary
