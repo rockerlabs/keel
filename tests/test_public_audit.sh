@@ -6,6 +6,11 @@
 
 pa="$REPO_ROOT/tools/public-audit.sh"
 
+# Pin the personal-literals file to a nonexistent sandbox path by default, so a real
+# ~/.claude/secret-scan-personal on the dev machine can never leak into these tests.
+# Personal-literal tests below override this per-invocation with env.
+export SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-absent"
+
 # a repo with one commit authored+committed by $1
 repo_by() {
   local d; d="$(mktemp -d "$SANDBOX/pa.XXXXXX")"
@@ -42,6 +47,22 @@ printf 'internal codename ACME-X\n' > "$d/notes.txt"; commit_in "$d" notes
 run bash "$pa" --token 'ACME-X' "$d"
 check_status "token in tree → GAP" 1 "$STATUS"
 check_contains "names the token (tree)" "$OUT" "private token /ACME-X/ in tracked tree"
+
+# a declared token that STARTS WITH A DASH must still GAP, in tree/history/binary (regression: an
+# unquoted `-- `-less grep/git-grep call would parse a dash-leading pattern as an option instead of a
+# search term, and the swallowed error read as a false-clean)
+d="$(repo_by dev@example.com)"
+printf -- '-leaked-id-1234 is here\n' > "$d/dash.txt"; commit_in "$d" dash
+run bash "$pa" --no-history --token '-leaked-id-1234' "$d"
+check_status "dash-leading token in tree → GAP (not a silent false-clean)" 1 "$STATUS"
+check_contains "names the dash-leading token (tree)" "$OUT" "private token /-leaked-id-1234/ in tracked tree"
+
+d="$(repo_by dev@example.com)"
+{ utf16le "-leaked-id-1234 in a binary blob"; } > "$d/dash.bin"
+commit_in "$d" "add dash binary fixture"
+run bash "$pa" --token '-leaked-id-1234' "$d"
+check_status "dash-leading token in a binary blob → GAP" 1 "$STATUS"
+check_contains "names the dash-leading token (binary blob)" "$OUT" "private token /-leaked-id-1234/ in a binary blob"
 
 # a token scrubbed from the tree but alive in history → still GAP
 d="$(repo_by dev@example.com)"
@@ -196,6 +217,20 @@ git -C "$d" reset -q --hard HEAD~2                    # ...not in main / tree / 
 run bash "$pa" --token 'ACME-PR-TOKEN' "$d"
 check_status "token early in a LARGE PR-ref history → GAP exit 1 (S2, no SIGPIPE false-clean)" 1 "$STATUS"
 check_contains "flags the PR-ref token at scale" "$OUT" "private token /ACME-PR-TOKEN/ in a host PR ref"
+
+# a declared token that STARTS WITH A DASH, reachable only from a refs/pull ref, must still GAP (same
+# missing-`--` regression class as the tree/binary cases above, at the PR-ref token call site)
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q \
+  -m "$(printf 'fix\n\n-leaked-id-1234 is here')"
+git -C "$d" push -q origin HEAD:refs/pull/3/head
+git -C "$d" reset -q --hard HEAD~1
+run bash "$pa" --token '-leaked-id-1234' "$d"
+check_status "dash-leading token only in a refs/pull ref → GAP (not a silent false-clean)" 1 "$STATUS"
+check_contains "flags the dash-leading PR-ref token" "$OUT" "private token /-leaked-id-1234/ in a host PR ref"
 
 # a personal email in an ANNOTATED-TAG message body (which `git log -p` omits) → WARN
 d="$(repo_by dev@example.com)"
@@ -376,5 +411,87 @@ printf 'allow-path: vendor/*\n' > "$d/.public-audit"
 commit_in "$d" "add allow-path config"
 run bash "$pa" --no-history "$d"
 check_absent "allow-path excludes the vendored file from content scanning" "$OUT" "email in tracked content"
+
+# --- dir #145: personal literals (local secret-scan-personal), hunted as private tokens -----------
+pfile="$SANDBOX/pa-personal.rx"
+printf 'Jane[[:space:]]+Q[[:space:]]+Public\n' > "$pfile"
+
+# a personal literal in plain tracked text → GAP, case-insensitively
+d="$(repo_by dev@example.com)"
+printf 'author: jane q public\n' > "$d/notes.txt"; commit_in "$d" notes
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" --no-history "$d"
+check_status "personal literal in tracked text → GAP" 1 "$STATUS"
+check_contains "tree personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in tracked tree"
+
+# a personal literal scrubbed from the tree but alive in history → still GAP
+d="$(repo_by dev@example.com)"
+printf 'jane q public\n' > "$d/secret.txt"; commit_in "$d" add
+git -C "$d" rm -q secret.txt; commit_in "$d" remove
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal only in history → GAP" 1 "$STATUS"
+check_contains "history personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in git history"
+
+# a personal literal inside a UTF-16LE binary blob → GAP (invisible to log -p / log -G)
+d="$(repo_by dev@example.com)"
+{ utf16le "made by Jane Q Public"; } > "$d/fixture.bin"
+commit_in "$d" fixture
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal in a UTF-16LE binary blob → GAP" 1 "$STATUS"
+check_contains "personal binary hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
+
+# the personal-consumption note appears when the file exists — and the run is clean without hits
+d="$(repo_by dev@example.com)"
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal file + clean repo → exit 0" 0 "$STATUS"
+check_contains "notes that personal literals are hunted" "$OUT" "secret-scan-personal literals"
+
+# a personal-file line with an invalid ERE is a GAP (not silently dropped, not a script-aborting
+# failure) — that literal goes unscanned, which is a detection-accuracy failure, not a false-positive
+# risk like a bad allow-email entry (which stays a WARN). Whether `foo(bar` is "broken" depends on the
+# grep: GNU rejects it, busybox accepts it as a literal — gate on what THIS platform's grep actually
+# does, same discipline as the allow-email broken-regex test above.
+d="$(repo_by dev@example.com)"
+badfile="$SANDBOX/pa-personal-bad.rx"
+printf 'foo(bar\n' > "$badfile"
+run env SECRET_SCAN_PERSONAL_FILE="$badfile" bash "$pa" --no-history "$d"
+if [ -n "$(printf '' | grep -iE -- 'foo(bar' 2>&1 >/dev/null)" ]; then
+  check_status "invalid personal regex line → GAP exit 1, not a script-aborting failure" 1 "$STATUS"
+  check_contains "flags the invalid personal regex line" "$OUT" "invalid regex line"
+else
+  pass "personal-literal regex tolerated by this grep (busybox) → nothing to flag"
+fi
+
+# no personal file at all (the sandbox default) → no personal-literal hunting, no note
+d="$(repo_by dev@example.com)"
+run bash "$pa" --no-history "$d"
+check_absent "no personal file → no personal-literal note" "$OUT" "secret-scan-personal literals"
+
+# a personal literal reachable ONLY from a refs/pull/* text ref → GAP (same false-clean class as
+# declared tokens: git log --all doesn't see it)
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+git -C "$d" -c user.email=dev@example.com -c user.name=dev commit --allow-empty -q \
+  -m "$(printf 'fix\n\nauthor: jane q public')"
+git -C "$d" push -q origin HEAD:refs/pull/1/head     # leak lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                    # ...not in main / any local ref
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal only in a refs/pull ref → GAP exit 1" 1 "$STATUS"
+check_contains "PR-ref personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a host PR ref"
+check_contains "PR-ref personal GAP names the real fix (rewriting local history won't purge it)" "$OUT" "purge via delete-and-recreate"
+
+# a personal literal inside a binary blob reachable ONLY from a refs/pull/* ref → GAP
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"; git init -q --bare "$bare"
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$bare"
+git -C "$d" push -q origin HEAD:main
+{ utf16le "made by Jane Q Public"; } > "$d/pr-fixture.bin"
+commit_in "$d" "add pr binary fixture"
+git -C "$d" push -q origin HEAD:refs/pull/2/head     # binary leak lives only in the PR ref...
+git -C "$d" reset -q --hard HEAD~1                    # ...not in main / any local ref
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal in a binary blob only in a refs/pull ref → GAP exit 1" 1 "$STATUS"
+check_contains "PR-ref binary personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
 
 summary

@@ -3,8 +3,9 @@
 # instance-specific leakage before a private->public flip. The audit you run once, on demand — NOT a
 # per-commit hook (scanning full history every commit is the wrong altitude).
 #
-#   GAP  (fails, exit 1): a declared-private token, or a commit/tag identity email that isn't
-#        public-safe — high-confidence leaks that are painful to scrub after publishing.
+#   GAP  (fails, exit 1): a declared-private token, a personal literal from the local
+#        secret-scan-personal file, or a commit/tag identity email that isn't public-safe —
+#        high-confidence leaks that are painful to scrub after publishing.
 #   WARN (advisory):      heuristic hits — absolute home paths, other emails in content, Cyrillic —
 #        a human decides.
 #
@@ -14,6 +15,11 @@
 #   public-audit.sh --no-history ... tree only (skip the git-history scan)
 #   public-audit.sh --config FILE    use a specific config file
 #   public-audit.sh --quiet ...      print only GAP/WARN lines
+#
+# If the secret-guard's local personal file exists (~/.claude/secret-scan-personal, override with
+# $SECRET_SCAN_PERSONAL_FILE — one ERE per line, never committed), its literals are hunted as
+# case-insensitive private tokens in the tree, git history, and binary blobs: they are precisely
+# what must not ship when a repo goes public.
 #
 # Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) — per-blob cap for the binary decode pass;
 #      oversized blobs are skipped but SURFACED as un-audited.
@@ -46,6 +52,9 @@ Usage:
   public-audit.sh --config FILE    use a specific config file
   public-audit.sh --quiet          print only GAP/WARN lines
   public-audit.sh -h | --help
+
+If ~/.claude/secret-scan-personal exists (override with $SECRET_SCAN_PERSONAL_FILE), its literals
+are hunted as case-insensitive private tokens in the tree, git history, and binary blobs.
 
 Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) caps the binary-blob decode pass;
      oversized blobs are skipped but surfaced as un-audited.
@@ -97,6 +106,35 @@ if [ -f "$cfg" ]; then
   done < "$cfg"
 fi
 
+# Bad ERE? Detect by stderr, not exit code: a valid pattern on empty input exits 1 (no match) with no
+# stderr; a broken one prints an error. (busybox grep doesn't use exit 2 for a bad regex, so an
+# exit-code check would pass a broken regex through.) Shared by the allow-email and personal-literal
+# validation below — same idiom, only the case-sensitivity flag differs.
+valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pat" 2>&1 >/dev/null)" ]; }
+
+# Personal literals from the secret-guard's local file double as private tokens for this audit —
+# they are precisely what must not ship when a repo goes public. Case-INSENSITIVE (unlike tokens).
+# Invalid lines are counted and reported as a GAP, not just a WARN (without echoing them — the file's
+# whole point is that its content stays off any pasteable output): unlike a bad allow-email entry
+# (which fails open safely — worst case one extra false WARN), a bad personal-literal line means that
+# literal goes completely unscanned, which is a detection-accuracy failure this audit's own GAP bar
+# ("high-confidence leaks... painful to scrub after publishing") exists to catch, not just advise on.
+PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
+personal_re=""
+bad_personal=0
+if [ -f "$PERSONAL_FILE" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    line="$(printf '%s' "$line" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
+    case "$line" in ''|\#*) continue ;; esac
+    if valid_ere -iE "$line"; then
+      personal_re="${personal_re:+$personal_re|}$line"
+    else
+      bad_personal=$((bad_personal + 1))
+    fi
+  done < "$PERSONAL_FILE"
+fi
+
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
 # safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern
 # LIST; re-deriving the joiner would leave that half still duplicated by eyeball.
@@ -108,12 +146,11 @@ bad_allow_emails=()
 if [ "${#allow_emails[@]}" -gt 0 ]; then
   for e in "${allow_emails[@]}"; do
     [ -n "$e" ] || continue
-    # Bad ERE? Detect by stderr, not exit code: a valid pattern on empty input exits 1 (no match) with
-    # no stderr; a broken one prints an error. (busybox grep doesn't use exit 2 for a bad regex, so the
-    # old `[ $? -lt 2 ]` check passed broken regexes through there.)
-    gerr="$(printf '' | grep -E -- "$e" 2>&1 >/dev/null)"
-    [ -z "$gerr" ] || { bad_allow_emails+=("$e"); continue; }
-    safe_re="${safe_re:+$safe_re|}$e"
+    if valid_ere -E "$e"; then
+      safe_re="${safe_re:+$safe_re|}$e"
+    else
+      bad_allow_emails+=("$e")
+    fi
   done
 fi
 
@@ -155,15 +192,15 @@ trap 'exit 143' TERM
 # renders a binary change as "Binary files … differ" — so personal data encoded in a binary blob (the
 # felt leak class: a real name UTF-16-encoded inside a fixture) passes every text check above. This
 # decodes each binary blob reachable from the given revs (NUL-strip + iconv UTF-16/UTF-32 LE/BE when
-# available + raw-printable) and re-runs the same regex set: declared tokens = GAP, heuristics = WARN — one
-# example per category per pass, like the text sections. KEEL_AUDIT_BLOB_MAX (bytes, default 10MB)
+# available + raw-printable) and re-runs the same regex set: declared tokens + personal literals =
+# GAP, heuristics = WARN — one example per category per pass, like the text sections. KEEL_AUDIT_BLOB_MAX (bytes, default 10MB)
 # bounds the per-blob cost; oversized blobs are counted and SURFACED, never silently trusted.
 scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g. --all)
   local label="$1"; shift
   local max="${KEEL_AUDIT_BLOB_MAX:-10485760}"
   case "$max" in ''|*[!0-9]*) max=10485760 ;; esac
   local tmp="$audit_tmp/blob" dec="$audit_tmp/blob.dec"
-  local otype osha osize opath h t skipped=0 reported_toks=""
+  local otype osha osize opath h t skipped=0 reported_toks="" reported_personal=""
   local hit_home="" hit_email="" hit_cyr=""
   # A failed mktemp (full/unwritable TMPDIR) must not silently no-op the whole pass — the tool's job
   # is never to trust unscanned content. Surface it and bail.
@@ -193,11 +230,18 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
       for t in "${tokens[@]}"; do
         [ -z "$t" ] && continue
         case "$reported_toks" in *"|$t|"*) continue ;; esac       # one GAP per token per pass
-        if [ -n "$(grep -aE "$t" "$dec" 2>/dev/null | head -n1 || true)" ]; then
+        if [ -n "$(grep -aE -- "$t" "$dec" 2>/dev/null | head -n1 || true)" ]; then
           gap "private token /$t/ in a binary blob in $label — ${opath:-$osha}"
           reported_toks="$reported_toks|$t|"
         fi
       done
+    fi
+    if [ -n "$personal_re" ] && [ -z "$reported_personal" ]; then
+      h="$(grep -aoiE -- "$personal_re" "$dec" 2>/dev/null | head -1 || true)"
+      if [ -n "$h" ]; then
+        gap "personal literal (secret-scan-personal) in a binary blob in $label — ${opath:-$osha}: $h"
+        reported_personal=1
+      fi
     fi
     if [ -z "$hit_home" ]; then
       h="$(grep -aoE "$HOME_RE" "$dec" 2>/dev/null | head -1 || true)"
@@ -229,9 +273,11 @@ say "● public-audit ($DIR)"
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
+[ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
+[ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
 
 # helper: first matching line of a tracked-tree grep, or empty
-tree_grep() { git -C "$DIR" grep -nIE "$1" -- . "${excludes[@]}" 2>/dev/null; }
+tree_grep() { git -C "$DIR" grep -nIE -- "$1" -- . "${excludes[@]}" 2>/dev/null; }
 
 # --- 1. identities in git history (GAP) ----------------------------------------------------------
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
@@ -264,6 +310,12 @@ if [ "${#tokens[@]}" -gt 0 ]; then
       [ -n "$c$m" ] && gap "private token /$t/ in git history — e.g. ${c:-$m}"
     fi
   done
+fi
+
+# --- 2b. personal literals (local secret-scan-personal), in tree text (GAP) ----------------------
+if [ -n "$personal_re" ]; then
+  hit="$(git -C "$DIR" grep -inIE -- "$personal_re" -- . "${excludes[@]}" 2>/dev/null | head -1 || true)"
+  [ -n "$hit" ] && gap "personal literal (secret-scan-personal) in tracked tree — e.g. $hit"
 fi
 
 # --- 3. heuristic content scans (WARN) -----------------------------------------------------------
@@ -314,6 +366,12 @@ if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   [ -n "$h" ] && warn "Cyrillic text in git history — e.g. $h"
 fi
 
+# --- 5a. personal literals (local secret-scan-personal), in git history text (GAP) ----------------
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ] && [ -n "$personal_re" ]; then
+  h="$(printf '%s\n' "$hist" | grep -aniE -- "$personal_re" | head -1 || true)"
+  [ -n "$h" ] && gap "personal literal (secret-scan-personal) in git history — e.g. $h"
+fi
+
 # --- 5b. binary blobs — the decoded scan of what sections 3/5 cannot see (tree + history) ---------
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
   scan_binary_blobs "git history" --all
@@ -356,10 +414,14 @@ EOF
         # Capture-then-test, not `grep -qE … && gap`: with a token that matches EARLY in a large
         # pr_hist, `printf | grep -q` SIGPIPEs printf, and `pipefail` makes the pipeline 141 — so the
         # `&& gap` never fires and a real leak passes clean. The captured hit can't be lost to SIGPIPE.
-        if [ -n "$(printf '%s\n' "$pr_hist" | grep -E "$t" | head -n1 || true)" ]; then
+        if [ -n "$(printf '%s\n' "$pr_hist" | grep -E -- "$t" | head -n1 || true)" ]; then
           gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
         fi
       done
+    fi
+    if [ -n "$personal_re" ]; then
+      ph="$(printf '%s\n' "$pr_hist" | grep -aniE -- "$personal_re" | head -1 || true)"
+      [ -n "$ph" ] && gap "personal literal (secret-scan-personal) in a host PR ref (refs/pull/*) — e.g. $ph — purge via delete-and-recreate"
     fi
     # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
     ph="$(printf '%s\n' "$pr_hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"

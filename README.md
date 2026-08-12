@@ -173,8 +173,9 @@ tools/install-secret-guard.sh --global   # every repo on this machine, from now 
   leak shipped in practice: test fixtures generated from a real device carried their owner's name, and a
   plain-text scan couldn't see it.
 - **public-audit** (`tools/public-audit.sh <repo>`) scans a repo's files **and its git history** for
-  personal and secret leaks before you flip it public — commit/tag identities, declared tokens, emails,
-  home paths.
+  personal and secret leaks before you flip it public — commit/tag identities, declared tokens, the
+  same local personal-literals file secret-guard uses, emails, home paths — including inside binary
+  blobs.
 
 ![Real sandboxed run: secret-guard blocks an API key on commit, then the owner's own name hidden inside a UTF-16 binary fixture](docs/demo.gif)
 

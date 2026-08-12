@@ -9,6 +9,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **A test-coverage ratchet in `tools/self/doctor.sh`** (dir #142). Its "tool wiring" check now maps
+  every shipped `tools/*.sh` script (already crossing subdirectories, so `tools/secret-guard/*.sh`
+  and `tools/lib/*.sh` were already in scope) plus the installed `keel` CLI against `tests/test_*.sh`
+  coverage; a script with zero coverage is now a hard GAP unless it is listed, by name, in the new
+  `tools/self/legacy-untested.txt` (soft, visible debt — currently empty). Why: v0.6.0's coverage was
+  carried reactively by review pressure (dir #100–#103 were exactly "no coverage at all" findings);
+  this turns "an element without a contract shouldn't be in the project" into a standing, mechanized
+  check instead of something only a review catches. Investigated real branch-coverage tooling (kcov)
+  for a tier-2 follow-up and closed it as not worth it — kcov is Linux/ptrace-only and doesn't run on
+  macOS or reliably under Alpine/musl, so it could only ever cover one of this project's three CI
+  legs; the decision and its reasoning are recorded in `BACKLOG.md`'s dir #142.
 - **`docs/release-audit.md`: the v0.6.0 campaign's release-readiness process, written down as a
   repeatable seven-phase flow** (dir #140). Module audit sweeps, synthesis-time dedupe with an
   up-front blocker-vs-tail ranking, batching by file-affinity, a model tier per batch, a review-round
@@ -42,6 +53,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     directional check alone would). Degrades to a silent skip on a shallow clone, where the tags
     this check needs aren't present even though the working tree is fine; the `self-check` CI job
     now fetches full history so the check actually runs there.
+- **`public-audit.sh` now hunts the secret-guard's local personal-literals file, not just declared
+  `--token`s** (dir #145). Re-derived from a 2026-07-07 branch that stranded before the tool's binary-blob
+  scanning (dir #101) landed independently — its own value was the missing piece: a real name in the
+  local `~/.claude/secret-scan-personal` file (override with `$SECRET_SCAN_PERSONAL_FILE`) is now hunted
+  case-insensitively in the tracked tree, git history, and binary blobs, the same three surfaces
+  declared tokens already cover. A bad regex line in the personal file is a GAP, not a silent drop — the
+  literal it would have hunted goes unscanned, and unlike a bad `allow-email` entry (which fails open
+  safely) that's a detection-accuracy failure this audit's own bar exists to catch.
 
 ### Fixed
 - **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose

@@ -257,14 +257,46 @@ run "$sd" "$d" --quiet
 check_status "bare occurrence alongside a nested one still -> exit 1" 1 "$STATUS"
 check_contains "still catches the bare occurrence" "$OUT" "dead reference '$fake_nested'"
 
-# --- 3. orphan tool + no test coverage -> WARN only (not GAP) --------------------------------------
+# --- 3. orphan tool -> WARN (advisory); a NEW script with zero test coverage -> hard GAP -----------
+# (the coverage ratchet, dir #142 — a mutation test on the class dir #100 was found only reactively:
+# a script planted with no test coverage at all must fail the self-check, not merely warn about it.)
 d="$(mk_clean_repo)"
 printf '#!/usr/bin/env bash\necho orphan\n' > "$d/$fake_orphan"
 ( cd "$d" && git add -A && git commit -qm "orphan tool" )
 run "$sd" "$d" --quiet
-check_status "orphan tool is advisory only -> exit 0" 0 "$STATUS"
-check_contains "flags the orphan tool" "$OUT" "orphan tool: no reference to $fake_orphan"
-check_contains "flags missing test coverage" "$OUT" "no test coverage: $fake_orphan"
+check_status "an untested new tool trips the coverage ratchet -> exit 1" 1 "$STATUS"
+check_contains "still flags the orphan tool (that half stays advisory)" "$OUT" "orphan tool: no reference to $fake_orphan"
+check_contains "flags the ratchet GAP for zero test coverage" "$OUT" "ratchet (dir #142): $fake_orphan"
+
+# the same script, but LISTED in tools/self/legacy-untested.txt -> the soft-debt half of the ratchet:
+# WARN, not a hard GAP.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho legacy\n' > "$d/$fake_orphan"
+mkdir -p "$d/tools/self"
+printf '# pre-existing debt\n%s\n' "$fake_orphan" > "$d/tools/self/legacy-untested.txt"
+( cd "$d" && git add -A && git commit -qm "listed legacy-debt tool" )
+run "$sd" "$d" --quiet
+check_status "a listed legacy-debt tool is advisory only -> exit 0" 0 "$STATUS"
+check_contains "flags it as listed debt" "$OUT" "listed debt (dir #142, tools/self/legacy-untested.txt): $fake_orphan"
+check_absent "not also raised as a fresh ratchet GAP" "$OUT" "ratchet (dir #142): $fake_orphan"
+
+# the installed `keel` CLI (install.sh's own make_link target) is part of the ratchet's inventory too
+# per dir #142's definition ("what install.sh itself installs" plus tools/*.sh) — not just the
+# tools/*.sh glob.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho keel\n' > "$d/keel"
+( cd "$d" && git add -A && git commit -qm "keel cli, untested" )
+run "$sd" "$d" --quiet
+check_status "an untested keel CLI trips the ratchet too -> exit 1" 1 "$STATUS"
+check_contains "flags the ratchet GAP for keel" "$OUT" "ratchet (dir #142): keel"
+
+# an UNTRACKED file named 'keel' (e.g. a stray local build artifact) must not be swept into the
+# inventory — only a tracked keel is a real shipped executable.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho untracked\n' > "$d/keel"
+run "$sd" "$d" --quiet
+check_status "an untracked keel file is not audited -> exit 0" 0 "$STATUS"
+check_absent "no ratchet GAP for an untracked keel" "$OUT" "ratchet (dir #142): keel"
 
 # a tool in a SUBDIRECTORY (e.g. the real tools/secret-guard/secret-scan.sh) must still be found
 # and audited — a plain bash glob doesn't cross '/' and would silently skip it entirely.
@@ -287,7 +319,8 @@ printf 'jobs:\n  x:\n    run: %s\n' "$fake_ci_tool" > "$d/.github/workflows/ci.y
 ( cd "$d" && git add -A && git commit -qm "ci-only tool" )
 run "$sd" "$d" --quiet
 check_absent "a CI-only-referenced tool is not flagged orphan" "$OUT" "orphan tool: no reference to $fake_ci_tool"
-check_contains "still flags it as untested (CI reference isn't test coverage)" "$OUT" "no test coverage: $fake_ci_tool"
+check_status "a CI reference isn't test coverage -- the ratchet still GAPs it -> exit 1" 1 "$STATUS"
+check_contains "flags the ratchet GAP" "$OUT" "ratchet (dir #142): $fake_ci_tool"
 
 # --- 4. CHANGELOG staleness -> WARN only ------------------------------------------------------------
 d="$(mk_clean_repo)"
