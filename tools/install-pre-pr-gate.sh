@@ -363,11 +363,10 @@ reduce $specs[] as $s (.;
     for m in "$gate_home_resolved"/.keel/install-manifest.*; do
       [ -e "$m" ] && manifests_left=1
     done
-    ledger="${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}"
-    if [ "$manifests_left" = 0 ] && [ -f "$ledger" ]; then
-      ledger_tmp="$ledger.keeltmp.$$"
-      grep -vxF "$gate_home_resolved" "$ledger" > "$ledger_tmp" 2>/dev/null || : > "$ledger_tmp"
-      mv -f "$ledger_tmp" "$ledger"
+    if [ "$manifests_left" = 0 ]; then
+      # shellcheck source=tools/lib/ledger.sh
+      . "$here/lib/ledger.sh"
+      ledger_remove "${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}" "$gate_home_resolved"
     fi
   fi
 

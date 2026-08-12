@@ -98,6 +98,13 @@ home_canon="$(cd "$HOME_DIR" 2>/dev/null && pwd || printf '%s' "$HOME_DIR")"
 # has_keel_rails below). `|| true`: an existing-but-unreadable manifest must degrade to absent, never
 # abort this script under set -euo pipefail.
 manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true; }
+# manifest_recorded_home/mode FILE DEFAULT — the manifest's own recorded home=/mode=, falling back to
+# DEFAULT when the field is empty (a well-formed-but-sparse manifest, in practice never hit against a
+# real install.sh write, but the same "don't trust a possibly-missing field" posture manifest_field's
+# own `|| true` takes). Two call sites share this shape: other_mode_hint (per ledger entry) and the
+# mismatch refusal below (this run's own $other_manifest).
+manifest_recorded_home() { local v; v="$(manifest_field "$1" home)"; [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"; }
+manifest_recorded_mode() { local v; v="$(manifest_field "$1" mode)"; [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"; }
 # manifest_usable FILE — the versioning contract: present, readable, AND a keel_manifest_version this
 # script knows how to read. Anything else (absent, corrupt, a future major version) is ABSENT — the
 # KEEL-LEGACY-NOMANIFEST fallback fires, never a crash.
@@ -105,6 +112,12 @@ manifest_usable() {
   [ -f "$1" ] || return 1
   [ "$(manifest_field "$1" keel_manifest_version)" = "1" ]
 }
+# this_usable/other_usable — manifest_usable "$this_manifest"/"$other_manifest" computed ONCE: both
+# files are fixed for the whole run (only $HOME_DIR's ledger-loop candidates in other_mode_hint vary,
+# so that call site still calls manifest_usable directly, per home). Everything below that asks
+# "is THIS/THE OTHER mode's manifest here usable" reads these instead of re-deriving the same answer.
+this_usable=0;  manifest_usable "$this_manifest"  && this_usable=1
+other_usable=0; manifest_usable "$other_manifest" && other_usable=1
 # artifact_cksum FILE — mirror of install.sh's own (must stay byte-identical: its output is compared
 # against what install.sh itself recorded, not re-derived independently).
 artifact_cksum() {
@@ -117,7 +130,7 @@ artifact_cksum() {
 # is "does the other install still need this file to exist", not "do the two installs agree on its
 # bytes" (they always do for a genuinely shared file: both wrote it from the same checkout).
 artifact_shared_with_other() {
-  manifest_usable "$other_manifest" || return 1
+  [ "$other_usable" = 1 ] || return 1
   awk -F'\t' -v rel="$1" '$1 ~ /^artifact=/ && $2 == rel { found=1 } END { exit !found }' "$other_manifest"
 }
 
@@ -198,8 +211,8 @@ other_mode_hint() {
       [ -n "$h" ] && [ "$h" != "$home_canon" ] || continue
       om="$h/.keel/install-manifest.$other_manifest_mode"
       manifest_usable "$om" || continue
-      rh="$(manifest_field "$om" home)"; [ -n "$rh" ] || rh="$h"
-      rm="$(manifest_field "$om" mode)"; [ -n "$rm" ] || rm="$other_manifest_mode"
+      rh="$(manifest_recorded_home "$om" "$h")"
+      rm="$(manifest_recorded_mode "$om" "$other_manifest_mode")"
       echo "  • A Keel install ($rm mode) is still in place at $rh — this run did not touch it."
       echo "    Remove it too:  $other_cmd --home \"$rh\""
       hinted=1
@@ -255,17 +268,15 @@ fi
 # dir #124's coherent both-modes home) — the removal loop below leans on cross-manifest refcount to
 # keep the shared half instead of a bare refusal. Only when NEITHER mode has ever recorded a manifest
 # here does this fall to the KEEL-LEGACY-NOMANIFEST block: today's context-file heuristic, unchanged.
-if manifest_usable "$other_manifest" && ! manifest_usable "$this_manifest"; then
-  other_home_recorded="$(manifest_field "$other_manifest" home)"
-  other_mode_recorded="$(manifest_field "$other_manifest" mode)"
-  [ -n "$other_home_recorded" ] || other_home_recorded="$HOME_DIR"
-  [ -n "$other_mode_recorded" ] || other_mode_recorded="$other_manifest_mode"
+if [ "$other_usable" = 1 ] && [ "$this_usable" = 0 ]; then
+  other_home_recorded="$(manifest_recorded_home "$other_manifest" "$HOME_DIR")"
+  other_mode_recorded="$(manifest_recorded_mode "$other_manifest" "$other_manifest_mode")"
   echo "uninstall: $HOME_DIR holds a Keel install, but its recorded manifest is $other_mode_recorded mode, not $manifest_mode." >&2
   echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
   echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave the $other_mode_recorded rails sitting there." >&2
   echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$other_home_recorded\"" >&2
   exit 2
-elif ! manifest_usable "$this_manifest" && ! manifest_usable "$other_manifest"; then
+elif [ "$this_usable" = 0 ] && [ "$other_usable" = 0 ]; then
   # KEEL-LEGACY-NOMANIFEST: neither mode has ever recorded a manifest at this home.
   if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && home_has_keel_content "$HOME_DIR"; then
     echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has $other_context instead." >&2
@@ -330,7 +341,7 @@ take() {
 # Cross-manifest refcount (dir #124's structural closure): an artifact ALSO listed in the OTHER mode's
 # manifest at this same home is shared — kept and named, never silently stripped from under a rail the
 # other install still loads.
-if manifest_usable "$this_manifest"; then
+if [ "$this_usable" = 1 ]; then
   while IFS=$'\t' read -r akind rel extra; do
     [ -n "$rel" ] || continue
     apath="$HOME_DIR/$rel"
@@ -452,11 +463,9 @@ if [ "$DRY_RUN" = 0 ]; then
     [ -e "$m" ] && manifests_left=1
   done
   if [ "$manifests_left" = 0 ]; then
-    if [ -f "$ledger_file" ]; then
-      ledger_tmp="$ledger_file.keeltmp.$$"
-      grep -vxF "$home_canon" "$ledger_file" > "$ledger_tmp" 2>/dev/null || : > "$ledger_tmp"
-      mv -f "$ledger_tmp" "$ledger_file"
-    fi
+    # shellcheck source=tools/lib/ledger.sh
+    . "$root/tools/lib/ledger.sh"
+    ledger_remove "$ledger_file" "$home_canon"
     rmdir "$HOME_DIR/.keel" 2>/dev/null || true
   fi
 fi
