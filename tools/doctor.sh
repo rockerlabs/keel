@@ -652,6 +652,43 @@ if [ "$INSTALL_MODE" = 1 ]; then
     fi
   fi
 
+  # Install manifest (dir #125): read-only in this PR — uninstall doesn't consume it yet, so both
+  # findings are advisory. A missing manifest just means the legacy heuristics above are still doing
+  # the work (KEEL-LEGACY-NOMANIFEST); a present-but-corrupt/unversioned one degrades to the same
+  # thing (the versioning contract: an unknown/unparsable manifest is treated as absent, never a
+  # crash). A present, well-formed manifest that CONTRADICTS the filesystem names both sides rather
+  # than trusting either — install.sh's own $manifest_mode/$manifest_layout naming, mirrored here.
+  imanifest_mode="claude"; [ "$CODEX_MODE" = 1 ] && imanifest_mode="codex"
+  imanifest="$ihome/.keel/install-manifest.$imanifest_mode"
+  if [ ! -f "$imanifest" ]; then
+    warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — uninstall/doctor fall back to today's heuristics (KEEL-LEGACY-NOMANIFEST); record one: install.sh$imode_flag$ihome_flag"
+  else
+    iman_version="$(sed -n 's/^keel_manifest_version=//p' "$imanifest" 2>/dev/null | head -n1)"
+    if [ "$iman_version" != "1" ]; then
+      warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest (KEEL-LEGACY-NOMANIFEST); re-run install.sh$imode_flag$ihome_flag to record a fresh one"
+    else
+      iman_layout="$(sed -n 's/^layout=//p' "$imanifest" 2>/dev/null | head -n1)"
+      iman_home="$(sed -n 's/^home=//p' "$imanifest" 2>/dev/null | head -n1)"
+      iman_drift=""
+      case "$iman_layout" in
+        link)
+          if [ -e "$ihome/keel/CORE.md" ] && [ ! -L "$ihome/keel/CORE.md" ]; then
+            iman_drift="manifest says layout=link but $ihome/keel/CORE.md is a regular file, not a symlink"
+          fi ;;
+        link-nogit)
+          if [ -L "$ihome/keel/CORE.md" ]; then
+            iman_drift="manifest says layout=link-nogit but $ihome/keel/CORE.md is a symlink (the --no-git trim looks restored)"
+          fi ;;
+      esac
+      if [ -z "$iman_drift" ] && [ -n "$iman_home" ] && [ "$iman_home" != "$ihome" ]; then
+        iman_drift="manifest recorded home=$iman_home, but this audit is auditing $ihome"
+      fi
+      if [ -n "$iman_drift" ]; then
+        warn W-MANIFEST-DRIFT "$iman_drift — re-run install.sh$imode_flag$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
+      fi
+    fi
+  fi
+
   # dir #68 pairing check: /polish ships unconditionally now, but its gate is a separate, opt-in step
   # (a hook changes what a session can do without asking each time, so install.sh never auto-wires it) —
   # flag the shipped-but-inert state instead of letting an adopter discover it only when gh pr create

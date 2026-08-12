@@ -78,7 +78,14 @@ EPHEMERAL="${KEEL_EPHEMERAL:-0}"   # env, not a flag: an internal bootstrap→in
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --home) shift; HOME_DIR="${1:?--home needs a DIR}" ;;
+    --home)
+      shift
+      # A leading dash is a swallowed flag, not a path — refuse before any write, same guard
+      # install-pre-pr-gate.sh's own --home already carries (dir #125 test A5).
+      case "${1:-}" in
+        -*) echo "install: --home needs a DIR, got the flag '${1:-}'" >&2; exit 2 ;;
+      esac
+      HOME_DIR="${1:?--home needs a DIR}" ;;
     --no-hooks) DO_HOOKS=0 ;;
     --link) LINK=1 ;;
     --no-git) NOGIT=1 ;;
@@ -182,12 +189,40 @@ make_link() {
   ln -s "$1" "$2.keeltmp.$$" && mv -f "$2.keeltmp.$$" "$2"
 }
 
+# manifest_artifacts — every Keel-owned artifact CONFIRMED in place this run (dir #125), one
+# "REL<TAB>KIND<TAB>EXTRA" element per record_artifact call below. Merged over the prior manifest's
+# own records near the end of the script (state, not action: an artifact this run left untouched —
+# up to date, or a declined drift prompt — must still appear, with its PRIOR recorded extra, not a
+# blind re-derive from possibly-user-edited disk bytes). Only sites that CONFIRM Keel content is
+# correctly at dest call this — a "left untouched, differs, kept as yours" branch never does, so a
+# foreign/edited file is never claimed as ours.
+manifest_artifacts=()
+record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
+# artifact_cksum FILE — "cksum:<sum>:<size>", POSIX cksum's first two fields (portable across
+# coreutils/busybox — both are POSIX cksum implementations; the filename field is dropped since a
+# home-relative path is already the record's own key).
+artifact_cksum() {
+  local sum size
+  read -r sum size _ < <(cksum "$1" 2>/dev/null) || { printf 'cksum:0:0'; return; }
+  printf 'cksum:%s:%s' "$sum" "$size"
+}
+# record_placed DEST — DEST is confirmed Keel content as of right now; classify symlink vs file and
+# record it relative to $HOME_DIR. The one call every write/up-to-date site below routes through.
+record_placed() {
+  local dest="$1" rel
+  rel="${dest#"$HOME_DIR"/}"
+  if [ -L "$dest" ]; then record_artifact "$rel" symlink -
+  elif [ -f "$dest" ]; then record_artifact "$rel" file "$(artifact_cksum "$dest")"
+  fi
+}
+
 # place / in_sync / FIX — the one seam between copy mode and linked mode: how Keel-owned content
 # lands at dest, when dest already matches the shipped source, and the one-liner we print for
 # fixing drift by hand. Everything else (never-clobber, collision aliases, tty/non-tty behavior)
 # is shared, so the two modes can't drift apart in semantics.
 place() {
   if [ "$LINK" = 1 ]; then make_link "$1" "$2"; else atomic_copy "$1" "$2"; fi
+  record_placed "$2"
 }
 in_sync() {
   if [ "$LINK" = 1 ]; then
@@ -325,6 +360,7 @@ sync_product() {
     sync_product "$src" "$alias_dest"
   elif in_sync "$src" "$dest"; then
     echo "  =    $name (up to date)"
+    record_placed "$dest"
   elif [ ! -f "$dest" ]; then
     # absent — or a dangling symlink (a moved/reaped checkout): place() replaces it atomically either way.
     place "$src" "$dest"
@@ -424,9 +460,11 @@ if [ "$LINK" = 1 ]; then
     trimmed="$(strip_git_blocks "$root/CORE.md")"
     if [ ! -L "$core_dest" ] && [ -f "$core_dest" ] && [ "$trimmed" = "$(cat "$core_dest")" ]; then
       echo "  =    CORE.md (up to date — trimmed --no-git copy)"
+      record_placed "$core_dest"
     else
       if [ -L "$core_dest" ]; then was_link=1; else was_link=0; fi
       printf '%s\n' "$trimmed" | atomic_write "$core_dest"
+      record_placed "$core_dest"
       if [ "$was_link" = 1 ]; then
         echo "  ^    CORE.md — linked full rails replaced by a trimmed copy (--no-git: code/git rails removed)"
       else
@@ -436,6 +474,7 @@ if [ "$LINK" = 1 ]; then
   elif [ -f "$core_dest" ] && [ ! -L "$core_dest" ] && grep -q 'KEEL-NOGIT' "$core_dest" 2>/dev/null; then
     # --with-git: the generated trimmed copy goes back to the canonical symlink (full rails restored).
     make_link "$root/CORE.md" "$core_dest"
+    record_placed "$core_dest"
     echo "  ^    CORE.md — trimmed --no-git copy replaced by the full linked rails (git rails restored)"
   else
     sync_product "$root/CORE.md"     "$core_dest"
@@ -463,6 +502,7 @@ To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUD
 \`commands/\` symlinks (one level up) into the checkout. Health check: \`tools/doctor.sh --install$doctor_arg\`
 (run from the checkout).
 EOF
+    record_placed "$link_dir/README.md"
     echo "  +    keel/README.md"
   fi
 
@@ -605,8 +645,10 @@ elif [ -f "$root/keel" ]; then
   if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
     if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
       echo "  =    bin/keel already wired"
+      record_placed "$keel_link"
     else
       make_link "$root/keel" "$keel_link"
+      record_placed "$keel_link"
       echo "  +    bin/keel → $root/keel  (run 'keel help')"
     fi
   else
@@ -755,6 +797,95 @@ if [ "$foreign_core" = 1 ]; then
 fi
 
 [ "$missing" = 0 ] || { echo "install: verification FAILED — core file(s) missing" >&2; exit 1; }
+
+# 4. Install manifest (dir #125) — records what THIS install owns, so uninstall/doctor read ONE
+# recorded state instead of re-deriving it heuristically at every site. `artifact=` lines are
+# TAB-separated with no empty middle field (the IFS=$'\t' read collapse trap). A manifest-less home
+# still works — every consumer keeps a KEEL-LEGACY-NOMANIFEST fallback (removed at 0.7).
+manifest_mode="claude"
+[ "$CODEX" = 1 ] && manifest_mode="codex"
+manifest_layout="copy"
+[ "$LINK" = 1 ] && manifest_layout="link"
+[ "$LINK" = 1 ] && [ "$NOGIT" = 1 ] && manifest_layout="link-nogit"
+manifest_dir="$HOME_DIR/.keel"
+manifest_file="$manifest_dir/install-manifest.$manifest_mode"
+home_resolved="$(cd "$HOME_DIR" && pwd)"
+keel_version="$(git -C "$root" describe --tags 2>/dev/null || echo unknown)"
+installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# context_created / the rails "edit" artifact — re-derived from the FINAL context-file state rather
+# than threaded through every wrapper/migration branch above: there's no cksum-precision to lose here
+# (extra is a fixed "import-line"/"core-block" tag, not a byte fingerprint), so re-inspecting the
+# result is just as correct and far simpler. `foreign_core=1` → context_created=0, no edit artifact.
+context_created=0
+edit_kind="" edit_extra=""
+if [ "$foreign_core" != 1 ]; then
+  if [ "$LINK" = 1 ]; then
+    if has_core_import "$gclaude" 2>/dev/null; then
+      context_created=1; edit_kind=edit; edit_extra=import-line
+    fi
+  elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+    context_created=1; edit_kind=edit; edit_extra=core-block
+  fi
+fi
+
+# Merge this run's confirmed placements over the prior manifest's own artifact records (state, not
+# action): a re-run whose files are all `=` or whose drift prompt was declined must still list every
+# Keel-owned artifact currently in place — the prior record wins unless THIS run confirmed a fresh
+# one, and any record whose file is gone from disk is dropped. (Old-manifest lines re-shaped from
+# `artifact=<kind>\t<rel>\t<extra>` to `<rel>\t<kind>\t<extra>` to match record_artifact's own order;
+# awk's `a[$1]=$0` keeps the LAST line per key, so the appended this-run records win on conflict.)
+mkdir -p "$manifest_dir"
+merge_tmp="$manifest_dir/.artifacts.$$"
+{
+  if [ -f "$manifest_file" ]; then
+    # edit-kind lines are excluded here — they're re-derived fresh above and printed separately
+    # below, never carried forward, or a stale prior-manifest copy would duplicate the fresh one.
+    awk -F'\t' '/^artifact=/ { k = $1; sub(/^artifact=/, "", k); if (k != "edit") print $2"\t"k"\t"$3 }' "$manifest_file"
+  fi
+  if [ "${#manifest_artifacts[@]}" -gt 0 ]; then
+    printf '%s\n' "${manifest_artifacts[@]}"
+  fi
+} | awk -F'\t' '{a[$1] = $0} END {for (k in a) print a[k]}' | sort > "$merge_tmp"
+
+manifest_artifact_lines=()
+while IFS=$'\t' read -r rel kind extra; do
+  [ -n "$rel" ] || continue
+  if [ -e "$HOME_DIR/$rel" ] || [ -L "$HOME_DIR/$rel" ]; then
+    manifest_artifact_lines+=("artifact=$kind	$rel	$extra")
+  fi
+done < "$merge_tmp"
+rm -f "$merge_tmp"
+
+{
+  echo "keel_manifest_version=1"
+  echo "mode=$manifest_mode"
+  echo "layout=$manifest_layout"
+  echo "home=$home_resolved"
+  echo "context_file=$CONTEXT_FILE"
+  echo "context_created=$context_created"
+  echo "checkout=$root"
+  echo "ephemeral=$EPHEMERAL"
+  echo "keel_version=$keel_version"
+  echo "installed_at=$installed_at"
+  [ -n "$edit_kind" ] && printf 'artifact=%s\t%s\t%s\n' "$edit_kind" "$CONTEXT_FILE" "$edit_extra"
+  if [ "${#manifest_artifact_lines[@]}" -gt 0 ]; then
+    printf '%s\n' "${manifest_artifact_lines[@]}"
+  fi
+} | atomic_write "$manifest_file"
+echo "  +    install manifest ($manifest_file)"
+
+# Checkout-side ledger — the discovery index consumers use to find every recorded home from the
+# checkout side; deduped on append. Skipped when EPHEMERAL: the checkout is a temp clone about to be
+# reaped, so a ledger entry pointing back at it would be pointing at nothing.
+if [ "$EPHEMERAL" != 1 ]; then
+  ledger_dir="$root/.keel"
+  ledger="$ledger_dir/installed-homes"
+  mkdir -p "$ledger_dir"
+  if [ ! -f "$ledger" ] || ! grep -qxF "$home_resolved" "$ledger" 2>/dev/null; then
+    printf '%s\n' "$home_resolved" >> "$ledger"
+  fi
+fi
 
 # Shared opening — the mode-specific middle differs below (clone handling, update, removal).
 # The guard sentence must match reality: after --no-hooks, a refused foreign hooksPath, or a wiring

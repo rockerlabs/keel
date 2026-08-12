@@ -348,6 +348,29 @@ reduce $specs[] as $s (.;
   done <<<"$statuses"
 
   echo "install-pre-pr-gate: $n_removed of 6 hook(s) removed from $settings"
+
+  # Gate manifest (dir #125) — global/home scope only (project scope writes none). Removed when
+  # hooks were actually removed; the checkout-side ledger entry is pruned when no install-manifest.*
+  # remains at this home (install.sh's own claude/codex manifests may still be there).
+  if [ -n "$scope_flag" ]; then
+    gate_home_resolved="$(cd "$settings_dir" && pwd)"
+    gate_manifest_file="$gate_home_resolved/.keel/install-manifest.gate"
+    if [ -f "$gate_manifest_file" ]; then
+      rm -f "$gate_manifest_file"
+      echo "install-pre-pr-gate: gate manifest removed ($gate_manifest_file)"
+    fi
+    manifests_left=0
+    for m in "$gate_home_resolved"/.keel/install-manifest.*; do
+      [ -e "$m" ] && manifests_left=1
+    done
+    ledger="$repo_root/.keel/installed-homes"
+    if [ "$manifests_left" = 0 ] && [ -f "$ledger" ]; then
+      ledger_tmp="$ledger.keeltmp.$$"
+      grep -vxF "$gate_home_resolved" "$ledger" > "$ledger_tmp" 2>/dev/null || : > "$ledger_tmp"
+      mv -f "$ledger_tmp" "$ledger"
+    fi
+  fi
+
   exit 0
 fi
 
@@ -411,6 +434,33 @@ while IFS=$'\t' read -r status event matcher; do
 done <<<"$statuses"
 
 echo "install-pre-pr-gate: wired into $settings"
+
+# Gate manifest (dir #125) — global/home scope only; project scope writes no manifest, no ledger
+# entry (a repo's own hooks are already discoverable via its .claude/settings.json). Written on
+# every successful wire, including the all-SAME idempotent path (state, not action).
+if [ -n "$scope_flag" ]; then
+  gate_home_resolved="$(cd "$settings_dir" && pwd)"
+  gate_manifest_dir="$gate_home_resolved/.keel"
+  gate_manifest_file="$gate_manifest_dir/install-manifest.gate"
+  mkdir -p "$gate_manifest_dir"
+  wired_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  gate_manifest_content="keel_manifest_version=1
+kind=gate
+settings=$settings
+gate=$gate
+wired_at=$wired_at"
+  _atomic_write "$gate_manifest_file" "$gate_manifest_content"
+  echo "install-pre-pr-gate: gate manifest ($gate_manifest_file)"
+
+  # Checkout-side ledger — the same discovery index install.sh writes to, deduped on append.
+  ledger_dir="$repo_root/.keel"
+  ledger="$ledger_dir/installed-homes"
+  mkdir -p "$ledger_dir"
+  if [ ! -f "$ledger" ] || ! grep -qxF "$gate_home_resolved" "$ledger" 2>/dev/null; then
+    printf '%s\n' "$gate_home_resolved" >> "$ledger"
+  fi
+fi
+
 echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."
 # Same rule as install.sh's home_flag and doctor's ihome_flag: a bare `doctor.sh --install` audits
 # ${KEEL_HOME:-$HOME/.claude}, so on a retargeted home it would report on a different install than the

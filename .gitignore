@@ -16,6 +16,10 @@
 # doctor's map-drift baseline (dir #39 T1) — an accepted stale-path mention; per-checkout, script-only read.
 /.keel/map-drift-baseline
 
+# Checkout-side install ledger (dir #125) — absolute homes install.sh/install-pre-pr-gate.sh wired,
+# a discovery index for uninstall/doctor's ledger-driven checks. Personal absolute paths — never tracked.
+/.keel/installed-homes
+
 # macOS / IDE / system noise
 .DS_Store
 .idea/
