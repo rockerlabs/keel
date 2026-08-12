@@ -497,6 +497,11 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   # the title to a ⏳/"IN REVIEW" occurring anywhere later — matching a heading discussing the
   # convention as prose ("### dir #50 — clarify whether ⏳ tickets citing PR #55 should auto-close —
   # R1") as if it carried a real tag. No wildcard, adjacency only, same as the staleness loop.
+  # A bare `⏳` alone is NOT enough, unlike the staleness loop's own tag regex: this project's real
+  # in-progress tag is `⏳ IN FLIGHT` (the /go claim marker), not "under review" — matching bare ⏳
+  # would also fire on an IN FLIGHT heading that happens to mention a merged PR elsewhere in its tail
+  # (e.g. "blocked by PR #99"), falsely calling it "⏳/IN REVIEW" (found by an independent reviewer's
+  # own pass). Requires the literal word "IN REVIEW", with ⏳ only ever optional decoration on it.
   # Best-effort by design: `gh pr view` needs `gh` on PATH, network, and GitHub auth — any of those
   # being unavailable (no gh installed, offline, rate-limited) fails the command and this simply
   # `continue`s past that heading, no crash, no false WARN. That single `|| continue` is the whole
@@ -506,7 +511,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   say "● BACKLOG.md ⏳/IN REVIEW heading vs. gh's live PR state"
   pr_stale=0
   if [ "${#heading_lines[@]}" -gt 0 ]; then
-    tag_re='— (⏳|IN REVIEW)'
+    tag_re='— (⏳ )?IN REVIEW'
     pr_re='PR #[0-9]+'
     for start in "${heading_lines[@]}"; do
       heading_line="${stripped_lines[$((start - 1))]}"
@@ -564,13 +569,19 @@ changelog_file="$repo_root/CHANGELOG.md"
 # line-by-line pass: this condition had only inherited the `-f` half).
 if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
    && [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
-  # `v[0-9]*.[0-9]*.[0-9]*`: this project's own tagging convention (v0.1.0 .. v0.6.0) — sort -u so a
-  # re-tagged/duplicate ref can't inflate the count. `git tag -l` itself always exits 0 (even with zero
-  # matches), but a CHANGELOG.md with no version headings YET (a legitimate pre-release state — e.g.
-  # this very sandbox fixture) makes `grep`'s no-match exit 1 ripple through `set -o pipefail` into an
-  # assignment's own exit status, which under `set -e` would abort the whole doctor.sh run — `|| true`
-  # below on every such assignment, same guard check 4's CHANGELOG-staleness timestamps already use.
-  tags="$(git -C "$repo_root" tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -u)"
+  # `git tag -l` takes a GLOB, not a regex — `*` matches ANY characters, so the naive glob
+  # `v[0-9]*.[0-9]*.[0-9]*` also matches a suffixed pre-release tag like `v0.7.0-rc1` (verified: the
+  # trailing `*` swallows `-rc1` too), which `sed 's/^v//' ` would then hand to the comparison below
+  # as `0.7.0-rc1` — a string no CHANGELOG section (strictly `[0-9]+\.[0-9]+\.[0-9]+`) can ever match,
+  # false-GAPing a healthy repo the day this project first cuts an RC tag (found by an independent
+  # reviewer's own pass; no such tag exists yet, so this was latent, not yet triggered). Filtered
+  # through a strict, anchored ERE instead of trusting the glob to be exact.
+  # `git tag -l` itself always exits 0 (even with zero matches), but a CHANGELOG.md with no version
+  # headings YET (a legitimate pre-release state — e.g. this very sandbox fixture) makes `grep`'s
+  # no-match exit 1 ripple through `set -o pipefail` into an assignment's own exit status, which under
+  # `set -e` would abort the whole doctor.sh run — `|| true` below on every such assignment, same
+  # guard check 4's CHANGELOG-staleness timestamps already use.
+  tags="$(git -C "$repo_root" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -u || true)"
   # Same `blank_fenced_blocks` fence-blanking as check 5's BACKLOG.md scan, and for the identical
   # reason (found by /polish's own independent review — this check shipped without it at first): a
   # `## [x.y.z]`-shaped line living inside a fenced example — this very file documents its own

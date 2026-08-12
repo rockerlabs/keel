@@ -533,6 +533,18 @@ run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
 check_status "an IN FLIGHT claim marker with no PR # is untouched -> exit 0" 0 "$STATUS"
 check_absent "no gap/warn for it" "$OUT" "dir #24's heading cites"
 
+# an IN FLIGHT claim marker that DOES mention a (merged) PR in its own tail — e.g. "blocked by
+# PR #99" — must not be mistaken for an IN REVIEW tag either. An earlier regex, `— (⏳|IN REVIEW)`,
+# matched the bare ⏳ glyph alone, which every real ⏳ IN FLIGHT heading also starts with — so it
+# would conflate the two DIFFERENT statuses this project actually uses, ⏳ IN FLIGHT (claimed, being
+# worked) and ⏳ IN REVIEW (this check's own target) (found by an independent reviewer's own pass).
+d="$(mk_clean_repo)"
+printf '### dir #30 — some ticket — R2 — ⏳ IN FLIGHT (2026-01-01, branch foo, blocked by PR #99)\n\nclaimed.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "an IN FLIGHT heading citing a merged PR isn't conflated with IN REVIEW" "$OUT" \
+  "dir #30's heading cites"
+
 # "IN REVIEW" or "⏳" appearing only as heading TITLE prose (not after the "— " tag separator) must
 # not count as a real tag — same false-positive guard the tag-staleness loop already relies on
 # (dir #17's own test case for that loop).
@@ -614,6 +626,17 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- f
 run "$sd" "$d" --quiet
 check_status "every tag has a section and vice versa -> exit 0" 0 "$STATUS"
 check_absent "no reconciliation GAP" "$OUT" "GAP"
+
+# `git tag -l` takes a GLOB, not a regex — a naive `v[0-9]*.[0-9]*.[0-9]*` pattern also matches a
+# suffixed pre-release tag (`*` swallows the suffix too), which then can't match any CHANGELOG
+# section and false-GAPs an otherwise-healthy repo (found by an independent reviewer's own pass; no
+# real tag like this exists in this project yet, so it was latent, not yet triggered).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, plus an RC tag" && git tag v1.0.0 && git tag v1.1.0-rc1 )
+run "$sd" "$d" --quiet
+check_status "a suffixed pre-release tag doesn't false-GAP a healthy repo -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the RC tag" "$OUT" "GAP"
 
 # a `## [x.y.z]`-shaped line inside a FENCED example (this file documents its own conventions, and an
 # illustrative snippet is realistic future content) must not be misread as a real release section —

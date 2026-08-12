@@ -98,6 +98,10 @@ jobs:
           # doesn't have the tags" — it degrades to a silent skip on a shallow checkout rather than
           # false-GAPing, so without this the check would never actually run in CI.
           fetch-depth: 0
+          # Same pairing as the secret-scan job above, same reason: the check only reads tag NAMES
+          # and CHANGELOG.md's working-tree text, never blob content across history, so there's no
+          # reason to pay for it (found by an independent reviewer's own pass).
+          filter: blob:none
       # tools/self/doctor.sh audits keel's OWN repo health (ship-skip-list sync, dead internal
       # references, tool wiring/test-coverage, CHANGELOG staleness, CHANGELOG<->tag reconciliation) —
       # distinct from the `tests` and `shellcheck` jobs above, though it also orchestrates (re-runs)
