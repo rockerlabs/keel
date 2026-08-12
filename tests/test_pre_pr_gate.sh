@@ -875,6 +875,59 @@ gate "gh pr create --fill" "$d"
 check_contains "'agent:high+operator-run' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
 
+# 50e. dir #141: Gate PASS for the combined `agent:<level>+second-opinion` outcome — an in-session
+# cross-model second-opinion subagent additionally reviewed on top of an already-standing,
+# trace-confirmed agent review. Same shape as dir #81's `+operator-run`, mirrored for the new suffix:
+# the SubagentStop trace leg can't tell WHICH subagent or model tier wrote a given `agent:<level>`
+# line (it matches on agent_type + marker text alone), so the standing review's own trace line already
+# satisfies this check without the second subagent needing to write a distinguishable trace of its own.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+second-opinion"
+gate "gh pr create --fill" "$d"
+check_status "combined agent:<level>+second-opinion receipt + matching agent trace → exit 0" 0 "$STATUS"
+check_absent "combined receipt + matching trace → allowed" "$OUT" "deny"
+check_contains "provenance names BOTH the agent review and the cross-model second opinion" "$OUT" "review: high, independent agent review (trace-confirmed) + in-session cross-model second opinion (self-reported — the trace can't distinguish one subagent run from two)"
+rm -f "$tf"
+
+# 50f. dir #141: Gate DENY for the combined outcome when NO trace exists at all — the same
+# mechanical check the plain `agent:<level>` case gets, the second-opinion half riding along
+# doesn't exempt it.
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high+second-opinion"
+gate "gh pr create --fill" "$d"
+check_contains "combined receipt, no trace → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "combined receipt, no trace → names the trace as missing" "$OUT" "no trace matching"
+
+# 50g. dir #141: Gate DENY for the combined outcome when a trace exists but at a DIFFERENT level — a
+# real `agent:low` review must not vouch for a receipt claiming `agent:max+second-opinion`.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tagent:low\n' "$(git -C "$d" rev-parse HEAD)" > "$tf"
+write_full_receipt_review "$d" "agent:max+second-opinion"
+gate "gh pr create --fill" "$d"
+check_contains "combined receipt, trace at a different level → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "combined-receipt denial names the trace, not some other reason" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 50h. dir #141: Gate DENY when the combined outcome's level doesn't match polish.4-depth's OWN
+# recorded level — same depth-consistency cross-check dir #81 built for `+operator-run`, mirrored here.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:high+second-opinion"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "'agent:high+second-opinion' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
+
 # 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
 # adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
 # be misread as "verified" just because it isn't literally "self-reported" — an early draft of the
@@ -1303,6 +1356,30 @@ tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high"
 write_full_receipt_review "$d" "agent:high+operator-run"
+gate "gh pr create --fill" "$d"
+check_status "ARMED: combined outcome + matching dialog trace → exit 0" 0 "$STATUS"
+check_absent "ARMED: combined outcome + matching dialog trace → allowed" "$OUT" "deny"
+rm -f "$tf"
+
+# 76c. dir #141: ARMED, the combined `agent:<level>+second-opinion` outcome requires the dialog line
+# too — the reminder fires identically for all three agent:* shapes.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+second-opinion"
+gate "gh pr create --fill" "$d"
+check_contains "ARMED: combined agent:<level>+second-opinion, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "ARMED: combined outcome denied for the missing dialog too" "$OUT" "reminder dialog was never opened"
+rm -f "$tf"
+
+# 76d. dir #141: same combined outcome, this time with a matching dialog:<level> trace line → PASS.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high"
+write_full_receipt_review "$d" "agent:high+second-opinion"
 gate "gh pr create --fill" "$d"
 check_status "ARMED: combined outcome + matching dialog trace → exit 0" 0 "$STATUS"
 check_absent "ARMED: combined outcome + matching dialog trace → allowed" "$OUT" "deny"

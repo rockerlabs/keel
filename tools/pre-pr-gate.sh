@@ -316,8 +316,9 @@
 # silent exit 0, same as the other legs.
 #
 # **Gate check** — in the PASS branch, immediately after the existing review-trace check: whenever
-# `$review_outcome` matches `agent:*` (BOTH shapes — bare `agent:<level>` and the combined
-# `agent:<level>+operator-run`, dir #81 — the dialog reminder fires identically for both), additionally
+# `$review_outcome` matches `agent:*` (all three shapes — bare `agent:<level>`, the combined
+# `agent:<level>+operator-run` (dir #81), and the combined `agent:<level>+second-opinion` (dir #141) —
+# the dialog reminder fires identically for all three), additionally
 # require a `dialog:<outcome_level>` line for `$current_sha` in the trace file; else deny naming the
 # dialog as missing. Per-SHA by construction (dir #72's convergence-round fork): a fix-commit moves HEAD,
 # so an earlier round's dialog line doesn't cover a later commit — a fresh answered dialog is required
@@ -1534,11 +1535,12 @@ case "$status" in
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
-    # decides whether the dir #88 dialog check applies (`$needs_dialog`: both `agent:*` arms — the
-    # outcomes step 5(a)'s reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
+    # decides whether the dir #88 dialog check applies (`$needs_dialog`: all three `agent:*`-shaped
+    # arms — bare, `+operator-run` (dir #81), `+second-opinion` (dir #141) — the outcomes step 5(a)'s
+    # reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
     # own skip dialog instead), AND builds the dir #64 tier 2a provenance label +
-    # tag (below) from the same match, so a future third suffix only needs adding here, not kept in
-    # sync across separate mechanisms. $prov_tag is a STABLE machine value ("trace-confirmed"/
+    # tag (below) from the same match — dir #141 is exactly the "future third suffix" this comment
+    # already anticipated, added here and nowhere else, as promised. $prov_tag is a STABLE machine value ("trace-confirmed"/
     # "self-reported") separate from $prov_label's human prose, so `sweep` (below) can classify without
     # depending on display wording (found in the operator-run /code-review high pass on this ticket —
     # sweep used to regex-match the prose directly).
@@ -1597,12 +1599,48 @@ case "$status" in
                          # trace match below — but matched against the level WITHOUT the
                          # `+operator-run` suffix, since the SubagentStop trace (skill-trace, above)
                          # only ever writes the bare `agent:<level>` shape and knows nothing of a
-                         # later operator pass.
+                         # later operator pass. (`trace_match_outcome="agent:$outcome_level"` rather
+                         # than its own independent suffix-strip: once outcome_level is stripped down
+                         # to the bare level, re-composing the `agent:` prefix always reproduces the
+                         # exact string the SubagentStop trace leg writes — true for every `agent:*`
+                         # arm, found while simplifying dir #141's sibling arm below.)
                          outcome_level="${review_outcome#agent:}"
                          outcome_level="${outcome_level%+operator-run}"
-                         trace_match_outcome="${review_outcome%+operator-run}"
+                         trace_match_outcome="agent:$outcome_level"
                          needs_dialog=1
                          prov_label="review: $outcome_level, independent agent review (trace-confirmed) + operator-run /code-review (self-reported)"; prov_tag="agent-confirmed" ;;
+      agent:*+second-opinion) # dir #141: an in-session cross-model second-opinion subagent
+                         # additionally reviewed ON TOP of an already-standing agent review — same
+                         # combined-record shape as dir #81's `+operator-run` arm above, mirrored for a
+                         # different add-on. Placed BEFORE the broader `agent:*` glob below for the same
+                         # first-match-wins reason. trusted stays 0: this half is just as
+                         # self-report-fabricable as the plain agent:* case, so it still needs the trace
+                         # match below — matched against the level WITHOUT the `+second-opinion` suffix.
+                         # **Verified against skill-trace's own SubagentStop branch (above), not assumed
+                         # (dir #141):** that leg matches on `agent_type == general-purpose` and the
+                         # marker text alone (dir #70's own residual (2) already documents this) — it
+                         # cannot tell which of the two subagents, or which model tier, produced a given
+                         # `agent:<level>` trace line, so either subagent's marker line satisfies this
+                         # check. The trace mechanism itself needed no change; only this outcome literal
+                         # is new, so the record can name the second pass honestly instead of silently
+                         # reusing the bare `agent:<level>` shape that already means "one agent review ran".
+                         # `trace_match_outcome="agent:$outcome_level"` re-composes the bare shape from the
+                         # already-stripped level rather than re-stripping the suffix independently — same
+                         # simplification applied to dir #81's sibling arm above (/simplify, dir #141).
+                         # **`prov_label`'s second half is "(self-reported)", NOT "(trace-confirmed)"
+                         # (found by the operator's own /code-review high pass on this ticket):** the
+                         # trace only proves SOME general-purpose subagent wrote the marker for this
+                         # commit+level — it cannot count how many times, so a receipt claiming this
+                         # combined outcome after only the standing review's ONE real subagent run (the
+                         # second opinion never actually spawned) passes this same trace check. That is
+                         # exactly the ambiguity dir #81's own arm resolves by labeling its operator-run
+                         # half "(self-reported)" rather than claiming a confirmation the mechanism can't
+                         # back — this arm follows the same discipline instead of overclaiming.
+                         outcome_level="${review_outcome#agent:}"
+                         outcome_level="${outcome_level%+second-opinion}"
+                         trace_match_outcome="agent:$outcome_level"
+                         needs_dialog=1
+                         prov_label="review: $outcome_level, independent agent review (trace-confirmed) + in-session cross-model second opinion (self-reported — the trace can't distinguish one subagent run from two)"; prov_tag="agent-confirmed" ;;
       agent:*)          # dir #70: an independent Agent-tool subagent reviewed (Skill(code-review) wasn't
                          # model-invokable in-session) — trusted stays 0, same as the bare-level case
                          # below: this outcome is just as self-report-fabricable, so it earns no more
@@ -1636,8 +1674,9 @@ case "$status" in
     # — otherwise a genuine `/code-review low` pass would vouch for a receipt claiming `max`. Trusted
     # outcomes need no trace — they already name a different, non-fabricable source (the human, or a
     # deliberate no-review choice) and are covered by the depth check above instead. $trace_match_outcome
-    # is $review_outcome verbatim UNLESS the combined-outcome branch above overrode it (dir #81) — the
-    # only shape where what's being depth-checked and what's being trace-matched legitimately differ.
+    # is $review_outcome verbatim UNLESS one of the combined-outcome branches above overrode it
+    # (`+operator-run`, dir #81, or `+second-opinion`, dir #141) — the only shapes where what's being
+    # depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
       # dir #80: $wt here is deliberately still repo-only (not $receipt_key) — the trace stays
       # per-repo, see the dir #80 header section above. retire_sentinel below still gets
@@ -1648,9 +1687,10 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
-    # dir #88: an `agent:*`-shaped outcome (BOTH plain `agent:<level>` and the combined
-    # `agent:<level>+operator-run`, dir #81 — the reminder fires identically for both, `$needs_dialog`
-    # set by the SAME case statement above) additionally requires a mechanically-traced, ANSWERED
+    # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, the combined `agent:<level>+operator-run`
+    # (dir #81), or the combined `agent:<level>+second-opinion` (dir #141) — the reminder fires
+    # identically for all three, `$needs_dialog` set by the SAME case statement above) additionally
+    # requires a mechanically-traced, ANSWERED
     # AskUserQuestion dialog for step 5(a)'s MANDATORY reminder — the review claim itself can be
     # receipted honestly while that reminder is silently skipped by momentum (felt on dir #62/PR #147).
     # Armed only when the AskUserQuestion leg is actually wired (`_dialog_leg_armed`, above) — see the
