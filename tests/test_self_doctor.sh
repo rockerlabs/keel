@@ -542,6 +542,19 @@ printf '### dir #25 — decide whether IN REVIEW should replace ⏳ — R1\n\n�
 run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
 check_absent "title prose mentioning IN REVIEW/⏳ isn't treated as a real tag" "$OUT" "dir #25's heading cites"
 
+# a second, stricter false-positive shape (found by /polish's own independent review): the PR # AND
+# the ⏳ glyph BOTH live in the heading line, but as title prose describing the convention, not as a
+# real tag — the loose `— .*(⏳|IN REVIEW)` an earlier draft used would bridge an unrelated "— "
+# elsewhere in the title across to this ⏳, treating discussion-about-the-convention as a real tag.
+# The PR # has to be IN THE HEADING LINE for this to exercise the bug at all — dir #25 above puts its
+# PR # in the body, which never reaches this code path.
+d="$(mk_clean_repo)"
+printf '### dir #26 — clarify whether ⏳ tickets citing PR #99 should auto-close — R1\n\nno status yet.\n' \
+  > "$d/BACKLOG.md"
+run env PATH="$fake_gh_bin:$PATH" "$sd" "$d" --quiet
+check_absent "a PR # in title prose discussing the convention isn't treated as a real tag either" "$OUT" \
+  "dir #26's heading cites"
+
 # --- 9. CHANGELOG.md <-> git release-tag reconciliation (dir #139) ---------------------------------
 # Each fixture builds its own small CHANGELOG.md + tag history directly, independent of this repo's
 # OWN real release history.
@@ -553,6 +566,18 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- f
 run "$sd" "$d" --quiet
 check_status "every tag has a section and vice versa -> exit 0" 0 "$STATUS"
 check_absent "no reconciliation GAP" "$OUT" "GAP"
+
+# a `## [x.y.z]`-shaped line inside a FENCED example (this file documents its own conventions, and an
+# illustrative snippet is realistic future content) must not be misread as a real release section —
+# same false-positive class check 5's BACKLOG.md scan already guards against, found here by /polish's
+# own independent review when check 6 first shipped without the equivalent fence-blanking.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n\nExample of how a section header looks:\n```\n## [9.9.9] — example\n- not a real release\n```\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, plus a fenced illustrative example" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a fenced-block example section isn't mistaken for a real one -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP from the fenced example" "$OUT" "GAP"
 
 # the exact PR #118 accident: a released section gets deleted by a LATER commit, its tag still exists
 d="$(mk_clean_repo)"

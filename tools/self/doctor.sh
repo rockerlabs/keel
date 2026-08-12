@@ -474,8 +474,12 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   # and that PR has since merged, with nobody coming back to flip the heading. That's independent of
   # whether the BODY agrees — dir #96 is the live case this reopens: heading and body were stale
   # TOGETHER, so no body-vs-heading comparison could ever have caught it.
-  # Same "— " tag-boundary convention as the staleness loop above (dir #17's own test: a bare ⏳ or
-  # the words "IN REVIEW" showing up as heading TITLE prose, not a real tag, must not false-fire).
+  # Same "— " tag-boundary convention as the staleness loop above, and it must be the SAME regex
+  # shape, not just the same idea: an earlier draft used `— .*(⏳|IN REVIEW)`, which (unlike the
+  # staleness loop's own `— (✅|⏳|RETRACTED\b)`) lets the `.*` bridge an unrelated "— " elsewhere in
+  # the title to a ⏳/"IN REVIEW" occurring anywhere later — matching a heading discussing the
+  # convention as prose ("### dir #50 — clarify whether ⏳ tickets citing PR #55 should auto-close —
+  # R1") as if it carried a real tag. No wildcard, adjacency only, same as the staleness loop.
   # Best-effort by design: `gh pr view` needs `gh` on PATH, network, and GitHub auth — any of those
   # being unavailable (no gh installed, offline, rate-limited) fails the command and this simply
   # `continue`s past that heading, no crash, no false WARN. That single `|| continue` is the whole
@@ -485,7 +489,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   if [ "${#heading_lines[@]}" -gt 0 ]; then
     for start in "${heading_lines[@]}"; do
       heading_line="${stripped_lines[$((start - 1))]}"
-      printf '%s' "$heading_line" | grep -qE -- '— .*(⏳|IN REVIEW)' || continue
+      printf '%s' "$heading_line" | grep -qE -- '— (⏳|IN REVIEW)' || continue
       pr_re='PR #[0-9]+'
       [[ "$heading_line" =~ $pr_re ]] || continue
       pr_num="${BASH_REMATCH[0]#PR #}"
@@ -531,10 +535,16 @@ if [ -f "$changelog_file" ] \
   # assignment's own exit status, which under `set -e` would abort the whole doctor.sh run — `|| true`
   # below on every such assignment, same guard check 4's CHANGELOG-staleness timestamps already use.
   tags="$(git -C "$repo_root" tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -u)"
-  sections="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$changelog_file" \
+  # Same fence-blanking as check 5's BACKLOG.md scan, and for the identical reason (found by
+  # /polish's own independent review — this check shipped without it at first): a `## [x.y.z]`-shaped
+  # line living inside a fenced example — this very file documents its own release-note conventions,
+  # and an illustrative snippet is a realistic future entry — must not be misread as a real release
+  # section. Blanked, not deleted, so line content changes but nothing here depends on line numbers.
+  changelog_blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$changelog_file")"
+  sections="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' <<< "$changelog_blanked" \
     | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u || true)"
-  unreleased_count="$(grep -cE '^## \[Unreleased\]' "$changelog_file" || true)"
-  total_sections="$(grep -cE '^## \[' "$changelog_file" || true)"
+  unreleased_count="$(grep -cE '^## \[Unreleased\]' <<< "$changelog_blanked" || true)"
+  total_sections="$(grep -cE '^## \[' <<< "$changelog_blanked" || true)"
   n_tags="$(printf '%s\n' "$tags" | grep -c . || true)"
 
   missing_section=""
