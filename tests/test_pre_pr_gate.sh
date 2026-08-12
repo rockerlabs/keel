@@ -1542,6 +1542,27 @@ rm -f "$tf"
 # ledger would otherwise leak this fixture's home into every later test in this file (found the hard
 # way: an earlier draft restored $KEEL_LEDGER_FILE itself and turned "no arming anywhere" red for the
 # rest of the suite).
+# One helper for the four checks below: writes a fresh SubagentStop trace + full agent:high receipt on
+# repo $1, drives the gate under the given extra env assignments, and asserts ARMED (deny, missing
+# dialog) or UNARMED (receipt just passes) per $2, labeling every assertion with $3. Collapses what was
+# 4 copies of the same 6-line arm/check sequence, varying only the label/env/expected outcome, into one
+# call per case (found by an independent /simplify pass).
+assert_dialog_arming() {
+  local d="$1" expect="$2" label="$3" tf; shift 3
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+  write_full_receipt_review "$d" "agent:high"
+  gate_env "gh pr create --fill" "$d" "$@"
+  if [ "$expect" = "armed" ]; then
+    check_contains "$label: ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
+    check_contains "$label: denied for the missing dialog specifically" "$OUT" "reminder dialog was never opened"
+  else
+    check_status "$label: UNARMED, receipt passes" 0 "$STATUS"
+    check_absent "$label: UNARMED, allowed" "$OUT" "deny"
+  fi
+  rm -f "$tf"
+}
+
 d="$(mkrepo)"
 b2_home="$SANDBOX/b2-home"; mkdir -p "$b2_home"
 b2_empty_home="$SANDBOX/b2-empty-home"; mkdir -p "$b2_empty_home"
@@ -1555,50 +1576,26 @@ b2_gate_manifest="$b2_home/.keel/install-manifest.gate"
 check_file "B2 fixture: gate manifest recorded" "$b2_gate_manifest"
 check_contains "B2 fixture: ledger lists the --home DIR" "$(cat "$b2_ledger" 2>/dev/null)" "$b2_home"
 
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high"
-gate_env "gh pr create --fill" "$d" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
-check_contains "B2: ledger-derived candidate ARMS the dialog leg (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
-check_contains "B2: denied for the missing dialog specifically" "$OUT" "reminder dialog was never opened"
-rm -f "$tf"
+assert_dialog_arming "$d" armed "B2" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
 
 # Mutation 1: delete the ledger's line for this home -> UNARMED again (same empty HOME, so this isolates
 # the assertion to the ledger entry itself). Only ever touches $b2_ledger — the shared one is untouched.
 : > "$b2_ledger"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high"
-gate_env "gh pr create --fill" "$d" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
-check_status "B2 mutation: ledger entry removed -> UNARMED, receipt passes" 0 "$STATUS"
-check_absent "B2 mutation: ledger entry removed -> allowed" "$OUT" "deny"
-rm -f "$tf"
+assert_dialog_arming "$d" unarmed "B2 mutation: ledger entry removed" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
 
 # Mutation 2: restore the ledger line, but delete the gate manifest -> UNARMED again — a stale ledger
 # line whose manifest is gone must contribute nothing (the read contract: verify before trusting).
 printf '%s\n' "$b2_home" > "$b2_ledger"
 mv "$b2_gate_manifest" "$b2_gate_manifest.bak"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high"
-gate_env "gh pr create --fill" "$d" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
-check_status "B2 mutation: gate manifest removed -> UNARMED, receipt passes" 0 "$STATUS"
-check_absent "B2 mutation: gate manifest removed -> allowed" "$OUT" "deny"
+assert_dialog_arming "$d" unarmed "B2 mutation: gate manifest removed" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
 mv "$b2_gate_manifest.bak" "$b2_gate_manifest"
-rm -f "$tf"
 
 # 78d. dir #125 (acceptance test 21, gate side): a corrupt/unknown-version gate manifest listed in the
 # ledger must be silently skipped as a candidate — never a crash, never a false ARM.
 cp "$b2_gate_manifest" "$b2_gate_manifest.orig"
 sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$b2_gate_manifest.orig" > "$b2_gate_manifest"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high"
-gate_env "gh pr create --fill" "$d" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
-check_status "unknown gate-manifest version -> UNARMED, no crash, receipt passes" 0 "$STATUS"
-check_absent "unknown gate-manifest version -> allowed" "$OUT" "deny"
+assert_dialog_arming "$d" unarmed "unknown gate-manifest version" "HOME=$b2_empty_home" "KEEL_LEDGER_FILE=$b2_ledger"
 mv "$b2_gate_manifest.orig" "$b2_gate_manifest"
-rm -f "$tf"
 
 # 79. dir #85 (code audit, finding 3): dir #80 re-keyed the sentinel/prev-sentinel/hand-off by
 # (repo, branch) but DELIBERATELY left the review trace and the rollout state per-repo. Nothing pinned

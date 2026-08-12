@@ -271,11 +271,5 @@ for site in $legacy_sites; do
     fail "legacy sweep: $site carries the KEEL-LEGACY-NOMANIFEST token" "no match found"
   fi
 done
-legacy_count="$(grep -rl 'KEEL-LEGACY-NOMANIFEST' "$REPO_ROOT"/*.sh "$REPO_ROOT"/tools/*.sh "$REPO_ROOT/keel" 2>/dev/null | wc -l | tr -d ' ')"
-if [ "$legacy_count" -ge 5 ]; then
-  pass "legacy sweep: at least 5 files carry the KEEL-LEGACY-NOMANIFEST token ($legacy_count found)"
-else
-  fail "legacy sweep: at least 5 files carry the KEEL-LEGACY-NOMANIFEST token" "only $legacy_count found"
-fi
 
 summary

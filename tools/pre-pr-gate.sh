@@ -539,28 +539,28 @@ _gate_checkout_root() {
   (cd "$here/.." && pwd) 2>/dev/null
 }
 
-# manifest_field FILE KEY — same minimal `key=value` reader tools/doctor.sh and uninstall.sh each keep
-# their own copy of (no established cross-sourcing convention between these files yet; see uninstall.sh's
-# own comment on its copy). First match only, empty string if the file or key is absent.
-_gate_manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1; }
-
 # dir #125 (B2 fix): for each home the checkout-side ledger (`installed-homes`) records, print that
 # home's gate-manifest `settings=` path — but only when the manifest is still actually there and at a
 # `keel_manifest_version` this reads (an unversioned/corrupt/removed manifest is silently skipped, never
-# a crash: same versioning contract as every other dir #125 consumer). `KEEL_LEDGER_FILE` is the same
-# test-isolation override `install.sh`/`install-pre-pr-gate.sh` respect. ARMED still wins (residual limit
-# above), so a candidate this prints that turns out not to match is harmless — it just never matches.
+# a crash: same versioning contract as every other dir #125 consumer, via `manifest_usable`/
+# `manifest_field` — tools/lib/ledger.sh, sourced below; this used to be a THIRD hand-copy of the
+# `key=value` reader tools/doctor.sh and uninstall.sh each already carry (found by an independent
+# /simplify pass — all four review angles converged on the same duplication), now the first shared home
+# for it instead). `KEEL_LEDGER_FILE` is the same test-isolation override `install.sh`/
+# `install-pre-pr-gate.sh` respect. ARMED still wins (residual limit above), so a candidate this prints
+# that turns out not to match is harmless — it just never matches.
 _gate_ledger_candidates() {
   local checkout_root ledger home manifest settings
   checkout_root="$(_gate_checkout_root)" || return 0
+  # shellcheck source=tools/lib/ledger.sh
+  . "$checkout_root/tools/lib/ledger.sh" 2>/dev/null || return 0
   ledger="${KEEL_LEDGER_FILE:-$checkout_root/.keel/installed-homes}"
   [ -f "$ledger" ] || return 0
   while IFS= read -r home; do
     [ -n "$home" ] || continue
     manifest="$home/.keel/install-manifest.gate"
-    [ -f "$manifest" ] || continue
-    [ "$(_gate_manifest_field "$manifest" keel_manifest_version)" = "1" ] || continue
-    settings="$(_gate_manifest_field "$manifest" settings)"
+    manifest_usable "$manifest" || continue
+    settings="$(manifest_field "$manifest" settings)"
     [ -n "$settings" ] && printf '%s\n' "$settings"
   done < "$ledger"
 }

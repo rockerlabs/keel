@@ -34,3 +34,26 @@ ledger_remove() {
   grep -vxF "$home" "$ledger" > "$tmp" 2>/dev/null || : > "$tmp"
   mv -f "$tmp" "$ledger"
 }
+
+# manifest_field FILE KEY — the value of a top-level `key=value` line in an install/gate manifest (dir
+# #125), first match, "" on any read failure. dir #125 PR3 (found by an independent /simplify pass,
+# converging across all four review angles): tools/doctor.sh and uninstall.sh each already carried their
+# own hand-copy of this identical one-liner ("no established cross-sourcing convention... yet", per
+# uninstall.sh's own comment on its copy) — a third hand-copy in tools/pre-pr-gate.sh would have made it
+# three. This is the first shared home for it; doctor.sh/uninstall.sh keep their own copies for now
+# (out of this PR's scope — they predate it and are independently tested), but any NEW manifest reader
+# should source this instead of hand-copying a fourth time. `|| true` at the end: an EXISTING but
+# unreadable manifest (permission-denied) makes `sed` exit non-zero even with stderr silenced, and a
+# caller running under `set -e` must not abort mid-run over a single unreadable manifest — the
+# versioning contract says exactly this case degrades to "treated as absent", never a crash.
+manifest_field() {
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true
+}
+
+# manifest_usable FILE — the versioning contract shared by every dir #125 manifest reader: present,
+# readable, AND a keel_manifest_version this consumer understands (currently exactly "1"). Mirrors
+# uninstall.sh's own manifest_usable (kept there, not yet migrated here, same out-of-scope reasoning as
+# manifest_field above) — the first shared instance of the predicate rather than a fourth hand-copy.
+manifest_usable() {
+  [ -f "$1" ] && [ "$(manifest_field "$1" keel_manifest_version)" = "1" ]
+}
