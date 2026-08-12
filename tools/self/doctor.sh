@@ -19,6 +19,8 @@
 #   WARN  a tools/*.sh script has no test coverage in tests/
 #   WARN  CHANGELOG.md predates the most recent commands/, tools/, or install.sh change
 #   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
+#   WARN  BACKLOG.md: a `⏳`/`IN REVIEW` heading cites a PR that `gh` reports MERGED (dir #135)
+#   GAP   CHANGELOG.md release sections and git release tags disagree (dir #139)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -319,15 +321,43 @@ else
   say "  OK   CHANGELOG.md is at least as recent as the last commands/, tools/, or install.sh change"
 fi
 
+# A heading line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly instead of
+# a fresh grep subprocess. Shared by check 5's tag-staleness loop and check 5b's merged-PR loop below
+# (both label a warn() with the ticket id). Regex kept in a variable, not inline, so the `#` can't be
+# misread as a comment start by anything re-parsing this word.
+heading_dir_id() {
+  local re='dir #[0-9]+' line="$1"
+  [[ "$line" =~ $re ]] && printf '%s' "${BASH_REMATCH[0]}" || printf '%s' "dir #?"
+}
+
 # --- 5. BACKLOG.md heading/status drift -----------------------------------------------------------
 # `### dir #N` tickets carry their own status tag on the heading line itself (✅ DONE/CLOSED,
 # ⏳ IN FLIGHT, or RETRACTED). Three real hits (dirs #81, #75, #74 — see dir #87) left that tag
 # behind after the ticket's own body already recorded closure, caught only by a LATER session's
 # wrap. BACKLOG.md is gitignored/personal (not every checkout — worktree or consumer — carries one),
 # so a missing file is not itself a finding.
+#
+# BACKLOG.md lives ONLY at the MAIN checkout root (this project's own CLAUDE.md convention) — a
+# linked worktree never carries its own copy. `repo_root` above is whatever checkout this script was
+# INVOKED against, which in a worktree session is the worktree path itself, not the main checkout —
+# so before dir #135, this check silently "skipped, no readable BACKLOG.md" in every worktree (i.e.
+# where /polish's step-7 self-check actually runs) and stayed dark until someone ran self/doctor.sh
+# by hand from the main checkout. Resolve the MAIN checkout the same way tools/doctor.sh's unit_top
+# does (PR #176): the first `worktree <path>` line of `git worktree list --porcelain`, unless that
+# entry is bare — a plain single-checkout repo's own porcelain output has exactly one such line
+# naming itself, so this is a no-op there. This makes self/doctor.sh the 7th tool carrying its own
+# copy of this same awk fragment (dir #26 — a tracked, deliberate "capture only, do not pre-build a
+# shared lib" decision, since the five prior sites don't all want the same projection); bump that
+# ticket's site count rather than extracting one here against its own recorded call. `|| true`: outside
+# a repo (or a REPO_ARG sandbox dir the
+# test suite points at a non-repo path) git exits non-zero, and pipefail must not abort the whole run
+# over a check this file already treats as advisory-optional.
+main_top="$(git -C "$repo_root" worktree list --porcelain 2>/dev/null \
+  | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+backlog_root="${main_top:-$repo_root}"
 say ""
 say "● BACKLOG.md heading/status drift"
-backlog_file="$repo_root/BACKLOG.md"
+backlog_file="$backlog_root/BACKLOG.md"
 # `-r`, not just `-f`: an unreadable file (e.g. a stray chmod) would otherwise fail the awk pass
 # below and, under `set -euo pipefail`, abort the ENTIRE doctor.sh run rather than just this check.
 if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
@@ -423,12 +453,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # this is a cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a
       # GAP.
       if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
-        # heading_line already matched '^### dir #[0-9]+ ' — pull the id back out of it directly
-        # instead of a fresh grep subprocess. Regex kept in a variable, not inline, so the `#`
-        # can't be misread as a comment start by anything re-parsing this word.
-        id_re='dir #[0-9]+'
-        id="dir #?"
-        [[ "$heading_line" =~ $id_re ]] && id="${BASH_REMATCH[0]}"
+        id="$(heading_dir_id "$heading_line")"
         # WARN, not GAP: the ticket this implements (dir #87) explicitly calls this bug class
         # "Low-severity (cosmetic ... nobody re-opened stale work)" — a hard exit-1 would fail
         # test_self_doctor.sh's real-checkout smoke test (and block /polish step 7) the moment
@@ -440,8 +465,107 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
     done
   fi
   [ "$stale" -eq 0 ] && say "  OK   no stale dir # heading tags in BACKLOG.md"
+
+  # --- 5b. a ⏳/IN REVIEW heading citing a MERGED PR is stale (dir #135) ---------------------------
+  # The tag-staleness loop above only catches a MISSING tag — it deliberately trusts any EXISTING
+  # tag (see its own comment: telling "still legitimately in flight" apart from "actually closed,
+  # tag just never updated" needs comparing tag semantics, harder than presence). But a heading can
+  # carry a perfectly well-formed tag that is itself now wrong: it names a PR as still under review,
+  # and that PR has since merged, with nobody coming back to flip the heading. That's independent of
+  # whether the BODY agrees — dir #96 is the live case this reopens: heading and body were stale
+  # TOGETHER, so no body-vs-heading comparison could ever have caught it.
+  # Same "— " tag-boundary convention as the staleness loop above (dir #17's own test: a bare ⏳ or
+  # the words "IN REVIEW" showing up as heading TITLE prose, not a real tag, must not false-fire).
+  # Best-effort by design: `gh pr view` needs `gh` on PATH, network, and GitHub auth — any of those
+  # being unavailable (no gh installed, offline, rate-limited) fails the command and this simply
+  # `continue`s past that heading, no crash, no false WARN. That single `|| continue` is the whole
+  # "degrade gracefully offline/no-gh" contract; there is deliberately no separate `command -v gh`
+  # gate; `gh` missing hits the exact same fallback a live-but-unreachable `gh` does.
+  pr_stale=0
+  if [ "${#heading_lines[@]}" -gt 0 ]; then
+    for start in "${heading_lines[@]}"; do
+      heading_line="${stripped_lines[$((start - 1))]}"
+      printf '%s' "$heading_line" | grep -qE -- '— .*(⏳|IN REVIEW)' || continue
+      pr_re='PR #[0-9]+'
+      [[ "$heading_line" =~ $pr_re ]] || continue
+      pr_num="${BASH_REMATCH[0]#PR #}"
+      pr_state="$(gh pr view "$pr_num" --json state -q .state 2>/dev/null)" || continue
+      [ "$pr_state" = "MERGED" ] || continue
+      id="$(heading_dir_id "$heading_line")"
+      warn "BACKLOG.md:$start: $id's heading cites PR #$pr_num as ⏳/IN REVIEW but gh reports it MERGED — stale regardless of heading-vs-body agreement"
+      pr_stale=$((pr_stale + 1))
+    done
+  fi
+  [ "$pr_stale" -eq 0 ] && say "  OK   no BACKLOG.md heading cites a merged PR as still ⏳/IN REVIEW (best effort — needs gh)"
 else
-  say "  OK   no readable BACKLOG.md at $repo_root — skipping heading/status check"
+  say "  OK   no readable BACKLOG.md at $backlog_root — skipping heading/status check"
+fi
+
+# --- 6. CHANGELOG.md <-> git release-tag reconciliation (dir #139) -------------------------------
+# v0.5.0's own section WAS cut at release, on time — then the very next commit (PR #118) accidentally
+# clobbered the heading line, and that stayed invisible for THREE WEEKS until an unrelated audit
+# tripped over it (dir #115). Discipline can't catch "the release commit was right and the next one
+# broke it"; only a standing check that re-derives the fact from git's own tags — not from CHANGELOG.md
+# agreeing with itself — can. Three invariants, all cheap: every release tag has its own
+# `## [x.y.z]` section, every versioned section has its tag, and the section COUNT equals tag count +
+# 1 (`[Unreleased]`) — the last one is what would have caught PR #118 directly (a section vanishing
+# without its tag going anywhere leaves the count short by exactly one).
+say ""
+say "● CHANGELOG.md <-> git release-tag reconciliation"
+changelog_file="$repo_root/CHANGELOG.md"
+# Tags are repo-wide, not main-checkout-only like BACKLOG.md — a linked worktree shares the same
+# `.git` and sees every tag, so this reads $repo_root directly, no worktree redirection needed.
+# A SHALLOW clone (CI's default checkout, or a contributor's `--depth 1`) has few or none of the
+# tags this check needs even though the working tree itself is complete and correct — flagging that
+# as drift would be a check lying about the repo's own state, so it degrades to a silent skip
+# instead. `rev-parse --is-shallow-repository` prints "false" in a normal checkout and "true" in a
+# shallow one; `|| true` covers a REPO_ARG sandbox dir that isn't a git repo at all (rev-parse then
+# just fails, same treatment as "can't tell, skip" — this check is advisory, not a hard requirement
+# to be inside a full git checkout).
+if [ -f "$changelog_file" ] \
+   && [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
+  # `v[0-9]*.[0-9]*.[0-9]*`: this project's own tagging convention (v0.1.0 .. v0.6.0) — sort -u so a
+  # re-tagged/duplicate ref can't inflate the count. `git tag -l` itself always exits 0 (even with zero
+  # matches), but a CHANGELOG.md with no version headings YET (a legitimate pre-release state — e.g.
+  # this very sandbox fixture) makes `grep`'s no-match exit 1 ripple through `set -o pipefail` into an
+  # assignment's own exit status, which under `set -e` would abort the whole doctor.sh run — `|| true`
+  # below on every such assignment, same guard check 4's CHANGELOG-staleness timestamps already use.
+  tags="$(git -C "$repo_root" tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -u)"
+  sections="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$changelog_file" \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u || true)"
+  unreleased_count="$(grep -cE '^## \[Unreleased\]' "$changelog_file" || true)"
+  total_sections="$(grep -cE '^## \[' "$changelog_file" || true)"
+  n_tags="$(printf '%s\n' "$tags" | grep -c . || true)"
+
+  missing_section=""
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    printf '%s\n' "$sections" | grep -qxF "$t" || missing_section="$missing_section${missing_section:+, }$t"
+  done <<< "$tags"
+
+  missing_tag=""
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    printf '%s\n' "$tags" | grep -qxF "$s" || missing_tag="$missing_tag${missing_tag:+, }$s"
+  done <<< "$sections"
+
+  changelog_bad=0
+  if [ -n "$missing_section" ]; then
+    gap "release tag(s) with no matching CHANGELOG.md '## [x.y.z]' section: $missing_section"
+    changelog_bad=1
+  fi
+  if [ -n "$missing_tag" ]; then
+    gap "CHANGELOG.md '## [x.y.z]' section(s) with no matching release tag: $missing_tag"
+    changelog_bad=1
+  fi
+  expected_sections=$((n_tags + unreleased_count))
+  if [ "$total_sections" != "$expected_sections" ]; then
+    gap "CHANGELOG.md section count ($total_sections) != tags ($n_tags) + Unreleased ($unreleased_count) — a released section may be missing, duplicated, or folded back into [Unreleased]"
+    changelog_bad=1
+  fi
+  [ "$changelog_bad" -eq 0 ] && say "  OK   every release tag has a CHANGELOG.md section and vice versa ($n_tags tags)"
+else
+  say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping tag reconciliation"
 fi
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
