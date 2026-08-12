@@ -1941,8 +1941,9 @@ check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$
 # operator's third /code-review pass verification). Sweep the whole worktree rather than a root list
 # (the fourth pass found a root list quietly omits docs/ and the root scripts — exactly where the
 # next marker mention will land); tests/ stays excluded by necessity (fixtures must spell composed
-# markers), .git/.claude/private are not shipped content.
-composed="$(grep -rlE '(KEEL-DEPTH-DIALOG|KEEL-REVIEW-DIALOG): level=(skip|low|medium|high|max|ultra)' \
+# markers), .git/.claude/private are not shipped content. KEEL-AGENT-REVIEW (dir #70's SubagentStop-leg
+# marker) joins the alternation (dir #146) — same composed-credential class, previously uncovered.
+composed="$(grep -rlE '(KEEL-DEPTH-DIALOG|KEEL-REVIEW-DIALOG|KEEL-AGENT-REVIEW): level=(skip|low|medium|high|max|ultra)' \
   --exclude-dir=tests --exclude-dir=.git --exclude-dir=.claude --exclude-dir=private \
   "$REPO_ROOT" 2>/dev/null || true)"
 if [ -z "$composed" ]; then
