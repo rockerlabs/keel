@@ -6,6 +6,11 @@
 
 pa="$REPO_ROOT/tools/public-audit.sh"
 
+# Pin the personal-literals file to a nonexistent sandbox path by default, so a real
+# ~/.claude/secret-scan-personal on the dev machine can never leak into these tests.
+# Personal-literal tests below override this per-invocation with env.
+export SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-absent"
+
 # a repo with one commit authored+committed by $1
 repo_by() {
   local d; d="$(mktemp -d "$SANDBOX/pa.XXXXXX")"
@@ -376,5 +381,51 @@ printf 'allow-path: vendor/*\n' > "$d/.public-audit"
 commit_in "$d" "add allow-path config"
 run bash "$pa" --no-history "$d"
 check_absent "allow-path excludes the vendored file from content scanning" "$OUT" "email in tracked content"
+
+# --- dir #145: personal literals (local secret-scan-personal), hunted as private tokens -----------
+pfile="$SANDBOX/pa-personal.rx"
+printf 'Jane[[:space:]]+Q[[:space:]]+Public\n' > "$pfile"
+
+# a personal literal in plain tracked text → GAP, case-insensitively
+d="$(repo_by dev@example.com)"
+printf 'author: jane q public\n' > "$d/notes.txt"; commit_in "$d" notes
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" --no-history "$d"
+check_status "personal literal in tracked text → GAP" 1 "$STATUS"
+check_contains "tree personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in tracked tree"
+
+# a personal literal scrubbed from the tree but alive in history → still GAP
+d="$(repo_by dev@example.com)"
+printf 'jane q public\n' > "$d/secret.txt"; commit_in "$d" add
+git -C "$d" rm -q secret.txt; commit_in "$d" remove
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal only in history → GAP" 1 "$STATUS"
+check_contains "history personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in git history"
+
+# a personal literal inside a UTF-16LE binary blob → GAP (invisible to log -p / log -G)
+d="$(repo_by dev@example.com)"
+{ utf16le "made by Jane Q Public"; } > "$d/fixture.bin"
+commit_in "$d" fixture
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal literal in a UTF-16LE binary blob → GAP" 1 "$STATUS"
+check_contains "personal binary hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
+
+# the personal-consumption note appears when the file exists — and the run is clean without hits
+d="$(repo_by dev@example.com)"
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
+check_status "personal file + clean repo → exit 0" 0 "$STATUS"
+check_contains "notes that personal literals are hunted" "$OUT" "secret-scan-personal literals"
+
+# a personal-file line with an invalid ERE is warned about (not silently dropped, not fatal)
+d="$(repo_by dev@example.com)"
+badfile="$SANDBOX/pa-personal-bad.rx"
+printf '[unterminated\n' > "$badfile"
+run env SECRET_SCAN_PERSONAL_FILE="$badfile" bash "$pa" --no-history "$d"
+check_status "invalid personal regex line → exit 0, not fatal" 0 "$STATUS"
+check_contains "warns about the invalid personal regex line" "$OUT" "invalid regex line"
+
+# no personal file at all (the sandbox default) → no personal-literal hunting, no note
+d="$(repo_by dev@example.com)"
+run bash "$pa" --no-history "$d"
+check_absent "no personal file → no personal-literal note" "$OUT" "secret-scan-personal literals"
 
 summary

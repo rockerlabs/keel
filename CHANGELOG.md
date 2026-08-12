@@ -42,6 +42,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
     directional check alone would). Degrades to a silent skip on a shallow clone, where the tags
     this check needs aren't present even though the working tree is fine; the `self-check` CI job
     now fetches full history so the check actually runs there.
+- **`public-audit.sh` now hunts the secret-guard's local personal-literals file, not just declared
+  `--token`s** (dir #145). Re-derived from a 2026-07-07 branch that stranded before the tool's binary-blob
+  scanning (dir #101) landed independently — its own value was the missing piece: a real name in the
+  local `~/.claude/secret-scan-personal` file (override with `$SECRET_SCAN_PERSONAL_FILE`) is now hunted
+  case-insensitively in the tracked tree, git history, and binary blobs, the same three surfaces
+  declared tokens already cover. A bad regex line in the personal file is WARNed about, not silently
+  dropped or fatal.
 
 ### Fixed
 - **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose
