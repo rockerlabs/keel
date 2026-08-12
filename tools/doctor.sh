@@ -145,6 +145,13 @@ _char_count() {
   printf '%s' "$n"
 }
 
+# manifest_field FILE KEY — the value of a top-level `key=value` line in an install manifest (dir
+# #125), first match. Used 3x below reading install-manifest.<mode> — one definition instead of three
+# hand-copied sed pipelines.
+manifest_field() {
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1
+}
+
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
 # printed was a floor on real startup cost, not the whole of it — the global core is the OTHER half
 # of every session's always-loaded set. Resolved once here (machine-invariant across every $d in the
@@ -663,12 +670,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   if [ ! -f "$imanifest" ]; then
     warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — uninstall/doctor fall back to today's heuristics (KEEL-LEGACY-NOMANIFEST); record one: install.sh$imode_flag$ihome_flag"
   else
-    iman_version="$(sed -n 's/^keel_manifest_version=//p' "$imanifest" 2>/dev/null | head -n1)"
+    iman_version="$(manifest_field "$imanifest" keel_manifest_version)"
     if [ "$iman_version" != "1" ]; then
       warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest (KEEL-LEGACY-NOMANIFEST); re-run install.sh$imode_flag$ihome_flag to record a fresh one"
     else
-      iman_layout="$(sed -n 's/^layout=//p' "$imanifest" 2>/dev/null | head -n1)"
-      iman_home="$(sed -n 's/^home=//p' "$imanifest" 2>/dev/null | head -n1)"
+      iman_layout="$(manifest_field "$imanifest" layout)"
+      iman_home="$(manifest_field "$imanifest" home)"
       iman_drift=""
       case "$iman_layout" in
         link)

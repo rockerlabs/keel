@@ -9,6 +9,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **An install manifest, recorded instead of re-derived** (dir #125, PR 1/3). `install.sh` and
+  `tools/install-pre-pr-gate.sh` now write a flat `key=value` manifest under
+  `<home>/.keel/install-manifest.<claude|codex|gate>` — mode, layout, every Keel-owned artifact (with
+  cksum provenance for upgrade precision), and a checkout-side ledger
+  (`<checkout>/.keel/installed-homes`, gitignored) indexing every recorded home. State, not action: a
+  re-run whose files are all up to date, or whose drift prompt was declined, still lists every
+  artifact — carrying forward its recorded cksum rather than re-deriving from possibly user-edited
+  disk bytes. This PR is schema + writers only; `uninstall.sh` doesn't consume the manifest yet.
+  `tools/doctor.sh` gains two new read-only findings: `W-MANIFEST-MISSING` (no manifest — legacy
+  heuristics still apply, `KEEL-LEGACY-NOMANIFEST`) and `W-MANIFEST-DRIFT` (a present manifest
+  contradicts the filesystem). Why: the dir #98/#108/#109 batch took ~9 review rounds because
+  `uninstall.sh`/`doctor.sh` guess install state per-site instead of reading one recorded contract —
+  a missing contract, not a bug list.
 - **A test-coverage ratchet in `tools/self/doctor.sh`** (dir #142). Its "tool wiring" check now maps
   every shipped `tools/*.sh` script (already crossing subdirectories, so `tools/secret-guard/*.sh`
   and `tools/lib/*.sh` were already in scope) plus the installed `keel` CLI against `tests/test_*.sh`

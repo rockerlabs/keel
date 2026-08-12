@@ -452,13 +452,10 @@ wired_at=$wired_at"
   _atomic_write "$gate_manifest_file" "$gate_manifest_content"
   echo "install-pre-pr-gate: gate manifest ($gate_manifest_file)"
 
-  # Checkout-side ledger — the same discovery index install.sh writes to, deduped on append.
-  ledger_dir="$repo_root/.keel"
-  ledger="$ledger_dir/installed-homes"
-  mkdir -p "$ledger_dir"
-  if [ ! -f "$ledger" ] || ! grep -qxF "$gate_home_resolved" "$ledger" 2>/dev/null; then
-    printf '%s\n' "$gate_home_resolved" >> "$ledger"
-  fi
+  # Checkout-side ledger — the same discovery index install.sh writes to (tools/lib/ledger.sh).
+  # shellcheck source=tools/lib/ledger.sh
+  . "$here/lib/ledger.sh"
+  ledger_append "$repo_root/.keel/installed-homes" "$gate_home_resolved"
 fi
 
 echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."

@@ -876,15 +876,13 @@ rm -f "$merge_tmp"
 echo "  +    install manifest ($manifest_file)"
 
 # Checkout-side ledger — the discovery index consumers use to find every recorded home from the
-# checkout side; deduped on append. Skipped when EPHEMERAL: the checkout is a temp clone about to be
-# reaped, so a ledger entry pointing back at it would be pointing at nothing.
+# checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own
+# ledger write, dir #125). Skipped when EPHEMERAL: the checkout is a temp clone about to be reaped, so
+# a ledger entry pointing back at it would be pointing at nothing.
 if [ "$EPHEMERAL" != 1 ]; then
-  ledger_dir="$root/.keel"
-  ledger="$ledger_dir/installed-homes"
-  mkdir -p "$ledger_dir"
-  if [ ! -f "$ledger" ] || ! grep -qxF "$home_resolved" "$ledger" 2>/dev/null; then
-    printf '%s\n' "$home_resolved" >> "$ledger"
-  fi
+  # shellcheck source=tools/lib/ledger.sh
+  . "$root/tools/lib/ledger.sh"
+  ledger_append "$root/.keel/installed-homes" "$home_resolved"
 fi
 
 # Shared opening — the mode-specific middle differs below (clone handling, update, removal).
