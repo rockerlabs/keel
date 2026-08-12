@@ -373,6 +373,51 @@ git -C "$d" config user.email 'dev@noreply.corp.com'
 run "$doctor" "$d"
 check_contains "deceptive noreply-corp email → nudges (no longer waved through)" "$OUT" "not a noreply address"
 
+# dir #120: the commit-email read falls through to whatever global config is in scope when the repo
+# itself sets no LOCAL user.email — under a redirected HOME that can go silent (no email anywhere) or
+# read a container's baked-in address, either of which would otherwise look like a clean verdict
+# without saying so. No local user.email is set in any of these three — only global.
+git config --global --unset user.email >/dev/null 2>&1 || true
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+git config --global user.email 'container-default@corp.com'
+run "$doctor" "$d"
+check_contains "unsafe email sourced from global (no local) → WARN carries the provenance note" "$OUT" \
+  "not a noreply address"
+check_contains "...naming that it came from global config, not this repo's own" "$OUT" \
+  "read via git's global/system config, not this repo's own"
+
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+git config --global user.email '12345+dev@users.noreply.github.com'
+run "$doctor" "$d"
+check_absent   "safe email sourced from global (no local) → still no WARN" "$OUT" "not a noreply address"
+check_contains "...but discloses the verdict rode on global config, not a repo-owned one" "$OUT" \
+  "not set locally — the verdict above rode on git's global/system config"
+git config --global --unset user.email >/dev/null 2>&1 || true
+
+# dir #120 (found by an independent /code-review high pass): "no email anywhere" is the case the
+# comment above already claims to cover, but the original $email != $email_local test stayed silent
+# exactly there (both sides empty) — the precise silent-under-a-sandbox verdict this check exists to
+# surface. No user.email at ANY scope this time.
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+run "$doctor" "$d"
+check_absent   "no email at any scope → still no WARN" "$OUT" "not a noreply address"
+check_contains "...but discloses that nothing local settled the verdict" "$OUT" \
+  "not set locally — the verdict above rode on git's global/system config, or found nothing at all"
+
+d="$(mkproj)"; git -C "$d" init -q
+printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+printf 'token: secret-name\n' > "$d/.public-audit"
+git -C "$d" config user.email 'person@corp.com'   # LOCAL — the check's own verdict is repo-owned
+run "$doctor" "$d"
+check_absent "unsafe LOCAL email → no dir #120 disclosure (nothing rode on config outside this repo)" "$OUT" \
+  "not set locally"
+
 # dependency pinning (FRAMEWORK "Dependency versioning") — advisory WARN, never a GAP
 newbase() {  # a GAP-free baseline project, prints its path
   local d; d="$(mkproj)"; git -C "$d" init -q
@@ -875,6 +920,12 @@ check_status   "sandboxed HOME → still exit 0 (WARN, not GAP)" 0 "$STATUS"
 check_contains "sandboxed HOME still reports the unwired guard" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "sandboxed HOME → the finding names the config it read" "$OUT" "global config read via GIT_CONFIG_GLOBAL=$h/.gitconfig"
 
+# dir #120: the machine-wide W-GUARD-GLOBAL-STALE drift check is GATED on core.hooksPath being set —
+# with none set, it never runs at all, and its silence must not read as "the guard is fresh". A
+# disclosure line takes its place, naming the same config source.
+check_contains "sandboxed HOME, no hooksPath → staleness check discloses instead of going silent" "$OUT" \
+  "machine-global secret-guard staleness check: no core.hooksPath resolved via GIT_CONFIG_GLOBAL=$h/.gitconfig"
+
 # (b) a sandbox HOME that DOES carry a global git config (no hooksPath) — the shape a narrower,
 # readability-triggered note would have stayed silent on
 h="$SANDBOX/guardhome.cfg.$$"; mkdir -p "$h"
@@ -975,6 +1026,34 @@ printf '[user]\n\tname = Keel Test\n' > "$hx/.gitconfig"
 run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hx/xdg" "HOME=$hx" "$doctor" "$d"
 check_status "XDG-wired guard behind a ~/.gitconfig → the run completed (exit 0)" 0 "$STATUS"
 check_absent "XDG-wired guard behind a ~/.gitconfig → project scope still sees it" "$OUT" "[W-GUARD-UNWIRED]"
+
+# dir #121: --install mode has no repo to fall through `git rev-parse --git-path hooks/pre-commit`
+# from, so the same XDG-behind-~/.gitconfig shape used to report W-GUARD-UNWIRED there even though the
+# guard genuinely governs every commit on the machine — fixed by resolving core.hooksPath effectively
+# (no --global restriction) from a scratch non-repo dir instead.
+hxi="$SANDBOX/guardhome.xdgwired-install.$$"; mkdir -p "$hxi/xdg/git" "$hxi/hooks" "$hxi/claude"
+printf '#!/bin/sh\nexit 0\n' > "$hxi/hooks/pre-commit"; chmod +x "$hxi/hooks/pre-commit"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hxi" > "$hxi/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$hxi/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hxi/xdg" "HOME=$hxi" "$doctor" --install "$hxi/claude"
+check_absent "--install, XDG-wired guard behind a ~/.gitconfig → no longer reports unwired" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "--install, XDG-wired guard behind a ~/.gitconfig → reports it as wired" "$OUT" \
+  "OK   secret-guard: machine-global ($hxi/hooks)"
+
+# ...and invoked from INSIDE a repo, the effective probe must not pick up THAT repo's own local
+# override — the probe has to run from a guaranteed non-repo scratch dir, not doctor's own cwd.
+hxir="$SANDBOX/guardhome.xdgwired-install-cwd.$$"
+mkdir -p "$hxir/xdg/git" "$hxir/hooks" "$hxir/claude" "$hxir/somerepo/.local-hooks"
+printf '#!/bin/sh\nexit 0\n' > "$hxir/hooks/pre-commit"; chmod +x "$hxir/hooks/pre-commit"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hxir" > "$hxir/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$hxir/.gitconfig"
+git -C "$hxir/somerepo" init -q
+git -C "$hxir/somerepo" config core.hooksPath .local-hooks   # a LOCAL override in the cwd repo — must not leak in
+run_in "$hxir/somerepo" env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hxir/xdg" "HOME=$hxir" \
+  "$doctor" --install "$hxir/claude"
+check_absent "run from inside a repo with its own local override → still not unwired" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "...and still reports the real machine-global dir, not the repo's local one" "$OUT" \
+  "OK   secret-guard: machine-global ($hxir/hooks)"
 
 # --install mode: a core.hooksPath that IS set but carries no executable pre-commit is a DIFFERENT state
 # from "nothing wired at all" and says so — the two need different fixes. The provenance clause still
@@ -1083,6 +1162,48 @@ check_contains "...but a drifted one still does" "$OUT" "[W-GUARD-STALE]"
 git -C "$d" config --local --unset core.hooksPath
 rm -rf "$d/.local-hooks"
 
+# dir #122: a LOCAL core.hooksPath pinned to the SAME absolute dir the machine-global one names is one
+# drifted file, not two — the machine-wide W-GUARD-GLOBAL-STALE finding already reports it, with the
+# remediation that actually fixes it (a per-repo re-vendor here would write a second, unshared copy,
+# or clobber the shared one — neither is what "re-vendor: <this repo>" promises).
+gdir3="$SANDBOX/ghooks-drift-dup"; mkdir -p "$gdir3"
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$gdir3/secret-scan.sh"; printf '\n# stale\n' >> "$gdir3/secret-scan.sh"
+printf '#!/bin/sh\nexit 0\n' > "$gdir3/pre-commit"; chmod +x "$gdir3/pre-commit"
+git config --global core.hooksPath "$gdir3"
+git -C "$d" config --local core.hooksPath "$gdir3"   # same absolute dir as the machine-global one
+run "$doctor" "$d"
+check_contains "local hooksPath == global hooksPath, drifted → still flagged once (machine-wide)" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent   "...but not ALSO as the per-repo finding (same physical file)" "$OUT" "[W-GUARD-STALE]"
+git -C "$d" config --local --unset core.hooksPath
+git config --global --unset core.hooksPath
+
+# ...and a local hooksPath at a DIFFERENT absolute dir is a genuine separate vendored copy, still owned
+# by the per-repo finding — the -ef check must not swallow that case too.
+gdir4="$SANDBOX/ghooks-drift-other"; mkdir -p "$gdir4"
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$gdir4/secret-scan.sh"; printf '\n# stale\n' >> "$gdir4/secret-scan.sh"
+printf '#!/bin/sh\nexit 0\n' > "$gdir4/pre-commit"; chmod +x "$gdir4/pre-commit"
+git config --global core.hooksPath "$gdir3"
+git -C "$d" config --local core.hooksPath "$gdir4"   # a DIFFERENT absolute dir
+run "$doctor" "$d"
+check_contains "local hooksPath at a DIFFERENT absolute dir, drifted → still the per-repo finding" "$OUT" "[W-GUARD-STALE]"
+git -C "$d" config --local --unset core.hooksPath
+git config --global --unset core.hooksPath
+
+# dir #122, the XDG variant of the same dedup: the machine-wide finding this check dedupes against
+# fires on the EFFECTIVE hooksPath (dir #121's hoist), not the plain --global-only one — so the dedup
+# itself must compare against the effective value too, or it silently misses the dup on exactly the
+# machines dir #121 exists for (found by an independent /code-review high pass, reproduced live).
+hxd="$SANDBOX/guardhome.xdgwired-dup.$$"; mkdir -p "$hxd/xdg/git" "$hxd/hooks"
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$hxd/hooks/secret-scan.sh"; printf '\n# stale\n' >> "$hxd/hooks/secret-scan.sh"
+printf '#!/bin/sh\nexit 0\n' > "$hxd/hooks/pre-commit"; chmod +x "$hxd/hooks/pre-commit"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hxd" > "$hxd/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$hxd/.gitconfig"
+git -C "$d" config --local core.hooksPath "$hxd/hooks"   # same absolute dir the XDG-effective one names
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hxd/xdg" "HOME=$hxd" "$doctor" "$d"
+check_contains "XDG-effective global == local hooksPath, drifted → still flagged once (machine-wide)" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent   "...but not ALSO as the per-repo finding (dedup follows the effective value)" "$OUT" "[W-GUARD-STALE]"
+git -C "$d" config --local --unset core.hooksPath
+
 # (c) a wired machine-global guard → no finding, so no provenance clause either (it never appears on
 # the path it exists to explain away). Anchored on a positive assertion too: two bare check_absents
 # would both pass on empty output, so a doctor that crashed before printing anything would look green.
@@ -1095,5 +1216,7 @@ check_status   "a wired machine-global guard → the run completed (exit 0)" 0 "
 check_contains "a wired machine-global guard → doctor reached its verdict" "$OUT" "baseline OK"
 check_absent   "a wired machine-global guard draws no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
 check_absent   "a wired machine-global guard draws no provenance clause" "$OUT" "global config read via"
+check_absent   "...and hooksPath being set means the staleness check ran → no dir #120 disclosure" "$OUT" \
+  "staleness check: no core.hooksPath resolved"
 
 summary
