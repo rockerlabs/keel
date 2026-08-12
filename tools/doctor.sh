@@ -687,7 +687,13 @@ if [ "$INSTALL_MODE" = 1 ]; then
             iman_drift="manifest says layout=link-nogit but $ihome/keel/CORE.md is a symlink (the --no-git trim looks restored)"
           fi ;;
       esac
-      if [ -z "$iman_drift" ] && [ -n "$iman_home" ] && [ "$iman_home" != "$ihome" ]; then
+      # Canonicalize $ihome for this ONE comparison only (never reassign the shared $ihome — every
+      # other advice line in this mode still names the home the way the operator typed it): the
+      # manifest's own home= is always resolved absolute (install.sh's home_resolved), so a
+      # cosmetic difference — a trailing slash, a relative path — would otherwise false-fire this
+      # WARN on a perfectly healthy install (found by an independent /code-review high pass).
+      ihome_canon="$(cd "$ihome" 2>/dev/null && pwd || printf '%s' "$ihome")"
+      if [ -z "$iman_drift" ] && [ -n "$iman_home" ] && [ "$iman_home" != "$ihome_canon" ]; then
         iman_drift="manifest recorded home=$iman_home, but this audit is auditing $ihome"
       fi
       if [ -n "$iman_drift" ]; then

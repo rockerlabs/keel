@@ -161,6 +161,12 @@ run "$doctor" --install "$dhome"
 check_absent "healthy manifested install: no W-MANIFEST-MISSING" "$OUT" "W-MANIFEST-MISSING"
 check_absent "healthy manifested install: no W-MANIFEST-DRIFT" "$OUT" "W-MANIFEST-DRIFT"
 
+# Regression (independent /code-review high pass): a cosmetic difference between the raw --install
+# argument and the manifest's own canonical home= (a trailing slash is the ordinary trigger — shell
+# tab-completion on a dir routinely appends one) must NOT false-fire W-MANIFEST-DRIFT.
+run "$doctor" --install "$dhome/"
+check_absent "trailing-slash home: no false W-MANIFEST-DRIFT" "$OUT" "W-MANIFEST-DRIFT"
+
 dman="$dhome/.keel/install-manifest.claude"
 mv "$dman" "$dman.aside"
 run "$doctor" --install "$dhome"
