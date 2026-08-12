@@ -447,13 +447,19 @@ check_contains "notes that personal literals are hunted" "$OUT" "secret-scan-per
 
 # a personal-file line with an invalid ERE is a GAP (not silently dropped, not a script-aborting
 # failure) — that literal goes unscanned, which is a detection-accuracy failure, not a false-positive
-# risk like a bad allow-email entry (which stays a WARN)
+# risk like a bad allow-email entry (which stays a WARN). Whether `foo(bar` is "broken" depends on the
+# grep: GNU rejects it, busybox accepts it as a literal — gate on what THIS platform's grep actually
+# does, same discipline as the allow-email broken-regex test above.
 d="$(repo_by dev@example.com)"
 badfile="$SANDBOX/pa-personal-bad.rx"
-printf '[unterminated\n' > "$badfile"
+printf 'foo(bar\n' > "$badfile"
 run env SECRET_SCAN_PERSONAL_FILE="$badfile" bash "$pa" --no-history "$d"
-check_status "invalid personal regex line → GAP exit 1, not a script-aborting failure" 1 "$STATUS"
-check_contains "flags the invalid personal regex line" "$OUT" "invalid regex line"
+if [ -n "$(printf '' | grep -iE -- 'foo(bar' 2>&1 >/dev/null)" ]; then
+  check_status "invalid personal regex line → GAP exit 1, not a script-aborting failure" 1 "$STATUS"
+  check_contains "flags the invalid personal regex line" "$OUT" "invalid regex line"
+else
+  pass "personal-literal regex tolerated by this grep (busybox) → nothing to flag"
+fi
 
 # no personal file at all (the sandbox default) → no personal-literal hunting, no note
 d="$(repo_by dev@example.com)"
