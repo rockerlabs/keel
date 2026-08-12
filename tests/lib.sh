@@ -42,6 +42,19 @@ _fail=0
 pass() { _pass=$((_pass + 1)); printf '  ok    %s\n' "$1"; }
 fail() { _fail=$((_fail + 1)); printf '  FAIL  %s\n        %s\n' "$1" "$2"; }
 
+# pin LABEL FILE PATTERN HINT — assert FILE contains PATTERN as a fixed string (grep -F), reporting
+# under LABEL with HINT on failure. Promoted here (dir #143) once a second test file
+# (test_release_audit_doc.sh) needed the exact same prose-citation-pin idiom
+# test_rails_honesty.sh had defined for itself — the "second use = promote" signal this file's own
+# earlier comments already apply to run()/fresh_home_env()/etc.
+pin() {
+  if grep -qF -- "$3" "$2"; then
+    pass "$1"
+  else
+    fail "$1" "$4"
+  fi
+}
+
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
 #
 # dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always
