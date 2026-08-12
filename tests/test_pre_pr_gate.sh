@@ -260,6 +260,18 @@ check_status "space-carrying outcome still succeeds" 0 "$STATUS"
 check_contains "space-carrying outcome is recorded in the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.5-review	medium-operator-run, findings resolved"
 rm -f "$(sentinel_for "$d")"
 
+# 11f. dir #149: a space-free but bogus step-id (a typo, not one of $EXPECTED_STEPS) is rejected too —
+# dir #144's whitespace guard above catches the "combined quoted string" shape, but a typo with no
+# embedded whitespace passed it and wrote silently, same deferred "missing receipt" denial class.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depht high
+check_status "bogus step-id → non-zero exit" 1 "$STATUS"
+check_contains "bogus step-id → error names the bad id" "$OUT" "polish.4-depht"
+check_contains "bogus step-id → error says it's not an expected step" "$OUT" "not one of the expected steps"
+check_absent "bogus step-id → nothing appended to the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depht"
+rm -f "$(sentinel_for "$d")"
+
 # --- impact instrumentation: guardrail-fire event on deny ---------------------------------------
 # A deny (here: no sentinel → run /polish first) records ONE metadata-only guard event when tracking is on
 # (via $KEEL_IMPACT_LOG or the target repo's .keel/ marker), on the log file only — never on stdout, so the
@@ -1136,6 +1148,20 @@ check_status "recover with one malformed step-id line among good ones → exit 0
 check_contains "recover names the malformed step as unrecovered" "$OUT" "malformed"
 check_contains "recover still restores the well-formed lines" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.1-diff	done"
 check_absent "the malformed step-id is never written to the live sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depth high"
+rm -f "$(prev_sentinel_for "$d")" "$(sentinel_for "$d")"
+
+# 59c. dir #149: `--recover` also skips a space-free but bogus step-id in the retired backup (a typo
+# from before dir #149's own membership guard existed, or hand-edited) — same skip-not-abort treatment
+# as 59b's whitespace case, reached through the same OTHER entry point relative to `receipt` itself.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+printf 'nonce\tprior-nonce\nbase-sha\t%s\nprior-nonce\tpolish.1-diff\tdone\nprior-nonce\tpolish.4-depht\tbad\nprior-nonce\tpolish.2-simplify\tdone\n' "$(git -C "$d" rev-parse HEAD)" > "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover with one bogus step-id line among good ones → exit 0" 0 "$STATUS"
+check_contains "recover names the bogus step as unrecovered" "$OUT" "not one of the expected steps"
+check_contains "recover still restores the well-formed lines" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.1-diff	done"
+check_absent "the bogus step-id is never written to the live sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.4-depht"
 rm -f "$(prev_sentinel_for "$d")" "$(sentinel_for "$d")"
 
 # --- dir #80: (repo, branch) receipt keying --------------------------------------------------------

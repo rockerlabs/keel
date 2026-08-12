@@ -365,6 +365,25 @@
 set -u
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
+# dir #149: the single membership test every raw write into the sentinel routes through — both
+# `receipt`'s own append and `receipt --recover`'s replay of a retired sentinel's lines (search their
+# call sites below). A literal `for`-loop + `=` compare, same idiom as $ACCEPTED_REVIEW_LEVELS's own
+# membership checks just below — NOT a `case " $EXPECTED_STEPS " in *" $step_id "*)` glob-substring
+# test, which an earlier draft of this used and which a fresh review caught as unsound in isolation: two
+# space-adjacent EXPECTED_STEPS entries joined into one string (`"polish.1-diff polish.2-simplify"`)
+# match that pattern as a substring, even though no single legal step id contains a space. Literal `=`
+# comparison has no such spanning failure mode — a whitespace-bearing candidate simply never equals any
+# single-word entry — so this one helper structurally closes the membership check even for a
+# whitespace-carrying candidate; both call sites keep dir #144's own whitespace-specific guard ahead of
+# this call anyway, purely for that guard's own friendlier, more specific error message.
+_expected_step() {
+  local want="$1" s
+  for s in $EXPECTED_STEPS; do
+    [ "$s" = "$want" ] && return 0
+  done
+  return 1
+}
+
 # dir #88 (found in the operator-run /code-review high pass on this ticket): the accepted review-depth
 # levels used to be hardcoded independently in the SubagentStop and AskUserQuestion marker-parsing
 # branches below — one shared source avoids a future tier addition/rename updating one and silently
@@ -832,6 +851,15 @@ case "${1:-}" in
             continue
             ;;
         esac
+        # dir #149: the whitespace guard just above catches one malformation shape, but a retired
+        # sentinel can also carry a space-free id that was never a legal step at all (a typo from a
+        # version of `receipt` that predates dir #149's own membership guard, or a hand-edited line) —
+        # same skip-not-abort treatment, same `_expected_step` helper `receipt` itself now calls.
+        if ! _expected_step "$r_step"; then
+          unrecovered="${unrecovered:+$unrecovered / }$r_step (malformed — not one of the expected steps)"
+          todo="${todo:+$todo, }a prior receipt for this step was malformed and could not be recovered; re-run it fresh"
+          continue
+        fi
         case "$r_step" in
           polish.3-tests|polish.5-review)
             # dir #96: never recovered. Both bind a claim to a SPECIFIC commit, and both have an arm
@@ -906,6 +934,14 @@ case "${1:-}" in
         exit 1
         ;;
     esac
+    # dir #149: the whitespace guard above catches the felt "combined quoted string" incident, but a
+    # typo'd, space-free step-id (e.g. "polish.4-depht") still passed it and wrote silently — the same
+    # deferred, misleading "missing receipt" denial at `gh pr create` time, just via a different
+    # malformation shape. `_expected_step` (defined by EXPECTED_STEPS above) closes it.
+    if ! _expected_step "$step_id"; then
+      printf 'pre-pr-gate: step-id %q is not one of the expected steps (%s)\n' "$step_id" "$EXPECTED_STEPS" >&2
+      exit 1
+    fi
     outcome="${3:-done}"
     # A real outcome routinely contains SPACES (e.g. "medium:+412-96,10f,code"), so it can't reuse
     # step_id's own [[:space:]] guard — only a TAB or newline actually corrupts the TSV sentinel (an
