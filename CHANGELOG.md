@@ -22,6 +22,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   contradicts the filesystem). Why: the dir #98/#108/#109 batch took ~9 review rounds because
   `uninstall.sh`/`doctor.sh` guess install state per-site instead of reading one recorded contract —
   a missing contract, not a bug list.
+- **`uninstall.sh` now consumes the install manifest** (dir #125, PR 2/3). Per-artifact ownership is
+  cksum-precision now (bytes must match the RECORDED cksum, not the current checkout — the old
+  cmp-to-checkout was blind to upgrades: an older release's untouched file differs from a newer
+  checkout and was wrongly kept). Cross-manifest refcount closes dir #124's structural gap: an
+  artifact also listed in the OTHER mode's manifest at the same home is shared, kept, and named — no
+  invocation silently strips the shared half of a both-modes home. The mode/home mismatch refusal and
+  `other_mode_hint` (now ledger-driven, naming a retargeted `--home` install the old `$HOME/<leaf>`
+  probe couldn't see) and `gate_hooks_hint` (quoting the gate manifest's recorded settings path) are
+  all manifest-driven, each keeping the old heuristic as an unchanged `KEEL-LEGACY-NOMANIFEST`
+  fallback for a manifest-less home. Also handles a MIXED-generation both-modes home (one side
+  installed by an old, pre-dir-125 checkout with no manifest, the other by the current one) without
+  either falsely refusing or letting the manifested mode's uninstall strip content the unmanifested
+  mode still needs, and never backs up/consumes a manifest whose `keel_manifest_version` it doesn't
+  understand — treated as absent for reads, left untouched on disk either way.
 - **A test-coverage ratchet in `tools/self/doctor.sh`** (dir #142). Its "tool wiring" check now maps
   every shipped `tools/*.sh` script (already crossing subdirectories, so `tools/secret-guard/*.sh`
   and `tools/lib/*.sh` were already in scope) plus the installed `keel` CLI against `tests/test_*.sh`
