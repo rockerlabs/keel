@@ -364,6 +364,35 @@ Steps, in order:
    a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
    means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
    applies to this round's fresh receipt before moving to step 6, same as the first pass.
+
+   **Delta-review protocol (dir #127):** a convergence round never re-runs a fresh full-diff review in a
+   new context. Re-engage the SAME reviewer — for the agent path (a), a follow-up message to the same
+   Agent-tool subagent that ran the original pass, not a new spawn; for an operator-run `/code-review`
+   hand-off, the operator re-running it on the delta — scoped to only the fix commit's own diff. A fresh
+   full pass is justified only when the fix touched surface the original review never examined (dir
+   #126 signal 1) — name that reason if it happens.
+
+   **Round budget (dir #127):** the full review (this step's first pass) runs once. After it, at most TWO
+   delta rounds. If a SECOND consecutive delta round still returns substantive findings (not a style nit),
+   stop fix-forward: do not attempt a third round. File the residual as a numbered backlog ticket, name it
+   honestly in the PR body's own words (not just in a code comment), and open the PR as-is — this is an
+   executed decision, written down like a `skipped:<reason>` receipt outcome, never a silent abandon. If
+   the two rounds' findings instead say "missing contract" (the same shape recurring, not shrinking),
+   escalate to redesign instead of a third fix-forward attempt.
+
+   **Terminal state (dir #127):** a convergence round is DONE when its delta re-review returns ZERO
+   findings. Zero findings on a fresh FULL re-review is explicitly NOT the goal and is not a stopping
+   signal by itself — a full review is sampling and will always find something to say if repeated; chasing
+   that produced the 7- and 13-round loops this ticket exists to close. Only a clean delta round ends the
+   cycle.
+
+   **Per-round trend line (dir #127):** at the end of EVERY convergence round (after the delta re-review
+   completes, before deciding whether another round is needed), report one line to the operator:
+   `round N: <count> findings, max severity <sev>, surface: same|new — <what>, class: named|exhausted,
+   forecast: <1 more delta round | stop-rule triggers next round | done>`. This makes the budget's
+   progress visible as it happens instead of only in a final summary — a 14-round loop with no visible
+   trend is the felt failure this line exists to prevent.
+
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
    automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
    `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip`, or `agent:medium+operator-run` —
@@ -381,10 +410,11 @@ Steps, in order:
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
    Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
-   as step 8, not a bare `done`: step 6 is one of the four steps a convergence round must write itself
-   (3, 5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth was `skip` — dir
-   #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its receipt — dir #119,
-   never written, so never recovered)), and its whole job is to catch a fix-commit
+   as step 8, not a bare `done`: step 6 is one of the steps a convergence round must write itself —
+   four ordinarily (3, 5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth
+   was `skip` — dir #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its
+   receipt — dir #119, never written, so never recovered)), five when that GAP forces a re-run (7
+   joins the set, dir #138) — and its whole job is to catch a fix-commit
    breaking something. So the gate cross-checks it against current HEAD the same way it does steps 3 and
    8 — a bare `done` would mean a recovered, pre-fix-commit retest could otherwise satisfy completeness
    without the fix-commit ever having been re-tested.
