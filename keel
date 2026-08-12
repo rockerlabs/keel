@@ -55,11 +55,19 @@ if [ ! -f "$CHECKOUT/install.sh" ] || [ ! -d "$CHECKOUT/tools" ]; then
   if [ -n "$keel_home" ]; then
     # MODE as well as home — the half a home flag can't see. The bin/keel wiring is not mode-gated,
     # so a --codex install has this CLI too; advising a bare `install.sh --home <codex-home>` would
-    # re-run Claude copy mode into it and write the wrong context file. The mode is read off the home
-    # itself, since the CLI has no other record of it: a --codex install writes AGENTS.md and no
-    # CLAUDE.md. The default it compares against moves with the mode for the same reason.
-    if [ -f "$keel_home/AGENTS.md" ] && [ ! -f "$keel_home/CLAUDE.md" ]; then
+    # re-run Claude copy mode into it and write the wrong context file. dir #125: prefer the recorded
+    # install manifest — exact, not guessed — when exactly one mode's manifest is present at the home;
+    # a both-modes home (dir #124) falls to claude, same as the legacy sniff below picks in that case.
+    if [ -f "$keel_home/.keel/install-manifest.codex" ] && [ ! -f "$keel_home/.keel/install-manifest.claude" ]; then
       mode_flag=" --codex"; default_leaf=".codex"
+    elif [ ! -f "$keel_home/.keel/install-manifest.claude" ] && [ ! -f "$keel_home/.keel/install-manifest.codex" ]; then
+      # KEEL-LEGACY-NOMANIFEST: no manifest recorded at the home — sniff by content instead. The mode is
+      # read off the home itself, since the CLI has no other record of it: a --codex install writes
+      # AGENTS.md and no CLAUDE.md. The default it compares against moves with the mode for the same
+      # reason.
+      if [ -f "$keel_home/AGENTS.md" ] && [ ! -f "$keel_home/CLAUDE.md" ]; then
+        mode_flag=" --codex"; default_leaf=".codex"
+      fi
     fi
     # Compare against the default BOTH raw and physically resolved: $keel_home came from `pwd -P`, so
     # a $HOME reached through a symlink (/tmp → /private/tmp on macOS) would otherwise differ from an

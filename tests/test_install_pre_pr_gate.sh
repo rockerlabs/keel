@@ -226,6 +226,35 @@ check_status "wiring the freshly-installed home's own gate -> exit 0" 0 "$STATUS
 run "$doctor" --install "$dh_wired"
 check_contains "wired gate -> OK" "$OUT" "OK   /polish gate: wired machine-global"
 
+# --- acceptance test 19: W-GATE-UNWIRED/OK advice agrees with the gate manifest --------------------
+# dh_wired's OK line above came from a REAL install-pre-pr-gate.sh --global run, so a gate manifest was
+# recorded too — the OK line should say so.
+check_contains "wired gate + recorded manifest -> OK names the manifest" "$OUT" "manifest confirms"
+
+# Gate genuinely wired, but no manifest was ever recorded (e.g. a pre-dir-125 wire) — advisory nudge to
+# re-run the installer, not the "unwired" WARN (the hooks really are there).
+dh_wired_nomanifest="$SANDBOX/dh-wired-nomanifest"
+run "$REPO_ROOT/install.sh" --home "$dh_wired_nomanifest" --no-hooks
+run env KEEL_HOME="$dh_wired_nomanifest" "$installer" --global
+check_status "wiring dh_wired_nomanifest's gate -> exit 0" 0 "$STATUS"
+rm -f "$dh_wired_nomanifest/.keel/install-manifest.gate"
+run "$doctor" --install "$dh_wired_nomanifest"
+check_contains "wired gate, no manifest -> still OK (hooks really are there)" "$OUT" "OK   /polish gate: wired machine-global"
+check_absent "...and does not falsely claim a manifest confirms it" "$OUT" "manifest confirms"
+check_contains "wired gate, no manifest -> W-GATE-MANIFEST-MISSING nudge (KEEL-LEGACY-NOMANIFEST)" "$OUT" "W-GATE-MANIFEST-MISSING"
+check_contains "...naming the installer re-run" "$OUT" "install-pre-pr-gate.sh"
+
+# A gate manifest recorded, but the hooks it claims are wired are gone (hand-edited/stripped settings.json
+# outside this installer's own --uninstall) — W-MANIFEST-DRIFT, not a silent OK or the plain-unwired WARN.
+dh_gate_drift="$SANDBOX/dh-gate-drift"
+run "$REPO_ROOT/install.sh" --home "$dh_gate_drift" --no-hooks
+run env KEEL_HOME="$dh_gate_drift" "$installer" --global
+check_status "wiring dh_gate_drift's gate -> exit 0" 0 "$STATUS"
+printf '{}' > "$dh_gate_drift/settings.json"
+run "$doctor" --install "$dh_gate_drift"
+check_contains "manifest says wired, hooks gone -> W-MANIFEST-DRIFT" "$OUT" "W-MANIFEST-DRIFT"
+check_contains "...naming the recorded settings path" "$OUT" "$dh_gate_drift/settings.json"
+
 # --- regression: doctor's gate check is structural, not a bare substring match ----------------------
 # A settings.json that only mentions pre-pr-gate.sh via an unrelated hook (no PreToolUse/Bash entry at
 # all — the one that actually blocks gh pr create) must NOT read as "wired".

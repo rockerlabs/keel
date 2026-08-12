@@ -335,8 +335,10 @@
 # **Arming rule (part of the spec, not optional):** the check above only fires when the AskUserQuestion
 # leg is actually WIRED — `_dialog_leg_armed` (below) greps the resolvable settings.json candidates
 # (project `.claude/settings.json`/`.claude/settings.local.json`, main-checkout-resolved per dir #61,
-# `~/.claude/settings.json`, and `${KEEL_HOME:-~/.claude}/settings.json` — four paths, dir #137) for a
-# `PostToolUse` entry whose matcher is `AskUserQuestion` and whose hook command names this script. Two
+# `~/.claude/settings.json`, and `${KEEL_HOME:-~/.claude}/settings.json` — four static paths, dir #137 —
+# PLUS one dynamic candidate per home the checkout-side install ledger has verified still carries a gate
+# manifest, dir #125/B2, see `_gate_ledger_candidates` below) for a `PostToolUse` entry whose matcher is
+# `AskUserQuestion` and whose hook command names this script. Two
 # rejected alternatives, same reasoning as dir #63/#70's own residual-limit
 # sections: (i) fail closed unconditionally — the gate CHECK ships in this file and goes live the instant
 # an adopter `git pull`s, but the TRACE leg needs a SEPARATE, explicit `tools/install-pre-pr-gate.sh`
@@ -354,7 +356,10 @@
 # trade-off as dir #63 limit (2). (3) per-repo trace file shared across worktrees — same as dir #63 limit
 # (3). (4) the arming grep is a structural presence check, not a liveness check — a matcher wired to a
 # STALE copy of this script (the felt incident that keeps `install-pre-pr-gate.sh` pointing at a kept
-# checkout by absolute path, never a copy) would still read as armed. (5) dir #63/#70's OWN trace-required
+# checkout by absolute path, never a copy) would still read as armed. Since dir #125/B2 this ALSO covers
+# the ledger-derived candidates: a home the checkout-side ledger (`<checkout>/.keel/installed-homes`)
+# lists is trusted once its gate manifest is present and version-1, never re-verified against the
+# harness's actual loaded hooks. (5) dir #63/#70's OWN trace-required
 # checks (the `trusted==0` block above, unchanged by this ticket) have no equivalent arming guard — an
 # adopter who `git pull`s past dir #63/#70 without re-running `tools/install-pre-pr-gate.sh` hits the same
 # false-deny window this ticket's arming rule exists to close, just unguarded. Found auditing this ticket
@@ -468,37 +473,96 @@ main_top_for() {
 # this leg guards a MANDATORY review step, and its failure mode is a loud block with a documented
 # manual escape, versus a silent skip with none.
 #
-# That argument covers KEEL_HOME, NOT `install.sh --home DIR`, which retargets the install WITHOUT
-# exporting KEEL_HOME. Nothing about the HOOKS moves with it: `install.sh` never writes settings.json
-# at all (wiring the gate is the separate, explicit opt-in `install-pre-pr-gate.sh` run — see its
-# header), and that script has no `--home` of its own, so its `--global` target stays
-# `${KEEL_HOME:-$HOME/.claude}` — exactly what this probe reads. Gate installer and probe therefore
-# still agree under `--home`; they just agree about a directory the harness may not be loading, so the
-# leg is never armed there — a silent skip, the pre-existing behavior, not a new deny. Named because it
-# is the case that most weakens the paragraph above; the `--home`/`--global` target disagreement
-# between the two installers is its own defect, not this one's.
+# That argument covers KEEL_HOME, NOT `install.sh --home DIR`/`install-pre-pr-gate.sh --home DIR`
+# (dir #98 added `--home` to BOTH installers after this paragraph was first written — a prior version of
+# it claimed the gate installer "has no --home of its own", which stopped being true and became this
+# section's own stale comment, the exact class of bug B2 is named after). `install-pre-pr-gate.sh --home
+# DIR` wires the 6 hooks at `DIR/settings.json`, a path none of the four static candidates above ever
+# probe — a genuinely wired AskUserQuestion leg there reads as UNARMED and the dir #88 mandatory-dialog
+# deny silently no-ops, the same class PR #165 closed for `KEEL_HOME` and PR #173's `--home` flag
+# reopened (dir #125's own B2 finding).
+#
+# **Fix (dir #125):** rather than adding a fifth static guess, `_dialog_leg_armed` now also walks the
+# checkout-side install ledger (`<checkout>/.keel/installed-homes`, `tools/lib/ledger.sh`'s discovery
+# index, written by both installers) via `_gate_ledger_candidates` below. For every home the ledger
+# lists, it verifies that home STILL carries a well-formed (version-1) gate manifest
+# (`<home>/.keel/install-manifest.gate`) before trusting its recorded `settings=` path as a candidate —
+# a stale ledger line whose manifest was since removed contributes nothing. This closes the `--home`
+# gap without special-casing the flag: whatever directory the gate installer actually wired into is
+# exactly the directory its own manifest records, ledger-verified.
 _dialog_leg_armed() {
   local top="${1:?_dialog_leg_armed: main-checkout top path required}" f
   command -v jq >/dev/null 2>&1 || return 1
+  # KEEL-LEGACY-NOMANIFEST: the four static, pre-manifest candidates — always probed, ledger or no
+  # ledger, since a manifest-less home (or a home never wired via the gate installer at all, e.g. a
+  # hand-edited settings.json) still needs exactly this heuristic set.
   for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" \
            "${HOME:-}/.claude/settings.json" \
            "${KEEL_HOME:-${HOME:-}/.claude}/settings.json"; do
     [ -f "$f" ] || continue
-    # `contains(...)`, not a regex `test(...)` — a plain substring check for this fixed literal, matching
-    # tools/doctor.sh's own `gate_hook_wired()` idiom for the identical "is this hook wired" shape (found
-    # in the operator-run /code-review high pass on this ticket — the two had drifted to different jq
-    # idioms with no behavioral difference; kept consistent so a future arming check copied from this one
-    # doesn't carry forward an unnecessary regex-escaping habit).
-    if jq -e '
-        (.hooks.PostToolUse // []) | any(
-          .matcher == "AskUserQuestion" and
-          ((.hooks // []) | any(.command // "" | contains("pre-pr-gate.sh")))
-        )
-      ' "$f" >/dev/null 2>&1; then
+    if _gate_settings_has_dialog_hook "$f"; then
       return 0
     fi
   done
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    if _gate_settings_has_dialog_hook "$f"; then
+      return 0
+    fi
+  done < <(_gate_ledger_candidates)
   return 1
+}
+
+# `contains(...)`, not a regex `test(...)` — a plain substring check for this fixed literal, matching
+# tools/doctor.sh's own `gate_hook_wired()` idiom for the identical "is this hook wired" shape (found
+# in the operator-run /code-review high pass on this ticket — the two had drifted to different jq
+# idioms with no behavioral difference; kept consistent so a future arming check copied from this one
+# doesn't carry forward an unnecessary regex-escaping habit). Factored out of `_dialog_leg_armed` so
+# both the static-candidate loop and the ledger-candidate loop (dir #125) share one jq query.
+_gate_settings_has_dialog_hook() {
+  jq -e '
+      (.hooks.PostToolUse // []) | any(
+        .matcher == "AskUserQuestion" and
+        ((.hooks // []) | any(.command // "" | contains("pre-pr-gate.sh")))
+      )
+    ' "$1" >/dev/null 2>&1
+}
+
+# dir #125 (B2 fix): the checkout root THIS SCRIPT itself resides in — not `$top` (the project the gate
+# is running against, resolved via `main_top_for` above), but the Keel checkout that ships this file and
+# that `install-pre-pr-gate.sh` recorded a ledger entry into. Self-resolved from the running script's own
+# path (mirrors `install-pre-pr-gate.sh`'s own `here=`/`repo_root=` derivation) so a symlinked or
+# directly-invoked copy still finds its own siblings rather than the caller's cwd.
+_gate_checkout_root() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || return 1
+  (cd "$here/.." && pwd) 2>/dev/null
+}
+
+# manifest_field FILE KEY — same minimal `key=value` reader tools/doctor.sh and uninstall.sh each keep
+# their own copy of (no established cross-sourcing convention between these files yet; see uninstall.sh's
+# own comment on its copy). First match only, empty string if the file or key is absent.
+_gate_manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1; }
+
+# dir #125 (B2 fix): for each home the checkout-side ledger (`installed-homes`) records, print that
+# home's gate-manifest `settings=` path — but only when the manifest is still actually there and at a
+# `keel_manifest_version` this reads (an unversioned/corrupt/removed manifest is silently skipped, never
+# a crash: same versioning contract as every other dir #125 consumer). `KEEL_LEDGER_FILE` is the same
+# test-isolation override `install.sh`/`install-pre-pr-gate.sh` respect. ARMED still wins (residual limit
+# above), so a candidate this prints that turns out not to match is harmless — it just never matches.
+_gate_ledger_candidates() {
+  local checkout_root ledger home manifest settings
+  checkout_root="$(_gate_checkout_root)" || return 0
+  ledger="${KEEL_LEDGER_FILE:-$checkout_root/.keel/installed-homes}"
+  [ -f "$ledger" ] || return 0
+  while IFS= read -r home; do
+    [ -n "$home" ] || continue
+    manifest="$home/.keel/install-manifest.gate"
+    [ -f "$manifest" ] || continue
+    [ "$(_gate_manifest_field "$manifest" keel_manifest_version)" = "1" ] || continue
+    settings="$(_gate_manifest_field "$manifest" settings)"
+    [ -n "$settings" ] && printf '%s\n' "$settings"
+  done < "$ledger"
 }
 
 # The basename-of-main-checkout key every per-repo /tmp file below shares, factored out once dir #63
