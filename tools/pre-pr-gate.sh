@@ -838,25 +838,24 @@ case "${1:-}" in
       count=0; skipped_existing=0; unrecovered=""; todo=""
       while IFS=$'\t' read -r r_step r_outcome; do
         [ -n "$r_step" ] || continue
-        # dir #144 (operator-run /code-review medium finding): the direct `receipt <step-id>` write path
-        # rejects a whitespace-carrying step_id, but this recovery path reads r_step from a RETIRED
-        # sentinel that could predate that guard (or was hand-edited) — without this check, recovering it
-        # would silently reintroduce the exact malformed-line bug the guard exists to close, just through
-        # a second entry point. Skip (not abort) so one bad historical line doesn't block recovering the
-        # rest of an otherwise-good backup.
+        # dir #144 (operator-run /code-review medium finding) + dir #149: the direct `receipt <step-id>`
+        # write path rejects both a whitespace-carrying step_id and one not in $EXPECTED_STEPS, but this
+        # recovery path reads r_step from a RETIRED sentinel that could predate either guard (or was
+        # hand-edited) — without this check, recovering it would silently reintroduce the exact
+        # malformed-line bug those guards exist to close, just through a second entry point. Skip (not
+        # abort) so one bad historical line doesn't block recovering the rest of an otherwise-good
+        # backup. Whitespace gets its own, more specific reason text ahead of the general membership
+        # check (the same `_expected_step` helper `receipt` itself now calls) purely for a friendlier
+        # message — a whitespace-carrying candidate would fail the membership check too.
+        r_malformed_reason=""
         case "$r_step" in
-          *[[:space:]]*)
-            unrecovered="${unrecovered:+$unrecovered / }$r_step (malformed — carries whitespace)"
-            todo="${todo:+$todo, }a prior receipt for this step was malformed and could not be recovered; re-run it fresh"
-            continue
-            ;;
+          *[[:space:]]*) r_malformed_reason="carries whitespace" ;;
         esac
-        # dir #149: the whitespace guard just above catches one malformation shape, but a retired
-        # sentinel can also carry a space-free id that was never a legal step at all (a typo from a
-        # version of `receipt` that predates dir #149's own membership guard, or a hand-edited line) —
-        # same skip-not-abort treatment, same `_expected_step` helper `receipt` itself now calls.
-        if ! _expected_step "$r_step"; then
-          unrecovered="${unrecovered:+$unrecovered / }$r_step (malformed — not one of the expected steps)"
+        if [ -z "$r_malformed_reason" ] && ! _expected_step "$r_step"; then
+          r_malformed_reason="not one of the expected steps"
+        fi
+        if [ -n "$r_malformed_reason" ]; then
+          unrecovered="${unrecovered:+$unrecovered / }$r_step (malformed — $r_malformed_reason)"
           todo="${todo:+$todo, }a prior receipt for this step was malformed and could not be recovered; re-run it fresh"
           continue
         fi
