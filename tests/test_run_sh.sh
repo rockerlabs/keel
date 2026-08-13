@@ -67,4 +67,23 @@ for n in 1 2 3 4 5 6; do
   check_contains "fixture $n ran despite the concurrency cap" "$OUT" "=== test_$n.sh ==="
 done
 
+# --- fixtures actually overlap in wall clock under concurrency, not just "all eventually ran" ------
+# (found by the /polish high-depth review agent: the assertions above would still pass a regression
+# to a sequential-only implementation, since none of them measure wall clock.) Four 1s-sleep fixtures
+# serially cost >=4s; under KEEL_TEST_JOBS=4 they should overlap and finish well under that.
+d="$(mkfakedir)"
+for n in 1 2 3 4; do
+  printf '#!/usr/bin/env bash\nsleep 1\nexit 0\n' > "$d/test_$n.sh"
+done
+t0=$(date +%s)
+run env KEEL_TEST_JOBS=4 bash "$d/run.sh"
+t1=$(date +%s)
+elapsed=$((t1 - t0))
+check_status "timing: 4x 1s fixtures, jobs=4 -> exit 0" 0 "$STATUS"
+if [ "$elapsed" -le 3 ]; then
+  pass "timing: 4x 1s fixtures overlap under jobs=4 (${elapsed}s, serial would be >=4s)"
+else
+  fail "timing: 4x 1s fixtures overlap under jobs=4" "took ${elapsed}s, expected <=3s if truly concurrent"
+fi
+
 summary
