@@ -175,7 +175,10 @@ _ledger_table_header() {
     label="$col"; [ "$col" = "gap" ] && label="gap (demote/promote)"
     hdr="$hdr $label |"
     # cell width = label + its two surrounding spaces (" $label |"), so the separator's dash run
-    # matches the header cell it sits under, not just the bare label length.
+    # matches the header cell it sits under, not just the bare label length. tests/lib.sh's rep()
+    # does the same printf+tr dash-repeat idiom, but it's a test-harness helper — tools/keel-impact.sh
+    # is production code and shouldn't depend on tests/, so the one-line idiom stays inline here
+    # rather than pulling a cross-layer dependency for it.
     dashes="$(printf '%*s' "$((${#label} + 2))" '' | tr ' ' '-')"
     sep="$sep$dashes|"
   done
