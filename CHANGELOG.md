@@ -9,6 +9,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`FRAMEWORK.md` gains a "when to stop reviewing" test and a contract-first design section**
+  (dir #126, dir #128). The two measured signals for ending a review round — new surface touched,
+  class exhaustion — replace the disproven "findings are getting smaller" heuristic (three separate
+  review campaigns converged by hitting the same defect shape twice, not by severity trending down).
+  A new "Contract-first for invariant-bearing surfaces" section states six rules distilled from those
+  same campaigns: contract-first design, the sync-comment smell, class → mechanical floor (plus the
+  floor needing its own mutation-tested proof), no-contract-no-ship, and rationale-lives-in-the-file.
+  Both are on-demand methodology only — nothing lands in `CORE.md`.
 - **An install manifest, recorded instead of re-derived** (dir #125, PR 1/3). `install.sh` and
   `tools/install-pre-pr-gate.sh` now write a flat `key=value` manifest under
   `<home>/.keel/install-manifest.<claude|codex|gate>` — mode, layout, every Keel-owned artifact (with
@@ -104,6 +112,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   literal it would have hunted goes unscanned, and unlike a bad `allow-email` entry (which fails open
   safely) that's a detection-accuracy failure this audit's own bar exists to catch.
 
+### Changed
+- **`tests/run.sh` now runs test files concurrently instead of one at a time** (dir #130,
+  keel-self-maintenance — internal to the test harness, not adopter-facing). A full local pass
+  measured at ~229s sequential (`test_pre_pr_gate.sh` at ~53s, `test_self_doctor.sh` ~36s,
+  `test_doctor.sh` ~25s, and `test_install.sh` ~24s the four biggest single files — install/uninstall
+  alone were NOT the dominant cost the ticket started from, measurement corrected that assumption).
+  Safe because every `tests/test_*.sh` already sets up its own throwaway sandbox `HOME` via
+  `tests/lib.sh`, and the one cross-file shared resource any of them touch —
+  `tools/pre-pr-gate.sh`'s `/tmp` sentinel (dir #80) — is keyed off a repo basename every fixture
+  mints via `mktemp -d`, so two files running at once can't collide on it either. The runner caps
+  concurrency at the CPU core count by default (override with `KEEL_TEST_JOBS`, e.g. `=1` to force
+  the old sequential behavior), via a bash-3.2-compatible poll loop (no `wait -n`, portable to
+  macOS's shipped `/bin/bash`) — full local run now ~90-100s. No test file's coverage or `HOME`
+  isolation changed; `tests/test_run_sh.sh` is a new file covering the runner's own aggregation
+  logic (concurrent pass/fail counting, a `KEEL_TEST_JOBS` override, more fixtures than the
+  concurrency cap).
+
 ### Fixed
 - **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose
   advice would have installed a second mode into the same home** (dir #134, one of 0.6.0's own known
@@ -130,6 +155,33 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   misleading "missing receipt" deny for a different malformation shape** (dir #149). A step-id is now
   checked against the complete `EXPECTED_STEPS` list at write time, at both entry points that append to
   the sentinel — `receipt`'s own write and `receipt --recover`'s replay of a retired sentinel.
+- **`doctor.sh`'s `$HOME`-resolved guard/email checks could read as a clean verdict while going
+  completely silent under a redirected `HOME`** (dir #120, found by dir #97's own `/polish` review). The
+  machine-wide `W-GUARD-GLOBAL-STALE` staleness check was gated on `core.hooksPath` being set at all, so
+  under a redirected config it never ran and its absence looked like "the guard is fresh" — it now
+  discloses the config source it consulted instead. `W-EMAIL-PUBLIC` had the same gap: a commit email
+  sourced from global config (not local) could go silent or nudge on a container's baked-in address
+  without saying so — it now names when the verdict rode on config this repo doesn't own, including the
+  "no email anywhere" case.
+- **`doctor.sh --install`'s machine-global guard check read `git config --global core.hooksPath`, a
+  scope selector that cannot see a `hooksPath` set only in the XDG git config behind an existing
+  `~/.gitconfig`, even though it genuinely governs every commit** (dir #121, same review). Backed by
+  git's own effective resolution (no `--global` restriction, read from a guaranteed non-repo scratch
+  dir) instead — resolved once, machine-wide, and shared by the top-level staleness check, the dir #120
+  disclosure, and `--install` mode alike, so all three agree on what the machine's guard actually is.
+- **A local `core.hooksPath` pinned to the same absolute dir as the machine-global one drew two findings
+  for one drifted file** (dir #122, same review). A `-ef` same-file guard in the per-repo drift branch
+  now suppresses the per-repo finding when it names the identical physical directory the machine-wide
+  finding already reported — that one's remediation actually fixes the shared copy; re-vendoring
+  per-repo would have written an unwanted second copy, or clobbered the shared one.
+- **The "slash command that doesn't ship" guard only ran in Keel's own test suite, so no adopter's
+  `tools/doctor.sh` run ever inherited it** (dir #129, captured during dir #110's own `/polish` review).
+  Moved from `tests/test_rails_honesty.sh` into `tools/self/doctor.sh` check 2b, alongside its
+  neighbouring dead-internal-reference class: every backticked `` `/name` `` reference across the
+  adopter-facing docs (root `.md` files, `docs/`, `commands/`, `templates/`) now GAPs if it has no
+  `commands/name.md`, carrying forward the same two allowlists (harness-provided vs not-a-command) and
+  the same leading-delimiter regex dir #110 tuned. Mutation-tested against a synthetic sandbox in
+  `tests/test_self_doctor.sh`, which is coverage the old live-tree-only test never had.
 - **`tools/pre-pr-gate.sh` never checked that HEAD was actually pushed before unlocking `gh pr create`
   — a convergence-round commit could be silently left local-only** (dir #133, one of 0.6.0's own known
   issues). Every existing sha-binding check in `polish.8-unlock` only verified the LOCAL repo, so a fix

@@ -257,6 +257,92 @@ run "$sd" "$d" --quiet
 check_status "bare occurrence alongside a nested one still -> exit 1" 1 "$STATUS"
 check_contains "still catches the bare occurrence" "$OUT" "dead reference '$fake_nested'"
 
+# --- 2b. slash-command reference -> GAP (dir #129, moved from tests/test_rails_honesty.sh) --------
+# The mutation standard: mk_clean_repo's own commands/go.md and commands/polish.md give a real
+# "shipped" case to contrast an unshipped one against, same as check 2's fixtures above.
+d="$(mk_clean_repo)"
+printf 'Run `/nosuchcmd` first.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "unshipped slash command" )
+run "$sd" "$d" --quiet
+check_status "unshipped slash-command reference -> exit 1" 1 "$STATUS"
+# built via key(), not a literal path — this file's own comments/assertions are themselves scanned
+# by check 2's dead-reference class, and a bare literal here would false-GAP the real checkout's own
+# self-audit (the fake_widget/fake_orphan fixtures above dodge it the same way).
+check_contains "reports the unshipped command" "$OUT" "slash-command reference '/nosuchcmd' in README.md has no $(key commands/nosuchcmd .md)"
+
+# a reference to a command that IS shipped must not false-GAP.
+d="$(mk_clean_repo)"
+printf 'Run `/go` to start.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "shipped slash command" )
+run "$sd" "$d" --quiet
+check_status "a shipped slash-command reference -> exit 0" 0 "$STATUS"
+
+# the harness_commands allowlist (dir #110): a Claude-Code-builtin-style name never shipped as a
+# commands/*.md file must not false-GAP.
+d="$(mk_clean_repo)"
+printf 'Then run `/code-review high`.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "harness-allowlisted command" )
+run "$sd" "$d" --quiet
+check_status "a harness-allowlisted command -> exit 0" 0 "$STATUS"
+
+# the not_commands allowlist (dir #110): a token that only looks like a command (a filesystem path
+# or an adopter's own pre-existing name) must not false-GAP.
+d="$(mk_clean_repo)"
+printf 'See `/tmp` for scratch files.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "not-a-command allowlisted token" )
+run "$sd" "$d" --quiet
+check_status "a not_commands-allowlisted token -> exit 0" 0 "$STATUS"
+
+# a multi-segment filesystem path is never captured at all — the regex's single-segment shape is the
+# guard, not the allowlist.
+d="$(mk_clean_repo)"
+printf 'Installed under `/usr/bin` on most systems.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "multi-segment filesystem path" )
+run "$sd" "$d" --quiet
+check_status "a multi-segment filesystem path is not captured -> exit 0" 0 "$STATUS"
+
+# closing-backtick prose: the backtick right before the slash is a code span's CLOSING one, not an
+# opening one — must not be read as a citation.
+d="$(mk_clean_repo)"
+printf 'See `CLAUDE.md`/git for details.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "closing-backtick prose" )
+run "$sd" "$d" --quiet
+check_status "closing-backtick prose is not a false citation -> exit 0" 0 "$STATUS"
+
+# scan surface reaches CORE.md, IDEAS.md and templates/*.md, not just README.md — the same files the
+# original tests/test_rails_honesty.sh glob covered.
+d="$(mk_clean_repo)"
+mkdir -p "$d/templates"
+printf 'Run `/nosuchcmd` first.\n' > "$d/templates/CLAUDE.md"
+( cd "$d" && git add -A && git commit -qm "unshipped ref inside templates/" )
+run "$sd" "$d" --quiet
+check_status "an unshipped ref inside templates/ is caught too -> exit 1" 1 "$STATUS"
+check_contains "reports it from the templates/ scan" "$OUT" "slash-command reference '/nosuchcmd'"
+
+# check 2's own broader scan set (tests/*.sh, install.sh, tools/*.sh) is deliberately NOT part of
+# this check's scan — those shell files are full of backticked `/word` text that is not a
+# slash-command citation (a GitHub API path fragment, a Claude Code builtin like `/clear`).
+fake_pulls_tool="$(key tools/pulls-example .sh)"
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\n# an endpoint ending in `/pulls`\necho ok\n' > "$d/$fake_pulls_tool"
+printf '#!/usr/bin/env bash\n# smoke-references %s\n' "$fake_pulls_tool" > "$d/tests/test_pulls_example.sh"
+( cd "$d" && git add -A && git commit -qm "shell-only /pulls text stays out of scope" )
+run "$sd" "$d" --quiet
+check_status "shell-file-only /word text is out of the slash-command scan -> exit 0" 0 "$STATUS"
+
+# a tracked file UNSTAGED-DELETED from the working tree (still in `git ls-files`, gone from disk)
+# must not blind the whole batched scan — the single `grep -r` call across every scanned file fails
+# its ENTIRE run if any one file operand is unreadable, so without an existence filter this would
+# silently swallow a genuine unshipped reference in a DIFFERENT, still-present file too.
+d="$(mk_clean_repo)"
+printf '# readme\n' > "$d/README.md"
+printf 'Run `/nosuchcmd` first.\n' > "$d/ADAPTING.md"
+( cd "$d" && git add -A && git commit -qm "tracked README.md plus an unshipped ref in a second file" )
+rm "$d/README.md"
+run "$sd" "$d" --quiet
+check_status "an unstaged-deleted tracked file doesn't blind the batched scan -> exit 1" 1 "$STATUS"
+check_contains "the OTHER file's unshipped ref is still caught" "$OUT" "slash-command reference '/nosuchcmd' in ADAPTING.md"
+
 # --- 3. orphan tool -> WARN (advisory); a NEW script with zero test coverage -> hard GAP -----------
 # (the coverage ratchet, dir #142 — a mutation test on the class dir #100 was found only reactively:
 # a script planted with no test coverage at all must fail the self-check, not merely warn about it.)
@@ -549,7 +635,7 @@ check_absent "and doesn't false-flag" "$OUT" "dir #22's heading cites"
 # that genuinely never resolves `gh` at all, carrying only the tools self/doctor.sh itself invokes.
 no_gh_bin="$SANDBOX/fakebin-nogh"
 mkdir -p "$no_gh_bin"
-for tool in awk basename bash cat chmod cut dirname git grep head printf sed sort tail wc env true false; do
+for tool in awk basename bash cat chmod cut dirname git grep head printf sed sort tail tr wc env true false; do
   t="$(command -v "$tool" 2>/dev/null)" && ln -sf "$t" "$no_gh_bin/$tool"
 done
 d="$(mk_clean_repo)"

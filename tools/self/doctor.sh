@@ -15,6 +15,9 @@
 #   GAP   install.sh's command ship-skip list disagrees with doctor.sh --install's mirror of it
 #   GAP   FRAMEWORK.md / PRINCIPLES.md contain a leaked host path or non-safe email (dir #114)
 #   GAP   a tools/commands/templates path referenced in tracked docs/scripts doesn't exist on disk
+#   GAP   a backticked `/name` slash-command reference in adopter-facing docs has no commands/<name>.md
+#         (dir #129 — moved from tests/test_rails_honesty.sh so an adopter's own doctor.sh run is
+#         covered too, not just Keel's own suite)
 #   WARN  a tools/*.sh script (or the installed `keel` CLI) has no reference anywhere (commands/,
 #         tests/, install.sh, docs/, CI)
 #   GAP   a NEW tools/*.sh script (or the installed `keel` CLI) has zero test coverage in tests/ —
@@ -228,15 +231,22 @@ done
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must
 # resolve on disk. CHANGELOG.md is deliberately excluded — it documents history, and a renamed or
 # removed file is expected to still be named there.
+#
+# adopter_docs is the base list check 2b (below) also scans — single-sourced so a new adopter-facing
+# doc location (CORE.md/IDEAS.md joined it late, dir #129) only needs adding here once. Check 2 adds
+# the implementation shell files on top (tests/*.sh, install.sh, tools/*.sh, tools/self/*.sh,
+# bootstrap.sh) — check 2b deliberately does NOT scan those (see its own comment for why).
+adopter_docs=(
+  'README.md' 'ADAPTING.md' 'FRAMEWORK.md' 'PRINCIPLES.md' 'SECURITY.md' 'CORE.md' 'IDEAS.md'
+  'docs/*.md' 'commands/*.md' 'templates/*.md'
+)
 say ""
 say "● dead internal references"
 dead=0
 scan_files=()
 while IFS= read -r f; do scan_files+=("$f"); done < <(
   git -C "$repo_root" ls-files -- \
-    'README.md' 'ADAPTING.md' 'FRAMEWORK.md' 'PRINCIPLES.md' 'SECURITY.md' \
-    'docs/*.md' 'commands/*.md' 'tests/*.sh' 'install.sh' 'tools/*.sh' 'tools/self/*.sh' \
-    'bootstrap.sh'
+    "${adopter_docs[@]}" 'tests/*.sh' 'install.sh' 'tools/*.sh' 'tools/self/*.sh' 'bootstrap.sh'
 )
 # "${arr[@]}" on a zero-element array is an unbound-variable error under `set -u` on bash < 4.4
 # (macOS ships bash 3.2 by default) — guard the length before expanding, every time, everywhere
@@ -258,6 +268,59 @@ if [ "${#scan_files[@]}" -gt 0 ]; then
   done
 fi
 [ "$dead" -eq 0 ] && say "  OK   no dead tools/commands/templates references"
+
+# --- 2b. slash-command references must resolve to a shipped command ------------------------------
+# Same class as check 2 above, different referent (dir #129): every backticked `/name` reference in
+# adopter-facing prose must resolve to commands/<name>.md. Moved here from tests/test_rails_honesty.sh
+# (dir #110) — that test only ran in Keel's own suite, so an adopter's own CLAUDE.md/rails citing a
+# command their install doesn't carry was never caught. Every adopter runs tools/doctor.sh, and this
+# script is what it orchestrates (via its own dead-reference-class checks), so the fix belongs here,
+# not in a second copy of the logic.
+#
+# Reuses adopter_docs (check 2, above) — deliberately WITHOUT check 2's extra shell files (tests/*.sh,
+# install.sh, tools/*.sh) — those are full of backticked `/word` text that is not a slash-command
+# citation at all: `/clear` (a Claude Code builtin, not a keel command), `/pulls` (a GitHub API path
+# fragment inside tools/pre-pr-gate.sh), and `/design` inside this file's own prose (a citation-style
+# example, not a real reference). Scoping to the adopter-facing docs is what the original test scanned
+# and stays false-positive-free on today's tree (verified empirically while sizing dir #129);
+# CHANGELOG.md is excluded on purpose, same reason as check 2 — it documents history, including
+# wording since corrected.
+#
+# Two allowlists, deliberately SEPARATE arrays, never collapsed into one (dir #110/dir #129 watch-out):
+# harness-provided commands, each of whose call sites already handles its absence explicitly, and
+# names that are not commands at all (a filesystem path, or prose about a name an adopter may already
+# have). Checked via `printf | grep -qxF`, the same exact-line-membership idiom checks 3 and 6 already
+# use in this file, rather than a hand-rolled space-padded `case` match.
+say ""
+say "● slash-command references"
+dead_cmd=0
+scan_files_cmd=()
+# Filter to files that actually exist on disk, not just git-tracked (an unstaged deletion of a
+# tracked file leaves it in `git ls-files` but absent from the working tree) — the single batched
+# `grep -r` below fails its WHOLE run, silently blinding this check across every file it scans, if
+# any one path in its file-operand list is unreadable; check 2's own per-file loop above only loses
+# that ONE file's coverage on the same failure, since each of its grep calls is scoped to one path.
+while IFS= read -r f; do [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done < <(
+  git -C "$repo_root" ls-files -- "${adopter_docs[@]}"
+)
+harness_commands=(code-review simplify review)
+not_commands=(tmp setup)
+if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
+  # `|| true`: grep exits 1 on zero matches, which under `set -e` would otherwise abort this whole
+  # script at the assignment (unlike the process-substitution loop above, a direct `var=$(cmd)`
+  # DOES propagate a failing exit status through errexit).
+  raw_hits="$(cd "$repo_root" && grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}" 2>/dev/null || true)"
+  refs="$(printf '%s\n' "$raw_hits" | cut -d: -f3- | tr -d '`/ ("*' | sort -u)"
+  for name in $refs; do
+    printf '%s\n' "${harness_commands[@]}" "${not_commands[@]}" | grep -qxF "$name" && continue
+    if [ ! -f "$repo_root/commands/$name.md" ]; then
+      cited_in="$(printf '%s\n' "$raw_hits" | grep -F "\`/$name" | head -1 | cut -d: -f1)"
+      gap "slash-command reference '/$name' in ${cited_in:-an adopter-facing doc} has no commands/$name.md — ship it, word it generically, or allowlist it (dir #129, only if harness-provided AND every call site handles its absence)"
+      dead_cmd=$((dead_cmd + 1))
+    fi
+  done
+fi
+[ "$dead_cmd" -eq 0 ] && say "  OK   no unshipped slash-command references"
 
 # --- 3. tool wiring: referenced anywhere, and covered by a test ---------------------------------
 # git ls-files, not a bash glob: a plain `tools/*.sh` glob does not cross '/', so a tool in a

@@ -338,9 +338,17 @@ gate_any_reference() {
   fi
 }
 
-global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
+# _expand_hookspath_tilde VALUE — a LITERAL leading `~/` a user wrote into git config, which git
+# returns verbatim rather than expanding itself. Shared by every core.hooksPath read below ($global_hooks
+# here, $global_hooks_eff further down) — one definition instead of two hand-copies of a git-version-
+# sensitive rule (found by an independent /code-review high pass: the duplication is exactly what its
+# own comment warned against).
 # shellcheck disable=SC2088  # matching a LITERAL ~ a user wrote into git config (git returns it verbatim)
-case "$global_hooks" in "~/"*) global_hooks="${HOME:-}/${global_hooks#\~/}" ;; esac
+_expand_hookspath_tilde() {
+  case "$1" in "~/"*) printf '%s' "${HOME:-}/${1#\~/}" ;; *) printf '%s' "$1" ;; esac
+}
+global_hooks="$(git config --global core.hooksPath 2>/dev/null || true)"
+global_hooks="$(_expand_hookspath_tilde "$global_hooks")"
 
 # dir #97: the machine-global half above resolves through whatever global git config the environment
 # points at. Under a REDIRECTED one — an audit probe isolating itself, a test harness, a container — a
@@ -414,9 +422,60 @@ tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$tools_dir/lib/safe-emails.sh"
 shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
 case "$global_hooks" in /*) global_hooks_abs=1 ;; *) global_hooks_abs=0 ;; esac
-if [ "$global_hooks_abs" = 1 ] && [ -f "$global_hooks/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
-   && ! cmp -s "$global_hooks/secret-scan.sh" "$shipped_scan"; then
-  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($global_hooks/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
+
+# dir #121: `git config --global` is a SCOPE SELECTOR (see the note above $guard_cfg_src) that
+# collapses to exactly ONE file — it cannot see a hooksPath set only in the XDG git config behind an
+# existing ~/.gitconfig, even though git's own EFFECTIVE resolution merges that file in and every
+# commit on the machine genuinely runs through it. Resolved ONCE here (not per project — same
+# machine-invariant reasoning as $global_hooks itself), by reading core.hooksPath (no --global
+# restriction) from a guaranteed non-repo scratch dir, so nothing at LOCAL scope — a repo doctor
+# happens to be invoked from — can leak into what must be a machine-wide read (verified against git
+# 2.52 in the same session as dir #97). Shared by the machine-wide staleness check right below, the
+# dir #120 disclosure in its elif, and --install mode's own secret-guard section further down — all
+# three are the same question ("what does this machine's effective config say"), asked three times;
+# one probe, one variable, answered once. `-d`-gated: if the probe dir turns out to sit inside a real
+# repo (an odd TMPDIR), fall back to $global_hooks rather than risk reading THAT repo's local scope —
+# disclosed when it happens (found by an independent /code-review high pass: a silent fallback here
+# would reintroduce dir #121's own false negative, invisibly, on exactly the machines it exists to fix).
+global_hooks_eff="$global_hooks"; global_hooks_eff_abs="$global_hooks_abs"; global_hooks_eff_degraded=0
+ieff_probe="$(mktemp -d 2>/dev/null || true)"
+if [ -n "$ieff_probe" ] && ! git -C "$ieff_probe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  global_hooks_eff="$(_expand_hookspath_tilde "$(git -C "$ieff_probe" config core.hooksPath 2>/dev/null || true)")"
+  case "$global_hooks_eff" in /*) global_hooks_eff_abs=1 ;; *) global_hooks_eff_abs=0 ;; esac
+else
+  global_hooks_eff_degraded=1
+fi
+[ -n "$ieff_probe" ] && rmdir "$ieff_probe" 2>/dev/null
+if [ "$global_hooks_eff_degraded" = 1 ]; then
+  say "  (effective core.hooksPath probe unavailable this run — falling back to the narrower --global-only read; a hooksPath set only behind an existing ~/.gitconfig would go undetected)"
+fi
+
+# guard_eff_note — the $guard_home_note-style provenance clause, but honest about WHICH resolution
+# actually produced a value that differs from what a plain `git config --global` read would give:
+# $guard_cfg_src (and $guard_home_note, built from it) name the ONE file `--global` collapses to, but
+# $global_hooks_eff can additionally merge in $XDG_CONFIG_HOME/git/config behind an existing
+# ~/.gitconfig — attaching $guard_home_note's file-specific claim to a value that came from THAT merge
+# names a file that was never the one actually consulted (found by an independent /code-review high
+# pass, reproduced for the XDG-behind-~/.gitconfig case). Falls back to $guard_home_note verbatim
+# whenever the two resolutions agree (the common case) or the probe degraded above (nothing more
+# precise to say than the --global-selector note already gives).
+guard_eff_note="$guard_home_note"
+if [ "$global_hooks_eff_degraded" = 0 ] \
+   && { [ "$global_hooks_eff" != "$global_hooks" ] || [ "$global_hooks_eff_abs" != "$global_hooks_abs" ]; }; then
+  guard_eff_note=" [resolved via git's effective config, which additionally merges \$XDG_CONFIG_HOME/git/config behind an existing ~/.gitconfig — narrower than that, a plain \`git config --global\` read would have missed this]"
+fi
+
+if [ "$global_hooks_eff_abs" = 1 ] && [ -f "$global_hooks_eff/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+   && ! cmp -s "$global_hooks_eff/secret-scan.sh" "$shipped_scan"; then
+  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($global_hooks_eff/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
+elif [ -z "$global_hooks_eff" ]; then
+  # dir #120: the drift check above is GATED on core.hooksPath resolving to anything at all, so with
+  # nothing configured (redirected OR genuinely bare — doctor cannot tell those apart) it never runs,
+  # and its absence would otherwise read as "the machine-global guard is fresh" (residual noted in dir
+  # #97's own comment above $guard_home_note). Unlike a WARN/GAP this has no message of its own to
+  # append the provenance clause to, so disclose here instead — same source, same wording family as
+  # $guard_home_note.
+  say "  (machine-global secret-guard staleness check: no core.hooksPath resolved via $guard_cfg_src — a redirected config looks identical to a genuinely bare machine)"
 fi
 # This machine-wide finding belongs to no audit unit — flush it now, against the accept file of the
 # repo the CWD sits in (so `cd project && keel doctor …` can still accept it there). Deliberately NOT
@@ -772,11 +831,19 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # W-GUARD-UNWIRED depending on where the operator stood, on one unchanged machine (reproduced). A
   # relative core.hooksPath names a different dir in every repo and is not a machine-global install at
   # all; the project audit is where it can be judged.
-  if [ "$global_hooks_abs" = 1 ] && [ -x "$global_hooks/pre-commit" ]; then
-    say "  OK   secret-guard: machine-global ($global_hooks)"
-  elif [ "$global_hooks_abs" = 0 ] && [ -n "$global_hooks" ]; then
-    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to the RELATIVE path '$global_hooks', which names a different directory in every repo — that is per-repo wiring, not a machine-global install (install-secret-guard.sh --global for a machine-wide one; tools/doctor.sh <repo> judges the relative one)$guard_home_note"
-  elif [ -n "$global_hooks" ]; then
+  #
+  # dir #121: `$global_hooks_eff`/`$global_hooks_eff_abs` (resolved once, machine-wide, above — same
+  # values the top-level W-GUARD-GLOBAL-STALE staleness check now uses) already close the gap this mode
+  # used to have on its own: `git config --global` cannot see a hooksPath set only in the XDG git config
+  # behind an existing ~/.gitconfig, even though it genuinely governs every commit on the machine. The
+  # per-project loop below survives that a different way (falling through to `git rev-parse --git-path
+  # hooks/pre-commit`, git's own resolution, when nothing at repo/global scope explains the guard) —
+  # --install mode has no repo to run that from, so it shares the machine-wide probe instead.
+  if [ "$global_hooks_eff_abs" = 1 ] && [ -x "$global_hooks_eff/pre-commit" ]; then
+    say "  OK   secret-guard: machine-global ($global_hooks_eff)"
+  elif [ "$global_hooks_eff_abs" = 0 ] && [ -n "$global_hooks_eff" ]; then
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to the RELATIVE path '$global_hooks_eff', which names a different directory in every repo — that is per-repo wiring, not a machine-global install (install-secret-guard.sh --global for a machine-wide one; tools/doctor.sh <repo> judges the relative one)$guard_eff_note"
+  elif [ -n "$global_hooks_eff" ]; then
     # A DIFFERENT shape from the else below: core.hooksPath is set, it just points somewhere with no
     # executable pre-commit. Say that, rather than the generic "not wired" — the two need different
     # fixes (dir #97, operator's own /code-review pass). The provenance clause still rides along: a
@@ -784,9 +851,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # whose config points at a hookless dir lands exactly here while the real machine is guarded — the
     # systematic false negative this whole clause exists to signal. The project-scope half below now
     # names the same shape in its own branch (it used to swallow it as "covered by global").
-    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to $global_hooks_eff but that dir carries no executable pre-commit (install-secret-guard.sh --global; or vendor per repo)$guard_eff_note"
   else
-    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_home_note"
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_eff_note"
   fi
 
   flush_notes "$ihome/.keel/doctor-accept"
@@ -996,8 +1063,23 @@ EOF
     # bit — left every commit running nothing while doctor printed a clean 0/0/0 (reproduced: a planted
     # key committed straight through). Presence of parts is not a wired guard.
     if [ -x "$lhd/pre-commit" ]; then
-      # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection
-      if [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
+      # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection.
+      # dir #122: a LOCAL hooksPath pinned to the very same absolute dir the machine-global one names
+      # (-ef, same physical file) is one drifted file, not two — the machine-wide W-GUARD-GLOBAL-STALE
+      # check above already reports it, with the remediation that actually fixes both (this repo's
+      # override just points at the same shared dir; re-vendoring per-repo here would either write a
+      # second, unshared copy or clobber the shared one, neither of which is what "re-vendor: <this
+      # repo>" promises). Only the RELATIVE case is this branch's to own — an absolute local path that
+      # happens to differ from the global one is a genuine separate vendored copy, still reported here.
+      # Compared against $global_hooks_eff/_eff_abs, NOT the plain $global_hooks/_abs — the machine-wide
+      # check above (dir #121's hoist) fires on the EFFECTIVE value, so deduping against the narrower
+      # --global-only one would miss the dup on exactly the XDG-behind-~/.gitconfig machines dir #121
+      # exists for (found by an independent /code-review high pass, reproduced against a live sandbox).
+      local_is_global_dup=0
+      [ "$global_hooks_eff_abs" = 1 ] && [ -d "$lhd" ] && [ -d "$global_hooks_eff" ] && [ "$lhd" -ef "$global_hooks_eff" ] \
+        && local_is_global_dup=1
+      if [ "$local_is_global_dup" = 0 ] && [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
+         && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
         warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
       fi
     else
@@ -1061,8 +1143,26 @@ EOF
   # (the GAP gate) sources the same file, so this advisory mirror can't silently disagree with it.
   if [ -f "$d/.public-audit" ]; then
     email="$(git -C "$d" config user.email 2>/dev/null || true)"
+    # dir #120: the effective read above falls through to whatever global config is in scope when this
+    # repo sets no LOCAL user.email — under a redirected HOME it can go silent (no email anywhere) or
+    # read a container's baked-in address, either of which looks like a clean verdict without saying so.
+    # Detectable: compare against the LOCAL-only read — a mismatch means the verdict just given (WARN or
+    # silence) rode on config this repo doesn't own.
+    email_local="$(git -C "$d" config --local user.email 2>/dev/null || true)"
+    # Disclose whenever this repo's OWN config didn't settle the verdict — including the "no email
+    # anywhere" case (found by an independent /code-review high pass: the prior `$email != $email_local`
+    # test stayed silent exactly when BOTH are empty, the precise silent-under-a-sandbox case this
+    # comment above already claims to cover). Not "$guard_cfg_src" in the note text: that names the ONE
+    # file a plain `git config --global` read collapses to, but the read above is user.email's own
+    # EFFECTIVE resolution (system/global/XDG, same merge core.hooksPath gets) — naming a specific file
+    # here risks pointing at one that was never actually consulted (same mislabeling the guard-side
+    # $guard_eff_note exists to avoid).
     if [ -n "$email" ] && ! printf '%s' "$email" | grep -qE "$safe_email_re"; then
-      warn W-EMAIL-PUBLIC "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)"
+      email_note=""
+      [ "$email" = "$email_local" ] || email_note=" (read via git's global/system config, not this repo's own)"
+      warn W-EMAIL-PUBLIC "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)$email_note"
+    elif [ -z "$email_local" ]; then
+      say "       (commit email for this publication-bound project not set locally — the verdict above rode on git's global/system config, or found nothing at all; a redirected HOME looks identical to a genuinely safe repo)"
     fi
   fi
 
