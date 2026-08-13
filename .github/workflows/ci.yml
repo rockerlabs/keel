@@ -17,6 +17,20 @@ jobs:
         # Pinned to explicit images (not the drifting -latest aliases) for reproducible runs.
         os: [ubuntu-24.04, macos-14]
     runs-on: ${{ matrix.os }}
+    env:
+      # dir #153 capped the alpine job's KEEL_TEST_JOBS after tests/run.sh's nproc-based default
+      # concurrency flaked test_keel_cli.sh's README-verb check there, and blamed alpine's
+      # container-vs-host nproc mismatch. That job's own cap left this job uncapped, and the
+      # identical flake resurfaced here on ubuntu-24.04 (PR #203) — a plain GNU-tooling hosted
+      # runner, not alpine/busybox, and byte-identical to the previous green run's README.md/keel
+      # (git diff confirmed empty both times). No file the check reads is ever written during the
+      # suite (every test that touches README.md/keel writes to its own sandboxed copy — grepped),
+      # so the flake isn't a content or extraction-logic race; it's the same resource-contention
+      # class dir #153 already named, just not alpine-specific — many test files' own subprocess
+      # forking (git/awk/grep) stacking up under tests/run.sh's own concurrency on a standard
+      # 4-vCPU hosted runner is enough to occasionally starve a single fork (dir #154). Same
+      # mitigation, extended to both legs here rather than re-capping one runner at a time.
+      KEEL_TEST_JOBS: 2
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: bash version
