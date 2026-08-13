@@ -230,6 +230,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   at step 8, and the CHANGELOG-paragraph case named in this ticket's own motivation does NOT skip a test
   run in keel's own repo (it's real-test-coupled here) — genuinely test-free docs and structural-only
   convergence commits are what actually benefit.
+- **`tests/run.sh`'s own concurrent-by-default test execution (dir #130) flaked `test_keel_cli.sh`'s
+  "README.md quotes verb" check under real CI load** (dir #153, then dir #154). dir #153 first capped
+  `KEEL_TEST_JOBS=2` for the `alpine-busybox` CI job alone, blaming the container's nproc-vs-host
+  mismatch — but the identical flake then resurfaced on the plain `tests (ubuntu-24.04)` leg (PR #203,
+  an unrelated diff), on plain GNU tooling, ruling out an alpine/busybox-specific cause. No file the
+  check reads (`README.md`, `keel`) is ever mutated during the suite (verified: every test that touches
+  either writes its own sandboxed copy), so it isn't a content or extraction-logic race — it's
+  subprocess-fork resource contention from many concurrently-running test files stacking up on a
+  standard hosted runner, independent of OS or container. `tests/run.sh`'s own default now caps at 2
+  whenever `$CI` is set (GitHub Actions and effectively every CI provider sets it), replacing the
+  alpine-only override — every current and future CI leg gets the safe default for free, and the
+  alpine job now forwards `CI` into its container (`-e CI`) instead of carrying its own copy of the
+  mitigation. Confirmed by 3 clean re-runs of the `ubuntu-24.04` leg post-merge, no repeat.
 
 ## [0.6.0] — 2026-08-12
 
