@@ -17,20 +17,6 @@ jobs:
         # Pinned to explicit images (not the drifting -latest aliases) for reproducible runs.
         os: [ubuntu-24.04, macos-14]
     runs-on: ${{ matrix.os }}
-    env:
-      # dir #153 capped the alpine job's KEEL_TEST_JOBS after tests/run.sh's nproc-based default
-      # concurrency flaked test_keel_cli.sh's README-verb check there, and blamed alpine's
-      # container-vs-host nproc mismatch. That job's own cap left this job uncapped, and the
-      # identical flake resurfaced here on ubuntu-24.04 (PR #203) — a plain GNU-tooling hosted
-      # runner, not alpine/busybox, and byte-identical to the previous green run's README.md/keel
-      # (git diff confirmed empty both times). No file the check reads is ever written during the
-      # suite (every test that touches README.md/keel writes to its own sandboxed copy — grepped),
-      # so the flake isn't a content or extraction-logic race; it's the same resource-contention
-      # class dir #153 already named, just not alpine-specific — many test files' own subprocess
-      # forking (git/awk/grep) stacking up under tests/run.sh's own concurrency on a standard
-      # 4-vCPU hosted runner is enough to occasionally starve a single fork (dir #154). Same
-      # mitigation, extended to both legs here rather than re-capping one runner at a time.
-      KEEL_TEST_JOBS: 2
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: bash version
@@ -45,14 +31,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       # Run the suite under Alpine's busybox coreutils — the durable guard against GNU-only constructs.
       # A busybox `grep --include` gap shipped uncaught precisely because the matrix was GNU + BSD only.
-      # KEEL_TEST_JOBS=2: nproc inside this container reports the host's full vCPU count, but the
-      # container itself gets no --cpus limit and shares the runner with everything else GH Actions
-      # is doing on that host — the docker pull/apk install overhead on top of that made dir #130's
-      # nproc-based default (jobs_cap ~4) contend hard enough under real CI load to flake an unrelated
-      # timing-sensitive check (dir #153). A lower, fixed cap trades some wall-clock for headroom.
+      # `-e CI` forwards the runner's own CI=true into the container (docker passes through the
+      # host's value when given a bare var name) so tests/run.sh's own CI-aware default (dir #154)
+      # applies here too — dir #153 first found this job's nproc-based default (container-reported,
+      # not container-limited) contending hard enough under real load to flake an unrelated
+      # timing-sensitive check; dir #154 traced the same flake to a plain ubuntu-24.04 leg and moved
+      # the fix into tests/run.sh's own default so every CI leg gets it for free, this one included.
       - name: Run test suite on Alpine/busybox
         run: |
-          docker run --rm -e KEEL_TEST_JOBS=2 -v "$PWD:/keel" -w /keel alpine:3.21 \
+          docker run --rm -e CI -v "$PWD:/keel" -w /keel alpine:3.21 \
             sh -c 'apk add --no-cache bash git >/dev/null && bash tests/run.sh'
 
   shellcheck:
