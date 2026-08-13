@@ -130,6 +130,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   misleading "missing receipt" deny for a different malformation shape** (dir #149). A step-id is now
   checked against the complete `EXPECTED_STEPS` list at write time, at both entry points that append to
   the sentinel — `receipt`'s own write and `receipt --recover`'s replay of a retired sentinel.
+- **`keel-impact.sh`'s ledger WRITER (`cmd_add`'s row-printf) still hand-indexed the same columns
+  `_ledger_parse` (dir #107, above) reads by position, with nothing checking the two against each
+  other or against `LEDGER_HEADER`'s own table header** (dir #131). A column added, removed, or
+  reordered in one without the identical edit in the other would silently misread/miswrite the
+  ledger. Added a source-level test asserting the printf's field count matches the header's column
+  count, and that the printf's arguments at `_ledger_parse`'s indexed positions (date/score/conf/
+  guard/hold/miss) are the variables the reader assumes — verified to fail on both a column reorder
+  and a header/printf field-count desync. Filed dir #151 as the deeper follow-up: a single shared
+  column-name source of truth for both sites, rather than a test catching drift after the fact.
 
 ## [0.6.0] — 2026-08-12
 
