@@ -31,9 +31,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       # Run the suite under Alpine's busybox coreutils — the durable guard against GNU-only constructs.
       # A busybox `grep --include` gap shipped uncaught precisely because the matrix was GNU + BSD only.
+      # KEEL_TEST_JOBS=2: nproc inside this container reports the host's full vCPU count, but the
+      # container itself gets no --cpus limit and shares the runner with everything else GH Actions
+      # is doing on that host — the docker pull/apk install overhead on top of that made dir #130's
+      # nproc-based default (jobs_cap ~4) contend hard enough under real CI load to flake an unrelated
+      # timing-sensitive check (dir #153). A lower, fixed cap trades some wall-clock for headroom.
       - name: Run test suite on Alpine/busybox
         run: |
-          docker run --rm -v "$PWD:/keel" -w /keel alpine:3.21 \
+          docker run --rm -e KEEL_TEST_JOBS=2 -v "$PWD:/keel" -w /keel alpine:3.21 \
             sh -c 'apk add --no-cache bash git >/dev/null && bash tests/run.sh'
 
   shellcheck:
