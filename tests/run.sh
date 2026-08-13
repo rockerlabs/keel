@@ -14,9 +14,24 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 # KEEL_TEST_JOBS overrides the concurrency cap (e.g. `KEEL_TEST_JOBS=1 ./tests/run.sh` to force the
 # old fully-sequential behavior for debugging a suspected cross-file interaction).
+#
+# Default: host CPU count, EXCEPT under CI ($CI, set by GitHub Actions and effectively every other
+# CI provider) where it's capped at 2 regardless of the reported count. dir #153 found the
+# alpine-in-docker leg's nproc-reported count didn't reflect the container's real share of the
+# runner, and dir #154 confirmed the same fork-contention flake on a plain ubuntu-24.04 leg too —
+# no file the flaking check reads is ever mutated during the suite, so it isn't a content race; it's
+# many test files' own subprocess forking (git/awk/grep) stacking up under this runner's own
+# concurrency, enough to starve a fork on a small hosted runner regardless of OS or container. One
+# CI-wide default here means a future CI leg gets the safe cap for free instead of needing its own
+# copy of this fix in .github/workflows/ci.yml (KEEL_TEST_JOBS stays available as the manual
+# override for a local repro).
 jobs_cap="${KEEL_TEST_JOBS:-}"
 if [ -z "$jobs_cap" ]; then
-  jobs_cap="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+  if [ -n "${CI:-}" ]; then
+    jobs_cap=2
+  else
+    jobs_cap="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+  fi
 fi
 case "$jobs_cap" in (*[!0-9]*|'') jobs_cap=4 ;; esac
 [ "$jobs_cap" -ge 1 ] || jobs_cap=1

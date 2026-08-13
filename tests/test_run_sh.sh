@@ -122,4 +122,64 @@ else
 fi
 rm -f "$int_out"
 
+# --- $CI caps the default at 2, overriding a host reporting more cores (dir #154) -----------------
+# tests/run.sh's own default now checks $CI before falling back to nproc/sysctl — the new branch had
+# no coverage at all (found by an operator-run /code-review medium pass): every case above pins
+# KEEL_TEST_JOBS explicitly, so a regression in the $CI branch itself would pass silently. A fake
+# `nproc` on PATH decouples this from the real host's core count on purpose — this suite exists to
+# fight resource-contention flakiness, so a timing assertion tied to the ACTUAL host's CPU count
+# would risk reintroducing exactly that class of flake.
+d="$(mkfakedir)"
+for n in 1 2 3 4 5 6; do
+  printf '#!/usr/bin/env bash\nsleep 1\nexit 0\n' > "$d/test_$n.sh"
+done
+fakebin="$(mktemp -d "$SANDBOX/fakebin.XXXXXX")"
+printf '#!/usr/bin/env bash\necho 9\n' > "$fakebin/nproc"
+chmod +x "$fakebin/nproc"
+
+# CI unset -> falls through to the (mocked, high) nproc default, all 6 overlap -> well under serial 6s
+t0=$(date +%s)
+run env -u KEEL_TEST_JOBS -u CI PATH="$fakebin:$PATH" bash "$d/run.sh"
+t1=$(date +%s)
+elapsed=$((t1 - t0))
+check_status "CI unset: nproc-default fixtures -> exit 0" 0 "$STATUS"
+# <=3s, matching the file's own established margin for this shape of assertion (the "timing: 4x 1s
+# fixtures overlap under jobs=4" case above uses the same +2s slack over ~1s of unconstrained work) —
+# a tighter bound here would risk reintroducing the exact contention-flake class this suite exists to
+# fight (found on a delta review pass).
+if [ "$elapsed" -le 3 ]; then
+  pass "CI unset: 6x 1s fixtures run at the mocked nproc=9 default, not capped (${elapsed}s)"
+else
+  fail "CI unset: 6x 1s fixtures run at the nproc default" "took ${elapsed}s, expected <=3s under the mocked nproc=9"
+fi
+
+# CI=true -> caps at 2 regardless of the (mocked, high) nproc value -> 3 batches of 2, ~3s
+t0=$(date +%s)
+run env -u KEEL_TEST_JOBS PATH="$fakebin:$PATH" CI=true bash "$d/run.sh"
+t1=$(date +%s)
+elapsed=$((t1 - t0))
+check_status "CI=true: capped fixtures -> exit 0" 0 "$STATUS"
+if [ "$elapsed" -ge 2 ] && [ "$elapsed" -le 5 ]; then
+  pass "CI=true: 6x 1s fixtures cap at 2 despite a high mocked nproc (${elapsed}s, ~3 batches)"
+else
+  fail "CI=true: 6x 1s fixtures cap at 2" "took ${elapsed}s, expected roughly 3 batches (2-5s)"
+fi
+
+# --- KEEL_TEST_JOBS still overrides $CI's default (dir #154) ---------------------------------------
+# A bare exit-0 + "ALL TEST FILES PASSED" check can't tell jobs_cap=1 (override honored) apart from
+# jobs_cap=2 or 9 (override silently lost to the CI default or the mocked nproc) — all three produce
+# identical output for these trivial fixtures. Only a timing check that proves fully SEQUENTIAL
+# execution (6 batches of 1, ~6s) actually distinguishes them (found on a delta review pass).
+t0=$(date +%s)
+run env PATH="$fakebin:$PATH" KEEL_TEST_JOBS=1 CI=true bash "$d/run.sh"
+t1=$(date +%s)
+elapsed=$((t1 - t0))
+check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
+check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
+if [ "$elapsed" -ge 5 ]; then
+  pass "KEEL_TEST_JOBS=1 under CI=true actually ran sequentially, not capped at 2 (${elapsed}s, ~6 batches)"
+else
+  fail "KEEL_TEST_JOBS=1 under CI=true ran sequentially" "took ${elapsed}s, expected >=5s for 6 fully-serial 1s fixtures — the override may have lost to the CI default"
+fi
+
 summary
