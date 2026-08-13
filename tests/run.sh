@@ -23,16 +23,33 @@ case "$jobs_cap" in (*[!0-9]*|'') jobs_cap=4 ;; esac
 
 logdir="$(mktemp -d)"
 trap 'rm -rf "$logdir"' EXIT
-# Concurrency amplifies the blast radius of an interrupt: an orphaned `bash "$t"` leaves its own
-# sandbox HOME (tests/lib.sh) behind uncleaned. Kill whatever's still in active_pids on Ctrl-C/TERM.
-# ${active_pids[@]+...} guards an empty array under `set -u` (bash 3.2 treats an empty array's [@]
-# expansion as unbound), same idiom reap_finished already uses below.
-trap 'kill "${active_pids[@]+"${active_pids[@]}"}" 2>/dev/null; exit 130' INT TERM
 
 failed=0
 active_pids=()
 active_files=()
 active_logs=()
+
+# Concurrency amplifies the blast radius of an interrupt: an orphaned `bash "$t"` leaves its own
+# sandbox HOME (tests/lib.sh) behind uncleaned, AND — unlike the old sequential runner, which
+# streamed each test's output straight to the terminal as it ran — an interrupted test's already-
+# buffered-but-not-yet-printed log would otherwise be silently lost (killed before reap_finished
+# ever cats it, then the EXIT trap deletes $logdir on the way out). Print every still-active test's
+# log before killing it, so an operator interrupting a hung run still gets the same diagnostic
+# trail the old runner gave for free (found by an operator-run /code-review high pass, dir #130).
+# Doesn't reach a grandchild subprocess a test file itself spawned (no process-group kill) — a
+# known, currently-unreachable gap: every test's git/gh/curl usage today is local-only or stubbed.
+on_interrupt() {
+  local i
+  for i in "${!active_pids[@]}"; do
+    printf '\n=== %s (interrupted) ===\n' "${active_files[$i]}"
+    cat "${active_logs[$i]}" 2>/dev/null
+  done
+  # ${active_pids[@]+...} guards an empty array under `set -u` (bash 3.2 treats an empty array's
+  # [@] expansion as unbound), same idiom reap_finished uses below.
+  kill "${active_pids[@]+"${active_pids[@]}"}" 2>/dev/null
+  exit 130
+}
+trap on_interrupt INT TERM
 
 # Wait for and report every job in active_* whose process has already exited, compacting the
 # arrays down to only the ones still running. Prints how many it reaped (as $?) so a caller can
@@ -69,14 +86,20 @@ wait_until_at_most() {
   done
 }
 
+# Room to keep for the job about to launch, so the loop below caps steady-state concurrency at
+# jobs_cap rather than jobs_cap+1: throttling post-launch (the original shape) let one extra job
+# run for the instant between a launch and its own throttle check — with KEEL_TEST_JOBS=1 that
+# meant two jobs overlapping instead of the true one-at-a-time the env var promises (found by an
+# operator-run /code-review high pass, dir #130).
+launch_cap=$((jobs_cap - 1))
 for t in "$here"/test_*.sh; do
+  wait_until_at_most "$launch_cap"
   base="$(basename "$t")"
   log="$logdir/$base.log"
   bash "$t" >"$log" 2>&1 &
   active_pids+=("$!")
   active_files+=("$base")
   active_logs+=("$log")
-  wait_until_at_most "$jobs_cap"
 done
 wait_until_at_most 0
 

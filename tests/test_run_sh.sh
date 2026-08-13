@@ -86,4 +86,40 @@ else
   fail "timing: 4x 1s fixtures overlap under jobs=4" "took ${elapsed}s, expected <=3s if truly concurrent"
 fi
 
+# --- SIGTERM mid-run: exits 130, kills the still-running children, and — unlike a naive kill-and-
+# exit — still surfaces each interrupted fixture's own buffered output rather than silently
+# dropping it (found by an operator-run /code-review high pass, dir #130: the old sequential
+# runner streamed output live, so an interrupt never lost anything; the new concurrent one buffers
+# per-file until reap time, which needed its own interrupt-time flush). ------------------------
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\necho hello-from-int-a\nsleep 5\nexit 0\n' > "$d/test_a.sh"
+printf '#!/usr/bin/env bash\necho hello-from-int-b\nsleep 5\nexit 0\n' > "$d/test_b.sh"
+int_out="$(mktemp)"
+t0=$(date +%s)
+env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
+rpid=$!
+# Poll for both fixtures' own echo instead of a fixed sleep, so the SIGTERM lands reliably once
+# both children are actually up rather than racing a guessed delay.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if grep -q "hello-from-int-a" "$int_out" 2>/dev/null && grep -q "hello-from-int-b" "$int_out" 2>/dev/null; then
+    break
+  fi
+  sleep 0.2
+done
+kill -TERM "$rpid"
+wait "$rpid"
+int_status=$?
+t1=$(date +%s)
+int_out_text="$(cat "$int_out")"
+check_status "SIGTERM mid-run -> exit 130" 130 "$int_status"
+check_contains "SIGTERM mid-run -> test_a's output survives the kill" "$int_out_text" "hello-from-int-a"
+check_contains "SIGTERM mid-run -> test_b's output survives the kill" "$int_out_text" "hello-from-int-b"
+check_contains "SIGTERM mid-run -> names the interrupted files" "$int_out_text" "(interrupted)"
+if [ "$((t1 - t0))" -le 3 ]; then
+  pass "SIGTERM mid-run -> the 5s sleeps were actually killed, not waited out ($((t1 - t0))s)"
+else
+  fail "SIGTERM mid-run -> the 5s sleeps were actually killed, not waited out" "took $((t1 - t0))s, expected <=3s"
+fi
+rm -f "$int_out"
+
 summary
