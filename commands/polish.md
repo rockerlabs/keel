@@ -61,24 +61,47 @@ Steps, in order:
    different diff. When the note names `polish.4-depth`, step 4 is NOT done: go re-size the diff there
    fresh (its own skip rule — dialog included — applies to this round's diff as usual).
 
-   **Step 3 is NOT in that recovered-and-done set** (dir #96): its receipt names the sha the tests ran
-   at, which after your fix commit is no longer the commit being shipped. **You always WRITE step 3's
-   receipt** — it stays in the completeness set, so omitting it denies for a missing step id and costs
-   you the whole round, and it must carry the new HEAD's sha: re-run the tests there. Don't plan on
-   step 6's retest carrying the binding for you — it does satisfy the gate when it happens (a later
-   commit, say a CHANGELOG entry, legitimately rebinds through step 6), but the normal convergence
-   outcome is a clean delta re-review that changes no files, and step 6 then writes
-   `skipped:no-file-changes`, which binds nothing. So: go to step 3, then step 5 for the delta
-   re-review, then 6 and 8, which always need a fresh value. Only steps 2, 4 and 7 are genuinely done
-   (step 4 minus the withheld-`skip` exception above; step 7 minus the GAP exception just below).
+   **Step 3 now also recovers, but only PROVISIONALLY (dir #123 — narrower than dir #96's original
+   blanket exclusion)**: treat it as done for now — do not re-run the tests just because this is a
+   convergence round — but do not fully trust it either. Its recovered receipt still names the sha the
+   tests actually ran at, which after your fix commit is not the commit being shipped; what makes it
+   still usable is a tree-relevant hash the gate stamped onto it at write time, which the final check at
+   step 8 recomputes for the NEW HEAD and compares. **What counts as exempt is narrower than "any `.md`
+   file"** (an earlier version of this ticket assumed that and shipped it, then an operator-run
+   `/code-review high` reproduced it live as unsound: most of this repo's own `.md` surface — `CORE.md`,
+   `templates/CLAUDE.md`, `commands/*.md`, `FRAMEWORK.md`, `docs/*.md`, `README.md`, even `CHANGELOG.md`
+   itself — is read by a real test in `tests/`) — a `.md` file is exempt ONLY when no file under
+   `tests/` mentions its basename at all (checked mechanically, not guessed; self-maintaining as tests
+   are added). Concretely for this repo: a moved bullet in `BACKLOG.md` (gitignored, untracked, never in
+   the tree at all) or a change to one of the handful of genuinely test-free docs is exempt; a CHANGELOG
+   paragraph is, in THIS repo, actually NOT exempt (`tests/test_doc_figures.sh` checks its size), so
+   don't expect that specific case to skip a test run here even though it motivated the ticket. If your
+   fix commit touched nothing exempt, step 8's comparison matches and unlocks with no test run this
+   round. If it touched anything else, step 8 denies with "no test suite run is bound to current HEAD" —
+   that denial is the signal, not something to predict up front: at that point go back to step 3,
+   actually run the tests, and write a fresh receipt carrying the new HEAD's sha
+   (`tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"`), then continue on to step 8
+   again. **A different denial — "missing receipt for step(s): polish.3-tests" instead of the sha-unbound
+   one above — means the SAME thing but arrived a different way**: the prior round's step 3 was a
+   `skipped:--no-test`/`skipped:no-test-command` waiver or a legacy bare sha (no stamped hash at all), so
+   `--recover` never carried it forward in the first place (unchanged from dir #96 — a waiver must never
+   silently re-apply to a round the operator didn't give it to). Same fix either way: go run the tests
+   fresh. Don't plan on step 6's retest carrying the binding either way — it does satisfy the gate when
+   it happens (a later commit, say a genuinely test-free doc entry, legitimately rebinds through step 6),
+   but the normal convergence outcome is a clean delta re-review that changes no files, and step 6 then
+   writes `skipped:no-file-changes`, which binds nothing on its own. So the ordinary round is
+   5 (delta) → 6 → 8, with step 3 only re-entered if step 8 denies (either shape above); steps 2, 4 and 7
+   are unconditionally done (step 4 minus the withheld-`skip` exception above; step 7 minus the GAP
+   exception just below).
 
    **When step 7 was the trigger (dir #119), which of its two triggers it was decides one thing.** A
    WARN you chose to fix left the prior run's `polish.7-selfcheck` receipt written, so it recovers and
    step 7 stays done. **A GAP did not** — step 7 stops the run *before* writing its receipt, so the
    backup never held it and `--recover` cannot restore it (its count won't mention a step that was never
    there): in that case go run step 7 again this round and write the receipt fresh, or step 8 denies for
-   a missing step id. So the round is 3 → 5 (delta) → 6 → 8 after a WARN trigger, and
-   3 → 5 (delta) → 6 → **7** → 8 after a GAP one — the sequence is the only thing the two differ in. And
+   a missing step id. So the round is 5 (delta) → 6 → 8 after a WARN trigger, and
+   5 (delta) → 6 → **7** → 8 after a GAP one (either way, step 3 only re-enters if step 8 denies for a
+   stale test binding, per above) — the sequence is the only thing the two differ in. And
    even where the receipt does recover, it attests the *prior* run's self-check, taken before your fix
    existed: re-run `tools/self/doctor.sh` by hand and confirm the finding is gone before unlocking. That
    hand-run is verification, not a step — no receipt, no change to the sequence. If it surfaces something
@@ -105,10 +128,11 @@ Steps, in order:
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`).
 
-3. **Tests — run them by default.** *You may skip the RUN only if HEAD has not moved since the tests
-   last passed — which in a convergence round it has, by definition (step 1's branch includes a fix
-   commit); the case where this applies is an interrupted re-run. Either way you always WRITE this
-   receipt: `--recover` never restores it.* Take the
+3. **Tests — run them by default.** *Skip entirely if step 1's convergence branch just recovered this
+   step's receipt (dir #123, provisional — see step 1) — do not invoke this step and do not write a
+   fresh receipt, unless step 8 later denies for a stale test binding, at which point come back here.*
+   Outside a convergence round, you may skip the RUN only if HEAD has not moved since the tests last
+   passed (an interrupted re-run) — you still always WRITE this receipt in that case. Take the
    test command from the project's `CLAUDE.md` and run it. Show the
    real output (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains
    `--no-test`, skip the run and say explicitly that tests were skipped by request (the human runs them before
@@ -117,11 +141,10 @@ Steps, in order:
    polish.3-tests skipped:--no-test`, or `... polish.3-tests skipped:no-test-command` when the project
    genuinely ships no test command — the same escape step 7 has as `skipped:no-doctor`) — **the sha is
    the point** (dir #96): the gate unlocks only when
-   some test run is bound to the commit being shipped, via this receipt or step 6's retest. After a fix
-   commit the previous round's sha is no longer that commit, so either the tests re-run here or step 6
-   binds the new HEAD. Only those two named literals waive it; an
-   invented `skipped:<anything-else>` is denied, and a prior round's waiver is never carried over —
-   `--recover` does not restore this step at all.
+   some test run is bound to the commit being shipped, via this receipt (directly, or — dir #123 — via
+   a still-matching tree-relevant hash carried over from a recovered receipt), or step 6's retest. Only
+   the two named literals waive it; an invented `skipped:<anything-else>` is denied, and a prior round's
+   *waiver* is never carried over on recovery — only a real sha's tree-relevant hash is.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** *Skip entirely if step 1's convergence
    branch just recovered this step's receipt* — reuse the recovered level as-is; do not re-size (the
@@ -129,8 +152,10 @@ Steps, in order:
    fresh sizing pass here would silently replace it, per step 1). A recovered `skip` never arrives here
    (dir #116 — `--recover` withholds it and its note says so): if the prior round chose `skip`, this
    step runs fresh, skip dialog and all, for the round's own diff. Otherwise, gate this on the steps above
-   being clean: proceed only if simplify left no open problems AND (tests are green OR were explicitly
-   skipped). Otherwise report what is left and stop — do NOT write this step's receipt or the sentinel.
+   being clean: proceed only if simplify left no open problems AND (tests are green, or were explicitly
+   skipped, or step 1 recovered step 3 provisionally per dir #123 — that provisional state is enough to
+   proceed; step 8 is what actually re-verifies it). Otherwise report what is left and stop — do NOT
+   write this step's receipt or the sentinel.
 
    **First check `tools/pre-pr-gate.sh handoff-check` — a match means step 5 already stopped to ask
    about THIS exact commit on an earlier invocation.** Reuse its recorded level as-is rather than
@@ -403,7 +428,7 @@ Steps, in order:
    re-invocation this produces, step 1's own convergence branch (`receipt --recover`) already skipped
    steps 2 and 7 for you (step 7 unless a GAP stopped that run before its receipt — dir #119), and
    step 4 unless the prior round's depth was `skip` (never carried — dir
-   #116, see step 1; NOT step 3 — it must bind this commit, see step 1) — arriving here, re-review only
+   #116, see step 1; step 3 recovers too now but only provisionally — dir #123, see step 1) — arriving here, re-review only
    the DELTA the fix introduced, not the full step-1
    diff again, and stop as soon as a pass needs no further changes (dir #127 below gives this "stop" a
    budget and a terminal condition; read the rest of this paragraph together with that block, not as two

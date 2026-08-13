@@ -416,6 +416,91 @@ ACCEPTED_REVIEW_LEVELS='low medium high max'
 # trust-boundary comment and the same one-liner aren't typed out twice in one case block.
 _head_sha() { git -C "${1:-.}" rev-parse HEAD 2>/dev/null; }
 
+# dir #123: a deterministic digest of the test-relevant part of a commit's tree, used to let
+# `polish.3-tests` rebind to a LATER commit without re-running the suite when nothing that could affect
+# a test outcome changed underneath it.
+#
+# **Not a blanket `*.md` exclusion — found unsound by this ticket's own operator-run /code-review high
+# pass, reproduced live against this repo.** A `.md` file is only a CANDIDATE for exclusion; it is
+# actually dropped from the hash ONLY when no file under `tests/` mentions its basename at all. Grepping
+# every tracked `.md` basename against this repo's own suite found the vast majority genuinely
+# test-relevant: `test_core_wrapper_sync.sh`/`test_conveyor_stages.sh`/`test_rails_honesty.sh`/
+# `test_release_audit_doc.sh` byte-compare or content-check `CORE.md`, `templates/CLAUDE.md`,
+# `commands/*.md`, `FRAMEWORK.md`, `docs/*.md`, `README.md` against the real repo tree; even
+# `CHANGELOG.md` — the ticket's own headline "safe" example — is read by `test_doc_figures.sh`'s
+# figure/floor check. A blanket exclusion would have let a commit that breaks one of those byte-equality
+# checks sail through as "nothing test-relevant changed," precisely the false-negative the ticket's own
+# acceptance criterion forbids. This dynamic check is self-maintaining (a newly-added test that starts
+# reading some `.md` file makes that file test-relevant again automatically, no list to keep in sync) and
+# fails closed (a `.md` file this check can't prove untested stays IN the hash, never silently dropped).
+# Still no per-project pathspec — the "is it referenced" check is generic, not project-configured.
+#
+# `git ls-tree -r --full-tree <sha>` prints `<mode> <blob-sha> <path>` for the WHOLE tree regardless of
+# `$cwd` — plain `-r` alone (an earlier version of this function used it) is silently scoped to `$cwd`'s
+# OWN subtree when `-C` points below the repo root, so a change to a file elsewhere in the tree would
+# never move the hash at all; reproduced live (a file outside the invocation's cwd, edited, and the hash
+# didn't budge) by the same review pass. `%(objectmode)` is included too — content alone
+# (`%(objectname)`) is unchanged by a `chmod +x`, so a mode-only change (also reproduced live: identical
+# hash before/after) would otherwise be invisible to a mechanism whose whole job is detecting what
+# changed. A content OR mode OR path change all move what gets printed; hashing the filtered listing with
+# `git hash-object --stdin` folds that into one digest per (sha, filter) pair.
+#
+# **Failure contract, found by this ticket's own high review:** `git hash-object --stdin` hashes
+# whatever bytes it receives, including zero of them — it emits the well-known empty-blob constant
+# (`e69de2...`) for BOTH a genuinely empty/all-excluded tree AND a failed `ls-tree` (bad sha, corrupt
+# odb) piped through as nothing. String emptiness can't tell those apart, so this returns via EXIT
+# STATUS instead: non-zero (and no output) means `ls-tree` itself failed — callers must check that, not
+# `-n` on the string, which is silently never false.
+_test_relevant_tree_hash() {
+  local cwd="$1" sha="$2" listing line rest path base
+  local testsdir="$cwd/tests"
+  listing="$(git -C "$cwd" ls-tree -r --full-tree --format='%(objectmode) %(objectname) %(path)' "$sha" 2>/dev/null)" || return 1
+  {
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      # Fixed-width mode + objectname, so splitting on the first two spaces is safe even when the
+      # PATH itself contains a space — `--format` (unlike default `ls-tree` output) does NOT C-quote
+      # unusual path bytes, confirmed live: a filename with an embedded space came out raw, so
+      # whitespace-based field-splitting across the whole line would have silently mis-parsed it.
+      rest="${line#* }"
+      path="${rest#* }"
+      case "$path" in
+        *.md)
+          base="${path##*/}"
+          [ -d "$testsdir" ] && grep -rq -F -- "$base" "$testsdir" 2>/dev/null && printf '%s\n' "$line"
+          ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done <<< "$listing"
+  } | git -C "$cwd" hash-object --stdin 2>/dev/null
+}
+
+# dir #123: enrich a `polish.3-tests` outcome with its tree-relevant hash — kept as its own function
+# (not inlined into the `receipt` CLI's step-id dispatch below) because it's a trust-boundary
+# computation with its own rationale, not a one-line side effect like the CLI's other per-step
+# specializations. Any suffix the CALLER already appended (a hand-crafted "sha:fakehash", or a recovered
+# value re-receipted by hand) is stripped and recomputed here, never taken as-is — trusting it would let
+# a self-reported tree hash forge a match at read time, exactly the "trust the model" shape this ticket
+# exists to avoid. The two skip literals (and anything else that isn't a resolvable commit) pass through
+# unchanged; their read-time check is a plain string match and needs no suffix.
+_stamp_tests_outcome() {
+  local cwd="$1" outcome="$2" candidate_sha treehash
+  case "$outcome" in
+    skipped:*) printf '%s' "$outcome"; return ;;
+  esac
+  candidate_sha="${outcome%%:*}"
+  if git -C "$cwd" rev-parse --verify --quiet "${candidate_sha}^{commit}" >/dev/null 2>&1; then
+    # Exit status, not string emptiness (see _test_relevant_tree_hash's own comment) — a failed
+    # computation must leave the outcome as the bare sha, not silently stamp nothing onto it.
+    if treehash="$(_test_relevant_tree_hash "$cwd" "$candidate_sha")"; then
+      outcome="${candidate_sha}:${treehash}"
+    else
+      outcome="$candidate_sha"
+    fi
+  fi
+  printf '%s' "$outcome"
+}
+
 # The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
 # resolve_impact_log() below (one file, two pre-dir-#61 and dir-#61 call sites) share the fragment
 # instead of each inlining it — the awk is identical; only the surrounding fallback order differs, so
@@ -853,12 +938,18 @@ case "${1:-}" in
     if [ "${2:-}" = "--recover" ]; then
       # dir #72: re-stamp the immediately-prior (now-retired) run's receipts onto the CURRENT nonce, in
       # one call — the convergence-round shortcut commands/polish.md step 1's own convergence branch
-      # calls right after `init`. dir #96 narrowed it twice, so this is no longer "whatever the prior run
-      # had, superseded later by a fresh write": `polish.3-tests` and `polish.5-review` are never
-      # restored (see the filter below), and a step id THIS run already wrote is left alone rather than
-      # overwritten — so the order of `--recover` against your own receipt calls no longer matters. The
-      # steps a round must write for itself are 3, 5, 6 and 8. The gate's own completeness/sha/trace
-      # checks are untouched either way, so a recovered-but-now-stale value can never itself unlock it.
+      # calls right after `init`. dir #96 narrowed it once, so this is no longer "whatever the prior run
+      # had, superseded later by a fresh write": `polish.5-review` is never restored (see the filter
+      # below), and a step id THIS run already wrote is left alone rather than overwritten — so the
+      # order of `--recover` against your own receipt calls no longer matters. `polish.3-tests` WAS also
+      # excluded here by dir #96, but dir #123 lifted that: it now recovers like any other step, because
+      # its stamped tree-relevant hash (see `_test_relevant_tree_hash` above) lets the read-time check
+      # below mechanically tell a genuinely-stale recovery from one that's still good — recovering it
+      # unconditionally used to be exactly the silent-skip dir #96 existed to close, so lifting the
+      # exclusion had to come with that read-time proof, not on its own. The steps a round must ALWAYS
+      # write for itself are 5, 6 and 8 (3 usually recovers now; see the dir #123 note near the
+      # test-binding check below for when it still can't). The gate's own completeness/sha/trace checks
+      # are untouched either way, so a recovered-but-now-stale value can never itself unlock it.
       require_active_receipt
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
       if [ ! -f "$prev" ]; then
@@ -916,6 +1007,16 @@ case "${1:-}" in
       # became a sha. Rather than leaning on step 1's prose ("call --recover right after init"), make
       # the order stop mattering: recovery fills gaps, it does not overwrite this run's own work.
       already="$(awk -F'\t' -v n="$nonce" 'NF>=3 && $1==n {print $2}' "$sentinel" | sort -u)"
+      # Shared by the polish.5-review/polish.3-tests/polish.4-depth withheld-from-recovery arms below —
+      # note a step as unrecovered (and why) UNLESS this run already wrote it itself, in which case a
+      # fresh write already exists and the note would send the round to redo work it just did.
+      _note_unrecovered() {
+        local step="$1" reason="$2"
+        if ! printf '%s\n' "$already" | grep -qxF -- "$step"; then
+          unrecovered="${unrecovered:+$unrecovered / }$step"
+          todo="${todo:+$todo, }$reason"
+        fi
+      }
       count=0; skipped_existing=0; unrecovered=""; todo=""
       while IFS=$'\t' read -r r_step r_outcome; do
         [ -n "$r_step" ] || continue
@@ -941,31 +1042,36 @@ case "${1:-}" in
           continue
         fi
         case "$r_step" in
-          polish.3-tests|polish.5-review)
-            # dir #96: never recovered. Both bind a claim to a SPECIFIC commit, and both have an arm
-            # that does not self-correct when the commit moves. Step 3: a stale sha fails the compare,
-            # but a recovered `skipped:--no-test` would re-assert a prior round's waiver into a round
-            # the operator never passed it to. Step 5: a bare level or `agent:*` is caught by the
-            # trace check (keyed to current HEAD), but the TRUSTED arms — `skip`, `*-operator-run`,
+          polish.5-review)
+            # dir #96: never recovered. It binds a claim to a SPECIFIC commit and has an arm that does
+            # not self-correct when the commit moves — a bare level or `agent:*` is caught by the trace
+            # check (keyed to current HEAD), but the TRUSTED arms — `skip`, `*-operator-run`,
             # `*-waived` — skip that check entirely, so a recovered one claims this fix commit was
             # reviewed when it was not. Reproduced end-to-end by this ticket's own high review.
-            # commands/polish.md already tells the round to re-do both ("go to step 3, then step 5 for
-            # the delta re-review"), so this makes the code say what the prose already said.
-            # Report only what was actually withheld from THIS run: a step the round has already
-            # written itself needs no instruction, and naming a step the backup never held would send
-            # the session looking for something that was never there. The INSTRUCTION is per-step for
-            # the same reason — a fixed "write both" tail would re-introduce exactly that, telling a
-            # round that only lost step 3 to go and redo a review nobody withheld.
-            if ! printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
-              case "$r_step" in
-                polish.3-tests)  _todo='step 3 bound to $(git rev-parse HEAD) (step 6 rebinds it too, but only if a later commit still changes files)' ;;
-                polish.5-review) _todo='step 5 a fresh delta re-review' ;;
-                *)               _todo="$r_step" ;;
-              esac
-              unrecovered="${unrecovered:+$unrecovered / }$r_step"
-              todo="${todo:+$todo, }$_todo"
-            fi
+            # commands/polish.md already tells the round to redo it ("step 5 for the delta re-review"),
+            # so this makes the code say what the prose already said.
+            _note_unrecovered "$r_step" "step 5 a fresh delta re-review"
             continue
+            ;;
+          polish.3-tests)
+            # dir #123: recovered ONLY when the retired outcome carries a stamped tree-relevant hash
+            # (`<sha>:<treehash>`, written server-side by `receipt` itself — see there) — the read-time
+            # test-binding check below independently re-verifies that hash against current HEAD, so a
+            # recovered value that turns out stale still denies on its own; recovering it is safe. A
+            # SKIP LITERAL (`skipped:--no-test`, `skipped:no-test-command`) or a legacy bare sha carries
+            # no such re-validation, so it is NEVER recovered, unchanged from dir #96's original rule:
+            # blindly carrying a skip literal forward would silently re-assert a waiver into a round that
+            # never asked for one — the exact hole a second dir #96 review pass found and closed by
+            # excluding step 3 outright, before this hash existed to re-check it safely. The glob
+            # requires a HEX first character before the colon so neither shape can slip through it: a
+            # skip literal starts with `s`, a bare sha has no colon at all.
+            case "$r_outcome" in
+              [0-9a-f]*:*) : ;;
+              *)
+                _note_unrecovered "$r_step" 'step 3 bound to $(git rev-parse HEAD) (step 6 rebinds it too, but only if a later commit still changes files)'
+                continue
+                ;;
+            esac
             ;;
           polish.4-depth)
             # dir #116: a SKIP-level depth is never recovered — the other depth with an arm that stays
@@ -978,10 +1084,7 @@ case "${1:-}" in
             # Non-skip levels keep recovering (dir #72's convenience): they bypass nothing — step 5
             # still has to produce a fresh outcome for them, HEAD-keyed by trace or named-source arms.
             if [ "${r_outcome%%:*}" = "skip" ]; then
-              if ! printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
-                unrecovered="${unrecovered:+$unrecovered / }$r_step"
-                todo="${todo:+$todo, }step 4 re-sized fresh (an inherited skip is never carried — a skip must be chosen for THIS diff)"
-              fi
+              _note_unrecovered "$r_step" "step 4 re-sized fresh (an inherited skip is never carried — a skip must be chosen for THIS diff)"
               continue
             fi
             ;;
@@ -1032,6 +1135,9 @@ case "${1:-}" in
         exit 1
         ;;
     esac
+    # dir #123: stamp polish.3-tests with its tree-relevant hash — see `_stamp_tests_outcome` above for
+    # the trust-boundary rationale (never trusts a caller-supplied suffix).
+    [ "$step_id" = "polish.3-tests" ] && outcome="$(_stamp_tests_outcome "$PWD" "$outcome")"
     require_active_receipt
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
     # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
@@ -1712,9 +1818,40 @@ case "$status" in
     # along as `skipped:no-doctor`). Without the second, a repo with no tests yet — an `/init-project`
     # scaffold, an early adopter — could never unlock the gate at all, and the deny would name causes
     # that are all wrong for it. Both are named literals so an invented reason still denies.
+    #
+    # dir #123: a THIRD way to satisfy this, on top of the exact-sha match and step 6's retest — a
+    # `polish.3-tests` outcome carrying a `<sha>:<treehash>` suffix (stamped server-side at write time,
+    # see the `receipt` case above) whose treehash still matches `$current_sha`'s OWN freshly-computed
+    # `_test_relevant_tree_hash`. This is what lets `receipt --recover` carry a stale sha forward (dir
+    # #96 used to block that outright, for exactly this check's absence) without reopening the silent-skip
+    # hole: the comparison is two independently-computed digests, never a self-reported claim, so a commit
+    # that actually touched a non-`.md` file will simply fail to match and fall through to the deny below
+    # — a genuine code change can never accidentally qualify for the shortcut. `$tests_outcome` written
+    # before this change (a bare sha, no colon) still satisfies the exact-match arm as before; nothing
+    # about the pre-dir-#123 behavior regresses.
     tests_bound=0
     case "$tests_outcome" in
-      "skipped:--no-test"|"skipped:no-test-command"|"$current_sha") tests_bound=1 ;;
+      "skipped:--no-test"|"skipped:no-test-command"|"$current_sha")
+        tests_bound=1
+        ;;
+      *:*)
+        # Cheap path first: every FRESH polish.3-tests write now carries this suffix (see the `receipt`
+        # case above), so the ordinary same-commit case — tests ran on the exact commit that is still
+        # HEAD — would otherwise fall through to a `git ls-tree`/`hash-object` pipeline on EVERY `gh pr
+        # create` attempt just to re-derive what the stored sha already answers directly. Sha equality
+        # alone proves the tree matches (it's the SAME commit); only a genuinely differing sha needs the
+        # tree-hash comparison at all.
+        if [ "${tests_outcome%%:*}" = "$current_sha" ]; then
+          tests_bound=1
+        else
+          stored_treehash="${tests_outcome#*:}"
+          # Exit status, not string emptiness (see _test_relevant_tree_hash's own comment) — a failed
+          # recomputation here must never quietly compare equal to a stale stored hash.
+          if [ -n "$stored_treehash" ] && current_treehash="$(_test_relevant_tree_hash "$cwd" "$current_sha")"; then
+            [ "$stored_treehash" = "$current_treehash" ] && tests_bound=1
+          fi
+        fi
+        ;;
     esac
     [ "$retest_outcome" = "$current_sha" ] && tests_bound=1
     if [ "$tests_bound" -eq 0 ]; then
@@ -1723,7 +1860,7 @@ case "$status" in
       # Prescribe the one action that WORKS from here: retire_sentinel just ran, so there is no active
       # receipt to append to — telling the operator to `receipt polish.3-tests <sha>` would hand them a
       # command that answers "no active receipt". Every sibling deny in this branch says the same thing.
-      deny "Pre-PR gate: no test suite run is bound to current HEAD ($current_sha) — step 3 recorded '$tests_outcome' and step 6 did not re-run here. Usual cause: a commit landed after the tests ran (a review fix, a changelog entry). If you just pulled Keel, an older copied commands/polish.md that writes a bare 'done' for step 3 causes this too — re-run install.sh. Run /polish again."
+      deny "Pre-PR gate: no test suite run is bound to current HEAD ($current_sha) — step 3 recorded '$tests_outcome' (its tree-relevant hash, if any, no longer matches current HEAD's) and step 6 did not re-run here. Usual cause: a commit landed after the tests ran and touched a test-relevant file — not necessarily code: a .md file some test reads (e.g. CORE.md's sync check) counts too, only a .md file NO test references is exempt. If you just pulled Keel, an older copied commands/polish.md that writes a bare 'done' for step 3 causes this too — re-run install.sh. Run /polish again."
     fi
     # dir #63/Hole A: cross-check step 5's review outcome against step 4's OWN recorded depth — without
     # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
