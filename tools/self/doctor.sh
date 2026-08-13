@@ -295,19 +295,27 @@ say ""
 say "● slash-command references"
 dead_cmd=0
 scan_files_cmd=()
-while IFS= read -r f; do scan_files_cmd+=("$f"); done < <(git -C "$repo_root" ls-files -- "${adopter_docs[@]}")
+# Filter to files that actually exist on disk, not just git-tracked (an unstaged deletion of a
+# tracked file leaves it in `git ls-files` but absent from the working tree) — the single batched
+# `grep -r` below fails its WHOLE run, silently blinding this check across every file it scans, if
+# any one path in its file-operand list is unreadable; check 2's own per-file loop above only loses
+# that ONE file's coverage on the same failure, since each of its grep calls is scoped to one path.
+while IFS= read -r f; do [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done < <(
+  git -C "$repo_root" ls-files -- "${adopter_docs[@]}"
+)
 harness_commands=(code-review simplify review)
 not_commands=(tmp setup)
 if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
   # `|| true`: grep exits 1 on zero matches, which under `set -e` would otherwise abort this whole
   # script at the assignment (unlike the process-substitution loop above, a direct `var=$(cmd)`
   # DOES propagate a failing exit status through errexit).
-  raw_refs="$(cd "$repo_root" && grep -rhoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}" 2>/dev/null || true)"
-  refs="$(printf '%s\n' "$raw_refs" | tr -d '`/ ("*' | sort -u)"
+  raw_hits="$(cd "$repo_root" && grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}" 2>/dev/null || true)"
+  refs="$(printf '%s\n' "$raw_hits" | cut -d: -f3- | tr -d '`/ ("*' | sort -u)"
   for name in $refs; do
     printf '%s\n' "${harness_commands[@]}" "${not_commands[@]}" | grep -qxF "$name" && continue
     if [ ! -f "$repo_root/commands/$name.md" ]; then
-      gap "slash-command reference '/$name' has no commands/$name.md — ship it, word it generically, or allowlist it (dir #129, only if harness-provided AND every call site handles its absence)"
+      cited_in="$(printf '%s\n' "$raw_hits" | grep -F "\`/$name" | head -1 | cut -d: -f1)"
+      gap "slash-command reference '/$name' in ${cited_in:-an adopter-facing doc} has no commands/$name.md — ship it, word it generically, or allowlist it (dir #129, only if harness-provided AND every call site handles its absence)"
       dead_cmd=$((dead_cmd + 1))
     fi
   done

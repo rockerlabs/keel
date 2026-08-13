@@ -268,7 +268,7 @@ check_status "unshipped slash-command reference -> exit 1" 1 "$STATUS"
 # built via key(), not a literal path — this file's own comments/assertions are themselves scanned
 # by check 2's dead-reference class, and a bare literal here would false-GAP the real checkout's own
 # self-audit (the fake_widget/fake_orphan fixtures above dodge it the same way).
-check_contains "reports the unshipped command" "$OUT" "slash-command reference '/nosuchcmd' has no $(key commands/nosuchcmd .md)"
+check_contains "reports the unshipped command" "$OUT" "slash-command reference '/nosuchcmd' in README.md has no $(key commands/nosuchcmd .md)"
 
 # a reference to a command that IS shipped must not false-GAP.
 d="$(mk_clean_repo)"
@@ -329,6 +329,19 @@ printf '#!/usr/bin/env bash\n# smoke-references %s\n' "$fake_pulls_tool" > "$d/t
 ( cd "$d" && git add -A && git commit -qm "shell-only /pulls text stays out of scope" )
 run "$sd" "$d" --quiet
 check_status "shell-file-only /word text is out of the slash-command scan -> exit 0" 0 "$STATUS"
+
+# a tracked file UNSTAGED-DELETED from the working tree (still in `git ls-files`, gone from disk)
+# must not blind the whole batched scan — the single `grep -r` call across every scanned file fails
+# its ENTIRE run if any one file operand is unreadable, so without an existence filter this would
+# silently swallow a genuine unshipped reference in a DIFFERENT, still-present file too.
+d="$(mk_clean_repo)"
+printf '# readme\n' > "$d/README.md"
+printf 'Run `/nosuchcmd` first.\n' > "$d/ADAPTING.md"
+( cd "$d" && git add -A && git commit -qm "tracked README.md plus an unshipped ref in a second file" )
+rm "$d/README.md"
+run "$sd" "$d" --quiet
+check_status "an unstaged-deleted tracked file doesn't blind the batched scan -> exit 1" 1 "$STATUS"
+check_contains "the OTHER file's unshipped ref is still caught" "$OUT" "slash-command reference '/nosuchcmd' in ADAPTING.md"
 
 # --- 3. orphan tool -> WARN (advisory); a NEW script with zero test coverage -> hard GAP -----------
 # (the coverage ratchet, dir #142 — a mutation test on the class dir #100 was found only reactively:
@@ -622,7 +635,7 @@ check_absent "and doesn't false-flag" "$OUT" "dir #22's heading cites"
 # that genuinely never resolves `gh` at all, carrying only the tools self/doctor.sh itself invokes.
 no_gh_bin="$SANDBOX/fakebin-nogh"
 mkdir -p "$no_gh_bin"
-for tool in awk basename bash cat chmod cut dirname git grep head printf sed sort tail wc env true false; do
+for tool in awk basename bash cat chmod cut dirname git grep head printf sed sort tail tr wc env true false; do
   t="$(command -v "$tool" 2>/dev/null)" && ln -sf "$t" "$no_gh_bin/$tool"
 done
 d="$(mk_clean_repo)"
