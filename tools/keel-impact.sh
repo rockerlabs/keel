@@ -153,9 +153,6 @@ EOF
 # before the table's leading "|"; array indices are 0-based, so "date" at index 0 is field 2, "guard"
 # at index 3 is field 5, etc — the same numbering _ledger_parse's old header comment already documented).
 _LEDGER_COLS=(date score conf guard hold fire hit miss fric silent evidence gap)
-# Display labels for the markdown header row, index-aligned with _LEDGER_COLS. Only "gap" differs from
-# its column name (the header spells out what the free-text cell is for) — everything else matches.
-_LEDGER_LABELS=(date score conf guard hold fire hit miss fric silent evidence "gap (demote/promote)")
 
 # table field number (1-based, counting the empty pre-leading-pipe cell as field 1) for column $1 —
 # the single place that turns a column NAME into a table POSITION. Every reader/writer of ledger rows
@@ -168,11 +165,14 @@ _ledger_col_pos() {
   return 1
 }
 
-# the two markdown table-header lines (column names + separator dashes), generated from _LEDGER_LABELS
-# so the header is never hand-typed independently of the array.
+# the two markdown table-header lines (column names + separator dashes), generated from _LEDGER_COLS
+# so the header is never hand-typed independently of the array. "gap" is the one column whose header
+# label differs from its bare name (spelling out what the free-text cell is for); every other column
+# uses its own name as the label, so a second near-duplicate array isn't needed just for that one case.
 _ledger_table_header() {
-  local hdr="|" sep="|" label dashes
-  for label in "${_LEDGER_LABELS[@]}"; do
+  local hdr="|" sep="|" col label dashes
+  for col in "${_LEDGER_COLS[@]}"; do
+    label="$col"; [ "$col" = "gap" ] && label="gap (demote/promote)"
     hdr="$hdr $label |"
     dashes="$(printf '%*s' "${#label}" '' | tr ' ' '-')"
     sep="$sep$dashes|"
@@ -647,11 +647,13 @@ cmd_add() {
   ensure_ledger
   local today; today="${asof:-$(date -u +%Y-%m-%d)}"
   # Row values, index-aligned with _LEDGER_COLS (dir #151): built from the array instead of a
-  # hand-typed printf, so the writer can't silently drift from _ledger_parse's column order.
+  # hand-typed printf, so the writer can't silently drift from _ledger_parse's column order. The
+  # format string depends only on the column COUNT (one "%s |" per column), not on any column's
+  # identity, so it's built once here rather than inside the value-mapping loop below.
   local -a _row_vals=()
   local _col _fmt="|"
+  for _col in "${_LEDGER_COLS[@]}"; do _fmt="$_fmt %s |"; done
   for _col in "${_LEDGER_COLS[@]}"; do
-    _fmt="$_fmt %s |"
     case "$_col" in
       date)     _row_vals+=("$today") ;;
       score)    _row_vals+=("$score") ;;
