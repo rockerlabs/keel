@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# test_rails_honesty.sh — pins the wording fixes of dir #99/#110/#111/#112/#119: places where a shipped
-# rail described a guarantee it does not give, or a mechanism no shipped command carries. Grep-based,
-# same idiom as test_conveyor_stages.sh — the failure mode these guard against is a later edit quietly
-# restoring the overclaim, which nothing else would notice.
+# test_rails_honesty.sh — pins the wording fixes of dir #99/#111/#112/#119: places where a shipped
+# rail described a guarantee it does not give. Grep-based, same idiom as test_conveyor_stages.sh — the
+# failure mode these guard against is a later edit quietly restoring the overclaim, which nothing else
+# would notice.
+#
+# dir #110's class-level "no unshipped slash-command reference" guard used to live here too, but it
+# ran only in Keel's own suite — no adopter install inherited it. Moved to tools/self/doctor.sh's
+# check 2b (dir #129), which every adopter's tools/doctor.sh run already orchestrates; the coverage
+# on Keel's own tree is preserved by tests/test_self_doctor.sh's smoke test (self/doctor.sh against
+# the real checkout), and mutation-tested against a synthetic sandbox the same way check 2's dead
+# internal references already are — coverage this file's own live-tree scan never had.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 
@@ -39,78 +46,6 @@ pin "going-public: the §0 detect block hands the WARN list to the human" \
 pin "going-public: the scrub gate before the force-push names the WARN read" \
   "$going" 'exit 0 AND its WARNs read' \
   "the third scrub gate must not read as satisfied by a green exit alone — a WARN-tier leak would ship"
-
-# --- dir #110: no shipped rail may route work through a command Keel does not ship ---------------
-# Class-level, not site-level (the dir #98 lesson): scan every tracked adopter-facing Markdown file —
-# rails, templates, commands AND docs, since docs/reference.md is the command catalogue and
-# getting-started.md is the onboarding path — for backticked slash-command references, and require a
-# matching commands/<name>.md. CHANGELOG.md is excluded: it records what past releases said, including
-# wording since corrected, so pinning it would forbid describing this very fix.
-#
-# Every citation style in the tree counts, not just the bare one: `/design`, the argument form
-# `/design <topic>` (the dominant style — `/go <n>`, `/code-review <level>` — and so the likeliest shape
-# for a dir #110 regression), bold-wrapped **`/design`**, and slash-joined `/go`/`/design` (FRAMEWORK.md
-# writes pairs that way today). That is what the leading-delimiter class is for: it admits a space, an
-# opening paren or quote, a `*` and a `/` before the backtick, while still refusing to match `X`/`Y`
-# prose, where the backtick before the slash is a code span's CLOSING one.
-#
-# Know the edge of what it covers, so nobody over-trusts it: backticked refs only, in Markdown, in these
-# four flat directories. A bare /design written without backticks, or one inside tools/ or a nested
-# docs subdirectory, still gets through.
-#
-# Two allowlists, deliberately separate — they mean different things and must not blur into one:
-#   harness-provided commands, each of whose call sites already handles its absence explicitly
-#   (polish.md step 2's inline-cleanup fallback, step 5's agent fallback, step 5's do-not-substitute note)
-harness_commands=" code-review simplify review "
-#   not commands at all — a filesystem path, and prose about a name an adopter may already have
-not_commands=" tmp setup "
-
-# An ARRAY, not a space-joined string: a checkout path containing a space would split into fragments,
-# grep would read none of the intended files, and an empty result is this check's own pass condition —
-# a vacuous green over a live violation.
-#
-# The empty case needs its own sentinel, though: an empty array is NOT self-limiting. Expanding
-# "${scan_files[@]}" empty aborts the file outright under lib.sh's `set -u` on bash 3.2 (what
-# `env bash` resolves to on macOS), and on bash 4.4+ it leaves grep with no file operands, so it reads
-# stdin — a hang from a terminal, a vacuous empty result in CI. `/dev/null` gives grep a real operand
-# that matches nothing, while the check just above has already turned the file red.
-scan_files=()
-for f in "$REPO_ROOT"/*.md "$REPO_ROOT"/docs/*.md "$REPO_ROOT"/commands/*.md "$REPO_ROOT"/templates/*.md; do
-  [ -f "$f" ] || continue
-  case "$(basename "$f")" in CHANGELOG.md | BACKLOG.md) continue ;; esac
-  scan_files+=("$f")
-done
-
-if [ "${#scan_files[@]}" -gt 0 ]; then
-  pass "slash-command scan has files to scan"
-else
-  fail "slash-command scan has files to scan" \
-    "found no Markdown under $REPO_ROOT — the glob list needs updating for the new layout"
-  scan_files=(/dev/null)
-fi
-
-# grep exits 0 with matches, 1 with none, 2 on error. Only 2 is a broken scan; treat it as a failure
-# rather than as "nothing to report", which is what silently swallowing it would look like.
-raw_refs="$(grep -rhoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files[@]}")"
-grep_status=$?   # captured off grep itself, not off a pipeline whose last stage would mask it
-refs="$(printf '%s\n' "$raw_refs" | tr -d '`/ ("*' | sort -u)"
-
-unshipped=""
-for name in $refs; do
-  case "$harness_commands$not_commands" in *" $name "*) continue ;; esac
-  [ -f "$REPO_ROOT/commands/$name.md" ] || unshipped="$unshipped $name"
-done
-
-if [ "$grep_status" -gt 1 ]; then
-  fail "rails, templates, commands and docs reference no slash command Keel does not ship" \
-    "the scan itself failed (grep exit $grep_status) — the result below proves nothing"
-elif [ -z "$unshipped" ]; then
-  pass "rails, templates, commands and docs reference no slash command Keel does not ship"
-else
-  fail "rails, templates, commands and docs reference no slash command Keel does not ship" \
-    "no commands/<name>.md for:$unshipped — ship it, or word it generically; allowlist it only if it is
-        harness-provided AND every call site handles its absence (say which, in the comment above)"
-fi
 
 # --- dir #111: /wrap must actually carry the fold FRAMEWORK.md calls its serialization point -----
 pin "wrap.md: step 2 names the BACKLOG.drafts fold" \

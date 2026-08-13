@@ -372,6 +372,49 @@ named after domain concepts); write tests before or alongside implementation —
 tests. When a unit of work has a written done-criterion, derive failing acceptance tests from it before
 implementing — a red test converts the criterion into something falsifiable, not prose trusted on faith.
 
+### Contract-first for invariant-bearing surfaces
+
+Two long review loops (13 and 14 rounds) both happened on surfaces whose expected behavior existed
+nowhere but in reviewers' heads — every review invented its own spec and "found" the differences against
+it. Per-file spec docs are the wrong fix (prose drifts out of sync with the code it describes); the
+durable spec is acceptance tests plus one source of truth in the code itself.
+
+1. **Contract-first.** An invariant-bearing surface (a gate, an installer, a protocol — anything whose
+   misbehavior is a security or data hazard) is not implemented without a design pass whose output is
+   done-criteria turned into failing acceptance tests *before* code. This is the design-time half of the
+   tests-first rail above; its enforcement mechanism is a separate concern (dir #112) — don't duplicate
+   it here.
+2. **The sync smell.** A "keep in sync with X" comment, or a ticket shaped "X and Y disagree", is a
+   symptom, not a task: the fix is the *Single source of truth* rule above (a manifest, a shared
+   function, one enum), never a better sync. Felt repeatedly — six sites re-deriving the same propagated
+   flag, a duplicated
+   allowlist, two independent ledger parsers, an installer that guessed install state instead of reading
+   one recorded manifest (dir #125).
+3. **Class → mechanical floor.** Once an incident class is closed, it gets a machine check — a test that
+   enumerates the class, a doctor finding, a scan — because discipline catches the first instance but
+   only a machine catches the Nth (the class-check caveat below applies here too: it has to read source,
+   not just runtime output).
+4. **The floor needs the same proof it enforces.** A check that has only ever gone red against the old
+   wording proves it can fire — not that it can catch a real break. One such guard shipped three
+   vacuous-pass holes past a fully-red test run (an unquoted file list a space would shatter, a pattern
+   blind to the tree's dominant citation style, an empty-input guard that reported the case without
+   preventing the scan). Mutation-test the guard's own negative path: break the thing it watches, in
+   every shape it occurs in, and confirm it goes red.
+5. **No contract, no ship.** An executable element without contract tests ideally isn't in the project.
+   Enforced as a ratchet, not a purge: new elements are hard-blocked (dir #142), legacy is burned down as
+   labeled debt (dir #143). Genre gradation: executable code needs contract tests; prose with checkable
+   claims needs a guard test; pure philosophy is exempt.
+6. **Rationale lives in the file, not beside it.** An invariant-bearing surface carries its own
+   threat-model header in source — what it must never allow, how it breaks, why the obvious fix is
+   wrong — because co-location is what keeps it honest: the editor and the delta-reviewer see it next to
+   the change they're making. Standalone per-element spec docs are the rejected alternative, for the
+   drift reason above.
+
+Cross-links: dir #112 (tests-first enforcement), #125 (the manifest fix behind rule 2's felt instance),
+#126/#127 (review-round methodology and its `/polish` enforcement), #142/#143 (the no-contract-no-ship
+ratchet and its legacy burn-down). Not a rails change — this is on-demand methodology; nothing here
+lands in `CORE.md`.
+
 **Build identity — make it self-reporting, early.** Any app should surface its own build identity — a human
 version *plus* a per-build stamp (commit SHA + build date) — in its own UI/output (a menu line, an
 `--version` flag, a startup log), wired in from near the first ticket that produces a runnable artifact. The
@@ -393,6 +436,28 @@ Review the diff before merge — for correctness bugs and for reuse/simplificati
   useful, but it usually needs its own API budget/token (a cost beyond a normal subscription) and may have
   auth/expiry constraints unfit for CI. Wire one only where an API key is deliberately available; otherwise
   rely on the manual pass.
+
+### When to stop reviewing
+
+The obvious heuristic — keep going until the findings get smaller — is measurably wrong: three separate
+review campaigns (14 rounds, 13 rounds, 3 rounds) converged not by shrinking severity but by hitting the
+same defect *shape* again, including a round's own fix causing the next round's finding. Two signals
+answer "is one more round worth it?" instead:
+
+- **New surface touched.** A fix that reaches into branch code earlier rounds never examined raises the
+  next round's expected yield, regardless of the severity trend. The overall shape is a sawtooth, not a
+  decay, once fixes start landing.
+- **Class exhaustion.** When the same defect shape appears twice, the question stops being "is this
+  finding severe" and becomes "how many sites does this class have" — sweep it mechanically (one grep
+  over the class) rather than keep patching sites as they're independently found, and pin the class with
+  a check once closed.
+
+**Caveat:** a class check scoped to runtime *output* misses any branch that only fires on a broken
+install — enumerating the class means reading source, not just observing behavior.
+
+This is on-demand review methodology, not a rails change — it governs how a review round decides to
+continue, distinct from the round-budget/delta-review mechanics that enforce the decision in `/polish`
+step 5.
 
 ---
 
