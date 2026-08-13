@@ -174,7 +174,9 @@ _ledger_table_header() {
   for col in "${_LEDGER_COLS[@]}"; do
     label="$col"; [ "$col" = "gap" ] && label="gap (demote/promote)"
     hdr="$hdr $label |"
-    dashes="$(printf '%*s' "${#label}" '' | tr ' ' '-')"
+    # cell width = label + its two surrounding spaces (" $label |"), so the separator's dash run
+    # matches the header cell it sits under, not just the bare label length.
+    dashes="$(printf '%*s' "$((${#label} + 2))" '' | tr ' ' '-')"
     sep="$sep$dashes|"
   done
   printf '%s\n%s' "$hdr" "$sep"
@@ -338,13 +340,16 @@ cmd_enable() {
 # last up-to-5 numeric scores in ledger order ("-" if none), used only by rollup's trend line.
 _ledger_parse() {
   local file="$1" mode="${2:-live}"
+  # Fail loudly on a lookup miss (e.g. _LEDGER_COLS renamed a column this function still names by its
+  # old string) rather than let an empty $*_col silently turn `$score_col` into awk's `$0` (the whole
+  # record) — the same explicit-catch discipline cmd_add's `*)` case arm applies on the writer side.
   local date_col score_col conf_col guard_col hold_col miss_col
-  date_col="$(_ledger_col_pos date)"
-  score_col="$(_ledger_col_pos score)"
-  conf_col="$(_ledger_col_pos conf)"
-  guard_col="$(_ledger_col_pos guard)"
-  hold_col="$(_ledger_col_pos hold)"
-  miss_col="$(_ledger_col_pos miss)"
+  date_col="$(_ledger_col_pos date)"     || { printf 'keel-impact: internal error — no table position for ledger column date\n' >&2; exit 1; }
+  score_col="$(_ledger_col_pos score)"   || { printf 'keel-impact: internal error — no table position for ledger column score\n' >&2; exit 1; }
+  conf_col="$(_ledger_col_pos conf)"     || { printf 'keel-impact: internal error — no table position for ledger column conf\n' >&2; exit 1; }
+  guard_col="$(_ledger_col_pos guard)"   || { printf 'keel-impact: internal error — no table position for ledger column guard\n' >&2; exit 1; }
+  hold_col="$(_ledger_col_pos hold)"     || { printf 'keel-impact: internal error — no table position for ledger column hold\n' >&2; exit 1; }
+  miss_col="$(_ledger_col_pos miss)"     || { printf 'keel-impact: internal error — no table position for ledger column miss\n' >&2; exit 1; }
   awk -F'|' -v mode="$mode" -v date_col="$date_col" -v score_col="$score_col" -v conf_col="$conf_col" \
     -v guard_col="$guard_col" -v hold_col="$hold_col" -v miss_col="$miss_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
