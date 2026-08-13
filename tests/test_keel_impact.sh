@@ -603,8 +603,12 @@ fi
 # fixed `printf '| %s | %s | ...'` no longer exists to match) with checks against the array itself.
 #
 # Extract the tool's actual _LEDGER_COLS definition (a plain array literal — safe to eval) rather than
-# hardcoding the column list here: a future column addition should only require editing the array (and
-# its value-mapping case arms), never this test file, for these checks to keep covering it.
+# hardcoding the column list here. Most of the checks below (col-pos-vs-array consistency, cmd_add's
+# per-column mapping coverage) are drift detectors that self-adjust to whatever the array currently
+# holds — no edit needed here when a column is added. Two checks are a deliberate exception: the
+# `n_cols -eq 12` count and `expect_pos`'s literal name:position pairs below PIN dir #151's actual
+# column list and positions as of this ticket, on purpose — a real column addition/reorder SHOULD fail
+# them until this file is updated to match, the same way it should fail any other spec-pinning test.
 ledger_cols_line="$(grep -n '^_LEDGER_COLS=(' "$TOOL" | head -1 | cut -d: -f1)"
 if [ -z "$ledger_cols_line" ]; then
   fail "_LEDGER_COLS array located" "no line matching \"_LEDGER_COLS=(\" found in $TOOL"
