@@ -9,6 +9,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`FRAMEWORK.md` gains a "when to stop reviewing" test and a contract-first design section**
+  (dir #126, dir #128). The two measured signals for ending a review round — new surface touched,
+  class exhaustion — replace the disproven "findings are getting smaller" heuristic (three separate
+  review campaigns converged by hitting the same defect shape twice, not by severity trending down).
+  A new "Contract-first for invariant-bearing surfaces" section states six rules distilled from those
+  same campaigns: contract-first design, the sync-comment smell, class → mechanical floor (plus the
+  floor needing its own mutation-tested proof), no-contract-no-ship, and rationale-lives-in-the-file.
+  Both are on-demand methodology only — nothing lands in `CORE.md`.
 - **An install manifest, recorded instead of re-derived** (dir #125, PR 1/3). `install.sh` and
   `tools/install-pre-pr-gate.sh` now write a flat `key=value` manifest under
   `<home>/.keel/install-manifest.<claude|codex|gate>` — mode, layout, every Keel-owned artifact (with
