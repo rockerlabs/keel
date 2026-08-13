@@ -138,6 +138,25 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   misleading "missing receipt" deny for a different malformation shape** (dir #149). A step-id is now
   checked against the complete `EXPECTED_STEPS` list at write time, at both entry points that append to
   the sentinel — `receipt`'s own write and `receipt --recover`'s replay of a retired sentinel.
+- **`doctor.sh`'s `$HOME`-resolved guard/email checks could read as a clean verdict while going
+  completely silent under a redirected `HOME`** (dir #120, found by dir #97's own `/polish` review). The
+  machine-wide `W-GUARD-GLOBAL-STALE` staleness check was gated on `core.hooksPath` being set at all, so
+  under a redirected config it never ran and its absence looked like "the guard is fresh" — it now
+  discloses the config source it consulted instead. `W-EMAIL-PUBLIC` had the same gap: a commit email
+  sourced from global config (not local) could go silent or nudge on a container's baked-in address
+  without saying so — it now names when the verdict rode on config this repo doesn't own, including the
+  "no email anywhere" case.
+- **`doctor.sh --install`'s machine-global guard check read `git config --global core.hooksPath`, a
+  scope selector that cannot see a `hooksPath` set only in the XDG git config behind an existing
+  `~/.gitconfig`, even though it genuinely governs every commit** (dir #121, same review). Backed by
+  git's own effective resolution (no `--global` restriction, read from a guaranteed non-repo scratch
+  dir) instead — resolved once, machine-wide, and shared by the top-level staleness check, the dir #120
+  disclosure, and `--install` mode alike, so all three agree on what the machine's guard actually is.
+- **A local `core.hooksPath` pinned to the same absolute dir as the machine-global one drew two findings
+  for one drifted file** (dir #122, same review). A `-ef` same-file guard in the per-repo drift branch
+  now suppresses the per-repo finding when it names the identical physical directory the machine-wide
+  finding already reported — that one's remediation actually fixes the shared copy; re-vendoring
+  per-repo would have written an unwanted second copy, or clobbered the shared one.
 
 ## [0.6.0] — 2026-08-12
 
