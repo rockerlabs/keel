@@ -182,6 +182,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `commands/name.md`, carrying forward the same two allowlists (harness-provided vs not-a-command) and
   the same leading-delimiter regex dir #110 tuned. Mutation-tested against a synthetic sandbox in
   `tests/test_self_doctor.sh`, which is coverage the old live-tree-only test never had.
+- **`tools/pre-pr-gate.sh` never checked that HEAD was actually pushed before unlocking `gh pr create`
+  — a convergence-round commit could be silently left local-only** (dir #133, one of 0.6.0's own known
+  issues). Every existing sha-binding check in `polish.8-unlock` only verified the LOCAL repo, so a fix
+  commit made after the branch's last `git push` passed all of them and opened a PR that silently
+  omitted it (the live incident behind this ticket: dir #113/#114's own PR, recovered via cherry-pick
+  as PR #177 only after the operator had already merged the truncated one). The gate now denies unless
+  HEAD is reachable from the branch's push remote (`git merge-base --is-ancestor`), skipped only when
+  the repo has no remote at all (a real `gh pr create` invocation can't exist without one). An
+  operator-run `/code-review high` on this same diff went further and reproduced, live, that a
+  hardcoded `origin/<branch>` false-denied a genuine cross-fork PR (`--head owner:branch`, dir #61)
+  pushed only to the contributor's own remote — filed and fixed in the same PR as dir #152: the check
+  now prefers the branch's own configured upstream (`<branch>@{upstream}`) over a hardcoded `origin`,
+  falling back to `origin/<branch>` only when no upstream is configured.
 
 ## [0.6.0] — 2026-08-12
 
