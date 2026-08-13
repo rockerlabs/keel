@@ -2159,4 +2159,50 @@ gate "gh pr create --fill" "$d"
 check_status "dir #133: no origin remote → exit 0 (check is N/A, not a deny)" 0 "$STATUS"
 check_absent "dir #133: no origin remote → allowed" "$OUT" "deny"
 
+# dir #152 (an operator-run /code-review high on dir #133 found this live): a hardcoded `origin` false-
+# denies a branch genuinely pushed through a differently-named remote — a fork-based workflow, or a real
+# cross-fork PR (dir #61's own `--head owner:branch` shape), routinely tracks a remote that isn't named
+# `origin`. Push $1's current branch to a FRESH remote named $2 WITH tracking (`git push -u`), so the
+# branch's own `@{upstream}` names it — the mechanism the fix now prefers over a hardcoded `origin`.
+push_named_remote() {
+  local d="$1" remote="$2" bare
+  bare="$SANDBOX/$remote-$(basename "$d").git"
+  git init -q --bare "$bare"
+  git -C "$d" remote add "$remote" "$bare"
+  git -C "$d" push -q -u "$remote" "$(branch_raw_for "$d")" >/dev/null 2>&1
+}
+
+# 100. Pushed to a differently-named remote WITH tracking → allowed. Before the fix this was denied
+# (in fact, pre-fix it would have silently SKIPPED the check entirely — no `origin` remote at all — the
+# dir #152 finding #2 shape: a fork-workflow adopter gets no reachability protection whatsoever).
+d="$(mkrepo)"
+push_named_remote "$d" "fork"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #152: pushed to a non-origin tracked remote → exit 0" 0 "$STATUS"
+check_absent "dir #152: pushed to a non-origin tracked remote → allowed" "$OUT" "deny"
+
+# 101. Same tracked-remote shape, but a convergence-round commit landed AFTER the push — must still
+# deny, and must name the ACTUAL tracked remote in the message, not a hardcoded "origin" (which doesn't
+# even exist in this repo).
+d="$(mkrepo)"
+push_named_remote "$d" "fork"
+git -C "$d" commit --allow-empty -qm "convergence-round fix, never pushed to fork"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_contains "dir #152: unpushed HEAD on a tracked non-origin remote → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #152: denied naming the real remote (fork/), not a hardcoded origin/" "$OUT" "not reachable on fork/"
+
+# 102. The dir #152 finding #1 reproduction: a genuine cross-fork PR (`--head owner:branch`, dir #61's
+# own supported shape) whose branch was pushed — with tracking — to the contributor's own fork remote,
+# never to anything named `origin`. Before the fix this false-denied with an actively wrong "push the
+# branch" message (it WAS pushed, just not to `origin`).
+d="$(mkrepo)"
+git -C "$d" checkout -q -b crossfork-feature
+push_named_remote "$d" "fork"
+write_full_receipt "$d"
+gate "gh pr create --head someone:crossfork-feature --fill" "$d"
+check_status "dir #152: cross-fork PR pushed to the contributor's own remote → exit 0" 0 "$STATUS"
+check_absent "dir #152: cross-fork PR pushed to the contributor's own remote → allowed" "$OUT" "deny"
+
 summary

@@ -1609,21 +1609,49 @@ case "$status" in
       log_event receipt-deny "sha-mismatch" "$cwd"
       deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
     fi
-    # dir #133: every check above is against the LOCAL repo — nothing confirms $current_sha was ever
-    # pushed. A convergence-round commit made after the branch's last `git push` passes every sha-binding
-    # check here and would open a PR that silently omits it (live-hit: dir #113/#114's own PR, recovered
-    # via cherry-pick as PR #177 after the operator had already merged the truncated one). Same layer the
-    # sha-binding checks above already operate at: HEAD must be reachable from `origin/$resolved_branch`.
-    # Skipped (not denied) when the repo has no `origin` remote at all — deliberately NOT this file's
-    # usual fail-closed-on-ambiguity convention (contrast the dir #80 branch-resolution DENY above): a
-    # real `gh pr create` invocation cannot exist without an `origin` (`gh` itself infers owner/repo from
-    # the remote and refuses without one), so this arm is unreachable in production and exists solely so
-    # a bare/offline test fixture with no remote configured isn't false-denied.
-    if git -C "$cwd" remote get-url origin >/dev/null 2>&1 &&
-       ! git -C "$cwd" merge-base --is-ancestor "$current_sha" "origin/$resolved_branch" 2>/dev/null; then
+    # dir #133: every check above is against the LOCAL repo only — nothing confirms $current_sha was
+    # ever pushed. A convergence-round commit made after the branch's last `git push` passes every one of
+    # those local sha-binding checks and would open a PR that silently omits it (live-hit: dir #113/#114's
+    # own PR, recovered via cherry-pick as PR #177 after the operator had already merged the truncated
+    # one). This closes that remote-facing gap the checks above never covered: HEAD must be reachable from
+    # the branch's actual push remote.
+    #
+    # dir #152 (found by an operator-run /code-review high on this ticket, promoted from a named-residual
+    # comment to a real fix once it was reproduced live): a hardcoded `origin/$resolved_branch` is wrong
+    # on two counts a real repo can hit, not just a hypothetical adopter-portability gap. (1) `gh pr
+    # create` resolves its target repo from ANY configured remote, or an explicit `--repo`/`GH_REPO`, not
+    # only one named `origin` — a fork-based workflow (`origin`=upstream, pushes go through `fork`) would
+    # silently skip the check on every real invocation, reopening dir #113/#114 with no dishonesty
+    # involved. (2) a genuine cross-fork PR (`gh pr create --head owner:branch`, dir #61's own supported
+    # shape) pushes through the CONTRIBUTOR's own remote, which is routinely not named `origin` on the
+    # machine that ran the push — reproduced live: `origin/$resolved_branch` doesn't exist there at all,
+    # so the check false-denies with a "push the branch" message that is actively wrong (it WAS pushed,
+    # just not to something named `origin`).
+    #
+    # Fix: prefer the LOCAL branch's own configured upstream (`<branch>@{upstream}`, set by `git push -u`
+    # or `git branch --set-upstream-to`) over a hardcoded `origin` — git already knows which remote a
+    # push actually went to, so ask it instead of guessing a name. Falls back to `origin/$resolved_branch`
+    # only when no upstream is configured at all (a branch that was never pushed with tracking, or a
+    # `git push` with no `-u` — the same shape the pre-fix behaviour already covered, so every existing
+    # `origin`-only test keeps passing unchanged). Still skipped entirely — neither remote nor upstream
+    # resolvable — only when the repo has NO remote at all: a real `gh pr create` invocation cannot exist
+    # without one (`gh` refuses outright), so that arm is unreachable in production and exists solely so
+    # a bare/offline test fixture isn't false-denied.
+    #
+    # **Residual still open, narrower than before:** a true cross-fork PR run from the BASE repo's own
+    # checkout (not the contributor's fork clone) has no local upstream for a branch it never pushed at
+    # all — that shape was already denied earlier, at the sha-mismatch check above (line ~1607, since
+    # `current_sha` itself comes up empty), so it never reaches this check either way; not a new gap this
+    # fix introduces.
+    push_remote_ref="$(git -C "$cwd" rev-parse --abbrev-ref --symbolic-full-name "$resolved_branch@{upstream}" 2>/dev/null)"
+    push_remote_name="origin"
+    [ -n "$push_remote_ref" ] && push_remote_name="${push_remote_ref%%/*}"
+    [ -z "$push_remote_ref" ] && push_remote_ref="origin/$resolved_branch"
+    if git -C "$cwd" remote get-url "$push_remote_name" >/dev/null 2>&1 &&
+       ! git -C "$cwd" merge-base --is-ancestor "$current_sha" "$push_remote_ref" 2>/dev/null; then
       retire_sentinel "$sentinel" "$cwd" "$receipt_key"
       log_event receipt-deny "head-not-pushed" "$cwd"
-      deny "Pre-PR gate: current HEAD ($current_sha) is not reachable on origin/$resolved_branch — push the branch (git push) before opening the PR."
+      deny "Pre-PR gate: current HEAD ($current_sha) is not reachable on $push_remote_ref — push the branch (git push) before opening the PR."
     fi
     # dir #72 finding #1: `polish.6-retest` used to be a bare completion marker with NO value-level
     # check — unlike step 5 (trace-matched) and step 8 (sha-matched); dir #96 later sha-bound step 3
