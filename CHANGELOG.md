@@ -113,6 +113,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   safely) that's a detection-accuracy failure this audit's own bar exists to catch.
 
 ### Changed
+- **`tools/keel-impact.sh`'s ledger columns now come from one ordered array instead of being
+  hand-listed independently in three places** (dir #151). The writer (`cmd_add`'s row-printf), the
+  reader (`_ledger_parse`'s awk field indices), and the markdown table header each separately
+  hand-listed the same 12 ledger columns, kept in sync only by a "keep in sync" comment plus a test
+  that caught drift after the fact but didn't prevent it. `_LEDGER_COLS` is now the single source of
+  truth: `cmd_add` builds its row by iterating it, `_ledger_parse` derives its awk field positions via
+  `_ledger_col_pos` (failing loudly on a lookup miss instead of silently degrading), and the table
+  header is generated from it, deferred to only build when a ledger file actually needs creating. No
+  behavior change — the ledger's data rows and header are byte-identical to before; bash 3.2 (macOS
+  default, no associative arrays) compatibility preserved throughout.
 - **`tests/run.sh` now runs test files concurrently instead of one at a time** (dir #130,
   keel-self-maintenance — internal to the test harness, not adopter-facing). A full local pass
   measured at ~229s sequential (`test_pre_pr_gate.sh` at ~53s, `test_self_doctor.sh` ~36s,
