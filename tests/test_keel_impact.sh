@@ -593,89 +593,122 @@ if grep -qE '_ledger_stats\(\) \{' "$TOOL" && sed -n '/^_ledger_stats() {/,/^}/p
 else
   fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
 fi
-# A second ledger-column reader should be caught even if it re-derives the date regex in a
-# DIFFERENT spelling than _ledger_parse's own (different escaping, {4} vs explicit digit classes,
-# reordered/newline-separated instead of semicolon-separated assignments) — a literal-string /
-# fixed-concatenation match was mutation-tested twice and found to miss both an escaping variant and
-# a reordering/separator variant (found in review). Match on the SEMANTIC signature instead, per
-# FUNCTION BLOCK rather than the whole file: does this function assign all three of guard/hold/miss
-# from columns 5/6/9 (the actual invariant LEDGER_HEADER's "keep in sync" warning is about — the
-# column POSITIONS, not any one spelling of the date regex or the order/separator between
-# assignments)? guard/hold/miss are standing variable names used throughout this file (see
-# add_cite's _n_guard etc.), so a copy-pasted second reader would very likely keep them regardless of
-# how its own date regex or statement layout was rewritten.
-sig_blocks="$(awk '
-  /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{/ { buf=""; in_fn=1; next }
-  in_fn && /^\}[[:space:]]*$/ {
-    gsub(/[ \t]/, "", buf)
-    if (index(buf, "guard+=$5+0") && index(buf, "hold+=$6+0") && index(buf, "miss+=$9+0")) hits++
-    in_fn=0; next
-  }
-  in_fn { buf = buf $0 }
-  END { print hits+0 }
-' "$TOOL")"
-if [ "$sig_blocks" -eq 1 ]; then
-  pass "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function"
+
+# --- dir #151: the ledger's 12 columns must come from ONE ordered array (_LEDGER_COLS), not be
+# hand-listed independently by the writer (cmd_add), the reader (_ledger_parse), and the header
+# (LEDGER_HEADER). dir #107 unified the two READERS behind _ledger_parse; dir #131 then caught, but
+# didn't prevent, the WRITER (cmd_add's row-printf) drifting from it — both still hand-indexed the
+# same columns in their own syntax. This block replaces both dir #107's and dir #131's structural
+# checks (which pinned the very hand-indexing this refactor removes — a literal `$5`/`$6`/`$9` or a
+# fixed `printf '| %s | %s | ...'` no longer exists to match) with checks against the array itself.
+#
+# Extract the tool's actual _LEDGER_COLS definition (a plain array literal — safe to eval) rather than
+# hardcoding the column list here. Most of the checks below (col-pos-vs-array consistency, cmd_add's
+# per-column mapping coverage) are drift detectors that self-adjust to whatever the array currently
+# holds — no edit needed here when a column is added. Two checks are a deliberate exception: the
+# `n_cols -eq 12` count and `expect_pos`'s literal name:position pairs below PIN dir #151's actual
+# column list and positions as of this ticket, on purpose — a real column addition/reorder SHOULD fail
+# them until this file is updated to match, the same way it should fail any other spec-pinning test.
+ledger_cols_line="$(grep -n '^_LEDGER_COLS=(' "$TOOL" | head -1 | cut -d: -f1)"
+if [ -z "$ledger_cols_line" ]; then
+  fail "_LEDGER_COLS array located" "no line matching \"_LEDGER_COLS=(\" found in $TOOL"
 else
-  fail "ledger column-extraction signature (guard=\$5,hold=\$6,miss=\$9) appears in exactly one function" "found in $sig_blocks function(s) — a parser was re-duplicated"
-fi
+  eval "$(sed -n "${ledger_cols_line}p" "$TOOL")"
+  n_cols="${#_LEDGER_COLS[@]}"
 
-# --- dir #131: cmd_add's row-printf (the ledger WRITER) must stay mechanically in sync with
-# LEDGER_HEADER's column count and with the specific columns _ledger_parse (the READER, dir #107)
-# indexes by position (date=2 score=3 conf=4 guard=5 hold=6 miss=9) --------------------------------
-# dir #107 unified the two readers behind _ledger_parse so a column reorder can no longer desync them
-# from EACH OTHER. But the writer still hand-indexes the same columns one hop further out, with
-# nothing checking it against _ledger_parse's own comment or LEDGER_HEADER's table header. Pin this at
-# the SOURCE level, same shape as the signature check above: an output-level check on one row can't
-# tell "this printf argument is the variable the reader assumes" from "an unrelated variable that
-# happens to print the same value today".
-fmt_line_no="$(grep -n "^  printf '| %s" "$TOOL" | head -1 | cut -d: -f1)"
-if [ -z "$fmt_line_no" ]; then
-  fail "cmd_add's row-printf located" "no line matching \"printf '| %s\" found in $TOOL"
-else
-  fmt_line="$(sed -n "${fmt_line_no}p" "$TOOL")"
-  args_line="$(sed -n "$((fmt_line_no + 1))p" "$TOOL")"
-  args_str="${args_line%%>>*}"   # drop the trailing `>> "$LEDGER"` so it isn't read as an argument
-  n_placeholders="$(grep -o '%s' <<<"$fmt_line" | wc -l | tr -d ' ')"
-
-  header_line_no="$(grep -n '^| date | score | conf |' "$TOOL" | head -1 | cut -d: -f1)"
-  header_str="$(sed -n "${header_line_no}p" "$TOOL")"
-  n_header_cols="$(( $(grep -o '|' <<<"$header_str" | wc -l | tr -d ' ') - 1 ))"
-
-  if [ "$n_placeholders" -eq "$n_header_cols" ]; then
-    pass "row-printf's field count matches LEDGER_HEADER's column count ($n_header_cols)"
+  if [ "$n_cols" -eq 12 ]; then
+    pass "_LEDGER_COLS has the ledger's 12 columns"
   else
-    fail "row-printf's field count matches LEDGER_HEADER's column count" \
-      "printf has $n_placeholders %s placeholders, header has $n_header_cols columns"
+    fail "_LEDGER_COLS has the ledger's 12 columns" "found $n_cols: ${_LEDGER_COLS[*]:-<none>}"
   fi
 
-  args=()
-  while IFS= read -r tok; do args+=("$tok"); done < <(grep -oE '"\$[A-Za-z_][A-Za-z0-9_]*"' <<<"$args_str" | tr -d '"$')
-
-  if [ "${#args[@]}" -eq "$n_placeholders" ]; then
-    pass "row-printf's argument count matches its own placeholder count (${#args[@]})"
-  else
-    fail "row-printf's argument count matches its own placeholder count" \
-      "printf has $n_placeholders %s placeholders but ${#args[@]} arguments follow"
-  fi
-
-  # _ledger_parse's comment gives 1-based table positions (column 1 is the empty cell before the
-  # first "|"); the printf's argument N fills table position N+1, so position P is args[P-2] (0-indexed).
-  # One "pos:var" array, not `declare -A` (bash 3.2 — macOS's default — has no associative arrays) and
-  # not two parallel arrays (index-aligned by convention only, so a row could silently mis-pair).
-  expect=(2:today 3:score 4:conf 5:_n_guard 6:_n_hold 9:_n_miss)
-  for pair in "${expect[@]}"; do
-    pos="${pair%%:*}"
-    want="${pair#*:}"
-    idx=$((pos - 2))
-    got="${args[$idx]:-}"
-    if [ "$got" = "$want" ]; then
-      pass "row-printf's field for _ledger_parse's column $pos (\$$want) lands where the reader expects"
-    else
-      fail "row-printf's field for _ledger_parse's column $pos (\$$want) lands where the reader expects" \
-        "found \$${got:-<missing>} at that position instead — _ledger_parse would misread this column"
+  # _ledger_col_pos (the reader-side lookup) must actually answer from the array, not a parallel
+  # hardcoded table — call the real function (sourcing the tool is unsafe, it dispatches a case
+  # statement at the bottom, so extract+eval just this one function's body).
+  pos_fn="$(sed -n '/^_ledger_col_pos() {/,/^}/p' "$TOOL")"
+  eval "$pos_fn"
+  pos_ok=1
+  expect_pos=(date:2 score:3 conf:4 guard:5 hold:6 fire:7 hit:8 miss:9 fric:10 silent:11 evidence:12 gap:13)
+  for pair in "${expect_pos[@]}"; do
+    col="${pair%%:*}"; want="${pair#*:}"
+    got="$(_ledger_col_pos "$col" 2>/dev/null || true)"
+    if [ "$got" != "$want" ]; then
+      pos_ok=0
+      fail "_ledger_col_pos('$col') returns its documented position" "want $want, got ${got:-<empty>}"
     fi
   done
+  [ "$pos_ok" -eq 1 ] && pass "_ledger_col_pos returns every column's documented table position"
+
+  # _ledger_parse must read its field numbers from _ledger_col_pos (via -v vars), never a hardcoded
+  # digit — the same "SOURCE level, not output level" reasoning as the old dir #107/#131 checks: an
+  # output-level check on one row can't tell "derived from the array" from "coincidentally still 12
+  # columns wide today". It loops `_ledger_col_pos "$_col"` over the 6 columns it actually needs
+  # (date/score/conf/guard/hold/miss — the rest go unused by rollup's stats) rather than one call per
+  # column, so check for the loop shape instead of six separate literal-string greps.
+  parse_fn="$(sed -n '/^_ledger_parse() {/,/^}/p' "$TOOL")"
+  if grep -qE 'for _col in date score conf guard hold miss;' <<<"$parse_fn" \
+    && grep -q '_ledger_col_pos "\$_col"' <<<"$parse_fn"; then
+    pass "_ledger_parse derives date/score/conf/guard/hold/miss positions via _ledger_col_pos"
+  else
+    fail "_ledger_parse derives date/score/conf/guard/hold/miss positions via _ledger_col_pos" \
+      "no longer loops _ledger_col_pos over date/score/conf/guard/hold/miss — hardcoded again?"
+  fi
+
+  # dir #107's original whole-FILE scan (not just this one function) caught a second, independently
+  # hand-rolled ledger-column reader appearing ANYWHERE else in the file, by matching a semantic
+  # signature (all three of guard/hold/miss extracted the same way) rather than one literal spelling —
+  # this refactor changed that signature (a hardcoded `$5`/`$6`/`$9` became `$guard_col`/`$hold_col`/
+  # `$miss_col`, computed via _ledger_col_pos), so the check must be repointed to the NEW signature to
+  # keep covering the same ground: a copy-pasted second reader would very likely keep these standing
+  # variable names (guard/hold/miss are used throughout the file — see add_cite's _n_guard etc.)
+  # regardless of how its own field-position derivation or statement layout was rewritten.
+  sig_blocks="$(awk '
+    /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{/ { buf=""; in_fn=1; next }
+    in_fn && /^\}[[:space:]]*$/ {
+      gsub(/[ \t]/, "", buf)
+      if (index(buf, "guard+=$guard_col+0") && index(buf, "hold+=$hold_col+0") && index(buf, "miss+=$miss_col+0")) hits++
+      in_fn=0; next
+    }
+    in_fn { buf = buf $0 }
+    END { print hits+0 }
+  ' "$TOOL")"
+  if [ "$sig_blocks" -eq 1 ]; then
+    pass "ledger column-extraction signature (guard=\$guard_col,hold=\$hold_col,miss=\$miss_col) appears in exactly one function"
+  else
+    fail "ledger column-extraction signature (guard=\$guard_col,hold=\$hold_col,miss=\$miss_col) appears in exactly one function" \
+      "found in $sig_blocks function(s) — a parser was re-duplicated"
+  fi
+  # Only the awk PROGRAM (the string after `awk -F'|' ...`) is at risk of a hardcoded field ref —
+  # exclude the shell preamble above it, which legitimately reads bash's own $1/$2 positional args.
+  awk_prog="$(sed -n "/^  awk -F/,\$p" <<<"$parse_fn")"
+  if grep -qE '\$[0-9]' <<<"$awk_prog"; then
+    fail "_ledger_parse's awk program has no leftover hardcoded numeric field refs" \
+      "found a \$<digit> in: $(grep -oE '\$[0-9]+' <<<"$awk_prog" | tr '\n' ' ')"
+  else
+    pass "_ledger_parse's awk program has no leftover hardcoded numeric field refs"
+  fi
+
+  # cmd_add (the writer) must build its row by iterating _LEDGER_COLS, and every column the array
+  # names must actually be mapped to a value — a column added to the array with no matching case arm
+  # would otherwise fall through to the catch-all and only fail at RUN time, not at review time; this
+  # test catches it structurally, matching the array's CURRENT contents (extracted above), so a
+  # consumer that silently stopped reading the array — or stopped covering one of its columns — is
+  # caught even if it still happens to produce a 12-column row today.
+  # cmd_add is a big function; grab it precisely by matching the next top-level `}` at column 0.
+  add_fn="$(awk '/^cmd_add\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$TOOL")"
+  if grep -qE 'for _col in "\$\{_LEDGER_COLS\[@\]\}"' <<<"$add_fn"; then
+    pass "cmd_add builds its row by iterating _LEDGER_COLS"
+  else
+    fail "cmd_add builds its row by iterating _LEDGER_COLS" "no \`for _col in \"\${_LEDGER_COLS[@]}\"\` found in cmd_add"
+  fi
+  map_ok=1
+  for col in "${_LEDGER_COLS[@]}"; do
+    if ! grep -qE "^ *${col}\)" <<<"$add_fn"; then
+      map_ok=0
+      fail "cmd_add maps ledger column '$col' to a row value" "no \`$col)\` case arm found in cmd_add"
+    fi
+  done
+  [ "$map_ok" -eq 1 ] && pass "cmd_add maps every _LEDGER_COLS entry to a row value"
 fi
 
 summary

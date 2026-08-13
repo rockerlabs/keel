@@ -146,8 +146,52 @@ Ledger file: $KEEL_IMPACT_LEDGER, else docs/keel-impact.md. Evidence file: $KEEL
 EOF
 }
 
+# --- the ledger's column list: the ONE ordered source of truth for the table's shape (dir #151) ----
+# cmd_add's row-printf (the WRITER), _ledger_parse (the READER), and the table header below all derive
+# their column positions/order from this single array instead of each hand-listing the same 12 columns.
+# Position in the array is the invariant: table field N = array-index + 2 (field 1 is the empty cell
+# before the table's leading "|"; array indices are 0-based, so "date" at index 0 is field 2, "guard"
+# at index 3 is field 5, etc — the same numbering _ledger_parse's old header comment already documented).
+_LEDGER_COLS=(date score conf guard hold fire hit miss fric silent evidence gap)
+
+# table field number (1-based, counting the empty pre-leading-pipe cell as field 1) for column $1 —
+# the single place that turns a column NAME into a table POSITION. Every reader/writer of ledger rows
+# goes through this instead of hand-indexing.
+_ledger_col_pos() {
+  local name="$1" i
+  for i in "${!_LEDGER_COLS[@]}"; do
+    if [ "${_LEDGER_COLS[$i]}" = "$name" ]; then printf '%d' "$((i + 2))"; return 0; fi
+  done
+  return 1
+}
+
+# the two markdown table-header lines (column names + separator dashes), generated from _LEDGER_COLS
+# so the header is never hand-typed independently of the array. "gap" is the one column whose header
+# label differs from its bare name (spelling out what the free-text cell is for); every other column
+# uses its own name as the label, so a second near-duplicate array isn't needed just for that one case.
+_ledger_table_header() {
+  local hdr="|" sep="|" col label dashes
+  for col in "${_LEDGER_COLS[@]}"; do
+    label="$col"; [ "$col" = "gap" ] && label="gap (demote/promote)"
+    hdr="$hdr $label |"
+    # cell width = label + its two surrounding spaces (" $label |"), so the separator's dash run
+    # matches the header cell it sits under, not just the bare label length. tests/lib.sh's rep()
+    # does the same printf+tr dash-repeat idiom, but it's a test-harness helper — tools/keel-impact.sh
+    # is production code and shouldn't depend on tests/, so the one-line idiom stays inline here
+    # rather than pulling a cross-layer dependency for it.
+    dashes="$(printf '%*s' "$((${#label} + 2))" '' | tr ' ' '-')"
+    sep="$sep$dashes|"
+  done
+  printf '%s\n%s' "$hdr" "$sep"
+}
+
 # --- the table header, written once when the ledger is first created ------------------------------
-LEDGER_HEADER='# Keel impact ledger
+# The trailing table rows are NOT appended here: _ledger_table_header() forks a handful of subshells
+# (one printf+tr pair per column) to build them, and this file's top level runs unconditionally on
+# EVERY invocation (add, rollup, event, enable, ...) regardless of whether a ledger even needs
+# creating. Building the full header (prose + table) is deferred to ensure_ledger, the one place that
+# actually writes it — a brand-new file is the rare case, not the common one.
+LEDGER_HEADER_PROSE='# Keel impact ledger
 
 One row per scored session. The score is **derived, not asserted**: `commands/keel-score.md` gathers counted,
 cited events; `tools/keel-impact.sh` computes the 0-100 number from them by a fixed formula, so it is a pure
@@ -168,9 +212,7 @@ log that `add` auto-ingests — the objective signal never depends on the model 
 
 Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
 citation, and the full per-event trail (every event → its citation) lives in `evidence.md` next to this file.
-
-| date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
-|------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|'
+'
 
 # --- the evidence file header, written once when it is first created ------------------------------
 EVIDENCE_HEADER='# Keel impact — per-event evidence
@@ -183,7 +225,7 @@ are captured from the guardrail hooks (`source | detail`); the rest are supplied
 ensure_ledger() {
   if [ ! -f "$LEDGER" ]; then
     mkdir -p "$(dirname "$LEDGER")"
-    printf '%s\n' "$LEDGER_HEADER" > "$LEDGER"
+    printf '%s\n%s\n' "$LEDGER_HEADER_PROSE" "$(_ledger_table_header)" > "$LEDGER"
   fi
 }
 
@@ -293,25 +335,39 @@ cmd_enable() {
 # --- shared ledger parser: the ONE place that indexes the table's columns -------------------------
 # dir #107: rollup and the cross-project _ledger_stats used to re-derive these column indices and
 # regexes independently, against the file's own "keep all three in sync" warning at cmd_add's printf.
-# Both now delegate here instead. A data row is a table line whose first cell is an ISO date. Explicit
-# digit classes (not {n} intervals) so busybox awk matches this too. A "—" score row still counts as a
-# session but is skipped from the mean. mode: "live" excludes quarantined retro rows (conf tagged
-# `-retro`); "retro" shows only them.
+# Both now delegate here instead. dir #151: the field numbers this awk block reads are no longer
+# hand-typed either — they're looked up from _LEDGER_COLS via _ledger_col_pos and passed in as -v
+# variables, so awk's own `$date_col` etc. always tracks the array regardless of column reordering.
+# A data row is a table line whose first cell is an ISO date. Explicit digit classes (not {n}
+# intervals) so busybox awk matches this too. A "—" score row still counts as a session but is
+# skipped from the mean. mode: "live" excludes quarantined retro rows (conf tagged `-retro`);
+# "retro" shows only them.
 #
 # Emits ONE line: "sessions scored sum guard hold miss recent" — recent is a comma-joined list of the
 # last up-to-5 numeric scores in ledger order ("-" if none), used only by rollup's trend line.
-# cols: date=2 score=3 conf=4 guard=5 hold=6 fire=7 hit=8 miss=9 (keep in sync with LEDGER_HEADER +
-# cmd_add's printf — this awk block is now the ONLY reader that indexes them).
 _ledger_parse() {
   local file="$1" mode="${2:-live}"
-  awk -F'|' -v mode="$mode" '
-    $2 ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
-      is_retro = ($4 ~ /retro/)
+  # Fail loudly on a lookup miss (e.g. _LEDGER_COLS renamed a column this function still names by its
+  # old string) rather than let an empty $*_col silently turn `$score_col` into awk's `$0` (the whole
+  # record) — the same explicit-catch discipline cmd_add's `*)` case arm applies on the writer side.
+  local date_col score_col conf_col guard_col hold_col miss_col
+  local _col _pos
+  for _col in date score conf guard hold miss; do
+    _pos="$(_ledger_col_pos "$_col")" || {
+      printf 'keel-impact: internal error — no table position for ledger column %s\n' "$_col" >&2
+      exit 1
+    }
+    printf -v "${_col}_col" '%s' "$_pos"
+  done
+  awk -F'|' -v mode="$mode" -v date_col="$date_col" -v score_col="$score_col" -v conf_col="$conf_col" \
+    -v guard_col="$guard_col" -v hold_col="$hold_col" -v miss_col="$miss_col" '
+    $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
+      is_retro = ($conf_col ~ /retro/)
       if (mode == "retro" && !is_retro) next
       if (mode != "retro" && is_retro) next
       sessions++
-      guard += $5 + 0; hold += $6 + 0; miss += $9 + 0
-      s = $3; gsub(/ /, "", s)
+      guard += $guard_col + 0; hold += $hold_col + 0; miss += $miss_col + 0
+      s = $score_col; gsub(/ /, "", s)
       if (s ~ /^[0-9]+$/) { n++; sum += s + 0; order[n] = s + 0 }
     }
     END {
@@ -604,10 +660,31 @@ cmd_add() {
 
   ensure_ledger
   local today; today="${asof:-$(date -u +%Y-%m-%d)}"
-  # cols: date score conf guard hold fire hit miss fric silent evidence gap — this ordering is the source of
-  # truth the awk readers (rollup, _ledger_stats) index by position; keep all three + LEDGER_HEADER in sync.
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-    "$today" "$score" "$conf" "$_n_guard" "$_n_hold" "$_n_fire" "$_n_hit" "$_n_miss" "$_n_friction" "$silent" "$ev" "$gp" >> "$LEDGER"
+  # Row values, index-aligned with _LEDGER_COLS (dir #151): built from the array instead of a
+  # hand-typed printf, so the writer can't silently drift from _ledger_parse's column order. The
+  # format string depends only on the column COUNT (one "%s |" per column), not on any column's
+  # identity, so it's built once here rather than inside the value-mapping loop below.
+  local -a _row_vals=()
+  local _col _fmt="|"
+  for _col in "${_LEDGER_COLS[@]}"; do _fmt="$_fmt %s |"; done
+  for _col in "${_LEDGER_COLS[@]}"; do
+    case "$_col" in
+      date)     _row_vals+=("$today") ;;
+      score)    _row_vals+=("$score") ;;
+      conf)     _row_vals+=("$conf") ;;
+      guard)    _row_vals+=("$_n_guard") ;;
+      hold)     _row_vals+=("$_n_hold") ;;
+      fire)     _row_vals+=("$_n_fire") ;;
+      hit)      _row_vals+=("$_n_hit") ;;
+      miss)     _row_vals+=("$_n_miss") ;;
+      fric)     _row_vals+=("$_n_friction") ;;
+      silent)   _row_vals+=("$silent") ;;
+      evidence) _row_vals+=("$ev") ;;
+      gap)      _row_vals+=("$gp") ;;
+      *) printf 'keel-impact: internal error — no value mapped for ledger column %s\n' "$_col" >&2; exit 1 ;;
+    esac
+  done
+  printf "$_fmt\n" "${_row_vals[@]}" >> "$LEDGER"
 
   # Archive the per-event citations — the auditable trail. Only when there was something to cite; an inert
   # ("—") session leaves no block, mirroring "no evidence, nothing to record".
