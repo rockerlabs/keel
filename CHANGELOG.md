@@ -130,6 +130,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   concurrency cap).
 
 ### Fixed
+- **The `tests (alpine-busybox)` CI leg flaked on an unrelated timing-sensitive check under dir #130's
+  new test-runner concurrency** (dir #153, PR #200 → #202). The alpine job's `docker run` has no
+  `--cpus` limit, so `nproc` inside the container reports the *host's* full vCPU count while the
+  container actually competes for CPU with everything else on the shared GH Actions runner —
+  reproduced locally (`docker run --cpus=2` simulating contention: 1/10 runs failed with the
+  `nproc`-based default, 0/10 with a lower cap). Investigated whether the flaking check itself
+  (`test_keel_cli.sh`'s busybox-awk README-verb extraction) had a genuine dialect bug — 200 sequential
+  plus 20 parallel-on-1-CPU runs against real busybox awk found none. Fix scopes `KEEL_TEST_JOBS=2` to
+  the alpine-busybox job's `docker run` invocation only; other CI legs and local dev are unaffected.
 - **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose
   advice would have installed a second mode into the same home** (dir #134, one of 0.6.0's own known
   issues). It gets an explicit `--codex` flag, mirroring `uninstall.sh`'s own (dir #109): the rails file
