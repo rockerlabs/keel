@@ -112,6 +112,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   literal it would have hunted goes unscanned, and unlike a bad `allow-email` entry (which fails open
   safely) that's a detection-accuracy failure this audit's own bar exists to catch.
 
+### Changed
+- **`tests/run.sh` now runs test files concurrently instead of one at a time** (dir #130,
+  keel-self-maintenance — internal to the test harness, not adopter-facing). A full local pass
+  measured at ~229s sequential (`test_pre_pr_gate.sh` at ~53s, `test_self_doctor.sh` ~36s,
+  `test_doctor.sh` ~25s, and `test_install.sh` ~24s the four biggest single files — install/uninstall
+  alone were NOT the dominant cost the ticket started from, measurement corrected that assumption).
+  Safe because every `tests/test_*.sh` already sets up its own throwaway sandbox `HOME` via
+  `tests/lib.sh`, and the one cross-file shared resource any of them touch —
+  `tools/pre-pr-gate.sh`'s `/tmp` sentinel (dir #80) — is keyed off a repo basename every fixture
+  mints via `mktemp -d`, so two files running at once can't collide on it either. The runner caps
+  concurrency at the CPU core count by default (override with `KEEL_TEST_JOBS`, e.g. `=1` to force
+  the old sequential behavior), via a bash-3.2-compatible poll loop (no `wait -n`, portable to
+  macOS's shipped `/bin/bash`) — full local run now ~90-100s. No test file's coverage or `HOME`
+  isolation changed; `tests/test_run_sh.sh` is a new file covering the runner's own aggregation
+  logic (concurrent pass/fail counting, a `KEEL_TEST_JOBS` override, more fixtures than the
+  concurrency cap).
+
 ### Fixed
 - **`doctor.sh --install` didn't understand `--codex` — a healthy codex install got a false GAP whose
   advice would have installed a second mode into the same home** (dir #134, one of 0.6.0's own known
