@@ -642,15 +642,41 @@ else
   # _ledger_parse must read its field numbers from _ledger_col_pos (via -v vars), never a hardcoded
   # digit — the same "SOURCE level, not output level" reasoning as the old dir #107/#131 checks: an
   # output-level check on one row can't tell "derived from the array" from "coincidentally still 12
-  # columns wide today".
+  # columns wide today". It loops `_ledger_col_pos "$_col"` over the 6 columns it actually needs
+  # (date/score/conf/guard/hold/miss — the rest go unused by rollup's stats) rather than one call per
+  # column, so check for the loop shape instead of six separate literal-string greps.
   parse_fn="$(sed -n '/^_ledger_parse() {/,/^}/p' "$TOOL")"
-  if grep -q '_ledger_col_pos date' <<<"$parse_fn" && grep -q '_ledger_col_pos score' <<<"$parse_fn" \
-    && grep -q '_ledger_col_pos conf' <<<"$parse_fn" && grep -q '_ledger_col_pos guard' <<<"$parse_fn" \
-    && grep -q '_ledger_col_pos hold' <<<"$parse_fn" && grep -q '_ledger_col_pos miss' <<<"$parse_fn"; then
+  if grep -qE 'for _col in date score conf guard hold miss;' <<<"$parse_fn" \
+    && grep -q '_ledger_col_pos "\$_col"' <<<"$parse_fn"; then
     pass "_ledger_parse derives date/score/conf/guard/hold/miss positions via _ledger_col_pos"
   else
     fail "_ledger_parse derives date/score/conf/guard/hold/miss positions via _ledger_col_pos" \
-      "one or more columns no longer looked up via _ledger_col_pos — hardcoded again?"
+      "no longer loops _ledger_col_pos over date/score/conf/guard/hold/miss — hardcoded again?"
+  fi
+
+  # dir #107's original whole-FILE scan (not just this one function) caught a second, independently
+  # hand-rolled ledger-column reader appearing ANYWHERE else in the file, by matching a semantic
+  # signature (all three of guard/hold/miss extracted the same way) rather than one literal spelling —
+  # this refactor changed that signature (a hardcoded `$5`/`$6`/`$9` became `$guard_col`/`$hold_col`/
+  # `$miss_col`, computed via _ledger_col_pos), so the check must be repointed to the NEW signature to
+  # keep covering the same ground: a copy-pasted second reader would very likely keep these standing
+  # variable names (guard/hold/miss are used throughout the file — see add_cite's _n_guard etc.)
+  # regardless of how its own field-position derivation or statement layout was rewritten.
+  sig_blocks="$(awk '
+    /^[A-Za-z_][A-Za-z0-9_]*\(\)[[:space:]]*\{/ { buf=""; in_fn=1; next }
+    in_fn && /^\}[[:space:]]*$/ {
+      gsub(/[ \t]/, "", buf)
+      if (index(buf, "guard+=$guard_col+0") && index(buf, "hold+=$hold_col+0") && index(buf, "miss+=$miss_col+0")) hits++
+      in_fn=0; next
+    }
+    in_fn { buf = buf $0 }
+    END { print hits+0 }
+  ' "$TOOL")"
+  if [ "$sig_blocks" -eq 1 ]; then
+    pass "ledger column-extraction signature (guard=\$guard_col,hold=\$hold_col,miss=\$miss_col) appears in exactly one function"
+  else
+    fail "ledger column-extraction signature (guard=\$guard_col,hold=\$hold_col,miss=\$miss_col) appears in exactly one function" \
+      "found in $sig_blocks function(s) — a parser was re-duplicated"
   fi
   # Only the awk PROGRAM (the string after `awk -F'|' ...`) is at risk of a hardcoded field ref —
   # exclude the shell preamble above it, which legitimately reads bash's own $1/$2 positional args.

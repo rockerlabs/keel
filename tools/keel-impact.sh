@@ -183,7 +183,12 @@ _ledger_table_header() {
 }
 
 # --- the table header, written once when the ledger is first created ------------------------------
-LEDGER_HEADER='# Keel impact ledger
+# The trailing table rows are NOT appended here: _ledger_table_header() forks a handful of subshells
+# (one printf+tr pair per column) to build them, and this file's top level runs unconditionally on
+# EVERY invocation (add, rollup, event, enable, ...) regardless of whether a ledger even needs
+# creating. Building the full header (prose + table) is deferred to ensure_ledger, the one place that
+# actually writes it — a brand-new file is the rare case, not the common one.
+LEDGER_HEADER_PROSE='# Keel impact ledger
 
 One row per scored session. The score is **derived, not asserted**: `commands/keel-score.md` gathers counted,
 cited events; `tools/keel-impact.sh` computes the 0-100 number from them by a fixed formula, so it is a pure
@@ -204,8 +209,7 @@ log that `add` auto-ingests — the objective signal never depends on the model 
 
 Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
 citation, and the full per-event trail (every event → its citation) lives in `evidence.md` next to this file.
-
-'"$(_ledger_table_header)"
+'
 
 # --- the evidence file header, written once when it is first created ------------------------------
 EVIDENCE_HEADER='# Keel impact — per-event evidence
@@ -218,7 +222,7 @@ are captured from the guardrail hooks (`source | detail`); the rest are supplied
 ensure_ledger() {
   if [ ! -f "$LEDGER" ]; then
     mkdir -p "$(dirname "$LEDGER")"
-    printf '%s\n' "$LEDGER_HEADER" > "$LEDGER"
+    printf '%s\n%s\n' "$LEDGER_HEADER_PROSE" "$(_ledger_table_header)" > "$LEDGER"
   fi
 }
 
@@ -344,12 +348,14 @@ _ledger_parse() {
   # old string) rather than let an empty $*_col silently turn `$score_col` into awk's `$0` (the whole
   # record) — the same explicit-catch discipline cmd_add's `*)` case arm applies on the writer side.
   local date_col score_col conf_col guard_col hold_col miss_col
-  date_col="$(_ledger_col_pos date)"     || { printf 'keel-impact: internal error — no table position for ledger column date\n' >&2; exit 1; }
-  score_col="$(_ledger_col_pos score)"   || { printf 'keel-impact: internal error — no table position for ledger column score\n' >&2; exit 1; }
-  conf_col="$(_ledger_col_pos conf)"     || { printf 'keel-impact: internal error — no table position for ledger column conf\n' >&2; exit 1; }
-  guard_col="$(_ledger_col_pos guard)"   || { printf 'keel-impact: internal error — no table position for ledger column guard\n' >&2; exit 1; }
-  hold_col="$(_ledger_col_pos hold)"     || { printf 'keel-impact: internal error — no table position for ledger column hold\n' >&2; exit 1; }
-  miss_col="$(_ledger_col_pos miss)"     || { printf 'keel-impact: internal error — no table position for ledger column miss\n' >&2; exit 1; }
+  local _col _pos
+  for _col in date score conf guard hold miss; do
+    _pos="$(_ledger_col_pos "$_col")" || {
+      printf 'keel-impact: internal error — no table position for ledger column %s\n' "$_col" >&2
+      exit 1
+    }
+    printf -v "${_col}_col" '%s' "$_pos"
+  done
   awk -F'|' -v mode="$mode" -v date_col="$date_col" -v score_col="$score_col" -v conf_col="$conf_col" \
     -v guard_col="$guard_col" -v hold_col="$hold_col" -v miss_col="$miss_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ {
