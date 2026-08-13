@@ -143,10 +143,14 @@ run env -u KEEL_TEST_JOBS -u CI PATH="$fakebin:$PATH" bash "$d/run.sh"
 t1=$(date +%s)
 elapsed=$((t1 - t0))
 check_status "CI unset: nproc-default fixtures -> exit 0" 0 "$STATUS"
-if [ "$elapsed" -le 2 ]; then
+# <=3s, matching the file's own established margin for this shape of assertion (the "timing: 4x 1s
+# fixtures overlap under jobs=4" case above uses the same +2s slack over ~1s of unconstrained work) —
+# a tighter bound here would risk reintroducing the exact contention-flake class this suite exists to
+# fight (found on a delta review pass).
+if [ "$elapsed" -le 3 ]; then
   pass "CI unset: 6x 1s fixtures run at the mocked nproc=9 default, not capped (${elapsed}s)"
 else
-  fail "CI unset: 6x 1s fixtures run at the nproc default" "took ${elapsed}s, expected <=2s under the mocked nproc=9"
+  fail "CI unset: 6x 1s fixtures run at the nproc default" "took ${elapsed}s, expected <=3s under the mocked nproc=9"
 fi
 
 # CI=true -> caps at 2 regardless of the (mocked, high) nproc value -> 3 batches of 2, ~3s
@@ -162,8 +166,20 @@ else
 fi
 
 # --- KEEL_TEST_JOBS still overrides $CI's default (dir #154) ---------------------------------------
+# A bare exit-0 + "ALL TEST FILES PASSED" check can't tell jobs_cap=1 (override honored) apart from
+# jobs_cap=2 or 9 (override silently lost to the CI default or the mocked nproc) — all three produce
+# identical output for these trivial fixtures. Only a timing check that proves fully SEQUENTIAL
+# execution (6 batches of 1, ~6s) actually distinguishes them (found on a delta review pass).
+t0=$(date +%s)
 run env PATH="$fakebin:$PATH" KEEL_TEST_JOBS=1 CI=true bash "$d/run.sh"
+t1=$(date +%s)
+elapsed=$((t1 - t0))
 check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
 check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
+if [ "$elapsed" -ge 5 ]; then
+  pass "KEEL_TEST_JOBS=1 under CI=true actually ran sequentially, not capped at 2 (${elapsed}s, ~6 batches)"
+else
+  fail "KEEL_TEST_JOBS=1 under CI=true ran sequentially" "took ${elapsed}s, expected >=5s for 6 fully-serial 1s fixtures — the override may have lost to the CI default"
+fi
 
 summary
