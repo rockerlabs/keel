@@ -157,6 +157,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   now suppresses the per-repo finding when it names the identical physical directory the machine-wide
   finding already reported — that one's remediation actually fixes the shared copy; re-vendoring
   per-repo would have written an unwanted second copy, or clobbered the shared one.
+- **The "slash command that doesn't ship" guard only ran in Keel's own test suite, so no adopter's
+  `tools/doctor.sh` run ever inherited it** (dir #129, captured during dir #110's own `/polish` review).
+  Moved from `tests/test_rails_honesty.sh` into `tools/self/doctor.sh` check 2b, alongside its
+  neighbouring dead-internal-reference class: every backticked `` `/name` `` reference across the
+  adopter-facing docs (root `.md` files, `docs/`, `commands/`, `templates/`) now GAPs if it has no
+  `commands/name.md`, carrying forward the same two allowlists (harness-provided vs not-a-command) and
+  the same leading-delimiter regex dir #110 tuned. Mutation-tested against a synthetic sandbox in
+  `tests/test_self_doctor.sh`, which is coverage the old live-tree-only test never had.
 
 ## [0.6.0] — 2026-08-12
 
