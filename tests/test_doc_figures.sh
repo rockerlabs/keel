@@ -210,6 +210,7 @@ assert_commands_range "commands/*.md sizes fall inside the quoted range"
 assert_readme_figure "README FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'
 assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'
 assert_readme_figure "README always-loaded core figure within 10%" templates/CLAUDE.md 'Always loaded.*~[0-9.]+K tokens'
+assert_readme_figure "README Economy bullet core figure within 10%" templates/CLAUDE.md 'Economy\.\*\* A thin, stable core \(~[0-9.]+K tokens\)'
 
 # /keel-setup step 3 and ADAPTING.md tell a no-git adopter which two template sections to drop BY NAME —
 # a heading rename in templates/CLAUDE.md would strand those instructions silently. Pin BOTH legs of the
