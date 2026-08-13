@@ -791,6 +791,75 @@ check_status "a section with no matching tag -> exit 1" 1 "$STATUS"
 check_contains "names the untagged section" "$OUT" "section(s) with no matching release tag"
 check_contains "and names it specifically" "$OUT" "1.1.0"
 
+# release-in-preparation allowance (dir #155): phase 7 cuts `## [x.y.z]` and lands it through a PR
+# BEFORE the operator tags the merge commit, so the newest section is legitimately untagged for the
+# life of that PR. Without this, the check reds the `self-check` CI job on the release-prep PR
+# itself — found live by dir #155's own RC pass, the first release cut after this check shipped.
+# Reverse-chronological order (newest first), the shape Keep a Changelog specifies and this repo uses.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, PR open, not tagged yet\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 ahead of its tag" && git tag v1.0.0 )
+# One NON-quiet run carries all four assertions: `--quiet` suppresses only `say`, while `gap` prints
+# unconditionally and the exit status is identical either way, so the absent-GAP check is just as
+# strong here — and the announcement (a `say` line) is only observable without it. A second `--quiet`
+# invocation would be a whole extra doctor.sh run for no added coverage, on a suite whose CI legs are
+# job-capped for exactly this contention.
+run "$sd" "$d"
+check_status "the NEWEST section untagged (release in preparation) -> exit 0" 0 "$STATUS"
+check_absent "no reconciliation GAP while the tag is still pending" "$OUT" "GAP"
+check_contains "the pending section is announced, not silently tolerated" "$OUT" "cut but not tagged yet"
+check_contains "and named specifically" "$OUT" "1.1.0"
+
+# ...and the allowance is exactly one section wide: a SECOND untagged section is still drift. Both
+# 1.1.0 and 1.2.0 lack tags; only the newest (1.2.0, first in file order) is exempt.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.2.0] — 2026-01-03\n- also untagged\n\n## [1.1.0] — 2026-01-02\n- untagged too\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "two untagged sections" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a SECOND untagged section is still a GAP -> exit 1" 1 "$STATUS"
+check_contains "names the one that isn't the newest" "$OUT" "1.1.0"
+check_absent "and does not name the exempt newest one as missing a tag" "$OUT" "no matching release tag: 1.2.0"
+# Discriminating assertion: the pre-allowance implementation ALSO exits 1 here and also names 1.1.0
+# (its GAP lists both, `1.1.0, 1.2.0`, so even the check_absent above passes under it). Only the new
+# code exempts 1.2.0 and therefore spells the untagged-newest term in the count GAP — without this,
+# the two assertions above pin "not over-broad" but not "the allowance ran at all".
+check_contains "the newest one is counted as pending, not as a missing section" "$OUT" "+ untagged-newest (1)"
+
+# ...and being NEWEST BY POSITION is not enough on its own — the section's version must also sort
+# above every tag. An independent high-depth review broke the position-only first draft with exactly
+# this fixture: `## [0.9.0]` sitting at the top of the file while v1.0.0/v1.1.0 are tagged is a
+# deleted/re-cut tag or a bad merge hoisting a stale section (the dir #115/PR #118 founding incident),
+# and the position-only rule turned its two GAPs into a clean run announcing a "release in
+# preparation" that is older than everything released.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [0.9.0] — 2026-01-04\n- untagged, and OLDER than every tag\n\n## [1.1.0] — 2026-01-02\n- second release\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "a stale untagged section hoisted to the top" \
+  && git tag v1.0.0 && git tag v1.1.0 )
+# NON-quiet, like the legit-pending fixture above and for the same reason: the announcement is a
+# `say` line, which `--quiet` suppresses unconditionally — so asserting its ABSENCE under `--quiet`
+# would pass against every possible implementation. Running full makes that assertion real.
+run "$sd" "$d"
+check_status "newest-by-position but OLDER than every tag -> still exit 1" 1 "$STATUS"
+check_contains "names the stale section as missing its tag" "$OUT" "no matching release tag: 0.9.0"
+check_absent "and does not excuse it as a release in preparation" "$OUT" "cut but not tagged yet"
+
+# ...and position still matters too, independently of the version test: an untagged section BELOW a
+# tagged one is the PR #118 drift shape from the other direction, and still GAPs. (Order-sensitive by
+# construction — this block's fixtures are newest-first, the Keep a Changelog ordering the allowance
+# assumes; the two older fixtures above are oldest-first, and reordering them would legitimately
+# change their verdicts rather than expose a bug.)
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- second release\n\n## [1.0.5] — 2026-01-02\n- never tagged\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "an untagged section buried below a tagged one" \
+  && git tag v1.0.0 && git tag v1.1.0 )
+run "$sd" "$d" --quiet
+check_status "an untagged section below a tagged one -> exit 1" 1 "$STATUS"
+check_contains "names the buried untagged section" "$OUT" "1.0.5"
+
 # section-count invariant: a DUPLICATED heading (e.g. a bad merge). Both directional checks pass —
 # every tag NAME has a matching section and vice versa, since `sort -u` dedupes the name lists — so
 # only the raw section-count invariant, comparing sections found to tags + Unreleased, catches the

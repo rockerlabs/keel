@@ -512,7 +512,18 @@ Steps, in order:
 8. **Unlock the gate.** Now that the diff is final (reviewed and re-tested), finalize the receipt with the
    current HEAD SHA: `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. That releases
    the `gh pr create` block. The SHA is recorded *after* the review so it matches exactly what the PR will
-   contain.
+   contain. **Push the branch before you unlock** — the gate also checks that current HEAD is reachable on
+   the branch's push remote (see the deny note below), and in a convergence round the fix commit is
+   exactly the one that tends to still be local-only.
+
+   **One deny is NOT a receipt problem, and re-running `/polish` alone will never clear it** (dir
+   #133/#152): `current HEAD (<sha>) is not reachable on <remote>/<branch> — push the branch (git push)
+   before opening the PR`. Every other check the gate runs is against the LOCAL repo, so a commit made
+   after the branch's last push satisfies all of them and would open a PR that silently omits it. The
+   remote it names is the branch's own configured `@{upstream}` (falling back to `origin/<branch>` when
+   the branch has no upstream), not a hardcoded `origin`. Fix it by pushing, then re-run `/polish` and
+   take step 1's convergence branch — this deny retires the sentinel like any other, so the receipts have
+   to be rewritten either way.
 
    **On any receipt-deny from the gate** (a blocked `gh pr create` naming missing step ids): before
    re-running `/polish`, honestly check whether the named step's work actually happened and was simply not

@@ -50,11 +50,16 @@ Order rows **Active → In flight → Next-up → Parked → Blocked** within ea
 append the gate to the gist; for an **In flight** item, append the claiming branch the marker names —
 the point of showing it is that the next `/go` doesn't pick it twice.
 
-**3b. Read the target-release label, if any.** A heading's status tail can end in a trailing `→ 0.6.1`
-(or `→ next`) — a target-release tag appended at triage time (see
+**3b. Read the target-release label, if any.** A heading's status tail can carry a `→ 0.6.1`
+(or `→ next`) tag — appended at triage time (see
 [`docs/release-audit.md`](../docs/release-audit.md) phase 2), orthogonal to the status markers above: it
 says *which release this item is slated for*, not what state it's in. An item with no such tag simply
 has no target yet — that's not itself a finding, and every status in the table above can carry one.
+**Do not require the tag to be LAST on the line.** It is appended at triage time, so a closure marker
+written later routinely lands after it — `— R2 — → 0.6.1 — ✅ CLOSED (…, PR #199 merged)` is the
+ordinary shape once a tail ticket closes, and most of a closed tail looks like that. Read the tag
+wherever it appears in the status tail; matching only a line-final one would hide most of the release
+tail from step 6's grouping, which is the one thing that grouping exists to show.
 
 **4. Multi-section backlogs:** when the source uses `##` section headers, add a **Section** column and group
 rows under their section; order sections by actionability (most Active/Next-up first), items within a
