@@ -195,6 +195,31 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   pushed only to the contributor's own remote — filed and fixed in the same PR as dir #152: the check
   now prefers the branch's own configured upstream (`<branch>@{upstream}`) over a hardcoded `origin`,
   falling back to `origin/<branch>` only when no upstream is configured.
+- **`/polish`'s convergence rounds no longer re-run the whole test suite just to re-bind `polish.3-tests`
+  to a commit that touched nothing test-relevant** (dir #123). dir #96 made step 3's receipt exclusive to
+  `--recover` for good reason — a stale sha must not silently satisfy the gate — but that made EVERY
+  convergence round pay a full test run even when the only change since the last green run was, say, a
+  reworded comment (measured on dir #97's own `/polish`: 14 rounds, 8 full suite runs at ~7 minutes
+  each). The fix is mechanical, not a self-reported claim: `receipt polish.3-tests <sha>` now stamps a
+  deterministic tree-relevant hash onto the outcome — `git ls-tree -r --full-tree <sha>` (mode + blob +
+  path, so content, permission-bit, and structural changes all move it), computed and verified
+  server-side from a sha the gate itself resolves, never taken from the caller (a hand-crafted
+  `sha:fake-hash` outcome is stripped and recomputed, not trusted). **Not a blanket `*.md` exclusion** —
+  an operator-run `/code-review high` pass on this ticket reproduced live that most of keel's own doc
+  surface (`CORE.md`, `templates/CLAUDE.md`, `commands/*.md`, `FRAMEWORK.md`, `docs/*.md`, `README.md`,
+  even `CHANGELOG.md` itself) is read by a real test in `tests/`, so a blanket exclusion would have let a
+  commit that broke one of those checks sail through as "nothing test-relevant changed." A `.md` path is
+  dropped from the hash only when NO file under `tests/` mentions its basename — self-maintaining (a new
+  test referencing a doc makes it test-relevant automatically) and fails closed (an unproven `.md` file
+  stays in the hash). `receipt --recover` now carries a `polish.3-tests` receipt forward only when it
+  carries the stamped hash; the final gate check recomputes the hash for the NEW HEAD and compares — a
+  match unlocks with no fresh test run, a genuine test-relevant change still denies exactly as before.
+  `skipped:--no-test`/`skipped:no-test-command` waivers and a legacy bare sha are never recovered,
+  unchanged from dir #96's original rule — only a real, re-checkable tree-hash claim is.
+  `commands/polish.md` step 1/3/4 updated: step 3 now recovers provisionally, re-verified (not assumed)
+  at step 8, and the CHANGELOG-paragraph case named in this ticket's own motivation does NOT skip a test
+  run in keel's own repo (it's real-test-coupled here) — genuinely test-free docs and structural-only
+  convergence commits are what actually benefit.
 
 ## [0.6.0] — 2026-08-12
 

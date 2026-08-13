@@ -1013,15 +1013,19 @@ check_contains "recover with nothing retired yet → says so" "$OUT" "nothing to
 
 # 54. `receipt --recover`: the felt dir #72 shape end-to-end — a completed run passes the gate (which
 # retires its receipt to the single-slot backup), a review-fix commit moves HEAD, and `receipt --recover`
-# restores 6 receipts in one call — every step the prior run had except 3 and 5, which dir #96 excludes.
-# Of those 6, only 1/2/4/7 are USABLE as-is; 6 and 8 come back stale and are overwritten below, which is
-# why the assertion says `recovered 6` while the round still writes 3, 5, 6 and 8 for itself.
-# dir #96 CHANGED this test's contract, and that change is the point of the ticket: the fix commit moved
-# HEAD, so a step-3 receipt from the prior run would name a sha that is no longer being shipped — which
-# is why recovery refuses to carry it over at all, and the round must write it. Step 6 must carry
-# a real retest sha here — `skipped:no-file-changes` (what this test used to write, and what a convergence
-# round legitimately produces when the delta re-review is clean) would leave NOTHING bound to the fix
-# commit. Test 80 below pins that the skip path is now denied.
+# restores 7 receipts in one call — every step the prior run had except 5, which dir #96 excludes (step
+# 3 recovers too, dir #123 — this repo fixture is a genuinely empty tree, so its carried-forward
+# tree-relevant hash trivially still matches HEAD; test 80 below covers the case where it must NOT match).
+# Of those 7, only 1/2/3/4/7 are USABLE as-is; 6 and 8 come back stale and are overwritten below, which is
+# why the assertion says `recovered 7` while the round still writes 5, 6 and 8 for itself.
+# dir #96's original contract for step 3 — the fix commit moved HEAD, so a step-3 receipt from the prior
+# run names a sha that is no longer being shipped, and recovery refused to carry it over at all — still
+# holds whenever the tree-relevant hash actually differs; dir #123 only lifted it for the case where the
+# hash proves nothing test-relevant changed. Step 6 must carry a real retest sha here — `skipped:no-file
+# -changes` (what this test used to write, and what a convergence round legitimately produces when the
+# delta re-review is clean) would leave NOTHING freshly bound to the fix commit, relying entirely on the
+# recovered (here, validly-matching) step 3. Test 80 below pins the case where recovered step 3 must NOT
+# satisfy the gate on its own.
 d="$(mkrepo)"
 rm -f "$(prev_sentinel_for "$d")"
 write_full_receipt "$d"
@@ -1033,9 +1037,9 @@ git -C "$d" commit --allow-empty -qm "review fix"    # HEAD moves — the review
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
 check_status "recover after the fix-commit's own init → exit 0" 0 "$STATUS"
-check_contains "recover reports how many steps it restored" "$OUT" "recovered 6 step receipt(s)"
-check_contains "recover names the steps it deliberately did not restore" "$OUT" "polish.3-tests / polish.5-review NOT recovered by design"
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
+check_contains "recover reports how many steps it restored" "$OUT" "recovered 7 step receipt(s)"
+check_contains "recover names the one step it deliberately did not restore" "$OUT" "polish.5-review NOT recovered by design"
+check_absent "recover does NOT withhold step 3 here — its tree-relevant hash still matches" "$OUT" "polish.3-tests NOT recovered"
 run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
 run_in "$d" bash "$gate" receipt polish.6-retest "$(git -C "$d" rev-parse HEAD)"
 run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
@@ -1635,9 +1639,15 @@ rm -f "$tf" "$rs"
 # (HEAD → sha2), and the re-invocation recovers step 3's pre-fix receipt. Step 5's delta re-review
 # changes no files, so step 6 legitimately writes `skipped:no-file-changes` — and step 6's skip was
 # exempt from the SHA check, leaving NOTHING bound to sha2. Reproduced end-to-end before the fix:
-# the gate answered `allow` on a commit no test had ever seen.
+# the gate answered `allow` on a commit no test had ever seen. dir #123 gave step 3 a mechanical way to
+# recover safely (a still-matching tree-relevant hash), so the fix commit here MUST touch a real,
+# non-`.md` tracked file — a genuine code change — or the new hash-match path would legitimately (and
+# correctly) let it through; that exact "nothing test-relevant changed" case is covered separately below
+# (dir #123 positive test) and must NOT be confused with this one.
 d="$(mkrepo)"
-git -C "$d" commit -q --allow-empty -m "run-1 content"
+printf 'echo run-1\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "run-1 content"
 sha1="$(git -C "$d" rev-parse HEAD)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.1-diff
@@ -1645,11 +1655,12 @@ run_in "$d" bash "$gate" receipt polish.2-simplify
 run_in "$d" bash "$gate" receipt polish.3-tests "$sha1"
 run_in "$d" bash "$gate" receipt polish.4-depth "medium:test-fixture"
 run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
-git -C "$d" commit -q --allow-empty -m "fix from review"      # the fix commit — never tested
+printf 'echo run-1\necho the-actual-fix\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "fix from review"      # the fix commit — never tested, touches a real file
 sha2="$(git -C "$d" rev-parse HEAD)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
-run_in "$d" bash "$gate" receipt polish.3-tests "$sha1"        # the stale pre-fix sha, carried forward
 run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
 run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
 run_in "$d" bash "$gate" receipt polish.7-selfcheck
@@ -1657,6 +1668,167 @@ run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
 gate "gh pr create --fill" "$d"
 check_contains "dir #96: untested fix commit in a convergence round → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #96: denied for the unbound test run specifically" "$OUT" "test suite"
+
+# 80b. dir #123 POSITIVE acceptance case: a convergence-round commit that touches ONLY a `.md` file
+# (a CHANGELOG entry, standing in for a reworded comment or a moved bullet) must let the recovered
+# `polish.3-tests` receipt satisfy the gate with NO fresh test run at all — the mechanical point of this
+# ticket. `build.sh` (the test-relevant file) is untouched by the second commit, so its tree-relevant
+# hash is unchanged. This fixture (`mkrepo()`) has no `tests/` dir at all, so `CHANGELOG.md` is exempt
+# here trivially (no test file anywhere to reference its basename) — tests 80d/80e below exercise the
+# actual DYNAMIC classification (some `.md` paths test-relevant, some not, in the SAME repo), which an
+# operator-run /code-review high pass on this ticket found necessary: a blanket `.md` exclusion turned
+# out unsound for keel's own repo, where most docs are genuinely read by real tests.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #123 setup: initial run → exit 0" 0 "$STATUS"
+printf '# Notes\n\nSome prose.\n' > "$d/CHANGELOG.md"
+git -C "$d" add CHANGELOG.md
+git -C "$d" commit -q -m "docs: changelog entry"      # doc-only convergence commit, build.sh untouched
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_absent "dir #123: doc-only convergence commit → step 3 recovered (no NOT-recovered note)" "$OUT" "polish.3-tests NOT recovered"
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.3-tests — proving the recovered receipt alone satisfies the gate
+gate "gh pr create --fill" "$d"
+check_status "dir #123: doc-only convergence commit → gate unlocks with NO fresh test run" 0 "$STATUS"
+check_absent "dir #123: unlocked, not denied" "$OUT" "deny"
+
+# 80c. dir #123 NEGATIVE acceptance case: the mirror image — the convergence-round commit touches the
+# test-relevant file itself, so the recovered receipt's tree-relevant hash must NOT match and the gate
+# must still deny, exactly as before this ticket. Minimal diff from 80b so the two are easy to compare:
+# only the second commit's target file differs.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #123 setup: initial run → exit 0" 0 "$STATUS"
+printf 'echo build\necho changed\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "fix: change build.sh"       # test-relevant file changed
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.3-tests — the recovered receipt's tree-relevant hash must NOT match
+gate "gh pr create --fill" "$d"
+check_contains "dir #123: test-relevant file changed → recovered step 3 does NOT rebind → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #123: denied for the unbound test run" "$OUT" "test suite"
+
+# 80d. dir #123 DYNAMIC-CLASSIFICATION positive case (operator-run /code-review high finding): a `.md`
+# file is exempt ONLY when no file under `tests/` mentions its basename — verify with a fixture that
+# actually HAS a `tests/` dir, unlike 80b/80c above. `untested.md`'s basename appears nowhere under
+# `tests/`, so a commit touching only it must still rebind step 3 with no fresh test run, exactly like
+# 80b.
+d="$(mkrepo)"
+mkdir -p "$d/tests"
+printf 'echo a real test file\n' > "$d/tests/test_something.sh"
+printf 'stub\n' > "$d/untested.md"
+git -C "$d" add -A
+git -C "$d" commit -q -m "add tests/ dir and an untested doc"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #123 setup: initial run with a real tests/ dir → exit 0" 0 "$STATUS"
+printf 'stub, edited\n' > "$d/untested.md"
+git -C "$d" add untested.md
+git -C "$d" commit -q -m "docs: edit the untested doc"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_absent "dir #123: untested.md's basename appears in no test → step 3 recovered" "$OUT" "polish.3-tests NOT recovered"
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_status "dir #123: editing a genuinely test-free .md → gate unlocks with NO fresh test run" 0 "$STATUS"
+check_absent "dir #123: unlocked, not denied" "$OUT" "deny"
+
+# 80e. dir #123 DYNAMIC-CLASSIFICATION negative case: the mirror image — `tested.md`'s basename IS
+# referenced by a real file under `tests/`, so editing it must NOT let step 3 silently rebind, even
+# though it's still a `.md` file. This is the exact shape the blanket-`.md`-exclusion design got wrong
+# for keel's own repo (CORE.md, CHANGELOG.md, commands/*.md are all real instances of this).
+d="$(mkrepo)"
+mkdir -p "$d/tests"
+printf 'doc="$REPO_ROOT/tested.md"\n' > "$d/tests/test_something.sh"
+printf 'stub\n' > "$d/tested.md"
+git -C "$d" add -A
+git -C "$d" commit -q -m "add tests/ dir and a test-referenced doc"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #123 setup: initial run with a real tests/ dir → exit 0" 0 "$STATUS"
+printf 'stub, edited\n' > "$d/tested.md"
+git -C "$d" add tested.md
+git -C "$d" commit -q -m "docs: edit the test-referenced doc"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.3-tests — the recovered receipt's tree-relevant hash must NOT match
+gate "gh pr create --fill" "$d"
+check_contains "dir #123: editing a .md file a real test references → recovered step 3 does NOT rebind → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #123: denied for the unbound test run" "$OUT" "test suite"
+
+# 80f. dir #123 `--full-tree` regression (operator-run /code-review high finding): `git ls-tree -r`
+# WITHOUT `--full-tree` is silently scoped to the invocation cwd's OWN subtree when `-C` points below
+# the repo root — reproduced live: a file outside that subtree changing left the hash untouched. So a
+# `/polish` session working from (or a `gh pr create` hook firing with cwd set to) a NESTED directory of
+# the repo must still see a change to a file OUTSIDE that directory as test-relevant. `sub/inner.sh` is
+# untouched by the fix commit — only root-level `root.sh` changes — but every gate call below runs with
+# cwd = `$d/sub`, not `$d`.
+d="$(mkrepo)"
+mkdir -p "$d/sub"
+printf 'echo root\n' > "$d/root.sh"
+printf 'echo sub\n' > "$d/sub/inner.sh"
+git -C "$d" add -A
+git -C "$d" commit -q -m "add root.sh and sub/inner.sh"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #123 setup: initial run → exit 0" 0 "$STATUS"
+printf 'echo root, changed\n' > "$d/root.sh"      # test-relevant change OUTSIDE the sub/ cwd below
+git -C "$d" add root.sh
+git -C "$d" commit -q -m "fix: change root.sh (outside sub/)"
+run_in "$d/sub" bash "$gate" init
+run_in "$d/sub" bash "$gate" receipt --recover
+run_in "$d/sub" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d/sub" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d/sub" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.3-tests — the recovered receipt's tree-relevant hash must NOT match,
+# even though every call above ran with cwd = a nested subdirectory, not the repo root
+gate "gh pr create --fill" "$d/sub"
+check_contains "dir #123: root-level file changed, gate invoked from a nested cwd → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #123: denied for the unbound test run" "$OUT" "test suite"
+
+# 80g. dir #123 `%(objectmode)` regression (operator-run /code-review high finding): content alone
+# (`%(objectname)`) is unchanged by `chmod +x` — a mode-only change must still register as test-relevant
+# (making a script executable, or removing exec permission, is a real behavioral change a test could
+# depend on), reproduced live as an identical hash before/after without `%(objectmode)` in the format.
+d="$(mkrepo)"
+printf '#!/bin/sh\necho build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build.sh (not executable)"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #123 setup: initial run → exit 0" 0 "$STATUS"
+chmod +x "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "chmod +x build.sh (content unchanged, mode only)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.3-tests — a mode-only change must still be seen as test-relevant
+gate "gh pr create --fill" "$d"
+check_contains "dir #123: chmod-only change (same content) → still denied, not silently matched" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #123: denied for the unbound test run" "$OUT" "test suite"
 
 # 81. dir #96: `--recover` itself keeps working. When HEAD has NOT moved, the recovered step-3 receipt
 # names the current sha, so the tests genuinely did run on this content — recovering is correct and
@@ -1857,7 +2029,10 @@ rm -f "$rstate"
 # reproduced both wrong shapes.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"    # prior run: step 3 only
+# dir #123: a SKIP LITERAL (not a resolvable sha) so this stays withheld regardless of the tree-hash
+# reuse path added there — that path is exercised on its own further below, not here; this sub-test is
+# only about the recovery NOTE's per-step wording.
+run_in "$d" bash "$gate" receipt polish.3-tests "skipped:--no-test"    # prior run: step 3 only
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
 check_contains "dir #96: the note names step 3" "$OUT" "polish.3-tests NOT recovered by design"
@@ -1883,6 +2058,23 @@ run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
 check_contains "dir #96: the note names step 5" "$OUT" "polish.5-review NOT recovered by design"
 check_absent "dir #96: ...and its tail doesn't tell it to bind a step 3 nobody withheld" "$OUT" "step 3 bound to"
+
+# 92b. dir #123 HARDENING: a hand-crafted `<sha>:<fake-treehash>` outcome must NOT be trusted verbatim —
+# `receipt` strips any caller-supplied suffix and recomputes the tree-relevant hash itself from the sha
+# alone. Write a receipt whose suffix is deliberately wrong (would satisfy nothing if trusted as given,
+# since a genuine mismatch must still deny); the gate must accept it anyway BECAUSE the real, freshly
+# computed hash is what actually got stored, not the forged one — proving the forged half was discarded,
+# never that a bad hash slipped through.
+d="$(mkrepo)"
+sha="$(git -C "$d" rev-parse HEAD)"
+write_full_receipt "$d" "" "polish.3-tests"
+run_in "$d" bash "$gate" receipt polish.3-tests "${sha}:not-the-real-tree-hash-at-all"
+check_contains "dir #123: a self-supplied treehash suffix is not trusted verbatim (recomputed, not stored as given)" \
+  "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "polish.3-tests	${sha}:"
+check_absent "dir #123: the forged suffix itself never reaches the sentinel" "$(cat "$(sentinel_for "$d")" 2>/dev/null)" "not-the-real-tree-hash-at-all"
+gate "gh pr create --fill" "$d"
+check_status "dir #123: HEAD unmoved, real (recomputed) hash trivially matches → still unlocks" 0 "$STATUS"
+check_absent "dir #123: unlocked, not denied" "$OUT" "deny"
 
 # 93. dir #116: `--recover` must not restore a SKIP-level `polish.4-depth`. `skip` is the one depth that
 # bypasses step 5 outright, and commands/polish.md step 4 tells a convergence round to reuse the recovered
