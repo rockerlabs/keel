@@ -167,18 +167,6 @@ announced on every full run rather than silent, and bounding it is backlog dir #
   this closes. Every round now also reports a one-line trend (findings, max severity, surface
   same/new, class named/exhausted, forecast) instead of a silent count climbing toward a dreaded
   double-digit round.
-- **The test runner's own concurrency default is now capped under CI, for every leg** (dir #153, then
-  dir #154; keel-self-maintenance — internal to the test harness). dir #130's concurrent `tests/run.sh`
-  flaked one `tests (alpine-busybox)` CI run on a timing-sensitive `test_keel_cli.sh` check; dir #153
-  capped that one job, and dir #154 then saw the same flake on the plain `ubuntu-24.04` leg, which had
-  never been capped. No source-level race was found in the flaking test — no file it reads is mutated
-  during the suite — so the cause is many test files' own subprocess forking stacking up on a small
-  hosted runner. The mitigation therefore moved out of `.github/workflows/ci.yml` and into
-  `tests/run.sh`'s own default: `$CI` set (GitHub Actions and effectively every other provider) caps
-  the default at 2 regardless of the reported core count, so a future CI leg inherits it for free
-  instead of needing its own copy of the fix. `KEEL_TEST_JOBS` remains the manual override; the alpine
-  job now forwards the runner's `CI` into its container (`docker run -e CI`) so the default applies
-  there too.
 - **`tools/keel-impact.sh`'s ledger columns now come from one ordered array instead of being
   hand-listed independently in three places** (dir #151). The writer (`cmd_add`'s row-printf), the
   reader (`_ledger_parse`'s awk field indices), and the markdown table header each separately
@@ -337,6 +325,19 @@ announced on every full run rather than silent, and bounding it is backlog dir #
   line number is drift-bait by construction. (5) `docs/loading-and-cost.md`'s `CHANGELOG.md` floor
   went `~50,000+` → `~60,000+`: this release's own entries pushed the file past the 25%-above-floor
   mark where `tests/test_doc_figures.sh` starts asking for a restatement.
+- **`tests/run.sh`'s own concurrent-by-default test execution (dir #130) flaked `test_keel_cli.sh`'s
+  "README.md quotes verb" check under real CI load** (dir #153, then dir #154). dir #153 first capped
+  `KEEL_TEST_JOBS=2` for the `alpine-busybox` CI job alone, blaming the container's nproc-vs-host
+  mismatch — but the identical flake then resurfaced on the plain `tests (ubuntu-24.04)` leg (PR #203,
+  an unrelated diff), on plain GNU tooling, ruling out an alpine/busybox-specific cause. No file the
+  check reads (`README.md`, `keel`) is ever mutated during the suite (verified: every test that touches
+  either writes its own sandboxed copy), so it isn't a content or extraction-logic race — it's
+  subprocess-fork resource contention from many concurrently-running test files stacking up on a
+  standard hosted runner, independent of OS or container. `tests/run.sh`'s own default now caps at 2
+  whenever `$CI` is set (GitHub Actions and effectively every CI provider sets it), replacing the
+  alpine-only override — every current and future CI leg gets the safe default for free, and the
+  alpine job now forwards `CI` into its container (`-e CI`) instead of carrying its own copy of the
+  mitigation. Confirmed by 3 clean re-runs of the `ubuntu-24.04` leg post-merge, no repeat.
 
 ## [0.6.0] — 2026-08-12
 
