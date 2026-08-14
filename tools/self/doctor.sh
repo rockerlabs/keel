@@ -659,6 +659,21 @@ fi
 # `## [x.y.z]` section, every versioned section has its tag, and the section COUNT equals tag count +
 # 1 (`[Unreleased]`) — the last one is what would have caught PR #118 directly (a section vanishing
 # without its tag going anywhere leaves the count short by exactly one).
+# _semver_gt A B — true iff semver A is strictly greater than semver B. Both are bare `x.y.z` strings
+# (the anchored ERE below is what guarantees that shape for tags; CHANGELOG sections are matched by
+# the same three-number pattern). Components compared as INTEGERS in pure bash — a string compare
+# would rank 1.10.0 below 1.9.0, and `sort -V` isn't dependable on the alpine-busybox CI leg. Single
+# consumer (the pending-release allowance below), so it lives here rather than with the file's
+# general helpers.
+_semver_gt() {
+  local a1 a2 a3 b1 b2 b3
+  IFS=. read -r a1 a2 a3 <<< "$1"
+  IFS=. read -r b1 b2 b3 <<< "$2"
+  if [ "$a1" -ne "$b1" ]; then [ "$a1" -gt "$b1" ]; return; fi
+  if [ "$a2" -ne "$b2" ]; then [ "$a2" -gt "$b2" ]; return; fi
+  [ "$a3" -gt "$b3" ]
+}
+
 say ""
 say "● CHANGELOG.md <-> git release-tag reconciliation"
 changelog_file="$repo_root/CHANGELOG.md"
@@ -696,8 +711,16 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   # release-note conventions, and an illustrative snippet is a realistic future entry — must not be
   # misread as a real release section.
   changelog_blanked="$(blank_fenced_blocks "$changelog_file")"
-  sections="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' <<< "$changelog_blanked" \
-    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u || true)"
+  # Extracted ONCE, in file order, then projected two ways: `sections` (deduped, for the two
+  # membership loops) and `newest_section` (first heading, for the pending-release allowance below).
+  # Both projections must be derived from the same scan — the heading regex was briefly spelled a
+  # third time here for `newest_section`, which made the allowance silently depend on two greps
+  # staying byte-identical (caught by this diff's own /simplify pass, and the same class
+  # `blank_fenced_blocks` above was extracted for one release earlier).
+  sections_in_order="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' <<< "$changelog_blanked" \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+  sections="$(sort -u <<< "$sections_in_order")"
+  newest_section="$(head -1 <<< "$sections_in_order")"
   unreleased_count="$(grep -cE '^## \[Unreleased\]' <<< "$changelog_blanked" || true)"
   # Only the two heading SHAPES this check actually understands — `[Unreleased]` and a bare semver
   # bracket — not a bare `grep -cE '^## \['`, which would also count any OTHER legitimate `## [...]`
@@ -707,16 +730,75 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   total_sections="$(grep -cE '^## (\[Unreleased\]|\[[0-9]+\.[0-9]+\.[0-9]+\])' <<< "$changelog_blanked" || true)"
   n_tags="$(printf '%s\n' "$tags" | grep -c . || true)"
 
+  # One pass over $tags derives BOTH tag-side facts: which tags have no section, and the highest tag
+  # (the pending-release allowance below needs it). Folded together rather than run as two separate
+  # `while read` loops over the identical stream — the same don't-spell-the-same-scan-twice point the
+  # `sections_in_order` note above makes, applied consistently.
   missing_section=""
+  highest_tag=""
   while IFS= read -r t; do
     [ -n "$t" ] || continue
+    if [ -z "$highest_tag" ] || _semver_gt "$t" "$highest_tag"; then highest_tag="$t"; fi
     printf '%s\n' "$sections" | grep -qxF "$t" || missing_section="$missing_section${missing_section:+, }$t"
   done <<< "$tags"
 
+  # A release being PREPARED legitimately has exactly one version section with no tag yet:
+  # docs/release-audit.md phase 7 cuts `## [x.y.z]` and lands it through the normal branch → PR flow,
+  # and only THEN does the operator tag the merge commit (cutting the tag is theirs, per the git
+  # rails' irreversible-action rule — the preparing session is required to stop before it). Without
+  # an allowance, this check GAPs on that very PR and the `self-check` CI job reds the release prep
+  # it exists to protect. Found live by dir #155's own RC pass — the first release cut after this
+  # check shipped, v0.6.0's section having predated it by one PR.
+  #
+  # The allowance is deliberately narrow, so it can't absorb the drift this check is for. TWO
+  # conditions, both required: the untagged section is the NEWEST heading (first `## [x.y.z]` in file
+  # order, per Keep a Changelog's reverse-chronological ordering), AND its version genuinely sorts
+  # above every existing tag. A second untagged section, or an untagged one sitting below a tagged
+  # one, is still drift and still GAPs.
+  #
+  # **The version half is load-bearing, not belt-and-braces** — position alone was the first draft of
+  # this fix and an independent high-depth review broke it, live: with tags v1.0.0/v1.1.0 and an
+  # untagged `## [0.9.0]` at the top of the file, the position-only test exempted a section OLDER than
+  # every tag and reported `release in preparation` about it, turning two GAPs into a clean run. That
+  # is squarely inside this check's own founding incident (dir #115/PR #118 — git state and CHANGELOG
+  # drifting apart): a deleted or re-cut tag, a bad merge hoisting a stale section, or a hand-written
+  # backport section all produce exactly that shape. On a linear release line — every release newer
+  # than the last, which is keel's own history 0.1.0 → 0.6.1 — a release in preparation is always
+  # NEWER than everything tagged, so requiring it costs nothing real and closes the hole. **Where it
+  # does cost something, it costs it LOUDLY** (the delta round of the same review named this, and it
+  # is why the version test is still worth having): a backport cut below the newest tag — tags
+  # v1.0.0/v1.1.0/v2.0.0 and a legitimate `## [1.0.1]` at the top, since Keep a Changelog orders by
+  # DATE, not by version — fails this test and GAPs its own release-prep PR. That is a blocking,
+  # instantly-diagnosed failure on a repo that starts backporting, not the silent hole position-only
+  # left; fix it then, with a real case in hand, rather than pre-building for it now.
+  #
+  # `_semver_gt` compares the three components as integers in pure bash — no `sort -V` (absent on the
+  # alpine-busybox CI leg), no fork. An earlier version of this comment claimed a portable compare
+  # wasn't available at all and used that to justify position-only; it was wrong, and the review that
+  # found the hole above found the overclaim with it.
+  #
+  # No tags at all (`$highest_tag` empty) exempts the newest section unconditionally: a repo cutting
+  # its very first release has nothing to be newer than.
+  #
+  # It is announced, never silent: a section left untagged long after its release stays visible on
+  # every non-`--quiet` run (it's an expected intermediate state, so an OK line — not a WARN, which
+  # would cry wolf on every release PR). **Accepted residual, ticketed as dir #156:** that means one
+  # instance of this check's own failure class — cut, then never tagged — is now permanently a green
+  # line rather than a GAP, with no time bound; on `main` a forgotten tag is indistinguishable from a
+  # release genuinely in flight. A flow-derived discriminator doesn't work either (CI runs this on
+  # the main push that lands BEFORE the operator tags, so "on main ⇒ must be tagged" would red main).
+  pending=""
+  pending_count=0
   missing_tag=""
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    printf '%s\n' "$tags" | grep -qxF "$s" || missing_tag="$missing_tag${missing_tag:+, }$s"
+    printf '%s\n' "$tags" | grep -qxF "$s" && continue
+    # `<<<` runs the loop in this same shell, so assignments here survive it (no subshell).
+    if [ "$s" = "$newest_section" ] && { [ -z "$highest_tag" ] || _semver_gt "$s" "$highest_tag"; }; then
+      pending="$s"; pending_count=1
+    else
+      missing_tag="$missing_tag${missing_tag:+, }$s"
+    fi
   done <<< "$sections"
 
   changelog_bad=0
@@ -741,11 +823,17 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     gap "CHANGELOG.md has $unreleased_count '## [Unreleased]' headings, expected at most 1"
     changelog_bad=1
   fi
-  expected_sections=$((n_tags + unreleased_count))
+  # $pending_count is part of "expected" for the same reason it's exempt from the directional check
+  # above — a release-in-preparation section is a real, intended heading, so it must not read as a
+  # duplicated or refolded one here either.
+  expected_sections=$((n_tags + unreleased_count + pending_count))
   if [ "$total_sections" != "$expected_sections" ]; then
-    gap "CHANGELOG.md section count ($total_sections) != tags ($n_tags) + Unreleased ($unreleased_count) — a released section may be missing, duplicated, or folded back into [Unreleased]"
+    # The untagged-newest term is only spelled when it's actually 1 — appending a constant "+ 0"
+    # to every ordinary drift report would be noise on the reading that matters most.
+    gap "CHANGELOG.md section count ($total_sections) != tags ($n_tags) + Unreleased ($unreleased_count)${pending:+ + untagged-newest (1)} — a released section may be missing, duplicated, or folded back into [Unreleased]"
     changelog_bad=1
   fi
+  [ -n "$pending" ] && say "  OK   '## [$pending]' is cut but not tagged yet — release in preparation (tag the merge commit to close it out)"
   [ "$changelog_bad" -eq 0 ] && say "  OK   every release tag has a CHANGELOG.md section and vice versa ($n_tags tags)"
 else
   say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping tag reconciliation"

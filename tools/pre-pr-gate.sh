@@ -1746,9 +1746,11 @@ case "$status" in
     #
     # **Residual still open, narrower than before:** a true cross-fork PR run from the BASE repo's own
     # checkout (not the contributor's fork clone) has no local upstream for a branch it never pushed at
-    # all — that shape was already denied earlier, at the sha-mismatch check above (line ~1607, since
-    # `current_sha` itself comes up empty), so it never reaches this check either way; not a new gap this
-    # fix introduces.
+    # all — that shape was already denied earlier, at the "sentinel is stale" sha-mismatch check at the
+    # top of this PASS arm (since `current_sha` itself comes up empty), so it never reaches this check
+    # either way; not a new gap this fix introduces. (Anchored by name, not by line number: the original
+    # note said "line ~1607" and dir #123's later insert above shifted that check to ~1713 within the
+    # same release tail — the exact stale-reference class this file's own comments keep catching.)
     push_remote_ref="$(git -C "$cwd" rev-parse --abbrev-ref --symbolic-full-name "$resolved_branch@{upstream}" 2>/dev/null)"
     push_remote_name="origin"
     [ -n "$push_remote_ref" ] && push_remote_name="${push_remote_ref%%/*}"

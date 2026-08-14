@@ -8,6 +8,36 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-14
+
+The release tail of the v0.6.0 audit. v0.6.0 shipped with a named list of known issues rather than
+holding the tag for them; this release closes that list and the ~25 tickets around it. Three arcs:
+the install manifest landed, so `install.sh`/`install-pre-pr-gate.sh`/`uninstall.sh`/`doctor.sh` read
+one recorded state instead of re-deriving it heuristically at every site (dir #125); the `/polish`
+gate learned the two checks v0.6.0 conceded it lacked — HEAD must actually be pushed before a PR can
+open (dir #133, dir #152), and a convergence round no longer re-runs the whole suite to re-bind a sha
+when nothing test-relevant moved (dir #123); and the review loop itself got a budget, a delta
+protocol, and a terminal condition (dir #127), plus an in-session cross-model second opinion (dir
+#141). The rest is standing bookkeeping — a coverage ratchet, CHANGELOG/tag reconciliation, backlog
+heading-drift, a written-down release-audit flow — turning things this project had been checking by
+hand into checks that run on their own.
+
+Known issues: three residuals from this tail are ticketed and deliberately not held for the tag. The
+composed dialog-marker name list (`KEEL-DEPTH-DIALOG` / `KEEL-REVIEW-DIALOG` / `KEEL-AGENT-REVIEW`)
+is still hardcoded separately in `tools/pre-pr-gate.sh` and `tests/test_pre_pr_gate.sh`, so a fourth
+marker can be added to one without the other noticing — the exact shape dir #146 in this release was
+(backlog dir #147). `tools/public-audit.sh`'s personal-literals loader duplicates
+`tools/secret-guard/secret-scan.sh`'s near-verbatim and uncredited, so a fix to one silently misses
+the other (backlog dir #148). And the install manifest ships with its pre-manifest heuristics still
+in place behind `KEEL-LEGACY-NOMANIFEST` fallback blocks, deliberately, so an install predating the
+manifest keeps working — removing them is dir #125's own closing instruction, targeted at 0.7
+(backlog dir #150). Nothing there is a correctness gap in a shipped path; all three are
+single-source-of-truth debt with a named ticket. A fourth residual is introduced by this release's
+own RC pass: the CHANGELOG↔tag reconciliation now has to allow the newest section to sit untagged
+while its release-prep PR is in flight, and that allowance is unbounded in time — so a release whose
+tag was simply forgotten reads as a green "release in preparation" line rather than a GAP. It is
+announced on every full run rather than silent, and bounding it is backlog dir #156.
+
 ### Added
 - **`FRAMEWORK.md` gains a "when to stop reviewing" test and a contract-first design section**
   (dir #126, dir #128). The two measured signals for ending a review round — new surface touched,
@@ -111,8 +141,32 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   declared tokens already cover. A bad regex line in the personal file is a GAP, not a silent drop — the
   literal it would have hunted goes unscanned, and unlike a bad `allow-email` entry (which fails open
   safely) that's a detection-accuracy failure this audit's own bar exists to catch.
+- **`/polish` step 5 can now get a second opinion from a DIFFERENT model tier in-session, without the
+  operator acting as message bus** (dir #141). The step 5(a) dialog gains a third option alongside the
+  standing agent review and the operator-run `/code-review` add-on: spawn ONE fresh-context subagent
+  pinned to another model tier, reviewing the same diff at the same depth. The combined receipt outcome
+  is `agent:<level>+second-opinion` (mirroring dir #81's `+operator-run` shape rather than opening a
+  second dialog), and both the PR body and the step 10 summary must name BOTH mechanisms and the pinned
+  tier — never collapse them into one. Its provenance half is labelled `(self-reported)`, not
+  `(trace-confirmed)`: the `SubagentStop` trace leg confirms a `general-purpose` subagent ran, not which
+  model answered. **Residual, named rather than dropped:** the dialog is single-select, so the
+  cross-model and operator-run add-ons can't both be chosen in the same round.
 
 ### Changed
+- **`/polish`'s review loop gets a round BUDGET, a delta-review protocol, and a precise terminal
+  condition** (dir #127, with dir #137/#138 folded into the same batch). Three specifics refine the
+  existing "converge, don't restart" rule: (1) *same reviewer, not a fresh spawn* — a convergence round
+  sends a follow-up message to the SAME subagent (or the operator re-runs `/code-review` on the delta),
+  a fresh full pass being justified only when the fix touched surface the original review never saw;
+  (2) *the full review runs once, then at most TWO delta rounds* — if a second consecutive delta round
+  still returns substantive findings, stop fix-forward, file the residual as a numbered ticket, name it
+  in the PR body, and open the PR as-is (an executed decision, not a silent abandon; the receipt shape
+  is unchanged, so no `pre-pr-gate.sh` change); (3) *the terminal condition is zero findings in a DELTA
+  round* — a fresh FULL re-review returning zero is explicitly NOT the signal, since a full review
+  samples and will always find something if repeated, which is what produced the 7- and 13-round loops
+  this closes. Every round now also reports a one-line trend (findings, max severity, surface
+  same/new, class named/exhausted, forecast) instead of a silent count climbing toward a dreaded
+  double-digit round.
 - **`tools/keel-impact.sh`'s ledger columns now come from one ordered array instead of being
   hand-listed independently in three places** (dir #151). The writer (`cmd_add`'s row-printf), the
   reader (`_ledger_parse`'s awk field indices), and the markdown table header each separately
@@ -230,6 +284,47 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   at step 8, and the CHANGELOG-paragraph case named in this ticket's own motivation does NOT skip a test
   run in keel's own repo (it's real-test-coupled here) — genuinely test-free docs and structural-only
   convergence commits are what actually benefit.
+- **Two comments that were true when written and had drifted since** (dir #137, dir #138, found by
+  v0.6.0's own RC pass and folded into dir #127's batch). `_dialog_leg_armed`'s header in
+  `tools/pre-pr-gate.sh` claimed three candidate settings paths while the code probed four, and
+  `commands/polish.md` still called step 6 one of "FOUR steps a convergence round writes itself" after
+  the with-GAP branch grew to five.
+- **`tests/test_pre_pr_gate.sh`'s composed-marker repo scan was blind to `KEEL-AGENT-REVIEW`** (dir
+  #146, found by dir #141's own independent agent review). dir #116's scan exists to prove no tracked
+  non-test file accidentally spells a composed dialog marker — which would mint a trace the gate then
+  trusts — but it only checked `KEEL-DEPTH-DIALOG` and `KEEL-REVIEW-DIALOG`, leaving the third marker
+  unguarded by exactly the check written to guard the class.
+- **`tools/keel-impact.sh`'s ledger WRITER was pinned against the READER's column mapping** (dir #131,
+  found by an operator-run `/code-review high`). dir #107 had unified the two readers behind
+  `_ledger_parse`, but `cmd_add`'s row-printf still hand-listed the same columns with nothing checking
+  the two agreed. A structural test now pins them — the contract that made dir #151's later refactor
+  to a single `_LEDGER_COLS` array safe to land.
+- **`README.md`'s "Economy" bullet was a third, unguarded quote of the always-loaded core token
+  figure** (dir #132, pre-existing, found by an operator-run `/code-review high` round). Two other
+  quotes of the same figure were already pinned by `tests/test_doc_figures.sh`; this one could drift
+  silently. Now guarded by the same check.
+- **Five findings from this release's own RC pass** (dir #155, `docs/release-audit.md` phase 6).
+  (1) `tools/self/doctor.sh`'s brand-new CHANGELOG↔tag reconciliation made the release flow it
+  protects impossible to land: phase 7 cuts `## [x.y.z]` and merges it through a PR *before* the
+  operator tags the merge commit, and the check GAPped on that untagged section, reddening the
+  `self-check` CI job on every release-prep PR (v0.6.0's own section predated the check by one PR, so
+  this release was the first to hit it). It now allows one untagged section, and only when it is both
+  the newest heading *and* a version above every existing tag — announced on every full run, never
+  silent. A second untagged section, one buried below a tagged one, or one whose version is older
+  than a tag still GAPs; that last condition was added after an independent high-depth review broke
+  the position-only first draft with a stale `## [0.9.0]` hoisted above two tagged releases, the
+  founding drift shape of the check itself. `docs/release-audit.md` phase 7 now states the
+  cut → land → tag ordering the allowance rests on, which had lived only in session habit.
+  (2) `commands/polish.md` step 8 described gate denials as receipt problems answered by re-running
+  `/polish`, which is the wrong remedy for the `head-not-pushed` denial dir #133/#152 added in this
+  same release — pushing is; the step now names that class and tells you to push before unlocking.
+  (3) `commands/backlog.md` step 3b called the `→ <release>` tag a *trailing* one; closure markers
+  are routinely appended after it, so a strict reading hid most of the release tail from the grouping
+  dir #143 added it for. (4) `tools/pre-pr-gate.sh` carried a `line ~1607` cross-reference that dir
+  #123's own later insert, in this same release, had shifted to ~1713 — re-anchored by name, since a
+  line number is drift-bait by construction. (5) `docs/loading-and-cost.md`'s `CHANGELOG.md` floor
+  went `~50,000+` → `~60,000+`: this release's own entries pushed the file past the 25%-above-floor
+  mark where `tests/test_doc_figures.sh` starts asking for a restatement.
 - **`tests/run.sh`'s own concurrent-by-default test execution (dir #130) flaked `test_keel_cli.sh`'s
   "README.md quotes verb" check under real CI load** (dir #153, then dir #154). dir #153 first capped
   `KEEL_TEST_JOBS=2` for the `alpine-busybox` CI job alone, blaming the container's nproc-vs-host
