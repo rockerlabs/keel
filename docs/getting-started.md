@@ -265,7 +265,9 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   asked to run — or waive — the built-in pass yourself instead, that outcome stays self-reported (visible
   in the receipt as `-operator-run` / `-waived`, not a bare level or `agent:<level>`). If you choose to
   run `/code-review` ON TOP of an agent review that already ran, the receipt records both — the agent half
-  stays trace-confirmed, only the operator half is self-reported (`agent:<level>+operator-run`).
+  stays trace-confirmed, only the operator half is self-reported (`agent:<level>+operator-run`). Add-ons
+  accumulate as a comma-separated set, so a commit reviewed several ways records all of them
+  (`agent:<level>+operator-run,second-opinion`) rather than only the one written last.
 - **A one-line banner at session start** (the `SessionStart` hook, `rollout-check`) if the model or
   Claude Code version changed since your last session here — a silent rollout is exactly how a pipeline
   step like `/code-review` can quietly stop being callable without anyone noticing.

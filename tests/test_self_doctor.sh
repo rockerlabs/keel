@@ -791,6 +791,14 @@ check_status "a section with no matching tag -> exit 1" 1 "$STATUS"
 check_contains "names the untagged section" "$OUT" "section(s) with no matching release tag"
 check_contains "and names it specifically" "$OUT" "1.1.0"
 
+# **These fixtures are the CODE leg of a doc↔code coupling (dir #157).** `docs/release-audit.md`'s
+# phase 7 states the allowance's two conditions in prose, and `tests/test_release_audit_doc.sh` pins
+# that prose. The conditions themselves are pinned HERE, behaviourally, rather than by grepping
+# `tools/self/doctor.sh` for its expression shape — a shape-grep would break on a harmless refactor
+# while these break only when behaviour actually changes. **So if you change what the allowance
+# accepts, update phase 7's prose in the same commit**; the doc drifted from the code once already,
+# inside the single PR that wrote both.
+#
 # release-in-preparation allowance (dir #155): phase 7 cuts `## [x.y.z]` and lands it through a PR
 # BEFORE the operator tags the merge commit, so the newest section is legitimately untagged for the
 # life of that PR. Without this, the check reds the `self-check` CI job on the release-prep PR

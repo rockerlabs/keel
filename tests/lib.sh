@@ -213,25 +213,34 @@ trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
 # override via write_full_receipt_review() when it needs a bare level. polish.4-depth is derived to carry
 # the SAME base level as the review outcome (dir #63's depth-mismatch check requires this on every real
 # receipt, trusted outcomes included).
+# $5 = optional polish.4-depth level OVERRIDE, for the deliberate depth-MISMATCH fixtures (dir #158).
+# Without it, the depth is derived from the review outcome and always agrees with it by construction, so
+# there was no way to ask this helper for a disagreeing pair — every such test had to open-code the whole
+# 9-line init+receipt sequence by hand instead, and there are now several near-identical copies of it
+# (found by /simplify's reuse AND simplification passes, independently). New mismatch fixtures should
+# pass this rather than add a copy; the existing hand-rolled ones are left alone deliberately — migrating
+# them is churn in tests that currently pass, not part of dir #158.
 write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
 write_full_receipt_review() {
-  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" s depth_level
+  local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" depth_override="${5:-}" s depth_level
   depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
-  # dir #81: the combined `agent:<level>+operator-run` outcome records step 4's depth as the bare level
-  # too — strip this suffix the same way `-operator-run`/`-waived` are stripped above (order relative to
-  # the `agent:` prefix strip below doesn't matter — prefix and suffix never overlap — but stripping it
-  # here keeps every suffix-strip grouped together), so a caller can pass "agent:high+operator-run" and
-  # still get a matching polish.4-depth of "high".
-  depth_level="${depth_level%+operator-run}"
-  # dir #141: the combined `agent:<level>+second-opinion` outcome (an in-session cross-model
-  # second-opinion subagent, dir #81's `+operator-run` pattern mirrored for a different suffix) records
-  # step 4's depth as the bare level too — same strip, same reasoning, so a caller can pass
-  # "agent:high+second-opinion" and still get a matching polish.4-depth of "high".
-  depth_level="${depth_level%+second-opinion}"
+  # dir #81/#141/#158: a combined `agent:<level>+<addon>[,<addon>…]` outcome records step 4's depth as
+  # the bare level too, so strip the whole add-on set the same way `-operator-run`/`-waived` are
+  # stripped above (order relative to the `agent:` prefix strip below doesn't matter — prefix and
+  # suffix never overlap — but keeping every suffix-strip grouped here is deliberate). `%%+*` (strip
+  # from the FIRST `+` onward), not a list of per-addon `%+operator-run` / `%+second-opinion` strips:
+  # dir #158 made the suffix a SET, so an enumerated strip here would have to be extended for every new
+  # add-on and, worse, would silently mis-derive the depth for a multi-addon outcome (stripping
+  # `+second-opinion` off `agent:high+operator-run,second-opinion` leaves `high+operator-run`, which
+  # then never matches step 4's `high` and every such fixture would fail for a reason that has nothing
+  # to do with what it tests). No real review level contains `+`, so this cannot over-strip.
+  depth_level="${depth_level%%+*}"
   # dir #70: an `agent:<level>` outcome (the independent-subagent-review leg) records step 4's depth as
   # the bare level too — strip the prefix the same way the `-operator-run`/`-waived` suffixes are stripped
   # above, so a caller can pass "agent:high" and still get a matching polish.4-depth of "high".
   depth_level="${depth_level#agent:}"
+  # Applied AFTER the derivation above so the override is the last word, whatever shape came in.
+  [ -n "$depth_override" ] && depth_level="$depth_override"
   run_in "$d" bash "$gate" init
   # Hoisted: nothing in the loop commits, so HEAD is invariant across it — one fork instead of three.
   local head_sha; head_sha="$(git -C "$d" rev-parse HEAD)"

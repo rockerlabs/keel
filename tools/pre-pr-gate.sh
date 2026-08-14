@@ -316,9 +316,9 @@
 # silent exit 0, same as the other legs.
 #
 # **Gate check** — in the PASS branch, immediately after the existing review-trace check: whenever
-# `$review_outcome` matches `agent:*` (all three shapes — bare `agent:<level>`, the combined
-# `agent:<level>+operator-run` (dir #81), and the combined `agent:<level>+second-opinion` (dir #141) —
-# the dialog reminder fires identically for all three), additionally
+# `$review_outcome` matches `agent:*` (bare `agent:<level>`, or with any add-on set —
+# `agent:<level>+<addon>[,<addon>…]`, dir #158's single arm; the dialog reminder fires identically for
+# every one of them), additionally
 # require a `dialog:<outcome_level>` line for `$current_sha` in the trace file; else deny naming the
 # dialog as missing. Per-SHA by construction (dir #72's convergence-round fork): a fix-commit moves HEAD,
 # so an earlier round's dialog line doesn't cover a later commit — a fresh answered dialog is required
@@ -410,6 +410,36 @@ _expected_step() {
 # loops over the space-separated words instead. `ultra` deliberately excluded: it never reaches either
 # marker path (see commands/polish.md step 5).
 ACCEPTED_REVIEW_LEVELS='low medium high max'
+# dir #158: the review ADD-ONS a step-5 outcome may name on top of a standing agent review, as a set:
+# `agent:<level>+<addon>[,<addon>…]`. Was two hardcoded literals (`+operator-run`, dir #81;
+# `+second-opinion`, dir #141), one per `case` arm, with step 5 holding one value — so a commit that
+# genuinely got BOTH (felt on dir #155: the operator ran `/code-review high`, then a cross-model second
+# opinion in a later round) had to drop one from the record whichever literal was written. Adding a
+# literal per combination grows the arm list combinatorially; one set parse handles every future add-on
+# with no new arm.
+#
+# **This function IS the allowlist — deliberately not a separate `ACCEPTED_REVIEW_ADDONS` list.** A
+# first draft had both, and shellcheck caught the list as unused: validation ran through this `case`
+# while the list only documented it, i.e. two sources of truth for one fact, kept in step by nothing —
+# the exact sync-comment smell `FRAMEWORK.md`'s contract-first section (dir #128) names, and the same
+# class as the still-open dir #147/#148. So an add-on is accepted **iff** it is describable here: a new
+# one cannot be silently allowed without also being given prose, and its unknown-token deny path
+# (below) needs no second list to stay consistent with.
+#
+# Every add-on is "(self-reported)": the SubagentStop trace proves SOME general-purpose subagent wrote
+# the marker for this commit+level, but can neither count runs nor identify a model tier. Only the
+# STANDING agent review is trace-confirmed; see the `agent:*+*` arm below.
+_addon_label() {
+  case "$1" in
+    operator-run)    printf 'operator-run /code-review (self-reported)' ;;
+    # Longer parenthetical than operator-run's on purpose, and pinned by tests/test_pre_pr_gate.sh: for
+    # a human pass "self-reported" is self-explanatory, but here a reader can reasonably assume the
+    # trace covers it, since a subagent genuinely did run. Naming the limit is what stops the label
+    # reading as a confirmation it isn't (found by an operator-run /code-review pass on dir #141).
+    second-opinion)  printf 'in-session cross-model second opinion (self-reported — the trace can'"'"'t distinguish one subagent run from two)' ;;
+    *)               return 1 ;;
+  esac
+}
 
 # The hook's OWN observation of HEAD at fire time — never a self-reported field — shared by both
 # skill-trace legs (the SubagentStop leg and the Skill/UserPromptExpansion legs below) so the same
@@ -1869,11 +1899,11 @@ case "$status" in
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
-    # decides whether the dir #88 dialog check applies (`$needs_dialog`: all three `agent:*`-shaped
-    # arms — bare, `+operator-run` (dir #81), `+second-opinion` (dir #141) — the outcomes step 5(a)'s
+    # decides whether the dir #88 dialog check applies (`$needs_dialog`: every `agent:*`-shaped
+    # outcome — bare, or carrying any add-on set (dir #158) — the outcomes step 5(a)'s
     # reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
     # own skip dialog instead), AND builds the dir #64 tier 2a provenance label +
-    # tag (below) from the same match — dir #141 is exactly the "future third suffix" this comment
+    # tag (below) from the same match — dir #141 was exactly the "future third suffix" this comment
     # already anticipated, added here and nowhere else, as promised. $prov_tag is a STABLE machine value ("trace-confirmed"/
     # "self-reported") separate from $prov_label's human prose, so `sweep` (below) can classify without
     # depending on display wording (found in the operator-run /code-review high pass on this ticket —
@@ -1918,7 +1948,7 @@ case "$status" in
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
                          prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
-      agent:*+operator-run) # dir #81: the operator additionally ran `/code-review` ON TOP of an
+      agent:*+*)        # dir #81, generalized to a set by dir #158: the operator additionally ran `/code-review` ON TOP of an
                          # already-standing agent review — an honest combined record, not the old
                          # overwrite that erased the agent half. Placed BEFORE the broader `agent:*`
                          # glob below (case is first-match-wins and this literal also matches that
@@ -1938,43 +1968,80 @@ case "$status" in
                          # to the bare level, re-composing the `agent:` prefix always reproduces the
                          # exact string the SubagentStop trace leg writes — true for every `agent:*`
                          # arm, found while simplifying dir #141's sibling arm below.)
+                         #
+                         # **dir #158 generalized this into a SET, and this is now the ONLY arm for any
+                         # add-on combination.** Everything above still holds — it is why the separator is
+                         # `+` and why `trusted` stays 0 — but the suffix is `<addon>[,<addon>…]`,
+                         # validated element-wise by `_addon_label`, whose own header carries the why.
+                         #
+                         # An UNKNOWN add-on still denies, via the existing level cross-check rather than
+                         # a deny of its own: the unrecognized token leaves $outcome_level as the raw
+                         # remainder (`high+bogus`), which cannot equal step 4's level, so the
+                         # `outcome_level != depth_level` check below rejects it — the same route that
+                         # caught an invented suffix when these were two literal arms. No new bypass
+                         # surface, and no deny message to keep in sync.
+                         #
+                         # $prov_label lists add-ons in the order the RECEIPT spelled them, not a
+                         # canonical one — accepted: the label is human prose, every add-on is named
+                         # either way, and `sweep` classifies on $prov_tag, which this doesn't touch.
                          outcome_level="${review_outcome#agent:}"
-                         outcome_level="${outcome_level%+operator-run}"
+                         addons="${outcome_level#*+}"
+                         # Walk the comma-separated set by parameter expansion only — no word splitting,
+                         # no IFS, no globbing. Two earlier drafts each shipped a bug this shape avoids,
+                         # both found by review: an `IFS=','` save/restore pair (whose `break` left IFS
+                         # set inside a hook whose \x1f receipt read depends on it), then a
+                         # `for a in ${addons//,/ }` split which — unquoted, and this script sets only
+                         # `-u`, not `-f` — also ran PATHNAME EXPANSION on the set, i.e. a glob in a
+                         # trust-boundary parse. This form has neither hazard, and an empty element
+                         # (`+,` or `+,,`) reaches `_addon_label` as the empty string and is DENIED by its
+                         # own `*)` arm, where the word-split version silently produced zero elements and
+                         # accepted the receipt — see the $addon_prose guard below.
+                         addons_ok=1
+                         addon_prose=""
+                         rest="$addons"
+                         while [ -n "$rest" ]; do
+                           a="${rest%%,*}"
+                           if [ "$rest" = "$a" ]; then rest=""; else rest="${rest#*,}"; fi
+                           p="$(_addon_label "$a")" || { addons_ok=0; break; }
+                           addon_prose="$addon_prose + $p"
+                         done
+                         # Gate on $addon_prose rather than on $addons being non-empty. **What the guard
+                         # does and does NOT do, measured — do not upgrade this claim without re-measuring,
+                         # two earlier versions of this comment overstated it and a review note repeated
+                         # the overstatement:** against the walk above the two predicates are EQUIVALENT on
+                         # every input (verified across every shape 50m and 50n cover, and by brute force
+                         # over several thousand generated strings in the delta review).
+                         # The walk is what rejects the COMMA shapes — an empty element reaches
+                         # `_addon_label` as `""` and its `*)` arm denies; an empty suffix leaves $addons
+                         # empty so the strip is skipped either way — **and that last shape is rejected by
+                         # THIS GUARD, not by the walk**, since the walk runs zero iterations for it. So:
+                         # the guard's EXISTENCE is pinned (deleting it outright reds 50m's
+                         # `agent:<level>+`), while the CHOICE between these two predicates is not
+                         # (swapping in `-n "$addons"` leaves the suite green — correctly, since they are
+                         # equivalent here). Do not read that green run as missing coverage.
+                         #
+                         # It is still the right predicate to write, for one concrete reason: it states the
+                         # INVARIANT ("at least one mechanism was actually named") where `-n "$addons"`
+                         # states a proxy for it ("the suffix had some text"). If the walk is ever loosened
+                         # to skip empty elements instead of denying them, this guard still holds the
+                         # invariant and the proxy stops doing so — the delta review measured exactly that:
+                         # loosening the walk with this guard intact still denies 3 of the 5 empty-suffix
+                         # and empty-element shapes 50m covers; the two it lets through are let through
+                         # because they pair an empty element with a VALID one, so the prose is non-empty
+                         # either way. Swapping in the proxy as well drops 4 of the 5 —
+                         # `agent:<level>+` survives even then, since an empty suffix never enters the
+                         # loop, so loosening the loop changes nothing for it and both predicates stay
+                         # false. The proxy is what the pre-fix version used, and it accepted
+                         # `agent:<level>+,` as a receipt announcing a combined outcome while naming zero
+                         # mechanisms, printing the stronger `(trace-confirmed)` label on the bare arm's
+                         # own evidence — reachable from one stray comma while re-typing an add-on from
+                         # session memory, which dir #161 says is exactly what has to happen today.
+                         if [ "$addons_ok" -eq 1 ] && [ -n "$addon_prose" ]; then
+                           outcome_level="${outcome_level%%+*}"
+                         fi
                          trace_match_outcome="agent:$outcome_level"
                          needs_dialog=1
-                         prov_label="review: $outcome_level, independent agent review (trace-confirmed) + operator-run /code-review (self-reported)"; prov_tag="agent-confirmed" ;;
-      agent:*+second-opinion) # dir #141: an in-session cross-model second-opinion subagent
-                         # additionally reviewed ON TOP of an already-standing agent review — same
-                         # combined-record shape as dir #81's `+operator-run` arm above, mirrored for a
-                         # different add-on. Placed BEFORE the broader `agent:*` glob below for the same
-                         # first-match-wins reason. trusted stays 0: this half is just as
-                         # self-report-fabricable as the plain agent:* case, so it still needs the trace
-                         # match below — matched against the level WITHOUT the `+second-opinion` suffix.
-                         # **Verified against skill-trace's own SubagentStop branch (above), not assumed
-                         # (dir #141):** that leg matches on `agent_type == general-purpose` and the
-                         # marker text alone (dir #70's own residual (2) already documents this) — it
-                         # cannot tell which of the two subagents, or which model tier, produced a given
-                         # `agent:<level>` trace line, so either subagent's marker line satisfies this
-                         # check. The trace mechanism itself needed no change; only this outcome literal
-                         # is new, so the record can name the second pass honestly instead of silently
-                         # reusing the bare `agent:<level>` shape that already means "one agent review ran".
-                         # `trace_match_outcome="agent:$outcome_level"` re-composes the bare shape from the
-                         # already-stripped level rather than re-stripping the suffix independently — same
-                         # simplification applied to dir #81's sibling arm above (/simplify, dir #141).
-                         # **`prov_label`'s second half is "(self-reported)", NOT "(trace-confirmed)"
-                         # (found by the operator's own /code-review high pass on this ticket):** the
-                         # trace only proves SOME general-purpose subagent wrote the marker for this
-                         # commit+level — it cannot count how many times, so a receipt claiming this
-                         # combined outcome after only the standing review's ONE real subagent run (the
-                         # second opinion never actually spawned) passes this same trace check. That is
-                         # exactly the ambiguity dir #81's own arm resolves by labeling its operator-run
-                         # half "(self-reported)" rather than claiming a confirmation the mechanism can't
-                         # back — this arm follows the same discipline instead of overclaiming.
-                         outcome_level="${review_outcome#agent:}"
-                         outcome_level="${outcome_level%+second-opinion}"
-                         trace_match_outcome="agent:$outcome_level"
-                         needs_dialog=1
-                         prov_label="review: $outcome_level, independent agent review (trace-confirmed) + in-session cross-model second opinion (self-reported — the trace can't distinguish one subagent run from two)"; prov_tag="agent-confirmed" ;;
+                         prov_label="review: $outcome_level, independent agent review (trace-confirmed)$addon_prose"; prov_tag="agent-confirmed" ;;
       agent:*)          # dir #70: an independent Agent-tool subagent reviewed (Skill(code-review) wasn't
                          # model-invokable in-session) — trusted stays 0, same as the bare-level case
                          # below: this outcome is just as self-report-fabricable, so it earns no more
@@ -2008,8 +2075,8 @@ case "$status" in
     # — otherwise a genuine `/code-review low` pass would vouch for a receipt claiming `max`. Trusted
     # outcomes need no trace — they already name a different, non-fabricable source (the human, or a
     # deliberate no-review choice) and are covered by the depth check above instead. $trace_match_outcome
-    # is $review_outcome verbatim UNLESS one of the combined-outcome branches above overrode it
-    # (`+operator-run`, dir #81, or `+second-opinion`, dir #141) — the only shapes where what's being
+    # is $review_outcome verbatim UNLESS the combined-outcome arm above overrode it
+    # (any `agent:<level>+<addon>[,…]` set, dir #158) — the only shape where what's being
     # depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
       # dir #80: $wt here is deliberately still repo-only (not $receipt_key) — the trace stays
@@ -2021,9 +2088,9 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
-    # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, the combined `agent:<level>+operator-run`
-    # (dir #81), or the combined `agent:<level>+second-opinion` (dir #141) — the reminder fires
-    # identically for all three, `$needs_dialog` set by the SAME case statement above) additionally
+    # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying any add-on set,
+    # `agent:<level>+<addon>[,<addon>…]` — dir #158 — the reminder fires
+    # identically for all of them, `$needs_dialog` set by the SAME case statement above) additionally
     # requires a mechanically-traced, ANSWERED
     # AskUserQuestion dialog for step 5(a)'s MANDATORY reminder — the review claim itself can be
     # receipted honestly while that reminder is silently skipped by momentum (felt on dir #62/PR #147).

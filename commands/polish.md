@@ -343,17 +343,32 @@ Steps, in order:
      trend line. On a later convergence round, re-engage this SAME second-opinion subagent with a
      follow-up message scoped to the fix delta — never a fresh spawn, per dir #127's "same reviewer" rule,
      extended to this subagent too. Once resolved (or if it reported nothing), receipt the combined
-     outcome: `polish.5-review agent:<level>+second-opinion`. **Residual, named rather than silently
-     dropped:** this dialog is single-select, so choosing the cross-model add-on and the operator-run
-     add-on together in the SAME round isn't supported today — wanting both means a later `/polish`
-     invocation on this branch, which is a fork for a future ticket, not this one.
+     outcome: `polish.5-review agent:<level>+second-opinion`. **If an operator-run `/code-review` also
+     reviewed work that is still in the commit you are shipping, name both as a SET —
+     `polish.5-review agent:<level>+operator-run,second-opinion`** (dir #158; the suffix is
+     comma-separated and order-free, validated against the gate's own allowlist, so an invented add-on
+     still denies).
+
+     **The set's unit is the SHIPPED COMMIT, not the round** — state it that way and nowhere else, since
+     everything else in step 5 is per-commit (the trace is HEAD-keyed, the depth cross-check is
+     per-commit, and dir #96 refuses to recover a review claim across a commit at all). This dialog is
+     single-select, so both add-ons can't be *chosen* in one round; they accumulate across rounds
+     instead, and each fix commit carries its predecessor's reviewed content forward. So: an add-on
+     belongs in the set while the work it reviewed is still in HEAD. **`--recover` will not carry it for
+     you** — `polish.5-review` is deliberately never restored (dir #96), so an earlier round's add-on
+     survives only in this session's own memory and has to be re-typed. Nothing denies or warns if you
+     forget, which is exactly how dir #155 lost one; closing that is dir #161.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
      still waits for the operator, dir #81 fork 4), then resolve what it reported and write the COMBINED
      outcome: `polish.5-review agent:<level>+operator-run` — a new, honest record naming BOTH reviews that
      ran, not an overwrite that erases the agent review the receipt above already established (whichever
-     receipt is written LAST for this step wins — see (c)).
+     receipt is written LAST for this step wins — see (c)). **If a cross-model second opinion also
+     reviewed work still in this commit, write the whole SET —
+     `agent:<level>+operator-run,second-opinion`** (dir #158). Whichever add-on arrives LAST is the one
+     at risk of overwriting the other, so the rule is the same on every branch: write every add-on that
+     applies to the shipped commit, not just the one you just resolved.
 
      **Anti-rebundle rule:** if a future edit ever makes the agent review itself optional or something to
      ask about, that must be its OWN separate question — never re-bundled with this one into a single
@@ -388,7 +403,11 @@ Steps, in order:
        it and trying the combined outcome first would only buy a guaranteed step-8 denial before falling
        back anyway. Otherwise, the common case is that this hand-off came from (a) — an agent review
        already ran and was independently receipted before the dialog ever opened — so try the COMBINED
-       outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note).
+       outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note) —
+       **or the full SET, `agent:<level>+operator-run,second-opinion`, if a cross-model second opinion
+       also reviewed work still in this commit** (dir #158). This branch is the ORDINARY hand-off path,
+       so it is the one most likely to arrive last and overwrite an earlier round's add-on; write every
+       add-on that applies, not only the one this hand-off resolved.
        Only if step 8 later denies it for a missing/mismatched agent trace — meaning this hand-off actually
        came from (b), where no agent review ever ran — fall back to the plain outcome,
        `polish.5-review <level>-operator-run`. **A `review-dialog-missing` denial is a DIFFERENT deny
@@ -468,12 +487,15 @@ Steps, in order:
      forecast: <1 more delta round | stop-rule triggers next round | done>` — visible progress instead of
      a silent count climbing toward a dreaded double-digit round.
 
-   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>` (e.g. `agent:medium` — the ordinary
-   automated outcome — or `low`/`high` for a genuine operator-typed/revisit-triggered `/code-review` pass,
-   `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip`, `agent:medium+operator-run` — the
-   combined outcome (dir #81) when the operator additionally ran `/code-review` on top of an already-standing
-   agent review — or `agent:medium+second-opinion` — the combined outcome (dir #141) when an in-session
-   cross-model subagent additionally reviewed on top of an already-standing agent review).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>`. The shapes:
+   - `agent:medium` — the ordinary automated outcome (an independent agent review).
+   - `low`/`high` — a genuine operator-typed or revisit-triggered in-session `/code-review` pass.
+   - `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip` — the hand-off outcomes.
+   - `agent:<level>+<addon>[,<addon>…]` — a standing agent review PLUS one or more add-ons, as a
+     comma-separated set (dir #158). The add-ons are `operator-run` (the operator additionally ran
+     `/code-review`, dir #81) and `second-opinion` (an in-session cross-model subagent additionally
+     reviewed, dir #141). **Name every mechanism that reviewed this commit, not just the last one** —
+     e.g. `agent:medium+operator-run,second-opinion` when both happened, even across rounds.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
@@ -543,11 +565,12 @@ Steps, in order:
    Compose the title and body from the implementation context (what changed, why, a test plan). **If step
    5's outcome was `agent:<level>`, the PR body must label the review as such** — e.g. "review: independent
    agent at `<level>` (built-in `/code-review` not model-invokable in-session)" — never presented as if
-   `/code-review` itself ran. **If the outcome was the combined `agent:<level>+operator-run` (dir #81), the
-   PR body must name BOTH** — the independent agent review AND the operator-run `/code-review` — never
-   collapsed into just one. **If the outcome was the combined `agent:<level>+second-opinion` (dir #141),
-   the PR body must name BOTH** — the standing independent agent review AND the in-session cross-model
-   second opinion (naming its pinned model tier) — never collapsed into just one. Return the PR URL.
+   `/code-review` itself ran. **If the outcome carries add-ons — `agent:<level>+<addon>[,<addon>…]` — the
+   PR body must name EVERY mechanism the outcome lists, one per add-on, never collapsed into fewer**: the
+   standing independent agent review, plus the operator-run `/code-review` for `+operator-run` (dir #81),
+   plus the in-session cross-model second opinion *naming its pinned model tier* for `+second-opinion`
+   (dir #141). A two-add-on set means three mechanisms in the body (dir #158) — the receipt is the list to
+   read off, so a set with two add-ons cannot be reported as if one review ran. Return the PR URL.
    Invoking `/polish` IS the standing authorization to push the
    branch and run `gh pr create --head <branch>` at this step; do not re-ask. The merge stays the
    operator's.
@@ -556,13 +579,12 @@ Steps, in order:
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
     review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
     independent agent review (`review: <level>, independent agent review — built-in /code-review not
-    model-invokable in-session`, matching the PR body's own label); **both, when the operator additionally
-    ran `/code-review` on top of an already-standing agent review (the combined `agent:<level>+operator-run`
-    outcome, dir #81)** — name BOTH mechanisms, e.g. `review: <level>, independent agent review +
-    operator-run /code-review`, never collapsed into just one of them; **both, when an in-session
-    cross-model subagent additionally reviewed on top of an already-standing agent review (the combined
-    `agent:<level>+second-opinion` outcome, dir #141)** — name BOTH mechanisms and the pinned model tier,
-    e.g. `review: <level>, independent agent review + in-session cross-model second opinion (<model>)`;
+    model-invokable in-session`, matching the PR body's own label); **or, when the outcome carries add-ons
+    (`agent:<level>+<addon>[,<addon>…]`), every mechanism it lists — one per add-on, never fewer**: append
+    `+ operator-run /code-review` for `+operator-run` (dir #81) and `+ in-session cross-model second
+    opinion (<model>)`, naming the pinned tier, for `+second-opinion` (dir #141). So a two-add-on set
+    reads `review: <level>, independent agent review + operator-run /code-review + in-session cross-model
+    second opinion (<model>)` — three mechanisms, matching the PR body (dir #158);
     or, if step 5 took the (b) hand-off, that no real review ran in-session and whether the human ran it
     (`-operator-run`) or waived it (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is
     indistinguishable from a genuine in-session review, so reporting one here would re-hide exactly what
