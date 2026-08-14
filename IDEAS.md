@@ -8,6 +8,49 @@ step may never materialize, and that's fine.)
 
 ## Ideas
 
+- [2026-08-13] **A "release conductor" mode — orchestration guidance for running a release tail as
+  many parallel sessions instead of one long serial slog** — surfaced live while working the v0.6.1
+  tail (dir #85's audit descendants, ~25 tickets): a chat session ended up manually doing five
+  things by hand, each time from scratch, that could be a documented (or partially mechanized)
+  capability instead:
+  1. **Parallel-launch advice** — given a batch of open tickets, recommend how many sessions can run
+     concurrently right now, grouped by file-affinity (`docs/release-audit.md` phase 3 already names
+     the principle; this idea is making it something a session can ask FOR, not just follow after the
+     fact) — including catching real conflicts before launch, not after (felt: dir #142 vs the
+     already-running dir #135 batch both touched `tools/self/doctor.sh`; dir #123's design vs dir
+     #133's batch both touch `tools/pre-pr-gate.sh` — both caught by hand, by re-reading every open
+     ticket's scope one at a time).
+  2. **Blocker tracking** — a lightweight dependency notation beyond the existing `⛔ BLOCKED by
+     <ref>` heading tag (which is per-ticket, static) for a whole batch's live state: what's waiting
+     on what RIGHT NOW, updated as PRs merge, without re-deriving it from scratch each time by reading
+     every heading in the file.
+  3. **Launch-prompt authoring** — most of the v0.6.1 tail tickets were spec-ready but had no
+     self-contained `/go` prompt attached (unlike dir #85's four audit-module tickets, which did); a
+     session ended up hand-writing ~15 of them from the ticket body, each following the same shape
+     (scope from the ticket + BOTH test legs + dir #127 review budget + sandbox mandate + batch-amend
+     rule). That shape is mechanical enough to template — the ticket body has almost everything
+     needed already.
+  4. **Target-release tag distribution** — dir #143 built the `→ 0.6.1`-style label and the
+     `/backlog` grouping; what's missing is the OTHER half: triaging a pile of untagged tickets against
+     the current release line in one pass (this session did it for 13 tickets in one sweep, deciding
+     `→ 0.6.1` vs `→ 0.7` vs "verify it isn't already subsumed" — dir #124 turned out to be closed
+     by dir #125 and nobody had noticed).
+  5. **Audit-surface estimation before tagging** — `docs/release-audit.md` phase 6 already scopes the
+     RC pass to three narrow checks, but nothing estimates ahead of time how big that surface is
+     getting as more tickets get tagged into a release line, so a maintainer can tell early whether a
+     release is trending toward "narrow RC pass" or "week-long re-audit" and split the tail into two
+     releases before it's too late — the whole reason dir #85's own campaign overran was exactly this,
+     found out only after ~20 tickets had already piled up (phase 2's own felt-incident note).
+
+  **Not actionable yet as one ticket** — items 1/2/4/5 are process/documentation extensions of
+  `docs/release-audit.md` and `commands/backlog.md` (on-demand methodology, matching dir #126/#128's
+  own "not a rails change" boundary); item 3 could be a small `tools/` helper (a launch-prompt
+  template generator fed by a ticket's own Scope/Acceptance/Model-rec fields) or stay a documented
+  convention. Possible next step: a `/design` pass scoping which of the five are worth mechanizing vs.
+  worth writing down as `docs/release-audit.md` phase additions vs. worth leaving as this session's own
+  proof that the manual version already works. Do not build straight from this entry — reconcile
+  against `docs/release-audit.md`'s current phases first, several already partially cover this (phase
+  3 for #1, phase 2's triage step for #4).
 - [2026-07-20] **Contributor-docs line: agent commit trailers vs the SEC4 commit-message scan** — felt
   on PR #106: a coding harness's session-URL commit trailer matched the key-shape patterns and the CI
   scan blocked the push; resolved by stripping the trailer (no allowlist, per the gate's own rule). One
