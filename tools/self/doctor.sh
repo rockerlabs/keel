@@ -14,7 +14,7 @@
 # Native checks (logic lives only here):
 #   GAP   install.sh's command ship-skip list disagrees with doctor.sh --install's mirror of it
 #   GAP   the core `@import` pattern hand-copied into install.sh/uninstall.sh/tools/doctor.sh has
-#         drifted between them (presence in some but not all)
+#         drifted between them (present in some but not all, or byte-different where present)
 #   GAP   an advised install/uninstall command in install.sh/uninstall.sh/keel/tools/doctor.sh/
 #         tools/install-pre-pr-gate.sh can't reach the home it names (dir #98)
 #   GAP   FRAMEWORK.md / PRINCIPLES.md contain a leaked host path or non-safe email (dir #114)

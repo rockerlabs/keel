@@ -335,8 +335,8 @@ cmd_enable() {
 # --- shared ledger parser: the ONE place that indexes the table's columns -------------------------
 # dir #107: rollup and the cross-project _ledger_stats used to re-derive these column indices and
 # regexes independently, against a "keep all three in sync" warning that used to sit at cmd_add's
-# hand-typed printf — since replaced by dir #151's array-driven version below (see there). Both now
-# delegate here instead. dir #151: the field numbers this awk block reads are no longer
+# hand-typed printf, since replaced by dir #151's array-driven version below. Both now delegate here
+# instead. dir #151: the field numbers this awk block reads are no longer
 # hand-typed either — they're looked up from _LEDGER_COLS via _ledger_col_pos and passed in as -v
 # variables, so awk's own `$date_col` etc. always tracks the array regardless of column reordering.
 # A data row is a table line whose first cell is an ISO date. Explicit digit classes (not {n}

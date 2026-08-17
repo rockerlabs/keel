@@ -32,8 +32,8 @@
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
 #   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's —
-#                             either a worktree carrying its own, or a main checkout whose linked
-#                             worktrees carry theirs
+#                             either a linked worktree carrying its own stray marker, or the main
+#                             checkout with one or more linked worktrees carrying their own
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
 #                              carrying no executable pre-commit) and no local hook. Sensitive to a
 #                              redirected global git config, so it names its source (dir #97)

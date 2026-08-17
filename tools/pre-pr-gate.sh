@@ -141,10 +141,11 @@
 #       never traces. Visible at PR-creation time instead of only via transcript archaeology.
 #   (b) `sweep [K]` reads the impact log's `receipt-pass` rows (now carrying that same classification as
 #       their detail field) and warns when the last K (default 3) consecutive passes never carried any
-#       verified tag ("trace-confirmed" or dir #70's "agent-confirmed") — a run of self-reported-only
-#       reviews, the exact pre-#63 blind spot. Read-only, never blocks; wiring it into a `/wrap` step is
-#       a manual follow-up (same precedent as dir #63's hook wiring into settings.json — see that
-#       section above).
+#       tag other than the self-reported one — any independently verified tag counts (currently
+#       "trace-confirmed" and dir #70's "agent-confirmed"; a future third one is covered automatically,
+#       since the check is negative, not an enumeration) — a run of self-reported-only reviews, the
+#       exact pre-#63 blind spot. Read-only, never blocks; wiring it into a `/wrap` step is a manual
+#       follow-up (same precedent as dir #63's hook wiring into settings.json — see that section above).
 #
 # Tier 3 — tools/pipeline-canary.sh (separate file). A sandboxed operator ritual that builds a toy repo +
 # isolated HOME + stubbed `gh` + this file's hooks wired in, then either drives a real `/polish` run
@@ -1362,12 +1363,13 @@ case "${1:-}" in
     ;;
   sweep)
     # dir #64 tier 2b — read-only /wrap-time floor, never blocks. Warns when the last K consecutive
-    # receipt-pass rows in the impact log never carried any verified tag ("trace-confirmed" or dir #70's
-    # "agent-confirmed") — the pre-#63 blind spot: every recent /polish run closed on a self-reported
-    # review only — OR when there are FEWER than K rows total and every one of them is unverified (a
-    # new/low-volume repo shouldn't read as "fine" just because it hasn't accumulated K runs yet — found
-    # in the operator-run /code-review high pass on this ticket). Not wired into any hook by design (a
-    # sweep needs to run once per /wrap, not per gate decision) — invoking it is a manual follow-up.
+    # receipt-pass rows in the impact log never carried any tag other than the self-reported one (any
+    # independently verified tag counts, currently "trace-confirmed" and dir #70's "agent-confirmed") —
+    # the pre-#63 blind spot: every recent /polish run closed on a self-reported review only — OR when
+    # there are FEWER than K rows total and every one of them is unverified (a new/low-volume repo
+    # shouldn't read as "fine" just because it hasn't accumulated K runs yet — found in the operator-run
+    # /code-review high pass on this ticket). Not wired into any hook by design (a sweep needs to run
+    # once per /wrap, not per gate decision) — invoking it is a manual follow-up.
     sw_k="${2:-3}"
     case "$sw_k" in ''|*[!0-9]*) sw_k=3 ;; esac
     sw_log="$(resolve_impact_log "$PWD")"
@@ -1403,10 +1405,10 @@ case "${1:-}" in
       }
     ' "$sw_log")"
     if [ "$sw_result" = "WARN" ]; then
-      printf 'pre-pr-gate: sweep - %s+ consecutive /polish runs closed without a trace-confirmed code-review (self-reported only). Consider tools/pipeline-canary.sh or an operator-run /code-review.\n' "$sw_k"
+      printf 'pre-pr-gate: sweep - %s+ consecutive /polish runs closed without a verified code-review (self-reported only). Consider tools/pipeline-canary.sh or an operator-run /code-review.\n' "$sw_k"
       exit 1
     fi
-    printf 'pre-pr-gate: sweep - recent runs look fine (a trace-confirmed review within the last %s)\n' "$sw_k"
+    printf 'pre-pr-gate: sweep - recent runs look fine (a verified review within the last %s)\n' "$sw_k"
     exit 0
     ;;
 esac
