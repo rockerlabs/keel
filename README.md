@@ -29,7 +29,7 @@ felt to the reason the project exists:
 2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
    and the unchanged prefix is prime prompt-cache material.
 3. **Constraint.** The mechanized layer — the secret-guard git hook — blocks a key-shaped leak no
-   matter what the model decides. The one hard guarantee.
+   matter what the model decides. A hard guarantee, not a nudge.
 4. **Accumulation.** The reason for the other three ([`PRINCIPLES.md`](PRINCIPLES.md), P0):
    decisions and project knowledge earned in a session outlive the session — and the model, and the
    tool itself.
@@ -259,7 +259,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 
 A small Bash test suite (no extra dependencies) runs on every change across Linux, macOS, and
 Alpine/busybox, plus a
-`shellcheck` pass — `tests/run.sh` runs it locally. It's the same rule Keel asks of you, applied to Keel
+`shellcheck` pass — `tests/run.sh` runs the test suite locally; `shellcheck -x --severity=warning`
+over the touched `.sh` files is a separate step. It's the same rule Keel asks of you, applied to Keel
 itself.
 
 Keel is a reference and method, not a packaged product or a subscription. Built for Claude Code but not

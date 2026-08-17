@@ -30,6 +30,7 @@
      (knowledge-base docs, code, git/PR text) should stay in English for cross-model portability regardless. -->
 
 - **Chat language:** <your preference>
+- **Explanation verbosity:** <your preference>
 - **Persistent artifacts** (knowledge-base docs, code, commits, PR text) → **English** (read at startup by whatever
   model runs the session; English maximizes comprehension and portability across models).
 
