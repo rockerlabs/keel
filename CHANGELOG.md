@@ -57,9 +57,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   addition to* the checklist, which never said so. §4 now passes `--title` explicitly, points at the
   freshly-cut `CHANGELOG.md` section as the source of the notes, and says to verify with
   `gh release view <tag> --json name,body,assets`, since an empty title is invisible from the command that
-  created it. The line's `[auto]` marker is corrected to `[you]`: extracting the notes file from
-  `CHANGELOG.md` is still by hand, which is the very step whose omission caused this — a
-  `tools/changelog-section.sh` helper to close that is filed as dir #162. Whether a doctor leg should
+  created it. The line's `[auto]` marker is corrected to `[you]`: producing the notes file is still by
+  hand, which is the very step whose omission caused this. **§4 also now says the notes are CURATED from
+  that section rather than copied from it** — found while hand-writing v0.6.1's own notes, where the
+  section ran ~31KB against a ~4KB house length (a prose opener, three or four highlight sections, a
+  Known-issues paragraph), so "notes come from the section" read literally produces a release note eight
+  times too long. A helper to make that step one paste is filed as dir #162, which the same measurement
+  rescoped: printing the section is not enough, since the curation is the work. Whether a doctor leg should
   WARN on a published release with an empty title (the ticket's own "ideally a check") is the remaining
   question, and `tools/self/doctor.sh` already reconciles CHANGELOG sections against git tags and already
   calls `gh` best-effort, so it is the natural home — not built here, so the live v0.6.1 release still

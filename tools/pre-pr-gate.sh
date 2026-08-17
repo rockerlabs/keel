@@ -2005,37 +2005,20 @@ case "$status" in
                            p="$(_addon_label "$a")" || { addons_ok=0; break; }
                            addon_prose="$addon_prose + $p"
                          done
-                         # Gate on $addon_prose rather than on $addons being non-empty. **What the guard
-                         # does and does NOT do, measured — do not upgrade this claim without re-measuring,
-                         # two earlier versions of this comment overstated it and a review note repeated
-                         # the overstatement:** against the walk above the two predicates are EQUIVALENT on
-                         # every input (verified across every shape 50m and 50n cover, and by brute force
-                         # over several thousand generated strings in the delta review).
-                         # The walk is what rejects the COMMA shapes — an empty element reaches
-                         # `_addon_label` as `""` and its `*)` arm denies; an empty suffix leaves $addons
-                         # empty so the strip is skipped either way — **and that last shape is rejected by
-                         # THIS GUARD, not by the walk**, since the walk runs zero iterations for it. So:
-                         # the guard's EXISTENCE is pinned (deleting it outright reds 50m's
-                         # `agent:<level>+`), while the CHOICE between these two predicates is not
-                         # (swapping in `-n "$addons"` leaves the suite green — correctly, since they are
-                         # equivalent here). Do not read that green run as missing coverage.
-                         #
-                         # It is still the right predicate to write, for one concrete reason: it states the
-                         # INVARIANT ("at least one mechanism was actually named") where `-n "$addons"`
-                         # states a proxy for it ("the suffix had some text"). If the walk is ever loosened
-                         # to skip empty elements instead of denying them, this guard still holds the
-                         # invariant and the proxy stops doing so — the delta review measured exactly that:
-                         # loosening the walk with this guard intact still denies 3 of the 5 empty-suffix
-                         # and empty-element shapes 50m covers; the two it lets through are let through
-                         # because they pair an empty element with a VALID one, so the prose is non-empty
-                         # either way. Swapping in the proxy as well drops 4 of the 5 —
-                         # `agent:<level>+` survives even then, since an empty suffix never enters the
-                         # loop, so loosening the loop changes nothing for it and both predicates stay
-                         # false. The proxy is what the pre-fix version used, and it accepted
-                         # `agent:<level>+,` as a receipt announcing a combined outcome while naming zero
-                         # mechanisms, printing the stronger `(trace-confirmed)` label on the bare arm's
-                         # own evidence — reachable from one stray comma while re-typing an add-on from
-                         # session memory, which dir #161 says is exactly what has to happen today.
+                         # This guard is what rejects an empty SUFFIX (`agent:<level>+`) — the walk runs
+                         # zero iterations there, so nothing else would. Against the current walk it is
+                         # equivalent to `-n "$addons"`, but it is the right one to WRITE: it states the
+                         # invariant ("at least one mechanism was actually named") where `-n "$addons"`
+                         # states a proxy ("the suffix had some text"), so it still holds if the walk is
+                         # ever loosened to skip empty elements rather than deny them. The proxy is what
+                         # the pre-fix version used, and it accepted `agent:<level>+,` — a receipt
+                         # announcing a combined outcome while naming zero mechanisms, printing the
+                         # stronger `(trace-confirmed)` label on the bare arm's own evidence, reachable
+                         # from one stray comma while re-typing an add-on from session memory (which dir
+                         # #161 says is exactly what has to happen today).
+                         # Which of this guard and the walk above rejects which shape, and which mutation
+                         # reds which test: tests/test_pre_pr_gate.sh's 50m comment — measured there,
+                         # stated once.
                          if [ "$addons_ok" -eq 1 ] && [ -n "$addon_prose" ]; then
                            outcome_level="${outcome_level%%+*}"
                          fi
