@@ -7,7 +7,7 @@ Every file, tool, and command — grouped, one line each.
 | File | What it is |
 |---|---|
 | [`PRINCIPLES.md`](../PRINCIPLES.md) | The lasting foundation. Read it for big, hard-to-undo decisions. |
-| [`FRAMEWORK.md`](../FRAMEWORK.md) | The reusable how-to: load-a-little-always, project list, git and code conventions. |
+| [`FRAMEWORK.md`](../FRAMEWORK.md) | The reusable how-to: load-a-little-always, registry-as-index design, git and code conventions. |
 | [`CORE.md`](../CORE.md) | The always-on rails alone — placeholder-free. On Claude Code, import it live (`git pull` refreshes it); elsewhere the template embeds it verbatim. |
 
 ## 📝 Templates — you fill them in once
@@ -45,7 +45,8 @@ Every file, tool, and command — grouped, one line each.
 catch an arbitrary AWS secret key, a JWT, or a password.*
 
 *Maintainer-only, not shipped by `install.sh`: `tools/self/` (this repo's own structural self-checks —
-dead references, ship-skip-list sync, doc staleness).*
+dead references, ship-skip-list sync, doc staleness) and `tools/stamp-release-bootstrap.sh` (stamps a
+release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).*
 
 ## Commands (`commands/`)
 
@@ -64,7 +65,9 @@ dead references, ship-skip-list sync, doc staleness).*
 ## Extras
 
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard
-blocking a key. The docs themselves are indexed in the [README's Docs section](../README.md#docs).
+blocking a key. Most of the docs are indexed in the [README's Docs section](../README.md#docs) too — a
+few maintainer/deep-dive ones (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`,
+`publishing-checklist.md`) aren't.
 
 Setting Keel up for a tool other than Claude Code (installer flags, the by-hand copy) →
 [`docs/getting-started.md`](getting-started.md) and [`ADAPTING.md`](../ADAPTING.md).
