@@ -10,9 +10,10 @@
 #   <tag>   the release tag to stamp in, e.g. v0.6.0 (must be non-empty, no quote/backslash/newline)
 #   [OUT]   output path (default: stdout)
 #
-# Wire into a release:
+# Wire into a release (`--title` and `--notes-file` are NOT optional — `--notes-from-tag` alone
+# published v0.6.1 with an empty title and a one-line body; see docs/publishing-checklist.md §4):
 #   tools/stamp-release-bootstrap.sh v0.6.0 /tmp/bootstrap.sh
-#   gh release create v0.6.0 --notes-from-tag /tmp/bootstrap.sh
+#   gh release create v0.6.0 --title "v0.6.0 — <headline>" --notes-file <notes> /tmp/bootstrap.sh
 set -euo pipefail
 
 tag="${1:?usage: stamp-release-bootstrap.sh <tag> [OUT]}"

@@ -8,6 +8,63 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+- **A step-5 receipt can now name EVERY review that saw the commit, not just the last one** (dir #158).
+  `polish.5-review`'s add-on suffix was two hardcoded literals — `+operator-run` (dir #81) and
+  `+second-opinion` (dir #141) — one per `case` arm, while step 5 holds a single value. So a commit that
+  genuinely got both add-ons had to drop one from the mechanical record. Felt on dir #155, whose own PR
+  got the standing agent review, an operator-run `/code-review high` that found a real bug three agent
+  rounds had missed, and a cross-model second opinion. `commands/polish.md` had named only the
+  same-*round* version of this as a residual (its dialog is single-select); the cross-*round* version —
+  add-ons accumulating across fix commits on one branch — looked resolvable from inside and wasn't. The
+  suffix is now a comma-separated set (`agent:<level>+operator-run,second-opinion`), parsed once and
+  validated element-wise, replacing both arms with one. Backward compatible: every existing single-add-on
+  outcome behaves identically, and all 420 prior gate assertions passed unchanged. An invented add-on
+  still denies, by the same level cross-check that caught an invented suffix before — proven by mutation
+  (making the allowlist accept anything reds four assertions). An independent high review then found the
+  first implementation accepted `agent:<level>+,` — an empty element word-split to zero add-ons, so nothing
+  was found invalid and a receipt naming NO mechanism was allowed, with the stronger `(trace-confirmed)`
+  label; the set is now walked by parameter expansion only (no word splitting, no IFS, no globbing) and an
+  empty element is denied by the allowlist itself. The allowlist is deliberately the
+  label function itself rather than a separate list: a first draft had both and shellcheck caught the
+  list as unused, i.e. two sources of truth for one fact — the sync-comment smell `FRAMEWORK.md`'s
+  contract-first section names. **Named residual, filed as dir #161:** this makes the receipt able to
+  *say* the whole set, but not to *get* it said — `polish.5-review` is deliberately never restored by
+  `receipt --recover` (dir #96), so an earlier round's add-on must be re-typed from session memory, and
+  nothing denies or warns if it isn't. The set's unit is the shipped commit, not the round: an add-on
+  belongs in it while the work it reviewed is still in HEAD.
+
+### Fixed
+- **`docs/release-audit.md` phase 7 and `tools/self/doctor.sh` are now mechanically coupled** (dir #157).
+  The felt incident is the cleanest available for this class: both halves shipped in dir #155's own PR and
+  drifted anyway. Phase 7's paragraph stated one condition for the release-in-preparation allowance; that
+  PR's own review then forced a second condition into the code (the pending version must out-sort every
+  tag); the paragraph was never revisited. Three delta rounds of the same reviewer missed it — each saw
+  only its own delta, and the divergence opened *between* deltas — and an operator-run `/code-review high`
+  caught it by reproducing a backport shape that satisfies the doc and GAPs in the code. Three pins in
+  `tests/test_release_audit_doc.sh` now hold the DOC leg: it must state both conditions and the
+  linear-release-line limit. The CODE leg is pinned behaviourally in `tests/test_self_doctor.sh` instead
+  of by grepping the expression — a first version did grep it, and `/simplify`'s altitude pass showed
+  that added no protection (deleting the conjunct already reds 3 behavioural assertions, measured) while
+  adding refactor fragility, since it pinned expression shape down to a trailing `&&`. **Named residual,
+  filed as dir #160:** presence-pins catch a DELETED condition, not the direction that actually failed
+  here — code *gaining* a condition the doc never states. The generated-embed shape this repo already
+  uses for `CORE.md` ↔ `templates/CLAUDE.md` is the real fix.
+- **`docs/publishing-checklist.md` §4 no longer prescribes a release with no title** (dir #159). It showed
+  `gh release create <tag> --notes-from-tag …` with no `--title`; followed literally for v0.6.1 that
+  published a release whose title was the empty string and whose body was the 25-character tag message,
+  while every earlier release carried a headline and real notes — those had been written by hand *in
+  addition to* the checklist, which never said so. §4 now passes `--title` explicitly, points at the
+  freshly-cut `CHANGELOG.md` section as the source of the notes, and says to verify with
+  `gh release view <tag> --json name,body,assets`, since an empty title is invisible from the command that
+  created it. The line's `[auto]` marker is corrected to `[you]`: extracting the notes file from
+  `CHANGELOG.md` is still by hand, which is the very step whose omission caused this — a
+  `tools/changelog-section.sh` helper to close that is filed as dir #162. Whether a doctor leg should
+  WARN on a published release with an empty title (the ticket's own "ideally a check") is the remaining
+  question, and `tools/self/doctor.sh` already reconciles CHANGELOG sections against git tags and already
+  calls `gh` best-effort, so it is the natural home — not built here, so the live v0.6.1 release still
+  needs the operator's own `gh release edit`.
+
 ## [0.6.1] — 2026-08-14
 
 The release tail of the v0.6.0 audit. v0.6.0 shipped with a named list of known issues rather than

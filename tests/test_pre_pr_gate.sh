@@ -980,6 +980,107 @@ gate "gh pr create --fill" "$d"
 check_contains "'agent:high+second-opinion' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
 
+# --- dir #158: the add-on suffix is a SET, so a commit that got BOTH add-ons can say so -------------
+# Felt on dir #155: that commit genuinely got the standing agent review AND an operator-run
+# `/code-review high` AND a cross-model second opinion, but step 5 holds one value and the gate knew
+# only two single-add-on literals — so whichever was written dropped a real review from the record.
+# 50i. BOTH add-ons in one outcome → allowed, and the provenance names all three mechanisms.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+operator-run,second-opinion"
+gate "gh pr create --fill" "$d"
+check_status "two-add-on set receipt + matching agent trace → exit 0" 0 "$STATUS"
+check_absent "two-add-on set + matching trace → allowed" "$OUT" "deny"
+check_contains "provenance names the trace-confirmed agent review" "$OUT" "review: high, independent agent review (trace-confirmed)"
+check_contains "...AND the operator-run pass" "$OUT" "+ operator-run /code-review (self-reported)"
+check_contains "...AND the cross-model second opinion — neither add-on is dropped" "$OUT" "+ in-session cross-model second opinion (self-reported"
+
+# 50j. The set still depth-checks against the BARE level: the whole `+…` suffix must be stripped, not
+# one known add-on at a time (an enumerated strip would leave `high+operator-run` here and deny for a
+# depth mismatch that isn't real). Uses write_full_receipt_review's depth-override (5th arg) rather
+# than open-coding a 5th copy of the manual init+receipt sequence — see tests/lib.sh.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+operator-run,second-opinion" "" "" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "two-add-on set at 'high' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "...denied for the depth mismatch, so the set's level parsed as the bare 'high'" "$OUT" "doesn't match the depth"
+
+# 50k. An INVENTED add-on must not ride the set parse in. It denies via the existing level
+# cross-check (the unknown token leaves outcome_level as the raw `high+bogus`, which can't equal step
+# 4's `high`) — the same route that caught an invented suffix when these were two literal arms. This
+# is the security-relevant half of dir #158: a glob arm that accepted any suffix would be a bypass.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+bogus-addon"
+gate "gh pr create --fill" "$d"
+check_contains "an unknown add-on token → denied, not silently accepted" "$OUT" '"permissionDecision":"deny"'
+# Assert the REASON too, not just the deny: the unknown token must leave outcome_level as the raw
+# remainder so the depth cross-check rejects it. A deny for any other reason would pass the check
+# above while the actual guard did nothing — and costs nothing extra to rule out.
+check_contains "...denied by the depth cross-check, which is the designed route" "$OUT" "doesn't match the depth"
+
+# 50l. ...and one unknown token poisons the whole set even when the other element is real — the
+# validation is all-or-nothing, so a real add-on can't smuggle an invented one alongside it.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+operator-run,bogus-addon"
+gate "gh pr create --fill" "$d"
+check_contains "a real add-on + an unknown one → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "...also by the depth cross-check — validation is all-or-nothing" "$OUT" "doesn't match the depth"
+
+# 50m. An EMPTY add-on element must deny. Found by an independent high review, reproduced live: the
+# first implementation gated the suffix-strip on `[ -n "$addons" ]` (the raw text being non-empty) when
+# the property that matters is "at least one element validated". `agent:high+,` word-split to ZERO
+# elements, so the validation loop never ran, nothing was found invalid, and the receipt was ACCEPTED —
+# announcing a combined outcome while naming no mechanism, and printing the stronger
+# `(trace-confirmed)` provenance label on exactly the evidence the bare `agent:<level>` arm has. A stray
+# comma while re-typing an add-on from session memory reaches this. Now denied: the walk hands the empty
+# string to `_addon_label`, whose `*)` arm rejects it.
+# The loop covers an empty SUFFIX (`agent:high+`) as well as empty ELEMENTS at the leading, doubled and
+# interior positions.
+#
+# **"Rejected by" and "pinned by" are different claims — keep them apart.** Five revisions of this
+# comment and the gate's conflated them, in both directions, which is where MOST of them came from —
+# not all: one was a plain miscount and one a word slip, so don't read this rule as covering every way
+# a comment goes wrong (saying it did was itself a claim stated wider than its evidence, i.e. the same
+# species as the five). "Rejected by X" describes the CURRENT code; "pinned by X" is a statement about a MUTATION, and
+# is only true if breaking X reds a test. Measured here:
+#   - REJECTED BY THE WALK: all four comma shapes (each reaches `_addon_label` as the empty string).
+#   - REJECTED BY THE GUARD: `agent:high+` — `$addons` is empty, so the walk runs zero iterations.
+#   - PIN THE WALK: only the two that pair an empty element with a VALID one (`+,second-opinion`,
+#     `+operator-run,,second-opinion`). Loosening the walk leaves `+,` and `+,,` green, because the
+#     guard backstops them.
+#   - PINS THE GUARD'S EXISTENCE: `agent:high+`, and only it — deleting the guard reds exactly that one.
+#
+# **What nothing here pins:** the guard's *predicate*. Swapping `[ -n "$addon_prose" ]` for
+# `[ -n "$addons" ]` leaves this suite green — correctly, since the two are equivalent against the
+# current walk — so that green run is not missing coverage. See the gate's own comment for why the
+# invariant-shaped predicate is still the one worth writing.
+for bad_set in "agent:high+" "agent:high+," "agent:high+,," "agent:high+,second-opinion" "agent:high+operator-run,,second-opinion"; do
+  d="$(mkrepo)"
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+  write_full_receipt_review "$d" "$bad_set"
+  gate "gh pr create --fill" "$d"
+  check_contains "an empty add-on suffix or element ('$bad_set') → denied" "$OUT" '"permissionDecision":"deny"'
+done
+
+# 50n. ...and the positive control for the same guard: a TRAILING comma is tolerated, because every
+# element it produces did validate. Pinned so the fix above can't be tightened into rejecting a set
+# that is merely untidy — the guard is about naming zero mechanisms, not about punctuation.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+write_full_receipt_review "$d" "agent:high+operator-run,"
+gate "gh pr create --fill" "$d"
+check_status "a trailing comma on an otherwise-valid set → exit 0" 0 "$STATUS"
+check_absent "trailing comma → allowed, every element validated" "$OUT" "deny"
+
 # 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
 # adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
 # be misread as "verified" just because it isn't literally "self-reported" — an early draft of the

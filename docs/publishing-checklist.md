@@ -52,8 +52,15 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       once on a clean machine/sandbox, not just wrote it. **[you]**
 - [ ] **Attach a stamped `bootstrap.sh` to the release**, so `releases/latest/download/bootstrap.sh`
       installs THIS tag by default instead of tracking main:
-      `tools/stamp-release-bootstrap.sh <tag> /tmp/bootstrap.sh && gh release create <tag> --notes-from-tag /tmp/bootstrap.sh`
-      (or `gh release upload <tag> /tmp/bootstrap.sh` on an existing release). **[auto]**
+      `tools/stamp-release-bootstrap.sh <tag> /tmp/bootstrap.sh && gh release create <tag> --title "<tag> — <headline>" --notes-file <notes-file> /tmp/bootstrap.sh`
+      (or `gh release upload <tag> /tmp/bootstrap.sh` on an existing release). **[you]** — not `[auto]`:
+      `<notes-file>` still has to be extracted from `CHANGELOG.md` by hand, which is the manual step
+      whose omission caused v0.6.1's blank release. A helper to make this one paste is on the backlog.
+- [ ] **Give the release a title and real notes**, then check them: `gh release view <tag> --json
+      name,body,assets`. `--notes-from-tag` alone yields a blank title and a one-line body, and an empty
+      title is invisible from the command that created it. Notes come from the `CHANGELOG.md` section you
+      just cut — already written, already reviewed, already canonical. **[you]** *(v0.6.1 shipped with a
+      blank title because this list omitted `--title`; see `CHANGELOG.md`'s dir #159 entry.)*
 
 ## 5. Presentation
 
