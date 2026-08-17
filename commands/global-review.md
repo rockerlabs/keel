@@ -35,8 +35,8 @@ Then:
   `/wrap`.
 
 **Persist before closing (red-flag sweep — P0 "capture is checked"):** ticket each surfaced idea/finding
-into the backlog, stage workflow insights in `LEARNINGS.md` (promote on recurrence), or record an explicit
-drop — never leave them chat-only. Also **prune** `LEARNINGS.md`: drop candidates that neither promoted nor
-recurred in ~5 sessions.
+into the backlog, stage workflow insights in `LEARNINGS.md` (promote on recurrence), stage a raw idea in
+`IDEAS.md`, or record an explicit drop — never leave them chat-only. Also **prune** `LEARNINGS.md`: drop
+candidates that neither promoted nor recurred in ~5 sessions.
 
 Ask only at a real fork that can't be resolved from the conventions, the backlog, or sensible defaults.
