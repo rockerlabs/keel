@@ -509,10 +509,11 @@ Steps, in order:
    Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
    as step 8, not a bare `done`: step 6 is one of the steps a convergence round must write itself —
-   four ordinarily (3, 5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth
+   three ordinarily (5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth
    was `skip` — dir #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its
-   receipt — dir #119, never written, so never recovered)), five when that GAP forces a re-run (7
-   joins the set, dir #138) — and its whole job is to catch a fix-commit
+   receipt — dir #119, never written, so never recovered)), four when that GAP forces a re-run (7
+   joins the set, dir #138). Step 3 recovers too now, but only provisionally — dir #123, see step 1.
+   Step 6's whole job is to catch a fix-commit
    breaking something. So the gate cross-checks it against current HEAD the same way it does steps 3 and
    8 — a bare `done` would mean a recovered, pre-fix-commit retest could otherwise satisfy completeness
    without the fix-commit ever having been re-tested.
