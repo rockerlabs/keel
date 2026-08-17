@@ -8,7 +8,7 @@
 # runs, /polish's steps still work; only the gh pr create block (below) is inert.
 #
 # Wired as a Claude Code PreToolUse(Bash) hook (tools/install-pre-pr-gate.sh does this for you): it
-# intercepts `gh pr create` and requires /polish (simplify + inline review + tests) to have run on the
+# intercepts `gh pr create` and requires /polish (simplify + independent review + tests) to have run on the
 # current HEAD. The bypass path is closed by
 # content, not just presence: each polish step appends a receipt line (see below), and the gate denies
 # unless every expected step id is present AND the final step's recorded SHA matches live HEAD — so a
@@ -39,7 +39,7 @@
 #   pre-pr-gate.sh skill-trace             hook subcommand (see dir #63 section below) — not run by hand
 #   pre-pr-gate.sh rollout-check           SessionStart hook subcommand (dir #64 tier 1) — not run by hand
 #   pre-pr-gate.sh sweep [K]               /wrap-time floor (dir #64 tier 2b): warn when the last K
-#                                           polish runs closed without a trace-confirmed review (default K=3)
+#                                           polish runs closed without a verified (non-self-reported) review (default K=3)
 #
 # With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
 # decides allow/deny for `gh pr create`.
@@ -48,7 +48,7 @@
 # Hole A (a fabricated in-session review claim is unfalsifiable): `polish.5-review`'s receipt is a
 # free-form string the model writes about itself, so a real in-session `/code-review <level>` pass and
 # a session that only claims one are byte-identical. Fix: two ADDITIONAL hooks (same settings.json as
-# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all four together) write a mechanical
+# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all six together) write a mechanical
 # trace line to a HOOK-OWNED side channel the model isn't expected to touch — a materially higher bar
 # than getting one self-report right, though not literally unfakeable (the model still has Bash; see the
 # residual limit below):
@@ -140,10 +140,11 @@
 #       (self-reported)" / "review: <level>, waived (self-reported)" for the hand-off outcomes dir #63
 #       never traces. Visible at PR-creation time instead of only via transcript archaeology.
 #   (b) `sweep [K]` reads the impact log's `receipt-pass` rows (now carrying that same classification as
-#       their detail field) and warns when the last K (default 3) consecutive passes never read
-#       "trace-confirmed" — a run of self-reported-only reviews, the exact pre-#63 blind spot. Read-only,
-#       never blocks; wiring it into a `/wrap` step is a manual follow-up (same precedent as dir #63's
-#       hook wiring into settings.json — see that section above).
+#       their detail field) and warns when the last K (default 3) consecutive passes never carried any
+#       verified tag ("trace-confirmed" or dir #70's "agent-confirmed") — a run of self-reported-only
+#       reviews, the exact pre-#63 blind spot. Read-only, never blocks; wiring it into a `/wrap` step is
+#       a manual follow-up (same precedent as dir #63's hook wiring into settings.json — see that
+#       section above).
 #
 # Tier 3 — tools/pipeline-canary.sh (separate file). A sandboxed operator ritual that builds a toy repo +
 # isolated HOME + stubbed `gh` + this file's hooks wired in, then either drives a real `/polish` run
@@ -231,19 +232,21 @@
 #       commit cost one command instead of eight manual `receipt <step-id> <outcome>` calls. dir #96
 #       moved step 3 OUT of that set: its outcome is now the sha the tests ran at, so after a fix commit
 #       the recovered value is stale by construction and either the tests re-run or step 6 binds the new
-#       HEAD (the enumeration lives once, at the end of this paragraph — see "must therefore write"). It reads
+#       HEAD (see the dir #123 update below for how step 3 recovery works today). It reads
 #       from a single-slot backup (`_prev_sentinel_path_for_key()`) that `retire_sentinel()` now writes at every
 #       point that used to just `rm -f`/overwrite the live sentinel (every gate-deny branch, the PASS
 #       branch's own post-unlock cleanup, and `init`'s overwrite) — so whichever run was just retired,
 #       for whatever reason, is the one `--recover` restores. Only one slot: this is a convenience for the
 #       common one-fix-commit case, not a receipt history. dir #96 made the filtering EXPLICIT rather
-#       than relying on a later write to supersede a recovered line: `polish.3-tests` and
-#       `polish.5-review` are never restored (their trusted arms — a sha that still matches, a
-#       `skip`/`-operator-run`/`-waived` outcome — would otherwise vouch for a commit they never saw,
-#       and unlike the other arms they do not self-correct — for step 3 that arm is `skipped:--no-test`,
-#       not a stale sha, which does fail its own compare), and recovery never overwrites a step id
-#       THIS run already receipted, so the order of `--recover` against your own receipt calls does not
-#       matter. The steps a convergence round must therefore write itself are 3, 5, 6 and 8. The gate's
+#       than relying on a later write to supersede a recovered line: at the time dir #96 shipped,
+#       `polish.3-tests` and `polish.5-review` were both never restored (their trusted arms — a sha that
+#       still matches, a `skip`/`-operator-run`/`-waived` outcome — would otherwise vouch for a commit
+#       they never saw). dir #123 later lifted the step-3 exclusion (see the `receipt --recover`
+#       implementation below): it now recovers like any other step, since its stamped tree-relevant hash
+#       lets the read-time check mechanically tell a stale recovery from a still-good one. Recovery never
+#       overwrites a step id THIS run already receipted, so the order of `--recover` against your own
+#       receipt calls does not matter. The steps a convergence round must ALWAYS write itself are 5, 6
+#       and 8 (3 usually recovers now too). The gate's
 #       completeness/sha/trace checks are entirely unchanged: a recovered-but-stale step-8 sha still
 #       denies exactly as before — `--recover` only removes the busywork of re-typing what didn't
 #       change.
@@ -1359,12 +1362,12 @@ case "${1:-}" in
     ;;
   sweep)
     # dir #64 tier 2b — read-only /wrap-time floor, never blocks. Warns when the last K consecutive
-    # receipt-pass rows in the impact log never read "trace-confirmed" (the pre-#63 blind spot: every
-    # recent /polish run closed on a self-reported review only), OR when there are FEWER than K rows
-    # total and every one of them is non-trace-confirmed (a new/low-volume repo shouldn't read as
-    # "fine" just because it hasn't accumulated K runs yet — found in the operator-run /code-review
-    # high pass on this ticket). Not wired into any hook by design (a sweep needs to run once per
-    # /wrap, not per gate decision) — invoking it is a manual follow-up.
+    # receipt-pass rows in the impact log never carried any verified tag ("trace-confirmed" or dir #70's
+    # "agent-confirmed") — the pre-#63 blind spot: every recent /polish run closed on a self-reported
+    # review only — OR when there are FEWER than K rows total and every one of them is unverified (a
+    # new/low-volume repo shouldn't read as "fine" just because it hasn't accumulated K runs yet — found
+    # in the operator-run /code-review high pass on this ticket). Not wired into any hook by design (a
+    # sweep needs to run once per /wrap, not per gate decision) — invoking it is a manual follow-up.
     sw_k="${2:-3}"
     case "$sw_k" in ''|*[!0-9]*) sw_k=3 ;; esac
     sw_log="$(resolve_impact_log "$PWD")"
@@ -1671,7 +1674,7 @@ sentinel="/tmp/pre-pr-gate-$receipt_key"
 
 if [ ! -f "$sentinel" ]; then
   log_event receipt-deny "no-run" "$cwd"
-  deny "Pre-PR gate: run /polish first (simplify + inline review + tests). The gate unlocks automatically when /polish completes cleanly."
+  deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly."
 fi
 
 # Parse the receipt: line 1 must be the nonce header; every later line is <nonce>\t<step-id>\t<outcome>.
