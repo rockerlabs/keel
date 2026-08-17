@@ -380,7 +380,7 @@ fi
 # =================================================================================================
 
 # --- B7: the manifest itself is backed up on removal; the checkout ledger is pruned once no
-# install-manifest.* remains; .keel/ is removed only when nothing else lives there [0a1e15b, dir #109] -
+# install-manifest.* remains; .keel/ is removed only when nothing else lives there [0a1e15b, dir #125] -
 B7="$SANDBOX/b7-manifest-backup/.claude"
 inst --home "$B7" --no-hooks
 check_status "B7 install succeeds" 0 "$STATUS"

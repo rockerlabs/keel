@@ -36,7 +36,7 @@ check_status "the real keel checkout is clean (no GAP)" 0 "$STATUS"
 # will lint when auditing the sandbox. A fixed old commit date on the baseline keeps the
 # CHANGELOG-staleness check (timestamp-ordered) deterministic — a later commit in the same test
 # always lands after it, never in the same second.
-# doctor.sh's orchestrated checks (line ~214) unconditionally `bash`-exec these two files, so any
+# doctor.sh's orchestrated checks (line ~861) unconditionally `bash`-exec these two files, so any
 # sandbox repo doctor.sh runs against needs them present or it GAPs on missing files.
 stub_orchestrated_tests() {
   local d="$1" f
@@ -128,7 +128,7 @@ d="$(mk_clean_repo)"; plant_import_re "$d" "$core_re"
 run "$sd" "$d" --quiet
 check_status "three identical copies -> exit 0" 0 "$STATUS"
 
-# one copy silently loses its end boundary — the exact widening dir #108 was
+# one copy silently loses its end boundary — the exact widening dir #108 was fixed against
 d="$(mk_clean_repo)"; plant_import_re "$d" '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md'
 ( cd "$d" && git add -A && git commit -qm "drifted import re" )
 run "$sd" "$d" --quiet

@@ -439,7 +439,8 @@ LEDGER="$SANDBOX/ledger4.md"; EVIDENCE="$SANDBOX/evidence4.md"; LOG="$SANDBOX/ev
 export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_EVIDENCE="$EVIDENCE" KEEL_IMPACT_LOG="$LOG"
 run bash "$TOOL" add --retro --asof 2026-05-01 --fire "past rule applied" --hit "past fact used" --gap "none"
 check_status "retro add succeeds" 0 "$STATUS"
-# HELP = 2*1(fire) + 1(hit) = 3 → 100; conf med→low then tagged retro (drop one tier: 3 events would be med)
+# HELP = 2*1(fire) + 1(hit) = 3 → 100; ev_count=2 (fire+hit) is already "low" (<3), so the retro
+# downgrade is a no-op here — the "-retro" suffix is just appended unconditionally
 check_contains "retro drops one conf tier and tags it" "$OUT" "conf low-retro"
 check_contains "retro row is backdated by --asof" "$(cat "$LEDGER")" "| 2026-05-01 | 100 | low-retro |"
 # a live score into the same ledger
@@ -579,7 +580,7 @@ run bash "$TOOL" rollup --registry "$SANDBOX/nope.md"
 check_status "missing registry → exit 2" 2 "$STATUS"
 
 # --- dir #107: rollup and _ledger_stats must share ONE ledger-column parser, not re-derive it ------
-# The file's own header comment (LEDGER_HEADER + _ledger_parse) says the column indices must stay in
+# The file's own header comment (_ledger_table_header + _ledger_parse) says the column indices must stay in
 # sync; pin that at the SOURCE level (dir #126: an output-level check can't tell "shares a parser"
 # from "two parsers that happen to agree today"). Both callers should delegate to _ledger_parse, and
 # no second awk block should independently match the ledger's date-column regex.
@@ -596,7 +597,7 @@ fi
 
 # --- dir #151: the ledger's 12 columns must come from ONE ordered array (_LEDGER_COLS), not be
 # hand-listed independently by the writer (cmd_add), the reader (_ledger_parse), and the header
-# (LEDGER_HEADER). dir #107 unified the two READERS behind _ledger_parse; dir #131 then caught, but
+# (_ledger_table_header). dir #107 unified the two READERS behind _ledger_parse; dir #131 then caught, but
 # didn't prevent, the WRITER (cmd_add's row-printf) drifting from it — both still hand-indexed the
 # same columns in their own syntax. This block replaces both dir #107's and dir #131's structural
 # checks (which pinned the very hand-indexing this refactor removes — a literal `$5`/`$6`/`$9` or a
