@@ -261,7 +261,8 @@ So context files don't bloat and stay useful.
   both edit section Y"), not by isolating the design output itself.
 - Reusable lesson/invariant NOT present in the code → a memory file, briefly.
 - **Anything surfaced but not yet handled** — an idea, a finding, a loose-end, a decision still owed →
-  persist it immediately as a backlog ticket (or record the drop + reason). Never leave it chat-only: the
+  persist it immediately as a backlog ticket, or — for a raw idea with no clear next step yet — as an
+  `IDEAS.md` entry (or record the drop + reason). Never leave it chat-only: the
   next session starts cold and won't recall it. This is the *checked* arm of P0's capture engine — every
   session wrap ends with a **red-flag sweep** that tickets / stages / drops everything still floating.
 - **A useful workflow insight not yet worth a committed rule → `LEARNINGS.md`** (the staging tier between
