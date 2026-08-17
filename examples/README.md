@@ -20,7 +20,8 @@ It walks the three run-on-demand tools plus the one fires-by-itself mechanism, e
 
 That arc — *scaffold → audit → fix → the guard catches a real mistake* — is Keel's mechanized layer
 in miniature. (The durable layer — `PRINCIPLES.md`, `FRAMEWORK.md`, the `CLAUDE.md` rails — biases a
-model when loaded but doesn't enforce itself; see the README's "mechanized vs needs-you" section.)
+model when loaded but doesn't enforce itself; see the README's "What runs by itself, what only nudges"
+section.)
 
 ## What it looks like
 
@@ -31,12 +32,25 @@ Real output from a run (paths abbreviated, and the planted key masked — a live
    init-project sets up git, a .gitignore that hides private AI context, and a CLAUDE.md.
 
 $ ./tools/init-project.sh /tmp/demo/my-project
+init-project: scaffolding /tmp/demo/my-project
   + git initialized
   + .gitignore += CLAUDE.md
+  + .gitignore += AGENTS.md
   + .gitignore += .claude/
   + .gitignore += .DS_Store
   + .gitignore += .idea/
+  + .gitignore += /.keel/map-drift-baseline
+  keel-impact: gitignored /.keel/impact-events.log in /tmp/demo/my-project/.gitignore
+  keel-impact: impact tracking enabled for /tmp/demo/my-project (marker: /tmp/demo/my-project/.keel/)
+    guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md and .keel/evidence.md to keep the history + audit trail.
   + CLAUDE.md created from template
+  + AGENTS.md created (symlink to CLAUDE.md)
+
+Next:
+  - fill in CLAUDE.md (overview, stack, conventions, roadmap) — AGENTS.md mirrors it automatically
+  - wire secret-guard:  install-secret-guard.sh --global   (or vendor into this repo)
+  - add to your INSTANCE.md registry:  register-project.sh "/tmp/demo/my-project"
+  - verify:  doctor.sh .
 
 == 2. The generated CLAUDE.md (the thin, always-loaded core) ==
    Edit the placeholders for your project; everything else loads on demand.
@@ -49,9 +63,10 @@ $ sed -n 1,10p /tmp/demo/my-project/CLAUDE.md
    doctor reports drift. secret-guard isn't wired yet, so it flags a WARN (advisory, not a fail).
 
 $ ./tools/doctor.sh /tmp/demo/my-project
+  (machine-global secret-guard staleness check: no core.hooksPath resolved via GIT_CONFIG_GLOBAL=/tmp/demo/home/.gitconfig — a redirected config looks identical to a genuinely bare machine)
 ● my-project (/tmp/demo/my-project)
   WARN [W-GUARD-UNWIRED] secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo) [global config read via GIT_CONFIG_GLOBAL=/tmp/demo/home/.gitconfig — a redirected one reports a guarded machine as unwired]
-  HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
+  HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: BACKLOG.drafts/, BACKLOG.md, FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
 doctor: structural baseline OK
 doctor: 0 gap, 1 warn, 1 hint
 
@@ -59,13 +74,23 @@ doctor: 0 gap, 1 warn, 1 hint
    A git hook that blocks key-shaped secrets before they ever reach a commit.
 
 $ ./tools/install-secret-guard.sh /tmp/demo/my-project
+  selftest: OK   — caught a key-shaped string
+  selftest: OK   — ignored the anchored pattern doc (no self-match)
+  selftest: OK   — honored the inline allow pragma
+  selftest: OK   — caught a personal literal in text (case-insensitive)
+  selftest: OK   — malformed personal regex fails CLOSED (config error, not a silent pass)
+  selftest: OK   — caught a personal literal inside a UTF-16LE blob
+  selftest: OK   — caught a non-ASCII personal literal inside a UTF-32LE blob
+  selftest: OK   — caught a session trailer in a pushed commit message
+  selftest: OK   — caught a session trailer in a pushed annotated-tag message
 secret-guard: vendored into /tmp/demo/my-project
 
 == 5. Re-audit — the secret-guard WARN is gone ==
 
 $ ./tools/doctor.sh /tmp/demo/my-project
+  (machine-global secret-guard staleness check: no core.hooksPath resolved via GIT_CONFIG_GLOBAL=/tmp/demo/home/.gitconfig — a redirected config looks identical to a genuinely bare machine)
 ● my-project (/tmp/demo/my-project)
-  HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
+  HINT [H-MAP-DRIFT] CLAUDE.md map may be stale — not found on disk: BACKLOG.drafts/, BACKLOG.md, FRAMEWORK.md (fix the mention, or accept it in .keel/map-drift-baseline)
 doctor: structural baseline OK
 doctor: 0 gap, 0 warn, 1 hint
 
@@ -82,6 +107,7 @@ Operator-specific literals live in the local, never-committed $SECRET_SCAN_PERSO
    ^ the commit was BLOCKED by the hook, exactly as intended.
 
 == Done ==
+   Nothing escaped the sandbox (auto-removed). Next: PRINCIPLES.md, FRAMEWORK.md, ADAPTING.md.
 ```
 
 ## Then what?
