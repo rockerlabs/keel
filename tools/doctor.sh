@@ -31,9 +31,9 @@
 #   WARN  W-AGENTSMD-DRIFT     AGENTS.md is a regular-file copy that has drifted from CLAUDE.md, or a
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
-#   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's,
-#                             either direction (a worktree carrying its own, or the main checkout's
-#                             linked worktrees carrying theirs)
+#   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's —
+#                             either a worktree carrying its own, or a main checkout whose linked
+#                             worktrees carry theirs
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
 #                              carrying no executable pre-commit) and no local hook. Sensitive to a
 #                              redirected global git config, so it names its source (dir #97)
@@ -149,7 +149,7 @@ _char_count() {
 }
 
 # manifest_field FILE KEY — the value of a top-level `key=value` line in an install manifest (dir
-# #125), first match, "" on any read failure. Used 5x below reading install-manifest.<mode> and
+# #125), first match, "" on any read failure. Used below to read both install-manifest.<mode> and
 # install-manifest.gate — one definition instead of hand-copied sed pipelines. `|| true` at the end: an
 # EXISTING but unreadable manifest (permission-denied) makes `sed` exit non-zero even with stderr silenced, and
 # under this file's own `set -euo pipefail` an unguarded pipeline failure here would abort the WHOLE
