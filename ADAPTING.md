@@ -4,10 +4,12 @@ Keel is built and tested on Claude Code, but most of it doesn't depend on Claude
 (keep the machinery thin and easy to swap). This is the honest map: what works as-is, what needs a small
 tweak, and how. So "works with any AI tool" is something you can actually *do*, not just a claim.
 
-> **Heads-up — honesty first.** Keel has now been run live on three substrates: **Claude Code**, **Codex**
-> (the one bundled in the ChatGPT desktop app), and **Cursor** — the rails fired on all three (with one
-> Cursor caveat below). Everything else in the table is still a general recipe, not a tested click-by-click.
-> If you get it working on Aider, Continue, Windsurf, or anything else, please
+> **Heads-up — honesty first.** Keel has now been run live on three vendor substrates: **Claude Code**,
+> **Codex** (the one bundled in the ChatGPT desktop app), and **Cursor** — the rails fired reliably on all
+> three (with one Cursor caveat below). A small local model (via ollama) was also tried and is marked ⚠️,
+> not ✅, in the table below — the same loaded prose only nudged it unreliably, short of a real gate (see
+> [the honest boundary](#the-honest-boundary)). Everything else in the table is still a general recipe, not
+> a tested click-by-click. If you get it working on Aider, Continue, Windsurf, or anything else, please
 > [share how](#help-map-your-tool) — that's the fastest way this section gets real.
 
 ## Non-Claude quickstart (3 steps)
@@ -186,9 +188,11 @@ this; start disjoint.
 
 ## Help map your tool
 
-Claude Code, Codex (ChatGPT app), and Cursor have been run live; everything else in the table is still a
-best guess. **If you got Keel running on another tool, please share the recipe** — it's the single most
-useful thing you can contribute right now.
+Claude Code, Codex (ChatGPT app), and Cursor have been run live and hold the rails reliably; a small local
+model was also tried and only got an unreliable nudge (see [the honest
+boundary](#the-honest-boundary)). Everything else in the table is still a best guess. **If you got Keel
+running on another tool, please share the recipe** — it's the single most useful thing you can contribute
+right now.
 
 Open a short PR or issue with:
 

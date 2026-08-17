@@ -374,9 +374,11 @@ implementing — a red test converts the criterion into something falsifiable, n
 
 ### Contract-first for invariant-bearing surfaces
 
-Two long review loops (13 and 14 rounds) both happened on surfaces whose expected behavior existed
-nowhere but in reviewers' heads — every review invented its own spec and "found" the differences against
-it. Per-file spec docs are the wrong fix (prose drifts out of sync with the code it describes); the
+Two long review loops (7 and 13 rounds — the 13-round loop recurs in the three-campaign tally in "When
+to stop reviewing" below; the 7-round loop is a separate campaign) both happened on surfaces whose
+expected behavior existed nowhere but in reviewers' heads — every review invented its own spec and
+"found" the differences against it. Per-file spec docs are the wrong fix (prose drifts out of sync with
+the code it describes); the
 durable spec is acceptance tests plus one source of truth in the code itself.
 
 1. **Contract-first.** An invariant-bearing surface (a gate, an installer, a protocol — anything whose

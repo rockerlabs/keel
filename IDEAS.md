@@ -2,9 +2,9 @@
 
 Keel's own instance of the tier `templates/IDEAS.md` describes: raw ideas about Keel itself, parked so
 they aren't lost to a chat transcript, and kept out of the always-loaded surfaces and the backlog until
-one earns a next step. Format: `- [date] idea — context (where it came from)`. Reviewed at `/wrap` /
-periodic review — promote to the backlog once actionable, or drop explicitly. (Ideas != Backlog: a next
-step may never materialize, and that's fine.)
+one earns a next step. Format: `- [date] idea — context (where it came from)`. Reviewed periodically
+(not yet part of `/wrap`'s mechanized sweep) — promote to the backlog once actionable, or drop
+explicitly. (Ideas != Backlog: a next step may never materialize, and that's fine.)
 
 ## Ideas
 
