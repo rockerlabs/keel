@@ -2,9 +2,10 @@
 
 Keel's own instance of the tier `templates/IDEAS.md` describes: raw ideas about Keel itself, parked so
 they aren't lost to a chat transcript, and kept out of the always-loaded surfaces and the backlog until
-one earns a next step. Format: `- [date] idea — context (where it came from)`. Reviewed periodically
-(not yet part of `/wrap`'s mechanized sweep) — promote to the backlog once actionable, or drop
-explicitly. (Ideas != Backlog: a next step may never materialize, and that's fine.)
+one earns a next step. Format: `- [date] idea — context (where it came from)`. Reviewed at `/wrap`'s
+red-flag sweep (in its mechanized outcome set since PR #213) and periodically — promote to the
+backlog once actionable, or drop explicitly. (Ideas != Backlog: a next step may never materialize,
+and that's fine.)
 
 ## Ideas
 
@@ -95,3 +96,9 @@ explicitly. (Ideas != Backlog: a next step may never materialize, and that's fin
   P3-flavored and worth stating even without adopting their pipeline: *decomposition quality is what
   buys the right to cheap implementation passes* — the better the grooming, the lower the effort tier a
   ticket needs. One added sentence in the model-selection section would carry it.
+- [2026-08-17] **Capability-split delegation pipeline: read-only analysis fans out to cheap spawned
+  subagents, gated mutation stays in serialized operator sessions** — surfaced designing drydock
+  (dir #165) and field-tested by its run 1 the same day. **Promoted the same day to dir #171** —
+  the run's empirics fired this entry's own promotion trigger; the pattern, the measured field test,
+  the "wrap duties are centralized" worker-marker lesson, and the design mandate all live in that
+  ticket now.
