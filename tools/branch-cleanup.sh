@@ -38,7 +38,7 @@
 #   branch-cleanup.sh -h | --help
 #
 # Env: KEEL_CLEANUP_GLOBS overrides the ephemeral-name allowlist (space-separated globs).
-#      KEEL_KEEP_WORKTREE=<path> names the worktree to never FLAG for removal (defaults to this run's own
+#      KEEL_KEEP_WORKTREE=<path> names the worktree to never touch (defaults to this run's own
 #      worktree); a caller that reconciles from another dir exports it to protect the session's worktree.
 #
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
@@ -97,8 +97,8 @@ git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git r
 
 # Default branch: origin/HEAD's target, else main. Compare against the REMOTE default when it resolves
 # (authoritative -- the merge lands there), else the local branch (offline / no remote, e.g. the tests).
-# symbolic-ref (not `rev-parse --abbrev-ref origin/HEAD`, which prints "HEAD" + exits 128 with no remote --
-# a pipefail landmine under set -e); an absent origin/HEAD just leaves default empty -> main.
+# symbolic-ref (not `rev-parse --abbrev-ref origin/HEAD`, which prints the literal "origin/HEAD" + exits
+# 128 with no remote); an absent origin/HEAD just leaves default empty -> main.
 default=""
 if _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then default="${_ref#refs/remotes/origin/}"; fi
 [ -n "$default" ] || default=main
@@ -163,7 +163,7 @@ EOF
 }
 
 # Portable file mtime, epoch seconds: GNU/busybox stat use -c '%Y'; BSD stat (macOS) uses -f '%m'. Detected
-# ONCE below (STAT_FMT) rather than trying both forms per file -- see the ticket note on stat -f/-c divergence.
+# ONCE below (STAT_FMT) rather than trying both forms per file.
 epoch_mtime() {
   case "$STAT_FMT" in
     c) stat -c '%Y' "$1" 2>/dev/null ;;
@@ -209,7 +209,7 @@ flag="";   n_flag=0          # worktrees with live work (dirty OR recently-touch
 # --merged="$base" does the "merged" gate in git itself (tip reachable from base — an unmerged or
 # squash-merged branch is simply not listed), replacing a per-branch `git merge-base` fork. The committer
 # date rides along free from the same call (a ref name can't contain a space, so `read b cd` splits
-# cleanly) — no per-branch `git log` fork either. (`--merged` needs git >= 2.7, 2015; macOS/Alpine clear it.)
+# cleanly) — no per-branch `git log` fork either. (`--merged` needs git >= 2.7, 2016; macOS/Alpine clear it.)
 while read -r b cd; do
   [ "$b" = "$default" ] && continue                         # base is trivially merged into itself
   age=$(( (now - ${cd:-$now}) / 86400 ))

@@ -334,8 +334,9 @@ cmd_enable() {
 
 # --- shared ledger parser: the ONE place that indexes the table's columns -------------------------
 # dir #107: rollup and the cross-project _ledger_stats used to re-derive these column indices and
-# regexes independently, against the file's own "keep all three in sync" warning at cmd_add's printf.
-# Both now delegate here instead. dir #151: the field numbers this awk block reads are no longer
+# regexes independently, against a "keep all three in sync" warning that used to sit at cmd_add's
+# hand-typed printf, since replaced by dir #151's array-driven version below. Both now delegate here
+# instead. dir #151: the field numbers this awk block reads are no longer
 # hand-typed either — they're looked up from _LEDGER_COLS via _ledger_col_pos and passed in as -v
 # variables, so awk's own `$date_col` etc. always tracks the array regardless of column reordering.
 # A data row is a table line whose first cell is an ISO date. Explicit digit classes (not {n}
@@ -594,7 +595,8 @@ cmd_add() {
     # trips byte-for-byte through a rewrite instead of being silently truncated to 5 fields.
     if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5 SEP $0}' "$LOG")"; then
       # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
-      # still populates the vars) — otherwise that event would be dropped, then lost when the log is rewritten.
+      # still populates the vars) — otherwise that event would be skipped this run and left unconsumed in
+      # $LOG for the next `add` to pick up (the subtractive rewrite below never removes a line it never read).
       while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
         # never consumed — survives the subtractive rewrite by not being in $consumed_raws
         is_event_type "$_ty" || continue

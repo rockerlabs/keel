@@ -12,7 +12,7 @@
 # Usage:
 #   public-audit.sh [DIR]            audit DIR (default: .); reads DIR/.public-audit if present
 #   public-audit.sh --token ERE ...  add a private token to hunt (repeatable; CLI, not committed)
-#   public-audit.sh --no-history ... tree only (skip the git-history scan)
+#   public-audit.sh --no-history ... tree only (skip the git-history + PR-ref scan)
 #   public-audit.sh --config FILE    use a specific config file
 #   public-audit.sh --quiet ...      print only GAP/WARN lines
 #
