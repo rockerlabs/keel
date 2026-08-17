@@ -4,10 +4,12 @@ Keel is publication-first, but a repo that grew up private accumulates two kinds
 expose: **content** (personal data / instance-specific strings in the tree) and **history** (real emails in
 commit/tag metadata, private tokens or personal data in old blobs and messages).
 [`public-audit`](../tools/public-audit.sh) is the detector — but know exactly what it **fails** on vs what
-it only **flags**: it **GAPs** (exit 1) on a non-public-safe commit/tag identity email and on a
-user-declared `--token`; it **WARNs** (advisory) on heuristic hits — emails, absolute home paths, and
-Cyrillic — in the tree *and* in history (message bodies + diffs), plus agent/session metadata. **Binary
-blobs are covered too:** every binary blob reachable from any ref (and a PR ref's exclusive blobs) is
+it only **flags**: it **GAPs** (exit 1) on a non-public-safe commit/tag identity email, a user-declared
+`--token`, and a personal literal from your local `secret-scan-personal` file (name, drive labels,
+serials, emails) found in the tree, history, or a binary blob; it **WARNs** (advisory) on heuristic hits —
+emails, absolute home paths, and Cyrillic — in the tree *and* in history (message bodies + diffs), plus
+agent/session metadata. **Binary blobs are covered too:** every binary blob reachable from any ref (and
+a PR ref's exclusive blobs) is
 decoded (NUL-strip + iconv UTF-16/UTF-32 LE/BE + raw-printable) and scanned with the same set — a
 personal name UTF-16/UTF-32-encoded inside a binary fixture no longer hides behind "Binary files
 differ". A bare
@@ -26,7 +28,9 @@ This page is the **procedure** to fix what it finds and flip without churn.
 3. **Purge host PR refs** — if the repo has any closed PRs, their old commits survive a `main`
    force-push in `refs/pull/*`. The only fix is **delete-and-recreate** (see below).
 4. **Flip** visibility to public — only after steps 2–3 are done, `public-audit` is exit 0, **and you
-   have read its WARNs** (exit 0 clears the GAP tier only; personal data lives in the WARN tier).
+   have read its WARNs** (exit 0 clears the GAP tier only — a personal literal declared in
+   `secret-scan-personal` is GAP-tier and already blocked; personal-data *heuristics* live in the WARN
+   tier).
 5. **Trigger** one CI run.
 6. **Share** the probe.
 
@@ -35,8 +39,9 @@ This page is the **procedure** to fix what it finds and flip without churn.
 ```bash
 tools/public-audit.sh --token <private-name> .
 ```
-GAP on non-public-safe identities and private tokens; WARN on heuristics (home paths, content emails,
-Cyrillic, agent/session metadata). **Clear every GAP before flipping — then read the WARNs yourself**,
+GAP on non-public-safe identities, private tokens, and declared personal literals (from
+`secret-scan-personal`); WARN on heuristics (home paths, content emails, Cyrillic, agent/session
+metadata). **Clear every GAP before flipping — then read the WARNs yourself**,
 because they do not move the exit code: a run can print real personal data and still exit 0. Re-run
 after each fix.
 
@@ -106,9 +111,9 @@ git push origin <tag> ; gh release create <tag> --title "<tag> — <headline>" -
 
 Flip to public **only after** steps 2–3 are done **and** a fresh `public-audit` (with network, so it covers
 host PR refs) is exit 0 across history, tree and PR refs — **and you have read the WARNs it printed.**
-Exit 0 clears the GAP tier: identities and declared tokens. The personal-data heuristics are WARN-tier and
-do not move the exit code, so "exit 0" is not the same claim as "clean" — that second claim is yours to
-make, after reading the list.
+Exit 0 clears the GAP tier: identities, declared tokens, and declared personal literals (from
+`secret-scan-personal`). The personal-data *heuristics* are WARN-tier and do not move the exit code, so
+"exit 0" is not the same claim as "clean" — that second claim is yours to make, after reading the list.
 
 ## 5. Trigger one CI run
 

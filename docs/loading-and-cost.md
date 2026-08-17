@@ -53,7 +53,7 @@ Put in perspective:
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
 - Over a month at ~50 sessions, the always-loaded core is ~110K input tokens total — cents, less with caching.
-- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~12K for one decision.
+- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~16.4K for one decision.
 
 A guard against bloat ships with the whole session's set: `doctor` raises a **HINT** (`H-FOOTPRINT`)
 when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (its `@…/keel/CORE.md` import

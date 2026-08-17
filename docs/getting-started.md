@@ -143,7 +143,7 @@ code/git rails from the always-on core on a machine with **no** git projects (st
 | In your config folder | What it is | What to do |
 |---|---|---|
 | `CLAUDE.md` | the small **always-on file** — ground rules + a map of where the rest lives | **fill in its placeholders** (chat language, etc.) |
-| `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md` | files loaded only when needed | leave as-is; they're pulled in when a task needs them. (On a **linked** install FRAMEWORK/PRINCIPLES live in `keel/` as symlinks, not at the top level.) |
+| `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md`, `IDEAS.md` | files loaded only when needed | leave as-is; they're pulled in when a task needs them. (On a **linked** install FRAMEWORK/PRINCIPLES live in `keel/` as symlinks, not at the top level.) |
 | `INSTANCE.md` | your **private** layer — machine details + a list of your projects | fill in the **machine details**; the project list fills itself as you `init-project`/`register-project`. Keep it private (git-ignored). |
 | a global git check | `secret-guard` | nothing — it runs on its own |
 

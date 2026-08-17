@@ -84,9 +84,11 @@ it is just ceremony.
 - [ ] **Discussions** — only if you'll read and use them. **[you]**
 - [ ] **Org profile README** — when the org hosts more than one thing worth a landing page. **[you]**
 
-> GitHub's "community standards" percentage counts the §6 files, so a deliberate skip leaves it **below
-> 100% — that's expected, not a defect.** Write the decision down (a line in your project notes) so a future
-> session doesn't re-open it.
+> GitHub's "community standards" percentage counts only CONTRIBUTING.md + templates and
+> CODE_OF_CONDUCT.md from this list — Discussions and an org profile README aren't part of that score at
+> all. A deliberate skip of CONTRIBUTING.md/templates or CODE_OF_CONDUCT.md leaves the percentage
+> **below 100% — that's expected, not a defect.** Write the decision down (a line in your project notes)
+> so a future session doesn't re-open it.
 
 ## How fast this should go
 
