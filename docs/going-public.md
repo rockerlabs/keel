@@ -8,8 +8,8 @@ it only **flags**: it **GAPs** (exit 1) on a non-public-safe commit/tag identity
 `--token`, and a personal literal from your local `secret-scan-personal` file (name, drive labels,
 serials, emails) found in the tree, history, or a binary blob; it **WARNs** (advisory) on heuristic hits —
 emails, absolute home paths, and Cyrillic — in the tree *and* in history (message bodies + diffs), plus
-agent/session metadata. **Binary
-blobs are covered too:** every binary blob reachable from any ref (and a PR ref's exclusive blobs) is
+agent/session metadata. **Binary blobs are covered too:** every binary blob reachable from any ref (and
+a PR ref's exclusive blobs) is
 decoded (NUL-strip + iconv UTF-16/UTF-32 LE/BE + raw-printable) and scanned with the same set — a
 personal name UTF-16/UTF-32-encoded inside a binary fixture no longer hides behind "Binary files
 differ". A bare

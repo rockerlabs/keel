@@ -66,8 +66,7 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard
 blocking a key. Most of the docs are indexed in the [README's Docs section](../README.md#docs) too — a
-few maintainer/deep-dive ones (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`,
-`publishing-checklist.md`) aren't.
+few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing-checklist.md`) aren't.
 
 Setting Keel up for a tool other than Claude Code (installer flags, the by-hand copy) →
 [`docs/getting-started.md`](getting-started.md) and [`ADAPTING.md`](../ADAPTING.md).

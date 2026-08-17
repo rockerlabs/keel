@@ -86,8 +86,9 @@ it is just ceremony.
 
 > GitHub's "community standards" percentage counts only CONTRIBUTING.md + templates and
 > CODE_OF_CONDUCT.md from this list — Discussions and an org profile README aren't part of that score at
-> all. A deliberate skip of either of those two leaves the percentage **below 100% — that's expected, not
-> a defect.** Write the decision down (a line in your project notes) so a future session doesn't re-open it.
+> all. A deliberate skip of CONTRIBUTING.md/templates or CODE_OF_CONDUCT.md leaves the percentage
+> **below 100% — that's expected, not a defect.** Write the decision down (a line in your project notes)
+> so a future session doesn't re-open it.
 
 ## How fast this should go
 
