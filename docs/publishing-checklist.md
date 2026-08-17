@@ -55,12 +55,17 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       `tools/stamp-release-bootstrap.sh <tag> /tmp/bootstrap.sh && gh release create <tag> --title "<tag> — <headline>" --notes-file <notes-file> /tmp/bootstrap.sh`
       (or `gh release upload <tag> /tmp/bootstrap.sh` on an existing release). **[you]** — not `[auto]`:
       `<notes-file>` still has to be extracted from `CHANGELOG.md` by hand, which is the manual step
-      whose omission caused v0.6.1's blank release. A helper to make this one paste is on the backlog.
+      whose omission caused v0.6.1's blank release. A helper to make the EXTRACTION one paste is on the
+      backlog; the curation below is human by nature, so this line stays `[you]` either way.
 - [ ] **Give the release a title and real notes**, then check them: `gh release view <tag> --json
       name,body,assets`. `--notes-from-tag` alone yields a blank title and a one-line body, and an empty
-      title is invisible from the command that created it. Notes come from the `CHANGELOG.md` section you
-      just cut — already written, already reviewed, already canonical. **[you]** *(v0.6.1 shipped with a
-      blank title because this list omitted `--title`; see `CHANGELOG.md`'s dir #159 entry.)*
+      title is invisible from the command that created it. **[you]**
+      *Notes are CURATED from the `CHANGELOG.md` section you just cut, not a copy of it* — this repo's own
+      releases run ~4KB (a prose opener, three or four highlight sections, a Known-issues paragraph) while
+      the section itself ran ~31KB at v0.6.1, so pasting it whole gives a release note eight times the
+      house length. The section is the source and the authority; the release note is the readable
+      digest of it. *(v0.6.1 shipped with a blank title because this list omitted `--title`; see
+      `CHANGELOG.md`'s dir #159 entry.)*
 
 ## 5. Presentation
 

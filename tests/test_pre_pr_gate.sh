@@ -461,8 +461,11 @@ check_contains "review 'skip' against a sized-medium depth → denied" "$OUT" '"
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
 
 # 18c. Same shape for a trusted -operator-run outcome: claiming "low-operator-run" against a depth
-# actually sized "high" must not unlock the gate either — write_full_receipt_review always matches
-# polish.4-depth to the given outcome, so this one is built by hand to deliberately mismatch them.
+# actually sized "high" must not unlock the gate either — write_full_receipt_review DERIVES
+# polish.4-depth from the given outcome by default, so a deliberate mismatch has to be asked for.
+# This block predates the helper's `depth_override` 5th argument (dir #158) and is still hand-rolled;
+# so are 18b, 49, 50d and 50h. Only 50j uses the override, which leaves two idioms for one fixture
+# shape 30 lines apart — migrating the five is its own cleanup, filed as dir #163, not folded in here.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.1-diff
@@ -1044,12 +1047,9 @@ check_contains "...also by the depth cross-check — validation is all-or-nothin
 # The loop covers an empty SUFFIX (`agent:high+`) as well as empty ELEMENTS at the leading, doubled and
 # interior positions.
 #
-# **"Rejected by" and "pinned by" are different claims — keep them apart.** Five revisions of this
-# comment and the gate's conflated them, in both directions, which is where MOST of them came from —
-# not all: one was a plain miscount and one a word slip, so don't read this rule as covering every way
-# a comment goes wrong (saying it did was itself a claim stated wider than its evidence, i.e. the same
-# species as the five). "Rejected by X" describes the CURRENT code; "pinned by X" is a statement about a MUTATION, and
-# is only true if breaking X reds a test. Measured here:
+# **"Rejected by X" describes the current code; "pinned by X" is only true if breaking X reds a test.**
+# Keeping those apart is what the table below is for — conflating them is how earlier revisions of this
+# comment and the gate's went wrong. Measured here:
 #   - REJECTED BY THE WALK: all four comma shapes (each reaches `_addon_label` as the empty string).
 #   - REJECTED BY THE GUARD: `agent:high+` — `$addons` is empty, so the walk runs zero iterations.
 #   - PIN THE WALK: only the two that pair an empty element with a VALID one (`+,second-opinion`,

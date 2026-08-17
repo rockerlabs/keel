@@ -90,15 +90,9 @@ pin "release-audit.md phase 7 states the allowance's SECOND condition (version a
 pin "release-audit.md phase 7 names the allowance's linear-release-line limit" \
   "$audit" 'linear release line' \
   "the version condition GAPs a legitimate backport cut below the newest tag; phase 7 must keep saying so, or the doc over-promises again"
-# **The CODE leg is deliberately NOT pinned here** (decided by /simplify's altitude pass, verified
-# empirically). A first version of this block also grepped `tools/self/doctor.sh` for the two conjuncts.
-# It added no protection: `tests/test_self_doctor.sh` already covers both BEHAVIOURALLY, with the very
-# fixture the review broke — deleting the version conjunct reds 3 of its assertions (measured). And it
-# added real fragility, pinning expression SHAPE down to a trailing `&&`, so extracting the guard into a
-# helper or reordering the conjuncts would red it while behaviour was identical — a second source of
-# truth about the code's shape, the same smell `_addon_label`'s header in tools/pre-pr-gate.sh rejects.
-# So: prose pinned here (nothing else covers it), behaviour pinned in test_self_doctor.sh, and a comment
-# there naming this doc as the one that must agree.
+# **The CODE leg is deliberately NOT pinned here** — it is covered behaviourally in
+# `tests/test_self_doctor.sh`, whose own comment carries the argument for why a shape-grep here would be
+# worse than useless. Prose pinned here, behaviour pinned there.
 #
 # **Named limit of this guard, so nobody mistakes its reach:** these pins catch the DELETION of a stated
 # condition, not the felt failure that motivated dir #157 — code GAINING a condition the doc never

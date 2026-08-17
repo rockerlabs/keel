@@ -794,8 +794,12 @@ check_contains "and names it specifically" "$OUT" "1.1.0"
 # **These fixtures are the CODE leg of a doc↔code coupling (dir #157).** `docs/release-audit.md`'s
 # phase 7 states the allowance's two conditions in prose, and `tests/test_release_audit_doc.sh` pins
 # that prose. The conditions themselves are pinned HERE, behaviourally, rather than by grepping
-# `tools/self/doctor.sh` for its expression shape — a shape-grep would break on a harmless refactor
-# while these break only when behaviour actually changes. **So if you change what the allowance
+# `tools/self/doctor.sh` for its expression shape. A first version of dir #157 DID grep it and was
+# removed: it added no protection — deleting either conjunct already reds these fixtures (3 assertions
+# for the version half, 4 for the position half, measured) — while pinning expression shape down to a
+# trailing `&&`, so extracting the guard into a helper or reordering the conjuncts would red it with
+# behaviour unchanged. That is a second source of truth about the code's shape, the same smell
+# `_addon_label`'s header in `tools/pre-pr-gate.sh` rejects. **So if you change what the allowance
 # accepts, update phase 7's prose in the same commit**; the doc drifted from the code once already,
 # inside the single PR that wrote both.
 #
