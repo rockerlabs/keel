@@ -6,16 +6,22 @@ Scaffold a new project to the Keel baseline so it is born-compliant (no backfill
 
 Runs `tools/init-project.sh` in the target directory, which idempotently ensures:
 1. **git** initialized.
-2. **`.gitignore`** ignores the private AI context (`CLAUDE.md`, `.claude/`) + IDE/OS noise.
-3. **project `CLAUDE.md`** created from `templates/project-CLAUDE.md` (never overwrites an existing one).
+2. **`.gitignore`** ignores the private AI context (`CLAUDE.md`, `AGENTS.md`, `.claude/`) + IDE/OS noise.
+3. **project `CLAUDE.md`** created from `templates/project-CLAUDE.md` (never overwrites an existing one),
+   plus an **`AGENTS.md`** vendor sibling symlinked to it (dir #75).
+4. **impact tracking** opted in via a `.keel/` marker (only its ephemeral event log is gitignored).
+5. **registration** in your `INSTANCE.md` Projects registry, if `INSTANCE.md` exists.
 
-Then it prints the manual follow-ups: fill in `CLAUDE.md`, wire `secret-guard`, register the project in
-`INSTANCE.md`, and verify with `doctor`.
+Then it prints the remaining manual follow-ups: fill in `CLAUDE.md`, wire `secret-guard`, and verify with
+`doctor`. (If registration didn't happen — no `INSTANCE.md` yet, or `--no-register` — it prints that as a
+manual follow-up too.)
 
 ## Usage
 
 ```
 tools/init-project.sh [PROJECT_DIR]      # default: current directory
+tools/init-project.sh --no-register      # skip auto-registering in INSTANCE.md
+tools/init-project.sh --no-impact        # skip opting into impact tracking
 ```
 
 ## Notes
