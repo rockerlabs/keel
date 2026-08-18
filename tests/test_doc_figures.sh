@@ -15,6 +15,14 @@ check_file "loading-and-cost.md exists" "$doc"
 # guards can't diverge from each other (this idiom used to be pasted per-function).
 tok_of() { local c; c="$(wc -c < "$1" | tr -d ' ')"; echo $(( c / 4 )); }
 
+# k_fig_to_tokens LINE — print the trailing "~N[.N]K" figure on LINE as a plain token count (no "~"/"K").
+# LC_ALL=C: awk parses "1.8" by locale — a comma-decimal locale would read it as 1 and false-fail. One
+# copy shared by every "~N.NK" parser below (assert_readme_figure, assert_derived_core_figures,
+# assert_derived_quoted_sum) — found duplicated three ways by review.
+k_fig_to_tokens() {
+  printf '%s' "$1" | grep -oE '~[0-9]+(\.[0-9]+)?K' | tail -1 | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}'
+}
+
 # Shared ±10% verdict: the quoted figure FIG (from SRCDESC) vs the file's ACTUAL token estimate.
 # dir #73: a figure that still passes but has nearly drifted out of the band fails silently — the next
 # edit to the same file (by anyone, for any reason) red-lights CI on a figure it never touched. Warn
@@ -66,7 +74,7 @@ assert_figure() {
 
   row="$(table_row_for "$file")"
   if [ -z "$row" ]; then fail "$label" "no table row mentions \`$file\` in loading-and-cost.md"; return; fi
-  doc_fig="$(printf '%s' "$row" | grep -oE '~[0-9,]+' | tail -1 | tr -d '~, ')"
+  doc_fig="$(table_fig_for "$file")"
   if [ -z "$doc_fig" ]; then fail "$label" "no ~figure on the $file row of loading-and-cost.md"; return; fi
 
   # A "~N,NNN+" figure is an open-ended FLOOR — for a monotonically-growing file (CHANGELOG), assert the
@@ -136,15 +144,13 @@ assert_readme_figure() {
   local label="$1" file="$2" pattern="$3" path="$REPO_ROOT/$2" readme="$REPO_ROOT/README.md"
   if [ ! -f "$path" ]; then fail "$label" "missing file: $path"; return; fi
 
-  local actual="" line="" fig_raw="" fig=""   # init all (set -u safe on bash 3.2)
+  local actual="" line="" fig=""   # init all (set -u safe on bash 3.2)
   actual="$(tok_of "$path")"
 
   line="$(grep -E "$pattern" "$readme" | head -1)"
   if [ -z "$line" ]; then fail "$label" "no line matching /$pattern/ in README.md"; return; fi
-  fig_raw="$(printf '%s' "$line" | grep -oE '~[0-9]+(\.[0-9]+)?K' | tail -1)"
-  if [ -z "$fig_raw" ]; then fail "$label" "no ~N[.N]K figure on the matched README.md line: $line"; return; fi
-  # LC_ALL=C: awk parses "1.8" by locale — a comma-decimal locale would read it as 1 and false-fail.
-  fig="$(printf '%s' "$fig_raw" | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}')"
+  fig="$(k_fig_to_tokens "$line")"
+  if [ -z "$fig" ]; then fail "$label" "no ~N[.N]K figure on the matched README.md line: $line"; return; fi
 
   assert_band "$label" "$fig" "$actual" "README"
 }
@@ -170,14 +176,17 @@ assert_derived_core_figures() {
   fi
 
   # ~N sessions x core -> ~NNNK input tokens total
-  local sess_line="" n_sessions="" fig_raw="" fig="" expected=""
+  local sess_line="" n_sessions="" fig="" expected=""
   sess_line="$(grep -E 'always-loaded core is ~[0-9]+(\.[0-9]+)?K input tokens total' "$doc" | head -1)"
   if [ -z "$sess_line" ]; then
     fail "loading-and-cost.md ~N-sessions total tracks the core figure" "no '~NK input tokens total' line found"
   else
     n_sessions="$(printf '%s' "$sess_line" | grep -oE '~[0-9]+ sessions' | grep -oE '[0-9]+')"
-    fig_raw="$(printf '%s' "$sess_line" | grep -oE '~[0-9]+(\.[0-9]+)?K input tokens total' | grep -oE '~[0-9]+(\.[0-9]+)?K')"
-    fig="$(printf '%s' "$fig_raw" | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}')"
+    # Re-anchor to "input tokens total" before handing off to k_fig_to_tokens (dir #167 review): the
+    # shared helper's own grep is unanchored (last ~N.NK match on the line wins), so pass it only the
+    # phrase-anchored substring — a second ~N.NK figure added later on this same line (e.g. a trailing
+    # per-session parenthetical) must not be silently picked up instead of the real one.
+    fig="$(k_fig_to_tokens "$(printf '%s' "$sess_line" | grep -oE '~[0-9]+(\.[0-9]+)?K input tokens total')")"
     if [ -z "$n_sessions" ] || [ -z "$fig" ]; then
       fail "loading-and-cost.md ~N-sessions total tracks the core figure" "couldn't parse: $sess_line"
     else
@@ -218,7 +227,7 @@ assert_derived_core_figures
 # tok_of) and assert the one-off line still tracks that sum within the usual ±10% band.
 assert_derived_quoted_sum() {
   local label="loading-and-cost.md ~16.4K FRAMEWORK+PRINCIPLES sum tracks its own quoted addends"
-  local fw_fig="" pr_fig="" line="" fig_raw="" fig="" expected=""   # init all (set -u safe on bash 3.2)
+  local fw_fig="" pr_fig="" line="" fig="" expected=""   # init all (set -u safe on bash 3.2)
   fw_fig="$(table_fig_for FRAMEWORK.md)"
   pr_fig="$(table_fig_for PRINCIPLES.md)"
   if [ -z "$fw_fig" ] || [ -z "$pr_fig" ]; then
@@ -230,12 +239,11 @@ assert_derived_quoted_sum() {
     fail "$label" "no 'open FRAMEWORK + PRINCIPLES together' line found"
     return
   fi
-  fig_raw="$(printf '%s' "$line" | grep -oE '~[0-9]+(\.[0-9]+)?K' | tail -1)"
-  if [ -z "$fig_raw" ]; then
+  fig="$(k_fig_to_tokens "$line")"
+  if [ -z "$fig" ]; then
     fail "$label" "no ~N[.N]K figure on the matched line: $line"
     return
   fi
-  fig="$(printf '%s' "$fig_raw" | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}')"
   expected=$(( fw_fig + pr_fig ))
   assert_band "$label" "$fig" "$expected" "doc: ~$fw_fig + ~$pr_fig"
 }
@@ -288,13 +296,16 @@ done
 # since loading-and-cost.md is the comprehensive page and legitimately covers files (CORE.md,
 # `<project>/CLAUDE.md`, ADAPTING.md, CHANGELOG.md, commands/*.md) that getting-started.md's narrower
 # "what got installed" table has no reason to repeat.
-gs_doc="$REPO_ROOT/docs/getting-started.md"
-check_file "getting-started.md exists" "$gs_doc"
+assert_getting_started_table_parity() {
+  local gs_doc="$REPO_ROOT/docs/getting-started.md"
+  local setup_table="" gs_files="" f=""   # init all (set -u safe on bash 3.2)
+  check_file "getting-started.md exists" "$gs_doc"
 
-setup_table="$(awk '/^## 2\. What just got set up/{f=1; next} /^## /{f=0} f && /^\|/' "$gs_doc")"
-if [ -z "$setup_table" ]; then
-  fail "getting-started.md 'What just got set up' table found" "no '## 2. What just got set up' section"
-else
+  setup_table="$(awk '/^## 2\. What just got set up/{f=1; next} /^## /{f=0} f && /^\|/' "$gs_doc")"
+  if [ -z "$setup_table" ]; then
+    fail "getting-started.md 'What just got set up' table found" "no '## 2. What just got set up' section"
+    return
+  fi
   pass "getting-started.md 'What just got set up' table found"
   gs_files="$(printf '%s' "$setup_table" | grep -oE '`[A-Za-z0-9_.-]+\.md`' | tr -d '`' | sort -u)"
   while IFS= read -r f; do
@@ -306,6 +317,7 @@ else
         "getting-started.md's setup table lists \`$f\` but no loading-and-cost.md row mentions it"
     fi
   done <<< "$gs_files"
-fi
+}
+assert_getting_started_table_parity
 
 summary
