@@ -218,6 +218,11 @@ trend.
   indefinitely.
 - L4 has no mid-task checkpoint, so a long-running ticket interrupted mid-session loses its plan state.
 
+**When any of these loops' work is bulk read-only analysis over many independent units** (an audit, a
+grooming wave, a recon dossier), fan it out to stateless subagent workers behind a file contract instead
+of doing it serially in one session — keeping every gate (commits, PRs, merges, backlog/memory writes)
+inside your own session regardless. Full pattern → `docs/delegation.md`.
+
 ---
 
 ## Knowledge & context upkeep

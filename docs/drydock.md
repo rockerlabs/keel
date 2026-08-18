@@ -1,5 +1,8 @@
 # Drydock — auditing the prose your agent actually executes
 
+*This is a worked instantiation of [`docs/delegation.md`](delegation.md)'s capability-split pattern —
+read that doc for the generalized roles, contracts, and rails behind everything below.*
+
 Your tests tell you the code still works. Nothing tells you the *prose* still does — the rails, the
 docs, the command steps, the comments a model reads and acts on every single session. That prose
 drifts in one direction only: it was true when written, then the surface it described moved, and

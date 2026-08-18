@@ -56,6 +56,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   on Keel's own tree the pathspec misses `keel` (the adopter-facing CLI entry point, 48 comment lines)
   and both secret-guard hooks — 55 lines of shipped prose that would have sat permanently outside
   every run's scope, invisible because an inventory reports totals, not omissions.
+- **Capability-split delegation, generalized from drydock into a standalone, adopter-usable pattern**
+  (dir #171). [`docs/delegation.md`](docs/delegation.md) names what drydock's own field test proved out:
+  most of a working session is read-only analysis — delegable to cheap, stateless, parallel workers
+  behind a file contract — while the gated mutation path (commits, PRs, merges, releases, deletions,
+  backlog and memory writes) and the operator's own review bandwidth stay non-delegable, named
+  explicitly as a rail rather than left to erode. Four roles in separate contexts (orchestrator, worker,
+  verifier, mutator — mutators are never subagents); a generic 7-phase skeleton; the unit-output
+  contract with its three-valued verdict; the run-directory/durable-history state split; the worker and
+  verifier rails as a literal, do-not-paraphrase block, including the centralized-wrap marker line that
+  countered drydock run 1's Stop-hook nudging every fixer session toward a spurious `/wrap`; the
+  session-limit ask-then-arithmetic flow; inline worker/verifier/mutator prompt templates; and three
+  application sketches beyond auditing (a grooming wave, a pre-implementation recon dossier, a
+  post-merge sweep — labeled not-yet-field-tested, unlike the audit sketch, which points at
+  [`docs/drydock.md`](docs/drydock.md) as the worked instantiation). `docs/drydock.md` now opens with a
+  line naming itself that instantiation, and `FRAMEWORK.md` gains a 4-line pointer to the pattern from
+  its "Loop model" section.
 
 ### Changed
 - **A step-5 receipt can now name EVERY review that saw the commit, not just the last one** (dir #158).
