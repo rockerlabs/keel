@@ -117,15 +117,20 @@ you notice, the cheaper the tier.
   branch off the default branch. An order of magnitude cheaper than any of the tiers below, because
   nothing collided yet.
 - **Pre-commit.** `git branch --show-current` immediately before any commit or push. On someone else's
-  branch: `git reset --soft @{upstream}` to back your own commit off it without touching the peer's
-  files, then commit through a throwaway worktree instead of switching branches out from under them.
+  branch: capture your own commits onto a ref first — `git branch rescue-mine HEAD` — then reset that
+  branch back to the commit before yours with `git reset --hard <sha>` (check `git log --oneline` for the
+  actual SHA rather than counting commits blindly: a peer's own commit can have landed on the tip after
+  yours). A plain `reset --soft` instead would leave your work only staged in the shared checkout's
+  index, not on a ref of its own — the peer's next ordinary commit there would silently absorb it.
+  Continue your own work from `rescue-mine` in a throwaway worktree instead of switching branches out
+  from under them.
 - **Retroactive.** Foreign commits have already piled onto your branch — don't push it as-is. Cherry-pick
   only your own SHAs onto a fresh branch cut from a freshly-fetched default branch; rescue any orphaned
   foreign commit onto its own throwaway branch rather than dropping it; re-verify anything you numbered
   against a shared file's *remote* version (`git show origin/<default>:<path>`), since the remote may
   have claimed that number while you weren't looking; finish with push-verify.
-- **The floor: `git reflog`.** Name it plainly — it recovered three of the four incidents in the catalog
-  above, it's local-only, and it expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
+- **The floor: `git reflog`.** Name it plainly — it recovered two of the four incidents in the catalog
+  above (F1 and F3), it's local-only, and it expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
   only** — to find commits a *peer* session dropped, check that branch's own reflog instead:
   `git reflog show <branch>`, which every worktree shares. Pair it with `git stash list` and
   `git fsck --lost-found` as the last stop before calling something actually gone.
