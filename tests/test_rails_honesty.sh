@@ -77,4 +77,27 @@ pin "polish.md: step 7 itself names the convergence round its finding triggers" 
   "$polish" 'you are in a convergence round' \
   "expected step 7 to state that a fix commit puts the run into step 1's convergence branch"
 
+# --- dir #177: the IN-RUN convergence path (resolve, --amend, continue the same run) needs its own
+# paragraph beside step 5's "converge, don't restart" block, and step 1's --recover warning needs the
+# mirror-image case added: a "nothing to recover" answer is by-design on this path too, not proof of a
+# fresh run. -----------------------------------------------------------------------------------------
+pin "polish.md: step 5 names the in-run converge-and-continue path explicitly" \
+  "$polish" 'The IN-RUN path is the cheaper alternative when steps 6/7/8 are still ahead' \
+  "expected step 5 to name the in-run --amend-and-continue path beside 'converge, don't restart'"
+pin "polish.md: step 5's in-run paragraph names polish.3-tests as the pre-existing sha-bound receipt" \
+  "$polish" '**`polish.3-tests`**, the one PRE-EXISTING receipt' \
+  "expected the in-run paragraph to name polish.3-tests by id"
+pin "polish.md: step 5's in-run paragraph names polish.6-retest as the receipt that re-establishes binding" \
+  "$polish" '`polish.6-retest` receipt against the new HEAD satisfies it on its own' \
+  "expected the in-run paragraph to name polish.6-retest by id"
+pin "polish.md: step 1's --recover warning names the in-run mirror-image trap" \
+  "$polish" 'answer has a mirror-image trap too (dir #177)' \
+  "expected step 1's 'do NOT use --recover's own output' warning to cover the nothing-to-recover case too"
+pin "polish.md: step 5's in-run paragraph does not misattribute the later-staleness trigger to steps 6/7" \
+  "$polish" 'but not via step 6 or step 7' \
+  "expected the polish.5-review staleness clause to name an add-on review as the trigger, not step 6/7 (which mandate re-invoking /polish, never an in-run amend)"
+pin "polish.md: step 5's in-run paragraph names the review dialog as per-commit too" \
+  "$polish" 'The MANDATORY review dialog (dir #88), on that same later-amend trigger' \
+  "expected the polish.5-review staleness clause to also cover the dir #88 review dialog going stale"
+
 summary
