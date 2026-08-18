@@ -38,6 +38,21 @@ assert_band() {
   fi
 }
 
+# table_row_for FILE — print FILE's own File-by-file table row in loading-and-cost.md, or nothing if
+# no row mentions it. Factored out of assert_figure so assert_derived_quoted_sum below can reuse the
+# SAME row-lookup instead of re-deriving it from the actual file (dir #167: the ~16.4K one-off line
+# must track the TABLE's own quoted addends, so a mismatch is caught even when neither individual
+# figure has drifted from its file).
+table_row_for() { grep -E "^\|.*\`${1//./\\.}\`" "$doc" | head -1; }
+
+# table_fig_for FILE — print the lone "~N,NNN" figure quoted on FILE's table row (digits only, no
+# "~"/","), or nothing if no such row/figure exists.
+table_fig_for() {
+  local row; row="$(table_row_for "$1")"
+  [ -z "$row" ] && return
+  printf '%s' "$row" | grep -oE '~[0-9,]+' | tail -1 | tr -d '~, '
+}
+
 # Assert the ~figure on FILE's table row is within ±10% of (chars / 4). The table keys some rows by
 # install location with the source file in parens (e.g. "(from `templates/CLAUDE.md`)"), so match any
 # table row (starts with "|") that mentions the backticked path — not just rows that start with it.
@@ -49,7 +64,7 @@ assert_figure() {
   local actual="" row="" doc_fig=""   # init all (set -u safe on bash 3.2)
   actual="$(tok_of "$path")"
 
-  row="$(grep -E "^\|.*\`${file//./\\.}\`" "$doc" | head -1)"
+  row="$(table_row_for "$file")"
   if [ -z "$row" ]; then fail "$label" "no table row mentions \`$file\` in loading-and-cost.md"; return; fi
   doc_fig="$(printf '%s' "$row" | grep -oE '~[0-9,]+' | tail -1 | tr -d '~, ')"
   if [ -z "$doc_fig" ]; then fail "$label" "no ~figure on the $file row of loading-and-cost.md"; return; fi
@@ -194,6 +209,38 @@ assert_derived_core_figures() {
 }
 assert_derived_core_figures
 
+# dir #167: "Even if you do open FRAMEWORK + PRINCIPLES together (rare), that's a one-off ~16.4K for
+# one decision" is arithmetic, not a file-size figure — assert_figure above pins each addend against
+# its OWN file, but nothing ever re-derives the SUM from those addends. A prior version of this line
+# said "~12K" against the same table's own ~10,500 + ~5,950 (= ~16,450); PR #211 fixed the printed
+# figure by hand, but the arithmetic itself stayed unguarded, so the same drift can recur silently. Sum
+# the TABLE's own quoted figures for the two files (not their actual on-disk sizes — table_fig_for, not
+# tok_of) and assert the one-off line still tracks that sum within the usual ±10% band.
+assert_derived_quoted_sum() {
+  local label="loading-and-cost.md ~16.4K FRAMEWORK+PRINCIPLES sum tracks its own quoted addends"
+  local fw_fig="" pr_fig="" line="" fig_raw="" fig="" expected=""   # init all (set -u safe on bash 3.2)
+  fw_fig="$(table_fig_for FRAMEWORK.md)"
+  pr_fig="$(table_fig_for PRINCIPLES.md)"
+  if [ -z "$fw_fig" ] || [ -z "$pr_fig" ]; then
+    fail "$label" "couldn't read both quoted addends (FRAMEWORK.md=$fw_fig PRINCIPLES.md=$pr_fig)"
+    return
+  fi
+  line="$(grep -E 'open .?FRAMEWORK.? \+ .?PRINCIPLES.? together' "$doc" | head -1)"
+  if [ -z "$line" ]; then
+    fail "$label" "no 'open FRAMEWORK + PRINCIPLES together' line found"
+    return
+  fi
+  fig_raw="$(printf '%s' "$line" | grep -oE '~[0-9]+(\.[0-9]+)?K' | tail -1)"
+  if [ -z "$fig_raw" ]; then
+    fail "$label" "no ~N[.N]K figure on the matched line: $line"
+    return
+  fi
+  fig="$(printf '%s' "$fig_raw" | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}')"
+  expected=$(( fw_fig + pr_fig ))
+  assert_band "$label" "$fig" "$expected" "doc: ~$fw_fig + ~$pr_fig"
+}
+assert_derived_quoted_sum
+
 # Every file with a quoted per-file figure in the table. Keep this list in sync with the table:
 # a new figure-bearing row should get a line here (the table itself is the source of truth for sizes).
 assert_figure "templates/CLAUDE.md figure within 10%"         templates/CLAUDE.md
@@ -203,6 +250,7 @@ assert_figure "FRAMEWORK.md figure within 10%"                FRAMEWORK.md
 assert_figure "PRINCIPLES.md figure within 10%"               PRINCIPLES.md
 assert_figure "templates/INSTANCE.md figure within 10%"       templates/INSTANCE.md
 assert_figure "templates/LEARNINGS.md figure within 10%"      templates/LEARNINGS.md
+assert_figure "templates/IDEAS.md figure within 10%"          templates/IDEAS.md
 assert_figure "ADAPTING.md figure within 10%"                 ADAPTING.md
 assert_figure "CHANGELOG.md figure within 10%"                CHANGELOG.md
 assert_commands_range "commands/*.md sizes fall inside the quoted range"
@@ -229,5 +277,35 @@ for h in "Git — mandatory rails" "Before writing code — reconcile first"; do
     fail "keel-setup trim quotes the heading: $h" "the trim instruction no longer names this section"
   fi
 done
+
+# dir #167 / P6-2: docs/getting-started.md's "What just got set up" table (the config-folder files an
+# install leaves behind) and loading-and-cost.md's "File by file" table both enumerate on-demand config
+# files, but nothing ever checked they name the SAME set — a same-batch fix (PR #211) added an
+# `IDEAS.md` row to getting-started.md's table without adding the matching row here, and no test caught
+# it. Read every backticked `*.md` filename out of getting-started.md's "What just got set up" table
+# (the section between its own heading and the next `##`) and assert each one has a matching row
+# (backticked, any path prefix) in loading-and-cost.md's File-by-file table — the direction that matters,
+# since loading-and-cost.md is the comprehensive page and legitimately covers files (CORE.md,
+# `<project>/CLAUDE.md`, ADAPTING.md, CHANGELOG.md, commands/*.md) that getting-started.md's narrower
+# "what got installed" table has no reason to repeat.
+gs_doc="$REPO_ROOT/docs/getting-started.md"
+check_file "getting-started.md exists" "$gs_doc"
+
+setup_table="$(awk '/^## 2\. What just got set up/{f=1; next} /^## /{f=0} f && /^\|/' "$gs_doc")"
+if [ -z "$setup_table" ]; then
+  fail "getting-started.md 'What just got set up' table found" "no '## 2. What just got set up' section"
+else
+  pass "getting-started.md 'What just got set up' table found"
+  gs_files="$(printf '%s' "$setup_table" | grep -oE '`[A-Za-z0-9_.-]+\.md`' | tr -d '`' | sort -u)"
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if grep -qE "^\|.*\`([^\`]*/)?${f//./\\.}\`" "$doc"; then
+      pass "loading-and-cost.md File-by-file table has a row for $f (getting-started.md parity)"
+    else
+      fail "loading-and-cost.md File-by-file table has a row for $f (getting-started.md parity)" \
+        "getting-started.md's setup table lists \`$f\` but no loading-and-cost.md row mentions it"
+    fi
+  done <<< "$gs_files"
+fi
 
 summary
