@@ -43,15 +43,13 @@ check_status "tour.sh runs end-to-end -> exit 0" 0 "$STATUS"
 
 # Rule 1: the tour's own mktemp sandbox, resolved or not, -> /tmp/demo.
 sandbox_re='(/private)?(/var/folders/[^ ]*/T/tmp\.[A-Za-z0-9]+|/tmp/tmp\.[A-Za-z0-9]+)'
-live="$(printf '%s\n' "$OUT" | sed -E "s#${sandbox_re}#/tmp/demo#g")"
-# Rule 2: this checkout's absolute root -> '.' (matches the README's relative `./tools/...` form).
-live="$(printf '%s\n' "$live" | sed "s#${REPO_ROOT}#.#g")"
-# Rule 3: the real planted key -> the README's disclosed masked form. Built from parts (like
-# tour.sh's own fake_key) so this file's source never holds a whole key-shaped token.
+# Rule 3's replacement is built from parts (like tour.sh's own fake_key) so this file's source
+# never holds a whole key-shaped token.
 planted_key="$(key 'AKIA' 'IOSFODNN7EXAMPLE')"
-live="$(printf '%s\n' "$live" | sed "s/${planted_key}/AKIA…REDACTED…/")"
-# Rule 4: drop exactly one leading blank line.
-live="$(printf '%s\n' "$live" | awk 'NR==1 && $0==""{next}{print}')"
+live="$(printf '%s\n' "$OUT" \
+  | sed -E "s#${sandbox_re}#/tmp/demo#g" \
+  | sed -e "s#${REPO_ROOT}#.#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
+  | awk 'NR==1 && $0==""{next}{print}')"  # rule 2, rule 3, rule 4
 
 # The README's own fenced transcript (the ```console block under "What it looks like").
 expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme")"
