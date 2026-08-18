@@ -37,6 +37,9 @@
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
 #   GAP   tests/test_core_wrapper_sync.sh fails (CORE.md / templates/CLAUDE.md embed diverged)
 #   GAP   shellcheck -x --severity=warning fails on any tracked shell script (mirrors ci.yml)
+#   GAP   tools/self/prose-drift.sh finds a dead relative markdown link
+#   WARN  tools/self/prose-drift.sh finds a line running well past its own wrapped block's
+#         neighbors (advisory lead, dir #169 — never fails this script on its own)
 #
 # Explicitly out of scope (not mechanizable — printed as a reminder, not silently dropped):
 #   PRINCIPLES.md "does every tension still have a running enforcement" — needs judgment; run the
@@ -876,6 +879,14 @@ if command -v shellcheck >/dev/null 2>&1; then
 else
   warn "shellcheck not installed locally — skipped here (CI still enforces it)"
 fi
+
+# Streamed directly rather than through run_check(): run_check only shows a tool's output when it
+# FAILS, but prose-drift.sh's line-length signal is advisory (WARN) by design and must stay visible
+# on every run, not just a failing one — only its dead-link signal (GAP) affects this exit code.
+say ""
+pd_args=("$repo_root")
+[ "$QUIET" = 1 ] && pd_args+=(--quiet)
+bash "$self_dir/prose-drift.sh" "${pd_args[@]}" || exit_code=1
 
 say ""
 say "  MANUAL  PRINCIPLES.md tension-enforcement isn't mechanizable (needs judgment) — run the Principles pass in /global-review"

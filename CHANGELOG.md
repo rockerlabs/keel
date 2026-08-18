@@ -113,6 +113,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   [`docs/drydock.md`](docs/drydock.md) as the worked instantiation). `docs/drydock.md` now opens with a
   line naming itself that instantiation, and `FRAMEWORK.md` gains a 4-line pointer to the pattern from
   its "Loop model" section.
+- **`tools/self/prose-drift.sh`** — drydock run 1's throwaway mechanical sweep
+  (`private/audit/bin/sweep.sh`, dir #165) promoted into a standing `tools/self/doctor.sh` check (dir
+  #169). Two signals: a dead relative markdown link (GAP — zero legitimate exceptions) and a line
+  running well past the other lines in its own wrapped block — a paragraph, a wrapped list item, a
+  comment run (WARN — advisory, "leads not verdicts" per sweep.sh's own framing). The design point
+  was the second signal's precision: a flat >110-char threshold produced 194 leads on this tree,
+  almost all ordinary table rows, fenced examples, and plain sentences that just run a little long.
+  Comparing a line only against the OTHER lines in its own block — never a global threshold — plus
+  excluding fenced code, GFM tables, YAML frontmatter, standalone link lines, and any line carrying a
+  literal URL, cuts that to 16 genuine leads on Keel's own tree, all advisory. Every exclusion is
+  mutation-tested against the same content presented as plain wrapped prose instead (dir #110's
+  lesson: fired != catches) — a table row, a fenced line, a frontmatter value, and a 2-line paragraph
+  each pair a "does not fire" case with a "the same content, unwrapped, DOES fire" case, so a
+  passing negative test can't just mean the checker is blind to that content.
 
 ### Changed
 - **A `new_repo_with_origin()` fixture helper in `tests/lib.sh`** (dir #173). The "sandbox repo plus a
