@@ -99,6 +99,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   instead of omitting.
 
 ### Changed
+- **A `new_repo_with_origin()` fixture helper in `tests/lib.sh`** (dir #173). The "sandbox repo plus a
+  bare origin, pushed and fetched" idiom was hand-rolled five times past `pin()`'s own promotion rule
+  ("once a SECOND test file needs the exact same idiom") before this: `tests/test_public_audit.sh`
+  (~10 copies), `tests/test_pre_pr_gate.sh`, `tests/test_ci_secret_scan.sh`,
+  `tests/test_branch_cleanup.sh`, and `tests/test_drydock_inventory.sh`'s own `mk_bare()`/`mk_repo()`
+  pair. The newest two consumers (`test_drydock_inventory.sh`, `test_pre_pr_gate.sh`) now use the
+  shared helper; the rest are left for a later ticket, since they push specific refspecs or
+  deliberately diverge local from `origin/<branch>` and don't fit the exact idiom. A successful `git
+  push` already updates the local `origin/<branch>` tracking ref, so the helper (and its
+  `new_bare_origin()` building block) skips the redundant `git fetch` every hand-rolled copy carried.
 - **`FRAMEWORK.md`'s PR-review section now covers what kind of review round to run, not just whether to
   run one** (dir #174, promoted from a 2nd-hit `LEARNINGS.md` entry). The existing "When to stop
   reviewing" answers *whether* another round is worth it; the new "Full pass or cheap delta?" answers
