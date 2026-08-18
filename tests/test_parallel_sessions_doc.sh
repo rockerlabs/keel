@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# test_parallel_sessions_doc.sh — dir #172: docs/parallel-sessions.md links four rails out of CORE.md
-# and FRAMEWORK.md instead of restating them. Same idiom as test_release_audit_doc.sh (pin() from
-# tests/lib.sh, both legs of a naming coupling pinned so a rename on either side fails loudly instead
-# of drifting silently).
+# test_parallel_sessions_doc.sh — dir #172: docs/parallel-sessions.md links five rail rows out of
+# CORE.md and FRAMEWORK.md instead of restating them. Same idiom as test_release_audit_doc.sh (pin()
+# from tests/lib.sh, both legs of a naming coupling pinned so a rename on either side fails loudly
+# instead of drifting silently).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 
@@ -23,9 +23,10 @@ pin "README Docs section links docs/parallel-sessions.md" \
   "expected the Docs section to list parallel-sessions.md the way it lists rollout-audit.md/drydock.md"
 
 # --- cross-doc rail citations: the doc's "linked" rails must name a heading that still exists on the
-# other side. Pin BOTH legs for each of the four linked rails (decision 5 in dir #172's design pass:
-# these four already live in CORE.md/FRAMEWORK.md and must be linked, not restated). One entry per
-# linked rail: label|source-file-label|source-marker (doc-side pin always searches for the label
+# other side. The rails table has five rows citing three distinct source headings (three CORE.md rows
+# share one heading); pin BOTH legs of each of the three headings (decision 5 in dir #172's design
+# pass: these five rows already live in CORE.md/FRAMEWORK.md and must be linked, not restated). One
+# entry per heading: label|source-file-label|source-marker (doc-side pin always searches for the label
 # itself, so only the source leg's file and exact marker vary). -----------------------------------
 linked_rails=(
   'Git — mandatory rails|CORE.md|## Git — mandatory rails'
@@ -45,6 +46,13 @@ for entry in "${linked_rails[@]}"; do
     "$file" "$marker" \
     "renamed in $file_label? update docs/parallel-sessions.md's rails table too"
 done
+
+# --- the ticket's own stated minimum (dir #172): pin the specific "Before every commit" sentence in
+# CORE.md, not just its enclosing heading — a rewording of the fetch-before-commit rule itself, with
+# the heading left untouched, would otherwise slip past the heading-only pins above. -----------------
+pin "CORE.md still states the 'Before every commit' rule the doc's first table row names" \
+  "$core" '**Before every commit**' \
+  "the sentence itself moved or was reworded; docs/parallel-sessions.md's rails table row 1 needs an update"
 
 # --- the three rails this doc originates (decision 5: verified absent from the tracked tree at
 # design time) must actually be present as full prose, not just named. One entry per rail:

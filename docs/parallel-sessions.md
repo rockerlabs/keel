@@ -19,8 +19,10 @@ it's usually where the safety story stops too early. At minimum, these are **not
 worktree:
 
 - **The shared `.git` directory.** Every worktree of a checkout shares one object store, one ref
-  namespace, one stash, one reflog. Another session's `branch -D`, `stash`, or `reset` isn't
-  "somewhere else" — it's the same store your session is reading from.
+  namespace, and one stash. Another session's `branch -D`, `stash`, or `reset` isn't "somewhere else" —
+  it's the same store your session is reading from. (One exception worth knowing up front: `HEAD`'s own
+  reflog is per-worktree; a *branch's* reflog is shared — the Recovery tiers section below says what that
+  means for finding a peer session's lost work.)
 - **Any file symlinked in from outside the tree.** Gitignored project context (a private `CLAUDE.md`,
   a backlog, session notes) is commonly symlinked into every worktree so a fresh session isn't blind.
   Two sessions then write the *same physical file* through two different paths, with no lock between
@@ -54,9 +56,11 @@ themselves live in the recovery-tiers section, not here.
 - **F2 — the shared working-directory wipe.** A second session wiped uncommitted changes out of a
   working directory another session was actively using. Why isolation didn't help: **uncommitted work
   has no owner.** Any session's `checkout`, `clean`, or `stash` reaches it, and losing it leaves no
-  reflog entry of its own — there's nothing to recover from. This is the mode that turns "commit early"
-  from hygiene advice into a safety rail. Rail: your own worktree, taken before the checkout gets busy.
-  Recovery: preemptive is the only tier that actually helps here.
+  reflog entry of its own — a *staged* file can sometimes be pulled back out of the object store with
+  `git fsck --lost-found`, but nothing indexes it by name, so treat that as a last resort, not a plan.
+  This is the mode that turns "commit early" from hygiene advice into a safety rail. Rail: your own
+  worktree, taken before the checkout gets busy. Recovery: preemptive is the only tier that reliably
+  helps here.
 - **F3 — the reset to the default branch.** A session reset a shared repo to `origin/main` and dropped
   two commits that had already been built and had passing tests; the reflog was the only way back. Why
   isolation didn't help: a session's idea of a "clean slate" is repo-global, not scoped to its own
@@ -72,8 +76,9 @@ themselves live in the recovery-tiers section, not here.
 
 ## The rails
 
-Four of these already exist in Keel's always-on files — linked below, not restated, so a rename on
-either side breaks the link instead of drifting silently:
+Five of these already exist in Keel's own rails files — `CORE.md` (loaded every session) and
+`FRAMEWORK.md` (read on demand) — linked below, not restated, so a rename on either side breaks the link
+instead of drifting silently:
 
 | Rail | Where it lives |
 |---|---|
@@ -83,8 +88,8 @@ either side breaks the link instead of drifting silently:
 | Reconcile first: fetch **before** reading log/PR state, and again before *reporting* status | [`CORE.md`](../CORE.md) — *Before writing code — reconcile first* |
 | Worktree discipline: explicit `git -C <worktree-path>`, verify the branch per working copy — the cwd drifts silently | [`FRAMEWORK.md`](../FRAMEWORK.md) — *Worktree discipline* |
 
-The other three don't exist anywhere else in this tree yet — they're stated here in full, as this doc's
-own rails, not links:
+The other three aren't stated as a general rail in `CORE.md`, `FRAMEWORK.md`, or elsewhere in `docs/`
+yet — they're stated here in full, as this doc's own rails, not links:
 
 - **Push-verify.** `git push` reporting success is not proof the remote has your work. Compare
   `git rev-parse HEAD` against `git rev-parse origin/<branch>` right after every push — this is the rail
@@ -112,16 +117,18 @@ you notice, the cheaper the tier.
   branch off the default branch. An order of magnitude cheaper than any of the tiers below, because
   nothing collided yet.
 - **Pre-commit.** `git branch --show-current` immediately before any commit or push. On someone else's
-  branch: `git reset --soft` off it, then commit through a throwaway worktree instead of switching
-  branches out from under a peer session.
+  branch: `git reset --soft @{upstream}` to back your own commit off it without touching the peer's
+  files, then commit through a throwaway worktree instead of switching branches out from under them.
 - **Retroactive.** Foreign commits have already piled onto your branch — don't push it as-is. Cherry-pick
   only your own SHAs onto a fresh branch cut from a freshly-fetched default branch; rescue any orphaned
   foreign commit onto its own throwaway branch rather than dropping it; re-verify anything you numbered
   against a shared file's *remote* version (`git show origin/<default>:<path>`), since the remote may
   have claimed that number while you weren't looking; finish with push-verify.
 - **The floor: `git reflog`.** Name it plainly — it recovered three of the four incidents in the catalog
-  above, it's local-only, and it expires. Pair it with `git stash list` and `git fsck --lost-found` as
-  the last stop before calling something actually gone.
+  above, it's local-only, and it expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
+  only** — to find commits a *peer* session dropped, check that branch's own reflog instead:
+  `git reflog show <branch>`, which every worktree shares. Pair it with `git stash list` and
+  `git fsck --lost-found` as the last stop before calling something actually gone.
 - **The tier that doesn't exist.** A raced file *outside* git — F4's symlink case — has no reflog and no
   recovery. That's why its rail is prevention, not repair. Say it plainly: there is no undo here, which
   is exactly why the stale-file refusal above is never something to route around.
@@ -140,11 +147,11 @@ git worktree add ../my-feature -b my-feature origin/main
 ```bash
 git fetch --prune
 git branch --show-current
-git push && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/$(git branch --show-current))"
+git push -u origin HEAD && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/$(git branch --show-current))" && echo "push verified" || echo "PUSH DID NOT LAND"
 ```
 
-If the branch shown isn't the one you expect, or the push-verify comparison fails, stop and work through
-the recovery tiers above before doing anything else.
+If the branch shown isn't the one you expect, or you see `PUSH DID NOT LAND`, stop and work through the
+recovery tiers above before doing anything else.
 
 ## What this doc deliberately is not
 
