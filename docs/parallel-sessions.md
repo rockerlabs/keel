@@ -51,8 +51,9 @@ themselves live in the recovery-tiers section, not here.
   a database migration another session had written three minutes earlier; every session exited green,
   and the loss surfaced only later, recovered from the reflog. Why isolation didn't help: an agent's
   cleanup scope is *the repo*, not its own change-set — nothing about running in a worktree narrows
-  "delete what's unused" down to "what I made." Rail: fetch-and-verify before every commit. Recovery:
-  preemptive, or the reflog floor.
+  "delete what's unused" down to "what I made." Rail: none of the git rails below reach this by
+  themselves — the guard is discipline: scope any cleanup pass to your own change-set, never a
+  repo-wide sweep. Recovery: preemptive, or the reflog floor.
 - **F2 — the shared working-directory wipe.** A second session wiped uncommitted changes out of a
   working directory another session was actively using. Why isolation didn't help: **uncommitted work
   has no owner.** Any session's `checkout`, `clean`, or `stash` reaches it, and losing it leaves no
@@ -117,13 +118,16 @@ you notice, the cheaper the tier.
   branch off the default branch. An order of magnitude cheaper than any of the tiers below, because
   nothing collided yet.
 - **Pre-commit.** `git branch --show-current` immediately before any commit or push. On someone else's
-  branch: capture your own commits onto a ref first — `git branch rescue-mine HEAD` — then reset that
-  branch back to the commit before yours with `git reset --hard <sha>` (check `git log --oneline` for the
-  actual SHA rather than counting commits blindly: a peer's own commit can have landed on the tip after
-  yours). A plain `reset --soft` instead would leave your work only staged in the shared checkout's
-  index, not on a ref of its own — the peer's next ordinary commit there would silently absorb it.
-  Continue your own work from `rescue-mine` in a throwaway worktree instead of switching branches out
-  from under them.
+  branch: check `git status` first — `reset --hard` below discards uncommitted work exactly like F2's
+  `checkout`/`clean`/`stash`, with the same no-reflog-entry loss, so stash anything you find
+  (`git stash push -u`) rather than let the reset take it. Then capture your own commits onto a ref —
+  `git branch rescue-mine HEAD` — and reset that branch back to the commit before yours with
+  `git reset --hard <sha>` (check `git log --oneline` for the actual SHA rather than counting commits
+  blindly: a peer's own commit can have landed on the tip after yours). A plain `reset --soft` instead
+  would leave your work only staged in the shared checkout's index, not on a ref of its own — the
+  peer's next ordinary commit there would silently absorb it. Continue your own work from `rescue-mine`
+  in a throwaway worktree instead of switching branches out from under them; pop the stash back for
+  whoever it belonged to once you're clear.
 - **Retroactive.** Foreign commits have already piled onto your branch — don't push it as-is. Cherry-pick
   only your own SHAs onto a fresh branch cut from a freshly-fetched default branch; rescue any orphaned
   foreign commit onto its own throwaway branch rather than dropping it; re-verify anything you numbered
