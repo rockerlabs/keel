@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`docs/parallel-sessions.md`** (dir #172, captured after four independent first-person loss reports
+  in one week — a deleted migration, a wiped working directory, a reset that dropped built-and-tested
+  commits, and keel's own silent race on a symlinked file). A worktree gives you parallelism, not
+  safety; this doc names the boundary (what's isolated per worktree and what isn't — the shared `.git`
+  directory, symlinked or absolute-path files, unlinked gitignored files, out-of-tree state keyed by
+  repo), a four-mode failure catalog, the rails (five linked out of `CORE.md`/`FRAMEWORK.md`, three
+  stated here as a general rail for the first time — push-verify, spent-branch/stale-resume, and
+  treating your editing tool's stale-file refusal as the only real conflict detector), one shared
+  recovery-tiers section, and a five-command pre-flight. Doc-only; linked from the README docs index;
+  its own doc-coupling test is `tests/test_parallel_sessions_doc.sh`.
 - **Drydock — the whole-tree prose audit, promoted from a run-validated procedure to a shipped
   capability** (dir #170). Tests tell you the code still works; nothing tells you the *prose* still
   does — and the rails, docs, command steps, and comments are what a model reads and acts on every
