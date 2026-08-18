@@ -8,6 +8,50 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **Drydock — the whole-tree prose audit, promoted from a run-validated procedure to a shipped
+  capability** (dir #170). Tests tell you the code still works; nothing tells you the *prose* still
+  does — and the rails, docs, command steps, and comments are what a model reads and acts on every
+  session. [`docs/drydock.md`](docs/drydock.md) is the repeatable pass that measures that drift: the
+  two-tier split (deterministic tier-1 checks under a model tier-2 pipeline) and the **ratchet** that
+  makes each run cheaper than the last by demoting finding classes into tier-1 checks; four roles in
+  separate contexts with their model and effort recommendations (fixers are never subagents — they
+  have to pass through the gates that keep a human in the loop); the audit-file contract, whose
+  closing `## claims` section doubles as the completeness marker that makes an interrupted wave
+  re-spawnable per unit; the three-valued verdict, whose third value (`known — <ticket>`) is what
+  stops an audit from silently reversing a deferral somebody made on purpose; the four delegation
+  gates; and the incremental-run mechanics. The three role prompts ship as copy-paste templates
+  ([`docs/drydock/`](docs/drydock/)), and the family cross-links are now explicit in both directions
+  — this is the fourth "how do you know it's still true?" doc, running underneath the other three.
+  Also written down: the session-limit flow, because an agent cannot see your quota and has to ask for
+  it. Its rule — pilot on a *leads-dense* batch, not just the biggest file — comes from run 1's pilot
+  under-predicting the main wave's per-agent cost by ~50%: cost scales with claims-to-re-measure, not
+  with input lines.
+- **`tools/drydock/inventory.sh`** — drydock phase 0's scope-as-code generator: measures the tracked
+  prose surface at one baseline commit and derives the per-auditor batches, so a run's scope is a
+  reproducible artifact instead of a hand-drawn list that quietly disagrees with the tree. The guard
+  is the point. Run 1's very first inventory was launched with the cwd left at the main checkout,
+  which was sitting on a peer session's branch two commits off the baseline; it measured that tree and
+  printed the numbers without a murmur, scoping the whole audit against a commit nobody had chosen.
+  The shipped script refuses (exit 3) on any of four conditions rather than measure a tree it cannot
+  vouch for: HEAD is not the baseline (naming both SHAs and the `git worktree add` that fixes it), the
+  tree is dirty, an in-scope file cannot be read (a sparse checkout, a dangling symlink — it refuses
+  instead of omitting the file), or the scope could not be enumerated at all. The last two came from
+  the independent review of this very diff, which found the first implementation dropping an
+  unreadable file from the artifact at exit 0 — a partial inventory being indistinguishable from a
+  small tree is precisely the failure the guard exists to prevent, so it had to refuse rather than
+  under-report. There is deliberately **no `--force`**; the escape hatch is `--baseline <rev>`, which
+  is the opposite of a bypass: you name the commit you meant and it lands in the output header.
+  `--prev <sha>` is the incremental-run mechanism, flagging what changed since a prior run's baseline
+  and scoping the derived batches to it. Batch sizes and scope
+  pathspecs are environment-tunable for a repo shaped differently from Keel's. Scope B defaults to
+  *every tracked shell script*, not to the `*.sh` pathspec — it calls
+  `tools/self/shellcheck-targets.sh`, the repo's existing canonical answer to "which tracked files are
+  shell scripts", rather than minting a third copy of that selection. The difference is not cosmetic:
+  on Keel's own tree the pathspec misses `keel` (the adopter-facing CLI entry point, 48 comment lines)
+  and both secret-guard hooks — 55 lines of shipped prose that would have sat permanently outside
+  every run's scope, invisible because an inventory reports totals, not omissions.
+
 ### Changed
 - **A step-5 receipt can now name EVERY review that saw the commit, not just the last one** (dir #158).
   `polish.5-review`'s add-on suffix was two hardcoded literals — `+operator-run` (dir #81) and
@@ -35,6 +79,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   belongs in it while the work it reviewed is still in HEAD.
 
 ### Fixed
+- **`tools/self/shellcheck-targets.sh` dropped non-ASCII paths and returned 1 on a healthy repo**
+  (found by dir #170's independent review, which made this script a consumer for the first time).
+  Two defects, both invisible while every caller ignored the output's completeness and its exit
+  status. (1) It listed files with a plain `git ls-files`, so a tracked path containing a non-ASCII
+  byte arrived C-quoted (`"r\303\251sum\303\251.sh"`); that string matches neither the `*.sh` arm nor
+  `head`'s idea of a filename, so the file was silently absent from the selection — from CI's
+  shellcheck job and `tools/self/doctor.sh` too, meaning an unlinted shell script with no signal that
+  anything was skipped. Now `-c core.quotePath=false`. (2) Its exit status was whatever the last loop
+  iteration returned, so a repo whose alphabetically-last tracked file is not a shell script exited 1
+  purely because the final shebang `grep -q` found nothing — reproduced on a two-file repo. Each
+  iteration now succeeds on its own (`if … then … fi` instead of `grep -q … && printf`); a trailing
+  `exit 0` would NOT have worked, since `set -e` exits at the failing pipeline before ever reaching
+  it — which the review caught after a first attempt shipped exactly that. **This was live CI
+  exposure, not a hypothetical:** `.github/workflows/ci.yml`'s shellcheck job runs this script under
+  `bash -e`, so Keel would have gone red — with no diagnostic pointing here — the day anyone added a
+  top-level tracked file sorting after `uninstall.sh`. The existing test passed only by accident of
+  its fixture's sort order; the fixture now ends in a non-script file, and both cases are
+  mutation-pinned.
 - **drydock run 1 — the whole tree's prose audited, 44 findings fixed across PRs #210–#217**
   (dir #165). First run of the named prose-audit framework: 33 markdown files (7,159 lines) plus the
   comment prose of all 60 shell files (6,442 comment lines), audited against frozen baseline
