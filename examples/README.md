@@ -57,7 +57,15 @@ Next:
 
 $ sed -n 1,10p /tmp/demo/my-project/CLAUDE.md
 # my-project
-> Per-project always-loaded context. Keep it ≤ ~8–10K tokens; move detail to the on-demand tier ...
+
+> Per-project always-loaded context. Keep it ≤ ~8–10K tokens; move detail to the on-demand tier once it
+> outgrows that (see `FRAMEWORK.md` → "Project context-file structure").
+
+## Where things live (map)
+
+- **This file** — how the project works + the roadmap index (startup tier).
+- **`<on-demand file>`** — full changelog, closed-work index, detailed plans (pointer, not loaded).
+- **memory** — reusable invariants (recalled pointwise).
 
 == 3. Audit the baseline with doctor ==
    doctor reports drift. secret-guard isn't wired yet, so it flags a WARN (advisory, not a fail).
