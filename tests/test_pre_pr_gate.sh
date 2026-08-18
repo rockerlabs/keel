@@ -2408,23 +2408,12 @@ check_absent "dir #116: UNARMED, skip with no dialog line → allowed" "$OUT" "d
 
 # --- dir #133: HEAD must be reachable on origin/<branch> before unlocking `gh pr create` ---------
 # Every sha-binding check above (steps 3/6/8) is against the LOCAL repo only — nothing confirms
-# $current_sha was actually pushed. Push $1 (repo dir)'s CURRENT branch to a fresh, colocated bare
-# "origin" remote. Local-only bare remote, no network — stays fast and offline like the rest of the
-# suite. Every caller below passes a freshly-`mkrepo()`'d dir and calls this at most once per dir, so
-# there is no "origin already configured" case to guard against — branch_raw_for (lib.sh) is reused for
-# the branch lookup, same as every other fixture in this file.
-push_origin() {
-  local d="$1" bare
-  bare="$SANDBOX/origin-$(basename "$d").git"
-  git init -q --bare "$bare"
-  git -C "$d" remote add origin "$bare"
-  git -C "$d" push -q origin "$(branch_raw_for "$d")" >/dev/null 2>&1
-}
+# $current_sha was actually pushed. new_repo_with_origin() (lib.sh, dir #173) gives a repo already
+# pushed to a fresh, colocated bare "origin" — local-only, no network, same as the rest of the suite.
 
 # 97. A genuine pass: HEAD was actually pushed to origin/<branch> before /polish's receipt was written
 # — the new check must not block the ordinary case.
-d="$(mkrepo)"
-push_origin "$d"
+d="$(new_repo_with_origin)"
 write_full_receipt "$d"
 gate "gh pr create --fill" "$d"
 check_status "dir #133: HEAD pushed to origin → exit 0" 0 "$STATUS"
@@ -2434,8 +2423,7 @@ check_absent "dir #133: HEAD pushed to origin → allowed" "$OUT" "deny"
 # sha-binding check above still passes (steps 3/6/8 all bind to THIS commit), but the commit was never
 # pushed — the exact gap dir #113/#114's own PR fell into (recovered via cherry-pick as PR #177 only
 # after the operator had already merged the truncated PR).
-d="$(mkrepo)"
-push_origin "$d"                                        # push the FIRST commit only
+d="$(new_repo_with_origin)"                              # push the FIRST commit only
 git -C "$d" commit --allow-empty -qm "convergence-round fix, never pushed"
 write_full_receipt "$d"                                 # receipts all bind to the NEW (unpushed) sha
 gate "gh pr create --fill" "$d"

@@ -251,6 +251,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
   true: the prose your agent executes drifts silently, and nothing fails when it does.
 - [`docs/delegation.md`](docs/delegation.md) — fan bulk read-only analysis out to parallel subagent
   workers behind a file contract, keeping every gate in your own session.
+- [`docs/parallel-sessions.md`](docs/parallel-sessions.md) — running 2+ agent sessions against one
+  repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
 - [`PRINCIPLES.md`](PRINCIPLES.md) · [`FRAMEWORK.md`](FRAMEWORK.md) — the foundation and the reusable how-to.
 

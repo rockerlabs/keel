@@ -465,7 +465,18 @@ install — enumerating the class means reading source, not just observing behav
 
 This is on-demand review methodology, not a rails change — it governs how a review round decides to
 continue, distinct from the round-budget/delta-review mechanics that enforce the decision in `/polish`
-step 5.
+step 5. See "Full pass or cheap delta?" below for the companion question — not *whether* to run another
+round, but what *kind* once you do.
+
+### Full pass or cheap delta?
+
+Once another round is worth running, a second question follows: full pass, or a cheap delta over the
+range no reviewer has seen? "When to stop reviewing" above rejects severity trend alone as a signal for
+*whether* to continue; read together with a second signal it still answers *what kind* of round to run:
+findings dropping from high-severity logic bugs to cosmetic nits, *and* landing in prose/docs rather than
+code. That combination, not either signal alone, is the tell that the substantive surface is exhausted.
+It produces a defensible "don't re-run a full pass — run one cheap delta over the unreviewed range
+instead" call, rather than either an arbitrary round cap or an open-ended "run it again to be sure."
 
 ---
 

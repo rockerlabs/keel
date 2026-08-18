@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`docs/parallel-sessions.md`** (dir #172, captured after four independent first-person loss reports
+  in one week — a deleted migration, a wiped working directory, a reset that dropped built-and-tested
+  commits, and keel's own silent race on a symlinked file). A worktree gives you parallelism, not
+  safety; this doc names the boundary (what's isolated per worktree and what isn't — the shared `.git`
+  directory, symlinked or absolute-path files, unlinked gitignored files, out-of-tree state keyed by
+  repo), a four-mode failure catalog, the rails (five linked out of `CORE.md`/`FRAMEWORK.md`, three
+  stated here as a general rail for the first time — push-verify, spent-branch/stale-resume, and
+  treating your editing tool's stale-file refusal as the only real conflict detector), one shared
+  recovery-tiers section, and a five-command pre-flight. Doc-only; linked from the README docs index;
+  its own doc-coupling test is `tests/test_parallel_sessions_doc.sh`.
 - **Drydock — the whole-tree prose audit, promoted from a run-validated procedure to a shipped
   capability** (dir #170). Tests tell you the code still works; nothing tells you the *prose* still
   does — and the rails, docs, command steps, and comments are what a model reads and acts on every
@@ -27,6 +37,28 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   it. Its rule — pilot on a *leads-dense* batch, not just the biggest file — comes from run 1's pilot
   under-predicting the main wave's per-agent cost by ~50%: cost scales with claims-to-re-measure, not
   with input lines.
+  Five defects in that shipped prose were caught by an independent review before the feature landed,
+  and four of the five sat in the role templates or in the doc's own copy-pasteable commands — the
+  half of this capability that agents actually execute, where a rule the procedure states and a
+  template omits is a rail that never fires. [`docs/drydock/verifier.md`](docs/drydock/verifier.md)
+  carried the sandbox rail absolutely, without the read-only-machine-state exception `drydock.md`
+  says it inherits: a verifier that sandboxes such a read measures a fully-guarded machine as "not
+  wired" and writes a confident `rejected`, which is the one verdict nothing downstream re-checks.
+  [`docs/drydock/fixer.md`](docs/drydock/fixer.md) told the fixer to mark `fixed: PR #<n>` once its
+  PR merges — contradicting phase 5, the roles table, and its own next paragraph, and asking a
+  session to act after it has already handed back; that mark belongs to the orchestrator, which is
+  still around when the merge lands. The roles table gave the orchestrator "phases 0, 4, 7" while
+  GATE-4 handed it 6 and 7, with phase 6 itself not saying which — now 0, 4, 6, 7, and phase 6
+  states that it owns the phase and delegates only the reading. And sweep 2 of the doc's own
+  mechanical sweeps enumerated without `-z`, so a C-quoted path reached `grep` unopenable and that
+  file's own links went unswept, silently — the same class the `Fixed` entry below records for
+  `tools/self/shellcheck-targets.sh`, present a second time here in the doc's command block, sweep 1
+  having already enumerated NUL-delimited — while that same sweep's character class also excluded
+  `:`, truncating `mailto:you@example.com` to `mailto`, which then failed the scheme test beside it
+  and was reported as a dead relative link, once per mail link in the tree. Ten pins in
+  `tests/test_drydock_doc.sh` now hold the doc/template couplings and both of sweep 2's fixes, and
+  they are mutation-proven: restoring the fixer contradiction reds two, restoring the colon-stopping
+  class reds one.
 - **`tools/drydock/inventory.sh`** — drydock phase 0's scope-as-code generator: measures the tracked
   prose surface at one baseline commit and derives the per-auditor batches, so a run's scope is a
   reproducible artifact instead of a hand-drawn list that quietly disagrees with the tree. The guard
@@ -56,6 +88,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   on Keel's own tree the pathspec misses `keel` (the adopter-facing CLI entry point, 48 comment lines)
   and both secret-guard hooks — 55 lines of shipped prose that would have sat permanently outside
   every run's scope, invisible because an inventory reports totals, not omissions.
+  A second silent-under-report of the same family was found by review after that guard landed, and
+  it was not in the enumeration at all but in the measurement: the path went to `awk` as a bare
+  operand, and `awk` reads an operand shaped `name=value` as a variable assignment rather than a
+  file — so a tracked file called `a=b.md` was never opened, `NR` stayed 0, and it was listed as an
+  EMPTY file at exit 0, with `[ -r ]` passing all the while because the file is perfectly readable.
+  The operand is now `./$f`: paths are repo-relative and cwd is the repo root, so the prefix always
+  resolves, and the record still prints the path unprefixed. An under-report that looks plausible is
+  worse than the visible error it replaces — the same reason the unreadable-file case above refuses
+  instead of omitting.
 - **Capability-split delegation, generalized from drydock into a standalone, adopter-usable pattern**
   (dir #171). [`docs/delegation.md`](docs/delegation.md) names what drydock's own field test proved out:
   most of a working session is read-only analysis — delegable to cheap, stateless, parallel workers
@@ -74,6 +115,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   its "Loop model" section.
 
 ### Changed
+- **A `new_repo_with_origin()` fixture helper in `tests/lib.sh`** (dir #173). The "sandbox repo plus a
+  bare origin, pushed and fetched" idiom was hand-rolled five times past `pin()`'s own promotion rule
+  ("once a SECOND test file needs the exact same idiom") before this: `tests/test_public_audit.sh`
+  (~10 copies), `tests/test_pre_pr_gate.sh`, `tests/test_ci_secret_scan.sh`,
+  `tests/test_branch_cleanup.sh`, and `tests/test_drydock_inventory.sh`'s own `mk_bare()`/`mk_repo()`
+  pair. The newest two consumers (`test_drydock_inventory.sh`, `test_pre_pr_gate.sh`) now use the
+  shared helper; the rest are left for a later ticket, since they push specific refspecs or
+  deliberately diverge local from `origin/<branch>` and don't fit the exact idiom. A successful `git
+  push` already updates the local `origin/<branch>` tracking ref, so the helper (and its
+  `new_bare_origin()` building block) skips the redundant `git fetch` every hand-rolled copy carried.
+- **`FRAMEWORK.md`'s PR-review section now covers what kind of review round to run, not just whether to
+  run one** (dir #174, promoted from a 2nd-hit `LEARNINGS.md` entry). The existing "When to stop
+  reviewing" answers *whether* another round is worth it; the new "Full pass or cheap delta?" answers
+  what kind, once it is — severity trend and where findings land (code migrating to prose-only) read
+  together are the tell that the substantive surface is exhausted, producing a defensible "run one
+  cheap delta instead of a full pass" call rather than an arbitrary round cap or an open-ended
+  "run it again to be sure." The two sections cross-link.
 - **A step-5 receipt can now name EVERY review that saw the commit, not just the last one** (dir #158).
   `polish.5-review`'s add-on suffix was two hardcoded literals — `+operator-run` (dir #81) and
   `+second-opinion` (dir #141) — one per `case` arm, while step 5 holds a single value. So a commit that
