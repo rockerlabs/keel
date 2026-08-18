@@ -35,6 +35,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   belongs in it while the work it reviewed is still in HEAD.
 
 ### Fixed
+- **drydock run 1 — the whole tree's prose audited, 44 findings fixed across PRs #210–#217**
+  (dir #165). First run of the named prose-audit framework: 33 markdown files (7,159 lines) plus the
+  comment prose of all 60 shell files (6,442 comment lines), audited against frozen baseline
+  `12a7a79` by a three-role pipeline — parallel auditors, empirical verifiers (every number
+  re-measured, live claims reproduced in scratch sandboxes), orchestrator arbitration. 45 confirmed
+  findings: stale console transcripts in `examples/README.md`, a self-contradicting "one hard
+  guarantee" pair in `README.md`, a `commands/polish.md` step-count enumeration dir #123 re-broke one
+  day after dir #138 had fixed the class, comment claims measured false against their own code, and a
+  round-count figure in `FRAMEWORK.md` that bled in from a different review campaign. 44 fixed; the
+  one survivor is the operator-deferred dir #156 overclaim, recorded `known` and left to its ticket.
+  A closing cross-file re-check found two residual mismatches, seeded into run 2 (dir #166/#167)
+  rather than fixed in-loop. The run's ratchet demoted four finding classes to ticketed deterministic
+  checks (dir #166–#169); promotion of the framework itself to a shipped doc is dir #170. Run record:
+  `private/audit/run-1-freeze.md`.
 - **`docs/release-audit.md` phase 7 and `tools/self/doctor.sh` are now mechanically coupled** (dir #157).
   The felt incident is the cleanest available for this class: both halves shipped in dir #155's own PR and
   drifted anyway. Phase 7's paragraph stated one condition for the release-in-preparation allowance; that
