@@ -24,39 +24,42 @@ pin "README Docs section links docs/parallel-sessions.md" \
 
 # --- cross-doc rail citations: the doc's "linked" rails must name a heading that still exists on the
 # other side. Pin BOTH legs for each of the four linked rails (decision 5 in dir #172's design pass:
-# these four already live in CORE.md/FRAMEWORK.md and must be linked, not restated). -------------
-pin "parallel-sessions.md cites CORE.md's 'Git — mandatory rails' heading" \
-  "$doc" 'Git — mandatory rails' \
-  "the doc's rails table should name this CORE.md heading; if renamed here the citation is stale"
-pin "CORE.md still carries the 'Git — mandatory rails' heading" \
-  "$core" '## Git — mandatory rails' \
-  "renamed in CORE.md? update docs/parallel-sessions.md's rails table too"
-
-pin "parallel-sessions.md cites CORE.md's 'Before writing code — reconcile first' heading" \
-  "$doc" 'Before writing code — reconcile first' \
-  "the doc's rails table should name this CORE.md heading; if renamed here the citation is stale"
-pin "CORE.md still carries the 'Before writing code — reconcile first' heading" \
-  "$core" '## Before writing code — reconcile first' \
-  "renamed in CORE.md? update docs/parallel-sessions.md's rails table too"
-
-pin "parallel-sessions.md cites FRAMEWORK.md's 'Worktree discipline' paragraph" \
-  "$doc" 'Worktree discipline' \
-  "the doc's rails table should name this FRAMEWORK.md paragraph; if renamed here the citation is stale"
-pin "FRAMEWORK.md still carries the 'Worktree discipline' paragraph" \
-  "$framework" '**Worktree discipline.**' \
-  "renamed in FRAMEWORK.md? update docs/parallel-sessions.md's rails table too"
+# these four already live in CORE.md/FRAMEWORK.md and must be linked, not restated). One entry per
+# linked rail: label|source-file-label|source-marker (doc-side pin always searches for the label
+# itself, so only the source leg's file and exact marker vary). -----------------------------------
+linked_rails=(
+  'Git — mandatory rails|CORE.md|## Git — mandatory rails'
+  'Before writing code — reconcile first|CORE.md|## Before writing code — reconcile first'
+  'Worktree discipline|FRAMEWORK.md|**Worktree discipline.**'
+)
+for entry in "${linked_rails[@]}"; do
+  IFS='|' read -r label file_label marker <<< "$entry"
+  case "$file_label" in
+    CORE.md) file="$core" ;;
+    FRAMEWORK.md) file="$framework" ;;
+  esac
+  pin "parallel-sessions.md cites $file_label's '$label' heading" \
+    "$doc" "$label" \
+    "the doc's rails table should name this $file_label heading; if renamed here the citation is stale"
+  pin "$file_label still carries the '$label' heading" \
+    "$file" "$marker" \
+    "renamed in $file_label? update docs/parallel-sessions.md's rails table too"
+done
 
 # --- the three rails this doc originates (decision 5: verified absent from the tracked tree at
-# design time) must actually be present as full prose, not just named. -----------------------------
-pin "parallel-sessions.md states the push-verify rail in full" \
-  "$doc" '**Push-verify.**' \
-  "expected the originated push-verify rail to be stated as this doc's own prose"
-pin "parallel-sessions.md states the spent-branch/stale-resume rail in full" \
-  "$doc" 'A merged branch is spent' \
-  "expected the originated spent-branch/stale-resume rail to be stated as this doc's own prose"
-pin "parallel-sessions.md states the stale-file-refusal/conflict-detection rail in full" \
-  "$doc" 'stale-file refusal' \
-  "expected the originated conflict-detection rail to be stated as this doc's own prose"
+# design time) must actually be present as full prose, not just named. One entry per rail:
+# name|marker. -----------------------------------------------------------------------------------
+originated_rails=(
+  'push-verify|**Push-verify.**'
+  'spent-branch/stale-resume|A merged branch is spent'
+  'stale-file-refusal/conflict-detection|stale-file refusal'
+)
+for entry in "${originated_rails[@]}"; do
+  IFS='|' read -r name marker <<< "$entry"
+  pin "parallel-sessions.md states the $name rail in full" \
+    "$doc" "$marker" \
+    "expected the originated $name rail to be stated as this doc's own prose"
+done
 
 # --- decision 4: "what worktrees do NOT isolate" must precede the failure catalog, not follow it --
 isolation_line="$(grep -n '^## What a worktree isolates' "$doc" | head -1 | cut -d: -f1)"

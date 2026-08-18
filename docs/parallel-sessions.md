@@ -87,9 +87,8 @@ The other three don't exist anywhere else in this tree yet — they're stated he
 own rails, not links:
 
 - **Push-verify.** `git push` reporting success is not proof the remote has your work. Compare
-  `git rev-parse HEAD` against `git rev-parse origin/<branch>` right after every push. `Everything
-  up-to-date` on a branch a peer session has since moved is exactly F4's branch-level sibling — the push
-  silently no-ops and looks identical to a real success.
+  `git rev-parse HEAD` against `git rev-parse origin/<branch>` right after every push — this is the rail
+  for F4's branch-level sibling above, where the push silently no-ops and looks identical to a real one.
 - **A merged branch is spent; a resumed session's picture is stale.** Once a PR has merged, its branch
   is dead — any new commit on it strands, invisible from the default branch. The same staleness hits a
   session resumed after a gap, or one running alongside a parallel session: before adding to a branch,
