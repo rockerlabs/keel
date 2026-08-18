@@ -80,4 +80,39 @@ pin "drydock.md documents the verifier footer" "$doc" 'verifier: <model + effort
 pin "verifier.md writes the footer drydock.md documents" "$verifier" 'verifier: <your model + effort>' \
   "expected the verifier template to specify the footer line it appends"
 
+# --- doc <-> template coherence (an independent review found all three of these live) -------------
+# The templates are what an agent actually executes, so a rule the procedure states and the template
+# omits is not a documentation nit — it is a rail that does not fire.
+
+# Bookkeeping ownership: drydock.md phase 5 says fixer sessions do none, so the fixer template must
+# not instruct one to mark findings fixed (its session also ends before the merge it would wait for).
+pin "drydock.md: bookkeeping belongs to the orchestrator" \
+  "$doc" 'Fixer sessions do no' \
+  "phase 5 must keep the fixed: marks with the orchestrator"
+check_absent "fixer.md does not tell the fixer to mark findings fixed" \
+  "$(cat "$fixer")" 'mark `fixed: PR'
+check_absent "...nor to wait for its own PR to merge" "$(cat "$fixer")" '**After the PR merges**'
+
+# The sandbox rail's read-only exception: drydock.md says the rail "inherits" it, so the template
+# that carries the rail has to carry the exception too, or a verifier writes an inverted `rejected`.
+pin "drydock.md states the sandbox rail's exception" "$doc" 'it inverts' \
+  "phase 2's sandbox rail must keep its read-only-machine-state carve-out"
+pin "verifier.md carries that exception too" "$verifier" 'it inverts' \
+  "the shipped verifier template must state the exception, not just the absolute rail"
+
+# Which phases the orchestrator owns, stated in two places that disagreed once.
+pin "the roles table lists the orchestrator's phases" "$doc" 'phases 0, 4, 6, 7' \
+  "the roles table must match GATE-4, which hands phases 6 and 7 back to the orchestrator"
+pin "GATE-4 hands back the same phases" "$doc" 'the orchestrator runs phases 6 and 7' \
+  "GATE-4 must match the roles table's phase list"
+
+# The shipped sweeps must survive a path git cannot print literally, and must not report every
+# mailto link as dead — both reproduced against the previous wording.
+pin "sweep 1 enumerates NUL-delimited" "$doc" "git ls-files -z '*.md' | xargs -0" \
+  "a C-quoted path is unopenable, so the file would go silently unswept"
+pin "sweep 2 enumerates NUL-delimited" "$doc" "git ls-files -z '*.md' | while IFS= read -r -d ''" \
+  "same reason as sweep 1"
+pin "sweep 2's class does not stop at a colon" "$doc" '\]\([^)#]+' \
+  "excluding ':' truncates mailto:you@example.com to 'mailto', reported as a dead relative link"
+
 summary

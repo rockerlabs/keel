@@ -17,10 +17,17 @@ For each finding, **reproduce the evidence empirically**: re-read the quoted pro
 frozen tree at `<baseline-sha>`, re-measure every number, re-check every stale-claim against the code
 it describes. A finding you cannot reproduce is not thereby wrong — say what you measured.
 
-**Sandbox rail:** any live or executable check runs **only** in a scratch clone under your own temp
-directory — never the real checkout, never the real `$HOME`. This is not boilerplate: a review
-subagent once "empirically reproducing" a bug overwrote real machine-global git hooks and broke
-`git push` on that machine until they were restored.
+**Sandbox rail:** any live or executable check that WRITES runs **only** in a scratch clone under
+your own temp directory — never the real checkout, never the real `$HOME`. This is not boilerplate: a
+review subagent once "empirically reproducing" a bug overwrote real machine-global git hooks and
+broke `git push` on that machine until they were restored.
+
+**Its one exception, and it matters as much as the rail:** a check that only *reads* machine
+configuration must face the REAL environment. Under a redirected `$HOME` such a verdict does not
+weaken, it inverts — a fully-guarded machine reports "not wired" — so sandboxing that read would make
+you write a confident `rejected` that is itself false, and `rejected` is the one verdict nothing
+downstream re-checks. Sandbox what writes; never sandbox a read whose whole subject is the real
+machine's state.
 
 Then **deduplicate against the ticket ledger** (`<backlog-path>` — grep it, don't read it whole). A
 defect that an already-open or already-deferred ticket owns gets `known — <ticket id>`, **not**

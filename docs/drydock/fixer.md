@@ -40,9 +40,9 @@ create>` → the PR.
   always-loaded or pipeline prose, **or** the diff is large. Either one is sufficient; they do not
   have to coincide.
 
-**After the PR merges**, mark `fixed: PR #<n>` next to each finding you fixed, in the audit files
-under `<audit-dir>`.
-
-Your final message: the PR URL, then one line per finding — fixed, or skipped with the reason. Do no
-other bookkeeping: the changelog entry, the ticket updates, and the run record belong to the
-orchestrator, which is holding the whole run's state and can write them once instead of eight times.
+Your final message: the PR URL, then one line per finding — fixed, or skipped with the reason. That
+message IS your handoff, and it is the whole of your bookkeeping: marking findings `fixed: PR #<n>`
+in the audit files, the changelog entry, the ticket updates, and the run record all belong to the
+orchestrator, which is holding the whole run's state, can write them once instead of eight times,
+and — unlike this session, which ends when it hands back the PR — is still around when the merge
+actually lands.

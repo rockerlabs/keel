@@ -48,7 +48,7 @@ deferred the cost.
 
 | Role | Runs as | Model + effort | May touch |
 |---|---|---|---|
-| **Orchestrator** | your own session | top tier, high | everything: phases 0, 4, 7, all arbitration, **all** bookkeeping |
+| **Orchestrator** | your own session | top tier, high | everything: phases 0, 4, 6, 7, all arbitration, **all** bookkeeping |
 | **Auditor** | spawned subagent, many in parallel | mid tier, high | read-only, plus its own audit files |
 | **Verifier** | spawned subagent, a few in parallel | mid tier, **xhigh** | the `verdict:` lines of the audit files it was given |
 | **Fixer** | a real, operator-launched session — **never** a subagent | mid tier, medium | one PR's worth of the tree |
@@ -172,11 +172,18 @@ conclusions.** Two signals earn their keep, and both are one-liners from the fro
 # 1. anomalous line length — an unfinished edit shows up as one long line in a wrapped block
 git ls-files -z '*.md' | xargs -0 awk 'length($0) > 110 { printf "%s:%d (%d ch)\n", FILENAME, FNR, length($0) }'
 # 2. dead relative links — a markdown target that no longer resolves on disk
-git ls-files '*.md' | while IFS= read -r f; do grep -oE '\]\([^):#]+' "$f" | cut -c3- | while IFS= read -r t; do
-  case "$t" in http*|mailto:*) continue ;; esac
+git ls-files -z '*.md' | while IFS= read -r -d '' f; do grep -oE '\]\([^)#]+' "$f" | cut -c3- | while IFS= read -r t; do
+  case "$t" in http*|mailto:*|"") continue ;; esac
   [ -e "$(dirname "$f")/$t" ] || printf '%s -> %s\n' "$f" "$t"
 done; done
 ```
+
+Both sweeps enumerate with `-z` for the same reason the shipped tooling does: git C-quotes any path
+it cannot print literally, and a quoted string is not a path `awk` or `grep` can open — the file's
+own contents would then go unswept, silently, which is the one outcome a sweep must not have. And
+sweep 2's character class excludes only `)` and `#`, deliberately not `:` — stopping at the colon
+would truncate `mailto:you@example.com` to `mailto`, which then fails the scheme test below it and
+gets reported as a dead relative link, once per mail link in your tree.
 
 Signal 1 is worth more than it sounds: run 1's single most diagnostic mechanical hit was a 131-char
 line inside a 103–106-char block — an edit that had been abandoned halfway. Signal 2 is the
@@ -294,9 +301,11 @@ instance of its class mid-fix and spun a follow-up. A queue entry is a plan, not
 
 ## Phase 6 — the closing re-check
 
-One agent, at the post-fix HEAD: re-extract claims from the files the fixes changed, re-run the
-cross-file classes, and verify the run's *recurring* classes are now coherent **everywhere**, not
-just where they were reported.
+The orchestrator owns this phase and delegates exactly one agent to it, at the post-fix HEAD:
+re-extract claims from the files the fixes changed, re-run the cross-file classes, and verify the
+run's *recurring* classes are now coherent **everywhere**, not just where they were reported. (Owning
+it and running it by hand are different things — as in phases 1–3, the reading is delegated while the
+arbitration and the record stay with the orchestrator.)
 
 **One fix loop, and only one: phase-6 findings feed the NEXT run, never this run's fixers.** Recorded,
 ticketed, not fixed. Without this rule the run has no termination condition, since every fix is itself
