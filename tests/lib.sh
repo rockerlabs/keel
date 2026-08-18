@@ -128,24 +128,37 @@ new_repo() {
   printf '%s' "$d"
 }
 
-# dir #173: new_repo() plus a fresh bare "origin" — pushed and fetched, so `origin/<branch>` is a real
-# ref to be at (or off). This exact 5-line idiom (mktemp -d + git init --bare + remote add origin +
-# push + fetch) was hand-rolled in six test files before this promotion; `pin()`'s own comment states
-# the promotion rule ("once a SECOND test file needed the exact same idiom") — this was five past it.
-# Makes one empty "init" commit first, since a bare new_repo() has no commits to push (unborn HEAD).
-# Prints the work tree's path, like new_repo() — callers that also need the bare origin's own path
-# (a second work tree pointed at the same origin, say) recover it with `git -C "$d" remote get-url
-# origin` rather than a second return channel: this is called via `$(...)` (a subshell), so a plain
-# variable set inside it never reaches the caller.
-new_repo_with_origin() {
-  local d bare
-  d="$(new_repo)"
-  git -C "$d" commit -q --allow-empty -m init
+# A fresh bare origin, wired to work tree $1's "origin" remote (mktemp -d + git init --bare + remote
+# add origin — the two of new_repo_with_origin()'s five lines that don't presume a commit already
+# exists). Split out so a caller that must commit real content BEFORE its first push (mk_repo() below)
+# can wire the remote without paying for the throwaway commit+push new_repo_with_origin() bakes in for
+# its own no-content callers. Prints the bare's path.
+new_bare_origin() {
+  local bare
   bare="$(mktemp -d "$SANDBOX/origin.XXXXXX")"
   git init -q --bare "$bare"
-  git -C "$d" remote add origin "$bare"
-  git -C "$d" push -q origin "$(git -C "$d" branch --show-current)"
-  git -C "$d" fetch -q origin
+  git -C "$1" remote add origin "$bare"
+  printf '%s' "$bare"
+}
+
+# dir #173: new_repo() plus a fresh bare "origin" — pushed, so `origin/<branch>` is a real ref to be at
+# (or off). This exact idiom (a bare origin, wired, and pushed to) was hand-rolled in six test files
+# before this promotion, two of them matching it closely enough to migrate here (`pin()`'s own comment
+# states the promotion rule — "once a SECOND test file needed the exact same idiom" — this was one past
+# it); the other four push specific refspecs or deliberately diverge local from origin/<branch> and were
+# left as their own fixtures. Makes one empty "init" commit first, since a bare new_repo() has no
+# commits to push (unborn HEAD). No explicit fetch: a successful push already updates the local
+# origin/<branch> tracking ref (git's own default since 1.8.4), so a fetch right after would just
+# re-derive a ref git already set. Prints the work tree's path, like new_repo() — callers that also need
+# the bare origin's own path (a second work tree pointed at the same origin, say) recover it with
+# `git -C "$d" remote get-url origin` rather than a second return channel: this is called via `$(...)`
+# (a subshell), so a plain variable set inside it never reaches the caller.
+new_repo_with_origin() {
+  local d
+  d="$(new_repo)"
+  git -C "$d" commit -q --allow-empty -m init
+  new_bare_origin "$d" >/dev/null
+  git -C "$d" push -q origin "$(branch_raw_for "$d")"
   printf '%s' "$d"
 }
 

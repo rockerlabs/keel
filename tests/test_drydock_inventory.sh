@@ -25,14 +25,17 @@ TAB="$(printf '\t')"
 # N lines of filler — awk, not `printf ... $(seq N)`, which needs an unquoted expansion.
 lines() { awk -v n="$1" 'BEGIN { for (i = 0; i < n; i++) print "l" }'; }
 
-# A sandbox repo pushed to a fresh bare origin (new_repo_with_origin(), lib.sh dir #173), so
-# `origin/main` is a real ref to be at (or off); recover the bare's own path with
-# `git -C "$d" remote get-url origin` (needed by the unborn-HEAD fixture below, for a second work tree
-# on the same origin). Prints the work tree's path. The line counts here are asserted on below — keep
-# them in sync.
+# A sandbox repo pushed to a fresh bare origin (new_bare_origin(), lib.sh dir #173), so `origin/main` is
+# a real ref to be at (or off); recover the bare's own path with `git -C "$d" remote get-url origin`
+# (needed by the unborn-HEAD fixture below, for a second work tree on the same origin). Uses
+# new_bare_origin() rather than new_repo_with_origin(): this fixture's own content has to be committed
+# before the first push, so the latter's built-in empty-commit-then-push would just be a wasted round
+# trip here. Prints the work tree's path. The line counts here are asserted on below — keep them in
+# sync.
 mk_repo() {
   local d
-  d="$(new_repo_with_origin)"
+  d="$(new_repo)"
+  new_bare_origin "$d" >/dev/null
   # `scripts/`, not `tools/`: tools/self/doctor.sh's dead-reference check scans tests/*.sh for
   # repo-root-relative tools-path mentions, and a fixture path that merely looks like one reads as a
   # dead reference to a script this repo doesn't have.
