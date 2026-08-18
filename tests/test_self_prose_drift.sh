@@ -161,7 +161,11 @@ run "$pd" "$d" --quiet
 check_absent "a line carrying a literal URL is not flagged even if it runs long" "$OUT" "WARN"
 
 # --- signal 1, sh comments: shebang excluded, comment block anomaly IS flagged ---------------------
-d="$(mk_repo_with tools/t.sh "#!/usr/bin/env bash
+# fake_sh built via key() rather than a bare literal "tools/" + "t.sh" — self/doctor.sh's own check 2
+# scans tests/*.sh for exactly such a joined substring, and this file's source must never hold it
+# intact (the same idiom test_self_doctor.sh already documents for its own fake fixture paths).
+fake_sh="$(key tools/t .sh)"
+d="$(mk_repo_with "$fake_sh" "#!/usr/bin/env bash
 # $a100
 # $b100
 # $c140

@@ -35,6 +35,10 @@
 # day-to-day this is invoked by tools/self/doctor.sh, which passes its own resolved repo root.
 set -euo pipefail
 
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/fence-blank.sh
+. "$self_dir/../lib/fence-blank.sh"
+
 QUIET=0
 usage() {
   cat <<'EOF'
@@ -80,13 +84,16 @@ WRAP_MAX=115
 MARGIN=18
 MIN_BLOCK=3
 
-# One awk program, MODE-switched, rather than two near-identical copies (md's fence/table/heading/
-# bullet handling vs sh's bare-comment-run handling) — the anomaly math in END is shared verbatim and
-# must stay that way; a second hand-maintained copy is exactly the drift class this project's own
-# doctor.sh check 1/1b exist to catch elsewhere. Emits TSV (line, length, block-baseline) per hit;
-# the caller does the printing so this stays reusable from both the md and sh loops below.
-scan_line_length() {   # scan_line_length FILE MODE(md|sh)
-  awk -v WRAP_MAX="$WRAP_MAX" -v MARGIN="$MARGIN" -v MIN_BLOCK="$MIN_BLOCK" -v MODE="$2" '
+# One awk program, MODE-switched, rather than two near-identical copies (md's table/heading/bullet
+# handling vs sh's bare-comment-run handling) — the anomaly math in END is shared verbatim and must
+# stay that way; a second hand-maintained copy is exactly the drift class this project's own
+# doctor.sh check 1/1b exist to catch elsewhere. Reads the file body on STDIN, not as a filename
+# argument: the md caller below pre-blanks fenced code through the shared blank_fenced_blocks() (a
+# fence toggle re-derived here instead would be a second copy of that exact drift, one file over —
+# found by an independent review of this diff), so this program itself never needs to know about
+# fences at all. Emits TSV (line, length, block-baseline) per hit.
+scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on stdin)
+  awk -v WRAP_MAX="$WRAP_MAX" -v MARGIN="$MARGIN" -v MIN_BLOCK="$MIN_BLOCK" -v MODE="$1" '
     function is_bullet(l)  { return (l ~ /^[-*+][ \t]/) || (l ~ /^[0-9]+\.[ \t]/) }
     function is_heading(l) { return l ~ /^#{1,6}[ \t]/ }
     function is_table(l)   { return l ~ /^[ \t]*\|.*\|[ \t]*$/ }
@@ -99,15 +106,13 @@ scan_line_length() {   # scan_line_length FILE MODE(md|sh)
       ln[block, n[block]] = NR
       urlf[block, n[block]] = has_url(raw)
     }
-    BEGIN { block = 0; in_fence = 0; prev_blank = 1; in_front = 0; prev_comment = 0 }
+    BEGIN { block = 0; prev_blank = 1; in_front = 0; prev_comment = 0 }
     MODE == "md" {
       raw = $0
       # A leading `---`/`---` pair is YAML frontmatter (commands/*.md), not prose — blank it like a
       # fence. Only recognized at the very top of the file, the one place frontmatter is valid.
       if (NR == 1 && raw == "---") { in_front = 1; prev_blank = 1; next }
       if (in_front) { if (raw == "---") in_front = 0; prev_blank = 1; next }
-      if (raw ~ /^[ \t]*(```|~~~)/) { in_fence = !in_fence; prev_blank = 1; next }
-      if (in_fence) { prev_blank = 1; next }
       if (raw ~ /^[ \t]*$/) { prev_blank = 1; next }
       if (is_heading(raw) || is_table(raw) || is_linkline(raw)) { prev_blank = 1; next }
       # A top-level bullet/numbered-item marker always starts a FRESH block, even with no blank line
@@ -146,44 +151,56 @@ scan_line_length() {   # scan_line_length FILE MODE(md|sh)
         }
       }
     }
-  ' "$1"
+  '
 }
+
+# report_hits MODE FILES — FILES is a newline-separated list (already resolved by the caller, so a
+# list shared with another signal — see md_files below — is computed by git only once). Empty FILES
+# is a legitimate case (e.g. a repo with no tracked shell scripts) and returns with no output, rather
+# than looping once over an empty line.
+report_hits() {
+  local mode="$1" files="$2" f
+  [ -n "$files" ] || return 0
+  while IFS= read -r f; do
+    while IFS=$'\t' read -r ln len base; do
+      warn "$f:$ln ($len ch, block wrap ~$base ch) — runs well past its wrapped neighbors"
+      ll_hits=$((ll_hits + 1))
+    done < <(
+      if [ "$mode" = md ]; then blank_fenced_blocks "$repo_dir/$f"; else cat "$repo_dir/$f"; fi \
+        | scan_line_length "$mode"
+    )
+  done <<< "$files"
+}
+
+md_files="$(git -C "$repo_dir" ls-files '*.md' | sort)"
+sh_files="$(git -C "$repo_dir" ls-files 'tools/*.sh' 'tools/**/*.sh' 'tests/*.sh' | sort)"
 
 say ""
 say "● signal 1 — anomalous line length inside a wrapped block (advisory)"
 ll_hits=0
-while IFS= read -r f; do
-  while IFS=$'\t' read -r ln len base; do
-    [ -n "$ln" ] || continue
-    warn "$f:$ln ($len ch, block wrap ~$base ch) — runs well past its wrapped neighbors"
-    ll_hits=$((ll_hits + 1))
-  done < <(scan_line_length "$repo_dir/$f" md)
-done < <(git -C "$repo_dir" ls-files '*.md' | sort)
-while IFS= read -r f; do
-  while IFS=$'\t' read -r ln len base; do
-    [ -n "$ln" ] || continue
-    warn "$f:$ln ($len ch, block wrap ~$base ch) — runs well past its wrapped neighbors"
-    ll_hits=$((ll_hits + 1))
-  done < <(scan_line_length "$repo_dir/$f" sh)
-done < <(git -C "$repo_dir" ls-files 'tools/*.sh' 'tools/**/*.sh' 'tests/*.sh' | sort)
+report_hits md "$md_files"
+report_hits sh "$sh_files"
 [ "$ll_hits" -eq 0 ] && say "  OK   no anomalous line length inside a wrapped block"
 
 # --- signal 2: dead relative markdown links --------------------------------------------------------
+# Reuses $md_files from signal 1 above rather than a second `git ls-files '*.md'` — same file set,
+# no reason to ask git twice.
 say ""
 say "● signal 2 — dead relative markdown links"
 dead=0
-while IFS= read -r f; do
-  dir=$(dirname "$f")
-  while IFS=: read -r ln target; do
-    [ -n "$ln" ] || continue
-    t="${target%%#*}"                                   # strip anchor
-    case "$t" in http*|mailto:*|"") continue ;; esac
-    if [ ! -e "$repo_dir/$dir/$t" ] && [ ! -e "$repo_dir/$t" ]; then
-      gap "$f:$ln → \`$target\` does not resolve"
-      dead=$((dead + 1))
-    fi
-  done < <(grep -onE '\]\(([^)]+)\)' "$repo_dir/$f" | sed -E 's/:\]\(/:/; s/\)$//')
-done < <(git -C "$repo_dir" ls-files '*.md' | sort)
+if [ -n "$md_files" ]; then
+  while IFS= read -r f; do
+    dir=$(dirname "$f")
+    while IFS=: read -r ln target; do
+      t="${target%%#*}"                                   # strip anchor
+      case "$t" in http*|mailto:*|"") continue ;; esac
+      if [ ! -e "$repo_dir/$dir/$t" ] && [ ! -e "$repo_dir/$t" ]; then
+        gap "$f:$ln → \`$target\` does not resolve"
+        dead=$((dead + 1))
+      fi
+    done < <(grep -onE '\]\(([^)]+)\)' "$repo_dir/$f" | sed -E 's/:\]\(/:/; s/\)$//')
+  done <<< "$md_files"
+fi
 [ "$dead" -eq 0 ] && say "  OK   no dead relative markdown links"
 
 say ""
