@@ -171,10 +171,17 @@ measure() {
     [ -r "$f" ] || refuse "cannot read '$f', which is in scope and tracked at this commit.
 Refusing rather than omitting it: a partial inventory is indistinguishable from a small tree. If this
 is a sparse checkout, widen it (git sparse-checkout disable) and measure the whole tree."
-    # The path goes through the ENVIRONMENT, not `-v F=…`: awk runs escape-sequence processing on a
-    # -v assignment, so a filename containing a literal backslash-t would arrive as a real tab —
-    # corrupting not just the path but this record's own tab-separated shape.
-    F="$f" awk '/^[[:space:]]*#/ { c++ } END { printf "%s\t%d\t%d\n", ENVIRON["F"], NR, c }' "$f"
+    # Two separate awk hazards, two separate defences, both about the PATH rather than the contents:
+    #   1. The path goes through the ENVIRONMENT, not `-v F=…` — awk runs escape-sequence processing
+    #      on a -v assignment, so a filename containing a literal backslash-t would arrive as a real
+    #      tab, corrupting not just the path but this record's own tab-separated shape.
+    #   2. The operand is `./$f`, never a bare `$f` — awk reads an operand shaped `name=value` as a
+    #      variable assignment and an operand starting `-` as an option, so a top-level file called
+    #      `a=b.md` was never opened at all: NR stayed 0 and it was listed as an EMPTY file at exit 0,
+    #      with `[ -r ]` passing because the file is perfectly readable. A silent under-report that
+    #      looks plausible is worse than the visible error it replaced. Paths are repo-relative and
+    #      cwd is the repo root, so `./` always resolves, and ENVIRON["F"] still prints it unprefixed.
+    F="$f" awk '/^[[:space:]]*#/ { c++ } END { printf "%s\t%d\t%d\n", ENVIRON["F"], NR, c }' "./$f"
   done
 }
 

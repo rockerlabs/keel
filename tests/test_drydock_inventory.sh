@@ -53,6 +53,10 @@ mk_repo() {
   # scope-B selector's exit status used to be the last loop iteration's, so it reported failure on a
   # perfectly healthy repo — and both suites stayed green purely by accident of sort order.
   lines 2 > "$d/zz-notes.md"
+  # awk reads a bare operand shaped `name=value` as a variable assignment, so this file was measured
+  # as 0 lines — silently, at exit 0, with `[ -r ]` passing because it is perfectly readable. Only a
+  # top-level path can trigger it: anything with a `/` is not a valid awk identifier.
+  lines 4 > "$d/a=b.md"
   git -C "$d" add -A
   git -C "$d" commit -qm init
   git -C "$d" remote add origin "$1"
@@ -71,8 +75,10 @@ check_contains "header names the measured baseline" "$OUT" "# drydock inventory 
 check_contains "scope A lists a tracked markdown file" "$OUT" "docs/guide.md"
 check_contains "scope A reports its line count" "$OUT" "20 ln"
 check_contains "a file with no trailing newline counts its last line" "$OUT" "docs/nonl.md${TAB}3 ln"
-check_contains "scope A totals every tracked .md" "$OUT" "scope A total: 7 files, 647 lines"
+check_contains "scope A totals every tracked .md" "$OUT" "scope A total: 8 files, 651 lines"
 check_contains "the historical file is still inventoried in scope A" "$OUT" "CHANGELOG.md${TAB}5 ln"
+check_contains "a path awk would read as an assignment is measured, not reported empty" \
+  "$OUT" "a=b.md${TAB}4 ln"
 check_contains "scope B counts comment lines only" "$OUT" "scripts/thing.sh${TAB}4 comment-ln"
 check_contains "scope B picks up a shebang-detected extensionless script" \
   "$OUT" "bin/cli${TAB}3 comment-ln"
@@ -88,7 +94,7 @@ check_absent "nothing is flagged CHANGED on a full run" "$OUT" "CHANGED"
 # Runs from a subdirectory: the tool resolves its own repo root rather than measuring the cwd.
 run_in "$r/docs" "$TOOL"
 check_status "runs from a subdirectory -> exit 0" 0 "$STATUS"
-check_contains "a subdirectory run still measures the whole tree" "$OUT" "scope A total: 7 files"
+check_contains "a subdirectory run still measures the whole tree" "$OUT" "scope A total: 8 files"
 
 # --- the run-1 guard: HEAD is not the baseline ----------------------------------------------------
 git -C "$r" checkout -q -b peer-session
@@ -170,7 +176,7 @@ check_contains "the header records the previous baseline" "$OUT" "previous basel
 check_contains "a file changed since the previous baseline is flagged" \
   "$OUT" "docs/guide.md${TAB}21 ln CHANGED"
 check_contains "the changed count covers the whole changed set" \
-  "$OUT" "scope A total: 7 files, 649 lines (2 changed since the previous baseline)"
+  "$OUT" "scope A total: 8 files, 653 lines (2 changed since the previous baseline)"
 # The membership test is delimited, not a substring match: `docs/README.md` changed, plain
 # `README.md` did not, and one path ends with the other.
 check_contains "a changed nested file is flagged" "$OUT" "docs/README.md${TAB}8 ln CHANGED"
@@ -242,7 +248,7 @@ check_status "a backslash in a tracked path is measured, not refused -> exit 0" 
 check_contains "the backslash path is listed unquoted, with its real line count" \
   "$OUT" "a\\tb.md${TAB}2 ln"
 check_contains "a backslash-named script still reaches scope B" "$OUT" "w\\eird.sh${TAB}2 comment-ln"
-check_absent "no path is emitted in git's C-quoted form" "$OUT" '\\\\t'
+check_absent "no path is emitted in git's C-quoted form" "$OUT" '\\t'
 
 # ...and the changed-set enumeration matches those same bytes, so an incremental run flags it.
 printf 'more\n' >> "$r3/a\\tb.md"

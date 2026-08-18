@@ -46,7 +46,7 @@ check_status "a non-ASCII path does not break the run -> exit 0" 0 "$STATUS"
 check_contains "a non-ASCII *.sh path is emitted unquoted" "$OUT" "résumé.sh"
 check_absent "and is not C-quoted" "$OUT" '\303'
 check_contains "a backslash-named script stays in the selection" "$OUT" "w\\eird.sh"
-check_absent "and it too is not C-quoted" "$OUT" '\\\\e'
+check_absent "and it too is not C-quoted" "$OUT" '\\e'
 
 # default REPO_DIR is the current directory
 run_in "$d" "$st"
