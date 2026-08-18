@@ -210,6 +210,64 @@ run_in "$r" env "DRYDOCK_SCOPE_A=:(attr:" "$TOOL"
 check_status "a failing scope-A enumeration -> exit 3" 3 "$STATUS"
 check_absent "no empty scope-A inventory is emitted" "$OUT" "scope A total"
 
+# The changed-set enumeration is the third of three and gets the same guard. A malformed pathspec
+# can't reach it (it takes revs, already validated), so this shims `git` on PATH to fail on `diff`
+# alone — an empty changed set would otherwise read as "nothing drifted since the last run", and an
+# incremental run would silently audit nothing.
+fakebin="$(mktemp -d "$SANDBOX/fakebin.XXXXXX")"
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = diff ] && exit 9; done\nexec %s "$@"\n' \
+  "$(command -v git)" > "$fakebin/git"
+chmod +x "$fakebin/git"
+run_in "$r" env "PATH=$fakebin:$PATH" "$TOOL" --prev "$base"
+check_status "a failing git diff -> exit 3" 3 "$STATUS"
+check_contains "the refusal says the incremental scope is unknown" "$OUT" "incremental scope is unknown"
+check_absent "no inventory is emitted when the changed set is unknown" "$OUT" "scope A total"
+
+# --- paths git cannot print literally ---------------------------------------------------------------
+# git C-quotes any path it can't print as-is, and `core.quotePath=false` only covers the non-ASCII
+# half of that: a backslash or a double quote is quoted regardless. A quoted string is not a path
+# anyone can open, so the run used to refuse a perfectly healthy tree and blame a sparse checkout.
+# `-z` is what actually fixes it, which is why these fixtures use a backslash and not an accent.
+bare3="$(mk_bare)"
+r3="$(mk_repo "$bare3")"
+printf 'x\ny\n' > "$r3/a\\tb.md"                                   # literal backslash-t in the name
+printf '#!/usr/bin/env bash\n# c\necho hi\n' > "$r3/w\\eird.sh"
+git -C "$r3" add -A
+git -C "$r3" commit -qm "paths git has to quote"
+git -C "$r3" push -q origin main
+git -C "$r3" fetch -q origin
+base3="$(git -C "$r3" rev-parse HEAD)"
+run_in "$r3" "$TOOL"
+check_status "a backslash in a tracked path is measured, not refused -> exit 0" 0 "$STATUS"
+check_contains "the backslash path is listed unquoted, with its real line count" \
+  "$OUT" "a\\tb.md${TAB}2 ln"
+check_contains "a backslash-named script still reaches scope B" "$OUT" "w\\eird.sh${TAB}2 comment-ln"
+check_absent "no path is emitted in git's C-quoted form" "$OUT" '\\\\t'
+
+# ...and the changed-set enumeration matches those same bytes, so an incremental run flags it.
+printf 'more\n' >> "$r3/a\\tb.md"
+git -C "$r3" commit -qam "change the backslash path"
+git -C "$r3" push -q origin main
+git -C "$r3" fetch -q origin
+run_in "$r3" "$TOOL" --prev "$base3"
+check_status "--prev over a backslash path -> exit 0" 0 "$STATUS"
+check_contains "a changed backslash path is flagged CHANGED" "$OUT" "a\\tb.md${TAB}3 ln CHANGED"
+
+# A tab or newline in a path cannot be represented in this script's own TSV record, so it refuses
+# rather than emitting a corrupt artifact.
+bare4="$(mk_bare)"
+r4="$(mk_repo "$bare4")"
+printf 'x\n' > "$r4/$(printf 'has\ttab').md"
+git -C "$r4" add -A
+git -C "$r4" commit -qm "a tab in a path"
+git -C "$r4" push -q origin main
+git -C "$r4" fetch -q origin
+run_in "$r4" "$TOOL"
+check_status "a tab in a tracked path -> exit 3" 3 "$STATUS"
+check_contains "the refusal explains the record format cannot represent it" "$OUT" "cannot
+represent"
+check_absent "no partial inventory is emitted for an unrepresentable path" "$OUT" "scope A total"
+
 # --- a repository with no commits at all -----------------------------------------------------------
 # origin/main resolves (it was fetched), but HEAD is unborn — without its own guard this exits 128
 # with git's raw error rather than the documented 0/2/3.

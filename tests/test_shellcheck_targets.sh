@@ -36,11 +36,17 @@ check_absent "the non-script last file is still excluded" "$OUT" "zz-last.md"
 # A non-ASCII path must be emitted usably, not C-quoted — a quoted path matches no case arm and the
 # file would drop out of the selection silently.
 printf '#!/usr/bin/env bash\necho x\n' > "$d/résumé.sh"
+# A backslash is the harder half: `core.quotePath=false` would still let git quote this one, so only
+# the NUL-delimited enumeration keeps it in the selection. A script silently missing from here is a
+# script CI never lints.
+printf '#!/usr/bin/env bash\necho y\n' > "$d/w\\eird.sh"
 ( cd "$d" && git add -A && git commit -qm nonascii )
 run "$st" "$d"
 check_status "a non-ASCII path does not break the run -> exit 0" 0 "$STATUS"
 check_contains "a non-ASCII *.sh path is emitted unquoted" "$OUT" "résumé.sh"
 check_absent "and is not C-quoted" "$OUT" '\303'
+check_contains "a backslash-named script stays in the selection" "$OUT" "w\\eird.sh"
+check_absent "and it too is not C-quoted" "$OUT" '\\\\e'
 
 # default REPO_DIR is the current directory
 run_in "$d" "$st"

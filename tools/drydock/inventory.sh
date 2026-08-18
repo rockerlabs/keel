@@ -135,8 +135,7 @@ NL=$'\n'   # a literal, NOT "$(printf '\n')" — command substitution strips tra
 # file for a fact one diff already knows. Wrapped in newlines — with the trailing one appended
 # explicitly, since `$(...)` would have eaten it — so the membership test below cannot match a path
 # that merely shares a prefix or suffix with a changed one.
-changed_set=""
-[ -n "$prev" ] && changed_set="$NL$(git diff --name-only "$prev" "$baseline")$NL"
+changed_set=""   # built below, once the scratch dir exists — see "the changed set".
 
 is_changed() {
   [ -n "$prev" ] || return 1
@@ -172,17 +171,21 @@ measure() {
     [ -r "$f" ] || refuse "cannot read '$f', which is in scope and tracked at this commit.
 Refusing rather than omitting it: a partial inventory is indistinguishable from a small tree. If this
 is a sparse checkout, widen it (git sparse-checkout disable) and measure the whole tree."
-    awk -v F="$f" '/^[[:space:]]*#/ { c++ } END { printf "%s\t%d\t%d\n", F, NR, c }' "$f"
+    # The path goes through the ENVIRONMENT, not `-v F=…`: awk runs escape-sequence processing on a
+    # -v assignment, so a filename containing a literal backslash-t would arrive as a real tab —
+    # corrupting not just the path but this record's own tab-separated shape.
+    F="$f" awk '/^[[:space:]]*#/ { c++ } END { printf "%s\t%d\t%d\n", ENVIRON["F"], NR, c }' "$f"
   done
 }
 
-# core.quotePath=false: with git's default, a tracked path containing a non-ASCII byte is printed
-# C-quoted (`"r\303\251sum\303\251.md"`), which is not a path any caller can open — the file would
-# then trip measure()'s readability refusal above for a reason that is git's output format, not the
-# tree.
+# Every enumeration below is NUL-delimited (`-z`), and that is a correctness requirement, not a
+# style: git C-quotes any path it cannot print literally, and a quoted string is not a path anyone can
+# open — so the file would trip measure()'s readability refusal above for a reason that is git's
+# output format rather than anything wrong with the tree. `-c core.quotePath=false` fixes only the
+# non-ASCII half; a backslash or a double quote is quoted regardless. `-z` is the whole fix.
 scope_a_files() {
   [ "${#scope_a[@]}" -gt 0 ] || return 0
-  git -c core.quotePath=false ls-files -- "${scope_a[@]}"
+  git ls-files -z -- "${scope_a[@]}"
 }
 
 # Unset DRYDOCK_SCOPE_B means "every tracked shell script", which is NOT the same as the `*.sh`
@@ -200,16 +203,19 @@ scope_a_files() {
 scope_b_files() {
   if [ -n "${DRYDOCK_SCOPE_B:-}" ]; then
     [ "${#scope_b[@]}" -gt 0 ] || return 0
-    git -c core.quotePath=false ls-files -- "${scope_b[@]}"
+    git ls-files -z -- "${scope_b[@]}"
     return $?
   fi
   local selector="$script_dir/../self/shellcheck-targets.sh"
   if [ -r "$selector" ]; then
-    bash "$selector" "$repo_root"
+    # The selector's own output is newline-delimited (its consumers require that), so convert. Its
+    # paths are already unquoted — it reads `ls-files -z` internally — which is what makes this
+    # conversion lossless for everything the format check below accepts.
+    bash "$selector" "$repo_root" | tr '\n' '\0'
     return $?
   fi
   local f tracked
-  tracked="$(git -c core.quotePath=false ls-files)" || return $?
+  tracked="$(git ls-files -z | tr '\0' '\n')" || return $?
   # `if … then … fi` for the same reason the selector uses it: a non-match is the ordinary outcome,
   # and as the loop body's last command it would become the `while`'s status. Here the trailing
   # `return 0` would in fact cover it — but relying on that is the reasoning that already failed one
@@ -217,33 +223,74 @@ scope_b_files() {
   printf '%s\n' "$tracked" | while IFS= read -r f; do
     [ -n "$f" ] || continue
     case "$f" in
-      *.sh) printf '%s\n' "$f" ;;
+      *.sh) printf '%s\0' "$f" ;;
       *) if head -1 -- "$f" 2>/dev/null \
               | grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)'; then
-           printf '%s\n' "$f"
+           printf '%s\0' "$f"
          fi ;;
     esac
   done
   return 0
 }
 
-# Enumerated into a variable, NOT through `< <(…)`: a failing `git ls-files` (or a failing selector
-# script) inside a process substitution leaves the loop with zero iterations and no status anyone
-# reads, reporting an empty tree at exit 0 — the silent-omission class again, one level up from
-# measure()'s. A command substitution's status IS observable, and `pipefail` carries a failure
-# through the `| sort`. Both refusals run in THIS shell, which matters: `refuse` calls `exit`, and an
-# `exit` inside a command substitution would only end the subshell.
-raw_a="$(scope_a_files | sort)" \
+# Enumerated through a temporary FILE, not a variable and not `< <(…)`. Three constraints meet here:
+# the list is NUL-delimited (a variable cannot hold NUL at all); the enumeration's exit status has to
+# be observable (a process substitution's is not — a failing `git ls-files` or selector would leave
+# the loop with zero iterations and report an empty tree at exit 0, the silent-omission class one
+# level up from measure()'s); and the refusal has to run in THIS shell, since `refuse` calls `exit`
+# and an `exit` inside a command substitution would only end a subshell. Writing to a file, checking
+# the status, then reading it back is the one shape that satisfies all three. No `| sort`: git
+# already emits index order, which is sorted, and the selector's own list comes from the same source.
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
+scope_a_files > "$scratch/a" \
   || refuse "could not enumerate scope A — git failed. Nothing was measured; fix that error rather
 than trusting a short inventory."
-raw_b="$(scope_b_files | sort)" \
+scope_b_files > "$scratch/b" \
   || refuse "could not enumerate scope B — git, or the shell-script selector, failed. Nothing was
 measured; fix that error rather than trusting a short inventory."
 
+# A tab or a newline inside a path would break this script's own `path<TAB>lines<TAB>comments` stream
+# — the tab silently shifts every later field, the newline splits one record into two — so such a
+# path is refused outright rather than measured into a corrupt artifact. Both are legal in git, and
+# both are vanishingly rare; refusing is the honest floor until the whole pipeline is NUL-delimited.
+assert_representable() {
+  case "$1" in
+    *"$TAB"*) refuse "the path '$1' contains a tab, which this inventory's own record format cannot
+represent. Rename it, or narrow the scope to exclude it." ;;
+    *"$NL"*) refuse "the path '$1' contains a newline, which this inventory's own record format
+cannot represent. Rename it, or narrow the scope to exclude it." ;;
+  esac
+}
+
 files_a=()
-while IFS= read -r f; do [ -n "$f" ] && files_a+=("$f"); done <<< "$raw_a"
+while IFS= read -r -d '' f; do
+  [ -n "$f" ] || continue
+  assert_representable "$f"
+  files_a+=("$f")
+done < "$scratch/a"
 files_b=()
-while IFS= read -r f; do [ -n "$f" ] && files_b+=("$f"); done <<< "$raw_b"
+while IFS= read -r -d '' f; do
+  [ -n "$f" ] || continue
+  assert_representable "$f"
+  files_b+=("$f")
+done < "$scratch/b"
+
+# The changed set — the THIRD enumeration, and it gets the same treatment as the two above, for the
+# same reason: a `git diff` whose failure went unchecked would yield an empty set, which is
+# indistinguishable from "nothing changed" and would make an incremental run silently audit nothing.
+# `-z` here too, so a path matches the ones enumerated above byte for byte.
+if [ -n "$prev" ]; then
+  git diff --name-only -z "$prev" "$baseline" > "$scratch/changed" \
+    || refuse "could not diff $prev..$baseline — the incremental scope is unknown. Nothing was
+measured; an empty changed set would read as 'nothing drifted', which is not what happened."
+  while IFS= read -r -d '' f; do
+    [ -n "$f" ] || continue
+    changed_set="$changed_set$f$NL"
+  done < "$scratch/changed"
+  changed_set="$NL$changed_set"
+fi
 
 # `|| exit $?` is load-bearing for the same reason: measure()'s readability refusal fires inside this
 # command substitution, so its exit ends only the subshell — this propagates the status outward.

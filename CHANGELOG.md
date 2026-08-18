@@ -43,7 +43,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   under-report. There is deliberately **no `--force`**; the escape hatch is `--baseline <rev>`, which
   is the opposite of a bypass: you name the commit you meant and it lands in the output header.
   `--prev <sha>` is the incremental-run mechanism, flagging what changed since a prior run's baseline
-  and scoping the derived batches to it. Batch sizes and scope
+  and scoping the derived batches to it. All three enumerations — scope A, scope B, and the changed
+  set — are NUL-delimited and status-checked, which is a correctness requirement rather than a
+  flourish: git C-quotes any path it cannot print literally, and a quoted string is not a path anyone
+  can open, so the guard used to refuse a healthy tree over a filename containing a backslash and
+  blame a sparse checkout for it. A path carrying a tab or a newline is still refused, explicitly,
+  because the artifact's own tab-separated record cannot represent one. Batch sizes and scope
   pathspecs are environment-tunable for a repo shaped differently from Keel's. Scope B defaults to
   *every tracked shell script*, not to the `*.sh` pathspec — it calls
   `tools/self/shellcheck-targets.sh`, the repo's existing canonical answer to "which tracked files are
@@ -86,7 +91,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   byte arrived C-quoted (`"r\303\251sum\303\251.sh"`); that string matches neither the `*.sh` arm nor
   `head`'s idea of a filename, so the file was silently absent from the selection — from CI's
   shellcheck job and `tools/self/doctor.sh` too, meaning an unlinted shell script with no signal that
-  anything was skipped. Now `-c core.quotePath=false`. (2) Its exit status was whatever the last loop
+  anything was skipped. Now `ls-files -z` with a NUL-delimited read: `-c core.quotePath=false` was the
+  first attempt and covers only the non-ASCII half, since git quotes a backslash or a double quote in
+  a path regardless of that setting — the operator's own `/code-review high` on this PR caught the
+  narrower fix being claimed as the whole one. (2) Its exit status was whatever the last loop
   iteration returned, so a repo whose alphabetically-last tracked file is not a shell script exited 1
   purely because the final shebang `grep -q` found nothing — reproduced on a two-file repo. Each
   iteration now succeeds on its own (`if … then … fi` instead of `grep -q … && printf`); a trailing
