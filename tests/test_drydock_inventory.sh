@@ -25,13 +25,14 @@ TAB="$(printf '\t')"
 # N lines of filler — awk, not `printf ... $(seq N)`, which needs an unquoted expansion.
 lines() { awk -v n="$1" 'BEGIN { for (i = 0; i < n; i++) print "l" }'; }
 
-mk_bare() { local b; b="$(mktemp -d "$SANDBOX/origin.XXXXXX")"; git init -q --bare "$b"; printf '%s' "$b"; }
-
-# A sandbox repo pushed to the bare origin in $1, so `origin/main` is a real ref to be at (or off).
-# Prints the work tree's path. The line counts here are asserted on below — keep them in sync.
+# A sandbox repo pushed to a fresh bare origin (new_repo_with_origin(), lib.sh dir #173), so
+# `origin/main` is a real ref to be at (or off); recover the bare's own path with
+# `git -C "$d" remote get-url origin` (needed by the unborn-HEAD fixture below, for a second work tree
+# on the same origin). Prints the work tree's path. The line counts here are asserted on below — keep
+# them in sync.
 mk_repo() {
   local d
-  d="$(new_repo)"
+  d="$(new_repo_with_origin)"
   # `scripts/`, not `tools/`: tools/self/doctor.sh's dead-reference check scans tests/*.sh for
   # repo-root-relative tools-path mentions, and a fixture path that merely looks like one reads as a
   # dead reference to a script this repo doesn't have.
@@ -58,16 +59,15 @@ mk_repo() {
   # top-level path can trigger it: anything with a `/` is not a valid awk identifier.
   lines 4 > "$d/a=b.md"
   git -C "$d" add -A
-  git -C "$d" commit -qm init
-  git -C "$d" remote add origin "$1"
+  git -C "$d" commit -qm content
   git -C "$d" push -q origin main
   git -C "$d" fetch -q origin
   printf '%s' "$d"
 }
 
 # --- the happy path: a clean tree at origin/main --------------------------------------------------
-bare="$(mk_bare)"
-r="$(mk_repo "$bare")"
+r="$(mk_repo)"
+bare="$(git -C "$r" remote get-url origin)"
 base="$(git -C "$r" rev-parse HEAD)"
 run_in "$r" "$TOOL"
 check_status "clean tree at origin/main -> exit 0" 0 "$STATUS"
@@ -191,8 +191,7 @@ check_absent "an unchanged historical file gets no SPECIAL batch" "$OUT" "CHANGE
 # A broken symlink, not `chmod 000`: chmod is a no-op for the root reader the Alpine CI leg runs as
 # (project CLAUDE.md), so that fixture would pass the exit-code half and silently skip the real
 # assertion on exactly one platform. `-r` on a dangling link is false for every user.
-bare2="$(mk_bare)"
-r2="$(mk_repo "$bare2")"
+r2="$(mk_repo)"
 ln -s nowhere-at-all "$r2/docs/dangling.md"
 git -C "$r2" add -A
 git -C "$r2" commit -qm "a tracked broken symlink"
@@ -234,8 +233,7 @@ check_absent "no inventory is emitted when the changed set is unknown" "$OUT" "s
 # half of that: a backslash or a double quote is quoted regardless. A quoted string is not a path
 # anyone can open, so the run used to refuse a perfectly healthy tree and blame a sparse checkout.
 # `-z` is what actually fixes it, which is why these fixtures use a backslash and not an accent.
-bare3="$(mk_bare)"
-r3="$(mk_repo "$bare3")"
+r3="$(mk_repo)"
 printf 'x\ny\n' > "$r3/a\\tb.md"                                   # literal backslash-t in the name
 printf '#!/usr/bin/env bash\n# c\necho hi\n' > "$r3/w\\eird.sh"
 git -C "$r3" add -A
@@ -261,8 +259,7 @@ check_contains "a changed backslash path is flagged CHANGED" "$OUT" "a\\tb.md${T
 
 # A tab or newline in a path cannot be represented in this script's own TSV record, so it refuses
 # rather than emitting a corrupt artifact.
-bare4="$(mk_bare)"
-r4="$(mk_repo "$bare4")"
+r4="$(mk_repo)"
 printf 'x\n' > "$r4/$(printf 'has\ttab').md"
 git -C "$r4" add -A
 git -C "$r4" commit -qm "a tab in a path"

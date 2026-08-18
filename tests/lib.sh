@@ -128,6 +128,27 @@ new_repo() {
   printf '%s' "$d"
 }
 
+# dir #173: new_repo() plus a fresh bare "origin" — pushed and fetched, so `origin/<branch>` is a real
+# ref to be at (or off). This exact 5-line idiom (mktemp -d + git init --bare + remote add origin +
+# push + fetch) was hand-rolled in six test files before this promotion; `pin()`'s own comment states
+# the promotion rule ("once a SECOND test file needed the exact same idiom") — this was five past it.
+# Makes one empty "init" commit first, since a bare new_repo() has no commits to push (unborn HEAD).
+# Prints the work tree's path, like new_repo() — callers that also need the bare origin's own path
+# (a second work tree pointed at the same origin, say) recover it with `git -C "$d" remote get-url
+# origin` rather than a second return channel: this is called via `$(...)` (a subshell), so a plain
+# variable set inside it never reaches the caller.
+new_repo_with_origin() {
+  local d bare
+  d="$(new_repo)"
+  git -C "$d" commit -q --allow-empty -m init
+  bare="$(mktemp -d "$SANDBOX/origin.XXXXXX")"
+  git init -q --bare "$bare"
+  git -C "$d" remote add origin "$bare"
+  git -C "$d" push -q origin "$(git -C "$d" branch --show-current)"
+  git -C "$d" fetch -q origin
+  printf '%s' "$d"
+}
+
 # --- pre-pr-gate.sh receipt fixtures -------------------------------------------------------------
 # Shared by test_pre_pr_gate.sh and test_pipeline_canary.sh (dir #64) — both drive the SAME gate CLI
 # subcommands to build a complete, matching receipt. Expects the CALLER to have already set a $gate
