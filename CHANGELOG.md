@@ -89,6 +89,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   instead of omitting.
 
 ### Changed
+- **`FRAMEWORK.md`'s PR-review section now covers what kind of review round to run, not just whether to
+  run one** (dir #174, promoted from a 2nd-hit `LEARNINGS.md` entry). The existing "When to stop
+  reviewing" answers *whether* another round is worth it; the new "Full pass or cheap delta?" answers
+  what kind, once it is — severity trend and where findings land (code migrating to prose-only) read
+  together are the tell that the substantive surface is exhausted, producing a defensible "run one
+  cheap delta instead of a full pass" call rather than an arbitrary round cap or an open-ended
+  "run it again to be sure." The two sections cross-link.
 - **A step-5 receipt can now name EVERY review that saw the commit, not just the last one** (dir #158).
   `polish.5-review`'s add-on suffix was two hardcoded literals — `+operator-run` (dir #81) and
   `+second-opinion` (dir #141) — one per `case` arm, while step 5 holds a single value. So a commit that
