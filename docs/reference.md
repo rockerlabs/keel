@@ -39,6 +39,7 @@ Every file, tool, and command — grouped, one line each.
 | [`tools/branch-cleanup.sh`](../tools/branch-cleanup.sh) | Classifies local branches after merges into AUTO/ASK/FLAG confidence tiers so post-merge cleanup never blanket-deletes live work. |
 | [`tools/pre-pr-gate.sh`](../tools/pre-pr-gate.sh) | The `/polish` pre-PR gate: a Claude Code hook that blocks the agent's own `gh pr create` until `/polish` (simplify + tests + a depth-matched review) has run cleanly on the current commit. Ships with `commands/polish.md`, but is never auto-wired — see `install-pre-pr-gate.sh` below. |
 | [`tools/install-pre-pr-gate.sh`](../tools/install-pre-pr-gate.sh) | Wires the `/polish` gate's 6 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` (every repo; `--home DIR` targets the same home an `install.sh --home DIR` install used). Opt-in and separate from `install.sh` on purpose: a hook changes what a session can do without asking each time. Same never-clobber discipline as `install-secret-guard.sh`. |
+| [`tools/drydock/inventory.sh`](../tools/drydock/inventory.sh) | Freezes a [drydock](drydock.md) prose-audit run's scope as code: measures the tracked prose surface (markdown whole-file, shell comment blocks) at one baseline commit and derives the per-auditor batches. Refuses a dirty tree or a HEAD that isn't the baseline — with no bypass flag — because an inventory measured off the baseline scopes the whole audit against a commit nobody chose. `--prev <sha>` scopes an incremental run to what changed since the last one. |
 | [`tools/pipeline-canary.sh`](../tools/pipeline-canary.sh) | A sandboxed operator ritual for auditing your own `/polish` → gate pipeline: drives a real dry run (or a scripted, no-model `demo-bypass`) in an isolated toy repo + `HOME`, so you can check the gate still denies a fabricated review claim. |
 
 *secret-guard is a safety net for known key shapes plus your listed literals — not a catch-all. It won't
@@ -66,7 +67,8 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard
 blocking a key. Most of the docs are indexed in the [README's Docs section](../README.md#docs) too — a
-few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing-checklist.md`) aren't.
+few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing-checklist.md`, and the
+three [`docs/drydock/`](drydock/) role-prompt templates) aren't.
 
 Setting Keel up for a tool other than Claude Code (installer flags, the by-hand copy) →
 [`docs/getting-started.md`](getting-started.md) and [`ADAPTING.md`](../ADAPTING.md).

@@ -11,6 +11,10 @@ It sits next to [`docs/rollout-audit.md`](rollout-audit.md) (checks a *model/har
 your pipeline) and [`docs/publishing-checklist.md`](publishing-checklist.md) (checks a repo *looks
 finished*) — this one is the third leg: checks the *project itself* is ready to tag, code and rails and
 docs and drift together, on a cadence of "before every release" rather than "after an upgrade."
+[`docs/drydock.md`](drydock.md) is the fourth, and it runs underneath all three: a whole-tree audit of
+whether the *prose* — rails, docs, command steps, comments — is still true, which is the assumption every
+checklist in this family quietly rests on. Phase 2's triage and phase 5's review budget below are what a
+drydock run's fix queue plugs into.
 
 ## Phase 0 — the state definition the whole flow rests on
 

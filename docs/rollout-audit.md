@@ -18,6 +18,11 @@ capability is always available) into a visible behaviour change, on a day nobody
 every rollout — including a plain upgrade — as a trigger for this audit, not only a downgrade or a
 provider switch.
 
+That insight has a standing consequence this checklist doesn't cover: the wording debt a rollout turns
+visible was already there, and finding it *before* an upgrade re-weights it is a separate,
+whole-tree pass — [`docs/drydock.md`](drydock.md). This audit is triggered by a rollout; that one runs
+on its own cadence, over prose nothing has broken yet.
+
 ## The three layers
 
 Split the check by how mechanizable it is. Each layer only matters once the one above it is clean — no

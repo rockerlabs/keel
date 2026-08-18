@@ -3,6 +3,13 @@
 This is the "is it finished and presentable?" list — what a repo should have before (and right after) you
 make it public, so the work goes fast the next time instead of being re-derived from scratch.
 
+Three siblings answer the other halves of "how do you know it's still true?":
+[`release-audit.md`](release-audit.md) checks the *project* is ready to tag,
+[`rollout-audit.md`](rollout-audit.md) checks a model or harness upgrade didn't quietly break your
+pipeline, and [`drydock.md`](drydock.md) audits whether the repo's own prose — the README this list asks
+you to write, the docs it asks you to ship — still matches the tree it describes. This list only checks
+that they exist and look finished.
+
 It's the companion to [`going-public.md`](going-public.md), which covers the **safety** side (no secrets or
 personal data leak). Do that one first; this one second. Roughly: *going-public = don't leak*,
 *this = look finished*.
