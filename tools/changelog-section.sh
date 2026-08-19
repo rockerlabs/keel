@@ -43,7 +43,11 @@ changelog_file="$repo_root/CHANGELOG.md"
 # blank, don't delete, so line numbers stay aligned, and a `## [x.y.z]`-shaped line living inside a
 # fenced example (this file documents its own release-note conventions) isn't mistaken for a real
 # section heading. Duplicated rather than shared per dir #26's standing, deliberate "capture only, do
-# not pre-build a shared lib" call — this is now a further site on that list.
+# not pre-build a shared lib" call — this is now a further site on that list. Deliberately NOT the
+# tools/lib/fence-blank.sh shared copy dir #169 introduced for doctor.sh/prose-drift.sh: THIS script
+# is meant to be copy-portable on its own (tests/test_changelog_section.sh's own fixture copies only
+# this one file into a sandbox to prove exactly that), and sourcing a sibling lib would break it —
+# tests/test_fence_blank_lib.sh's duplicate-scan knows to allowlist this file for that reason.
 blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$changelog_file")"
 
 # Locate the target heading and the next `## ` heading after it (any shape — [Unreleased] or another

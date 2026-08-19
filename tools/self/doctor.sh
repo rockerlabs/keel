@@ -37,6 +37,9 @@
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
 #   GAP   tests/test_core_wrapper_sync.sh fails (CORE.md / templates/CLAUDE.md embed diverged)
 #   GAP   shellcheck -x --severity=warning fails on any tracked shell script (mirrors ci.yml)
+#   GAP   tools/self/prose-drift.sh finds a dead relative markdown link
+#   WARN  tools/self/prose-drift.sh finds a line running well past its own wrapped block's
+#         neighbors (advisory lead, dir #169 — never fails this script on its own)
 #
 # Explicitly out of scope (not mechanizable — printed as a reminder, not silently dropped):
 #   PRINCIPLES.md "does every tension still have a running enforcement" — needs judgment; run the
@@ -442,17 +445,14 @@ heading_dir_id() {
   [[ "$line" =~ $re ]] && printf '%s' "${BASH_REMATCH[0]}" || printf '%s' "dir #?"
 }
 
-# Blank (not delete, so line numbers stay aligned) fenced ```/~~~ code-block regions of a file,
-# same convention `tools/doctor.sh` already uses elsewhere (indented AND tilde-style fences). Shared
-# by check 5's BACKLOG.md scan and check 6's CHANGELOG.md scan below (found duplicated verbatim
-# between them by /code-review medium's own reuse/altitude passes) — both need it for the identical
-# reason: a `##`/`###`-shaped line living inside a fenced example must not be misread as a real
-# heading/section. Accepted limitation, same as both former call sites carried individually: an ODD
-# number of fence markers (a forgotten closing fence) leaves the toggle stuck "in fence" for the rest
-# of the file.
-blank_fenced_blocks() {
-  awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$1"
-}
+# Blank (not delete, so line numbers stay aligned) fenced ```/~~~ code-block regions of a file, so a
+# `##`/`###`-shaped line living inside a fenced example must not be misread as a real heading/section.
+# Needed by check 5's BACKLOG.md scan and check 6's CHANGELOG.md scan below, and by
+# tools/self/prose-drift.sh's own md line-length signal — tools/lib/fence-blank.sh (dir #169) is the
+# one shared copy, after this exact toggle was found duplicated verbatim between check 5 and check 6
+# themselves by an earlier /code-review medium pass.
+# shellcheck source=tools/lib/fence-blank.sh
+. "$self_dir/../lib/fence-blank.sh"
 
 # --- 5. BACKLOG.md heading/status drift -----------------------------------------------------------
 # `### dir #N` tickets carry their own status tag on the heading line itself (✅ DONE/CLOSED,
@@ -875,6 +875,21 @@ if command -v shellcheck >/dev/null 2>&1; then
   fi
 else
   warn "shellcheck not installed locally — skipped here (CI still enforces it)"
+fi
+
+# Streamed directly rather than through run_check(): run_check only shows a tool's output when it
+# FAILS, but prose-drift.sh's line-length signal is advisory (WARN) by design and must stay visible
+# on every run, not just a failing one — only its dead-link signal (GAP) affects this exit code.
+say ""
+if [ -f "$self_dir/prose-drift.sh" ]; then
+  pd_args=("$repo_root")
+  [ "$QUIET" = 1 ] && pd_args+=(--quiet)
+  bash "$self_dir/prose-drift.sh" "${pd_args[@]}" || exit_code=1
+else
+  # Same reporting shape as every other check here (a structured GAP line), not the raw, unlabeled
+  # "No such file or directory" bash itself would print for a bare `bash <missing path>` call — a
+  # future rename/move of prose-drift.sh should fail loud AND diagnosable, not just loud.
+  gap "tools/self/prose-drift.sh missing — dead-link and line-length checks skipped"
 fi
 
 say ""
