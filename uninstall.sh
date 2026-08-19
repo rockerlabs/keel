@@ -160,6 +160,23 @@ artifact_cksum() {
 # content, that the OTHER mode's install genuinely happened here. Costs an occasional over-wide keep (a
 # same-named file that isn't actually a Keel install); the alternative costs a live install's shared
 # files.
+#
+# **Named residual (dir #150 audit, operator-run /code-review max, 2nd pass):** "plain existence" and
+# "carries evidence of a real install" are NOT the same question, and nothing here can tell them apart
+# — a foreign-core install's own kept context file is, by construction (install.sh's foreign_core path
+# never writes into it), indistinguishable from an unrelated user file that merely happens to share the
+# name. Reproduced live: drop an ordinary file named exactly `$other_context` into a single-mode home
+# with no real other-mode install at all, and every shared artifact reads as "shared with the other
+# install" and survives, even though `bin/keel` still gets printed as removed as a summary artifact —
+# a fabricated cross-mode install that then makes the home's shared half permanently unremovable via
+# the documented path (this mode's own manifest is consumed by the run that hit it). Accepted here
+# because it degrades the WRONG DIRECTION from the bug it replaces: over-keeping a stray file costs a
+# manual cleanup, silently stripping a live install's CLI symlink and docs does not; every kept
+# artifact is still named in the output (`... is shared with the $other_manifest_mode install — left in
+# place`), so the operator has a paper trail here even though the situation itself is ambiguous. Filed
+# as dir #190, not fixed in this round — a fix needs either a stronger other-mode-specific signal (none
+# exists once manifests and rails are both off the table) or accepting a scoped edge case the CHANGELOG
+# names, not a same-round respin of what the whole function is already the second draft of.
 artifact_shared_with_other() {
   if [ "$other_usable" = 1 ]; then
     awk -F'\t' -v rel="$1" '$1 ~ /^artifact=/ && $2 == rel { found=1 } END { exit !found }' "$other_manifest"
@@ -351,7 +368,7 @@ elif [ "$this_usable" = 0 ]; then
     echo "   rename it, or point --home at the right home.)" >&2
     exit 2
   elif [ "$this_has_content" = 1 ] || [ "$this_has_rails" = 1 ]; then
-    this_mode_flag=""; [ "$CODEX" = 1 ] && this_mode_flag=" --codex"
+    this_mode_flag=""; [ "$manifest_mode" = "codex" ] && this_mode_flag=" --codex"
     echo "uninstall: $HOME_DIR holds a Keel install, but no usable install manifest is recorded at $this_manifest." >&2
     echo "  This install predates Keel's install manifest, or hasn't been re-run since — uninstall can no" >&2
     echo "  longer fall back to guessing what it owns here." >&2
@@ -455,8 +472,16 @@ fi
 # your edits): only the Keel-delivered rails come out, i.e. the @import line and/or the embedded
 # KEEL-CORE block. Backed up before the edit.
 # (core_import_re / has_keel_rails — and why the boundaries matter — are defined near the top.)
+#
+# $this_has_rails already holds the right answer here when $this_usable=0: either a refusal branch
+# above already exited on it being 1, or execution fell through with it still 0 — nothing between its
+# computation and here mutates $gclaude. Only $this_usable=1 (which never sets it at all, that whole
+# `if`/`elif` block being scoped to $this_usable=0) needs a fresh call (found by an operator-run
+# /code-review max pass: without this, the this_usable=0 no-op fall-through called has_keel_rails on
+# the identical path twice).
 gclaude="$HOME_DIR/$CONTEXT_FILE"
-if has_keel_rails "$gclaude"; then
+[ "$this_usable" = 1 ] && has_keel_rails "$gclaude" && this_has_rails=1
+if [ "$this_has_rails" = 1 ]; then
   if [ "$DRY_RUN" = 1 ]; then
     echo "  would strip the Keel rails (import line / KEEL-CORE block) from $CONTEXT_FILE"
     removed=$((removed + 1))
@@ -593,3 +618,9 @@ case "$hp" in
 esac
 
 gate_hooks_hint
+# Explicit, not a fall-off-the-end: every OTHER exit in this script (0 and 2 alike) says so with an
+# `exit N`; this success path is the one that didn't, leaving its reported code to whatever
+# gate_hooks_hint's own last statement happens to return (currently always 0, but silently at the
+# mercy of a future edit to that function) — found by an operator-run /code-review max pass, pre-existing
+# and unrelated to dir #150's own changes, hardened here since this file was already open.
+exit 0

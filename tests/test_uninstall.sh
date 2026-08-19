@@ -617,7 +617,7 @@ check_status "B15 uninstall over a manifest-less home refuses -> exit 2" 2 "$STA
 check_contains "B15 refusal explains why" "$OUT" "no usable install manifest is recorded"
 check_contains "B15 refusal names the fix" "$OUT" "install.sh --home"
 check_link "B15 nothing removed — the CLI symlink survives" "$B15/bin/keel"
-if [ -e "$B15/commands/go.md" ]; then pass "B15 nothing removed — a shipped command survives"; else fail "B15 nothing removed — a shipped command survives" "missing"; fi
+check_file "B15 nothing removed — a shipped command survives" "$B15/commands/go.md"
 check_file "B15 nothing removed — FRAMEWORK.md survives" "$B15/FRAMEWORK.md"
 check_file "B15 INSTANCE.md (user data) untouched" "$B15/INSTANCE.md"
 

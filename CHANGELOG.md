@@ -164,7 +164,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `AGENTS.md`-vs-`CLAUDE.md` when no manifest is present — dir #125's own design notes named this site
   an explicit exception ("keep the sniff as legacy"), since this is advisory recovery text for an
   already-broken CLI, not a destructive action, and a confidently-wrong claude-mode default would be a
-  worse silent behavior change than the guess it replaces.
+  worse silent behavior change than the guess it replaces. A genuine narrowing, not a "kept" exception:
+  `uninstall.sh`'s `other_mode_hint` lost its own default-leaf probe along with the sweep — a leftover
+  other-mode install at the conventional default leaf that was never ledger-recorded (a pre-0.7
+  install.sh run there, never re-run since) no longer gets named at all; a ledger-recorded leftover
+  (any install.sh run, default location included) still does. Re-running that install's own install.sh
+  restores the hint.
   `tests/test_install_manifest.sh`'s acceptance test 20 now asserts the token is ABSENT from every
   audited site instead of asserting it's present; `tests/test_uninstall.sh`'s B15/B18B now pin the
   refusal where they used to pin a successful heuristic removal.
@@ -225,7 +230,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   install genuinely happen here" question the cross-mode mismatch guard a few lines up already asks,
   independent of whether that file happens to carry rails. New coverage: `tests/test_uninstall.sh`'s
   B22 (the foreign-core mixed-generation case) and B15C (the `--codex` no-manifest refusal, previously
-  untested under that flag).
+  untested under that flag). **Named residual, filed as dir #190:** the fix trades that false negative
+  for a narrower false positive in the opposite (safe) direction — an unrelated file that merely shares
+  the other mode's context filename, with no real other-mode install ever having run, now also reads as
+  "shared" and survives, leaving the home's shared half unremovable via the documented path. Every kept
+  artifact is still named in the output, so this isn't silent, but it isn't automatically recoverable
+  either.
 - **`secret-scan.sh`'s `emit_diff()` leaked a stray `+` into every BLOCKED diagnostic built from a
   staged-diff scan (the normal `git commit` hook path) on Alpine/BusyBox** (dir #168, found by an
   operator-run `/code-review medium` verifying `tests/test_tour_transcript.sh` live in an
