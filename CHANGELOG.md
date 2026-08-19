@@ -230,6 +230,51 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   belongs in it while the work it reviewed is still in HEAD.
 
 ### Fixed
+- **`tools/self/doctor.sh`'s release-in-preparation allowance permanently downgraded a forgotten tag to
+  a standing green line, with no time bound** (dir #156, found by dir #155's own `/polish` altitude
+  pass; spec designed and reproduced live 2026-08-19). The allowance's two existing conditions —
+  untagged section is the newest heading, and its version sorts above every existing tag — make a
+  section that was cut and genuinely never tagged indistinguishable from a **deleted** tag that was the
+  topmost section's own, with no remaining tag left above it: a live recurrence of this check's own
+  founding incident (dir #115/PR #118), arriving through the door the allowance itself opened.
+  Reproduced live before any code was written: sections `[0.6.0]`/`[0.5.0]`/`[0.4.0]`, tags
+  `v0.4.0`/`v0.5.0`/`v0.6.0`, delete `v0.6.0` — `self/doctor.sh` prints `OK '## [0.6.0]' is cut but not
+  tagged yet — release in preparation` and fires no GAP at all. Fixed with a THIRD conjunct, ANDed onto
+  the whole allowance: the untagged newest section stays exempt only while HEAD is no more than
+  `KEEL_PENDING_RELEASE_MAX_COMMITS` commits (env-overridable, default 40 — ~2.9× the worst observed
+  real cut→tag distance of 14) past the commit that introduced its `## [x.y.z]` heading, resolved via
+  `git log -S'## [x.y.z]' --format=%H -n 1 -- CHANGELOG.md`. Boundary is `>`, not `>=`. Fails OPEN — keeps
+  the allowance and says so in the announcement — only when that pickaxe genuinely returns nothing (an
+  untracked/uncommitted CHANGELOG.md), never as a way to dodge a real GAP. Strictly narrowing: every
+  input that GAPed before still GAPs; the only new failure mode is a false GAP, which is loud, names
+  the section, and states the remedy. Also corrected an overclaim in `tools/self/doctor.sh`'s own
+  comments and in `docs/release-audit.md` phase 7: the version condition was credited with stopping "a
+  deleted tag" in general — it stops a section sorting below some *remaining* tag, not a deleted tag
+  that was the topmost section's own, which is what the new bound now covers. **Two operator-run
+  `/code-review high` rounds** on this same diff each found real bugs, both fixed: round 1 found the
+  pickaxe resolving the OLDEST commit that ever added/removed the heading text (`tail -1`) instead of
+  its most recent (re-)introduction — a version cut, reverted, and later genuinely re-cut with the same
+  number would measure distance from the stale original cut, not zero — fixed to resolve the newest
+  match; round 1 also found the `KEEL_PENDING_RELEASE_MAX_COMMITS` guard rejected non-digit input but
+  not excessive magnitude, letting a 10+-digit override overflow the shell's integer range and silently
+  fail-open the bound check, fixed with a length cap. Fixing the first of those two live introduced a
+  THIRD bug caught by round 2: resolving the newest match via `git log -S... | head -1` reproducibly
+  SIGPIPEs the whole script under `set -o pipefail` on a long enough match list — fixed by using git's
+  own `-n 1` flag instead of piping. New coverage in `tests/test_self_doctor.sh` (7 fixtures: legit-pending
+  within bound, over-bound, the `>`/`>=` boundary, the residual-case-2 reproduction with a dedicated GAP,
+  the fail-open path, a pin on the shipped default, and a cut/revert/re-cut fixture locking in both the
+  stale-match and SIGPIPE fixes together) and a fourth prose-coupling pin in `tests/test_release_audit_doc.sh`
+  (dir #157's own comment had predicted this exact class of drift — a conjunct gained in code without
+  phase 7 being updated in the same commit — as a named limit of that guard). Discharges drydock run 1's
+  `known — dir #156` finding (dir #165). **Three named residuals, filed as dir #194/#195/#196** (found
+  across both review rounds): `_pending_release_intro_commit`'s pickaxe searches CHANGELOG.md's raw
+  history, not fence-blanked like this same check's other heading extraction, confirmed latent
+  (dir #194); the identical SIGPIPE-under-pipefail shape this ticket fixed in one function also exists,
+  untouched, in an unrelated pre-existing check at `tools/self/doctor.sh:326` (dir #195); the identical
+  digit-shape-only-no-magnitude-cap numeric guard this ticket fixed in one place is duplicated, unfixed,
+  across six other `tools/*.sh` files (dir #196). Sequencing: dir #160, a related doc↔code coupling gap,
+  rebases on top of this ticket next, now with a live three-conjunct specimen to build its guard
+  against.
 - **`uninstall.sh`'s `artifact_shared_with_other()` misjudged a foreign-core install as unshared**
   (found live by an operator-run `/code-review max` pass on dir #150's own diff, in code adjacent to —
   but pre-dating — that ticket's changes). Its fallback for an unmanifested other-mode install tested

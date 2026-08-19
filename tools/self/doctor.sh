@@ -32,6 +32,8 @@
 #   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #   WARN  BACKLOG.md: a `⏳`/`IN REVIEW` heading cites a PR that `gh` reports MERGED (dir #135)
 #   GAP   CHANGELOG.md release sections and git release tags disagree (dir #139)
+#   GAP   a release-in-preparation section was cut more than KEEL_PENDING_RELEASE_MAX_COMMITS commits
+#         ago and is still untagged — the tag was forgotten, not merely pending (dir #156)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -678,6 +680,59 @@ _semver_gt() {
   [ "$a3" -gt "$b3" ]
 }
 
+# KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
+# release-in-preparation section's own introducing commit the pending-release allowance below stays
+# exempt. `${VAR:-40}`, not a bare `$VAR` reference — `set -u` aborts on an unset bare reference. A
+# non-numeric override is treated as unset rather than handed to the `-gt` comparison below: a garbage
+# `$pending_max_commits` there wouldn't abort under `set -e` (a failed `[` inside an `if` is exempt),
+# but it WOULD corrupt the comparison silently — `[ "$dist" -gt "$pending_max_commits" ]` errors
+# "integer expression expected" and evaluates false, fail-opening every section regardless of its real
+# distance (found by an operator-run `/code-review high` pass, reproduced live). The digit-shape guard
+# alone doesn't catch this: an all-digit string can still overflow the shell's native integer range.
+# `??????????*` (10+ chars) rejects that too, capping the accepted value at 9 digits
+# (≤ 999,999,999) — far above any sane bound, comfortably inside every shell's integer range (even a
+# 32-bit signed `int`'s ~2.1 billion ceiling), so a legitimate override is never affected. Same class
+# as the `-r`-not-just-`-f` fix already recorded in this check's own comments below.
+pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
+# No `''` arm: `${VAR:-40}` above already substitutes the default for both unset AND empty, so
+# $pending_max_commits can never actually be empty here — an explicit `''|` alternative would be
+# dead code implying otherwise (found by an operator-run `/code-review high` pass, reproduced live).
+case "$pending_max_commits" in
+  *[!0-9]*|??????????*) pending_max_commits=40 ;;
+esac
+
+# _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced
+# the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history — i.e. how long the
+# section AS IT CURRENTLY STANDS has existed, which is what the pending-release allowance's
+# commit-distance bound below needs. `git log -S` (the pickaxe) reports every commit where the exact
+# occurrence COUNT changed (an add or a remove), newest first. **`-n 1`, not `tail -1`** (found by an
+# operator-run `/code-review high` pass on this very ticket, reproduced live): since this function is
+# only ever called on a heading that IS present in the current file, the newest pickaxe entry must be
+# an ADD — the most recent one — so the FIRST entry is the commit that introduced today's occurrence.
+# `tail -1` (an earlier version of this function) instead picks the OLDEST such commit ever, in ANY
+# add/remove cycle — wrong when a version number is cut, reverted (folded back into `[Unreleased]`, or
+# its tag deleted and the section edited out), and later genuinely re-cut with the SAME number: a
+# section freshly re-introduced at HEAD would measure its distance from the stale original cut instead
+# of 0, false-GAPing a release that was never forgotten. **`-n 1`, not `| head -1`, for a second,
+# independent reason** (found fixing the first: an earlier `head -1` version of this fix reproducibly
+# crashed the whole doctor.sh run under `set -o pipefail` — `head` closes its read end after one line,
+# `git log` can still be mid-write on a longer history, gets SIGPIPE, and the pipe's exit status under
+# `pipefail` is non-zero, which `set -e` then treats as this WHOLE SCRIPT failing). Asking git itself
+# to stop after one match has no such pipe to break. Prints nothing if the heading text never appears
+# anywhere in tracked history — an untracked or freshly-added-but-uncommitted CHANGELOG.md, or (in
+# principle) a history rewrite. The pending-release allowance's commit-distance bound below (dir #156)
+# FAILS OPEN on that empty case rather than inventing drift from a measurement it couldn't make — see
+# the comment there. Single consumer (that bound), so — like `_semver_gt` just above — it lives here
+# beside check 6 rather than with the file's general helpers.
+# **Named residual, filed as dir #194 (found by the same review pass):** unlike
+# `sections_in_order`/`newest_section` below, this pickaxe searches RAW file history, not
+# `blank_fenced_blocks`-filtered — a future fenced example containing a real `## [x.y.z]` heading text
+# could make `git log -S` resolve the wrong introducing commit. Confirmed latent, not live: this
+# repo's own CHANGELOG.md has never used a fenced `## [x.y.z]`-shaped example.
+_pending_release_intro_commit() {
+  git -C "$repo_root" log -S"## [$1]" --format=%H -n 1 -- "$changelog_file" 2>/dev/null
+}
+
 say ""
 say "● CHANGELOG.md <-> git release-tag reconciliation"
 changelog_file="$repo_root/CHANGELOG.md"
@@ -765,10 +820,13 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   # untagged `## [0.9.0]` at the top of the file, the position-only test exempted a section OLDER than
   # every tag and reported `release in preparation` about it, turning two GAPs into a clean run. That
   # is squarely inside this check's own founding incident (dir #115/PR #118 — git state and CHANGELOG
-  # drifting apart): a deleted or re-cut tag, a bad merge hoisting a stale section, or a hand-written
-  # backport section all produce exactly that shape. On a linear release line — every release newer
-  # than the last, which is keel's own history 0.1.0 → 0.6.1 — a release in preparation is always
-  # NEWER than everything tagged, so requiring it costs nothing real and closes the hole. **Where it
+  # drifting apart) — but only ONE shape of it: a section whose version sorts BELOW some REMAINING tag
+  # (a bad merge hoisting a stale section, a hand-written backport section, or a tag deleted while a
+  # higher one still stands). It does NOT catch a deleted tag that was the TOPMOST section's own — the
+  # commit-distance bound below (dir #156) exists to catch that instead; see its own comment for why.
+  # On a linear release line — every release newer than the last, which is keel's own history 0.1.0 → 0.6.1
+  # — a release in preparation is always NEWER than everything tagged, so requiring it costs nothing
+  # real and closes the below-a-remaining-tag hole. **Where it
   # does cost something, it costs it LOUDLY** (the delta round of the same review named this, and it
   # is why the version test is still worth having): a backport cut below the newest tag — tags
   # v1.0.0/v1.1.0/v2.0.0 and a legitimate `## [1.0.1]` at the top, since Keep a Changelog orders by
@@ -786,24 +844,64 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   #
   # It is announced, never silent: a section left untagged long after its release stays visible on
   # every non-`--quiet` run (it's an expected intermediate state, so an OK line — not a WARN, which
-  # would cry wolf on every release PR). **Accepted residual, ticketed as dir #156:** that means one
-  # instance of this check's own failure class — cut, then never tagged — is now permanently a green
-  # line rather than a GAP, with no time bound; on `main` a forgotten tag is indistinguishable from a
-  # release genuinely in flight. A flow-derived discriminator doesn't work either (CI runs this on
-  # the main push that lands BEFORE the operator tags, so "on main ⇒ must be tagged" would red main).
+  # would cry wolf on every release PR).
+  #
+  # **Bounded by commit distance (dir #156).** The two conditions above make a genuinely forgotten tag
+  # indistinguishable from one still pending — including this check's OWN founding incident (dir
+  # #115/PR #118) recurring through the very door the allowance opened: delete a tag that was the
+  # TOPMOST section's own, with no remaining tag above it, and position+version read it as a release
+  # in preparation forever. A THIRD conjunct, ANDed onto the whole allowance (not nested inside the
+  # version test), closes that: HEAD must also be no more than `$pending_max_commits` commits past the
+  # commit that introduced the section's own `## [x.y.z]` heading (`_pending_release_intro_commit`
+  # above). This is strictly NARROWING — every input that GAPs today still GAPs, and some that read OK
+  # today now GAP instead — so it cannot open a new false-green path; the only risk it adds is a false
+  # GAP, and that fires loud, names the section, and states the remedy. Boundary is `>`, not `>=`:
+  # distance exactly at the bound stays exempt. A first-ever release (`$highest_tag` empty) is exempt
+  # from the VERSION condition below but is NOT exempt from this bound — a first release cut and never
+  # tagged is the same forgotten-tag shape as any other.
+  #
+  # Fails OPEN when the bound can't be computed at all (`_pending_release_intro_commit` returns
+  # nothing — the heading text never appears in CHANGELOG.md's tracked history, e.g. an uncommitted
+  # file): keep the allowance and say so in the announcement, rather than GAP on a check that could not
+  # measure what it would be reporting on. Matches this check's own existing degradation style — the
+  # shallow-clone guard above already downgrades to a silent skip instead of inventing drift.
   pending=""
-  pending_count=0
+  pending_dist=""
   missing_tag=""
+  overbound_section=""
+  overbound_dist=""
+  # Guard-clause shaped (found by an operator-run `/code-review high` pass, reproduced live as
+  # behavior-preserving): `continue` targets this `while`, so each non-candidate exits early rather
+  # than nesting the whole remaining chain — the four mutually-exclusive outcomes (not-a-candidate /
+  # bound-unresolvable-fail-open / over-bound / within-bound-pending) end up at one consistent depth.
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     printf '%s\n' "$tags" | grep -qxF "$s" && continue
-    # `<<<` runs the loop in this same shell, so assignments here survive it (no subshell).
-    if [ "$s" = "$newest_section" ] && { [ -z "$highest_tag" ] || _semver_gt "$s" "$highest_tag"; }; then
-      pending="$s"; pending_count=1
-    else
+    # `<<<` runs the loop in this same shell, so assignments here survive it (no subshell). Negating
+    # the whole compound condition (rather than manually De Morgan-expanding it) keeps this guard
+    # byte-identical in meaning to the version it replaces.
+    if ! { [ "$s" = "$newest_section" ] && { [ -z "$highest_tag" ] || _semver_gt "$s" "$highest_tag"; }; }; then
       missing_tag="$missing_tag${missing_tag:+, }$s"
+      continue
     fi
+    intro_commit="$(_pending_release_intro_commit "$s")"
+    if [ -z "$intro_commit" ]; then
+      pending="$s"   # bound unresolvable -> fail open, per the comment above
+      continue
+    fi
+    dist="$(git -C "$repo_root" rev-list --count "$intro_commit"..HEAD)"
+    if [ "$dist" -gt "$pending_max_commits" ]; then
+      overbound_section="$s"; overbound_dist="$dist"
+      continue
+    fi
+    pending="$s"; pending_dist="$dist"
   done <<< "$sections"
+  # $pending_count is derived, not tracked in parallel — $pending is the single source of truth for
+  # whether a section is pending (found by an operator-run `/code-review high` pass: two duplicated
+  # `pending_count=1` assignments alongside `pending="$s"` carried no independent information, unlike
+  # the genuinely-independent overbound_section/overbound_dist pair, and risked drifting out of sync).
+  pending_count=0
+  [ -n "$pending" ] && pending_count=1
 
   changelog_bad=0
   if [ -n "$missing_section" ]; then
@@ -812,6 +910,16 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   fi
   if [ -n "$missing_tag" ]; then
     gap "CHANGELOG.md '## [x.y.z]' section(s) with no matching release tag: $missing_tag"
+    changelog_bad=1
+  fi
+  # A dedicated GAP, distinct from the generic "no matching release tag" line above — the remedy here
+  # ("tag the release") is different from that line's implication ("this section shouldn't exist").
+  # Deliberately does NOT go into $missing_tag and $pending_count stays 0, so the section-count
+  # invariant below also fires — two GAPs for one problem, but that is existing, accepted behaviour
+  # (the two-untagged-sections fixture above already exhibits it), and the count GAP names no version,
+  # so nothing is named twice.
+  if [ -n "$overbound_section" ]; then
+    gap "'## [$overbound_section]' was cut $overbound_dist commits ago and is still untagged (bound: $pending_max_commits) — tag the release, or the section is drift"
     changelog_bad=1
   fi
   # A DUPLICATED `[Unreleased]` heading evades the count invariant below entirely: both
@@ -837,7 +945,11 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     gap "CHANGELOG.md section count ($total_sections) != tags ($n_tags) + Unreleased ($unreleased_count)${pending:+ + untagged-newest (1)} — a released section may be missing, duplicated, or folded back into [Unreleased]"
     changelog_bad=1
   fi
-  [ -n "$pending" ] && say "  OK   '## [$pending]' is cut but not tagged yet — release in preparation (tag the merge commit to close it out)"
+  if [ -n "$pending" ]; then
+    pending_note="bound not computed"
+    [ -n "$pending_dist" ] && pending_note="$pending_dist commit(s) since cut, bound $pending_max_commits"
+    say "  OK   '## [$pending]' is cut but not tagged yet — release in preparation ($pending_note) (tag the merge commit to close it out)"
+  fi
   [ "$changelog_bad" -eq 0 ] && say "  OK   every release tag has a CHANGELOG.md section and vice versa ($n_tags tags)"
 else
   say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping tag reconciliation"
