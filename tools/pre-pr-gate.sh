@@ -519,7 +519,10 @@ _warn_dropped_addons() {
   # no-op path. `-F` (fixed-string): the step id has no regex metacharacters worth treating specially.
   raw_prev="$(_prev_sentinel_path_for_key "$receipt_key")"
   [ -f "$raw_prev" ] || return 0
-  grep -qF -- "$(printf '\tpolish.5-review\t')" "$raw_prev" || return 0
+  # ANSI-C quoting, not `$(printf ...)` (dir #161 /code-review high): the whole point of this
+  # pre-check is avoiding forks on the common no-op path — building its own search pattern via a
+  # command-substitution fork would have undercut that.
+  grep -qF -- $'\tpolish.5-review\t' "$raw_prev" || return 0
   # Existence/header/lineage validation is shared with `--recover` via `_validated_prev_sentinel`
   # (defined above, near `retire_sentinel`) — every failure reason (no backup, malformed header,
   # foreign lineage) is silent here, the opposite of `--recover`'s loud refusal, per this function's
@@ -563,6 +566,14 @@ _warn_dropped_addons() {
   # same discipline the skip-dialog deny message follows elsewhere in this file, so a session recapping
   # this warning inside an AskUserQuestion can never hand a hook the exact line it greps for.
   printf 'pre-pr-gate: this step-5 receipt drops add-on(s) the prior round recorded: %s. The add-on set applies to the SHIPPED COMMIT, not the round — if that reviewed work is still in HEAD, re-run with the full set (e.g. receipt polish.5-review "agent:<level>+<addon>[,<addon>...]"). If the fix commit removed the reviewed work, dropping it is fine and no action is needed.\n' "$missing" >&2
+  # dir #161 /code-review high (altitude finding): the stderr print is the fastest signal in the
+  # common case, but it relies entirely on being read — nothing forces that. Also persist the fact to
+  # the durable impact log (the same `log_event` primitive `receipt-deny`/`receipt-pass`/etc. already
+  # use throughout this file), so a session that misses the stderr line still leaves a mechanically
+  # recoverable trail rather than none at all. Does not upgrade this into a gate — still advisory,
+  # still `exit 0` either way; a later step is free to grep the log for this event type, but nothing
+  # here requires it to.
+  log_event review-addon-dropped "$missing" "$cwd"
 }
 
 # The hook's OWN observation of HEAD at fire time — never a self-reported field — shared by both
@@ -1032,12 +1043,17 @@ _prev_sentinel_outcomes() {
   awk -F'\t' -v want="${2:-}" '
     NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
     NF>=3 && pnonce!="" && $1==pnonce {
-      if (want!="" && $2!=want) next
+      # Filtered call (dir #161 /code-review high): track a plain scalar, not the order[]/val[]
+      # array pair — that bookkeeping is only needed to replay ALL steps in first-seen order for
+      # `--recover`, which this branch never does. Building it anyway on every matching line, only
+      # to have `END` never read it, was wasted work. The nonce guard above still applies either
+      # way — only lines under the CURRENT nonce ever reach here.
+      if (want!="") { if ($2==want) scalar=$3; next }
       if (!($2 in val)) order[++n]=$2
       val[$2]=$3
     }
     END {
-      if (want!="") { print val[want]; exit }
+      if (want!="") { print scalar; exit }
       for (i=1;i<=n;i++) print order[i] "\t" val[order[i]]
     }
   ' "$1"
