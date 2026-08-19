@@ -29,14 +29,18 @@ check_contains "prose-drift.sh sources tools/lib/fence-blank.sh" \
 # would carry it; the unrelated filter-style copies above do not.
 marker='infence = !infence'
 # `grep -rl` already IS the "which files contain it" scan a hand-rolled find+while loop would
-# rebuild line by line; only the lib's own match, plus one allowlisted intentional copy, needs
-# excluding from the result. tools/changelog-section.sh keeps its own copy ON PURPOSE (its own
-# comment names dir #26's "capture only, do not pre-build a shared lib" standing): it is meant to
-# be copy-portable as a single file on its own — tests/test_changelog_section.sh's own fixture
-# copies only that one file into a sandbox to prove exactly that — and sourcing the shared lib
-# would break that portability. A second, unlisted copy anywhere else is still a real finding.
-allowlisted="$REPO_ROOT/tools/changelog-section.sh"
-hits="$(grep -rlF "$marker" "$REPO_ROOT/tools" 2>/dev/null | grep -vF "$lib" | grep -vF "$allowlisted" || true)"
+# rebuild line by line; only the lib's own match, plus any allowlisted intentional copy, needs
+# excluding from the result. An array, not a bare scalar, matching the allowlist shape doctor.sh's
+# own slash-command check already uses (harness_commands/not_commands, tools/self/doctor.sh) — a
+# second legitimate exception is then one more element, not a second `grep -vF` to chain.
+# tools/changelog-section.sh keeps its own copy ON PURPOSE (its own comment names dir #26's
+# "capture only, do not pre-build a shared lib" standing): it is meant to be copy-portable as a
+# single file on its own — tests/test_changelog_section.sh's own fixture copies only that one file
+# into a sandbox to prove exactly that — and sourcing the shared lib would break that portability.
+# A second, unlisted copy anywhere else is still a real finding.
+allowlisted_dup_sites=("$REPO_ROOT/tools/changelog-section.sh")
+hits="$(grep -rlF "$marker" "$REPO_ROOT/tools" 2>/dev/null | grep -vF "$lib" \
+  | grep -vFf <(printf '%s\n' "${allowlisted_dup_sites[@]}") || true)"
 if [ -z "$hits" ]; then
   pass "no duplicated fence-toggle pattern outside tools/lib/fence-blank.sh"
 else
