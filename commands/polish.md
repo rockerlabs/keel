@@ -111,8 +111,13 @@ Steps, in order:
    success for any retired prior run — an interrupted run, a denied `gh pr create`, any second `init` —
    because `retire_sentinel` backs up on every invalidation path and its lineage guard compares a
    base-sha stamped at retirement time, which is *inside* `init` and therefore already past your fix
-   commit. Only you know why you re-invoked. If nothing was retired at all it will say so, and that
-   does tell you this is a fresh run — but the converse carries no information.
+   commit. Only you know why you re-invoked. If nothing was retired at all it will say so — but that
+   answer has a mirror-image trap too (dir #177): the identical `nothing to recover` message is also
+   the correct, by-design result when a fix already went in via the in-run path below (resolve,
+   `--amend`, and continue the same run without ever re-`init`-ing) and you only reach this branch
+   later, for an unrelated reason — nothing was retired there either, yet a fix commit already sits
+   ahead of `polish.3-tests`'s stamped sha. Read `nothing to recover` as telling you only that nothing
+   was retired since the last `init` — never as telling you this is a fresh run.
 
    Not a convergence round (the ordinary case): `tools/pre-pr-gate.sh receipt polish.1-diff`, then
    continue through every step below in order.
@@ -455,6 +460,37 @@ Steps, in order:
    a "consider later") in the step 10 summary instead of chasing it into another round. **"Stop" here
    means stop re-reviewing — it does NOT mean step 5 is done:** the MANDATORY dialog in (a) above still
    applies to this round's fresh receipt before moving to step 6, same as the first pass.
+
+   **The IN-RUN path is the cheaper alternative when steps 6/7/8 are still ahead (dir #177): resolve
+   the finding, fold the fix into the current commit with `--amend`, and simply continue this `/polish`
+   run in place — no re-invocation, so step 1's convergence branch above never fires for this fix at
+   all.** The sentinel is never retired on this path, so steps 1, 2, and 4's receipts — already written
+   before you reached step 5 — stay live and valid, untouched by the amend (none of them is sha-bound),
+   and step 5's own receipt for the finding you just resolved is written normally right after (a first
+   write for this round, not a recovery — nothing special applies to it). What needs re-establishing
+   before step 8, precisely:
+   - **`polish.3-tests`**, the one PRE-EXISTING receipt that is already sha-bound at this point: after
+     the amend it is still bound to the pre-amend commit — nothing else in this flow says so, and step
+     8 denying it later against the new HEAD is the only, indirect way that surfaces. A fresh
+     `polish.6-retest` receipt against the new HEAD satisfies it on its own — one test run after the
+     last change, not two separate re-receipts (step 1 already describes this same OR).
+   - **`polish.5-review`, if a LATER commit in the same run moves HEAD again after its receipt is
+     already written** — but not via step 6 or step 7, which stop the run and require re-invoking
+     `/polish` on any finding of their own; the reachable trigger is an add-on review arriving after
+     the standing receipt (an operator-run `/code-review`, dir #81, or a cross-model second opinion,
+     dir #141) reporting a finding you resolve in-run. When that happens, its trace-confirmed outcomes
+     (`agent:<level>`, its add-on forms, and a bare `<level>` from a genuine in-session `/code-review`)
+     go stale the same way `polish.3-tests` does — the trace is keyed to the sha it was written at —
+     and need a fresh agent review or add-on, or a hand-off outcome that carries no trace-check at all.
+   - **The MANDATORY review dialog (dir #88), on that same later-amend trigger** — per-commit too, but
+     only for `agent:*` outcomes (and `skip`, step 4's own dialog): re-answer it for the new HEAD, an
+     earlier round's answer does not carry over. The gate never checks it for a bare `<level>` outcome,
+     so there is nothing to re-answer there. (Whether this SHA-binding should instead survive a clean
+     delta round is an open design question, dir #180 — unresolved here.)
+
+   If you run `tools/pre-pr-gate.sh receipt --recover` anyway to sanity-check state, its `nothing to
+   recover` answer is correct and BY DESIGN here — not a signal that this isn't a convergence round;
+   see the mirror-case note in step 1.
 
    **Delta-review protocol, round budget, and terminal state (dir #127) — refines the "converge, don't
    restart" paragraph above, same rule, three added specifics:**
