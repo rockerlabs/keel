@@ -38,7 +38,12 @@
 #      (`| sed 's/^/  /'` in install-secret-guard.sh) — lands at a different position in the captured
 #      transcript entirely. This is the tool honestly reporting a host capability, not the tool's
 #      output changing meaning, so both known forms are dropped from BOTH sides before comparing
-#      (position-independent — see the note above about why position can't be preserved).
+#      (position-independent — see the note above about why position can't be preserved). Matched as
+#      two EXACT fixed strings, not a wildcard: the same probe also has a genuine "FAIL — ... (exit N,
+#      want 2)" shape when the fail-closed guard is actually broken (secret-scan.sh's own probe()), and
+#      that FAIL text must NOT be swallowed by this rule — a loose `.*` pattern here would silently hide
+#      a real regression in the guard this test exists to protect, by dropping the mismatch from both
+#      sides instead of surfacing it.
 #
 # No other content difference is normalized away — an actual output change (a new step, a reworded
 # line, a different WARN/HINT count) survives the pipeline below and fails the diff.
@@ -65,12 +70,14 @@ live="$(printf '%s\n' "$OUT" \
   | sed -e "s#${REPO_ROOT}/#./#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
   | awk 'NR==1 && $0==""{next}{print}')"  # rule 2, rule 3, rule 4
 
-# Rule 5: drop both known forms of the host-grep-capability selftest line, on both sides.
-grep_variance='selftest:.*malformed personal regex fails CLOSED|selftest: WARN — this grep does not flag a malformed ERE'
-live="$(printf '%s\n' "$live" | grep -Ev "$grep_variance")"
+# Rule 5: drop both known-GOOD forms of the host-grep-capability selftest line, on both sides —
+# fixed strings, not a wildcard, so a genuine FAIL for this same probe is never swallowed.
+drop_ok() { grep -v -F -e 'selftest: OK   — malformed personal regex fails CLOSED' \
+                        -e 'selftest: WARN — this grep does not flag a malformed ERE'; }
+live="$(printf '%s\n' "$live" | drop_ok)"
 
 # The README's own fenced transcript (the ```console block under "What it looks like").
-expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme" | grep -Ev "$grep_variance")"
+expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme" | drop_ok)"
 
 if [ "$live" = "$expected" ]; then
   pass "normalized tour.sh output matches examples/README.md's transcript"
