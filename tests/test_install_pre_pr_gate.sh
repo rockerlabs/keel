@@ -241,7 +241,7 @@ rm -f "$dh_wired_nomanifest/.keel/install-manifest.gate"
 run "$doctor" --install "$dh_wired_nomanifest"
 check_contains "wired gate, no manifest -> still OK (hooks really are there)" "$OUT" "OK   /polish gate: wired machine-global"
 check_absent "...and does not falsely claim a manifest confirms it" "$OUT" "manifest confirms"
-check_contains "wired gate, no manifest -> W-GATE-MANIFEST-MISSING nudge (KEEL-LEGACY-NOMANIFEST)" "$OUT" "W-GATE-MANIFEST-MISSING"
+check_contains "wired gate, no manifest -> W-GATE-MANIFEST-MISSING nudge (dir #150: kept, deterministic default path)" "$OUT" "W-GATE-MANIFEST-MISSING"
 check_contains "...naming the installer re-run" "$OUT" "install-pre-pr-gate.sh"
 
 # A gate manifest recorded, but the hooks it claims are wired are gone (hand-edited/stripped settings.json

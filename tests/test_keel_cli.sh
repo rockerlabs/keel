@@ -97,13 +97,23 @@ check_contains "and its re-wire advice names that home" "$OUT" "install.sh --hom
 check_absent "no --codex on a CLAUDE.md home" "$OUT" "--codex"
 
 # ...and the MODE travels with it: bin/keel is wired in both modes, so a Codex home must not be told
-# to re-run Claude copy mode into itself. The mode is read off the home's own always-loaded file.
+# to re-run Claude copy mode into itself. dir #150 audit (kept, not removed — BACKLOG.md's own dir #125
+# design note names this site an explicit exception, "keep the sniff as legacy"): a manifest is
+# preferred when present; a manifest-less home (this fixture, or a genuine pre-0.7 install) still falls
+# back to sniffing AGENTS.md-vs-CLAUDE.md, since this is advisory recovery text, not a destructive
+# action, and a confidently-wrong claude-mode default would be worse than a best-effort guess.
 cxhome="$SANDBOX/rewire-codex"; mkdir -p "$cxhome/bin"
 cp "$REPO_ROOT/keel" "$cxhome/bin/keel"; chmod +x "$cxhome/bin/keel"
 printf '# ctx\n' > "$cxhome/AGENTS.md"
 cxhome_p="$(cd "$cxhome" && pwd -P)"
 run "$cxhome/bin/keel" doctor
 check_contains "a Codex home gets --codex too" "$OUT" "install.sh --codex --home \"$cxhome_p\""
+
+# ...and WITH a recorded manifest, the mode is read off it directly rather than sniffed.
+mkdir -p "$cxhome/.keel"
+printf 'keel_manifest_version=1\nmode=codex\n' > "$cxhome/.keel/install-manifest.codex"
+run "$cxhome/bin/keel" doctor
+check_contains "a manifested Codex home gets --codex too, via the manifest" "$OUT" "install.sh --codex --home \"$cxhome_p\""
 
 # --- dir #104: the verb list docs quote must not drift from the dispatcher's own case arms ------
 # The dispatcher's `case "$cmd" in ... esac` block is the one source of truth for what verbs exist

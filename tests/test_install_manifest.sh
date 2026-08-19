@@ -246,7 +246,7 @@ if command -v jq >/dev/null 2>&1; then
   sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$g21man.orig" > "$g21man"
   run "$doctor" --install "$g21home"
   check_contains "unknown gate-manifest version -> treated as absent, still OK (hooks really are there)" "$OUT" "OK   /polish gate: wired machine-global"
-  check_contains "...and nudges a re-record (KEEL-LEGACY-NOMANIFEST)" "$OUT" "W-GATE-MANIFEST-MISSING"
+  check_contains "...and nudges a re-record (dir #150: kept, deterministic default path)" "$OUT" "W-GATE-MANIFEST-MISSING"
   mv "$g21man.orig" "$g21man"
 
   if [ "$(id -u 2>/dev/null)" != 0 ]; then
@@ -260,15 +260,19 @@ else
   pass "jq not available — gate manifest robustness tests skipped (installer requires jq)"
 fi
 
-# --- acceptance test 20: every KEEL-LEGACY-NOMANIFEST fallback block is still marked, across every
-# consumer this ticket (dir #125) touches — a plain grep so the eventual -> 0.7 removal sweep is
-# mechanical (delete every marked block, not a re-audit from scratch) -------------------------------
+# --- acceptance test 20: the KEEL-LEGACY-NOMANIFEST token is gone from every consumer dir #125 marked
+# (dir #150, 0.7) — inverted from the old "must still carry it" check (which made the eventual removal
+# sweep mechanical) into "must no longer carry it", now that the sweep has actually run. A deliberately
+# KEPT fallback (tools/pre-pr-gate.sh's project-scope candidates, doctor.sh's/uninstall.sh's
+# deterministic gate-settings default path — see their own dir #150 comments for why) is not tagged
+# with this token any more either: it was never a multi-candidate guess in those cases, just mistakenly
+# swept into the original "every consumer" list -------------------------------------------------------
 legacy_sites="$REPO_ROOT/uninstall.sh $REPO_ROOT/tools/doctor.sh $REPO_ROOT/tools/pre-pr-gate.sh $REPO_ROOT/keel $REPO_ROOT/install.sh"
 for site in $legacy_sites; do
   if grep -q 'KEEL-LEGACY-NOMANIFEST' "$site"; then
-    pass "legacy sweep: $site carries the KEEL-LEGACY-NOMANIFEST token"
+    fail "legacy sweep: $site no longer carries the KEEL-LEGACY-NOMANIFEST token" "still present"
   else
-    fail "legacy sweep: $site carries the KEEL-LEGACY-NOMANIFEST token" "no match found"
+    pass "legacy sweep: $site no longer carries the KEEL-LEGACY-NOMANIFEST token"
   fi
 done
 

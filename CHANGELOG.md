@@ -115,6 +115,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   its "Loop model" section.
 
 ### Changed
+- **`uninstall.sh`/`tools/doctor.sh` now require an install manifest to remove or report on Keel
+  content — the pre-manifest (`KEEL-LEGACY-NOMANIFEST`) heuristic fallbacks dir #125 kept for a
+  transitional window are gone at 0.7, per that ticket's own filed follow-up (dir #150).** A home with
+  no usable manifest (a pre-0.7 install, or one whose manifest is corrupt/unversioned) gets a clear,
+  actionable refusal from `uninstall.sh` naming `install.sh --home <dir>` as the fix, never a silent
+  content-sniffed removal. Three of the audited sites turned out NOT to be transitional fallbacks and
+  were deliberately kept, just relabeled (token dropped, comment corrected): `tools/doctor.sh`'s and
+  `uninstall.sh`'s gate-hooks default settings-path probe is the only possible path for a global/
+  home-scope gate install (never a guess among candidates); `tools/pre-pr-gate.sh`'s four static
+  dialog-arming candidates are the sole arming mechanism for PROJECT-scope `/polish` gate installs,
+  which structurally never get a manifest (`install-pre-pr-gate.sh <repo>`, the documented default) —
+  removing them would have silently disabled the dir #88 mandatory-review-dialog check for the common
+  case forever, not just for pre-0.7 installs; and `keel`'s own checkout-recovery advice keeps sniffing
+  `AGENTS.md`-vs-`CLAUDE.md` when no manifest is present — dir #125's own design notes named this site
+  an explicit exception ("keep the sniff as legacy"), since this is advisory recovery text for an
+  already-broken CLI, not a destructive action, and a confidently-wrong claude-mode default would be a
+  worse silent behavior change than the guess it replaces.
+  `tests/test_install_manifest.sh`'s acceptance test 20 now asserts the token is ABSENT from every
+  audited site instead of asserting it's present; `tests/test_uninstall.sh`'s B15/B18B now pin the
+  refusal where they used to pin a successful heuristic removal.
 - **A `new_repo_with_origin()` fixture helper in `tests/lib.sh`** (dir #173). The "sandbox repo plus a
   bare origin, pushed and fetched" idiom was hand-rolled five times past `pin()`'s own promotion rule
   ("once a SECOND test file needs the exact same idiom") before this: `tests/test_public_audit.sh`
@@ -158,6 +178,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   belongs in it while the work it reviewed is still in HEAD.
 
 ### Fixed
+- **`uninstall.sh`'s `artifact_shared_with_other()` misjudged a foreign-core install as unshared**
+  (found live by an operator-run `/code-review max` pass on dir #150's own diff, in code adjacent to —
+  but pre-dating — that ticket's changes). Its fallback for an unmanifested other-mode install tested
+  `has_keel_rails` on the other mode's context file — but `install.sh`'s foreign-core path (installing
+  over a pre-existing user `CLAUDE.md`/`AGENTS.md`) never writes a rails marker into that file even
+  though the install is completely real, so the rails test always read a genuinely-installed but
+  unmanifested foreign-core mode as "not shared." Reproduced live: `install.sh` then `install.sh
+  --codex` over the same foreign `CLAUDE.md`, delete the claude manifest to simulate a pre-dir-125
+  half, then follow the mismatch refusal's own advised `uninstall.sh --codex` — it stripped `bin/keel`,
+  `FRAMEWORK.md` and `PRINCIPLES.md` still needed by the un-migrated claude half. Fixed by testing
+  plain existence of the other mode's context file instead — the same, narrower "did the other mode's
+  install genuinely happen here" question the cross-mode mismatch guard a few lines up already asks,
+  independent of whether that file happens to carry rails. New coverage: `tests/test_uninstall.sh`'s
+  B22 (the foreign-core mixed-generation case) and B15C (the `--codex` no-manifest refusal, previously
+  untested under that flag).
 - **`tools/self/shellcheck-targets.sh` dropped non-ASCII paths and returned 1 on a healthy repo**
   (found by dir #170's independent review, which made this script a consumer for the first time).
   Two defects, both invisible while every caller ignored the output's completeness and its exit

@@ -623,9 +623,15 @@ main_top_for() {
 _dialog_leg_armed() {
   local top="${1:?_dialog_leg_armed: main-checkout top path required}" f
   command -v jq >/dev/null 2>&1 || return 1
-  # KEEL-LEGACY-NOMANIFEST: the four static, pre-manifest candidates — always probed, ledger or no
-  # ledger, since a manifest-less home (or a home never wired via the gate installer at all, e.g. a
-  # hand-edited settings.json) still needs exactly this heuristic set.
+  # dir #150 audit (kept, not removed): these four static candidates were in scope for the general
+  # no-manifest-fallback removal sweep, but they are NOT a transitional pre-manifest fallback the way the
+  # other consumers' were — install-pre-pr-gate.sh's PROJECT scope (no --global/--home, the documented
+  # default: tools/doctor.sh's own pairing-check comment names it that) writes NO manifest and NO ledger
+  # entry, ever, by design (see that installer's own "project scope writes none" comment). The ledger
+  # walk below can only ever see global/home-scope installs. Removing the static probes would leave
+  # `_dialog_leg_armed` permanently UNARMED for every ordinary project-scope gate — not just pre-0.7
+  # installs — silently disabling the dir #88 mandatory-review-dialog check for the common case forever.
+  # That is exactly the "silent behavior change" this whole removal ticket forbids, so this block stays.
   for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" \
            "${HOME:-}/.claude/settings.json" \
            "${KEEL_HOME:-${HOME:-}/.claude}/settings.json"; do
