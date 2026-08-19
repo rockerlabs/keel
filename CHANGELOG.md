@@ -162,6 +162,31 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   pre-existing bug in `secret-scan.sh` the same review surfaced.
 
 ### Changed
+- **`uninstall.sh`/`tools/doctor.sh` now require an install manifest to remove or report on Keel
+  content — the pre-manifest (`KEEL-LEGACY-NOMANIFEST`) heuristic fallbacks dir #125 kept for a
+  transitional window are gone at 0.7, per that ticket's own filed follow-up (dir #150).** A home with
+  no usable manifest (a pre-0.7 install, or one whose manifest is corrupt/unversioned) gets a clear,
+  actionable refusal from `uninstall.sh` naming `install.sh --home <dir>` as the fix, never a silent
+  content-sniffed removal. Three of the audited sites turned out NOT to be transitional fallbacks and
+  were deliberately kept, just relabeled (token dropped, comment corrected): `tools/doctor.sh`'s and
+  `uninstall.sh`'s gate-hooks default settings-path probe is the only possible path for a global/
+  home-scope gate install (never a guess among candidates); `tools/pre-pr-gate.sh`'s four static
+  dialog-arming candidates are the sole arming mechanism for PROJECT-scope `/polish` gate installs,
+  which structurally never get a manifest (`install-pre-pr-gate.sh <repo>`, the documented default) —
+  removing them would have silently disabled the dir #88 mandatory-review-dialog check for the common
+  case forever, not just for pre-0.7 installs; and `keel`'s own checkout-recovery advice keeps sniffing
+  `AGENTS.md`-vs-`CLAUDE.md` when no manifest is present — dir #125's own design notes named this site
+  an explicit exception ("keep the sniff as legacy"), since this is advisory recovery text for an
+  already-broken CLI, not a destructive action, and a confidently-wrong claude-mode default would be a
+  worse silent behavior change than the guess it replaces. A genuine narrowing, not a "kept" exception:
+  `uninstall.sh`'s `other_mode_hint` lost its own default-leaf probe along with the sweep — a leftover
+  other-mode install at the conventional default leaf that was never ledger-recorded (a pre-0.7
+  install.sh run there, never re-run since) no longer gets named at all; a ledger-recorded leftover
+  (any install.sh run, default location included) still does. Re-running that install's own install.sh
+  restores the hint.
+  `tests/test_install_manifest.sh`'s acceptance test 20 now asserts the token is ABSENT from every
+  audited site instead of asserting it's present; `tests/test_uninstall.sh`'s B15/B18B now pin the
+  refusal where they used to pin a successful heuristic removal.
 - **A `new_repo_with_origin()` fixture helper in `tests/lib.sh`** (dir #173). The "sandbox repo plus a
   bare origin, pushed and fetched" idiom was hand-rolled five times past `pin()`'s own promotion rule
   ("once a SECOND test file needs the exact same idiom") before this: `tests/test_public_audit.sh`
@@ -205,6 +230,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   belongs in it while the work it reviewed is still in HEAD.
 
 ### Fixed
+- **`uninstall.sh`'s `artifact_shared_with_other()` misjudged a foreign-core install as unshared**
+  (found live by an operator-run `/code-review max` pass on dir #150's own diff, in code adjacent to —
+  but pre-dating — that ticket's changes). Its fallback for an unmanifested other-mode install tested
+  `has_keel_rails` on the other mode's context file — but `install.sh`'s foreign-core path (installing
+  over a pre-existing user `CLAUDE.md`/`AGENTS.md`) never writes a rails marker into that file even
+  though the install is completely real, so the rails test always read a genuinely-installed but
+  unmanifested foreign-core mode as "not shared." Reproduced live: `install.sh` then `install.sh
+  --codex` over the same foreign `CLAUDE.md`, delete the claude manifest to simulate a pre-dir-125
+  half, then follow the mismatch refusal's own advised `uninstall.sh --codex` — it stripped `bin/keel`,
+  `FRAMEWORK.md` and `PRINCIPLES.md` still needed by the un-migrated claude half. Fixed by testing
+  plain existence of the other mode's context file instead — the same, narrower "did the other mode's
+  install genuinely happen here" question the cross-mode mismatch guard a few lines up already asks,
+  independent of whether that file happens to carry rails. New coverage: `tests/test_uninstall.sh`'s
+  B22 (the foreign-core mixed-generation case) and B15C (the `--codex` no-manifest refusal, previously
+  untested under that flag). **Named residual, filed as dir #190:** the fix trades that false negative
+  for a narrower false positive in the opposite (safe) direction — an unrelated file that merely shares
+  the other mode's context filename, with no real other-mode install ever having run, now also reads as
+  "shared" and survives, leaving the home's shared half unremovable via the documented path. Every kept
+  artifact is still named in the output, so this isn't silent, but it isn't automatically recoverable
+  either.
 - **`secret-scan.sh`'s `emit_diff()` leaked a stray `+` into every BLOCKED diagnostic built from a
   staged-diff scan (the normal `git commit` hook path) on Alpine/BusyBox** (dir #168, found by an
   operator-run `/code-review medium` verifying `tests/test_tour_transcript.sh` live in an

@@ -62,8 +62,18 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       `tools/stamp-release-bootstrap.sh <tag> /tmp/bootstrap.sh && gh release create <tag> --title "<tag> — <headline>" --notes-file <notes-file> /tmp/bootstrap.sh`
       (or `gh release upload <tag> /tmp/bootstrap.sh` on an existing release). **[you]** — not `[auto]`:
       `<notes-file>` still has to be extracted from `CHANGELOG.md` by hand, which is the manual step
-      whose omission caused v0.6.1's blank release. A helper to make the EXTRACTION one paste is on the
-      backlog; the curation below is human by nature, so this line stays `[you]` either way.
+      whose omission caused v0.6.1's blank release. `tools/changelog-section.sh <version>` prints the
+      section body (`--digest` for just the opener + `### ` headings, to skim before curating) —
+      redirect it into a scratch draft, edit that, then copy the curated result to `<notes-file>` (all
+      three chained on success only):
+      `tools/changelog-section.sh <version> > /tmp/notes-draft.md && eval "${EDITOR:?set the EDITOR environment variable first} /tmp/notes-draft.md" && cp /tmp/notes-draft.md <notes-file>`
+      (a plain `> <notes-file>` would truncate a real file even when the command fails; unquoted
+      `$EDITOR <file>` breaks in zsh — the default shell on macOS — whenever `$EDITOR` carries a flag,
+      e.g. `"code -w"`, `eval` re-splits it correctly in both bash and zsh, and `${EDITOR:?...}` fails
+      loudly instead of trying to execute the draft file as a command if `$EDITOR` is unset; piping
+      straight into `$EDITOR` doesn't work at all — most editors, `vim` included, need an explicit
+      filename or `-` argument to read piped stdin). It extracts the section, not the release note
+      itself; the curation below is still human by nature, so this line stays `[you]` either way.
 - [ ] **Give the release a title and real notes**, then check them: `gh release view <tag> --json
       name,body,assets`. `--notes-from-tag` alone yields a blank title and a one-line body, and an empty
       title is invisible from the command that created it. **[you]**
