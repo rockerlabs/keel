@@ -66,9 +66,15 @@ readme="$REPO_ROOT/examples/README.md"
 run bash "$tour"
 check_status "tour.sh runs end-to-end -> exit 0" 0 "$STATUS"
 
-# Escape every non-alnum/underscore/hyphen byte with a backslash, so an arbitrary string is safe to
-# interpolate as a literal (not a pattern) into a BRE, regardless of which delimiter the caller picks.
-sed_escape() { printf '%s' "$1" | sed 's/[^a-zA-Z0-9_-]/\\&/g'; }
+# Escape a string so it's safe to interpolate as a LITERAL (not a pattern) into a BRE using '#' as the
+# delimiter below. Escapes backslash first (so the metachar pass below can't double-escape a backslash
+# it just inserted), then the actual BRE metacharacters plus the '#' delimiter itself. Deliberately does
+# NOT escape `+ ? | ( ) { }`: those are ordinary literal characters in POSIX BRE, but backslash-escaping
+# them invokes GNU sed's non-portable BRE extensions (`\+` = one-or-more, `\?` = zero-or-one, `\|` =
+# alternation, `\(...\)`/`\{...\}` = grouping/interval) — escaping a literal '+' in $REPO_ROOT would turn
+# it into a quantifier on GNU sed (confirmed live: `sed 's/a\+b/X/'` matches "aab", not "a+b"), silently
+# breaking the very substitution this function exists to make safe.
+sed_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/[.[*^$#]/\\&/g'; }
 
 # Rule 1: the tour's own mktemp sandbox, resolved or not, -> /tmp/demo.
 sandbox_re='(/private)?(/var/folders/[^ ]*/T/tmp\.[A-Za-z0-9]+|/tmp/tmp\.[A-Za-z0-9]+)'
