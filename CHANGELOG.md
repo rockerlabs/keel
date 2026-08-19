@@ -292,6 +292,28 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   left unchecked. `tests/test_doc_figures.sh` now re-derives that sum from the table's own quoted
   addends and asserts the two tables' file sets match; both checks are mutation-proven (perturbing the
   quoted sum, or dropping the `IDEAS.md` row, independently red the suite).
+- **`commands/polish.md`'s convergence prose only covered the RE-INVOKED round** (dir #177, felt during
+  this file's own changelog-delta `/polish` run). Step 5 said a fix commit moving HEAD was expected,
+  then routed every reader through re-invoking `/polish` and step 1's `receipt --recover` branch — but
+  resolving a step-5 finding IN-RUN (`--amend`, keep going, never re-invoke) is the cheaper path when
+  steps 6/7/8 are still ahead, and the doc never named it. On that path the sentinel is never retired,
+  so it lands in a state the prose didn't describe: `polish.3-tests` silently goes stale, still bound
+  to the pre-amend commit, with step 8 denying later the only way to find out; and `receipt --recover`'s
+  `nothing to recover` answer is correct and by design there too, not proof the round wasn't a
+  convergence round — the mirror image of the dir #96 misreading step 1 already warned against. Step 5
+  now names the in-run path explicitly, states which receipt needs re-establishing before step 8 and
+  how, and step 1's own `--recover` warning got the mirror-case caveat added. Two operator-run
+  `/code-review medium` passes on the fix itself then caught three real errors in the new prose before
+  it shipped: an example wrongly claiming steps 6/7 can also resolve in-run (both mandate stopping and
+  re-invoking on any finding of their own), an instruction to re-receipt two receipts where the gate's
+  own check is an OR satisfied by either one, and — in the second pass — a follow-on claim that the
+  MANDATORY review dialog (dir #88) needs re-answering for every `polish.5-review` outcome shape,
+  overreaching to a bare `<level>` outcome the gate never actually checks it for. A third pass then
+  restructured the two dense paragraphs holding those fixes into a lead-in plus a bulleted list — by
+  then they held four separate "re-establish X after a later same-run amend" facts, run together at
+  equal visual weight, the same shape the file already bullets two sections below for its own dir #127
+  additions — and trimmed one remaining redundant clause. Six pins in `tests/test_rails_honesty.sh`
+  hold the paragraph's key phrases.
 
 ## [0.6.1] — 2026-08-14
 
