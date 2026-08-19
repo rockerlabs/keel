@@ -161,13 +161,23 @@ scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on 
 report_hits() {
   local mode="$1" files="$2" f
   [ -n "$files" ] || return 0
+  # sh reads its file directly via redirection rather than through `cat` — scan_line_length is
+  # stdin-based, so a `cat |` here would spawn a process purely to move bytes for every sh file (a
+  # real, if small, cost across ~69 tracked shell scripts); md still needs blank_fenced_blocks' own
+  # awk pass first, so it keeps the pipe. The mode check itself stays per-file (cheap, no
+  # subprocess) rather than hoisted above the loop — a hoisted variable would have to carry two
+  # DIFFERENT pipeline shapes (one command vs. two piped together), which reads as more indirection
+  # than the plain per-file branch it would replace.
   while IFS= read -r f; do
     while IFS=$'\t' read -r ln len base; do
       warn "$f:$ln ($len ch, block wrap ~$base ch) — runs well past its wrapped neighbors"
       ll_hits=$((ll_hits + 1))
     done < <(
-      if [ "$mode" = md ]; then blank_fenced_blocks "$repo_dir/$f"; else cat "$repo_dir/$f"; fi \
-        | scan_line_length "$mode"
+      if [ "$mode" = md ]; then
+        blank_fenced_blocks "$repo_dir/$f" | scan_line_length "$mode"
+      else
+        scan_line_length "$mode" < "$repo_dir/$f"
+      fi
     )
   done <<< "$files"
 }
@@ -188,6 +198,10 @@ report_hits sh "$sh_files"
 say ""
 say "● signal 2 — dead relative markdown links"
 dead=0
+# Same empty-list guard as report_hits()'s `[ -n "$files" ] || return 0` above — an `<<<` herestring
+# on an empty variable feeds one spurious empty-string iteration rather than zero. Shaped as an `if`
+# here instead of an early return because this is top-level script body, not a function: `return`
+# is only valid inside one.
 if [ -n "$md_files" ]; then
   while IFS= read -r f; do
     dir=$(dirname "$f")

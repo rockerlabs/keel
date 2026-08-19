@@ -28,13 +28,9 @@ check_contains "prose-drift.sh sources tools/lib/fence-blank.sh" \
 # function's toggle uses, unique to its own body — a re-duplication of blank_fenced_blocks() ITSELF
 # would carry it; the unrelated filter-style copies above do not.
 marker='infence = !infence'
-hits=""
-while IFS= read -r -d '' f; do
-  [ "$f" = "$lib" ] && continue
-  if grep -qF "$marker" "$f" 2>/dev/null; then
-    hits="${hits:+$hits }$f"
-  fi
-done < <(find "$REPO_ROOT/tools" -type f -print0)
+# `grep -rl` already IS the "which files contain it" scan a hand-rolled find+while loop would
+# rebuild line by line; only the lib's own match needs excluding from the result.
+hits="$(grep -rlF "$marker" "$REPO_ROOT/tools" 2>/dev/null | grep -vF "$lib" || true)"
 if [ -z "$hits" ]; then
   pass "no duplicated fence-toggle pattern outside tools/lib/fence-blank.sh"
 else
