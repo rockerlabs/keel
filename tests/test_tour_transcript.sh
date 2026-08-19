@@ -21,6 +21,12 @@
 #      hit `$REPO_ROOT` as a plain substring prefix of an unrelated string that merely starts the same
 #      way — confirmed live on the Alpine leg, where `$REPO_ROOT` is `/keel` and doctor.sh's own
 #      "run /keel-score to score" hint collapsed into "run .-score to score" without this anchor.
+#      `$REPO_ROOT` is escaped (`sed_escape`, below) before going into the sed pattern: it's an
+#      arbitrary filesystem path, not a literal this file controls, and interpolating it into a BRE
+#      unescaped is a real, reproducible bug on a checkout whose path contains a sed/regex
+#      metacharacter (`.`, `*`, `[`, or the `#` delimiter itself) — confirmed live: a `#` in the path
+#      breaks the sed script outright, and an unescaped `.` silently mismatches an unrelated string,
+#      which would mask real staleness rather than report it.
 #   3. Key masking — the real planted AWS-shaped key tour.sh commits is replaced with the README's
 #      disclosed masked form (`AKIA…REDACTED…`); secret-guard's own BLOCKED output has no masking of
 #      its own — the masking is an editorial choice on the README's part, not a claim about what
@@ -60,21 +66,27 @@ readme="$REPO_ROOT/examples/README.md"
 run bash "$tour"
 check_status "tour.sh runs end-to-end -> exit 0" 0 "$STATUS"
 
+# Escape every non-alnum/underscore/hyphen byte with a backslash, so an arbitrary string is safe to
+# interpolate as a literal (not a pattern) into a BRE, regardless of which delimiter the caller picks.
+sed_escape() { printf '%s' "$1" | sed 's/[^a-zA-Z0-9_-]/\\&/g'; }
+
 # Rule 1: the tour's own mktemp sandbox, resolved or not, -> /tmp/demo.
 sandbox_re='(/private)?(/var/folders/[^ ]*/T/tmp\.[A-Za-z0-9]+|/tmp/tmp\.[A-Za-z0-9]+)'
+repo_root_esc="$(sed_escape "$REPO_ROOT")"
 # Rule 3's replacement is built from parts (like tour.sh's own fake_key) so this file's source
 # never holds a whole key-shaped token.
 planted_key="$(key 'AKIA' 'IOSFODNN7EXAMPLE')"
-live="$(printf '%s\n' "$OUT" \
-  | sed -E "s#${sandbox_re}#/tmp/demo#g" \
-  | sed -e "s#${REPO_ROOT}/#./#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
-  | awk 'NR==1 && $0==""{next}{print}')"  # rule 2, rule 3, rule 4
 
 # Rule 5: drop both known-GOOD forms of the host-grep-capability selftest line, on both sides —
 # fixed strings, not a wildcard, so a genuine FAIL for this same probe is never swallowed.
 drop_ok() { grep -v -F -e 'selftest: OK   — malformed personal regex fails CLOSED' \
                         -e 'selftest: WARN — this grep does not flag a malformed ERE'; }
-live="$(printf '%s\n' "$live" | drop_ok)"
+
+live="$(printf '%s\n' "$OUT" \
+  | sed -E "s#${sandbox_re}#/tmp/demo#g" \
+  | sed -e "s#${repo_root_esc}/#./#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
+  | awk 'NR==1 && $0==""{next}{print}' \
+  | drop_ok)"  # rule 2, rule 3, rule 4, rule 5
 
 # The README's own fenced transcript (the ```console block under "What it looks like").
 expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme" | drop_ok)"
