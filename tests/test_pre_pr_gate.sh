@@ -2486,4 +2486,149 @@ gate "gh pr create --head someone:crossfork-feature --fill" "$d"
 check_status "dir #152: cross-fork PR pushed to the contributor's own remote → exit 0" 0 "$STATUS"
 check_absent "dir #152: cross-fork PR pushed to the contributor's own remote → allowed" "$OUT" "deny"
 
+# --- dir #161: writing a step-5 receipt that DROPS a prior round's add-on now warns -----------------
+# The setup below never needs a fix commit or a full gate PASS: `init` retires whatever the LIVE
+# sentinel holds into the single-slot prev backup unconditionally (retire_sentinel runs on every
+# invalidation path, `init`'s overwrite included — see its own header comment), stamping base-sha at
+# CURRENT HEAD. So "init; receipt polish.5-review <outcome>; init" alone leaves a well-formed,
+# same-lineage prev backup carrying that outcome — exactly what `_warn_dropped_addons` reads. No
+# `write_full_receipt`/`subagentstop_trace`/gate-PASS machinery is needed: this check runs on the
+# ordinary `receipt` write path, independent of whether the rest of the round's steps exist at all.
+
+# 103. The felt case, set form. Round N's polish.5-review names {operator-run}; round N+1 drops it.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+check_status "dropping a recorded add-on → the receipt write itself still exits 0" 0 "$STATUS"
+check_contains "...stderr names the dropped add-on" "$OUT" "operator-run"
+sentinel_body="$(cat "$(sentinel_for "$d")")"
+check_contains "...and the sentinel still holds the NEW (dropped) outcome verbatim" "$sentinel_body" "$(printf 'polish.5-review\tagent:medium')"
+
+# 104. The cross-shape case (fork 2's whole reason): prior round hands off as the dash form
+# `medium-operator-run` (dir #155's own shape), this round writes a plain `agent:medium` — the same
+# regression through a different outcome shape must still warn. Mutation-floor item 2 (dir #128):
+# collapsing the normalizer's dash-form arm into its fail-open default turns this test red.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+check_contains "dash-form prior + bare agent: this round → still warns, naming operator-run" "$OUT" "operator-run"
+
+# 105. Subset satisfied → silent. This round's set is a SUPERSET of the prior one (gained
+# second-opinion, kept operator-run) — nothing was dropped.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run,second-opinion"
+check_absent "prior set ⊆ new set → silent, nothing dropped" "$OUT" "drops add-on"
+
+# 106. Equal sets → silent.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+check_absent "identical add-on set re-written → silent" "$OUT" "drops add-on"
+
+# 107. Empty prior set → silent. A bare `agent:<level>` review carries no add-on to lose.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+check_absent "empty prior add-on set → silent" "$OUT" "drops add-on"
+
+# 108. No prior run at all → silent. A fresh repo's very first /polish round has no prev-sentinel to
+# compare against.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+check_absent "first-ever round, no prev backup → silent" "$OUT" "drops add-on"
+
+# 109. Foreign lineage → silent, no error. Same orphan-branch trick as test 58's `--recover` lineage
+# guard: the retired backup's base-sha predates a branch history rewrite (an unrelated worktree/branch,
+# or a rebase/amend, in the felt shape), so it must never be trusted — but unlike `--recover`, this is
+# advisory, so the fail direction is silence, not a loud refusal.
+d="$(mkrepo)"
+orig_branch="$(git -C "$d" branch --show-current)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" bash "$gate" init                     # retires into prev; base-sha = mkrepo's own commit
+git -C "$d" checkout -q --orphan unrelated
+git -C "$d" commit --allow-empty -qm "totally unrelated history"
+git -C "$d" branch -M "$orig_branch"              # same (repo, branch) receipt key, unrelated HEAD
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+check_status "foreign-lineage prev backup → the write itself still exits 0" 0 "$STATUS"
+check_absent "...and stays silent — an unverifiable prior must never manufacture a warn" "$OUT" "drops add-on"
+
+# 110. Malformed prev (no nonce header) → silent — contrast with `--recover`, which errors loudly on
+# the SAME file. Both behaviours coexist: the malformed-prev guard is shared code, but the two callers
+# react to it differently (one is a gate-adjacent recovery the operator must notice; the other is a
+# best-effort advisory that has nothing useful to say about a file it can't parse).
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" bash "$gate" init
+printf 'not-a-nonce-header\tgarbage\n' > "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" receipt --recover
+check_status "recover on the same malformed prev → still exit 1" 1 "$STATUS"
+check_contains "...and still errors loudly" "$OUT" "malformed"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+check_status "...but the step-5 write itself stays exit 0" 0 "$STATUS"
+check_absent "...and the drop warning stays silent on a prev it can't parse" "$OUT" "drops add-on"
+
+# 111. Other step ids never consult prev — the check is wired ONLY to polish.5-review.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.2-simplify
+check_status "a non-review step's own receipt write → exit 0" 0 "$STATUS"
+check_absent "...and emits nothing about a dropped add-on" "$OUT" "drops add-on"
+
+# 112. The warn is advisory, proven directly: re-run test 103's felt case and assert BOTH halves
+# explicitly — exit 0 AND the sentinel accepts the new (dropped) outcome. A deliberate drop (the fix
+# commit removed the reviewed work) must still be receiptable; this is a printout, never a gate.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:high+operator-run,second-opinion"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:high"
+check_status "warn fires (both add-ons dropped) but the write is still allowed" 0 "$STATUS"
+check_contains "...naming operator-run" "$OUT" "operator-run"
+check_contains "...naming second-opinion" "$OUT" "second opinion"
+sentinel_body="$(cat "$(sentinel_for "$d")")"
+check_contains "...and the sentinel reflects the fully-dropped new outcome, not the old set" "$sentinel_body" "$(printf 'polish.5-review\tagent:high')"
+
+# 113. Mutation-floor item 3 (dir #128): a hand-written PRIOR outcome naming an UNKNOWN token must never
+# reach the warning as advised text — `_addon_label` is the allowlist and the prior set is filtered
+# through it before comparison. Dropping that filter would print "not-a-real-addon" as a missing
+# add-on, advising the operator to re-add a token the gate's own unlock check would then deny (the
+# ticket's own "never advise garbage" framing). Items 1 and 2 of the mutation floor (deleting the
+# subset guard; collapsing the dash-form normalizer arm) are pinned by tests 103 and 104 themselves —
+# each is written to demonstrate the exact behavior that guard/arm produces, not just a passing shape.
+d="$(mkrepo)"
+rm -f "$(prev_sentinel_for "$d")"
+printf 'nonce\tprior-nonce\nbase-sha\t%s\nprior-nonce\tpolish.5-review\tagent:medium+not-a-real-addon\n' \
+  "$(git -C "$d" rev-parse HEAD)" > "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+check_status "hand-written unknown prior add-on → the write itself still exits 0" 0 "$STATUS"
+check_absent "...and the unknown token is never advised as a dropped add-on" "$OUT" "not-a-real-addon"
+check_absent "...silent altogether, not just wrong-worded" "$OUT" "drops add-on"
+
 summary

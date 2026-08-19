@@ -361,8 +361,10 @@ Steps, in order:
      instead, and each fix commit carries its predecessor's reviewed content forward. So: an add-on
      belongs in the set while the work it reviewed is still in HEAD. **`--recover` will not carry it for
      you** — `polish.5-review` is deliberately never restored (dir #96), so an earlier round's add-on
-     survives only in this session's own memory and has to be re-typed. Nothing denies or warns if you
-     forget, which is exactly how dir #155 lost one; closing that is dir #161.
+     survives only in this session's own memory and has to be re-typed. `--recover` staying silent is
+     unchanged, but writing a step-5 receipt that DROPS an add-on the prior round recorded now prints a
+     warning naming it (dir #161) — advisory, never a deny, because only you know whether the fix commit
+     removed the reviewed work.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,

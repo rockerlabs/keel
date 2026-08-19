@@ -73,4 +73,13 @@ else
   fi
 fi
 
+# (D) dir #161: step 5's add-on-set paragraph states the new warn behavior — dropping a prior round's
+# add-on from a fresh step-5 receipt now prints a warning naming it, not silence.
+if grep -qi 'drops an add-on' "$polish" && grep -qi 'dir #161' "$polish"; then
+  pass "polish.md: step 5 states the add-on-drop warning (dir #161)"
+else
+  fail "polish.md: step 5 states the add-on-drop warning (dir #161)" \
+    "expected a 'drops an add-on ... (dir #161)' clause near the add-on set paragraph"
+fi
+
 summary

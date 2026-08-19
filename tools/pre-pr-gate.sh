@@ -445,6 +445,93 @@ _addon_label() {
   esac
 }
 
+# dir #161: the add-on SET a `polish.5-review` outcome carries, as one token per line (never printed —
+# consumed by `_warn_dropped_addons` below). Branches on the `agent:` prefix first, then the dash forms,
+# per the ticket's normalization table: only `agent:<level>+<a>[,<b>...]` carries a non-empty set — every
+# other recognized shape (bare `agent:<level>`, `*-waived`, `skip`) is a review with no separately-named
+# mechanism, and `*-operator-run` names exactly one (`operator-run`). An unrecognized shape falls through
+# to the empty set: this function must never manufacture a warn by guessing at a shape it doesn't know.
+# Deliberately NOT validated against `_addon_label` here — that happens once, in `_warn_dropped_addons`,
+# against the PRIOR set only (see its own comment for why: this function's job is only to read what was
+# written, not to judge it).
+_normalize_addon_set() {
+  local outcome="$1" rest a
+  case "$outcome" in
+    agent:*+*)
+      # Same no-word-split, no-glob comma walk as the gate's own `agent:*+*` unlock arm above (search
+      # "PATHNAME EXPANSION" in this file) — an unquoted `for a in ${addons//,/ }` would run pathname
+      # expansion on a self-reported set, a trust-boundary parse.
+      rest="${outcome#agent:}"
+      rest="${rest#*+}"
+      while [ -n "$rest" ]; do
+        a="${rest%%,*}"
+        if [ "$rest" = "$a" ]; then rest=""; else rest="${rest#*,}"; fi
+        [ -n "$a" ] && printf '%s\n' "$a"
+      done
+      ;;
+    agent:*)          : ;;
+    *-operator-run)   printf '%s\n' operator-run ;;
+    *-waived)         : ;;
+    skip)             : ;;
+    *)                : ;;
+  esac
+}
+
+# dir #161: advisory-only check, called from the ordinary `receipt polish.5-review <outcome>` write path
+# AFTER the line has already been appended — this never affects the write itself (same appended line,
+# same exit 0). Warns on stderr when the immediately-prior round (the single-slot prev-sentinel backup)
+# named a review add-on this round's outcome does not carry, so a re-typed-from-memory receipt (the dir
+# #155 incident) is noticed at the exact moment the omission is made rather than never. See the ticket
+# (dir #161) for why this fires here and not in `--recover` or the gate's PASS branch, and why it fails
+# SILENT (opposite direction from `--recover`'s fail-closed) on every unverifiable condition: this grants
+# no trust, so an unverifiable prior must never manufacture a warn.
+_warn_dropped_addons() {
+  local receipt_key="$1" new_outcome="$2" cwd="${3:-$PWD}"
+  local prev prev_header base_sha prev_outcome prior_set new_set a label missing=""
+  prev="$(_prev_sentinel_path_for_key "$receipt_key")"
+  [ -f "$prev" ] || return 0
+  prev_header="$(awk -F'\t' 'NR==1{print; exit}' "$prev")"
+  case "$prev_header" in
+    nonce$'\t'*) : ;;
+    # Malformed prev header: `--recover` already reports this loudly on its own path — repeating it on
+    # every step-5 receipt would be noise, not signal.
+    *) return 0 ;;
+  esac
+  base_sha="$(awk -F'\t' '$1=="base-sha"{print $2; exit}' "$prev")"
+  if [ -z "$base_sha" ] || ! git -C "$cwd" merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null; then
+    return 0
+  fi
+  # Same header-nonce + last-write-wins idiom `--recover` uses to read the retired sentinel, filtered to
+  # just the one step id this check cares about.
+  prev_outcome="$(awk -F'\t' '
+    NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
+    NF>=3 && pnonce!="" && $1==pnonce && $2=="polish.5-review" { val=$3 }
+    END { print val }
+  ' "$prev")"
+  [ -n "$prev_outcome" ] || return 0
+  prior_set="$(_normalize_addon_set "$prev_outcome")"
+  new_set="$(_normalize_addon_set "$new_outcome")"
+  while IFS= read -r a; do
+    [ -n "$a" ] || continue
+    # Filter the PRIOR set through `_addon_label` — the add-on allowlist, deliberately not duplicated
+    # here (see its own header) — so this can never advise re-adding a token the gate would then deny.
+    # The NEW set is compared as opaque tokens: the gate already rejects an invented add-on at unlock
+    # time, duplicating that check here buys nothing.
+    label="$(_addon_label "$a")" || continue
+    if ! printf '%s\n' "$new_set" | grep -qxF -- "$a"; then
+      missing="${missing:+$missing, }$label"
+    fi
+  done <<EOF
+$prior_set
+EOF
+  [ -n "$missing" ] || return 0
+  # Advisory only — stderr, and the caller's exit 0 is unaffected either way. Deliberately does not
+  # mention either trace marker literal (KEEL-REVIEW-DIALOG/KEEL-DEPTH-DIALOG followed by ": level=") —
+  # same discipline the skip-dialog deny message follows elsewhere in this file, so a session recapping
+  # this warning inside an AskUserQuestion can never hand a hook the exact line it greps for.
+  printf 'pre-pr-gate: this step-5 receipt drops add-on(s) the prior round recorded: %s. The add-on set applies to the SHIPPED COMMIT, not the round — if that reviewed work is still in HEAD, re-run with the full set (e.g. receipt polish.5-review "agent:<level>+<addon>[,<addon>...]"). If the fix commit removed the reviewed work, dropping it is fine and no action is needed.\n' "$missing" >&2
+}
+
 # The hook's OWN observation of HEAD at fire time — never a self-reported field — shared by both
 # skill-trace legs (the SubagentStop leg and the Skill/UserPromptExpansion legs below) so the same
 # trust-boundary comment and the same one-liner aren't typed out twice in one case block.
@@ -1182,7 +1269,11 @@ case "${1:-}" in
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
     # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
     # hand-off note rather than let it linger past the question it recorded.
-    [ "$step_id" = "polish.5-review" ] && rm -f "$(handoff_path)"
+    if [ "$step_id" = "polish.5-review" ]; then
+      rm -f "$(handoff_path)"
+      # dir #161: advisory-only, never affects this exit 0.
+      _warn_dropped_addons "$receipt_key" "$outcome" "$PWD"
+    fi
     exit 0
     ;;
   log)
