@@ -9,6 +9,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **A step-5 `/polish` receipt that drops a prior round's review add-on now warns on stderr, naming
+  it** (dir #161, PR #236). Closes a gap dir #158 left open: the receipt could already SAY a combined
+  review add-on set (`agent:<level>+operator-run,second-opinion`), but nothing pressured a session to
+  keep saying it after a fix commit — a re-typed-from-memory receipt could silently lose one, the
+  dir #155 incident. The check fires only at the ordinary `receipt polish.5-review` write path (never
+  `--recover`, never the gate's own allow/deny decision), compares the immediately-prior round's
+  add-on set against the new one, and never affects the write or the exit code either way — advisory
+  only, since only the session knows whether a fix commit genuinely removed the reviewed work.
+  `commands/polish.md` step 5 now also states the warning must be actively read, not skimmed past, and
+  the check leaves a durable trail via the existing impact-log primitive alongside its stderr print.
 - **`tests/test_sweep_outcome_coherence.sh`** (dir #166, drydock run 1 ratchet). CORE.md's Persist
   rail, `commands/wrap.md`, `commands/global-review.md`, and `FRAMEWORK.md` each restate, in prose,
   the set of outcomes a red-flag-sweep finding can land in (a backlog ticket, a committed/promoted
