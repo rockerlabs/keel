@@ -160,6 +160,18 @@ https://example.invalid/$c140
 run "$pd" "$d" --quiet
 check_absent "a line carrying a literal URL is not flagged even if it runs long" "$OUT" "WARN"
 
+# --- signal 1: is_linkline only excludes actual link/image syntax, not any '[...' line -------------
+# A genuinely anomalous line that happens to start with '[' but is NOT a markdown link (a footnote,
+# a bracketed aside) must still be flagged — a real link line pairs with the "not flagged" case above.
+d="$(mk_repo_with doc.md "# doc
+
+$a100
+$b100
+[K] not a link, just a bracketed aside that runs on for a very long stretch of unwrapped prose well past its neighbors here
+")"
+run "$pd" "$d" --quiet
+check_contains "a non-link bracketed line IS flagged when genuinely anomalous" "$OUT" "doc.md:5"
+
 # --- signal 1, sh comments: shebang excluded, comment block anomaly IS flagged ---------------------
 # fake_sh built via key() rather than a bare literal "tools/" + "t.sh" — self/doctor.sh's own check 2
 # scans tests/*.sh for exactly such a joined substring, and this file's source must never hold it
@@ -174,6 +186,19 @@ echo done
 run "$pd" "$d" --quiet
 check_contains "an anomalous sh comment line is flagged" "$OUT" "t.sh:4"
 check_absent "the shebang line is never itself flagged" "$OUT" "t.sh:1"
+
+# --- signal 1, sh_files: an extensionless shebang-only script IS scanned, not just *.sh ------------
+# sh_files is derived from shellcheck-targets.sh (dir #169 fix), not a bare `*.sh` glob — a bare glob
+# would silently skip this fixture entirely (real case: tools/secret-guard/pre-commit, pre-push).
+fake_hook="$(key tools/pre .commit)"
+d="$(mk_repo_with "$fake_hook" "#!/usr/bin/env bash
+# $a100
+# $b100
+# $c140
+echo done
+")"
+run "$pd" "$d" --quiet
+check_contains "an extensionless shebang-only script is scanned like a .sh file" "$OUT" "commit:4"
 
 # --- signal 2: a dead relative link -> GAP, exit 1 --------------------------------------------------
 d="$(mk_repo_with doc.md "# doc
@@ -199,6 +224,26 @@ See [the guide](./other.md) for detail.
 ")"
 run "$pd" "$d" --quiet
 check_status "the SAME link, now with its target missing, DOES fail -> exit 1" 1 "$STATUS"
+
+# --- signal 2: a broken-link EXAMPLE inside a fenced code block is not flagged; the SAME content
+# unfenced (a real broken link) DOES fail -> exit 1 (dir #110 pairing) -------------------------------
+d="$(mk_repo_with doc.md '# doc
+
+Example of a broken link:
+
+```
+[guide](./missing-illustrative.md)
+```
+')"
+run "$pd" "$d" --quiet
+check_status "an illustrative dead link inside a fence does not fail the script -> exit 0" 0 "$STATUS"
+
+d="$(mk_repo_with doc.md '# doc
+
+[guide](./missing-illustrative.md)
+')"
+run "$pd" "$d" --quiet
+check_status "the SAME content, unfenced, DOES fail -> exit 1" 1 "$STATUS"
 
 # --- --quiet suppresses OK but never a WARN/GAP -----------------------------------------------------
 d="$(mk_repo_with doc.md "# doc

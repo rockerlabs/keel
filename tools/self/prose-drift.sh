@@ -88,16 +88,16 @@ MIN_BLOCK=3
 # handling vs sh's bare-comment-run handling) — the anomaly math in END is shared verbatim and must
 # stay that way; a second hand-maintained copy is exactly the drift class this project's own
 # doctor.sh check 1/1b exist to catch elsewhere. Reads the file body on STDIN, not as a filename
-# argument: the md caller below pre-blanks fenced code through the shared blank_fenced_blocks() (a
+# argument: the md caller below pre-blanks fenced code through the shared blank_fenced_blocks() — a
 # fence toggle re-derived here instead would be a second copy of that exact drift, one file over —
-# found by an independent review of this diff), so this program itself never needs to know about
-# fences at all. Emits TSV (line, length, block-baseline) per hit.
+# so this program itself never needs to know about fences at all. Emits TSV (line, length,
+# block-baseline) per hit.
 scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on stdin)
   awk -v WRAP_MAX="$WRAP_MAX" -v MARGIN="$MARGIN" -v MIN_BLOCK="$MIN_BLOCK" -v MODE="$1" '
     function is_bullet(l)  { return (l ~ /^[-*+][ \t]/) || (l ~ /^[0-9]+\.[ \t]/) }
     function is_heading(l) { return l ~ /^#{1,6}[ \t]/ }
     function is_table(l)   { return l ~ /^[ \t]*\|.*\|[ \t]*$/ }
-    function is_linkline(l){ return l ~ /^[ \t]*\[/ }
+    function is_linkline(l){ return (l ~ /^[ \t]*\[.*\]\(.*\)/) || (l ~ /^[ \t]*\[[^]]*\]:/) }
     function has_url(l)    { return l ~ /https?:\/\// }
     function record() {
       len = length(raw)
@@ -136,16 +136,20 @@ scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on 
     END {
       for (b = 1; b <= block; b++) {
         cnt = n[b]; if (cnt < MIN_BLOCK) continue
+        # This block wrap baseline is the same for every candidate line in it — a line only ever
+        # qualifies as a candidate once its own length already exceeds WRAP_MAX (the `continue`
+        # below), so it can never itself contribute to the baseline max regardless of which
+        # candidate is being checked; a per-candidate re-scan excluding it would just recompute the
+        # identical value. One pass over the block up front, not one pass per candidate.
+        maxother = 0
+        for (j = 1; j <= cnt; j++) {
+          lj = bl[b, j]
+          if (lj <= WRAP_MAX && lj > maxother) maxother = lj
+        }
         for (i = 1; i <= cnt; i++) {
           if (urlf[b, i]) continue                # a line carrying a literal URL is data, not prose
           li = bl[b, i]
           if (li <= WRAP_MAX) continue
-          maxother = 0
-          for (j = 1; j <= cnt; j++) {
-            if (j == i) continue
-            lj = bl[b, j]
-            if (lj <= WRAP_MAX && lj > maxother) maxother = lj
-          }
           if (maxother > 0 && (li - maxother) >= MARGIN)
             printf "%d\t%d\t%d\n", ln[b, i], li, maxother
         }
@@ -183,7 +187,17 @@ report_hits() {
 }
 
 md_files="$(git -C "$repo_dir" ls-files '*.md' | sort)"
-sh_files="$(git -C "$repo_dir" ls-files 'tools/*.sh' 'tools/**/*.sh' 'tests/*.sh' | sort)"
+# Reuses tools/self/shellcheck-targets.sh's own enumeration rather than a hand-rolled `*.sh` glob —
+# that script exists specifically because a plain pathspec misses shebang-only, extensionless
+# scripts (e.g. tools/secret-guard/pre-commit and pre-push both slipped through a bare glob here
+# until this fix). Filtered to tools/ and tests/ to keep sweep.sh's original scope (a top-level
+# installer/entry-point script like install.sh or bootstrap.sh is a different kind of prose than the
+# tools/ tree this signal targets, and was never in scope even before this fix).
+# `|| true`: grep exits 1 on zero matches (a repo/sandbox with no tools/ or tests/ shell scripts at
+# all is legitimate — the earlier `git ls-files` calls never needed this guard since ls-files itself
+# exits 0 on an empty match set, but grep does not), and under `set -o pipefail` that would otherwise
+# abort this whole script at the assignment, unlike an empty result from the loop below.
+sh_files="$(bash "$self_dir/shellcheck-targets.sh" "$repo_dir" | grep -E '^(tools|tests)/' | sort || true)"
 
 say ""
 say "● signal 1 — anomalous line length inside a wrapped block (advisory)"
@@ -194,7 +208,11 @@ report_hits sh "$sh_files"
 
 # --- signal 2: dead relative markdown links --------------------------------------------------------
 # Reuses $md_files from signal 1 above rather than a second `git ls-files '*.md'` — same file set,
-# no reason to ask git twice.
+# no reason to ask git twice. Also reuses signal 1's blank_fenced_blocks() pre-pass, for the same
+# reason signal 1 needs it: a fenced example illustrating link syntax (`[text](target)`) must not be
+# parsed as a real link — a doc about drydock/prose-drift itself is exactly the place such an example
+# would show up, and an illustrative target that doesn't resolve would otherwise read as a real dead
+# link (a hard GAP), not a WARN.
 say ""
 say "● signal 2 — dead relative markdown links"
 dead=0
@@ -212,7 +230,7 @@ if [ -n "$md_files" ]; then
         gap "$f:$ln → \`$target\` does not resolve"
         dead=$((dead + 1))
       fi
-    done < <(grep -onE '\]\(([^)]+)\)' "$repo_dir/$f" | sed -E 's/:\]\(/:/; s/\)$//')
+    done < <(blank_fenced_blocks "$repo_dir/$f" | grep -onE '\]\(([^)]+)\)' | sed -E 's/:\]\(/:/; s/\)$//')
   done <<< "$md_files"
 fi
 [ "$dead" -eq 0 ] && say "  OK   no dead relative markdown links"

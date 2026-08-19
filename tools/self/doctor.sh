@@ -881,9 +881,16 @@ fi
 # FAILS, but prose-drift.sh's line-length signal is advisory (WARN) by design and must stay visible
 # on every run, not just a failing one — only its dead-link signal (GAP) affects this exit code.
 say ""
-pd_args=("$repo_root")
-[ "$QUIET" = 1 ] && pd_args+=(--quiet)
-bash "$self_dir/prose-drift.sh" "${pd_args[@]}" || exit_code=1
+if [ -f "$self_dir/prose-drift.sh" ]; then
+  pd_args=("$repo_root")
+  [ "$QUIET" = 1 ] && pd_args+=(--quiet)
+  bash "$self_dir/prose-drift.sh" "${pd_args[@]}" || exit_code=1
+else
+  # Same reporting shape as every other check here (a structured GAP line), not the raw, unlabeled
+  # "No such file or directory" bash itself would print for a bare `bash <missing path>` call — a
+  # future rename/move of prose-drift.sh should fail loud AND diagnosable, not just loud.
+  gap "tools/self/prose-drift.sh missing — dead-link and line-length checks skipped"
+fi
 
 say ""
 say "  MANUAL  PRINCIPLES.md tension-enforcement isn't mechanizable (needs judgment) — run the Principles pass in /global-review"
