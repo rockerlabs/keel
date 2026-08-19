@@ -727,20 +727,21 @@ if [ "$INSTALL_MODE" = 1 ]; then
     fi
   fi
 
-  # Install manifest (dir #125): read-only in this PR — uninstall doesn't consume it yet, so both
-  # findings are advisory. A missing manifest just means the legacy heuristics above are still doing
-  # the work (KEEL-LEGACY-NOMANIFEST); a present-but-corrupt/unversioned one degrades to the same
-  # thing (the versioning contract: an unknown/unparsable manifest is treated as absent, never a
-  # crash). A present, well-formed manifest that CONTRADICTS the filesystem names both sides rather
-  # than trusting either — install.sh's own $manifest_mode/$manifest_layout naming, mirrored here.
+  # Install manifest (dir #125): read-only here — doctor only reports on it, never acts on it. Both
+  # findings below are advisory. A missing (or corrupt/unversioned, same versioning contract: an
+  # unknown/unparsable manifest is treated as absent, never a crash) manifest just means this audit
+  # can't run the layout/home drift checks below install.sh$imode_flag$ihome_flag would let it
+  # (dir #150 removed the pre-manifest heuristic that used to stand in). A present, well-formed
+  # manifest that CONTRADICTS the filesystem names both sides rather than trusting either —
+  # install.sh's own $manifest_mode/$manifest_layout naming, mirrored here.
   imanifest_mode="claude"; [ "$CODEX_MODE" = 1 ] && imanifest_mode="codex"
   imanifest="$ihome/.keel/install-manifest.$imanifest_mode"
   if [ ! -f "$imanifest" ]; then
-    warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — uninstall/doctor fall back to today's heuristics (KEEL-LEGACY-NOMANIFEST); record one: install.sh$imode_flag$ihome_flag"
+    warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — this install predates Keel's install manifest or hasn't been re-run since; record one: install.sh$imode_flag$ihome_flag"
   else
     iman_version="$(manifest_field "$imanifest" keel_manifest_version)"
     if [ "$iman_version" != "1" ]; then
-      warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest (KEEL-LEGACY-NOMANIFEST); re-run install.sh$imode_flag$ihome_flag to record a fresh one"
+      warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest; re-run install.sh$imode_flag$ihome_flag to record a fresh one"
     else
       iman_layout="$(manifest_field "$imanifest" layout)"
       iman_home="$(manifest_field "$imanifest" home)"
@@ -800,7 +801,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
       igate_settings="$(manifest_field "$igate_manifest" settings)"
       [ -n "$igate_settings" ] || igate_settings="$ihome/settings.json"
     else
-      # KEEL-LEGACY-NOMANIFEST: no usable gate manifest — the only source is the default path.
+      # dir #150 audit (kept, not a no-manifest heuristic): without a usable manifest there is still
+      # only one possible settings path for a global/home-scope gate install — install-pre-pr-gate.sh
+      # itself always writes to exactly $ihome/settings.json for this scope (never project scope, which
+      # this loop doesn't reach — see the pairing-check comment above). Nothing here is guessed among
+      # several candidates the way the removed pre-manifest fallbacks in uninstall.sh/install.sh were.
       igate_settings="$ihome/settings.json"
     fi
 
@@ -813,7 +818,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         say "  OK   /polish gate: wired machine-global ($igate_settings; manifest confirms)"
       else
         say "  OK   /polish gate: wired machine-global ($igate_settings)"
-        warn W-GATE-MANIFEST-MISSING "gate hooks are wired at $igate_settings but no gate manifest is recorded (KEEL-LEGACY-NOMANIFEST) — re-run install-pre-pr-gate.sh $gate_flag to record one (the B2 ledger-based dialog-arming check in tools/pre-pr-gate.sh relies on it for a retargeted --home)"
+        warn W-GATE-MANIFEST-MISSING "gate hooks are wired at $igate_settings but no gate manifest is recorded — re-run install-pre-pr-gate.sh $gate_flag to record one (the B2 ledger-based dialog-arming check in tools/pre-pr-gate.sh relies on it for a retargeted --home)"
       fi
     elif [ "$igate_manifest_usable" = 1 ]; then
       # A DISTINCT id from the install-manifest drift check above (W-MANIFEST-DRIFT), not a reuse: found

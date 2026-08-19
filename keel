@@ -57,12 +57,18 @@ if [ ! -f "$CHECKOUT/install.sh" ] || [ ! -d "$CHECKOUT/tools" ]; then
     # so a --codex install has this CLI too; advising a bare `install.sh --home <codex-home>` would
     # re-run Claude copy mode into it and write the wrong context file. dir #125: prefer the recorded
     # install manifest — exact, not guessed — when exactly one mode's manifest is present at the home;
-    # a both-modes home (dir #124) falls to claude, same as the legacy sniff below picks in that case.
+    # a both-modes home (dir #124) falls to claude, same as the sniff below picks in that case.
     if [ -f "$keel_home/.keel/install-manifest.codex" ] && [ ! -f "$keel_home/.keel/install-manifest.claude" ]; then
       mode_flag=" --codex"; default_leaf=".codex"
     elif [ ! -f "$keel_home/.keel/install-manifest.claude" ] && [ ! -f "$keel_home/.keel/install-manifest.codex" ]; then
-      # KEEL-LEGACY-NOMANIFEST: no manifest recorded at the home — sniff by content instead. The mode is
-      # read off the home itself, since the CLI has no other record of it: a --codex install writes
+      # dir #150 audit (kept, not removed — dir #125's own design note, BACKLOG.md, named this site an
+      # explicit exception: "keep the sniff as legacy"): unlike uninstall.sh's manifest-required
+      # refusal, this is advisory recovery text for an already-broken CLI (the checkout it points at is
+      # gone), never a destructive action — a best-effort guess here is more useful than a flat "could
+      # be either mode" shrug, and going silently to the claude default without ANY signal would be
+      # exactly the confidently-wrong guess dir #150's own "never a silent behavior change" bar forbids
+      # (a --codex home with no manifest would otherwise be told to re-run Claude copy mode into it).
+      # Read off the home itself, since the CLI has no other record of it: a --codex install writes
       # AGENTS.md and no CLAUDE.md. The default it compares against moves with the mode for the same
       # reason.
       if [ -f "$keel_home/AGENTS.md" ] && [ ! -f "$keel_home/CLAUDE.md" ]; then

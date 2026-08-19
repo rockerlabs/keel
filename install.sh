@@ -805,8 +805,10 @@ fi
 
 # 4. Install manifest (dir #125) — records what THIS install owns, so uninstall/doctor read ONE
 # recorded state instead of re-deriving it heuristically at every site. `artifact=` lines are
-# TAB-separated with no empty middle field (the IFS=$'\t' read collapse trap). A manifest-less home
-# still works — every consumer keeps a KEEL-LEGACY-NOMANIFEST fallback (removed at 0.7).
+# TAB-separated with no empty middle field (the IFS=$'\t' read collapse trap). dir #150 (0.7): the
+# manifest is now REQUIRED by every consumer — a home with no manifest (a pre-0.7 install that hasn't
+# re-run this script) gets a clear, actionable error from uninstall.sh/tools/doctor.sh naming this
+# script as the fix, never a silent heuristic fallback.
 manifest_mode="claude"
 [ "$CODEX" = 1 ] && manifest_mode="codex"
 manifest_layout="copy"
