@@ -74,12 +74,28 @@ else
 fi
 
 # (D) dir #161: step 5's add-on-set paragraph states the new warn behavior — dropping a prior round's
-# add-on from a fresh step-5 receipt now prints a warning naming it, not silence.
-if grep -qi 'drops an add-on' "$polish" && grep -qi 'dir #161' "$polish"; then
-  pass "polish.md: step 5 states the add-on-drop warning (dir #161)"
+# add-on from a fresh step-5 receipt now prints a warning naming it, not silence. Windowed on the
+# paragraph itself (same idiom as block (C)) rather than a bare file-wide grep: `dir #161` alone was
+# already present in the OLD, now-false sentence this paragraph replaces, so a bare grep for it proves
+# nothing — and the window also asserts that old sentence is actually GONE, not just supplemented
+# (found by the cross-model second-opinion review on this ticket's own diff).
+addon_line="$(grep -n "set's unit is the SHIPPED COMMIT" "$polish" | head -1 | cut -d: -f1)"
+if [ -z "$addon_line" ]; then
+  fail "polish.md: add-on-set paragraph still present" "anchor sentence not found"
 else
-  fail "polish.md: step 5 states the add-on-drop warning (dir #161)" \
-    "expected a 'drops an add-on ... (dir #161)' clause near the add-on set paragraph"
+  addon_window="$(sed -n "${addon_line},$((addon_line + 12))p" "$polish")"
+  if printf '%s' "$addon_window" | grep -qi 'drops an add-on' && printf '%s' "$addon_window" | grep -qi 'dir #161'; then
+    pass "polish.md: step 5 states the add-on-drop warning (dir #161)"
+  else
+    fail "polish.md: step 5 states the add-on-drop warning (dir #161)" \
+      "expected a 'drops an add-on ... (dir #161)' clause in the add-on set paragraph"
+  fi
+  if printf '%s' "$addon_window" | grep -qi 'nothing denies or warns if you forget'; then
+    fail "polish.md: the old, now-false 'nothing warns' sentence is gone" \
+      "found the pre-dir-#161 sentence still present alongside the new wording"
+  else
+    pass "polish.md: the old, now-false 'nothing warns' sentence is gone"
+  fi
 fi
 
 summary

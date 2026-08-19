@@ -469,10 +469,10 @@ _normalize_addon_set() {
         [ -n "$a" ] && printf '%s\n' "$a"
       done
       ;;
-    agent:*)          : ;;
     *-operator-run)   printf '%s\n' operator-run ;;
-    *-waived)         : ;;
-    skip)             : ;;
+    # Every other recognized shape (bare `agent:<level>`, `*-waived`, `skip`) is a review naming no
+    # separate mechanism, and an unrecognized shape must never manufacture one — all fall to this one
+    # empty-set arm rather than each getting its own identical `: ;;` (simplify pass, dir #161).
     *)                : ;;
   esac
 }
@@ -485,22 +485,20 @@ _normalize_addon_set() {
 # (dir #161) for why this fires here and not in `--recover` or the gate's PASS branch, and why it fails
 # SILENT (opposite direction from `--recover`'s fail-closed) on every unverifiable condition: this grants
 # no trust, so an unverifiable prior must never manufacture a warn.
+# **Best-effort, not a guarantee (cross-model second-opinion review, dir #161):** the single-slot prev
+# backup only ever holds the MOST RECENT retirement. If an intermediate round is retired without ever
+# writing a `polish.5-review` receipt (a gate deny at an earlier step, or two `init`s in a row with no
+# review write between them), that round's own prior add-on memory is silently gone from the chain —
+# correctly fail-silent per the rule above, but it means a real drop from two-or-more rounds back can
+# go unnoticed. A nudge for the common case, not a substitute for reading the receipt.
 _warn_dropped_addons() {
   local receipt_key="$1" new_outcome="$2" cwd="${3:-$PWD}"
-  local prev prev_header base_sha prev_outcome prior_set new_set a label missing=""
-  prev="$(_prev_sentinel_path_for_key "$receipt_key")"
-  [ -f "$prev" ] || return 0
-  prev_header="$(awk -F'\t' 'NR==1{print; exit}' "$prev")"
-  case "$prev_header" in
-    nonce$'\t'*) : ;;
-    # Malformed prev header: `--recover` already reports this loudly on its own path — repeating it on
-    # every step-5 receipt would be noise, not signal.
-    *) return 0 ;;
-  esac
-  base_sha="$(awk -F'\t' '$1=="base-sha"{print $2; exit}' "$prev")"
-  if [ -z "$base_sha" ] || ! git -C "$cwd" merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null; then
-    return 0
-  fi
+  local prev prev_outcome prior_set new_set a label missing=""
+  # dir #161: existence/header/lineage validation is shared with `--recover` via
+  # `_validated_prev_sentinel` (defined above, near `retire_sentinel`) — every failure reason (no
+  # backup, malformed header, foreign lineage) is silent here, the opposite of `--recover`'s loud
+  # refusal, per this function's own header.
+  prev="$(_validated_prev_sentinel "$receipt_key" "$cwd")" || return 0
   # Same header-nonce + last-write-wins idiom `--recover` uses to read the retired sentinel, filtered to
   # just the one step id this check cares about.
   prev_outcome="$(awk -F'\t' '
@@ -519,7 +517,11 @@ _warn_dropped_addons() {
     # time, duplicating that check here buys nothing.
     label="$(_addon_label "$a")" || continue
     if ! printf '%s\n' "$new_set" | grep -qxF -- "$a"; then
-      missing="${missing:+$missing, }$label"
+      # Name the raw TOKEN, not just its human label (found by the cross-model second-opinion review,
+      # dir #161): the label alone (e.g. "in-session cross-model second opinion (self-reported...)")
+      # gives the operator nothing to copy-paste back into the receipt — the token is what actually
+      # goes after the `+` in `agent:<level>+<addon>`.
+      missing="${missing:+$missing, }$a ($label)"
     fi
   done <<EOF
 $prior_set
@@ -949,6 +951,35 @@ retire_sentinel() {
   fi
   rm -f "$sentinel"
 }
+# dir #161: shared by `receipt --recover` and `_warn_dropped_addons` (below) — both need "does key $1's
+# retired backup exist, is its header well-formed, and is it on the SAME lineage as $2 (cwd)'s current
+# HEAD" before trusting anything it says. On success, prints the prev sentinel's path on stdout and
+# returns 0. On failure, returns one of three distinct codes and prints nothing — the two callers need
+# opposite FAIL DIRECTIONS (`--recover` is about to grant trust, so it reports each reason loudly and
+# stops; `_warn_dropped_addons` grants no trust, so an unverifiable prior must never manufacture a warn,
+# and stays silent on all three — see its own header), so the messaging stays with each caller rather
+# than living here:
+#   1 = no backup at all (a first-ever round, or nothing retired since the last `init`)
+#   2 = malformed header (no leading `nonce\t…` line)
+#   3 = lineage guard failed (missing/foreign base-sha — not a verified ancestor of current HEAD)
+# Before this (dir #161), `--recover` carried this exact three-check sequence inline and
+# `_warn_dropped_addons` would have been a second, independent copy of it (flagged live in this ticket's
+# own /simplify pass — reuse, simplification and altitude angles all converged on the same finding).
+_validated_prev_sentinel() {
+  local key="$1" cwd="${2:-$PWD}" prev prev_header base_sha
+  prev="$(_prev_sentinel_path_for_key "$key")"
+  [ -f "$prev" ] || return 1
+  prev_header="$(awk -F'\t' 'NR==1{print; exit}' "$prev")"
+  case "$prev_header" in
+    nonce$'\t'*) : ;;
+    *) return 2 ;;
+  esac
+  base_sha="$(awk -F'\t' '$1=="base-sha"{print $2; exit}' "$prev")"
+  if [ -z "$base_sha" ] || ! git -C "$cwd" merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null; then
+    return 3
+  fi
+  printf '%s\n' "$prev"
+}
 # dir #72: shared by `receipt --recover` and the ordinary `receipt <step-id>` path (both need "is there
 # an active receipt, and what's its nonce" before doing anything else) — sets $sentinel/$nonce in the
 # CALLER's shell (this runs inline, not in a `$(...)` subshell, so `exit 1` here ends the whole script
@@ -1079,30 +1110,25 @@ case "${1:-}" in
       # are untouched either way, so a recovered-but-now-stale value can never itself unlock it.
       require_active_receipt
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
-      if [ ! -f "$prev" ]; then
-        printf 'pre-pr-gate: nothing to recover — no receipt was retired since the last init\n' >&2
-        exit 1
-      fi
-      # dir #72 finding #5: distinguish a genuinely-empty prior run (a real "nothing to recover") from
-      # a malformed/corrupted backup (bad or missing nonce header) — these used to report the identical
-      # message, masking a real parse failure as the normal case.
-      prev_header="$(awk -F'\t' 'NR==1{print; exit}' "$prev")"
-      case "$prev_header" in
-        nonce$'\t'*) : ;;
-        *)
-          printf 'pre-pr-gate: prior receipt (%s) is malformed (bad or missing nonce header) — not recovering. Investigate the file, or proceed as a fresh (non-convergence) run.\n' "$prev" >&2
-          exit 1
-          ;;
-      esac
-      # dir #72 finding #3: refuse to trust a backup that is not on the SAME lineage as current HEAD —
-      # the shared per-repo backup slot (dir #61's deliberate worktree-collapsing key) means an
-      # unrelated worktree/branch's retirement, or a rebase/amend since retirement, can otherwise look
-      # like a valid convergence-round backup. A missing base-sha (a retirement written before this
-      # check existed, or a cwd that was not a git repo at retirement time) fails closed, same direction
-      # as every other new-and-unverifiable condition in this file.
-      base_sha="$(awk -F'\t' '$1=="base-sha"{print $2; exit}' "$prev")"
-      if [ -z "$base_sha" ] || ! git merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null; then
-        printf 'pre-pr-gate: refusing to recover — the retired backup base commit (%s) is not a verified ancestor of current HEAD. Looks like an unrelated run (a different worktree/branch), or a rebase/amend since retirement. Proceed as a fresh (non-convergence) run instead.\n' "${base_sha:-<none>}" >&2
+      # dir #161: the exists/header/lineage checks below now live once, in `_validated_prev_sentinel`
+      # (shared with `_warn_dropped_addons`) — this block keeps its own three distinct, loud messages
+      # (dir #72 findings #3/#5), since `--recover` is about to GRANT trust and must say exactly why it
+      # refuses to; only the shared VALIDATION moved, not the reporting.
+      _validated_prev_sentinel "$receipt_key" "$PWD" >/dev/null
+      rc=$?
+      if [ "$rc" -ne 0 ]; then
+        case "$rc" in
+          1)
+            printf 'pre-pr-gate: nothing to recover — no receipt was retired since the last init\n' >&2
+            ;;
+          2)
+            printf 'pre-pr-gate: prior receipt (%s) is malformed (bad or missing nonce header) — not recovering. Investigate the file, or proceed as a fresh (non-convergence) run.\n' "$prev" >&2
+            ;;
+          *)
+            base_sha="$(awk -F'\t' '$1=="base-sha"{print $2; exit}' "$prev")"
+            printf 'pre-pr-gate: refusing to recover — the retired backup base commit (%s) is not a verified ancestor of current HEAD. Looks like an unrelated run (a different worktree/branch), or a rebase/amend since retirement. Proceed as a fresh (non-convergence) run instead.\n' "${base_sha:-<none>}" >&2
+            ;;
+        esac
         exit 1
       fi
       # dir #72 finding #6: this implements the same "header nonce, then last-write-wins per step id

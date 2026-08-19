@@ -2505,7 +2505,13 @@ run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
 check_status "dropping a recorded add-on → the receipt write itself still exits 0" 0 "$STATUS"
 check_contains "...stderr names the dropped add-on" "$OUT" "operator-run"
 sentinel_body="$(cat "$(sentinel_for "$d")")"
-check_contains "...and the sentinel still holds the NEW (dropped) outcome verbatim" "$sentinel_body" "$(printf 'polish.5-review\tagent:medium')"
+# Anchored with a trailing newline (cross-model second-opinion review, dir #161): a bare
+# 'polish.5-review\tagent:medium' needle is a PREFIX of '...agent:medium+operator-run' too, so an
+# un-anchored check_contains would pass even if the old, un-dropped outcome were still what got
+# written — exactly the bug this assertion exists to catch. The anchor forces the outcome field to
+# end exactly at "medium".
+check_contains "...and the sentinel still holds the NEW (dropped) outcome verbatim" "$sentinel_body" "$(printf 'polish.5-review\tagent:medium\n')"
+check_absent "...and NOT the old, un-dropped outcome" "$sentinel_body" "agent:medium+operator-run"
 
 # 104. The cross-shape case (fork 2's whole reason): prior round hands off as the dash form
 # `medium-operator-run` (dir #155's own shape), this round writes a plain `agent:medium` — the same
@@ -2538,14 +2544,19 @@ run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
 check_absent "identical add-on set re-written → silent" "$OUT" "drops add-on"
 
-# 107. Empty prior set → silent. A bare `agent:<level>` review carries no add-on to lose.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-check_absent "empty prior add-on set → silent" "$OUT" "drops add-on"
+# 107. Empty prior set → silent, for EVERY shape that normalizes to {} — not just the bare `agent:
+# <level>` case (the ticket's own test plan names all three; a prior pass covered only the first,
+# leaving the other two arms of `_normalize_addon_set`'s catch-all unexercised — found by the
+# cross-model second-opinion review on this ticket's own diff).
+for empty_prior in "agent:medium" "skip" "medium-waived"; do
+  d="$(mkrepo)"
+  rm -f "$(prev_sentinel_for "$d")"
+  run_in "$d" bash "$gate" init
+  run_in "$d" bash "$gate" receipt polish.5-review "$empty_prior"
+  run_in "$d" bash "$gate" init
+  run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+  check_absent "empty prior add-on set ('$empty_prior') → silent" "$OUT" "drops add-on"
+done
 
 # 108. No prior run at all → silent. A fresh repo's very first /polish round has no prev-sentinel to
 # compare against.
@@ -2612,7 +2623,10 @@ check_status "warn fires (both add-ons dropped) but the write is still allowed" 
 check_contains "...naming operator-run" "$OUT" "operator-run"
 check_contains "...naming second-opinion" "$OUT" "second opinion"
 sentinel_body="$(cat "$(sentinel_for "$d")")"
-check_contains "...and the sentinel reflects the fully-dropped new outcome, not the old set" "$sentinel_body" "$(printf 'polish.5-review\tagent:high')"
+# Anchored the same way test 103 is (cross-model second-opinion review, dir #161) — a bare
+# 'agent:high' needle is a prefix of 'agent:high+operator-run,second-opinion' too.
+check_contains "...and the sentinel reflects the fully-dropped new outcome, not the old set" "$sentinel_body" "$(printf 'polish.5-review\tagent:high\n')"
+check_absent "...and NOT the old, un-dropped set" "$sentinel_body" "agent:high+operator-run,second-opinion"
 
 # 113. Mutation-floor item 3 (dir #128): a hand-written PRIOR outcome naming an UNKNOWN token must never
 # reach the warning as advised text — `_addon_label` is the allowlist and the prior set is filtered
