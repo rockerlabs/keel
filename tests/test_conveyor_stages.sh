@@ -83,7 +83,7 @@ addon_line="$(grep -n "set's unit is the SHIPPED COMMIT" "$polish" | head -1 | c
 if [ -z "$addon_line" ]; then
   fail "polish.md: add-on-set paragraph still present" "anchor sentence not found"
 else
-  addon_window="$(sed -n "${addon_line},$((addon_line + 12))p" "$polish")"
+  addon_window="$(sed -n "${addon_line},$((addon_line + 20))p" "$polish")"
   if printf '%s' "$addon_window" | grep -qi 'drops an add-on' && printf '%s' "$addon_window" | grep -qi 'dir #161'; then
     pass "polish.md: step 5 states the add-on-drop warning (dir #161)"
   else
@@ -95,6 +95,15 @@ else
       "found the pre-dir-#161 sentence still present alongside the new wording"
   else
     pass "polish.md: the old, now-false 'nothing warns' sentence is gone"
+  fi
+  # dir #161 /code-review high (glide-past-risk finding): the warning must be a MANDATORY read, not
+  # just a documented tool behavior — otherwise the mechanism this ticket built can itself be silently
+  # ignored by a session, the same shape of miss dir #155 already showed happens with a text-only cue.
+  if printf '%s' "$addon_window" | grep -qi 'MANDATORY read'; then
+    pass "polish.md: step 5 states the add-on-drop warning must be actively read, not skimmed past"
+  else
+    fail "polish.md: step 5 states the add-on-drop warning must be actively read, not skimmed past" \
+      "expected a 'MANDATORY read' (or equivalent) clause instructing the session to check receipt output"
   fi
 fi
 

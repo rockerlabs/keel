@@ -445,6 +445,26 @@ _addon_label() {
   esac
 }
 
+# dir #161 /code-review high: the "no word-split, no glob" comma-walk shared by BOTH consumers of a
+# `<something>+<addon>[,<addon>...]` suffix — the gate's own unlock-time `agent:*+*` validation arm
+# (below) and `_normalize_addon_set` (below). $1 = the raw text after the `+`. Prints one element per
+# line, EMPTY ELEMENTS INCLUDED (as empty lines) — do not add a `[ -n "$a" ]` filter here. The unlock
+# arm depends on seeing an empty element (`agent:<level>+,` or a trailing `,`) so it can feed it to
+# `_addon_label`, which denies on empty — that is the mechanism dir #158's own tests (50m) pin as
+# proving "at least one mechanism was actually named"; dropping empties in this shared splitter would
+# silently reopen that hole. `_normalize_addon_set` filters empties itself, on the caller side, since it
+# has no such validation to protect. An entirely empty suffix ($1="") emits nothing at all — the
+# `[ -n "$rest" ]` loop guard runs zero iterations there — matching the unlock arm's own prior special
+# case for a bare `agent:<level>+` (its own now-inherited `$addon_prose`-empty check still catches that).
+_split_comma_set() {
+  local rest="$1" a
+  while [ -n "$rest" ]; do
+    a="${rest%%,*}"
+    if [ "$rest" = "$a" ]; then rest=""; else rest="${rest#*,}"; fi
+    printf '%s\n' "$a"
+  done
+}
+
 # dir #161: the add-on SET a `polish.5-review` outcome carries, as one token per line (never printed —
 # consumed by `_warn_dropped_addons` below). Branches on the `agent:` prefix first, then the dash forms,
 # per the ticket's normalization table: only `agent:<level>+<a>[,<b>...]` carries a non-empty set — every
@@ -458,22 +478,20 @@ _normalize_addon_set() {
   local outcome="$1" rest a
   case "$outcome" in
     agent:*+*)
-      # Same no-word-split, no-glob comma walk as the gate's own `agent:*+*` unlock arm above (search
-      # "PATHNAME EXPANSION" in this file) — an unquoted `for a in ${addons//,/ }` would run pathname
-      # expansion on a self-reported set, a trust-boundary parse.
+      # `_split_comma_set` (above) yields empty elements too — this caller drops them itself, since it
+      # has no validation to protect (unlike the unlock arm, which needs to SEE an empty element to
+      # deny it via `_addon_label`).
       rest="${outcome#agent:}"
       rest="${rest#*+}"
-      while [ -n "$rest" ]; do
-        a="${rest%%,*}"
-        if [ "$rest" = "$a" ]; then rest=""; else rest="${rest#*,}"; fi
+      while IFS= read -r a; do
         [ -n "$a" ] && printf '%s\n' "$a"
-      done
+      done < <(_split_comma_set "$rest")
       ;;
     *-operator-run)   printf '%s\n' operator-run ;;
-    # Every other recognized shape (bare `agent:<level>`, `*-waived`, `skip`) is a review naming no
-    # separate mechanism, and an unrecognized shape must never manufacture one — all fall to this one
-    # empty-set arm rather than each getting its own identical `: ;;` (simplify pass, dir #161).
-    *)                : ;;
+    # Every other recognized shape (bare `agent:<level>`, `*-waived`, `skip`), and any unrecognized
+    # shape, falls through with no output — bash's own `case` already no-ops on no match, so there is
+    # no need for an explicit catch-all arm here (verified: a `case` with zero matching patterns exits
+    # 0 with nothing printed; simplify pass, dir #161's own /code-review high).
   esac
 }
 
@@ -493,21 +511,29 @@ _normalize_addon_set() {
 # go unnoticed. A nudge for the common case, not a substitute for reading the receipt.
 _warn_dropped_addons() {
   local receipt_key="$1" new_outcome="$2" cwd="${3:-$PWD}"
-  local prev prev_outcome prior_set new_set a label missing=""
-  # dir #161: existence/header/lineage validation is shared with `--recover` via
-  # `_validated_prev_sentinel` (defined above, near `retire_sentinel`) — every failure reason (no
-  # backup, malformed header, foreign lineage) is silent here, the opposite of `--recover`'s loud
-  # refusal, per this function's own header.
+  local raw_prev prev prev_outcome prior_set new_set a label missing=""
+  # dir #161 /code-review high: cheap pre-check, no fork of `git`/`awk` beyond the grep below — most
+  # rounds have no prev backup at all, and there is nothing to compare regardless of lineage. Skipping
+  # straight to the expensive lineage check inside `_validated_prev_sentinel` (a `git merge-base` fork)
+  # before knowing whether the prev file even MENTIONS `polish.5-review` was wasted work on the common
+  # no-op path. `-F` (fixed-string): the step id has no regex metacharacters worth treating specially.
+  raw_prev="$(_prev_sentinel_path_for_key "$receipt_key")"
+  [ -f "$raw_prev" ] || return 0
+  grep -qF -- "$(printf '\tpolish.5-review\t')" "$raw_prev" || return 0
+  # Existence/header/lineage validation is shared with `--recover` via `_validated_prev_sentinel`
+  # (defined above, near `retire_sentinel`) — every failure reason (no backup, malformed header,
+  # foreign lineage) is silent here, the opposite of `--recover`'s loud refusal, per this function's
+  # own header.
   prev="$(_validated_prev_sentinel "$receipt_key" "$cwd")" || return 0
-  # Same header-nonce + last-write-wins idiom `--recover` uses to read the retired sentinel, filtered to
-  # just the one step id this check cares about.
-  prev_outcome="$(awk -F'\t' '
-    NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
-    NF>=3 && pnonce!="" && $1==pnonce && $2=="polish.5-review" { val=$3 }
-    END { print val }
-  ' "$prev")"
+  # Same header-nonce + last-write-wins idiom `--recover` uses (shared via `_prev_sentinel_outcomes`,
+  # above), filtered to just the one step id this check cares about.
+  prev_outcome="$(_prev_sentinel_outcomes "$prev" polish.5-review)"
   [ -n "$prev_outcome" ] || return 0
   prior_set="$(_normalize_addon_set "$prev_outcome")"
+  # Bail before computing `new_set` (a subshell fork) when `prior_set` is empty — the majority case per
+  # the normalization table above (bare `agent:<level>`, `*-waived`, and `skip` all normalize to `{}`)
+  # — the loop below would do nothing with `new_set` in that case anyway.
+  [ -n "$prior_set" ] || return 0
   new_set="$(_normalize_addon_set "$new_outcome")"
   while IFS= read -r a; do
     [ -n "$a" ] || continue
@@ -516,16 +542,21 @@ _warn_dropped_addons() {
     # The NEW set is compared as opaque tokens: the gate already rejects an invented add-on at unlock
     # time, duplicating that check here buys nothing.
     label="$(_addon_label "$a")" || continue
-    if ! printf '%s\n' "$new_set" | grep -qxF -- "$a"; then
-      # Name the raw TOKEN, not just its human label (found by the cross-model second-opinion review,
-      # dir #161): the label alone (e.g. "in-session cross-model second opinion (self-reported...)")
-      # gives the operator nothing to copy-paste back into the receipt — the token is what actually
-      # goes after the `+` in `agent:<level>+<addon>`.
-      missing="${missing:+$missing, }$a ($label)"
-    fi
-  done <<EOF
-$prior_set
-EOF
+    # Pure-bash exact-line membership test — no `printf | grep` fork per token. `$a` is already
+    # allowlist-filtered by `_addon_label` above (only ever `operator-run`/`second-opinion`, both
+    # glob-metacharacter-free), so it is safe to use as a `case` PATTERN here; `$new_set` is only ever
+    # the VALUE being matched, never itself a pattern, so its content needs no such guarantee.
+    case $'\n'"$new_set"$'\n' in
+      *$'\n'"$a"$'\n'*) : ;;
+      *)
+        # Name the raw TOKEN, not just its human label (found by the cross-model second-opinion review,
+        # dir #161): the label alone (e.g. "in-session cross-model second opinion (self-reported...)")
+        # gives the operator nothing to copy-paste back into the receipt — the token is what actually
+        # goes after the `+` in `agent:<level>+<addon>`.
+        missing="${missing:+$missing, }$a ($label)"
+        ;;
+    esac
+  done <<< "$prior_set"
   [ -n "$missing" ] || return 0
   # Advisory only — stderr, and the caller's exit 0 is unaffected either way. Deliberately does not
   # mention either trace marker literal (KEEL-REVIEW-DIALOG/KEEL-DEPTH-DIALOG followed by ": level=") —
@@ -965,6 +996,11 @@ retire_sentinel() {
 # Before this (dir #161), `--recover` carried this exact three-check sequence inline and
 # `_warn_dropped_addons` would have been a second, independent copy of it (flagged live in this ticket's
 # own /simplify pass — reuse, simplification and altitude angles all converged on the same finding).
+# **This function itself carries no trust semantics (found by the cross-model /code-review high pass,
+# dir #161) — the "grants trust" / "grants no trust" language above describes its two CURRENT CALLERS,
+# not this function.** It only checks facts and returns a path + a numeric code; a future third caller
+# must consciously choose its own fail direction (loud vs. silent) for its own use case rather than
+# pattern-matching one of the two existing callers off the language in this comment.
 _validated_prev_sentinel() {
   local key="$1" cwd="${2:-$PWD}" prev prev_header base_sha
   prev="$(_prev_sentinel_path_for_key "$key")"
@@ -979,6 +1015,32 @@ _validated_prev_sentinel() {
     return 3
   fi
   printf '%s\n' "$prev"
+}
+# dir #161 /code-review high: shared by `receipt --recover`'s own replay (which reads ALL steps) and
+# `_warn_dropped_addons` (which reads only ONE) — both read the RETIRED prev sentinel and need no
+# foreign-nonce/MISSING/REPLAY bookkeeping. Contrast the completeness parser elsewhere in this file
+# (search `EXPECTED_STEPS`), which reads the LIVE sentinel and does need that extra state for its
+# PASS/MISSING/REPLAY verdict — dir #72 finding #6 already argued, and this still holds, for why THAT
+# one stays a separate implementation rather than sharing with either of these two. $1 = the prev
+# sentinel file (assumed already header-validated by the caller, e.g. via `_validated_prev_sentinel`).
+# $2 = an optional step id filter: given, prints only that step's outcome (nothing if it was never
+# written under the matching nonce); omitted, prints "step<TAB>outcome" for every step, in first-seen
+# order — the shape `--recover` needs to replay them all. If the receipt line FORMAT itself ever
+# changes (delimiter, field count), this is now the ONE place that needs the matching edit for both
+# consumers.
+_prev_sentinel_outcomes() {
+  awk -F'\t' -v want="${2:-}" '
+    NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
+    NF>=3 && pnonce!="" && $1==pnonce {
+      if (want!="" && $2!=want) next
+      if (!($2 in val)) order[++n]=$2
+      val[$2]=$3
+    }
+    END {
+      if (want!="") { print val[want]; exit }
+      for (i=1;i<=n;i++) print order[i] "\t" val[order[i]]
+    }
+  ' "$1"
 }
 # dir #72: shared by `receipt --recover` and the ordinary `receipt <step-id>` path (both need "is there
 # an active receipt, and what's its nonce" before doing anything else) — sets $sentinel/$nonce in the
@@ -1109,6 +1171,13 @@ case "${1:-}" in
       # test-binding check below for when it still can't). The gate's own completeness/sha/trace checks
       # are untouched either way, so a recovered-but-now-stale value can never itself unlock it.
       require_active_receipt
+      # `prev`'s path is recomputed here even though `_validated_prev_sentinel` (below) derives the
+      # identical value internally — reviewed live (cross-model /code-review high, dir #161) and kept
+      # deliberately: this block's own message #2 needs `$prev`'s VALUE for its text, and the shared
+      # function's bare 1/2/3 return-code signature has no channel to hand it back without widening that
+      # signature for a caller-specific need. Same reasoning covers the `base_sha` re-derivation on the
+      # `rc=3` branch below — real, minor duplication, judged not worth complicating a shared,
+      # security-adjacent validator's signature to remove.
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
       # dir #161: the exists/header/lineage checks below now live once, in `_validated_prev_sentinel`
       # (shared with `_warn_dropped_addons`) — this block keeps its own three distinct, loud messages
@@ -1131,23 +1200,11 @@ case "${1:-}" in
         esac
         exit 1
       fi
-      # dir #72 finding #6: this implements the same "header nonce, then last-write-wins per step id
-      # among lines matching it" idiom as the completeness parser below (search `EXPECTED_STEPS` in
-      # this file) — kept as its own awk block rather than a shared primitive: this one reads the
-      # RETIRED sentinel and needs no foreign-nonce/MISSING/REPLAY bookkeeping, while the completeness
-      # parser reads the LIVE one and needs exactly that extra state for its PASS/MISSING/REPLAY
-      # verdict. Forcing a shared helper would need mode parameters for that difference — reviewed as a
-      # net complexity cost, not a win, for ~6 lines of duplicated idiom (verified during this ticket's
-      # own /code-review pass). If the receipt line FORMAT itself ever changes (delimiter, field count),
-      # both this block and the completeness parser need the matching edit.
-      recovered="$(awk -F'\t' '
-        NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
-        NF>=3 && pnonce!="" && $1==pnonce {
-          if (!($2 in val)) order[++n]=$2
-          val[$2]=$3
-        }
-        END { for (i=1;i<=n;i++) print order[i] "\t" val[order[i]] }
-      ' "$prev")"
+      # dir #72 finding #6 / dir #161: reads the RETIRED sentinel via `_prev_sentinel_outcomes` (shared
+      # with `_warn_dropped_addons`, above) — see that function's own header for why it does NOT also
+      # share with the completeness parser below (`EXPECTED_STEPS`), which reads the LIVE sentinel and
+      # needs extra MISSING/REPLAY bookkeeping this one doesn't.
+      recovered="$(_prev_sentinel_outcomes "$prev")"
       if [ -z "$recovered" ]; then
         printf 'pre-pr-gate: prior receipt had no completed steps to recover\n' >&2
         exit 1
@@ -2114,25 +2171,25 @@ case "$status" in
                          # either way, and `sweep` classifies on $prov_tag, which this doesn't touch.
                          outcome_level="${review_outcome#agent:}"
                          addons="${outcome_level#*+}"
-                         # Walk the comma-separated set by parameter expansion only — no word splitting,
-                         # no IFS, no globbing. Two earlier drafts each shipped a bug this shape avoids,
-                         # both found by review: an `IFS=','` save/restore pair (whose `break` left IFS
-                         # set inside a hook whose \x1f receipt read depends on it), then a
-                         # `for a in ${addons//,/ }` split which — unquoted, and this script sets only
-                         # `-u`, not `-f` — also ran PATHNAME EXPANSION on the set, i.e. a glob in a
-                         # trust-boundary parse. This form has neither hazard, and an empty element
-                         # (`+,` or `+,,`) reaches `_addon_label` as the empty string and is DENIED by its
-                         # own `*)` arm, where the word-split version silently produced zero elements and
+                         # `_split_comma_set` (shared with `_normalize_addon_set`, dir #161's own
+                         # /code-review high pass) does the no-word-split, no-glob comma walk — two
+                         # earlier drafts of THIS walk each shipped a bug this shape avoids, both found
+                         # by review: an `IFS=','` save/restore pair (whose `break` left IFS set inside a
+                         # hook whose \x1f receipt read depends on it), then a `for a in ${addons//,/ }`
+                         # split which — unquoted, and this script sets only `-u`, not `-f` — also ran
+                         # PATHNAME EXPANSION on the set, i.e. a glob in a trust-boundary parse. Consuming
+                         # it via `while read ... done < <(...)` (not a pipe) keeps `addons_ok`/
+                         # `addon_prose` in THIS shell, not a subshell — `break` still works normally.
+                         # The shared splitter yields an empty element too (`+,` or `+,,`), which reaches
+                         # `_addon_label` as the empty string and is DENIED by its own `*)` arm below,
+                         # where a word-split version would have silently produced zero elements and
                          # accepted the receipt — see the $addon_prose guard below.
                          addons_ok=1
                          addon_prose=""
-                         rest="$addons"
-                         while [ -n "$rest" ]; do
-                           a="${rest%%,*}"
-                           if [ "$rest" = "$a" ]; then rest=""; else rest="${rest#*,}"; fi
+                         while IFS= read -r a; do
                            p="$(_addon_label "$a")" || { addons_ok=0; break; }
                            addon_prose="$addon_prose + $p"
-                         done
+                         done < <(_split_comma_set "$addons")
                          # This guard is what rejects an empty SUFFIX (`agent:<level>+`) — the walk runs
                          # zero iterations there, so nothing else would. Against the current walk it is
                          # equivalent to `-n "$addons"`, but it is the right one to WRITE: it states the

@@ -366,6 +366,15 @@ Steps, in order:
      warning naming it (dir #161) — advisory, never a deny, because only you know whether the fix commit
      removed the reviewed work.
 
+     **This warning is a MANDATORY read, not a line to let scroll past (found by an operator-run
+     `/code-review high` pass, dir #161's own PR).** It is printed to stderr on an ordinary, successful
+     `exit 0` — nothing about the tool call itself flags it, unlike a real deny. Every `receipt
+     polish.5-review <outcome>` call's full output (not just its exit status) must be read before moving
+     on. If it names a dropped add-on: either re-run the receipt with the full set (the reviewed work is
+     still in HEAD — the common case), or, if the fix commit genuinely removed that reviewed work, say so
+     explicitly in the step 10 summary rather than silently letting the narrower outcome stand — a
+     deliberate drop is legitimate, but it still needs to be a stated decision, not an unnoticed one.
+
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
      still waits for the operator, dir #81 fork 4), then resolve what it reported and write the COMBINED
