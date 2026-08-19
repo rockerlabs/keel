@@ -186,7 +186,13 @@ report_hits() {
   done <<< "$files"
 }
 
-md_files="$(git -C "$repo_dir" ls-files '*.md' | sort)"
+# `|| true`: an unusual environment can make `git` itself fail outright here (e.g. a container
+# reading a bind-mounted repo it does not own emits "detected dubious ownership" and exits 128,
+# felt live on this project's own alpine-busybox CI leg) — under `set -o pipefail` that would
+# otherwise abort this whole script at the assignment. doctor.sh's own git-backed checks already
+# degrade the same way rather than crash; this keeps prose-drift.sh consistent with that rather
+# than being the one check that takes doctor.sh down with it via its own `|| exit_code=1`.
+md_files="$(git -C "$repo_dir" ls-files '*.md' | sort || true)"
 # Reuses tools/self/shellcheck-targets.sh's own enumeration rather than a hand-rolled `*.sh` glob —
 # that script exists specifically because a plain pathspec misses shebang-only, extensionless
 # scripts (e.g. tools/secret-guard/pre-commit and pre-push both slipped through a bare glob here
