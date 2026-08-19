@@ -136,6 +136,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   [`docs/drydock.md`](docs/drydock.md) as the worked instantiation). `docs/drydock.md` now opens with a
   line naming itself that instantiation, and `FRAMEWORK.md` gains a 4-line pointer to the pattern from
   its "Loop model" section.
+- **`tests/test_tour_transcript.sh`** (dir #168) — mechanizes the class of drift behind 5 of drydock
+  run 1's `examples/README.md` findings (a stale console transcript, silently out of date against the
+  live tools). Runs `examples/tour.sh` sandboxed and byte-compares its normalized output against the
+  README's own fenced transcript, normalizing only per the README's own disclosed rules (path
+  abbreviation, key masking) plus one mechanical fence-capture trim and one host-grep-capability
+  variance rule — all five documented in the test's own header so the comparison is verifiably fair,
+  not lossy. An operator-run `/code-review medium`, verified live against real `alpine:3.21` and
+  `ubuntu:24.04` containers (the macOS-only local run couldn't surface these), found and fixed two more
+  cross-platform bugs in the test itself before it shipped — see Fixed, below, for the third, a
+  pre-existing bug in `secret-scan.sh` the same review surfaced.
 
 ### Changed
 - **A `new_repo_with_origin()` fixture helper in `tests/lib.sh`** (dir #173). The "sandbox repo plus a
@@ -181,6 +191,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   belongs in it while the work it reviewed is still in HEAD.
 
 ### Fixed
+- **`secret-scan.sh`'s `emit_diff()` leaked a stray `+` into every BLOCKED diagnostic built from a
+  staged-diff scan (the normal `git commit` hook path) on Alpine/BusyBox** (dir #168, found by an
+  operator-run `/code-review medium` verifying `tests/test_tour_transcript.sh` live in an
+  `alpine:3.21` container). The line-stripping `sed 's/^\+//'` relies on GNU sed's non-portable `\+`
+  extension ("one or more of the preceding atom") to match a literal leading `+`; BusyBox sed has no
+  such extension, so the pattern matches nothing and the `+` survives into the printed record —
+  e.g. `config.txt:+aws_key = "..."` instead of `config.txt:aws_key = "..."`. Pre-existing on every
+  CI leg since the hook shipped, invisible until a test byte-compared the exact diagnostic text.
+  Fixed to the portable `sed 's/^+//'` (no escaping needed for a literal `+` in BRE); verified live
+  on both `alpine:3.21` and `ubuntu:24.04`.
 - **`tools/self/shellcheck-targets.sh` dropped non-ASCII paths and returned 1 on a healthy repo**
   (found by dir #170's independent review, which made this script a consumer for the first time).
   Two defects, both invisible while every caller ignored the output's completeness and its exit

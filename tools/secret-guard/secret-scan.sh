@@ -207,9 +207,13 @@ emit_diff() {
   local path="$1"; shift   # remaining args = git diff args
   local dtmp
   dtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
+  # `sed 's/^+//'`, NOT `'^\+'`: BRE has no standard meaning for `\+` (GNU sed's "one or more"
+  # extension), and BusyBox sed (Alpine CI leg) treats it as literal backslash-then-plus — matching
+  # nothing, so the leading '+' from the diff's added-line marker survives unstripped and leaks into
+  # every emitted record. '+' needs no escaping in BRE to match itself.
   git diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null \
     | grep -E '^\+' | grep -vE '^\+\+\+' \
-    | sed 's/^\+//' > "$dtmp" || true
+    | sed 's/^+//' > "$dtmp" || true
   while IFS= read -r hit; do
     records+="$path:$hit"$'\n'
   done < <(match_text '' "$dtmp")
