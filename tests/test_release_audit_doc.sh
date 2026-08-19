@@ -77,7 +77,7 @@ fi
 # delta rounds missed it (each sees only its own delta; the divergence opened between them); an
 # operator-run /code-review caught it. Nothing coupled the two, so nothing could have.
 #
-# These three pins cover the DOC leg only; the code leg is covered behaviourally elsewhere — see the
+# These four pins cover the DOC leg only; the code leg is covered behaviourally elsewhere — see the
 # note below the pins for why that split is deliberate.
 pin "release-audit.md phase 7 states the allowance's FIRST condition (newest heading)" \
   "$audit" 'it is the newest heading in the file' \
@@ -90,16 +90,24 @@ pin "release-audit.md phase 7 states the allowance's SECOND condition (version a
 pin "release-audit.md phase 7 names the allowance's linear-release-line limit" \
   "$audit" 'linear release line' \
   "the version condition GAPs a legitimate backport cut below the newest tag; phase 7 must keep saying so, or the doc over-promises again"
+# dir #156: the THIRD condition (the commit-distance bound) — added after this file's own comment
+# below predicted exactly this drift ("add a third conjunct... and all three stay green"). Same
+# single-line-fragment discipline as the pin above.
+pin "release-audit.md phase 7 states the allowance's THIRD condition (commit-distance bound)" \
+  "$audit" 'cut no more than `KEEL_PENDING_RELEASE_MAX_COMMITS` commits ago' \
+  "self/doctor.sh's allowance now has a third conjunct (dir #156) bounding how long a pending section stays exempt — if phase 7 stops saying so, a forgotten tag reads as permanently pending again"
 # **The CODE leg is deliberately NOT pinned here** — it is covered behaviourally in
 # `tests/test_self_doctor.sh`, whose own comment carries the argument for why a shape-grep here would be
 # worse than useless. Prose pinned here, behaviour pinned there.
 #
 # **Named limit of this guard, so nobody mistakes its reach:** these pins catch the DELETION of a stated
 # condition, not the felt failure that motivated dir #157 — code GAINING a condition the doc never
-# stated. Add a third conjunct to the allowance tomorrow and all three stay green while phase 7
-# under-promises again. The real fix is the generated-embed shape this repo already uses for
-# CORE.md ↔ templates/CLAUDE.md (tests/test_core_wrapper_sync.sh): have the conditions live once and
-# transclude them into phase 7. Filed rather than built here — see dir #160.
+# stated. dir #156 is exactly that failure, caught only because a human read both sides while making the
+# change, not because this file would have caught it — add a FOURTH conjunct tomorrow and all four pins
+# stay green while phase 7 under-promises again. The real fix is the generated-embed shape this repo
+# already uses for CORE.md ↔ templates/CLAUDE.md (tests/test_core_wrapper_sync.sh): have the conditions
+# live once and transclude them into phase 7. Still filed rather than built here — see dir #160, which
+# rebases onto dir #156 and now has a live three-conjunct specimen to build the coupling against.
 
 # --- dir #140's own acceptance: every phase names its felt incident (a "Felt incident" tag), so a
 # future edit can't quietly turn a phase back into unmotivated prose. Phase 0 is the one documented

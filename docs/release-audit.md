@@ -130,19 +130,25 @@ That ordering has a consequence worth stating, because it is otherwise only visi
 **between the cut and the tag, the newest `## [x.y.z]` section legitimately has no tag** — for the
 whole life of the release-prep PR, and on `main` until the tag lands. Any check reconciling CHANGELOG
 sections against git tags has to allow that one section, or it reds the very PR this phase asks for.
-`tools/self/doctor.sh`'s own reconciliation does, on **two** conditions the section must meet together:
-it is the newest heading in the file, AND its version sorts above every existing tag. It then prints a
-standing `release in preparation` line naming the section until the tag closes it out — **that line is
-the phase's own open loop: it is only correct while a tag is genuinely pending, so if you see it on
-`main` and no release is in flight, the tag was forgotten.**
+`tools/self/doctor.sh`'s own reconciliation does, on **three** conditions the section must meet
+together: it is the newest heading in the file, its version sorts above every existing tag, AND the
+section was cut no more than `KEEL_PENDING_RELEASE_MAX_COMMITS` commits ago (env-overridable, default
+40). It then prints a standing `release in preparation` line naming the section until the tag closes
+it out — **that line is the phase's own open loop, and it is now bounded, not open-ended: it is only
+correct while a tag is genuinely pending, and once HEAD is more than the bound past the cut, the check
+stops taking your word for it and GAPs instead, naming the section and the bound.**
 
-The second condition is what stops a stale section hoisted to the top — by a deleted tag, a bad merge —
-from being waved through as a release in preparation. **It also means this phase, as written, assumes a
-linear release line.** Cutting a backport below the newest tag (tags `v1.0.0`/`v1.1.0`/`v2.0.0` and a
-`## [1.0.1]` placed on top, which Keep a Changelog's date ordering makes correct) satisfies the first
-condition and fails the second, so `self-check` reds that release-prep PR. That failure is loud,
-immediate, and names the section — fix the check when a real backport arrives, rather than pre-building
-for one; just don't be surprised by it.
+The second condition stops a stale section hoisted to the top — by a bad merge, or by a tag deleted
+while a HIGHER tag still stands — from being waved through as a release in preparation. It does **not**
+stop a deleted tag that was the topmost section's **own**, with no remaining tag left above it — by
+construction that is byte-identical to a genuine release in preparation, and it is the third condition
+(the commit-distance bound, dir #156) that closes that gap instead, once the deletion is far enough
+past the cut. **The second condition also means this phase, as written, assumes a linear release line.**
+Cutting a backport below the newest tag (tags `v1.0.0`/`v1.1.0`/`v2.0.0` and a `## [1.0.1]`
+placed on top, which Keep a Changelog's date ordering makes correct) satisfies the first condition and
+fails the second, so `self-check` reds that release-prep PR. That failure is loud, immediate, and names
+the section — fix the check when a real backport arrives, rather than pre-building for one; just don't
+be surprised by it.
 
 Felt incident, twice over: the allowance itself was found missing by v0.6.1's own RC pass, one release
 after the reconciliation check shipped (v0.6.0's section predated the check by a single PR, so the
@@ -150,7 +156,10 @@ release that introduced the check was also the last one that could not have trip
 then this very paragraph shipped stating only the first condition, because it was written before an
 independent review forced the second one into the code. An operator-run `/code-review high` caught the
 mismatch inside the same PR. Phase 6's stale-phrase sweep is exactly this class; a doc describing a
-check is as prone to it as a comment.
+check is as prone to it as a comment. A third time over: the two-condition version above was itself
+found to permanently downgrade one instance of the check's own founding-incident class (a tag deleted
+after having existed) to a standing green line, with no time bound — found by dir #155's own `/polish`
+altitude pass, closed by dir #156's commit-distance bound.
 
 ## Deliverable
 

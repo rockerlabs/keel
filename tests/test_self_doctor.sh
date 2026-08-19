@@ -872,6 +872,125 @@ run "$sd" "$d" --quiet
 check_status "an untagged section below a tagged one -> exit 1" 1 "$STATUS"
 check_contains "names the buried untagged section" "$OUT" "1.0.5"
 
+# --- dir #156: bound the release-in-preparation allowance by commit distance -----------------------
+# The two conditions above (newest heading, version above every tag) make a genuinely FORGOTTEN tag
+# indistinguishable from one still pending — including a live recurrence of this check's own founding
+# incident (dir #115/PR #118): delete a tag that was the topmost section's OWN, with no remaining tag
+# above it, and the fixture above's exact shape results. Reproduced live during the design pass before
+# any code was written (fixture D below is that reproduction). KEEL_PENDING_RELEASE_MAX_COMMITS=3 for
+# A-D so a handful of `git commit --allow-empty` stand in for the shipped default of 40 (fixture F
+# pins the real default separately, without manufacturing 41 commits).
+
+# A: legitimately pending, distance 2, bound 3 -> still exempt. NON-quiet: the announcement is a `say`
+# line, invisible under --quiet, so a presence assertion needs the full run.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, PR open, not tagged yet\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 ahead of its tag" && git tag v1.0.0 \
+  && git commit -q --allow-empty -m "empty 1" && git commit -q --allow-empty -m "empty 2" )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "A: distance 2 within bound 3 -> exit 0" 0 "$STATUS"
+check_absent "A: no reconciliation GAP while still within the bound" "$OUT" "GAP"
+check_contains "A: pending announcement present" "$OUT" "cut but not tagged yet"
+check_contains "A: names the version" "$OUT" "1.1.0"
+
+# B: same shape, distance 4, bound 3 -> the tag was forgotten, not merely pending. NON-quiet, same
+# reason as A — `check_absent` on the old announcement phrase needs it to be observable at all.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, then the tag was forgotten\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.0.0 \
+  && for i in 1 2 3 4; do git commit -q --allow-empty -m "empty $i"; done )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "B: distance 4 past bound 3 -> exit 1" 1 "$STATUS"
+check_contains "B: dedicated GAP names the version" "$OUT" "'## [1.1.0]' was cut"
+check_contains "B: dedicated GAP names the bound" "$OUT" "bound: 3"
+check_absent "B: no longer excused as a release in preparation" "$OUT" "cut but not tagged yet"
+
+# C: distance exactly AT the bound -> still exempt. Pins `>`, not `>=` (a boundary off-by-one would
+# red this fixture alone, not A/B/D).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, right at the bound\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.0.0 \
+  && for i in 1 2 3; do git commit -q --allow-empty -m "empty $i"; done )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d" --quiet
+check_status "C: distance exactly at the bound (3) stays exempt -> exit 0 (pins > not >=)" 0 "$STATUS"
+
+# D: THE residual-case-2 fixture — a deleted tag that was the topmost section's OWN, no remaining tag
+# above it, reproduced live during dir #156's design pass before any code existed. Proves the founding
+# incident (dir #115/PR #118) is closed: without the bound, this reads as a clean "release in
+# preparation" forever (byte-identical to the real thing by construction). NON-quiet, same reason as
+# A/B.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-01\n- cut and tagged, then the tag was deleted\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.1.0 && git tag -d v1.1.0 \
+  && for i in 1 2 3 4; do git commit -q --allow-empty -m "empty $i"; done )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "D: founding-incident class (dir #115/PR #118) is closed -> exit 1" 1 "$STATUS"
+check_contains "D: dedicated GAP fires on the deleted-topmost-tag shape" "$OUT" "'## [1.1.0]' was cut"
+check_absent "D: no longer waved through as a release in preparation" "$OUT" "cut but not tagged yet"
+
+# E: the bound is UNRESOLVABLE — a section cut in the working tree but never committed, so the exact
+# heading text never appears anywhere in CHANGELOG.md's tracked history and the pickaxe genuinely
+# returns empty (verified live during the design pass — a bare non-existent string was already known
+# to return empty; an uncommitted file was the TO VERIFY case). Fails OPEN: keep the allowance, say so.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut but never committed\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+run "$sd" "$d"
+check_status "E: bound unresolvable (uncommitted section) -> exit 0, allowance held" 0 "$STATUS"
+check_contains "E: announcement says the bound was not computed" "$OUT" "bound not computed"
+check_contains "E: still announced as pending, not silently tolerated" "$OUT" "cut but not tagged yet"
+
+# F: default-value pin — extract the shipped default (40) out of tools/self/doctor.sh itself, the same
+# eval-out-of-source idiom tests/test_keel_impact.sh:606-618 uses for _LEDGER_COLS, rather than
+# manufacturing 41 real commits just to watch the default kick in.
+default_line="$(grep -nF 'pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"' "$sd" | head -1 | cut -d: -f1)"
+if [ -z "$default_line" ]; then
+  fail "F: KEEL_PENDING_RELEASE_MAX_COMMITS default located in tools/self/doctor.sh" \
+    "no line matching the expected assignment found in $sd"
+else
+  unset KEEL_PENDING_RELEASE_MAX_COMMITS
+  eval "$(sed -n "${default_line}p" "$sd")"
+  # shellcheck disable=SC2154  # pending_max_commits is assigned by the eval just above, not statically
+  if [ "$pending_max_commits" = 40 ]; then
+    pass "F: shipped default for KEEL_PENDING_RELEASE_MAX_COMMITS is 40"
+  else
+    fail "F: shipped default for KEEL_PENDING_RELEASE_MAX_COMMITS is 40" "found: $pending_max_commits"
+  fi
+fi
+
+# G: a version number CUT, then REVERTED (folded back into [Unreleased]), then LATER genuinely re-cut
+# fresh with the SAME number (found by an operator-run `/code-review high` pass on this ticket,
+# reproduced live). Locks in TWO fixes together: (1) `_pending_release_intro_commit` must resolve the
+# FRESH re-introduction, not the stale original cut — an earlier `tail -1` version measured distance
+# from the wrong, much older commit and would false-GAP this fixture; (2) resolving it via `git log -S
+# ... | head -1` (an earlier version of the fix for (1)) reproducibly CRASHED THE WHOLE SCRIPT under
+# `set -o pipefail` (`head` closing its read end early SIGPIPEs `git log`, and pipefail turns that into
+# a script-ending failure) — `-n 1` on the git invocation itself has no such pipe to break. Non-quiet:
+# the announcement's distance figure is the whole point of this fixture.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.0.0 )
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "revert 1.1.0, folded back into Unreleased" \
+  && for i in 1 2; do git commit -q --allow-empty -m "filler $i"; done )
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-08\n- re-cut fresh\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "re-cut 1.1.0 fresh" )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "G: script does not crash (SIGPIPE-under-pipefail regression) -> exit 0" 0 "$STATUS"
+check_absent "G: no reconciliation GAP for the freshly re-cut section" "$OUT" "GAP"
+check_contains "G: distance measured from the FRESH re-cut (0 commits), not the stale original" "$OUT" \
+  "0 commit(s) since cut"
+check_contains "G: pending announcement present" "$OUT" "cut but not tagged yet"
+
 # section-count invariant: a DUPLICATED heading (e.g. a bad merge). Both directional checks pass —
 # every tag NAME has a matching section and vice versa, since `sort -u` dedupes the name lists — so
 # only the raw section-count invariant, comparing sections found to tags + Unreleased, catches the
