@@ -9,6 +9,29 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Added
+- **`tests/test_sweep_outcome_coherence.sh`** (dir #166, drydock run 1 ratchet). CORE.md's Persist
+  rail, `commands/wrap.md`, `commands/global-review.md`, and `FRAMEWORK.md` each restate, in prose,
+  the set of outcomes a red-flag-sweep finding can land in (a backlog ticket, a committed/promoted
+  rule, the `LEARNINGS.md` staging tier, the `IDEAS.md` staging tier, or an explicit drop) — manual
+  coherence across four independent surfaces provably does not hold: phase 6's closing re-check
+  (`private/audit/phase6-recheck.md`, finding P6-1) found `commands/global-review.md` still missing
+  the rule outcome — PR #213 had fixed a different gap in the same paragraph (a missing `IDEAS.md`
+  outcome) without catching this one. The new test extracts each surface's own sweep
+  paragraph and checks it names all five canonical tokens, extended (P6-3) to two more files that
+  describe their own place in the sweep (`IDEAS.md`, `templates/LEARNINGS.md`) after PRs #212 and
+  #213 landed individually-correct fixes that contradicted each other within a day. Fixed P6-1 in the
+  same PR (`commands/global-review.md` now names the rule outcome). Mutation-tested: an independent
+  agent review and a cross-model second opinion both found the initial token patterns too loose —
+  `commands/global-review.md`'s sweep paragraph was immediately followed, same paragraph, by an
+  unrelated `LEARNINGS.md`-pruning sentence that incidentally contained the words "LEARNINGS.md" and
+  "drop", so removing the real outcome mentions didn't red the suite. A later `/code-review` pass found
+  the test-side truncation this was first fixed with was itself a bandaid — `commands/global-review.md`
+  was the only one of the four surfaces with an unrelated sentence trailing its outcome paragraph with
+  no blank line, so the paragraph is now split in two (matching the other three surfaces' shape) and
+  the shared extraction helper handles all four surfaces uniformly, no per-file truncation logic
+  needed. The P6-3 header checks also moved from a fixed 10-line window to an anchor-based extraction
+  (everything before the first `## ` heading) after a mutation showed a legitimate header-prose grow
+  could push the real content out of a fixed window.
 - **`docs/parallel-sessions.md`** (dir #172, captured after four independent first-person loss reports
   in one week — a deleted migration, a wiped working directory, a reset that dropped built-and-tested
   commits, and keel's own silent race on a symlinked file). A worktree gives you parallelism, not
@@ -246,6 +269,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   question, and `tools/self/doctor.sh` already reconciles CHANGELOG sections against git tags and already
   calls `gh` best-effort, so it is the natural home — not built here, so the live v0.6.1 release still
   needs the operator's own `gh release edit`.
+- **`docs/loading-and-cost.md` was missing an `IDEAS.md` row its own "File by file" table should have
+  had** (dir #167, the drydock run-1 phase-6 re-check's P6-2). The same PR #211 batch had added an
+  `IDEAS.md` row to `docs/getting-started.md`'s parallel table but never the matching row here, and
+  nothing checked the two tables named the same file set. Also unguarded: the "one-off ~16.4K for one
+  decision" line derived from the table's own FRAMEWORK.md + PRINCIPLES.md figures — a prior version
+  said "~12K" against the same table's own ~16,450, hand-fixed in PR #211 with the arithmetic itself
+  left unchecked. `tests/test_doc_figures.sh` now re-derives that sum from the table's own quoted
+  addends and asserts the two tables' file sets match; both checks are mutation-proven (perturbing the
+  quoted sum, or dropping the `IDEAS.md` row, independently red the suite).
 
 ## [0.6.1] — 2026-08-14
 
