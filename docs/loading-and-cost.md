@@ -31,6 +31,7 @@ the table above.
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,950 |
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
+| `IDEAS.md` (from `templates/IDEAS.md`) | on demand — staging a raw, not-yet-actionable idea | The earliest staging tier, one step before `LEARNINGS.md`/`BACKLOG.md`. | ~290 |
 | `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~3,750 |
 | `CHANGELOG.md` | on demand — release history | Reference. | ~60,000+ |
 | `commands/*.md` | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–1,450+ each |

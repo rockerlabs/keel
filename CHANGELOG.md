@@ -249,6 +249,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   question, and `tools/self/doctor.sh` already reconciles CHANGELOG sections against git tags and already
   calls `gh` best-effort, so it is the natural home — not built here, so the live v0.6.1 release still
   needs the operator's own `gh release edit`.
+- **`docs/loading-and-cost.md` was missing an `IDEAS.md` row its own "File by file" table should have
+  had** (dir #167, the drydock run-1 phase-6 re-check's P6-2). The same PR #211 batch had added an
+  `IDEAS.md` row to `docs/getting-started.md`'s parallel table but never the matching row here, and
+  nothing checked the two tables named the same file set. Also unguarded: the "one-off ~16.4K for one
+  decision" line derived from the table's own FRAMEWORK.md + PRINCIPLES.md figures — a prior version
+  said "~12K" against the same table's own ~16,450, hand-fixed in PR #211 with the arithmetic itself
+  left unchecked. `tests/test_doc_figures.sh` now re-derives that sum from the table's own quoted
+  addends and asserts the two tables' file sets match; both checks are mutation-proven (perturbing the
+  quoted sum, or dropping the `IDEAS.md` row, independently red the suite).
 
 ## [0.6.1] — 2026-08-14
 
