@@ -15,8 +15,12 @@
 #      README's literal stand-in path `/tmp/demo`, wherever it appears (as the project dir, the HOME
 #      dir, or inside a nested message like the keel-impact gitignore note).
 #   2. Path abbreviation — this repo's own absolute checkout root (which tour.sh's `show()` prints as
-#      part of each `$ <tool>` command line) is replaced with `.`, matching how the README shows
-#      `./tools/doctor.sh ...` rather than a machine-specific absolute path.
+#      part of each `$ <tool>` command line), followed by a path separator, is replaced with `./`,
+#      matching how the README shows `./tools/doctor.sh ...` rather than a machine-specific absolute
+#      path. The trailing `/` is load-bearing, not cosmetic: a bare `${REPO_ROOT}` match would also
+#      hit `$REPO_ROOT` as a plain substring prefix of an unrelated string that merely starts the same
+#      way — confirmed live on the Alpine leg, where `$REPO_ROOT` is `/keel` and doctor.sh's own
+#      "run /keel-score to score" hint collapsed into "run .-score to score" without this anchor.
 #   3. Key masking — the real planted AWS-shaped key tour.sh commits is replaced with the README's
 #      disclosed masked form (`AKIA…REDACTED…`); secret-guard's own BLOCKED output has no masking of
 #      its own — the masking is an editorial choice on the README's part, not a claim about what
@@ -25,6 +29,16 @@
 #      tour.sh's step() helper prints a blank line before EVERY heading, including the first; a Markdown
 #      code fence pasted from a terminal naturally starts at the first real line of output, not a
 #      blank one, so this drops only that one leading artifact and nothing else.
+#   5. Host-grep-capability variance in install-secret-guard.sh's own selftest (confirmed live on
+#      Alpine/BusyBox, the CI matrix's third leg): secret-scan.sh's selftest() probes whether this
+#      host's `grep -E` flags a malformed ERE (see its own comment there) — GNU/BSD grep does, so the
+#      probe prints an indented "OK — malformed personal regex fails CLOSED" line; BusyBox grep
+#      doesn't, so it prints an unindented "WARN — this grep does not flag a malformed ERE..." line
+#      to stderr INSTEAD, which — because it's unbuffered stderr racing a buffered stdout pipe
+#      (`| sed 's/^/  /'` in install-secret-guard.sh) — lands at a different position in the captured
+#      transcript entirely. This is the tool honestly reporting a host capability, not the tool's
+#      output changing meaning, so both known forms are dropped from BOTH sides before comparing
+#      (position-independent — see the note above about why position can't be preserved).
 #
 # No other content difference is normalized away — an actual output change (a new step, a reworded
 # line, a different WARN/HINT count) survives the pipeline below and fails the diff.
@@ -48,11 +62,15 @@ sandbox_re='(/private)?(/var/folders/[^ ]*/T/tmp\.[A-Za-z0-9]+|/tmp/tmp\.[A-Za-z
 planted_key="$(key 'AKIA' 'IOSFODNN7EXAMPLE')"
 live="$(printf '%s\n' "$OUT" \
   | sed -E "s#${sandbox_re}#/tmp/demo#g" \
-  | sed -e "s#${REPO_ROOT}#.#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
+  | sed -e "s#${REPO_ROOT}/#./#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
   | awk 'NR==1 && $0==""{next}{print}')"  # rule 2, rule 3, rule 4
 
+# Rule 5: drop both known forms of the host-grep-capability selftest line, on both sides.
+grep_variance='selftest:.*malformed personal regex fails CLOSED|selftest: WARN — this grep does not flag a malformed ERE'
+live="$(printf '%s\n' "$live" | grep -Ev "$grep_variance")"
+
 # The README's own fenced transcript (the ```console block under "What it looks like").
-expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme")"
+expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme" | grep -Ev "$grep_variance")"
 
 if [ "$live" = "$expected" ]; then
   pass "normalized tour.sh output matches examples/README.md's transcript"
