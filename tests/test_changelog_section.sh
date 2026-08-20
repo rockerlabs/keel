@@ -193,6 +193,17 @@ exit 1
 EOF
 chmod +x "$edit_repo/bin/editor-fail.sh"
 
+# fail-after-write: writes real content, THEN exits nonzero — a --wait wrapper's own housekeeping
+# failing, a window-close race, or a Ctrl-C can all leave genuine curated content behind even though
+# the editor itself reports failure. Proves that content is not silently destroyed by the cleanup trap.
+cat > "$edit_repo/bin/editor-fail-after-write.sh" <<'EOF'
+#!/bin/sh
+eval 'f="${'"$#"'}"'
+printf '\nUSER TYPED THIS\n' >> "$f"
+exit 3
+EOF
+chmod +x "$edit_repo/bin/editor-fail-after-write.sh"
+
 notes_out="$SANDBOX/edit-notes-ok.md"
 rm -f "$notes_out"
 run env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_out"
@@ -222,5 +233,36 @@ check_contains "notes-file is left untouched on editor failure" "$(cat "$notes_u
 run env -u EDITOR "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$SANDBOX/edit-notes-unset.md"
 check_status "--edit with \$EDITOR unset -> nonzero exit" 1 "$STATUS"
 check_contains "clear message, no bare \$EDITOR sigil (bash/zsh escaping trap)" "$OUT" "set the EDITOR environment variable"
+
+# regression (medium code-review finding): an editor that WRITES real content and THEN exits
+# nonzero must not have that content silently destroyed by the cleanup trap — only a `cp` failure
+# was hardened this way before; an editor failure has to be too.
+notes_after_write="$SANDBOX/edit-notes-fail-after-write.md"
+rm -f "$notes_after_write"
+run env "EDITOR=$edit_repo/bin/editor-fail-after-write.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_after_write"
+check_status "--edit whose editor writes content then fails -> nonzero exit" 1 "$STATUS"
+check_contains "notes-file itself still not written (editor failure never copies)" "$([ -f "$notes_after_write" ] && cat "$notes_after_write" || echo NOTHING_WRITTEN)" "NOTHING_WRITTEN"
+check_contains "failure names a recoverable scratch-file path" "$OUT" "preserved at"
+recovered_scratch="$(printf '%s\n' "$OUT" | sed -n 's/.*preserved at \(.*\)$/\1/p')"
+check_contains "the scratch file with the user's real content actually survives on disk" \
+  "$(cat "$recovered_scratch" 2>/dev/null)" "USER TYPED THIS"
+rm -f "$recovered_scratch"
+
+# regression (cross-model second-opinion review finding): a flag-shaped <notes-file> must not be
+# read as a `cp` option — BSD and GNU `cp` disagree on unknown long options, so an unguarded `cp`
+# would silently create a file literally named `--digest` on one platform and abort on the other.
+notes_flag_shaped="$edit_repo/--digest"
+rm -f "$notes_flag_shaped"
+run_in "$edit_repo" env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "--digest"
+check_status "--edit with a flag-shaped notes-file -> exit 0, not swallowed as a cp option" 0 "$STATUS"
+check_contains "the flag-shaped file is actually written, not silently dropped" "$(cat "$notes_flag_shaped" 2>/dev/null)" "Real release."
+rm -f "$notes_flag_shaped"
+
+# regression (cross-model second-opinion review finding): a `cp` failure after a successful edit
+# must not discard the user's curated draft — the scratch file must survive so it can be recovered.
+notes_bad_dir="$edit_repo/no-such-directory/out.md"
+run env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_bad_dir"
+check_status "--edit whose cp destination fails -> nonzero exit" 1 "$STATUS"
+check_contains "failure names a recoverable scratch-file path, not silent data loss" "$OUT" "your edited draft is preserved at"
 
 summary

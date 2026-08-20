@@ -47,13 +47,13 @@ notes_file=""
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   --edit)
-    [ "$#" -eq 3 ] || die_usage "usage: changelog-section.sh --edit <version> <notes-file>"
+    [ "$#" -eq 3 ] || die_usage "--edit needs <version> <notes-file> (see --help)"
     version="$2"
     notes_file="$3"
     mode="--edit"
     ;;
   *)
-    [ "$#" -ge 1 ] || die_usage "usage: changelog-section.sh <version> [--digest]"
+    [ "$#" -ge 1 ] || die_usage "missing <version> (see --help)"
     version="$1"
     mode="${2:-}"
     [ "$#" -le 2 ] || die_usage "unexpected extra argument(s): ${*:3}"
@@ -114,8 +114,25 @@ if [ "$mode" = "--edit" ]; then
   scratch_file="$(mktemp)"
   trap 'rm -f "$scratch_file"' EXIT
   printf '%s\n' "$section" > "$scratch_file"
-  eval "$EDITOR \"\$scratch_file\""
-  cp "$scratch_file" "$notes_file"
+  # A nonzero editor exit doesn't necessarily mean nothing was typed — a --wait wrapper's own
+  # housekeeping failing, a window-close race, or a Ctrl-C can all leave real, curated content
+  # sitting in $scratch_file. Cancel the cleanup trap on this path too (same reasoning as the
+  # cp-failure branch below), so an editor failure never silently destroys work the user already did.
+  if ! eval "$EDITOR \"\$scratch_file\""; then
+    trap - EXIT
+    echo "changelog-section: \$EDITOR exited with an error — your draft, if any, is preserved at $scratch_file" >&2
+    exit 1
+  fi
+  # `--` guards against a flag-shaped <notes-file> (e.g. `--digest`) being read as a `cp` option —
+  # BSD and GNU `cp` disagree on unknown long options, so an unguarded `cp` would silently create a
+  # file literally named `--digest` on one platform and abort on the other. On a `cp` failure, cancel
+  # the cleanup trap so the user's edited draft survives at $scratch_file instead of being discarded
+  # along with their work.
+  if ! cp -- "$scratch_file" "$notes_file"; then
+    trap - EXIT
+    echo "changelog-section: could not write $notes_file — your edited draft is preserved at $scratch_file" >&2
+    exit 1
+  fi
   exit 0
 fi
 
