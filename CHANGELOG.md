@@ -475,6 +475,23 @@ warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
   entries having pushed the file past the 25%-above-floor mark where `tests/test_doc_figures.sh`
   starts asking for a restatement — the same bump v0.6.1 made from `~50,000+`, and the fifth by hand
   in this file's history, now ticketed for mechanization (backlog dir #202).
+- **`docs/drydock.md` still described its own ratchet as unpaid in the very release that paid it**
+  (dir #205, found by an end-to-end read of the drydock/delegation/parallel-sessions trio). The doc
+  said run 1's four demoted classes (dir #166–#169) were, in full, *"at the time of writing … filed
+  and not yet landed, which is precisely the gap the next run measures"* — and that hedge kept the
+  sentence literally true after all four merged (PRs #227, #230–#232), every one inside this release.
+  The defect is what the hedge did not reach: the run-2 worked example 340 lines downstream inherited
+  the claim with no time-scope at all, framing *"did those checks land?"* as run 2's open question
+  when the answer already existed. So the release disagreed with itself — this changelog listing the
+  four checks as shipped, the drydock doc reading as though they were still owed. The landed status now
+  lives in the run-2 example alone, with the concept section keeping only the durable rule and a
+  pointer to it — a status restated on two surfaces is dir #166's own class, and an earlier draft of
+  this very fix reintroduced it before review caught that. **Why the RC pass above missed it:** its
+  stale-phrase sweep did reach this file, but only mechanically — `tools/self/prose-drift.sh` reads
+  line shape and dead links, never claims, and dir #166's coherence check reads outcome tokens in six
+  named rails files that do not include this one. The manual half was a targeted grep for tail-ticket
+  references. Nothing in that step reads a paragraph and asks whether it is still true, which is the
+  one thing that catches this class.
 
 ## [0.6.1] — 2026-08-14
 
