@@ -85,6 +85,8 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # GAP over FRAMEWORK.md/PRINCIPLES.md (dir #114) — same reuse reason as safe-emails.sh above.
 # shellcheck source=tools/lib/leak-patterns.sh
 . "$_pa_dir/lib/leak-patterns.sh"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$_pa_dir/lib/nonneg-int.sh"
 unset _pa_dir
 
 # --- gather config -------------------------------------------------------------------------------
@@ -197,8 +199,9 @@ trap 'exit 143' TERM
 # bounds the per-blob cost; oversized blobs are counted and SURFACED, never silently trusted.
 scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g. --all)
   local label="$1"; shift
-  local max="${KEEL_AUDIT_BLOB_MAX:-10485760}"
-  case "$max" in ''|*[!0-9]*) max=10485760 ;; esac
+  # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls
+  # back to 10485760 rather than crashing the later `-gt` size comparison.
+  local max; max="$(sanitize_nonneg_int "${KEEL_AUDIT_BLOB_MAX:-10485760}" 10485760)"
   local tmp="$audit_tmp/blob" dec="$audit_tmp/blob.dec"
   local otype osha osize opath h t skipped=0 reported_toks="" reported_personal=""
   local hit_home="" hit_email="" hit_cyr=""

@@ -323,7 +323,18 @@ if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
   for name in $refs; do
     printf '%s\n' "${harness_commands[@]}" "${not_commands[@]}" | grep -qxF "$name" && continue
     if [ ! -f "$repo_root/commands/$name.md" ]; then
-      cited_in="$(printf '%s\n' "$raw_hits" | grep -F "\`/$name" | head -1 | cut -d: -f1)"
+      # `grep -m 1`, not `| head -1` (dir #195, the same SIGPIPE-under-pipefail shape dir #156 fixed for
+      # `_pending_release_intro_commit`'s `git log -S`, same fix shape too — `-n 1` there, `-m 1` here):
+      # if `$raw_hits` grows large enough that grep's matching lines exceed the pipe buffer before
+      # `head -1` reads its one line and closes, grep gets SIGPIPE and the whole doctor.sh run aborts
+      # under `set -o pipefail`. Asking grep itself to stop after one match (verified present in GNU,
+      # BSD/macOS, and busybox grep — this repo's whole CI matrix) has no such downstream pipe to break —
+      # but `-m 1` alone just MOVES the same hazard one stage left: a `printf '%s\n' "$raw_hits" | grep`
+      # feed still has printf as a live writer process that grep's own early stdin-close can SIGPIPE
+      # (reproduced live: swapping the `printf | grep -m 1` form in still crashed this fixture at exit
+      # 141). A `<<<` here-string has no such writer — bash buffers it via a temp file up front, so
+      # there's no concurrent process on the other end of grep's stdin for grep to signal.
+      cited_in="$(grep -m 1 -F "\`/$name" <<< "$raw_hits" | cut -d: -f1)"
       gap "slash-command reference '/$name' in ${cited_in:-an adopter-facing doc} has no commands/$name.md — ship it, word it generically, or allowlist it (dir #129, only if harness-provided AND every call site handles its absence)"
       dead_cmd=$((dead_cmd + 1))
     fi
@@ -702,35 +713,69 @@ case "$pending_max_commits" in
 esac
 
 # _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced
-# the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history — i.e. how long the
-# section AS IT CURRENTLY STANDS has existed, which is what the pending-release allowance's
-# commit-distance bound below needs. `git log -S` (the pickaxe) reports every commit where the exact
-# occurrence COUNT changed (an add or a remove), newest first. **`-n 1`, not `tail -1`** (found by an
-# operator-run `/code-review high` pass on this very ticket, reproduced live): since this function is
-# only ever called on a heading that IS present in the current file, the newest pickaxe entry must be
-# an ADD — the most recent one — so the FIRST entry is the commit that introduced today's occurrence.
-# `tail -1` (an earlier version of this function) instead picks the OLDEST such commit ever, in ANY
-# add/remove cycle — wrong when a version number is cut, reverted (folded back into `[Unreleased]`, or
-# its tag deleted and the section edited out), and later genuinely re-cut with the SAME number: a
-# section freshly re-introduced at HEAD would measure its distance from the stale original cut instead
-# of 0, false-GAPing a release that was never forgotten. **`-n 1`, not `| head -1`, for a second,
-# independent reason** (found fixing the first: an earlier `head -1` version of this fix reproducibly
-# crashed the whole doctor.sh run under `set -o pipefail` — `head` closes its read end after one line,
-# `git log` can still be mid-write on a longer history, gets SIGPIPE, and the pipe's exit status under
-# `pipefail` is non-zero, which `set -e` then treats as this WHOLE SCRIPT failing). Asking git itself
-# to stop after one match has no such pipe to break. Prints nothing if the heading text never appears
-# anywhere in tracked history — an untracked or freshly-added-but-uncommitted CHANGELOG.md, or (in
-# principle) a history rewrite. The pending-release allowance's commit-distance bound below (dir #156)
-# FAILS OPEN on that empty case rather than inventing drift from a measurement it couldn't make — see
-# the comment there. Single consumer (that bound), so — like `_semver_gt` just above — it lives here
-# beside check 6 rather than with the file's general helpers.
-# **Named residual, filed as dir #194 (found by the same review pass):** unlike
-# `sections_in_order`/`newest_section` below, this pickaxe searches RAW file history, not
-# `blank_fenced_blocks`-filtered — a future fenced example containing a real `## [x.y.z]` heading text
-# could make `git log -S` resolve the wrong introducing commit. Confirmed latent, not live: this
-# repo's own CHANGELOG.md has never used a fenced `## [x.y.z]`-shaped example.
+# the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history, OUTSIDE any fenced code
+# block — i.e. how long the section AS IT CURRENTLY STANDS has existed, which is what the
+# pending-release allowance's commit-distance bound below needs. `git log -S` (the pickaxe) reports
+# every commit where the exact occurrence COUNT changed (an add or a remove), newest first — so the
+# FIRST entry is normally the commit that introduced today's occurrence (an earlier `tail -1` version
+# of this function instead picked the OLDEST such commit ever, in ANY add/remove cycle — wrong when a
+# version number is cut, reverted, and later genuinely re-cut with the SAME number).
+#
+# **Verify-after-the-fact (dir #194, candidate 1 — the operator's choice over "accept and document" for
+# this fork):** the pickaxe itself has no concept of "inside a fence" — it matches the file's RAW
+# historical content, so a candidate SHA can be a decoy: a commit that only added (or removed) a
+# FENCED example elsewhere in CHANGELOG.md (this very file documents its own release-note conventions,
+# and an illustrative snippet is a realistic future entry) whose literal text happens to contain a real
+# `## [x.y.z]` heading, while the section's actual un-fenced heading was introduced at a DIFFERENT
+# commit. A plain "does this commit's fence-blanked content contain the heading" check is not enough to
+# tell the two apart — once the real section exists, its heading stays present (fence-blanked) at every
+# later commit, decoy or not. What actually distinguishes them is whether THIS commit's own diff added
+# the heading OUTSIDE a fence: fence-blank both this commit's content and its immediate PARENT's, and
+# require the heading to be PRESENT now but ABSENT before — a targeted, per-candidate recheck (not the
+# "reconstruct every historical revision's fence-blanked content and re-search" mechanism this ticket
+# explicitly scoped out as too big). Candidates are walked newest first; the first one whose fence-blanked
+# presence flips false→true is the real introducing commit — a decoy (present both before and after,
+# because the real heading was already there, or the add was itself inside a fence) is skipped in favor
+# of the next-newest match. A presence check, not an occurrence-COUNT comparison: a genuinely duplicated
+# heading (a bad merge — the file's own separate section-count invariant elsewhere already flags that
+# as its own drift) would make a later duplicate-adding commit look like a valid "count went up" event
+# to a counting check, but presence alone correctly keeps resolving to the section's true original
+# introduction regardless. Confirmed latent, not live: this repo's own CHANGELOG.md has never used a
+# fenced `## [x.y.z]`-shaped example, so every real call so far returns on the first candidate — this
+# only costs two extra `git show` + awk passes per candidate, and only for a heading with more than one
+# pickaxe hit.
+#
+# Prints nothing if no candidate is found, or if every candidate turns out to be a fence-only add/remove
+# — an untracked or freshly-added-but-uncommitted CHANGELOG.md, a history rewrite, or (the fenced case)
+# a heading whose every occurrence-count change happened inside an example. The pending-release
+# allowance's commit-distance bound below (dir #156) FAILS OPEN on that empty case rather than inventing
+# drift from a measurement it couldn't make — see the comment there. Single consumer (that bound), so —
+# like `_semver_gt` just above — it lives here beside check 6 rather than with the file's general
+# helpers.
 _pending_release_intro_commit() {
-  git -C "$repo_root" log -S"## [$1]" --format=%H -n 1 -- "$changelog_file" 2>/dev/null
+  local heading="## [$1]" rel sha now before
+  rel="${changelog_file#"$repo_root"/}"
+  # dir #213 closes via SHAPE, not the trailing `|| true`: a process substitution's exit status is never
+  # checked by the shell (verified live — `done < <(false)` does not trip `set -e`), so a failing `git
+  # log` here could never have aborted the run either way. The actual dir #213 fix is that this function
+  # no longer assigns the pickaxe's raw output to a bare `$( )` variable — THAT construct's failing exit
+  # status DOES propagate through `set -e`, and this `while read < <(...)` loop structurally can't. The
+  # `|| true` stays only because it matches the ticket's own named acceptance criterion, at zero cost.
+  while IFS= read -r sha; do
+    # Captured into variables, not piped straight into `grep -q` (dir #195's own class, reintroduced
+    # here and caught live: `blank_fenced_blocks <(...) | grep -qF ...` SIGPIPEs the awk writer the
+    # instant grep finds its match and exits, and under `set -o pipefail` that reads as "not present"
+    # even when it plainly is — reproduced against this repo's own real CHANGELOG.md, 300KB+, where the
+    # heading sits well before the point grep would need to keep reading). Capturing to `$now`/`$before`
+    # first lets `blank_fenced_blocks` run to completion on its own, then a `<<<` here-string grep (no
+    # live writer process on the other end) tests presence with nothing left to signal.
+    now="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha:$rel" 2>/dev/null) 2>/dev/null)"
+    before="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha^:$rel" 2>/dev/null) 2>/dev/null)"
+    if grep -qF "$heading" <<< "$now" && ! grep -qF "$heading" <<< "$before"; then
+      printf '%s\n' "$sha"
+      return 0
+    fi
+  done < <(git -C "$repo_root" log -S"$heading" --format=%H -- "$changelog_file" 2>/dev/null || true)
 }
 
 say ""

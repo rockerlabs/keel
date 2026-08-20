@@ -306,6 +306,11 @@ sp_root="$(mktemp -d)/space checkout"
 mkdir -p "$sp_root/tools"
 cp "$installer" "$sp_root/tools/install-pre-pr-gate.sh"
 cp "$gate" "$sp_root/tools/pre-pr-gate.sh"
+# pre-pr-gate.sh sources tools/lib/nonneg-int.sh (dir #196) at startup, unconditionally — a real
+# checkout always carries tools/lib/ alongside it (nothing is copied OUT of the checkout in normal
+# use), so this fixture's own space-path copy needs to too, or the space-path regression it's actually
+# testing gets masked by an unrelated "lib file not found" failure.
+cp -r "$REPO_ROOT/tools/lib" "$sp_root/tools/lib"
 sp_repo="$(new_repo)"
 run "$sp_root/tools/install-pre-pr-gate.sh" "$sp_repo"
 check_status "install from a space-containing checkout path -> exit 0" 0 "$STATUS"

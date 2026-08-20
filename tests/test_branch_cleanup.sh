@@ -144,6 +144,20 @@ check_contains "live-hours 0 disables the probe: fresh-mtime worktree is ASK aga
 check_absent   "live-hours 0: fresh-mtime worktree no longer FLAGged" \
   "$(line_for claude/wt-fresh)" "FLAG"
 
+# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): `epoch_mtime`'s own `stat` output
+# feeds the same `''|*[!0-9]*)`-shaped guard, digit-shape only until this ticket. A corrupted/hostile
+# `stat` returning a huge all-digit string must be skipped (fail open to "not live"), not crash the
+# `-gt` comparison with "integer expression expected". A stub `stat` on PATH stands in for a genuinely
+# corrupted one — real `stat` never returns anything but a sane epoch or a failure.
+mockbin="$SANDBOX/statbin"; mkdir -p "$mockbin"
+printf '#!/usr/bin/env bash\necho 999999999999999999999\n' > "$mockbin/stat"
+chmod +x "$mockbin/stat"
+PATH="$mockbin:$PATH" run_in "$liverepo" bash "$TOOL" --live-hours 6
+check_status "a corrupted huge stat output does not crash the run" 0 "$STATUS"
+check_absent "no 'integer expression expected' crash leaks through" "$OUT" "integer expression expected"
+check_contains "the corrupted-mtime worktree fails open to ASK, not falsely FLAGged live" \
+  "$(line_for claude/wt-fresh)" "ASK"
+
 run bash "$TOOL" --live-hours abc
 check_status "non-numeric --live-hours exits 2" 2 "$STATUS"
 
@@ -287,5 +301,17 @@ check_contains "--days=<non-numeric> explains itself" "$OUT" "non-negative integ
 run_in "$repo" bash "$TOOL" --live-hours=-3
 check_status   "--live-hours=<negative> is rejected" 2 "$STATUS"
 check_contains "--live-hours=<negative> explains itself" "$OUT" "non-negative integer"
+
+# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): a digit-SHAPED but overflowing value
+# (20 nines) must be rejected too, not accepted and then crash the later `-ge`/`-lt` age comparisons
+# with "integer expression expected" — reproduced live against the unguarded case arm before fixing it
+# here (it silently misclassified a branch as "recent" instead of failing validation).
+run_in "$repo" bash "$TOOL" --days 99999999999999999999
+check_status   "an overflowing --days is rejected, not accepted and crashed later" 2 "$STATUS"
+check_contains "overflowing --days explains itself" "$OUT" "non-negative integer"
+check_absent   "no 'integer expression expected' crash leaks through" "$OUT" "integer expression expected"
+run_in "$repo" bash "$TOOL" --live-hours 99999999999999999999
+check_status   "an overflowing --live-hours is rejected, not accepted and crashed later" 2 "$STATUS"
+check_contains "overflowing --live-hours explains itself" "$OUT" "non-negative integer"
 
 summary

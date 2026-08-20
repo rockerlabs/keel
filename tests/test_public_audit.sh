@@ -364,6 +364,16 @@ run env KEEL_AUDIT_BLOB_MAX=10 bash "$pa" --token 'SeekritCorpName' "$d"
 check_status "oversized blob skipped → its token NOT found (exit 0)" 0 "$STATUS"
 check_contains "skipped blob is surfaced as UN-audited" "$OUT" "UN-audited"
 
+# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): a digit-SHAPED but overflowing cap
+# (20 nines) must fall back to the default (10MB) instead of overflowing the shell's native integer
+# range and crashing the later `-gt` size comparison with "integer expression expected" — reproduced
+# live against the unguarded case arm before fixing it here.
+run env KEEL_AUDIT_BLOB_MAX=99999999999999999999 bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "an overflowing cap falls back to the default, blob well under it → GAP (exit 1)" 1 "$STATUS"
+check_absent "no 'integer expression expected' crash leaks through" "$OUT" "integer expression expected"
+check_contains "the token is found — the default cap, not the overflow, governs" "$OUT" \
+  "binary blob in git history"
+
 # --- CLI surface: unknown option, non-directory DIR (dir #101) -----------------------------------
 run bash "$pa" --bogus
 check_status "unknown option → exit 2" 2 "$STATUS"

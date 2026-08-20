@@ -88,10 +88,14 @@ check_contains "the event is typed friction" "$(cat "$log")" "friction"
 # as a crashed shim rather than a caught test. Each case: the shim still runs the check and passes its
 # exit code through, and the fallback threshold still behaves (banner on the 2nd failure, or the 1st
 # where the value clamps to 1).
-# All three land on the SAME fallback of 2 — including the negative one, which the non-numeric arm
+# All four land on the SAME fallback of 2 — including the negative one, which the non-numeric arm
 # catches first (a leading '-' is not [0-9]), never reaching the `-lt 1` clamp. Pinned as a set:
 # either route is a graceful degrade, and this records which one actually fires for each.
-for bad in abc '' -5; do
+# The 20-digit value (dir #196, the same overflow class dir #156 fixed in self/doctor.sh) is
+# digit-SHAPED but overflows the shell's native integer range: `[ "99999999999999999999" -lt 1 ]`
+# crashes with "integer expression expected" rather than comparing, silently defeating the guard
+# were it not length-capped — reproduced live against the unguarded case arm before fixing it here.
+for bad in abc '' -5 99999999999999999999; do
   fresh_sd
   KEEL_CHECK_THRESHOLD="$bad" run "$TOOL" "false"
   check_status "threshold '$bad': exit code still passes through" 1 "$STATUS"

@@ -168,7 +168,7 @@ report_hits() {
   [ -n "$files" ] || return 0
   # sh reads its file directly via redirection rather than through `cat` — scan_line_length is
   # stdin-based, so a `cat |` here would spawn a process purely to move bytes for every sh file (a
-  # real, if small, cost across ~69 tracked shell scripts); md still needs blank_fenced_blocks' own
+  # real, if small, cost across 75 tracked shell scripts); md still needs blank_fenced_blocks' own
   # awk pass first, so it keeps the pipe. The mode check itself stays per-file (cheap, no
   # subprocess) rather than hoisted above the loop — a hoisted variable would have to carry two
   # DIFFERENT pipeline shapes (one command vs. two piped together), which reads as more indirection

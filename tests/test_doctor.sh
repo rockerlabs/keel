@@ -310,6 +310,17 @@ run env KEEL_STARTUP_WARN_TOKENS=abc "$doctor" "$d"
 check_status "non-numeric token budget → exit 0 (no crash)" 0 "$STATUS"
 check_absent "no '[: integer expected' diagnostic" "$OUT" "integer expected"
 
+# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): a digit-SHAPED but overflowing
+# token budget (20 nines) must fall back the same way a non-numeric one does, not overflow the shell's
+# native integer range and crash the later `-gt` comparison with "integer expression expected" —
+# reproduced live against the unguarded case arm before fixing it here (the exact bash diagnostic text,
+# not the narrower "integer expected" substring the neighboring non-numeric assertion checks for, which
+# would have stayed green even with the guard missing).
+run env KEEL_STARTUP_WARN_TOKENS=99999999999999999999 "$doctor" "$d"
+check_status "overflowing token budget → exit 0 (no crash)" 0 "$STATUS"
+check_absent "no '[: integer expression expected' diagnostic from the overflow" "$OUT" \
+  "integer expression expected"
+
 # --registry: sweep an INSTANCE.md Projects table, skipping the unfilled placeholder row
 good="$(mkproj)"; git -C "$good" init -q
 printf '# ctx\n' > "$good/CLAUDE.md"
