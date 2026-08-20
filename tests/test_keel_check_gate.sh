@@ -6,7 +6,8 @@
 # red marker for the repo. We drive it end-to-end with the real shim so the marker is produced/cleared the
 # way it is in practice, not hand-faked.
 #
-# The gate parses its input with jq; the busybox/Alpine CI job ships without jq, so skip cleanly there.
+# The gate parses its input with jq; the busybox/Alpine CI job ships it (dir #220), so this file runs
+# for real there too, not skip-only.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 

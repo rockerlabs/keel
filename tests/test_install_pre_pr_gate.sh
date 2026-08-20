@@ -8,9 +8,9 @@
 # NAMES even though there are now 6 matcher entries across them.
 #
 # The installer edits settings.json with jq, so most of these tests need jq. The busybox/Alpine CI job
-# installs only bash+git (same convention as tests/test_pre_pr_gate.sh, tests/test_pipeline_canary.sh,
-# tests/test_keel_check_gate.sh) — there, skip cleanly. Without jq the installer degrades to printing a
-# ready-to-paste snippet instead of writing anything (an explicit, documented, already-tested choice —
+# installs it (dir #220), so this file runs for real there too, not skip-only. Without jq the installer
+# degrades to printing a ready-to-paste snippet instead of writing anything (an explicit, documented,
+# already-tested choice —
 # see the "no jq" block below, which stays real coverage on the legs that DO have jq by hiding it via
 # PATH regardless of what's actually installed).
 # shellcheck source=tests/lib.sh
