@@ -42,10 +42,10 @@ and would have caught the class — a backlog ticket is the *commitment* to that
 demotion itself. Without it, run 2 costs exactly what run 1 cost and finds the same shapes again.
 
 Keel's run 1 demoted four classes this way (dir #166–#169), each ticket naming its live case as the
-red-to-green test the check has to reproduce; at the time of writing those four are filed and not yet
-landed, which is precisely the gap the next run measures (see [Incremental runs](#incremental-runs)).
-**A run that demotes nothing has not finished** — and a run whose demotions never land has only
-deferred the cost.
+red-to-green test the check has to reproduce (see [Incremental runs](#incremental-runs) for what run 2
+does with them). The gap between *filed* and *landed* is the one the next run always measures. **A run
+that demotes nothing has not finished** — and a run whose demotions never land has only deferred the
+cost.
 
 ## Roles — four of them, in separate contexts
 
@@ -381,12 +381,13 @@ files. Two things you carry in by hand on top of the diff scope:
 the two phase-6 residuals above: **dir #166** (four surfaces restating one procedure's outcome set,
 one of them still short an item after four separate fixes) and **dir #167** (a derived sum quoted in
 prose disagreeing with the table it sums, plus two parallel tables that drifted in row set). Both were
-*also* the two classes run 1's ratchet demoted, so run 2's cheapest early measurement is simply: did
-those checks land, and do they now catch these two residuals mechanically instead of by hand? A
-demotion that shipped means run 2 never spends an auditor on that class again; a demotion still
-sitting in the backlog means the ratchet was written down but not paid. Either answer is worth having
-before the wave spawns — it is the cheapest available measurement of whether the last run's phase 7
-was real.
+*also* two of the four classes run 1's ratchet demoted, so run 2's cheapest early measurement is
+simply: did those checks land, and do they now catch these two residuals mechanically instead of by
+hand? Here the first half is already answered — both checks merged before run 2 begins — so only the
+second half is open. Ask both halves anyway, every run: a demotion that shipped means the next run
+never spends an auditor on that class again; one still sitting in the backlog means the ratchet was
+written down but not paid. Either answer is worth having before the wave spawns — it is the cheapest
+available measurement of whether the last run's phase 7 was real.
 
 ## What a first run costs
 
