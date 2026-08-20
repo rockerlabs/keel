@@ -448,6 +448,23 @@ own output.
   question, and `tools/self/doctor.sh` already reconciles CHANGELOG sections against git tags and already
   calls `gh` best-effort, so it is the natural home — not built here, so the live v0.6.1 release still
   needs the operator's own `gh release edit`.
+- **`docs/publishing-checklist.md` §4 (above) also never said HOW the tag is created, and the sibling
+  recipe could create it at the wrong commit** (the v0.6.1→v0.7.0 delta audit's Batch A, PR #240).
+  The step named a version tag as the outcome and carried no command for creating one, so the only
+  tag-creating command anywhere in §4 was a bare `gh release create` in its stamped-bootstrap bullet —
+  which, with no tag already on the remote, tags **the default branch's head at execution time**. That
+  silently disagrees with `docs/release-audit.md` phase 7, whose whole job is to stop at "tag ready to
+  cut" and *name the exact SHA* — the two agree only while nothing lands in between, which is the
+  window phase 7 exists to describe. §4 now prescribes the annotated-tag-on-the-named-SHA shape v0.6.1
+  actually used, pushed before `gh` runs, with `--target <sha>` as the alternative — and a reciprocal
+  pin pair in `tests/test_release_audit_doc.sh` couples §4's new quotation to phase 7's wording in both
+  directions, since a citation pinned on neither side is how the original drift opened. Two other sites
+  could reach the same trap and are closed too: `docs/going-public.md`'s delete-and-recreate recipe
+  chained `git push origin <tag> ; gh release create …` with `;`, so a failed tag push still reached
+  `gh` (now `&&`, the chained-on-success-only idiom `docs/publishing-checklist.md` states for its own
+  commands), and `tools/stamp-release-bootstrap.sh`'s wire-into-a-release example showed `gh release
+  create` with no tag step before it — that one found by the review of THIS entry, which had claimed
+  going-public.md was the only site, and fixed alongside it.
 - **`docs/loading-and-cost.md` was missing an `IDEAS.md` row its own "File by file" table should have
   had** (dir #167, the drydock run-1 phase-6 re-check's P6-2). The same PR #211 batch had added an
   `IDEAS.md` row to `docs/getting-started.md`'s parallel table but never the matching row here, and
