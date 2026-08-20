@@ -16,6 +16,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   extraction code). `docs/publishing-checklist.md` §4 collapses to one command.
 
 ### Fixed
+- **`docs/loading-and-cost.md`'s `commands/*.md` row no longer hides `commands/polish.md`'s real size
+  behind an open `~250–1,450+ each` ceiling** (dir #203): `polish.md` measures ~15,074 tok, ~7x the
+  next-largest command, and the trailing `+` made the row's own understatement unfalsifiable by
+  `tests/test_doc_figures.sh`. Split into a tightened `~250–2,100+ each` ordinary-command range plus a
+  dedicated `commands/polish.md ~14,000+` open-floor row, each independently pinned by the test.
+- **`docs/release-audit.md` phase 7 now names re-checking `docs/loading-and-cost.md`'s open-floor
+  figures as an explicit release step**, at the "cut, land" moment before the tag (dir #202): the
+  `CHANGELOG.md` floor had been hand-bumped five releases running — 25k → 40k → 50k → 60k → 70k —
+  always triggered by a human happening to notice `tests/test_doc_figures.sh`'s non-failing drift
+  `note` during a release pass, never by a test failure.
 - **`tools/changelog-section.sh` now honors the cross-tool `-h`/`--help` and exit-code contract**
   its two sibling tools from the same release already follow (`tools/drydock/inventory.sh`,
   `tools/self/prose-drift.sh`): `-h`/`--help` prints usage and exits 0, and a malformed-invocation
