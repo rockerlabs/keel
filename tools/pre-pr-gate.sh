@@ -516,9 +516,23 @@ _normalize_addon_set() {
 # "silent on the in-run path": the comparison still runs, against whatever the last RETIRED round
 # held. So an in-run drop is judged against the wrong baseline in both directions — silent when that
 # round carried no add-on (an add-on gained and dropped inside one run, the dir #155 shape), and
-# a warning about that OLDER round when it did, which only looks like a catch. Both verified live.
+# a warning about that OLDER round when it did, which only looks like a catch. Those two were verified
+# live; so, separately, was the third direction below.
+# **A further direction within that third case (dir #214), beyond the two just named:** whether EITHER
+# of them happens depends on the lineage guard. `retire_sentinel` stamps the then-HEAD into the backup
+# as `base-sha`, and `_validated_prev_sentinel` requires that sha to still be REACHABLE from current
+# HEAD. A plain `--amend` of the very commit retirement saw ORPHANS it (a rewrite, not an extension),
+# the guard returns 3, and this check goes SILENT there too, whatever the retired round held. Two
+# details the obvious reading gets wrong, both load-bearing for any test written against this:
+# (1) the condition is REACHABILITY, not "a fresh commit landed since `init`" — a commit is its own
+# ancestor, so a round where HEAD never moved passes the guard and still compares; (2) the stamp is NOT
+# necessarily the current round's `init`. `retire_sentinel` runs on every deny path and on the PASS
+# branch as well (see its call sites and `init`'s own note, "the same retire_sentinel every deny/pass
+# path uses below"), and it stamps only when a live sentinel exists — so after a deny or a shipped
+# round, `init` finds nothing to retire and the backup keeps the EARLIER retirement's sha.
 # Disclosed in that step's own prose rather than fixed here, because dir #186 removes this whole
-# check; keep the two in sync.
+# check; keep it in sync with BOTH other copies — `commands/polish.md` step 5 and the `[0.7.0]`
+# CHANGELOG Known-issues block, which now carries the mechanism too, not just an announcement.
 _warn_dropped_addons() {
   local receipt_key="$1" new_outcome="$2" cwd="${3:-$PWD}"
   local raw_prev prev prev_outcome prior_set new_set a label missing=""
