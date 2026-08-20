@@ -7,8 +7,9 @@
 # (a nonce header + one line per expected step id) and the deny paths are security-adjacent, so both the
 # hook-mode gate and the `init`/`receipt`/`log` CLI subcommands (dir #49) are covered here.
 #
-# The gate parses its input with jq, so these tests need jq. The busybox/Alpine CI job installs only
-# bash+git; there, skip cleanly. Without jq the gate now exits early by an EXPLICIT, documented choice
+# The gate parses its input with jq, so these tests need jq. The busybox/Alpine CI job installs it
+# (dir #220), so this file runs for real there too, not skip-only. Without jq the gate now exits early by
+# an EXPLICIT, documented choice
 # (`command -v jq || exit 0`) — it can't tell `gh pr create` from any other Bash call, so it allows rather
 # than block everything; it's a workflow reminder, not the secret boundary (that's secret-guard, no jq).
 # shellcheck source=tests/lib.sh

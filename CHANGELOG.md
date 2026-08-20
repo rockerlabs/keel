@@ -8,6 +8,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+- The alpine-busybox CI leg now installs `jq`, so `tests/test_pre_pr_gate.sh` and its
+  install-side siblings (`test_install_pre_pr_gate.sh`, the gate half of
+  `test_install_manifest.sh`) actually run there instead of skipping cleanly for want of it. Before
+  this, "alpine-busybox: success" was not evidence about `tools/pre-pr-gate.sh` — the single
+  largest shell surface in the repo — on its one non-GNU CI leg (dir #220).
+
 ## [0.7.0] — 2026-08-20
 
 The drydock release. Two arcs, plus the end of a migration window. First arc: **drydock** — a named,
