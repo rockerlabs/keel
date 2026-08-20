@@ -8,11 +8,43 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Fixed
 - The alpine-busybox CI leg now installs `jq`, so `tests/test_pre_pr_gate.sh` and its
   install-side siblings (`test_install_pre_pr_gate.sh`, the gate half of
   `test_install_manifest.sh`) actually run there instead of skipping cleanly for want of it. Before
   this, "alpine-busybox: success" was not evidence about `tools/pre-pr-gate.sh` — the single
   largest shell surface in the repo — on its one non-GNU CI leg (dir #220).
+- **`uninstall.sh`'s `artifact_shared_with_other()` no longer reads a stray same-named context file, or
+  the ordinary both-modes home's own surviving one, as proof of a live sibling install** (dir #190,
+  0.7.0's sixth Known-issue). Its no-usable-other-manifest fallback now requires `has_keel_rails` on the
+  other mode's context file OR a manifest-independent sentinel (`.keel/foreign-core.<mode>`, written by
+  `install.sh` whenever it detects a foreign-core install and cleared otherwise) — plain existence alone
+  no longer counts. The ordinary both-modes home (dir #124) now uninstalls cleanly in sequence again,
+  matching v0.6.1; dir #150's original foreign-core fix (a genuinely unmanifested foreign-core install
+  must not have its shared half stripped) stays intact via the sentinel. Pinned by five new
+  `tests/test_uninstall.sh` fixtures — B23 (the regression), B24 (the stray-file scenario), B25A (the
+  sentinel's own clear branch on a fresh, non-foreign re-install), B25B (both modes foreign-core,
+  uninstalled in sequence) — alongside the pre-existing B22 (dir #150's own foreign-core case). The
+  checkout-side ledger's own pruning (near uninstall.sh's manifest housekeeping) now also counts a
+  surviving `foreign-core.*` sentinel, not just a surviving manifest, before dropping a home — an
+  operator-run `/code-review high` pass live-reproduced the ledger silently losing track of a still-live,
+  sentinel-only-protected install otherwise. **Named residual, not fully closed:** the sentinel is
+  forward-only — an install placed by a Keel checkout that predates it has neither a sentinel nor rails,
+  so if its manifest is later lost, this fallback still can't tell it apart from an unrelated stray file
+  and — unlike every other ambiguous-ownership case in this file — resolves that ambiguity by stripping
+  rather than refusing or asking (the same `/code-review high` pass live-reproduced this too). No signal
+  on disk can close it for pre-existing installs without new evidence going forward; re-running
+  `install.sh` for that mode records one. Filed as a residual to `uninstall.sh`'s own header, not a
+  separate ticket, since it's the direct continuation of dir #190/dir #150's own arc.
+- **`uninstall.sh --dry-run` over a manifest-less install now falls through to a heuristic advisory
+  listing instead of refusing** (dir #228, operator-decided; reverses part of 0.7.0's "Changed" entry
+  above, which shipped the refusal deliberately as an open fork). A dry run removes nothing, so the
+  refusal's own "can't guess what to remove" rationale doesn't apply to it; the listing is explicitly
+  labeled heuristic (content-sniffed, not manifest-confirmed) and now also says outright that a real
+  (non-dry) run in the same state refuses rather than removing — dropping `--dry-run` here does not
+  perform the listed removals (an operator-run `/code-review high` pass live-reproduced the two
+  disagreeing). The real, non-dry refusal is untouched. Pinned by `tests/test_uninstall.sh`'s new B15D
+  fixture.
 
 ## [0.7.0] — 2026-08-20
 

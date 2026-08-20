@@ -891,6 +891,21 @@ rm -f "$merge_tmp"
 } | atomic_write "$manifest_file"
 echo "  +    install manifest ($manifest_file)"
 
+# dir #190 — a manifest-INDEPENDENT sentinel for the foreign_core case, written/cleared every run from
+# THIS run's own $foreign_core value. Exists because uninstall.sh's artifact_shared_with_other fallback
+# (when the OTHER mode's manifest is unusable) has no other way to tell "a genuine foreign-core install
+# of the other mode happened here" from "an unrelated file that merely shares the other mode's context
+# filename" — has_keel_rails can't help (foreign_core's whole point is that Keel never writes rails into
+# the file), and the manifest itself is exactly what's missing/unusable in that branch. A plain marker
+# file, checked by existence alone, survives the other manifest being lost or deliberately deleted
+# (dir #150's own repro and B22's fixture both do this) without depending on it.
+foreign_core_marker="$manifest_dir/foreign-core.$manifest_mode"
+if [ "$foreign_core" = 1 ]; then
+  printf '' | atomic_write "$foreign_core_marker"
+else
+  rm -f "$foreign_core_marker"
+fi
+
 # Checkout-side ledger — the discovery index consumers use to find every recorded home from the
 # checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own
 # ledger write, dir #125). Skipped when EPHEMERAL: the checkout is a temp clone about to be reaped, so

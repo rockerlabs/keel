@@ -638,6 +638,26 @@ check_link "B15C nothing removed — the CLI symlink survives" "$B15C/bin/keel"
 check_file "B15C nothing removed — FRAMEWORK.md survives" "$B15C/FRAMEWORK.md"
 check_file "B15C INSTANCE.md (user data) untouched" "$B15C/INSTANCE.md"
 
+# --- B15D: dir #228 (operator-decided) — --dry-run over the SAME manifest-less home as B15 falls
+# through to a heuristic advisory listing instead of refusing: a dry run removes nothing, so B15's own
+# refusal rationale ("can't guess what to remove") doesn't apply to it. Pins both halves the decision
+# calls for: the listing prints, and it is explicitly labeled as heuristic/guessed, not manifest-backed.
+# The real (non-dry) refusal (B15 above) is untouched. -------------------------------------------------
+B15D="$SANDBOX/b15d-no-manifest-dry-run/.claude"
+inst --home "$B15D" --no-hooks
+check_status "B15D install succeeds" 0 "$STATUS"
+rm -f "$B15D/.keel/install-manifest.claude"   # simulate a pre-0.7 (manifest-less) home
+check_nofile "B15D fixture: no manifest for this mode" "$B15D/.keel/install-manifest.claude"
+
+unin --home "$B15D" --dry-run
+check_status "B15D dry-run over a manifest-less home falls through -> exit 0" 0 "$STATUS"
+check_contains "B15D dry-run labels the listing as heuristic" "$OUT" "heuristic"
+check_contains "B15D dry-run lists a would-remove line" "$OUT" "would remove"
+check_contains "B15D dry-run states a real run refuses instead of removing (code-review high finding)" "$OUT" "a REAL (non-dry) run in this same state refuses"
+check_link "B15D nothing removed — the CLI symlink survives" "$B15D/bin/keel"
+check_file "B15D nothing removed — FRAMEWORK.md survives" "$B15D/FRAMEWORK.md"
+check_file "B15D INSTANCE.md (user data) untouched" "$B15D/INSTANCE.md"
+
 # --- B16: the mode/home mismatch refusal for a home where NEITHER mode ever recorded a manifest
 # still fires, using the same context-file evidence — built entirely by hand, with install.sh never
 # invoked, so no manifest exists anywhere at this home. dir #150 folded this into the general
@@ -823,5 +843,134 @@ check_file "B22 shared PRINCIPLES.md survives" "$B22/PRINCIPLES.md"
 check_file "B22 shared commands survive" "$B22/commands/go.md"
 check_contains "B22 the foreign CLAUDE.md is untouched" "$(cat "$B22/CLAUDE.md")" "My own global notes"
 check_nofile "B22 codex manifest removed" "$B22/.keel/install-manifest.codex"
+check_contains "B22 the ledger entry survives — the still-live claude install is sentinel-protected (code-review high finding)" "$(cat "$KEEL_LEDGER_FILE")" "$B22"
+
+# assert_shared_half_removed LABEL HOME — the common tail asserted after a dual-mode sequence's SECOND
+# uninstall, expected to fully clean up the shared half now that no sibling-mode evidence protects it.
+# B23/B25B/B26 below all repeat this identical block; factored here once a fourth copy (B26) made it
+# past this project's own "3rd copy" convention (an operator-run /code-review high pass on this same
+# branch flagged the fixture-scaffold triplication as its own finding).
+assert_shared_half_removed() {
+  local label="$1" home="$2"
+  check_nofile "$label shared bin/keel finally removed" "$home/bin/keel"
+  check_nofile "$label shared FRAMEWORK.md finally removed" "$home/FRAMEWORK.md"
+  check_nofile "$label shared PRINCIPLES.md finally removed" "$home/PRINCIPLES.md"
+}
+
+# --- B23: dir #190's PRIMARY regression fixture — an ordinary, non-foreign-core both-modes home
+# (dir #124, a supported and tested shape), uninstalled in sequence. The first uninstall strips this
+# mode's rails from CLAUDE.md (has_keel_rails now false) and consumes ITS OWN manifest, but the context
+# file itself survives by design (uninstall never deletes it) — exactly what the old fallback
+# (bare `[ -f "$other_context" ]`) misread as "the other mode is still installed here" forever, on the
+# SECOND run's normal — not foreign-core — sequence. v0.6.1 completed this cleanly; this pins the same
+# outcome against the fix (a manifest-independent foreign-core sentinel, absent here since neither half
+# is foreign-core). ------------------------------------------------------------------------------------
+B23="$SANDBOX/b23-dir190-regression/.claude"
+inst --home "$B23" --no-hooks
+check_status "B23 install succeeds" 0 "$STATUS"
+run env KEEL_HOME="$B23" "$INSTALL" --codex --no-hooks
+check_status "B23 codex install over the same home succeeds" 0 "$STATUS"
+
+unin --home "$B23" --yes
+check_status "B23 first (claude) uninstall exits 0" 0 "$STATUS"
+check_nofile "B23 claude manifest removed" "$B23/.keel/install-manifest.claude"
+check_file "B23 codex manifest still present" "$B23/.keel/install-manifest.codex"
+check_file "B23 shared bin/keel survives the first uninstall (codex still needs it)" "$B23/bin/keel"
+
+unin --codex --home "$B23" --yes
+check_status "B23 second (codex) uninstall exits 0" 0 "$STATUS"
+check_absent "B23 second uninstall no longer misreports a claude sharer" "$OUT" "shared with the claude install"
+check_contains "B23 the strip is announced as an unconfirmed guess, not silent (code-review high finding)" "$OUT" "no evidence CLAUDE.md is gone"
+# no orphaned shared half:
+assert_shared_half_removed B23 "$B23"
+check_nofile "B23 codex manifest removed" "$B23/.keel/install-manifest.codex"
+
+# --- B24: dir #190's original scenario — a single real (claude-only) install, with an ordinary,
+# unrelated file dropped at the OTHER mode's context-file path (never a real codex install: no
+# install.sh --codex ever ran, no foreign-core sentinel exists). Must uninstall cleanly — shared
+# artifacts removed, not falsely kept because of the name collision alone. ------------------------------
+B24="$SANDBOX/b24-dir190-stray-file/.claude"
+inst --home "$B24" --no-hooks
+check_status "B24 install succeeds" 0 "$STATUS"
+printf '# not a codex install\njust a stray file with the same name\n' > "$B24/AGENTS.md"
+check_nofile "B24 fixture: no codex manifest ever recorded" "$B24/.keel/install-manifest.codex"
+
+unin --home "$B24" --yes
+check_status "B24 uninstall over a home with a stray AGENTS.md exits 0" 0 "$STATUS"
+check_absent "B24 does not falsely report AGENTS.md as a shared codex install" "$OUT" "shared with the codex install"
+check_contains "B24 the strip is announced as an unconfirmed guess, not silent (code-review high finding)" "$OUT" "no evidence AGENTS.md is gone"
+check_nofile "B24 shared bin/keel correctly removed (no real codex install to protect)" "$B24/bin/keel"
+check_nofile "B24 shared FRAMEWORK.md correctly removed" "$B24/FRAMEWORK.md"
+check_nofile "B24 shared PRINCIPLES.md correctly removed" "$B24/PRINCIPLES.md"
+check_file "B24 the stray AGENTS.md itself is left alone (not Keel's to touch)" "$B24/AGENTS.md"
+
+# --- B25A: the foreign-core sentinel's CLEAR branch (install.sh's `rm -f "$foreign_core_marker"`) —
+# never exercised by B22 (which only ever writes the sentinel, once). Install claude over a foreign
+# CLAUDE.md (sentinel written), then delete that CLAUDE.md and re-run install.sh fresh: the new run is
+# NOT foreign-core (no pre-existing file to collide with), so the sentinel must be cleared. ------------
+B25A="$SANDBOX/b25a-sentinel-clear/.claude"; mkdir -p "$B25A"
+printf '# My own global notes\nnothing keel here\n' > "$B25A/CLAUDE.md"
+inst --home "$B25A" --no-hooks
+check_status "B25A install over a foreign CLAUDE.md succeeds" 0 "$STATUS"
+check_file "B25A fixture: the foreign-core sentinel was written" "$B25A/.keel/foreign-core.claude"
+rm -f "$B25A/CLAUDE.md"
+inst --home "$B25A" --no-hooks
+check_status "B25A re-install after removing the foreign file succeeds" 0 "$STATUS"
+check_contains "B25A fixture: the fresh CLAUDE.md now carries rails" "$(cat "$B25A/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_nofile "B25A the foreign-core sentinel is cleared" "$B25A/.keel/foreign-core.claude"
+
+# --- B25B: BOTH modes foreign-core, uninstalled in sequence — the closest analogue to B23 for the
+# sentinel path. Exercises uninstall's own self-take of ITS sentinel (the claude uninstall below takes
+# foreign-core.claude) and confirms the SECOND uninstall still cleans up the shared half even though
+# both context files were foreign-core, not just one (B22's shape). -------------------------------------
+B25B="$SANDBOX/b25b-both-foreign/.claude"; mkdir -p "$B25B"
+printf '# My own global notes (claude)\nnothing keel here\n' > "$B25B/CLAUDE.md"
+inst --home "$B25B" --no-hooks
+check_status "B25B claude install over a foreign CLAUDE.md succeeds" 0 "$STATUS"
+printf '# My own global notes (codex)\nnothing keel here\n' > "$B25B/AGENTS.md"
+run env KEEL_HOME="$B25B" "$INSTALL" --codex --no-hooks
+check_status "B25B codex install over the same home, also foreign, succeeds" 0 "$STATUS"
+check_file "B25B fixture: both sentinels written" "$B25B/.keel/foreign-core.claude"
+check_file "B25B fixture: both sentinels written (codex)" "$B25B/.keel/foreign-core.codex"
+
+unin --home "$B25B" --yes
+check_status "B25B first (claude) uninstall exits 0" 0 "$STATUS"
+check_file "B25B shared bin/keel survives the first uninstall (codex still needs it)" "$B25B/bin/keel"
+check_nofile "B25B claude's own sentinel is taken by its own uninstall" "$B25B/.keel/foreign-core.claude"
+check_file "B25B codex's sentinel is untouched by the claude uninstall" "$B25B/.keel/foreign-core.codex"
+
+unin --codex --home "$B25B" --yes
+check_status "B25B second (codex) uninstall exits 0" 0 "$STATUS"
+check_absent "B25B second uninstall does not misreport a claude sharer" "$OUT" "shared with the claude install"
+assert_shared_half_removed B25B "$B25B"
+check_nofile "B25B codex's own sentinel is taken by its own uninstall" "$B25B/.keel/foreign-core.codex"
+check_contains "B25B the foreign CLAUDE.md is untouched throughout" "$(cat "$B25B/CLAUDE.md")" "My own global notes (claude)"
+check_contains "B25B the foreign AGENTS.md is untouched throughout" "$(cat "$B25B/AGENTS.md")" "My own global notes (codex)"
+
+# --- B26: dir #190's named migration residual, pinned live — an /code-review high pass live-reproduced
+# a foreign-core install placed by a PRE-fix checkout (no sentinel ever written) whose manifest is later
+# lost: neither rails nor sentinel confirm it, so this fallback still can't tell it apart from B24's
+# stray file and strips its shared half — the one structural trade-off this diff's own comments name as
+# unclosable without new evidence. What CAN be pinned: the strip is no longer silent (the review's other
+# finding, now fixed) — it prints the same unconfirmed-guess warning B23/B24 do, naming the survivor and
+# the recovery command, instead of exiting 0 with no trace of the guess it made. ---------------------
+B26="$SANDBOX/b26-dir190-residual/.claude"; mkdir -p "$B26"
+printf '# My own global notes\nnothing keel here\n' > "$B26/CLAUDE.md"
+inst --home "$B26" --no-hooks
+check_status "B26 install over a foreign CLAUDE.md succeeds" 0 "$STATUS"
+check_file "B26 fixture: the foreign-core sentinel was written" "$B26/.keel/foreign-core.claude"
+run env KEEL_HOME="$B26" "$INSTALL" --codex --no-hooks
+check_status "B26 codex install over the same home succeeds" 0 "$STATUS"
+rm -f "$B26/.keel/install-manifest.claude" "$B26/.keel/foreign-core.claude"   # simulate a pre-dir-190 install
+check_nofile "B26 fixture: claude manifest absent" "$B26/.keel/install-manifest.claude"
+check_nofile "B26 fixture: no sentinel (simulating a pre-fix install)" "$B26/.keel/foreign-core.claude"
+
+unin --codex --home "$B26" --yes
+check_status "B26 the advised codex uninstall exits 0 — the residual is not a new refusal" 0 "$STATUS"
+check_contains "B26 the strip is announced as an unconfirmed guess (the residual is disclosed at runtime, not silent)" "$OUT" "no evidence CLAUDE.md is gone"
+check_contains "B26 names the exact recovery command" "$OUT" "install.sh --home"
+# the known, disclosed residual — not this ticket's fix:
+assert_shared_half_removed B26 "$B26"
+check_contains "B26 the foreign CLAUDE.md itself is untouched" "$(cat "$B26/CLAUDE.md")" "My own global notes"
 
 summary
