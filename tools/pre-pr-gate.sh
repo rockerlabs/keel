@@ -509,6 +509,11 @@ _normalize_addon_set() {
 # review write between them), that round's own prior add-on memory is silently gone from the chain —
 # correctly fail-silent per the rule above, but it means a real drop from two-or-more rounds back can
 # go unnoticed. A nudge for the common case, not a substitute for reading the receipt.
+# **Third case, same family (found 2026-08-20 by dir #192's RC cross-PR-seam pass, dir #201):** the
+# IN-RUN convergence path (`commands/polish.md` step 5 — resolve, `--amend`, continue without
+# re-`init`-ing, dir #177) never retires anything at all, so the prior `polish.5-review` line stays in
+# the LIVE sentinel this function never reads, and a drop there is silent. Disclosed in that step's own
+# prose rather than fixed here, because dir #186 removes this whole check; keep the two in sync.
 _warn_dropped_addons() {
   local receipt_key="$1" new_outcome="$2" cwd="${3:-$PWD}"
   local raw_prev prev prev_outcome prior_set new_set a label missing=""
