@@ -193,9 +193,13 @@ line inside a 103–106-char block — an edit that had been abandoned halfway. 
 markdown-link half of a class this repo already polices in prose:
 [`tools/self/doctor.sh`](../tools/self/doctor.sh)'s dead-internal-reference check resolves
 `tools/`, `commands/`, and `templates/` mentions anywhere in the adopter-facing docs, in link syntax
-or not. The two are complementary, and when this sweep is promoted to tier 1 (keel's own dir #169) it
-belongs as an extension of that check rather than a second tool beside it. Until a class is demoted,
-running it by hand per run is the honest state.
+or not. The two are complementary, and keel's own dir #169 has since demoted this class to tier 1 —
+as [`tools/self/prose-drift.sh`](../tools/self/prose-drift.sh), a second tool beside that check rather
+than an extension of it: what shipped for signal 1 is block-relative, not the flat `>110` threshold
+above (which the tool's own header records as mostly ordinary long lines, not defects), so the two
+share no machinery. `tools/self/doctor.sh` invokes it as an orchestrated check, so a keel run now gets
+both signals from the suite; the sweeps above stay the honest state for any class still undemoted, and
+for the flat-threshold leads the shipped check deliberately drops.
 
 ## Phase 1 — per-file audits, in parallel
 

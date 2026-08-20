@@ -31,7 +31,7 @@ out not to be transitional at all were deliberately kept and relabeled (dir #150
 arcs and that closure, `docs/parallel-sessions.md` — the adopter-facing playbook for running two or
 more agent sessions against one repo (dir #172).
 
-Known issues: five residuals ship unfixed, deliberately not held for the tag — four carry open
+Known issues: six residuals ship unfixed, deliberately not held for the tag — five carry open
 tickets, and the first is a recorded design bound rather than a ticket. The release-in-preparation
 allowance is now **bounded, not closed** — inside its 40-commit window a forgotten or deleted topmost
 tag still reads as a green "release in preparation" line rather than a GAP. That window is the
@@ -51,7 +51,13 @@ against whatever the last retired round held. An add-on gained and dropped insid
 goes unannounced, and when the older round happens to carry it the warning fires about that round
 instead — wrong baseline either way, both verified live. It is documented in
 `commands/polish.md` rather than fixed in code, because v0.8.0's gate-surface rewrite removes the
-warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
+warning outright (ticketed as backlog dir #201; the rewrite is dir #186). The sixth is the only
+behaviour-level one, and Fixed carries its account: `uninstall.sh` now reads any file merely sharing
+the other mode's context filename as evidence of that install, so a stray `AGENTS.md` in the home
+leaves the shared half unremovable via the documented path — the advised re-record-then-uninstall
+recovery loops instead of removing (backlog dir #190). It ships because it errs toward keeping files
+rather than stripping ones another install still needs, and every kept artifact is named in the run's
+own output.
 
 ### Added
 - **A step-5 `/polish` receipt that drops a prior round's review add-on now warns on stderr, naming
@@ -217,6 +223,15 @@ warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
   `ubuntu:24.04` containers (the macOS-only local run couldn't surface these), found and fixed two more
   cross-platform bugs in the test itself before it shipped — see Fixed, below, for the third, a
   pre-existing bug in `secret-scan.sh` the same review surfaced.
+- **`tools/changelog-section.sh`** (dir #162, PR #228) — prints one released version's `## [x.y.z]`
+  section body out of a repo's own `CHANGELOG.md`, so `docs/publishing-checklist.md` §4's "go find
+  and copy the section out" step has a deterministic replacement instead of a hand-scroll through a
+  file this long. `--digest` prints only the section opener plus its `### ` heading lines, for
+  skimming. Adopter-usable (dir #68): the changelog is resolved relative to the script's own
+  location, with nothing keel-specific hardcoded. Scope correction the ticket itself made: printing
+  the section is an INPUT to release notes, not the notes — the curation stays the operator's work
+  and the tool only removes the fetching (the measurement behind that rescope is in the dir #159
+  entry under Fixed). Pinned by `tests/test_changelog_section.sh`.
 
 ### Changed
 - **`uninstall.sh`/`tools/doctor.sh` now require an install manifest to remove or report on Keel
@@ -403,15 +418,17 @@ warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
   PR's own review then forced a second condition into the code (the pending version must out-sort every
   tag); the paragraph was never revisited. Three delta rounds of the same reviewer missed it — each saw
   only its own delta, and the divergence opened *between* deltas — and an operator-run `/code-review high`
-  caught it by reproducing a backport shape that satisfies the doc and GAPs in the code. Three pins in
+  caught it by reproducing a backport shape that satisfies the doc and GAPs in the code. Four pins in
   `tests/test_release_audit_doc.sh` now hold the DOC leg: it must state both conditions and the
-  linear-release-line limit. The CODE leg is pinned behaviourally in `tests/test_self_doctor.sh` instead
-  of by grepping the expression — a first version did grep it, and `/simplify`'s altitude pass showed
-  that added no protection (deleting the conjunct already reds 3 behavioural assertions, measured) while
-  adding refactor fragility, since it pinned expression shape down to a trailing `&&`. **Named residual,
-  filed as dir #160:** presence-pins catch a DELETED condition, not the direction that actually failed
-  here — code *gaining* a condition the doc never states. The generated-embed shape this repo already
-  uses for `CORE.md` ↔ `templates/CLAUDE.md` is the real fix.
+  linear-release-line limit (the fourth arrived later in this same release, with dir #156's
+  commit-distance bound — see that entry above). The CODE leg is pinned behaviourally in
+  `tests/test_self_doctor.sh` instead of by grepping the expression — a first version did grep it, and
+  `/simplify`'s altitude pass showed that added no protection (deleting the conjunct already reds 3
+  behavioural assertions, measured) while adding refactor fragility, since it pinned expression shape
+  down to a trailing `&&`. **Named residual, filed as dir #160:** presence-pins catch a DELETED
+  condition, not the direction that actually failed here — code *gaining* a condition the doc never
+  states. The generated-embed shape this repo already uses for `CORE.md` ↔ `templates/CLAUDE.md` is the
+  real fix.
 - **`docs/publishing-checklist.md` §4 no longer prescribes a release with no title** (dir #159). It showed
   `gh release create <tag> --notes-from-tag …` with no `--title`; followed literally for v0.6.1 that
   published a release whose title was the empty string and whose body was the 25-character tag message,
@@ -424,8 +441,9 @@ warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
   that section rather than copied from it** — found while hand-writing v0.6.1's own notes, where the
   section ran ~31KB against a ~4KB house length (a prose opener, three or four highlight sections, a
   Known-issues paragraph), so "notes come from the section" read literally produces a release note eight
-  times too long. A helper to make that step one paste is filed as dir #162, which the same measurement
-  rescoped: printing the section is not enough, since the curation is the work. Whether a doctor leg should
+  times too long. A helper to make that step one paste was filed as dir #162, which the same measurement
+  rescoped: printing the section is not enough, since the curation is the work — it shipped inside
+  this same release as `tools/changelog-section.sh` (see Added). Whether a doctor leg should
   WARN on a published release with an empty title (the ticket's own "ideally a check") is the remaining
   question, and `tools/self/doctor.sh` already reconciles CHANGELOG sections against git tags and already
   calls `gh` best-effort, so it is the natural home — not built here, so the live v0.6.1 release still

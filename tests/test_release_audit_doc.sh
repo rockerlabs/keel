@@ -71,6 +71,17 @@ else
     "renumbered in publishing-checklist.md? update docs/release-audit.md phase 7 too"
 fi
 
+# The reverse citation, added when publishing-checklist.md §4 gained the tag-creation step: §4 quotes
+# phase 7's own stop point to justify tagging the NAMED sha rather than whatever the default branch's
+# head happens to be at execution time. Both legs, so a reword on either side surfaces here instead of
+# stranding the quote (the broken-xref class docs/drydock.md names).
+pin "publishing-checklist §4 cites phase 7's stop point" \
+  "$checklist" 'tag ready to cut' \
+  "§4's tag step quotes phase 7; if phase 7 rewords, the checklist's quotation is stale"
+pin "release-audit.md phase 7 still says 'tag ready to cut'" \
+  "$audit" 'tag ready to cut' \
+  "rewording phase 7's stop point? update docs/publishing-checklist.md §4's quotation of it too"
+
 # --- dir #157: phase 7's description of the pending-release allowance vs. the code enforcing it ----
 # Both halves shipped in dir #155's own PR and drifted anyway: phase 7 stated one condition, that PR's
 # review then forced a second into tools/self/doctor.sh, and the paragraph was never revisited. Three

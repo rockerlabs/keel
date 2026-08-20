@@ -55,6 +55,13 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
 ## 4. A real release
 
 - [ ] **A version tag + GitHub release** — so people can pin a version and read what changed. **[you]**
+      Create and push the tag YOURSELF, annotated, on the exact SHA the release audit named
+      ([`release-audit.md`](release-audit.md) phase 7 stops at "tag ready to cut" and names that SHA;
+      v0.6.1's tag is this shape, an annotated tag on the named merge commit):
+      `git tag -a <tag> <sha> -m "<tag> — <headline>" && git push origin <tag>`
+      A bare `gh release create <tag>` with no tag already on the remote silently creates one at **the
+      default branch's head at execution time** — a different commit if anything landed since the cut.
+      If you let `gh` create the tag, pass `--target <sha>`.
 - [ ] **A no-clone install path works**, if you offer one (e.g. `curl … | sh`) — and you actually ran it
       once on a clean machine/sandbox, not just wrote it. **[you]**
 - [ ] **Attach a stamped `bootstrap.sh` to the release**, so `releases/latest/download/bootstrap.sh`
