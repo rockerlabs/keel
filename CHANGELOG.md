@@ -49,15 +49,24 @@ add-on-drop warning cannot see the path dir #177 blessed — an in-run `--amend`
 round retires nothing, so the check never compares against this run's own earlier step-5 receipt, only
 against whatever the last retired round held. An add-on gained and dropped inside one run therefore
 goes unannounced, and when the older round happens to carry it the warning fires about that round
-instead — wrong baseline either way, both verified live. It is documented in
-`commands/polish.md` rather than fixed in code, because v0.8.0's gate-surface rewrite removes the
-warning outright (ticketed as backlog dir #201; the rewrite is dir #186). The sixth is the only
-behaviour-level one, and Fixed carries its account: `uninstall.sh` now reads any file merely sharing
-the other mode's context filename as evidence of that install, so a stray `AGENTS.md` in the home
-leaves the shared half unremovable via the documented path — the advised re-record-then-uninstall
-recovery loops instead of removing (backlog dir #190). It ships because it errs toward keeping files
-rather than stripping ones another install still needs, and every kept artifact is named in the run's
-own output.
+instead — wrong baseline either way. A third outcome neither of those covers: an in-run `--amend` of
+the very commit the last retirement stamped as `base-sha` orphans that sha, so the lineage guard
+discards the comparison entirely and the check is SILENT on that path too, rather than firing the
+"false catch" about an older round. All three are verified live — the third only after this entry first
+claimed the pair was exhaustive. All three are documented in `commands/polish.md` and in the check's own
+header rather than fixed in code, because v0.8.0's gate-surface rewrite removes the warning outright
+(ticketed as backlog dir #201 and dir #214; the rewrite is dir #186). The sixth is the only
+behaviour-level one, and Fixed carries its account: `uninstall.sh` now reads any file merely sharing the
+other mode's context filename as evidence of that install. The trigger is the ORDINARY both-modes home
+dir #124 supports, not a stray `AGENTS.md` nobody installed. Uninstall never deletes the context file,
+by design, so removing the first mode always leaves the other mode's `CLAUDE.md`/`AGENTS.md` on disk;
+the second uninstall's fallback then reads that survivor as proof of a live sibling install and keeps
+the shared half (`FRAMEWORK.md`, `PRINCIPLES.md`, `bin/keel`) permanently. The advised
+re-record-then-uninstall recovery loops instead of removing, and the printed reason ("shared with the
+claude install") is false at a point where no manifest for that mode exists anywhere in the home. That
+is a regression on a supported flow: v0.6.1 completed the same sequence cleanly, A/B-proven against the
+tag. It ships anyway because it errs toward keeping files rather than stripping ones another install
+still needs, and every kept artifact is named in the run's own output (backlog dir #190).
 
 ### Added
 - **A step-5 `/polish` receipt that drops a prior round's review add-on now warns on stderr, naming
@@ -239,7 +248,11 @@ own output.
   transitional window are gone at 0.7, per that ticket's own filed follow-up (dir #150).** A home with
   no usable manifest (a pre-0.7 install, or one whose manifest is corrupt/unversioned) gets a clear,
   actionable refusal from `uninstall.sh` naming `install.sh --home <dir>` as the fix, never a silent
-  content-sniffed removal. Three of the audited sites turned out NOT to be transitional fallbacks and
+  content-sniffed removal. That refusal is unconditional, `--dry-run` included: a dry run against such a
+  home now prints it and exits 2, where 0.6.1 printed a "would remove" listing — that listing was itself
+  the content-sniffed guess this change retires. Whether `--dry-run` should instead fall through to an
+  advisory listing is an open fork (backlog dir #228); this entry declares the shape that ships.
+  Three of the audited sites turned out NOT to be transitional fallbacks and
   were deliberately kept, just relabeled (token dropped, comment corrected): `tools/doctor.sh`'s and
   `uninstall.sh`'s gate-hooks default settings-path probe is the only possible path for a global/
   home-scope gate install (never a guess among candidates); `tools/pre-pr-gate.sh`'s four static
@@ -362,11 +375,13 @@ own output.
   independent of whether that file happens to carry rails. New coverage: `tests/test_uninstall.sh`'s
   B22 (the foreign-core mixed-generation case) and B15C (the `--codex` no-manifest refusal, previously
   untested under that flag). **Named residual, filed as dir #190:** the fix trades that false negative
-  for a narrower false positive in the opposite (safe) direction — an unrelated file that merely shares
-  the other mode's context filename, with no real other-mode install ever having run, now also reads as
-  "shared" and survives, leaving the home's shared half unremovable via the documented path. Every kept
-  artifact is still named in the output, so this isn't silent, but it isn't automatically recoverable
-  either.
+  for a false positive in the opposite (safe) direction — any file merely sharing the other mode's
+  context filename now reads as "shared" and survives, leaving the home's shared half unremovable via
+  the documented path. That is not confined to an unrelated same-named file, as this entry first said:
+  the ordinary both-modes home reaches it too, because uninstall never deletes the context file, so the
+  first mode's removal always leaves the other mode's file behind for the second run to read. Known
+  issues above carries the full account and the A/B against v0.6.1. Every kept artifact is still named
+  in the output, so this isn't silent, but it isn't automatically recoverable either.
 - **`secret-scan.sh`'s `emit_diff()` leaked a stray `+` into every BLOCKED diagnostic built from a
   staged-diff scan (the normal `git commit` hook path) on Alpine/BusyBox** (dir #168, found by an
   operator-run `/code-review medium` verifying `tests/test_tour_transcript.sh` live in an

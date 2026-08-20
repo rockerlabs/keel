@@ -386,6 +386,19 @@ Steps, in order:
      the add-on, the warning fires about IT and merely looks like it caught you; if it did not — an
      add-on gained and dropped inside this one run, the dir #155 shape this warning exists to catch —
      you get silence. Neither answer is about the line you actually need to compare against.
+     **A THIRD outcome (dir #214), not covered by that pair:** whether you get either of them at all
+     depends on the lineage guard. Retiring a live sentinel stamps the then-HEAD into the backup as
+     `base-sha`, and the guard requires that sha to still be REACHABLE from current HEAD. A plain
+     `--amend` of the very commit that retirement saw rewrites it rather than extending it, so the sha
+     is orphaned, the guard discards the comparison, and the check is SILENT here too — regardless of
+     what the retired round held. Two things make this hard to predict from the session's own view, so
+     do not try to. **The condition is reachability, not "a fresh commit happened"** — a commit is its
+     own ancestor, so an unmoved HEAD passes the guard. **And the stamp is not necessarily YOUR
+     `init`'s** — retirement runs on every gate deny and on the PASS branch too, and it only stamps when
+     a live sentinel exists, so after a deny or a shipped round your `init` finds nothing to retire,
+     stamps nothing, and the backup still carries an OLDER round's sha, which your own amend may have
+     orphaned. Which is why the rule above is to read the live sentinel, never to infer anything from
+     the presence or absence of a warning.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,

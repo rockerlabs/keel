@@ -157,26 +157,35 @@ artifact_cksum() {
 # own manifest. That reads every removal as "shared" and uninstall becomes a permanent no-op (caught by
 # this file's own baseline coverage going fully red the moment that swap was tried). The other context
 # file's mere presence is the narrower, correct question: is there evidence, independent of THIS mode's
-# content, that the OTHER mode's install genuinely happened here. Costs an occasional over-wide keep (a
-# same-named file that isn't actually a Keel install); the alternative costs a live install's shared
-# files.
+# content, that the OTHER mode's install genuinely happened here. Costs an over-wide keep whenever that
+# file outlives the install it belonged to — routinely, per the scope correction below; the alternative
+# costs a live install's shared files.
 #
 # **Named residual (dir #150 audit, operator-run /code-review max, 2nd pass):** "plain existence" and
 # "carries evidence of a real install" are NOT the same question, and nothing here can tell them apart
 # — a foreign-core install's own kept context file is, by construction (install.sh's foreign_core path
 # never writes into it), indistinguishable from an unrelated user file that merely happens to share the
-# name. Reproduced live: drop an ordinary file named exactly `$other_context` into a single-mode home
-# with no real other-mode install at all, and every shared artifact reads as "shared with the other
-# install" and survives — a fabricated cross-mode install that then makes the home's shared half
-# permanently unremovable via the documented path (this mode's own manifest is consumed by the run
-# that hit it). Accepted here because it degrades the WRONG DIRECTION from the bug it replaces:
-# over-keeping a stray file costs a manual cleanup, silently stripping a live install's CLI symlink
+# name. Reproduced live: drop an ordinary file named exactly `$other_context` into a single-mode home,
+# and every shared artifact reads as "shared with the other install" and survives — making the home's
+# shared half permanently unremovable via the documented path (this mode's own manifest is consumed by
+# the run that hit it).
+# **Scope correction (2026-08-20 delta audit, A/B-proven against v0.6.1):** that repro is not the only
+# way in, and not even the ordinary one. The ORDINARY both-modes home (dir #124, a supported and tested
+# shape) hits the identical path, because uninstall never deletes the context file by design — so the
+# FIRST mode's removal always leaves a genuine `$other_context` behind for the SECOND run's fallback to
+# read, and that second run keeps FRAMEWORK.md, PRINCIPLES.md and bin/keel forever. The advised
+# re-record-then-uninstall recovery loops, and the message names a mode whose manifest no longer exists
+# anywhere in the home. v0.6.1 completed the same sequence cleanly, so this is a regression on a
+# supported flow, not only on a fabricated one.
+# Accepted here because it degrades the WRONG DIRECTION from the bug it replaces:
+# an over-wide keep costs a manual cleanup, silently stripping a live install's CLI symlink
 # and docs does not; every kept artifact is still named in the output (`... is shared with the
 # $other_manifest_mode install — left in place`), so the operator has a paper trail here even though
-# the situation itself is ambiguous. Filed as dir #190, not fixed in this round — a fix needs either a
-# stronger other-mode-specific signal (none exists once manifests and rails are both off the table) or
-# accepting a scoped edge case the CHANGELOG names, not a same-round respin of what the whole function
-# is already the second draft of.
+# the reason printed there can itself be wrong. Filed as dir #190, not fixed in this round — a fix
+# needs a stronger other-mode-specific signal than context-file existence (S8-F2's candidate: that file
+# existing AND some evidence independent of THIS mode — `has_keel_rails` on it, a surviving
+# `.keel/install-manifest.<other>`, or a ledger entry for the other mode), not a same-round respin of
+# what the whole function is already the second draft of.
 artifact_shared_with_other() {
   if [ "$other_usable" = 1 ]; then
     awk -F'\t' -v rel="$1" '$1 ~ /^artifact=/ && $2 == rel { found=1 } END { exit !found }' "$other_manifest"
