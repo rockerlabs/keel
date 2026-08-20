@@ -30,6 +30,25 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   its two sibling tools from the same release already follow (`tools/drydock/inventory.sh`,
   `tools/self/prose-drift.sh`): `-h`/`--help` prints usage and exits 0, and a malformed-invocation
   error exits 2 rather than 1 (dir #223). A data miss (no matching CHANGELOG section) still exits 1.
+- **Five bugs found by an operator-run `/code-review high` pass on dir #156's own diff, plus two
+  cheap passengers found by a delta audit** (dir #213/#194/#195/#196, dir #219/#215). `doctor.sh`'s
+  `_pending_release_intro_commit()` `git log -S` pickaxe could abort the whole run silently on an
+  unborn HEAD (fresh `git init`, an orphan branch, a `filter: blob:none` partial clone with an
+  unreachable promisor) — guarded with `|| true`, and `filter: blob:none` dropped from the CI
+  `self-check` job, whose own rationale for it (blob content never read) stopped being true once
+  that pickaxe landed (dir #213). The same pickaxe had no concept of "inside a fenced code block", so
+  a fenced CHANGELOG.md example reusing a real version heading could resolve the wrong introducing
+  commit — fixed by checking each pickaxe candidate's fence-blanked content against its parent's,
+  walking to the next-newest candidate on a fence-only occurrence change (dir #194, an open fork the
+  operator resolved mid-session). The dead-slash-command-reference scan's `grep -F ... | head -1` carried
+  the same SIGPIPE-under-`pipefail` shape dir #156 had already fixed elsewhere in the file — replaced
+  with a here-string `grep -m 1` (dir #195). The digit-shape-only numeric env-var guard was duplicated,
+  unfixed, across six other files; swept, then consolidated into a shared
+  `tools/lib/nonneg-int.sh` (`sanitize_nonneg_int` / `_nonneg_int_valid`), each call site passing its
+  own digit-cap (`tools/branch-cleanup.sh`'s raw unix-epoch mtime comparison needs 14, not the usual
+  10) (dir #196). Passengers: a stray `Deleted tag ...` line no longer leaks into test suite output
+  (`git tag -d` now redirects to `/dev/null`, dir #219); three stale self-referential figures/pointers
+  in delta-added comments corrected, comment-only (dir #215).
 - The alpine-busybox CI leg now installs `jq`, so `tests/test_pre_pr_gate.sh` and its
   install-side siblings (`test_install_pre_pr_gate.sh`, the gate half of
   `test_install_manifest.sh`) actually run there instead of skipping cleanly for want of it. Before

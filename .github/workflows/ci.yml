@@ -40,10 +40,23 @@ jobs:
       # `jq` (dir #220): without it, tests/test_pre_pr_gate.sh and its install-side siblings skip
       # cleanly rather than running — so "alpine-busybox: success" was silently NOT evidence about
       # tools/pre-pr-gate.sh, the largest shell surface in the repo, on its one non-GNU CI leg.
+      # `git config --system --add safe.directory '*'` (dir #191): this leg bind-mounts the WHOLE
+      # checkout into the container, so EVERY git call any script makes inside is dubious-owned to a
+      # container-root reader, not just a test's own clone (the narrower class the "Alpine-only trap"
+      # in this repo's CLAUDE.md already names). `--system`, not `--global` (found live, an independent
+      # `/code-review` altitude-angle pass): `tests/lib.sh` sandboxes every test file's `HOME` and
+      # `GIT_CONFIG_GLOBAL` to a fresh per-run path before its own body executes (dir #64), which
+      # shadows the "global" config scope outright — a `--global` write made here, before that
+      # override, becomes invisible to any git call any test file makes afterward (reproduced live:
+      # `git config --global --get-all safe.directory` returns nothing once `GIT_CONFIG_GLOBAL` is
+      # redirected, while `--system`'s value still resolves). System scope is a separate file
+      # (`/etc/gitconfig`) that no test's `HOME`/`GIT_CONFIG_GLOBAL` override touches, so it is the
+      # only scope that actually reaches every git call in the suite — closing the class for every git
+      # call, present and future, rather than requiring each new script to carry its own `|| true` guard.
       - name: Run test suite on Alpine/busybox
         run: |
           docker run --rm -e CI -v "$PWD:/keel" -w /keel alpine:3.21 \
-            sh -c 'apk add --no-cache bash git jq >/dev/null && bash tests/run.sh'
+            sh -c 'apk add --no-cache bash git jq >/dev/null && git config --system --add safe.directory "*" && bash tests/run.sh'
 
   shellcheck:
     name: shellcheck
