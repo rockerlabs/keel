@@ -2,7 +2,8 @@
 # tools/self/prose-drift.sh — keel-self-maintenance (dir #68): audits the KEEL REPO'S OWN tracked
 # prose, not an adopter's install — there is no consumer-facing counterpart, and install.sh never
 # ships this file. Invoked by tools/self/doctor.sh's orchestrated checks and by this file's own test;
-# not referenced from any adopter-facing doc.
+# named from adopter-facing prose at exactly one place, docs/drydock.md's phase-0 mechanical-sweeps
+# paragraph, under docs/reference.md's generic tools/self/ maintainer-only exemption.
 #
 # Promotes drydock run 1's throwaway mechanical sweep (private/audit/bin/sweep.sh, dir #165) into a
 # standing check. Two signals, deliberately different severities:

@@ -232,7 +232,8 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 
 # --- acceptance test 21 (gate side): corrupt/unknown-version/unreadable GATE manifest degrades to
-# absent — named warning + legacy fallback, exit behavior unchanged, no set -euo pipefail crash --------
+# absent — named warning + the deterministic default path dir #150 kept on purpose (not a legacy
+# fallback), exit behavior unchanged, no set -euo pipefail crash ----------------------------------
 if command -v jq >/dev/null 2>&1; then
   g21home="$SANDBOX/gate-home-21/.claude"
   run "$install" --home "$g21home" --no-hooks

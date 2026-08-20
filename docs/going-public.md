@@ -104,7 +104,7 @@ pre-launch repo with no external clones is the cheapest moment to do this, befor
 # from your scrubbed working clone (main already clean):
 gh repo delete <owner>/<repo> --yes          # needs the delete_repo scope
 gh repo create <owner>/<repo> --private --source=. --remote=origin --push
-git push origin <tag> ; gh release create <tag> --title "<tag> — <headline>" --notes-file <notes>
+git push origin <tag> && gh release create <tag> --title "<tag> — <headline>" --notes-file <notes>
 ```
 
 ## 4. Flip visibility

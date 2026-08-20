@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# test_rails_honesty.sh — pins the wording fixes of dir #99/#111/#112/#119: places where a shipped
-# rail described a guarantee it does not give. Grep-based, same idiom as test_conveyor_stages.sh — the
-# failure mode these guard against is a later edit quietly restoring the overclaim, which nothing else
-# would notice.
+# test_rails_honesty.sh — pins the wording fixes of dir #99/#111/#112/#119/#177: places where a
+# shipped rail described a guarantee it does not give. Grep-based, same idiom as
+# test_conveyor_stages.sh — the failure mode these guard against is a later edit quietly restoring
+# the overclaim, which nothing else would notice.
 #
 # dir #110's class-level "no unshipped slash-command reference" guard used to live here too, but it
 # ran only in Keel's own suite — no adopter install inherited it. Moved to tools/self/doctor.sh's

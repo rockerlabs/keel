@@ -167,16 +167,16 @@ artifact_cksum() {
 # never writes into it), indistinguishable from an unrelated user file that merely happens to share the
 # name. Reproduced live: drop an ordinary file named exactly `$other_context` into a single-mode home
 # with no real other-mode install at all, and every shared artifact reads as "shared with the other
-# install" and survives, even though `bin/keel` still gets printed as removed as a summary artifact —
-# a fabricated cross-mode install that then makes the home's shared half permanently unremovable via
-# the documented path (this mode's own manifest is consumed by the run that hit it). Accepted here
-# because it degrades the WRONG DIRECTION from the bug it replaces: over-keeping a stray file costs a
-# manual cleanup, silently stripping a live install's CLI symlink and docs does not; every kept
-# artifact is still named in the output (`... is shared with the $other_manifest_mode install — left in
-# place`), so the operator has a paper trail here even though the situation itself is ambiguous. Filed
-# as dir #190, not fixed in this round — a fix needs either a stronger other-mode-specific signal (none
-# exists once manifests and rails are both off the table) or accepting a scoped edge case the CHANGELOG
-# names, not a same-round respin of what the whole function is already the second draft of.
+# install" and survives — a fabricated cross-mode install that then makes the home's shared half
+# permanently unremovable via the documented path (this mode's own manifest is consumed by the run
+# that hit it). Accepted here because it degrades the WRONG DIRECTION from the bug it replaces:
+# over-keeping a stray file costs a manual cleanup, silently stripping a live install's CLI symlink
+# and docs does not; every kept artifact is still named in the output (`... is shared with the
+# $other_manifest_mode install — left in place`), so the operator has a paper trail here even though
+# the situation itself is ambiguous. Filed as dir #190, not fixed in this round — a fix needs either a
+# stronger other-mode-specific signal (none exists once manifests and rails are both off the table) or
+# accepting a scoped edge case the CHANGELOG names, not a same-round respin of what the whole function
+# is already the second draft of.
 artifact_shared_with_other() {
   if [ "$other_usable" = 1 ]; then
     awk -F'\t' -v rel="$1" '$1 ~ /^artifact=/ && $2 == rel { found=1 } END { exit !found }' "$other_manifest"
@@ -562,7 +562,8 @@ fi
 # manifest lingers (independent operator-run /code-review high pass: a stale gate manifest made this
 # print "still wired" — and the removal command it then advised — for hooks that were already gone).
 # The structural jq/grep check below still runs against whichever settings= this resolves to, manifest
-# or legacy default, so the hint is precise about WHERE but never blind about WHETHER. Note this runs
+# or the deterministic default dir #150 kept on purpose (not a legacy fallback), so the hint is
+# precise about WHERE but never blind about WHETHER. Note this runs
 # AFTER the manifest housekeeping step above moves $gate_manifest's SIBLING (this mode's own
 # install-manifest) into the backup — the gate manifest itself is untouched by this uninstall (a
 # separate opt-in installer owns it), so it's still there to read.
