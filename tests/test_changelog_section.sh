@@ -10,31 +10,50 @@
 helper="$REPO_ROOT/tools/changelog-section.sh"
 
 # --- arg validation --------------------------------------------------------------------------------
+# dir #223: usage errors are exit 2, matching the two sibling tools from the same release
+# (tools/drydock/inventory.sh, tools/self/prose-drift.sh) — only a "no matching section" data miss
+# and a missing CHANGELOG.md stay exit 1, since those aren't malformed-invocation errors.
 
 run "$helper"
-check_status "no version arg -> exit 1" 1 "$STATUS"
+check_status "no version arg -> exit 2 (usage error)" 2 "$STATUS"
 
 run "$helper" not-a-version
-check_status "non-semver version -> exit 1" 1 "$STATUS"
+check_status "non-semver version -> exit 2 (usage error)" 2 "$STATUS"
 
 # regression: a bash-glob check (`[0-9]*.[0-9]*.[0-9]*`) would accept these — `*` matches any
 # characters, not just digits — letting a non-semver string with unescaped ERE metacharacters
 # reach the internal grep -E heading search instead of failing validation cleanly.
 run "$helper" 0.6.1abc
-check_status "semver-prefixed garbage -> exit 1, not silently accepted" 1 "$STATUS"
+check_status "semver-prefixed garbage -> exit 2, not silently accepted" 2 "$STATUS"
 
 run "$helper" "1.2.3+(x)"
-check_status "version with unescaped regex metacharacters -> exit 1" 1 "$STATUS"
+check_status "version with unescaped regex metacharacters -> exit 2" 2 "$STATUS"
 
 run "$helper" 9.9.9
-check_status "version with no matching section -> exit 1" 1 "$STATUS"
+check_status "version with no matching section -> exit 1 (data miss, not a usage error)" 1 "$STATUS"
 check_contains "explains the miss" "$OUT" "no \`## [9.9.9]\` section found"
 
 run "$helper" 0.1.0 --bogus
-check_status "unknown option -> exit 1" 1 "$STATUS"
+check_status "unknown option -> exit 2 (usage error)" 2 "$STATUS"
 
 run "$helper" 0.1.0 --digest extra-junk-arg
-check_status "unexpected extra argument -> exit 1, not silently ignored" 1 "$STATUS"
+check_status "unexpected extra argument -> exit 2, not silently ignored" 2 "$STATUS"
+
+# --- -h / --help (dir #223) --------------------------------------------------------------------
+
+run "$helper" -h
+check_status "-h -> exit 0" 0 "$STATUS"
+check_contains "-h prints usage" "$OUT" "usage: changelog-section.sh"
+
+run "$helper" --help
+check_status "--help -> exit 0" 0 "$STATUS"
+check_contains "--help prints usage" "$OUT" "usage: changelog-section.sh"
+
+run "$helper" --edit
+check_status "--edit with no further args -> exit 2 (usage error)" 2 "$STATUS"
+
+run "$helper" --edit 0.1.0
+check_status "--edit with a version but no notes-file -> exit 2 (usage error)" 2 "$STATUS"
 
 # --- (a) real repo: helper output equals the section body for every released tag ------------------
 # Mark REPO_ROOT safe: in a container (CI Alpine leg) the mounted repo is owned by a different uid
@@ -135,5 +154,73 @@ check_absent "digest drops the heading's own bullet body" "$OUT" "the real thing
 # fenced fake heading instead of the real one, silently dropping the prose that follows the fence.
 check_contains "digest is fence-safe: prose after the fence is still part of the opener" \
   "$OUT" "More prose after the fence"
+
+# --- --edit mode (dir #189) ---------------------------------------------------------------------
+# Stubbed $EDITOR via a fake editor script on PATH, not a real interactive editor, mirroring the
+# three scenarios manually re-verified by hand across dir #162's own review rounds: unset EDITOR,
+# a flag-carrying EDITOR (re-split correctly in both shells), and a failing editor exit code.
+
+edit_repo="$SANDBOX/edit-repo"
+mkdir -p "$edit_repo/tools" "$edit_repo/bin"
+cp "$helper" "$edit_repo/tools/changelog-section.sh"
+cat > "$edit_repo/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [1.0.0] — 2026-01-01
+
+Real release.
+
+### Added
+- the real thing
+EOF
+
+# ok: appends a marker line to whatever file it's pointed at (last arg) and exits 0 — proves the
+# script's own scratch file (not the caller's real file) is what the editor actually touched, and
+# that the marked-up version is what lands in <notes-file>.
+cat > "$edit_repo/bin/editor-ok.sh" <<'EOF'
+#!/bin/sh
+eval 'f="${'"$#"'}"'
+printf '\nEDITED\n' >> "$f"
+EOF
+chmod +x "$edit_repo/bin/editor-ok.sh"
+
+# fail: never touches the file, exits 1 — proves a failing editor leaves <notes-file> untouched.
+cat > "$edit_repo/bin/editor-fail.sh" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$edit_repo/bin/editor-fail.sh"
+
+notes_out="$SANDBOX/edit-notes-ok.md"
+rm -f "$notes_out"
+run env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_out"
+check_status "--edit with a working editor -> exit 0" 0 "$STATUS"
+check_contains "notes-file gets the section body" "$(cat "$notes_out" 2>/dev/null)" "Real release."
+check_contains "notes-file reflects the editor's own edit" "$(cat "$notes_out" 2>/dev/null)" "EDITED"
+
+# flag-carrying $EDITOR: re-split correctly under both bash and zsh (the exact fix dir #162 landed
+# for the standalone recipe — an unquoted `$EDITOR <file>` breaks in zsh whenever $EDITOR carries a
+# flag). Run the helper itself under each shell explicitly.
+for sh_bin in bash zsh; do
+  if command -v "$sh_bin" >/dev/null 2>&1; then
+    notes_flag="$SANDBOX/edit-notes-flag-$sh_bin.md"
+    rm -f "$notes_flag"
+    run env "EDITOR=$edit_repo/bin/editor-ok.sh --some-flag" "$sh_bin" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_flag"
+    check_status "--edit with a flag-carrying \$EDITOR under $sh_bin -> exit 0" 0 "$STATUS"
+    check_contains "$sh_bin: notes-file still gets the edited content" "$(cat "$notes_flag" 2>/dev/null)" "EDITED"
+  fi
+done
+
+notes_untouched="$SANDBOX/edit-notes-untouched.md"
+printf 'SENTINEL\n' > "$notes_untouched"
+run env "EDITOR=$edit_repo/bin/editor-fail.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_untouched"
+check_status "--edit with a failing editor -> nonzero exit" 1 "$STATUS"
+check_contains "notes-file is left untouched on editor failure" "$(cat "$notes_untouched")" "SENTINEL"
+
+run env -u EDITOR "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$SANDBOX/edit-notes-unset.md"
+check_status "--edit with \$EDITOR unset -> nonzero exit" 1 "$STATUS"
+check_contains "clear message, no bare \$EDITOR sigil (bash/zsh escaping trap)" "$OUT" "set the EDITOR environment variable"
 
 summary

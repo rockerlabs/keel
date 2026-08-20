@@ -8,7 +8,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **`tools/changelog-section.sh --edit <version> <notes-file>`** (dir #189): folds the release-note
+  compose recipe — extract, open in `$EDITOR`, copy on success only — into tested code instead of
+  the hand-typed shell prose that used to live in `docs/publishing-checklist.md` §4 (every real bug
+  found across dir #162's own review rounds lived in that untested prose, never in the tested
+  extraction code). `docs/publishing-checklist.md` §4 collapses to one command.
+
 ### Fixed
+- **`tools/changelog-section.sh` now honors the cross-tool `-h`/`--help` and exit-code contract**
+  its two sibling tools from the same release already follow (`tools/drydock/inventory.sh`,
+  `tools/self/prose-drift.sh`): `-h`/`--help` prints usage and exits 0, and a malformed-invocation
+  error exits 2 rather than 1 (dir #223). A data miss (no matching CHANGELOG section) still exits 1.
 - The alpine-busybox CI leg now installs `jq`, so `tests/test_pre_pr_gate.sh` and its
   install-side siblings (`test_install_pre_pr_gate.sh`, the gate half of
   `test_install_manifest.sh`) actually run there instead of skipping cleanly for want of it. Before

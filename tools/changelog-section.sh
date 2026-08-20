@@ -5,35 +5,72 @@
 # manual "go find and copy the section out of CHANGELOG.md" step in docs/publishing-checklist.md §4
 # has a deterministic replacement. This is an INPUT to writing release notes, not the note itself:
 # release notes are a curated digest (v0.6.0's body was ~3.7KB) while a full section can run to
-# ~31KB (v0.6.1) — see dir #162's "Scope correction". Intended usage:
-#   tools/changelog-section.sh <version> > /tmp/notes-draft.md && eval "${EDITOR:?set the EDITOR environment variable first} /tmp/notes-draft.md" \
-#     && cp /tmp/notes-draft.md <notes-file>
-#   tools/changelog-section.sh <version> --digest    # opener + ### headings only, for skimming
+# ~31KB (v0.6.1) — see dir #162's "Scope correction". `--edit` (dir #189) folds the former by-hand
+# compose recipe — redirect to a scratch file, launch $EDITOR, copy on success — into tested code:
+# every real bug found across dir #162's own review rounds lived in that untested shell prose, never
+# in the tested extraction code, so the mechanism moved here rather than staying hand-typed in
+# docs/publishing-checklist.md.
 #
 # Usage:
 #   tools/changelog-section.sh <version> [--digest]
+#   tools/changelog-section.sh --edit <version> <notes-file>
+#   tools/changelog-section.sh -h | --help
 #
-#   <version>  bare semver, e.g. 0.6.1 (no leading `v` — matches the `## [x.y.z]` bracket text)
-#   --digest   print only the section's opening prose (everything before its first `### ` heading)
-#              plus the `### ` heading lines themselves, not the full body
+#   <version>   bare semver, e.g. 0.6.1 (no leading `v` — matches the `## [x.y.z]` bracket text)
+#   --digest    print only the section's opening prose (everything before its first `### ` heading)
+#               plus the `### ` heading lines themselves, not the full body
+#   --edit      extract the section to a scratch file, open it in $EDITOR, and copy the result to
+#               <notes-file> only if the editor exits 0 — <notes-file> is never touched otherwise
 set -euo pipefail
 
-version="${1:?usage: changelog-section.sh <version> [--digest]}"
-mode="${2:-}"
-[ "$#" -le 2 ] || { echo "changelog-section: unexpected extra argument(s): ${*:3}" >&2; exit 1; }
+usage() {
+  cat <<'EOF'
+usage: changelog-section.sh <version> [--digest]
+       changelog-section.sh --edit <version> <notes-file>
+       changelog-section.sh -h | --help
+
+Print the `## [x.y.z]` section body of CHANGELOG.md for a released version — an input to writing
+release notes, not the note itself (release notes are a curated digest, not a raw copy).
+
+  <version>   bare semver, e.g. 0.6.1 (no leading v)
+  --digest    print only the section's opening prose plus its `### ` heading lines
+  --edit      compose <notes-file> interactively: extract the section to a scratch file, launch
+              $EDITOR on it, and copy the result to <notes-file> only if the editor exits 0
+  -h, --help  this message
+EOF
+}
+
+die_usage() { echo "changelog-section: $1" >&2; exit 2; }
+
+mode=""
+notes_file=""
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  --edit)
+    [ "$#" -eq 3 ] || die_usage "usage: changelog-section.sh --edit <version> <notes-file>"
+    version="$2"
+    notes_file="$3"
+    mode="--edit"
+    ;;
+  *)
+    [ "$#" -ge 1 ] || die_usage "usage: changelog-section.sh <version> [--digest]"
+    version="$1"
+    mode="${2:-}"
+    [ "$#" -le 2 ] || die_usage "unexpected extra argument(s): ${*:3}"
+    case "$mode" in
+      ""|--digest) : ;;
+      *) die_usage "unknown option: $mode" ;;
+    esac
+    ;;
+esac
 
 # Anchored ERE, not a bash glob (`[0-9]*.[0-9]*.[0-9]*` would also accept "0.6.1abc" or
 # "1.2.3+(x)" — `*` matches any characters, not just digits, and a permissive match here would let
 # unescaped regex metacharacters reach the `grep -E` heading search below). Same strictness as
 # tools/self/doctor.sh's own tag filter.
 if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "changelog-section: version must be bare semver (e.g. 0.6.1, no leading v): $version" >&2
-  exit 1
+  die_usage "version must be bare semver (e.g. 0.6.1, no leading v): $version"
 fi
-case "$mode" in
-  ""|--digest) : ;;
-  *) echo "changelog-section: unknown option: $mode" >&2; exit 1 ;;
-esac
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 changelog_file="$repo_root/CHANGELOG.md"
@@ -65,6 +102,22 @@ else
   end_line='$'
 fi
 section="$(sed -n "${start_line},${end_line}p" "$changelog_file")"
+
+if [ "$mode" = "--edit" ]; then
+  # The compose recipe itself, formerly hand-typed shell prose in docs/publishing-checklist.md §4
+  # (dir #189): extract to a mktemp scratch file, guard $EDITOR being unset with a message that
+  # spells the variable name out in plain words (no `$` sigil) — no single backslash-escaping of a
+  # `$VAR`-shaped word renders correctly in both bash and zsh, dir #162's own fix for the standalone
+  # recipe — launch it via `eval` so a flag-carrying $EDITOR (e.g. "code --wait") re-splits correctly
+  # in both shells, then copy the draft to <notes-file> only if the editor exits 0.
+  : "${EDITOR:?set the EDITOR environment variable first, no shell metacharacters}"
+  scratch_file="$(mktemp)"
+  trap 'rm -f "$scratch_file"' EXIT
+  printf '%s\n' "$section" > "$scratch_file"
+  eval "$EDITOR \"\$scratch_file\""
+  cp "$scratch_file" "$notes_file"
+  exit 0
+fi
 
 if [ "$mode" = "--digest" ]; then
   # Opener = everything before the section's first REAL `### ` heading; then the `### ` heading
