@@ -35,6 +35,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$SCRIPT_DIR/lib/nonneg-int.sh"
 
 # Ledger + event log both live in the tracked repo's .keel/ (the same per-repo marker the guardrail hooks
 # use), so the loop is out-of-the-box per project with no env. Resolution: an explicit env override wins;
@@ -573,8 +575,9 @@ cmd_add() {
   # construction, the same way a foreign-keyed line does, needing no dedicated accumulator either.
   local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _raw _cite cutoff_iso="" stale_lines="" consumed_raws="" _awk_out
   local own_key=""
-  local max_age_h="${KEEL_INGEST_MAX_AGE_HOURS:-12}"
-  case "$max_age_h" in ''|*[!0-9]*) max_age_h=12 ;; esac
+  # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls
+  # back to 12 rather than crashing the later arithmetic/date math.
+  local max_age_h; max_age_h="$(sanitize_nonneg_int "${KEEL_INGEST_MAX_AGE_HOURS:-12}" 12)"
   if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
     own_key="$(_claim_key)"
     if [ -n "$since" ]; then

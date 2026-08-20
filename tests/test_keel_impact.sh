@@ -265,6 +265,19 @@ run env KEEL_INGEST_MAX_AGE_HOURS=999999 bash "$TOOL" add --gap none
 check_contains "a huge cap window counts the old fixture as fresh" "$OUT" "ingested: $old_ts guard secret-guard | blocked"
 check_contains "a huge cap window derives from it" "$OUT" "derived score 100/100"
 
+# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): a digit-SHAPED but overflowing
+# override (20 nines) must fall back to the default 12h cap, not silently ingest everything uncapped.
+# Unguarded, `max_age_h * 3600` overflows the shell's arithmetic, `_epoch_to_iso` can't convert the
+# resulting cutoff, and the tool's own date-conversion fail-open kicks in — INGESTING the felt-scenario
+# "old" fixture as if no cap existed at all, the opposite of the intended fallback (reproduced live
+# against the unguarded case arm before fixing it here).
+printf '%s\tguard\tsecret-guard\tblocked\n' "$old_ts" > "$LOG"
+run env KEEL_INGEST_MAX_AGE_HOURS=99999999999999999999 bash "$TOOL" add --gap none
+check_status "an overflowing cap override does not crash the tool" 0 "$STATUS"
+check_absent "no fail-open uncapped-ingest message from the overflow" "$OUT" "could not convert the ingest age-cap cutoff"
+check_contains "overflow falls back to the default 12h cap, staling the old fixture" "$OUT" \
+  "stale-skipped: $old_ts guard secret-guard | blocked"
+
 # date-conversion fail-open: if every fallback in the epoch->ISO chain fails, ingest everything uncapped
 # and warn -- never crash `add`. A stub `date` errors on -r/-d/-D (the three fallback flags this tool's
 # cutoff conversion uses) but passes every other invocation through to the real binary, so it forces this

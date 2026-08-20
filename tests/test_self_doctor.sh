@@ -15,6 +15,7 @@ fake_orphan="$(key tools/orphan .sh)"
 fake_nested="$(key commands/keel-go .md)"
 fake_dead="$(key commands/does -not-exist.md)"
 fake_ci_tool="$(key tools/ci-only .sh)"
+fake_ghost_md="$(key commands/ghostcmd .md)"
 
 # --- --help / bad args ---------------------------------------------------------------------------
 run "$sd" --help
@@ -925,7 +926,7 @@ check_status "C: distance exactly at the bound (3) stays exempt -> exit 0 (pins 
 d="$(mk_clean_repo)"
 printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-01\n- cut and tagged, then the tag was deleted\n' \
   > "$d/CHANGELOG.md"
-( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.1.0 && git tag -d v1.1.0 \
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.1.0 && git tag -d v1.1.0 >/dev/null \
   && for i in 1 2 3 4; do git commit -q --allow-empty -m "empty $i"; done )
 KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
 check_status "D: founding-incident class (dir #115/PR #118) is closed -> exit 1" 1 "$STATUS"
@@ -990,6 +991,92 @@ check_absent "G: no reconciliation GAP for the freshly re-cut section" "$OUT" "G
 check_contains "G: distance measured from the FRESH re-cut (0 commits), not the stale original" "$OUT" \
   "0 commit(s) since cut"
 check_contains "G: pending announcement present" "$OUT" "cut but not tagged yet"
+
+# H (dir #194): `git log -S` has no concept of "inside a fence" — a commit that only adds a FENCED
+# example reusing the SAME version-heading text must not be mistaken for the section's real
+# introduction. Built from the ticket's own described shape: the real section is cut and left pending
+# long enough to exceed the bound (would GAP), then — much closer to HEAD — a fenced example
+# illustrating the CHANGELOG.md convention reuses the same version number. A naive "newest pickaxe hit"
+# resolution would measure distance from the decoy (small, still exempt) instead of the real cut
+# (large, past the bound) and silently hide a genuinely forgotten tag.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, decoy-fence regression\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.0.0 \
+  && for i in 1 2 3 4 5; do git commit -q --allow-empty -m "empty $i"; done )
+printf '\n## Conventions\n\n```\n## [1.1.0] — YYYY-MM-DD\n- illustrative example entry\n```\n' >> "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "document the heading convention with a fenced example" \
+  && git commit -q --allow-empty -m "empty 6" && git commit -q --allow-empty -m "empty 7" )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "H: a fenced decoy is not mistaken for the real intro -> exit 1 (forgotten, not pending)" 1 "$STATUS"
+check_contains "H: dedicated GAP fires, measured from the real (older) intro, not the decoy" "$OUT" \
+  "'## [1.1.0]' was cut 8 commits ago"
+check_absent "H: no longer waved through as a release in preparation" "$OUT" "cut but not tagged yet"
+
+# I (dir #213): an unborn HEAD (no commits at all yet) must not silently abort the whole doctor.sh run.
+# `_pending_release_intro_commit`'s `git log -S` was the loop's FIRST git call reachable with zero
+# commits; on an unborn HEAD `git log` exits 128 rather than printing nothing, which — bare inside a
+# `$( )` assignment, its `2>/dev/null` swallowing the `fatal:` line — used to abort the entire run
+# under `set -euo pipefail` with no GAP, no WARN, no summary at all (A/B-proven live against the
+# unguarded code, delta audit S5/S8). CHANGELOG.md is read from the working tree directly (fence-blank
+# scans don't need history), so a heading is visible even with nothing committed yet.
+d="$(new_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-01\n- cut before any commit exists\n' \
+  > "$d/CHANGELOG.md"
+run "$sd" "$d"
+check_status "I: an unborn HEAD does not crash the whole run" 1 "$STATUS"
+check_contains "I: the bound degrades to unresolvable rather than aborting" "$OUT" "bound not computed"
+check_contains "I: still announced as pending, not silently swallowed" "$OUT" "cut but not tagged yet"
+# the run must reach the orchestrated-checks section, several checks after the reconciliation one that
+# used to abort it — proof it did not silently stop mid-run (the pre-fix crash produced NO output past
+# "slash-command references", well before this point)
+check_contains "I: the run reaches the orchestrated checks, proving it did not abort mid-run" "$OUT" \
+  "orchestrated checks"
+
+# J (dir #195): the dead-slash-command-reference scan's `grep -F ... | head -1 | cut -d: -f1` risked the
+# same SIGPIPE-under-`set -o pipefail` shape dir #156 fixed elsewhere in this file — `head` can close
+# its read end before `grep` finishes writing a long match list, and under `pipefail` that non-zero
+# exit status becomes the WHOLE doctor.sh run aborting. A single adopter-facing doc citing one dead
+# slash command thousands of times (all sharing one raw_hits scan) reliably overflows the pipe buffer
+# before `head` reads its one line and closes — reproduced live (exit 141, SIGPIPE) against the
+# unguarded `| head -1`, and again (still exit 141) against a `grep -m 1` fix piped from a live
+# `printf` writer (the early stdin-close just moved the SIGPIPE one stage left) — clean only once
+# `grep -m 1 ... <<< "$raw_hits"` reads from a here-string instead of a piped writer process.
+d="$(mk_clean_repo)"
+awk 'BEGIN { for (i = 1; i <= 20000; i++) printf "See `/ghostcmd` for details, line %d.\n", i }' \
+  > "$d/IDEAS.md"
+( cd "$d" && git add -A && git commit -qm "20000 citations of one dead slash command" )
+run "$sd" "$d" --quiet
+check_status "J: a huge single-name citation count does not SIGPIPE the whole run -> exit 1" 1 "$STATUS"
+check_contains "J: the dead-reference GAP still fires normally" "$OUT" \
+  "slash-command reference '/ghostcmd' in IDEAS.md has no $fake_ghost_md"
+
+# K (dir #194, blocking finding from an independent cross-model review of this very ticket): the
+# fence-aware presence check inside `_pending_release_intro_commit` first shipped piping
+# `blank_fenced_blocks <(...) | grep -qF ...` directly — `grep -q` exits at its first match, and on a
+# CHANGELOG.md whose content past the heading exceeds the pipe buffer (~64KB), that early close SIGPIPEs
+# the awk writer, and under `set -o pipefail` the pipeline reads as "heading NOT present" even when it
+# plainly is (reproduced live against this repo's own 300KB+ CHANGELOG.md before the fix: `PIPESTATUS`
+# 141, the presence check silently false). The fix captures `blank_fenced_blocks`'s output into a
+# variable first, then greps a `<<<` here-string — no live writer left for grep to signal. This fixture
+# pads the newest, untagged, pending section's CHANGELOG.md well past the pipe-buffer threshold so a
+# reintroduced piped-grep-q bug would misfire here even though every OTHER fixture in this file (all a
+# few hundred bytes) stays far too small to trigger it.
+d="$(mk_clean_repo)"
+{
+  printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, large-file regression\n\n'
+  awk 'BEGIN { for (i = 1; i <= 3000; i++) printf "padding line %d to push this file past the pipe buffer.\n", i }'
+  printf '\n## [1.0.0] — 2026-01-01\n- first release\n'
+} > "$d/CHANGELOG.md"
+[ "$(wc -c < "$d/CHANGELOG.md")" -gt 65536 ] || fail "K: fixture setup" "CHANGELOG.md padding is not actually past the pipe-buffer threshold"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0" && git tag v1.0.0 \
+  && for i in 1 2 3 4 5; do git commit -q --allow-empty -m "empty $i"; done )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "K: a large CHANGELOG.md doesn't false-negative the presence check -> exit 1 (forgotten tag)" 1 "$STATUS"
+check_contains "K: dedicated GAP fires, correctly resolving the intro commit on a large file" "$OUT" \
+  "'## [1.1.0]' was cut 5 commits ago"
+check_absent "K: not silently waved through as unresolvable" "$OUT" "bound not computed"
+check_absent "K: not silently waved through as a release in preparation" "$OUT" "cut but not tagged yet"
 
 # section-count invariant: a DUPLICATED heading (e.g. a bad merge). Both directional checks pass —
 # every tag NAME has a matching section and vice versa, since `sort -u` dedupes the name lists — so

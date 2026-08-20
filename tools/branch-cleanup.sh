@@ -45,6 +45,11 @@
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
 set -euo pipefail
 
+_bc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$_bc_dir/lib/nonneg-int.sh"
+unset _bc_dir
+
 usage() {
   cat <<'EOF'
 branch-cleanup.sh — classify local branches for post-merge cleanup (zero-dep, network-free).
@@ -88,7 +93,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 require_nonneg_int() {
-  case "$2" in ''|*[!0-9]*) printf 'branch-cleanup: %s must be a non-negative integer\n' "$1" >&2; exit 2 ;; esac
+  # Rejects, not defaults (dir #196 — see tools/lib/nonneg-int.sh's own header for why digit-shape
+  # alone isn't enough): a CLI flag value the operator typed wrong should error, not silently fall back.
+  _nonneg_int_valid "$2" \
+    || { printf 'branch-cleanup: %s must be a non-negative integer\n' "$1" >&2; exit 2; }
 }
 require_nonneg_int --days "$DAYS"
 require_nonneg_int --live-hours "$LIVE_HOURS"
@@ -191,7 +199,13 @@ worktree_live() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     m="$(epoch_mtime "$f")"
-    case "$m" in ''|*[!0-9]*) continue ;; esac
+    # A 13-digit cap (not the 10-digit default — see tools/lib/nonneg-int.sh): unlike an env-var
+    # override, `$m` is a real unix epoch from `stat`, already 10 digits today and not due to reach 11
+    # until the year 2286 — a 10-digit cap here would reject every legitimate mtime right now
+    # (reproduced live: it broke 8 worktree-liveness tests). 13 digits stays far below the ~19-digit
+    # range where the `-gt` comparison below would fail with "integer expression expected" instead of
+    # comparing, while never colliding with a real epoch for millennia.
+    _nonneg_int_valid "$m" 14 || continue
     [ "$m" -gt "$threshold" ] && return 0
   done < <(find "$wtp" \( -name node_modules -o -name target -o -name dist -o -name build -o -name .venv \
     -o -name venv -o -name .next -o -name .gradle -o -name Pods -o -name DerivedData -o -name .build \

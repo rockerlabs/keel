@@ -130,9 +130,9 @@ new_repo() {
 
 # A fresh bare origin, wired to work tree $1's "origin" remote (mktemp -d + git init --bare + remote
 # add origin — the two of new_repo_with_origin()'s five lines that don't presume a commit already
-# exists). Split out so a caller that must commit real content BEFORE its first push (mk_repo() below)
-# can wire the remote without paying for the throwaway commit+push new_repo_with_origin() bakes in for
-# its own no-content callers. Prints the bare's path.
+# exists). Split out so a caller that must commit real content BEFORE its first push (mk_repo() at
+# tests/test_drydock_inventory.sh:36) can wire the remote without paying for the throwaway commit+push
+# new_repo_with_origin() bakes in for its own no-content callers. Prints the bare's path.
 new_bare_origin() {
   local bare
   bare="$(mktemp -d "$SANDBOX/origin.XXXXXX")"
@@ -142,11 +142,14 @@ new_bare_origin() {
 }
 
 # dir #173: new_repo() plus a fresh bare "origin" — pushed, so `origin/<branch>` is a real ref to be at
-# (or off). This exact idiom (a bare origin, wired, and pushed to) was hand-rolled in six test files
+# (or off). This exact idiom (a bare origin, wired, and pushed to) was hand-rolled in five test files
 # before this promotion, two of them matching it closely enough to migrate here (`pin()`'s own comment
 # states the promotion rule — "once a SECOND test file needed the exact same idiom" — this was one past
-# it); the other four push specific refspecs or deliberately diverge local from origin/<branch> and were
-# left as their own fixtures. Makes one empty "init" commit first, since a bare new_repo() has no
+# it); the other three push specific refspecs or deliberately diverge local from origin/<branch> and were
+# left as their own fixtures — and both migrated files (`test_drydock_inventory.sh:281`,
+# `test_pre_pr_gate.sh:2461`, inside its own `push_named_remote()`) still keep a hand-rolled site of
+# their own alongside using this helper.
+# Makes one empty "init" commit first, since a bare new_repo() has no
 # commits to push (unborn HEAD). No explicit fetch: a successful push already updates the local
 # origin/<branch> tracking ref (git's own default since 1.8.4), so a fetch right after would just
 # re-derive a ref git already set. Prints the work tree's path, like new_repo() — callers that also need

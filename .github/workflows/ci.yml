@@ -107,10 +107,12 @@ jobs:
           # doesn't have the tags" — it degrades to a silent skip on a shallow checkout rather than
           # false-GAPing, so without this the check would never actually run in CI.
           fetch-depth: 0
-          # Same pairing as the secret-scan job above, same reason: the check only reads tag NAMES
-          # and CHANGELOG.md's working-tree text, never blob content across history, so there's no
-          # reason to pay for it (found by an independent reviewer's own pass).
-          filter: blob:none
+          # NOT paired with filter: blob:none like the secret-scan job above (dir #213): that pairing's
+          # rationale — "the check only reads tag NAMES and CHANGELOG.md's working-tree text, never blob
+          # content across history" — stopped being true when dir #156 landed `_pending_release_intro_commit`,
+          # a `git log -S` pickaxe that DOES need CHANGELOG.md's blob at every commit it walks. Under a
+          # blobless partial clone that either lazily fetches (silent extra network per run) or, with the
+          # promisor unreachable, fails outright — which this job needs full blob content to avoid.
       # tools/self/doctor.sh audits keel's OWN repo health (ship-skip-list sync, dead internal
       # references, tool wiring/test-coverage, CHANGELOG staleness, CHANGELOG<->tag reconciliation) —
       # distinct from the `tests` and `shellcheck` jobs above, though it also orchestrates (re-runs)

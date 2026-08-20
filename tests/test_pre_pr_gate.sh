@@ -710,6 +710,15 @@ run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "3 consecutive self-reported passes → non-zero (advisory warn)" 1 "$STATUS"
 check_contains "warns naming the threshold" "$OUT" "3+ consecutive"
 
+# 38b. dir #196 (same overflow class dir #156 fixed in self/doctor.sh): a digit-SHAPED but overflowing
+# K (20 nines) must fall back to the default (3), not overflow the shell's native integer range and
+# crash whatever later comparison reads it — reproduced live against the unguarded case arm before
+# fixing it here. Same 3-self-reported-row state as #38, so the default-K warn is the expected outcome.
+run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep 99999999999999999999
+check_status "an overflowing K falls back to the default 3 → same warn (exit 1)" 1 "$STATUS"
+check_contains "warns naming the (fallback) default threshold" "$OUT" "3+ consecutive"
+check_absent "no 'integer expression expected' crash leaks through" "$OUT" "integer expression expected"
+
 # 39. The sweep is read-only — the impact log is untouched (unlike `add`'s ingest-and-truncate).
 check_contains "sweep does not truncate the impact log" "$(cat "$ilog" 2>/dev/null)" "receipt-pass"
 

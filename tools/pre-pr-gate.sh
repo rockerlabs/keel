@@ -384,6 +384,11 @@
 
 set -u
 
+_ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$_ppg_dir/lib/nonneg-int.sh"
+unset _ppg_dir
+
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 # dir #149: the single membership test every raw write into the sentinel routes through — both
 # `receipt`'s own append and `receipt --recover`'s replay of a retired sentinel's lines (search their
@@ -1590,8 +1595,9 @@ case "${1:-}" in
     # shouldn't read as "fine" just because it hasn't accumulated K runs yet — found in the operator-run
     # /code-review high pass on this ticket). Not wired into any hook by design (a sweep needs to run
     # once per /wrap, not per gate decision) — invoking it is a manual follow-up.
-    sw_k="${2:-3}"
-    case "$sw_k" in ''|*[!0-9]*) sw_k=3 ;; esac
+    # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls
+    # back to 3 rather than crashing a later comparison against this value.
+    sw_k="$(sanitize_nonneg_int "${2:-3}" 3)"
     sw_log="$(resolve_impact_log "$PWD")"
     if [ -z "$sw_log" ] || [ ! -f "$sw_log" ]; then
       printf 'pre-pr-gate: sweep - no impact log found, nothing to check\n'

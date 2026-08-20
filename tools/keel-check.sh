@@ -22,9 +22,15 @@
 #                                 (metadata only; never the check's output). Mirrors pre-pr-gate.sh.
 set -uo pipefail
 
-# Sanitize the threshold: a non-numeric env value falls back to 2 rather than crashing the arithmetic.
-threshold="${KEEL_CHECK_THRESHOLD:-2}"
-case "$threshold" in ''|*[!0-9]*) threshold=2 ;; esac
+_kc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$_kc_dir/lib/nonneg-int.sh"
+unset _kc_dir
+
+# Sanitize the threshold: a non-numeric OR overflowing env value falls back to 2 rather than crashing
+# the `-lt`/`-gt` arithmetic below (dir #196 — see tools/lib/nonneg-int.sh's own header for why a bare
+# digit-shape check isn't enough).
+threshold="$(sanitize_nonneg_int "${KEEL_CHECK_THRESHOLD:-2}" 2)"
 [ "$threshold" -lt 1 ] && threshold=1
 
 if [ "$#" -eq 0 ]; then

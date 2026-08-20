@@ -57,6 +57,11 @@
 # (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below.)
 set -euo pipefail
 
+_doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$_doctor_dir/lib/nonneg-int.sh"
+unset _doctor_dir
+
 QUIET=0
 REGISTRY=""
 DIRS=()
@@ -127,8 +132,9 @@ if [ "$INSTALL_MODE" = 0 ]; then
   [ "${#DIRS[@]}" -gt 0 ] || DIRS=(".")
 fi
 
-WARN_TOKENS="${KEEL_STARTUP_WARN_TOKENS:-10000}"
-case "$WARN_TOKENS" in ''|*[!0-9]*) WARN_TOKENS=10000 ;; esac   # non-numeric → default (no `[: integer expected`)
+# Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls back
+# to 10000 rather than crashing the later `-gt` token-count comparison (no `[: integer expected`).
+WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_STARTUP_WARN_TOKENS:-10000}" 10000)"
 exit_code=0
 
 # The @import line's own detection regex — mirror of install.sh's has_core_import() — used twice
