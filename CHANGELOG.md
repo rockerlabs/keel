@@ -45,9 +45,11 @@ dir #196). Of those three, dir #195 is the one to weigh: it is not documentation
 whole-run abort — an unguarded `head -1` inside a `var=$(…)` assignment under this script's own
 `set -euo pipefail`, the identical shape dir #156 reproduced crashing. dir #194 is latent and
 unreachable on today's tree; dir #196 is single-source-of-truth debt. The fifth residual: dir #161's
-add-on-drop warning is blind on exactly the path dir #177 blessed — an in-run
-`--amend` round never retires a sentinel, so the prior step-5 receipt it must compare against sits
-where the check does not look, and a dropped review add-on goes unannounced. It is documented in
+add-on-drop warning cannot see the path dir #177 blessed — an in-run `--amend`
+round retires nothing, so the check never compares against this run's own earlier step-5 receipt, only
+against whatever the last retired round held. An add-on gained and dropped inside one run therefore
+goes unannounced, and when the older round happens to carry it the warning fires about that round
+instead — wrong baseline either way, both verified live. It is documented in
 `commands/polish.md` rather than fixed in code, because v0.8.0's gate-surface rewrite removes the
 warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
 

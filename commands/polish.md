@@ -375,14 +375,17 @@ Steps, in order:
      explicitly in the step 10 summary rather than silently letting the narrower outcome stand — a
      deliberate drop is legitimate, but it still needs to be a stated decision, not an unnoticed one.
 
-     **On the IN-RUN path, do that comparison yourself — re-read your own earlier `polish.5-review`
-     line before writing the new one, because the warning cannot reach you there** (found by v0.7.0's
-     RC cross-PR-seam pass, dir #192; ticketed as dir #201). "The prior round" is read from the RETIRED
-     sentinel backup, which only exists once a round has been retired. Resolve a finding in-run instead
-     (`--amend` and keep going, the path named further down in this step) and no retirement ever
-     happens: this round's earlier `polish.5-review` line sits in the SAME live sentinel, where the
-     check does not look, so a second, narrower step-5 receipt in the same run drops the add-on in
-     silence — the very shape of the dir #155 incident this warning exists to catch.
+     **On the IN-RUN path, do that comparison yourself — read this run's own earlier
+     `polish.5-review` line out of the live sentinel (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh
+     receipt-key)`, last write wins) before writing the new one** (found by v0.7.0's RC
+     cross-PR-seam pass, dir #192; ticketed as dir #201). The warning cannot do it for you, because
+     "the prior round" it compares against is read from the RETIRED sentinel backup — never from this
+     run's own earlier line. Resolve a finding in-run (`--amend` and keep going, the path named
+     further down in this step) and nothing is retired, so your in-run drop is judged against whatever
+     the LAST RETIRED round happened to hold. Both outcomes are wrong for you: if that round carried
+     the add-on, the warning fires about IT and merely looks like it caught you; if it did not — an
+     add-on gained and dropped inside this one run, the dir #155 shape this warning exists to catch —
+     you get silence. Neither answer is about the line you actually need to compare against.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
