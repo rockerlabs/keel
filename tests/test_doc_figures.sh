@@ -104,13 +104,23 @@ assert_figure() {
   assert_band "$label" "$doc_fig" "$actual" "doc"
 }
 
-# The "commands/*.md ~LO-HI each" row quotes a range, not one figure: assert every command file's
-# size falls inside the quoted [LO, HI] band, so this row can't drift unguarded either.
+# The "commands/*.md (excl. polish.md) ~LO-HI each" row quotes a range, not one figure: assert every
+# ORDINARY command file's size falls inside the quoted [LO, HI] band, so this row can't drift unguarded
+# either. `commands/polish.md` is excluded here — dir #203 found it ~10x the row's own quoted ceiling
+# (a genuine outlier, not drift: several other steps folded into one command), so it gets its own
+# open-floor row instead of stretching this range to cover it and hiding every OTHER command's real
+# band inside a ceiling only polish.md needs (see assert_figure "commands/polish.md" below).
 # A trailing "+" on HI ("~LO-HI+ each") makes the upper bound an open floor — the same growth-tolerant
 # semantics assert_figure gives the monotonic CHANGELOG row. Commands only grow (procedures accrete
 # steps), so a command nudging past HI shouldn't force a doc bump on every PR; understating your own
 # ceiling behind an explicit "+" is never an overclaim of cheapness. The LO bound stays enforced so the
 # quoted floor can't drift above the smallest command.
+# dir #203 also asked whether this HI ceiling should reject a real command that outgrows it (the open
+# "+" makes that structurally impossible, which is how polish.md drifted unseen in the first place) —
+# considered and deliberately left open, not missed: the open ceiling is this same growth-tolerant
+# design applied consistently, and the LO floor above already catches the one direction that actually
+# matters (a quoted range too generous for what ships). A future outlier the size of polish.md would
+# need the same split treatment, not a tighter ceiling here.
 assert_commands_range() {
   local label="$1"
   local row="" lo="" hi="" f="" tok="" bad="" open_upper=""   # init all (set -u safe on bash 3.2)
@@ -128,6 +138,7 @@ assert_commands_range() {
   if printf '%s' "$cell" | grep -qE '[0-9][0-9,]*\+'; then open_upper=1; fi
   for f in "$REPO_ROOT"/commands/*.md; do
     [ -f "$f" ] || continue
+    [ "$(basename "$f")" = "polish.md" ] && continue
     tok="$(tok_of "$f")"
     if [ "$tok" -lt "$lo" ]; then bad="$bad $(basename "$f")=$tok"; continue; fi
     if [ -z "$open_upper" ] && [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
@@ -261,7 +272,8 @@ assert_figure "templates/LEARNINGS.md figure within 10%"      templates/LEARNING
 assert_figure "templates/IDEAS.md figure within 10%"          templates/IDEAS.md
 assert_figure "ADAPTING.md figure within 10%"                 ADAPTING.md
 assert_figure "CHANGELOG.md figure within 10%"                CHANGELOG.md
-assert_commands_range "commands/*.md sizes fall inside the quoted range"
+assert_figure "commands/polish.md figure (open floor)"        commands/polish.md
+assert_commands_range "commands/*.md (excl. polish.md) sizes fall inside the quoted range"
 
 assert_readme_figure "README FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'
 assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'
