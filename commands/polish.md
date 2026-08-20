@@ -375,6 +375,18 @@ Steps, in order:
      explicitly in the step 10 summary rather than silently letting the narrower outcome stand — a
      deliberate drop is legitimate, but it still needs to be a stated decision, not an unnoticed one.
 
+     **On the IN-RUN path, do that comparison yourself — read this run's own earlier
+     `polish.5-review` line out of the live sentinel (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh
+     receipt-key)`, last write wins) before writing the new one** (found by v0.7.0's RC
+     cross-PR-seam pass, dir #192; ticketed as dir #201). The warning cannot do it for you, because
+     "the prior round" it compares against is read from the RETIRED sentinel backup — never from this
+     run's own earlier line. Resolve a finding in-run (`--amend` and keep going, the path named
+     further down in this step) and nothing is retired, so your in-run drop is judged against whatever
+     the LAST RETIRED round happened to hold. Both outcomes are wrong for you: if that round carried
+     the add-on, the warning fires about IT and merely looks like it caught you; if it did not — an
+     add-on gained and dropped inside this one run, the dir #155 shape this warning exists to catch —
+     you get silence. Neither answer is about the line you actually need to compare against.
+
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
      not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
      still waits for the operator, dir #81 fork 4), then resolve what it reported and write the COMBINED
@@ -493,11 +505,15 @@ Steps, in order:
      (`agent:<level>`, its add-on forms, and a bare `<level>` from a genuine in-session `/code-review`)
      go stale the same way `polish.3-tests` does — the trace is keyed to the sha it was written at —
      and need a fresh agent review or add-on, or a hand-off outcome that carries no trace-check at all.
+     **On this exact trigger, compare the add-on set by hand before re-writing the receipt** — the dir
+     #161 drop-warning is silent on this path by construction; see its own paragraph above.
    - **The MANDATORY review dialog (dir #88), on that same later-amend trigger** — per-commit too, but
      only for `agent:*` outcomes (and `skip`, step 4's own dialog): re-answer it for the new HEAD, an
      earlier round's answer does not carry over. The gate never checks it for a bare `<level>` outcome,
      so there is nothing to re-answer there. (Whether this SHA-binding should instead survive a clean
-     delta round is an open design question, dir #180 — unresolved here.)
+     delta round WAS an open design question, dir #180 — since SUPERSEDED by dir #183, which removes
+     the mandatory dialog outright rather than relaxing when it re-fires. Until that lands, the
+     SHA-binding holds exactly as described here.)
 
    If you run `tools/pre-pr-gate.sh receipt --recover` anyway to sanity-check state, its `nothing to
    recover` answer is correct and BY DESIGN here — not a signal that this isn't a convergence round;

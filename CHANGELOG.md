@@ -8,6 +8,51 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-20
+
+The drydock release. Two arcs, plus the end of a migration window. First arc: **drydock** — a named,
+reproducible whole-tree prose audit — went from an idea to a run to a shipped capability inside this cycle: run 1
+swept 33 markdown files and fixed 44 findings (dir #165), the procedure and its tooling shipped as
+`docs/drydock.md` + `tools/drydock/inventory.sh` (dir #170), and the orchestration pattern behind it
+was generalized into `docs/delegation.md` (dir #171). Its **ratchet** — the rule that each run makes
+the next one cheaper by demoting a finding class into a standing check — then produced four of them:
+sweep-outcome coherence across the four red-flag surfaces (dir #166), derived-figure arithmetic and
+parallel-table parity in the docs (dir #167), a live-run diff against `examples/README.md`'s console
+transcript (dir #168), and `tools/self/prose-drift.sh`, which promotes run 1's throwaway sweep into
+`tools/self/doctor.sh` (dir #169). Second arc: **release and review bookkeeping**. The CHANGELOG↔tag
+check's release-in-preparation allowance is now bounded by commit distance, so a forgotten tag stops
+reading green forever (dir #156); `tools/changelog-section.sh` makes cutting release notes one command
+(dir #162); a step-5 receipt can name every review that saw the commit and warns when a later round
+drops one (dir #158, dir #161); and `/polish` finally documents its in-run convergence path (dir #177).
+And the manifest migration window that v0.6.1 opened is closed: every transitional
+`KEEL-LEGACY-NOMANIFEST` fallback is gone — `uninstall.sh` and `tools/doctor.sh` now require an
+install manifest rather than re-deriving state heuristically — while three audited sites that turned
+out not to be transitional at all were deliberately kept and relabeled (dir #150). Alongside both
+arcs and that closure, `docs/parallel-sessions.md` — the adopter-facing playbook for running two or
+more agent sessions against one repo (dir #172).
+
+Known issues: five residuals ship unfixed, deliberately not held for the tag — four carry open
+tickets, and the first is a recorded design bound rather than a ticket. The release-in-preparation
+allowance is now **bounded, not closed** — inside its 40-commit window a forgotten or deleted topmost
+tag still reads as a green "release in preparation" line rather than a GAP. That window is the
+operator-chosen accept recorded in dir #156, which is closed; nothing tracks it as open work. Three
+more came out of that same fix's own review: its `git log -S` pickaxe searches raw file history
+rather than fence-filtered content, so a future fenced `## [x.y.z]` example could resolve the wrong
+introducing commit (backlog dir #194); a second `| head -1`-under-`pipefail` construct of the shape
+that fix removed still stands elsewhere in `tools/self/doctor.sh` (backlog dir #195); and the
+digit-shape-only numeric env-var guard it added is duplicated, unfixed, in six other files (backlog
+dir #196). Of those three, dir #195 is the one to weigh: it is not documentation debt but a latent
+whole-run abort — an unguarded `head -1` inside a `var=$(…)` assignment under this script's own
+`set -euo pipefail`, the identical shape dir #156 reproduced crashing. dir #194 is latent and
+unreachable on today's tree; dir #196 is single-source-of-truth debt. The fifth residual: dir #161's
+add-on-drop warning cannot see the path dir #177 blessed — an in-run `--amend`
+round retires nothing, so the check never compares against this run's own earlier step-5 receipt, only
+against whatever the last retired round held. An add-on gained and dropped inside one run therefore
+goes unannounced, and when the older round happens to carry it the warning fires about that round
+instead — wrong baseline either way, both verified live. It is documented in
+`commands/polish.md` rather than fixed in code, because v0.8.0's gate-surface rewrite removes the
+warning outright (ticketed as backlog dir #201; the rewrite is dir #186).
+
 ### Added
 - **A step-5 `/polish` receipt that drops a prior round's review add-on now warns on stderr, naming
   it** (dir #161, PR #236). Closes a gap dir #158 left open: the receipt could already SAY a combined
@@ -151,11 +196,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   #169). Two signals: a dead relative markdown link (GAP — zero legitimate exceptions) and a line
   running well past the other lines in its own wrapped block — a paragraph, a wrapped list item, a
   comment run (WARN — advisory, "leads not verdicts" per sweep.sh's own framing). The design point
-  was the second signal's precision: a flat >110-char threshold produced 194 leads on this tree,
-  almost all ordinary table rows, fenced examples, and plain sentences that just run a little long.
-  Comparing a line only against the OTHER lines in its own block — never a global threshold — plus
-  excluding fenced code, GFM tables, YAML frontmatter, standalone link lines, and any line carrying a
-  literal URL, cuts that to 16 genuine leads on Keel's own tree, all advisory. Every exclusion is
+  was the second signal's precision: a flat >110-char threshold produced ~200 leads on the tree as it
+  then stood, almost all ordinary table rows, fenced examples, and plain sentences that just run a
+  little long. Comparing a line only against the OTHER lines in its own block — never a global
+  threshold — plus excluding fenced code, GFM tables, YAML frontmatter, standalone link lines, and any
+  line carrying a literal URL, cuts that to 16 genuine leads on dir #169's own branch tip and 18 from
+  its merge through the v0.7.0 tag, all advisory. Both counts track the tree; nothing pins either.
+  Every exclusion is
   mutation-tested against the same content presented as plain wrapped prose instead (dir #110's
   lesson: fired != catches) — a table row, a fenced line, a frontmatter value, and a 2-line paragraph
   each pair a "does not fire" case with a "the same content, unwrapped, DOES fire" case, so a
@@ -414,6 +461,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   equal visual weight, the same shape the file already bullets two sections below for its own dir #127
   additions — and trimmed one remaining redundant clause. Six pins in `tests/test_rails_honesty.sh`
   hold the paragraph's key phrases.
+- **Three findings from this release's own RC pass** (dir #192). The first two are one shape: a claim
+  true when the PR that wrote it merged, false once a LATER PR in the same tail moved what it
+  describes. (1) `commands/polish.md` called the SHA-binding of the mandatory review dialog an open
+  design question under dir #180 — superseded hours later by dir #183, which removes that dialog
+  outright rather than relaxing when it re-fires; the paragraph now points there and says the binding
+  holds as described until it lands. (2) This file's own `tools/self/prose-drift.sh` entry pinned the
+  check's output at a single lead count, which had already moved when that branch merged `main`; it
+  now names both measurements and the fact that nothing pins either. Neither drift was catchable by
+  the two checks this same tail shipped for the class — dir #169's sweep reads line SHAPE, not claims,
+  and dir #167's arithmetic guard covers the docs' figure tables, not `CHANGELOG.md` prose. (3)
+  `docs/loading-and-cost.md`'s `CHANGELOG.md` floor went `~60,000+` → `~70,000+`, this release's own
+  entries having pushed the file past the 25%-above-floor mark where `tests/test_doc_figures.sh`
+  starts asking for a restatement — the same bump v0.6.1 made from `~50,000+`, and the fifth by hand
+  in this file's history, now ticketed for mechanization (backlog dir #202).
 
 ## [0.6.1] — 2026-08-14
 

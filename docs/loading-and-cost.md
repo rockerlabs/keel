@@ -33,7 +33,7 @@ the table above.
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
 | `IDEAS.md` (from `templates/IDEAS.md`) | on demand — staging a raw, not-yet-actionable idea | The earliest staging tier, one step before `LEARNINGS.md`/`BACKLOG.md`. | ~290 |
 | `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~3,750 |
-| `CHANGELOG.md` | on demand — release history | Reference. | ~60,000+ |
+| `CHANGELOG.md` | on demand — release history | Reference. | ~70,000+ |
 | `commands/*.md` | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–1,450+ each |
 | `install.sh`, `tools/*.sh`, `secret-guard/*` | **never loaded** — executed in the shell | The mechanized layer: blocks secrets, runs audits. Only their few lines of **output** reach the context. | **0** |
 
