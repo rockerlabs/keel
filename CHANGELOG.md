@@ -9,6 +9,11 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- The alpine-busybox CI leg now installs `jq`, so `tests/test_pre_pr_gate.sh` and its
+  install-side siblings (`test_install_pre_pr_gate.sh`, the gate half of
+  `test_install_manifest.sh`) actually run there instead of skipping cleanly for want of it. Before
+  this, "alpine-busybox: success" was not evidence about `tools/pre-pr-gate.sh` — the single
+  largest shell surface in the repo — on its one non-GNU CI leg (dir #220).
 - **`uninstall.sh`'s `artifact_shared_with_other()` no longer reads a stray same-named context file, or
   the ordinary both-modes home's own surviving one, as proof of a live sibling install** (dir #190,
   0.7.0's sixth Known-issue). Its no-usable-other-manifest fallback now requires `has_keel_rails` on the
