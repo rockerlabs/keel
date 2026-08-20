@@ -2396,15 +2396,48 @@ check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$
 # operator's third /code-review pass verification). Sweep the whole worktree rather than a root list
 # (the fourth pass found a root list quietly omits docs/ and the root scripts — exactly where the
 # next marker mention will land); tests/ stays excluded by necessity (fixtures must spell composed
-# markers), .git/.claude/private are not shipped content. KEEL-AGENT-REVIEW (dir #70's SubagentStop-leg
-# marker) joins the alternation (dir #146) — same composed-credential class, previously uncovered.
-composed="$(grep -rlE '(KEEL-DEPTH-DIALOG|KEEL-REVIEW-DIALOG|KEEL-AGENT-REVIEW): level=(skip|low|medium|high|max|ultra)' \
-  --exclude-dir=tests --exclude-dir=.git --exclude-dir=.claude --exclude-dir=private \
-  "$REPO_ROOT" 2>/dev/null || true)"
+# markers). Sweep via `git grep`, not a raw `grep -r "$REPO_ROOT"` (dir #222): the latter also reads
+# gitignored working files (an operator's BACKLOG.md quoting the gate's own marker text, a
+# .keel/evidence.md) and turns green CI red on the operator's own checkout for content that was never
+# shipped — `git grep` only searches tracked content, matching the assertion's own name ("tracked")
+# and skipping .git/.claude/private for free since those are never tracked (also the codebase's own
+# established idiom for this job, see tools/public-audit.sh's `tree_grep`, rather than a bespoke
+# `git ls-files -z | xargs -0 grep` pipeline — found by an independent agent review pass). One
+# function, not two copies of the pipeline, so the marker alternation (dir #146) only ever needs
+# updating in one place. Takes an optional dir (default $REPO_ROOT) so the dir #222 regression below
+# can exercise the exact same sweep against a throwaway sandbox instead of the real checkout — the
+# property under test ("git only searches tracked files") is generic git behavior, not something
+# specific to $REPO_ROOT (found by an independent
+# agent review pass; a first draft of this fixture planted its bait directly in the real, gitignored
+# $REPO_ROOT/BACKLOG.md, which risked clobbering an operator's real uncommitted ticket text on a
+# concurrent edit even with a backup/restore trap around it).
+_composed_marker_sweep() {
+  local dir="${1:-$REPO_ROOT}"
+  (cd "$dir" && git grep -lE '(KEEL-DEPTH-DIALOG|KEEL-REVIEW-DIALOG|KEEL-AGENT-REVIEW): level=(skip|low|medium|high|max|ultra)' \
+    -- . ':!tests' 2>/dev/null || true)
+}
+composed="$(_composed_marker_sweep)"
 if [ -z "$composed" ]; then
   pass "dir #116: no tracked non-test file spells a composed marker"
 else
   fail "dir #116: no tracked non-test file spells a composed marker" "composed marker found in: $composed"
+fi
+
+# dir #222 regression: an UNTRACKED file quoting the composed marker (the felt case — the delta
+# audit's own gitignored BACKLOG.md ticket text tripped the old grep-over-the-working-tree sweep on
+# the main checkout minutes after being filed) must NOT turn the sweep above red — it is never
+# shipped content. `git ls-files` excludes anything not tracked regardless of WHY it's untracked
+# (gitignored, or simply never `git add`ed), so a plain untracked file in a throwaway mkrepo()
+# sandbox reproduces the exact mechanism the real fix relies on, with no need to touch the real
+# checkout at all.
+_d222_repo="$(mkrepo)"
+printf '### some ticket\nquoting the gate marker: KEEL-REVIEW-DIALOG: level=high\n' > "$_d222_repo/BACKLOG.md"
+d222_composed="$(_composed_marker_sweep "$_d222_repo")"
+if [ -z "$d222_composed" ]; then
+  pass "dir #222: a gitignored file quoting the marker does not trip the tracked-file sweep"
+else
+  fail "dir #222: a gitignored file quoting the marker does not trip the tracked-file sweep" \
+    "sweep caught: $d222_composed"
 fi
 
 # 96. dir #116: UNARMED (no AskUserQuestion leg wired — the default), skip stays self-reported and

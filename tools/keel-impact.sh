@@ -597,9 +597,12 @@ cmd_add() {
     # receipt-pass rows deliberately embed an extra one, see its own log_event/_claim_key comment) round-
     # trips byte-for-byte through a rewrite instead of being silently truncated to 5 fields.
     if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5 SEP $0}' "$LOG")"; then
-      # `|| [ -n "$_ty" ]` processes a final line with no trailing newline (read returns non-zero at EOF but
-      # still populates the vars) — otherwise that event would be skipped this run and left unconsumed in
-      # $LOG for the next `add` to pick up (the subtractive rewrite below never removes a line it never read).
+      # `|| [ -n "$_ty" ]` is belt-and-braces, not the thing that makes an unterminated final $LOG line work:
+      # the awk pre-pass above always terminates every record it prints (awk's `print` appends a newline
+      # regardless of the input line), and that output round-trips through `$(...)` (strips trailing
+      # newlines) and back through `<<<` (appends exactly one) — so `read` here never actually hits EOF
+      # mid-record on this path. The guard stays as a second line of defense in case that pre-pass ever
+      # changes shape.
       while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
         # never consumed — survives the subtractive rewrite by not being in $consumed_raws
         is_event_type "$_ty" || continue

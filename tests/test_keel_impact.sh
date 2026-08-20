@@ -163,9 +163,12 @@ check_contains "--no-ingest ignores the log" "$OUT" "from 1 event(s)"
 check_contains "--no-ingest preserves the log" "$(wc -l < "$LOG" | tr -d ' ')" "1"
 
 # a final log line with NO trailing newline (a producer appending directly, or a partial write) must still
-# be ingested — otherwise it is dropped and then lost when the log is truncated. Timestamps are stamped
-# live (not a fixed past date) so the fixture stays inside the default age cap regardless of when this
-# test runs (backlog #59 — a hardcoded past date here would now read as stale and break this test).
+# be ingested — otherwise it is dropped and then lost when the log is truncated. This is guarded by the
+# tool's awk pre-pass, which always terminates every record it emits, not by the `read` loop's own
+# `|| [ -n "$_ty" ]` EOF fallback (that's belt-and-braces — the pre-pass means `read` never actually hits
+# EOF mid-record on this path). Timestamps are stamped live (not a fixed past date) so the fixture stays
+# inside the default age cap regardless of when this test runs (backlog #59 — a hardcoded past date here
+# would now read as stale and break this test).
 LEDGER="$SANDBOX/ledger-nonl.md"; LOG="$SANDBOX/events-nonl.log"; EVIDENCE="$SANDBOX/evidence-nonl.md"
 export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_LOG="$LOG" KEEL_IMPACT_EVIDENCE="$EVIDENCE"
 _nonl_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -454,7 +457,7 @@ run bash "$TOOL" add --retro --asof 2026-05-01 --fire "past rule applied" --hit 
 check_status "retro add succeeds" 0 "$STATUS"
 # HELP = 2*1(fire) + 1(hit) = 3 → 100; ev_count=2 (fire+hit) is already "low" (<3), so the retro
 # downgrade is a no-op here — the "-retro" suffix is just appended unconditionally
-check_contains "retro drops one conf tier and tags it" "$OUT" "conf low-retro"
+check_contains "retro tags conf, tier-drop a no-op at this ev_count" "$OUT" "conf low-retro"
 check_contains "retro row is backdated by --asof" "$(cat "$LEDGER")" "| 2026-05-01 | 100 | low-retro |"
 # a live score into the same ledger
 run bash "$TOOL" add --fire "live rule" --gap "none"
@@ -466,6 +469,18 @@ check_contains "live rollup excludes the retro row" "$OUT" "impact ledger: 1 ses
 run bash "$TOOL" rollup --retro
 check_contains "retro rollup labels itself" "$OUT" "retro impact ledger: 1 session(s)"
 check_contains "retro rollup means only retro scores" "$OUT" "mean score 100.0/100"
+
+# a retro fixture that actually reaches the tier-drop `case` (the low-retro one above never does — its
+# ev_count=2 is already "low", so the downgrade is a no-op there): 6 events (3 fire + 3 hit) put the
+# LIVE conf at "high" (>=6), and the retro downgrade must drop it exactly one tier to "med" before
+# tagging — deleting the `case`'s `high) conf="med" ;;` arm must turn this red.
+LEDGER="$SANDBOX/ledger4b.md"; EVIDENCE="$SANDBOX/evidence4b.md"; LOG="$SANDBOX/events4b.log"
+export KEEL_IMPACT_LEDGER="$LEDGER" KEEL_IMPACT_EVIDENCE="$EVIDENCE" KEEL_IMPACT_LOG="$LOG"
+run bash "$TOOL" add --retro --asof 2026-05-02 \
+  --fire "a" --fire "b" --fire "c" --hit "d" --hit "e" --hit "f" --gap "none"
+check_status "6-event retro add succeeds" 0 "$STATUS"
+check_contains "retro drops high to med and tags it" "$OUT" "conf med-retro"
+check_contains "retro row records the dropped tier" "$(cat "$LEDGER")" "| 2026-05-02 | 100 | med-retro |"
 
 # --asof rejects a non-date
 run bash "$TOOL" add --retro --asof notadate --fire x
