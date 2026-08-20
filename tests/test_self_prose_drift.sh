@@ -256,4 +256,199 @@ run "$pd" "$d" --quiet
 check_absent "--quiet suppresses OK lines" "$OUT" "OK   no dead"
 check_contains "--quiet still shows a WARN" "$OUT" "WARN"
 
+# --- signal 2: dir #217 — no repo-root fallback; a link resolving ONLY via the repo root (not
+# sibling-relative to the linking file) is dead, not green -------------------------------------------
+d="$(mk_repo_with sub/doc.md "# doc
+
+See [the guide](other.md) for detail.
+" other.md "# other
+")"
+run "$pd" "$d" --quiet
+check_status "a repo-root-only-resolving link fails -> exit 1 (no fallback)" 1 "$STATUS"
+check_contains "reports the fallback-only link as dead" "$OUT" "does not resolve"
+
+d="$(mk_repo_with sub/doc.md "# doc
+
+See [the guide](../other.md) for detail.
+" other.md "# other
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME target, correctly sibling-relative, resolves -> exit 0" 0 "$STATUS"
+
+# --- signal 2: dir #218 — a link to a heading anchor that doesn't exist is a GAP; the SAME anchor,
+# once the heading exists, is OK ----------------------------------------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [the section](#does-not-exist) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "a dead in-document anchor fails -> exit 1" 1 "$STATUS"
+check_contains "reports the dead anchor" "$OUT" "anchor does not resolve"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [the section](#a-real-section) for detail.
+
+## A Real Section
+")"
+run "$pd" "$d" --quiet
+check_status "an anchor matching a real heading's GitHub slug resolves -> exit 0" 0 "$STATUS"
+
+# Cross-file anchor, and GitHub's own non-collapsing hyphenation for a run of dropped punctuation —
+# an em dash between two spaces slugs to a DOUBLE hyphen, not one (dir #217/#218's shared spec cites
+# this exact shape from docs/getting-started.md).
+d="$(mk_repo_with doc.md "# doc
+
+See [linked install](other.md#linked-install--recommended) for detail.
+" other.md "# other
+
+## Linked install — recommended
+")"
+run "$pd" "$d" --quiet
+check_status "a cross-file anchor with an em-dash heading resolves -> exit 0" 0 "$STATUS"
+
+# --- signal 2: dir #224 — balanced parens in a link target, and a percent-encoded target, both
+# resolve rather than false-GAP; the SAME shapes pointing at a missing file still fail -----------------
+d="$(mk_repo_with doc.md "# doc
+
+See [x](design(notes).md) for detail.
+" "design(notes).md" "# notes
+")"
+run "$pd" "$d" --quiet
+check_status "a target with one level of balanced parens resolves -> exit 0" 0 "$STATUS"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [x](design(notes).md) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME balanced-paren target, missing, DOES fail -> exit 1" 1 "$STATUS"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [y](design%20notes.md) for detail.
+" "design notes.md" "# notes
+")"
+run "$pd" "$d" --quiet
+check_status "a percent-encoded target resolves against its decoded path -> exit 0" 0 "$STATUS"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [y](design%20notes.md) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME percent-encoded target, missing, DOES fail -> exit 1" 1 "$STATUS"
+
+# --- signal 2: an anchor whose GitHub slug legitimately starts with '-' doesn't trip `grep`'s own
+# option parsing (found by an independent agent review of dir #218's own diff) ------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [a](#--todo-item) for detail.
+
+## - Todo Item
+")"
+run "$pd" "$d" --quiet
+check_status "a leading-hyphen anchor resolves, not misread as a grep flag -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a literal '%' in a target that isn't part of a %XX escape is left alone, not corrupted
+# by the percent-decoder (found by the same review) ----------------------------------------------------
+d="$(mk_repo_with doc.md '# doc
+
+See [b](100%.md) for detail.
+' "100%.md" "content
+")"
+run "$pd" "$d" --quiet
+check_status "a bare percent sign in a target resolves, not corrupted by decoding -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a `#fragment` link into a NON-markdown target is out of scope for anchor validation —
+# a GitHub line anchor (e.g. `file.sh#L10`) is a viewer feature, not a dead heading (found by the
+# cross-model second-opinion review of dir #218's own diff) --------------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [x](script.sh#L10) for detail.
+" script.sh "#!/usr/bin/env bash
+# not a heading
+")"
+run "$pd" "$d" --quiet
+check_status "a fragment into a non-md file is not anchor-checked -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a tab inside heading text hyphenates like a space would, instead of being silently
+# dropped (found by the same review) --------------------------------------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [x](#foo-bar) for detail.
+
+## Foo	Bar
+")"
+run "$pd" "$d" --quiet
+check_status "a tab-separated heading slugs with a hyphen, not a dropped tab -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a heading with trailing whitespace slugs without a spurious trailing hyphen (found by
+# /code-review medium, angle A) --------------------------------------------------------------------
+trailing_space_heading="## Notes "
+d="$(mk_repo_with doc.md "# doc
+
+See [x](#notes) for detail.
+
+$trailing_space_heading
+")"
+run "$pd" "$d" --quiet
+check_status "a heading with trailing whitespace still resolves -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a literal backslash already in a target isn't corrupted by percent-decoding (found by
+# /code-review medium, angle A) -----------------------------------------------------------------------
+d="$(mk_repo_with doc.md '# doc
+
+See [x](note\ntest.md) for detail.
+' 'note\ntest.md' "content
+")"
+run "$pd" "$d" --quiet
+check_status "a literal backslash in a target resolves, not reinterpreted -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a relative filename that merely starts with "http"/"mailto" is still existence-checked,
+# not mistaken for an external link (found by /code-review medium, angle A) ----------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [x](http-notes.md) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "a missing http-prefixed relative filename still fails -> exit 1" 1 "$STATUS"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [x](http-notes.md) for detail.
+" http-notes.md "content
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME http-prefixed filename, present, resolves -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a percent-encoded anchor decodes before matching against a heading slug (found by
+# /code-review medium, angle A) — %2D is a hyphen, so the decoded anchor and the heading's own slug
+# agree only once decoding actually happens ------------------------------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [x](#foo%2Dbar) for detail.
+
+## Foo-Bar
+")"
+run "$pd" "$d" --quiet
+check_status "a percent-encoded anchor resolves against the decoded slug -> exit 0" 0 "$STATUS"
+
+# --- signal 2: a leading-slash target is GitHub's own repo-root-relative link convention, not the
+# undocumented bare-relative fallback dir #217 removed (found by /code-review medium, angle B) ---------
+d="$(mk_repo_with sub/doc.md "# doc
+
+See [x](/other.md) for detail.
+" other.md "# other
+")"
+run "$pd" "$d" --quiet
+check_status "a leading-slash target resolves against the repo root -> exit 0" 0 "$STATUS"
+
+d="$(mk_repo_with sub/doc.md "# doc
+
+See [x](/other.md) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME leading-slash target, missing, DOES fail -> exit 1" 1 "$STATUS"
+
 summary

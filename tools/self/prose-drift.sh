@@ -24,8 +24,12 @@
 #         ordinary sentence that simply runs a bit long (an inline command kept on one line, two
 #         short clauses sharing a line) — both look identical to a mechanical length comparison. A
 #         WARN says "a human may want to glance here," nothing stronger.
-#   GAP   dead relative markdown link — a `[text](target)` whose target does not resolve on disk.
-#         Zero legitimate exceptions (a link either resolves or it doesn't), so this one is a hard
+#   GAP   dead relative markdown link — a `[text](target)` whose target does not resolve, OR whose
+#         `#anchor` half names no heading in the resolved file. Resolution is sibling-relative to the
+#         linking file ONLY, matching how GitHub itself resolves a relative link (dir #217 — an
+#         earlier repo-root fallback made a link dead for a real reader while this signal still called
+#         it green; dropped outright, so there is no second root to document). Zero legitimate
+#         exceptions (a link either resolves, anchor included, or it doesn't), so this one is a hard
 #         fail, unlike signal 1.
 #
 # Usage:
@@ -187,13 +191,18 @@ report_hits() {
   done <<< "$files"
 }
 
-# `|| true`: an unusual environment can make `git` itself fail outright here (e.g. a container
-# reading a bind-mounted repo it does not own emits "detected dubious ownership" and exits 128,
-# felt live on this project's own alpine-busybox CI leg) — under `set -o pipefail` that would
-# otherwise abort this whole script at the assignment. doctor.sh's own git-backed checks already
-# degrade the same way rather than crash; this keeps prose-drift.sh consistent with that rather
-# than being the one check that takes doctor.sh down with it via its own `|| exit_code=1`.
-md_files="$(git -C "$repo_dir" ls-files '*.md' | sort || true)"
+# No `|| true` here (dir #191): a container reading a bind-mounted repo it does not own used to make
+# `git` itself fail outright ("detected dubious ownership", exit 128), felt live on this project's own
+# alpine-busybox CI leg. That leg is now closed at the container level — `.github/workflows/ci.yml`'s
+# alpine step runs `git config --system --add safe.directory '*'` before any test executes. `--system`,
+# not `--global`: `tests/lib.sh` sandboxes every test file's `HOME`/`GIT_CONFIG_GLOBAL` to a fresh
+# per-run path (dir #64), which shadows the global config scope outright, so a `--global` write made
+# before that override becomes invisible to any git call the test suite itself makes afterward — system
+# scope is a separate file (`/etc/gitconfig`) that override never touches, so it reaches every git call
+# in the container, this one included. This assignment can therefore fail loudly on a real git failure
+# instead of degrading silently to an empty file list, same as `sh_files` just below (its own `|| true`
+# is unrelated — grep's zero-match exit, not a git guard).
+md_files="$(git -C "$repo_dir" ls-files '*.md' | sort)"
 # Reuses tools/self/shellcheck-targets.sh's own enumeration rather than a hand-rolled `*.sh` glob —
 # that script exists specifically because a plain pathspec misses shebang-only, extensionless
 # scripts (e.g. tools/secret-guard/pre-commit and pre-push both slipped through a bare glob here
@@ -213,15 +222,70 @@ report_hits md "$md_files"
 report_hits sh "$sh_files"
 [ "$ll_hits" -eq 0 ] && say "  OK   no anomalous line length inside a wrapped block"
 
-# --- signal 2: dead relative markdown links --------------------------------------------------------
+# --- signal 2: dead relative markdown links and dead in-document anchors ---------------------------
 # Reuses $md_files from signal 1 above rather than a second `git ls-files '*.md'` — same file set,
 # no reason to ask git twice. Also reuses signal 1's blank_fenced_blocks() pre-pass, for the same
 # reason signal 1 needs it: a fenced example illustrating link syntax (`[text](target)`) must not be
 # parsed as a real link — a doc about drydock/prose-drift itself is exactly the place such an example
 # would show up, and an illustrative target that doesn't resolve would otherwise read as a real dead
 # link (a hard GAP), not a WARN.
+
+# Slugs for FILE's own ATX headings (`#` through `######`), in document order, GitHub-flavored:
+# lowercase, drop everything but [a-z0-9 _-], then each remaining space becomes its own hyphen —
+# GitHub does NOT collapse a run of spaces into one hyphen, it hyphenates each one (verified live
+# against this tree's own docs/getting-started.md: "Linked install — recommended on Claude Code" slugs
+# to `linked-install--recommended-on-claude-code`, the double hyphen is where the em dash's
+# surrounding spaces both survived). `LC_ALL=C` makes the character class byte-wise rather than
+# locale-dependent, so a multi-byte character is stripped as raw bytes instead of behaving differently
+# under whatever locale the shell happens to be in — correct for a stripped-punctuation mark like that
+# em dash, but it means a non-ASCII LETTER (an accented Latin character, a non-Latin script) is also
+# stripped byte-by-byte here, where GitHub's own slugger keeps Unicode word characters and strips only
+# punctuation. Every in-document anchor target in this tracked tree points at an ASCII plain-text
+# heading, so this signal doesn't need real Unicode handling to do its job today — but a heading with a
+# non-ASCII letter would slug differently here than on GitHub. A literal tab in heading text is folded
+# to a space FIRST (`tr '\t' ' '`), before the case fold and character strip, so it hyphenates the same
+# way a space does instead of being silently dropped by the character-class strip below. No DELIBERATE
+# inline-markup stripping: backtick/asterisk `code`/**bold** markers happen to slug correctly anyway,
+# as a side effect of the same punctuation strip that drops the em dash above, but a real markdown
+# LINK inside a heading (`[text](url)`) would leak the URL into the slug instead of using only the
+# visible text the way GitHub's own slugger does — out of scope here since no in-document anchor target
+# in this tracked tree points at a heading like that. blank_fenced_blocks keeps a heading-looking line
+# inside a fenced illustrative example from counting as a real heading, same as signal 1 and the link
+# scan below. Slugged and de-duplicated as one stream (not per-heading) — a second heading slugging to the
+# same value anchors at `#slug-1`, a third at `#slug-2`, and so on, same as GitHub's own collision
+# suffix.
+_heading_slugs() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  # The 3rd substitution trims bare trailing whitespace left behind once the trailing-`#` strip runs
+  # (a heading with no closing `#`s but a stray trailing space — an editor artifact, or markdown's own
+  # two-space line-break convention) — without it, that space survives to `s/ /-/g` below and produces
+  # a slug with a spurious trailing hyphen that never matches a real link's anchor.
+  blank_fenced_blocks "$file" \
+    | grep -E '^#+[[:space:]]' \
+    | sed -E 's/^#+[[:space:]]+//; s/[[:space:]]+#+[[:space:]]*$//; s/[[:space:]]+$//' \
+    | tr '\t' ' ' \
+    | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+    | LC_ALL=C sed -E 's/[^a-z0-9 _-]//g; s/ /-/g' \
+    | awk '{ if (seen[$0]++) print $0 "-" seen[$0]-1; else print $0 }'
+}
+
+# Percent-decode a link target before touching the filesystem (dir #224): `%20` and friends are
+# CommonMark-legal and GitHub renders them as the literal character, so an encoded-but-otherwise-valid
+# target must not read as dead just because the raw percent-escape doesn't exist as a path on disk.
+# Only a genuine `%XX` hex pair is turned into `\xHH` for `printf '%b'` to decode — a bare `%` with no
+# following hex pair (a real target can legitimately contain one, e.g. `100%.md`) is left as a literal
+# character instead of being blindly rewritten to `\x`, which `printf %b` would then reject outright
+# ("missing hex digit for \x") rather than pass through. Any backslash ALREADY in the target (a real,
+# if unusual, path fragment) is escaped to `\\` first — `printf %b` reinterprets its ENTIRE argument,
+# not just the `\xHH` sequences this function itself injects, so a literal `\n`/`\t`/etc. in the raw
+# target would otherwise be silently turned into a control character before the existence check runs.
+_url_decode() {
+  printf '%b' "$(printf '%s' "$1" | sed -E 's/\\/\\\\/g; s/%([0-9A-Fa-f]{2})/\\x\1/g')"
+}
+
 say ""
-say "● signal 2 — dead relative markdown links"
+say "● signal 2 — dead relative markdown links and anchors"
 dead=0
 # Same empty-list guard as report_hits()'s `[ -n "$files" ] || return 0` above — an `<<<` herestring
 # on an empty variable feeds one spurious empty-string iteration rather than zero. Shaped as an `if`
@@ -231,16 +295,62 @@ if [ -n "$md_files" ]; then
   while IFS= read -r f; do
     dir=$(dirname "$f")
     while IFS=: read -r ln target; do
-      t="${target%%#*}"                                   # strip anchor
-      case "$t" in http*|mailto:*|"") continue ;; esac
-      if [ ! -e "$repo_dir/$dir/$t" ] && [ ! -e "$repo_dir/$t" ]; then
+      case "$target" in
+        *'#'*) file_part="${target%%#*}"; anchor="${target#*#}" ;;
+        *)     file_part="$target"; anchor="" ;;
+      esac
+      # Anchored scheme match (dir #224's own review round): a bare `http*`/`mailto*` glob also matches
+      # a real relative filename that merely happens to START with those letters (`http-notes.md`,
+      # `mailto-list.md`) — anchoring on the scheme's own `://`/`:` terminator excludes those.
+      case "$file_part" in http://*|https://*|mailto:*) continue ;; esac
+      anchor="$(_url_decode "$anchor")"
+      t="$(_url_decode "$file_part")"
+      # Sibling-relative to the linking file (dir #217) is the DEFAULT — no bare repo-root fallback for
+      # an otherwise-ambiguous target; a target that only "resolved" via that removed fallback was dead
+      # for a real reader while this signal still called it green. A LEADING-SLASH target is a distinct,
+      # unambiguous case, not that fallback: GitHub itself resolves `[x](/CHANGELOG.md)` against the
+      # REPO ROOT, by the target's own explicit syntax, regardless of which file it's linked from — so
+      # it gets its own resolution rule rather than being swept into "no second root" along with the
+      # bare-relative case dir #217 actually fixed. An empty $t (a bare "#anchor" target) skips the
+      # existence check below and resolves to THIS SAME file instead.
+      case "$t" in
+        /*) resolved="$repo_dir$t" ;;
+        *)  resolved="$repo_dir/$dir/$t" ;;
+      esac
+      [ -z "$t" ] && resolved="$repo_dir/$f"
+      if [ -n "$t" ] && [ ! -e "$resolved" ]; then
         gap "$f:$ln → \`$target\` does not resolve"
         dead=$((dead + 1))
+        continue
       fi
-    done < <(blank_fenced_blocks "$repo_dir/$f" | grep -onE '\]\(([^)]+)\)' | sed -E 's/:\]\(/:/; s/\)$//')
+      # Anchor validation only applies when the RESOLVED target is itself markdown — GitHub's ATX
+      # heading anchors are a markdown-rendering feature, not a general file-viewer one, so a link
+      # into a non-md file's own `#fragment` (e.g. a GitHub line anchor into a tracked `.sh` file) is
+      # out of scope here, not a dead anchor. An empty $t (bare "#anchor", resolved to THIS file) is
+      # always markdown, since this whole loop only ever runs over $md_files.
+      case "$resolved" in *.md|*.markdown) is_md=1 ;; *) is_md=0 ;; esac
+      # No `-q` on the grep below: under `set -o pipefail`, `-q` closes its read end the instant it
+      # sees a match, and if that match isn't the LAST heading `_heading_slugs` emits, its still-
+      # writing internal pipeline (awk feeding the final stage) gets SIGPIPE'd — a nonzero exit from
+      # an EARLIER pipe stage that pipefail then reports as this pipeline's own status, even though
+      # the match was genuinely found. Redirecting `grep`'s normal (non-`-q`) output to `/dev/null`
+      # keeps the same found/not-found exit code without ever closing the pipe early. No per-file
+      # cache of this pipeline's output either — bash 3.2 (this project's own macOS CI leg, and macOS's
+      # own system `/usr/bin/env bash`) has no associative arrays to key one by resolved path, and a
+      # linear-scan substitute would trade a straightforward re-read for indirection this signal's
+      # existing per-line subshell cost doesn't otherwise need.
+      # `--` before $anchor: a heading whose own text starts with `-` (rare, but legal markdown) slugs
+      # to a leading-hyphen anchor, and grep would otherwise parse it as an option string and error.
+      if [ -n "$anchor" ] && [ "$is_md" = 1 ] && ! _heading_slugs "$resolved" | grep -xF -- "$anchor" >/dev/null; then
+        gap "$f:$ln → \`$target\` anchor does not resolve"
+        dead=$((dead + 1))
+      fi
+    done < <(blank_fenced_blocks "$repo_dir/$f" \
+      | grep -onE '\]\(([^()]|\([^()]*\))*\)' \
+      | sed -E 's/:\]\(/:/; s/\)$//')
   done <<< "$md_files"
 fi
-[ "$dead" -eq 0 ] && say "  OK   no dead relative markdown links"
+[ "$dead" -eq 0 ] && say "  OK   no dead relative markdown links or anchors"
 
 say ""
 [ "$exit_code" = 0 ] && say "prose-drift: OK ($ll_hits line-length lead(s), advisory only)"
