@@ -235,12 +235,18 @@ Steps, in order:
    alternative attempted. For `low|medium|high|max`, do NOT attempt `Skill(code-review)`: the built-in
    `/code-review` is not model-invokable in-session — a documented harness policy
    (`disable-model-invocation`, verified 2026-07-29 against the Claude Code docs) — so the automated path
-   IS branch (a) directly, no attempt first. **Revisit trigger:** if a session ever observes the harness
-   accepting a model invocation of `/code-review` (a docs/policy change, or the `skillOverrides` mechanism
-   becoming applicable), restore attempt-first — the gate's Skill/UserPromptExpansion trace legs and the
-   bare-`<level>` receipt outcome already cover a genuine in-session run natively, so nothing else needs
-   rebuilding. Either way, do not substitute `/review` (a GitHub-PR command, not a working-diff review) and
-   do not guess.
+   IS branch (a) directly, no attempt first. **That verification date is a last-checked marker, not a
+   freshness guarantee (dir #221):** a docs re-read alone can't fully re-verify it — the docs could
+   themselves be stale, and the authoritative signal is the harness's actual runtime behavior, which this
+   step deliberately never manufactures by attempting the call (that's the "no attempt first" rule just
+   above); observing it live is effectively an operator action. So there is no calendar re-verify cadence
+   for either path — staleness is instead caught event-based, by the **Revisit trigger** immediately
+   below, on EITHER signal: an operator-reported docs/policy change, or a session that observes the
+   harness accepting a model invocation of `/code-review` outright (the `skillOverrides` mechanism
+   becoming applicable, or any other cause). **Revisit trigger:** on either signal, restore attempt-first — the gate's
+   Skill/UserPromptExpansion trace legs and the bare-`<level>` receipt outcome already cover a genuine
+   in-session run natively, so nothing else needs rebuilding. Either way, do not substitute `/review` (a
+   GitHub-PR command, not a working-diff review) and do not guess.
 
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
    directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
