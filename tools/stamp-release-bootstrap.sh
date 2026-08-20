@@ -11,7 +11,10 @@
 #   [OUT]   output path (default: stdout)
 #
 # Wire into a release (`--title` and `--notes-file` are NOT optional — `--notes-from-tag` alone
-# published v0.6.1 with an empty title and a one-line body; see docs/publishing-checklist.md §4):
+# published v0.6.1 with an empty title and a one-line body; see docs/publishing-checklist.md §4).
+# The tag is created and pushed FIRST, per that same section: with no tag on the remote, gh creates
+# one at the default branch's head at execution time, which is not necessarily the audited SHA.
+#   git tag -a v0.6.0 <sha> -m "v0.6.0 — <headline>" && git push origin v0.6.0
 #   tools/stamp-release-bootstrap.sh v0.6.0 /tmp/bootstrap.sh
 #   gh release create v0.6.0 --title "v0.6.0 — <headline>" --notes-file <notes> /tmp/bootstrap.sh
 set -euo pipefail
