@@ -8,6 +8,50 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-08-21
+
+The audit-tail release. v0.7.0 shipped with a named list of six residuals it deliberately did not
+hold its tag for; this release closes four of them rather than adding surface. Fixed: the
+fenced-example collision that could resolve the wrong introducing commit (dir #194); the second
+`head -1`-under-`pipefail` construct (dir #195); the digit-shape numeric guard that stood duplicated
+and unfixed across seven files, now one shared `tools/lib/nonneg-int.sh` (dir #196); and the only
+behaviour-level one of the six — `uninstall.sh` no longer reads a stray same-named context file as
+proof of a live sibling install (dir #190). The two that remain are not open work: one is the
+release-in-preparation window, an accepted design bound rather than a defect, and the other is a
+warning that the v0.8.0 gate rewrite removes outright (dir #201, dir #186).
+
+Two more fixes came from that same review round rather than from the disclosed list: the `git log -S`
+pickaxe that could abort a whole `self-check` run on an unborn HEAD (dir #213), and `--dry-run` over
+a manifest-less install now listing heuristically instead of refusing (dir #228, which deliberately
+reverses part of v0.7.0's own "Changed" entry).
+
+Alongside them, the release machinery this project leans on got its own pass —
+`tools/changelog-section.sh --edit` folds the by-hand release-note compose recipe into tested code
+(dir #189, dir #223), and `docs/release-audit.md` phase 7 now names the open-floor recheck as a step
+instead of leaving it to a human happening to notice a passing test's note (dir #202, dir #203). And
+the largest coverage hole v0.7.0's audit named is closed at the source: the alpine-busybox CI leg
+installs `jq`, so the gate tests run there for the first time — `tests/test_pre_pr_gate.sh` went from
+**2 to 469 assertions** on that leg (dir #220), and the leg's "dubious ownership" workarounds were
+replaced by one container-level fix (dir #191).
+
+Known issues: four residuals ship unfixed, each with an open ticket, and none of them changes what
+the tools do. Two are in `tools/self/prose-drift.sh`, which is keel-self-maintenance and is never
+installed for adopters: it hard-GAPs a link whose anchor names a heading containing a non-ASCII
+**letter**, because its slugger strips bytes above ASCII while GitHub keeps them (em-dashed headings,
+which this project uses everywhere, are unaffected); and it now aborts with git's raw error, instead
+of degrading, when pointed at a directory that is not a git repository — an input its own header
+still advertises as supported (both: backlog dir #240). Third, five test assertions were found by
+live mutation to pin a weaker proxy than their names promise, among them the sweep that checks no
+shipped file spells a gate marker, which passes whenever `git grep` fails for any reason; the shipped
+behaviour is correct at every site, so these are gaps in the guards rather than defects (backlog
+dir #239, with dir #238 for the standing mutation check that would have caught them). Fourth, the
+`uninstall.sh` warning described under dir #190 above (backlog dir #248).
+
+On how these were found, since it bears on how much the list is worth: three of the four came at
+least in part from a cross-vendor review layer, run after this project's own same-family passes had
+already read the same files and called them clean. One of the three was found by both layers
+independently.
+
 ### Added
 - **`tools/changelog-section.sh --edit <version> <notes-file>`** (dir #189): folds the release-note
   compose recipe — extract, open in `$EDITOR`, copy on success only — into tested code instead of
@@ -59,8 +103,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   0.7.0's sixth Known-issue). Its no-usable-other-manifest fallback now requires `has_keel_rails` on the
   other mode's context file OR a manifest-independent sentinel (`.keel/foreign-core.<mode>`, written by
   `install.sh` whenever it detects a foreign-core install and cleared otherwise) — plain existence alone
-  no longer counts. The ordinary both-modes home (dir #124) now uninstalls cleanly in sequence again,
-  matching v0.6.1; dir #150's original foreign-core fix (a genuinely unmanifested foreign-core install
+  no longer counts. The ordinary both-modes home (dir #124) is removable in sequence again, as it was in
+  v0.6.1 — with one caveat this note owes you: the second uninstall still announces each shared artifact
+  as an unconfirmed guess (`no evidence CLAUDE.md is gone … removing anyway`) before removing it, because
+  the first uninstall stripped the sibling context file's rails and an ordinary install leaves no
+  sentinel. It removes the right files; the warning's premise is wrong and its suggested `install.sh`
+  recovery would undo the mode you just removed. Ignore it on this flow (backlog dir #248).
+  dir #150's original foreign-core fix (a genuinely unmanifested foreign-core install
   must not have its shared half stripped) stays intact via the sentinel. Pinned by five new
   `tests/test_uninstall.sh` fixtures — B23 (the regression), B24 (the stray-file scenario), B25A (the
   sentinel's own clear branch on a fresh, non-foreign re-install), B25B (both modes foreign-core,
@@ -85,6 +134,33 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   perform the listed removals (an operator-run `/code-review high` pass live-reproduced the two
   disagreeing). The real, non-dry refusal is untouched. Pinned by `tests/test_uninstall.sh`'s new B15D
   fixture.
+- **`commands/polish.md`'s dated verification claim about `disable-model-invocation` now reads as a
+  last-checked marker rather than a freshness guarantee** (dir #221), and leans on the existing
+  event-based Revisit trigger for staleness instead of implying a calendar cadence that never existed.
+  Adopter-visible: `commands/` is installed into every keel home.
+- **`tools/self/prose-drift.sh`'s signal 2 stops passing links a real reader would find broken**
+  (dir #217, dir #218, dir #224). Dead in-document `#anchor` links were an uncovered class entirely —
+  the signal now validates them against GitHub-flavored heading slugs. Link resolution is
+  sibling-relative only: an undocumented repo-root fallback used to call a link green that GitHub
+  itself resolves to nothing, while GitHub's own leading-slash convention (`[x](/CHANGELOG.md)`) gets
+  an explicit rule instead of being swept into the removal. And the extractor no longer truncates at
+  the first `)`, so a target with one level of balanced parens or percent-encoding stops false-GAPping.
+  *Known limitation, see Known issues below: a heading containing a non-ASCII letter false-GAPs.*
+- **The alpine-busybox CI leg no longer works around "dubious ownership" per call site** (dir #191).
+  The leg bind-mounts the whole checkout, so every git call any script makes inside it was blocked
+  unless configured otherwise — previously patched with narrow `|| true` guards at individual call
+  sites. The container now does `git config --system --add safe.directory '*'` once, before any test
+  runs. **`--system` is load-bearing and a future change must not "simplify" it to `--global`:**
+  `tests/lib.sh` redirects `GIT_CONFIG_GLOBAL` per test file, which shadows a `--global` write
+  entirely, so only `--system` reaches every git call in the suite. As part of the same cleanup
+  `tools/self/prose-drift.sh` lost its own `|| true` guard — see Known issues.
+- **`tests/run.sh` no longer reports a false FAIL on a real checkout** (dir #222). One
+  `tests/test_pre_pr_gate.sh` assertion scanned the working tree with `grep -r` rather than tracked
+  files, so any gitignored file that happened to quote a gate marker — an operator's own backlog or
+  notes — turned the suite red while CI and clean worktrees stayed green. It now uses `git grep`.
+- Two `tests/test_keel_impact.sh` assertions that named coverage they did not have were replaced with
+  fixtures that actually exercise the code, mutation-proven (dir #216). Test-internal; no shipped
+  behaviour changes.
 
 ## [0.7.0] — 2026-08-20
 
