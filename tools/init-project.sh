@@ -21,14 +21,14 @@ init-project — scaffold a new project to the Keel baseline (born-compliant).
 Usage:
   init-project.sh [PROJECT_DIR]   scaffold PROJECT_DIR (default: current dir)
   init-project.sh --no-register   skip adding it to the INSTANCE.md Projects registry
-  init-project.sh --no-impact     skip opting the project into impact tracking (.keel/)
+  init-project.sh --no-impact     skip opting the project into impact tracking
   init-project.sh -h | --help
 
 Idempotent: fills gaps (git, a .gitignore that hides private context, a project
 CLAUDE.md, an AGENTS.md vendor sibling symlinked to it for Codex/Cursor), opts the
-project into impact tracking (a .keel/ marker so guardrail fires get recorded; only
-its ephemeral event log is gitignored), auto-registers the project in your
-INSTANCE.md, and reports — it never overwrites a file you have.
+project into impact tracking (an external store entry, dir #251 — nothing is written
+into the project's own tree), auto-registers the project in your INSTANCE.md, and
+reports — it never overwrites a file you have.
 EOF
       exit 0 ;;
     --no-register) REGISTER=0 ;;
@@ -76,12 +76,11 @@ ensure_ignore ".idea/"
 # gitignore it up front so a later `doctor.sh` WARN never tempts a `git add` of a per-checkout file.
 ensure_ignore "/.keel/map-drift-baseline"
 
-# 2b. Impact tracking — opt this project in by creating the .keel/ marker the guardrail hooks look for
-# before recording a fire. Delegated to keel-impact.sh enable (not a raw `mkdir -p .keel` here): its
-# resolver always targets the MAIN checkout's top (PR #67 discipline), so scaffolding a project FROM a
-# linked worktree doesn't plant a stray local marker other worktrees can't see (dir #10 residue (a)).
-# Only the ephemeral event log is gitignored; .keel/ledger.md (the durable score history) stays trackable.
-# Zero token cost; --no-impact to skip.
+# 2b. Impact tracking — opt this project into an external store entry (dir #251) so guardrail hooks
+# get recorded with no env needed. Delegated to keel-impact.sh enable: its resolver always targets the
+# MAIN checkout's top, so scaffolding a project FROM a linked worktree still resolves the same store
+# entry every other worktree does. Nothing is written into the project's own tree. Zero token cost;
+# --no-impact to skip.
 if [ "$IMPACT" = 1 ]; then
   "$here/keel-impact.sh" enable . | sed 's/^/  /'
 fi

@@ -387,6 +387,8 @@ set -u
 _ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_ppg_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$_ppg_dir/lib/impact-store.sh"
 unset _ppg_dir
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
@@ -1113,21 +1115,13 @@ require_active_receipt() {
 # `init`'s nonce reset (the sentinel's job) never touches it, same rationale as the trace/hand-off files.
 rollout_state_path() { printf '/tmp/pre-pr-gate-rollout-%s' "$(_repo_key "${1:-$PWD}")"; }
 
-# Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
-# (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
-# so a linked worktree looks at the first `git worktree list` entry, skipped when bare). One resolution
-# used everywhere a guard/receipt/log event is recorded (dir #49 folded three copies into this one).
+# Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else this project's external
+# store entry (dir #251), else a legacy in-tree .keel/impact-events.log left over from before the
+# store existed. One resolution used everywhere a guard/receipt/log event is recorded (dir #49 folded
+# three copies into this one; dir #251 moved its body into tools/lib/impact-store.sh, shared by every
+# consumer that CAN source it — this file, public-audit.sh, keel-impact.sh itself).
 resolve_impact_log() {
-  local cwd="$1" klog="${KEEL_IMPACT_LOG:-}" top main
-  if [ -z "$klog" ]; then
-    top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(_worktree_main_entry "$cwd")"
-      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
-    fi
-    if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
-  fi
-  printf '%s' "$klog"
+  impact_log_path "$1"
 }
 
 # dir #74: the log's 5th TSV field — the claim key an event is stamped with, so a shared multi-worktree

@@ -26,14 +26,12 @@ check_contains ".gitignore ignores AGENTS.md" "$gi" "AGENTS.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
 check_contains ".gitignore ignores the map-drift baseline" "$gi" "/.keel/map-drift-baseline"
 
-# impact tracking is on by default: the .keel/ marker is created; only the event log is gitignored
-check_dir "creates the .keel/ impact marker" "$d/.keel"
-check_contains ".gitignore ignores the event log" "$gi" "/.keel/impact-events.log"
-if grep -qxF '/.keel/' "$d/.gitignore"; then
-  fail ".gitignore does NOT ignore the whole .keel/ (ledger stays trackable)" "a bare /.keel/ line is present"
-else
-  pass ".gitignore does NOT ignore the whole .keel/ (ledger stays trackable)"
-fi
+# impact tracking is on by default (dir #251): an EXTERNAL store entry is created, nothing inside the
+# project's own tree — no .keel/ marker, no impact-related .gitignore line beyond the map-drift one above
+d_id="$(cd "$d" && pwd -P | tr '/' '-')"
+check_dir "creates the external impact-store entry" "$KEEL_IMPACT_STORE/$d_id"
+check_nofile "creates nothing inside the project tree" "$d/.keel/ledger.md"
+check_absent ".gitignore gets no impact-log line (nothing left to ignore)" "$gi" "/.keel/impact-events.log"
 
 # idempotency: a second run preserves an edited CLAUDE.md and adds no duplicate .gitignore lines
 printf '\nMY-EDIT\n' >> "$d/CLAUDE.md"
@@ -106,25 +104,26 @@ run env KEEL_INSTANCE="$inst2" "$init" --no-register "$np"
 check_status "--no-register → exit 0" 0 "$STATUS"
 check_absent "--no-register adds no row" "$(cat "$inst2")" "| $np |"
 
-# --no-impact opts out of impact tracking (no .keel/ marker, no /.keel/ ignore)
+# --no-impact opts out of impact tracking (no external store entry created)
 ni="$SANDBOX/no-impact-proj"
 run "$init" --no-impact "$ni"
 check_status "--no-impact → exit 0" 0 "$STATUS"
-if [ -d "$ni/.keel" ]; then fail "--no-impact creates no .keel/ marker" "dir exists: $ni/.keel"; else pass "--no-impact creates no .keel/ marker"; fi
-check_absent "--no-impact adds no impact-log ignore" "$(cat "$ni/.gitignore")" "/.keel/impact-events.log"
+ni_id="$(cd "$ni" && pwd -P | tr '/' '-')"
+check_nodir "--no-impact creates no store entry" "$KEEL_IMPACT_STORE/$ni_id"
 
-# dir #10 residue (a): scaffolding FROM a linked worktree routes the .keel/ marker through
-# keel-impact.sh's main-top resolution (PR #67 discipline) — it must land at the MAIN checkout's top,
-# never as a stray local marker other worktrees can't see. Build the repo by hand (not via a first
-# init-project run) so the worktree starts with no .keel/ of its own.
+# dir #10 residue (a) / dir #251: scaffolding FROM a linked worktree routes through keel-impact.sh's
+# main-top resolution — the store entry it creates must be the SAME one the main checkout resolves to,
+# never a worktree-forked one. Build the repo by hand (not via a first init-project run) so the
+# worktree starts with no store entry of its own yet.
 wbase="$SANDBOX/wt-base-proj"; mkdir -p "$wbase"; git -C "$wbase" init -q
 git -C "$wbase" -c user.email=t@keel.invalid -c user.name=t commit -qm init --allow-empty >/dev/null
 wt="$SANDBOX/wt-base-proj.wt"
 git -C "$wbase" worktree add -q -b wt-branch "$wt" >/dev/null 2>&1
 run "$init" --no-register "$wt"
 check_status "init from a linked worktree → exit 0" 0 "$STATUS"
-check_dir "marker lands at the main checkout's top" "$wbase/.keel"
-if [ -d "$wt/.keel" ]; then fail "no stray local marker in the worktree" "dir exists: $wt/.keel"; else pass "no stray local marker in the worktree"; fi
+wbase_id="$(cd "$wbase" && pwd -P | tr '/' '-')"
+check_dir "store entry lands at the main checkout's id" "$KEEL_IMPACT_STORE/$wbase_id"
+check_nofile "nothing created inside the worktree's own tree" "$wt/.keel/ledger.md"
 
 # dir #85 (code audit, finding 20): a project name carrying sed/awk replacement metacharacters must
 # reach CLAUDE.md verbatim. Under the old `sed "s/<Project name>/$name/"`, `&` spliced the whole match

@@ -1,0 +1,181 @@
+# shellcheck shell=bash
+# tools/lib/impact-store.sh — resolves WHERE the impact-score triple (ledger.md, evidence.md,
+# impact-events.log) lives for a given project (dir #251).
+#
+# Before this file, that triple lived inside the project's OWN working tree (a `.keel/` marker every
+# consuming repo had to know about, gitignore, and avoid committing — two adopter repos committed it
+# into git history by mistake, following this tool's own OLD advice to do so). Now the triple lives
+# at an external store, keyed by the project's MAIN checkout's physical path — the same shape KB.16
+# already used to fix the identical failure for `kb-memory`.
+#
+# Sourced, not executed — no shebang requirement, no `set -e` (inherits the caller's).
+#
+# Store layout: $(impact_store_root)/<project-id>/{ledger.md,evidence.md,impact-events.log,origin}.
+# <project-id> = the path-slug of the project's main-checkout top (D2): physical path, every '/' ->
+# '-' — the same transform ~/.claude/projects/ already uses. `origin` holds the one physical path the
+# id was derived from, for orphan detection (a store entry whose origin no longer exists on disk).
+#
+# Env overrides:
+#   KEEL_IMPACT_STORE    overrides the store ROOT outright — required for test isolation.
+#   KEEL_HOME             overrides $HOME_DIR the same way install.sh's own resolution does
+#                          (${KEEL_HOME:-$HOME/.claude}) — mirrored here, not reinvented. keel-impact.sh
+#                          gains no `--home` of its own; KEEL_HOME/KEEL_IMPACT_STORE cover every case.
+#   KEEL_IMPACT_LEDGER / KEEL_IMPACT_EVIDENCE / KEEL_IMPACT_LOG   explicit per-file overrides, unchanged
+#                          from before this ticket — still win over the store outright.
+#
+# A project is "enabled" iff a store dir already exists for its id. Every path resolver below is
+# read-only (no writes, no mutation) and never errors: empty output means "no explicit override, and
+# this project isn't enabled" — refusing on that (keel-impact.sh's `add`/`rollup`) vs. silently doing
+# nothing (a guardrail hook recording a fire) is each caller's own decision, not this file's.
+
+# _impact_main_top [DIR] — the MAIN checkout's top for DIR (default cwd): the first `git worktree
+# list` entry, empty if DIR is not a repo or that entry is bare (no working tree). Equals DIR's own
+# top in a plain (non-worktree) repo. `|| true`: outside a repo git exits 128, which would trip the
+# caller's `set -e` if this ran unguarded; the awk reads its whole input on purpose (no early exit, no
+# SIGPIPE).
+_impact_main_top() {
+  git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
+    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
+}
+
+# _impact_resolve_top [DIR] — the physical path a project's id is derived from: the main checkout's
+# top; else (a bare-main topology) DIR's own toplevel; else (DIR is not a git repo yet) DIR's own
+# physical path. Mirrors keel-impact.sh's pre-store `cmd_enable` fallback chain exactly, so a project
+# that could `enable` before this ticket can still `enable` now.
+#
+# Single-slot memoized (dir -> result): every public resolver below calls this, and a typical
+# keel-impact.sh invocation calls several of them for the SAME dir within one process — the pre-store
+# code (`_keel_top()`'s own `_KEEL_TOP_CACHE`) memoized this exact value for the same reason. A single
+# slot (not a map) is enough: it hits on every repeated call with the SAME dir, which is the actual
+# pattern here, without needing an associative array (bash 3.2/busybox parity, house convention).
+_IMPACT_TOP_CACHE_DIR=""
+_IMPACT_TOP_CACHE_VAL=""
+_impact_resolve_top() {
+  local dir="${1:-.}" top
+  if [ "$dir" = "$_IMPACT_TOP_CACHE_DIR" ]; then
+    printf '%s' "$_IMPACT_TOP_CACHE_VAL"
+    return
+  fi
+  top="$(_impact_main_top "$dir")"
+  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$top" ] || top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"
+  _IMPACT_TOP_CACHE_DIR="$dir"
+  _IMPACT_TOP_CACHE_VAL="$top"
+  printf '%s' "$top"
+}
+
+# impact_project_id [DIR] — D2: the path-slug of DIR's resolved top (physical path, every '/' -> '-').
+# Deterministic, reversible, needs no registry and no hashing utility — the tradeoff D2 accepted over
+# those: a `-` in a real directory NAME is indistinguishable from a converted `/`, so two projects at
+# genuinely ambiguous paths (e.g. `/a/b-c` and `/a-b/c`, both slugging to `-a-b-c`) collide. Narrow in
+# practice (it needs two real repos at exactly that shape), not worth a heavier scheme for.
+impact_project_id() {
+  printf '%s' "$(_impact_resolve_top "${1:-.}")" | tr '/' '-'
+}
+
+# impact_claim_key [DIR] — dir #74: THIS producer's own worktree top, NEVER main-top'd. Decides WHO
+# fired an event, not where the file lives — must stay independent of every fallback above.
+impact_claim_key() {
+  git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true
+}
+
+# impact_store_root — D1: $HOME_DIR/.keel/impact, or $KEEL_IMPACT_STORE verbatim when set. $HOME is
+# required only on the fallback path (mirrors install.sh's own `${HOME:?...}` placement) so a caller
+# that always sets KEEL_HOME or KEEL_IMPACT_STORE never needs $HOME under `set -u`.
+impact_store_root() {
+  if [ -n "${KEEL_IMPACT_STORE:-}" ]; then printf '%s' "$KEEL_IMPACT_STORE"; return; fi
+  printf '%s/.keel/impact' "${KEEL_HOME:-${HOME:?impact-store: set HOME, or export KEEL_HOME}/.claude}"
+}
+
+# impact_store_dir [DIR] — the store directory for DIR's project (computed; existence not checked).
+impact_store_dir() {
+  printf '%s/%s' "$(impact_store_root)" "$(impact_project_id "${1:-.}")"
+}
+
+# impact_enabled [DIR] — true iff a store entry already exists for DIR's project.
+impact_enabled() {
+  [ -d "$(impact_store_dir "${1:-.}")" ]
+}
+
+# impact_ledger_path / impact_evidence_path / impact_log_path [DIR] — resolve one file. Precedence:
+# (1) the matching env override, always; (2) a legacy in-tree `.keel/<file>` when THAT SPECIFIC FILE is
+# still physically there — a repo D4 deliberately leaves untouched (a TRACKED legacy ledger/evidence,
+# e.g. social-media/affiliate-lab) must keep resolving and working exactly as it did before this
+# ticket, not go dark; (3) the store path, if the project is enabled; (4) a legacy in-tree `.keel/<file>`
+# when a marker exists but neither the file nor a store entry does yet — a marker-enabled-but-not-yet-
+# scored repo must still resolve a not-yet-created ledger.md to its would-be legacy path (ensure_ledger
+# creates it on first write); (5) empty. Never errors — an empty result IS the "not enabled at all"
+# signal (no store, no legacy marker either), which is the one case keel-impact.sh's `add`/`rollup`
+# refuse on.
+#
+# Checking THE FILE's own presence (2) BEFORE the store (3) — not just whether the project's store
+# DIRECTORY exists — matters because `migrate`/keel-impact.sh's own auto-migration support PARTIAL
+# migration: one file (say, the untracked log) can move into the store while another (a tracked
+# ledger/evidence, left in place on purpose) stays at its legacy path. Once ANY file moves, the store
+# directory exists — so a precedence that only asked "does the store dir exist" would flip EVERY file's
+# resolution to the store the moment ANY one of them moved, silently orphaning the still-tracked file's
+# real history in a brand-new, empty store copy instead. Found live by an operator-run max-depth review
+# reproducing exactly that: `add` after a partial migrate wrote into an empty store ledger while the
+# tracked in-tree ledger.md — the one `migrate`'s own message promised would keep working — never
+# received another row.
+impact_ledger_path() { _impact_file_path ledger.md "${1:-.}"; }
+impact_evidence_path() { _impact_file_path evidence.md "${1:-.}"; }
+impact_log_path() { _impact_file_path impact-events.log "${1:-.}"; }
+_impact_file_path() {
+  local name="$1" dir="$2" override_var store top
+  case "$name" in
+    ledger.md) override_var="${KEEL_IMPACT_LEDGER:-}" ;;
+    evidence.md) override_var="${KEEL_IMPACT_EVIDENCE:-}" ;;
+    impact-events.log) override_var="${KEEL_IMPACT_LOG:-}" ;;
+  esac
+  if [ -n "$override_var" ]; then printf '%s' "$override_var"; return; fi
+  top="$(_impact_resolve_top "$dir")"
+  if [ -n "$top" ] && [ -f "$top/.keel/$name" ]; then printf '%s/.keel/%s' "$top" "$name"; return; fi
+  store="$(impact_store_dir "$dir")"
+  if [ -d "$store" ]; then printf '%s/%s' "$store" "$name"; return; fi
+  # Step 4's marker-but-not-yet-scored fallback must NOT fire on a bare `[ -d "$top/.keel" ]` — D3's own
+  # `.keel/doctor-accept`/`map-drift-baseline` are project-local by design and can legitimately be the
+  # ONLY thing in `.keel/` for a project that never ran impact tracking at all (including one scaffolded
+  # with `--no-impact`). Treating that directory's mere existence as "an old-style marker" would make
+  # `add`/a guardrail hook write a brand-new ledger.md/evidence.md/impact-events.log INTO the project's
+  # own tree — precisely the leak this ticket exists to close, just via a different trigger. The
+  # positive, reliable signal that a repo genuinely ran the PRE-#251 `enable` is that EXACT ignore line
+  # it always appended, byte-for-byte — found live by an operator-run max-depth review, reproduced
+  # against a `.keel/` holding only `map-drift-baseline`. NOT `git check-ignore` (a SECOND review round
+  # caught this): that asks "is this path ignored by ANYTHING", which a common, unrelated pattern like
+  # `*.log` in the adopter's own `.gitignore` would also satisfy, reopening the exact leak with no
+  # `enable` involved at all. `grep -qxF` matches only the literal line `enable` itself wrote, mirroring
+  # the exact idempotency check its own old `cmd_enable` used before this ticket removed it.
+  [ -n "$top" ] && [ -f "$top/.gitignore" ] && grep -qxF '/.keel/impact-events.log' "$top/.gitignore" 2>/dev/null && \
+    printf '%s/.keel/%s' "$top" "$name"
+  return 0
+}
+
+# impact_store_enable [DIR] — idempotently create/refresh the store entry for DIR's project (the
+# opt-in marker itself, D1's `origin` file included) and print its path. Nothing is ever written
+# inside DIR's own working tree.
+impact_store_enable() {
+  local dir="${1:-.}" top store
+  top="$(_impact_resolve_top "$dir")"
+  store="$(impact_store_dir "$dir")"
+  mkdir -p "$store"
+  printf '%s\n' "$top" > "$store/origin"
+  printf '%s' "$store"
+}
+
+# IMPACT_LEGACY_NAMES — the impact-triple's filenames, relative to a project's `.keel/`, named in this
+# ONE place so `doctor.sh`'s W-KEEL-LEGACY check and keel-impact.sh's `migrate`/auto-migrate don't each
+# hand-list the same three strings independently.
+IMPACT_LEGACY_NAMES="ledger.md evidence.md impact-events.log"
+
+# impact_has_legacy_files [DIR] — true iff DIR's project has at least one in-tree
+# .keel/{ledger.md,evidence.md,impact-events.log} left over from before the external store existed.
+impact_has_legacy_files() {
+  local dir="${1:-.}" top name
+  top="$(_impact_resolve_top "$dir")"
+  [ -n "$top" ] || return 1
+  for name in $IMPACT_LEGACY_NAMES; do
+    [ -f "$top/.keel/$name" ] && return 0
+  done
+  return 1
+}

@@ -281,8 +281,9 @@ check_status "GAP still exits 1 with impact log on" 1 "$STATUS"
 check_file "GAP records an impact event" "$imp_log"
 check_contains "event is a guard/public-audit line" "$(cat "$imp_log" 2>/dev/null)" "	guard	public-audit	blocked"
 
-# (b) per-repo .keel/ marker, NO env — resolved from the audited dir
-d="$(repo_by person@corp.com)"; mkdir "$d/.keel"
+# (b) per-repo .keel/ marker, NO env — resolved from the audited dir. The gitignore line is what makes
+# this a GENUINE legacy marker (dir #251 review: a bare `.keel/` alone is not proof of one).
+d="$(repo_by person@corp.com)"; mkdir "$d/.keel"; printf '/.keel/impact-events.log\n' >> "$d/.gitignore"
 run env -u KEEL_IMPACT_LOG bash "$pa" "$d"
 check_status "GAP exits 1 with only a .keel/ marker" 1 "$STATUS"
 check_file "marker alone records the GAP event (no env)" "$d/.keel/impact-events.log"

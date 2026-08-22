@@ -52,6 +52,8 @@ set -u
 CANARY_STATE="${KEEL_CANARY_STATE:-/tmp/pre-pr-gate-canary-state}"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$SELF_DIR/pre-pr-gate.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$SELF_DIR/lib/impact-store.sh"
 
 usage() {
   cat <<'EOF'
@@ -120,7 +122,12 @@ GHEOF
   HOME="$home" git -C "$repo" config user.email canary@keel.invalid
   HOME="$home" git -C "$repo" config user.name "Keel Canary"
   printf 'canary toy project\n' > "$repo/README.md"
-  mkdir -p "$repo/.keel"   # so a real run's impact events land somewhere `check` can read without extra env
+  # dir #251: impact events now live in an EXTERNAL store, $KEEL_HOME/.keel/impact/<project-id>/, never
+  # inside the repo itself. The real /polish session below runs with HOME=$home, so
+  # ${KEEL_HOME:-$HOME/.claude} lands inside this sandbox on its own — pre-create that store entry
+  # (mirrors keel-impact.sh's own `enable`) so a real run's impact events land somewhere `check` can
+  # read without extra env. `cmd_check` recomputes the identical path (search "impact_store_dir").
+  mkdir -p "$(HOME="$home" impact_store_dir "$repo")"
   git -C "$repo" add README.md
   HOME="$home" git -C "$repo" commit -q -m "init"
 
@@ -207,12 +214,15 @@ cmd_check() {
     printf 'PASS  no leftover receipt sentinel — consistent with a consumed, successful pass\n'
   fi
 
-  # resolve_impact_log() in pre-pr-gate.sh prefers $KEEL_IMPACT_LOG over a repo's own .keel/ marker —
+  # resolve_impact_log() in pre-pr-gate.sh prefers $KEEL_IMPACT_LOG over the repo's own store entry —
   # match that precedence here, or an operator with that env var set (plausible if they use it for
   # their real repos, and it's inherited into the sandboxed `claude --settings ...` session) would see
   # a fully successful canary run misreported as "no receipt-pass event recorded" (found in the
-  # operator-run /code-review high pass on this ticket).
-  ilog="${KEEL_IMPACT_LOG:-$repo/.keel/impact-events.log}"
+  # operator-run /code-review high pass on this ticket). dir #251: the store entry itself lives at
+  # $home/.claude/.keel/impact/<project-id>/ — `home` is deterministic from `sandbox` (cmd_setup always
+  # sets it to "$sandbox/home"), so it needs no CANARY_STATE field of its own.
+  home="$sandbox/home"
+  ilog="$(HOME="$home" impact_log_path "$repo")"
   if [ -f "$ilog" ] && grep -q 'receipt-pass' "$ilog" 2>/dev/null; then
     printf 'PASS  a receipt-pass event was recorded: %s\n' "$(grep 'receipt-pass' "$ilog" | tail -n1)"
   else

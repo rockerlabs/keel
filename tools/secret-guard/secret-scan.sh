@@ -200,6 +200,42 @@ require_git_repo() {
     || { echo "secret-scan: $1 needs a git repo" >&2; exit 2; }
 }
 
+# --- dir #251: impact-log resolution, a small INLINE copy of tools/lib/impact-store.sh ------------
+# This file is VENDORED (install-secret-guard.sh `cp`s it into each repo's hooks dir) and may only
+# source files vendored beside it (range-lib.sh is the precedent) — it cannot `source` the shared lib,
+# so its one behaviour both implementations must agree on (the LOG path for a given cwd) is kept here
+# as a small, self-contained pair of functions instead. tests/test_secret_guard.sh's own sync test
+# runs both under identical env/fixtures and asserts byte-identical output, so this copy can't quietly
+# drift from tools/lib/impact-store.sh's impact_log_path/impact_claim_key.
+_impact_log_path_inline() {
+  local dir="${1:-.}" klog="${KEEL_IMPACT_LOG:-}" store_root top store
+  if [ -n "$klog" ]; then printf '%s' "$klog"; return; fi
+  if [ -n "${KEEL_IMPACT_STORE:-}" ]; then
+    store_root="$KEEL_IMPACT_STORE"
+  else
+    store_root="${KEEL_HOME:-${HOME:?secret-scan: set HOME, or export KEEL_HOME}/.claude}/.keel/impact"
+  fi
+  top="$(git -C "$dir" worktree list --porcelain 2>/dev/null |
+    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$top" ] || top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"
+  # A file still physically present at its legacy in-tree location wins outright — mirrors
+  # tools/lib/impact-store.sh's own fix (dir #251 review): the store DIRECTORY existing is not proof
+  # THIS file lives there (a partial migrate can leave the log's siblings tracked and in place).
+  [ -n "$top" ] && [ -f "$top/.keel/impact-events.log" ] && { printf '%s/.keel/impact-events.log' "$top"; return; }
+  store="$store_root/$(printf '%s' "$top" | tr '/' '-')"
+  if [ -d "$store" ]; then printf '%s/impact-events.log' "$store"; return; fi
+  # Same review finding, step 4: a bare `.keel/` dir is not proof of a genuine old-style `enable` — a
+  # role-3-only marker (D3's own doctor-accept/map-drift-baseline) must not resolve here either. The
+  # positive signal is the EXACT gitignore line pre-#251 `enable` always wrote, byte-for-byte — NOT
+  # `git check-ignore` (a second review round caught this): that asks "is this path ignored by
+  # ANYTHING", which an unrelated pattern like `*.log` would also satisfy, reopening the same leak.
+  [ -n "$top" ] && [ -f "$top/.gitignore" ] && grep -qxF '/.keel/impact-events.log' "$top/.gitignore" 2>/dev/null && \
+    printf '%s/.keel/impact-events.log' "$top"
+  return 0
+}
+_impact_claim_key_inline() { git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true; }
+
 # scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
 # not the file — a misleading figure. The path + matched content is what's actionable.
@@ -534,30 +570,12 @@ done <<< "$records"
 if [ "$found" = 1 ]; then
   # Impact instrumentation (metadata only, opt-in per repo): record that a guardrail fired so keel-impact
   # can auto-ingest it — a deterministic, zero-token signal. NEVER the matched secret; only the fact of a
-  # block. Enabled either explicitly ($KEEL_IMPACT_LOG) or per repo by a .keel/ marker at its top level
-  # (in a linked worktree: the MAIN checkout's top — the untracked marker isn't shared, so fall back to
-  # the first `git worktree list` entry, skipped when bare; awk reads its whole input on purpose — no early exit, no
-  # SIGPIPE); with neither, nothing is written and the hook's behaviour is unchanged.
-  _klog="${KEEL_IMPACT_LOG:-}"
-  _kclaim=""
-  if [ -z "$_klog" ]; then
-    _ktop="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-    # dir #74: the claim key is THIS site's own toplevel, captured here before the main-checkout fallback
-    # below can overwrite $_ktop — that fallback only decides where the log FILE lives, not who fired the
-    # event. Saving it now (instead of re-deriving it at the write site) avoids a second identical
-    # `git rev-parse` subprocess for the same value.
-    _kclaim="$_ktop"
-    if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
-      _kmain="$(git worktree list --porcelain 2>/dev/null |
-        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-      if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
-    fi
-    if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
-  fi
+  # block. Resolved by the inline copy above (dir #251): $KEEL_IMPACT_LOG, else this repo's external
+  # store entry, else a legacy in-tree marker; with none of those, nothing is written and the hook's
+  # behaviour is unchanged.
+  _klog="$(_impact_log_path_inline .)"
   if [ -n "$_klog" ]; then
-    # $KEEL_IMPACT_LOG was set explicitly, so the resolution block above (and $_kclaim with it) never ran
-    # — compute it fresh here, the only remaining case that needs a subprocess for it.
-    [ -n "$_kclaim" ] || _kclaim="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    _kclaim="$(_impact_claim_key_inline .)"
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard secret-guard blocked "$_kclaim" \
       >> "$_klog" 2>/dev/null || true
   fi

@@ -9,7 +9,7 @@ Runs `tools/init-project.sh` in the target directory, which idempotently ensures
 2. **`.gitignore`** ignores the private AI context (`CLAUDE.md`, `AGENTS.md`, `.claude/`) + IDE/OS noise.
 3. **project `CLAUDE.md`** created from `templates/project-CLAUDE.md` (never overwrites an existing one),
    plus an **`AGENTS.md`** vendor sibling symlinked to it (dir #75).
-4. **impact tracking** opted in via a `.keel/` marker (only its ephemeral event log is gitignored).
+4. **impact tracking** opted in via an external store entry (nothing written into the project's own tree).
 5. **registration** in your `INSTANCE.md` Projects registry, if `INSTANCE.md` exists.
 
 Then it prints the remaining manual follow-ups: fill in `CLAUDE.md`, wire `secret-guard`, and verify with

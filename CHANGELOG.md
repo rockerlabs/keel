@@ -8,6 +8,31 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- **The impact-scoring ledger (`ledger.md`/`evidence.md`/`impact-events.log`) no longer lives inside a
+  consuming project's own working tree** (dir #251). It moved to an external store,
+  `$KEEL_HOME/.keel/impact/<project-id>/`, keyed by the project's main-checkout physical path — the
+  same shape KB.16 already used to fix the identical failure class for `kb-memory`. `keel-impact.sh
+  enable` now creates nothing inside the project tree (no `.keel/` marker, no `.gitignore` line, and
+  the old "commit .keel/ledger.md and .keel/evidence.md" advice is retracted); a linked worktree
+  resolves to the identical store entry as its main checkout, closing the whole worktree-divergence
+  bug class dir #181 patched around (dir #181 closes as subsumed — this ticket removes the
+  architecture that made its bug possible). `add`/`rollup` on a never-enabled repo now refuse with a
+  named message instead of the old silent fallback onto Keel's own `docs/keel-impact.md`. A new
+  `keel-impact.sh migrate [dir] [--dry-run]` subcommand sweeps a legacy in-tree copy (main checkout +
+  every linked worktree) into the store: untracked sources are merged in and removed; a tracked
+  source (found live on two adopter repos, which had committed Keel-internal scoring data into their
+  own git history) is left in place with the remediation choice printed, never touched automatically.
+  `doctor.sh`'s `W-EVENTLOG-TRACKED`/`W-KEEL-SPLIT` WARNs collapse into one `W-KEEL-LEGACY`, naming
+  `migrate` as the fix. `tools/secret-guard/secret-scan.sh` changed too: it is vendored (copied whole
+  into each consuming repo's hooks dir) and cannot `source` the new shared `tools/lib/impact-store.sh`,
+  so it carries a small inline copy of the log-path resolver instead (option (a) — keeps the vendored
+  file count unchanged; a byte-identical-output sync test in `tests/test_secret_guard.sh` guards
+  against drift). **Every already-vendored copy on the fleet is stale until re-vendored** — until then
+  it still resolves the pre-#251 way (a `.keel/` marker only), so its guard events keep landing in the
+  project tree rather than the store.
+
 ### Added
 
 - `tools/self/doctor.sh` now cross-checks every `dir #N` referenced in commit messages since the

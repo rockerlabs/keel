@@ -28,72 +28,64 @@
 #   keel-impact.sh rollup                             recompute + print the trend and aggregates only
 #   keel-impact.sh -h | --help
 #
-# The ledger file: KEEL_IMPACT_LEDGER wins, else docs/keel-impact.md under the repo root. The per-event
-# evidence file: KEEL_IMPACT_EVIDENCE wins, else .keel/evidence.md (marker) / docs/keel-impact-evidence.md.
+# The ledger/evidence/log triple lives OUTSIDE this repo's working tree (dir #251): an external store,
+# $KEEL_HOME/.keel/impact/<project-id>/, keyed by this repo's main-checkout physical path — never inside
+# the repo itself. KEEL_IMPACT_LEDGER / KEEL_IMPACT_EVIDENCE / KEEL_IMPACT_LOG each override their own
+# file outright; KEEL_IMPACT_STORE overrides the store root. See tools/lib/impact-store.sh.
 # The date is stamped from `date -u` so rows are ordered and reproducible.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$SCRIPT_DIR/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$SCRIPT_DIR/lib/impact-store.sh"
 
-# Ledger + event log both live in the tracked repo's .keel/ (the same per-repo marker the guardrail hooks
-# use), so the loop is out-of-the-box per project with no env. Resolution: an explicit env override wins;
-# else, if the repo has a .keel/ marker, use it; else fall back (the ledger to Keel's own dogfooding copy,
-# the log to a CWD-relative path). $KEEL_IMPACT_LEDGER / $KEEL_IMPACT_LOG override either.
-# Worktree fallback: the marker is an UNTRACKED dir, so a linked worktree's top never carries it — when
-# the current top has no .keel/, try the main checkout's top (first `git worktree list` entry; equals the
-# current top in a plain repo). The awk reads its whole input on purpose: no early exit, no SIGPIPE.
-_keel_main_top() {  # the main checkout's top; empty if not a repo or the main entry is BARE (no working tree)
-  # `|| true`: outside a repo git exits 128 and pipefail would trip set -e (porcelain emits `bare` only
-  # for the main entry, which is always listed first)
-  git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
-    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
-}
-_keel_top() {  # memoized: invariant within a run, and the resolvers below all call it at startup
-  if [ -z "${_KEEL_TOP_CACHE+x}" ]; then
-    local top main
-    top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-    _KEEL_CLAIM_CACHE="$top"  # dir #74: the raw pre-fallback value — _claim_key()'s answer too
-    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(_keel_main_top)"
-      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
+# dir #251 D4's automatic half: a project with a legacy in-tree .keel/ marker and no store entry yet
+# gets migrated the moment this script next resolves for it — main checkout only, no worktree sweep
+# (that is cmd_migrate's job), and ONLY when every legacy file present is untracked. A repo with even
+# one TRACKED legacy file (social-media/affiliate-lab's shape) is left entirely alone: impact_ledger_path
+# et al.'s own legacy fallback keeps it fully functional via its old in-tree files, and doctor.sh's
+# W-KEEL-LEGACY names the explicit `migrate` path for the operator to run. Best-effort and silent by
+# design (called with `|| true`): any failure here just leaves the legacy file in place for `enable`/
+# `migrate` to handle properly later, never worth aborting a plain `add`/`rollup`/`event` over.
+_impact_auto_migrate() {
+  local top store f any=0 all_untracked=1
+  top="$(_impact_resolve_top .)"
+  [ -n "$top" ] && [ -d "$top/.keel" ] || return 0
+  store="$(impact_store_dir "$top")"
+  [ -d "$store" ] && return 0   # already enabled — nothing to auto-migrate
+  for f in $IMPACT_LEGACY_NAMES; do
+    [ -f "$top/.keel/$f" ] || continue
+    any=1
+    if git -C "$top" ls-files --error-unmatch ".keel/$f" >/dev/null 2>&1; then
+      all_untracked=0
+    elif [ ! -r "$top/.keel/$f" ]; then
+      # Unreadable but untracked: can't safely merge (a source awk/cat can't open silently drops its
+      # content rather than failing, so "merged successfully" could mean "merged NONE of it" — found
+      # live by an operator-run max-depth review). Treat it like a tracked file: block auto-migrate
+      # entirely for this repo rather than risk deleting the one copy of unreadable data.
+      all_untracked=0
     fi
-    _KEEL_TOP_CACHE="$top"
+  done
+  { [ "$any" -eq 1 ] && [ "$all_untracked" -eq 1 ]; } || return 0
+  mkdir -p "$store" || return 0
+  printf '%s\n' "$top" > "$store/origin"
+  if [ -f "$top/.keel/ledger.md" ]; then
+    _impact_merge_ledger "$store/ledger.md" "$top/.keel/ledger.md" && rm -f "$top/.keel/ledger.md"
   fi
-  printf '%s' "$_KEEL_TOP_CACHE"
+  if [ -f "$top/.keel/evidence.md" ]; then
+    _impact_merge_evidence "$store/evidence.md" "$top/.keel/evidence.md" && rm -f "$top/.keel/evidence.md"
+  fi
+  if [ -f "$top/.keel/impact-events.log" ]; then
+    cat "$top/.keel/impact-events.log" >> "$store/impact-events.log" && rm -f "$top/.keel/impact-events.log"
+  fi
+  rmdir "$top/.keel" 2>/dev/null || true   # only succeeds once role-3/4 files are gone too — expected to no-op
 }
-_claim_key() {  # dir #74: this producer's OWN worktree top, BEFORE _keel_top's main-checkout fallback —
-                 # that fallback only decides where the shared log FILE lives, not who fired the event.
-                 # Reuses _keel_top's own memoized raw value instead of a second git rev-parse subprocess.
-  _keel_top > /dev/null
-  printf '%s' "$_KEEL_CLAIM_CACHE"
-}
-_resolve_ledger() {
-  if [ -n "${KEEL_IMPACT_LEDGER:-}" ]; then printf '%s' "$KEEL_IMPACT_LEDGER"; return; fi
-  local top; top="$(_keel_top)"
-  if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/ledger.md"; return; fi
-  printf '%s' "$REPO_ROOT/docs/keel-impact.md"
-}
-_resolve_log() {
-  if [ -n "${KEEL_IMPACT_LOG:-}" ]; then printf '%s' "$KEEL_IMPACT_LOG"; return; fi
-  local top; top="$(_keel_top)"
-  if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/impact-events.log"; return; fi
-  printf '%s' ".keel/impact-events.log"
-}
-# The durable per-event evidence file — the auditable trail behind each ledger row. Same resolution shape as
-# the ledger (it is trackable too, unlike the ephemeral event log): explicit env override, else the .keel/
-# marker, else Keel's own dogfooding copy under docs/.
-_resolve_evidence() {
-  if [ -n "${KEEL_IMPACT_EVIDENCE:-}" ]; then printf '%s' "$KEEL_IMPACT_EVIDENCE"; return; fi
-  local top; top="$(_keel_top)"
-  if [ -n "$top" ] && [ -d "$top/.keel" ]; then printf '%s' "$top/.keel/evidence.md"; return; fi
-  printf '%s' "$REPO_ROOT/docs/keel-impact-evidence.md"
-}
-LEDGER="$(_resolve_ledger)"
-LOG="$(_resolve_log)"
-EVIDENCE="$(_resolve_evidence)"
+# NOTE: _impact_auto_migrate calls _impact_merge_ledger/_impact_merge_evidence, defined further down
+# next to ensure_ledger/_ledger_col_pos — so the actual call (and the LEDGER/LOG/EVIDENCE resolution
+# that depends on its result) is deferred to the bottom of this file, after every function it needs
+# exists. Search "EVENT_TYPES=" below.
 EVENT_TYPES="hold guard fire hit miss friction"
 
 usage() {
@@ -105,17 +97,19 @@ Usage:
                      --friction "cite"... [--silent N] [--since ISO-TS] --gap "..."
   keel-impact.sh add ... --retro [--asof YYYY-MM-DD]   record a quarantined retrospective score (see below)
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
-  keel-impact.sh enable [dir]                    opt a repo into tracking (create .keel/ marker + gitignore)
+  keel-impact.sh enable [dir]                    opt a repo into tracking (creates an external store entry)
+  keel-impact.sh migrate [dir] [--dry-run]       sweep a legacy in-tree .keel/ marker into the store
   keel-impact.sh rollup                          this repo's live trend + cumulative signals
   keel-impact.sh rollup --retro                  only the quarantined retrospective scores
   keel-impact.sh rollup --registry FILE          cross-project sweep of an INSTANCE.md Projects table
   keel-impact.sh -h | --help
 
-`enable` turns a repo on: it creates the .keel/ marker the guardrail hooks look for. Once enabled, a
-guardrail fire in that repo records an event with no env needed; `add` auto-ingests any logged events and
-folds them into the counts — so objective events (e.g. a secret-guard block) reach the score
-deterministically, at zero token cost, without the model counting them. $KEEL_IMPACT_LOG overrides the
-default log path (.keel/impact-events.log); pass --no-ingest to skip ingestion. TYPE ∈ hold guard fire hit miss friction.
+`enable` turns a repo on: it creates an entry in the external impact store (nothing is written inside
+the repo's own working tree — dir #251). Once enabled, a guardrail fire in that repo records an event
+with no env needed; `add` auto-ingests any logged events and folds them into the counts — so objective
+events (e.g. a secret-guard block) reach the score deterministically, at zero token cost, without the
+model counting them. $KEEL_IMPACT_LOG overrides the log path outright; pass --no-ingest to skip
+ingestion. TYPE ∈ hold guard fire hit miss friction.
 
 Auto-ingest only counts events younger than $KEEL_INGEST_MAX_AGE_HOURS hours (default 12) — an event a
 session left unconsumed (no `add` ran) is stale past that: skipped from the counts, archived to the
@@ -143,8 +137,10 @@ quarantined so it never inflates the live signal: it skips the live event log, i
 `-retro` (and dropped one tier, since a retro estimate is weaker), and the live `rollup` excludes it —
 `rollup --retro` shows only these. --asof YYYY-MM-DD backdates the row to the session's real date.
 
-Ledger file: $KEEL_IMPACT_LEDGER, else docs/keel-impact.md. Evidence file: $KEEL_IMPACT_EVIDENCE, else
-.keel/evidence.md (marker) / docs/keel-impact-evidence.md.
+Ledger/evidence/log files live in an external store, $KEEL_HOME/.keel/impact/<project-id>/, never inside
+this repo's own tree; $KEEL_IMPACT_LEDGER / $KEEL_IMPACT_EVIDENCE / $KEEL_IMPACT_LOG each override their
+own file outright, $KEEL_IMPACT_STORE overrides the store root. `add`/`rollup` refuse on a repo that has
+never been enabled (no store entry, no legacy marker either) — run `enable` first.
 EOF
 }
 
@@ -208,9 +204,10 @@ function; scores above guard) · **fire** rule applied · **hit** retrieval hit 
 (promote pressure) · **fric** friction (demote pressure) · **silent** always-loaded rules that did not fire
 (demote candidates; NOT folded into the score).
 
-**guard** is collected deterministically: in a tracked repo (an enabled `.keel/` marker, or `$KEEL_IMPACT_LOG`)
-the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire to a zero-token event
-log that `add` auto-ingests — the objective signal never depends on the model counting it.
+**guard** is collected deterministically: in a tracked repo (an enabled external store entry, or
+`$KEEL_IMPACT_LOG`) the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire
+to a zero-token event log that `add` auto-ingests — the objective signal never depends on the model
+counting it.
 
 Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
 citation, and the full per-event trail (every event → its citation) lives in `evidence.md` next to this file.
@@ -232,10 +229,85 @@ ensure_ledger() {
 }
 
 ensure_evidence() {
+  # $EVIDENCE is guaranteed non-empty by the time this runs — cmd_add (this function's only caller)
+  # refuses at its own top, before any write, on an empty $EVIDENCE (a partial env override on a
+  # never-enabled repo: found live by an operator-run max-depth review). No redundant check here.
   if [ ! -f "$EVIDENCE" ]; then
     mkdir -p "$(dirname "$EVIDENCE")"
     printf '%s\n' "$EVIDENCE_HEADER" > "$EVIDENCE"
   fi
+}
+
+# --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate -----------------------
+# _impact_merge_ledger TARGET SRC... — merge TARGET's existing data rows (if any) plus each SRC
+# ledger.md's data rows into TARGET (created with the standard header first if it doesn't exist yet):
+# sorted by the date column, byte-identical duplicate rows dropped. A no-op when there is nothing to
+# merge. `LEDGER="$target" ensure_ledger`: a bash variable-assignment prefix on a function call is
+# scoped to that one call only (restores the script's own $LEDGER afterward) — reuses the real header
+# writer instead of a second hand-copy of LEDGER_HEADER_PROSE/_ledger_table_header.
+_impact_merge_ledger() {
+  local target="$1"; shift
+  local date_col; date_col="$(_ledger_col_pos date)" || return 1
+  local inputs=()
+  local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
+  [ "${#inputs[@]}" -gt 0 ] || return 0
+  LEDGER="$target" ensure_ledger
+  local header_tmp rows_tmp
+  header_tmp="$(mktemp)"; rows_tmp="$(mktemp)"
+  awk -F'|' -v date_col="$date_col" '
+    $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { exit }
+    { print }
+  ' "$target" > "$header_tmp"
+  awk -F'|' -v date_col="$date_col" '
+    $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { print }
+  ' "$target" "${inputs[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
+  # Capture the write's own exit status explicitly — a bare `cmd1 && cmd2` as this function's LAST
+  # statement would otherwise report whatever the following `rm -f` cleanup returns (almost always 0),
+  # silently masking a real write failure (disk-full, a transiently unwritable store dir, a concurrent-
+  # process race) from every caller that gates a source-file deletion on this function's return status
+  # (`_impact_merge_ledger ... && rm -f "$legacy_source"`) — found live by an operator-run max-depth
+  # review: a masked failure here would delete the legacy ledger while never having durably written its
+  # rows anywhere.
+  local write_status
+  cat "$header_tmp" "$rows_tmp" > "$target.keelmerge.$$" && mv -f "$target.keelmerge.$$" "$target"
+  write_status=$?
+  rm -f "$header_tmp" "$rows_tmp" "$target.keelmerge.$$"
+  return "$write_status"
+}
+
+# _impact_merge_evidence TARGET SRC... — merge TARGET's existing blocks (if any) plus each SRC
+# evidence.md's blocks (a block = a `## YYYY-MM-DD ...` line through the next such line or EOF, the
+# shared EVIDENCE_HEADER text counting as one no-date block) into TARGET, sorted by block date,
+# byte-identical duplicate blocks dropped (so the header, appearing verbatim in every source, survives
+# as exactly one copy — its empty date key sorts first). A no-op when there is nothing to merge.
+_impact_merge_evidence() {
+  local target="$1"; shift
+  local inputs=()
+  [ -f "$target" ] && inputs+=("$target")
+  local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
+  [ "${#inputs[@]}" -gt 0 ] || return 0
+  local tmp; tmp="$(mktemp)"
+  awk '
+    function flush_block() { if (block != "") { n++; blocks[n] = block; dates[n] = date } }
+    FNR==1 { flush_block(); block=""; date="" }
+    /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / { flush_block(); block=$0 "\n"; date=substr($0,4,10); next }
+    { block = block $0 "\n" }
+    END {
+      flush_block()
+      for (i=2;i<=n;i++) {
+        kd=dates[i]; kb=blocks[i]; j=i-1
+        while (j>=1 && dates[j] > kd) { dates[j+1]=dates[j]; blocks[j+1]=blocks[j]; j-- }
+        dates[j+1]=kd; blocks[j+1]=kb
+      }
+      seen_n=0
+      for (i=1;i<=n;i++) {
+        dup=0
+        for (k=1;k<=seen_n;k++) if (seen[k]==blocks[i]) { dup=1; break }
+        if (!dup) { seen_n++; seen[seen_n]=blocks[i]; printf "%s", blocks[i] }
+      }
+    }
+  ' "${inputs[@]}" > "$tmp"
+  mv -f "$tmp" "$target"
 }
 
 # require a non-negative integer; empty defaults to 0
@@ -286,51 +358,42 @@ _flatten() { local s="${1//$'\t'/ }"; printf '%s' "${s//$'\n'/ }"; }
 _need_cite() { [ -n "$1" ] || { printf 'keel-impact: %s needs a non-empty citation\n' "$2" >&2; exit 2; }; }
 
 # event TYPE [source] [detail] — append one deterministic event to the log. Producers (secret-guard et al.)
-# can also append the TSV line directly; this subcommand is the friendly, validated entry point.
+# can also append the TSV line directly; this subcommand is the friendly, validated entry point. A
+# guardrail fire in a not-enabled repo simply records nothing (matches every other producer's own
+# silent no-op) — never a hard error, since a hook's own behaviour must not change either way.
 cmd_event() {
   local type="${1:-}" source="${2:-}" detail="${3:-}" key
   [ -n "$type" ] || { printf 'keel-impact: event needs a TYPE (%s)\n' "$EVENT_TYPES" >&2; exit 2 ; }
   is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
+  if [ -z "$LOG" ]; then
+    printf 'keel-impact: impact tracking not enabled — %s event not recorded (run "keel-impact.sh enable")\n' "$type" >&2
+    return 0
+  fi
   # strip tabs/newlines so one event is always exactly one well-formed TSV line
   source="$(_flatten "$source")"; detail="$(_flatten "$detail")"
-  key="$(_claim_key)"
+  key="$(impact_claim_key)"
   mkdir -p "$(dirname "$LOG")"
   printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$source" "$detail" "$key" >> "$LOG"
   printf 'keel-impact: recorded %s event to %s\n' "$type" "$LOG"
 }
 
-# enable [dir] — opt a repo into impact tracking: create its .keel/ marker (which the guardrail hooks look
-# for before recording a fire) and gitignore the ephemeral event log. Idempotent. Run once per project; the
-# AI-session flow then works with no env: hooks write events into .keel/, `add` auto-ingests them. Only the
-# event log is ignored — .keel/ledger.md (the durable score history) and .keel/evidence.md (the per-event
-# audit trail) stay trackable, so `git add` them to keep a shareable, cross-clone record.
+# enable [dir] — opt a repo into impact tracking: create its external store entry (dir #251 — NOTHING is
+# written inside the project's own working tree anymore: no marker, no gitignore line). Idempotent. Run
+# once per project; the AI-session flow then works with no env: guardrail hooks record events straight
+# into the store, `add` auto-ingests them.
 cmd_enable() {
-  local dir="${1:-.}" top
-  # always target the MAIN checkout's top: a marker created in a linked worktree would be ephemeral and
-  # invisible to every other worktree (untracked dirs aren't shared); the .gitignore line IS tracked, so
-  # it reaches the worktrees from the main checkout anyway
-  top="$(_keel_main_top "$dir")"
-  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"  # bare main: this worktree's top
-  [ -n "$top" ] || top="$dir"                 # not a git repo yet: fall back to the dir as-is
-  local already=0
-  [ -d "$top/.keel" ] && already=1
-  mkdir -p "$top/.keel"
-  local gi="$top/.gitignore"
-  if ! { [ -f "$gi" ] && grep -qxF '/.keel/impact-events.log' "$gi"; }; then
-    # dir #85 (code audit, finding 5): a .gitignore whose last line has no trailing newline would
-    # otherwise get our rule GLUED onto it — `node_modules` + `/.keel/impact-events.log` becomes the
-    # single pattern `node_modules/.keel/impact-events.log`, silently breaking the adopter's existing
-    # ignore AND ours. `tail -c1` is the portable "does it end in a newline" test (an empty read means
-    # the file is empty or ended in one); the missing newline is written first, never in place of ours.
-    if [ -s "$gi" ] && [ -n "$(tail -c1 "$gi" 2>/dev/null)" ]; then printf '\n' >> "$gi"; fi
-    printf '/.keel/impact-events.log\n' >> "$gi"
-    printf 'keel-impact: gitignored /.keel/impact-events.log in %s\n' "$gi"
-  fi
+  local dir="${1:-.}" top already=0
+  top="$(_impact_resolve_top "$dir")"
+  impact_enabled "$dir" && already=1
+  # The store's own absolute path is an internal implementation detail (never inside the project's own
+  # tree, never something an adopter browses directly) — deliberately NOT echoed here, unlike the old
+  # in-tree marker message: that path was actionable ("here's the file to `git add`"), this one isn't.
+  impact_store_enable "$dir" >/dev/null
   if [ "$already" -eq 1 ]; then
-    printf 'keel-impact: impact tracking already enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
+    printf 'keel-impact: impact tracking already enabled for %s\n' "$top"
   else
-    printf 'keel-impact: impact tracking enabled for %s (marker: %s/.keel/)\n' "$top" "$top"
-    printf '  guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md and .keel/evidence.md to keep the history + audit trail.\n'
+    printf 'keel-impact: impact tracking enabled for %s\n' "$top"
+    printf '  guardrail fires now record events with no env needed; run /keel-score to score.\n'
   fi
 }
 
@@ -389,9 +452,20 @@ _ledger_parse() {
   # awk with no stderr redirect at all).
 }
 
+# dir #251 §3: the OLD fallback (a not-enabled repo's add/rollup silently reading/writing Keel's own
+# docs/keel-impact.md) is gone — a hard, named refusal replaces it. $LEDGER empty means neither an
+# explicit env override nor a store entry nor even a legacy in-tree marker resolved (impact_ledger_path's
+# own fallback chain already covers the legacy case) — i.e. this project was genuinely never enabled.
+_impact_require_enabled() {
+  [ -n "$LEDGER" ] && return 0
+  printf 'keel-impact: impact tracking is not enabled for %s — run keel-impact.sh enable\n' "$(_impact_resolve_top .)" >&2
+  return 1
+}
+
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
 rollup() {
   local mode="${1:-live}"
+  _impact_require_enabled || return 2
   ensure_ledger
   # A heredoc always supplies a trailing newline, so `read <<EOF $(cmd) EOF` reads an empty line
   # and "succeeds" even when cmd failed and printed nothing — the command substitution's own exit
@@ -444,7 +518,14 @@ rollup_registry() {
     case "$path" in ""|Path|*"<"*) continue ;; esac          # header / blank / placeholder row
     path="${path/#\~/$HOME}"
     shown=$(( shown + 1 ))
-    ledger="$path/.keel/ledger.md"
+    # Deliberately NOT impact_ledger_path (which honours $KEEL_IMPACT_LEDGER): an env override must
+    # not leak across every project in this sweep and point them all at the SAME file — each row
+    # reads its own $STORE/<id>/ledger.md, exactly as the old code read its own $path/.keel/ledger.md.
+    # Legacy fallback (dir #251 review): a project D4 deliberately leaves on its TRACKED in-tree ledger
+    # (the two real adopter repos this ticket is about) has no store copy at all — without this, the
+    # sweep would report them as "tracking off", silently dropping the exact projects the ticket names.
+    ledger="$(impact_store_dir "$path")/ledger.md"
+    [ -f "$ledger" ] || ledger="$path/.keel/ledger.md"
     if [ ! -f "$ledger" ]; then
       printf '  %-28s —  (tracking off or no sessions scored)\n' "$(basename "$path")"
       continue
@@ -508,6 +589,17 @@ add_cite() {
 }
 
 cmd_add() {
+  _impact_require_enabled || exit 2
+  # $EVIDENCE can resolve empty independently of $LEDGER (a partial env override — only
+  # $KEEL_IMPACT_LEDGER set, not $KEEL_IMPACT_EVIDENCE — on a never-enabled repo), so
+  # _impact_require_enabled's own $LEDGER-only check isn't sufficient here (rollup shares that check
+  # and never touches $EVIDENCE, so broadening it there would wrongly refuse a legitimate rollup).
+  # Caught HERE, before anything is written — not inside ensure_evidence, which only runs partway
+  # through this function's OWN write sequence, after the ledger row is already appended (found live
+  # by an operator-run max-depth review's delta pass: the earlier, narrower fix left `add` able to
+  # half-complete — a scored row with no evidence block, breaking evidence.md's own stated invariant,
+  # "a count in the ledger equals the number of citations here").
+  [ -n "$EVIDENCE" ] || { printf 'keel-impact: no evidence path resolved (a partial env override?) — run keel-impact.sh enable\n' >&2; exit 2; }
   local silent="" gap="" ingest=1 retro=0 asof="" since=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -579,7 +671,7 @@ cmd_add() {
   # back to 12 rather than crashing the later arithmetic/date math.
   local max_age_h; max_age_h="$(sanitize_nonneg_int "${KEEL_INGEST_MAX_AGE_HOURS:-12}" 12)"
   if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
-    own_key="$(_claim_key)"
+    own_key="$(impact_claim_key)"
     if [ -n "$since" ]; then
       cutoff_iso="$since"
     elif ! cutoff_iso="$(_epoch_to_iso "$(( $(date +%s) - max_age_h * 3600 ))")"; then
@@ -798,10 +890,124 @@ cmd_add() {
   if [ "$retro" -eq 1 ]; then rollup retro || true; else rollup || true; fi
 }
 
+# migrate [dir] [--dry-run] — dir #251 D4's EXPLICIT half: sweep a legacy in-tree .keel/ marker — the
+# main checkout AND every linked worktree (git worktree list --porcelain; this is what also resolves
+# KB.82's rows stranded in a worktree's own .keel/) — into the external store. Untracked source files
+# are moved (merged, dedup'd); a TRACKED source (social-media/affiliate-lab's shape) is never touched
+# automatically — printed as three options instead, the operator's call. Idempotent: a second run finds
+# nothing left to move. `--dry-run` prints the plan and writes nothing.
+cmd_migrate() {
+  local dir="." dry_run=0 a
+  for a in "$@"; do
+    case "$a" in
+      --dry-run) dry_run=1 ;;
+      *) dir="$a" ;;
+    esac
+  done
+  local top; top="$(_impact_resolve_top "$dir")"
+  [ -n "$top" ] && [ -d "$top" ] || { printf 'keel-impact: migrate: not a directory: %s\n' "$dir" >&2; exit 2; }
+  local store; store="$(impact_store_dir "$top")"
+
+  # --- collect: main checkout + every linked worktree ---------------------------------------------
+  local dirs=("$top") wt_line wt
+  while IFS= read -r wt_line; do
+    case "$wt_line" in "worktree "*) wt="${wt_line#worktree }" ;; *) continue ;; esac
+    [ "$wt" = "$top" ] && continue
+    [ -d "$wt/.keel" ] && dirs+=("$wt")
+  done < <(git -C "$top" worktree list --porcelain 2>/dev/null || true)
+
+  local f name ledger_srcs=() evidence_srcs=() log_srcs=() tracked_left=()
+  local any_untracked=0
+  for name in $IMPACT_LEGACY_NAMES; do
+    for f in "${dirs[@]}"; do
+      [ -f "$f/.keel/$name" ] || continue
+      if git -C "$f" ls-files --error-unmatch ".keel/$name" >/dev/null 2>&1; then
+        tracked_left+=("$f/.keel/$name")
+        continue
+      fi
+      # Unreadable but untracked: same reasoning as _impact_auto_migrate's own guard — a source awk/cat
+      # can't open silently drops its content instead of failing loudly, so leave it untouched (never
+      # merged, never removed) rather than risk losing the one copy of data nothing could actually read.
+      if [ ! -r "$f/.keel/$name" ]; then
+        tracked_left+=("$f/.keel/$name")
+        continue
+      fi
+      any_untracked=1
+      case "$name" in
+        ledger.md) ledger_srcs+=("$f/.keel/$name") ;;
+        evidence.md) evidence_srcs+=("$f/.keel/$name") ;;
+        impact-events.log) log_srcs+=("$f/.keel/$name") ;;
+      esac
+    done
+  done
+
+  if [ "$any_untracked" -eq 0 ] && [ "${#tracked_left[@]}" -eq 0 ]; then
+    printf 'keel-impact: migrate: nothing to move for %s (already migrated, or never enabled)\n' "$top"
+    return 0
+  fi
+
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'keel-impact: migrate --dry-run for %s (store: %s)\n' "$top" "$store"
+    [ "${#ledger_srcs[@]}" -gt 0 ] && printf '  would merge ledger.md from: %s\n' "${ledger_srcs[*]}"
+    [ "${#evidence_srcs[@]}" -gt 0 ] && printf '  would merge evidence.md from: %s\n' "${evidence_srcs[*]}"
+    [ "${#log_srcs[@]}" -gt 0 ] && printf '  would concatenate impact-events.log from: %s\n' "${log_srcs[*]}"
+    [ "${#tracked_left[@]}" -gt 0 ] && printf '  would LEAVE (tracked): %s\n' "${tracked_left[*]}"
+    return 0
+  fi
+
+  if [ "$any_untracked" -eq 1 ]; then
+    mkdir -p "$store"
+    printf '%s\n' "$top" > "$store/origin"
+    if [ "${#ledger_srcs[@]}" -gt 0 ]; then
+      _impact_merge_ledger "$store/ledger.md" "${ledger_srcs[@]}"
+      rm -f "${ledger_srcs[@]}"
+    fi
+    if [ "${#evidence_srcs[@]}" -gt 0 ]; then
+      _impact_merge_evidence "$store/evidence.md" "${evidence_srcs[@]}"
+      rm -f "${evidence_srcs[@]}"
+    fi
+    if [ "${#log_srcs[@]}" -gt 0 ]; then
+      local log_tmp; log_tmp="$(mktemp)"
+      touch "$store/impact-events.log"
+      LC_ALL=C sort -u "$store/impact-events.log" "${log_srcs[@]}" > "$log_tmp"
+      mv -f "$log_tmp" "$store/impact-events.log"
+      rm -f "${log_srcs[@]}"
+    fi
+    printf 'keel-impact: migrated into %s\n' "$store"
+    for f in "${dirs[@]}"; do rmdir "$f/.keel" 2>/dev/null || true; done
+  fi
+
+  if [ "${#tracked_left[@]}" -gt 0 ]; then
+    printf 'keel-impact: %d tracked legacy file(s) left in place (never moved automatically):\n' "${#tracked_left[@]}"
+    printf '  %s\n' "${tracked_left[@]}"
+    printf '  This project keeps working via these files until you choose one:\n'
+    printf '    1. leave them (no action — the tracked history stays exactly where it is)\n'
+    printf '    2. git rm --cached them, then commit, so future runs stop tracking them\n'
+    printf '    3. rewrite history to remove them entirely (a separate, deliberate operation)\n'
+  fi
+}
+
+# Deferred from just after sourcing tools/lib/impact-store.sh (search "EVENT_TYPES=" above): every
+# function _impact_auto_migrate calls now exists, so resolve here, once, before dispatch.
+#
+# NEVER for `migrate` itself (dir #251 review finding): _impact_auto_migrate is keyed off the CWD's
+# main checkout, unconditionally — but `migrate` has its own explicit `[dir]` argument and its own
+# `--dry-run` contract ("prints the plan and writes nothing"). Running auto-migrate first would
+# silently migrate the CWD's project (real files moved and removed) before cmd_migrate's own dry-run
+# logic ever ran, then report "nothing to move" — turning a preview into the real thing. `migrate`
+# resolves everything it needs itself; it never reads $LEDGER/$LOG/$EVIDENCE.
+if [ "${1:-}" != "migrate" ]; then
+  _impact_auto_migrate || true
+  LEDGER="$(impact_ledger_path)"
+  LOG="$(impact_log_path)"
+  EVIDENCE="$(impact_evidence_path)"
+fi
+
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
   event)          shift; cmd_event "$@" ;;
   enable)         shift; cmd_enable "$@" ;;
+  migrate)        shift; cmd_migrate "$@" ;;
   rollup)
     shift
     if [ "${1:-}" = "--registry" ]; then
