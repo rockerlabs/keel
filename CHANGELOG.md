@@ -8,6 +8,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- `tools/self/doctor.sh` now cross-checks every `dir #N` referenced in commit messages since the
+  previous release tag against CHANGELOG.md's own `[Unreleased]` section, WARNing on any ticket
+  present in commits but absent from `[Unreleased]` — per-ticket, not per-file, so a PR that touches
+  CHANGELOG.md for a *different* ticket still trips it. Closes the class the v0.7.0 → v0.7.1 delta
+  audit found five times, three of them undetected until the audit itself (dir #237).
+
 ## [0.7.1] — 2026-08-21
 
 The audit-tail release. v0.7.0 shipped with a named list of six residuals it deliberately did not

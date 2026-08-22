@@ -1163,4 +1163,121 @@ run "$sd" "$shallow" --quiet
 check_status "a shallow clone skips the reconciliation rather than false-GAPing -> exit 0" 0 "$STATUS"
 check_absent "no reconciliation GAP on a shallow clone" "$OUT" "CHANGELOG.md section"
 
+# --- 9. commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237) -----------------------
+# A cut-and-tagged v1.0.0 section, kept in every fixture below, so check 6's own tag-reconciliation
+# GAP stays clean and only THIS check's finding shows through — isolating the assertion.
+ct_v1_section='## [1.0.0] — 2026-01-01
+- first release'
+
+# A synthetic tools-only diff carrying a `dir #N` in its commit message, with the [Unreleased]
+# section silent about that ticket, must fire — the ticket's own acceptance bar. WARN, never a GAP.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #900 tweak the widget tool" )
+run "$sd" "$d" --quiet
+check_status "an unreferenced ticket in a commit message is advisory only -> exit 0" 0 "$STATUS"
+check_contains "flags the missing ticket" "$OUT" "dir #900"
+check_contains "names the convention's remedy" "$OUT" "absent from CHANGELOG.md's [Unreleased] section"
+
+# the same ticket IS referenced in [Unreleased] -> silent.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- dir #900: tweak the widget tool\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #900 tweak the widget tool" )
+run "$sd" "$d" --quiet
+check_absent "a ticket referenced in [Unreleased] is not flagged" "$OUT" "dir #900"
+check_status "still exit 0" 0 "$STATUS"
+
+# PR #244's miss shape: the check must ENUMERATE, not sample the tail — a later, UNRELATED
+# CHANGELOG.md commit landing after the miss must not clear it (check 4's timestamp signal would
+# have gone quiet here; this check must not).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #244 change commands/polish.md-equivalent content" )
+printf '# Changelog\n\n## [Unreleased]\n- dir #901: unrelated bookkeeping\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "dir #901 unrelated CHANGELOG bookkeeping" )
+run "$sd" "$d" --quiet
+check_contains "a later unrelated CHANGELOG.md commit doesn't clear an earlier real miss" "$OUT" "dir #244"
+
+# PR #249's miss shape: a PR that DOES touch CHANGELOG.md, but for a DIFFERENT ticket than its own,
+# still trips it — per-TICKET, not per-file.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+printf '# Changelog\n\n## [Unreleased]\n- dir #245: some passenger ticket\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "dir #249 closes its own ticket but only writes dir #245's entry" )
+run "$sd" "$d" --quiet
+check_contains "a PR touching CHANGELOG.md for a different ticket still trips it" "$OUT" "dir #249"
+
+# a ticket already released in an earlier version section, cited only there (not re-entered under
+# [Unreleased]) must not vouch for a DIFFERENT, still-open ticket with the same convention text.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- dir #700: shipped already\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #701 a new, still-open ticket" )
+run "$sd" "$d" --quiet
+check_contains "an already-released ticket's citation doesn't vouch for a different open one" "$OUT" "dir #701"
+check_absent "the released ticket itself isn't re-flagged" "$OUT" "dir #700"
+
+# the SAME ticket, cited only in an already-tagged section, must NOT vouch for a fresh reference to
+# ITSELF in a later, un-entered commit — the exact case the heading-version parse bug (found by an
+# operator-run /code-review medium pass) let slip through: `gsub(/^## \[|\]$/, "", ver)` only
+# stripped the leading bracket (real headings carry a trailing " — DATE", so `\]$` never matched),
+# leaving `grabbing` stuck on past every already-tagged section down to EOF — so an already-released
+# ticket's own citation leaked into "unreleased" and silently vouched for its own re-citation. Every
+# fixture above this one only ever referenced a ticket ONCE in the whole file, so the leak never
+# changed an assertion's outcome; this one is the discriminating case.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- dir #700: shipped already\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #700 a follow-up change, no fresh [Unreleased] entry" )
+run "$sd" "$d" --quiet
+check_contains "a re-cited already-released ticket is still flagged, not vouched for by its own old entry" "$OUT" "dir #700"
+
+# a commit-message dir #N that is only test/comment-shaped work stays a WARN, not a GAP — exit code
+# must stay 0 even with a miss reported (the ticket's own advisory-only acceptance bar).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #902 test-only change, no entry needed" )
+run "$sd" "$d" --quiet
+check_status "a missing ticket stays advisory (WARN), never a hard GAP/deny -> exit 0" 0 "$STATUS"
+
+# A release cut BEFORE the tag is placed (the operator's own action, per the git rails — same window
+# check 6's "release in preparation" allowance above covers): /wrap moves every ticket out of
+# [Unreleased] into a fresh, still-untagged `## [x.y.z]` section. Bounding this check to [Unreleased]
+# alone would false-positive on every ticket in the wave on the very PR that files them correctly
+# (found live by a cross-model second-opinion review, dir #237) — the pending section must count too.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #950 change entering the pending release" )
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-02-01\n- dir #950: change entering the pending release\n\n%s\n' \
+  "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 (not yet tagged)" )
+run "$sd" "$d" --quiet
+check_absent "a ticket filed under a pending, not-yet-tagged section is not flagged" "$OUT" "dir #950"
+check_status "still exit 0" 0 "$STATUS"
+
+# no release tag at all (first-ever release): widens to the whole history rather than skipping.
+d="$(new_repo)"
+mkdir -p "$d/commands" "$d/tools" "$d/tests"
+stub_orchestrated_tests "$d"
+printf '# Changelog\n\n## [Unreleased]\n- init\n' > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "dir #903 no prior release tag yet" )
+run "$sd" "$d" --quiet
+check_contains "no prior release tag widens to the whole history" "$OUT" "dir #903"
+check_contains "names the repo's start, not a tag, as the range" "$OUT" "since the repo's start"
+
 summary

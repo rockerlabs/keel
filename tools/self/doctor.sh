@@ -34,6 +34,9 @@
 #   GAP   CHANGELOG.md release sections and git release tags disagree (dir #139)
 #   GAP   a release-in-preparation section was cut more than KEEL_PENDING_RELEASE_MAX_COMMITS commits
 #         ago and is still untagged — the tag was forgotten, not merely pending (dir #156)
+#   WARN  a `dir #N` referenced in a commit message since the previous release tag is absent from
+#         CHANGELOG.md's own `[Unreleased]` section — per-TICKET, not per-file, so a PR that DOES
+#         touch CHANGELOG.md (for a different ticket) still trips it (dir #237)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -691,6 +694,33 @@ _semver_gt() {
   [ "$a3" -gt "$b3" ]
 }
 
+# _release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver tag (bare `x.y.z`, no `v`),
+# one per line, unsorted-by-version (whatever order `git tag -l` gives). Pure (no shared mutable
+# state), so check 7 below can call it to stand on its own — independent of whether check 6 ran first
+# or its guard changed — without re-deriving the same tag-collection shape by hand (found by
+# /simplify's own reuse pass on dir #237's diff, which shipped the collection loop byte-for-byte
+# duplicated at first). Check 6 keeps its own inline scan rather than calling this: it folds the
+# highest-tag pass together with its `missing_section` scan over the identical `$tags` stream in one
+# loop (see the comment there), so calling this helper too would mean scanning `$tags` twice instead
+# of once for no benefit.
+_release_tag_versions() {
+  git -C "$1" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' || true
+}
+
+# _semver_max — reads bare `x.y.z` versions on stdin, one per line, echoes the highest (or empty for
+# no input). A THIRD `git tag -l` scan for the max alone (on top of `_release_tag_versions` and check
+# 6's own inline one) was flagged independently by three review passes (`/simplify`'s reuse,
+# simplification, AND efficiency angles all named the same duplication) — folding the reduction into
+# a pipe over an already-fetched list, rather than a second helper that re-fetches, removes it.
+_semver_max() {
+  local t highest=""
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    if [ -z "$highest" ] || _semver_gt "$t" "$highest"; then highest="$t"; fi
+  done
+  printf '%s\n' "$highest"
+}
+
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
 # release-in-preparation section's own introducing commit the pending-release allowance below stays
 # exempt. `${VAR:-40}`, not a bare `$VAR` reference — `set -u` aborts on an unset bare reference. A
@@ -998,6 +1028,118 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   [ "$changelog_bad" -eq 0 ] && say "  OK   every release tag has a CHANGELOG.md section and vice versa ($n_tags tags)"
 else
   say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping tag reconciliation"
+fi
+
+# --- 7. commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237) ---------------------
+# dir #237: five misses in the v0.7.1 wave (three undetected until the release audit) showed the
+# "every user-visible change gets an [Unreleased] entry" convention is prose-only and gets dropped
+# under load. Check 4 above (CHANGELOG staleness) is the nearest existing signal, but it is
+# TIMESTAMP-shaped — it only compares the newest CHANGELOG.md commit against the newest
+# commands/, tools/, or install.sh commit — so a miss with a LATER, unrelated CHANGELOG.md commit landing
+# after it is structurally invisible to it (PR #244's own miss shape: two CHANGELOG.md commits landed
+# after it and check 4 stayed clean). This check instead ENUMERATES: every `dir #N` referenced in a
+# commit message since the previous release tag, diffed against every `dir #N` referenced inside
+# CHANGELOG.md's own `[Unreleased]` section. The trigger is per-TICKET, not per-file, on purpose
+# (dir #237's second refinement): PR #249 touched CHANGELOG.md — 19 real lines — but for a passenger
+# ticket, not its own three, so a per-FILE "touches code but not CHANGELOG.md" trigger would have
+# stayed silent on it. Advisory only (WARN, never GAP/deny): a genuinely user-invisible ticket
+# (comment-only/test-only) has no entry to give, and that judgment stays human — this check only
+# flags the candidates, per the ticket's own acceptance bar.
+say ""
+say "● commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237)"
+if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
+   && [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
+  # Same tag-collecting shape as check 6 above (v-prefixed strict-semver tags only), via the shared
+  # `_release_tag_versions` helper rather than check 6's own $tags — those only exist when check 6's
+  # guard above passed, and this check must stand on its own if check 6 is ever reordered or its guard
+  # tightened. The helper is pure (no shared state), so calling it costs one more `git tag` scan but no
+  # coupling. Fetched ONCE here and reused below for both the highest-tag reduction and the awk
+  # membership set — a second, MAX-only helper that re-scanned `git tag` again was flagged
+  # independently by three review passes (dir #237) as the exact duplication `_release_tag_versions`
+  # itself exists to avoid.
+  ct_tag_list="$(_release_tag_versions "$repo_root")"
+  ct_highest="$(_semver_max <<< "$ct_tag_list")"
+  # `%B` (raw commit message body), `--no-merges` — the exact command dir #237's own body names as
+  # what the release audit already used, so this check reproduces a proven-accurate extraction rather
+  # than inventing a new one. No prior release tag (a repo's first-ever release) widens to the whole
+  # history — there is nothing else to bound the range by yet.
+  if [ -n "$ct_highest" ]; then
+    ct_range="v$ct_highest..HEAD"
+  else
+    ct_range="HEAD"
+  fi
+  ct_commit_tickets="$(git -C "$repo_root" log "$ct_range" --no-merges --format=%B 2>/dev/null \
+    | grep -oE 'dir #[0-9]+' | sort -u || true)"
+  # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
+  # not the whole file, or an already-released section's historical ticket citations would silently
+  # vouch for a DIFFERENT, still-open ticket never actually re-entered under [Unreleased]. Reuses
+  # check 6's own `blank_fenced_blocks` pass so a `## [x.y.z]`-shaped or `dir #N`-shaped fenced example
+  # (this file documents its own conventions with illustrative snippets) isn't misread as a real
+  # section boundary or a real ticket citation.
+  # Recomputed independently rather than reused from check 6's own $changelog_blanked — same reason
+  # $ct_highest above stands on its own (via the shared helper) instead of reusing check 6's
+  # $highest_tag: this check's guard must not silently depend on check 6's internal state staying in
+  # sync with it.
+  #
+  # A cross-model second-opinion review (dir #237) reproduced a real false-positive without this
+  # widening: `/wrap`'s release cut moves every ticket out of [Unreleased] into a fresh `## [x.y.z]`
+  # heading BEFORE the tag is placed (tagging is the operator's own action, per the git rails — check
+  # 6's own "release in preparation" allowance above exists for exactly this window). Bounded to
+  # `[Unreleased]` alone, this check would have reported every ticket in the whole release wave as
+  # missing on the very PR that files them correctly — noise loud enough to train the reader to ignore
+  # it. So the body extraction below keeps grabbing through consecutive `## [x.y.z]` headings as long as
+  # each one's version is NOT among the actual git tags — i.e. through the pending, not-yet-tagged
+  # section — and only stops at the first section that IS a real released tag.
+  # Space-separated, not newline-separated: passed to awk via -v below, and this checkout's own
+  # (BSD/one-true) awk rejects a -v value containing an embedded newline outright ("newline in
+  # string") rather than just mis-splitting it — found live running this fixture locally, not by
+  # either review pass, both of which ran in a container with gawk. Derived from the SAME
+  # `$ct_tag_list` already fetched above, not a fresh `git tag` call — see the comment there.
+  ct_tag_versions="$(tr '\n' ' ' <<< "$ct_tag_list")"
+  ct_changelog_blanked="$(blank_fenced_blocks "$changelog_file")"
+  # Heading-version parse: two anchored `sub()` calls, not a single `gsub(/^## \[|\]$/, ...)`. The
+  # real heading shape is "## [x.y.z] -- DATE", so the closing bracket is never the LAST character of
+  # the line and an end-anchored `\]$` never matches -- a bug that shipped and passed every fixture
+  # (none of them cited the SAME ticket in both an already-released section and a later, un-entered
+  # commit, so the stop condition silently never firing never changed an assertion outcome). Found
+  # live by an operator-run /code-review medium pass. Strip the leading "## [" first, then discard
+  # everything from the first "]" onward -- both anchored at a fixed end (start-of-line / first
+  # match), so trailing date text after the bracket is irrelevant to either.
+  ct_unreleased_body="$(awk -v tags="$ct_tag_versions" '
+    BEGIN { n = split(tags, arr, " "); for (i = 1; i <= n; i++) tagged[arr[i]] = 1 }
+    /^## \[Unreleased\]/ { grabbing=1; next }
+    /^## \[[0-9]+\.[0-9]+\.[0-9]+\]/ {
+      if (!grabbing) next
+      ver=$0; sub(/^## \[/, "", ver); sub(/\].*/, "", ver)
+      if (ver in tagged) { grabbing=0 }
+      next
+    }
+    /^## / { grabbing=0 }
+    grabbing { print }
+  ' <<< "$ct_changelog_blanked")"
+  ct_unreleased_tickets="$(grep -oE 'dir #[0-9]+' <<< "$ct_unreleased_body" | sort -u || true)"
+  # Set difference via the same `printf | grep -qxF` per-item membership idiom check 6's pending-tag
+  # loop already uses above, not `comm` — `comm` needs no extra dependency here (it's coreutils, not
+  # guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this idiom is already
+  # this file's own established style for a small set-membership test.
+  ct_missing=""
+  if [ -n "$ct_commit_tickets" ]; then
+    while IFS= read -r ticket; do
+      [ -n "$ticket" ] || continue
+      if [ -z "$ct_unreleased_tickets" ] || ! printf '%s\n' "$ct_unreleased_tickets" | grep -qxF "$ticket"; then
+        ct_missing="$ct_missing${ct_missing:+, }$ticket"
+      fi
+    done <<< "$ct_commit_tickets"
+  fi
+  ct_since="the repo's start"
+  [ -n "$ct_highest" ] && ct_since="v$ct_highest"
+  if [ -n "$ct_missing" ]; then
+    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237)"
+  else
+    say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section"
+  fi
+else
+  say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping commit-ticket reconciliation"
 fi
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
