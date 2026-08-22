@@ -387,6 +387,8 @@ set -u
 _ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_ppg_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$_ppg_dir/lib/impact-store.sh"
 unset _ppg_dir
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
@@ -1113,21 +1115,13 @@ require_active_receipt() {
 # `init`'s nonce reset (the sentinel's job) never touches it, same rationale as the trace/hand-off files.
 rollout_state_path() { printf '/tmp/pre-pr-gate-rollout-%s' "$(_repo_key "${1:-$PWD}")"; }
 
-# Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else the repo's own .keel/ marker
-# (falling back to the main checkout's marker from a linked worktree — the untracked marker isn't shared,
-# so a linked worktree looks at the first `git worktree list` entry, skipped when bare). One resolution
-# used everywhere a guard/receipt/log event is recorded (dir #49 folded three copies into this one).
+# Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else this project's external
+# store entry (dir #251), else a legacy in-tree .keel/impact-events.log left over from before the
+# store existed. One resolution used everywhere a guard/receipt/log event is recorded (dir #49 folded
+# three copies into this one; dir #251 moved its body into tools/lib/impact-store.sh, shared by every
+# consumer that CAN source it — this file, public-audit.sh, keel-impact.sh itself).
 resolve_impact_log() {
-  local cwd="$1" klog="${KEEL_IMPACT_LOG:-}" top main
-  if [ -z "$klog" ]; then
-    top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -n "$top" ] && [ ! -d "$top/.keel" ]; then
-      main="$(_worktree_main_entry "$cwd")"
-      if [ -n "$main" ] && [ -d "$main/.keel" ]; then top="$main"; fi
-    fi
-    if [ -n "$top" ] && [ -d "$top/.keel" ]; then klog="$top/.keel/impact-events.log"; fi
-  fi
-  printf '%s' "$klog"
+  impact_log_path "$1"
 }
 
 # dir #74: the log's 5th TSV field — the claim key an event is stamped with, so a shared multi-worktree
@@ -1144,15 +1138,21 @@ resolve_impact_log() {
 # preserve it, so the extra field survives on disk even though nothing reads it yet — but don't extend
 # EVENT_TYPES to cover a type whose detail can carry an embedded tab without also sanitizing it here the
 # way `keel-impact.sh cmd_event`'s `_flatten` does for its own writes.
-_claim_key() { git -C "${1:-$PWD}" rev-parse --show-toplevel 2>/dev/null || true; }
-
 # Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —
 # never stdout, so a hook's JSON decision stays intact; with no log path resolved, this is a silent no-op.
 log_event() {
   local ty="$1" detail="${2:-}" cwd="${3:-$PWD}" log key
   log="$(resolve_impact_log "$cwd")"
   [ -n "$log" ] || return 0
-  key="$(_claim_key "$cwd")"
+  # dir #251 review: this used to be a local _claim_key(), byte-for-byte identical to the shared lib's
+  # own impact_claim_key() (already sourced above for resolve_impact_log) — one fewer copy of dir #74's
+  # concurrency-invariant logic to keep in sync.
+  key="$(impact_claim_key "$cwd")"
+  # dir #251 review: the resolver's legacy-marker fallback can name a path whose parent .keel/ doesn't
+  # physically exist yet (a fresh clone carrying the committed gitignore line but never recreating the
+  # untracked dir) — without this, the append's own failed redirect leaks a raw error and silently
+  # drops the event.
+  mkdir -p "$(dirname "$log")" 2>/dev/null || true
   printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" "$key" >> "$log" 2>/dev/null || true
 }
 

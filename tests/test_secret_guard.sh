@@ -327,8 +327,11 @@ check_file "block records an impact event" "$imp_log"
 check_contains "event is a guard/secret-guard line" "$(cat "$imp_log")" "	guard	secret-guard	blocked"
 check_absent "event log never contains the secret" "$(cat "$imp_log")" "AKIA"
 
-# (b) per-repo .keel/ marker, NO env — the out-of-the-box path
+# (b) per-repo .keel/ marker, NO env — the out-of-the-box path. The gitignore line is what makes this
+# a GENUINE old-style `enable` marker (dir #251 review: a bare `.keel/` alone is not proof — D3's own
+# role-3 files can legitimately be the only thing there for a project that never ran impact tracking).
 mrepo="$(new_repo)"; mkdir "$mrepo/.keel"
+printf '/.keel/impact-events.log\n' >> "$mrepo/.gitignore"
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$mrepo/leak.txt"
 run_in "$mrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
 check_status "block exits 1 with only a .keel/ marker" 1 "$STATUS"
@@ -353,6 +356,90 @@ printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$nrepo/leak.txt"
 run_in "$nrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
 check_status "block still exits 1 with tracking off" 1 "$STATUS"
 check_nofile "no event written without override or marker" "$nrepo/.keel/impact-events.log"
+
+# (d) dir #251: a real EXTERNAL store entry (no in-tree marker at all) also records — the store branch
+# of this file's own inline resolver, not just its legacy-marker fallback
+srepo="$(new_repo)"
+sstore_root="$SANDBOX/secret-guard-store"
+sstore="$sstore_root/$(cd "$srepo" && pwd -P | tr '/' '-')"
+mkdir -p "$sstore"
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$srepo/leak.txt"
+run_in "$srepo" env -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$sstore_root" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+check_status "block exits 1 with only an external store entry" 1 "$STATUS"
+check_file "store entry alone records the event (no marker, no override)" "$sstore/impact-events.log"
+check_contains "store event is a guard/secret-guard line" "$(cat "$sstore/impact-events.log" 2>/dev/null)" "	guard	secret-guard	blocked"
+
+# (e) dir #251 review round 3: a genuine legacy marker (the gitignore line committed) whose .keel/
+# directory doesn't physically exist yet — a fresh clone that carries the committed line but never
+# recreated the untracked dir — must still record the event, not crash on a failed append redirect.
+gonerepo="$(new_repo)"
+printf '/.keel/impact-events.log\n' >> "$gonerepo/.gitignore"
+git -C "$gonerepo" add .gitignore
+git -C "$gonerepo" commit -qm "gitignore only, no .keel/ dir"
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$gonerepo/leak.txt"
+run_in "$gonerepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+check_status "block exits 1 with a gitignore-only marker (no .keel/ dir yet)" 1 "$STATUS"
+check_file "the event is recorded, creating .keel/ on demand" "$gonerepo/.keel/impact-events.log"
+check_absent "no leaked bash redirect error on stderr" "$OUT" "No such file or directory"
+
+# --- dir #251 sync: this file's inline copy must stay byte-identical to tools/lib/impact-store.sh's
+# impact_log_path for the one behaviour both implement — a vendored file cannot `source` the shared
+# lib (it may only source files vendored beside it), so drift here would be invisible until a real
+# repo's guard-hook log silently diverged from keel-impact.sh's own resolution. Extract just the two
+# inline functions (sourcing secret-scan.sh whole would run its real top-level scan logic) — the same
+# technique test_keel_impact.sh already uses for _ledger_col_pos/_ledger_parse.
+sync_lib="$REPO_ROOT/tools/lib/impact-store.sh"
+check_file "tools/lib/impact-store.sh exists (sync target)" "$sync_lib"
+inline_fn="$(sed -n '/^_impact_log_path_inline() {/,/^}/p' "$scan")"
+if [ -z "$inline_fn" ]; then
+  fail "secret-scan.sh's _impact_log_path_inline located" "no such function found in $scan"
+else
+  sync_repo="$(new_repo)"
+  sync_store_root="$SANDBOX/sync-store"
+  for sync_case in no-store with-store legacy-marker role3-only legacy-file-present; do
+    case "$sync_case" in
+      with-store) mkdir -p "$sync_store_root/$(cd "$sync_repo" && pwd -P | tr '/' '-')" ;;
+      legacy-marker) rm -rf "$sync_store_root"; rm -rf "$sync_repo/.keel"; mkdir -p "$sync_repo/.keel"
+        printf '/.keel/impact-events.log\n' >> "$sync_repo/.gitignore" ;;
+      # dir #251 review: a bare `.keel/` holding ONLY a role-3 file (never gitignored — that line is
+      # the genuine-marker signal) must NOT resolve as legacy in either implementation.
+      role3-only) rm -rf "$sync_repo/.keel"; mkdir -p "$sync_repo/.keel"
+        printf 'H-DEP-FLOATING\n' > "$sync_repo/.keel/doctor-accept" ;;
+      # dir #251 review round 3: the load-bearing branch (a physically-present legacy file wins
+      # outright, even with an existing store dir — the partial-migrate fix) was never independently
+      # exercised by this sync test before; a real .keel/impact-events.log file now covers it.
+      legacy-file-present) mkdir -p "$sync_store_root/$(cd "$sync_repo" && pwd -P | tr '/' '-')"
+        : > "$sync_repo/.keel/impact-events.log" ;;
+    esac
+    lib_out="$(cd "$sync_repo" && env -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$sync_store_root" \
+      bash -c ". '$sync_lib'; impact_log_path .")"
+    inline_out="$(cd "$sync_repo" && env -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$sync_store_root" \
+      bash -c "$inline_fn"$'\n''_impact_log_path_inline .')"
+    if [ "$inline_out" = "$lib_out" ]; then
+      pass "sync ($sync_case): inline copy agrees with the shared lib"
+    else
+      fail "sync ($sync_case): inline copy agrees with the shared lib" "inline='$inline_out' lib='$lib_out'"
+    fi
+  done
+  # dir #251 review round 3: the $HOME/$KEEL_HOME fallback branch — where an earlier bug lived (the
+  # inline copy used to compute this BEFORE checking the legacy-file branch, so a repo with a genuine
+  # legacy file but no $KEEL_IMPACT_STORE/$KEEL_HOME/$HOME set would crash instead of resolving
+  # cleanly) — is never reached by the fixtures above (they all set $KEEL_IMPACT_STORE). Cover it
+  # directly: a legacy file present, no store override, no HOME/KEEL_HOME at all.
+  rm -rf "$sync_repo/.keel"; mkdir -p "$sync_repo/.keel"
+  : > "$sync_repo/.keel/impact-events.log"
+  lib_out="$(cd "$sync_repo" && env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE -u KEEL_HOME -u HOME \
+    bash -c ". '$sync_lib'; impact_log_path ." 2>&1)"
+  inline_out="$(cd "$sync_repo" && env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE -u KEEL_HOME -u HOME \
+    bash -c "$inline_fn"$'\n''_impact_log_path_inline .' 2>&1)"
+  if [ "$inline_out" = "$lib_out" ]; then
+    pass "sync (no-home, legacy file present): inline copy agrees with the shared lib"
+  else
+    fail "sync (no-home, legacy file present): inline copy agrees with the shared lib" "inline='$inline_out' lib='$lib_out'"
+  fi
+  check_contains "no-home case resolves the legacy path cleanly, no HOME-unset crash" "$lib_out" "$sync_repo/.keel/impact-events.log"
+  rm -rf "$sync_store_root" "$sync_repo/.keel"
+fi
 
 # --- the explicit --staged alias behaves exactly like the default staged mode --------------------
 repo="$(new_repo)"

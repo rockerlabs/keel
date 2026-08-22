@@ -289,8 +289,10 @@ check_file "deny records an impact event when opted in" "$imp_log"
 check_contains "event is a guard/pre-pr-gate line" "$(cat "$imp_log" 2>/dev/null)" "	guard	pre-pr-gate	blocked"
 check_contains "a receipt-deny event is also recorded (no-run)" "$(cat "$imp_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	no-run"
 
-# (b) per-repo .keel/ marker, NO env — resolved from the hook's cwd ($d)
-mkdir -p "$d/.keel"; rm -f "$(sentinel_for "$d")"
+# (b) per-repo .keel/ marker, NO env — resolved from the hook's cwd ($d). The gitignore line is what
+# makes this a GENUINE legacy marker (dir #251 review: a bare `.keel/` alone is not proof — D3's own
+# role-3 files can legitimately be the only thing there for a project that never ran impact tracking).
+mkdir -p "$d/.keel"; printf '/.keel/impact-events.log\n' >> "$d/.gitignore"; rm -f "$(sentinel_for "$d")"
 printf '%s' "$json" | env -u KEEL_IMPACT_LOG bash "$gate" >/dev/null 2>&1
 check_file "marker alone records the deny event (no env)" "$d/.keel/impact-events.log"
 check_contains "marker event is a guard/pre-pr-gate line" "$(cat "$d/.keel/impact-events.log" 2>/dev/null)" "	guard	pre-pr-gate	blocked"
@@ -312,7 +314,7 @@ check_contains "the receipt-pass event's detail carries the provenance classific
 
 # (e) `pre-pr-gate.sh log` appends an arbitrary verdict/friction line for the current run.
 d="$(mkrepo)"
-mkdir -p "$d/.keel"
+mkdir -p "$d/.keel"; printf '/.keel/impact-events.log\n' >> "$d/.gitignore"
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" log receipt-verdict "true-catch polish.3-tests"
 check_contains "log subcommand appends the given type/detail" "$(cat "$d/.keel/impact-events.log" 2>/dev/null)" "	receipt-verdict	pre-pr-gate	true-catch polish.3-tests"
 

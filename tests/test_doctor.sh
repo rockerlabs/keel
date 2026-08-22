@@ -50,21 +50,28 @@ run "$doctor" "$d"
 check_status "clean baseline → exit 0" 0 "$STATUS"
 check_contains "reports baseline OK" "$OUT" "baseline OK"
 
-# WARN (not GAP): a .keel/ marker exists but its ephemeral event log is NOT gitignored — it could leak
+# WARN (not GAP), dir #251: an EMPTY .keel/ (e.g. holding only a role-3 doctor-accept/map-drift-baseline
+# file) never warns — impact tracking moved to an external store, so there is nothing left to flag.
 d="$(mkproj)"; git -C "$d" init -q
 printf '# ctx\n' > "$d/CLAUDE.md"
-printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"   # baseline clean...
-mkdir "$d/.keel"                                    # ...but the event log isn't ignored
+printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
+mkdir "$d/.keel"
 run "$doctor" "$d"
-check_status "unignored event log → exit 0 (WARN, not GAP)" 0 "$STATUS"
-check_contains "warns about the unignored event log" "$OUT" "impact event log (.keel/impact-events.log) is not gitignored"
+check_status "empty .keel/ (role-3 only) → exit 0, no legacy WARN" 0 "$STATUS"
+check_absent "no W-KEEL-LEGACY warning for an empty .keel/" "$OUT" "W-KEEL-LEGACY"
 
-# ...and once the event log is ignored, the warning is gone (the out-of-the-box enable state). The ledger
-# beside it stays trackable — ignoring only the log is exactly what `enable` / init-project do.
-printf '/.keel/impact-events.log\n' >> "$d/.gitignore"
+# ...but a LEFTOVER in-tree impact file (ledger/evidence/log from before the store existed) does warn
+: > "$d/.keel/impact-events.log"
 run "$doctor" "$d"
-check_status "gitignored event log → exit 0" 0 "$STATUS"
-check_absent "no warning once the event log is ignored" "$OUT" "impact event log (.keel/impact-events.log) is not gitignored"
+check_status "leftover in-tree impact file → exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "warns about the leftover in-tree impact file" "$OUT" "in-tree impact files found"
+check_contains "the warning names the fix" "$OUT" "keel-impact.sh migrate"
+
+# ...and once migrated away (the file removed), the warning is gone
+rm -f "$d/.keel/impact-events.log"
+run "$doctor" "$d"
+check_status "migrated (file removed) → exit 0" 0 "$STATUS"
+check_absent "no warning once the legacy file is gone" "$OUT" "in-tree impact files found"
 
 # a git WORKTREE — where .git is a FILE, not a dir — must not be mis-detected as "not a git repo"
 # (the same trap hits submodules). Regression for the [ -d .git ] → git rev-parse fix.
@@ -544,26 +551,25 @@ git -C "$base" worktree add -q "$wtp" >/dev/null 2>&1
 run "$doctor" "$base"
 check_absent  "public-fork worktree → exempt from bridge WARN" "$OUT" "missing the CLAUDE.md bridge"
 
-# --- impact-tracking split-brain (dir #10 residue (b)): a worktree-local .keel/ marker alongside the
-# main checkout's own → advisory WARN, both directions -------------------------------------------
+# --- dir #251: the OLD impact-tracking "split-brain" hazard (dir #10 residue (b) — a worktree-local
+# .keel/ marker diverging from the main checkout's own) is now structurally unrepresentable: there is
+# no more per-tree marker to split, since tracking is keyed by an EXTERNAL store entry, not a directory
+# inside either tree. W-KEEL-LEGACY (its replacement) is instead a per-directory leftover check — a
+# legacy file in ONE worktree must not spuriously warn about, or hide behind, the other.
 base="$(mkproj)"; git -C "$base" init -q
 git -C "$base" -c user.email=t@keel.invalid -c user.name=t commit -qm init --allow-empty >/dev/null
 wts="$SANDBOX/wtsplit.$$"
 git -C "$base" worktree add -q "$wts" >/dev/null 2>&1
-# neither side has a marker yet → no split-brain WARN
 run "$doctor" "$wts"
-check_absent "no .keel/ anywhere → no split-brain WARN" "$OUT" "coexists with the main checkout"
-mkdir "$base/.keel"
+check_absent "no .keel/ anywhere → no W-KEEL-LEGACY" "$OUT" "W-KEEL-LEGACY"
+mkdir -p "$base/.keel"; : > "$base/.keel/impact-events.log"
 run "$doctor" "$wts"
-check_absent "only the main-top marker → no split-brain WARN from the worktree side" "$OUT" "coexists with the main checkout"
+check_absent "a main-top leftover doesn't warn when auditing the worktree" "$OUT" "W-KEEL-LEGACY"
 run "$doctor" "$base"
-check_absent "only the main-top marker → no split-brain WARN from the main side" "$OUT" "carry their own .keel/ marker"
-# now plant a stray marker in the worktree too → split-brain WARN, checked from BOTH sides
-mkdir "$wts/.keel"
+check_contains "the main-top leftover DOES warn when auditing the main checkout itself" "$OUT" "W-KEEL-LEGACY"
+mkdir -p "$wts/.keel"; : > "$wts/.keel/impact-events.log"
 run "$doctor" "$wts"
-check_contains "worktree-local + main-top .keel/ → split-brain WARN (from the worktree)" "$OUT" "coexists with the main checkout"
-run "$doctor" "$base"
-check_contains "worktree-local + main-top .keel/ → split-brain WARN (from the main checkout)" "$OUT" "carry their own .keel/ marker"
+check_contains "a worktree-local leftover warns when auditing the worktree itself" "$OUT" "W-KEEL-LEGACY"
 
 # --- secret-guard drift: an installed copy that differs from the shipped engine → WARN -----------
 shipped="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
@@ -619,8 +625,8 @@ git config --global --unset core.hooksPath
 # ...and from a linked WORKTREE, the machine-global drift accept file resolves at the MAIN checkout
 # — not the raw CWD toplevel (which, inside a worktree, is the worktree itself). A regression test for
 # a bug found in review: an earlier version keyed this one WARN's accept lookup off the raw worktree
-# toplevel, so accepting it there would have planted exactly the worktree-local .keel/ marker the
-# split-brain check (W-KEEL-SPLIT) exists to catch.
+# toplevel, so accepting it there would have planted a worktree-local .keel/ marker (the split-brain
+# hazard W-KEEL-SPLIT used to flag, before dir #251 made a per-tree marker unrepresentable).
 base="$(mkproj)"; git -C "$base" init -q
 printf '# ctx\n' > "$base/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
 git -C "$base" add .gitignore
@@ -737,7 +743,7 @@ run "$doctor" "$d"
 check_absent "baseline-accepted path → no map-drift WARN" "$OUT" "map may be stale"
 
 # a linked worktree's map-drift baseline resolves to the MAIN checkout's .keel/, never a worktree-local
-# one (mirrors the split-brain discipline just above — a worktree-local .keel/ would itself draw a WARN)
+# one — a worktree-local baseline would be invisible to the project's other worktrees and main checkout
 base="$(mkproj)"; git -C "$base" init -q
 printf '# ctx\nSee `scripts/ghost.sh` for details.\n' > "$base/CLAUDE.md"
 printf 'CLAUDE.md\n.claude/\n' > "$base/.gitignore"
@@ -792,7 +798,7 @@ check_absent "CLAUDE-archive.md mentions are never checked" "$OUT" "ghost-in-arc
 mixed() {  # a project that draws one finding of each tier; prints its path
   local d; d="$(mkproj)"; git -C "$d" init -q
   printf '.claude/\n' > "$d/.gitignore"             # no CLAUDE.md, not gitignored → GAP
-  mkdir "$d/.keel"                                  # event log not gitignored → WARN
+  mkdir "$d/.keel"; : > "$d/.keel/impact-events.log"  # leftover in-tree impact file → WARN
   printf 'FROM postgres:latest\n' > "$d/Dockerfile" # floating dep → HINT
   printf '%s' "$d"
 }
@@ -800,10 +806,10 @@ d="$(mixed)"
 run "$doctor" "$d"
 check_status   "mixed run → GAP still fails (exit 1)" 1 "$STATUS"
 check_contains "GAP line carries its stable ID"  "$OUT" "[G-CLAUDEMD-MISSING]"
-check_contains "WARN line carries its stable ID" "$OUT" "[W-EVENTLOG-TRACKED]"
+check_contains "WARN line carries its stable ID" "$OUT" "[W-KEEL-LEGACY]"
 check_contains "HINT line carries its stable ID" "$OUT" "[H-DEP-FLOATING]"
-ord="$(printf '%s\n' "$OUT" | grep -oE 'G-CLAUDEMD-MISSING|W-EVENTLOG-TRACKED|H-DEP-FLOATING' | tr '\n' ' ')"
-if [ "$ord" = "G-CLAUDEMD-MISSING W-EVENTLOG-TRACKED H-DEP-FLOATING " ]; then
+ord="$(printf '%s\n' "$OUT" | grep -oE 'G-CLAUDEMD-MISSING|W-KEEL-LEGACY|H-DEP-FLOATING' | tr '\n' ' ')"
+if [ "$ord" = "G-CLAUDEMD-MISSING W-KEEL-LEGACY H-DEP-FLOATING " ]; then
   pass "findings print in tier order GAP → WARN → HINT"
 else
   fail "findings print in tier order GAP → WARN → HINT" "got order: $ord"
@@ -822,7 +828,7 @@ check_contains "clean run prints the tail summary"    "$OUT" "doctor: 0 gap,"
 d="$(mixed)"
 run "$doctor" --quiet "$d"
 check_contains "--quiet keeps the GAP line"  "$OUT" "[G-CLAUDEMD-MISSING]"
-check_contains "--quiet keeps the WARN line" "$OUT" "[W-EVENTLOG-TRACKED]"
+check_contains "--quiet keeps the WARN line" "$OUT" "[W-KEEL-LEGACY]"
 check_absent   "--quiet hides the HINT line" "$OUT" "[H-DEP-FLOATING]"
 check_contains "--quiet still counts the hidden hint in the summary" "$OUT" "1 hint"
 
@@ -864,7 +870,7 @@ check_status   "accepted GAP still fails the audit" 1 "$STATUS"
 check_contains "accepted GAP still prints" "$OUT" "[G-CLAUDEMD-MISSING]"
 
 # a linked worktree resolves the accept file at the MAIN checkout's .keel/ — same discipline as the
-# map-drift baseline (a worktree-local .keel/ would itself draw the split-brain WARN)
+# map-drift baseline (a worktree-local accept file would be invisible to the project's other worktrees)
 base="$(mkproj)"; git -C "$base" init -q
 printf '# ctx\n' > "$base/CLAUDE.md"
 printf 'CLAUDE.md\n.claude/\n/.keel/impact-events.log\n' > "$base/.gitignore"

@@ -1,5 +1,10 @@
 # Keel impact ledger
 
+**Frozen historical artifact.** Live scoring moved to `.keel/ledger.md` when this checkout got its own
+impact-tracking marker (2026-07-20), and moved again with dir #251 (2026-08-22) to an external store —
+`$KEEL_HOME/.keel/impact/<project-id>/ledger.md`, never inside the project's own tree. This file's rows
+below are not updated any further; it is kept as a record of Keel's earliest dogfooding history.
+
 One row per scored session. The score is **derived, not asserted**: `commands/keel-score.md` gathers counted,
 cited events; `tools/keel-impact.sh` computes the 0-100 number from them by a fixed formula, so it is a pure
 function of the evidence and cannot be inflated by vibe. This is the quantified form of the wrap-time
@@ -13,13 +18,13 @@ function; scores above guard) · **fire** rule applied · **hit** retrieval hit 
 (promote pressure) · **fric** friction (demote pressure) · **silent** always-loaded rules that did not fire
 (demote candidates; NOT folded into the score).
 
-**guard** is collected deterministically: in a tracked repo (an enabled `.keel/` marker, or `$KEEL_IMPACT_LOG`)
-the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire to a zero-token event
-log that `add` auto-ingests — the objective signal never depends on the model counting it.
+**guard** is collected deterministically: in a tracked repo (an enabled external store entry, or
+`$KEEL_IMPACT_LOG`) the guardrail hooks (`secret-guard`, `pre-pr-gate`, `public-audit`) record each fire to
+a zero-token event log that `add` auto-ingests — the objective signal never depends on the model counting it.
 
 Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
 citation, and the full per-event trail (every event → its citation) lives in `keel-impact-evidence.md`
-next to this file (in an installed project's `.keel/` dir the same file is named `evidence.md`).
+next to this file (in an installed project's external store the same file is named `evidence.md`).
 
 | date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) |
 |------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|

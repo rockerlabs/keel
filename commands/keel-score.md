@@ -1,17 +1,18 @@
 ---
 description: Measure how much Keel shaped THIS session by counting cited events; the 0-100 score is DERIVED from them by tools/keel-impact.sh, never picked by hand
 ---
-Measure how much **Keel** shaped *this* session and append one row to the impact ledger
-(`docs/keel-impact.md`, or the project's own knowledge base). This is the *quantified* form of the wrap-time
-promote/demote ritual in `FRAMEWORK.md` ("retrieval miss = promote signal"). Ledger content is English.
+Measure how much **Keel** shaped *this* session and append one row to the project's impact ledger — an
+external store, keyed by the project (`keel-impact.sh enable`/`init-project` opts it in; nothing is written
+inside the project's own tree). This is the *quantified* form of the wrap-time promote/demote ritual in
+`FRAMEWORK.md` ("retrieval miss = promote signal"). Ledger content is English.
 
 ## What counts as an event — one citation per event; the score falls out of them
 
 **You do not pick the score.** You pass **one citation per event** (repeat the flag); `tools/keel-impact.sh`
 counts them and derives the 0-100 number by a fixed formula — a pure function of the evidence, not mood. So
 *no citation → no count*, mechanically. Every citation MUST name a concrete artifact from *this* session, and
-each is archived to the evidence trail (`.keel/evidence.md`), making the score a checkable record. Your one
-job: keep the event list honest.
+each is archived to the evidence trail (`evidence.md`, alongside the ledger in the same external store),
+making the score a checkable record. Your one job: keep the event list honest.
 
 | Flag (repeat per event) | Event | What the citation must name |
 |---|---|---|
@@ -32,8 +33,8 @@ job: keep the event list honest.
    this while orienting anyway" — reading the files it is about to edit, listing branches, running the test
    suite. Behavior indistinguishable from ordinary orientation is not a fire.
 
-**Guardrail fires are collected for you.** In a tracked repo (an enabled `.keel/` marker — `keel-impact.sh
-enable`, or `init-project` by default — or `$KEEL_IMPACT_LOG`), the guardrail hooks (`secret-guard`,
+**Guardrail fires are collected for you.** In a tracked repo (an enabled external store entry —
+`keel-impact.sh enable`, or `init-project` by default — or `$KEEL_IMPACT_LOG`), the guardrail hooks (`secret-guard`,
 `pre-pr-gate`, `public-audit`) record each fire to a zero-token event log (metadata only, never the secret)
 and `add` auto-ingests it into `--guard` — so normally omit `--guard`, passing it only for a fire the log
 missed. Collection is honest about *count*, not about *valence* — a gate DENY is auto-ingested as `--guard`
@@ -64,9 +65,9 @@ measure), not a fake 0. `conf` (none/low/med/high) comes from how many events ba
    them for `--silent`, and name the top one in `--gap`. Note any `--miss` as a promote candidate too.
 3. **Append the row** — repeat a flag once per cited event; the tool counts, derives, and records.
    `tools/…` is your **Keel checkout's** copy, so spell it `<keel-checkout>/tools/keel-impact.sh` when
-   the session's cwd is the project being scored — and it should be: the `.keel/` marker and ledger
-   resolve from the cwd's repo, so a call made from the wrong directory silently scores that repo
-   instead (or, if it carries no marker, appends to Keel's own dogfooding ledger):
+   the session's cwd is the project being scored — and it should be: the store entry resolves from the
+   cwd's repo, so a call made from the wrong directory silently scores that repo instead (or, if it was
+   never enabled, refuses outright — run `keel-impact.sh enable` first):
 
    ```bash
    tools/keel-impact.sh add \
