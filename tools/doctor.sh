@@ -30,10 +30,10 @@
 #   WARN  W-CLAUDEMD-GITIGNORED  CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
 #   WARN  W-AGENTSMD-DRIFT     AGENTS.md is a regular-file copy that has drifted from CLAUDE.md, or a
 #                             symlink pointing somewhere other than CLAUDE.md
-#   WARN  W-EVENTLOG-TRACKED   a .keel/ marker exists but its event log isn't gitignored (leak risk)
-#   WARN  W-KEEL-SPLIT         a worktree-local .keel/ marker coexists with the main checkout's —
-#                             either a linked worktree carrying its own stray marker, or the main
-#                             checkout with one or more linked worktrees carrying their own
+#   WARN  W-KEEL-LEGACY        an in-tree .keel/{ledger.md,evidence.md,impact-events.log} left over from
+#                             before impact tracking moved to an external store (dir #251) — run
+#                             `keel-impact.sh migrate` (retired: W-EVENTLOG-TRACKED, W-KEEL-SPLIT, which
+#                             lost their reason to exist once nothing is written in-tree any more)
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
 #                              carrying no executable pre-commit) and no local hook. Sensitive to a
 #                              redirected global git config, so it names its source (dir #97)
@@ -60,6 +60,8 @@ set -euo pipefail
 _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_doctor_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$_doctor_dir/lib/impact-store.sh"
 unset _doctor_dir
 
 QUIET=0
@@ -494,8 +496,8 @@ fi
 # accept this specific finding does so via the CWD's accept file, same as any other invocation.
 #
 # Resolved to the MAIN checkout, same fallback chain as unit_top below — NOT the raw CWD toplevel: a
-# CWD sitting inside a linked worktree would otherwise point this at the worktree's own .keel/, which
-# is exactly the split-brain condition W-KEEL-SPLIT flags (an accept file only that worktree ever sees).
+# CWD sitting inside a linked worktree would otherwise point this at the worktree's own .keel/ — an
+# accept file only that worktree would ever see, never the project's other worktrees or main checkout.
 cwd_d_top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 cwd_main_top="$(git worktree list --porcelain 2>/dev/null \
   | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
@@ -950,50 +952,34 @@ for d in "${DIRS[@]}"; do
     fi
   fi
 
-  # Impact-tracking hygiene: a repo opted into impact tracking carries a .keel/ marker. Its event log is
-  # ephemeral and must stay out of git (the ledger.md beside it is durable and MAY be committed — so we
-  # check the log specifically, not the whole dir). Fires ONLY when .keel/ exists AND the log isn't ignored;
-  # it never nags a project to enable tracking (optional).
-  if [ -d "$d/.keel" ] && ! git -C "$d" check-ignore -q .keel/impact-events.log 2>/dev/null; then
-    warn W-EVENTLOG-TRACKED "impact event log (.keel/impact-events.log) is not gitignored — it can leak into history (run keel-impact.sh enable, or add /.keel/impact-events.log to .gitignore)"
+  # dir #251: the impact-score triple (ledger.md/evidence.md/impact-events.log) no longer lives inside
+  # the project tree at all — it moved to an external store, so W-EVENTLOG-TRACKED (an ungitignored
+  # event log) and W-KEEL-SPLIT (a worktree-local marker diverging from the main checkout's) both lost
+  # their reason to exist: nothing is left to gitignore, and there is no per-tree marker left to split.
+  # They collapse into ONE new check: a LEFTOVER in-tree copy from before the store existed. Checked
+  # against $d ITSELF, literally — NOT via impact_has_legacy_files/_impact_resolve_top's main-checkout
+  # redirection: this audit is per-DIRECTORY (a worktree's own leftover must warn on that worktree, a
+  # main checkout's own leftover on the main checkout, never cross-attributed either way), only the
+  # shared $IMPACT_LEGACY_NAMES list is reused here to avoid a third hand-typed copy of the 3 filenames.
+  legacy_found=0
+  for legacy_name in $IMPACT_LEGACY_NAMES; do
+    [ -f "$d/.keel/$legacy_name" ] && { legacy_found=1; break; }
+  done
+  if [ "$legacy_found" -eq 1 ]; then
+    warn W-KEEL-LEGACY "in-tree impact files found (.keel/{ledger.md,evidence.md,impact-events.log}) — run 'keel-impact.sh migrate $d' to move them into the external store"
   fi
 
-  # Impact-tracking split-brain (dir #10 residue (b)): a pre-#67 `enable`/init-project run could have
-  # planted the .keel/ marker at a linked worktree's own top (untracked, so it's invisible to other
-  # worktrees). PR #67's resolvers try the CURRENT top first, so a leftover worktree-local marker
-  # silently diverts that worktree's events into its own ledger while the main-top ledger undercounts —
-  # a split it's easy not to notice without this check. Covers both directions: $d itself carrying a
-  # stray local marker next to the main one, and $d (as the main checkout) having linked worktrees that
-  # each carry their own.
   # `|| true`: outside a repo (e.g. the "bare dir" GAP case above, which doesn't `continue`) git exits
   # 128 and pipefail would trip `set -e` here, aborting the whole audit instead of just skipping this
-  # check — same guard as keel-impact.sh's `_keel_main_top`. Both paths come from git (not `cd && pwd`)
-  # so they're canonicalized the same way — on macOS /tmp is a symlink to /private/tmp, and comparing a
-  # shell-resolved path against git's own realpath'd worktree list would otherwise false-positive.
+  # check. Both paths come from git (not `cd && pwd`) so they're canonicalized the same way — on macOS
+  # /tmp is a symlink to /private/tmp, and comparing a shell-resolved path against git's own realpath'd
+  # worktree list would otherwise false-positive.
   d_top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
-  wt_list="$(git -C "$d" worktree list --porcelain 2>/dev/null || true)"  # one snapshot, read below for both main_top and the stray-worktree scan
+  wt_list="$(git -C "$d" worktree list --porcelain 2>/dev/null || true)"  # one snapshot, read below for main_top
   main_top="$(printf '%s\n' "$wt_list" | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-  # The MAIN checkout's top, never a worktree-local one — a single fallback chain reused below by
-  # both the map-drift baseline and the doctor-accept file: a worktree-local .keel/ is exactly what
-  # the split-brain check above flags, so neither lookup should tempt anyone into creating one.
+  # The MAIN checkout's top, never a worktree-local one — role 3's (D3) doctor-accept/map-drift-baseline
+  # files are still project-local and still resolved at the main checkout only, unaffected by dir #251.
   unit_top="${main_top:-${d_top:-$d}}"
-  if [ -n "$d_top" ] && [ -n "$main_top" ] && [ -d "$main_top/.keel" ]; then
-    if [ "$main_top" != "$d_top" ] && [ -d "$d/.keel" ]; then
-      warn W-KEEL-SPLIT "worktree-local .keel/ marker coexists with the main checkout's ($main_top/.keel/) — events split across two ledgers (this worktree wins locally); remove this worktree's .keel/ so events land in the shared one"
-    elif [ "$main_top" = "$d_top" ]; then
-      stray_wt=0
-      while IFS= read -r wline; do
-        case "$wline" in "worktree "*) wt="${wline#worktree }" ;; *) continue ;; esac
-        if [ "$wt" = "$d_top" ]; then continue; fi          # the main checkout itself
-        if [ -d "$wt/.keel" ]; then stray_wt=$((stray_wt + 1)); fi
-      done <<EOF
-$wt_list
-EOF
-      if [ "$stray_wt" -gt 0 ]; then
-        warn W-KEEL-SPLIT "$stray_wt linked worktree(s) carry their own .keel/ marker alongside the main checkout's — events split across ledgers; remove the worktree-local .keel/ dirs so events land in the shared one"
-      fi
-    fi
-  fi
 
   # Map-drift (dir #39 T1): a backtick-spanned path/filename in the LIVE map that no longer exists on
   # disk — code moves, the map doesn't, and the agent confidently follows a dead path. Backtick-spans

@@ -40,9 +40,8 @@ init-project: scaffolding /tmp/demo/my-project
   + .gitignore += .DS_Store
   + .gitignore += .idea/
   + .gitignore += /.keel/map-drift-baseline
-  keel-impact: gitignored /.keel/impact-events.log in /tmp/demo/my-project/.gitignore
-  keel-impact: impact tracking enabled for /tmp/demo/my-project (marker: /tmp/demo/my-project/.keel/)
-    guardrail fires now record events; run /keel-score to score. Commit .keel/ledger.md and .keel/evidence.md to keep the history + audit trail.
+  keel-impact: impact tracking enabled for /tmp/demo/my-project
+    guardrail fires now record events with no env needed; run /keel-score to score.
   + CLAUDE.md created from template
   + AGENTS.md created (symlink to CLAUDE.md)
 

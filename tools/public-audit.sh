@@ -87,6 +87,8 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_pa_dir/lib/leak-patterns.sh"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_pa_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$_pa_dir/lib/impact-store.sh"
 unset _pa_dir
 
 # --- gather config -------------------------------------------------------------------------------
@@ -458,31 +460,18 @@ fi
 
 # Impact instrumentation (metadata only, opt-in per repo): a GAP is a real publication blocker caught —
 # record the guardrail fire so keel-impact can auto-ingest it (deterministic, zero-token). Only on GAP
-# (exit 1), never on a clean run or advisory WARNs. Enabled via $KEEL_IMPACT_LOG or a .keel/ marker at the
-# audited repo's top level (in a linked worktree: the MAIN checkout's top — the untracked marker isn't
-# shared, so fall back to the first `git worktree list` entry, skipped when bare; awk reads its whole input on purpose — no
-# early exit, no SIGPIPE); with neither, nothing is written.
+# (exit 1), never on a clean run or advisory WARNs. Resolved via tools/lib/impact-store.sh (dir #251):
+# $KEEL_IMPACT_LOG, else the audited repo's external store entry, else a legacy in-tree marker; with
+# none of those, nothing is written.
 if [ "$exit_code" != 0 ]; then
-  _klog="${KEEL_IMPACT_LOG:-}"
-  _kclaim=""
-  if [ -z "$_klog" ]; then
-    _ktop="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)"
-    # dir #74: the claim key is THIS site's own toplevel, captured here before the main-checkout fallback
-    # below can overwrite $_ktop — that fallback only decides where the log FILE lives, not who fired the
-    # event. Saving it now (instead of re-deriving it at the write site) avoids a second identical
-    # `git rev-parse` subprocess for the same value.
-    _kclaim="$_ktop"
-    if [ -n "$_ktop" ] && [ ! -d "$_ktop/.keel" ]; then
-      _kmain="$(git -C "$DIR" worktree list --porcelain 2>/dev/null |
-        awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-      if [ -n "$_kmain" ] && [ -d "$_kmain/.keel" ]; then _ktop="$_kmain"; fi
-    fi
-    if [ -n "$_ktop" ] && [ -d "$_ktop/.keel" ]; then _klog="$_ktop/.keel/impact-events.log"; fi
-  fi
+  _klog="$(impact_log_path "$DIR")"
   if [ -n "$_klog" ]; then
-    # $KEEL_IMPACT_LOG was set explicitly, so the resolution block above (and $_kclaim with it) never ran
-    # — compute it fresh here, the only remaining case that needs a subprocess for it.
-    [ -n "$_kclaim" ] || _kclaim="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+    _kclaim="$(impact_claim_key "$DIR")"
+    # dir #251 review: the resolver's legacy-marker fallback can name a path whose parent .keel/
+    # doesn't physically exist yet (a fresh clone carrying the committed gitignore line but never
+    # recreating the untracked dir) — without this, the append's own failed redirect leaks a raw error
+    # and silently drops the event.
+    mkdir -p "$(dirname "$_klog")" 2>/dev/null || true
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard public-audit blocked "$_kclaim" \
       >> "$_klog" 2>/dev/null || true
   fi

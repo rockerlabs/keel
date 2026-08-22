@@ -493,93 +493,286 @@ run bash "$TOOL" add --retro --fire "only the fire" --gap "none"
 check_contains "retro ignores the live log" "$OUT" "from 1 event(s)"
 check_contains "retro preserves the live log" "$(wc -l < "$LOG" | tr -d ' ')" "1"
 
-# --- enable: opt a repo into tracking (the .keel/ marker the hooks look for) ---------------------
+# --- enable: opt a repo into tracking (dir #251 — an EXTERNAL store entry, nothing in-tree) -------
+store_id_for() { printf '%s' "$(cd "$1" && pwd -P)" | tr '/' '-'; }
+
 erepo="$(new_repo)"
-run bash "$TOOL" enable "$erepo"
+erepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$erepo")"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$erepo"
 check_status "enable succeeds on a git repo" 0 "$STATUS"
-check_dir "enable creates the .keel/ marker" "$erepo/.keel"
-check_contains "enable gitignores the event log only" "$(cat "$erepo/.gitignore" 2>/dev/null)" "/.keel/impact-events.log"
+check_dir "enable creates an external store entry" "$erepo_store"
+check_file "the store entry carries an origin file" "$erepo_store/origin"
+check_nofile "enable writes NOTHING inside the project tree" "$erepo/.keel/ledger.md"
+check_nofile "enable writes no .gitignore" "$erepo/.gitignore"
 check_contains "enable confirms tracking is on" "$OUT" "impact tracking enabled"
 
-# idempotent: a second enable doesn't duplicate the gitignore line, and reports itself as a no-op
-# (not "enabled" again) — the same +/= convention init-project.sh uses for its other idempotent steps
-run bash "$TOOL" enable "$erepo"
+# idempotent: a second enable reports itself as a no-op, not "enabled" again
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$erepo"
 check_status "second enable succeeds" 0 "$STATUS"
-check_contains "gitignore has exactly one event-log line" "$(grep -c '^/\.keel/impact-events\.log$' "$erepo/.gitignore")" "1"
 check_contains "second enable reports already-enabled, not newly-enabled" "$OUT" "impact tracking already enabled"
 
-# dir #85 (code audit, finding 5): a .gitignore whose last line has no trailing newline must not get
-# our rule glued onto it. Before the fix, `node_modules` (unterminated) + our append produced the
-# single pattern `node_modules/.keel/impact-events.log`, silently destroying BOTH rules.
-nlrepo="$(new_repo)"
-printf 'node_modules' > "$nlrepo/.gitignore"     # deliberately no trailing newline
-run bash "$TOOL" enable "$nlrepo"
-check_status "enable on an unterminated .gitignore succeeds" 0 "$STATUS"
-check_contains "the pre-existing unterminated rule survives intact" \
-  "$(grep -c '^node_modules$' "$nlrepo/.gitignore")" "1"
-check_contains "our rule lands on its own line" \
-  "$(grep -c '^/\.keel/impact-events\.log$' "$nlrepo/.gitignore")" "1"
-check_absent "the two rules are never concatenated" \
-  "$(cat "$nlrepo/.gitignore")" "node_modules/.keel/impact-events.log"
-
-# end-to-end: an enabled repo records a guard event with NO env, and the ledger resolves to .keel/ledger.md
+# end-to-end: an enabled repo records a guard event with NO env, and files land in the external store
 run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" event guard secret-guard blocked
-check_file "event lands in the enabled repo's .keel/ log" "$erepo/.keel/impact-events.log"
+check_file "event lands in the store's log" "$erepo_store/impact-events.log"
 run_in "$erepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --fire "e" --gap none
-check_file "score writes the ledger to .keel/ledger.md (marker-resolved, no env)" "$erepo/.keel/ledger.md"
-check_file "score writes the trail to .keel/evidence.md (marker-resolved, no env)" "$erepo/.keel/evidence.md"
-# the split: the ephemeral log is ignored, the durable ledger + evidence trail stay trackable
-git -C "$erepo" check-ignore -q .keel/impact-events.log && pass "event log is gitignored" || fail "event log is gitignored" "not ignored"
-git -C "$erepo" check-ignore -q .keel/ledger.md && fail "ledger stays trackable (not ignored)" "ledger is ignored" || pass "ledger stays trackable (not ignored)"
-git -C "$erepo" check-ignore -q .keel/evidence.md && fail "evidence stays trackable (not ignored)" "evidence is ignored" || pass "evidence stays trackable (not ignored)"
+check_file "score writes the ledger into the store (marker-free, no env)" "$erepo_store/ledger.md"
+check_file "score writes the trail into the store (marker-free, no env)" "$erepo_store/evidence.md"
+check_nofile "the project tree still carries nothing after add" "$erepo/.keel/ledger.md"
 
-# --- worktree fallback: the marker is untracked, so it lives ONLY at the main checkout's top ------
-# a session in a linked worktree must still resolve the MAIN .keel/ (log, ledger, evidence) — before the
-# fallback, events from worktree sessions silently vanished (felt on keel's own dogfooding, dir #10)
-git -C "$erepo" add -A -- ':!.keel' >/dev/null 2>&1
+# --- worktree: a linked worktree resolves to the SAME store entry as its main checkout -------------
+# before the store (dir #181's bug class), events from worktree sessions could silently vanish or split
+git -C "$erepo" add -A >/dev/null 2>&1
 git -C "$erepo" commit -qm "seed" >/dev/null 2>&1
 ewt="$SANDBOX/erepo-wt"
 git -C "$erepo" worktree add -q -b wt-session "$ewt" >/dev/null 2>&1
 check_dir "worktree fixture exists" "$ewt"
-wt_log_before="$(wc -l < "$erepo/.keel/impact-events.log" | tr -d ' ')"
+wt_log_before="$(wc -l < "$erepo_store/impact-events.log" | tr -d ' ')"
 run_in "$ewt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" event guard secret-guard blocked
 check_status "event from a worktree succeeds" 0 "$STATUS"
-check_contains "worktree event appends to the MAIN checkout's log" "$(wc -l < "$erepo/.keel/impact-events.log" | tr -d ' ')" "$((wt_log_before + 1))"
+check_contains "worktree event appends to the MAIN checkout's store log" "$(wc -l < "$erepo_store/impact-events.log" | tr -d ' ')" "$((wt_log_before + 1))"
 [ ! -d "$ewt/.keel" ] && pass "no stray worktree-local .keel/" || fail "no stray worktree-local .keel/" "worktree grew its own marker"
-# the add also auto-ingests the pending guard event above FROM the main log — proof the worktree session
-# reads and writes the main .keel/ end-to-end (guard=1 ingested + fire=1 cited → 100, guard cell wins)
+# the add also auto-ingests the pending guard event above FROM the main store log — proof the worktree
+# session reads and writes the SAME store entry end-to-end (guard=1 ingested + fire=1 cited → 100)
 run_in "$ewt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --fire "wt cite" --gap none
-check_contains "add from a worktree ingests the MAIN log and writes the MAIN ledger" "$(cat "$erepo/.keel/ledger.md")" "| 100 | low | 1 | 0 | 1 | 0 | 0 | 0 | 0 |"
-check_contains "add from a worktree archives to the MAIN evidence trail" "$(cat "$erepo/.keel/evidence.md")" "- fire: wt cite"
+check_contains "add from a worktree ingests the MAIN store log and writes the MAIN store ledger" "$(cat "$erepo_store/ledger.md")" "| 100 | low | 1 | 0 | 1 | 0 | 0 | 0 | 0 |"
+check_contains "add from a worktree archives to the MAIN store evidence trail" "$(cat "$erepo_store/evidence.md")" "- fire: wt cite"
 
-# enable run FROM a worktree targets the main checkout (an in-worktree marker would be ephemeral)
+# enable run FROM a worktree targets the main checkout's id (an in-worktree store entry would fork it)
 wrepo="$(new_repo)"
 run_in "$wrepo" git commit -qm seed --allow-empty
+wrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$wrepo")"
 wwt="$SANDBOX/wrepo-wt"
 git -C "$wrepo" worktree add -q -b wt-enable "$wwt" >/dev/null 2>&1
 run_in "$wwt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
 check_status "enable from a worktree succeeds" 0 "$STATUS"
-check_dir "enable from a worktree creates the marker at the MAIN top" "$wrepo/.keel"
+check_dir "enable from a worktree creates the store entry at the MAIN id" "$wrepo_store"
 [ ! -d "$wwt/.keel" ] && pass "enable leaves no worktree-local marker" || fail "enable leaves no worktree-local marker" "marker created in the worktree"
-check_contains "enable from a worktree gitignores at the MAIN top" "$(cat "$wrepo/.gitignore" 2>/dev/null)" "/.keel/impact-events.log"
 
-# bare-main topology: the first worktree-list entry has no working tree — enable must NOT write .keel/
-# into the bare repo dir (nothing could ever commit it); it falls back to the worktree's own top
+# bare-main topology: the first worktree-list entry has no working tree — enable falls back to the
+# worktree's own top for the id, same as the pre-store resolver always did
 brepo="$SANDBOX/bare-main.git"
 git clone -q --bare "$wrepo" "$brepo" 2>/dev/null    # reuse the seeded repo above for a HEAD to check out
 bwt="$SANDBOX/bare-wt"
 git -C "$brepo" worktree add -q -b wt-bare "$bwt" >/dev/null 2>&1
+bwt_store="$KEEL_IMPACT_STORE/$(store_id_for "$bwt")"
 run_in "$bwt" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
 check_status "enable under a bare main succeeds" 0 "$STATUS"
-[ ! -d "$brepo/.keel" ] && pass "bare main gets no .keel/" || fail "bare main gets no .keel/" ".keel created inside the bare repo"
-check_dir "bare-main enable falls back to the worktree's own top" "$bwt/.keel"
+check_dir "bare-main enable falls back to the worktree's own top" "$bwt_store"
 
 # not-a-repo-yet: enable must fall back to the dir as-is (regression: the worktree-list probe exits 128
 # outside a repo, and under set -euo pipefail an unguarded pipeline killed the whole script)
 ngdir="$(mktemp -d "$SANDBOX/nogit.XXXXXX")"
-run bash "$TOOL" enable "$ngdir"
+ngdir_store="$KEEL_IMPACT_STORE/$(store_id_for "$ngdir")"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$ngdir"
 check_status "enable on a not-yet-git dir still succeeds" 0 "$STATUS"
-check_dir "not-yet-git enable creates the marker in the dir as-is" "$ngdir/.keel"
+check_dir "not-yet-git enable creates the store entry keyed by the dir as-is" "$ngdir_store"
+
+# --- add/rollup refuse on a never-enabled repo (dir #251 §3 — the OLD silent docs/keel-impact.md
+# fallback is gone; a hard, named refusal replaces it) -----------------------------------------------
+nrepo="$(new_repo)"
+run_in "$nrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --fire "e" --gap none
+check_status "add on a never-enabled repo refuses" 2 "$STATUS"
+check_contains "add's refusal names the repo and the fix" "$OUT" "run keel-impact.sh enable"
+run_in "$nrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "rollup on a never-enabled repo refuses" 2 "$STATUS"
+# the OLD silent fallback (a not-enabled repo's add/rollup reading/writing Keel's own
+# docs/keel-impact.md) must be structurally gone, not just untriggered by this one fixture
+if grep -qE 'REPO_ROOT/docs/keel-impact' "$TOOL"; then
+  fail "no resolver falls back to REPO_ROOT/docs/keel-impact*" "found a REPO_ROOT/docs/keel-impact reference in $TOOL"
+else
+  pass "no resolver falls back to REPO_ROOT/docs/keel-impact*"
+fi
+
+# a PARTIAL env override (only $KEEL_IMPACT_LEDGER, not $KEEL_IMPACT_EVIDENCE) on a genuinely
+# never-enabled repo must fail CLEANLY, BEFORE anything is written — not crash on a bare `>> ""`
+# redirect mid-write, and not half-complete (a scored ledger row with no evidence block, breaking
+# evidence.md's own stated invariant). Found live by an operator-run max-depth review across two
+# delta rounds: round 1 closed the crash (a refusal inside ensure_evidence, exit 1) but that still ran
+# AFTER the ledger row was already appended; round 2 moved the check to the top of cmd_add, before any
+# write, so it now shares _impact_require_enabled's own exit code (2).
+perepo="$(new_repo)"
+partial_ledger="$SANDBOX/partial-ledger.md"
+run_in "$perepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LEDGER="$partial_ledger" \
+  bash "$TOOL" add --fire "e" --gap none
+check_status "add with only \$KEEL_IMPACT_LEDGER set on a not-enabled repo fails cleanly" 2 "$STATUS"
+check_contains "the failure names the tool, not a bare shell redirect error" "$OUT" "keel-impact:"
+check_nofile "the ledger row is NOT half-written — nothing happens before the refusal" "$partial_ledger"
+check_absent "the failure is not bash's own bare redirect syntax error" "$OUT" "No such file or directory"
+
+# --- migrate: a legacy in-tree .keel/ marker gets swept into the store (explicit path, dir #251 §5) --
+lrepo="$(new_repo)"
+mkdir -p "$lrepo/.keel"
+{
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|"
+  printf '| 2026-01-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | e | none |\n'
+} > "$lrepo/.keel/ledger.md"
+printf '# Keel impact — per-event evidence\n\n## 2026-01-01 — score 100/100 (conf low)\n\n- guard: e\n' > "$lrepo/.keel/evidence.md"
+printf '2026-01-01T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$lrepo" > "$lrepo/.keel/impact-events.log"
+lrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$lrepo")"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$lrepo"
+check_status "migrate succeeds on a legacy in-tree marker" 0 "$STATUS"
+check_dir "migrate creates the store entry" "$lrepo_store"
+check_contains "migrate carries the ledger row into the store" "$(cat "$lrepo_store/ledger.md" 2>/dev/null)" "2026-01-01"
+check_contains "migrate carries the evidence block into the store" "$(cat "$lrepo_store/evidence.md" 2>/dev/null)" "guard: e"
+check_contains "migrate carries the event log into the store" "$(cat "$lrepo_store/impact-events.log" 2>/dev/null)" "secret-guard"
+check_nofile "migrate removes the untracked source ledger" "$lrepo/.keel/ledger.md"
+check_nodir "migrate rmdirs the now-empty legacy .keel/" "$lrepo/.keel"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$lrepo"
+check_status "migrate is idempotent — a second run finds nothing left" 0 "$STATUS"
+check_contains "the idempotent re-run says so" "$OUT" "nothing to move"
+
+# --dry-run: prints the plan, writes nothing (verify BEFORE running the real thing, per the spec)
+drepo="$(new_repo)"
+mkdir -p "$drepo/.keel"
+printf '2026-01-03T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$drepo" > "$drepo/.keel/impact-events.log"
+drepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$drepo")"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$drepo" --dry-run
+check_status "migrate --dry-run succeeds" 0 "$STATUS"
+check_contains "--dry-run names the plan" "$OUT" "would concatenate"
+check_nodir "--dry-run creates no store entry" "$drepo_store"
+check_file "--dry-run leaves the source untouched" "$drepo/.keel/impact-events.log"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$drepo" --dry-run
+check_status "a second --dry-run is equally a no-op" 0 "$STATUS"
+check_nodir "still no store entry after a second --dry-run" "$drepo_store"
+
+# --dry-run run FROM INSIDE the project (default dir=".", the documented usage) must ALSO write
+# nothing (found live by an operator-run max-depth review): _impact_auto_migrate used to run
+# unconditionally at top-level BEFORE dispatch, keyed off the cwd rather than migrate's own `[dir]`
+# argument — so `cd project && keel-impact.sh migrate --dry-run` silently did the REAL migration
+# first, then cmd_migrate's own dry-run logic ran against an already-emptied .keel/ and reported
+# "nothing to move", exactly backwards from the documented contract.
+cdrepo="$(new_repo)"
+mkdir -p "$cdrepo/.keel"
+printf '2026-05-01T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$cdrepo" > "$cdrepo/.keel/impact-events.log"
+cdrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$cdrepo")"
+run_in "$cdrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate --dry-run
+check_status "migrate --dry-run from inside the project succeeds" 0 "$STATUS"
+check_nodir "in-cwd --dry-run creates no store entry" "$cdrepo_store"
+check_file "in-cwd --dry-run leaves the source untouched" "$cdrepo/.keel/impact-events.log"
+
+# worktree sweep: migrate collects from the MAIN checkout AND every linked worktree (this is what also
+# resolves KB.82's shape — rows stranded in a worktree's own .keel/, not just the main checkout's)
+mrepo="$(new_repo)"
+mkdir -p "$mrepo/.keel"
+printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$mrepo/.keel/ledger.md"
+printf '| 2026-02-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | main-row | none |\n' >> "$mrepo/.keel/ledger.md"
+git -C "$mrepo" add -A -- ':!.keel'; git -C "$mrepo" commit -qm seed
+mwt2="$SANDBOX/mrepo-migrate-wt"
+git -C "$mrepo" worktree add -q -b wt-migrate "$mwt2" >/dev/null 2>&1
+mkdir -p "$mwt2/.keel"
+printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$mwt2/.keel/ledger.md"
+printf '| 2026-02-02 | 50 | low | 0 | 0 | 0 | 0 | 1 | 0 | 0 | wt-row | none |\n' >> "$mwt2/.keel/ledger.md"
+mrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$mrepo")"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$mrepo"
+check_status "migrate with a linked worktree succeeds" 0 "$STATUS"
+check_contains "migrate carries the MAIN checkout's row" "$(cat "$mrepo_store/ledger.md" 2>/dev/null)" "main-row"
+check_contains "migrate ALSO carries the linked worktree's row" "$(cat "$mrepo_store/ledger.md" 2>/dev/null)" "wt-row"
+check_nofile "the worktree's own source is removed too" "$mwt2/.keel/ledger.md"
+check_nodir "the worktree's own now-empty .keel/ is rmdir'd too" "$mwt2/.keel"
+
+# --- a merge WRITE FAILURE must never delete the source (found live by an operator-run max-depth
+# review): _impact_merge_ledger's last statement used to be `rm -f` its own temp files, so a failed
+# `cat ... > target.keelmerge.$$` (the redirect denied, e.g. a read-only store dir) left the temp-file
+# cleanup as the function's own reported exit status — success — even though nothing was ever written.
+# Callers gate `rm -f "$source"` on that status, so the bug would delete a legacy ledger while its rows
+# were never durably saved anywhere. Root can write through any permission bits, so this only tests
+# under a non-root reader — same guard this project's other chmod-based tests already use. -----------
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  wrepo="$(new_repo)"
+  mkdir -p "$wrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$wrepo/.keel/ledger.md"
+  printf '| 2026-04-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | first-row | none |\n' >> "$wrepo/.keel/ledger.md"
+  wrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$wrepo")"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$wrepo"
+  check_status "setup: first migrate (creates the store, succeeds normally)" 0 "$STATUS"
+  check_file "setup: the store's ledger now exists" "$wrepo_store/ledger.md"
+  # A second legacy ledger appears (as if a fresh guardrail-tracked repo scored again before a second
+  # migrate); make the STORE dir read-only so the merge's own temp-file write inside it fails.
+  mkdir -p "$wrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$wrepo/.keel/ledger.md"
+  printf '| 2026-04-02 | 50 | low | 0 | 0 | 0 | 0 | 1 | 0 | 0 | second-row | none |\n' >> "$wrepo/.keel/ledger.md"
+  before_ledger="$(cat "$wrepo_store/ledger.md")"
+  chmod 555 "$wrepo_store"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$wrepo"
+  chmod 755 "$wrepo_store"
+  check_contains "a failed merge write leaves the legacy source UNDELETED" "$([ -f "$wrepo/.keel/ledger.md" ] && echo present)" "present"
+  check_contains "the store's ledger is unchanged by the failed write (no partial/lost content)" "$(cat "$wrepo_store/ledger.md")" "$before_ledger"
+
+  # An UNREADABLE (but untracked) source must never be merged-and-deleted either (found live by the
+  # same review): an awk/cat that can't open one of several input files often just skips it silently
+  # rather than failing, so "the merge reported success" would not mean "all the data survived" —
+  # migrate must leave an unreadable source alone entirely rather than risk that.
+  urepo="$(new_repo)"
+  mkdir -p "$urepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$urepo/.keel/ledger.md"
+  printf '| 2026-04-03 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | unreadable-row | none |\n' >> "$urepo/.keel/ledger.md"
+  chmod 000 "$urepo/.keel/ledger.md"
+  urepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$urepo")"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$urepo"
+  chmod 644 "$urepo/.keel/ledger.md"
+  check_status "migrate on an unreadable source still succeeds (leaves it be)" 0 "$STATUS"
+  check_file "the unreadable source is left in place, not deleted" "$urepo/.keel/ledger.md"
+  check_nofile "the unreadable source was never merged into the store" "$urepo_store/ledger.md"
+fi
+
+# a TRACKED legacy ledger is never touched automatically — printed as three options instead
+trepo="$(new_repo)"
+mkdir -p "$trepo/.keel"
+printf 'tracked ledger content\n' > "$trepo/.keel/ledger.md"
+git -C "$trepo" add .keel/ledger.md
+git -C "$trepo" commit -qm "tracked ledger"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$trepo"
+check_status "migrate on a tracked-only legacy repo still succeeds" 0 "$STATUS"
+check_contains "migrate prints the three options for a tracked source" "$OUT" "git rm --cached"
+check_file "the tracked source is left in place" "$trepo/.keel/ledger.md"
+# a tracked legacy repo keeps working via its in-tree file — impact_ledger_path's own legacy fallback
+run_in "$trepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "rollup on a tracked-legacy repo keeps working (never refuses)" 0 "$STATUS"
+
+# --- PARTIAL migration regression (found live by an operator-run max-depth review): ledger.md +
+# evidence.md TRACKED and left in place, impact-events.log UNTRACKED and migrated — the realistic
+# adopter shape (the tool's own old `enable` advice: gitignore only the log, ledger/evidence stay
+# trackable). Once the log moves, the store DIRECTORY exists — impact_ledger_path/evidence_path must
+# NOT flip to it just because the store dir exists; they must keep resolving to the still-tracked
+# legacy files specifically, or `add` silently starts a second, empty ledger in the store while the
+# real tracked history never gets another row. ------------------------------------------------------
+prepo="$(new_repo)"
+mkdir -p "$prepo/.keel"
+{
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|"
+  printf '| 2026-03-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | tracked-row | none |\n'
+} > "$prepo/.keel/ledger.md"
+printf '# Keel impact — per-event evidence\n\n## 2026-03-01 — score 100/100 (conf low)\n\n- guard: tracked-row\n' > "$prepo/.keel/evidence.md"
+printf '2026-03-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$prepo" > "$prepo/.keel/impact-events.log"
+git -C "$prepo" add .keel/ledger.md .keel/evidence.md
+git -C "$prepo" commit -qm "tracked ledger+evidence"
+prepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$prepo")"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$prepo"
+check_status "partial migrate (log only) succeeds" 0 "$STATUS"
+check_file "the untracked log moved into the store" "$prepo_store/impact-events.log"
+check_file "the tracked ledger stays at its legacy path" "$prepo/.keel/ledger.md"
+check_file "the tracked evidence stays at its legacy path" "$prepo/.keel/evidence.md"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash -c ". '$REPO_ROOT/tools/lib/impact-store.sh'; impact_ledger_path '$prepo'"
+check_contains "impact_ledger_path still resolves to the TRACKED legacy file, not the store" "$OUT" "$prepo/.keel/ledger.md"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash -c ". '$REPO_ROOT/tools/lib/impact-store.sh'; impact_evidence_path '$prepo'"
+check_contains "impact_evidence_path still resolves to the TRACKED legacy file, not the store" "$OUT" "$prepo/.keel/evidence.md"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash -c ". '$REPO_ROOT/tools/lib/impact-store.sh'; impact_log_path '$prepo'"
+check_contains "impact_log_path resolves to the STORE (it was migrated)" "$OUT" "$prepo_store/impact-events.log"
+run_in "$prepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --fire "second row" --gap none
+check_status "add after a partial migrate succeeds" 0 "$STATUS"
+check_contains "add's new row lands in the TRACKED legacy ledger" "$(cat "$prepo/.keel/ledger.md")" "second row"
+check_absent "the store's ledger was never created (nothing to write there)" "$(ls "$prepo_store" 2>/dev/null)" "ledger.md"
+
+# --- auto-migrate: an ALL-untracked legacy marker migrates silently on the next plain resolve --------
+arepo="$(new_repo)"
+mkdir -p "$arepo/.keel"
+printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$arepo" > "$arepo/.keel/impact-events.log"
+arepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$arepo")"
+run_in "$arepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "a plain rollup on an all-untracked legacy repo auto-migrates and succeeds" 0 "$STATUS"
+check_dir "auto-migrate created the store entry" "$arepo_store"
+check_contains "auto-migrate carried the legacy log into the store" "$(cat "$arepo_store/impact-events.log" 2>/dev/null)" "secret-guard"
+check_nofile "auto-migrate removed the legacy in-tree log" "$arepo/.keel/impact-events.log"
 
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1
@@ -606,6 +799,26 @@ check_contains "grand total sums the honest guard signal" "$OUT" "1 guard fire(s
 
 run bash "$TOOL" rollup --registry "$SANDBOX/nope.md"
 check_status "missing registry → exit 2" 2 "$STATUS"
+
+# dir #251 review finding: a project D4 deliberately leaves on its TRACKED legacy ledger (no store
+# copy at all — the exact shape of the two real adopter repos this ticket is about) must still show
+# up in the registry sweep, not silently read as "tracking off".
+pd="$(new_repo)"
+mkdir -p "$pd/.keel"
+{
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|"
+  printf '| 2026-06-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | tracked-row | none |\n'
+} > "$pd/.keel/ledger.md"
+git -C "$pd" add .keel/ledger.md
+git -C "$pd" commit -qm "tracked ledger"
+reg2="$SANDBOX/INSTANCE2.md"
+{
+  printf '## Projects\n\n| Name | Path | Tag |\n|------|------|-----|\n'
+  printf '| pd | `%s` | x |\n' "$pd"
+} > "$reg2"
+run bash "$TOOL" rollup --registry "$reg2"
+check_status "rollup --registry with a tracked-legacy project succeeds" 0 "$STATUS"
+check_contains "the tracked-legacy project's mean shows up, not 'tracking off'" "$OUT" "mean 100.0/100 over 1 scored"
 
 # --- dir #107: rollup and _ledger_stats must share ONE ledger-column parser, not re-derive it ------
 # The file's own header comment (_ledger_table_header + _ledger_parse) says the column indices must stay in

@@ -32,6 +32,10 @@ git config --global commit.gpgsign false
 export KEEL_IMPACT_LOG="$SANDBOX/harness-impact.log"
 export KEEL_IMPACT_LEDGER="$SANDBOX/harness-ledger.md"
 export KEEL_IMPACT_EVIDENCE="$SANDBOX/harness-evidence.md"
+# dir #251: the impact-score triple's external store root, redirected the same way — a test of the
+# store-based path (enable/migrate/rollup --registry) unsets the three explicit overrides above and
+# relies on this instead, so it must never resolve into the real $HOME/.claude/.keel/impact/.
+export KEEL_IMPACT_STORE="$SANDBOX/harness-impact-store"
 
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
 # both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS
@@ -108,6 +112,7 @@ check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3
 check_file()     { if [ -f "$2" ]; then pass "$1"; else fail "$1" "missing file: $2"; fi; }
 check_dir()      { if [ -d "$2" ]; then pass "$1"; else fail "$1" "missing dir: $2"; fi; }
 check_nofile()   { if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; else pass "$1"; fi; }
+check_nodir()    { if [ -d "$2" ]; then fail "$1" "dir should not exist: $2"; else pass "$1"; fi; }
 check_link()     { if [ -L "$2" ]; then pass "$1"; else fail "$1" "not a symlink: $2"; fi; }
 check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2"; else pass "$1"; fi; }
 
