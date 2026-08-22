@@ -40,6 +40,14 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   present in commits but absent from `[Unreleased]` — per-ticket, not per-file, so a PR that touches
   CHANGELOG.md for a *different* ticket still trips it. Closes the class the v0.7.0 → v0.7.1 delta
   audit found five times, three of them undetected until the audit itself (dir #237).
+- `tests/test_ci_alpine_safe_directory.sh` pins `.github/workflows/ci.yml`'s alpine leg to a
+  `--system` (not `--global`) `safe.directory` write ordered before `bash tests/run.sh` (dir #246).
+  Nothing previously covered that one line — it's YAML, so shellcheck never reaches it, and neither
+  prose-drift nor doctor.sh's shellcheck mirror reads workflow files — so reverting `--system` to
+  `--global`, or reordering the write after the test run, reds nothing locally; only the alpine-busybox
+  CI leg itself would go red, after the fact. Verified live: the new test goes red against a
+  `--global`-reverted copy of the real file and green again once restored, plus three synthetic-fixture
+  mutation cases (revert, reorder, missing write) to prove the guard itself can fail.
 
 ## [0.7.1] — 2026-08-21
 
