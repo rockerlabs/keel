@@ -1164,10 +1164,15 @@ check_status "a shallow clone skips the reconciliation rather than false-GAPing 
 check_absent "no reconciliation GAP on a shallow clone" "$OUT" "CHANGELOG.md section"
 
 # --- 9. commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237) -----------------------
+# A cut-and-tagged v1.0.0 section, kept in every fixture below, so check 6's own tag-reconciliation
+# GAP stays clean and only THIS check's finding shows through — isolating the assertion.
+ct_v1_section='## [1.0.0] — 2026-01-01
+- first release'
+
 # A synthetic tools-only diff carrying a `dir #N` in its commit message, with the [Unreleased]
 # section silent about that ticket, must fire — the ticket's own acceptance bar. WARN, never a GAP.
 d="$(mk_clean_repo)"
-printf '# Changelog\n\n## [Unreleased]\n- init\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
 { printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
 ( cd "$d" && git add -A && git commit -qm "dir #900 tweak the widget tool" )
@@ -1178,7 +1183,7 @@ check_contains "names the convention's remedy" "$OUT" "absent from CHANGELOG.md'
 
 # the same ticket IS referenced in [Unreleased] -> silent.
 d="$(mk_clean_repo)"
-printf '# Changelog\n\n## [Unreleased]\n- dir #900: tweak the widget tool\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- dir #900: tweak the widget tool\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
 { printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
 ( cd "$d" && git add -A && git commit -qm "dir #900 tweak the widget tool" )
@@ -1190,11 +1195,11 @@ check_status "still exit 0" 0 "$STATUS"
 # CHANGELOG.md commit landing after the miss must not clear it (check 4's timestamp signal would
 # have gone quiet here; this check must not).
 d="$(mk_clean_repo)"
-printf '# Changelog\n\n## [Unreleased]\n- init\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
 { printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
 ( cd "$d" && git add -A && git commit -qm "dir #244 change commands/polish.md-equivalent content" )
-printf '# Changelog\n\n## [Unreleased]\n- dir #901: unrelated bookkeeping\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- dir #901: unrelated bookkeeping\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "dir #901 unrelated CHANGELOG bookkeeping" )
 run "$sd" "$d" --quiet
 check_contains "a later unrelated CHANGELOG.md commit doesn't clear an earlier real miss" "$OUT" "dir #244"
@@ -1202,9 +1207,9 @@ check_contains "a later unrelated CHANGELOG.md commit doesn't clear an earlier r
 # PR #249's miss shape: a PR that DOES touch CHANGELOG.md, but for a DIFFERENT ticket than its own,
 # still trips it — per-TICKET, not per-file.
 d="$(mk_clean_repo)"
-printf '# Changelog\n\n## [Unreleased]\n- init\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
-printf '# Changelog\n\n## [Unreleased]\n- dir #245: some passenger ticket\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- dir #245: some passenger ticket\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "dir #249 closes its own ticket but only writes dir #245's entry" )
 run "$sd" "$d" --quiet
 check_contains "a PR touching CHANGELOG.md for a different ticket still trips it" "$OUT" "dir #249"
@@ -1224,7 +1229,7 @@ check_absent "the released ticket itself isn't re-flagged" "$OUT" "dir #700"
 # a commit-message dir #N that is only test/comment-shaped work stays a WARN, not a GAP — exit code
 # must stay 0 even with a miss reported (the ticket's own advisory-only acceptance bar).
 d="$(mk_clean_repo)"
-printf '# Changelog\n\n## [Unreleased]\n- init\n' > "$d/CHANGELOG.md"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
 { printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
 ( cd "$d" && git add -A && git commit -qm "dir #902 test-only change, no entry needed" )

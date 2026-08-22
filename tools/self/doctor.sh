@@ -1008,7 +1008,7 @@ fi
 # "every user-visible change gets an [Unreleased] entry" convention is prose-only and gets dropped
 # under load. Check 4 above (CHANGELOG staleness) is the nearest existing signal, but it is
 # TIMESTAMP-shaped — it only compares the newest CHANGELOG.md commit against the newest
-# commands/tools/install.sh commit — so a miss with a LATER, unrelated CHANGELOG.md commit landing
+# commands/, tools/, or install.sh commit — so a miss with a LATER, unrelated CHANGELOG.md commit landing
 # after it is structurally invisible to it (PR #244's own miss shape: two CHANGELOG.md commits landed
 # after it and check 4 stayed clean). This check instead ENUMERATES: every `dir #N` referenced in a
 # commit message since the previous release tag, diffed against every `dir #N` referenced inside
