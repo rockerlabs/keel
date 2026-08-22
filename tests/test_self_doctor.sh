@@ -1226,6 +1226,23 @@ run "$sd" "$d" --quiet
 check_contains "an already-released ticket's citation doesn't vouch for a different open one" "$OUT" "dir #701"
 check_absent "the released ticket itself isn't re-flagged" "$OUT" "dir #700"
 
+# the SAME ticket, cited only in an already-tagged section, must NOT vouch for a fresh reference to
+# ITSELF in a later, un-entered commit — the exact case the heading-version parse bug (found by an
+# operator-run /code-review medium pass) let slip through: `gsub(/^## \[|\]$/, "", ver)` only
+# stripped the leading bracket (real headings carry a trailing " — DATE", so `\]$` never matched),
+# leaving `grabbing` stuck on past every already-tagged section down to EOF — so an already-released
+# ticket's own citation leaked into "unreleased" and silently vouched for its own re-citation. Every
+# fixture above this one only ever referenced a ticket ONCE in the whole file, so the leak never
+# changed an assertion's outcome; this one is the discriminating case.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- dir #700: shipped already\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #700 a follow-up change, no fresh [Unreleased] entry" )
+run "$sd" "$d" --quiet
+check_contains "a re-cited already-released ticket is still flagged, not vouched for by its own old entry" "$OUT" "dir #700"
+
 # a commit-message dir #N that is only test/comment-shaped work stays a WARN, not a GAP — exit code
 # must stay 0 even with a miss reported (the ticket's own advisory-only acceptance bar).
 d="$(mk_clean_repo)"
@@ -1235,6 +1252,23 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/C
 ( cd "$d" && git add -A && git commit -qm "dir #902 test-only change, no entry needed" )
 run "$sd" "$d" --quiet
 check_status "a missing ticket stays advisory (WARN), never a hard GAP/deny -> exit 0" 0 "$STATUS"
+
+# A release cut BEFORE the tag is placed (the operator's own action, per the git rails — same window
+# check 6's "release in preparation" allowance above covers): /wrap moves every ticket out of
+# [Unreleased] into a fresh, still-untagged `## [x.y.z]` section. Bounding this check to [Unreleased]
+# alone would false-positive on every ticket in the wave on the very PR that files them correctly
+# (found live by a cross-model second-opinion review, dir #237) — the pending section must count too.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #950 change entering the pending release" )
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-02-01\n- dir #950: change entering the pending release\n\n%s\n' \
+  "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 (not yet tagged)" )
+run "$sd" "$d" --quiet
+check_absent "a ticket filed under a pending, not-yet-tagged section is not flagged" "$OUT" "dir #950"
+check_status "still exit 0" 0 "$STATUS"
 
 # no release tag at all (first-ever release): widens to the whole history rather than skipping.
 d="$(new_repo)"
