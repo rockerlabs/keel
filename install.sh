@@ -71,6 +71,7 @@ EOF
 HOME_DIR="${KEEL_HOME:-}"          # --home overrides; the $HOME default is resolved AFTER parsing
 DO_HOOKS=1
 LINK=0
+SOFT=0
 NOGIT=0
 WITHGIT=0
 CODEX=0
@@ -88,6 +89,7 @@ while [ "$#" -gt 0 ]; do
       HOME_DIR="${1:?--home needs a DIR}" ;;
     --no-hooks) DO_HOOKS=0 ;;
     --link) LINK=1 ;;
+    --soft) SOFT=1 ;;
     --no-git) NOGIT=1 ;;
     --with-git) WITHGIT=1 ;;
     --codex) CODEX=1 ;;
@@ -427,33 +429,40 @@ if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/$CONTEXT_FILE" ]; then
   fi
 fi
 
-if [ "$LINK" = 1 ]; then
-  # Linked mode: everything Keel-owned lives under ONE consumption point ($HOME_DIR/keel/) as
-  # symlinks into this checkout — enumerable (traceable), refreshed by `git pull`, removable by
-  # deleting the dir + the one import line. User-owned files stay real files, never symlinks into
-  # a public checkout (INSTANCE.md carries personal data).
-  link_dir="$HOME_DIR/keel"
-  # Self-link guard: if the consumption dir IS this checkout (e.g. --home "$HOME" while the checkout
-  # sits at $HOME/keel, bootstrap's default), sync_product would see src -ef dest and "upgrade" the
-  # checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves — corrupting every
-  # file the links resolve to. -ef (not a string compare): different spellings of the same dir still
-  # collide. Refuse rather than no-op — the invocation is nonsensical (home is ~/.claude, not the checkout).
-  if [ "$link_dir" -ef "$root" ] 2>/dev/null; then
-    echo "install: --link consumption dir ($link_dir) is the Keel checkout itself — refusing (it would" >&2
-    echo "         replace the checkout's own core files with self-referential symlinks). Point --home at" >&2
-    echo "         your Claude home (e.g. ~/.claude), not the checkout." >&2
-    exit 2
+if [ "$LINK" = 1 ] || [ "$SOFT" = 1 ]; then
+  if [ "$SOFT" = 1 ]; then
+    engine_dir="${KEEL_ENGINE:-$HOME/.keel/engine}"
+    if [ "$root" != "$engine_dir" ]; then
+      echo "install: --soft requires the engine to be at $engine_dir. Copying..."
+      mkdir -p "$HOME/.keel"
+      cp -a "$root" "$engine_dir"
+      if [ -n "${home_flag:-}" ]; then
+        eval exec "\"$engine_dir/install.sh\"" --soft "${home_flag# }"
+      else
+        exec "$engine_dir/install.sh" --soft
+      fi
+    fi
+    link_dir="$engine_dir"
+    import_line="@~/.keel/engine/CORE.md"
+  else
+    link_dir="$HOME_DIR/keel"
+    if [ "$link_dir" -ef "$root" ] 2>/dev/null; then
+      echo "install: --link consumption dir ($link_dir) is the Keel checkout itself — refusing (it would" >&2
+      echo "         replace the checkout's own core files with self-referential symlinks). Point --home at" >&2
+      echo "         your Claude home (e.g. ~/.claude), not the checkout." >&2
+      exit 2
+    fi
+    import_line="@$link_dir/CORE.md"
+    if [ -n "${HOME:-}" ]; then
+      case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
+    fi
+    mkdir -p "$link_dir"
   fi
-  import_line="@$link_dir/CORE.md"
-  # Prefer the ~-form when the home sits under $HOME — shorter, and survives a username-preserving
-  # home move. (${HOME:-} guard: --home/KEEL_HOME callers may legitimately run without $HOME.)
-  if [ -n "${HOME:-}" ]; then
-    case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
-  fi
-  mkdir -p "$link_dir"
 
   core_dest="$link_dir/CORE.md"
-  if [ "$NOGIT" = 1 ]; then
+  if [ "$SOFT" = 1 ]; then
+    echo "  =    Engine already at $engine_dir"
+  elif [ "$NOGIT" = 1 ]; then
     # A generated trimmed copy instead of the symlink. keel/ is Keel-owned and the KEEL-NOGIT token
     # marks the file as generated — regenerate without asking: a re-run after `git pull` is exactly
     # how a stale trim heals (doctor --install carries the matching staleness check).
@@ -479,13 +488,15 @@ if [ "$LINK" = 1 ]; then
   else
     sync_product "$root/CORE.md"     "$core_dest"
   fi
-  sync_product "$root/FRAMEWORK.md"  "$link_dir/FRAMEWORK.md"
-  sync_product "$root/PRINCIPLES.md" "$link_dir/PRINCIPLES.md"
+  if [ "$SOFT" = 0 ]; then
+    sync_product "$root/FRAMEWORK.md"  "$link_dir/FRAMEWORK.md"
+    sync_product "$root/PRINCIPLES.md" "$link_dir/PRINCIPLES.md"
+  fi
 
   # A short README so the dir explains itself later (written once; yours to edit after).
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
   # moves — the symlinks themselves are the live pointer (readlink shows where).
-  if [ ! -f "$link_dir/README.md" ]; then
+  if [ "$SOFT" = 0 ] && [ ! -f "$link_dir/README.md" ]; then
     atomic_write "$link_dir/README.md" <<EOF
 # keel/ — the Keel consumption point (linked install)
 
@@ -509,7 +520,7 @@ EOF
   # install upgrading straight into this version) must still get it listed, not permanently miss it
   # because the write-once guard skipped the record too (found by an independent /code-review high
   # pass). By this point the file exists either way.
-  record_placed "$link_dir/README.md"
+  [ "$SOFT" = 0 ] && record_placed "$link_dir/README.md"
 
   # The global CLAUDE.md — exactly ONE @import line delivers the rails, whatever was there before:
   #   absent            → generate a thin wrapper: the template minus the embedded core, import line instead
@@ -522,11 +533,19 @@ EOF
   if [ ! -f "$gclaude" ]; then
     # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
     # reword in templates/CLAUDE.md fails loudly instead of no-oping here.
-    strip_core_block "$root/templates/CLAUDE.md" \
-      | strip_template_prose \
-      | sed -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
-            -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
-      | atomic_write "$gclaude"
+    if [ "$SOFT" = 1 ]; then
+      strip_core_block "$root/templates/CLAUDE.md" \
+        | strip_template_prose \
+        | sed -e 's|\*\*`FRAMEWORK\.md`\*\*|**`'"$engine_dir"'/FRAMEWORK.md`**|' \
+              -e 's|\*\*`PRINCIPLES\.md`\*\*|**`'"$engine_dir"'/PRINCIPLES.md`**|' \
+        | atomic_write "$gclaude"
+    else
+      strip_core_block "$root/templates/CLAUDE.md" \
+        | strip_template_prose \
+        | sed -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
+              -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
+        | atomic_write "$gclaude"
+    fi
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
     if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
@@ -568,8 +587,13 @@ EOF
   # delete; you re-point the map, then remove the copies).
   for stale in FRAMEWORK.md PRINCIPLES.md; do
     if [ -e "$HOME_DIR/$stale" ] && [ ! -L "$HOME_DIR/$stale" ]; then
-      echo "  !    $stale root copy remains from a copy-mode install — linked mode reads keel/$stale."
-      echo "       Point your CLAUDE.md map at keel/$stale, then remove the copy:  rm \"$HOME_DIR/$stale\""
+      if [ "$SOFT" = 1 ]; then
+        echo "  !    $stale root copy remains from a copy-mode install — soft install reads $engine_dir/$stale."
+        echo "       Point your CLAUDE.md map at $engine_dir/$stale, then remove the copy:  rm \"$HOME_DIR/$stale\""
+      else
+        echo "  !    $stale root copy remains from a copy-mode install — linked mode reads keel/$stale."
+        echo "       Point your CLAUDE.md map at keel/$stale, then remove the copy:  rm \"$HOME_DIR/$stale\""
+      fi
     fi
   done
 else
@@ -729,7 +753,9 @@ if [ "$LINK" = 1 ]; then
     echo "  WARN CLAUDE.md does not import the linked core — the always-on rails will NOT load."
     echo "       Add the line:  $import_line"
   fi
-  if [ "$NOGIT" = 1 ]; then
+  if [ "$SOFT" = 1 ]; then
+    echo "  =    Engine already at $engine_dir"
+  elif [ "$NOGIT" = 1 ]; then
     echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
     echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
   fi

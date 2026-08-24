@@ -13,6 +13,7 @@
 #   keel audit                 -> tools/public-audit.sh  leak-surface scan before going public
 #   keel init [DIR]            -> tools/init-project.sh  scaffold a project's knowledge base
 #   keel check <cmd...>        -> tools/keel-check.sh    run a check through the stop-mode floor
+#   keel unify                 -> tools/kb-unify.sh      migrate harness files to a single source of truth
 #   keel uninstall             -> uninstall.sh           reverse install.sh (backs up what it removes)
 #   keel version               -> the checkout's version (git describe)
 #   keel help | -h | --help    -> this usage
@@ -103,6 +104,7 @@ Commands:
   audit                scan the leak surface before pushing public
   init [DIR]           scaffold a project's Keel knowledge base
   check <cmd...>       run a verification command through the stop-mode floor
+  unify                migrate harness files to a single source of truth (~/.keel/kb/)
   uninstall            reverse install.sh (backs up anything it removes)
   version              print the checkout's version
   help                 show this help
@@ -130,6 +132,7 @@ case "$cmd" in
   audit)     exec "$CHECKOUT/tools/public-audit.sh" "$@" ;;
   init)      exec "$CHECKOUT/tools/init-project.sh" "$@" ;;
   check)     exec "$CHECKOUT/tools/keel-check.sh" "$@" ;;
+  unify)     exec "$CHECKOUT/tools/kb-unify.sh" "$@" ;;
   uninstall) exec "$CHECKOUT/uninstall.sh" "$@" ;;
   version)
     v="$(git -C "$CHECKOUT" describe --tags --always --dirty 2>/dev/null || true)"

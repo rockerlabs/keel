@@ -227,7 +227,7 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 
 > **One command for the rest.** Install drops a `keel` CLI into `~/.claude/bin` (the summary prints a
 > one-line PATH hint if that dir isn't on your PATH) — `keel help` lists the verbs: `keel install`,
-> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`,
+> `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`, `keel unify`,
 > `keel uninstall` (reverses the install, backing up anything it removes), `keel version`, and
 > `keel help`. It's a thin front-end over the same `tools/*.sh`, so it works from any directory, not
 > just the clone. The CLI needs a checkout it can
