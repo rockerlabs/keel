@@ -75,6 +75,7 @@ fi
 # `KEEL_HOME=X uninstall.sh --codex`. The mode/home mismatch that precedence makes possible is caught
 # below rather than papered over here — see the refusal.
 : "${HOME_DIR:=${HOME:?uninstall: set HOME, or pass --home DIR}/$leaf}"
+if [ -n "${HOME:-}" ]; then keel_bin="$HOME/.keel/bin"; else keel_bin="$(dirname "$HOME_DIR")/.keel/bin"; fi
 
 # Install-manifest paths (dir #125) — one recorded state this script reads instead of re-deriving
 # ownership heuristically at every site. manifest_mode/other_manifest_mode mirror install.sh's own
@@ -329,7 +330,7 @@ dry_run_heuristic_listing() {
   if [ -d "$HOME_DIR/keel" ] || [ -L "$HOME_DIR/keel" ]; then
     echo "  would remove  keel"
   fi
-  if [ -L "$HOME/.keel/bin/keel" ]; then
+  if [ -L "$keel_bin/keel" ]; then
     echo "  would remove  bin/keel"
   fi
   if [ -d "$root/commands" ]; then
@@ -598,7 +599,11 @@ take() {
   [ -e "$p" ] || [ -L "$p" ] || return 0
   if [ "$DRY_RUN" = 1 ]; then echo "  would remove  ${p#"$HOME_DIR"/}"; removed=$((removed + 1)); return 0; fi
   _ensure_backup
-  case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
+  case "$p" in
+    "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;;
+    "$HOME"/*) rel="${p#"$HOME"/}" ;;
+    *) rel="$(basename "$p")" ;;
+  esac
   dest="$backup/$rel"
   mkdir -p "$(dirname "$dest")"
   mv "$p" "$dest"
@@ -624,7 +629,7 @@ take() {
 if [ "$this_usable" = 1 ]; then
   while IFS=$'\t' read -r akind rel extra; do
     [ -n "$rel" ] || continue
-    apath="$HOME_DIR/$rel"
+    case "$rel" in /*) apath="$rel" ;; *) apath="$HOME_DIR/$rel" ;; esac
     owned=0
     if [ "$akind" = "symlink" ]; then
       if [ -L "$apath" ]; then

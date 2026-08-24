@@ -88,8 +88,9 @@ check_contains "correctly reports no install at the Claude default, not a false 
 dlhome="$SANDBOX/codex-dangling-link"
 run "$install" --codex --home "$dlhome" --no-hooks
 check_status "codex install for the dangling-link fixture -> exit 0" 0 "$STATUS"
-rm -f "$dlhome/bin/keel"
-ln -s "$SANDBOX/nonexistent-checkout/keel" "$dlhome/bin/keel"
+mkdir -p "$HOME/.keel/bin"
+rm -f "$HOME/.keel/bin/keel"
+ln -s "$SANDBOX/nonexistent-checkout/keel" "$HOME/.keel/bin/keel"
 run "$doctor" --install --codex "$dlhome"
 check_status "doctor --install --codex over a dangling bin/keel -> exit 1 (GAP)" 1 "$STATUS"
 check_contains "names the dangling symlink" "$OUT" "G-LINK-DANGLING"

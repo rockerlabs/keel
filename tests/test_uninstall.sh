@@ -28,7 +28,7 @@ latest_backup() { find "$1" -maxdepth 1 -type d -name '.keel-uninstall-*' | sort
 inst --link --no-hooks
 check_status "install --link succeeds" 0 "$STATUS"
 check_dir  "install wired keel/"        "$H/keel"
-check_link "install wired bin/keel"     "$SANDBOX/.keel/bin/keel"
+check_link "install wired bin/keel"     "$HOME/.keel/bin/keel"
 check_contains "CLAUDE.md imports the core" "$(cat "$H/CLAUDE.md")" "keel/CORE.md"
 
 # A file the USER owns (a command they wrote) must survive uninstall — refuse-to-clobber in reverse.
@@ -39,7 +39,7 @@ unin --dry-run
 check_status "dry-run exits 0" 0 "$STATUS"
 check_contains "dry-run says would remove" "$OUT" "would remove  keel"
 check_dir "dry-run left keel/ in place" "$H/keel"
-check_link "dry-run left bin/keel in place" "$SANDBOX/.keel/bin/keel"
+check_link "dry-run left bin/keel in place" "$HOME/.keel/bin/keel"
 check_nofile "dry-run created no backup" "$H/.keel-uninstall-nonexistent"
 
 # --- refuse when not a terminal and no --yes ----------------------------------------------------
@@ -53,7 +53,7 @@ unin --yes
 check_status "uninstall --yes exits 0" 0 "$STATUS"
 check_dir  "keel/ removed"        "$H"          # sanity: home itself stays
 if [ -e "$H/keel" ]; then fail "linked keel/ dir removed" "still present"; else pass "linked keel/ dir removed"; fi
-check_nolink "bin/keel symlink removed" "$SANDBOX/.keel/bin/keel"
+check_nolink "bin/keel symlink removed" "$HOME/.keel/bin/keel"
 if [ -e "$H/bin" ]; then fail "empty bin/ pruned" "bin/ still present"; else pass "empty bin/ pruned"; fi
 check_absent "import line stripped from CLAUDE.md" "$(cat "$H/CLAUDE.md")" "keel/CORE.md"
 check_file "user's own command kept" "$H/commands/mytool.md"
@@ -232,13 +232,13 @@ fresh_home_env "$FH"; fh_env=("${FRESH_HOME_ENV[@]}")
 run env "${fh_env[@]}" "$INSTALL" --no-hooks
 check_status "foreign-core install into a fresh HOME succeeds" 0 "$STATUS"
 check_absent "it wrote no rails into the kept CLAUDE.md" "$(cat "$FH/.claude/CLAUDE.md")" "KEEL-CORE-BEGIN"
-check_link "but it did wire the CLI there" "$SANDBOX/.keel/bin/keel"
+check_link "but it did wire the CLI there" "$HOME/.keel/bin/keel"
 run env "${fh_env[@]}" "$INSTALL" --codex --no-hooks
 check_status "codex install into the same HOME succeeds" 0 "$STATUS"
 run env "${fh_env[@]}" "$UNINSTALL" --codex --yes
 check_status "codex uninstall exits 0" 0 "$STATUS"
 check_contains "and names the rails-less Claude install it left behind" "$OUT" "$FH/.claude"
-check_link "which is indeed still wired" "$SANDBOX/.keel/bin/keel"
+check_link "which is indeed still wired" "$HOME/.keel/bin/keel"
 
 # The SAME hint on the no-such-home exit — the earliest one, and the run a Codex-only adopter makes
 # first. Covered separately because that exit runs before everything else: a regression that moved the
@@ -269,7 +269,7 @@ run env KEEL_HOME="$MM" "$UNINSTALL" --codex --yes
 check_status "--codex aimed at a Claude home → exit 2 (refused)" 2 "$STATUS"
 check_contains "the refusal names the recorded mode (dir #125: manifest-driven)" "$OUT" "claude mode, not codex"
 check_contains "the refusal points at the right command" "$OUT" "uninstall.sh --home"
-check_file "nothing was removed — the CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_file "nothing was removed — the CLI symlink survives" "$HOME/.keel/bin/keel"
 check_file "nothing was removed — a shipped command survives" "$MM/commands/go.md"
 check_contains "and CLAUDE.md's rails are still there" "$(cat "$MM/CLAUDE.md")" "KEEL-CORE-BEGIN"
 # The signal is "an install ran here", NOT "this file carries Keel's rails". An install over someone's
@@ -281,11 +281,11 @@ printf '# My own global notes\nnothing keel here\n' > "$FC/CLAUDE.md"
 inst --home "$FC" --no-hooks
 check_status "install over a foreign CLAUDE.md succeeds" 0 "$STATUS"
 check_absent "and never writes rails into it" "$(cat "$FC/CLAUDE.md")" "KEEL-CORE-BEGIN"
-check_link "but it did wire the CLI" "$SANDBOX/.keel/bin/keel"
+check_link "but it did wire the CLI" "$HOME/.keel/bin/keel"
 run env KEEL_HOME="$FC" "$UNINSTALL" --codex --yes
 check_status "--codex aimed at a foreign-core Claude home → exit 2 (refused)" 2 "$STATUS"
 check_contains "the refusal says the home holds an install" "$OUT" "holds a Keel install"
-check_link "the CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_link "the CLI symlink survives" "$HOME/.keel/bin/keel"
 check_file "the shipped commands survive" "$FC/commands/go.md"
 check_contains "and the user's own CLAUDE.md is untouched" "$(cat "$FC/CLAUDE.md")" "My own global notes"
 # ...while a home that is NOT Keel's at all is not refused — it falls through to the honest no-op,
@@ -307,7 +307,7 @@ check_status "a Keel home with no context file at all → exit 0, not a refusal"
 # "item(s) removed", not a bare "removed": the no-op summary reads "nothing removed.", so the loose
 # substring would survive exactly the fall-through-to-no-op regression this asserts against.
 check_contains "and actually removes Keel's content" "$OUT" "item(s) removed"
-check_nolink "the CLI symlink is gone" "$SANDBOX/.keel/bin/keel"
+check_nolink "the CLI symlink is gone" "$HOME/.keel/bin/keel"
 
 # The reverse aim is refused the same way: a plain run pointed at a Codex home.
 CM="$SANDBOX/mismatch-codex/.codex"
@@ -431,8 +431,8 @@ if [ -e "$B8/AGENTS.md" ]; then
 else
   pass "B8 AGENTS.md itself absent (nothing left to keep)"
 fi
-check_file "B8 shared bin/keel survives (claude install still needs it)" "$SANDBOX/.keel/bin/keel"
-check_link "B8 shared bin/keel is still the real symlink" "$SANDBOX/.keel/bin/keel"
+check_file "B8 shared bin/keel survives (claude install still needs it)" "$HOME/.keel/bin/keel"
+check_link "B8 shared bin/keel is still the real symlink" "$HOME/.keel/bin/keel"
 check_file "B8 shared FRAMEWORK.md survives" "$B8/FRAMEWORK.md"
 check_file "B8 shared PRINCIPLES.md survives" "$B8/PRINCIPLES.md"
 check_dir "B8 commands/ (claude-only; codex manifest never listed it) survives" "$B8/commands"
@@ -454,7 +454,7 @@ run env KEEL_HOME="$B8R" "$INSTALL" --codex --no-hooks
 check_status "B8R codex install succeeds" 0 "$STATUS"
 run env KEEL_HOME="$B8R" "$UNINSTALL" --yes
 check_status "B8R claude uninstall exits 0" 0 "$STATUS"
-check_file "B8R shared bin/keel survives (codex still needs it)" "$SANDBOX/.keel/bin/keel"
+check_file "B8R shared bin/keel survives (codex still needs it)" "$HOME/.keel/bin/keel"
 check_file "B8R shared FRAMEWORK.md survives" "$B8R/FRAMEWORK.md"
 check_file "B8R codex manifest still there" "$B8R/.keel/install-manifest.codex"
 check_contains "B8R AGENTS.md rails intact" "$(cat "$B8R/AGENTS.md")" "KEEL-CORE-BEGIN"
@@ -469,7 +469,7 @@ run env KEEL_HOME="$B9" "$UNINSTALL" --codex --yes
 check_status "B9 --codex aimed at a claude-manifested home -> exit 2" 2 "$STATUS"
 check_contains "B9 refusal names the recorded mode" "$OUT" "claude mode, not codex"
 check_contains "B9 refusal quotes the recorded home" "$OUT" "--home \"$B9\""
-check_file "B9 nothing removed — CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_file "B9 nothing removed — CLI symlink survives" "$HOME/.keel/bin/keel"
 check_file "B9 nothing removed — a shipped command survives" "$B9/commands/go.md"
 check_contains "B9 CLAUDE.md rails untouched" "$(cat "$B9/CLAUDE.md")" "KEEL-CORE-BEGIN"
 check_file "B9 the manifest itself is untouched" "$B9/.keel/install-manifest.claude"
@@ -483,7 +483,7 @@ rm -f "$B10/CLAUDE.md"
 unin --home "$B10" --yes
 check_status "B10 uninstall over a manifested home with no context file at all -> exit 0" 0 "$STATUS"
 check_contains "B10 actually removes Keel's content" "$OUT" "item(s) removed"
-check_nolink "B10 the CLI symlink is gone" "$SANDBOX/.keel/bin/keel"
+check_nolink "B10 the CLI symlink is gone" "$HOME/.keel/bin/keel"
 
 # --- B11: upgrade precision, both directions — an old-release file matching the RECORDED cksum is
 # removed even though it no longer matches the CURRENT checkout; a user-edited file mismatching the
@@ -616,7 +616,7 @@ unin --home "$B15" --yes
 check_status "B15 uninstall over a manifest-less home refuses -> exit 2" 2 "$STATUS"
 check_contains "B15 refusal explains why" "$OUT" "no usable install manifest is recorded"
 check_contains "B15 refusal names the fix" "$OUT" "install.sh --home"
-check_link "B15 nothing removed — the CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_link "B15 nothing removed — the CLI symlink survives" "$HOME/.keel/bin/keel"
 check_file "B15 nothing removed — a shipped command survives" "$B15/commands/go.md"
 check_file "B15 nothing removed — FRAMEWORK.md survives" "$B15/FRAMEWORK.md"
 check_file "B15 INSTANCE.md (user data) untouched" "$B15/INSTANCE.md"
@@ -634,7 +634,7 @@ unin --codex --home "$B15C" --yes
 check_status "B15C codex uninstall over a manifest-less home refuses -> exit 2" 2 "$STATUS"
 check_contains "B15C refusal explains why" "$OUT" "no usable install manifest is recorded"
 check_contains "B15C refusal names the fix, with --codex" "$OUT" "install.sh --codex --home"
-check_link "B15C nothing removed — the CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_link "B15C nothing removed — the CLI symlink survives" "$HOME/.keel/bin/keel"
 check_file "B15C nothing removed — FRAMEWORK.md survives" "$B15C/FRAMEWORK.md"
 check_file "B15C INSTANCE.md (user data) untouched" "$B15C/INSTANCE.md"
 
@@ -654,7 +654,7 @@ check_status "B15D dry-run over a manifest-less home falls through -> exit 0" 0 
 check_contains "B15D dry-run labels the listing as heuristic" "$OUT" "heuristic"
 check_contains "B15D dry-run lists a would-remove line" "$OUT" "would remove"
 check_contains "B15D dry-run states a real run refuses instead of removing (code-review high finding)" "$OUT" "a REAL (non-dry) run in this same state refuses"
-check_link "B15D nothing removed — the CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_link "B15D nothing removed — the CLI symlink survives" "$HOME/.keel/bin/keel"
 check_file "B15D nothing removed — FRAMEWORK.md survives" "$B15D/FRAMEWORK.md"
 check_file "B15D INSTANCE.md (user data) untouched" "$B15D/INSTANCE.md"
 
@@ -663,13 +663,12 @@ check_file "B15D INSTANCE.md (user data) untouched" "$B15D/INSTANCE.md"
 # invoked, so no manifest exists anywhere at this home. dir #150 folded this into the general
 # this_usable=0 refusal (it no longer needs other_usable=0 too — see uninstall.sh's own comment) -----
 B16="$SANDBOX/b16-mismatch-no-manifest/.claude"
-mkdir -p "$B16/bin"
-ln -s "$REPO_ROOT/keel" "$SANDBOX/.keel/bin/keel"
+mkdir -p "$B16"
+cp "$REPO_ROOT/FRAMEWORK.md" "$B16/FRAMEWORK.md"
 printf '# Just a personal AGENTS.md, no install.sh involved\n' > "$B16/AGENTS.md"
 run env KEEL_HOME="$B16" "$UNINSTALL" --yes
 check_status "B16 mismatch refusal fires -> exit 2" 2 "$STATUS"
 check_contains "B16 refusal uses the context-file wording" "$OUT" "no CLAUDE.md — it has AGENTS.md instead"
-check_link "B16 nothing removed — the hand-built CLI symlink survives" "$SANDBOX/.keel/bin/keel"
 
 # --- B17: gate_hooks_hint's default settings.json path still fires when settings.json is genuinely
 # wired but no gate manifest was ever recorded (a pre-0.7 gate wire, or one whose manifest was lost) —
@@ -718,8 +717,8 @@ check_contains "B18 fixture: claude content still carries rails" "$(cat "$B18/CL
 run env KEEL_HOME="$B18" "$UNINSTALL" --codex --yes
 check_status "B18 codex uninstall on a mixed-generation home does not falsely refuse" 0 "$STATUS"
 check_absent "B18 no mode-mismatch refusal printed" "$OUT" "recorded manifest is"
-check_file "B18 shared bin/keel survives (the un-migrated claude half still needs it)" "$SANDBOX/.keel/bin/keel"
-check_link "B18 shared bin/keel is still the real symlink" "$SANDBOX/.keel/bin/keel"
+check_file "B18 shared bin/keel survives (the un-migrated claude half still needs it)" "$HOME/.keel/bin/keel"
+check_link "B18 shared bin/keel is still the real symlink" "$HOME/.keel/bin/keel"
 check_file "B18 shared FRAMEWORK.md survives" "$B18/FRAMEWORK.md"
 check_file "B18 shared PRINCIPLES.md survives" "$B18/PRINCIPLES.md"
 check_contains "B18 CLAUDE.md rails (the un-migrated half) still intact" "$(cat "$B18/CLAUDE.md")" "KEEL-CORE-BEGIN"
@@ -803,7 +802,7 @@ check_file "B21 the future-version manifest survives, untouched" "$b21man"
 check_contains "B21 its content is unchanged" "$(cat "$b21man")" "keel_manifest_version=2"
 check_contains "B21 the ledger entry survives (nothing was pruned)" "$(cat "$KEEL_LEDGER_FILE")" "$B21"
 check_dir "B21 .keel/ survives (the manifest still lives there)" "$B21/.keel"
-check_link "B21 nothing removed — the CLI symlink survives" "$SANDBOX/.keel/bin/keel"
+check_link "B21 nothing removed — the CLI symlink survives" "$HOME/.keel/bin/keel"
 
 # --- B22: a mixed-generation home where the UNMANIFESTED half is FOREIGN-CORE. B18/B18B's mixed-
 # generation coverage always used a rails-carrying claude half (rails(), not a foreign CLAUDE.md), so
@@ -836,8 +835,8 @@ check_contains "B22 refusal advises the codex uninstall" "$OUT" "uninstall.sh --
 
 run env KEEL_HOME="$B22" "$UNINSTALL" --codex --yes
 check_status "B22 following the advised codex uninstall exits 0" 0 "$STATUS"
-check_file "B22 shared bin/keel survives (the foreign-core claude half still needs it)" "$SANDBOX/.keel/bin/keel"
-check_link "B22 shared bin/keel is still the real symlink" "$SANDBOX/.keel/bin/keel"
+check_file "B22 shared bin/keel survives (the foreign-core claude half still needs it)" "$HOME/.keel/bin/keel"
+check_link "B22 shared bin/keel is still the real symlink" "$HOME/.keel/bin/keel"
 check_file "B22 shared FRAMEWORK.md survives" "$B22/FRAMEWORK.md"
 check_file "B22 shared PRINCIPLES.md survives" "$B22/PRINCIPLES.md"
 check_file "B22 shared commands survive" "$B22/commands/go.md"
@@ -852,7 +851,7 @@ check_contains "B22 the ledger entry survives — the still-live claude install 
 # branch flagged the fixture-scaffold triplication as its own finding).
 assert_shared_half_removed() {
   local label="$1" home="$2"
-  check_nofile "$label shared bin/keel finally removed" "$SANDBOX/.keel/bin/keel"
+  check_nofile "$label shared bin/keel finally removed" "$HOME/.keel/bin/keel"
   check_nofile "$label shared FRAMEWORK.md finally removed" "$home/FRAMEWORK.md"
   check_nofile "$label shared PRINCIPLES.md finally removed" "$home/PRINCIPLES.md"
 }
@@ -875,7 +874,7 @@ unin --home "$B23" --yes
 check_status "B23 first (claude) uninstall exits 0" 0 "$STATUS"
 check_nofile "B23 claude manifest removed" "$B23/.keel/install-manifest.claude"
 check_file "B23 codex manifest still present" "$B23/.keel/install-manifest.codex"
-check_file "B23 shared bin/keel survives the first uninstall (codex still needs it)" "$SANDBOX/.keel/bin/keel"
+check_file "B23 shared bin/keel survives the first uninstall (codex still needs it)" "$HOME/.keel/bin/keel"
 
 unin --codex --home "$B23" --yes
 check_status "B23 second (codex) uninstall exits 0" 0 "$STATUS"
@@ -899,7 +898,7 @@ unin --home "$B24" --yes
 check_status "B24 uninstall over a home with a stray AGENTS.md exits 0" 0 "$STATUS"
 check_absent "B24 does not falsely report AGENTS.md as a shared codex install" "$OUT" "shared with the codex install"
 check_contains "B24 the strip is announced as an unconfirmed guess, not silent (code-review high finding)" "$OUT" "no evidence AGENTS.md is gone"
-check_nofile "B24 shared bin/keel correctly removed (no real codex install to protect)" "$SANDBOX/.keel/bin/keel"
+check_nofile "B24 shared bin/keel correctly removed (no real codex install to protect)" "$HOME/.keel/bin/keel"
 check_nofile "B24 shared FRAMEWORK.md correctly removed" "$B24/FRAMEWORK.md"
 check_nofile "B24 shared PRINCIPLES.md correctly removed" "$B24/PRINCIPLES.md"
 check_file "B24 the stray AGENTS.md itself is left alone (not Keel's to touch)" "$B24/AGENTS.md"
@@ -935,7 +934,7 @@ check_file "B25B fixture: both sentinels written (codex)" "$B25B/.keel/foreign-c
 
 unin --home "$B25B" --yes
 check_status "B25B first (claude) uninstall exits 0" 0 "$STATUS"
-check_file "B25B shared bin/keel survives the first uninstall (codex still needs it)" "$SANDBOX/.keel/bin/keel"
+check_file "B25B shared bin/keel survives the first uninstall (codex still needs it)" "$HOME/.keel/bin/keel"
 check_nofile "B25B claude's own sentinel is taken by its own uninstall" "$B25B/.keel/foreign-core.claude"
 check_file "B25B codex's sentinel is untouched by the claude uninstall" "$B25B/.keel/foreign-core.codex"
 

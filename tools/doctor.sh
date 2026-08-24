@@ -526,6 +526,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   else                            idefault_leaf=".claude"; iother_leaf=".codex"; icontext="CLAUDE.md"; imode_flag="";        iother_context="AGENTS.md"
   fi
   ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/$idefault_leaf}}"
+  if [ -n "${HOME:-}" ]; then keel_bin="$HOME/.keel/bin"; else keel_bin="$(dirname "$ihome")/.keel/bin"; fi
   # ihome_flag — the ` --home "DIR"` every command this mode ADVISES must carry when $ihome is not
   # where a bare re-run would land. Same rule, and the same reason, as install.sh's home_flag: an
   # instruction that re-resolves the home from scratch cannot fix the install this audit is about, so
@@ -572,7 +573,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # FRAMEWORK/PRINCIPLES layout. ([ -L ] skips the literal glob when a dir is empty.) A link that
   # RESOLVES but into a different checkout than this one looks healthy while running stale content —
   # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
-  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$keel_bin"/*; do
     [ -L "$l" ] || continue
     # this_relink — the re-wiring mode that can actually restore THIS SPECIFIC slot (found by a second
     # independent code-review pass): bin/keel is the ONLY slot wired in BOTH modes, so $irelink_mode's
@@ -581,7 +582,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # creates any of them — so one dangling under a --codex audit is a leftover from an UNRELATED
     # Claude-mode install sharing this home (dir #124's shape), not something a --codex re-run could
     # ever fix; it keeps advising `--link` unconditionally, same as before --codex existed.
-    if [ "$l" = "$ihome/bin/keel" ]; then this_relink="$irelink_mode"
+    if [ "$l" = "$keel_bin/keel" ]; then this_relink="$irelink_mode"
     else                                    this_relink=" --link"
     fi
     if [ ! -e "$l" ]; then
@@ -593,7 +594,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       "$ihome/commands/"*)
         tgt="$repo_root/commands/${b#keel-}"
         if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
-      "$ihome/bin/keel")
+      "$keel_bin/keel")
         tgt="$repo_root/keel" ;;
       "$ihome/keel/"*)
         tgt="$repo_root/$b" ;;
@@ -723,7 +724,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # is the same stale-clone smell as the command links above (advisory, a second checkout can be
   # deliberate). Missing entirely is advisory too: the CLI is a convenience, not a rail.
   if [ -f "$repo_root/keel" ]; then
-    kl="$ihome/bin/keel"
+    kl="$keel_bin/keel"
     if [ -L "$kl" ] && [ -e "$kl" ]; then
       if [ "$kl" -ef "$repo_root/keel" ]; then
         say "  OK   keel CLI: wired ($kl)"
@@ -731,7 +732,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh$imode_flag$ihome_flag from here if this is the live one"
       fi
     else
-      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$imode_flag$ihome_flag (or add an alias by hand)"
+      warn W-CLI-UNWIRED "keel CLI not wired at $keel_bin/keel — re-run install.sh$imode_flag$ihome_flag (or add an alias by hand)"
     fi
   fi
 

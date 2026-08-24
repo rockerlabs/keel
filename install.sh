@@ -120,6 +120,7 @@ default_home_leaf=".claude"
 # talked about. Deriving the suffix ONCE, from the same expression a bare re-run would evaluate, is what
 # stops the next advice string from re-opening it: if the two agree the flag is empty, so the friendly
 # short form survives for the ordinary install, and it appears exactly when it is load-bearing.
+if [ -n "${HOME:-}" ]; then keel_bin="$HOME/.keel/bin"; else keel_bin="$(dirname "$HOME_DIR")/.keel/bin"; fi
 if [ "$HOME_DIR" = "${KEEL_HOME:-${HOME:-}/$default_home_leaf}" ]; then home_flag=""; doctor_arg=""
 else home_flag=" --home \"$HOME_DIR\""; doctor_arg=" \"$HOME_DIR\""; fi   # doctor takes the home positionally
 # The MODE is half of "can this command reach the install", and the half home_flag can't see: a bare
@@ -669,8 +670,8 @@ fi
 if [ "$EPHEMERAL" = 1 ]; then
   echo "  =    keel CLI skipped (temporary bootstrap clone — the summary below has the --link alternative)"
 elif [ -f "$root/keel" ]; then
-  mkdir -p "$HOME/.keel/bin"
-  keel_link="$HOME/.keel/bin/keel"
+  mkdir -p "$keel_bin"
+  keel_link="$keel_bin/keel"
   if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
     if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
       echo "  =    bin/keel already wired"
@@ -893,7 +894,8 @@ merge_tmp="$manifest_dir/.artifacts.$$"
 manifest_artifact_lines=()
 while IFS=$'\t' read -r rel kind extra; do
   [ -n "$rel" ] || continue
-  if [ -e "$HOME_DIR/$rel" ] || [ -L "$HOME_DIR/$rel" ]; then
+  case "$rel" in /*) cpath="$rel" ;; *) cpath="$HOME_DIR/$rel" ;; esac
+  if [ -e "$cpath" ] || [ -L "$cpath" ]; then
     manifest_artifact_lines+=("artifact=$kind	$rel	$extra")
   fi
 done < "$merge_tmp"
@@ -978,7 +980,7 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   echo "  - the  keel  CLI is on  $HOME_DIR/bin  →  keel help  (install · sync · doctor · audit · init · check · uninstall)"
   case ":${PATH:-}:" in
     *":$HOME_DIR/bin:"*) : ;;
-    *) echo "    (add it to PATH:  export PATH=\"$HOME/.keel/bin:\$PATH\"  — or keep using the tools by path)" ;;
+    *) echo "    (add it to PATH:  export PATH=\"$keel_bin:\$PATH\"  — or keep using the tools by path)" ;;
   esac
 fi
 if [ "$CODEX" = 0 ] && [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then

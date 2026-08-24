@@ -318,12 +318,12 @@ assert_doctor_warn W-TIER-SHADOW "linked + stale root copy"
 
 # W-CLI-FOREIGN: bin/keel resolves to something other than this checkout's keel CLI.
 h="$SANDBOX/w-cli-foreign"; run "$install" --link --home "$h" --no-hooks
-ln -sfn "$REPO_ROOT/README.md" "$h/bin/keel"
+ln -sfn "$REPO_ROOT/README.md" "$HOME/.keel/bin/keel"
 assert_doctor_warn W-CLI-FOREIGN "bin/keel points outside this checkout"
 
 # W-CLI-UNWIRED: bin/keel not wired at all.
 h="$SANDBOX/w-cli-unwired"; run "$install" --link --home "$h" --no-hooks
-rm "$h/bin/keel"
+rm "$HOME/.keel/bin/keel"
 assert_doctor_warn W-CLI-UNWIRED "bin/keel missing"
 
 summary
