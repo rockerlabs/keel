@@ -232,13 +232,13 @@ fresh_home_env "$FH"; fh_env=("${FRESH_HOME_ENV[@]}")
 run env "${fh_env[@]}" "$INSTALL" --no-hooks
 check_status "foreign-core install into a fresh HOME succeeds" 0 "$STATUS"
 check_absent "it wrote no rails into the kept CLAUDE.md" "$(cat "$FH/.claude/CLAUDE.md")" "KEEL-CORE-BEGIN"
-check_link "but it did wire the CLI there" "$HOME/.keel/bin/keel"
+check_link "but it did wire the CLI there" "$FH/.keel/bin/keel"
 run env "${fh_env[@]}" "$INSTALL" --codex --no-hooks
 check_status "codex install into the same HOME succeeds" 0 "$STATUS"
 run env "${fh_env[@]}" "$UNINSTALL" --codex --yes
 check_status "codex uninstall exits 0" 0 "$STATUS"
 check_contains "and names the rails-less Claude install it left behind" "$OUT" "$FH/.claude"
-check_link "which is indeed still wired" "$HOME/.keel/bin/keel"
+check_link "which is indeed still wired" "$FH/.keel/bin/keel"
 
 # The SAME hint on the no-such-home exit — the earliest one, and the run a Codex-only adopter makes
 # first. Covered separately because that exit runs before everything else: a regression that moved the

@@ -675,10 +675,8 @@ elif [ -f "$root/keel" ]; then
   if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
     if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
       echo "  =    bin/keel already wired"
-      record_placed "$keel_link"
     else
       make_link "$root/keel" "$keel_link"
-      record_placed "$keel_link"
       echo "  +    bin/keel → $root/keel  (run 'keel help')"
     fi
   else

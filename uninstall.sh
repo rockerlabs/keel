@@ -743,6 +743,10 @@ if [ "$DRY_RUN" = 0 ]; then
     . "$root/tools/lib/ledger.sh"
     ledger_remove "$ledger_file" "$home_canon"
     rmdir "$HOME_DIR/.keel" 2>/dev/null || true
+    if [ ! -s "$ledger_file" ]; then
+      take "$keel_bin/keel"
+      [ -d "$keel_bin" ] && rmdir "$keel_bin" 2>/dev/null || true
+    fi
   fi
 fi
 
