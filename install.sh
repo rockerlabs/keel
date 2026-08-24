@@ -669,8 +669,8 @@ fi
 if [ "$EPHEMERAL" = 1 ]; then
   echo "  =    keel CLI skipped (temporary bootstrap clone — the summary below has the --link alternative)"
 elif [ -f "$root/keel" ]; then
-  mkdir -p "$HOME_DIR/bin"
-  keel_link="$HOME_DIR/bin/keel"
+  mkdir -p "$HOME/.keel/bin"
+  keel_link="$HOME/.keel/bin/keel"
   if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
     if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
       echo "  =    bin/keel already wired"
@@ -978,7 +978,7 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   echo "  - the  keel  CLI is on  $HOME_DIR/bin  →  keel help  (install · sync · doctor · audit · init · check · uninstall)"
   case ":${PATH:-}:" in
     *":$HOME_DIR/bin:"*) : ;;
-    *) echo "    (add it to PATH:  export PATH=\"$HOME_DIR/bin:\$PATH\"  — or keep using the tools by path)" ;;
+    *) echo "    (add it to PATH:  export PATH=\"$HOME/.keel/bin:\$PATH\"  — or keep using the tools by path)" ;;
   esac
 fi
 if [ "$CODEX" = 0 ] && [ "$EPHEMERAL" != 1 ] && [ -f "$root/tools/install-pre-pr-gate.sh" ]; then

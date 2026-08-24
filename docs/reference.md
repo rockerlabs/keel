@@ -24,7 +24,7 @@ Every file, tool, and command — grouped, one line each.
 
 | Tool | What it does |
 |---|---|
-| [`keel`](../keel) | One CLI over the rest, installed to `~/.claude/bin` (the install summary prints a one-line PATH hint if that dir isn't on your PATH): `keel install \| sync \| doctor \| audit \| init \| check \| unify \| uninstall \| version \| help`. A thin dispatcher, so it works from any directory. |
+| [`keel`](../keel) | One CLI over the rest, installed to `~/.keel/bin` (the install summary prints a one-line PATH hint if that dir isn't on your PATH): `keel install \| sync \| doctor \| audit \| init \| check \| unify \| uninstall \| version \| help`. A thin dispatcher, so it works from any directory. |
 | [`bootstrap.sh`](../bootstrap.sh) | The `curl … \| sh` entry point: fetches the repo (git clone, or a tarball on a git-less machine) and runs `install.sh`. |
 | [`install.sh`](../install.sh) | One-command setup: copies (or, with `--link`, symlinks) the always-on files and turns on secret-guard. Safe to re-run; never overwrites your own files. On a machine with no git projects, `--link --no-git` trims the code/git rails from the always-on core (sticky across re-runs; `--with-git` restores). |
 | [`uninstall.sh`](../uninstall.sh) | Reverses `install.sh` (`keel uninstall`): removes only Keel-owned content, backs up what it removes, leaves your own files and the machine-global secret-guard alone. Mirrors install's mode flags — `--home DIR`, and `--codex` for an `install.sh --codex` install (`~/.codex`, `AGENTS.md`); a run names an install of the other mode it finds rather than leaving it behind, and refuses when pointed at the other mode's home (most of what it removes is shared, so it would half-dismantle that install). |

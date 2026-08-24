@@ -329,7 +329,7 @@ dry_run_heuristic_listing() {
   if [ -d "$HOME_DIR/keel" ] || [ -L "$HOME_DIR/keel" ]; then
     echo "  would remove  keel"
   fi
-  if [ -L "$HOME_DIR/bin/keel" ]; then
+  if [ -L "$HOME/.keel/bin/keel" ]; then
     echo "  would remove  bin/keel"
   fi
   if [ -d "$root/commands" ]; then

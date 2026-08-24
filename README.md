@@ -225,7 +225,7 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 > [standalone tools](#just-want-the-git-hook) next to what you have, or grab one `commands/*.md` and
 > ignore the rest — a method to graft on, not a framework to adopt whole.
 
-> **One command for the rest.** Install drops a `keel` CLI into `~/.claude/bin` (the summary prints a
+> **One command for the rest.** Install drops a `keel` CLI into `~/.keel/bin` (the summary prints a
 > one-line PATH hint if that dir isn't on your PATH) — `keel help` lists the verbs: `keel install`,
 > `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`, `keel unify`,
 > `keel uninstall` (reverses the install, backing up anything it removes), `keel version`, and
