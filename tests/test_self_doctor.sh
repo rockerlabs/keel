@@ -60,8 +60,11 @@ mk_clean_repo() {
 
   printf '#!/usr/bin/env bash\necho widget\n' > "$d/$fake_widget"
 
-  # the only mention of tools/doctor.sh and $fake_widget — makes both "wired" (referenced + tested)
-  printf '#!/usr/bin/env bash\n# smoke-references tools/doctor.sh and %s\n' "$fake_widget" \
+  # the only mention of tools/doctor.sh and $fake_widget — makes both "wired" (referenced + tested).
+  # A real code line, not a `#`-comment: dir #242's ratchet fix requires a tests/*.sh mention to
+  # survive comment-stripping before it counts as test coverage, closing the exact loophole
+  # (a bare comment mention with no actual test) this fixture used to rely on.
+  printf '#!/usr/bin/env bash\ntrue # smoke-references tools/doctor.sh and %s\n' "$fake_widget" \
     > "$d/tests/test_tools.sh"
 
   stub_orchestrated_tests "$d"
@@ -326,7 +329,7 @@ check_contains "reports it from the templates/ scan" "$OUT" "slash-command refer
 fake_pulls_tool="$(key tools/pulls-example .sh)"
 d="$(mk_clean_repo)"
 printf '#!/usr/bin/env bash\n# an endpoint ending in `/pulls`\necho ok\n' > "$d/$fake_pulls_tool"
-printf '#!/usr/bin/env bash\n# smoke-references %s\n' "$fake_pulls_tool" > "$d/tests/test_pulls_example.sh"
+printf '#!/usr/bin/env bash\ntrue # smoke-references %s\n' "$fake_pulls_tool" > "$d/tests/test_pulls_example.sh"
 ( cd "$d" && git add -A && git commit -qm "shell-only /pulls text stays out of scope" )
 run "$sd" "$d" --quiet
 check_status "shell-file-only /word text is out of the slash-command scan -> exit 0" 0 "$STATUS"
@@ -391,7 +394,7 @@ fake_nested_tool="$(key tools/nested/tool .sh)"
 d="$(mk_clean_repo)"
 mkdir -p "$d/tools/nested"
 printf '#!/usr/bin/env bash\necho nested\n' > "$d/$fake_nested_tool"
-printf '#!/usr/bin/env bash\n# references %s\n' "$fake_nested_tool" > "$d/tests/test_nested_tool.sh"
+printf '#!/usr/bin/env bash\ntrue # references %s\n' "$fake_nested_tool" > "$d/tests/test_nested_tool.sh"
 ( cd "$d" && git add -A && git commit -qm "nested tool dir" )
 run "$sd" "$d"
 check_status "a wired nested-dir tool is clean -> exit 0" 0 "$STATUS"

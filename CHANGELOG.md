@@ -49,6 +49,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `--global`-reverted copy of the real file and green again once restored, plus three synthetic-fixture
   mutation cases (revert, reorder, missing write) to prove the guard itself can fail.
 
+### Fixed
+
+- `tools/lib/nonneg-int.sh` (dir #196) claimed to be "the ONE non-negative-integer sanitizer, shared
+  by every tool that clamps a numeric env-var/arg override", but two sites still carried their own
+  inline copy of the digit-shape-only guard it exists to replace (dir #242). `tools/self/doctor.sh`'s
+  `pending_max_commits` now calls `sanitize_nonneg_int`; `tools/keel-impact.sh`'s `require_count` now
+  calls `_nonneg_int_valid` and, as a result, gains a magnitude cap it never had — a 10+ digit
+  all-digit `--<flag>` value that used to pass silently now exits 2 (a fix, not a regression). The
+  coverage ratchet (dir #142) also reported the lib "test-covered" on nothing more than a bare
+  filename mention inside a `tests/*.sh` **comment**; the ratchet now strips comment lines before
+  counting a mention as coverage, and `tests/test_nonneg_int_lib.sh` gives the lib the direct unit
+  coverage the repo's other shared libs already have.
+
 ## [0.7.1] — 2026-08-21
 
 The audit-tail release. v0.7.0 shipped with a named list of six residuals it deliberately did not

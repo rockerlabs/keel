@@ -314,14 +314,23 @@ _impact_merge_evidence() {
   mv -f "$tmp" "$target"
 }
 
-# require a non-negative integer; empty defaults to 0
+# require a non-negative integer; empty defaults to 0. Digit-shape AND magnitude checked via
+# tools/lib/nonneg-int.sh's shared `_nonneg_int_valid` (dir #196/#242) — the old inline `*[!0-9]*`
+# guard rejected non-digit input but accepted an arbitrarily long all-digit string, which could
+# overflow the shell's native integer range in a later numeric comparison and silently defeat the
+# bound it was meant to guard. A 10+ digit `--<flag>` value that used to pass now exits 2 here; that is
+# the fix, not a regression.
 require_count() {
   local name="$1" val="$2"
   case "$val" in
     "" ) printf '0'; return ;;
-    *[!0-9]* ) printf 'keel-impact: --%s must be a non-negative integer\n' "$name" >&2; exit 2 ;;
-    * ) printf '%s' "$val" ;;
   esac
+  if _nonneg_int_valid "$val"; then
+    printf '%s' "$val"
+  else
+    printf 'keel-impact: --%s must be a non-negative integer\n' "$name" >&2
+    exit 2
+  fi
 }
 
 # is $1 one of the recognized event types?
