@@ -40,6 +40,16 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   present in commits but absent from `[Unreleased]` — per-ticket, not per-file, so a PR that touches
   CHANGELOG.md for a *different* ticket still trips it. Closes the class the v0.7.0 → v0.7.1 delta
   audit found five times, three of them undetected until the audit itself (dir #237).
+- `tools/delta-audit/derive.sh` mechanically derives a release delta audit's universe from git
+  history (dir #207, PR1 of 2): the range's file list, a file→PR seam map, an empty-verdict ledger
+  skeleton in pinned read order (seams and behaviour-with-a-rail code first, prose last), and a
+  run-record stub. Promotes the one-off script the v0.7.0→v0.7.1 light run used, into a tested,
+  adopter-facing tool. Its closure check — comparing the range diff against the union of every
+  per-PR file list — refuses when a squash- or rebase-merged PR leaves files unattributed, closing
+  the hand-derivation gap that under-counted the first delta audit's own PR total (24 vs 31) until a
+  session caught it by hand. Reproduces both real prototype datasets byte-identically, verified
+  live on macOS, Alpine/BusyBox, and Debian/GNU. `docs/delta-audit.md`, the doc that adopts this
+  script into a full procedure, is dir #207's PR2.
 - `tests/test_ci_alpine_safe_directory.sh` pins `.github/workflows/ci.yml`'s alpine leg to a
   `--system` (not `--global`) `safe.directory` write ordered before `bash tests/run.sh` (dir #246).
   Nothing previously covered that one line — it's YAML, so shellcheck never reaches it, and neither
