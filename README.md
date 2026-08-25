@@ -247,6 +247,9 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
   didn't silently break your pipeline.
 - [`docs/release-audit.md`](docs/release-audit.md) — a repeatable flow for a project's own
   release-readiness sweep, before tagging.
+- [`docs/delta-audit.md`](docs/delta-audit.md) — the release-candidate pass release-audit.md's
+  phase 6 calls: a mechanically derived universe (every file a release range touched, plus its
+  seam map) instead of a scope chosen by judgment.
 - [`docs/drydock.md`](docs/drydock.md) — a whole-tree audit of whether your knowledge base is still
   true: the prose your agent executes drifts silently, and nothing fails when it does.
 - [`docs/delegation.md`](docs/delegation.md) — fan bulk read-only analysis out to parallel subagent

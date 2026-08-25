@@ -88,11 +88,22 @@ thirteen — before a delta-review protocol (verify only the fix's own delta, sa
 rounds) proved a fraction of the cost per round. Full mechanics, including the zero-findings-in-a-delta-
 round termination rule and the per-round trend line: dir #127 — cross-linked here, not restated.
 
-## Phase 6 — RC pass with a narrow, three-point mandate
+## Phase 6 — RC pass: a delta audit over a mechanically derived universe
 
-Run one release-candidate pass late, scoped to exactly three checks, and fix only what's release-critical
-inline — everything else is a ticket, not a delay. **Felt incident — the mandate is exactly what v0.6.0's
-own RC pass found, generalized:**
+Run one release-candidate pass late, scoped to a universe **derived from git, never chosen by
+judgment**: every file the release range touched, plus the file→PR seam map. Follow
+[`docs/delta-audit.md`](delta-audit.md) — this phase is now that procedure's caller, not a
+restatement of it. Every audit session in that procedure is read-only; release-critical findings go
+through that procedure's own gated Fixer phase, never a fix folded inline into an audit session.
+Everything not release-critical is a ticket, not a delay.
+
+**Felt incident — this inverts what the phase used to assert.** Before `docs/delta-audit.md` existed, this phase's
+mandate *selected* what to check from three points chosen by judgment — the shape every RC pass
+before it followed — and every coverage gap so far was found by the operator noticing an omission
+after the fact — proof the coverage was never enumerable. Now the scope
+is mechanical (`docs/delta-audit.md` §3), and the same three points survive, but only as the **depth
+heuristic a whole-read session applies within** that derived universe — never again the rule that
+decides what's in scope at all:
 
 1. **Cross-PR seams** — where independently-reviewed PRs disagree at the boundary. Found: dir #134
    (`doctor.sh --install` never learned the `--codex` mode a separate PR shipped) and dir #136
@@ -106,8 +117,9 @@ own RC pass found, generalized:**
    backlog heading-drift check is skipped in every worktree and impossible in CI — the exact place v0.6.0's
    own tickets were being closed).
 
-Each of these findings landed in exactly one of the three buckets — the mandate isn't a guess, it's what
-an unscoped "review everything again" pass would have taken far longer to reach the same findings by.
+Each of these findings landed in exactly one of the three buckets — the heuristic isn't a guess, it's
+what an unscoped "review everything again" pass would have taken far longer to reach the same
+findings by.
 
 ## Phase 7 — tag
 
