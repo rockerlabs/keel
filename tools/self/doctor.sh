@@ -389,11 +389,41 @@ while IFS= read -r f; do ref_files+=("$f"); done < <(
 )
 # Read each reference file's content once (parallel to ref_files, same order) so the per-tool loop
 # below does zero subprocess spawns / disk re-reads — O(files) I/O total, not O(tools × files) grep
-# calls (that used to be the shape even after ref_files itself was hoisted out of the loop).
+# calls (that used to be the shape even after ref_files itself was hoisted out of the loop). A SECOND,
+# comment-stripped copy is precomputed here too, but ONLY for tests/*.sh entries (dir #242) — sparse,
+# not a full parallel array, since it's only ever read for that subset: the ratchet's "test-covered"
+# verdict must require the tool's path to appear in a tests/*.sh file OUTSIDE a comment (leading OR
+# trailing), or a bare mention in an explanatory comment (found live: a comment at
+# tests/test_install_pre_pr_gate.sh:309 naming tools/lib/nonneg-int.sh, with no actual test of it
+# anywhere, made the ratchet report "referenced and test-covered") satisfies the check with zero real
+# coverage. Precomputing it here, once per tests/*.sh file, rather than inside the per-tool loop below,
+# matters: an earlier version called `sed` inside that loop, on demand — cheap-looking, but the loop
+# is keyed by (tool × ref_file) pairs, so any tests/*.sh file whose content substring-matches MULTIPLE
+# tool paths (the common case) got re-stripped by a fresh `sed` subprocess once per matching tool,
+# quietly reintroducing the exact O(tools × files) subprocess-spawn shape this comment's first
+# sentence claims doesn't happen (found by an operator-run `/code-review medium` pass, confirmed live:
+# ~111 extra spawns on this repo's own tree). `ref_hit` (mere "referenced somewhere") keeps using the
+# unstripped content — a comment is legitimate evidence of that weaker claim — only `test_hit` is
+# tightened.
+#
+# KNOWN LIMITATION (found by the same `/code-review medium` pass, CONFIRMED mechanism but no live
+# instance found in this repo's own tree): the strip is line-based, not shell/quote-aware, so a `#`
+# preceded by whitespace INSIDE a quoted string constant (not a real shell comment) still gets
+# stripped along with everything after it. A tests/*.sh line whose only mention of a tool's path sits
+# after such a `#` (e.g. asserting on an error message that itself contains a literal `# tools/<x>.sh`
+# as data) would false-GAP that tool as uncovered — the opposite failure mode from the one this ticket
+# closes. A real fix needs shell-aware tokenization, which is disproportionate to a currently-latent
+# risk; if a future GAP looks spurious, check here first.
 ref_contents=()
+ref_contents_stripped=()
 if [ "${#ref_files[@]}" -gt 0 ]; then
   for f in "${ref_files[@]}"; do
-    ref_contents+=("$(cat "$repo_root/$f" 2>/dev/null)")
+    content="$(cat "$repo_root/$f" 2>/dev/null)"
+    ref_contents+=("$content")
+    case "$f" in
+      tests/*) ref_contents_stripped+=("$(sed -E 's/(^|[[:space:]])#.*$//' <<< "$content")") ;;
+      *) ref_contents_stripped+=("") ;;
+    esac
   done
 fi
 if [ "${#tool_files[@]}" -gt 0 ]; then
@@ -409,7 +439,11 @@ if [ "${#tool_files[@]}" -gt 0 ]; then
         case "${ref_contents[$i]}" in
           *"$rel"*)
             ref_hit=1
-            case "$f" in tests/*) test_hit=1 ;; esac
+            case "$f" in
+              tests/*)
+                case "${ref_contents_stripped[$i]}" in *"$rel"*) test_hit=1 ;; esac
+                ;;
+            esac
             ;;
         esac
         i=$((i + 1))
@@ -730,17 +764,19 @@ _semver_max() {
 # "integer expression expected" and evaluates false, fail-opening every section regardless of its real
 # distance (found by an operator-run `/code-review high` pass, reproduced live). The digit-shape guard
 # alone doesn't catch this: an all-digit string can still overflow the shell's native integer range.
-# `??????????*` (10+ chars) rejects that too, capping the accepted value at 9 digits
-# (≤ 999,999,999) — far above any sane bound, comfortably inside every shell's integer range (even a
-# 32-bit signed `int`'s ~2.1 billion ceiling), so a legitimate override is never affected. Same class
-# as the `-r`-not-just-`-f` fix already recorded in this check's own comments below.
+# `sanitize_nonneg_int` (dir #196/#242 — tools/lib/nonneg-int.sh, the one shared sanitizer for this
+# class) caps the accepted value at 9 digits (its default 10-digit-or-more rejection), far above any
+# sane bound and comfortably inside every shell's integer range (even a 32-bit signed `int`'s
+# ~2.1 billion ceiling), so a legitimate override is never affected. Same class as the
+# `-r`-not-just-`-f` fix already recorded in this check's own comments below.
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$self_dir/../lib/nonneg-int.sh"
 pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
-# No `''` arm: `${VAR:-40}` above already substitutes the default for both unset AND empty, so
-# $pending_max_commits can never actually be empty here — an explicit `''|` alternative would be
-# dead code implying otherwise (found by an operator-run `/code-review high` pass, reproduced live).
-case "$pending_max_commits" in
-  *[!0-9]*|??????????*) pending_max_commits=40 ;;
-esac
+# No explicit empty-string handling here: `sanitize_nonneg_int` itself treats '' as invalid and
+# returns the default, so `${VAR:-40}` above (unset -> default) and the sanitizer below (empty,
+# non-digit-shaped, or overlong -> default) cover unset, empty, and garbage the same way (found by an
+# operator-run `/code-review high` pass, reproduced live).
+pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 
 # _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced
 # the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history, OUTSIDE any fenced code

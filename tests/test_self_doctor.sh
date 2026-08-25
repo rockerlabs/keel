@@ -60,8 +60,11 @@ mk_clean_repo() {
 
   printf '#!/usr/bin/env bash\necho widget\n' > "$d/$fake_widget"
 
-  # the only mention of tools/doctor.sh and $fake_widget — makes both "wired" (referenced + tested)
-  printf '#!/usr/bin/env bash\n# smoke-references tools/doctor.sh and %s\n' "$fake_widget" \
+  # the only mention of tools/doctor.sh and $fake_widget — makes both "wired" (referenced + tested).
+  # A real code line, not a `#`-comment (leading OR trailing): dir #242's ratchet fix requires a
+  # tests/*.sh mention to survive comment-stripping before it counts as test coverage, closing the
+  # exact loophole (a bare comment mention with no actual test) this fixture used to rely on.
+  printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh and %s"\n' "$fake_widget" \
     > "$d/tests/test_tools.sh"
 
   stub_orchestrated_tests "$d"
@@ -326,7 +329,7 @@ check_contains "reports it from the templates/ scan" "$OUT" "slash-command refer
 fake_pulls_tool="$(key tools/pulls-example .sh)"
 d="$(mk_clean_repo)"
 printf '#!/usr/bin/env bash\n# an endpoint ending in `/pulls`\necho ok\n' > "$d/$fake_pulls_tool"
-printf '#!/usr/bin/env bash\n# smoke-references %s\n' "$fake_pulls_tool" > "$d/tests/test_pulls_example.sh"
+printf '#!/usr/bin/env bash\n: "smoke-references %s"\n' "$fake_pulls_tool" > "$d/tests/test_pulls_example.sh"
 ( cd "$d" && git add -A && git commit -qm "shell-only /pulls text stays out of scope" )
 run "$sd" "$d" --quiet
 check_status "shell-file-only /word text is out of the slash-command scan -> exit 0" 0 "$STATUS"
@@ -391,11 +394,46 @@ fake_nested_tool="$(key tools/nested/tool .sh)"
 d="$(mk_clean_repo)"
 mkdir -p "$d/tools/nested"
 printf '#!/usr/bin/env bash\necho nested\n' > "$d/$fake_nested_tool"
-printf '#!/usr/bin/env bash\n# references %s\n' "$fake_nested_tool" > "$d/tests/test_nested_tool.sh"
+printf '#!/usr/bin/env bash\n: "references %s"\n' "$fake_nested_tool" > "$d/tests/test_nested_tool.sh"
 ( cd "$d" && git add -A && git commit -qm "nested tool dir" )
 run "$sd" "$d"
 check_status "a wired nested-dir tool is clean -> exit 0" 0 "$STATUS"
 check_contains "the nested tool was actually audited" "$OUT" "$fake_nested_tool"
+
+# dir #242's own ratchet tightening, mutation-proven: a tool whose ONLY tests/*.sh mention sits on a
+# leading `#`-comment line must still GAP as uncovered — reverting the comment-stripping back to a
+# bare substring match makes this fixture pass with no GAP, which is what proves the tightening is
+# load-bearing rather than a change nothing in the suite actually exercises (found live by an
+# operator-run cross-model second-opinion pass: the fixture edits elsewhere in this file only stopped
+# RELYING on the loophole, they never asserted it was closed). This also doubles as the regression test
+# for an earlier version of the fix (`grep -vE '^[[:space:]]*#'`, without `|| true`): a tests/*.sh file
+# made ENTIRELY of comment lines made that `grep -v` exit 1 with no output, which aborted doctor.sh
+# outright under `set -e` — a real comment-only mention like this fixture's, not a synthetic one, is
+# exactly the shape that used to crash. The shipped fix uses `sed -E 's/(^|[[:space:]])#.*$//'`
+# instead, which never fails on an all-comment input, so this fixture also stands as a live check that
+# whatever stripping mechanism is used doesn't regress that crash.
+fake_comment_only_tool="$(key tools/comment-only .sh)"
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho comment-only\n' > "$d/$fake_comment_only_tool"
+printf '#!/usr/bin/env bash\n# mentions %s but never actually runs or checks it\n' "$fake_comment_only_tool" \
+  > "$d/tests/test_comment_only.sh"
+( cd "$d" && git add -A && git commit -qm "comment-only mention of a tool" )
+run "$sd" "$d" --quiet
+check_status "a tool mentioned only in a tests/*.sh comment -> exit 1 (ratchet GAP, not a crash)" 1 "$STATUS"
+check_contains "flags it as uncovered, not silently passed" "$OUT" "ratchet (dir #142): $fake_comment_only_tool"
+
+# The trailing-comment half of the same loophole (found by the same cross-model second-opinion pass):
+# `real-code # mentions tools/<x>.sh` must ALSO not count as coverage — a leading-comment-only strip
+# would still let this pass, since the mention lives after a trailing `#` on an otherwise-real line.
+fake_trailing_comment_tool="$(key tools/trailing-comment .sh)"
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho trailing-comment\n' > "$d/$fake_trailing_comment_tool"
+printf '#!/usr/bin/env bash\ntrue # mentions %s but never actually runs or checks it\n' \
+  "$fake_trailing_comment_tool" > "$d/tests/test_trailing_comment.sh"
+( cd "$d" && git add -A && git commit -qm "trailing-comment mention of a tool" )
+run "$sd" "$d" --quiet
+check_status "a tool mentioned only after a trailing # comment -> exit 1 (ratchet GAP)" 1 "$STATUS"
+check_contains "flags it as uncovered too" "$OUT" "ratchet (dir #142): $fake_trailing_comment_tool"
 
 # a tool referenced only from CI, not from any of commands/ or tests/ or install.sh or docs/, is
 # still wired, not an orphan — ref_files must include .github/workflows/*.yml.
