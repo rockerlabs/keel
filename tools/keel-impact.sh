@@ -322,10 +322,9 @@ _impact_merge_evidence() {
 # the fix, not a regression.
 require_count() {
   local name="$1" val="$2"
-  case "$val" in
-    "" ) printf '0'; return ;;
-  esac
-  if _nonneg_int_valid "$val"; then
+  if [ -z "$val" ]; then
+    printf '0'
+  elif _nonneg_int_valid "$val"; then
     printf '%s' "$val"
   else
     printf 'keel-impact: --%s must be a non-negative integer\n' "$name" >&2

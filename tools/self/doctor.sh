@@ -389,14 +389,31 @@ while IFS= read -r f; do ref_files+=("$f"); done < <(
 )
 # Read each reference file's content once (parallel to ref_files, same order) so the per-tool loop
 # below does zero subprocess spawns / disk re-reads — O(files) I/O total, not O(tools × files) grep
-# calls (that used to be the shape even after ref_files itself was hoisted out of the loop).
-# A SECOND, comment-stripped copy is built in parallel for tests/*.sh entries only (dir #242): the
-# ratchet's "test-covered" verdict below must require the tool's path to appear in a tests/*.sh file
-# OUTSIDE a `#`-comment line, or a bare mention in an explanatory comment (found live: a comment at
+# calls (that used to be the shape even after ref_files itself was hoisted out of the loop). A SECOND,
+# comment-stripped copy is precomputed here too, but ONLY for tests/*.sh entries (dir #242) — sparse,
+# not a full parallel array, since it's only ever read for that subset: the ratchet's "test-covered"
+# verdict must require the tool's path to appear in a tests/*.sh file OUTSIDE a comment (leading OR
+# trailing), or a bare mention in an explanatory comment (found live: a comment at
 # tests/test_install_pre_pr_gate.sh:309 naming tools/lib/nonneg-int.sh, with no actual test of it
 # anywhere, made the ratchet report "referenced and test-covered") satisfies the check with zero real
-# coverage. `ref_hit` (mere "referenced somewhere") keeps using the unstripped content — a comment is
-# legitimate evidence of that weaker claim — only `test_hit` is tightened.
+# coverage. Precomputing it here, once per tests/*.sh file, rather than inside the per-tool loop below,
+# matters: an earlier version called `sed` inside that loop, on demand — cheap-looking, but the loop
+# is keyed by (tool × ref_file) pairs, so any tests/*.sh file whose content substring-matches MULTIPLE
+# tool paths (the common case) got re-stripped by a fresh `sed` subprocess once per matching tool,
+# quietly reintroducing the exact O(tools × files) subprocess-spawn shape this comment's first
+# sentence claims doesn't happen (found by an operator-run `/code-review medium` pass, confirmed live:
+# ~111 extra spawns on this repo's own tree). `ref_hit` (mere "referenced somewhere") keeps using the
+# unstripped content — a comment is legitimate evidence of that weaker claim — only `test_hit` is
+# tightened.
+#
+# KNOWN LIMITATION (found by the same `/code-review medium` pass, CONFIRMED mechanism but no live
+# instance found in this repo's own tree): the strip is line-based, not shell/quote-aware, so a `#`
+# preceded by whitespace INSIDE a quoted string constant (not a real shell comment) still gets
+# stripped along with everything after it. A tests/*.sh line whose only mention of a tool's path sits
+# after such a `#` (e.g. asserting on an error message that itself contains a literal `# tools/<x>.sh`
+# as data) would false-GAP that tool as uncovered — the opposite failure mode from the one this ticket
+# closes. A real fix needs shell-aware tokenization, which is disproportionate to a currently-latent
+# risk; if a future GAP looks spurious, check here first.
 ref_contents=()
 ref_contents_stripped=()
 if [ "${#ref_files[@]}" -gt 0 ]; then
@@ -404,8 +421,8 @@ if [ "${#ref_files[@]}" -gt 0 ]; then
     content="$(cat "$repo_root/$f" 2>/dev/null)"
     ref_contents+=("$content")
     case "$f" in
-      tests/*) ref_contents_stripped+=("$(grep -vE '^[[:space:]]*#' <<< "$content")") ;;
-      *) ref_contents_stripped+=("$content") ;;
+      tests/*) ref_contents_stripped+=("$(sed -E 's/(^|[[:space:]])#.*$//' <<< "$content")") ;;
+      *) ref_contents_stripped+=("") ;;
     esac
   done
 fi

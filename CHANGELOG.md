@@ -58,9 +58,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   calls `_nonneg_int_valid` and, as a result, gains a magnitude cap it never had — a 10+ digit
   all-digit `--<flag>` value that used to pass silently now exits 2 (a fix, not a regression). The
   coverage ratchet (dir #142) also reported the lib "test-covered" on nothing more than a bare
-  filename mention inside a `tests/*.sh` **comment**; the ratchet now strips comment lines before
-  counting a mention as coverage, and `tests/test_nonneg_int_lib.sh` gives the lib the direct unit
-  coverage the repo's other shared libs already have.
+  filename mention inside a `tests/*.sh` **comment** (leading OR trailing); the ratchet now strips
+  both comment shapes before counting a mention as coverage, and `tests/test_nonneg_int_lib.sh` gives
+  the lib the direct unit coverage the repo's other shared libs already have. An operator-run
+  cross-model second-opinion review of this fix caught a real bug in an earlier draft: the
+  comment-stripping used `grep -v`, which exits 1 (no matching lines) when a `tests/*.sh` file is made
+  entirely of comment lines — under `tools/self/doctor.sh`'s `set -e`, that silently aborted the whole
+  self-check with no error message, indistinguishable from every later check simply never having run.
+  Fixed by switching to a `sed` substitution, which never fails on all-comment input; both the crash
+  and the trailing-comment loophole now have dedicated regression fixtures.
 
 ## [0.7.1] — 2026-08-21
 
