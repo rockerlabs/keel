@@ -173,23 +173,22 @@ is_changed() {
   return 1
 }
 
-is_historical() {
-  [ "${#historical[@]}" -gt 0 ] || return 1
-  local h
-  for h in "${historical[@]}"; do [ "$h" = "$1" ] && return 0; done
+# Exact-match array membership, shared by is_historical() and is_invariant() below — both need "is
+# this exact path in this list", differing only in which list.
+array_contains() {
+  local needle="$1"; shift
+  local x
+  for x in "$@"; do [ "$x" = "$needle" ] && return 0; done
   return 1
 }
+
+is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${historical[@]}"; }
 
 # EXACT-path membership, deliberately not the substring match tools/delta-audit/derive.sh's own
 # DELTA_INVARIANT_PATHS uses — that env's default entries are substrings by design, and would match
 # zero files if compared exactly here; porting the shape without the semantics would silently mark
-# nothing invariant. This mirrors is_historical() above instead.
-is_invariant() {
-  [ "${#invariant_paths[@]}" -gt 0 ] || return 1
-  local p
-  for p in "${invariant_paths[@]}"; do [ "$p" = "$1" ] && return 0; done
-  return 1
-}
+# nothing invariant.
+is_invariant() { [ "${#invariant_paths[@]}" -gt 0 ] && array_contains "$1" "${invariant_paths[@]}"; }
 
 # --- measurement ----------------------------------------------------------------------------------
 # Measured ONCE per file, into a stream both the listing and the batching read from — an earlier
