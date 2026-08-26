@@ -40,7 +40,7 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   independent blind pass, then a reconciliation section against the worker's own report) instantiated by
   the delta audit's diversity-leg pattern; and **Execute the claim, don't re-read it** — a comment or
   contract note describing behavior is a claim, not evidence, generalized from `docs/delta-audit.md`
-  §4 rule 3's own worked incident (dir #223/#224) rather than left as a drydock-only special case (a gap
+  §4 rule 3's own worked incident (dir #225) rather than left as a drydock-only special case (a gap
   a `/simplify` altitude review caught: the first draft generalized the reconcile lesson correctly but
   bolted this one onto `docs/drydock.md` alone, in four places, none pointing back to the rule or the
   doc it originated in). `docs/drydock.md`'s auditor rails gain a fifth rule stating and citing that
@@ -48,11 +48,23 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `docs/drydock/verifier.md` keep their own self-contained copies of the rule, since those are prompts
   handed to an agent that can't be expected to dereference a doc mid-session. `docs/delegation.md` also
   gains a **Disclosures** section naming the one-canonical-text-plus-pointer rule for any operator-facing
-  caveat restated across surfaces — cross-linked to `FRAMEWORK.md`'s existing Single-source-of-truth /
-  sync-smell rule rather than restating it standalone (a `/simplify` reuse-review catch), and stated
-  alongside an explicit carve-out for the rails block's own deliberate verbatim-copy-plus-drift-test
-  discipline, so the two don't read as contradicting each other. All seven lessons are pin-tested across
-  `tests/test_delegation_doc.sh`, `tests/test_drydock_doc.sh`, and `tests/test_delta_audit_doc.sh` — each
+  caveat restated across surfaces — scoped explicitly to what this pattern's own runs produce (a
+  verifier's `known` pointer, a fix queue's residual note, a run's durable-output summary), cross-linked
+  to `FRAMEWORK.md`'s existing Single-source-of-truth / sync-smell rule rather than restating it
+  standalone (a `/simplify` reuse-review catch), and stated alongside an explicit carve-out for the rails
+  block's own deliberate verbatim-copy-plus-drift-test discipline, so the two don't read as contradicting
+  each other. Both new sections sit right after "The generic phase skeleton" (a `/code-review high`
+  finding: an earlier placement right after "Roles" forward-referenced the skeleton three sections
+  early), and the phase skeleton's own step 3 now points forward at Blind-then-reconcile, closing what
+  had been a one-way link. That same review pass also caught the "Execute the claim" lesson citing the
+  wrong ticket throughout (`dir #223/#224` — two unrelated cross-vendor findings from the same audit)
+  instead of its real source, `dir #225` (delta audit S8 blind pass F1); fixed in `docs/delegation.md`,
+  `docs/delta-audit.md`, and `docs/drydock.md` alike, and `docs/delta-audit.md`/`docs/drydock.md`'s own
+  restatements of the rule were trimmed to bare pointers at the same time, since a `/simplify` pass and
+  the same review both separately flagged the rule being independently restated in five places with no
+  drift test as the exact "keep in sync" pattern the new Disclosures section itself warns against. All
+  seven lessons are pin-tested across `tests/test_delegation_doc.sh`, `tests/test_drydock_doc.sh`, and
+  `tests/test_delta_audit_doc.sh` — each
   new pin verified live to fail against the pre-fix docs.
 
 ### Added

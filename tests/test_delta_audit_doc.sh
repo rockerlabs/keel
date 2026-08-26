@@ -83,10 +83,10 @@ pin "item 6 — suite evidence excludes the operator's own main checkout" \
   "expected §8 to state the clean-worktree-or-CI rail"
 
 # --- dir #231 item 2: this doc's diversity leg is the worked instance delegation.md's generalized
-# blind-then-reconcile section points at — pin both legs of the coupling here too ------------------
-pin "the diversity leg points at delegation.md's blind-then-reconcile section" \
-  "$doc" 'see its "Blind-then-reconcile" section for the two-phase reviewer contract stated' \
-  "expected the diversity-leg paragraph to name the generalized section it instantiates"
+# blind-then-reconcile section points at. The reciprocal pin (this same fact, checked against this
+# same file) lives in tests/test_delegation_doc.sh, not duplicated here (an efficiency review of the
+# first draft found both files pinning the identical fixed string against the identical file for no
+# added coverage) — that file already owns both legs of this coupling. --------------------------------
 
 # --- the rails block: BLOCK-EXTRACT every copy and diff against the canonical source, never a
 # substring-presence check. dir #209's own finding against test_drydock_doc.sh:70-75 is the class

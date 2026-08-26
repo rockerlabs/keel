@@ -227,10 +227,10 @@ are the ones with a story):
 4. **Any executable check runs in a scratch copy** — not the live tree, not the real home directory.
    This rail belongs in the *auditor* prompt, not just the verifier's: two run-1 auditors ran live
    repo scripts before it was there. No harm that time.
-5. **A comment or contract note describing behavior is a claim, not evidence — execute what it
-   describes rather than accepting the prose.** Not a run-1 incident; [`docs/delegation.md`](delegation.md)'s
-   "Execute the claim, don't re-read it" section states the rule once, generalized, with its felt
-   incident (dir #223/#224). Applies to the verifier's re-derivation in phase 2 too — see below.
+5. **A claim about executable behavior is not evidence.** Not a run-1 incident —
+   [`docs/delegation.md`](delegation.md)'s "Execute the claim, don't re-read it" section states the
+   rule and its felt incident (dir #225); applies to the verifier's re-derivation in phase 2 too — see
+   below.
 
 **Zero findings is a valid result** and should be reported plainly. Run 1's cleanest files were not
 the short ones — they were the recently-reworked ones. Recency of maintenance, not file type or size,
@@ -258,8 +258,7 @@ machine's state.
 Three calibration notes: `rejected` requires a measurement, not a doubt — "I couldn't see how this would
 be wrong" is not a rejection. A `readability`/`optimization`-class finding carries a *higher* bar
 than a factual one, because it is the class most likely to be an agent restyling prose it merely
-finds unfamiliar. And reproducing a finding empirically means running what a comment or contract note
-*claims*, not reading the same prose again more carefully — phase 1's rail 5 states why.
+finds unfamiliar. And "reproduce" itself means execute, not re-read — phase 1's rail 5 states why.
 
 ## Phase 3 — the cross-file pass
 

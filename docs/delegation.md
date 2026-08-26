@@ -43,38 +43,6 @@ The orchestrator does **all** bookkeeping: assembling the fix/action queue, mark
 writing the run's summary. Workers and verifiers stay stateless behind the file contract, so neither
 ever needs to know the ledger, and one dying loses nothing but its own unit of work.
 
-## Blind-then-reconcile — an optional two-phase verifier shape
-
-Step 3 of the phase skeleton below runs a verifier once, independently, against a worker's
-already-written output. Some applications get more out of a two-phase variant: the verifier does its
-own pass **blind** — before reading the worker's report at all — writes its own findings in full, and
-only then reads the worker's report (and any sibling verifier reports already written) and appends a
-**reconciliation section**: what both sides caught, what only each side caught, and — the part a plain
-re-check never produces — any of the verifier's *own* findings it now judges wrong in light of what the
-other side measured. Judge your own findings against what the other side measured; don't simply defer
-to it.
-
-This is worth the extra pass specifically when a unit's judgment is hard enough that two independent
-reads catch different things than one read plus a re-check would — it is not the default verifier
-shape. A field-tested instance is the diversity leg of a delta audit
-([`docs/delta-audit.md`](delta-audit.md) §9's diversity-leg template): running the same whole-read
-method blind, then reconciling, caught both a shared blind spot every same-family session had missed
-and its own misreading of an unrelated finding, in the same run.
-
-## Execute the claim, don't re-read it
-
-A comment, docstring, or contract note describing behavior is a **claim, not evidence**. When the
-input it describes is executable, verification means running it — not reading the same prose again,
-however carefully. A field-tested incident: three review layers of a delta audit (the mechanical
-baseline, the main-wave whole-read sessions, and their verifier) each accepted a well-written contract
-comment as proof of what a script did; only the diversity leg, which ran the described input instead
-of re-reading the comment, caught that the comment was false (dir #223/#224).
-
-The rule this generalizes is [`docs/delta-audit.md`](delta-audit.md) §4 rule 3 ("verify claims against
-the tree, not memory or plausibility") — that rule's own worked incident is this one, stated here
-because auditing isn't the only application that needs it: any worker or verifier reading a claim about
-executable behavior should run it, not just re-read it more carefully.
-
 ## The non-delegable set — a rail, not a suggestion
 
 Every operator gate and control point stays inside the orchestrator's own session, full stop, no matter
@@ -112,7 +80,8 @@ there.)
    phase 3: one agent, over extracted claims only, catching contradictions no single unit's verifier
    would see from its own side). Applications that add this pass need a claims-style field of their own
    in the unit-output contract below for it to read from — drydock's `## claims` section is the pattern
-   to copy.
+   to copy. A verifier can also run this step **blind-then-reconcile** instead of the plain shape just
+   described — see that section, right below, for when the extra pass is worth it.
 4. **Orchestrator arbitration.** Spot-check every rejection, a sample of accepted units, and every
    territory an already-open ticket claims to own. This is the one phase delegation never reaches: a
    unit can look clean to both its worker and its verifier and still be wrong in a way only the
@@ -129,6 +98,38 @@ there.)
 **One-loop invariant:** late findings — anything phase 6 turns up — feed the *next* run, never this
 run's mutators. Without this rule a run has no termination condition, since every mutation is itself new
 material the next pass could analyze.
+
+## Blind-then-reconcile — an optional two-phase verifier shape
+
+Step 3 above runs a verifier once, independently, against a worker's already-written output. Some
+applications get more out of a two-phase variant: the verifier does its own pass **blind** — before
+reading the worker's report at all — writes its own findings in full, and only then reads the worker's
+report (and any sibling verifier reports already written) and appends a **reconciliation section**:
+what both sides caught, what only each side caught, and — the part a plain re-check never produces —
+any of the verifier's *own* findings it now judges wrong in light of what the other side measured.
+Judge your own findings against what the other side measured; don't simply defer to it.
+
+This is worth the extra pass specifically when a unit's judgment is hard enough that two independent
+reads catch different things than one read plus a re-check would — step 3 above stays the default
+shape; this is an opt-in variant of it, not a replacement. A field-tested instance is the diversity leg
+of a delta audit: its own diversity-leg template is [`docs/delta-audit.md`](delta-audit.md) §9, but the
+run that field-tested this shape is dir #207 — running the same whole-read method blind, then
+reconciling, caught a shared blind spot every same-family session had missed and self-corrected the
+leg's own misreading of a different finding, in the same run.
+
+## Execute the claim, don't re-read it
+
+A comment, docstring, or contract note describing behavior is a **claim, not evidence**. When the
+input it describes is executable, verification means running it — not reading the same prose again,
+however carefully. A field-tested incident: three review layers of a delta audit (the mechanical
+baseline, the main-wave whole-read sessions, and their verifier) each read a script's contract comment
+as evidence for what it did; only the diversity leg, which ran the described input instead of
+re-reading the comment, caught that the comment was false (dir #225).
+
+The rule this generalizes is [`docs/delta-audit.md`](delta-audit.md) §4 rule 3 ("verify claims against
+the tree, not memory or plausibility") — that rule's own worked incident is this one, stated here
+because auditing isn't the only application that needs it: any worker or verifier reading a claim about
+executable behavior should run it, not just re-read it more carefully.
 
 ## The unit-output contract
 
@@ -208,6 +209,11 @@ equivalent — reproducing it exactly is what makes it a reliable countermeasure
 prompts too, not only worker and verifier ones — see the templates below.
 
 ## Disclosures — one canonical text, not mirrors
+
+This pattern's own runs produce disclosures — a verifier's `known — <ticket id>` pointer, a fix
+queue's residual note, a run's durable-output summary (see [Run directory and state
+split](#run-directory-and-state-split) above) — and those are exactly the surfaces this rule protects,
+even though the felt incident behind it happened outside this pattern.
 
 A caveat, a known gap, or any other operator-facing disclosure that has to appear on more than one
 surface (a gate's own message, a command doc, a changelog entry) is a **drift factory** the moment it's

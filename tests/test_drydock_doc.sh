@@ -118,13 +118,14 @@ pin "sweep 2's class does not stop at a colon" "$doc" '\]\([^)#]+' \
 # --- dir #231 item 3: a comment is a claim, not evidence — execute what it describes (home: this doc,
 # mirrored into the auditor/verifier templates it hands to agents) ---------------------------------
 pin "drydock.md's phase 1 rail 5 states the execute-don't-read rule" "$doc" \
-  'A comment or contract note describing behavior is a claim, not evidence' \
+  'A claim about executable behavior is not evidence' \
   "expected a numbered auditor rail stating the rule, per the doc's own 'these are the ones with a story' convention"
-pin "rail 5 cites its felt incident" "$doc" 'dir #223/#224' \
-  "expected the delta-audit run's diversity-leg incident to be named, not just described"
-pin "phase 2's calibration note applies the same rule to re-derivation" "$doc" \
-  'reproducing a finding empirically means running what a comment or contract note' \
-  "expected the verifier's re-derivation section to restate the rule for phase 2"
+pin "rail 5 cites its felt incident, the correct ticket (dir #225, not #223/#224)" "$doc" \
+  'felt incident (dir #225)' \
+  "expected the delta-audit run's diversity-leg incident to be named with its real ticket -- BACKLOG.md: dir #225 is delta audit S8 blind pass F1; #223/#224 are two unrelated cross-vendor findings"
+pin "phase 2's calibration note points at the rule rather than restating it" "$doc" \
+  'reproduce" itself means execute, not re-read' \
+  "expected the verifier's re-derivation section to point at phase 1's rail 5, not independently restate the rule"
 pin "auditor.md's rails carry the same rule" "$auditor" \
   'A comment or contract note describing behavior is a claim, not evidence' \
   "expected the shipped auditor template to carry the rule the procedure states"

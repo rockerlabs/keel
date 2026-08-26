@@ -81,10 +81,8 @@ This is the durable public referent a future run points at instead of re-derivin
    have drifted as another PR changed the surface it described, and whether the tree's own
    drift-detectors still run where the work actually happens — the same three points that heuristic
    names, applied here rather than left as prose in a different document. **This rule's own worked
-   incident** — a well-written contract comment accepted as proof of behavior by every same-family
-   session, caught only by the diversity leg running the described input instead of re-reading the
-   comment (dir #223/#224) — is generalized in [`docs/delegation.md`](delegation.md)'s "Execute the
-   claim, don't re-read it" section, for applications beyond auditing that need the same rule.
+   incident is dir #225**, generalized in [`docs/delegation.md`](delegation.md)'s "Execute the claim,
+   don't re-read it" section — see there for applications beyond auditing that need the same rule.
 4. **Seam duty.** For each of your files with ≥2 PRs in `file-pr-map.tsv`: read the final merged
    state AND each contributing PR's own diff; check no later PR silently falsified what an earlier
    PR (or the file's own prose) established.
