@@ -174,6 +174,20 @@ run_in "$r" env "DRYDOCK_SCOPE_C=" "$TOOL"
 check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a disable" \
   "$OUT" "scope C total: 3 files, 13 lines"
 
+# Regression pin: an all-whitespace value passes `[ -n ]` (non-empty string — unlike a truly empty
+# one, this does NOT fall through to the default-selection branch), but `read -a` still parses it
+# into zero array elements — a real crash this repo shipped and reverted mid-review. Passing that
+# empty array as *function-call arguments* (a since-reverted scope_b_files/scope_c_files unification
+# attempt) expands "${arr[@]}" before the callee's own length guard ever runs, and this repo's target
+# bash (3.2, macOS's shipped version) throws "unbound variable" on an EMPTY array's "${arr[@]}"
+# expansion under `set -u`, no matter the context. Exit 0 with an empty scope (the SAME outcome as an
+# explicit no-match pathspec like `:!*`, arrived at via a different path — an unparsed pathspec, not a
+# refused one) — not exit 1 with an unbound-variable crash — is the only correct behavior here.
+run_in "$r" env "DRYDOCK_SCOPE_C= " "$TOOL"
+check_status "an all-whitespace DRYDOCK_SCOPE_C does not crash -> exit 0" 0 "$STATUS"
+check_contains "...and yields an empty scope C (an explicit pathspec that parses to nothing), not the default" \
+  "$OUT" "scope C total: 0 files, 0 lines"
+
 run_in "$r" env "DRYDOCK_SOLO_LINES=10" "$TOOL"
 check_contains "a lowered solo threshold sends a smaller file solo" "$OUT" "docs/guide.md SOLO"
 

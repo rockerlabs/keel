@@ -296,6 +296,17 @@ scope_b_files() {
 # Same convention as scope B (unset or empty means the default shell-file selection, not the `*.sh`
 # pathspec); default_shell_files() above is what makes the two selections identical by construction
 # when both are left unset, per docs/drydock.md's scope-C section.
+#
+# NOT further unified with scope_b_files() into one shared "scope_files(envval, ...)" helper, despite
+# the two functions being otherwise identical — tried and reverted: passing "${scope_c[@]}" as
+# function-call arguments expands it BEFORE the callee's own `[ "$#" -gt 0 ]` guard ever runs, and on
+# this repo's target bash (3.2, macOS's shipped version) expanding an EMPTY array's "${arr[@]}" throws
+# "unbound variable" under `set -u`, regardless of context — reproduced live with
+# `DRYDOCK_SCOPE_C=' '` (any all-whitespace value: `[ -n ]` is true, but `read -a` still parses zero
+# elements). The count-then-expand guard has to run in the scope that still holds the array as a named
+# variable, before any `"${arr[@]}"` value-expansion — which a shared helper receiving it as "$@"
+# cannot do. Same class of hazard tools/self/doctor.sh's own header comment documents for this exact
+# expansion.
 scope_c_files() {
   if [ -n "${DRYDOCK_SCOPE_C:-}" ]; then
     [ "${#scope_c[@]}" -gt 0 ] || return 0
