@@ -91,6 +91,14 @@ check_contains "the historical-prose file is its own batch" "$OUT" "CHANGELOG.md
 check_contains "ordinary files pack by directory" "$OUT" "batch 2: docs/guide.md (20 ln)"
 check_contains "a directory's files ride in one batch under the cap" "$OUT" "batch 2: docs/README.md"
 check_contains "scope B packs under its own cap" "$OUT" "batch B2: scripts/other.sh (3 comment-ln)"
+check_contains "scope C counts whole-file lines, not just comments" "$OUT" "scripts/thing.sh${TAB}5 ln"
+check_contains "scope C picks up the same shebang-detected extensionless script as scope B" \
+  "$OUT" "bin/cli${TAB}4 ln"
+check_contains "scope C's default selection is identical to scope B's" \
+  "$OUT" "scope C total: 3 files, 13 lines"
+check_contains "scope C packs under its own cap, in its own C-prefixed batches" \
+  "$OUT" "batch C2: scripts/thing.sh (5 ln)"
+check_absent "an unmarked scope-C file carries no INVARIANT flag" "$OUT" "scripts/thing.sh${TAB}5 ln INVARIANT"
 check_absent "no previous-baseline line without --prev" "$OUT" "previous baseline"
 check_absent "nothing is flagged CHANGED on a full run" "$OUT" "CHANGED"
 
@@ -141,10 +149,30 @@ check_absent "an ignored file is not inventoried" "$OUT" "audit/notes.md"
 
 # --- the tuning knobs -----------------------------------------------------------------------------
 # Each knob is the only thing that makes this script runnable on a repo shaped unlike this one, so
-# each of the six gets a case: unexercised knobs rot green.
+# each of the nine gets a case: unexercised knobs rot green.
 run_in "$r" env "DRYDOCK_SCOPE_B=*.sh" "$TOOL"
 check_contains "an explicit scope-B pathspec still finds the .sh file" "$OUT" "scripts/thing.sh"
-check_absent "an explicit scope-B pathspec drops the shebang-only script" "$OUT" "bin/cli"
+# Not a bare "bin/cli" absence check: scope C (unaffected by this scope-B-only override) still lists
+# it, via its own default shebang detection — the comment-ln unit is what makes this scope-B-specific.
+check_absent "an explicit scope-B pathspec drops the shebang-only script" "$OUT" "bin/cli${TAB}3 comment-ln"
+
+run_in "$r" env "DRYDOCK_SCOPE_C=scripts/*.sh" "$TOOL"
+check_contains "an explicit scope-C pathspec still finds the .sh file" "$OUT" "scripts/thing.sh${TAB}5 ln"
+check_absent "an explicit scope-C pathspec drops the shebang-only script" "$OUT" "bin/cli${TAB}4 ln"
+check_contains "a narrowed scope C totals only its own files" "$OUT" "scope C total: 2 files, 9 lines"
+
+# The canonical disable spelling: a pathspec matching nothing yields an empty scope at exit 0, never
+# a refusal — docs/drydock.md's scope-C section states this exact spelling for a prose-only run.
+run_in "$r" env "DRYDOCK_SCOPE_C=:!*" "$TOOL"
+check_status "the ':!*' disable spelling -> exit 0" 0 "$STATUS"
+check_contains "':!*' yields an empty scope C" "$OUT" "scope C total: 0 files, 0 lines"
+
+# An empty-but-set value is UNSET too, per the same convention scope B already uses — it must NOT be
+# read as "match nothing" (that would silently disable scope C on `DRYDOCK_SCOPE_C=` rather than on
+# the documented ':!*' spelling).
+run_in "$r" env "DRYDOCK_SCOPE_C=" "$TOOL"
+check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a disable" \
+  "$OUT" "scope C total: 3 files, 13 lines"
 
 run_in "$r" env "DRYDOCK_SOLO_LINES=10" "$TOOL"
 check_contains "a lowered solo threshold sends a smaller file solo" "$OUT" "docs/guide.md SOLO"
@@ -157,9 +185,31 @@ run_in "$r" env "DRYDOCK_COMMENT_BATCH_LINES=4" "$TOOL"
 check_contains "a lowered scope-B cap splits a directory across batches" \
   "$OUT" "batch B3: scripts/other.sh"
 
+run_in "$r" env "DRYDOCK_CODE_BATCH_LINES=5" "$TOOL"
+check_contains "a lowered scope-C cap splits a directory across batches" \
+  "$OUT" "batch C3: scripts/other.sh (4 ln)"
+
 run_in "$r" env "DRYDOCK_HISTORICAL=big.md" "$TOOL"
 check_contains "the historical knob moves the SPECIAL batch" "$OUT" "big.md SPECIAL"
 check_absent "and the default historical file is no longer special-cased" "$OUT" "CHANGELOG.md SPECIAL"
+
+# The invariant knob marks a DIFFERENT file than the default list would, proving it is read at all —
+# the default list itself is pinned separately below, on a fixture actually named for it.
+run_in "$r" env "DRYDOCK_INVARIANT_PATHS=scripts/thing.sh" "$TOOL"
+check_contains "the invariant knob marks the named file" "$OUT" "scripts/thing.sh${TAB}5 ln INVARIANT"
+check_contains "...and its batch line too — the marker is per-file, not per-batch-summary" \
+  "$OUT" "batch C2: scripts/thing.sh (5 ln) INVARIANT"
+
+# --- the DEFAULT invariant list, unexercised by the override test above ----------------------------
+r5="$(new_repo_with_origin)"
+printf '#!/usr/bin/env bash\necho installing\n' > "$r5/install.sh"
+git -C "$r5" add -A
+git -C "$r5" commit -qm "add install.sh"
+git -C "$r5" push -q origin main
+run_in "$r5" "$TOOL"
+check_status "a repo whose only file is a default-invariant path -> exit 0" 0 "$STATUS"
+check_contains "the default DRYDOCK_INVARIANT_PATHS marks install.sh with no override at all" \
+  "$OUT" "install.sh${TAB}2 ln INVARIANT"
 
 # A file outside scope A can never be emitted as a scope-A batch, historical or not.
 run_in "$r" env "DRYDOCK_SCOPE_A=docs/*.md" "$TOOL"
