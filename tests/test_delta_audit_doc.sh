@@ -54,9 +54,13 @@ pin "delta-audit.md names tools/delta-audit/derive.sh by its real path" \
   "$doc" 'tools/delta-audit/derive.sh' \
   "expected phase 1 to name the shipped script"
 
-# --- the required-diversity-leg rail, cited not restated (dir #230 owns the doctrine) ---------------
-pin "the diversity leg names dir #230 as the rail's source" "$doc" 'dir #230' \
-  "expected the skip-only-by-operator-decision rail to cite its doctrine home, not restate it"
+# --- the required-diversity-leg rail, cited not restated -------------------------------------------
+# dir #230: this pin used to read 'dir #230' — a section anchor into a gitignored backlog no adopter
+# can open. The doctrine now ships as a real doc, and BOTH legs of that coupling are pinned in
+# tests/test_verification_economics_doc.sh, which declares itself the owner ("one link-pin per
+# citer"). Not duplicated here: two files pinning the identical fixed string against the identical
+# file add no coverage and give a rename two places to break — the same call, for the same reason,
+# as the delegation.md coupling twenty lines below.
 
 # --- the disclosure-only fix round's own hazard is stated, not just named --------------------------
 pin "the disclosure-only round states the re-derive-don't-paraphrase hazard" \

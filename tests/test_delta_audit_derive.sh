@@ -208,9 +208,21 @@ check_status "a deleted extensionless executable -> exit 0 (closure closes, one 
 check_contains "a deleted extensionless executable still classes code, not prose" \
   "$(cat "$SANDBOX/out-del-exec/ledger.md")" "| cli-tool | code |"
 
-# --- run-record.md is a stub carrying the scope line, nothing else asserted (it is filled by hand) -
+# --- run-record.md is a stub carrying the scope line and the run-profile rows (filled by hand) -----
+run_record="$(cat "$out1/run-record.md")"
 check_contains "run-record.md's scope line names the file and PR counts" \
-  "$(cat "$out1/run-record.md")" "| scope | 6 files, 2 PRs |"
+  "$run_record" "| scope | 6 files, 2 PRs |"
+
+# dir #230: the profile's four added fields. A field nothing writes is a field that does not exist,
+# so the stub carries a slot for each one the doctrine defines.
+check_contains "run-record.md carries the new-classes-vs-instances row" \
+  "$run_record" "| new classes vs instances of known ones |"
+check_contains "run-record.md carries the upstream-gate row" \
+  "$run_record" "| upstream gate that should have caught it |"
+check_contains "run-record.md carries the per-leg cost row, permitting an unmeasured value" \
+  "$run_record" "cost, per leg (sessions, tier+effort, tokens or \`unmeasured\`)"
+check_contains "run-record.md carries the induced-defects rate row" \
+  "$run_record" "| induced defects (induced / total) |"
 
 # --- the closure check fires on a squash/rebase merge: the one structural blind spot --------------
 sq="$(mk_repo)"

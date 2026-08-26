@@ -468,15 +468,30 @@ continue, distinct from the round-budget/delta-review mechanics that enforce the
 step 5. See "Full pass or cheap delta?" below for the companion question — not *whether* to run another
 round, but what *kind* once you do.
 
+**The two signals above are the per-ROUND question.** Two layers sit above them — when a whole *run*
+is done, and what a *release* files from it — and they are not the same question:
+[`docs/verification-economics.md`](docs/verification-economics.md) owns those, along with the datasets
+behind the "review until clean" model being wrong. It folds "new surface touched" into its own
+stopping rule and cites the campaign evidence above as the prior art for its
+fix-rounds-are-a-defect-source section. Read it when deciding whether an *audit* is finished; the two
+signals here stay the answer inside a single review.
+
 ### Full pass or cheap delta?
 
 Once another round is worth running, a second question follows: full pass, or a cheap delta over the
 range no reviewer has seen? "When to stop reviewing" above rejects severity trend alone as a signal for
 *whether* to continue; read together with a second signal it still answers *what kind* of round to run:
 findings dropping from high-severity logic bugs to cosmetic nits, *and* landing in prose/docs rather than
-code. That combination, not either signal alone, is the tell that the substantive surface is exhausted.
-It produces a defensible "don't re-run a full pass — run one cheap delta over the unreviewed range
-instead" call, rather than either an arbitrary round cap or an open-ended "run it again to be sure."
+code. That combination, not either signal alone, produces a defensible "don't re-run a full pass — run
+one cheap delta over the unreviewed range instead" call, rather than either an arbitrary round cap or
+an open-ended "run it again to be sure."
+
+**Scope that to the reviewer, not to the artifact.** It is a reading of what *this* reviewer has left
+to find on this state, not evidence that the substantive surface is exhausted — a fresh-context
+reviewer on the *same* state routinely finds more, and often more severe, than the reviewer whose
+trend just flattened (the datasets are in
+[`docs/verification-economics.md`](docs/verification-economics.md)). So a flattening trend is a fair
+basis for spending less on the *next round's shape*; it is not a basis for declaring the work verified.
 
 ---
 

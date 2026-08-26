@@ -35,7 +35,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 - `docs/delegation.md`, `docs/drydock.md`, and `docs/delta-audit.md` fold in method lessons from the
   v0.7.0 delta audit retro (dir #231). Three of the seven lessons the retro named were already seeded
   into `docs/delta-audit.md` by dir #207 and are pin-tested here rather than reintroduced; a fourth (a
-  stopping-rule citation) stays deferred until dir #230's own `/design` pass lands. `docs/delegation.md`
+  stopping-rule citation) was deferred until dir #230's doctrine doc existed, and lands with it in the
+  Added entry below. `docs/delegation.md`
   gains two new generalized sections: **Blind-then-reconcile**, a reusable two-phase verifier shape (an
   independent blind pass, then a reconciliation section against the worker's own report) instantiated by
   the delta audit's diversity-leg pattern; and **Execute the claim, don't re-read it** — a comment or
@@ -69,6 +70,45 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ### Added
 
+- **[`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what
+  to file from a run, and how to tell whether the verification method is improving** (dir #230). The
+  three audit docs (`docs/drydock.md`, `docs/delta-audit.md`, `docs/release-audit.md`) each say how
+  to *run* a pass;
+  none said when a pass is *done*, so the stop rule and filing bar existed only as prose inside a
+  gitignored backlog ticket that `docs/delta-audit.md` cited by a section anchor resolving to nothing.
+  The doc replaces the founding claim it was specced from rather than restating it: "severity-weighted
+  findings-per-token, falling monotonically" is retired, not weakened — its denominator was never
+  recorded by any run, and its shape is contradicted by the newer of the two datasets. What replaces
+  it is a **two-axis** premise: convergence exists in *class space across runs*, and does not exist in
+  *finding-count space within a run* (one reviewer went 9→8→7→5→5 on one document; a fresh-context
+  reviewer running the **same model as the author** then found 18 on the more-reviewed state — find-rate
+  tracks reviewer novelty, not artifact quality). On that premise: a stopping rule in two clauses
+  (within-run: two independent diverse legs in parallel yielding no behavioural findings and no new
+  classes, with "new" scoped to the registry *as it stands at that moment* so the rule is satisfiable
+  on a project's first run; across-run: a known-instances-only run indicts the demotion pipeline, not
+  the review count), a **filing bar** whose sub-bar findings land on a named standing line rather than
+  a ticket of their own, a diversity axis reordered **fresh context → method → vendor**, a section on
+  fix rounds as a measurable defect source, the shift-left ladder, a bootstrapping section for an
+  adopter with no class registry yet, and a six-field run **profile** replacing the retired scalar.
+  Wired into all four citers: `FRAMEWORK.md`'s "PR review" **keeps** its two signals as the per-round
+  question and gains a pointer to the layer above (its "Full pass or cheap delta?" trend signal is
+  rescoped to the reviewer rather than the artifact); `docs/delta-audit.md`'s two `dir #230 §N` anchors
+  become links; `docs/drydock.md` cites it from four sections (the two-tiers/ratchet framing, Scope C's
+  diversity paragraph, phase 6's ticketing decision, and phase 7's ratchet), and
+  `docs/release-audit.md` from phase 5 and its See-also. `tools/delta-audit/derive.sh`'s
+  `run-record.md` stub gains rows for the profile's four added fields, so a field the doctrine defines
+  is one a run actually records. New `tests/test_verification_economics_doc.sh` (41 assertions) pins
+  the doctrine invariants and one link per citer, every assertion mutation-proven;
+  `tests/test_delta_audit_doc.sh`'s pin on the literal `dir #230` is removed rather than retargeted —
+  both legs of that coupling are owned by the new test file, and duplicating them would give a rename
+  two places to break — and `tests/test_delta_audit_derive.sh` covers the new stub rows.
+  **Closes dir #258 as absorbed** — this is the only PR in which the link target exists, so it is the
+  only one that could convert those citations and stay green. #258's one out-of-scope note (every
+  `dir #N` in `docs/` resolves only to a gitignored backlog, so no adopter can follow one) was moved
+  out to **dir #269** *before* #258 closed, rather than dying inside an absorbed ticket. Also closes
+  **dir #231's item 4**, its last open dependency. Three sites where the doctrine belongs but the edit
+  would change what an audit session *does* are filed as **dir #270**, and the deferred metric-harvest
+  script as **dir #267** — neither is in this diff.
 - `tools/self/doctor.sh` now cross-checks every `dir #N` referenced in commit messages since the
   previous release tag against CHANGELOG.md's own `[Unreleased]` section, WARNing on any ticket
   present in commits but absent from `[Unreleased]` — per-ticket, not per-file, so a PR that touches

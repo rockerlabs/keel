@@ -88,6 +88,15 @@ thirteen — before a delta-review protocol (verify only the fix's own delta, sa
 rounds) proved a fraction of the cost per round. Full mechanics, including the zero-findings-in-a-delta-
 round termination rule and the per-round trend line: dir #127 — cross-linked here, not restated.
 
+**Why a budget is the right shape at all, and the one boundary to keep straight:**
+[`docs/verification-economics.md`](verification-economics.md) is the *why* behind capping rounds —
+find-rate tracks reviewer novelty rather than artifact quality, so "review until a round comes back
+clean" is not a stopping rule, and a fix round is itself a measurable defect source that the cap
+limits. **Do not generalize the delta-round termination above into a release-level stop.** The two
+answer different questions and are both correct at their own scale: a zero-findings *delta* round says
+this fix introduced nothing, which is a convergence check on one change; deciding the *run* is done is
+the doctrine's two-diverse-legs clause, and a single clean round never satisfies it.
+
 ## Phase 6 — RC pass: a delta audit over a mechanically derived universe
 
 Run one release-candidate pass late, scoped to a universe **derived from git, never chosen by
@@ -201,7 +210,9 @@ being reusable the moment a second campaign's lessons don't fit it.
 ## See also
 
 - **dir #126** — the two measurable signals for *when to stop reviewing* (new surface touched, class
-  exhaustion), which phase 5's review-budget rounds apply on each pass.
+  exhaustion), which phase 5's review-budget rounds apply on each pass. They are the **per-round**
+  question; [`docs/verification-economics.md`](verification-economics.md) is the layer above them,
+  per-run and per-release, and folds "new surface touched" into its own stopping rule.
 - **dir #127** — the review-round budget and delta-review protocol phase 5 hands off to.
 - **dir #128** — contract-first for invariant-bearing surfaces and the "sync comment is a missing
   contract" smell; phase 0's green-contracts state definition is this idea applied project-wide.
