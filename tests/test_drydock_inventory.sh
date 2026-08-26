@@ -190,11 +190,12 @@ check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a di
 # on the expected content is the second, independent proof (a crash's captured stderr, via run()'s
 # `2>&1`, would starve this assertion of the real output either way).
 #
-# CI-BLIND, ON PURPOSE, NOT A GAP TO CLOSE: this bug is bash-3.2-specific (macOS's shipped version) —
-# reproduced clean (no crash) on Debian bash 5.2 and Alpine bash 5.3, the two platforms this repo's CI
-# actually runs. This pin only has teeth on a local macOS run; a green CI leg proves nothing about it,
-# same shape as this repo's other platform-conditional traps (project CLAUDE.md's Alpine-only-trap
-# entries), just the mirror-image case — macOS-only, not Alpine-only.
+# This bug is bash-3.2-specific (macOS's shipped version, reproduced clean — no crash — on Debian
+# bash 5.2 and Alpine bash 5.2.37): a green run on this repo's `tests` (ubuntu-24.04) or `alpine`
+# CI legs proves nothing about this pin. It DOES bite on CI's `tests (macos-14)` leg, though — that
+# leg's own `bash --version` diagnostic step confirms bash 3.2.57, the exact vulnerable version, so a
+# reintroduction of the reverted bug would turn that leg red. Verify the claim before trusting it if
+# ci.yml's matrix ever changes: `grep -A3 "matrix:" .github/workflows/ci.yml`.
 run_in "$r" env "DRYDOCK_SCOPE_C= " "$TOOL"
 check_status "an all-whitespace DRYDOCK_SCOPE_C exits 0 either way (not the discriminator — see below)" \
   0 "$STATUS"
