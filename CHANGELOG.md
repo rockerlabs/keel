@@ -50,6 +50,17 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   session caught it by hand. Reproduces both real prototype datasets byte-identically, verified
   live on macOS, Alpine/BusyBox, and Debian/GNU. `docs/delta-audit.md`, the doc that adopts this
   script into a full procedure, is dir #207's PR2.
+- `docs/delta-audit.md` (dir #207, PR2 of 2): the full procedure that adopts `tools/delta-audit/
+  derive.sh` — the 8-rule Protocol, roles and legs (including the required diversity leg, skippable
+  only by an explicit operator decision, never the orchestrator's own judgment), the read-order and
+  incremental-writing rule, a sizing range from two real runs, the verdict contract, copy-paste
+  session prompts (each carrying `docs/delegation.md`'s rails block verbatim — dir #208's own defect
+  is a second template set that doesn't), the disclosure-only fix round, and the cross-vendor leg's
+  two harness lessons. `docs/release-audit.md` phase 6 is rewritten into this doc's caller: its
+  three-point mandate survives as a depth heuristic applied within the derived universe, no longer
+  the rule that chooses the universe itself. `docs/drydock.md`'s "Incremental runs" section gains a
+  cross-reference distinguishing its own prose-only, previous-run-baseline scope from this doc's
+  release-range scope.
 - `tests/test_ci_alpine_safe_directory.sh` pins `.github/workflows/ci.yml`'s alpine leg to a
   `--system` (not `--global`) `safe.directory` write ordered before `bash tests/run.sh` (dir #246).
   Nothing previously covered that one line — it's YAML, so shellcheck never reaches it, and neither
