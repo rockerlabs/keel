@@ -402,4 +402,56 @@ run_in "$notrepo" "$TOOL"
 check_status "outside a git repository -> exit 3" 3 "$STATUS"
 check_contains "the non-repo refusal says so" "$OUT" "git repository"
 
+# --- the EXIT trap must preserve a genuine set -u crash's exit status (dir #264) --------------------
+# Extracted from the real file, not hardcoded, so a regression back to the bare `trap 'rm -rf
+# "$scratch"' EXIT` form (or to the naive-but-wrong `trap 'st=$?; ...; exit $st' EXIT` idiom — verified
+# live to ALSO exit 0 on macOS's bash 3.2.57, see inventory.sh's own comment at this pair) is caught
+# mechanically rather than by inspection.
+#
+# The crash trigger is a plain UNSET SCALAR reference, not an empty array's "${arr[@]}" expansion —
+# CI caught this live (alpine-busybox, bash 5.2.37): bash 4.4 changed an empty array's "[@]"/"[*]"
+# expansion to no longer violate `set -u` at all, so the original array-based trigger silently never
+# crashed there, and the assertions below failed for the wrong reason (a real "no crash happened",
+# not a masked one). An unset scalar reference still violates `set -u` on every bash version checked
+# (3.2.57 and 5.2.37) and reproduces the SAME masking on 3.2.57 as the array did. On bash 5.2.37 this
+# scalar crash's real exit status survives even through the OLD bare trap (verified live in Docker,
+# alpine:3.21) — meaning this specific class of the bug is 3.2-specific and the assertions below don't
+# discriminate fixed-vs-bare on that platform, but they still pass there for the right reason: the
+# script's actual behavior (crash -> nonzero) is correct on both bash versions either way.
+#
+# A first version of this test extracted these three pieces and, if any grep/sed came up empty
+# (because the trap reverted to some other shape), silently built a harness with NO trap installed at
+# all — which still exits nonzero on a nounset crash for an unrelated reason (nothing overrides $?
+# when there is no trap), so the test kept passing on the very regression it exists to catch. Guard
+# against that class directly: fail loudly if extraction finds nothing, instead of silently testing an
+# empty harness.
+ok_line="$(grep -m1 '^ok=' "$TOOL")"
+on_exit_fn="$(sed -n '/^on_exit() {/,/^}/p' "$TOOL")"
+trap_line="$(grep -m1 '^trap on_exit EXIT' "$TOOL")"
+if [ -z "$ok_line" ] || [ -z "$on_exit_fn" ] || [ -z "$trap_line" ]; then
+  fail "inventory.sh's EXIT trap reports a genuine set -u crash as nonzero, not exit 0" \
+    "could not extract the ok=/on_exit()/trap lines from $TOOL — its EXIT-trap shape changed; update this test's extraction"
+else
+  harness="$SANDBOX/trap-harness.sh"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'scratch="$(mktemp -d)"' \
+    'set -euo pipefail' \
+    "$ok_line" \
+    "$on_exit_fn" \
+    "$trap_line" \
+    'echo "$__dir264_undefined_var"' \
+    'ok=1' > "$harness"
+  run bash "$harness"
+  check_status "inventory.sh's EXIT trap reports a genuine set -u crash as nonzero, not exit 0" 1 "$STATUS"
+  check_contains "...and the crash is a real nounset abort, not some other failure" "$OUT" "unbound variable"
+fi
+
+# The completion marker only works if `ok=1` is genuinely the script's last line — nothing else
+# enforces that, and a future append after it would silently reintroduce the masking bug the tests
+# above exist to catch (the harness above builds its OWN synthetic `ok=1` and can't see this).
+last_line="$(tail -n1 "$TOOL")"
+check_contains "the ok=1 completion marker is still the script's last line, not shadowed by later code" \
+  "$last_line" "ok=1"
+
 summary
