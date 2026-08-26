@@ -33,7 +33,11 @@
 #                                (see docs/drydock.md's scope-C section for why the overlap is fine).
 #                                An empty value (`DRYDOCK_SCOPE_C=`) is UNSET too, same as scope B —
 #                                to disable scope C, name a pathspec matching nothing, canonically
-#                                `DRYDOCK_SCOPE_C=':!*'`.
+#                                `DRYDOCK_SCOPE_C=':!*'`. An all-whitespace value is NEITHER of the
+#                                above: it is non-empty, so it takes the explicit-pathspec branch, but
+#                                parses to zero pathspec tokens — same net effect as `:!*` (an empty
+#                                scope C), reached by a different path (an unparsed pathspec, not a
+#                                refused one). Not a spelling to rely on; `:!*` is the canonical one.
 #   DRYDOCK_HISTORICAL           files under the historical-prose rule, always their own batch —
 #                                EXACT repo-relative paths, not pathspecs (default: CHANGELOG.md;
 #                                see docs/drydock.md, phase 1)

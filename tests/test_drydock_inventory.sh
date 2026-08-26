@@ -180,7 +180,8 @@ check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a di
 # empty array as *function-call arguments* (a since-reverted scope_b_files/scope_c_files unification
 # attempt) expands "${arr[@]}" before the callee's own length guard ever runs, and this repo's target
 # bash (3.2, macOS's shipped version) throws "unbound variable" on an EMPTY array's "${arr[@]}"
-# expansion under `set -u`, no matter the context.
+# expansion under `set -u`, no matter the context. Same class of hazard the guard comment on
+# `scan_files` in tools/self/doctor.sh's dead-reference scan documents for this exact expansion.
 #
 # `check_status ... 0` below is NOT what actually catches this — verified live: this script's own
 # `trap 'rm -rf "$scratch"' EXIT` runs (and succeeds) on the nounset abort too, so bash reports the
@@ -188,6 +189,12 @@ check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a di
 # `check_absent` on the literal error text is what actually proves no crash happened; `check_contains`
 # on the expected content is the second, independent proof (a crash's captured stderr, via run()'s
 # `2>&1`, would starve this assertion of the real output either way).
+#
+# CI-BLIND, ON PURPOSE, NOT A GAP TO CLOSE: this bug is bash-3.2-specific (macOS's shipped version) —
+# reproduced clean (no crash) on Debian bash 5.2 and Alpine bash 5.3, the two platforms this repo's CI
+# actually runs. This pin only has teeth on a local macOS run; a green CI leg proves nothing about it,
+# same shape as this repo's other platform-conditional traps (project CLAUDE.md's Alpine-only-trap
+# entries), just the mirror-image case — macOS-only, not Alpine-only.
 run_in "$r" env "DRYDOCK_SCOPE_C= " "$TOOL"
 check_status "an all-whitespace DRYDOCK_SCOPE_C exits 0 either way (not the discriminator — see below)" \
   0 "$STATUS"
