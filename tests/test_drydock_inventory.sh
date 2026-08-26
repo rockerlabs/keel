@@ -405,9 +405,19 @@ check_contains "the non-repo refusal says so" "$OUT" "git repository"
 # --- the EXIT trap must preserve a genuine set -u crash's exit status (dir #264) --------------------
 # Extracted from the real file, not hardcoded, so a regression back to the bare `trap 'rm -rf
 # "$scratch"' EXIT` form (or to the naive-but-wrong `trap 'st=$?; ...; exit $st' EXIT` idiom — verified
-# live to ALSO exit 0 here, see inventory.sh's own comment at this pair) is caught mechanically rather
-# than by inspection. The harness reproduces the exact top-level nounset shape this repo's target bash
-# (3.2.57) requires to exhibit the masking: an EMPTY array's "${arr[@]}" expansion under `set -u`.
+# live to ALSO exit 0 on macOS's bash 3.2.57, see inventory.sh's own comment at this pair) is caught
+# mechanically rather than by inspection.
+#
+# The crash trigger is a plain UNSET SCALAR reference, not an empty array's "${arr[@]}" expansion —
+# CI caught this live (alpine-busybox, bash 5.2.37): bash 4.4 changed an empty array's "[@]"/"[*]"
+# expansion to no longer violate `set -u` at all, so the original array-based trigger silently never
+# crashed there, and the assertions below failed for the wrong reason (a real "no crash happened",
+# not a masked one). An unset scalar reference still violates `set -u` on every bash version checked
+# (3.2.57 and 5.2.37) and reproduces the SAME masking on 3.2.57 as the array did. On bash 5.2.37 this
+# scalar crash's real exit status survives even through the OLD bare trap (verified live in Docker,
+# alpine:3.21) — meaning this specific class of the bug is 3.2-specific and the assertions below don't
+# discriminate fixed-vs-bare on that platform, but they still pass there for the right reason: the
+# script's actual behavior (crash -> nonzero) is correct on both bash versions either way.
 #
 # A first version of this test extracted these three pieces and, if any grep/sed came up empty
 # (because the trap reverted to some other shape), silently built a harness with NO trap installed at
@@ -430,8 +440,7 @@ else
     "$ok_line" \
     "$on_exit_fn" \
     "$trap_line" \
-    'arr=()' \
-    'echo "${arr[@]}"' \
+    'echo "$__dir264_undefined_var"' \
     'ok=1' > "$harness"
   run bash "$harness"
   check_status "inventory.sh's EXIT trap reports a genuine set -u crash as nonzero, not exit 0" 1 "$STATUS"
