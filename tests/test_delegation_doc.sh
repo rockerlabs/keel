@@ -10,6 +10,7 @@
 
 doc="$REPO_ROOT/docs/delegation.md"
 drydock="$REPO_ROOT/docs/drydock.md"
+delta_audit="$REPO_ROOT/docs/delta-audit.md"
 readme="$REPO_ROOT/README.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
@@ -85,5 +86,34 @@ else
   fail "FRAMEWORK.md's delegation pointer is <= 4 lines" \
     "measured $pointer_lines lines — pointer must stay a pointer, not the pattern body"
 fi
+
+# --- dir #231 item 2: blind-then-reconcile, a two-phase verifier shape (home: this doc) -------------
+pin "delegation.md names the blind-then-reconcile section" "$doc" \
+  '## Blind-then-reconcile — an optional two-phase verifier shape' \
+  "expected a named section generalizing the blind-pass-then-reconciliation pattern"
+pin "the reconciliation step names self-correction, not just deference" "$doc" \
+  "Self-correct against the other report; don't just defer to it" \
+  "expected the reconciliation step to require judging the verifier's own findings, not just comparing"
+pin "the pattern cites its field-tested instance" "$doc" \
+  'diversity leg of a delta audit' \
+  "expected a pointer to docs/delta-audit.md's diversity-leg template as the worked example"
+pin "delta-audit.md's diversity leg names the blind-then-reconcile section back" "$delta_audit" \
+  'see its "Blind-then-reconcile" section for the two-phase reviewer contract stated' \
+  "expected the diversity-leg paragraph to name delegation.md's section, both legs of the coupling pinned"
+
+# --- dir #231 item 7: mirrored disclosures are a drift factory (home: this doc) ---------------------
+pin "delegation.md names the disclosures section" "$doc" \
+  '## Disclosures — one canonical text, not mirrors' \
+  "expected a named section on avoiding mirrored disclosures"
+pin "the disclosures rule cites its felt incident" "$doc" 'dir #201/#214' \
+  "expected the three-mirror disclosure incident to be named, not just described"
+pin "the disclosures rule cites its sibling class" "$doc" 'dir #166' \
+  "expected the one-status-on-N-surfaces class to be cross-linked as the same root cause"
+pin "the disclosures rule states the pointer, not restate, remedy" "$doc" \
+  'Write it **once**, on the surface closest to' \
+  "expected the canonical-text-plus-pointer remedy stated explicitly"
+pin "the disclosures section reconciles with the verbatim rails block" "$doc" \
+  'This does not apply to the worker rails block above' \
+  "a section on avoiding mirrors must explain why the rails block deliberately IS one, or it contradicts itself"
 
 summary

@@ -15,7 +15,10 @@ Verify the findings in these audit files:
 
 For each finding, **reproduce the evidence empirically**: re-read the quoted prose in place in the
 frozen tree at `<baseline-sha>`, re-measure every number, re-check every stale-claim against the code
-it describes. A finding you cannot reproduce is not thereby wrong — say what you measured.
+it describes. A finding you cannot reproduce is not thereby wrong — say what you measured. Where a
+finding turns on a comment or contract note describing behavior, "reproduce" means **execute what it
+claims**, not read the comment again more carefully — a well-written comment has passed as proof of
+behavior before and been wrong.
 
 **Sandbox rail:** any live or executable check that WRITES runs **only** in a scratch clone under
 your own temp directory — never the real checkout, never the real `$HOME`. This is not boilerplate: a

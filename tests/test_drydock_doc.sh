@@ -115,4 +115,21 @@ pin "sweep 2 enumerates NUL-delimited" "$doc" "git ls-files -z '*.md' | while IF
 pin "sweep 2's class does not stop at a colon" "$doc" '\]\([^)#]+' \
   "excluding ':' truncates mailto:you@example.com to 'mailto', reported as a dead relative link"
 
+# --- dir #231 item 3: a comment is a claim, not evidence — execute what it describes (home: this doc,
+# mirrored into the auditor/verifier templates it hands to agents) ---------------------------------
+pin "drydock.md's phase 1 rail 5 states the execute-don't-read rule" "$doc" \
+  'A comment or contract note describing behavior is a claim, not evidence' \
+  "expected a numbered auditor rail stating the rule, per the doc's own 'these are the ones with a story' convention"
+pin "rail 5 cites its felt incident" "$doc" 'dir #223/#224' \
+  "expected the delta-audit run's diversity-leg incident to be named, not just described"
+pin "phase 2's calibration note applies the same rule to re-derivation" "$doc" \
+  'reproducing a finding empirically means running what a comment or contract note' \
+  "expected the verifier's re-derivation section to restate the rule for phase 2"
+pin "auditor.md's rails carry the same rule" "$auditor" \
+  'A comment or contract note describing behavior is a claim, not evidence' \
+  "expected the shipped auditor template to carry the rule the procedure states"
+pin "verifier.md's re-derivation carries the same rule" "$verifier" \
+  'not read the comment again more carefully' \
+  "expected the shipped verifier template to say execute-not-reread"
+
 summary

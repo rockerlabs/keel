@@ -226,6 +226,13 @@ The auditor prompt's rails, each of which run 1 needed (the full, copy-paste lis
 4. **Any executable check runs in a scratch copy** — not the live tree, not the real home directory.
    This rail belongs in the *auditor* prompt, not just the verifier's: two run-1 auditors ran live
    repo scripts before it was there. No harm that time.
+5. **A comment or contract note describing behavior is a claim, not evidence — execute what it
+   describes rather than accepting the prose.** Not a run-1 incident, but a lesson a later run of the
+   same shape produced and this rail generalizes from: a delta-audit run's main-wave sessions each
+   accepted a well-written contract comment as proof of what the code did; only its diversity leg,
+   which ran the described input instead of re-reading the comment, caught that it was false
+   (dir #223/#224, [`docs/delta-audit.md`](delta-audit.md) §4 rule 3). Applies to the verifier's
+   re-derivation in phase 2 too — see below.
 
 **Zero findings is a valid result** and should be reported plainly. Run 1's cleanest files were not
 the short ones — they were the recently-reworked ones. Recency of maintenance, not file type or size,
@@ -250,10 +257,11 @@ under a redirected `$HOME` its verdict doesn't weaken, it inverts — a fully-gu
 "not wired." Sandbox anything that writes; never sandbox a read whose whole subject is the real
 machine's state.
 
-Two calibration notes: `rejected` requires a measurement, not a doubt — "I couldn't see how this would
-be wrong" is not a rejection. And a `readability`/`optimization`-class finding carries a *higher* bar
+Three calibration notes: `rejected` requires a measurement, not a doubt — "I couldn't see how this would
+be wrong" is not a rejection. A `readability`/`optimization`-class finding carries a *higher* bar
 than a factual one, because it is the class most likely to be an agent restyling prose it merely
-finds unfamiliar.
+finds unfamiliar. And reproducing a finding empirically means running what a comment or contract note
+*claims*, not reading the same prose again more carefully — phase 1's rail 5 states why.
 
 ## Phase 3 — the cross-file pass
 

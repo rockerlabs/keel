@@ -32,6 +32,21 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   against drift). **Every already-vendored copy on the fleet is stale until re-vendored** — until then
   it still resolves the pre-#251 way (a `.keel/` marker only), so its guard events keep landing in the
   project tree rather than the store.
+- `docs/delegation.md` and `docs/drydock.md` fold in method lessons from the v0.7.0 delta audit retro
+  (dir #231). Three of the seven lessons the retro named were already seeded into `docs/delta-audit.md`
+  by dir #207 and are pin-tested here rather than reintroduced; a fourth (a stopping-rule citation)
+  stays deferred until dir #230's own `/design` pass lands. `docs/delegation.md` gains a
+  **Blind-then-reconcile** section generalizing the delta audit's diversity-leg pattern into a reusable
+  two-phase verifier shape (an independent blind pass, then a reconciliation section against the
+  worker's own report) and a **Disclosures** section naming the one-canonical-text-plus-pointer rule
+  for any operator-facing caveat that has to appear on more than one surface — stated alongside an
+  explicit carve-out for the rails block's own deliberate verbatim-copy-plus-drift-test discipline, so
+  the two don't read as contradicting each other. `docs/drydock.md`'s auditor rails gain a fifth rule —
+  a comment or contract note describing behavior is a claim, not evidence; execute what it describes
+  rather than accepting the prose — mirrored into `docs/drydock/auditor.md` and
+  `docs/drydock/verifier.md`, naming the felt incident it generalizes from (dir #223/#224) inline. All
+  seven lessons are now pin-tested across `tests/test_delegation_doc.sh`, `tests/test_drydock_doc.sh`,
+  and `tests/test_delta_audit_doc.sh` — each new pin verified live to fail against the pre-fix docs.
 
 ### Added
 

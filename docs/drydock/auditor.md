@@ -39,6 +39,9 @@ doesn't resolve) · `overclaim` (a promise stronger than the implementation) · 
   real checkout, never the real `$HOME`.
 - Measure in the frozen tree you were given (`<frozen-worktree-path>`); write output to
   `<audit-dir>`. Never the reverse.
+- **A comment or contract note describing behavior is a claim, not evidence.** If the input it
+  describes is executable, run it rather than accepting the prose — a well-written comment has passed
+  as proof of behavior before and been wrong.
 
 **Audit-file contract** — fill exactly this shape, and leave the `verdict:` line EMPTY for the
 verifier:

@@ -124,6 +124,9 @@ never the orchestrator's own judgment — a real run's own orchestrator dropped 
 judgment once, was corrected only by an operator question, and the restored leg then supplied most of
 that run's disclosed residuals. dir #230 §4 owns the doctrine this rail comes from; the rail itself is
 stated here because a session following this procedure needs the operative rule, not just a pointer.
+The blind-then-reconcile method is the generalized [`docs/delegation.md`](delegation.md) shape this
+leg instantiates — see its "Blind-then-reconcile" section for the two-phase reviewer contract stated
+independently of this application.
 
 **Fixes are a separate, gated phase, not part of any audit session above.** Every role through
 S-final is Protocol rule 1's read-only — a `fix-before-tag` disposition (§8's report contract) is a
