@@ -92,7 +92,7 @@ pin "delegation.md names the blind-then-reconcile section" "$doc" \
   '## Blind-then-reconcile — an optional two-phase verifier shape' \
   "expected a named section generalizing the blind-pass-then-reconciliation pattern"
 pin "the reconciliation step names self-correction, not just deference" "$doc" \
-  "Self-correct against the other report; don't just defer to it" \
+  "Judge your own findings against what the other side measured; don't simply defer" \
   "expected the reconciliation step to require judging the verifier's own findings, not just comparing"
 pin "the pattern cites its field-tested instance" "$doc" \
   'diversity leg of a delta audit' \
@@ -100,6 +100,30 @@ pin "the pattern cites its field-tested instance" "$doc" \
 pin "delta-audit.md's diversity leg names the blind-then-reconcile section back" "$delta_audit" \
   'see its "Blind-then-reconcile" section for the two-phase reviewer contract stated' \
   "expected the diversity-leg paragraph to name delegation.md's section, both legs of the coupling pinned"
+
+# --- dir #231 item 3: execute the claim, don't re-read it — generalized here, not bolted onto drydock.md
+# alone (an altitude review of the first draft found the asymmetry: item 2 was generalized up into this
+# doc with two-way pointers, item 3 was not) ---------------------------------------------------------
+pin "delegation.md names the execute-the-claim section" "$doc" \
+  "## Execute the claim, don't re-read it" \
+  "expected a named, generalized section stating the rule once"
+pin "the section cites its felt incident" "$doc" 'dir #223/#224' \
+  "expected the delta-audit run's diversity-leg incident to be named, not just described"
+pin "the section names the rule it generalizes, both legs of the coupling pinned" "$doc" \
+  "The rule this generalizes is [\`docs/delta-audit.md\`](delta-audit.md) §4 rule 3" \
+  "expected an explicit pointer back to delta-audit.md's own Protocol rule 3"
+pin "delta-audit.md's rule 3 names the generalized section back" "$delta_audit" \
+  "is generalized in [\`docs/delegation.md\`](delegation.md)'s \"Execute the" \
+  "expected delta-audit.md's rule 3 to point at delegation.md's section, both legs pinned"
+pin "drydock.md's rail 5 points at the generalized section rather than restating it" "$drydock" \
+  "\"Execute the claim, don't re-read it\" section states the rule once" \
+  "expected drydock.md's auditor rail to point at delegation.md instead of re-narrating the incident"
+
+# --- reuse: the disclosures rule is an application of FRAMEWORK.md's existing sync-smell rule, not a
+# second, unlinked statement of the same principle (found by a /simplify reuse review) --------------
+pin "the disclosures section cites FRAMEWORK.md's Single source of truth / sync smell rule" "$doc" \
+  "Single source of truth" \
+  "expected the new Disclosures section to link the existing FRAMEWORK.md rule it applies, not restate it standalone"
 
 # --- dir #231 item 7: mirrored disclosures are a drift factory (home: this doc) ---------------------
 pin "delegation.md names the disclosures section" "$doc" \

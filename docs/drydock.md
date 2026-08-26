@@ -227,12 +227,9 @@ The auditor prompt's rails, each of which run 1 needed (the full, copy-paste lis
    This rail belongs in the *auditor* prompt, not just the verifier's: two run-1 auditors ran live
    repo scripts before it was there. No harm that time.
 5. **A comment or contract note describing behavior is a claim, not evidence — execute what it
-   describes rather than accepting the prose.** Not a run-1 incident, but a lesson a later run of the
-   same shape produced and this rail generalizes from: a delta-audit run's main-wave sessions each
-   accepted a well-written contract comment as proof of what the code did; only its diversity leg,
-   which ran the described input instead of re-reading the comment, caught that it was false
-   (dir #223/#224, [`docs/delta-audit.md`](delta-audit.md) §4 rule 3). Applies to the verifier's
-   re-derivation in phase 2 too — see below.
+   describes rather than accepting the prose.** Not a run-1 incident; [`docs/delegation.md`](delegation.md)'s
+   "Execute the claim, don't re-read it" section states the rule once, generalized, with its felt
+   incident (dir #223/#224). Applies to the verifier's re-derivation in phase 2 too — see below.
 
 **Zero findings is a valid result** and should be reported plainly. Run 1's cleanest files were not
 the short ones — they were the recently-reworked ones. Recency of maintenance, not file type or size,

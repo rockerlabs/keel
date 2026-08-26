@@ -51,7 +51,8 @@ own pass **blind** — before reading the worker's report at all — writes its 
 only then reads the worker's report (and any sibling verifier reports already written) and appends a
 **reconciliation section**: what both sides caught, what only each side caught, and — the part a plain
 re-check never produces — any of the verifier's *own* findings it now judges wrong in light of what the
-other side measured. Self-correct against the other report; don't just defer to it.
+other side measured. Judge your own findings against what the other side measured; don't simply defer
+to it.
 
 This is worth the extra pass specifically when a unit's judgment is hard enough that two independent
 reads catch different things than one read plus a re-check would — it is not the default verifier
@@ -59,6 +60,20 @@ shape. A field-tested instance is the diversity leg of a delta audit
 ([`docs/delta-audit.md`](delta-audit.md) §9's diversity-leg template): running the same whole-read
 method blind, then reconciling, caught both a shared blind spot every same-family session had missed
 and its own misreading of an unrelated finding, in the same run.
+
+## Execute the claim, don't re-read it
+
+A comment, docstring, or contract note describing behavior is a **claim, not evidence**. When the
+input it describes is executable, verification means running it — not reading the same prose again,
+however carefully. A field-tested incident: three review layers of a delta audit (the mechanical
+baseline, the main-wave whole-read sessions, and their verifier) each accepted a well-written contract
+comment as proof of what a script did; only the diversity leg, which ran the described input instead
+of re-reading the comment, caught that the comment was false (dir #223/#224).
+
+The rule this generalizes is [`docs/delta-audit.md`](delta-audit.md) §4 rule 3 ("verify claims against
+the tree, not memory or plausibility") — that rule's own worked incident is this one, stated here
+because auditing isn't the only application that needs it: any worker or verifier reading a claim about
+executable behavior should run it, not just re-read it more carefully.
 
 ## The non-delegable set — a rail, not a suggestion
 
@@ -204,8 +219,10 @@ same commit, in the very header that mandated the sync.
 Write it **once**, on the surface closest to where the disclosed condition actually lives, and have
 every other surface **point at it** rather than restate it. A pointer can't drift out of sync with
 itself; a second full copy always eventually will, no matter how carefully "keep in sync" is worded.
-Same root cause as dir #166's one-status-restated-on-N-surfaces class, applied to prose disclosures
-instead of a status marker.
+This is [`FRAMEWORK.md`](../FRAMEWORK.md)'s **Single source of truth** rule and its **sync smell**
+corollary ("a 'keep in sync with X' comment... is a symptom, not a task"), applied specifically to a
+disclosure instead of a fact, a status marker, or a shared value — same root cause as dir #166's
+one-status-restated-on-N-surfaces class too.
 
 **This does not apply to the worker rails block above.** That block has to be inlined verbatim into
 every prompt an agent actually reads, because a subagent can't reliably dereference a cross-file
