@@ -141,6 +141,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   matching the shape `docs/drydock.md` already uses in this same table (an inline link inside its
   tool's row, no dedicated row of its own) — `docs/delta-audit.md` needs no new row either. Pinned on
   both halves in `tests/test_delta_audit_doc.sh`: the stale claim is gone, and the row links the doc.
+- `tools/drydock/inventory.sh`'s `trap 'rm -rf "$scratch"' EXIT` silently reported exit 0 for a genuine
+  `set -u` "unbound variable" abort (dir #264) — verified live on this repo's target bash (3.2.57) that
+  `$?` is already lost by the time an EXIT trap runs for that one failure class specifically, so even
+  the seemingly-obvious `trap 'st=$?; ...; exit $st' EXIT` fix does not work either. Replaced with an
+  `ok` completion marker, set only on the script's true last line, plus a named `on_exit()` function
+  (a named function avoids a shellcheck SC2154 false positive the inline form triggers) that forces a
+  nonzero exit whenever the script didn't genuinely reach that line. `refuse()`/`die_args()`'s own exit
+  codes (2/3) and an ordinary `set -e` command failure were already reporting correctly and are
+  unaffected. Pinned with a regression test that extracts the real fix from the script (not a
+  hardcoded copy) and runs it in a harness that reproduces the crash, mutation-tested against the
+  pre-fix file. The same bare-trap hazard was found live and reachable (not just latent) in
+  `tools/delta-audit/derive.sh` via `DELTA_HISTORICAL`/`DELTA_INVARIANT_PATHS` — filed as dir #265
+  rather than expanding this fix's scope.
 
 ## [0.7.1] — 2026-08-21
 

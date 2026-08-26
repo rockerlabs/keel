@@ -329,7 +329,28 @@ scope_c_files() {
 # the status, then reading it back is the one shape that satisfies all three. No `| sort`: git
 # already emits index order, which is sorted, and the selector's own list comes from the same source.
 scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT
+# A bare `trap 'rm -rf "$scratch"' EXIT` masks a `set -u` "unbound variable" abort as exit 0 — verified
+# live on this repo's target bash (3.2.57): $? reads 0 inside an EXIT trap for THIS specific fatal-error
+# class, even with no trap commands at all between the crash and the read. It is not the `rm -rf`
+# clobbering a real status; bash itself has already lost it by the time the trap runs. The obvious fix,
+# `trap 'st=$?; ...; exit $st' EXIT`, does NOT work here either — $? is already wrong when the trap
+# sees it (mutation-tested: both forms exit 0 on a genuine nounset crash). `ok` is a completion marker
+# instead: set to a real value only on the script's own last line, once everything has actually
+# succeeded, so the trap can tell "we got there" apart from "something aborted before we got there"
+# without trusting $? for that one case. Every controlled exit already reports the right $? at trap
+# time — refuse()/die_args()'s explicit `exit N`, and an ordinary `set -e` command failure — so this
+# only overrides the one class that lies (dir #264). A named function, not an inline `trap '...' EXIT`
+# string: shellcheck's SC2154 cannot see `st`'s own assignment inside an inline trap body (false
+# positive, verified — the identical logic in a function is clean), and this matches refuse()/
+# die_args()'s own named-function shape besides.
+ok=""
+on_exit() {
+  st=$?
+  [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
+  rm -rf "$scratch"
+  exit "$st"
+}
+trap on_exit EXIT
 
 scope_a_files > "$scratch/a" \
   || refuse "could not enumerate scope A — git failed. Nothing was measured; fix that error rather
@@ -510,3 +531,4 @@ printf '\n'
 batch_stream "$stream_b" comments all | pack B 0 "$comment_batch_lines" comment-ln
 printf '\n'
 batch_stream "$stream_c" lines all mark_invariant | pack C 0 "$code_batch_lines" ln
+ok=1   # marks genuine completion for the EXIT trap's nounset guard above — see its comment (dir #264)
