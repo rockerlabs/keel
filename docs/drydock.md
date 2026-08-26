@@ -213,8 +213,9 @@ always in its own batch: a dated section is checked for **internal consistency a
 only** — never against today's code, where every historical entry would read as a stale claim. Only
 the unreleased section and the newest tagged one get a full stale-claim audit.
 
-The auditor prompt's rails, each of which run 1 needed (the full, copy-paste list is in
-[`docs/drydock/auditor.md`](drydock/auditor.md) — these are the ones with a story):
+The auditor prompt's rails — most of which run 1 needed directly, one folded in from a later run of
+the same shape (the full, copy-paste list is in [`docs/drydock/auditor.md`](drydock/auditor.md) — these
+are the ones with a story):
 
 1. **Read-only, and write only your own audit files.** No commits, no branch changes, no edits to any
    repo file.

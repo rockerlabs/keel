@@ -132,4 +132,12 @@ pin "verifier.md's re-derivation carries the same rule" "$verifier" \
   'not read the comment again more carefully' \
   "expected the shipped verifier template to say execute-not-reread"
 
+# --- the auditor-rails intro must not claim EVERY rail is run-1's own, since rail 5 explicitly isn't
+# (an independent agent review caught this doc contradicting itself — the exact `contradiction` class
+# it defines as a prose defect) ----------------------------------------------------------------------
+check_absent "the auditor-rails intro no longer claims every rail is run-1's own" \
+  "$(cat "$doc")" 'rails, each of which run 1 needed ('
+pin "rail 5 states it is not a run-1 incident" "$doc" 'Not a run-1 incident' \
+  "expected rail 5 to disclaim the run-1 framing the intro no longer makes absolute"
+
 summary

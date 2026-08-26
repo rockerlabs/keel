@@ -140,4 +140,13 @@ pin "the disclosures section reconciles with the verbatim rails block" "$doc" \
   'This does not apply to the worker rails block above' \
   "a section on avoiding mirrors must explain why the rails block deliberately IS one, or it contradicts itself"
 
+# --- the FRAMEWORK.md citation's target side: verify the cited rule still exists there, not just that
+# delegation.md claims to cite it (an independent agent review flagged this leg as unpinned) ----------
+pin "FRAMEWORK.md still carries the Single source of truth rule delegation.md cites" \
+  "$framework" 'Single source of truth' \
+  "expected FRAMEWORK.md to still state the rule the Disclosures section points at"
+pin "FRAMEWORK.md still carries the sync smell corollary delegation.md cites" \
+  "$framework" 'The sync smell' \
+  "expected FRAMEWORK.md to still state the corollary the Disclosures section points at"
+
 summary
