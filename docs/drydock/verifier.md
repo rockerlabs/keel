@@ -20,6 +20,10 @@ finding turns on a comment or contract note describing behavior, "reproduce" mea
 claims**, not read the comment again more carefully — a well-written comment has passed as proof of
 behavior before and been wrong.
 
+**Code findings (scope C) — the bar is unconditional, not comment-triggered.** A `verdict:` on a code
+finding must rest on a sandboxed execution: run the shape, break the test, trace the caller. Same
+rule, same felt incident: [`docs/drydock.md`](../drydock.md)'s phase 1 rail 5.
+
 **Sandbox rail:** any live or executable check that WRITES runs **only** in a scratch clone under
 your own temp directory — never the real checkout, never the real `$HOME`. This is not boilerplate: a
 review subagent once "empirically reproducing" a bug overwrote real machine-global git hooks and
@@ -69,6 +73,13 @@ see, in four classes:
 - **broken promise pairs** — file A says "as described in B", and B describes something else;
 - **dangling references** — a named file, section, ticket, or count that doesn't resolve;
 - **multi-surface procedure skew** — three or more files each restating one procedure, drifted apart.
+
+**If this run covers scope C, three more classes apply**, over the extended `defines:`/`calls:`/
+consumer/test-pin fields [`docs/drydock/code-auditor.md`](code-auditor.md)'s contract adds: a name in
+some file's `defines:` that appears in no file's `calls:` (a dead helper); the same name in a lib's
+`defines:` and a consumer's own `defines:` (the shadowing hazard); and a contract statement with no
+matching test-pin claim (unpinned behavior). Cross-file duplication is NOT one of these — code bodies
+never enter the claims registry, so this pass structurally cannot see it.
 
 You are **self-verifying**: reproduce each candidate against the frozen tree before writing it, and
 write findings straight into `<audit-dir>/cross-file-audit.md` with verdicts already filled, using the

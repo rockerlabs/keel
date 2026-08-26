@@ -3,9 +3,10 @@
 #
 # Adopter-facing: run it on YOUR repo, in a clean tree at the commit you are auditing, and redirect
 # stdout into your run's working directory. It measures what a drydock pass will read (every tracked
-# markdown file whole; every tracked shell file's comment prose) and derives the per-auditor batches
-# from that measurement, so the run's scope is a reproducible artifact instead of a hand-drawn list
-# that quietly disagrees with the tree. Full procedure: docs/drydock.md. Flags: --help.
+# markdown file whole; every tracked shell file's comment prose; every tracked shell file's whole code)
+# and derives the per-auditor batches from that measurement, so the run's scope is a reproducible
+# artifact instead of a hand-drawn list that quietly disagrees with the tree. Full procedure:
+# docs/drydock.md. Flags: --help.
 #
 # The refusals are the point, not a formality. Drydock run 1's very first execution measured the
 # WRONG TREE: it was launched with cwd = the main checkout, which happened to be sitting on a peer
@@ -75,8 +76,9 @@ usage() {
   cat <<'EOF'
 usage: inventory.sh [--baseline <rev>] [--prev <rev>]
 
-Freeze a drydock run's scope. Measures the tracked prose surface at the baseline commit and derives
-the per-auditor batches. Writes markdown to stdout; redirect it into your run's working directory.
+Freeze a drydock run's scope. Measures the tracked prose and code surface at the baseline commit and
+derives the per-auditor batches. Writes markdown to stdout; redirect it into your run's working
+directory.
 
   --baseline <rev>  the commit this run audits (default: origin/main). HEAD must equal it.
   --prev <rev>      a prior run's baseline; files changed since it are flagged CHANGED and the

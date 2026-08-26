@@ -17,9 +17,10 @@ Three siblings, and the boundary with each:
   three points surviving as a **depth heuristic applied within** the derived universe, never as the
   rule that decides what's in scope at all.
 - [`docs/drydock.md`](drydock.md) is the **same role machinery, scoped differently.** Drydock audits
-  the whole tree, prose only, on a cadence of "every few releases." A delta audit scopes to one
-  release range, covers every class `derive.sh` classifies a file into (not prose alone), and ends
-  in a GO/NO-GO a tag actually waits on — drydock ends in a ratchet, not a release gate.
+  the whole tree — prose and code both, by default — on a cadence of "every few releases." A delta
+  audit scopes to one release range, covers every class `derive.sh` classifies a file into (not
+  prose alone), and ends in a GO/NO-GO a tag actually waits on — drydock ends in a ratchet, not a
+  release gate.
 - [`docs/delegation.md`](delegation.md) is the **fan-out contract underneath both.** The roles,
   the unit-output contract, the rails block, the session-limit flow — none of it is re-derived here;
   this doc instantiates it for one application (a release delta) the way `drydock.md` instantiates it

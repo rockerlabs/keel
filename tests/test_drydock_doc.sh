@@ -13,14 +13,19 @@ audit="$REPO_ROOT/docs/release-audit.md"
 rollout="$REPO_ROOT/docs/rollout-audit.md"
 checklist="$REPO_ROOT/docs/publishing-checklist.md"
 readme="$REPO_ROOT/README.md"
+delegation="$REPO_ROOT/docs/delegation.md"
+delta_audit="$REPO_ROOT/docs/delta-audit.md"
+reference="$REPO_ROOT/docs/reference.md"
 auditor="$REPO_ROOT/docs/drydock/auditor.md"
 verifier="$REPO_ROOT/docs/drydock/verifier.md"
 fixer="$REPO_ROOT/docs/drydock/fixer.md"
+code_auditor="$REPO_ROOT/docs/drydock/code-auditor.md"
 
 check_file "docs/drydock.md exists" "$doc"
 check_file "docs/drydock/auditor.md exists" "$auditor"
 check_file "docs/drydock/verifier.md exists" "$verifier"
 check_file "docs/drydock/fixer.md exists" "$fixer"
+check_file "docs/drydock/code-auditor.md exists" "$code_auditor"
 check_file "tools/drydock/inventory.sh exists" "$REPO_ROOT/tools/drydock/inventory.sh"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
@@ -140,5 +145,128 @@ check_absent "the auditor-rails intro no longer claims every rail is run-1's own
   "$(cat "$doc")" 'rails, each of which run 1 needed ('
 pin "rail 5 states it is not a run-1 incident" "$doc" 'Not a run-1 incident' \
   "expected rail 5 to disclaim the run-1 framing the intro no longer makes absolute"
+
+# --- dir #204 PR2: scope C (code) joins the procedure as a fourth role template plus a Scope C
+# section, and every surface PR1 left saying "prose only" gets corrected -----------------------------
+
+pin "drydock.md now measures three scopes, not two" "$doc" 'It measures three scopes' \
+  "PR1 shipped scope C; the phase-0 scope paragraph must say three, not two"
+check_absent "the stale two-scopes wording is gone" "$(cat "$doc")" 'It measures two scopes'
+
+pin "drydock.md links the code-auditor prompt" "$doc" '](drydock/code-auditor.md)' \
+  "expected the role-prompt section to link the fourth template"
+pin "reference.md now counts four drydock role-prompt templates" \
+  "$reference" 'four [`docs/drydock/`](drydock/) role-prompt templates' \
+  "PR2 ships a fourth template; the Extras section's count must follow"
+check_absent "reference.md no longer undercounts at three" \
+  "$(cat "$reference")" 'three [`docs/drydock/`](drydock/) role-prompt templates'
+
+# --- the Scope C section itself: boundary, cadence, cost, diversity, ratchet ------------------------
+pin "drydock.md has a Scope C section" "$doc" '## Scope C — code' \
+  "What ships §3 requires a named Scope C section"
+pin "Scope C states its boundary vs /polish's per-PR review" "$doc" \
+  "Scope C's value is the classes a diff-scoped review structurally cannot" \
+  "expected the boundary-vs-/polish framing this module's whole rationale rests on"
+pin "Scope C states its boundary vs scope B" "$doc" \
+  'default file sets are identical by design' \
+  "expected the scope-B/scope-C overlap to be stated explicitly, not left implicit"
+pin "Scope C states the disable spelling" "$doc" "DRYDOCK_SCOPE_C=':!*'" \
+  "expected the canonical prose-only disable spelling, per F2's resolved fork"
+pin "Scope C states the empty-string trap" "$doc" \
+  'Unset or empty both mean the full' \
+  "expected the doc to warn DRYDOCK_SCOPE_C= is NOT a disable, unlike a naive reading of the A/B convention"
+pin "Scope C's cost disclosure names the existing prose-only figure" "$doc" '6.1M subagent tokens' \
+  "expected the cost section to point at the existing cost table's number, not invent a new one"
+pin "Scope C defers real code-run numbers to the module's first run" "$doc" \
+  'token** cost stays' \
+  "expected the doc to say per-batch token cost is unmeasured rather than invent a number"
+pin "Scope C states the real, live-measured batch count" "$doc" '14 directory-affinity batches' \
+  "the claim marker's own correction: the spec's 'roughly 4-6' estimate was stale, 14 is the real measured count"
+pin "Scope C's diversity leg cites delta-audit.md §5, not restated" "$doc" \
+  'delta-audit.md`](delta-audit.md) §5' \
+  "F6: the code module inherits delta-audit.md §5's rule as-is, cited not restated"
+pin "GATE-2 requires the diversity leg's report for a scope-C run" "$doc" \
+  "the diversity leg's own report present" \
+  "F6: 'integration is explicit, not implied' — GATE-2 itself must gate on it, not just the Diversity paragraph mentioning it exists"
+pin "Scope C's ratchet note reuses the existing noise guard" "$doc" \
+  'a common, benign pattern' \
+  "F7: the ratchet mechanism is unchanged; state the same noise guard prose demotions already need"
+pin "Scope C's Model lines resolve inventory.sh's own forward reference" "$doc" \
+  '**Model lines.**' \
+  "tools/drydock/inventory.sh's own header already says 'see docs/drydock.md's Model lines' — that text must resolve to something"
+pin "Scope C's Model lines name the invariant-batch escalation" "$doc" \
+  'DRYDOCK_INVARIANT_PATHS`-marked file goes to top tier or xhigh' \
+  "expected the doc to state the escalation the inventory's own INVARIANT marker exists to drive"
+
+# --- phase 3 gains code claim classes, cross-file duplication deliberately excluded ------------------
+pin "phase 3 points at the Scope C code claim classes" "$doc" \
+  'Scope C adds three more, over its own extended' \
+  "What ships item 5: phase 3 gains code claim classes"
+pin "phase 3 states why duplication is NOT a claims-derived class" "$doc" \
+  'deliberately NOT one of them' \
+  "code bodies never enter the claims registry, so phase 3 structurally cannot see duplication"
+
+# --- code-auditor.md: the fourth role template, dir #85's taxonomy, no invented classes --------------
+pin "code-auditor.md carries dir #85's taxonomy" "$code_auditor" 'dead-code' \
+  "F3: the taxonomy is reused from dir #85 module-1, not invented"
+pin "code-auditor.md's claims contract carries defines:" "$code_auditor" 'defines: <name>' \
+  "item 5: the claims contract must extend with defines: for phase 3 to derive the dead-helper class"
+pin "code-auditor.md's claims contract carries calls:" "$code_auditor" 'calls: <name>' \
+  "item 5: calls: must include internal calls, or a used local helper reads as dead"
+pin "code-auditor.md's claims contract explains why internal calls count" "$code_auditor" \
+  'omitting it would make phase 3 flag that helper as dead' \
+  "expected the template to state the false-positive class the cross-vendor review round caught"
+pin "code-auditor.md routes duplication to phase 1, not the claims registry" "$code_auditor" \
+  'the frozen tree yourself for the suspicious shape' \
+  "duplication is a phase-1 finding, never a phase-3 claims-derived class"
+
+# --- verifier.md's F5 bullet: unconditional for code, points at phase 1 rail 5, does not restate
+# dir #225 inline (F5's own resolved fork) -------------------------------------------------------------
+pin "verifier.md's code bullet states the unconditional bar" "$verifier" \
+  'the bar is unconditional, not comment-triggered' \
+  "F5: a code finding's verdict rests on execution regardless of whether it turns on a comment"
+pin "verifier.md's code bullet points at phase 1 rail 5" "$verifier" \
+  'drydock.md`](../drydock.md)'"'"'s phase 1 rail 5' \
+  "F5: point at the existing rail rather than re-citing dir #225 inline"
+check_absent "verifier.md's new bullet does not re-cite dir #225 inline" \
+  "$(cat "$verifier")" 'dir #225'
+
+# --- the rails block in code-auditor.md: block-extract and diff against the canonical source, never a
+# substring-presence check (dir #209's own finding against this file's earlier pins was exactly a
+# substring check that a block-level drift survives) --------------------------------------------------
+extract_rails() { awk '/^- You are read-only:/,/^- DELEGATION RUN:/' "$1"; }
+canonical_rails="$(extract_rails "$delegation")"
+code_auditor_rails="$(extract_rails "$code_auditor")"
+if [ "$code_auditor_rails" = "$canonical_rails" ] && [ -n "$code_auditor_rails" ]; then
+  pass "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text"
+else
+  fail "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
+    "block-extracted text differs or is empty — diff the two extractions by hand"
+fi
+
+# --- docs/delta-audit.md §1 and docs/reference.md's inventory row: both called drydock "prose only"
+# and PR2's own Done criterion requires the claim corrected (the dir #256 class) --------------------
+check_absent "delta-audit.md §1 no longer calls drydock prose-only" \
+  "$(cat "$delta_audit")" 'the whole tree, prose only'
+pin "delta-audit.md §1 now says prose and code" "$delta_audit" 'prose and code both, by default' \
+  "expected §1's drydock comparison to reflect the shipped scope-C default"
+check_absent "reference.md's inventory row no longer calls it a prose-audit run" \
+  "$(cat "$reference")" 'prose-audit run'
+pin "reference.md's inventory row now says prose and code surface" "$reference" \
+  'tracked prose and code surface' \
+  "expected the Tools table row to reflect scope C"
+
+# --- /code-review medium findings: three more stale/missing surfaces the fourth template exposed ----
+pin "the file contract section points at code-auditor.md's extension" "$doc" \
+  'code-auditor.md`](drydock/code-auditor.md) extends this same shape for scope C' \
+  "The file contract section names auditor.md verbatim but never mentioned code-auditor.md extends it"
+check_absent "delegation.md's role-prompt enumeration no longer undercounts at three" \
+  "$(cat "$delegation")" 'templates (auditor, verifier, fixer)'
+pin "delegation.md's role-prompt enumeration now names all four" "$delegation" \
+  'templates (auditor, code-auditor, verifier, fixer)' \
+  "delegation.md's own See-also enumeration went stale the moment code-auditor.md shipped, same class doctor.sh's dir #256 check exists to catch on other surfaces"
+pin "verifier.md's cross-file variant states the scope-C classes an agent actually running it needs" \
+  "$verifier" 'three more classes apply' \
+  "the executable phase-3 template, not just drydock.md's narrative doc, must name the code claim classes or an agent running it on a scope-C batch never looks for them"
 
 summary
