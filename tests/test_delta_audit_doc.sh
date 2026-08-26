@@ -14,6 +14,7 @@ doc="$REPO_ROOT/docs/delta-audit.md"
 delegation="$REPO_ROOT/docs/delegation.md"
 release_audit="$REPO_ROOT/docs/release-audit.md"
 drydock="$REPO_ROOT/docs/drydock.md"
+reference="$REPO_ROOT/docs/reference.md"
 readme="$REPO_ROOT/README.md"
 derive="$REPO_ROOT/tools/delta-audit/derive.sh"
 
@@ -87,6 +88,15 @@ pin "item 6 — suite evidence excludes the operator's own main checkout" \
 # same file) lives in tests/test_delegation_doc.sh, not duplicated here (an efficiency review of the
 # first draft found both files pinning the identical fixed string against the identical file for no
 # added coverage) — that file already owns both legs of this coupling. --------------------------------
+
+# --- dir #256: docs/reference.md's derive.sh row was on dir #207 PR2's own edit list and never got
+# it — it still called this doc "not yet shipped" one release after it shipped. Pin both halves: the
+# stale claim is gone, and the row now links the doc instead. ----------------------------------------
+check_absent "reference.md's derive.sh row no longer calls delta-audit.md 'not yet shipped'" \
+  "$(cat "$reference")" 'not yet shipped'
+pin "reference.md's derive.sh row links delta-audit.md" \
+  "$reference" '[delta-audit](delta-audit.md)' \
+  "expected the derive.sh row to link the doc now that it has shipped, matching the drydock.md row's own inline-link shape"
 
 # --- the rails block: BLOCK-EXTRACT every copy and diff against the canonical source, never a
 # substring-presence check. dir #209's own finding against test_drydock_doc.sh:70-75 is the class

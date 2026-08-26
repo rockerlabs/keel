@@ -122,6 +122,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   self-check with no error message, indistinguishable from every later check simply never having run.
   Fixed by switching to a `sed` substitution, which never fails on all-comment input; both the crash
   and the trailing-comment loophole now have dedicated regression fixtures.
+- `docs/reference.md`'s `tools/delta-audit/derive.sh` row called the procedure that adopts the script,
+  `docs/delta-audit.md`, "not yet shipped — a separate, sequenced follow-up" (dir #256) — true when
+  dir #207's PR1 wrote it, false the moment PR2 shipped the doc in the same release; PR2's own edit
+  list owed this file and skipped it. Dropped the stale parenthetical and linked the doc instead,
+  matching the shape `docs/drydock.md` already uses in this same table (an inline link inside its
+  tool's row, no dedicated row of its own) — `docs/delta-audit.md` needs no new row either. Pinned on
+  both halves in `tests/test_delta_audit_doc.sh`: the stale claim is gone, and the row links the doc.
 
 ## [0.7.1] — 2026-08-21
 
