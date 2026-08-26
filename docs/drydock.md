@@ -62,6 +62,9 @@ verdict nothing downstream re-checks. And **fixers are never subagents** — the
 the gates that exist to keep a human in the loop (a pre-PR gate's receipts, a review dialog, the PR,
 the merge). A subagent that skips those isn't a faster fixer, it's an ungated one.
 
+One qualifier scoped to scope C alone: an auditor batch containing an `INVARIANT`-marked file escalates
+above this table's mid-tier-high row — see [Scope C — code](#scope-c--code)'s Model lines.
+
 The orchestrator does **all** bookkeeping — marking findings fixed, updating the queue, writing the
 run record. Workers stay stateless behind the file contract below, so a worker never has to know the
 ledger, and a worker dying loses nothing but its own unit of work.
@@ -90,6 +93,8 @@ Phase 2 appends one footer line per file it verifies —
 file names both contexts that touched it. The shape above is reproduced verbatim in
 [`docs/drydock/auditor.md`](drydock/auditor.md), which is the copy an agent is actually handed; if you
 change one, change both, and the phrasing is deliberately identical so a diff between them is visible.
+[`docs/drydock/code-auditor.md`](drydock/code-auditor.md) extends this same shape for scope C — see
+[Scope C — code](#scope-c--code).
 
 Two parts of the contract carry more weight than they look:
 
@@ -158,12 +163,14 @@ inventory that quietly disagrees with the tree is worse than no inventory**:
 The escape hatch is `--baseline <rev>` — not a bypass, the opposite: you name the commit you meant,
 and it goes in the output header where the next run can read it. There is no `--force`.
 
-The inventory is **scope as code**. It measures two scopes — every tracked markdown file whole
-(scope A), and the comment prose of every tracked shell file (scope B) — and derives the per-auditor
-batches from that measurement, so the run's scope is a reproducible artifact rather than a hand-drawn
-list that silently disagrees with the tree. Adjust for your repo's shape with the environment
-variables documented in the script's own header (`DRYDOCK_SCOPE_A`, `DRYDOCK_SCOPE_B`,
-`DRYDOCK_HISTORICAL`, and the three batch-size knobs).
+The inventory is **scope as code**. It measures three scopes — every tracked markdown file whole
+(scope A), the comment prose of every tracked shell file (scope B), and the whole code of every
+tracked shell file (scope C) — and derives the per-auditor batches from that measurement, so the run's
+scope is a reproducible artifact rather than a hand-drawn list that silently disagrees with the tree.
+A run covers all three by default; see [Scope C — code](#scope-c--code) below for the code module's
+own boundary, cadence knob, and cost. Adjust for your repo's shape with the environment variables
+documented in the script's own header (`DRYDOCK_SCOPE_A`, `DRYDOCK_SCOPE_B`, `DRYDOCK_SCOPE_C`,
+`DRYDOCK_HISTORICAL`, `DRYDOCK_INVARIANT_PATHS`, and the four batch-size knobs).
 
 **Precondition: the baseline's test suite and linters are green.** An audit on a red tree cannot tell
 prose drift from a live bug, and every finding it produces inherits that ambiguity.
@@ -201,12 +208,88 @@ share no machinery. `tools/self/doctor.sh` invokes it as an orchestrated check, 
 both signals from the suite; the sweeps above stay the honest state for any class still undemoted, and
 for the flat-threshold leads the shipped check deliberately drops.
 
+## Scope C — code
+
+Where scope B reads a shell file's **comment prose only**, scope C reads the same file **whole**,
+auditing for the classes [`docs/drydock/code-auditor.md`](drydock/code-auditor.md)'s own Classes line
+names — dir #85's module-1 rubric: dead code, duplication, missing coverage, correctness. A run
+covers scope A, B, and C together by default; this section states the code module's boundary,
+cadence, and cost, since it is the one scope that differs materially from the other two.
+
+**Boundary vs. `/polish`'s per-PR review.** `/polish` step 5 already reviews every diff for
+correctness at merge time. Scope C's value is the classes a diff-scoped review structurally cannot
+see: dead code no PR happens to touch, duplication across files no PR ever diffs together, and
+missing coverage nobody's PR was asked to add. It is a whole-tree, cross-file pass, not a slower
+re-run of ordinary PR review.
+
+**Boundary vs. scope B.** Scope B's and scope C's default file sets are identical by design — both
+resolve through the same shell-file selection
+([`tools/self/shellcheck-targets.sh`](../tools/self/shellcheck-targets.sh)): on keel's own tree, the
+comment prose scope B reads is a real subset of the lines scope C also measures. A comment-prose
+defect (a stale claim, a broken cross-reference) still belongs to scope B; the code auditor does not
+re-file it — [`docs/drydock/code-auditor.md`](drydock/code-auditor.md)'s own method steers it toward
+code defects instead.
+
+**Method and rails.** [`docs/drydock/code-auditor.md`](drydock/code-auditor.md) is the copy-paste
+template — its Method and Rails sections are the authoritative text, not restated here. One addition
+that lives at the procedure level, not the template: **the verification bar is unconditional for
+code, not comment-triggered** — [`docs/drydock/verifier.md`](drydock/verifier.md) states the bullet,
+a code finding's verdict rests on a sandboxed execution, full stop.
+
+**Claims, extended for code.** Phase 3 reads `## claims` sections only, never the files again — for a
+code audit file, the extended field shapes (`defines: <name>`, `calls: <name>` with internal calls
+included, named consumers, test-pin claims) are
+[`docs/drydock/code-auditor.md`](drydock/code-auditor.md)'s own contract, not restated here. Phase 3
+derives three code-specific classes from those fields: a name in some file's `defines:` that appears
+in no file's `calls:` (a dead helper); the same name in a lib's `defines:` and a consumer's own
+`defines:` (the shadowing hazard); and a contract statement with no matching test-pin claim (unpinned
+behavior). **Cross-file duplication is NOT a phase-3 class** — code bodies never enter the claims
+registry, so phase 3 structurally cannot see it;
+[`docs/drydock/code-auditor.md`](drydock/code-auditor.md)'s Method section states where it's filed
+instead.
+
+**Cadence — `DRYDOCK_SCOPE_C`, same convention as scope B.** Unset or empty both mean the full
+default selection, not a disable (scope C gates on `[ -n ... ]`, same as scope B); to run prose only,
+name a pathspec that matches nothing rather than passing an empty string — canonically
+`DRYDOCK_SCOPE_C=':!*'`, verified live to yield an empty scope at exit 0, not a refusal. `--prev`
+incremental scoping applies to scope C exactly as it does to A and B.
+
+**Cost.** Prose and code together, the new default, costs materially more than the prose-only figure
+[What a first run costs](#what-a-first-run-costs) records (≈6.1M subagent tokens): re-run that
+section's session-limit arithmetic fresh rather than reusing its number, and fall back to
+`DRYDOCK_SCOPE_C=':!*'` (a prose-only run) when the wave doesn't fit. The batch **count** is
+mechanical and already known — 14 directory-affinity batches on keel's own tree at the default
+`DRYDOCK_CODE_BATCH_LINES` (live-measured, not the "roughly 4–6" an early estimate guessed before
+directory affinity's per-directory forcing was accounted for). Per-batch **token** cost stays
+unmeasured until the module's own first real run — no invented numbers here — and that run records
+them in its own dated summary.
+
+**Diversity.** Code batches inherit [`docs/delta-audit.md`](delta-audit.md) §5's required-diversity-leg
+rule as-is: one leg differing by vendor or by method (blind-then-reconcile), skippable only by an
+explicit, recorded operator decision — see that section for the rule and its evidence; it is not
+restated here. Prose batches are unaffected; the requirement is scope C's own.
+
+**Ratchet.** The ratchet's mechanism is unchanged for code: keel's own tier 1 for code already
+executes (the test suite, shellcheck, [`tools/self/doctor.sh`](../tools/self/doctor.sh), all run in
+CI), so a demoted code class lands the same way a demoted prose class does — a test, a
+shellcheck-target rule, or a doctor check that reds on the class's own live case. The same noise guard
+prose demotions need applies here too: a class that flags every instance of a common, benign pattern
+is noise, not a check.
+
+**Model lines.** Code auditors run at the same tier and effort as prose auditors: mid tier, high. Two
+escalations, both routed off the inventory's own per-file markers, not a second query: a batch
+containing a `DRYDOCK_INVARIANT_PATHS`-marked file goes to top tier or xhigh effort, and the verifier
+stays xhigh regardless of scope, per the roles table above. The diversity leg (above) runs at a
+different vendor's own default settings, or a blind same-method pass at mid tier, high.
+
 ## Phase 1 — per-file audits, in parallel
 
 One auditor session per batch from the inventory, all read-only, all at once. The batching rules the
 script already applies: a long file gets a session to itself; the rest pack by directory affinity up
 to a per-session line budget; comment prose packs to a *larger* budget than doc prose, because
-comments are terser units.
+comments are terser units. **Scope C batches run under a separate template**,
+[`docs/drydock/code-auditor.md`](drydock/code-auditor.md) — see [Scope C — code](#scope-c--code)
+above; everything below this point is scope A/B's own auditor.
 
 **The historical-prose rule.** A changelog (or any dated, append-only log) is audited differently and
 always in its own batch: a dated section is checked for **internal consistency at its own date
@@ -241,7 +324,9 @@ is what predicts cleanliness.
 Each verifier gets a disjoint set of audit files and re-derives **every** finding empirically: re-read
 the quoted prose in place at the baseline, re-measure every number, re-check every stale-claim against
 the code. Then it deduplicates against the ticket ledger (grep it; do not read the whole thing) and
-fills the empty verdict lines. It never edits the auditor's text.
+fills the empty verdict lines. It never edits the auditor's text. **For a scope-C audit file, the same
+verifier handles it — no separate template — but the bar is unconditional**: see [Scope C —
+code](#scope-c--code)'s "Method and rails" paragraph.
 
 **The sandbox rail, with its incident stated verbatim in the prompt.** Live or executable checks run
 only in a scratch clone under the agent's own temp directory — never the real checkout, never the real
@@ -268,6 +353,10 @@ One agent, over the extracted `## claims` sections only — never the files agai
 - **broken promise pairs** — file A says "as described in B", B describes something else;
 - **dangling references** — a named file, section, or ticket that doesn't resolve;
 - **multi-surface procedure skew** — three or more files each restating one procedure, drifted apart.
+
+**Scope C adds three more, over its own extended `## claims` fields** (`defines:`, `calls:`, named
+consumers, test-pin claims) — see [Scope C — code](#scope-c--code) above for the field shapes and why
+cross-file duplication is deliberately NOT one of them.
 
 **Felt incident:** run 1's per-file auditors caught a rail restated in three places being wrong in
 *one* of them, and the auditor of the second file missed the same mismatch from its own side. The
@@ -345,6 +434,9 @@ Four control points where the orchestrator either hands off or takes back:
 - **GATE-1** — baseline frozen, inventory generated and reconciled, preconditions green, sweep leads
   written, role prompts instantiated → **phases 1–3 are delegated**, orchestrator tokens go idle.
 - **GATE-2** — every audit file of every batch carries verdicts → the orchestrator returns for phase 4.
+  **For a run covering scope C**, GATE-2 additionally requires the diversity leg's own report present —
+  or the recorded operator skip decision — before phase 4; see [Scope C — code](#scope-c--code)'s
+  Diversity paragraph.
 - **GATE-3** — fix queue assembled → **phase 5 is delegated** to fixer sessions, strictly serialized.
 - **GATE-4** — all fix PRs merged → the orchestrator runs phases 6 and 7.
 
@@ -429,7 +521,8 @@ therefore actively maintained.
 Copy-paste-ready templates, one per delegated role — instantiate the `<angle-bracket>` placeholders
 and hand them to the session:
 
-- [`docs/drydock/auditor.md`](drydock/auditor.md) — phase 1
+- [`docs/drydock/auditor.md`](drydock/auditor.md) — phase 1, scope A and B
+- [`docs/drydock/code-auditor.md`](drydock/code-auditor.md) — phase 1, scope C
 - [`docs/drydock/verifier.md`](drydock/verifier.md) — phase 2 (and the cross-file pass, phase 3)
 - [`docs/drydock/fixer.md`](drydock/fixer.md) — phase 5
 

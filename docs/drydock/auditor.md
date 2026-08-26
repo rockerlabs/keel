@@ -1,8 +1,9 @@
-# Drydock auditor prompt — phase 1
+# Drydock auditor prompt — phase 1, scope A and B
 
 *Copy the block below into a fresh subagent session, replacing every `<placeholder>`. Model: mid
-tier, high effort. One session per inventory batch, all in parallel, all read-only. Procedure:
-[`docs/drydock.md`](../drydock.md).*
+tier, high effort. One session per inventory scope-A/B batch, all in parallel, all read-only.
+Procedure: [`docs/drydock.md`](../drydock.md). (Scope C has its own template,
+[`docs/drydock/code-auditor.md`](code-auditor.md).)*
 
 ---
 

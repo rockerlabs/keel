@@ -115,6 +115,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   to yield an empty scope at exit 0, not a refusal. The role template and procedure docs that adopt
   this scope are dir #204's PR2, sequenced after this one so they can cite its real shipped output
   rather than a plan.
+- Drydock adopts scope C into its procedure docs, closing dir #204 (PR2 of 2): `docs/drydock.md`
+  gains a "Scope C — code" section (the module's boundary vs. `/polish`'s per-PR review, its boundary
+  vs. scope B, the `DRYDOCK_SCOPE_C` cadence knob and its `':!*'` disable spelling, a cost disclosure,
+  a diversity-leg pointer, and the ratchet/model-effort notes `tools/drydock/inventory.sh`'s own
+  header already forward-referenced), and phase 3 gains three code-specific claim classes (a dead
+  helper, the lib-sourcing shadowing hazard, unpinned behavior) derived from an extended `## claims`
+  contract (`defines:`/`calls:` fields) — cross-file duplication is deliberately NOT one of them,
+  since code bodies never enter the claims registry; it's filed by the auditor in phase 1 instead.
+  `docs/drydock/code-auditor.md` ships as the fourth role template, reusing dir #85's own module-1
+  taxonomy (dead code, duplication, missing coverage, correctness) and carrying the delegation rails
+  block verbatim (dir #208 is open precisely because the three existing templates don't — this one
+  isn't a fourth instance of that gap). `docs/drydock/verifier.md` gains an unconditional
+  verification bar for code findings (a sandboxed execution, not just a re-read), extending its
+  existing comment-triggered rule rather than duplicating it. `docs/delta-audit.md`'s §1 and
+  `docs/reference.md`'s inventory-tool row, both of which called drydock "prose only", are corrected
+  to name the code scope too.
 
 ### Fixed
 
