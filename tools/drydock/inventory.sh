@@ -26,20 +26,49 @@
 #                                canonical "which tracked files are shell scripts" selection. Setting
 #                                this switches to a plain pathspec match, shebangs included only if a
 #                                pathspec happens to catch them.
+#   DRYDOCK_SCOPE_C              scope-C pathspecs, space-separated. Same UNSET-is-not-'*.sh' rule as
+#                                DRYDOCK_SCOPE_B, and by default resolves through the SAME selector, so
+#                                an unset scope B and an unset scope C name the identical file set —
+#                                that is by design, not a coincidence two copies happen to agree on
+#                                (see docs/drydock.md's scope-C section for why the overlap is fine).
+#                                An empty value (`DRYDOCK_SCOPE_C=`) is UNSET too, same as scope B —
+#                                to disable scope C, name a pathspec matching nothing, canonically
+#                                `DRYDOCK_SCOPE_C=':!*'`. An all-whitespace value is NEITHER of the
+#                                above: it is non-empty, so it takes the explicit-pathspec branch, but
+#                                parses to zero pathspec tokens — same net effect as `:!*` (an empty
+#                                scope C), reached by a different path (an unparsed pathspec, not a
+#                                refused one). Not a spelling to rely on; `:!*` is the canonical one.
 #   DRYDOCK_HISTORICAL           files under the historical-prose rule, always their own batch —
 #                                EXACT repo-relative paths, not pathspecs (default: CHANGELOG.md;
 #                                see docs/drydock.md, phase 1)
+#   DRYDOCK_INVARIANT_PATHS      code-invariant files that get a per-file marker in scope C's output —
+#                                EXACT repo-relative paths, not pathspecs and not substrings (default:
+#                                install.sh uninstall.sh keel tools/pre-pr-gate.sh
+#                                tools/install-pre-pr-gate.sh tools/install-secret-guard.sh
+#                                tools/secret-guard/secret-scan.sh tools/secret-guard/ci-scan.sh
+#                                tools/secret-guard/range-lib.sh tools/secret-guard/pre-commit
+#                                tools/secret-guard/pre-push). Marking is per file, not per batch: the
+#                                orchestrator reads the marker and routes that file's whole batch to
+#                                higher effort — see docs/drydock.md's Model lines.
 #   DRYDOCK_SOLO_LINES           a scope-A file this long gets a session to itself (default: 500)
 #   DRYDOCK_BATCH_LINES          scope-A lines per packed batch (default: 600)
 #   DRYDOCK_COMMENT_BATCH_LINES  scope-B comment lines per packed batch (default: 1200 — comments
 #                                are terser units than doc prose; run 1 raised this from 600 after
 #                                measuring, and it is the one batching parameter a first run should
 #                                expect to re-tune)
+#   DRYDOCK_CODE_BATCH_LINES     scope-C lines per packed batch (default: 4500 — a guess to re-tune
+#                                after the first code-scope run, the same honest framing
+#                                DRYDOCK_COMMENT_BATCH_LINES's own header entry uses)
 #
 # A scope-B "comment line" is a line whose first non-blank character is `#` — shebang included, and
 # an end-of-line comment after code NOT counted. That is a sizing heuristic, not a prose census. It
 # is also shell-shaped: point DRYDOCK_SCOPE_B at a `//`- or `/* */`-comment language and every file
 # measures 0 comment lines rather than erroring, which is a meaningless inventory, not a small one.
+# Scope C measures the SAME files in total lines instead of comment lines — an exact measurement, not
+# a sizing heuristic, so it does NOT share scope B's measurement-failure caveat (a `//`-language repo
+# still counts real lines correctly). What doesn't transfer is the AUDITING technique: point
+# DRYDOCK_SCOPE_C at a `//`-language repo and the auditor's lint-and-spot-break method stays
+# shell-shaped and per-language, one honest sentence rather than a feature.
 set -euo pipefail
 
 usage() {
@@ -122,10 +151,16 @@ fi
 read -r -a scope_a <<< "${DRYDOCK_SCOPE_A:-*.md}"
 read -r -a scope_b <<< "${DRYDOCK_SCOPE_B:-}"   # no default here on purpose: an UNSET scope B is not
                                                 # the `*.sh` pathspec, it is the selection below.
+read -r -a scope_c <<< "${DRYDOCK_SCOPE_C:-}"   # same convention as scope B, same reason.
 read -r -a historical <<< "${DRYDOCK_HISTORICAL:-CHANGELOG.md}"
+read -r -a invariant_paths <<< "${DRYDOCK_INVARIANT_PATHS:-install.sh uninstall.sh keel \
+  tools/pre-pr-gate.sh tools/install-pre-pr-gate.sh tools/install-secret-guard.sh \
+  tools/secret-guard/secret-scan.sh tools/secret-guard/ci-scan.sh tools/secret-guard/range-lib.sh \
+  tools/secret-guard/pre-commit tools/secret-guard/pre-push}"
 solo_lines="${DRYDOCK_SOLO_LINES:-500}"
 batch_lines="${DRYDOCK_BATCH_LINES:-600}"
 comment_batch_lines="${DRYDOCK_COMMENT_BATCH_LINES:-1200}"
+code_batch_lines="${DRYDOCK_CODE_BATCH_LINES:-4500}"
 
 TAB="$(printf '\t')"
 NL=$'\n'   # a literal, NOT "$(printf '\n')" — command substitution strips trailing newlines, so that
@@ -143,19 +178,33 @@ is_changed() {
   return 1
 }
 
-is_historical() {
-  [ "${#historical[@]}" -gt 0 ] || return 1
-  local h
-  for h in "${historical[@]}"; do [ "$h" = "$1" ] && return 0; done
+# Exact-match array membership, shared by is_historical() and is_invariant() below — both need "is
+# this exact path in this list", differing only in which list.
+array_contains() {
+  local needle="$1"; shift
+  local x
+  for x in "$@"; do [ "$x" = "$needle" ] && return 0; done
   return 1
 }
 
+is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${historical[@]}"; }
+
+# EXACT-path membership, deliberately not the substring match tools/delta-audit/derive.sh's own
+# DELTA_INVARIANT_PATHS uses — that env's default entries are substrings by design, and would match
+# zero files if compared exactly here; porting the shape without the semantics would silently mark
+# nothing invariant.
+is_invariant() { [ "${#invariant_paths[@]}" -gt 0 ] && array_contains "$1" "${invariant_paths[@]}"; }
+
 # --- measurement ----------------------------------------------------------------------------------
-# Measured ONCE per file, into a stream both the listing and the batching read from — an earlier
-# version measured every file twice (once to list it, once to size its batch), which is two forks and
-# two code paths that can only agree by coincidence. One awk per file yields both counts: line count
-# via NR (not `wc -l`, which counts newlines and so undercounts a file with no trailing newline, and
-# pads its output with whitespace on some platforms) and comment lines in the same pass.
+# Measured ONCE PER SCOPE per file, into a stream both the listing and the batching for that scope
+# read from — an earlier version measured every file twice WITHIN one scope (once to list it, once to
+# size its batch), which is two forks and two code paths that can only agree by coincidence. One awk
+# per file yields both counts: line count via NR (not `wc -l`, which counts newlines and so
+# undercounts a file with no trailing newline, and pads its output with whitespace on some platforms)
+# and comment lines in the same pass. Scope B and scope C's default file sets are identical by design
+# (default_shell_files() below), so a file in both re-measures once per scope — deterministic, not a
+# coincidence-prone double path, and accepted as the cost of keeping the two scopes independently
+# overridable; see docs/drydock.md's scope-C section for the tradeoff.
 # Stream shape, one line per file: path <TAB> lines <TAB> comment-lines
 #
 # A file this cannot READ is a refusal, never a silent omission. An in-scope file that git lists but
@@ -207,12 +256,11 @@ scope_a_files() {
 # reason: `git ls-files | while …` ends with the last iteration's status, so on a repo whose last
 # tracked file is not a script the trailing `grep -q` would make a healthy enumeration look failed.
 # So the fallback observes git's status explicitly and returns 0 for the loop.
-scope_b_files() {
-  if [ -n "${DRYDOCK_SCOPE_B:-}" ]; then
-    [ "${#scope_b[@]}" -gt 0 ] || return 0
-    git ls-files -z -- "${scope_b[@]}"
-    return $?
-  fi
+#
+# Shared by scope B and scope C: both default to this exact selection, and factoring it into one
+# function makes that identity structural rather than two copies that happen to agree today and
+# silently diverge the next time either one is edited.
+default_shell_files() {
   local selector="$script_dir/../self/shellcheck-targets.sh"
   if [ -r "$selector" ]; then
     # The selector's own output is newline-delimited (its consumers require that), so convert. Its
@@ -240,6 +288,38 @@ scope_b_files() {
   return 0
 }
 
+scope_b_files() {
+  if [ -n "${DRYDOCK_SCOPE_B:-}" ]; then
+    [ "${#scope_b[@]}" -gt 0 ] || return 0
+    git ls-files -z -- "${scope_b[@]}"
+    return $?
+  fi
+  default_shell_files
+}
+
+# Same convention as scope B (unset or empty means the default shell-file selection, not the `*.sh`
+# pathspec); default_shell_files() above is what makes the two selections identical by construction
+# when both are left unset, per docs/drydock.md's scope-C section.
+#
+# NOT further unified with scope_b_files() into one shared "scope_files(envval, ...)" helper, despite
+# the two functions being otherwise identical — tried and reverted: passing "${scope_c[@]}" as
+# function-call arguments expands it BEFORE the callee's own `[ "$#" -gt 0 ]` guard ever runs, and on
+# this repo's target bash (3.2, macOS's shipped version) expanding an EMPTY array's "${arr[@]}" throws
+# "unbound variable" under `set -u`, regardless of context — reproduced live with
+# `DRYDOCK_SCOPE_C=' '` (any all-whitespace value: `[ -n ]` is true, but `read -a` still parses zero
+# elements). The count-then-expand guard has to run in the scope that still holds the array as a named
+# variable, before any `"${arr[@]}"` value-expansion — which a shared helper receiving it as "$@"
+# cannot do. Same class of hazard tools/self/doctor.sh's own header comment documents for this exact
+# expansion.
+scope_c_files() {
+  if [ -n "${DRYDOCK_SCOPE_C:-}" ]; then
+    [ "${#scope_c[@]}" -gt 0 ] || return 0
+    git ls-files -z -- "${scope_c[@]}"
+    return $?
+  fi
+  default_shell_files
+}
+
 # Enumerated through a temporary FILE, not a variable and not `< <(…)`. Three constraints meet here:
 # the list is NUL-delimited (a variable cannot hold NUL at all); the enumeration's exit status has to
 # be observable (a process substitution's is not — a failing `git ls-files` or selector would leave
@@ -256,6 +336,9 @@ scope_a_files > "$scratch/a" \
 than trusting a short inventory."
 scope_b_files > "$scratch/b" \
   || refuse "could not enumerate scope B — git, or the shell-script selector, failed. Nothing was
+measured; fix that error rather than trusting a short inventory."
+scope_c_files > "$scratch/c" \
+  || refuse "could not enumerate scope C — git, or the shell-script selector, failed. Nothing was
 measured; fix that error rather than trusting a short inventory."
 
 # A tab or a newline inside a path would break this script's own `path<TAB>lines<TAB>comments` stream
@@ -283,6 +366,12 @@ while IFS= read -r -d '' f; do
   assert_representable "$f"
   files_b+=("$f")
 done < "$scratch/b"
+files_c=()
+while IFS= read -r -d '' f; do
+  [ -n "$f" ] || continue
+  assert_representable "$f"
+  files_c+=("$f")
+done < "$scratch/c"
 
 # The changed set — the THIRD enumeration, and it gets the same treatment as the two above, for the
 # same reason: a `git diff` whose failure went unchecked would yield an empty set, which is
@@ -305,24 +394,31 @@ stream_a=""
 [ "${#files_a[@]}" -gt 0 ] && { stream_a="$(measure "${files_a[@]}")" || exit $?; }
 stream_b=""
 [ "${#files_b[@]}" -gt 0 ] && { stream_b="$(measure "${files_b[@]}")" || exit $?; }
+stream_c=""
+[ "${#files_c[@]}" -gt 0 ] && { stream_c="$(measure "${files_c[@]}")" || exit $?; }
 
 # --- output -----------------------------------------------------------------------------------
 printf '# drydock inventory @ %s\n' "$baseline"
 printf 'baseline rev: %s | generated by tools/drydock/inventory.sh\n' "$baseline_rev"
 [ -n "$prev" ] && printf 'previous baseline: %s\n' "$prev"
 
-# render STREAM FIELD UNIT — list one scope and set the reply variables below. The counters come back
-# in globals rather than on stdout because the listing itself is what goes to stdout.
-render_files=0 render_total=0 render_changed=0
+# render STREAM FIELD UNIT [mark_invariant] — list one scope and set the reply variables below. The
+# counters come back in globals rather than on stdout because the listing itself is what goes to
+# stdout. The optional 4th argument is scope C's own: every other caller leaves it unset, so is_
+# invariant() is never even consulted for scope A or B, which have no such marker.
+render_files=0 render_total=0 render_changed=0 render_invariant=0
 render() {
   local path lines comments n flag
-  render_files=0; render_total=0; render_changed=0
+  render_files=0; render_total=0; render_changed=0; render_invariant=0
   [ -n "$1" ] || return 0
   while IFS="$TAB" read -r path lines comments; do
     [ -n "$path" ] || continue
     if [ "$2" = lines ]; then n="$lines"; else n="$comments"; fi
     flag=""
-    if is_changed "$path"; then flag=" CHANGED"; render_changed=$((render_changed + 1)); fi
+    if is_changed "$path"; then flag="$flag CHANGED"; render_changed=$((render_changed + 1)); fi
+    if [ "${4:-}" = mark_invariant ] && is_invariant "$path"; then
+      flag="$flag INVARIANT"; render_invariant=$((render_invariant + 1))
+    fi
     printf -- '- %s%s%s %s%s\n' "$path" "$TAB" "$n" "$3" "$flag"
     render_files=$((render_files + 1)); render_total=$((render_total + n))
   done <<< "$1"
@@ -340,6 +436,13 @@ printf '\nscope B total: %s files, %s comment lines' "$render_files" "$render_to
 [ -n "$prev" ] && printf ' (%s changed since the previous baseline)' "$render_changed"
 printf '\n'
 
+printf '\n## scope C — shell code (audited whole-file)\n\n'
+render "$stream_c" lines ln mark_invariant
+printf '\nscope C total: %s files, %s lines' "$render_files" "$render_total"
+[ -n "$prev" ] && printf ' (%s changed since the previous baseline)' "$render_changed"
+printf ' (%s invariant)' "$render_invariant"
+printf '\n'
+
 # One auditor session per batch. Packing is by directory affinity (adjacent files share context, so
 # one reader re-derives less), size-descending within a directory so the big file anchors its batch.
 if [ -n "$prev" ]; then
@@ -348,15 +451,20 @@ else
   printf '\n## derived batches — every file in scope (full run)\n'
 fi
 printf 'rules: historical-prose files always solo; scope-A file >%s ln solo; else pack by directory\n' "$solo_lines"
-printf 'to <=%s ln per session; scope B packs to <=%s comment-ln per session.\n\n' \
+printf 'to <=%s ln per session; scope B packs to <=%s comment-ln per session; scope C packs to\n' \
   "$batch_lines" "$comment_batch_lines"
+printf '<=%s ln per session (no file ever batches SOLO in scope C), invariant files marked per-file.\n\n' \
+  "$code_batch_lines"
 
-# batch_stream STREAM FIELD MODE — re-shape a measured stream into dir<TAB>size<TAB>path for pack(),
-# dropping anything out of this run's scope. MODE `ordinary` drops the historical files (they are
-# emitted as their own SPECIAL batches by `historical_batches` below, from this same stream — never
-# by a second git query, which could otherwise name a file no scope actually listed).
+# batch_stream STREAM FIELD MODE [mark_invariant] — re-shape a measured stream into
+# dir<TAB>size<TAB>path<TAB>flag for pack(), dropping anything out of this run's scope. MODE
+# `ordinary` drops the historical files (they are emitted as their own SPECIAL batches by
+# `historical_batches` below, from this same stream — never by a second git query, which could
+# otherwise name a file no scope actually listed). The trailing flag field is scope C's own — every
+# other caller leaves the 4th argument unset, so it always prints empty and pack() below is a no-op
+# for that column on scope A/B.
 batch_stream() {
-  local path lines comments n dir
+  local path lines comments n dir flag
   [ -n "$1" ] || return 0
   while IFS="$TAB" read -r path lines comments; do
     [ -n "$path" ] || continue
@@ -364,7 +472,9 @@ batch_stream() {
     [ "$3" = ordinary ] && is_historical "$path" && continue
     if [ "$2" = lines ]; then n="$lines"; else n="$comments"; fi
     dir="${path%/*}"; [ "$dir" = "$path" ] && dir="."
-    printf '%s%s%s%s%s\n' "$dir" "$TAB" "$n" "$TAB" "$path"
+    flag=""
+    [ "${4:-}" = mark_invariant ] && is_invariant "$path" && flag="INVARIANT"
+    printf '%s%s%s%s%s%s%s\n' "$dir" "$TAB" "$n" "$TAB" "$path" "$TAB" "$flag"
   done <<< "$1"
 }
 
@@ -379,14 +489,18 @@ historical_batches() {
   done <<< "$1"
 }
 
-pack() { # $1 = prefix, $2 = solo threshold (0 = never solo), $3 = cap, $4 = unit label
+# $1 = prefix, $2 = solo threshold (0 = never solo), $3 = cap, $4 = unit label. Reads
+# dir<TAB>size<TAB>path<TAB>flag records; the flag prints as a trailing " INVARIANT" when batch_stream
+# set one, empty otherwise — scope A/B's records always carry an empty 4th field, so their output is
+# byte-for-byte unchanged from before this column existed.
+pack() {
   sort -t"$TAB" -k1,1 -k2,2rn | awk -F"$TAB" \
     -v prefix="$1" -v solo="$2" -v cap="$3" -v unit="$4" '
     BEGIN { bn = 0; acc = 0; cur = "" }
-    { dir = $1; n = $2 + 0; f = $3 }
-    solo > 0 && n > solo { printf "batch: %s SOLO (%d %s)\n", f, n, unit; next }
+    { dir = $1; n = $2 + 0; f = $3; suffix = ($4 != "" ? " " $4 : "") }
+    solo > 0 && n > solo { printf "batch: %s SOLO (%d %s)%s\n", f, n, unit, suffix; next }
     dir != cur || acc + n > cap { cur = dir; acc = 0; bn++ }
-    { acc += n; printf "batch %s%d: %s (%d %s)\n", prefix, bn, f, n, unit }
+    { acc += n; printf "batch %s%d: %s (%d %s)%s\n", prefix, bn, f, n, unit, suffix }
   '
 }
 
@@ -394,3 +508,5 @@ batch_stream "$stream_a" lines ordinary | pack "" "$solo_lines" "$batch_lines" l
 historical_batches "$stream_a"
 printf '\n'
 batch_stream "$stream_b" comments all | pack B 0 "$comment_batch_lines" comment-ln
+printf '\n'
+batch_stream "$stream_c" lines all mark_invariant | pack C 0 "$code_batch_lines" ln

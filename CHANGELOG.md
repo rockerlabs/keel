@@ -103,6 +103,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   CI leg itself would go red, after the fact. Verified live: the new test goes red against a
   `--global`-reverted copy of the real file and green again once restored, plus three synthetic-fixture
   mutation cases (revert, reorder, missing write) to prove the guard itself can fail.
+- `tools/drydock/inventory.sh` gains scope C: a third measured surface, whole-file shell code, over
+  the identical file selection scope B already uses by default (dir #204, PR1 of 2) — the scanning
+  mechanism a future code-correctness audit module plugs into. Same shape as scope A/B (a
+  `DRYDOCK_SCOPE_C` pathspec override, unset-or-empty meaning the full default selection, a
+  `DRYDOCK_CODE_BATCH_LINES` packing cap default ~4500), plus one new marker: `DRYDOCK_INVARIANT_PATHS`
+  (default: the repo's own install/uninstall/gate/secret-guard scripts) flags a file per-line and
+  per-batch-line, so a downstream orchestrator can route an invariant-bearing batch to higher review
+  effort without a second query. Disabling scope C for a prose-only run uses the same pathspec
+  convention as A/B — a pattern matching nothing, canonically `DRYDOCK_SCOPE_C=':!*'` — verified live
+  to yield an empty scope at exit 0, not a refusal. The role template and procedure docs that adopt
+  this scope are dir #204's PR2, sequenced after this one so they can cite its real shipped output
+  rather than a plan.
 
 ### Fixed
 

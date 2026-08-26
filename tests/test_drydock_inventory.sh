@@ -91,6 +91,14 @@ check_contains "the historical-prose file is its own batch" "$OUT" "CHANGELOG.md
 check_contains "ordinary files pack by directory" "$OUT" "batch 2: docs/guide.md (20 ln)"
 check_contains "a directory's files ride in one batch under the cap" "$OUT" "batch 2: docs/README.md"
 check_contains "scope B packs under its own cap" "$OUT" "batch B2: scripts/other.sh (3 comment-ln)"
+check_contains "scope C counts whole-file lines, not just comments" "$OUT" "scripts/thing.sh${TAB}5 ln"
+check_contains "scope C picks up the same shebang-detected extensionless script as scope B" \
+  "$OUT" "bin/cli${TAB}4 ln"
+check_contains "scope C's default selection is identical to scope B's" \
+  "$OUT" "scope C total: 3 files, 13 lines (0 invariant)"
+check_contains "scope C packs under its own cap, in its own C-prefixed batches" \
+  "$OUT" "batch C2: scripts/thing.sh (5 ln)"
+check_absent "an unmarked scope-C file carries no INVARIANT flag" "$OUT" "scripts/thing.sh${TAB}5 ln INVARIANT"
 check_absent "no previous-baseline line without --prev" "$OUT" "previous baseline"
 check_absent "nothing is flagged CHANGED on a full run" "$OUT" "CHANGED"
 
@@ -141,10 +149,60 @@ check_absent "an ignored file is not inventoried" "$OUT" "audit/notes.md"
 
 # --- the tuning knobs -----------------------------------------------------------------------------
 # Each knob is the only thing that makes this script runnable on a repo shaped unlike this one, so
-# each of the six gets a case: unexercised knobs rot green.
+# each of the nine gets a case: unexercised knobs rot green.
 run_in "$r" env "DRYDOCK_SCOPE_B=*.sh" "$TOOL"
 check_contains "an explicit scope-B pathspec still finds the .sh file" "$OUT" "scripts/thing.sh"
-check_absent "an explicit scope-B pathspec drops the shebang-only script" "$OUT" "bin/cli"
+# Not a bare "bin/cli" absence check: scope C (unaffected by this scope-B-only override) still lists
+# it, via its own default shebang detection — the comment-ln unit is what makes this scope-B-specific.
+check_absent "an explicit scope-B pathspec drops the shebang-only script" "$OUT" "bin/cli${TAB}3 comment-ln"
+
+run_in "$r" env "DRYDOCK_SCOPE_C=scripts/*.sh" "$TOOL"
+check_contains "an explicit scope-C pathspec still finds the .sh file" "$OUT" "scripts/thing.sh${TAB}5 ln"
+check_absent "an explicit scope-C pathspec drops the shebang-only script" "$OUT" "bin/cli${TAB}4 ln"
+check_contains "a narrowed scope C totals only its own files" "$OUT" "scope C total: 2 files, 9 lines"
+
+# The canonical disable spelling: a pathspec matching nothing yields an empty scope at exit 0, never
+# a refusal — docs/drydock.md's scope-C section states this exact spelling for a prose-only run.
+run_in "$r" env "DRYDOCK_SCOPE_C=:!*" "$TOOL"
+check_status "the ':!*' disable spelling -> exit 0" 0 "$STATUS"
+check_contains "':!*' yields an empty scope C" "$OUT" "scope C total: 0 files, 0 lines"
+
+# An empty-but-set value is UNSET too, per the same convention scope B already uses — it must NOT be
+# read as "match nothing" (that would silently disable scope C on `DRYDOCK_SCOPE_C=` rather than on
+# the documented ':!*' spelling).
+run_in "$r" env "DRYDOCK_SCOPE_C=" "$TOOL"
+check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a disable" \
+  "$OUT" "scope C total: 3 files, 13 lines"
+
+# Regression pin: an all-whitespace value passes `[ -n ]` (non-empty string — unlike a truly empty
+# one, this does NOT fall through to the default-selection branch), but `read -a` still parses it
+# into zero array elements — a real crash this repo shipped and reverted mid-review. Passing that
+# empty array as *function-call arguments* (a since-reverted scope_b_files/scope_c_files unification
+# attempt) expands "${arr[@]}" before the callee's own length guard ever runs, and this repo's target
+# bash (3.2, macOS's shipped version) throws "unbound variable" on an EMPTY array's "${arr[@]}"
+# expansion under `set -u`, no matter the context. Same class of hazard the guard comment on
+# `scan_files` in tools/self/doctor.sh's dead-reference scan documents for this exact expansion.
+#
+# `check_status ... 0` below is NOT what actually catches this — verified live: this script's own
+# `trap 'rm -rf "$scratch"' EXIT` runs (and succeeds) on the nounset abort too, so bash reports the
+# process's FINAL exit status as the trap's own (0), silently masking the abort's real status.
+# `check_absent` on the literal error text is what actually proves no crash happened; `check_contains`
+# on the expected content is the second, independent proof (a crash's captured stderr, via run()'s
+# `2>&1`, would starve this assertion of the real output either way).
+#
+# This bug is bash-3.2-specific (macOS's shipped version, reproduced clean — no crash — on Debian
+# bash 5.2 and Alpine bash 5.2.37): a green run on this repo's `tests` (ubuntu-24.04) or `alpine`
+# CI legs proves nothing about this pin. It DOES bite on CI's `tests (macos-14)` leg, though — that
+# leg's own `bash --version` diagnostic step confirms bash 3.2.57, the exact vulnerable version, so a
+# reintroduction of the reverted bug would turn that leg red. Verify the claim before trusting it if
+# ci.yml's matrix ever changes: `grep -A3 "matrix:" .github/workflows/ci.yml`.
+run_in "$r" env "DRYDOCK_SCOPE_C= " "$TOOL"
+check_status "an all-whitespace DRYDOCK_SCOPE_C exits 0 either way (not the discriminator — see below)" \
+  0 "$STATUS"
+check_absent "...and does NOT crash: no unbound-variable error in the captured output" \
+  "$OUT" "unbound variable"
+check_contains "...and yields an empty scope C (an explicit pathspec that parses to nothing), not the default" \
+  "$OUT" "scope C total: 0 files, 0 lines"
 
 run_in "$r" env "DRYDOCK_SOLO_LINES=10" "$TOOL"
 check_contains "a lowered solo threshold sends a smaller file solo" "$OUT" "docs/guide.md SOLO"
@@ -157,9 +215,35 @@ run_in "$r" env "DRYDOCK_COMMENT_BATCH_LINES=4" "$TOOL"
 check_contains "a lowered scope-B cap splits a directory across batches" \
   "$OUT" "batch B3: scripts/other.sh"
 
+run_in "$r" env "DRYDOCK_CODE_BATCH_LINES=5" "$TOOL"
+check_contains "a lowered scope-C cap splits a directory across batches" \
+  "$OUT" "batch C3: scripts/other.sh (4 ln)"
+
 run_in "$r" env "DRYDOCK_HISTORICAL=big.md" "$TOOL"
 check_contains "the historical knob moves the SPECIAL batch" "$OUT" "big.md SPECIAL"
 check_absent "and the default historical file is no longer special-cased" "$OUT" "CHANGELOG.md SPECIAL"
+
+# The invariant knob marks a DIFFERENT file than the default list would, proving it is read at all —
+# the default list itself is pinned separately below, on a fixture actually named for it.
+run_in "$r" env "DRYDOCK_INVARIANT_PATHS=scripts/thing.sh" "$TOOL"
+check_contains "the invariant knob marks the named file" "$OUT" "scripts/thing.sh${TAB}5 ln INVARIANT"
+check_contains "...and its batch line too — the marker is per-file, not per-batch-summary" \
+  "$OUT" "batch C2: scripts/thing.sh (5 ln) INVARIANT"
+check_contains "...and the scope-C total counts it, so deleting the counter increment reds this" \
+  "$OUT" "scope C total: 3 files, 13 lines (1 invariant)"
+
+# --- the DEFAULT invariant list, unexercised by the override test above ----------------------------
+r5="$(new_repo_with_origin)"
+printf '#!/usr/bin/env bash\necho installing\n' > "$r5/install.sh"
+git -C "$r5" add -A
+git -C "$r5" commit -qm "add install.sh"
+git -C "$r5" push -q origin main
+run_in "$r5" "$TOOL"
+check_status "a repo whose only file is a default-invariant path -> exit 0" 0 "$STATUS"
+check_contains "the default DRYDOCK_INVARIANT_PATHS marks install.sh with no override at all" \
+  "$OUT" "install.sh${TAB}2 ln INVARIANT"
+check_contains "...and the scope-C total's own invariant count reflects it" \
+  "$OUT" "scope C total: 1 files, 2 lines (1 invariant)"
 
 # A file outside scope A can never be emitted as a scope-A batch, historical or not.
 run_in "$r" env "DRYDOCK_SCOPE_A=docs/*.md" "$TOOL"
@@ -213,6 +297,14 @@ run_in "$r" env "DRYDOCK_SCOPE_B=:(attr:" "$TOOL"
 check_status "a failing scope-B enumeration -> exit 3" 3 "$STATUS"
 check_contains "the refusal says nothing was measured" "$OUT" "Nothing was"
 check_absent "no empty inventory is emitted" "$OUT" "scope B total"
+
+# Scope C's own `|| refuse` is unexercised without this — it is wired the same way as scope B's
+# (git ls-files failing on a malformed pathspec), not the shebang-fallback branch's own return-0 bug,
+# but nothing else in this suite proves the wiring still holds.
+run_in "$r" env "DRYDOCK_SCOPE_C=:(attr:" "$TOOL"
+check_status "a failing scope-C enumeration -> exit 3" 3 "$STATUS"
+check_contains "the refusal says nothing was measured" "$OUT" "Nothing was"
+check_absent "no empty inventory is emitted" "$OUT" "scope C total"
 
 run_in "$r" env "DRYDOCK_SCOPE_A=:(attr:" "$TOOL"
 check_status "a failing scope-A enumeration -> exit 3" 3 "$STATUS"
