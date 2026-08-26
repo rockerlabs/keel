@@ -180,11 +180,19 @@ check_contains "an empty DRYDOCK_SCOPE_C is the full default selection, not a di
 # empty array as *function-call arguments* (a since-reverted scope_b_files/scope_c_files unification
 # attempt) expands "${arr[@]}" before the callee's own length guard ever runs, and this repo's target
 # bash (3.2, macOS's shipped version) throws "unbound variable" on an EMPTY array's "${arr[@]}"
-# expansion under `set -u`, no matter the context. Exit 0 with an empty scope (the SAME outcome as an
-# explicit no-match pathspec like `:!*`, arrived at via a different path — an unparsed pathspec, not a
-# refused one) — not exit 1 with an unbound-variable crash — is the only correct behavior here.
+# expansion under `set -u`, no matter the context.
+#
+# `check_status ... 0` below is NOT what actually catches this — verified live: this script's own
+# `trap 'rm -rf "$scratch"' EXIT` runs (and succeeds) on the nounset abort too, so bash reports the
+# process's FINAL exit status as the trap's own (0), silently masking the abort's real status.
+# `check_absent` on the literal error text is what actually proves no crash happened; `check_contains`
+# on the expected content is the second, independent proof (a crash's captured stderr, via run()'s
+# `2>&1`, would starve this assertion of the real output either way).
 run_in "$r" env "DRYDOCK_SCOPE_C= " "$TOOL"
-check_status "an all-whitespace DRYDOCK_SCOPE_C does not crash -> exit 0" 0 "$STATUS"
+check_status "an all-whitespace DRYDOCK_SCOPE_C exits 0 either way (not the discriminator — see below)" \
+  0 "$STATUS"
+check_absent "...and does NOT crash: no unbound-variable error in the captured output" \
+  "$OUT" "unbound variable"
 check_contains "...and yields an empty scope C (an explicit pathspec that parses to nothing), not the default" \
   "$OUT" "scope C total: 0 files, 0 lines"
 
