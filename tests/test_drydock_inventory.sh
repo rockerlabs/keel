@@ -95,7 +95,7 @@ check_contains "scope C counts whole-file lines, not just comments" "$OUT" "scri
 check_contains "scope C picks up the same shebang-detected extensionless script as scope B" \
   "$OUT" "bin/cli${TAB}4 ln"
 check_contains "scope C's default selection is identical to scope B's" \
-  "$OUT" "scope C total: 3 files, 13 lines"
+  "$OUT" "scope C total: 3 files, 13 lines (0 invariant)"
 check_contains "scope C packs under its own cap, in its own C-prefixed batches" \
   "$OUT" "batch C2: scripts/thing.sh (5 ln)"
 check_absent "an unmarked scope-C file carries no INVARIANT flag" "$OUT" "scripts/thing.sh${TAB}5 ln INVARIANT"
@@ -199,6 +199,8 @@ run_in "$r" env "DRYDOCK_INVARIANT_PATHS=scripts/thing.sh" "$TOOL"
 check_contains "the invariant knob marks the named file" "$OUT" "scripts/thing.sh${TAB}5 ln INVARIANT"
 check_contains "...and its batch line too — the marker is per-file, not per-batch-summary" \
   "$OUT" "batch C2: scripts/thing.sh (5 ln) INVARIANT"
+check_contains "...and the scope-C total counts it, so deleting the counter increment reds this" \
+  "$OUT" "scope C total: 3 files, 13 lines (1 invariant)"
 
 # --- the DEFAULT invariant list, unexercised by the override test above ----------------------------
 r5="$(new_repo_with_origin)"
@@ -210,6 +212,8 @@ run_in "$r5" "$TOOL"
 check_status "a repo whose only file is a default-invariant path -> exit 0" 0 "$STATUS"
 check_contains "the default DRYDOCK_INVARIANT_PATHS marks install.sh with no override at all" \
   "$OUT" "install.sh${TAB}2 ln INVARIANT"
+check_contains "...and the scope-C total's own invariant count reflects it" \
+  "$OUT" "scope C total: 1 files, 2 lines (1 invariant)"
 
 # A file outside scope A can never be emitted as a scope-A batch, historical or not.
 run_in "$r" env "DRYDOCK_SCOPE_A=docs/*.md" "$TOOL"
@@ -263,6 +267,14 @@ run_in "$r" env "DRYDOCK_SCOPE_B=:(attr:" "$TOOL"
 check_status "a failing scope-B enumeration -> exit 3" 3 "$STATUS"
 check_contains "the refusal says nothing was measured" "$OUT" "Nothing was"
 check_absent "no empty inventory is emitted" "$OUT" "scope B total"
+
+# Scope C's own `|| refuse` is unexercised without this — it is wired the same way as scope B's
+# (git ls-files failing on a malformed pathspec), not the shebang-fallback branch's own return-0 bug,
+# but nothing else in this suite proves the wiring still holds.
+run_in "$r" env "DRYDOCK_SCOPE_C=:(attr:" "$TOOL"
+check_status "a failing scope-C enumeration -> exit 3" 3 "$STATUS"
+check_contains "the refusal says nothing was measured" "$OUT" "Nothing was"
+check_absent "no empty inventory is emitted" "$OUT" "scope C total"
 
 run_in "$r" env "DRYDOCK_SCOPE_A=:(attr:" "$TOOL"
 check_status "a failing scope-A enumeration -> exit 3" 3 "$STATUS"

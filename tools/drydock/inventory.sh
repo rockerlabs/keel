@@ -26,9 +26,6 @@
 #                                canonical "which tracked files are shell scripts" selection. Setting
 #                                this switches to a plain pathspec match, shebangs included only if a
 #                                pathspec happens to catch them.
-#   DRYDOCK_HISTORICAL           files under the historical-prose rule, always their own batch —
-#                                EXACT repo-relative paths, not pathspecs (default: CHANGELOG.md;
-#                                see docs/drydock.md, phase 1)
 #   DRYDOCK_SCOPE_C              scope-C pathspecs, space-separated. Same UNSET-is-not-'*.sh' rule as
 #                                DRYDOCK_SCOPE_B, and by default resolves through the SAME selector, so
 #                                an unset scope B and an unset scope C name the identical file set —
@@ -37,6 +34,9 @@
 #                                An empty value (`DRYDOCK_SCOPE_C=`) is UNSET too, same as scope B —
 #                                to disable scope C, name a pathspec matching nothing, canonically
 #                                `DRYDOCK_SCOPE_C=':!*'`.
+#   DRYDOCK_HISTORICAL           files under the historical-prose rule, always their own batch —
+#                                EXACT repo-relative paths, not pathspecs (default: CHANGELOG.md;
+#                                see docs/drydock.md, phase 1)
 #   DRYDOCK_INVARIANT_PATHS      code-invariant files that get a per-file marker in scope C's output —
 #                                EXACT repo-relative paths, not pathspecs and not substrings (default:
 #                                install.sh uninstall.sh keel tools/pre-pr-gate.sh
@@ -60,10 +60,11 @@
 # an end-of-line comment after code NOT counted. That is a sizing heuristic, not a prose census. It
 # is also shell-shaped: point DRYDOCK_SCOPE_B at a `//`- or `/* */`-comment language and every file
 # measures 0 comment lines rather than erroring, which is a meaningless inventory, not a small one.
-# Scope C measures the SAME files in total lines instead — whole-file code review, not a prose census
-# — and inherits the identical shell-shaped caveat: point it at a `//`-language repo and the method
-# (this script's batching; the auditor's shellcheck/spot-break technique) stays per-language, one
-# honest sentence rather than a feature.
+# Scope C measures the SAME files in total lines instead of comment lines — an exact measurement, not
+# a sizing heuristic, so it does NOT share scope B's measurement-failure caveat (a `//`-language repo
+# still counts real lines correctly). What doesn't transfer is the AUDITING technique: point
+# DRYDOCK_SCOPE_C at a `//`-language repo and the auditor's lint-and-spot-break method stays
+# shell-shaped and per-language, one honest sentence rather than a feature.
 set -euo pipefail
 
 usage() {
@@ -191,11 +192,15 @@ is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${histor
 is_invariant() { [ "${#invariant_paths[@]}" -gt 0 ] && array_contains "$1" "${invariant_paths[@]}"; }
 
 # --- measurement ----------------------------------------------------------------------------------
-# Measured ONCE per file, into a stream both the listing and the batching read from — an earlier
-# version measured every file twice (once to list it, once to size its batch), which is two forks and
-# two code paths that can only agree by coincidence. One awk per file yields both counts: line count
-# via NR (not `wc -l`, which counts newlines and so undercounts a file with no trailing newline, and
-# pads its output with whitespace on some platforms) and comment lines in the same pass.
+# Measured ONCE PER SCOPE per file, into a stream both the listing and the batching for that scope
+# read from — an earlier version measured every file twice WITHIN one scope (once to list it, once to
+# size its batch), which is two forks and two code paths that can only agree by coincidence. One awk
+# per file yields both counts: line count via NR (not `wc -l`, which counts newlines and so
+# undercounts a file with no trailing newline, and pads its output with whitespace on some platforms)
+# and comment lines in the same pass. Scope B and scope C's default file sets are identical by design
+# (default_shell_files() below), so a file in both re-measures once per scope — deterministic, not a
+# coincidence-prone double path, and accepted as the cost of keeping the two scopes independently
+# overridable; see docs/drydock.md's scope-C section for the tradeoff.
 # Stream shape, one line per file: path <TAB> lines <TAB> comment-lines
 #
 # A file this cannot READ is a refusal, never a silent omission. An in-scope file that git lists but
@@ -433,7 +438,8 @@ fi
 printf 'rules: historical-prose files always solo; scope-A file >%s ln solo; else pack by directory\n' "$solo_lines"
 printf 'to <=%s ln per session; scope B packs to <=%s comment-ln per session; scope C packs to\n' \
   "$batch_lines" "$comment_batch_lines"
-printf '<=%s ln per session, invariant files marked per-file, never solo.\n\n' "$code_batch_lines"
+printf '<=%s ln per session (no file ever batches SOLO in scope C), invariant files marked per-file.\n\n' \
+  "$code_batch_lines"
 
 # batch_stream STREAM FIELD MODE [mark_invariant] — re-shape a measured stream into
 # dir<TAB>size<TAB>path<TAB>flag for pack(), dropping anything out of this run's scope. MODE
