@@ -115,4 +115,30 @@ pin "sweep 2 enumerates NUL-delimited" "$doc" "git ls-files -z '*.md' | while IF
 pin "sweep 2's class does not stop at a colon" "$doc" '\]\([^)#]+' \
   "excluding ':' truncates mailto:you@example.com to 'mailto', reported as a dead relative link"
 
+# --- dir #231 item 3: a comment is a claim, not evidence — execute what it describes (home: this doc,
+# mirrored into the auditor/verifier templates it hands to agents) ---------------------------------
+pin "drydock.md's phase 1 rail 5 states the execute-don't-read rule" "$doc" \
+  'A claim about executable behavior is not evidence' \
+  "expected a numbered auditor rail stating the rule, per the doc's own 'these are the ones with a story' convention"
+pin "rail 5 cites its felt incident, the correct ticket (dir #225, not #223/#224)" "$doc" \
+  'felt incident (dir #225)' \
+  "expected the delta-audit run's diversity-leg incident to be named with its real ticket -- BACKLOG.md: dir #225 is delta audit S8 blind pass F1; #223/#224 are two unrelated cross-vendor findings"
+pin "phase 2's calibration note points at the rule rather than restating it" "$doc" \
+  'reproduce" itself means execute, not re-read' \
+  "expected the verifier's re-derivation section to point at phase 1's rail 5, not independently restate the rule"
+pin "auditor.md's rails carry the same rule" "$auditor" \
+  'A comment or contract note describing behavior is a claim, not evidence' \
+  "expected the shipped auditor template to carry the rule the procedure states"
+pin "verifier.md's re-derivation carries the same rule" "$verifier" \
+  'not read the comment again more carefully' \
+  "expected the shipped verifier template to say execute-not-reread"
+
+# --- the auditor-rails intro must not claim EVERY rail is run-1's own, since rail 5 explicitly isn't
+# (an independent agent review caught this doc contradicting itself — the exact `contradiction` class
+# it defines as a prose defect) ----------------------------------------------------------------------
+check_absent "the auditor-rails intro no longer claims every rail is run-1's own" \
+  "$(cat "$doc")" 'rails, each of which run 1 needed ('
+pin "rail 5 states it is not a run-1 incident" "$doc" 'Not a run-1 incident' \
+  "expected rail 5 to disclaim the run-1 framing the intro no longer makes absolute"
+
 summary

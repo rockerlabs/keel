@@ -80,7 +80,9 @@ This is the durable public referent a future run points at instead of re-derivin
    your assigned files, spend the deepest verification on a cross-PR seam (rule 4), a phrase that may
    have drifted as another PR changed the surface it described, and whether the tree's own
    drift-detectors still run where the work actually happens — the same three points that heuristic
-   names, applied here rather than left as prose in a different document.
+   names, applied here rather than left as prose in a different document. **This rule's own worked
+   incident is dir #225**, generalized in [`docs/delegation.md`](delegation.md)'s "Execute the claim,
+   don't re-read it" section — see there for applications beyond auditing that need the same rule.
 4. **Seam duty.** For each of your files with ≥2 PRs in `file-pr-map.tsv`: read the final merged
    state AND each contributing PR's own diff; check no later PR silently falsified what an earlier
    PR (or the file's own prose) established.
@@ -124,6 +126,9 @@ never the orchestrator's own judgment — a real run's own orchestrator dropped 
 judgment once, was corrected only by an operator question, and the restored leg then supplied most of
 that run's disclosed residuals. dir #230 §4 owns the doctrine this rail comes from; the rail itself is
 stated here because a session following this procedure needs the operative rule, not just a pointer.
+The blind-then-reconcile method is the generalized [`docs/delegation.md`](delegation.md) shape this
+leg instantiates — see its "Blind-then-reconcile" section for the two-phase reviewer contract stated
+independently of this application.
 
 **Fixes are a separate, gated phase, not part of any audit session above.** Every role through
 S-final is Protocol rule 1's read-only — a `fix-before-tag` disposition (§8's report contract) is a

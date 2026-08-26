@@ -10,6 +10,7 @@
 
 doc="$REPO_ROOT/docs/delegation.md"
 drydock="$REPO_ROOT/docs/drydock.md"
+delta_audit="$REPO_ROOT/docs/delta-audit.md"
 readme="$REPO_ROOT/README.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
@@ -85,5 +86,79 @@ else
   fail "FRAMEWORK.md's delegation pointer is <= 4 lines" \
     "measured $pointer_lines lines — pointer must stay a pointer, not the pattern body"
 fi
+
+# --- dir #231 item 2: blind-then-reconcile, a two-phase verifier shape (home: this doc) -------------
+pin "delegation.md names the blind-then-reconcile section" "$doc" \
+  '## Blind-then-reconcile — an optional two-phase verifier shape' \
+  "expected a named section generalizing the blind-pass-then-reconciliation pattern"
+pin "the reconciliation step names self-correction, not just deference" "$doc" \
+  "Judge your own findings against what the other side measured; don't simply defer" \
+  "expected the reconciliation step to require judging the verifier's own findings, not just comparing"
+pin "the pattern cites its field-tested instance" "$doc" \
+  'A field-tested instance is the diversity leg' \
+  "expected a pointer to docs/delta-audit.md's diversity-leg template as the worked example"
+pin "the field-tested instance cites the run that field-tested it, not just the template" "$doc" \
+  'run that field-tested this shape is dir #207' \
+  "expected the citation to name dir #207 (the run), not just delta-audit.md §9 (a placeholder template with no outcome of its own)"
+pin "delta-audit.md's diversity leg names the blind-then-reconcile section back" "$delta_audit" \
+  'see its "Blind-then-reconcile" section for the two-phase reviewer contract stated' \
+  "expected the diversity-leg paragraph to name delegation.md's section, both legs of the coupling pinned"
+
+# --- dir #231 item 3: execute the claim, don't re-read it — generalized here, not bolted onto drydock.md
+# alone (an altitude review of the first draft found the asymmetry: item 2 was generalized up into this
+# doc with two-way pointers, item 3 was not) ---------------------------------------------------------
+pin "delegation.md names the execute-the-claim section" "$doc" \
+  "## Execute the claim, don't re-read it" \
+  "expected a named, generalized section stating the rule once"
+pin "the section cites its felt incident, the correct ticket (dir #225, not #223/#224)" "$doc" \
+  'caught that the comment was false (dir #225)' \
+  "expected the delta-audit run's diversity-leg incident to be named with its real ticket, dir #225 (BACKLOG.md: delta audit S8 blind pass F1) -- #223/#224 are two unrelated cross-vendor findings"
+check_absent "delegation.md's execute-the-claim section does not cite the wrong ticket" \
+  "$(cat "$doc")" 'dir #223/#224'
+pin "the section names the rule it generalizes, both legs of the coupling pinned" "$doc" \
+  "The rule this generalizes is [\`docs/delta-audit.md\`](delta-audit.md) §4 rule 3" \
+  "expected an explicit pointer back to delta-audit.md's own Protocol rule 3"
+pin "delta-audit.md's rule 3 names the generalized section back" "$delta_audit" \
+  "generalized in [\`docs/delegation.md\`](delegation.md)'s \"Execute the claim," \
+  "expected delta-audit.md's rule 3 to point at delegation.md's section, both legs pinned"
+pin "delta-audit.md's rule 3 cites the correct ticket too" "$delta_audit" \
+  "incident is dir #225" \
+  "expected rule 3's own citation to also use dir #225, not the wrong #223/#224"
+pin "drydock.md's rail 5 points at the generalized section rather than restating it" "$drydock" \
+  "\"Execute the claim, don't re-read it\" section states the" \
+  "expected drydock.md's auditor rail to point at delegation.md instead of re-narrating the incident"
+pin "drydock.md's rail 5 cites the correct ticket too" "$drydock" \
+  "felt incident (dir #225)" \
+  "expected rail 5's own citation to also use dir #225, not the wrong #223/#224"
+
+# --- reuse: the disclosures rule is an application of FRAMEWORK.md's existing sync-smell rule, not a
+# second, unlinked statement of the same principle (found by a /simplify reuse review) --------------
+pin "the disclosures section cites FRAMEWORK.md's Single source of truth / sync smell rule" "$doc" \
+  "Single source of truth" \
+  "expected the new Disclosures section to link the existing FRAMEWORK.md rule it applies, not restate it standalone"
+
+# --- dir #231 item 7: mirrored disclosures are a drift factory (home: this doc) ---------------------
+pin "delegation.md names the disclosures section" "$doc" \
+  '## Disclosures — one canonical text, not mirrors' \
+  "expected a named section on avoiding mirrored disclosures"
+pin "the disclosures rule cites its felt incident" "$doc" 'dir #201/#214' \
+  "expected the three-mirror disclosure incident to be named, not just described"
+pin "the disclosures rule cites its sibling class" "$doc" 'dir #166' \
+  "expected the one-status-on-N-surfaces class to be cross-linked as the same root cause"
+pin "the disclosures rule states the pointer, not restate, remedy" "$doc" \
+  'Write it **once**, on the surface closest to' \
+  "expected the canonical-text-plus-pointer remedy stated explicitly"
+pin "the disclosures section reconciles with the verbatim rails block" "$doc" \
+  'This does not apply to the worker rails block above' \
+  "a section on avoiding mirrors must explain why the rails block deliberately IS one, or it contradicts itself"
+
+# --- the FRAMEWORK.md citation's target side: verify the cited rule still exists there, not just that
+# delegation.md claims to cite it (an independent agent review flagged this leg as unpinned) ----------
+pin "FRAMEWORK.md still carries the Single source of truth rule delegation.md cites" \
+  "$framework" 'Single source of truth' \
+  "expected FRAMEWORK.md to still state the rule the Disclosures section points at"
+pin "FRAMEWORK.md still carries the sync smell corollary delegation.md cites" \
+  "$framework" 'The sync smell' \
+  "expected FRAMEWORK.md to still state the corollary the Disclosures section points at"
 
 summary

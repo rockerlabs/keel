@@ -213,8 +213,9 @@ always in its own batch: a dated section is checked for **internal consistency a
 only** — never against today's code, where every historical entry would read as a stale claim. Only
 the unreleased section and the newest tagged one get a full stale-claim audit.
 
-The auditor prompt's rails, each of which run 1 needed (the full, copy-paste list is in
-[`docs/drydock/auditor.md`](drydock/auditor.md) — these are the ones with a story):
+The auditor prompt's rails — most of which run 1 needed directly, one folded in from a later run of
+the same shape (the full, copy-paste list is in [`docs/drydock/auditor.md`](drydock/auditor.md) — these
+are the ones with a story):
 
 1. **Read-only, and write only your own audit files.** No commits, no branch changes, no edits to any
    repo file.
@@ -226,6 +227,10 @@ The auditor prompt's rails, each of which run 1 needed (the full, copy-paste lis
 4. **Any executable check runs in a scratch copy** — not the live tree, not the real home directory.
    This rail belongs in the *auditor* prompt, not just the verifier's: two run-1 auditors ran live
    repo scripts before it was there. No harm that time.
+5. **A claim about executable behavior is not evidence.** Not a run-1 incident —
+   [`docs/delegation.md`](delegation.md)'s "Execute the claim, don't re-read it" section states the
+   rule and its felt incident (dir #225); applies to the verifier's re-derivation in phase 2 too — see
+   below.
 
 **Zero findings is a valid result** and should be reported plainly. Run 1's cleanest files were not
 the short ones — they were the recently-reworked ones. Recency of maintenance, not file type or size,
@@ -250,10 +255,10 @@ under a redirected `$HOME` its verdict doesn't weaken, it inverts — a fully-gu
 "not wired." Sandbox anything that writes; never sandbox a read whose whole subject is the real
 machine's state.
 
-Two calibration notes: `rejected` requires a measurement, not a doubt — "I couldn't see how this would
-be wrong" is not a rejection. And a `readability`/`optimization`-class finding carries a *higher* bar
+Three calibration notes: `rejected` requires a measurement, not a doubt — "I couldn't see how this would
+be wrong" is not a rejection. A `readability`/`optimization`-class finding carries a *higher* bar
 than a factual one, because it is the class most likely to be an agent restyling prose it merely
-finds unfamiliar.
+finds unfamiliar. And "reproduce" itself means execute, not re-read — phase 1's rail 5 states why.
 
 ## Phase 3 — the cross-file pass
 

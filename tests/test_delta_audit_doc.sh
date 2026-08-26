@@ -67,6 +67,27 @@ pin "delta-audit.md carries the self-revision clause" \
   "$doc" 'subject to its own phase-0 discipline: not a fixed verdict, a checklist to' \
   "expected the closing section to match drydock.md/release-audit.md's own self-revision wording"
 
+# --- dir #231 items 1, 5, 6: lessons dir #207 already seeded into this doc — pinned here so the
+# dir #231 retro doesn't reintroduce what already shipped (this doc is their canonical home) --------
+pin "item 1 — the diversity leg is stated as required, not optional" \
+  "$doc" 'The diversity leg is required, not optional' \
+  "expected §5 to state the required-diversity-leg rail in these exact terms"
+pin "item 5 — the universe is derived mechanically, not by judgment" \
+  "$doc" ') does this mechanically' \
+  "expected §3 to name the mechanical derivation the coverage ledger rests on"
+pin "item 5 — every ledger row ends with exactly one verdict" \
+  "$doc" 'Every ledger row carries a verdict' \
+  "expected §8 to state the ledger-row completeness rule"
+pin "item 6 — suite evidence excludes the operator's own main checkout" \
+  "$doc" "Suite evidence comes from a clean worktree or CI, never the operator's own main checkout" \
+  "expected §8 to state the clean-worktree-or-CI rail"
+
+# --- dir #231 item 2: this doc's diversity leg is the worked instance delegation.md's generalized
+# blind-then-reconcile section points at. The reciprocal pin (this same fact, checked against this
+# same file) lives in tests/test_delegation_doc.sh, not duplicated here (an efficiency review of the
+# first draft found both files pinning the identical fixed string against the identical file for no
+# added coverage) — that file already owns both legs of this coupling. --------------------------------
+
 # --- the rails block: BLOCK-EXTRACT every copy and diff against the canonical source, never a
 # substring-presence check. dir #209's own finding against test_drydock_doc.sh:70-75 is the class
 # this guards against: a substring pin can survive a drift that deletes or reorders a contract line,
