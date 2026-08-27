@@ -95,7 +95,13 @@ This is the durable public referent a future run points at instead of re-derivin
    - `## Verdicts` — one line per assigned file: `clean` | `FINDING-<id>` | `waived(<reason>)`;
    - `## Findings` — each with file:line, the exact stale or false text quoted, the evidence
      (command + output) proving it wrong, and a proposed disposition (fix-before-tag / ticket-next /
-     known-issue-in-changelog);
+     known-issue-in-changelog / `no-action(<reason>)`). **`no-action` is a real disposition, not a
+     silent drop** — it is what a finding gets when it does not clear
+     [`docs/verification-economics.md`](verification-economics.md)'s filing bar. Record the reason
+     here **and**, if the finding names a real defect, add it to the project's standing list: that
+     doc is explicit that a record living only in a report body is unschedulable, so the list is what
+     makes this a persist rather than a discard. Without this disposition a session has only "ticket
+     it or lose it", which is how a run files one ticket per residual;
    - `## NOT checked` — anything in scope you skipped or couldn't verify, stated plainly.
 7. **Don't trust a plan's snapshot.** Re-derive counts and lists live at pickup — the repo may have
    moved since the plan was written. The anchor stays FIXED even as `origin/main` moves past it
@@ -123,10 +129,10 @@ and a wrong verdict is the one thing nothing downstream re-checks.
 **The diversity leg is required, not optional** — either a different model vendor or a different
 method (blind whole-read, reconciled against the same-family sessions' reports afterward) satisfies
 it, but skipping it entirely does not. Skippable only by an explicit, recorded operator decision,
-never the orchestrator's own judgment — a real run's own orchestrator dropped this leg on its own
-judgment once, was corrected only by an operator question, and the restored leg then supplied most of
-that run's disclosed residuals. dir #230 §4 owns the doctrine this rail comes from; the rail itself is
-stated here because a session following this procedure needs the operative rule, not just a pointer.
+never the orchestrator's own judgment. [`docs/verification-economics.md`](verification-economics.md)
+owns the doctrine this rail comes from — why diversity is what decorrelates a reviewer, why a named
+leg is non-waivable by an orchestrator, and the run that proved it; the rail itself is stated here
+because a session following this procedure needs the operative rule, not just a pointer.
 The blind-then-reconcile method is the generalized [`docs/delegation.md`](delegation.md) shape this
 leg instantiates — see its "Blind-then-reconcile" section for the two-phase reviewer contract stated
 independently of this application.
@@ -387,8 +393,8 @@ moment a second run's lessons don't fit it.
   heuristic §5's whole-read sessions apply within the derived universe.
 - **[`docs/drydock.md`](drydock.md)** — the same role machinery, scoped to the whole tree and prose
   only; its "Incremental runs" section cross-references this doc for the release-range shape.
-- **dir #230** — the verification-economics doctrine behind the diversity-leg skip-requires-an-
-  operator-decision rail (§5 states the rail itself; dir #230's own §4 owns the reasoning, and the
-  stop-rule/filing-bar doctrine generally, neither restated here).
+- [`docs/verification-economics.md`](verification-economics.md) — the reasoning behind the
+  diversity-leg skip-requires-an-operator-decision rail (§5 states the rail itself), and the home of
+  the stopping rule and filing bar this procedure's runs are governed by. Neither restated here.
 - **dir #249** — owns the procedural step that requires `run-record.md`'s stub (§3) to be filled in
   and appended to the cross-run record; this doc's script emits only the stub.

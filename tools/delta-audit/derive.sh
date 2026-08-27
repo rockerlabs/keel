@@ -330,6 +330,12 @@ pr_count="$(cut -f3 "$out_dir/file-pr-map.tsv" | tr ' ' '\n' | LC_ALL=C sort -u 
   printf '# Run record — %s..%s\n\n' "$prev_rev" "$head_rev"
   printf 'Stub emitted by `tools/delta-audit/derive.sh`. Fill in at verdict time and append this row\n'
   printf 'to private/audit/RUNS.md (dir #249 owns the append step; this script owns only the stub).\n\n'
+  printf 'Six of the rows below are the verification-economics run profile; the rest are run identity.\n'
+  printf 'Two of the six predate it — `behavioural defects in shipped code` is its field 1, and\n'
+  printf '`diversity result` is its field 3, "which layer found what". The other four are new. Cost may\n'
+  printf 'be recorded as `unmeasured`, which is expected and permitted — never a fabricated zero. Raw\n'
+  printf 'finding counts are NOT comparable across runs of different scale, so the scope row must stay\n'
+  printf 'beside any figure derived from them.\n\n'
   printf '| | |\n|---|---|\n'
   printf '| scope | %s files, %s PRs |\n' "$file_count" "$pr_count"
   printf '| method | |\n'
@@ -337,6 +343,10 @@ pr_count="$(cut -f3 "$out_dir/file-pr-map.tsv" | tr ' ' '\n' | LC_ALL=C sort -u 
   printf '| findings | |\n'
   printf '| behavioural defects in shipped code | |\n'
   printf '| diversity result | |\n'
+  printf '| new classes vs instances of known ones | |\n'
+  printf '| upstream gate that should have caught it | |\n'
+  printf '| cost, per leg (sessions, tier+effort, tokens or `unmeasured`) | |\n'
+  printf '| induced defects (induced / total) | |\n'
   printf '| records | |\n'
 } > "$out_dir/run-record.md"
 

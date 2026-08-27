@@ -47,6 +47,19 @@ does with them). The gap between *filed* and *landed* is the one the next run al
 that demotes nothing has not finished** — and a run whose demotions never land has only deferred the
 cost.
 
+Why the ratchet is the *response to a run's result*, and not just good hygiene:
+[`docs/verification-economics.md`](verification-economics.md)'s Clause B — a run that yields only
+*instances* of classes already on the record indicts this demotion pipeline, never the review count.
+That doc also owns the bar a finding clears before it earns a ticket at all, applied at phase 6 and
+again at phase 7's ratchet; it is not restated here.
+
+**It does not, however, decide when a drydock run ends — this document does, at phase 6.** Keep the
+two apart: drydock terminates structurally, on *one fix loop and only one*, because every fix is new
+prose that could itself be audited. The doctrine's stopping rule answers a different question — whether
+another audit *wave* over the same state is worth running — and its two-diverse-legs clause is written
+for a run that fields several diverse legs, where drydock's own diversity requirement is one leg, on
+scope C only. Neither rule overrides the other; they terminate different things.
+
 ## Roles — four of them, in separate contexts
 
 | Role | Runs as | Model + effort | May touch |
@@ -266,8 +279,9 @@ them in its own dated summary.
 
 **Diversity.** Code batches inherit [`docs/delta-audit.md`](delta-audit.md) §5's required-diversity-leg
 rule as-is: one leg differing by vendor or by method (blind-then-reconcile), skippable only by an
-explicit, recorded operator decision — see that section for the rule and its evidence; it is not
-restated here. Prose batches are unaffected; the requirement is scope C's own.
+explicit, recorded operator decision — see that section for the operative rule, and
+[`docs/verification-economics.md`](verification-economics.md) for the reasoning and the evidence
+behind it; neither is restated here. Prose batches are unaffected; the requirement is scope C's own.
 
 **Ratchet.** The ratchet's mechanism is unchanged for code: keel's own tier 1 for code already
 executes (the test suite, shellcheck, [`tools/self/doctor.sh`](../tools/self/doctor.sh), all run in
@@ -412,6 +426,15 @@ arbitration and the record stay with the orchestrator.)
 ticketed, not fixed. Without this rule the run has no termination condition, since every fix is itself
 new prose that can be audited.
 
+**"Ticketed" is not automatic — apply the filing bar here**
+([`docs/verification-economics.md`](verification-economics.md)): a finding earns a ticket when it is
+behavioural, a new class, or a guard gap on an invariant-bearing surface. Anything else is recorded as
+"no action — <reason>" in the run's summary and, if it names a real defect, added to a standing list
+the project already keeps. "Recorded, ticketed" otherwise reads as *ticket everything*, and a run that
+files one ticket per residual buries its own class tickets in one-off instances. (The bar applies again
+at phase 7's ratchet, over a different population: these are this run's re-check residuals, those are
+the run-wide demotions.)
+
 **Felt incident:** run 1's re-check found two residuals — one of them on a surface that *four
 separate fixes* had each touched and still left out of sync with its siblings. That residual is what
 justified demoting the class rather than fixing it a fifth time.
@@ -422,7 +445,12 @@ justified demoting the class rather than fixing it a fifth time.
    the baseline SHA. **Trends compare per class, never totals**: a total moves with scope, so a
    smaller number can mean a cleaner tree or a narrower run, and by itself tells you neither.
 2. **The ratchet** — one ticket per demoted class, each carrying the run's live case as its
-   red-to-green test. This is the step that makes the next run cheaper.
+   red-to-green test. This is the step that makes the next run cheaper. **Which findings become
+   tickets at all** is the filing bar in
+   [`docs/verification-economics.md`](verification-economics.md); everything below it is
+   dispositioned "no action — <reason>" in the run's report and, if it names a real defect, added to
+   a standing list — not filed. Apply that bar here, or the ratchet's ticket-per-class discipline
+   drowns in one-off instances.
 3. **Procedure deltas back into this document** — including deviations you *took* and decided were
    right, not only mistakes. Every rail above got here that way.
 4. **A consolidated changelog entry** for the run as a whole, not one per fix PR.

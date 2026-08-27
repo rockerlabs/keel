@@ -252,6 +252,9 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
   seam map) instead of a scope chosen by judgment.
 - [`docs/drydock.md`](docs/drydock.md) — a whole-tree audit of whether your knowledge base is still
   true: the prose your agent executes drifts silently, and nothing fails when it does.
+- [`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what to
+  file from a run, and how to tell whether your verification method is improving: the stopping rule
+  and filing bar that govern `release-audit.md`, `delta-audit.md` and `drydock.md` runs.
 - [`docs/delegation.md`](docs/delegation.md) — fan bulk read-only analysis out to parallel subagent
   workers behind a file contract, keeping every gate in your own session.
 - [`docs/parallel-sessions.md`](docs/parallel-sessions.md) — running 2+ agent sessions against one
