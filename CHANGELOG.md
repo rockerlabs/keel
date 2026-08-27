@@ -199,6 +199,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `install.sh`/`uninstall.sh`/`tools/doctor.sh` with no shared helper (dir #278), and the narrower
   `CORE.md`-only check can under-report if `CORE.md` alone is tampered while its siblings survive
   (dir #279, low impact — advisory dry-run output only).
+- `commands/polish.md` step 5's "For `skip`, do nothing" read as "no receipt either" — but `skip` still
+  needs its own receipt-only write (`polish.5-review skip`, no review to run), and a forgotten one
+  denied `gh pr create` and retired the sentinel even when nothing had shipped since the skip decision.
+  Because `receipt --recover` refused to restore ANY skip-level `polish.4-depth` unconditionally (dir
+  #116's own protection against a stale skip riding a later, unreviewed fix commit), the retry forced a
+  full re-ask of both step 4 dialogs for a diff the operator had already approved skipping (dir #236).
+  `tools/pre-pr-gate.sh` now stamps a skip decision with the commit it was made against at write time
+  (`_stamp_depth_outcome`, the same trust-boundary move dir #123 made for step 3's tree hash) and
+  `--recover` narrows its refusal accordingly: it restores a skip only when that stamp still matches
+  current HEAD, i.e. nothing shipped since — dir #116's original danger (a fix commit landing under an
+  inherited skip) still refuses exactly as before. `commands/polish.md` step 5 now also states the
+  receipt requirement explicitly. Pin-tested in `tests/test_pre_pr_gate.sh` (same-commit recovers,
+  cross-commit still refuses, legacy-unstamped-skip still refuses, plus an end-to-end reproduction of
+  the felt case).
 - `docs/drydock.md` phase 7 said cost and induced/original-defect marks are captured *during* a run,
   not reconstructed afterward (dir #270) — but that instruction lived only in phase 7's own narrative,
   at the bottom of the doc, which the orchestrator's own session reads (it runs the whole procedure
