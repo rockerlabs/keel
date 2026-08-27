@@ -756,23 +756,60 @@ _semver_max() {
 }
 
 # _extract_dir_tickets — reads text on stdin, echoes every `dir #N` ticket it references, one per
-# line, deduped (dir #273 gap 2). A bare `grep -oE 'dir #[0-9]+'` only matches a fully-spelled
-# reference and silently drops every bare `#N` in a shorthand list like "dir #208, #211, #212" — the
-# first commit hit by this exact shape (PR #267's own message) went undetected because #211/#212 were
-# never even in the candidate set to look for, not merely uncredited. First capture the whole
-# comma/whitespace-joined run starting at a `dir #N` anchor, THEN pull every `#N` out of that run and
-# reattach the `dir ` prefix — so "dir #208, #211, #212" and "dir #208" (or two fully-spelled
-# references like "dir #208, dir #211", where the run stops right after the first because "dir " breaks
-# the bare-`#N` continuation) both resolve to their complete ticket sets either way.
-# KNOWN RESIDUAL, not covered: a list joined by "and"/`;`/`/`/a numeric range (`dir #104-107`) —
-# every one of these has real precedent in this repo's own history, not hypothetical: e.g. commit
-# 1515d7a's own title, "...dir #208/#211/#212...", is itself an unrecognized slash-separated instance
-# — or split across a wrapped commit-message line, still drops every trailing ticket the same silent
-# way gap 2 did — tracked as dir #274, not fixed here.
+# line, deduped (dir #273 gap 2, dir #274). A bare `grep -oE 'dir #[0-9]+'` only matches a
+# fully-spelled reference and silently drops every bare `#N` in a shorthand list like
+# "dir #208, #211, #212" — the first commit hit by this exact shape (PR #267's own message) went
+# undetected because #211/#212 were never even in the candidate set to look for, not merely
+# uncredited (dir #273). First join a shorthand list wrapped across a commit-message line break back
+# onto one line (grep is inherently line-based and can't see across a `\n` otherwise), then capture
+# the whole run starting at a `dir #N` anchor — comma/semicolon/slash/whitespace/"and"-joined, and a
+# `#N-M` range expanded to every ticket in it, not just its endpoints (dir #274; a range names every
+# ticket between its bounds, so extracting only the two written numbers would silently lose the
+# middle) — THEN pull every `#N`/`#N-M` out of that run and reattach the `dir ` prefix, expanding
+# ranges last. "dir #208, #211, #212" and two fully-spelled references like "dir #208, dir #211"
+# (where the run stops right after the first, because "dir " breaks the bare-`#N` continuation) both
+# resolve to their complete ticket sets either way. Every one of the four extra shapes has real
+# precedent in this repo's own history, not hypothetical: e.g. commit 1515d7a's own title,
+# "...dir #208/#211/#212...", is a slash-separated instance; `f4109e72`/`21e984bfd9a` are real
+# batch-close commits using the range shape.
+# The line-wrap join only fires when the PRECEDING line ends in a trailing comma — not a blanket
+# newline-to-space join — so it can't accidentally stitch one commit's trailing "dir #100" onto a
+# NEXT, unrelated commit's leading bare "#101" when multiple commit bodies are concatenated upstream
+# (`git log --format=%B`); an ordinary line never ends in a trailing comma, so paragraph/commit
+# boundaries stay intact.
+# Two malformed-range edge cases (found by a peer session's review), both handled loudly rather than
+# by silently dropping a ticket the way the pre-dir-#274 helper did:
+# - Reversed (e.g. "#107-104", a typo'd order): looping lo..hi would print nothing (lo > hi), which is
+#   the exact silent-drop defect this whole chain exists to kill. Treated as two bare ticket
+#   references instead of a range — both endpoints surface, neither is invented.
+# - Absurdly wide (e.g. "#1-99999"): expanding it would either hang or flood the output; silently
+#   truncating to one endpoint (an earlier draft's behavior) would look complete while dropping every
+#   other ticket in the span, one layer deeper than dir #273's own gap. Capped at a 500-ticket span;
+#   past the cap this emits a single, deliberately unmatchable marker line instead of a real ticket, so
+#   it always shows up as "missing" in check 7's WARN — visible for a human to verify manually, never
+#   silently scanned away.
+# A hyphen that ISN'T a range (prose like "dir #208 - fixed the extraction", a spaced dash) never
+# reaches either branch: the range suffix requires a digit immediately after the `-`, with no space,
+# so the anchor below stops at "dir #208" and the loose dash is left alone.
 _extract_dir_tickets() {
-  grep -oE 'dir #[0-9]+([,[:space:]]+#[0-9]+)*' \
-    | grep -oE '#[0-9]+' \
-    | sed 's/^/dir /' \
+  awk '
+    { line = $0
+      if (buf != "") { line = buf " " line; buf = "" }
+      if (line ~ /,[ \t]*$/) { sub(/[ \t]*$/, "", line); buf = line }
+      else { print line }
+    }
+    END { if (buf != "") print buf }
+  ' \
+    | grep -oE 'dir #[0-9]+(-[0-9]+)?([,;/[:space:]]+(and[[:space:]]+)?#[0-9]+(-[0-9]+)?)*' \
+    | grep -oE '#[0-9]+(-[0-9]+)?' \
+    | awk -F'[#-]' '
+        /-/ { lo = $2 + 0; hi = $3 + 0
+              if (hi < lo) { print "dir #" lo; print "dir #" hi; next }
+              if (hi - lo > 500) { print "dir #" lo "-" hi ": range too large to expand — verify manually (dir #274)"; next }
+              for (i = lo; i <= hi; i++) print "dir #" i
+              next }
+        { print "dir #" $2 }
+      ' \
     | sort -u \
     || true
 }
