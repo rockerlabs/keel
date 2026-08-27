@@ -210,6 +210,15 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   pre-fix file. The same bare-trap hazard was found live and reachable (not just latent) in
   `tools/delta-audit/derive.sh` via `DELTA_HISTORICAL`/`DELTA_INVARIANT_PATHS` — filed as dir #265
   rather than expanding this fix's scope.
+- `tests/test_drydock_doc.sh`'s check on the audit-file contract shared by `docs/drydock.md` and
+  `docs/drydock/auditor.md` pinned only 3 of the contract's 6 fields, and only as independent
+  substring presence — never that the two copies actually agree (dir #209). Mutation-proven: three
+  injected drifts, including deleting a contract line outright, all left the 36-check suite fully
+  green. Replaced the per-field loop with a `check_block_equal()` helper that block-extracts both
+  copies (`awk` between the contract's opening and closing anchor lines) and diffs them, verified
+  against the same three mutations plus the anchor-line-deleted-from-both-sides edge case. The
+  pre-existing rails-block check further down the same file (`code-auditor.md` vs `delegation.md`)
+  now shares this helper too, instead of its own near-duplicate inline comparison.
 
 ## [0.7.1] — 2026-08-21
 
