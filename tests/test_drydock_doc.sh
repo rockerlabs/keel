@@ -69,15 +69,30 @@ pin "drydock.md links the verifier prompt" "$doc" '](drydock/verifier.md)' \
 pin "drydock.md links the fixer prompt" "$doc" '](drydock/fixer.md)' \
   "expected the role-prompt section to link the fixer template"
 
-# --- the audit-file contract is stated in two places on purpose; pin the shared shape ------------
-# drydock.md documents it for the operator, auditor.md hands it to the agent. Both must carry the
-# same field names, or the orchestrator's completeness check and the agent's output disagree.
-for field in '# drydock audit — <repo-relative path> @ <baseline-sha>' '## claims' 'verdict:'; do
-  pin "drydock.md's contract carries: $field" "$doc" "$field" \
-    "the file contract in drydock.md must match docs/drydock/auditor.md field for field"
-  pin "auditor.md's contract carries: $field" "$auditor" "$field" \
-    "the file contract in docs/drydock/auditor.md must match drydock.md field for field"
-done
+# Block-extract two copies of a shared, meant-to-be-identical passage and confirm they agree, with a
+# diff on failure — shared by the audit-file contract below and the rails block further down, so a
+# renamed, reordered, or deleted line can't hide behind independent substring-presence pins the way
+# dir #209's finding showed (FINDING-S2-3: three drifts injected into one copy, one deleting a
+# contract line outright, left the old per-field loop's 36 checks fully green — presence isn't
+# agreement). "$a" empty and "$b" empty would otherwise match, hence the non-emptiness check too.
+check_block_equal() {
+  local label="$1" a="$2" b="$3"
+  if [ -n "$a" ] && [ "$a" = "$b" ]; then
+    pass "$label"
+  else
+    fail "$label" "block-extracted text differs or is empty — diff:
+$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
+  fi
+}
+
+# --- the audit-file contract is stated in two places on purpose; the phrasing must agree ---------
+# drydock.md documents it for the operator, auditor.md hands it to the agent — drydock.md:97-98 says
+# "the phrasing is deliberately identical so a diff between them is visible."
+contract_block() { awk '/^# drydock audit —/,/^- <every fact/' "$1"; }
+doc_contract="$(contract_block "$doc")"
+auditor_contract="$(contract_block "$auditor")"
+check_block_equal "drydock.md's audit-file contract is byte-identical to auditor.md's" \
+  "$doc_contract" "$auditor_contract"
 
 # The verifier's footer line is part of the contract drydock.md documents, so both must name it.
 pin "drydock.md documents the verifier footer" "$doc" 'verifier: <model + effort>' \
@@ -237,12 +252,8 @@ check_absent "verifier.md's new bullet does not re-cite dir #225 inline" \
 extract_rails() { awk '/^- You are read-only:/,/^- DELEGATION RUN:/' "$1"; }
 canonical_rails="$(extract_rails "$delegation")"
 code_auditor_rails="$(extract_rails "$code_auditor")"
-if [ "$code_auditor_rails" = "$canonical_rails" ] && [ -n "$code_auditor_rails" ]; then
-  pass "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text"
-else
-  fail "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
-    "block-extracted text differs or is empty — diff the two extractions by hand"
-fi
+check_block_equal "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
+  "$code_auditor_rails" "$canonical_rails"
 
 # --- docs/delta-audit.md §1 and docs/reference.md's inventory row: both called drydock "prose only"
 # and PR2's own Done criterion requires the claim corrected (the dir #256 class) --------------------
