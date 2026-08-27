@@ -220,10 +220,12 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   pre-existing rails-block check further down the same file (`code-auditor.md` vs `delegation.md`)
   now shares this helper too, instead of its own near-duplicate inline comparison.
 - Three prose-only drifts in `docs/drydock.md` from the delta audit (dir #210): **"Four conditions,
-  one rule"** under-counted `tools/drydock/inventory.sh`'s seven distinct refuse conditions — dropped
-  the definite count and pointed readers at the script's own `refuse` call sites, which
-  `tests/test_drydock_inventory.sh` already pins in full, rather than duplicating an exhaustive list
-  across three prose surfaces. The **run-cost table**'s "Whole run | ≈6.1M subagent tokens" row
+  one rule"** under-counted `tools/drydock/inventory.sh`'s refuse conditions — 11 call sites, but
+  only 7 distinct conditions once the three per-scope enumeration failures and the two
+  unrepresentable-path (tab/newline) sites are each counted once. Rather than commit to a number
+  that drifts every time a guard is added or grouped differently, dropped the definite count and
+  pointed readers at the script's own `refuse` call sites, which `tests/test_drydock_inventory.sh`
+  already pins in full. The **run-cost table**'s "Whole run | ≈6.1M subagent tokens" row
   didn't reconcile against its own itemized rows; re-derived from the source record
   (`~/.claude/REVIEW_HISTORY.md:480-481`), split into a new "Cross-file pass + re-check" row, and
   the Whole run row now states explicitly what its itemized rows sum to and names orchestrator

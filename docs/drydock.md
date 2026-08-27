@@ -535,7 +535,7 @@ where the shipped default takes *every* tracked shell file):
 |---|---|
 | Auditors | 18 sessions, 83–438K tokens each (median ~190K), ≈3.56M total |
 | Verifiers | 4 sessions, 116–184K each, ≈0.63M total |
-| Cross-file pass + re-check | 1 session, ~283K for the pass; ≈0.47M total once GATE-2's re-check is folded in (the source records only the combined figure) |
+| Cross-file pass + re-check | 1 session, ~283K for the pass; ≈0.47M total once phase 6's closing re-check is folded in (the source records only the combined figure) |
 | Whole run | ≈6.1M sonnet subagent tokens, mid-tier model throughout: the itemized rows above sum to ≈4.66M, the remainder being orchestrator arbitration turns not metered per row |
 | Findings | 45 confirmed — 44 fixed across 8 PRs, 1 `known` |
 | Wall-clock | ~1 operator-day, including quota waits |
