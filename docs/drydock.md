@@ -162,9 +162,8 @@ session's branch*, two commits off the baseline. It measured that tree and print
 without a murmur; the whole audit was scoped against a commit nobody had chosen, and it took a
 re-measurement to notice. [`tools/drydock/inventory.sh`](../tools/drydock/inventory.sh) now refuses
 outright (exit 3) rather than measure a tree it cannot vouch for. One rule, several guarded
-conditions (grep the script for `refuse "` calls for the exhaustive list — this list gives the
-load-bearing ones, not a count) — **an inventory that quietly disagrees with the tree is worse than
-no inventory**:
+conditions (see the script's own `refuse "` call sites for the exhaustive list) — **an inventory
+that quietly disagrees with the tree is worse than no inventory**:
 
 - **HEAD is not the baseline** — the run-1 case; the message names both SHAs and the `git worktree
   add` that fixes it.
@@ -536,8 +535,8 @@ where the shipped default takes *every* tracked shell file):
 |---|---|
 | Auditors | 18 sessions, 83–438K tokens each (median ~190K), ≈3.56M total |
 | Verifiers | 4 sessions, 116–184K each, ≈0.63M total |
-| Cross-file pass + re-check | the pass itself: 1 session, ~283K; plus GATE-2's re-check, ≈0.47M total |
-| Whole run | ≈6.1M sonnet subagent tokens, mid-tier model throughout: the ≈4.66M itemized above (3.56 + 0.63 + 0.47), plus orchestrator arbitration turns not metered per row |
+| Cross-file pass + re-check | 1 session, ~283K for the pass; ≈0.47M total once GATE-2's re-check is folded in (the source records only the combined figure) |
+| Whole run | ≈6.1M sonnet subagent tokens, mid-tier model throughout: the itemized rows above sum to ≈4.66M, the remainder being orchestrator arbitration turns not metered per row |
 | Findings | 45 confirmed — 44 fixed across 8 PRs, 1 `known` |
 | Wall-clock | ~1 operator-day, including quota waits |
 

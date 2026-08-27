@@ -225,10 +225,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `tests/test_drydock_inventory.sh` already pins in full, rather than duplicating an exhaustive list
   across three prose surfaces. The **run-cost table**'s "Whole run | ≈6.1M subagent tokens" row
   didn't reconcile against its own itemized rows; re-derived from the source record
-  (`~/.claude/REVIEW_HISTORY.md:480-481`) and added a "Cross-file pass + re-check" row so auditors
-  (3.56M) + verifiers (0.63M) + cross-file pass/re-check (0.47M) sum to the ≈4.66M the table now
-  states explicitly, naming orchestrator arbitration turns — not metered per row, per that same
-  source line — as the account for the remainder, rather than leaving the gap unexplained. The
+  (`~/.claude/REVIEW_HISTORY.md:480-481`), split into a new "Cross-file pass + re-check" row, and
+  the Whole run row now states explicitly what its itemized rows sum to and names orchestrator
+  arbitration turns — not metered per row, per that same source line — as the account for the
+  remainder, rather than leaving the gap unexplained. The
   **roles table**'s Verifier "May touch" cell named only the `verdict:` lines, omitting the
   `verifier:` footer line phase 2 also requires — same shape PR #219's review already fixed once in
   this table.
