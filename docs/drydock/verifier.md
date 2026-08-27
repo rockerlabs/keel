@@ -55,6 +55,13 @@ Fill the empty `verdict:` line of each finding with exactly one of:
 - `rejected: <reason>` — the reason must name **what you measured**, never what you doubted.
 - `known — <ticket id>`
 
+**For every `accepted` finding, also mark `induced` or `original`** —
+[`docs/verification-economics.md`](../verification-economics.md)'s field 6: `induced` when it lands in
+a region a prior round's fix actually touched and you can state the causal path in one sentence,
+`original` otherwise — both halves required. Mark it even on a run's first wave, where every finding
+is trivially `original`: the run's induced/total rate needs the denominator too. Append it to the
+verdict line: `accepted — induced` or `accepted — original`.
+
 **Never edit or delete the auditor's text** — you append verdicts, nothing else. Hold
 `optimization`-class findings to a higher bar than factual ones: reject unless the gain is plain, since
 that class is the one most likely to be an agent restyling prose it merely finds unfamiliar.

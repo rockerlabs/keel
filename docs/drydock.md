@@ -82,6 +82,13 @@ The orchestrator does **all** bookkeeping — marking findings fixed, updating t
 run record. Workers stay stateless behind the file contract below, so a worker never has to know the
 ledger, and a worker dying loses nothing but its own unit of work.
 
+**That bookkeeping includes [`docs/verification-economics.md`](verification-economics.md)'s
+during-the-run fields, not just phase 7's own.** Record each phase's sessions spawned, model tier +
+effort, and token spend as each of GATE-1 through GATE-4 is reached — `unmeasured` where the harness doesn't
+report it, never a fabricated zero — the same discipline
+[`docs/delta-audit.md`](delta-audit.md)'s own orchestrator bookkeeping applies to its legs. Phase 7
+assembles the entry; this is where the numbers it needs actually get captured.
+
 ## The file contract
 
 The run's working directory (gitignored — these are artifacts, not products) holds **one audit file
@@ -343,6 +350,11 @@ fills the empty verdict lines. It never edits the auditor's text. **For a scope-
 verifier handles it — no separate template — but the bar is unconditional**: see [Scope C —
 code](#scope-c--code)'s "Method and rails" paragraph.
 
+**Every `accepted` finding also gets marked `induced` or `original` at this triage step** —
+[`docs/verification-economics.md`](verification-economics.md)'s field 6, operative rule in
+[`docs/drydock/verifier.md`](drydock/verifier.md), the same instruction
+[`docs/delta-audit.md`](delta-audit.md)'s Protocol rule 6 gives its own sessions.
+
 **The sandbox rail, with its incident stated verbatim in the prompt.** Live or executable checks run
 only in a scratch clone under the agent's own temp directory — never the real checkout, never the real
 `$HOME`. A review subagent once "empirically reproducing" a bug overwrote real machine-global git
@@ -449,8 +461,9 @@ justified demoting the class rather than fixing it a fifth time.
    SHA, scope). **Trends compare per class, never totals**: a total moves with scope, so a smaller
    number can mean a cleaner tree or a narrower run, and by itself tells you neither. Cost and
    induced-defect marks are during-the-run captures, not something the entry reconstructs from memory
-   afterward: tally each role's cost as it finishes and mark each surviving finding
-   `induced`/`original` as it's triaged — the same discipline
+   afterward: tally each role's cost as it finishes (the roles section's bookkeeping note) and mark
+   each surviving finding `induced`/`original` as it's triaged (phase 2, operative rule in
+   [`docs/drydock/verifier.md`](drydock/verifier.md)) — the same discipline
    [`docs/delta-audit.md`](delta-audit.md) applies to its own sessions.
 2. **The ratchet** — one ticket per demoted class, each carrying the run's live case as its
    red-to-green test. This is the step that makes the next run cheaper. **Which findings become

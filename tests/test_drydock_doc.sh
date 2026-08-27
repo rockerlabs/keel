@@ -306,4 +306,27 @@ pin "phase 7 step 1 states cost/induced marks are during-the-run captures" "$doc
   'the entry reconstructs from memory' \
   "expected step 1 to say when fields 5/6 are captured, not just that they exist"
 
+# --- dir #270 follow-up: an independent /simplify pass found phase 7's "capture during, don't
+# reconstruct after" discipline lived only in the orchestrator-facing narrative at the bottom of the
+# doc — a spawned auditor/verifier session, which reads only its own role-prompt template
+# (docs/drydock/*.md), never sees phase 7's text. delta-audit.md's own equivalent fix put the
+# induced/original mark directly in Protocol rule 6 (the report contract every spawned session binds
+# to) rather than leaving it as narration; these pins require drydock's verifier.md to carry the same
+# operative instruction, not just point at it -------------------------------------------------------
+pin "verifier.md instructs marking accepted findings induced/original at triage time" "$verifier" \
+  'For every `accepted` finding, also mark `induced` or `original`' \
+  "expected the operative rule to live in verifier.md itself — the file a spawned verifier session actually reads — not only in phase 7's narrative"
+pin "verifier.md's induced/original mark cites verification-economics.md's field 6" "$verifier" \
+  "field 6: \`induced\` when it lands in" \
+  "expected verifier.md to point at the doctrine's attribution rule rather than inventing its own"
+pin "verifier.md tells the verifier how to record the mark on the verdict line" "$verifier" \
+  '`accepted — induced` or `accepted — original`' \
+  "expected a concrete instruction for where the mark goes, not just that one exists"
+pin "drydock.md's roles section ties per-phase cost tallying to gate returns, not phase 7" "$doc" \
+  'as each of GATE-1 through GATE-4 is reached' \
+  "expected the roles section (part of the orchestrator's own procedure, read well before phase 7) to say cost is recorded as each phase finishes"
+pin "phase 2's narrative points at verifier.md for the induced/original operative rule" "$doc" \
+  'gets marked `induced` or `original` at this triage step' \
+  "expected phase 2's own description of what verifiers do to name the mark, not just verifier.md and phase 7"
+
 summary

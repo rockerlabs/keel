@@ -79,7 +79,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   with no upstream capture step telling a session to mark them during the run — is closed in
   `delta-audit.md`'s Protocol (rule 6 now marks each finding `induced`/`original` as it's written) and
   its roles section (the orchestrator now tallies per-leg cost as each leg completes); `drydock.md`
-  phase 7 step 1 points at the same discipline. Pin-tested across `tests/test_delta_audit_doc.sh`,
+  phase 7 step 1 points at the same discipline (dir #276 makes that pointer land somewhere a spawned
+  session actually reads — see below). Pin-tested across `tests/test_delta_audit_doc.sh`,
   `tests/test_release_audit_doc.sh`, and `tests/test_drydock_doc.sh`.
 
 ### Added
@@ -188,6 +189,18 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ### Fixed
 
+- `docs/drydock.md` phase 7 said cost and induced/original-defect marks are captured *during* a run,
+  not reconstructed afterward (dir #270) — but that instruction lived only in phase 7's own narrative,
+  at the bottom of the doc, which the orchestrator's own session reads (it runs the whole procedure
+  directly) but a spawned auditor/verifier subagent never does (it is handed only its own role-prompt
+  template file). `docs/delta-audit.md`'s equivalent fix had already put the induced/original mark
+  directly in its Protocol rule 6 — the report contract every spawned session binds to — leaving
+  `drydock.md`'s version inconsistent with its own sibling doc (dir #276). `docs/drydock/verifier.md`
+  now carries the operative instruction itself (mark every `accepted` finding `induced` or `original`,
+  citing `docs/verification-economics.md`'s field 6, in the concrete form `accepted — induced` /
+  `accepted — original`); `docs/drydock.md`'s roles section ties per-phase cost tallying to the
+  orchestrator's own bookkeeping, since the orchestrator needs no separate wiring to read it. Pin-tested
+  in `tests/test_drydock_doc.sh`, mutation-verified (red without the fix, green with it).
 - `tools/lib/nonneg-int.sh` (dir #196) claimed to be "the ONE non-negative-integer sanitizer, shared
   by every tool that clamps a numeric env-var/arg override", but two sites still carried their own
   inline copy of the digit-shape-only guard it exists to replace (dir #242). `tools/self/doctor.sh`'s
