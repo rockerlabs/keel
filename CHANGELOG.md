@@ -85,6 +85,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   phase 7 step 1 points at the same discipline (dir #276 makes that pointer land somewhere a spawned
   session actually reads — see below). Pin-tested across `tests/test_delta_audit_doc.sh`,
   `tests/test_release_audit_doc.sh`, and `tests/test_drydock_doc.sh`.
+- `uninstall.sh --dry-run` over a mode/home mismatch (e.g. `--codex` aimed at a claude-manifested home)
+  now falls through to advisory output and exits 0, instead of refusing with exit 2 (dir #234) —
+  matching dir #228's treatment of the sibling "no usable manifest" refusal, since a dry run removes
+  nothing. Narrower than that sibling fallthrough on purpose (operator decision): only
+  `other_mode_hint()`/`gate_hooks_hint()` run, never `dry_run_heuristic_listing()` — a mismatch means
+  the named home is probably not the one the caller meant, so a listing scoped to it would describe the
+  wrong home. The real (non-dry) refusal is untouched.
 
 ### Added
 
