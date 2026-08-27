@@ -525,6 +525,24 @@ this_has_rails=0
 if [ "$other_usable" = 1 ] && [ "$this_usable" = 0 ] && [ "$this_has_rails" = 0 ]; then
   other_home_recorded="$(manifest_recorded_home "$other_manifest" "$HOME_DIR")"
   other_mode_recorded="$(manifest_recorded_mode "$other_manifest" "$other_manifest_mode")"
+  # dir #234: --dry-run falls through here too (exit 0, advisory) rather than refusing (exit 2), same
+  # rationale as dir #228's neighboring "no usable manifest" fallthrough below — a dry run removes
+  # nothing, so the refusal's rationale doesn't apply. Narrower than that fallthrough on purpose
+  # (operator decision 2026-08-27): dry_run_heuristic_listing() is deliberately NOT called here — it
+  # lists content-sniffed files in THIS home, and a mismatch is exactly the case where this is probably
+  # not the home the caller meant, so a listing scoped to it would describe the wrong home rather than a
+  # weaker answer. other_mode_hint()/gate_hooks_hint() still run, matching every other reporting exit.
+  # The reason line stays mismatch-specific (not the "no usable manifest" text) regardless of branch.
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "uninstall: $HOME_DIR holds a Keel install, but its recorded manifest is $other_mode_recorded mode, not $manifest_mode."
+    echo "        (dry run — nothing will be changed)"
+    echo "  That looks like the other install mode. Removing it from HERE would take the shared half"
+    echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave the $other_mode_recorded rails sitting there."
+    echo "  Reverse it with:  $other_cmd --home \"$other_home_recorded\""
+    other_mode_hint
+    gate_hooks_hint
+    exit 0
+  fi
   echo "uninstall: $HOME_DIR holds a Keel install, but its recorded manifest is $other_mode_recorded mode, not $manifest_mode." >&2
   echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
   echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave the $other_mode_recorded rails sitting there." >&2

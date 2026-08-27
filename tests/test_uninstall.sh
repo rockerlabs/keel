@@ -474,6 +474,20 @@ check_file "B9 nothing removed — a shipped command survives" "$B9/commands/go.
 check_contains "B9 CLAUDE.md rails untouched" "$(cat "$B9/CLAUDE.md")" "KEEL-CORE-BEGIN"
 check_file "B9 the manifest itself is untouched" "$B9/.keel/install-manifest.claude"
 
+# --- B9D: dir #234 (operator-decided) — --dry-run over the SAME mismatched home as B9 falls through to
+# exit 0 advisory output instead of B9's exit 2 refusal, names the mismatch (not the unrelated
+# "no usable manifest" text), and does NOT print the heuristic file listing (it would describe the wrong
+# home) --------------------------------------------------------------------------------------------
+run env KEEL_HOME="$B9" "$UNINSTALL" --codex --dry-run
+check_status "B9D --codex --dry-run aimed at a claude-manifested home -> exit 0" 0 "$STATUS"
+check_contains "B9D dry-run names the recorded mode" "$OUT" "claude mode, not codex"
+check_contains "B9D dry-run marks itself as a dry run" "$OUT" "dry run — nothing will be changed"
+check_contains "B9D dry-run still quotes the recorded home" "$OUT" "--home \"$B9\""
+check_absent "B9D dry-run does NOT print the heuristic-listing disclaimer" "$OUT" "heuristic"
+check_absent "B9D dry-run does NOT claim any specific file would be removed" "$OUT" "would remove"
+check_file "B9D nothing removed — CLI symlink survives" "$B9/bin/keel"
+check_file "B9D the manifest itself is untouched" "$B9/.keel/install-manifest.claude"
+
 # --- B10: user-deleted context file on a manifested home — uninstall still works, no two-mode
 # deadlock [287642e] ---------------------------------------------------------------------------------
 B10="$SANDBOX/b10-no-context/.claude"
