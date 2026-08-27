@@ -157,12 +157,13 @@ Steps, in order:
 4. **Pick a review depth — matched to the diff, mostly automatic.** *Skip entirely if step 1's convergence
    branch just recovered this step's receipt* — reuse the recovered level as-is; do not re-size (the
    recovered `polish.4-depth` is the baseline step 5's delta re-review gets cross-checked against, and a
-   fresh sizing pass here would silently replace it, per step 1). A recovered `skip` reaching here means
-   something genuinely did — `--recover` (dir #116, narrowed by dir #236) restores a skip ONLY when the
-   commit it was decided against still matches current HEAD, i.e. nothing shipped since; a skip decided
-   against an earlier commit still withholds and its note says so, same as before dir #236. So: if the
-   note names `polish.4-depth` as withheld, or the prior round chose a non-skip level, this step runs
-   fresh (skip dialog and all, if that's where the fresh sizing lands) for the round's own diff. Otherwise, gate this on the steps above
+   fresh sizing pass here would silently replace it, per step 1). Non-skip levels always recover (dir
+   #72's convenience) and never reach this step's body at all. A `skip` level only recovers — `--recover`
+   (dir #116, narrowed by dir #236) — when the commit it was decided against still matches current HEAD,
+   i.e. nothing shipped since; a skip decided against an earlier commit still withholds and its note says
+   so, same as before dir #236. So: **this step's body is reached only when the note names
+   `polish.4-depth` as withheld** — a skip that didn't recover — and runs fresh (skip dialog and all) for
+   the round's own diff. Otherwise, gate this on the steps above
    being clean: proceed only if simplify left no open problems AND (tests are green, or were explicitly
    skipped, or step 1 recovered step 3 provisionally per dir #123 — that provisional state is enough to
    proceed; step 8 is what actually re-verifies it). Otherwise report what is left and stop — do NOT
