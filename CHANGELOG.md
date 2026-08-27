@@ -16,6 +16,36 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 - **`docs/release-history.md`** (dir #232): a one-paragraph-per-release digest page, newest first,
   condensing each `CHANGELOG.md` section into a short summary so a reader doesn't have to reconstruct
   "what actually shipped in each version" from the full dated detail. Indexed in `README.md`.
+- **`tools/self/citation-resolvability.sh`** — every `dir #N` cited in `docs/*.md` must resolve to
+  exactly one ticket (dir #266, filed after a day in which three separate tickets were filed for
+  citations that looked resolvable and were not). Checks two sources: `BACKLOG.md`'s live `### dir
+  #N` headings (two or more for the same number is AMBIGUOUS — this subsumes dir #259's duplicate-
+  heading check, since a duplicate heading is exactly what makes a citation of that number ambiguous)
+  and the closed-ticket archive index outside the repo, at `~/.claude/projects/<slug>/CLAUDE-
+  archive.md`. Reading only `BACKLOG.md` false-positives on every ticket a cooldown sweep has moved to
+  the archive — dir #202 is the worked example: zero live headings, one archive line, not dead — so a
+  citation resolves via either source. `BACKLOG.md` is resolved to the MAIN checkout the same way
+  `tools/self/doctor.sh`'s own check 5 does (dir #135, reused via `tools/lib/impact-store.sh`'s
+  `_impact_main_top`/`impact_project_id` rather than hand-rolled a second time), so a worktree
+  invocation — the common case — finds it rather than silently skipping; an unreadable file degrades
+  the same silent way an absent one does (`-r`, not just `-f` — an earlier draft missed this and
+  reported a false DEAD for every citation instead). Only a genuinely `BACKLOG.md`-less checkout (CI,
+  an adopter's install) degrades to a silent skip (exit 0) instead of a false failure. Deliberately
+  keel-self-maintenance, kept as its own script rather than a `tools/self/doctor.sh` leg (per the
+  ticket's own filed scope): the archive lives entirely outside the repo, so it is never available in
+  CI regardless of packaging. `docs/*.md` and the archive are both fence-blanked
+  (`tools/lib/fence-blank.sh`, dir #169) and run through a new shared `tools/lib/dir-tickets.sh`
+  (`extract_dir_tickets`, promoted from `tools/self/doctor.sh`'s own `_extract_dir_tickets`, dir #274 —
+  doctor.sh keeps a one-line wrapper of the same old name so its two call sites and its 225 tests need
+  no change), rather than a bare `grep -oE 'dir #[0-9]+'`: that naive form silently drops every bare
+  `#N` in a shorthand/slash/range list, a real, already-shipped shape
+  (`docs/delegation.md`'s own "dir #201/#214"), not a hypothetical one. `BACKLOG.md`'s own `###
+  dir #N` heading scan is fence-blanked the same way but stays its own anchor match
+  (`^### dir #N`), a different job from citation extraction. Scoped to `docs/*.md` only (matching this
+  ticket's own proof run of 26 unique numbers, 41 mentions, 1 unresolvable): `CHANGELOG.md` is excluded
+  even though it cites ticket numbers too, since it documents history and six of its own citations (dir
+  #12, dir #23, dir #27, dir #28, dir #49, dir #77) surfaced as false positives — pre-dating the
+  archive, legitimately unresolvable today, and not defects — the first time this script scanned it.
 - **[`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what
   to file from a run, and how to tell whether the verification method is improving** (dir #230). The
   three audit docs (`docs/drydock.md`, `docs/delta-audit.md`, `docs/release-audit.md`) each say how
