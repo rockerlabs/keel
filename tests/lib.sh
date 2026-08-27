@@ -116,6 +116,17 @@ check_nodir()    { if [ -d "$2" ]; then fail "$1" "dir should not exist: $2"; el
 check_link()     { if [ -L "$2" ]; then pass "$1"; else fail "$1" "not a symlink: $2"; fi; }
 check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2"; else pass "$1"; fi; }
 
+# release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver release tag (`v<x.y.z>`, the
+# `v` kept), one per line, `git tag -l`'s own order. Third independent copy of this exact regex found
+# by /code-review medium on dir #232's own diff (tools/self/doctor.sh's `_release_tag_versions()` — not
+# sourceable, doctor.sh runs its own audit on load — plus test_changelog_section.sh and
+# test_release_history.sh, both of which DO already source this file): promoted here so the two test
+# files share one copy instead of three total. doctor.sh keeps its own private copy (bare version, `v`
+# stripped) since it isn't a consumer of this file.
+release_tag_versions() {
+  git -C "$1" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true
+}
+
 # --- fixtures -----------------------------------------------------------------------------------
 # Join a prefix and body so the *source* of a test file never holds a whole key-shaped token —
 # the repo's own secret-guard (and GitHub push protection) would otherwise block committing it.

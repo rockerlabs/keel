@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). It is an experimental
 probe, so pre-1.0 minor releases may still carry breaking changes.
 
+For a condensed one-paragraph-per-release digest instead of the full dated detail below, see
+[`docs/release-history.md`](docs/release-history.md).
+
 ## [Unreleased]
 
 ### Changed

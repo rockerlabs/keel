@@ -63,7 +63,10 @@ git config --global --add safe.directory '*'
 # Reconciled per CORE's git rail: fetch first so the tag list is current, not a stale local picture.
 git -C "$REPO_ROOT" fetch --prune --tags -q 2>/dev/null || true
 
-tags="$(git -C "$REPO_ROOT" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -u || true)"
+# release_tag_versions (tests/lib.sh) is the shared tag-shape scan — promoted there (dir #232's own
+# /code-review medium pass) once test_release_history.sh turned up a third independent copy of this
+# exact regex.
+tags="$(release_tag_versions "$REPO_ROOT" | sed 's/^v//' | sort -u)"
 n_tags=0
 n_matched=0
 while IFS= read -r ver; do
