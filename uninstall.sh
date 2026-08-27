@@ -326,7 +326,13 @@ dry_run_heuristic_listing() {
   echo "  --dry-run here will actually do (an operator-run /code-review high pass live-reproduced the"
   echo "  two disagreeing: this listing names files a real run leaves untouched)."
   echo "  record one first, for an accurate real uninstall:  $root/install.sh$install_flag --home \"$HOME_DIR\""
-  if [ -d "$HOME_DIR/keel" ] || [ -L "$HOME_DIR/keel" ]; then
+  # dir #233 (found by PR #244's own /code-review high pass): existence alone (a directory or symlink
+  # at this path) is not ownership — an unrelated user directory literally named `keel` at the home root
+  # read as "would remove" here. Mirror install.sh's own linked-home detection instead: keel/CORE.md is
+  # either a symlink (an ordinary linked install) or a regular file carrying the KEEL-NOGIT token (a
+  # --no-git trim) — that is the actual ownership signal install.sh relies on to recognize its own
+  # linked home (see its LINK-stickiness check near CONTEXT_FILE), not "a keel/ entry exists".
+  if [ -L "$HOME_DIR/keel/CORE.md" ] || { [ -f "$HOME_DIR/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$HOME_DIR/keel/CORE.md" 2>/dev/null; }; then
     echo "  would remove  keel"
   fi
   if [ -L "$HOME_DIR/bin/keel" ]; then
