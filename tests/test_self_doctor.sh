@@ -1453,4 +1453,22 @@ run "$sd" "$d" --quiet
 check_status "a spaced hyphen after a ticket number doesn't crash the check" 0 "$STATUS"
 check_absent "a spaced hyphen after a ticket number isn't misread as a range" "$OUT" "range too large"
 
+# cross-commit stitching (found live by an independent review pass on this same fix, dir #274):
+# `git log --format=%B` inserts a BLANK line between commit bodies, not a hard reset by itself — a
+# buffered trailing-comma line that merely absorbs the blank line (still ending in ", " after the
+# merge) rides straight through it and stitches onto the NEXT, unrelated commit's leading token. Two
+# real commits, oldest first: an older one whose message starts with a bare "#941" (no "dir " prefix,
+# so on its own it is not a ticket citation at all), then a newer one ending in a genuine trailing-
+# comma ticket citation. Without the blank-line flush, "dir #940," would ride through the blank
+# separator and glue onto "#941", fabricating a "dir #941" citation nothing in the repo ever made.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+( cd "$d" && git commit -q --allow-empty -m "$(printf '#941 an older, unrelated commit starting with a bare number')" )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #940 fixes bug,')" )
+run "$sd" "$d" --quiet
+check_contains "cross-commit: the real trailing-comma ticket is still flagged" "$OUT" "dir #940"
+check_absent "cross-commit: an unrelated older commit's bare number isn't fabricated into a ticket" "$OUT" "dir #941"
+
 summary

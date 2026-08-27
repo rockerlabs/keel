@@ -775,8 +775,16 @@ _semver_max() {
 # The line-wrap join only fires when the PRECEDING line ends in a trailing comma — not a blanket
 # newline-to-space join — so it can't accidentally stitch one commit's trailing "dir #100" onto a
 # NEXT, unrelated commit's leading bare "#101" when multiple commit bodies are concatenated upstream
-# (`git log --format=%B`); an ordinary line never ends in a trailing comma, so paragraph/commit
-# boundaries stay intact.
+# (`git log --format=%B`, which inserts a BLANK line between commit bodies — verified live, not
+# assumed): an ordinary line never ends in a trailing comma, so paragraph/commit boundaries stay
+# intact. The blank line itself is a hard flush point, not just an ordinary non-comma line — a
+# buffered trailing-comma line must not survive PAST it: without an explicit flush, appending the
+# empty line to the buffer still ends in ", " (comma-space), which re-buffers instead of printing,
+# so the buffer would otherwise ride straight through the blank separator and stitch onto the NEXT
+# commit's leading token — reproduced live by an independent review pass (dir #274): a commit body
+# ending "...dir #100," immediately followed (newest-first in the log) by an unrelated older commit
+# whose message starts with a bare "#102" fabricated a "dir #102" citation with nothing to do with
+# ticket #102. Flushing on every blank line closes that gap.
 # Two malformed-range edge cases (found by a peer session's review), both handled loudly rather than
 # by silently dropping a ticket the way the pre-dir-#274 helper did:
 # - Reversed (e.g. "#107-104", a typo'd order): looping lo..hi would print nothing (lo > hi), which is
@@ -794,6 +802,7 @@ _semver_max() {
 _extract_dir_tickets() {
   awk '
     { line = $0
+      if (line == "") { if (buf != "") { print buf; buf = "" }; print line; next }
       if (buf != "") { line = buf " " line; buf = "" }
       if (line ~ /,[ \t]*$/) { sub(/[ \t]*$/, "", line); buf = line }
       else { print line }
