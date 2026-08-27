@@ -1346,4 +1346,162 @@ run "$sd" "$d" --quiet
 check_absent "shorthand list, all three entered: none flagged" "$OUT" "absent from CHANGELOG.md's [Unreleased] section"
 check_status "still exit 0" 0 "$STATUS"
 
+# dir #274: the same class of gap dir #273 closed for comma/whitespace lists, but for the four
+# remaining real-precedent shapes — "and", ";", "/" (all three separators between explicit numbers,
+# so every ticket resolves) and a numeric range (`#N-M`, an EXPANSION: `dir #104-107` names four
+# tickets while writing only two numbers, so a fix that just pulled the two endpoints would silently
+# lose the middle — worse than today's visible drop, because it would look complete). Mutation-proved
+# per shape, not one fixture standing in for all four (a single shared fixture is exactly the
+# one-layer-up version of the defect dir #274 exists to close).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #920 and #921 two-way and-list" )
+run "$sd" "$d" --quiet
+check_contains "\"and\"-list: first ticket flagged" "$OUT" "dir #920"
+check_contains "\"and\"-list: second ticket flagged too" "$OUT" "dir #921"
+
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #922; #923 semicolon-separated list" )
+run "$sd" "$d" --quiet
+check_contains "semicolon-list: first ticket flagged" "$OUT" "dir #922"
+check_contains "semicolon-list: second (bare #N) ticket flagged too" "$OUT" "dir #923"
+
+# real precedent for this exact shape: commit 1515d7a's own title, "...dir #208/#211/#212...".
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #924/#925/#926 slash-separated list" )
+run "$sd" "$d" --quiet
+check_contains "slash-list: first ticket flagged" "$OUT" "dir #924"
+check_contains "slash-list: second ticket flagged too" "$OUT" "dir #925"
+check_contains "slash-list: third ticket flagged too" "$OUT" "dir #926"
+
+# range shape: real precedent (f4109e72 "dir #100-103", 21e984bfd9a "dir #104-107"). Every ticket IN
+# the range must surface, not just its two written endpoints — the middle ticket (#928) is the
+# discriminating assertion an endpoints-only fix would still pass.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #927-929 batch range close" )
+run "$sd" "$d" --quiet
+check_contains "range: first (written) endpoint flagged" "$OUT" "dir #927"
+check_contains "range: middle ticket flagged (not just the two written endpoints)" "$OUT" "dir #928"
+check_contains "range: second (written) endpoint flagged" "$OUT" "dir #929"
+
+# wrapped shorthand list: a shorthand list split across a commit-message line break (a trailing
+# comma right before the `\n`) must not defeat extraction the same way a same-line comma list
+# doesn't — grep is inherently line-based, so this needs an explicit line-join first. The wrapped
+# continuation line is made of nothing but the rest of the list (no trailing prose after the last
+# ticket) — the real shape this closes (dir #274's own "dir #208,\n#211, #212"), and the shape the
+# join's own stricter continuation guard requires (see the false-positive fixture further down: a
+# continuation line that mixes a ticket number with other prose is deliberately NOT joined).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #930,\n#931')" )
+run "$sd" "$d" --quiet
+check_contains "line-wrapped list: first ticket flagged" "$OUT" "dir #930"
+check_contains "line-wrapped list: second (wrapped) ticket flagged too" "$OUT" "dir #931"
+
+# over-matching guard: a bare `#N` that follows a `dir #N` reference through ordinary prose (not a
+# comma/semicolon/slash/whitespace-only run) must NOT be swept in as a continuation — an unrelated PR
+# or issue number mentioned in the same commit message stays uncredited, not invented as a ticket.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- dir #932: fixes bug\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #932 fixes bug, see PR #933 for context" )
+run "$sd" "$d" --quiet
+check_absent "an unrelated PR number in prose isn't swept in as a ticket" "$OUT" "dir #933"
+
+# malformed-range edge cases (a peer review of this same fix, dir #274): a typo'd/reversed range
+# ("#107-104") must not silently drop both tickets by looping lo..hi backwards into nothing — treated
+# as two bare references instead, both surface.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #934-933 typo'd reversed range" )
+run "$sd" "$d" --quiet
+check_contains "reversed range: first written endpoint still flagged" "$OUT" "dir #934"
+check_contains "reversed range: second written endpoint still flagged" "$OUT" "dir #933"
+
+# an absurdly wide range (over the 500-ticket cap) must not silently truncate to a single endpoint —
+# that would look complete while dropping every other ticket in the span, the exact class of defect
+# this whole chain exists to kill. It must surface loudly instead: a deliberately unmatchable marker
+# line that always shows as "missing" in the WARN, prompting a human to look.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #1-99999 absurdly wide range" )
+run "$sd" "$d" --quiet
+check_contains "over-cap range surfaces loudly rather than silently truncating" "$OUT" "range too large to expand"
+
+# a spaced hyphen after a ticket number is ordinary prose, not a range — must not misparse into a
+# wild expansion or a parse failure.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- dir #935: fixed the extraction\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #935 - fixed the extraction" )
+run "$sd" "$d" --quiet
+check_status "a spaced hyphen after a ticket number doesn't crash the check" 0 "$STATUS"
+check_absent "a spaced hyphen after a ticket number isn't misread as a range" "$OUT" "range too large"
+
+# cross-commit stitching (found live by an independent review pass on this same fix, dir #274):
+# `git log --format=%B` inserts a BLANK line between commit bodies, not a hard reset by itself — a
+# buffered trailing-comma line that merely absorbs the blank line (still ending in ", " after the
+# merge) rides straight through it and stitches onto the NEXT, unrelated commit's leading token. Two
+# real commits, oldest first: an older one whose message starts with a bare "#941" (no "dir " prefix,
+# so on its own it is not a ticket citation at all), then a newer one ending in a genuine trailing-
+# comma ticket citation. Without the blank-line flush, "dir #940," would ride through the blank
+# separator and glue onto "#941", fabricating a "dir #941" citation nothing in the repo ever made.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+( cd "$d" && git commit -q --allow-empty -m "$(printf '#941 an older, unrelated commit starting with a bare number')" )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #940 fixes bug,')" )
+run "$sd" "$d" --quiet
+check_contains "cross-commit: the real trailing-comma ticket is still flagged" "$OUT" "dir #940"
+check_absent "cross-commit: an unrelated older commit's bare number isn't fabricated into a ticket" "$OUT" "dir #941"
+
+# within-one-commit false positive (found live by /code-review medium on this same fix, dir #274): a
+# trailing-comma line followed, with NO blank line involved, by a continuation line that mixes a bare
+# ticket number with other prose must not be joined — only a continuation line made of nothing but
+# ticket tokens is a genuine wrapped list (the fixture above). A commit body citing "dir #942, #943,"
+# then continuing "#944 unrelated text" on the next physical line must not fabricate "dir #944".
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #942, #943,\n#944 unrelated text')" )
+run "$sd" "$d" --quiet
+check_contains "within-commit false positive: the real listed tickets are still flagged" "$OUT" "dir #942"
+check_contains "within-commit false positive: second real listed ticket also flagged" "$OUT" "dir #943"
+check_absent "within-commit false positive: a continuation line mixing prose isn't fabricated into a ticket" "$OUT" "dir #944"
+
+# backtick self-reference (found live by /code-review medium on this same fix, dir #274 — and a LIVE
+# hazard, not hypothetical: this very PR's own CHANGELOG.md entry quotes illustrative examples like
+# `"dir #104-107"` in backticks): a ticket-shaped number inside an inline code span must not be swept
+# in as a real citation, the same way `blank_fenced_blocks` already protects the BACKLOG.md
+# heading/status-drift check above from flagging its own fenced examples.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #945 document the shape `"dir #946-947"` as an example')" )
+run "$sd" "$d" --quiet
+check_contains "backtick guard: the real citation outside backticks is still flagged" "$OUT" "dir #945"
+check_absent "backtick guard: an illustrative example inside backticks isn't fabricated into a ticket" "$OUT" "dir #946"
+
 summary

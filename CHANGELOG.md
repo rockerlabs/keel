@@ -82,7 +82,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   with no upstream capture step telling a session to mark them during the run — is closed in
   `delta-audit.md`'s Protocol (rule 6 now marks each finding `induced`/`original` as it's written) and
   its roles section (the orchestrator now tallies per-leg cost as each leg completes); `drydock.md`
-  phase 7 step 1 points at the same discipline. Pin-tested across `tests/test_delta_audit_doc.sh`,
+  phase 7 step 1 points at the same discipline (dir #276 makes that pointer land somewhere a spawned
+  session actually reads — see below). Pin-tested across `tests/test_delta_audit_doc.sh`,
   `tests/test_release_audit_doc.sh`, and `tests/test_drydock_doc.sh`.
 
 ### Added
@@ -191,6 +192,71 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ### Fixed
 
+- `uninstall.sh --dry-run`'s manifest-less heuristic listing treated a `keel/` directory or symlink at
+  the home root as Keel-owned by existence alone, misreporting "would remove keel" for an unrelated
+  user directory that merely shared the name (dir #233). It now checks `keel/CORE.md` ownership
+  (a symlink, or a regular file carrying the `KEEL-NOGIT` token) — the same signal `install.sh` itself
+  uses to recognize its own linked home. The identical existence-only imprecision in
+  `home_has_keel_content()` is unchanged, left for a future ticket; two new findings from this fix's own
+  `/code-review` pass are filed separately — the ownership predicate is now duplicated across
+  `install.sh`/`uninstall.sh`/`tools/doctor.sh` with no shared helper (dir #278), and the narrower
+  `CORE.md`-only check can under-report if `CORE.md` alone is tampered while its siblings survive
+  (dir #279, low impact — advisory dry-run output only).
+- `commands/polish.md` step 5's "For `skip`, do nothing" read as "no receipt either" — but `skip` still
+  needs its own receipt-only write (`polish.5-review skip`, no review to run), and a forgotten one
+  denied `gh pr create` and retired the sentinel even when nothing had shipped since the skip decision.
+  Because `receipt --recover` refused to restore ANY skip-level `polish.4-depth` unconditionally (dir
+  #116's own protection against a stale skip riding a later, unreviewed fix commit), the retry forced a
+  full re-ask of both step 4 dialogs for a diff the operator had already approved skipping (dir #236).
+  `tools/pre-pr-gate.sh` now stamps a skip decision with the commit it was made against at write time
+  (`_stamp_depth_outcome`, the same trust-boundary move dir #123 made for step 3's tree hash) and
+  `--recover` narrows its refusal accordingly: it restores a skip only when that stamp still matches
+  current HEAD, i.e. nothing shipped since — dir #116's original danger (a fix commit landing under an
+  inherited skip) still refuses exactly as before. `commands/polish.md` step 5 now also states the
+  receipt requirement explicitly. Pin-tested in `tests/test_pre_pr_gate.sh` (same-commit recovers,
+  cross-commit still refuses, legacy-unstamped-skip still refuses, plus an end-to-end reproduction of
+  the felt case).
+- `docs/drydock.md` phase 7 said cost and induced/original-defect marks are captured *during* a run,
+  not reconstructed afterward (dir #270) — but that instruction lived only in phase 7's own narrative,
+  at the bottom of the doc, which the orchestrator's own session reads (it runs the whole procedure
+  directly) but a spawned auditor/verifier subagent never does (it is handed only its own role-prompt
+  template file). `docs/delta-audit.md`'s equivalent fix had already put the induced/original mark
+  directly in its Protocol rule 6 — the report contract every spawned session binds to — leaving
+  `drydock.md`'s version inconsistent with its own sibling doc (dir #276). `docs/drydock/verifier.md`
+  now carries the operative instruction itself (mark every `accepted` finding `induced` or `original`,
+  citing `docs/verification-economics.md`'s field 6, in the concrete form `accepted — induced` /
+  `accepted — original`); `docs/drydock.md`'s roles section ties per-phase cost tallying to the
+  orchestrator's own bookkeeping, since the orchestrator needs no separate wiring to read it. Pin-tested
+  in `tests/test_drydock_doc.sh`, mutation-verified (red without the fix, green with it).
+- `tools/self/doctor.sh`'s `_extract_dir_tickets()` (dir #237's commit-vs-CHANGELOG reconciliation
+  check) still silently dropped tickets past the first in four real-precedent shapes dir #273 left as
+  a named residual: `"dir #208 and #211"`, `"dir #208; #211"`, `"dir #208/#211/#212"` (commit
+  `1515d7a`'s own title is an unrecognized instance of this exact shape), and a numeric range
+  (`"dir #104-107"` — real batch-close commits `f4109e72`/`21e984bfd9a`), plus a shorthand list
+  wrapped across a commit-message line break (dir #274). A range is an EXPANSION, not a separator list
+  — `dir #104-107` names four tickets while writing only two numbers, so pulling just the two
+  endpoints would have silently lost the middle ticket while looking complete; the fix expands every
+  ticket in the span (capped at 500) instead. The line-wrap join only fires when the preceding line
+  ends in a trailing comma, not a blanket newline-to-space merge, so it can't stitch one commit's
+  trailing ticket onto an unrelated next commit's leading bare `#N` when multiple commit bodies are
+  concatenated. A cross-session review of this same fix caught three malformed-range edge cases the
+  first draft missed: a reversed range (`"#107-104"`) is now treated as two bare ticket references
+  rather than looping backwards into nothing; an absurdly wide range (past the 500-ticket cap) now
+  emits a deliberately unmatchable marker line rather than silently truncating to one endpoint — loud,
+  not a quiet re-creation of the same drop-without-saying-so defect one layer deeper; a spaced hyphen
+  after a ticket number (ordinary prose, e.g. `"dir #208 - fixed the extraction"`) is confirmed not to
+  misparse as a range, since the range suffix requires a digit immediately after the `-` with no
+  space. Each of the four shapes plus all three edge cases is mutation-proved separately in
+  `tests/test_self_doctor.sh`, plus a false-positive fixture confirming an unrelated PR/issue number
+  in ordinary prose is never swept in as a ticket. An operator-run `/code-review medium` pass caught
+  two more real gaps: this diff's own CHANGELOG entry quoted illustrative examples like
+  `"dir #104-107"` in backticks, and the new range/slash support made those examples newly parseable
+  as if they were real citations — fixed by stripping backtick-quoted inline spans before extraction,
+  the same idiom already used elsewhere in this file for the same self-reference hazard; and a
+  trailing-comma line followed, with no blank line involved, by a continuation line mixing a bare
+  ticket number with other prose (`"dir #100, #105,\n#110 unrelated text"`) still fabricated a
+  ticket — fixed by requiring the continuation line to be made of nothing but ticket-list tokens
+  before joining.
 - `tools/lib/nonneg-int.sh` (dir #196) claimed to be "the ONE non-negative-integer sanitizer, shared
   by every tool that clamps a numeric env-var/arg override", but two sites still carried their own
   inline copy of the digit-shape-only guard it exists to replace (dir #242). `tools/self/doctor.sh`'s
