@@ -1,6 +1,9 @@
 # shellcheck shell=bash
-# tools/lib/dir-tickets.sh — extract_dir_tickets: reads text on stdin, echoes every `dir #N` ticket
-# it references, one per line, deduped (dir #273 gap 2, dir #274).
+# tools/lib/dir-tickets.sh — keel-self-maintenance (dir #68): extract_dir_tickets reads text on
+# stdin, echoes every `dir #N` ticket it references, one per line, deduped (dir #273 gap 2, dir
+# #274). Shared only by keel-self-maintenance tools (tools/self/doctor.sh,
+# tools/self/citation-resolvability.sh); install.sh never ships either of them, so this lib never
+# reaches an adopter's install.
 #
 # Promoted out of tools/self/doctor.sh's own `_extract_dir_tickets` (dir #266, its second consumer:
 # tools/self/citation-resolvability.sh) — doctor.sh keeps a one-line wrapper of the same name so its

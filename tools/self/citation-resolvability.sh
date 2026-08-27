@@ -85,10 +85,13 @@ say() { [ "$QUIET" = 1 ] || echo "$@"; }
 say "● citation resolvability ($repo_dir)"
 
 # Resolve the MAIN checkout the same way tools/self/doctor.sh's own check 5 does (dir #135):
-# BACKLOG.md lives ONLY there, never in a linked worktree. `_impact_main_top`/`impact_project_id`
-# (tools/lib/impact-store.sh, dir #251) already implement this exact projection — sourced rather than
-# hand-rolled a second time, since dir #251's own store resolution needs the identical main-checkout
-# and `~/.claude/projects/`-style slug this script also needs for the archive path below.
+# BACKLOG.md lives ONLY there, never in a linked worktree. `_impact_main_top` (tools/lib/impact-
+# store.sh, dir #251) already implements this exact projection — sourced rather than hand-rolled a
+# second time, since dir #251's own store resolution needs the identical main-checkout projection
+# this script also needs. This is NOT a new site for dir #26's tracked "N tools carrying their own
+# copy of this awk fragment" count — dir #26 is about NOT pre-building a shared lib for it; reusing
+# an EXISTING lib that already exposed it (built for dir #251's own, unrelated purpose) is the
+# opposite of adding a new hand-rolled copy.
 backlog_root="$(_impact_main_top "$repo_dir")"
 backlog_root="${backlog_root:-$repo_dir}"
 backlog_file="$backlog_root/BACKLOG.md"
@@ -101,13 +104,16 @@ if [ ! -r "$backlog_file" ]; then
 fi
 
 # Derived per BACKLOG.md:1255's own naming convention: the project dir under ~/.claude/projects/ is
-# the repo's absolute path with every '/' replaced by '-' — exactly `impact_project_id`'s own D2
-# slug (tools/lib/impact-store.sh), reused rather than hand-rolled. Overridable for test isolation,
-# since the real archive is personal state outside the repo and outside git entirely.
+# the repo's absolute path with every '/' replaced by '-' — the same D2 slug transform
+# `impact_project_id` (tools/lib/impact-store.sh) uses. Not routed through that function itself: it
+# re-resolves the main-checkout top from scratch via `_impact_resolve_top`, which `backlog_root`
+# above already did — calling it here would just re-run the same `git worktree list` a second time
+# for an idempotent result. Overridable for test isolation, since the real archive is personal state
+# outside the repo and outside git entirely.
 if [ -n "${KEEL_CITATION_ARCHIVE_FILE:-}" ]; then
   archive_file="$KEEL_CITATION_ARCHIVE_FILE"
 else
-  archive_file="${HOME:-}/.claude/projects/$(impact_project_id "$backlog_root")/CLAUDE-archive.md"
+  archive_file="${HOME:-}/.claude/projects/$(printf '%s' "$backlog_root" | tr '/' '-')/CLAUDE-archive.md"
 fi
 if [ -f "$archive_file" ]; then
   say "  archive: $archive_file"
@@ -131,6 +137,15 @@ while IFS= read -r f; do scan_files+=("$f"); done < <(
 abs_files=()
 [ "${#scan_files[@]}" -gt 0 ] && abs_files=("${scan_files[@]/#/$repo_dir/}")
 
+# extract_dir_tickets (below, and the archive scan further down) can emit a non-numeric marker line
+# for an absurdly wide range ("dir #1-99999 (range too large to expand, dir #274)") rather than
+# silently dropping it — correct for its own WARN-surfacing caller in doctor.sh, but not a valid
+# ticket number here. Both call sites need the identical filter, so it's one shared function rather
+# than two copies of the same regex to keep in lockstep if the marker's shape ever changes.
+as_ticket_number() {   # as_ticket_number LINE — prints the bare number, or nothing if LINE isn't one
+  [[ "$1" =~ ^dir\ \#([0-9]+)$ ]] && printf '%s' "${BASH_REMATCH[1]}"
+}
+
 # One pass per doc file (not per cited number): fence-blank it (a `dir #N`-shaped line inside a
 # fenced code example must not read as a real citation — tools/lib/fence-blank.sh, dir #169) and run
 # it through `extract_dir_tickets` (tools/lib/dir-tickets.sh, dir #274, promoted from
@@ -146,17 +161,13 @@ abs_files=()
 # repo's tools target bash 3.2 (macOS's shipped /bin/bash), where `"${arr[@]}"` on a still-empty
 # array throws unbound-variable under `set -u` even when declared — but `arr+=("x")` on that same
 # still-empty array is safe (only EXPANDING an empty array is the trap, not appending to one), so the
-# final `for` loop below just needs its own length guard, nothing upstream does.
+# merged block below just needs its own length guard, nothing upstream does.
 cited_numbers=()
 if [ "${#abs_files[@]}" -gt 0 ]; then
   for f in "${abs_files[@]}"; do
-    while IFS= read -r n; do
-      # extract_dir_tickets can emit a non-numeric marker line for an absurdly wide range
-      # ("dir #1-99999 (range too large to expand, dir #274)") rather than silently dropping it —
-      # correct for its own WARN-surfacing caller in doctor.sh, but not a valid ticket number here, so
-      # it's filtered out rather than fed into a variable name or an integer comparison below.
-      [[ "$n" =~ ^dir\ \#([0-9]+)$ ]] || continue
-      n="${BASH_REMATCH[1]}"
+    while IFS= read -r line; do
+      n="$(as_ticket_number "$line")"
+      [ -n "$n" ] || continue
       var="cite_first_$n"
       if [ -z "${!var:-}" ]; then
         printf -v "$var" '%s' "${f#"$repo_dir"/}"
@@ -165,30 +176,35 @@ if [ "${#abs_files[@]}" -gt 0 ]; then
     done < <(blank_fenced_blocks "$f" | extract_dir_tickets)
   done
 fi
-# Numeric order for stable, predictable output (the accumulation above is first-cited-file order).
+
+exit_code=0
+dead=0
+ambiguous=0
+
+# Everything below only matters if something was actually cited — one guard, not the two separate
+# "scan" and "report" checks an earlier draft had, which could silently drift out of sync with each
+# other. Skips a full fence-blanked pass over BACKLOG.md (1.3MB+ in this repo) and the archive for a
+# result nothing will consult, same as skipping the report loop itself.
 if [ "${#cited_numbers[@]}" -gt 0 ]; then
+  # Numeric order for stable, predictable output (the accumulation above is first-cited-file order).
   sorted_numbers=()
   while IFS= read -r n; do sorted_numbers+=("$n"); done < <(printf '%s\n' "${cited_numbers[@]}" | sort -un)
   cited_numbers=("${sorted_numbers[@]}")
-fi
 
-# The two resolution-source scans below only ever matter if something was actually cited — skip both
-# when nothing was, rather than paying a full fence-blanked pass over BACKLOG.md (1.3MB+ in this repo)
-# and the archive for a result nothing will consult.
-if [ "${#cited_numbers[@]}" -gt 0 ]; then
   # One pass over BACKLOG.md (fence-blanked, same reasoning as the doc files above — an illustrative
   # `### dir #N` heading inside a fenced example must not count as a live one): a number -> live-
-  # heading-count map, built once, rather than a `grep -cE` re-scan of the whole file per cited
-  # number. Plain dynamic variable names (`live_$n`), not `declare -A` — this repo's tools target
-  # bash 3.2 (macOS's shipped /bin/bash), which has no associative arrays; `printf -v`/`${!var}`
-  # indirection is the established bash-3.2-safe substitute (tests/run.sh's own header names the
-  # same constraint). This is a HEADING scan (`^### dir #N`), a different job from `extract_dir_tickets`
-  # above (every citation anywhere in running prose) — deliberately not reused for this anchor-match.
+  # heading-count map, built once via a single `sed`, rather than a `grep -cE` re-scan of the whole
+  # file per cited number. Plain dynamic variable names (`live_$n`), not `declare -A` — this repo's
+  # tools target bash 3.2 (macOS's shipped /bin/bash), which has no associative arrays; `printf -v`/
+  # `${!var}` indirection is the established bash-3.2-safe substitute (tests/run.sh's own header
+  # names the same constraint). This is a HEADING scan (`^### dir #N`), a different job from
+  # `extract_dir_tickets` above (every citation anywhere in running prose) — deliberately not reused
+  # for this anchor-match.
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     var="live_$n"
     printf -v "$var" '%s' "$(( ${!var:-0} + 1 ))"
-  done < <(blank_fenced_blocks "$backlog_file" | grep -oE '^### dir #[0-9]+' | grep -oE '[0-9]+')
+  done < <(blank_fenced_blocks "$backlog_file" | sed -n -E 's/^### dir #([0-9]+).*/\1/p')
 
   # One pass over the archive (when present), fence-blanked the same way as the two sources above (an
   # illustrative `dir #N` inside a pasted fenced transcript must not count as a real archival
@@ -197,21 +213,12 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
   # the archive accumulates repeated closure-sweep blocks by design (see header), so more than one
   # mention there is not an ambiguity.
   if [ -n "$archive_file" ]; then
-    while IFS= read -r n; do
-      [[ "$n" =~ ^dir\ \#([0-9]+)$ ]] || continue
-      printf -v "arch_${BASH_REMATCH[1]}" 1
+    while IFS= read -r line; do
+      n="$(as_ticket_number "$line")"
+      [ -n "$n" ] && printf -v "arch_$n" 1
     done < <(blank_fenced_blocks "$archive_file" | extract_dir_tickets)
   fi
-fi
 
-exit_code=0
-dead=0
-ambiguous=0
-
-# `"${cited_numbers[@]}"` on a still-empty array throws unbound-variable under `set -u` on this
-# repo's target bash 3.2 even though the array WAS declared — guard the length before iterating,
-# every time.
-if [ "${#cited_numbers[@]}" -gt 0 ]; then
   for n in "${cited_numbers[@]}"; do
     live_var="live_$n"; live_count="${!live_var:-0}"
     arch_var="arch_$n"; archive_hit="${!arch_var:-0}"
