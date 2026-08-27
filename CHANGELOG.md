@@ -219,6 +219,19 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   against the same three mutations plus the anchor-line-deleted-from-both-sides edge case. The
   pre-existing rails-block check further down the same file (`code-auditor.md` vs `delegation.md`)
   now shares this helper too, instead of its own near-duplicate inline comparison.
+- Three prose-only drifts in `docs/drydock.md` from the delta audit (dir #210): **"Four conditions,
+  one rule"** under-counted `tools/drydock/inventory.sh`'s seven distinct refuse conditions — dropped
+  the definite count and pointed readers at the script's own `refuse` call sites, which
+  `tests/test_drydock_inventory.sh` already pins in full, rather than duplicating an exhaustive list
+  across three prose surfaces. The **run-cost table**'s "Whole run | ≈6.1M subagent tokens" row
+  didn't reconcile against its own itemized rows; re-derived from the source record
+  (`~/.claude/REVIEW_HISTORY.md:480-481`) and added a "Cross-file pass + re-check" row so auditors
+  (3.56M) + verifiers (0.63M) + cross-file pass/re-check (0.47M) sum to the ≈4.66M the table now
+  states explicitly, naming orchestrator arbitration turns — not metered per row, per that same
+  source line — as the account for the remainder, rather than leaving the gap unexplained. The
+  **roles table**'s Verifier "May touch" cell named only the `verdict:` lines, omitting the
+  `verifier:` footer line phase 2 also requires — same shape PR #219's review already fixed once in
+  this table.
 
 ## [0.7.1] — 2026-08-21
 
