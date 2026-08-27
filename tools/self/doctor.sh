@@ -805,7 +805,7 @@ _extract_dir_tickets() {
     | awk -F'[#-]' '
         /-/ { lo = $2 + 0; hi = $3 + 0
               if (hi < lo) { print "dir #" lo; print "dir #" hi; next }
-              if (hi - lo > 500) { print "dir #" lo "-" hi ": range too large to expand — verify manually (dir #274)"; next }
+              if (hi - lo > 500) { print "dir #" lo "-" hi " (range too large to expand, dir #274)"; next }
               for (i = lo; i <= hi; i++) print "dir #" i
               next }
         { print "dir #" $2 }
