@@ -283,4 +283,56 @@ for site in $legacy_sites; do
   fi
 done
 
+# --- dir #235: install.sh writes the dir #190 foreign-core sentinel and the install manifest via two
+# independent, non-atomic operations; a kill/crash between them could leave a fresh-looking manifest
+# paired with a stale sentinel — the one partial state artifact_shared_with_other's own
+# no-usable-other-manifest fallback (uninstall.sh) can misjudge. Fixed by writing/clearing the sentinel
+# BEFORE the manifest, so the only reachable partial state is the safe one (sentinel fresh, manifest
+# stale). KEEL_TEST_CRASH_AFTER=foreign-core-sentinel is a test-only hook that exits right after the
+# sentinel step, letting this test prove the ORDER deterministically instead of racing a real interrupt
+# (both writes are near-instant renames — a real-kill test would be flaky). RED against the pre-fix
+# ordering: with the sentinel written AFTER the manifest, a crash at this hook point is a crash after
+# BOTH writes, so the manifest would already be updated by the time it fires. -----------------------------
+
+# C1 — first-ever install into a fresh home, crashed right after the sentinel write: the sentinel must
+# already be fresh, and the manifest — which only gets written afterward — must not exist yet.
+c1home="$SANDBOX/dir235-crash-set"; mkdir -p "$c1home"
+printf '# My own global notes\nnothing keel here\n' > "$c1home/CLAUDE.md"
+run env KEEL_TEST_CRASH_AFTER=foreign-core-sentinel "$install" --home "$c1home" --no-hooks
+check_status "C1 simulated crash right after the sentinel write -> exit 99" 99 "$STATUS"
+check_file "C1 the foreign-core sentinel is already fresh" "$c1home/.keel/foreign-core.claude"
+check_nofile "C1 the manifest has NOT been written yet (proves the sentinel goes first)" "$c1home/.keel/install-manifest.claude"
+
+# C2 — a home with a completed, non-foreign-core prior install (sentinel absent, manifest recorded from
+# that earlier run), now replacing CLAUDE.md with a foreign one and crashing this re-run right after the
+# sentinel write: the sentinel must already reflect the NEW foreign-core state, while the manifest must
+# still be the OLD one (same installed_at) — stale, never wrongly "fresh".
+c2home="$SANDBOX/dir235-crash-transition"
+run "$install" --home "$c2home" --no-hooks
+check_status "C2 baseline (non-foreign-core) install -> exit 0" 0 "$STATUS"
+c2man="$c2home/.keel/install-manifest.claude"
+check_nofile "C2 baseline: no sentinel yet (not foreign-core)" "$c2home/.keel/foreign-core.claude"
+c2_before="$(cat "$c2man")"
+printf '# My own global notes\nnothing keel here\n' > "$c2home/CLAUDE.md"
+run env KEEL_TEST_CRASH_AFTER=foreign-core-sentinel "$install" --home "$c2home" --no-hooks
+check_status "C2 simulated crash on the re-run, right after the sentinel write -> exit 99" 99 "$STATUS"
+check_file "C2 the sentinel is already fresh for the new foreign-core state" "$c2home/.keel/foreign-core.claude"
+check_status "C2 the manifest is byte-for-byte untouched by the crashed run" "$c2_before" "$(cat "$c2man")"
+
+# C3 — the CLEAR direction: a home with a completed foreign-core install (sentinel present), the foreign
+# file now removed and this re-run crashed right after the sentinel clear: the sentinel must already be
+# gone, while the manifest must still be the OLD (foreign-core) one, untouched.
+c3home="$SANDBOX/dir235-crash-clear"; mkdir -p "$c3home"
+printf '# My own global notes\nnothing keel here\n' > "$c3home/CLAUDE.md"
+run "$install" --home "$c3home" --no-hooks
+check_status "C3 baseline foreign-core install -> exit 0" 0 "$STATUS"
+c3man="$c3home/.keel/install-manifest.claude"
+check_file "C3 baseline: sentinel written" "$c3home/.keel/foreign-core.claude"
+c3_before="$(cat "$c3man")"
+rm -f "$c3home/CLAUDE.md"
+run env KEEL_TEST_CRASH_AFTER=foreign-core-sentinel "$install" --home "$c3home" --no-hooks
+check_status "C3 simulated crash on the re-run, right after the sentinel clear -> exit 99" 99 "$STATUS"
+check_nofile "C3 the sentinel is already cleared" "$c3home/.keel/foreign-core.claude"
+check_status "C3 the manifest is byte-for-byte untouched by the crashed run" "$c3_before" "$(cat "$c3man")"
+
 summary
