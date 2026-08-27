@@ -24,14 +24,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   and the closed-ticket archive index outside the repo, at `~/.claude/projects/<slug>/CLAUDE-
   archive.md`. Reading only `BACKLOG.md` false-positives on every ticket a cooldown sweep has moved to
   the archive — dir #202 is the worked example: zero live headings, one archive line, not dead — so a
-  citation resolves via either source. Deliberately keel-self-maintenance, not a CI check or a
-  `tools/self/doctor.sh` leg: `BACKLOG.md` is gitignored and main-checkout-only, and the archive lives
-  entirely outside the repo, so neither source exists in CI or a worktree — both absences degrade to a
-  silent skip (exit 0) instead of a false failure. Scoped to `docs/*.md` only (matching this ticket's
-  own proof run of 26 unique numbers, 41 mentions, 1 unresolvable): `CHANGELOG.md` is excluded even
-  though it cites ticket numbers too, since it documents history and six of its own citations (dir
-  #12, dir #23, dir #27, dir #28, dir #49, dir #77) surfaced as false positives — pre-dating the
-  archive, legitimately unresolvable today, and not defects — the first time this script scanned it.
+  citation resolves via either source. `BACKLOG.md` is resolved to the MAIN checkout the same way
+  `tools/self/doctor.sh`'s own check 5 does (dir #135), so a worktree invocation — the common case —
+  finds it rather than silently skipping; only a genuinely `BACKLOG.md`-less checkout (CI, an
+  adopter's install) degrades to a silent skip (exit 0) instead of a false failure. Deliberately
+  keel-self-maintenance, kept as its own script rather than a `tools/self/doctor.sh` leg (per the
+  ticket's own filed scope): the archive lives entirely outside the repo, so it is never available in
+  CI regardless of packaging. Both `docs/*.md` and `BACKLOG.md` are fence-blanked
+  (`tools/lib/fence-blank.sh`, dir #169) and backtick-stripped before scanning, so an illustrative
+  `dir #N` inside a fenced example or inline code span is never counted as a real citation or heading.
+  Scoped to `docs/*.md` only (matching this ticket's own proof run of 26 unique numbers, 41 mentions,
+  1 unresolvable): `CHANGELOG.md` is excluded even though it cites ticket numbers too, since it
+  documents history and six of its own citations (dir #12, dir #23, dir #27, dir #28, dir #49, dir
+  #77) surfaced as false positives — pre-dating the archive, legitimately unresolvable today, and not
+  defects — the first time this script scanned it.
 - **[`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what
   to file from a run, and how to tell whether the verification method is improving** (dir #230). The
   three audit docs (`docs/drydock.md`, `docs/delta-audit.md`, `docs/release-audit.md`) each say how

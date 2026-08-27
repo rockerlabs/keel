@@ -85,6 +85,36 @@ check_contains "reports it AMBIGUOUS" "$OUT" "AMBIGUOUS dir #5"
 run "$cr" "$d" --quiet
 check_status "removing the duplicate heading -> exit 0 (green again)" 0 "$STATUS"
 
+# --- worktree invocation resolves the MAIN checkout's BACKLOG.md (dir #135's fix, reused) -----------
+# BACKLOG.md is gitignored and lives ONLY at the main checkout root — a linked worktree never gets its
+# own copy. `git worktree add` only checks out TRACKED content, so writing BACKLOG.md into the main
+# checkout $d before adding the worktree reproduces the real split precisely: $d has it, $wt does not.
+d="$(mk_repo "$backlog_ok" "$doc_ok")"
+wt="$SANDBOX/wt266"
+( cd "$d" && git worktree add -q -b wt266-branch "$wt" )
+run "$cr" "$wt" --quiet
+check_status "a worktree invocation finds the main checkout's BACKLOG.md, not silently skipped" 0 "$STATUS"
+
+# --- a `dir #N` inside a fenced code example is not a real citation ---------------------------------
+doc_fenced="# doc
+
+\`\`\`
+Cites dir #202 inside a fenced example — not a real citation.
+\`\`\`
+"
+d="$(mk_repo "$backlog_ok" "$doc_fenced")"
+run "$cr" "$d" --quiet
+check_status "a fenced-code dir #N is not treated as a citation -> exit 0" 0 "$STATUS"
+
+# --- a backtick-quoted `dir #N` in prose is not a real citation -------------------------------------
+doc_backtick="# doc
+
+An illustrative example: \`dir #202\` is not a real citation here.
+"
+d="$(mk_repo "$backlog_ok" "$doc_backtick")"
+run "$cr" "$d" --quiet
+check_status "a backtick-quoted dir #N is not treated as a citation -> exit 0" 0 "$STATUS"
+
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
 # ~/.claude/projects/.../CLAUDE-archive.md is invisible to this run regardless of REPO_DIR, and a
