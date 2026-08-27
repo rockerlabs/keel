@@ -183,6 +183,20 @@ atomic_copy() {
   atomic_write "$2" < "$1"
 }
 
+# _keel_test_checkpoint NAME — test-only crash-simulation checkpoint (dir #235): exits immediately
+# when KEEL_TEST_CRASH_AFTER equals NAME, letting the test suite prove the ordering of two
+# non-atomic writes deterministically instead of racing a real interrupt (both writes are near-instant
+# renames). A no-op in every real run. One generic mechanism, parameterized by checkpoint name, rather
+# than a bespoke `exit` line grown per write pair that ever needs this.
+# The explicit `return 0` matters under `set -e`: unlike a bare `[ cond ] && exit N` inlined at the
+# call site (exempt from errexit because it's the non-final command of its own && list), a FUNCTION's
+# own return status is what the caller sees — without this, a false `[ cond ]` here would make the
+# whole function return 1 and abort the script even when no crash was requested.
+_keel_test_checkpoint() {
+  [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
+  return 0
+}
+
 # make_link — same temp-sibling + rename discipline for a symlink, so a dest is replaced, never
 # left dangling mid-write.
 make_link() {
@@ -820,6 +834,25 @@ home_resolved="$(cd "$HOME_DIR" && pwd)"
 keel_version="$(git -C "$root" describe --tags 2>/dev/null || echo unknown)"
 installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+mkdir -p "$manifest_dir"
+
+# dir #190's foreign-core sentinel, written/cleared BEFORE the manifest below (dir #235) — the two
+# writes are independent, non-atomic operations, so a kill/crash between them is possible; ordering
+# the sentinel first means the only reachable partial state is "sentinel fresh, manifest stale",
+# never "manifest fresh, sentinel stale". That matters because artifact_shared_with_other's
+# no-usable-other-manifest fallback (uninstall.sh) only trusts the sentinel once the manifest itself
+# is unusable — a fresh-looking manifest paired with a stale sentinel is exactly the combination that
+# could misjudge a live foreign-core install as unconfirmed. A stale manifest paired with a fresh
+# sentinel carries no such risk: the manifest reflects an earlier, still-valid run, and the sentinel
+# already tells the truth for whichever mode/state this run ended in.
+foreign_core_marker="$manifest_dir/foreign-core.$manifest_mode"
+if [ "$foreign_core" = 1 ]; then
+  printf '' | atomic_write "$foreign_core_marker"
+else
+  rm -f "$foreign_core_marker"
+fi
+_keel_test_checkpoint foreign-core-sentinel
+
 # context_created / the rails "edit" artifact — re-derived from the FINAL context-file state rather
 # than threaded through every wrapper/migration branch above: there's no cksum-precision to lose here
 # (extra is a fixed "import-line"/"core-block" tag, not a byte fingerprint), so re-inspecting the
@@ -851,7 +884,6 @@ fi
 # one, and any record whose file is gone from disk is dropped. (Old-manifest lines re-shaped from
 # `artifact=<kind>\t<rel>\t<extra>` to `<rel>\t<kind>\t<extra>` to match record_artifact's own order;
 # awk's `a[$1]=$0` keeps the LAST line per key, so the appended this-run records win on conflict.)
-mkdir -p "$manifest_dir"
 merge_tmp="$manifest_dir/.artifacts.$$"
 {
   if [ -f "$manifest_file" ]; then
@@ -890,21 +922,6 @@ rm -f "$merge_tmp"
   fi
 } | atomic_write "$manifest_file"
 echo "  +    install manifest ($manifest_file)"
-
-# dir #190 — a manifest-INDEPENDENT sentinel for the foreign_core case, written/cleared every run from
-# THIS run's own $foreign_core value. Exists because uninstall.sh's artifact_shared_with_other fallback
-# (when the OTHER mode's manifest is unusable) has no other way to tell "a genuine foreign-core install
-# of the other mode happened here" from "an unrelated file that merely shares the other mode's context
-# filename" — has_keel_rails can't help (foreign_core's whole point is that Keel never writes rails into
-# the file), and the manifest itself is exactly what's missing/unusable in that branch. A plain marker
-# file, checked by existence alone, survives the other manifest being lost or deliberately deleted
-# (dir #150's own repro and B22's fixture both do this) without depending on it.
-foreign_core_marker="$manifest_dir/foreign-core.$manifest_mode"
-if [ "$foreign_core" = 1 ]; then
-  printf '' | atomic_write "$foreign_core_marker"
-else
-  rm -f "$foreign_core_marker"
-fi
 
 # Checkout-side ledger — the discovery index consumers use to find every recorded home from the
 # checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own

@@ -373,6 +373,27 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   scoped. Scoped to this one gap only — the ticket's other, harder gap (a bare mention anywhere in
   `[Unreleased]` satisfying the check even when it's a stale citation, not a fresh entry) is left for a
   separate design pass, per the ticket's own stated preference.
+- `install.sh` wrote the install manifest and the dir #190 foreign-core sentinel (`.keel/foreign-core.
+  <mode>`) as two independent, non-atomic writes with no ordering guarantee (dir #235). A kill/crash
+  between them could leave a fresh, usable manifest paired with a stale or missing sentinel — the one
+  partial state `uninstall.sh`'s `artifact_shared_with_other` no-usable-other-manifest fallback can
+  misjudge, since it only consults the sentinel once the manifest itself becomes unusable. Fixed by
+  writing/clearing the sentinel *before* the manifest, so the only reachable partial state is the safe
+  one (sentinel fresh, manifest stale) — a stale manifest still reflects an earlier, valid run, while a
+  stale sentinel paired with a fresh-looking manifest could silently read as "not confirmed". Proven
+  with a test-only `KEEL_TEST_CRASH_AFTER=foreign-core-sentinel` hook (a reusable
+  `_keel_test_checkpoint NAME` helper, generalized from an initial bespoke inline check on a
+  `/simplify` altitude finding) that exits right after the sentinel step — a real timed interrupt would
+  be flaky here, since both writes are near-instant renames — mutation-verified red against the pre-fix
+  ordering, green after, covering both the set and clear directions in `tests/test_install_manifest.sh`.
+  An operator-run `/code-review medium` pass on this same PR found two low-severity residuals, both left
+  as-is: the checkpoint hook has no companion "testing mode" guard var (accepted — the test suite only
+  ever sets it via a per-command, non-exported `env VAR=...` prefix, so it doesn't leak), and
+  `_keel_test_checkpoint` is generalized ahead of a second call site (accepted — cheap, test-only,
+  well-documented). A third finding — `tests/lib.sh`'s `check_status` misused for full-file
+  content-equality assertions, producing a misleading "expected exit X, got Y" message — is a
+  pre-existing pattern (`tests/test_install_pre_pr_gate.sh:91,444`) this PR's own new assertions
+  followed rather than introduced; filed as dir #285 rather than fixed here, to keep this PR scoped.
 
 ## [0.7.1] — 2026-08-21
 
