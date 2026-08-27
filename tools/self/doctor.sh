@@ -764,14 +764,17 @@ _semver_max() {
 # reattach the `dir ` prefix — so "dir #208, #211, #212" and "dir #208" (or two fully-spelled
 # references like "dir #208, dir #211", where the run stops right after the first because "dir " breaks
 # the bare-`#N` continuation) both resolve to their complete ticket sets either way.
-# KNOWN RESIDUAL, not covered: a list joined by "and"/`;`/a numeric range (`dir #104-107` — real
-# precedent in this repo's history, not hypothetical) or split across a wrapped commit-message line
-# still drops every trailing ticket the same silent way gap 2 did — tracked as dir #274, not fixed here.
+# KNOWN RESIDUAL, not covered: a list joined by "and"/`;`/`/`/a numeric range (`dir #104-107`) —
+# every one of these has real precedent in this repo's own history, not hypothetical: e.g. commit
+# 1515d7a's own title, "...dir #208/#211/#212...", is itself an unrecognized slash-separated instance
+# — or split across a wrapped commit-message line, still drops every trailing ticket the same silent
+# way gap 2 did — tracked as dir #274, not fixed here.
 _extract_dir_tickets() {
   grep -oE 'dir #[0-9]+([,[:space:]]+#[0-9]+)*' \
     | grep -oE '#[0-9]+' \
     | sed 's/^/dir /' \
-    | sort -u
+    | sort -u \
+    || true
 }
 
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
