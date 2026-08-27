@@ -697,6 +697,21 @@ _stamp_tests_outcome() {
   printf '%s' "$outcome"
 }
 
+# dir #236: stamp a skip-level `polish.4-depth` outcome with the commit it was decided against — the
+# same trust-boundary move dir #123 made for step 3 above (`_stamp_tests_outcome`): always computed
+# fresh here, server-side, never taken from the caller. `receipt --recover` (below) reads only the LAST
+# colon-separated field as the stamped sha, so any field a caller already embedded (a hand-crafted
+# trailing sha, or a recovered value re-receipted by hand) is inert — this fresh append is always what
+# gets read. Non-skip levels are untouched: they don't bypass step 5, so dir #116's hole never applied
+# to them and there is nothing here for a digest to protect.
+_stamp_depth_outcome() {
+  local cwd="$1" outcome="$2" sha
+  [ "${outcome%%:*}" = "skip" ] || { printf '%s' "$outcome"; return; }
+  sha="$(_head_sha "$cwd")"
+  [ -n "$sha" ] && outcome="${outcome}:${sha}"
+  printf '%s' "$outcome"
+}
+
 # The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
 # resolve_impact_log() below (one file, two pre-dir-#61 and dir-#61 call sites) share the fragment
 # instead of each inlining it — the awk is identical; only the surrounding fallback order differs, so
@@ -1272,6 +1287,9 @@ case "${1:-}" in
           todo="${todo:+$todo, }$reason"
         fi
       }
+      # dir #236: the digest the narrowed skip-recovery arm below checks a stamped `polish.4-depth`
+      # outcome against — computed once here rather than per-line, since it can't change mid-loop.
+      current_head="$(_head_sha "$PWD")"
       count=0; skipped_existing=0; unrecovered=""; todo=""
       while IFS=$'\t' read -r r_step r_outcome; do
         [ -n "$r_step" ] || continue
@@ -1338,10 +1356,31 @@ case "${1:-}" in
             # depth cross-check and the gate answered allow with no review ever seeing the commit.
             # Non-skip levels keep recovering (dir #72's convenience): they bypass nothing — step 5
             # still has to produce a fresh outcome for them, HEAD-keyed by trace or named-source arms.
-            if [ "${r_outcome%%:*}" = "skip" ]; then
-              _note_unrecovered "$r_step" "step 4 re-sized fresh (an inherited skip is never carried — a skip must be chosen for THIS diff)"
-              continue
-            fi
+            #
+            # dir #236: narrowed, not lifted. Felt case: a session skip-sizes a trivial diff, misses
+            # step 5's own receipt-only write (no review to run for `skip`), and `gh pr create` denies for
+            # the missing step 5 receipt — retiring this sentinel even though nothing shipped since the
+            # skip decision. Refusing recovery unconditionally forces a full re-ask of BOTH step 4 dialogs
+            # for a diff the operator already approved skipping. `_stamp_depth_outcome` (write path, above)
+            # now stamps every skip outcome with the commit it was decided against, so this can tell dir
+            # #116's dangerous case (a fix commit landed since) from the safe one (nothing did) by a
+            # digest instead of assuming the worst every time: recover only when that stamped sha still
+            # equals current HEAD. A legacy/unstamped bare `skip` (written before this fix, or if sha
+            # resolution ever failed at write time) has no digest to check and stays withheld, same as
+            # today — the safe default whenever the evidence is missing, not just when it's contradicted.
+            case "$r_outcome" in
+              skip:*)
+                r_depth_sha="${r_outcome##*:}"
+                if [ -z "$r_depth_sha" ] || [ "$r_depth_sha" != "$current_head" ]; then
+                  _note_unrecovered "$r_step" "step 4 re-sized fresh (the recorded skip was decided at a different commit than current HEAD — re-confirm skip, or size fresh, for this diff)"
+                  continue
+                fi
+                ;;
+              skip)
+                _note_unrecovered "$r_step" "step 4 re-sized fresh (an inherited skip is never carried — a skip must be chosen for THIS diff)"
+                continue
+                ;;
+            esac
             ;;
         esac
         if printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
@@ -1393,6 +1432,9 @@ case "${1:-}" in
     # dir #123: stamp polish.3-tests with its tree-relevant hash — see `_stamp_tests_outcome` above for
     # the trust-boundary rationale (never trusts a caller-supplied suffix).
     [ "$step_id" = "polish.3-tests" ] && outcome="$(_stamp_tests_outcome "$PWD" "$outcome")"
+    # dir #236: stamp a skip-level polish.4-depth with the commit it was decided against — see
+    # `_stamp_depth_outcome` above for the trust-boundary rationale.
+    [ "$step_id" = "polish.4-depth" ] && outcome="$(_stamp_depth_outcome "$PWD" "$outcome")"
     require_active_receipt
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
     # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
@@ -2056,6 +2098,12 @@ case "$status" in
     # retirement happens inside `init`, i.e. AFTER the fix commit. So `base_sha == HEAD` in an ordinary
     # interrupted re-init AND in a genuine convergence round; the condition discriminates nothing and
     # would refuse every recovery. Verified in a sandbox before this fix was written.
+    # (dir #236's skip-recovery narrowing, elsewhere in this file, superficially resembles this rejected
+    # shape but isn't it: it compares current HEAD against a sha stamped at the ORIGINAL DECISION's own
+    # write time — `receipt polish.4-depth skip`, which fires before any fix commit exists — never against
+    # a retirement-time base-sha. That's the same discriminator dir #123 already uses for step 3's tree
+    # hash, just applied to a plain sha instead. This note exists so a future reader doesn't read that
+    # narrowing as "the rejected idea, shipped anyway.")
     #
     # The deeper point: the gate does not need to know WHETHER this is a convergence round. It needs to
     # know the shipped code was tested. Binding step 3 the same way steps 6 and 8 are bound removes the
