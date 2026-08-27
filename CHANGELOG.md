@@ -16,6 +16,22 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 - **`docs/release-history.md`** (dir #232): a one-paragraph-per-release digest page, newest first,
   condensing each `CHANGELOG.md` section into a short summary so a reader doesn't have to reconstruct
   "what actually shipped in each version" from the full dated detail. Indexed in `README.md`.
+- **`tools/self/citation-resolvability.sh`** — every `dir #N` cited in `docs/*.md` must resolve to
+  exactly one ticket (dir #266, filed after a day in which three separate tickets were filed for
+  citations that looked resolvable and were not). Checks two sources: `BACKLOG.md`'s live `### dir
+  #N` headings (two or more for the same number is AMBIGUOUS — this subsumes dir #259's duplicate-
+  heading check, since a duplicate heading is exactly what makes a citation of that number ambiguous)
+  and the closed-ticket archive index outside the repo, at `~/.claude/projects/<slug>/CLAUDE-
+  archive.md`. Reading only `BACKLOG.md` false-positives on every ticket a cooldown sweep has moved to
+  the archive — dir #202 is the worked example: zero live headings, one archive line, not dead — so a
+  citation resolves via either source. Deliberately keel-self-maintenance, not a CI check or a
+  `tools/self/doctor.sh` leg: `BACKLOG.md` is gitignored and main-checkout-only, and the archive lives
+  entirely outside the repo, so neither source exists in CI or a worktree — both absences degrade to a
+  silent skip (exit 0) instead of a false failure. Scoped to `docs/*.md` only (matching this ticket's
+  own proof run of 26 unique numbers, 41 mentions, 1 unresolvable): `CHANGELOG.md` is excluded even
+  though it cites ticket numbers too, since it documents history and six of its own citations (dir
+  #12, dir #23, dir #27, dir #28, dir #49, dir #77) surfaced as false positives — pre-dating the
+  archive, legitimately unresolvable today, and not defects — the first time this script scanned it.
 - **[`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what
   to file from a run, and how to tell whether the verification method is improving** (dir #230). The
   three audit docs (`docs/drydock.md`, `docs/delta-audit.md`, `docs/release-audit.md`) each say how
