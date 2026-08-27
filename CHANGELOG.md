@@ -16,91 +16,6 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 - **`docs/release-history.md`** (dir #232): a one-paragraph-per-release digest page, newest first,
   condensing each `CHANGELOG.md` section into a short summary so a reader doesn't have to reconstruct
   "what actually shipped in each version" from the full dated detail. Indexed in `README.md`.
-
-### Changed
-
-- **The impact-scoring ledger (`ledger.md`/`evidence.md`/`impact-events.log`) no longer lives inside a
-  consuming project's own working tree** (dir #251). It moved to an external store,
-  `$KEEL_HOME/.keel/impact/<project-id>/`, keyed by the project's main-checkout physical path — the
-  same shape KB.16 already used to fix the identical failure class for `kb-memory`. `keel-impact.sh
-  enable` now creates nothing inside the project tree (no `.keel/` marker, no `.gitignore` line, and
-  the old "commit .keel/ledger.md and .keel/evidence.md" advice is retracted); a linked worktree
-  resolves to the identical store entry as its main checkout, closing the whole worktree-divergence
-  bug class dir #181 patched around (dir #181 closes as subsumed — this ticket removes the
-  architecture that made its bug possible). `add`/`rollup` on a never-enabled repo now refuse with a
-  named message instead of the old silent fallback onto Keel's own `docs/keel-impact.md`. A new
-  `keel-impact.sh migrate [dir] [--dry-run]` subcommand sweeps a legacy in-tree copy (main checkout +
-  every linked worktree) into the store: untracked sources are merged in and removed; a tracked
-  source (found live on two adopter repos, which had committed Keel-internal scoring data into their
-  own git history) is left in place with the remediation choice printed, never touched automatically.
-  `doctor.sh`'s `W-EVENTLOG-TRACKED`/`W-KEEL-SPLIT` WARNs collapse into one `W-KEEL-LEGACY`, naming
-  `migrate` as the fix. `tools/secret-guard/secret-scan.sh` changed too: it is vendored (copied whole
-  into each consuming repo's hooks dir) and cannot `source` the new shared `tools/lib/impact-store.sh`,
-  so it carries a small inline copy of the log-path resolver instead (option (a) — keeps the vendored
-  file count unchanged; a byte-identical-output sync test in `tests/test_secret_guard.sh` guards
-  against drift). **Every already-vendored copy on the fleet is stale until re-vendored** — until then
-  it still resolves the pre-#251 way (a `.keel/` marker only), so its guard events keep landing in the
-  project tree rather than the store.
-- `docs/delegation.md`, `docs/drydock.md`, and `docs/delta-audit.md` fold in method lessons from the
-  v0.7.0 delta audit retro (dir #231). Three of the seven lessons the retro named were already seeded
-  into `docs/delta-audit.md` by dir #207 and are pin-tested here rather than reintroduced; a fourth (a
-  stopping-rule citation) was deferred until dir #230's doctrine doc existed, and lands with it in the
-  Added entry below. `docs/delegation.md`
-  gains two new generalized sections: **Blind-then-reconcile**, a reusable two-phase verifier shape (an
-  independent blind pass, then a reconciliation section against the worker's own report) instantiated by
-  the delta audit's diversity-leg pattern; and **Execute the claim, don't re-read it** — a comment or
-  contract note describing behavior is a claim, not evidence, generalized from `docs/delta-audit.md`
-  §4 rule 3's own worked incident (dir #225) rather than left as a drydock-only special case (a gap
-  a `/simplify` altitude review caught: the first draft generalized the reconcile lesson correctly but
-  bolted this one onto `docs/drydock.md` alone, in four places, none pointing back to the rule or the
-  doc it originated in). `docs/drydock.md`'s auditor rails gain a fifth rule stating and citing that
-  generalized section rather than re-narrating its incident; `docs/drydock/auditor.md` and
-  `docs/drydock/verifier.md` keep their own self-contained copies of the rule, since those are prompts
-  handed to an agent that can't be expected to dereference a doc mid-session. `docs/delegation.md` also
-  gains a **Disclosures** section naming the one-canonical-text-plus-pointer rule for any operator-facing
-  caveat restated across surfaces — scoped explicitly to what this pattern's own runs produce (a
-  verifier's `known` pointer, a fix queue's residual note, a run's durable-output summary), cross-linked
-  to `FRAMEWORK.md`'s existing Single-source-of-truth / sync-smell rule rather than restating it
-  standalone (a `/simplify` reuse-review catch), and stated alongside an explicit carve-out for the rails
-  block's own deliberate verbatim-copy-plus-drift-test discipline, so the two don't read as contradicting
-  each other. Both new sections sit right after "The generic phase skeleton" (a `/code-review high`
-  finding: an earlier placement right after "Roles" forward-referenced the skeleton three sections
-  early), and the phase skeleton's own step 3 now points forward at Blind-then-reconcile, closing what
-  had been a one-way link. That same review pass also caught the "Execute the claim" lesson citing the
-  wrong ticket throughout (`dir #223/#224` — two unrelated cross-vendor findings from the same audit)
-  instead of its real source, `dir #225` (delta audit S8 blind pass F1); fixed in `docs/delegation.md`,
-  `docs/delta-audit.md`, and `docs/drydock.md` alike, and `docs/delta-audit.md`/`docs/drydock.md`'s own
-  restatements of the rule were trimmed to bare pointers at the same time, since a `/simplify` pass and
-  the same review both separately flagged the rule being independently restated in five places with no
-  drift test as the exact "keep in sync" pattern the new Disclosures section itself warns against. All
-  seven lessons are pin-tested across `tests/test_delegation_doc.sh`, `tests/test_drydock_doc.sh`, and
-  `tests/test_delta_audit_doc.sh` — each
-  new pin verified live to fail against the pre-fix docs.
-- `docs/delta-audit.md`, `docs/release-audit.md`, and `docs/drydock.md` wire the three remaining
-  verification-economics decision points dir #230's own PR left unwired (dir #270). `delta-audit.md`
-  §8's tag-ready bar now says explicitly that it is a coverage check, not the doctrine's Clause A
-  stopping rule — a run can satisfy every ledger-completeness bullet while still owing a diverse leg's
-  second silent round. `release-audit.md` phase 2's "file tickets" step now cites the doctrine's
-  filing bar, so a synthesis pass doesn't ticket every sub-bar finding the way dir #85's campaign did.
-  `drydock.md` phase 7 step 1's review-history entry now uses the doctrine's six-field run profile as
-  its field list instead of an ad hoc one. A fourth gap dir #270 found separately — fields 5 (per-leg
-  cost) and 6 (induced/original) were defined only as verdict-time fields in `run-record.md`'s stub,
-  with no upstream capture step telling a session to mark them during the run — is closed in
-  `delta-audit.md`'s Protocol (rule 6 now marks each finding `induced`/`original` as it's written) and
-  its roles section (the orchestrator now tallies per-leg cost as each leg completes); `drydock.md`
-  phase 7 step 1 points at the same discipline (dir #276 makes that pointer land somewhere a spawned
-  session actually reads — see below). Pin-tested across `tests/test_delta_audit_doc.sh`,
-  `tests/test_release_audit_doc.sh`, and `tests/test_drydock_doc.sh`.
-- `uninstall.sh --dry-run` over a mode/home mismatch (e.g. `--codex` aimed at a claude-manifested home)
-  now falls through to advisory output and exits 0, instead of refusing with exit 2 (dir #234) —
-  matching dir #228's treatment of the sibling "no usable manifest" refusal, since a dry run removes
-  nothing. Narrower than that sibling fallthrough on purpose (operator decision): only
-  `other_mode_hint()`/`gate_hooks_hint()` run, never `dry_run_heuristic_listing()` — a mismatch means
-  the named home is probably not the one the caller meant, so a listing scoped to it would describe the
-  wrong home. The real (non-dry) refusal is untouched.
-
-### Added
-
 - **[`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what
   to file from a run, and how to tell whether the verification method is improving** (dir #230). The
   three audit docs (`docs/drydock.md`, `docs/delta-audit.md`, `docs/release-audit.md`) each say how
@@ -202,6 +117,88 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   existing comment-triggered rule rather than duplicating it. `docs/delta-audit.md`'s §1 and
   `docs/reference.md`'s inventory-tool row, both of which called drydock "prose only", are corrected
   to name the code scope too.
+
+### Changed
+
+- **The impact-scoring ledger (`ledger.md`/`evidence.md`/`impact-events.log`) no longer lives inside a
+  consuming project's own working tree** (dir #251). It moved to an external store,
+  `$KEEL_HOME/.keel/impact/<project-id>/`, keyed by the project's main-checkout physical path — the
+  same shape KB.16 already used to fix the identical failure class for `kb-memory`. `keel-impact.sh
+  enable` now creates nothing inside the project tree (no `.keel/` marker, no `.gitignore` line, and
+  the old "commit .keel/ledger.md and .keel/evidence.md" advice is retracted); a linked worktree
+  resolves to the identical store entry as its main checkout, closing the whole worktree-divergence
+  bug class dir #181 patched around (dir #181 closes as subsumed — this ticket removes the
+  architecture that made its bug possible). `add`/`rollup` on a never-enabled repo now refuse with a
+  named message instead of the old silent fallback onto Keel's own `docs/keel-impact.md`. A new
+  `keel-impact.sh migrate [dir] [--dry-run]` subcommand sweeps a legacy in-tree copy (main checkout +
+  every linked worktree) into the store: untracked sources are merged in and removed; a tracked
+  source (found live on two adopter repos, which had committed Keel-internal scoring data into their
+  own git history) is left in place with the remediation choice printed, never touched automatically.
+  `doctor.sh`'s `W-EVENTLOG-TRACKED`/`W-KEEL-SPLIT` WARNs collapse into one `W-KEEL-LEGACY`, naming
+  `migrate` as the fix. `tools/secret-guard/secret-scan.sh` changed too: it is vendored (copied whole
+  into each consuming repo's hooks dir) and cannot `source` the new shared `tools/lib/impact-store.sh`,
+  so it carries a small inline copy of the log-path resolver instead (option (a) — keeps the vendored
+  file count unchanged; a byte-identical-output sync test in `tests/test_secret_guard.sh` guards
+  against drift). **Every already-vendored copy on the fleet is stale until re-vendored** — until then
+  it still resolves the pre-#251 way (a `.keel/` marker only), so its guard events keep landing in the
+  project tree rather than the store.
+- `docs/delegation.md`, `docs/drydock.md`, and `docs/delta-audit.md` fold in method lessons from the
+  v0.7.0 delta audit retro (dir #231). Three of the seven lessons the retro named were already seeded
+  into `docs/delta-audit.md` by dir #207 and are pin-tested here rather than reintroduced; a fourth (a
+  stopping-rule citation) was deferred until dir #230's doctrine doc existed, and lands with it in the
+  Added entry below. `docs/delegation.md`
+  gains two new generalized sections: **Blind-then-reconcile**, a reusable two-phase verifier shape (an
+  independent blind pass, then a reconciliation section against the worker's own report) instantiated by
+  the delta audit's diversity-leg pattern; and **Execute the claim, don't re-read it** — a comment or
+  contract note describing behavior is a claim, not evidence, generalized from `docs/delta-audit.md`
+  §4 rule 3's own worked incident (dir #225) rather than left as a drydock-only special case (a gap
+  a `/simplify` altitude review caught: the first draft generalized the reconcile lesson correctly but
+  bolted this one onto `docs/drydock.md` alone, in four places, none pointing back to the rule or the
+  doc it originated in). `docs/drydock.md`'s auditor rails gain a fifth rule stating and citing that
+  generalized section rather than re-narrating its incident; `docs/drydock/auditor.md` and
+  `docs/drydock/verifier.md` keep their own self-contained copies of the rule, since those are prompts
+  handed to an agent that can't be expected to dereference a doc mid-session. `docs/delegation.md` also
+  gains a **Disclosures** section naming the one-canonical-text-plus-pointer rule for any operator-facing
+  caveat restated across surfaces — scoped explicitly to what this pattern's own runs produce (a
+  verifier's `known` pointer, a fix queue's residual note, a run's durable-output summary), cross-linked
+  to `FRAMEWORK.md`'s existing Single-source-of-truth / sync-smell rule rather than restating it
+  standalone (a `/simplify` reuse-review catch), and stated alongside an explicit carve-out for the rails
+  block's own deliberate verbatim-copy-plus-drift-test discipline, so the two don't read as contradicting
+  each other. Both new sections sit right after "The generic phase skeleton" (a `/code-review high`
+  finding: an earlier placement right after "Roles" forward-referenced the skeleton three sections
+  early), and the phase skeleton's own step 3 now points forward at Blind-then-reconcile, closing what
+  had been a one-way link. That same review pass also caught the "Execute the claim" lesson citing the
+  wrong ticket throughout (`dir #223/#224` — two unrelated cross-vendor findings from the same audit)
+  instead of its real source, `dir #225` (delta audit S8 blind pass F1); fixed in `docs/delegation.md`,
+  `docs/delta-audit.md`, and `docs/drydock.md` alike, and `docs/delta-audit.md`/`docs/drydock.md`'s own
+  restatements of the rule were trimmed to bare pointers at the same time, since a `/simplify` pass and
+  the same review both separately flagged the rule being independently restated in five places with no
+  drift test as the exact "keep in sync" pattern the new Disclosures section itself warns against. All
+  seven lessons are pin-tested across `tests/test_delegation_doc.sh`, `tests/test_drydock_doc.sh`, and
+  `tests/test_delta_audit_doc.sh` — each
+  new pin verified live to fail against the pre-fix docs.
+- `docs/delta-audit.md`, `docs/release-audit.md`, and `docs/drydock.md` wire the three remaining
+  verification-economics decision points dir #230's own PR left unwired (dir #270). `delta-audit.md`
+  §8's tag-ready bar now says explicitly that it is a coverage check, not the doctrine's Clause A
+  stopping rule — a run can satisfy every ledger-completeness bullet while still owing a diverse leg's
+  second silent round. `release-audit.md` phase 2's "file tickets" step now cites the doctrine's
+  filing bar, so a synthesis pass doesn't ticket every sub-bar finding the way dir #85's campaign did.
+  `drydock.md` phase 7 step 1's review-history entry now uses the doctrine's six-field run profile as
+  its field list instead of an ad hoc one. A fourth gap dir #270 found separately — fields 5 (per-leg
+  cost) and 6 (induced/original) were defined only as verdict-time fields in `run-record.md`'s stub,
+  with no upstream capture step telling a session to mark them during the run — is closed in
+  `delta-audit.md`'s Protocol (rule 6 now marks each finding `induced`/`original` as it's written) and
+  its roles section (the orchestrator now tallies per-leg cost as each leg completes); `drydock.md`
+  phase 7 step 1 points at the same discipline (dir #276 makes that pointer land somewhere a spawned
+  session actually reads — see below). Pin-tested across `tests/test_delta_audit_doc.sh`,
+  `tests/test_release_audit_doc.sh`, and `tests/test_drydock_doc.sh`.
+- `uninstall.sh --dry-run` over a mode/home mismatch (e.g. `--codex` aimed at a claude-manifested home)
+  now falls through to advisory output and exits 0, instead of refusing with exit 2 (dir #234) —
+  matching dir #228's treatment of the sibling "no usable manifest" refusal, since a dry run removes
+  nothing. Narrower than that sibling fallthrough on purpose (operator decision): only
+  `other_mode_hint()`/`gate_hooks_hint()` run, never `dry_run_heuristic_listing()` — a mismatch means
+  the named home is probably not the one the caller meant, so a listing scoped to it would describe the
+  wrong home. The real (non-dry) refusal is untouched.
 
 ### Fixed
 
