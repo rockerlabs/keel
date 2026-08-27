@@ -66,7 +66,7 @@ scope C only. Neither rule overrides the other; they terminate different things.
 |---|---|---|---|
 | **Orchestrator** | your own session | top tier, high | everything: phases 0, 4, 6, 7, all arbitration, **all** bookkeeping |
 | **Auditor** | spawned subagent, many in parallel | mid tier, high | read-only, plus its own audit files |
-| **Verifier** | spawned subagent, a few in parallel | mid tier, **xhigh** | the `verdict:` lines of the audit files it was given |
+| **Verifier** | spawned subagent, a few in parallel | mid tier, **xhigh** | the `verdict:` lines of the audit files it was given, plus its own `verifier:` footer line |
 | **Fixer** | a real, operator-launched session — **never** a subagent | mid tier, medium | one PR's worth of the tree |
 
 Two of those assignments are load-bearing. **Verifiers get more effort than auditors**, not less:
@@ -161,8 +161,10 @@ was launched with the cwd left at the main checkout, which happened to be sittin
 session's branch*, two commits off the baseline. It measured that tree and printed the numbers
 without a murmur; the whole audit was scoped against a commit nobody had chosen, and it took a
 re-measurement to notice. [`tools/drydock/inventory.sh`](../tools/drydock/inventory.sh) now refuses
-outright (exit 3) rather than measure a tree it cannot vouch for. Four conditions, one rule — **an
-inventory that quietly disagrees with the tree is worse than no inventory**:
+outright (exit 3) rather than measure a tree it cannot vouch for. One rule, several guarded
+conditions (grep the script for `refuse "` calls for the exhaustive list — this list gives the
+load-bearing ones, not a count) — **an inventory that quietly disagrees with the tree is worse than
+no inventory**:
 
 - **HEAD is not the baseline** — the run-1 case; the message names both SHAs and the `git worktree
   add` that fixes it.
@@ -532,10 +534,10 @@ where the shipped default takes *every* tracked shell file):
 
 | | |
 |---|---|
-| Auditors | 18 sessions, 83–438K tokens each (median ~190K) |
-| Verifiers | 4 sessions, 116–184K each |
-| Cross-file pass | 1 session, ~283K |
-| Whole run | ≈6.1M subagent tokens, mid-tier model throughout |
+| Auditors | 18 sessions, 83–438K tokens each (median ~190K), ≈3.56M total |
+| Verifiers | 4 sessions, 116–184K each, ≈0.63M total |
+| Cross-file pass + re-check | the pass itself: 1 session, ~283K; plus GATE-2's re-check, ≈0.47M total |
+| Whole run | ≈6.1M sonnet subagent tokens, mid-tier model throughout: the ≈4.66M itemized above (3.56 + 0.63 + 0.47), plus orchestrator arbitration turns not metered per row |
 | Findings | 45 confirmed — 44 fixed across 8 PRs, 1 `known` |
 | Wall-clock | ~1 operator-day, including quota waits |
 
