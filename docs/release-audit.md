@@ -68,9 +68,8 @@ class, or a guard gap on an invariant-bearing surface. Everything else is dispos
 `no action — <reason>` in the audit report and, if it names a real defect, added to the project's
 standing list — never a ticket of its own; filing one for every sub-bar finding is how a synthesis
 pass reproduces dir #85's snowball at a different layer. The blocker-vs-tail ranking above stays this
-phase's own step; the doctrine's per-release debt budget is the reason the tail should also stay
-small — a fixed quota of tagged tickets, the rest an untagged background pool taken as passengers, not
-neglect.
+phase's own step; the doctrine's per-release debt budget is why the tail should also stay small — its
+own corollary states the mechanics, not restated here.
 
 ## Phase 3 — batch by file-affinity
 

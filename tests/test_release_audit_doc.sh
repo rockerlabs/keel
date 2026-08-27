@@ -54,7 +54,7 @@ pin "release-audit.md phase 2 names backlog.md step 6" \
 # --- dir #270: phase 2's "file tickets" step is wired to the doctrine's filing bar, so a synthesis
 # pass doesn't file a ticket for every sub-bar finding the way dir #85's own campaign did -----------
 pin "release-audit.md phase 2 links the doctrine's filing bar" \
-  "$audit" '](verification-economics.md)' \
+  "$audit" 'clear the bar to become a ticket at all' \
   "expected phase 2 to cite the filing bar, not restate it"
 pin "release-audit.md phase 2 names the no-action disposition for sub-bar findings" \
   "$audit" 'no action — <reason>' \

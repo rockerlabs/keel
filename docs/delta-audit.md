@@ -146,9 +146,12 @@ independently of this application.
 other during-the-run field.** [`docs/verification-economics.md`](verification-economics.md)'s
 per-leg cost (field 5) is not something `run-record.md`'s stub reconstructs at verdict time — record
 each leg's sessions spawned, model tier + effort, and token spend as it completes, or `unmeasured`
-where the harness doesn't report it, never a fabricated zero. This is the same discipline the
-`induced`/`original` mark above applies to findings as they're written: a field with no capture step
-upstream of it does not fill itself when the run closes.
+where the harness doesn't report it, never a fabricated zero. Same discipline as the
+`induced`/`original` mark above, with one gap that mark alone can't close: a per-file auditor sees
+only its own assigned files' post-anchor commits (Protocol rule 7), so it can mark a same-file induced
+defect but not one caused by a fix to a *different* file. The orchestrator, who already knows every
+accepted fix and where it landed, reconciles cross-file marks at synthesis, before they land in
+`run-record.md`.
 
 **Fixes are a separate, gated phase, not part of any audit session above.** Every role through
 S-final is Protocol rule 1's read-only — a `fix-before-tag` disposition (§8's report contract) is a
@@ -222,12 +225,11 @@ A release is tag-ready only when:
   real run's own main checkout produced a false FAIL once, costing a diagnosis round mid-run.
 
 **This bar is coverage, not stopping.** It answers "is the run's bookkeeping complete" — every row
-verdicted, on a re-resolved SHA, with CI green on clean evidence. It does not by itself answer "was
-this run allowed to stop where it did" — that is
-[`docs/verification-economics.md`](verification-economics.md)'s Clause A: two independent diverse
-legs, run in parallel on the same state, together yielding no behavioural findings and no new class.
-A run can satisfy every bullet above while a diverse leg's silence is still one round short of
-Clause A's two — the verifier checks both before declaring tag-ready, never the coverage bar alone.
+verdicted, on a re-resolved SHA, with CI green on clean evidence — not "was this run allowed to stop
+where it did," which is [`docs/verification-economics.md`](verification-economics.md)'s Clause A: two
+independent diverse legs, run in parallel on the same state, yielding no behavioural findings and no
+new class. A run can satisfy every bullet above while still owing Clause A's second silent round; the
+verifier checks both before declaring tag-ready, never the coverage bar alone.
 
 **The operator tags. No session in this procedure runs `git tag`.**
 
@@ -349,7 +351,10 @@ docs/delta-audit.md §8's verdict contract. Adversarially re-verify a SAMPLE of 
 `mechanical-only` rows yourself (don't just transcribe), and re-derive every `FINDING` independently
 before accepting it. Resolve the GO SHA LIVE — re-check `origin/main` at verdict time, not the SHA
 this run started against — and confirm CI is green on that exact SHA, including every platform leg.
-Confirm suite evidence came from a clean worktree or CI, never the operator's own main checkout.
+Confirm suite evidence came from a clean worktree or CI, never the operator's own main checkout. Then,
+separately from that coverage bar, confirm Clause A itself — two independent diverse legs, run in
+parallel on the same state, together finding no behavioural findings and no new class — before
+declaring GO; a fully-verdicted ledger is not by itself permission to stop (docs/delta-audit.md §8).
 
 Follow the Protocol: docs/delta-audit.md §4, all 8 rules, binding — including rule 8: only THIS
 session issues a release verdict.
