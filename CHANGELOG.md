@@ -128,8 +128,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   derive.sh` — the 8-rule Protocol, roles and legs (including the required diversity leg, skippable
   only by an explicit operator decision, never the orchestrator's own judgment), the read-order and
   incremental-writing rule, a sizing range from two real runs, the verdict contract, copy-paste
-  session prompts (each carrying `docs/delegation.md`'s rails block verbatim — dir #208's own defect
-  is a second template set that doesn't), the disclosure-only fix round, and the cross-vendor leg's
+  session prompts (each carrying `docs/delegation.md`'s rails block verbatim — dir #208 later fixed
+  the sibling template set that didn't), the disclosure-only fix round, and the cross-vendor leg's
   two harness lessons. `docs/release-audit.md` phase 6 is rewritten into this doc's caller: its
   three-point mandate survives as a depth heuristic applied within the derived universe, no longer
   the rule that chooses the universe itself. `docs/drydock.md`'s "Incremental runs" section gains a
@@ -165,8 +165,8 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   since code bodies never enter the claims registry; it's filed by the auditor in phase 1 instead.
   `docs/drydock/code-auditor.md` ships as the fourth role template, reusing dir #85's own module-1
   taxonomy (dead code, duplication, missing coverage, correctness) and carrying the delegation rails
-  block verbatim (dir #208 is open precisely because the three existing templates don't — this one
-  isn't a fourth instance of that gap). `docs/drydock/verifier.md` gains an unconditional
+  block verbatim (dir #208, closed below, later fixed the three existing templates that didn't — this
+  one wasn't a fourth instance of that gap). `docs/drydock/verifier.md` gains an unconditional
   verification bar for code findings (a sandboxed execution, not just a re-read), extending its
   existing comment-triggered rule rather than duplicating it. `docs/delta-audit.md`'s §1 and
   `docs/reference.md`'s inventory-tool row, both of which called drydock "prose only", are corrected
@@ -237,6 +237,22 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   **roles table**'s Verifier "May touch" cell named only the `verdict:` lines, omitting the
   `verifier:` footer line phase 2 also requires — same shape PR #219's review already fixed once in
   this table.
+- Three more exhaustive-enumeration drifts from the delta audit, fixed together as one batch (dir
+  #208, dir #211, dir #212 — [PR #267](https://github.com/rockerlabs/keel/pull/267)). `docs/delegation.md`
+  promises its worker-rails block is reproduced verbatim in every worker and verifier prompt this
+  pattern generates; `docs/drydock/auditor.md` and `docs/drydock/verifier.md` didn't carry it
+  (`code-auditor.md` already did, from dir #204) — now block-diffed against the canonical text
+  (mutation-proven), never a substring pin. `docs/drydock/fixer.md` is a mutator, not a
+  worker/verifier — per `delegation.md`'s own Mutator template, it gets only the `DELEGATION RUN:`
+  marker line, not the full read-only rails, which would misdescribe a session that commits and opens
+  PRs. `commands/wrap.md`'s FLAG description named only one of `tools/branch-cleanup.sh`'s two FLAG
+  reasons and never named `--live-hours`, the flag governing the other — now names both.
+  `commands/init-project.md` enumerated two registration-failure reasons as exhaustive; a third
+  (`INSTANCE.md` present but missing a Projects table) was silent because `tools/init-project.sh`
+  discarded `register-project.sh`'s stderr — now captured and surfaced in the follow-up message, and
+  the doc names the third reason. A related drift the fix exposed but didn't cause —
+  `docs/delegation.md:233` states the verbatim-rails scope more broadly than `:189` does — is filed
+  separately as dir #272.
 
 ## [0.7.1] — 2026-08-21
 
