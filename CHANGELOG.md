@@ -227,10 +227,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   pointed readers at the script's own `refuse` call sites, which `tests/test_drydock_inventory.sh`
   already pins in full. The **run-cost table**'s "Whole run | ≈6.1M subagent tokens" row
   didn't reconcile against its own itemized rows; re-derived from the source record
-  (`~/.claude/REVIEW_HISTORY.md:480-481`), split into a new "Cross-file pass + re-check" row, and
-  the Whole run row now states explicitly what its itemized rows sum to and names orchestrator
-  arbitration turns — not metered per row, per that same source line — as the account for the
-  remainder, rather than leaving the gap unexplained. The
+  (`~/.claude/REVIEW_HISTORY.md:480-481`), which itself only reconciles to ≈4.66M
+  (auditors 3.56M + verifiers 0.63M + cross-file pass/re-check 0.47M) against its own stated ≈6.1M
+  total, and split into a new "Cross-file pass + re-check" row. The source's own "+ orchestrator
+  turns" clause is not usable to explain the ~1.4M gap without contradicting the roles table three
+  rows up (the orchestrator runs as a real session, never a subagent, so its turns can't be part of
+  a "subagent tokens" figure) — so the Whole run row now discloses the gap as an unreconciled
+  residual in the source record rather than inventing an attribution for it. The
   **roles table**'s Verifier "May touch" cell named only the `verdict:` lines, omitting the
   `verifier:` footer line phase 2 also requires — same shape PR #219's review already fixed once in
   this table.
