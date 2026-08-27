@@ -100,4 +100,43 @@ pin "polish.md: step 5's in-run paragraph names the review dialog as per-commit 
   "$polish" 'The MANDATORY review dialog (dir #88), on that same later-amend trigger' \
   "expected the polish.5-review staleness clause to also cover the dir #88 review dialog going stale"
 
+
+# --- dir #211: wrap.md's FLAG description named only one of branch-cleanup.sh's two FLAG reasons
+# (dirty worktree), silently dropping the clean-but-recently-touched one and never naming the flag
+# that governs it. Pin both legs: the tool's own two FLAG messages, and wrap.md naming both causes. ---
+cleanup="$REPO_ROOT/tools/branch-cleanup.sh"
+check_file "tools/branch-cleanup.sh exists" "$cleanup"
+pin "branch-cleanup.sh's dirty-worktree FLAG reason" "$cleanup" \
+  'has uncommitted/untracked work — review before removing' \
+  "expected the tool's dirty-worktree FLAG message to still read this way"
+pin "branch-cleanup.sh's live-worktree FLAG reason" "$cleanup" \
+  'merged but recently active — possibly a live parallel session; leave it, re-run cleanup later' \
+  "expected the tool's clean-but-recently-touched FLAG message to still read this way"
+pin "wrap.md's FLAG description covers the uncommitted/untracked reason" "$wrap" \
+  'uncommitted/untracked files that `git worktree remove` would refuse' \
+  "expected wrap.md's FLAG parenthetical to keep naming the dirty-worktree reason"
+pin "wrap.md's FLAG description covers the --live-hours reason" "$wrap" \
+  '--live-hours' \
+  "expected wrap.md's FLAG parenthetical to name the flag governing the clean-but-recently-touched reason"
+pin "wrap.md's FLAG description explains why a recently-touched clean worktree is flagged" "$wrap" \
+  'a worktree merged today can be a parallel session still mid-wrap, not a stale leftover' \
+  "expected wrap.md to state the reasoning, not just gesture at the tool's -h"
+
+
+# --- dir #212: init-project.md enumerated only two registration-failure reasons as if exhaustive; a
+# third exists (INSTANCE.md present but missing a Projects table) and was SILENT. Pin the doc naming
+# it, and that discarding register-project.sh's stderr became surfacing it instead. --------------------
+init_doc="$REPO_ROOT/commands/init-project.md"
+init_sh="$REPO_ROOT/tools/init-project.sh"
+check_file "commands/init-project.md exists" "$init_doc"
+pin "init-project.md names the third registration-failure reason" "$init_doc" \
+  'missing a Projects table' \
+  "expected the doc to name the present-but-unsuitable-INSTANCE.md case, not just 'no INSTANCE.md yet' / '--no-register'"
+pin "init-project.md says the actual failure reason is surfaced" "$init_doc" \
+  "own error message when an attempt was made and failed" \
+  "expected the doc to say the follow-up now carries register-project.sh's real cause, not a generic message"
+pin "init-project.sh captures register-project.sh's stderr instead of discarding it" "$init_sh" \
+  'register_err="$("$here/register-project.sh"' \
+  "expected the fix: capture stderr so the printed follow-up can name the actual cause"
+
 summary

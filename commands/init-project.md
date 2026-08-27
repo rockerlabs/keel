@@ -13,8 +13,9 @@ Runs `tools/init-project.sh` in the target directory, which idempotently ensures
 5. **registration** in your `INSTANCE.md` Projects registry, if `INSTANCE.md` exists.
 
 Then it prints the remaining manual follow-ups: fill in `CLAUDE.md`, wire `secret-guard`, and verify with
-`doctor`. (If registration didn't happen — no `INSTANCE.md` yet, or `--no-register` — it prints that as a
-manual follow-up too.)
+`doctor`. (If registration didn't happen — no `INSTANCE.md` yet, `--no-register`, or an `INSTANCE.md`
+present but missing a Projects table — it prints that as a manual follow-up too, including
+`register-project.sh`'s own error message when an attempt was made and failed.)
 
 ## Usage
 

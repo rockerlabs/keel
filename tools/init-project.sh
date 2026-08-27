@@ -124,11 +124,17 @@ else
   echo "  ! AGENTS.md skipped: no CLAUDE.md to link to" >&2
 fi
 
-# Auto-register in the INSTANCE.md Projects index (best-effort; --no-register to skip).
+# Auto-register in the INSTANCE.md Projects index (best-effort; --no-register to skip). Capture
+# register-project.sh's stderr rather than discarding it (dir #212): a present-but-unsuitable
+# INSTANCE.md (no Projects table) exits 2 with a reason on stderr, and silencing it left the
+# follow-up below indistinguishable from the "no INSTANCE.md yet" / "--no-register" cases.
 registered=0
+register_err=""
 instance="${KEEL_INSTANCE:-${KEEL_HOME:-${HOME:-}/.claude}/INSTANCE.md}"
 if [ "$REGISTER" = 1 ] && [ -f "$instance" ]; then
-  "$here/register-project.sh" "$(pwd)" >/dev/null 2>&1 && registered=1
+  if register_err="$("$here/register-project.sh" "$(pwd)" 2>&1 >/dev/null)"; then
+    registered=1
+  fi
 fi
 
 echo ""
@@ -137,6 +143,8 @@ echo "  - fill in CLAUDE.md (overview, stack, conventions, roadmap) — AGENTS.m
 echo "  - wire secret-guard:  install-secret-guard.sh --global   (or vendor into this repo)"
 if [ "$registered" = 1 ]; then
   echo "  - added to your INSTANCE.md Projects registry — refine its Tag there"
+elif [ -n "$register_err" ]; then
+  echo "  - add to your INSTANCE.md registry:  register-project.sh \"$(pwd)\"  (previous attempt failed: $register_err)"
 else
   echo "  - add to your INSTANCE.md registry:  register-project.sh \"$(pwd)\""
 fi

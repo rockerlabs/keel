@@ -255,6 +255,23 @@ code_auditor_rails="$(extract_rails "$code_auditor")"
 check_block_equal "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
   "$code_auditor_rails" "$canonical_rails"
 
+# --- dir #208: delegation.md:189 promises this block is reproduced verbatim "in every worker and
+# verifier prompt this pattern generates" — auditor.md and verifier.md are exactly that (code-auditor.md
+# above is the fourth worker template), so they get the same block-diff treatment, not a substring pin --
+auditor_rails="$(extract_rails "$auditor")"
+check_block_equal "auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
+  "$auditor_rails" "$canonical_rails"
+verifier_rails="$(extract_rails "$verifier")"
+check_block_equal "verifier.md's rails block is byte-identical to docs/delegation.md's canonical text" \
+  "$verifier_rails" "$canonical_rails"
+
+# --- fixer.md is a MUTATOR, not a worker/verifier (an operator-launched session that commits and opens
+# a PR) — delegation.md's own Mutator template carries only the DELEGATION RUN line, never the full
+# read-only rails block, so fixer.md's fix is scoped to that one line, pinned verbatim --------------------
+marker='DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.'
+pin "fixer.md carries the centralized-wrap marker verbatim" "$fixer" "$marker" \
+  "expected fixer.md (the mutator instantiation) to carry the same marker the Mutator template requires"
+
 # --- docs/delta-audit.md §1 and docs/reference.md's inventory row: both called drydock "prose only"
 # and PR2's own Done criterion requires the claim corrected (the dir #256 class) --------------------
 check_absent "delta-audit.md §1 no longer calls drydock prose-only" \
