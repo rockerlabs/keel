@@ -247,6 +247,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
   didn't silently break your pipeline.
 - [`docs/release-audit.md`](docs/release-audit.md) — a repeatable flow for a project's own
   release-readiness sweep, before tagging.
+- [`docs/release-history.md`](docs/release-history.md) — a one-paragraph-per-release digest, newest
+  first, so you don't reconstruct "what shipped in vX.Y" from the full `CHANGELOG.md`.
 - [`docs/delta-audit.md`](docs/delta-audit.md) — the release-candidate pass release-audit.md's
   phase 6 calls: a mechanically derived universe (every file a release range touched, plus its
   seam map) instead of a scope chosen by judgment.
