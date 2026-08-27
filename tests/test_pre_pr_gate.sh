@@ -2189,20 +2189,46 @@ gate "gh pr create --fill" "$d"
 check_status "dir #123: HEAD unmoved, real (recomputed) hash trivially matches → still unlocks" 0 "$STATUS"
 check_absent "dir #123: unlocked, not denied" "$OUT" "deny"
 
-# 93. dir #116: `--recover` must not restore a SKIP-level `polish.4-depth`. `skip` is the one depth that
-# bypasses step 5 outright, and commands/polish.md step 4 tells a convergence round to reuse the recovered
-# level as-is — so an inherited skip is a review bypass the operator never chose for the new commit. A
-# non-skip depth still recovers (dir #72's convenience: it doesn't bypass review; step 5 still has to
-# produce a fresh, HEAD-keyed outcome against it).
+# 93. dir #116, narrowed by dir #236: `--recover` restores a SKIP-level `polish.4-depth` ONLY when the
+# commit it was decided against still matches current HEAD — i.e. nothing shipped since the skip
+# decision, which is exactly the felt case (a missing polish.5-review receipt denying `gh pr create` with
+# no fix commit involved at all). `skip` is the one depth that bypasses step 5 outright, and
+# commands/polish.md step 4 tells a convergence round to reuse the recovered level as-is — so inheriting
+# one decided against an OLDER commit would still be a review bypass the operator never chose for the new
+# commit, which is why that case (below) still refuses. A non-skip depth recovers unconditionally either
+# way (dir #72's convenience: it doesn't bypass review; step 5 still has to produce a fresh, HEAD-keyed
+# outcome against it).
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"                # prior run chose skip
+run_in "$d" bash "$gate" init                                                       # no commit in between
+run_in "$d" bash "$gate" receipt --recover
+check_status "dir #236: recover, skip decided at current HEAD → exit 0" 0 "$STATUS"
+check_absent "dir #236: same-commit skip is NOT named as withheld" "$OUT" "polish.4-depth NOT recovered by design"
+check_contains "dir #236: same-commit skip IS re-stamped onto the fresh nonce" "$(cat "$(sentinel_for "$d")")" "	polish.4-depth	skip:"
+
+# The dangerous case dir #116 exists to close still refuses: a fix commit lands between the skip decision
+# and the retry, so the sha `_stamp_depth_outcome` stamped at write time no longer matches current HEAD.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"
+git -C "$d" commit --allow-empty -qm "substantial follow-up commit"                # HEAD moves
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt --recover
-check_status "dir #116: recover with a skip-level step 4 → exit 0" 0 "$STATUS"
-check_contains "dir #116: skip-level polish.4-depth is named as withheld" "$OUT" "polish.4-depth NOT recovered by design"
-check_contains "dir #116: the instruction says to re-size fresh" "$OUT" "step 4 re-sized fresh"
-check_absent "dir #116: the skip-level depth line was not re-stamped" "$(cat "$(sentinel_for "$d")")" "polish.4-depth"
+check_status "dir #116: recover, skip decided at an EARLIER commit → exit 0" 0 "$STATUS"
+check_contains "dir #116: cross-commit skip is still named as withheld" "$OUT" "polish.4-depth NOT recovered by design"
+check_contains "dir #116: the instruction says to re-confirm or re-size" "$OUT" "step 4 re-sized fresh"
+check_absent "dir #116: the cross-commit skip line was not re-stamped" "$(cat "$(sentinel_for "$d")")" "polish.4-depth"
+
+# A legacy/unstamped bare "skip" (no sha suffix at all — the shape written before dir #236, or if sha
+# resolution ever failed at write time) has no digest to check, so it stays withheld too: missing evidence
+# is not treated as a pass.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+printf 'nonce\tprior-nonce\nbase-sha\t%s\nprior-nonce\tpolish.4-depth\tskip\n' "$(git -C "$d" rev-parse HEAD)" > "$(prev_sentinel_for "$d")"
+run_in "$d" bash "$gate" receipt --recover
+check_contains "dir #236: an unstamped legacy bare 'skip' still withholds" "$OUT" "polish.4-depth NOT recovered by design"
+check_absent "dir #236: the legacy skip line was not re-stamped" "$(cat "$(sentinel_for "$d")")" "polish.4-depth"
 
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
@@ -2220,6 +2246,34 @@ run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"                # this round wrote it itself
 run_in "$d" bash "$gate" receipt --recover
 check_absent "dir #116: no withheld note when this round already wrote step 4" "$OUT" "polish.4-depth NOT recovered by design"
+
+# 93b. dir #236 end-to-end: the felt shape itself. A trivial diff is skip-sized and every step except
+# step 5 is receipted — step 5's "for skip, do nothing" was misread as "no receipt either", the exact
+# wording this ticket's commands/polish.md fix closes. `gh pr create` denies for the missing step 5
+# receipt and retires the sentinel; no fix commit is involved, so the retry must not have to re-open step
+# 4's dialogs — `--recover` restores the skip-level depth (this test's own floor above proves it can), and
+# the only write the retry needs is step 5's own bare, receipt-only `skip`.
+d="$(mkrepo)"
+head_sha="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_sha"
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck
+run_in "$d" bash "$gate" receipt polish.8-unlock "$head_sha"
+# polish.5-review deliberately never written — the felt miss.
+gate "gh pr create --fill" "$d"
+check_contains "dir #236: setup — missing step-5 receipt denies, as before" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #236: ...naming the missing receipt" "$OUT" "missing receipt for step(s)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+check_absent "dir #236: retry recovers the skip-level depth — no re-ask needed" "$OUT" "polish.4-depth NOT recovered by design"
+run_in "$d" bash "$gate" receipt polish.5-review skip                              # the only write this retry needs
+gate "gh pr create --fill" "$d"
+check_status "dir #236: retry unlocks with no fresh step-4 dialog" 0 "$STATUS"
+check_absent "dir #236: retry unlocks with no fresh step-4 dialog → allowed" "$OUT" "deny"
 
 # 94. dir #116: step 4's mandatory skip dialog carries its OWN token (KEEL-DEPTH-DIALOG: level=skip),
 # which must leave a `dialog:skip` trace the gate can check. The token is deliberately distinct from

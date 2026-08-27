@@ -55,11 +55,14 @@ Steps, in order:
    receipted outcome is just a completion marker) and actively wrong for `polish.4-depth`, whose sized
    level step 5 will be cross-checked against: overwriting it with a stale pre-fix-commit sizing would
    compare this round's real review against the wrong baseline.
-   **One exception inside that set (dir #116): a `skip`-level step 4 is never recovered** — `--recover`'s
-   closing note names it withheld when that happens. `skip` is the one depth that bypasses step 5
-   outright, so inheriting it would hand the fix commit a review bypass the operator chose for a
-   different diff. When the note names `polish.4-depth`, step 4 is NOT done: go re-size the diff there
-   fresh (its own skip rule — dialog included — applies to this round's diff as usual).
+   **One exception inside that set (dir #116, narrowed by dir #236): a `skip`-level step 4 recovers only
+   when it was decided against the commit that is STILL current HEAD** — i.e. nothing has shipped since,
+   the case a missing step 5 receipt alone forced (dir #236's felt case), not a genuine fix commit.
+   `--recover`'s closing note names it withheld whenever that's not true: `skip` is the one depth that
+   bypasses step 5 outright, so inheriting it across an actual fix commit would hand that commit a review
+   bypass the operator chose for a different diff. When the note names `polish.4-depth`, step 4 is NOT
+   done: go re-size the diff there fresh (its own skip rule — dialog included — applies to this round's
+   diff as usual).
 
    **Step 3 now also recovers, but only PROVISIONALLY (dir #123 — narrower than dir #96's original
    blanket exclusion)**: treat it as done for now — do not re-run the tests just because this is a
@@ -154,9 +157,13 @@ Steps, in order:
 4. **Pick a review depth — matched to the diff, mostly automatic.** *Skip entirely if step 1's convergence
    branch just recovered this step's receipt* — reuse the recovered level as-is; do not re-size (the
    recovered `polish.4-depth` is the baseline step 5's delta re-review gets cross-checked against, and a
-   fresh sizing pass here would silently replace it, per step 1). A recovered `skip` never arrives here
-   (dir #116 — `--recover` withholds it and its note says so): if the prior round chose `skip`, this
-   step runs fresh, skip dialog and all, for the round's own diff. Otherwise, gate this on the steps above
+   fresh sizing pass here would silently replace it, per step 1). Non-skip levels always recover (dir
+   #72's convenience) and never reach this step's body at all. A `skip` level only recovers — `--recover`
+   (dir #116, narrowed by dir #236) — when the commit it was decided against still matches current HEAD,
+   i.e. nothing shipped since; a skip decided against an earlier commit still withholds and its note says
+   so, same as before dir #236. So: **this step's body is reached only when the note names
+   `polish.4-depth` as withheld** — a skip that didn't recover — and runs fresh (skip dialog and all) for
+   the round's own diff. Otherwise, gate this on the steps above
    being clean: proceed only if simplify left no open problems AND (tests are green, or were explicitly
    skipped, or step 1 recovered step 3 provisionally per dir #123 — that provisional state is enough to
    proceed; step 8 is what actually re-verifies it). Otherwise report what is left and stop — do NOT
@@ -228,9 +235,16 @@ Steps, in order:
    `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
    the evidence for it; the measurement is what makes a questionable call visible afterwards.
 
-5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, do nothing — the decision
-   already happened at step 4's skip dialog, which the gate cross-checks per commit (dir #116; a fix
-   commit moving HEAD needs that dialog re-answered at step 4, not here). `ultra` you
+5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, there is no REVIEW to run —
+   the decision already happened at step 4's skip dialog, which the gate cross-checks per commit (dir
+   #116; a fix commit moving HEAD needs that dialog re-answered at step 4, not here). **This step's own
+   RECEIPT is still required** (`tools/pre-pr-gate.sh receipt polish.5-review skip`, immediately, no
+   dialog, no wait) — the gate's completeness check treats all eight steps as mandatory, `skip` included,
+   and a missing step 5 receipt denies `gh pr create` on its own, independent of whether step 4's
+   decision was sound (dir #236: "do nothing" describing the review was misread as "no receipt either,"
+   and a forgotten receipt then forced a full re-ask of both step 4 dialogs on retry — recovering a
+   same-commit skip is narrower now, see step 4's own note, but writing this receipt immediately is still
+   the cheap way to never need that). `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
    alternative attempted. For `low|medium|high|max`, do NOT attempt `Skill(code-review)`: the built-in
    `/code-review` is not model-invokable in-session — a documented harness policy
@@ -592,7 +606,8 @@ Steps, in order:
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
    as step 8, not a bare `done`: step 6 is one of the steps a convergence round must write itself —
    three ordinarily (5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth
-   was `skip` — dir #116, never carried) and 7 (unless a step-7 GAP stopped the prior run before its
+   was `skip` decided against an earlier commit than current HEAD — dir #116, narrowed by dir #236, not
+   carried) and 7 (unless a step-7 GAP stopped the prior run before its
    receipt — dir #119, never written, so never recovered)), four when that GAP forces a re-run (7
    joins the set, dir #138). Step 3 recovers too now, but only provisionally — dir #123, see step 1.
    Step 6's whole job is to catch a fix-commit
