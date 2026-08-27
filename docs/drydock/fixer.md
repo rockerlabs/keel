@@ -25,6 +25,7 @@ create>` → the PR.
 
 **Rails:**
 
+- DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 - **Test-pinned prose moves its pins in the same commit.** If a figure, a step count, or a quoted
   phrase is asserted by a test, the fix is both edits or neither. Known pinned surfaces in this repo:
   <list them, or "none — grep the test suite for the phrase you are about to change">.

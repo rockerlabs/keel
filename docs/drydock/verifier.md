@@ -24,12 +24,18 @@ behavior before and been wrong.
 finding must rest on a sandboxed execution: run the shape, break the test, trace the caller. Same
 rule, same felt incident: [`docs/drydock.md`](../drydock.md)'s phase 1 rail 5.
 
-**Sandbox rail:** any live or executable check that WRITES runs **only** in a scratch clone under
-your own temp directory — never the real checkout, never the real `$HOME`. This is not boilerplate: a
-review subagent once "empirically reproducing" a bug overwrote real machine-global git hooks and
-broke `git push` on that machine until they were restored.
+**Rails:**
 
-**Its one exception, and it matters as much as the rail:** a check that only *reads* machine
+- You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
+  your own contract file(s).
+- Do not spawn subagents of your own.
+- Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
+  checkout, never the real $HOME. (A past verifier session "empirically reproducing" a finding
+  overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
+- DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+
+**The sandbox bullet above is scoped to what WRITES.** Its one exception matters as much as the rail
+itself: a check that only *reads* machine
 configuration must face the REAL environment. Under a redirected `$HOME` such a verdict does not
 weaken, it inverts — a fully-guarded machine reports "not wired" — so sandboxing that read would make
 you write a confident `rejected` that is itself false, and `rejected` is the one verdict nothing

@@ -104,6 +104,16 @@ run env KEEL_INSTANCE="$inst2" "$init" --no-register "$np"
 check_status "--no-register → exit 0" 0 "$STATUS"
 check_absent "--no-register adds no row" "$(cat "$inst2")" "| $np |"
 
+# dir #212: a present-but-unsuitable INSTANCE.md (no Projects table) makes register-project.sh exit 2;
+# the follow-up must surface ITS reason, not read identically to "no INSTANCE.md yet" / "--no-register"
+inst3="$SANDBOX/INSTANCE-no-table.md"
+printf '# Instance — no Projects table here\n' > "$inst3"
+np2="$SANDBOX/unsuitable-instance-proj"
+run env KEEL_INSTANCE="$inst3" "$init" "$np2"
+check_status "init against an INSTANCE.md with no Projects table → exit 0" 0 "$STATUS"
+check_contains "the follow-up carries register-project.sh's own failure reason" "$OUT" "previous attempt failed"
+check_contains "the follow-up quotes the actual cause, not a generic message" "$OUT" "no Projects table"
+
 # --no-impact opts out of impact tracking (no external store entry created)
 ni="$SANDBOX/no-impact-proj"
 run "$init" --no-impact "$ni"

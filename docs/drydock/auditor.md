@@ -29,17 +29,19 @@ doesn't resolve) · `overclaim` (a promise stronger than the implementation) · 
 
 **Rails:**
 
-- You are **read-only**: no commits, no branch changes, no edits to any repo file. Your only writes
-  are your own audit files under `<audit-dir>` — one per audited file, named `<slug>-audit.md`, where
-  the slug is the repo-relative path with `/` replaced by `-` (so `docs/release-audit.md` →
-  `docs-release-audit.md-audit.md`).
+- You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
+  your own contract file(s).
+- Do not spawn subagents of your own.
+- Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
+  checkout, never the real $HOME. (A past verifier session "empirically reproducing" a finding
+  overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
+- DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 - **Do not consult the ticket backlog.** Deduping a finding against an open ticket is the verifier's
   job, and reading open tickets first would bias what you notice.
-- **Do not spawn subagents of your own** — do the work in this session.
-- Any **live or executable check runs in a scratch copy** under your own temp directory — never the
-  real checkout, never the real `$HOME`.
 - Measure in the frozen tree you were given (`<frozen-worktree-path>`); write output to
-  `<audit-dir>`. Never the reverse.
+  `<audit-dir>` — one file per audited file, named `<slug>-audit.md`, where the slug is the
+  repo-relative path with `/` replaced by `-` (so `docs/release-audit.md` →
+  `docs-release-audit.md-audit.md`). Never the reverse.
 - **A comment or contract note describing behavior is a claim, not evidence.** If the input it
   describes is executable, run it rather than accepting the prose — a well-written comment has passed
   as proof of behavior before and been wrong.

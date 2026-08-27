@@ -29,9 +29,11 @@ fetch above and grades each local branch by how safe deletion provably is: **AUT
 branch is a redundant pointer, and a worktree that is provably *dead* (clean of tracked/untracked work and
 holding no valued gitignored content) is removed along with it; deletion is lossless), **ASK** (merged but
 not provably safe — a recent/off-pattern free branch, or a clean worktree that's recent/off-pattern or holds
-non-disposable gitignored content like `private/` — confirm), **FLAG** (a worktree with LIVE uncommitted or
-untracked work that `git worktree remove` would refuse — surfaced for review, no destructive command, since
-forcing it would discard that work); see the tool's `-h` for exact rules. Auto-delete/-remove AUTO with
+non-disposable gitignored content like `private/` — confirm), **FLAG** (a worktree with LIVE work — either
+uncommitted/untracked files that `git worktree remove` would refuse, or clean but touched within
+`--live-hours`: a worktree merged today can be a parallel session still mid-wrap, not a stale leftover —
+surfaced for review, no destructive command, since forcing it could discard that work or race a live
+session); see the tool's `-h` for exact rules. Auto-delete/-remove AUTO with
 `--prune-safe`, act on ASK only after a yes, review FLAG by hand.
 Never the current branch/worktree or an unmerged branch. Run it **from the session's own worktree** so it
 excludes the worktree you're in; if you reconciled from the main checkout, prefix
