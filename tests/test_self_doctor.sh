@@ -1397,12 +1397,16 @@ check_contains "range: second (written) endpoint flagged" "$OUT" "dir #929"
 
 # wrapped shorthand list: a shorthand list split across a commit-message line break (a trailing
 # comma right before the `\n`) must not defeat extraction the same way a same-line comma list
-# doesn't — grep is inherently line-based, so this needs an explicit line-join first.
+# doesn't — grep is inherently line-based, so this needs an explicit line-join first. The wrapped
+# continuation line is made of nothing but the rest of the list (no trailing prose after the last
+# ticket) — the real shape this closes (dir #274's own "dir #208,\n#211, #212"), and the shape the
+# join's own stricter continuation guard requires (see the false-positive fixture further down: a
+# continuation line that mixes a ticket number with other prose is deliberately NOT joined).
 d="$(mk_clean_repo)"
 printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
 ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
 { printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
-( cd "$d" && git add -A && git commit -qm "$(printf 'dir #930,\n#931 wrapped shorthand list')" )
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #930,\n#931')" )
 run "$sd" "$d" --quiet
 check_contains "line-wrapped list: first ticket flagged" "$OUT" "dir #930"
 check_contains "line-wrapped list: second (wrapped) ticket flagged too" "$OUT" "dir #931"
@@ -1470,5 +1474,34 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/C
 run "$sd" "$d" --quiet
 check_contains "cross-commit: the real trailing-comma ticket is still flagged" "$OUT" "dir #940"
 check_absent "cross-commit: an unrelated older commit's bare number isn't fabricated into a ticket" "$OUT" "dir #941"
+
+# within-one-commit false positive (found live by /code-review medium on this same fix, dir #274): a
+# trailing-comma line followed, with NO blank line involved, by a continuation line that mixes a bare
+# ticket number with other prose must not be joined — only a continuation line made of nothing but
+# ticket tokens is a genuine wrapped list (the fixture above). A commit body citing "dir #942, #943,"
+# then continuing "#944 unrelated text" on the next physical line must not fabricate "dir #944".
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #942, #943,\n#944 unrelated text')" )
+run "$sd" "$d" --quiet
+check_contains "within-commit false positive: the real listed tickets are still flagged" "$OUT" "dir #942"
+check_contains "within-commit false positive: second real listed ticket also flagged" "$OUT" "dir #943"
+check_absent "within-commit false positive: a continuation line mixing prose isn't fabricated into a ticket" "$OUT" "dir #944"
+
+# backtick self-reference (found live by /code-review medium on this same fix, dir #274 — and a LIVE
+# hazard, not hypothetical: this very PR's own CHANGELOG.md entry quotes illustrative examples like
+# `"dir #104-107"` in backticks): a ticket-shaped number inside an inline code span must not be swept
+# in as a real citation, the same way `blank_fenced_blocks` already protects the BACKLOG.md
+# heading/status-drift check above from flagging its own fenced examples.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #945 document the shape `"dir #946-947"` as an example')" )
+run "$sd" "$d" --quiet
+check_contains "backtick guard: the real citation outside backticks is still flagged" "$OUT" "dir #945"
+check_absent "backtick guard: an illustrative example inside backticks isn't fabricated into a ticket" "$OUT" "dir #946"
 
 summary

@@ -772,19 +772,34 @@ _semver_max() {
 # precedent in this repo's own history, not hypothetical: e.g. commit 1515d7a's own title,
 # "...dir #208/#211/#212...", is a slash-separated instance; `f4109e72`/`21e984bfd9a` are real
 # batch-close commits using the range shape.
-# The line-wrap join only fires when the PRECEDING line ends in a trailing comma — not a blanket
-# newline-to-space join — so it can't accidentally stitch one commit's trailing "dir #100" onto a
-# NEXT, unrelated commit's leading bare "#101" when multiple commit bodies are concatenated upstream
-# (`git log --format=%B`, which inserts a BLANK line between commit bodies — verified live, not
-# assumed): an ordinary line never ends in a trailing comma, so paragraph/commit boundaries stay
-# intact. The blank line itself is a hard flush point, not just an ordinary non-comma line — a
-# buffered trailing-comma line must not survive PAST it: without an explicit flush, appending the
-# empty line to the buffer still ends in ", " (comma-space), which re-buffers instead of printing,
-# so the buffer would otherwise ride straight through the blank separator and stitch onto the NEXT
-# commit's leading token — reproduced live by an independent review pass (dir #274): a commit body
-# ending "...dir #100," immediately followed (newest-first in the log) by an unrelated older commit
-# whose message starts with a bare "#102" fabricated a "dir #102" citation with nothing to do with
-# ticket #102. Flushing on every blank line closes that gap.
+# The line-wrap join only fires when the PRECEDING line ends in a trailing comma AND the line it
+# would join onto is made of NOTHING but ticket-list tokens — not a blanket newline-to-space join —
+# so it can't stitch one line's trailing ticket onto unrelated content on the next line. Two distinct
+# false-positive shapes this closes, both found live by an independent review pass (dir #274) against
+# an earlier, looser version of this join that merged unconditionally on any trailing comma:
+# - Cross-commit: `git log --format=%B` inserts a BLANK line between commit bodies (verified live, not
+#   assumed) — but a buffered trailing-comma line that merely absorbs that blank line still ends in
+#   ", " (comma-space) after the merge, which re-buffers instead of printing, so it would otherwise
+#   ride straight through the blank separator and stitch onto the NEXT commit's leading token. A blank
+#   line is therefore a hard flush point: whatever is buffered is printed before it, never merged with
+#   it. Reproduced: a commit body ending "...dir #100," immediately followed (newest-first) by an
+#   unrelated older commit starting with a bare "#102" fabricated a "dir #102" citation.
+# - Within one paragraph/commit body (no blank line involved): a line ending "...dir #100, #105,"
+#   directly followed by unrelated prose that happens to start with a bare number ("#110 unrelated
+#   text") would, under an unconditional join, fabricate "dir #110" too. Reproduced the same way. The
+#   fix requires the CONTINUATION line to be made of nothing but ticket tokens (`#N`, `#N-M`, joined
+#   only by `,`/`;`/`/`/whitespace, with an optional trailing separator) before joining — a genuine
+#   wrapped ticket list wraps onto a line that IS the rest of the list, never onto a line that mixes
+#   list items with other prose. A line failing that shape check flushes the buffer as-is and is
+#   itself processed as ordinary text, so "#110 unrelated text" is left alone (no leading "dir ", so
+#   it was never a candidate on its own either).
+# Every backtick-quoted inline code span is stripped before any of the above runs (same idiom already
+# used elsewhere in this file, see the BACKLOG.md heading/status-drift check above) — found live by an
+# independent review pass (dir #274): this very function's own doc comments and CHANGELOG entries
+# quote illustrative examples like `` `"dir #104-107"` `` and `` `"dir #208/#211/#212"` ``, and without
+# stripping, the range/slash support this diff adds makes those EXAMPLES parseable as if they were
+# real citations — silently vouching for tickets nothing ever actually cited, which is a WORSE failure
+# than a missed one (it can mask a genuinely missing entry, not just miss reporting one).
 # Two malformed-range edge cases (found by a peer session's review), both handled loudly rather than
 # by silently dropping a ticket the way the pre-dir-#274 helper did:
 # - Reversed (e.g. "#107-104", a typo'd order): looping lo..hi would print nothing (lo > hi), which is
@@ -792,18 +807,23 @@ _semver_max() {
 #   references instead of a range — both endpoints surface, neither is invented.
 # - Absurdly wide (e.g. "#1-99999"): expanding it would either hang or flood the output; silently
 #   truncating to one endpoint (an earlier draft's behavior) would look complete while dropping every
-#   other ticket in the span, one layer deeper than dir #273's own gap. Capped at a 500-ticket span;
-#   past the cap this emits a single, deliberately unmatchable marker line instead of a real ticket, so
-#   it always shows up as "missing" in check 7's WARN — visible for a human to verify manually, never
+#   other ticket in the span, one layer deeper than dir #273's own gap. Capped at 500 tickets; past
+#   the cap this emits a single, deliberately unmatchable marker line instead of a real ticket, so it
+#   always shows up as "missing" in check 7's WARN — visible for a human to verify manually, never
 #   silently scanned away.
 # A hyphen that ISN'T a range (prose like "dir #208 - fixed the extraction", a spaced dash) never
 # reaches either branch: the range suffix requires a digit immediately after the `-`, with no space,
 # so the anchor below stops at "dir #208" and the loose dash is left alone.
 _extract_dir_tickets() {
-  awk '
+  sed -E 's/`[^`]*`//g' \
+    | awk '
     { line = $0
-      if (line == "") { if (buf != "") { print buf; buf = "" }; print line; next }
-      if (buf != "") { line = buf " " line; buf = "" }
+      if (line == "") { if (buf != "") { print buf; buf = "" }; next }
+      if (buf != "") {
+        if (line ~ /^[ \t]*#[0-9]+([,;\/[:space:]]+#[0-9]+)*[,;]?[ \t]*$/) { line = buf " " line }
+        else { print buf }
+        buf = ""
+      }
       if (line ~ /,[ \t]*$/) { sub(/[ \t]*$/, "", line); buf = line }
       else { print line }
     }
@@ -814,7 +834,7 @@ _extract_dir_tickets() {
     | awk -F'[#-]' '
         /-/ { lo = $2 + 0; hi = $3 + 0
               if (hi < lo) { print "dir #" lo; print "dir #" hi; next }
-              if (hi - lo > 500) { print "dir #" lo "-" hi " (range too large to expand, dir #274)"; next }
+              if (hi - lo >= 500) { print "dir #" lo "-" hi " (range too large to expand, dir #274)"; next }
               for (i = lo; i <= hi; i++) print "dir #" i
               next }
         { print "dir #" $2 }
