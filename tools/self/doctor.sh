@@ -755,6 +755,28 @@ _semver_max() {
   printf '%s\n' "$highest"
 }
 
+# _extract_dir_tickets — reads text on stdin, echoes every `dir #N` ticket it references, one per
+# line, deduped (dir #273 gap 2). A bare `grep -oE 'dir #[0-9]+'` only matches a fully-spelled
+# reference and silently drops every bare `#N` in a shorthand list like "dir #208, #211, #212" — the
+# first commit hit by this exact shape (PR #267's own message) went undetected because #211/#212 were
+# never even in the candidate set to look for, not merely uncredited. First capture the whole
+# comma/whitespace-joined run starting at a `dir #N` anchor, THEN pull every `#N` out of that run and
+# reattach the `dir ` prefix — so "dir #208, #211, #212" and "dir #208" (or two fully-spelled
+# references like "dir #208, dir #211", where the run stops right after the first because "dir " breaks
+# the bare-`#N` continuation) both resolve to their complete ticket sets either way.
+# KNOWN RESIDUAL, not covered: a list joined by "and"/`;`/`/`/a numeric range (`dir #104-107`) —
+# every one of these has real precedent in this repo's own history, not hypothetical: e.g. commit
+# 1515d7a's own title, "...dir #208/#211/#212...", is itself an unrecognized slash-separated instance
+# — or split across a wrapped commit-message line, still drops every trailing ticket the same silent
+# way gap 2 did — tracked as dir #274, not fixed here.
+_extract_dir_tickets() {
+  grep -oE 'dir #[0-9]+([,[:space:]]+#[0-9]+)*' \
+    | grep -oE '#[0-9]+' \
+    | sed 's/^/dir /' \
+    | sort -u \
+    || true
+}
+
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
 # release-in-preparation section's own introducing commit the pending-release allowance below stays
 # exempt. `${VAR:-40}`, not a bare `$VAR` reference — `set -u` aborts on an unset bare reference. A
@@ -1105,7 +1127,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     ct_range="HEAD"
   fi
   ct_commit_tickets="$(git -C "$repo_root" log "$ct_range" --no-merges --format=%B 2>/dev/null \
-    | grep -oE 'dir #[0-9]+' | sort -u || true)"
+    | _extract_dir_tickets || true)"
   # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
   # not the whole file, or an already-released section's historical ticket citations would silently
   # vouch for a DIFFERENT, still-open ticket never actually re-entered under [Unreleased]. Reuses
@@ -1153,7 +1175,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     /^## / { grabbing=0 }
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
-  ct_unreleased_tickets="$(grep -oE 'dir #[0-9]+' <<< "$ct_unreleased_body" | sort -u || true)"
+  ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body" || true)"
   # Set difference via the same `printf | grep -qxF` per-item membership idiom check 6's pending-tag
   # loop already uses above, not `comm` — `comm` needs no extra dependency here (it's coreutils, not
   # guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this idiom is already
