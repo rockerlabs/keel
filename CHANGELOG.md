@@ -219,6 +219,24 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   against the same three mutations plus the anchor-line-deleted-from-both-sides edge case. The
   pre-existing rails-block check further down the same file (`code-auditor.md` vs `delegation.md`)
   now shares this helper too, instead of its own near-duplicate inline comparison.
+- Three prose-only drifts in `docs/drydock.md` from the delta audit (dir #210): **"Four conditions,
+  one rule"** under-counted `tools/drydock/inventory.sh`'s refuse conditions — 11 call sites, but
+  only 7 distinct conditions once the three per-scope enumeration failures and the two
+  unrepresentable-path (tab/newline) sites are each counted once. Rather than commit to a number
+  that drifts every time a guard is added or grouped differently, dropped the definite count and
+  pointed readers at the script's own `refuse` call sites, which `tests/test_drydock_inventory.sh`
+  already pins in full. The **run-cost table**'s "Whole run | ≈6.1M subagent tokens" row
+  didn't reconcile against its own itemized rows; re-derived from the source record
+  (`~/.claude/REVIEW_HISTORY.md:480-481`), which itself only reconciles to ≈4.66M
+  (auditors 3.56M + verifiers 0.63M + cross-file pass/re-check 0.47M) against its own stated ≈6.1M
+  total, and split into a new "Cross-file pass + re-check" row. The source's own "+ orchestrator
+  turns" clause is not usable to explain the ~1.4M gap without contradicting the roles table three
+  rows up (the orchestrator runs as a real session, never a subagent, so its turns can't be part of
+  a "subagent tokens" figure) — so the Whole run row now discloses the gap as an unreconciled
+  residual in the source record rather than inventing an attribution for it. The
+  **roles table**'s Verifier "May touch" cell named only the `verdict:` lines, omitting the
+  `verifier:` footer line phase 2 also requires — same shape PR #219's review already fixed once in
+  this table.
 
 ## [0.7.1] — 2026-08-21
 

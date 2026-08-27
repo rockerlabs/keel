@@ -66,7 +66,7 @@ scope C only. Neither rule overrides the other; they terminate different things.
 |---|---|---|---|
 | **Orchestrator** | your own session | top tier, high | everything: phases 0, 4, 6, 7, all arbitration, **all** bookkeeping |
 | **Auditor** | spawned subagent, many in parallel | mid tier, high | read-only, plus its own audit files |
-| **Verifier** | spawned subagent, a few in parallel | mid tier, **xhigh** | the `verdict:` lines of the audit files it was given |
+| **Verifier** | spawned subagent, a few in parallel | mid tier, **xhigh** | the `verdict:` lines of the audit files it was given, plus its own `verifier:` footer line |
 | **Fixer** | a real, operator-launched session — **never** a subagent | mid tier, medium | one PR's worth of the tree |
 
 Two of those assignments are load-bearing. **Verifiers get more effort than auditors**, not less:
@@ -161,8 +161,9 @@ was launched with the cwd left at the main checkout, which happened to be sittin
 session's branch*, two commits off the baseline. It measured that tree and printed the numbers
 without a murmur; the whole audit was scoped against a commit nobody had chosen, and it took a
 re-measurement to notice. [`tools/drydock/inventory.sh`](../tools/drydock/inventory.sh) now refuses
-outright (exit 3) rather than measure a tree it cannot vouch for. Four conditions, one rule — **an
-inventory that quietly disagrees with the tree is worse than no inventory**:
+outright (exit 3) rather than measure a tree it cannot vouch for. One rule, several guarded
+conditions (see the script's own `refuse "` call sites for the exhaustive list) — **an inventory
+that quietly disagrees with the tree is worse than no inventory**:
 
 - **HEAD is not the baseline** — the run-1 case; the message names both SHAs and the `git worktree
   add` that fixes it.
@@ -268,7 +269,7 @@ name a pathspec that matches nothing rather than passing an empty string — can
 incremental scoping applies to scope C exactly as it does to A and B.
 
 **Cost.** Prose and code together, the new default, costs materially more than the prose-only figure
-[What a first run costs](#what-a-first-run-costs) records (≈6.1M subagent tokens): re-run that
+[What a first run costs](#what-a-first-run-costs) records (≈6.1M tokens): re-run that
 section's session-limit arithmetic fresh rather than reusing its number, and fall back to
 `DRYDOCK_SCOPE_C=':!*'` (a prose-only run) when the wave doesn't fit. The batch **count** is
 mechanical and already known — 14 directory-affinity batches on keel's own tree at the default
@@ -532,10 +533,10 @@ where the shipped default takes *every* tracked shell file):
 
 | | |
 |---|---|
-| Auditors | 18 sessions, 83–438K tokens each (median ~190K) |
-| Verifiers | 4 sessions, 116–184K each |
-| Cross-file pass | 1 session, ~283K |
-| Whole run | ≈6.1M subagent tokens, mid-tier model throughout |
+| Auditors | 18 sessions, 83–438K tokens each (median ~190K), ≈3.56M total |
+| Verifiers | 4 sessions, 116–184K each, ≈0.63M total |
+| Cross-file pass + re-check | 1 session, ~283K for the pass; ≈0.47M total once phase 6's closing re-check is folded in (the source records only the combined figure) |
+| Whole run | ≈6.1M sonnet tokens, mid-tier model throughout — the source record's own stated total; its itemization above sums to ≈4.66M, and the ~1.4M gap is a disclosed residual the source doesn't reconcile (calling it "orchestrator turns" would contradict the roles table three rows up, which runs the orchestrator as a real session, never a subagent) |
 | Findings | 45 confirmed — 44 fixed across 8 PRs, 1 `known` |
 | Wall-clock | ~1 operator-day, including quota waits |
 
