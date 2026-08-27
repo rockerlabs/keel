@@ -51,6 +51,15 @@ pin "release-audit.md phase 2 names backlog.md step 6" \
   "$audit" 'step 6 groups by' \
   "expected phase 2 to name the exact backlog.md step (6) that groups by the label it writes"
 
+# --- dir #270: phase 2's "file tickets" step is wired to the doctrine's filing bar, so a synthesis
+# pass doesn't file a ticket for every sub-bar finding the way dir #85's own campaign did -----------
+pin "release-audit.md phase 2 links the doctrine's filing bar" \
+  "$audit" 'clear the bar to become a ticket at all' \
+  "expected phase 2 to cite the filing bar, not restate it"
+pin "release-audit.md phase 2 names the no-action disposition for sub-bar findings" \
+  "$audit" 'no action — <reason>' \
+  "expected phase 2 to say where a sub-bar finding lands, not just what clears the bar"
+
 # --- cross-doc section citations: release-audit.md names sections of two OTHER docs by heading text;
 # pin both legs (the citation's wording AND the heading actually existing) the same way
 # test_doc_figures.sh pins keel-setup's droppable-heading quotes against the template. -------------

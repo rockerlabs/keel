@@ -87,6 +87,22 @@ pin "item 6 — suite evidence excludes the operator's own main checkout" \
   "$doc" "Suite evidence comes from a clean worktree or CI, never the operator's own main checkout" \
   "expected §8 to state the clean-worktree-or-CI rail"
 
+# --- dir #270: §8's coverage bar is reconciled with the doctrine's Clause A (a run can satisfy
+# every ledger-completeness bullet while a diverse leg still owes Clause A's second silent round) --
+pin "§8's coverage bar is distinguished from the doctrine's Clause A stopping rule" \
+  "$doc" 'This bar is coverage, not stopping.' \
+  "expected §8 to name which question the ledger bar answers and which it does not"
+
+# --- dir #270: fields 5/6 (per-leg cost, induced/original) are during-the-run captures, assigned to
+# the Protocol's report contract (rule 6) and the orchestrator's bookkeeping (§5), not left for
+# run-record.md's stub to reconstruct at verdict time -----------------------------------------------
+pin "Protocol rule 6 assigns the induced/original mark to each finding as it's written" \
+  "$doc" 'Mark each finding `induced`' \
+  "expected §4 rule 6 to capture field 6 during the run, not defer it to verdict time"
+pin "§5 assigns per-leg cost bookkeeping to the orchestrator" \
+  "$doc" "includes the run profile's" \
+  "expected §5 to assign field 5's during-the-run capture, not leave it to run-record.md's stub"
+
 # --- dir #231 item 2: this doc's diversity leg is the worked instance delegation.md's generalized
 # blind-then-reconcile section points at. The reciprocal pin (this same fact, checked against this
 # same file) lives in tests/test_delegation_doc.sh, not duplicated here (an efficiency review of the
