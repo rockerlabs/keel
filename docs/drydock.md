@@ -269,7 +269,7 @@ name a pathspec that matches nothing rather than passing an empty string — can
 incremental scoping applies to scope C exactly as it does to A and B.
 
 **Cost.** Prose and code together, the new default, costs materially more than the prose-only figure
-[What a first run costs](#what-a-first-run-costs) records (≈6.1M subagent tokens): re-run that
+[What a first run costs](#what-a-first-run-costs) records (≈6.1M tokens): re-run that
 section's session-limit arithmetic fresh rather than reusing its number, and fall back to
 `DRYDOCK_SCOPE_C=':!*'` (a prose-only run) when the wave doesn't fit. The batch **count** is
 mechanical and already known — 14 directory-affinity batches on keel's own tree at the default

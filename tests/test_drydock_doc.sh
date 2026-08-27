@@ -190,7 +190,7 @@ pin "Scope C states the disable spelling" "$doc" "DRYDOCK_SCOPE_C=':!*'" \
 pin "Scope C states the empty-string trap" "$doc" \
   'Unset or empty both mean the full' \
   "expected the doc to warn DRYDOCK_SCOPE_C= is NOT a disable, unlike a naive reading of the A/B convention"
-pin "Scope C's cost disclosure names the existing prose-only figure" "$doc" '6.1M subagent tokens' \
+pin "Scope C's cost disclosure names the existing prose-only figure" "$doc" '6.1M tokens' \
   "expected the cost section to point at the existing cost table's number, not invent a new one"
 pin "Scope C defers real code-run numbers to the module's first run" "$doc" \
   'token** cost stays' \
