@@ -165,3 +165,5 @@ case "$STATUS" in
   0|1) pass "the real keel checkout runs to completion (exit $STATUS)" ;;
   *) fail "the real keel checkout runs to completion" "unexpected exit $STATUS" ;;
 esac
+
+summary
