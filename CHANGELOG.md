@@ -11,6 +11,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/release-history.md`** (dir #232): a one-paragraph-per-release digest page, newest first,
+  condensing each `CHANGELOG.md` section into a short summary so a reader doesn't have to reconstruct
+  "what actually shipped in each version" from the full dated detail. Indexed in `README.md`.
+
 ### Changed
 
 - **The impact-scoring ledger (`ledger.md`/`evidence.md`/`impact-events.log`) no longer lives inside a
