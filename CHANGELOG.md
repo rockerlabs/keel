@@ -189,6 +189,13 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 
 ### Fixed
 
+- `uninstall.sh --dry-run`'s manifest-less heuristic listing treated a `keel/` directory or symlink at
+  the home root as Keel-owned by existence alone, misreporting "would remove keel" for an unrelated
+  user directory that merely shared the name (dir #233). It now checks `keel/CORE.md` ownership
+  (a symlink, or a regular file carrying the `KEEL-NOGIT` token) — the same signal `install.sh` itself
+  uses to recognize its own linked home. Explicitly out of scope (dir #278, dir #279): the identical
+  existence-only imprecision in `home_has_keel_content()`, and the resulting duplication of this
+  ownership predicate across `install.sh`/`uninstall.sh`/`tools/doctor.sh`.
 - `docs/drydock.md` phase 7 said cost and induced/original-defect marks are captured *during* a run,
   not reconstructed afterward (dir #270) — but that instruction lived only in phase 7's own narrative,
   at the bottom of the doc, which the orchestrator's own session reads (it runs the whole procedure
