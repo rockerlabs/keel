@@ -424,6 +424,44 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   content-equality assertions, producing a misleading "expected exit X, got Y" message — is a
   pre-existing pattern (`tests/test_install_pre_pr_gate.sh:91,444`) this PR's own new assertions
   followed rather than introduced; filed as dir #285 rather than fixed here, to keep this PR scoped.
+- Under heavy local concurrency (several `/go` sessions running full test suites at once), `tests/run.sh`
+  would fail a random single test file with `printf: write error: Broken pipe`, making a green full-suite
+  run stop being evidence of a clean diff (dir #280, found in dir #233's session). Root cause: a
+  widespread `printf "$var" | grep -q ...` idiom, present across the test suite and several
+  `set -o pipefail` production tools (`tools/doctor.sh`, `tools/self/doctor.sh`, `tools/public-audit.sh`,
+  `tools/secret-guard/secret-scan.sh`) — `grep -q`'s early exit on a match can close the pipe before
+  `printf` finishes writing, and under `pipefail` the resulting SIGPIPE flips a real match into a false
+  "not found" (reproduced live: a genuine `v0.3.0` release-history heading was reported missing this
+  way). One instance of this exact shape had already been found and fixed in `tools/public-audit.sh`
+  (the pr_hist SIGPIPE regression, S2) and in `tools/self/doctor.sh` (dir #195); this ticket generalizes
+  the fix to every reachable site (over 30 call sites across 19 files, `sed`/`tr` producers included —
+  the identical bug under a different name), replacing the pipe with a `<<<` here-string — no live writer
+  process for grep's early exit to signal — including two sites in `tools/pipeline-canary.sh` and
+  `tools/pre-pr-gate.sh` that carry no `pipefail` today and so aren't live bugs yet, closed anyway since
+  either file adopting `pipefail` (the rest of this repo's tools already do) would silently reintroduce
+  the race. Test files got a new shared `tests/lib.sh` helper, `match()`, folding 18 near-identical call
+  sites into one documented idiom (this repo's own established "second use = promote" convention, already
+  applied at this exact threshold for `count_matches()` in `tools/secret-guard/secret-scan.sh`). A new
+  static guard, `tests/test_no_pipe_sigpipe_race.sh`, scans every `tools/*.sh`/`tests/*.sh` file that runs
+  under `pipefail` (including `tools/lib/*.sh`, which carries no `set` line of its own by design and
+  inherits whatever its caller has) for a reintroduced instance of the pattern; two review rounds each
+  caught and fixed real gaps in the guard itself — an independent high-depth agent review found it missed
+  every test file (most rely on `tests/lib.sh`'s own `set -uo pipefail` rather than repeating it) and
+  `tools/public-audit.sh`'s `set -uo pipefail` form (no `e` flag); an operator-run `/code-review high` pass
+  then found its producer scope was still printf/echo-only (missing `sed`/`tr`) and its `tools/lib/*.sh`
+  sourcing gap — the broadened guard then caught a real, previously-undiscovered instance of the same bug
+  in `tests/test_install_manifest.sh`'s `manifest_field()`. A delta follow-up on the same reviewer found
+  one more gap (the fixed `-[qm]` consumer flag only matched `-q`/`-m` as the first flag, missing
+  `-iq`/`-vq`/`--quiet`) and two lower-severity, accepted-as-documented edge cases (a producer whose own
+  arguments contain a literal `|`; the `|| true` exception's fragility against a trailing inline comment)
+  the guard's header comment now states explicitly rather than chasing a fully general parser for a
+  narrow, already-mostly-remediated bug class. Each round was re-verified with the same mutation test (or
+  the reviewer's own reproduction) that found it: red against a deliberately reintroduced instance, green
+  once fixed. Verified under the load that reproduces the original bug, not
+  just on an idle machine: 6 consecutive rounds of 5-way concurrent full-suite runs (30 runs total) came
+  back clean post-fix, versus reproducible failures pre-fix — the concurrent-load reproduction itself is
+  not encoded as a permanent automated test, since the trigger needs real concurrent system load (~15 min
+  per round), impractical to run in CI.
 
 ## [0.7.1] — 2026-08-21
 

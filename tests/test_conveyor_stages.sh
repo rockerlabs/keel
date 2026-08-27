@@ -59,13 +59,14 @@ if [ -z "$design_line" ]; then
 else
   # the cross-link sentence should land within the next few lines of the same bullet
   window="$(sed -n "${design_line},$((design_line + 4))p" "$framework")"
-  if printf '%s' "$window" | grep -qi 'done-criterion'; then
+  # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
+  if match "$window" -qi 'done-criterion'; then
     pass "FRAMEWORK.md: tests-before-or-alongside line gains a done-criterion cross-link"
   else
     fail "FRAMEWORK.md: tests-before-or-alongside line gains a done-criterion cross-link" \
       "expected a nearby sentence mentioning a written done-criterion"
   fi
-  if printf '%s' "$window" | grep -qE '/go\.md|/polish\.md|dir #[0-9]'; then
+  if match "$window" -qE '/go\.md|/polish\.md|dir #[0-9]'; then
     fail "FRAMEWORK.md: cross-link sentence stays generic" \
       "found a keel-internal reference (dir #N or a command path) in an adopter-usable doc"
   else
@@ -84,13 +85,14 @@ if [ -z "$addon_line" ]; then
   fail "polish.md: add-on-set paragraph still present" "anchor sentence not found"
 else
   addon_window="$(sed -n "${addon_line},$((addon_line + 20))p" "$polish")"
-  if printf '%s' "$addon_window" | grep -qi 'drops an add-on' && printf '%s' "$addon_window" | grep -qi 'dir #161'; then
+  # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
+  if match "$addon_window" -qi 'drops an add-on' && match "$addon_window" -qi 'dir #161'; then
     pass "polish.md: step 5 states the add-on-drop warning (dir #161)"
   else
     fail "polish.md: step 5 states the add-on-drop warning (dir #161)" \
       "expected a 'drops an add-on ... (dir #161)' clause in the add-on set paragraph"
   fi
-  if printf '%s' "$addon_window" | grep -qi 'nothing denies or warns if you forget'; then
+  if match "$addon_window" -qi 'nothing denies or warns if you forget'; then
     fail "polish.md: the old, now-false 'nothing warns' sentence is gone" \
       "found the pre-dir-#161 sentence still present alongside the new wording"
   else
@@ -99,7 +101,7 @@ else
   # dir #161 /code-review high (glide-past-risk finding): the warning must be a MANDATORY read, not
   # just a documented tool behavior — otherwise the mechanism this ticket built can itself be silently
   # ignored by a session, the same shape of miss dir #155 already showed happens with a text-only cue.
-  if printf '%s' "$addon_window" | grep -qi 'MANDATORY read'; then
+  if match "$addon_window" -qi 'MANDATORY read'; then
     pass "polish.md: step 5 states the add-on-drop warning must be actively read, not skimmed past"
   else
     fail "polish.md: step 5 states the add-on-drop warning must be actively read, not skimmed past" \

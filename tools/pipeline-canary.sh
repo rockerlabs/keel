@@ -268,7 +268,11 @@ cmd_demo_bypass() {
   out="$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}' 2>/dev/null | bash "$GATE" 2>&1)"
   status=$?
 
-  if [ "$status" -eq 0 ] && printf '%s' "$out" | grep -q '"permissionDecision":"deny"' && printf '%s' "$out" | grep -q 'no trace matching'; then
+  # `<<<` here-strings, not `printf | grep -q` pipes: this file has no `pipefail` today, so the SIGPIPE
+  # race dir #280 fixes elsewhere can't flip these two conditions yet — but the fix is free, and the
+  # rest of this repo's tools/*.sh files do set pipefail, so leaving the pipe form here is one stray
+  # `set -o pipefail` away from reintroducing it.
+  if [ "$status" -eq 0 ] && grep -q '"permissionDecision":"deny"' <<< "$out" && grep -q 'no trace matching' <<< "$out"; then
     printf 'PASS  demo-bypass: a fabricated in-session review claim (no matching trace) was correctly DENIED\n'
     ec=0
   else

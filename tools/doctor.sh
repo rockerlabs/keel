@@ -1157,7 +1157,11 @@ for d in "${DIRS[@]}"; do
     # EFFECTIVE resolution (system/global/XDG, same merge core.hooksPath gets) — naming a specific file
     # here risks pointing at one that was never actually consulted (same mislabeling the guard-side
     # $guard_eff_note exists to avoid).
-    if [ -n "$email" ] && ! printf '%s' "$email" | grep -qE "$safe_email_re"; then
+    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
+    # can be SIGPIPE'd by grep's own early exit on match, flipping a real "safe" match into a false
+    # "unsafe" WARN (or the reverse) under load (dir #280). A here-string has bash buffer the content
+    # up front, so there's no live writer for grep to signal.
+    if [ -n "$email" ] && ! grep -qE "$safe_email_re" <<< "$email"; then
       email_note=""
       [ "$email" = "$email_local" ] || email_note=" (read via git's global/system config, not this repo's own)"
       warn W-EMAIL-PUBLIC "git commit email '$email' is not a noreply address — it lands in public history (run public-audit.sh)$email_note"

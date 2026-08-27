@@ -57,8 +57,12 @@ check_contains "verify discipline stays OUTSIDE the trim" "$outside_blocks" "## 
 if [ "$core_block" = "$wrapper_block" ]; then
   pass "wrapper embeds CORE.md block byte-for-byte"
 else
+  # diff's output captured first, then head -20 applied to the capture — not `diff ... | head -20`
+  # (dir #280: diff is a live writer a `head` pipe could SIGPIPE under load; capturing first means
+  # diff always drains to EOF, same as everywhere else this ticket applies the fix).
+  diff_out="$(diff <(printf '%s' "$core_block") <(printf '%s' "$wrapper_block"))"
   fail "wrapper embeds CORE.md block byte-for-byte" \
-    "blocks differ — edit rails in CORE.md, then mirror the block into templates/CLAUDE.md:$(printf '\n')$(diff <(printf '%s' "$core_block") <(printf '%s' "$wrapper_block") | head -20)"
+    "blocks differ — edit rails in CORE.md, then mirror the block into templates/CLAUDE.md:$(printf '\n')$(head -20 <<< "$diff_out")"
 fi
 
 # CORE.md is consumed live (imported/symlinked) — template artifacts in it would ride into every

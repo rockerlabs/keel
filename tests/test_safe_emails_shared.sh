@@ -43,10 +43,12 @@ while IFS= read -r -d '' f; do
   [ "$f" = "$lib" ] && continue
   norm="$(tr -d '\\.@' < "$f" 2>/dev/null | tr -d '[:space:]')"
   for m in "$marker1" "$marker2" "$marker3" "$marker4"; do
-    if printf '%s' "$norm" | grep -qF "$m"; then
-      hits="${hits:+$hits }$f"
-      break
-    fi
+    # A literal substring test, so a plain bash `case` glob (same idiom check_contains uses) rather
+    # than `grep -F` — no subprocess, no pipe, structurally immune to the SIGPIPE race a
+    # `printf | grep -q` gate has under load (dir #280; norm can be a whole large tools/ file here).
+    case "$norm" in
+      *"$m"*) hits="${hits:+$hits }$f"; break ;;
+    esac
   done
 done < <(find "$REPO_ROOT/tools" -type f -print0)
 if [ -z "$hits" ]; then
@@ -63,12 +65,13 @@ if [ "${#SAFE_EMAILS[@]}" -gt 0 ]; then
 else
   fail "SAFE_EMAILS is non-empty" "array is empty after sourcing the lib"
 fi
-if [ -n "$safe_email_re" ] && printf 'noreply@github.com' | grep -qE "$safe_email_re"; then
+# match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
+if [ -n "$safe_email_re" ] && match 'noreply@github.com' -qE "$safe_email_re"; then
   pass "safe_email_re matches a known-safe address"
 else
   fail "safe_email_re matches a known-safe address" "noreply@github.com did not match: $safe_email_re"
 fi
-if printf 'someone@personal-domain.example' | grep -qE "$safe_email_re" 2>/dev/null; then
+if match 'someone@personal-domain.example' -qE "$safe_email_re" 2>/dev/null; then
   fail "safe_email_re rejects a non-safe address" "a made-up personal address incorrectly matched"
 else
   pass "safe_email_re rejects a non-safe address"

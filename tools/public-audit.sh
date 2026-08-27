@@ -296,7 +296,10 @@ if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
           | sed '/^$/d' | sort -u )"
   while IFS= read -r e; do
     [ -z "$e" ] && continue
-    printf '%s' "$e" | grep -qE "$safe_re" && continue
+    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
+    # can be SIGPIPE'd by grep's own early exit on match, flipping a real "safe" match into a false
+    # GAP under load (dir #280) — the same class the pr_hist scan below (S2) already fixes.
+    grep -qE "$safe_re" <<< "$e" && continue
     gap "non-public-safe identity in git history: $e"
   done <<EOF
 $ids
@@ -407,7 +410,9 @@ if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
       'refs/pull/*/merge:refs/keel-pr-audit/merge-*' 2>/dev/null || true
     while IFS= read -r e; do
       [ -z "$e" ] && continue
-      printf '%s' "$e" | grep -qE "$safe_re" && continue
+      # A here-string (dir #280) — see the git-history identity scan above for why not a
+      # `printf | grep -q` pipe.
+      grep -qE "$safe_re" <<< "$e" && continue
       gap "non-public-safe identity in a host PR ref (refs/pull/*): $e — purge via delete-and-recreate (going-public.md)"
     done <<EOF
 $(git -C "$DIR" log --glob='refs/keel-pr-audit/*' --format='%ae%n%ce' 2>/dev/null | sed '/^$/d' | sort -u)

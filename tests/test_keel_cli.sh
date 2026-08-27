@@ -152,23 +152,27 @@ readme_block="$(awk '/lists the verbs:/{f=1} f{print; if (/`keel help`\./) exit}
 [ -n "$ref_line" ] || fail "found the keel row in docs/reference.md" "no line links to ../keel"
 [ -n "$readme_block" ] || fail "found the verb-list paragraph in README.md" "no line matches 'lists the verbs:'"
 
+# match(), not a direct `printf | grep -qw` pipe (dir #280 — see tests/lib.sh's match() for why).
+# This is dir #153/#154's original flake ("README.md quotes verb: help/audit"), mitigated there only
+# by capping CI concurrency; dir #280 found it still reachable under heavy LOCAL concurrency and fixes
+# the actual race instead.
 for v in $verbs; do
-  if printf '%s' "$usage_block" | grep -qw "$v"; then
+  if match "$usage_block" -qw "$v"; then
     pass "keel's usage() lists verb: $v"
   else
     fail "keel's usage() lists verb: $v" "missing from usage() — dispatcher has it, --help doesn't"
   fi
-  if printf '%s' "$header_block" | grep -qw "$v"; then
+  if match "$header_block" -qw "$v"; then
     pass "keel's header comment lists verb: $v"
   else
     fail "keel's header comment lists verb: $v" "missing from the '# Verbs:' header comment"
   fi
-  if printf '%s' "$ref_line" | grep -qw "$v"; then
+  if match "$ref_line" -qw "$v"; then
     pass "docs/reference.md quotes verb: $v"
   else
     fail "docs/reference.md quotes verb: $v" "missing from the keel row — dispatcher has it, doc doesn't"
   fi
-  if printf '%s' "$readme_block" | grep -qw "$v"; then
+  if match "$readme_block" -qw "$v"; then
     pass "README.md quotes verb: $v"
   else
     fail "README.md quotes verb: $v" "missing from the verb-list paragraph — dispatcher has it, doc doesn't"

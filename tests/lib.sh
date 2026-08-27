@@ -116,6 +116,17 @@ check_nodir()    { if [ -d "$2" ]; then fail "$1" "dir should not exist: $2"; el
 check_link()     { if [ -L "$2" ]; then pass "$1"; else fail "$1" "not a symlink: $2"; fi; }
 check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2"; else pass "$1"; fi; }
 
+# match HAYSTACK GREP_ARGS... — grep against an in-memory string via a `<<<` here-string, not a
+# `printf HAYSTACK | grep ...` pipe (dir #280, promoted here once a sixth test file needed the exact
+# same idiom — this file's own established "second use = promote" convention, see release_tag_versions
+# below). Under load, grep's own early exit on a match (`-q`/`-m`) can close the read end of a pipe
+# before printf finishes writing; this file's `pipefail` then reports printf's broken-pipe failure
+# instead of grep's real (successful) match, silently flipping a real hit into "missing" (reproduced
+# live: a genuine v0.3.0 release-history heading was reported missing this exact way). A here-string
+# has bash buffer the content up front, so there's no live writer process for grep's early exit to
+# signal — pass grep's own flags (including -q) straight through, e.g. `match "$s" -qw "$v"`.
+match() { local h="$1"; shift; grep "$@" <<< "$h"; }
+
 # release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver release tag (`v<x.y.z>`, the
 # `v` kept), one per line, `git tag -l`'s own order. Third independent copy of this exact regex found
 # by /code-review medium on dir #232's own diff (tools/self/doctor.sh's `_release_tag_versions()` — not

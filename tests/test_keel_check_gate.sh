@@ -30,10 +30,16 @@ export KEEL_CHECK_STATE_DIR; KEEL_CHECK_STATE_DIR="$(mktemp -d "$SANDBOX/kcgate.
 gate() {
   local json path_override="${4:-$PATH}"
   json="$(jq -n --arg c "$1" --arg w "$2" '{tool_input:{command:$c}, cwd:$w}')"
+  # A here-string, not a `printf | bash "$GATE"` pipe: scenario 8 below runs the gate with jq
+  # stripped from PATH, which makes it exit at its own `command -v jq` guard BEFORE ever reading
+  # stdin — printf is then a live writer with no reader at all, and can SIGPIPE (dir #280,
+  # reproduced live: "test_keel_check_gate.sh: line 34: printf: write error: Broken pipe" under
+  # concurrent load). A here-string has bash buffer the content up front, so there's no live writer
+  # for the gate's early exit to signal, regardless of whether it ever reads stdin.
   if [ "${3:-}" = "1" ]; then
-    OUT="$(printf '%s' "$json" | PATH="$path_override" KEEL_CHECK_VETO=1 bash "$GATE" 2>&1)"; STATUS=$?
+    OUT="$(PATH="$path_override" KEEL_CHECK_VETO=1 bash "$GATE" 2>&1 <<< "$json")"; STATUS=$?
   else
-    OUT="$(printf '%s' "$json" | PATH="$path_override" env -u KEEL_CHECK_VETO bash "$GATE" 2>&1)"; STATUS=$?
+    OUT="$(PATH="$path_override" env -u KEEL_CHECK_VETO bash "$GATE" 2>&1 <<< "$json")"; STATUS=$?
   fi
 }
 
@@ -82,7 +88,7 @@ check_absent "no declared check → nothing to veto → allowed" "$OUT" "deny"
 rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1     # red again
 imp="$SANDBOX/gate-events.log"; : > "$imp"
 json="$(jq -n --arg c "git commit -m done" --arg w "$d" '{tool_input:{command:$c}, cwd:$w}')"
-out="$(printf '%s' "$json" | KEEL_CHECK_VETO=1 KEEL_IMPACT_LOG="$imp" bash "$GATE" 2>/dev/null)"
+out="$(KEEL_CHECK_VETO=1 KEEL_IMPACT_LOG="$imp" bash "$GATE" 2>/dev/null <<< "$json")"
 check_contains "deny still emits the deny payload on stdout" "$out" '"permissionDecision":"deny"'
 check_absent "stdout is not polluted by the event line" "$out" "keel-check-gate	blocked"
 check_contains "deny records a guard event when opted in" "$(cat "$imp" 2>/dev/null)" "	guard	keel-check-gate	blocked"

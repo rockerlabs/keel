@@ -1282,7 +1282,11 @@ case "${1:-}" in
       # fresh write already exists and the note would send the round to redo work it just did.
       _note_unrecovered() {
         local step="$1" reason="$2"
-        if ! printf '%s\n' "$already" | grep -qxF -- "$step"; then
+        # A `<<<` here-string, not `printf | grep -q`: this file has no `pipefail` today, so the
+        # SIGPIPE race dir #280 fixes elsewhere can't flip this yet — but the fix is free, and most of
+        # this repo's tools/*.sh files do set pipefail, so leaving the pipe form here is one stray
+        # `set -o pipefail` away from reintroducing it.
+        if ! grep -qxF -- "$step" <<< "$already"; then
           unrecovered="${unrecovered:+$unrecovered / }$step"
           todo="${todo:+$todo, }$reason"
         fi
@@ -1387,7 +1391,8 @@ case "${1:-}" in
             esac
             ;;
         esac
-        if printf '%s\n' "$already" | grep -qxF -- "$r_step"; then
+        # A `<<<` here-string, not `printf | grep -q` (dir #280 — see _note_unrecovered above for why).
+        if grep -qxF -- "$r_step" <<< "$already"; then
           skipped_existing=$((skipped_existing + 1)); continue
         fi
         printf '%s\t%s\t%s\n' "$nonce" "$r_step" "$r_outcome" >> "$sentinel"

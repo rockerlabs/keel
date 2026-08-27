@@ -553,7 +553,11 @@ while IFS= read -r rec; do
   skip=0
   for re in "${drop_res[@]:-}"; do
     [ -z "$re" ] && continue
-    if printf '%s' "$rec" | grep -qE "$re"; then skip=1; break; fi
+    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
+    # can be SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a
+    # false "not allowlisted" under load (dir #280) — a spurious finding, not a missed one, but still
+    # unreliable evidence in a security-facing scanner.
+    if grep -qE "$re" <<< "$rec"; then skip=1; break; fi
   done
   [ "$skip" = 1 ] && continue
   # path-glob allowlist (only meaningful for "path:line" records)

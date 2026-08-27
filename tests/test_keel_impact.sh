@@ -830,7 +830,10 @@ if grep -qE '_ledger_parse "\$LEDGER" "\$mode"' "$TOOL"; then
 else
   fail "rollup delegates to _ledger_parse" "rollup no longer calls _ledger_parse — re-duplicated?"
 fi
-if grep -qE '_ledger_stats\(\) \{' "$TOOL" && sed -n '/^_ledger_stats() {/,/^}/p' "$TOOL" | grep -q '_ledger_parse'; then
+# The sed capture is a plain $(...) (always drains to EOF, no early exit) fed to match() via a
+# here-string, not `sed ... | grep -q` — the same live-writer-vs-early-exit SIGPIPE shape dir #280
+# fixed for printf/echo producers applies to any producer, sed included.
+if grep -qE '_ledger_stats\(\) \{' "$TOOL" && match "$(sed -n '/^_ledger_stats() {/,/^}/p' "$TOOL")" -q '_ledger_parse'; then
   pass "_ledger_stats delegates to _ledger_parse"
 else
   fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
