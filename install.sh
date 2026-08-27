@@ -183,6 +183,20 @@ atomic_copy() {
   atomic_write "$2" < "$1"
 }
 
+# _keel_test_checkpoint NAME — test-only crash-simulation checkpoint (dir #235): exits immediately
+# when KEEL_TEST_CRASH_AFTER equals NAME, letting the test suite prove the ordering of two
+# non-atomic writes deterministically instead of racing a real interrupt (both writes are near-instant
+# renames). A no-op in every real run. One generic mechanism, parameterized by checkpoint name, rather
+# than a bespoke `exit` line grown per write pair that ever needs this.
+# The explicit `return 0` matters under `set -e`: unlike a bare `[ cond ] && exit N` inlined at the
+# call site (exempt from errexit because it's the non-final command of its own && list), a FUNCTION's
+# own return status is what the caller sees — without this, a false `[ cond ]` here would make the
+# whole function return 1 and abort the script even when no crash was requested.
+_keel_test_checkpoint() {
+  [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
+  return 0
+}
+
 # make_link — same temp-sibling + rename discipline for a symlink, so a dest is replaced, never
 # left dangling mid-write.
 make_link() {
@@ -837,9 +851,7 @@ if [ "$foreign_core" = 1 ]; then
 else
   rm -f "$foreign_core_marker"
 fi
-# Test-only crash-simulation hook (dir #235): lets the test suite prove the ordering above without a
-# racy real interrupt. No-op unless the test suite sets it.
-[ "${KEEL_TEST_CRASH_AFTER:-}" = "foreign-core-sentinel" ] && exit 99
+_keel_test_checkpoint foreign-core-sentinel
 
 # context_created / the rails "edit" artifact — re-derived from the FINAL context-file state rather
 # than threaded through every wrapper/migration branch above: there's no cksum-precision to lose here
