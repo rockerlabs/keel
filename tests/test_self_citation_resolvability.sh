@@ -87,13 +87,23 @@ check_status "removing the duplicate heading -> exit 0 (green again)" 0 "$STATUS
 
 # --- worktree invocation resolves the MAIN checkout's BACKLOG.md (dir #135's fix, reused) -----------
 # BACKLOG.md is gitignored and lives ONLY at the main checkout root — a linked worktree never gets its
-# own copy. `git worktree add` only checks out TRACKED content, so writing BACKLOG.md into the main
-# checkout $d before adding the worktree reproduces the real split precisely: $d has it, $wt does not.
-d="$(mk_repo "$backlog_ok" "$doc_ok")"
+# own copy. `git worktree add` only checks out TRACKED content, so BACKLOG.md must never be committed
+# in this fixture (unlike `mk_repo`'s other callers, where tracked-vs-untracked doesn't matter) — a
+# TRACKED BACKLOG.md would ride along into the worktree via git's own normal checkout, and this test
+# would then pass without ever exercising the main-checkout resolution it claims to (found live: an
+# earlier version of this fixture used `mk_repo`, which commits BACKLOG.md via `git add -A`, and
+# gutting the resolution to a bare `backlog_root="$repo_dir"` still passed against it). $d has
+# BACKLOG.md, $wt does not.
+d="$(new_repo)"
+mkdir -p "$d/docs"
+printf '%s' "$doc_ok" > "$d/docs/doc.md"
+( cd "$d" && git add -A && git commit -q -m fixture )   # BACKLOG.md deliberately not part of this commit
 wt="$SANDBOX/wt266"
 ( cd "$d" && git worktree add -q -b wt266-branch "$wt" )
+printf '%s' "$backlog_ok" > "$d/BACKLOG.md"   # untracked, written after the worktree already exists
+check_nofile "the worktree never received the untracked BACKLOG.md" "$wt/BACKLOG.md"
 run "$cr" "$wt" --quiet
-check_status "a worktree invocation finds the main checkout's BACKLOG.md, not silently skipped" 0 "$STATUS"
+check_status "a worktree invocation finds the main checkout's untracked BACKLOG.md, not silently skipped" 0 "$STATUS"
 
 # --- a `dir #N` inside a fenced code example is not a real citation ---------------------------------
 doc_fenced="# doc
@@ -114,6 +124,36 @@ An illustrative example: \`dir #202\` is not a real citation here.
 d="$(mk_repo "$backlog_ok" "$doc_backtick")"
 run "$cr" "$d" --quiet
 check_status "a backtick-quoted dir #N is not treated as a citation -> exit 0" 0 "$STATUS"
+
+# --- a slash-separated shorthand citation list is fully extracted, not just its first number --------
+# A bare `grep -oE 'dir #[0-9]+'` only matches a fully-spelled reference and silently drops every bare
+# `#N` in a shorthand list like "dir #201/#214" — a real shape already shipped in this repo's own
+# docs/delegation.md:221, found live by this ticket's own review reproducing the exact bug class
+# tools/lib/dir-tickets.sh's `extract_dir_tickets` (promoted from tools/self/doctor.sh, dir #274) was
+# hardened against. #214 here is dead; if only #201 were extracted, this would wrongly read as clean.
+doc_shorthand="# doc
+
+Cites dir #5/#214 as a slash-separated shorthand list.
+"
+d="$(mk_repo "$backlog_ok" "$doc_shorthand")"
+run "$cr" "$d" --quiet
+check_status "the second, shorthand-form number in a slash list is caught as dead -> exit 1" 1 "$STATUS"
+check_contains "the shorthand-form number is individually extracted and reported" "$OUT" "DEAD dir #214"
+
+# --- an unreadable (not just absent) BACKLOG.md degrades the same silent way, never a false DEAD -----
+# `chmod 000` is a no-op for a root reader (this project's own known CI trap — the alpine-busybox CI
+# leg runs as root), so this assertion only means what it says when this test itself is run as a
+# non-root user; guarded accordingly, matching the project's own documented pattern for this exact
+# trap. Without the `-r` check, `blank_fenced_blocks` failing to open the file inside a `< <(...)`
+# process substitution is invisible to `set -e`/`pipefail`, so the script would silently treat the
+# file as having zero headings and report DEAD for every citation instead of skipping.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mk_repo "$backlog_ok" "$doc_ok")"
+  chmod 000 "$d/BACKLOG.md"
+  run "$cr" "$d" --quiet
+  check_status "an unreadable BACKLOG.md degrades to a skip, not a false DEAD -> exit 0" 0 "$STATUS"
+  chmod 644 "$d/BACKLOG.md"
+fi
 
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal

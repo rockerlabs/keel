@@ -814,34 +814,13 @@ _semver_max() {
 # A hyphen that ISN'T a range (prose like "dir #208 - fixed the extraction", a spaced dash) never
 # reaches either branch: the range suffix requires a digit immediately after the `-`, with no space,
 # so the anchor below stops at "dir #208" and the loose dash is left alone.
-_extract_dir_tickets() {
-  sed -E 's/`[^`]*`//g' \
-    | awk '
-    { line = $0
-      if (line == "") { if (buf != "") { print buf; buf = "" }; next }
-      if (buf != "") {
-        if (line ~ /^[ \t]*#[0-9]+([,;\/[:space:]]+#[0-9]+)*[,;]?[ \t]*$/) { line = buf " " line }
-        else { print buf }
-        buf = ""
-      }
-      if (line ~ /,[ \t]*$/) { sub(/[ \t]*$/, "", line); buf = line }
-      else { print line }
-    }
-    END { if (buf != "") print buf }
-  ' \
-    | grep -oE 'dir #[0-9]+(-[0-9]+)?([,;/[:space:]]+(and[[:space:]]+)?#[0-9]+(-[0-9]+)?)*' \
-    | grep -oE '#[0-9]+(-[0-9]+)?' \
-    | awk -F'[#-]' '
-        /-/ { lo = $2 + 0; hi = $3 + 0
-              if (hi < lo) { print "dir #" lo; print "dir #" hi; next }
-              if (hi - lo >= 500) { print "dir #" lo "-" hi " (range too large to expand, dir #274)"; next }
-              for (i = lo; i <= hi; i++) print "dir #" i
-              next }
-        { print "dir #" $2 }
-      ' \
-    | sort -u \
-    || true
-}
+#
+# Promoted to tools/lib/dir-tickets.sh (dir #266, its second consumer: citation-resolvability.sh) —
+# this is now a one-line wrapper so neither call site below nor this file's own 225 tests need to
+# change. See that lib file for the full extraction logic and its comments.
+# shellcheck source=tools/lib/dir-tickets.sh
+. "$self_dir/../lib/dir-tickets.sh"
+_extract_dir_tickets() { extract_dir_tickets; }
 
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
 # release-in-preparation section's own introducing commit the pending-release allowance below stays
