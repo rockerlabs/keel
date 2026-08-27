@@ -211,6 +211,35 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   `accepted — original`); `docs/drydock.md`'s roles section ties per-phase cost tallying to the
   orchestrator's own bookkeeping, since the orchestrator needs no separate wiring to read it. Pin-tested
   in `tests/test_drydock_doc.sh`, mutation-verified (red without the fix, green with it).
+- `tools/self/doctor.sh`'s `_extract_dir_tickets()` (dir #237's commit-vs-CHANGELOG reconciliation
+  check) still silently dropped tickets past the first in four real-precedent shapes dir #273 left as
+  a named residual: `"dir #208 and #211"`, `"dir #208; #211"`, `"dir #208/#211/#212"` (commit
+  `1515d7a`'s own title is an unrecognized instance of this exact shape), and a numeric range
+  (`"dir #104-107"` — real batch-close commits `f4109e72`/`21e984bfd9a`), plus a shorthand list
+  wrapped across a commit-message line break (dir #274). A range is an EXPANSION, not a separator list
+  — `dir #104-107` names four tickets while writing only two numbers, so pulling just the two
+  endpoints would have silently lost the middle ticket while looking complete; the fix expands every
+  ticket in the span (capped at 500) instead. The line-wrap join only fires when the preceding line
+  ends in a trailing comma, not a blanket newline-to-space merge, so it can't stitch one commit's
+  trailing ticket onto an unrelated next commit's leading bare `#N` when multiple commit bodies are
+  concatenated. A cross-session review of this same fix caught three malformed-range edge cases the
+  first draft missed: a reversed range (`"#107-104"`) is now treated as two bare ticket references
+  rather than looping backwards into nothing; an absurdly wide range (past the 500-ticket cap) now
+  emits a deliberately unmatchable marker line rather than silently truncating to one endpoint — loud,
+  not a quiet re-creation of the same drop-without-saying-so defect one layer deeper; a spaced hyphen
+  after a ticket number (ordinary prose, e.g. `"dir #208 - fixed the extraction"`) is confirmed not to
+  misparse as a range, since the range suffix requires a digit immediately after the `-` with no
+  space. Each of the four shapes plus all three edge cases is mutation-proved separately in
+  `tests/test_self_doctor.sh`, plus a false-positive fixture confirming an unrelated PR/issue number
+  in ordinary prose is never swept in as a ticket. An operator-run `/code-review medium` pass caught
+  two more real gaps: this diff's own CHANGELOG entry quoted illustrative examples like
+  `"dir #104-107"` in backticks, and the new range/slash support made those examples newly parseable
+  as if they were real citations — fixed by stripping backtick-quoted inline spans before extraction,
+  the same idiom already used elsewhere in this file for the same self-reference hazard; and a
+  trailing-comma line followed, with no blank line involved, by a continuation line mixing a bare
+  ticket number with other prose (`"dir #100, #105,\n#110 unrelated text"`) still fabricated a
+  ticket — fixed by requiring the continuation line to be made of nothing but ticket-list tokens
+  before joining.
 - `tools/lib/nonneg-int.sh` (dir #196) claimed to be "the ONE non-negative-integer sanitizer, shared
   by every tool that clamps a numeric env-var/arg override", but two sites still carried their own
   inline copy of the digit-shape-only guard it exists to replace (dir #242). `tools/self/doctor.sh`'s
