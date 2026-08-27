@@ -253,6 +253,26 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   the doc names the third reason. A related drift the fix exposed but didn't cause —
   `docs/delegation.md:233` states the verbatim-rails scope more broadly than `:189` does — is filed
   separately as dir #272.
+- `tools/self/doctor.sh`'s dir #237 check ("commit `dir #N` tickets vs CHANGELOG.md's `[Unreleased]`
+  section") extracted ticket references with a bare `grep -oE 'dir #[0-9]+'`, which only matches a
+  fully-spelled reference — a shorthand commit-message list like "dir #208, #211, #212" (one `dir`
+  prefix, then bare `#N` for the rest) left every trailing ticket outright invisible to the check's own
+  candidate set, not merely unflagged (dir #273; the felt case was this repo's own PR #267 commit,
+  which silently dropped #211/#212). Replaced both call sites (the commit-range scan and the
+  `[Unreleased]`-body scan) with a shared `_extract_dir_tickets` helper that first captures the whole
+  comma/whitespace-joined run starting at a `dir #N` anchor, then pulls every `#N` out of it — so a
+  shorthand list, a fully-spelled list, and a lone reference all resolve to their complete ticket sets.
+  Mutation-proven: a fixture citing a three-ticket shorthand list with none of them entered flags all
+  three (confirmed red against the pre-fix extraction, green after); a second fixture with all three
+  properly entered under `[Unreleased]` stays silent. **Narrower than "fixed", stated precisely:** the
+  extraction now recognizes a comma/whitespace-joined run, and only that — a list joined by "and", `;`,
+  or a numeric range (`dir #104-107`, which has real precedent in this repo's own history: e.g. the
+  commits closing dir #100-103 and dir #104-107) still drops every trailing ticket the same silent way
+  gap 2 did, and neither the mutation proof above nor the new fixtures exercise those shapes. Left as a
+  named residual, filed as dir #274, rather than folded in here, to keep this fix mechanical and
+  scoped. Scoped to this one gap only — the ticket's other, harder gap (a bare mention anywhere in
+  `[Unreleased]` satisfying the check even when it's a stale citation, not a fresh entry) is left for a
+  separate design pass, per the ticket's own stated preference.
 
 ## [0.7.1] — 2026-08-21
 

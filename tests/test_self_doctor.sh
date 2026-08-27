@@ -1318,4 +1318,32 @@ run "$sd" "$d" --quiet
 check_contains "no prior release tag widens to the whole history" "$OUT" "dir #903"
 check_contains "names the repo's start, not a tag, as the range" "$OUT" "since the repo's start"
 
+# dir #273 gap 2: a commit message's shorthand ticket list ("dir #910, #911, #912" — one `dir` prefix,
+# then bare `#N` for the rest, PR #267's own real shape) must not defeat the extraction. Every ticket
+# in the list is genuinely absent from [Unreleased] here (mutation-proof: red before the fix, since
+# `grep -oE 'dir #[0-9]+'` alone only ever surfaced #910 and left #911/#912 outright invisible to the
+# candidate set, not merely unflagged).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #910, #911, #912 shorthand ticket list" )
+run "$sd" "$d" --quiet
+check_contains "shorthand list: first ticket flagged" "$OUT" "dir #910"
+check_contains "shorthand list: second (bare #N) ticket flagged too" "$OUT" "dir #911"
+check_contains "shorthand list: third (bare #N) ticket flagged too" "$OUT" "dir #912"
+
+# same shorthand commit list, but all three are properly entered under [Unreleased] (spelled out in
+# full there, as convention requires) -> none flagged. Proves the tightened extraction doesn't just
+# widen the candidate set, it also matches correctly against a fully-spelled [Unreleased] body.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- dir #910, dir #911, dir #912: shorthand ticket list\n\n%s\n' \
+  "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #910, #911, #912 shorthand ticket list" )
+run "$sd" "$d" --quiet
+check_absent "shorthand list, all three entered: none flagged" "$OUT" "absent from CHANGELOG.md's [Unreleased] section"
+check_status "still exit 0" 0 "$STATUS"
+
 summary
