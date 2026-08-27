@@ -1368,17 +1368,21 @@ case "${1:-}" in
             # equals current HEAD. A legacy/unstamped bare `skip` (written before this fix, or if sha
             # resolution ever failed at write time) has no digest to check and stays withheld, same as
             # today — the safe default whenever the evidence is missing, not just when it's contradicted.
+            # One arm, not two: a bare `skip` (no stamp) and a stamped `skip:<measurement>:<sha>` that
+            # mismatches current HEAD both fail the identical "is there a digest, and does it match"
+            # test. `##*:` takes the LAST colon-separated field, which is the sha whenever one was
+            # stamped (the free-text measurement in between may itself contain no colon, but nothing
+            # requires that — greedy-from-the-end is what makes this robust either way); on a bare
+            # `skip` with no colon at all, `##*:` is a no-op, so comparing the result back to the whole
+            # string is how "no stamp existed" is told apart from "a stamp existed and it was empty".
             case "$r_outcome" in
-              skip:*)
+              skip|skip:*)
                 r_depth_sha="${r_outcome##*:}"
+                [ "$r_depth_sha" = "$r_outcome" ] && r_depth_sha=""
                 if [ -z "$r_depth_sha" ] || [ "$r_depth_sha" != "$current_head" ]; then
-                  _note_unrecovered "$r_step" "step 4 re-sized fresh (the recorded skip was decided at a different commit than current HEAD — re-confirm skip, or size fresh, for this diff)"
+                  _note_unrecovered "$r_step" "step 4 re-sized fresh (no proof the recorded skip was decided for current HEAD — an unstamped/legacy skip, or one decided at a different commit; re-confirm skip, or size fresh, for this diff)"
                   continue
                 fi
-                ;;
-              skip)
-                _note_unrecovered "$r_step" "step 4 re-sized fresh (an inherited skip is never carried — a skip must be chosen for THIS diff)"
-                continue
                 ;;
             esac
             ;;
