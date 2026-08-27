@@ -658,6 +658,26 @@ check_link "B15D nothing removed — the CLI symlink survives" "$B15D/bin/keel"
 check_file "B15D nothing removed — FRAMEWORK.md survives" "$B15D/FRAMEWORK.md"
 check_file "B15D INSTANCE.md (user data) untouched" "$B15D/INSTANCE.md"
 
+# --- B15E: dir #233 (found by PR #244's own /code-review high pass) — the SAME manifest-less
+# heuristic listing must not read an unrelated user directory literally named `keel` at the home root
+# as Keel-owned. Same fixture shape as B15D, but keel/ is replaced with a foreign directory before the
+# dry-run: ownership is CORE.md being a symlink (or a KEEL-NOGIT trim), not the keel/ entry's mere
+# existence. CLAUDE.md still carries the rails import line, so the heuristic-listing branch is still
+# reached the same way B15D reaches it — only the keel/ ownership evidence itself is swapped out. ------
+B15E="$SANDBOX/b15e-foreign-keel-dir/.claude"
+inst --home "$B15E" --no-hooks
+check_status "B15E install succeeds" 0 "$STATUS"
+rm -f "$B15E/.keel/install-manifest.claude"   # simulate a pre-0.7 (manifest-less) home
+rm -rf "$B15E/keel"
+mkdir -p "$B15E/keel"
+printf 'my own stuff, not Keel\n' > "$B15E/keel/notes.txt"   # unrelated dir, same name, not Keel-owned
+
+unin --home "$B15E" --dry-run
+check_status "B15E dry-run over a manifest-less home falls through -> exit 0" 0 "$STATUS"
+check_absent "B15E dry-run does NOT claim the foreign keel/ dir would be removed" "$OUT" "would remove  keel"
+check_dir "B15E foreign keel/ dir untouched" "$B15E/keel"
+check_file "B15E foreign keel/notes.txt untouched" "$B15E/keel/notes.txt"
+
 # --- B16: the mode/home mismatch refusal for a home where NEITHER mode ever recorded a manifest
 # still fires, using the same context-file evidence — built entirely by hand, with install.sh never
 # invoked, so no manifest exists anywhere at this home. dir #150 folded this into the general
