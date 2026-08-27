@@ -62,6 +62,16 @@ the convention [`commands/backlog.md`](../commands/backlog.md) step 3b reads and
 Labeling at filing time is what keeps the tail visible without a retroactive re-read of every ticket the
 way v0.6.0's ~20-ticket tail needed.
 
+**Which findings clear the bar to become a ticket at all** is
+[`docs/verification-economics.md`](verification-economics.md)'s filing bar — behavioural, a new
+class, or a guard gap on an invariant-bearing surface. Everything else is dispositioned
+`no action — <reason>` in the audit report and, if it names a real defect, added to the project's
+standing list — never a ticket of its own; filing one for every sub-bar finding is how a synthesis
+pass reproduces dir #85's snowball at a different layer. The blocker-vs-tail ranking above stays this
+phase's own step; the doctrine's per-release debt budget is the reason the tail should also stay
+small — a fixed quota of tagged tickets, the rest an untagged background pool taken as passengers, not
+neglect.
+
 ## Phase 3 — batch by file-affinity
 
 Group filed tickets into batches that touch disjoint files; disjoint batches can run as parallel sessions,

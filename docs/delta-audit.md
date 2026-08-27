@@ -101,7 +101,12 @@ This is the durable public referent a future run points at instead of re-derivin
      here **and**, if the finding names a real defect, add it to the project's standing list: that
      doc is explicit that a record living only in a report body is unschedulable, so the list is what
      makes this a persist rather than a discard. Without this disposition a session has only "ticket
-     it or lose it", which is how a run files one ticket per residual;
+     it or lose it", which is how a run files one ticket per residual. **Mark each finding `induced`
+     or `original`** per that doc's run-profile field 6: `induced` when it lands in a region an
+     earlier wave's fix actually touched *and* you can state the causal path in one sentence,
+     `original` otherwise — both halves required, or the mark over- or under-counts. A run's first
+     wave has no prior fix to be induced from, so every finding there is trivially `original`; mark it
+     anyway, since the run record's rate (`induced / total`) needs the denominator too;
    - `## NOT checked` — anything in scope you skipped or couldn't verify, stated plainly.
 7. **Don't trust a plan's snapshot.** Re-derive counts and lists live at pickup — the repo may have
    moved since the plan was written. The anchor stays FIXED even as `origin/main` moves past it
@@ -136,6 +141,14 @@ because a session following this procedure needs the operative rule, not just a 
 The blind-then-reconcile method is the generalized [`docs/delegation.md`](delegation.md) shape this
 leg instantiates — see its "Blind-then-reconcile" section for the two-phase reviewer contract stated
 independently of this application.
+
+**The orchestrator's bookkeeping (the table's own "all bookkeeping" cell) includes the run profile's
+other during-the-run field.** [`docs/verification-economics.md`](verification-economics.md)'s
+per-leg cost (field 5) is not something `run-record.md`'s stub reconstructs at verdict time — record
+each leg's sessions spawned, model tier + effort, and token spend as it completes, or `unmeasured`
+where the harness doesn't report it, never a fabricated zero. This is the same discipline the
+`induced`/`original` mark above applies to findings as they're written: a field with no capture step
+upstream of it does not fill itself when the run closes.
 
 **Fixes are a separate, gated phase, not part of any audit session above.** Every role through
 S-final is Protocol rule 1's read-only — a `fix-before-tag` disposition (§8's report contract) is a
@@ -207,6 +220,14 @@ A release is tag-ready only when:
   Alpine/BusyBox leg found real defects a GNU-only pass missed, in this project's own history).
 - **Suite evidence comes from a clean worktree or CI, never the operator's own main checkout** — a
   real run's own main checkout produced a false FAIL once, costing a diagnosis round mid-run.
+
+**This bar is coverage, not stopping.** It answers "is the run's bookkeeping complete" — every row
+verdicted, on a re-resolved SHA, with CI green on clean evidence. It does not by itself answer "was
+this run allowed to stop where it did" — that is
+[`docs/verification-economics.md`](verification-economics.md)'s Clause A: two independent diverse
+legs, run in parallel on the same state, together yielding no behavioural findings and no new class.
+A run can satisfy every bullet above while a diverse leg's silence is still one round short of
+Clause A's two — the verifier checks both before declaring tag-ready, never the coverage bar alone.
 
 **The operator tags. No session in this procedure runs `git tag`.**
 

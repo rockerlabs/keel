@@ -297,4 +297,13 @@ pin "verifier.md's cross-file variant states the scope-C classes an agent actual
   "$verifier" 'three more classes apply' \
   "the executable phase-3 template, not just drydock.md's narrative doc, must name the code claim classes or an agent running it on a scope-C batch never looks for them"
 
+# --- dir #270: phase 7 step 1's review-history entry uses the doctrine's run profile as its field
+# list, and treats cost/induced-defect marks as during-the-run captures, not a verdict-time guess ---
+pin "phase 7 step 1 links the doctrine's run profile" "$doc" \
+  '](verification-economics.md)'"'"'s run profile as the field list' \
+  "expected step 1's field list to be the doctrine's six-field profile, not an ad hoc list"
+pin "phase 7 step 1 states cost/induced marks are during-the-run captures" "$doc" \
+  'the entry reconstructs from memory' \
+  "expected step 1 to say when fields 5/6 are captured, not just that they exist"
+
 summary

@@ -67,6 +67,20 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
   seven lessons are pin-tested across `tests/test_delegation_doc.sh`, `tests/test_drydock_doc.sh`, and
   `tests/test_delta_audit_doc.sh` — each
   new pin verified live to fail against the pre-fix docs.
+- `docs/delta-audit.md`, `docs/release-audit.md`, and `docs/drydock.md` wire the three remaining
+  verification-economics decision points dir #230's own PR left unwired (dir #270). `delta-audit.md`
+  §8's tag-ready bar now says explicitly that it is a coverage check, not the doctrine's Clause A
+  stopping rule — a run can satisfy every ledger-completeness bullet while still owing a diverse leg's
+  second silent round. `release-audit.md` phase 2's "file tickets" step now cites the doctrine's
+  filing bar, so a synthesis pass doesn't ticket every sub-bar finding the way dir #85's campaign did.
+  `drydock.md` phase 7 step 1's review-history entry now uses the doctrine's six-field run profile as
+  its field list instead of an ad hoc one. A fourth gap dir #270 found separately — fields 5 (per-leg
+  cost) and 6 (induced/original) were defined only as verdict-time fields in `run-record.md`'s stub,
+  with no upstream capture step telling a session to mark them during the run — is closed in
+  `delta-audit.md`'s Protocol (rule 6 now marks each finding `induced`/`original` as it's written) and
+  its roles section (the orchestrator now tallies per-leg cost as each leg completes); `drydock.md`
+  phase 7 step 1 points at the same discipline. Pin-tested across `tests/test_delta_audit_doc.sh`,
+  `tests/test_release_audit_doc.sh`, and `tests/test_drydock_doc.sh`.
 
 ### Added
 

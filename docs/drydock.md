@@ -442,9 +442,16 @@ justified demoting the class rather than fixing it a fifth time.
 
 ## Phase 7 — summary, ratchet, extraction
 
-1. **A dated entry in your review-history log** — per-class finding counts, token spend, models used,
-   the baseline SHA. **Trends compare per class, never totals**: a total moves with scope, so a
-   smaller number can mean a cleaner tree or a narrower run, and by itself tells you neither.
+1. **A dated entry in your review-history log**, using
+   [`docs/verification-economics.md`](verification-economics.md)'s run profile as the field list:
+   behavioural defects, new-vs-known classes, which layer found what, whether an upstream gate should
+   have caught it, cost per leg, and induced defects — plus this run's own identity fields (baseline
+   SHA, scope). **Trends compare per class, never totals**: a total moves with scope, so a smaller
+   number can mean a cleaner tree or a narrower run, and by itself tells you neither. Cost and
+   induced-defect marks are during-the-run captures, not something the entry reconstructs from memory
+   afterward: tally each role's cost as it finishes and mark each surviving finding
+   `induced`/`original` as it's triaged — the same discipline
+   [`docs/delta-audit.md`](delta-audit.md) applies to its own sessions.
 2. **The ratchet** — one ticket per demoted class, each carrying the run's live case as its
    red-to-green test. This is the step that makes the next run cheaper. **Which findings become
    tickets at all** is the filing bar in
