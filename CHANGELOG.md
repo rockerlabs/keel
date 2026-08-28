@@ -265,9 +265,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `docs/reference.md`'s tool table — steer at `enable <dir>`. That gap is a 0.7.2 delta finding, not
   inherited debt: `_impact_auto_migrate` does not exist at `v0.7.1` at all, so it was introduced
   earlier in this same release cycle rather than before it. It predates this reorder, which neither
-  creates nor worsens it, and it is fixed in its own batch rather than folded in here. Both halves of that are pre-existing and
-  unchanged here — `origin/main` makes the identical call from its dispatch allowlist — and are now
-  named in the code rather than left inside a sentence reading as though the invariant were closed. Also
+  creates nor worsens it, and it is fixed in its own batch rather than folded in here — named in the
+  code rather than left inside a sentence reading as though the invariant were closed. Also
   regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
   the legacy marker and create no store entry, and — the direction that actually keeps the reorder
   honest, since a "does not migrate" assertion passes just as well on code where auto-migration was

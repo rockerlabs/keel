@@ -785,10 +785,12 @@ check_nofile "auto-migrate removed the legacy in-tree log" "$arepo/.keel/impact-
 # --- `enable` must auto-migrate BEFORE it creates the store entry (the ordering invariant) --------
 # impact_store_enable() unconditionally `mkdir -p`s the store, and _impact_auto_migrate's own
 # idempotency guard is `[ -d "$store" ] && return 0`. So if `enable` ever ran without auto-migrate
-# having gone first, that mkdir would permanently satisfy the guard and no future call — `enable`,
-# `add`, `event`, `rollup` — would ever sweep the legacy in-tree marker in: an adopter's pre-keel
-# history stranded for the life of the project, silently, with the rest of this suite still green.
-# The invariant is stated in keel-impact.sh's own dispatch comment; before this block nothing
+# having gone first, that mkdir would permanently satisfy the guard and no AUTOMATIC path — `enable`,
+# `add`, `event`, `rollup` — would ever sweep the legacy in-tree marker in again: an adopter's pre-keel
+# history left behind silently, with the rest of this suite still green. (Recoverable by an explicit
+# `migrate`, never automatically — see the note below the assertions; the harm is the missing signal.)
+# The invariant is stated at keel-impact.sh's _impact_begin, near the top of that file (this batch
+# removed the dispatch block it used to sit at); before this block nothing
 # executed it, which is exactly why fix-queue BATCH 3 ordered this pin ahead of its reorder.
 enrepo="$(legacy_log_repo carried-by-enable)"
 enrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$enrepo")"

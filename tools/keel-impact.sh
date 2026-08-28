@@ -102,7 +102,9 @@ _impact_auto_migrate() {
 # guard (`[ -d "$store" ] && return 0`) is permanently satisfied by a store that was created empty, and
 # AUTO-migration is then dead for that project: no later `enable`/`add`/`event`/`rollup` will ever sweep
 # the legacy in-tree marker in. Calibrate the harm correctly, though — it is silence, not data loss.
-# The files keep resolving and working in place via impact_ledger_path's own legacy rungs, and an
+# Each legacy file keeps resolving and working from wherever it physically is — impact_ledger_path's
+# legacy rung is a PER-FILE test, so a stranded project whose marker is only impact-events.log ends up
+# split, that log in-tree and a later ledger/evidence in the store — and an
 # EXPLICIT `migrate` still recovers them (reproduced: after the stranding, `migrate .` exits 0 and
 # carries the marker into the store). What the operator never gets is any signal that the automatic
 # path stopped; only doctor's W-KEEL-LEGACY names `migrate` for them. Pinned by
@@ -124,10 +126,9 @@ _impact_auto_migrate() {
 # and a legacy CWD gets migrated as a side effect of a command that named a different project. This is
 # NOT inherited debt: _impact_auto_migrate does not exist at v0.7.1 (649ae00) at all, so every defect
 # in it belongs to the 0.7.2 range — it predates this reorder, which neither creates nor worsens it,
-# but it is not older than the release. Tracked as its own fix-before-tag batch. Both halves are PRE-EXISTING and unchanged
-# by the reordering (origin/main runs the identical call from its dispatch allowlist) — stated here
-# rather than silently left inside a sentence that would otherwise read as "this invariant is closed".
-# The real fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.
+# but it is not older than the release. Tracked as its own fix-before-tag batch. It is named here
+# rather than left inside a sentence that would otherwise read as "this invariant is closed". The real
+# fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.
 #
 # $LEDGER/$LOG/$EVIDENCE are initialised empty, unconditionally, as a defensive default for a command
 # that never calls _impact_begin: it reads them as "" under `set -u` instead of crashing on an unbound
