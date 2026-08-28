@@ -238,10 +238,12 @@ verifier checks both before declaring tag-ready, never the coverage bar alone.
 Copy-paste-ready skeletons, one per role. Every prompt below adopts the Protocol (§4) **by
 reference** — restating all 8 rules in every prompt is exactly the bloat a reference avoids — but
 **carries the rails block below verbatim, not by reference.** This is
-[`docs/delegation.md`](delegation.md)'s own promise (`docs/delegation.md:156`) applied honestly:
-[`docs/drydock.md`](drydock.md)'s three shipped role templates cite the pattern but don't literally
-carry this block, which is exactly the defect a real run's own audit found in them (dir #208) — a
-second template set repeating that gap is the one outcome this section exists to prevent.
+[`docs/delegation.md`](delegation.md)'s own promise (`docs/delegation.md:189`) applied honestly:
+[`docs/drydock.md`](drydock.md)'s worker and verifier role templates (auditor, code-auditor, verifier)
+now carry this block verbatim — dir #208 closed the gap a real run's own audit found in auditor and
+verifier (code-auditor already carried it, from dir #204). The fixer, a mutator rather than a worker
+or verifier, carries only the narrower DELEGATION RUN line per `docs/delegation.md`'s own template
+split — a second template set repeating that gap is the one outcome this section exists to prevent.
 
 ```
 - You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
@@ -414,11 +416,12 @@ moment a second run's lessons don't fit it.
 
 ## See also
 
-- **[`docs/release-audit.md`](release-audit.md) phase 6** — the caller. Its three-point mandate
-  (cross-PR seams, whole-delta stale-phrase sweep, residual-ledger check) survives here as the depth
-  heuristic §5's whole-read sessions apply within the derived universe.
-- **[`docs/drydock.md`](drydock.md)** — the same role machinery, scoped to the whole tree and prose
-  only; its "Incremental runs" section cross-references this doc for the release-range shape.
+- **[`docs/release-audit.md`](release-audit.md) phase 6** — the caller. Its three points (cross-PR
+  seams, whole-delta stale-phrase sweep, residual-ledger check) survive here as the depth heuristic
+  §5's whole-read sessions apply within the derived universe.
+- **[`docs/drydock.md`](drydock.md)** — the same role machinery, scoped to the whole tree (§1's prose
+  and code both, not one release range); its "Incremental runs" section cross-references this doc for
+  the release-range shape.
 - [`docs/verification-economics.md`](verification-economics.md) — the reasoning behind the
   diversity-leg skip-requires-an-operator-decision rail (§5 states the rail itself), and the home of
   the stopping rule and filing bar this procedure's runs are governed by. Neither restated here.
