@@ -1011,8 +1011,12 @@ cmd_migrate() {
 #
 # ALLOWLIST, not a denylist (dir #251 review finding; a denylist version of this guard was then found
 # live to still auto-migrate on an unrecognized command, e.g. a typo — fix-queue.md BATCH 1 follow-up).
-# Only `add`/`event`/`enable`/`rollup` actually read or write $LEDGER/$LOG/$EVIDENCE, so only those get
-# _impact_auto_migrate run first. Everything else is read-only by contract and must never trigger a real
+# Only `add`/`event`/`rollup` actually read or write $LEDGER/$LOG/$EVIDENCE; `enable` is on this list
+# for a different reason (impact_store_enable() unconditionally `mkdir -p`s the store) — if it ran
+# BEFORE auto-migrate got a chance to, _impact_auto_migrate's own idempotency guard (`[ -d "$store" ] &&
+# return 0`) would then skip that repo forever, silently stranding a legacy in-tree marker no future
+# call would ever sweep in. So only those four get _impact_auto_migrate run first. Everything else is
+# read-only by contract and must never trigger a real
 # migration as a side effect: `migrate` resolves everything it needs itself via its own `[dir]` argument
 # and `--dry-run` contract ("prints the plan and writes nothing") — running auto-migrate first would
 # silently migrate the CWD's project (real files moved and removed) before cmd_migrate's own dry-run
