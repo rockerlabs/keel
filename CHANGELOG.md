@@ -232,6 +232,29 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ### Fixed
 
+- `tools/keel-impact.sh` still ran `_impact_auto_migrate` — moving and deleting a project's legacy
+  in-tree `.keel/` files — for an invocation it was about to reject, one layer below the dispatch guard
+  described in the entry below. `add --guard` with no citation and a bare `event` with no TYPE both
+  migrated and then exited 2 on a usage error (found live by the v0.7.1→v0.7.2 delta audit's verifier,
+  on the fixed state of that guard). The dispatch guard could not have caught it: argument validation
+  lives INSIDE `cmd_add`/`cmd_event`, after the dispatch, so no list drawn at the dispatch can see
+  whether a run will do any work. The guard is therefore gone, not extended a third time — the
+  allowlist below was already the second attempt to enumerate the exceptions, after a denylist. Each
+  command now calls a new `_impact_begin` itself, at the point where it knows it will proceed: after
+  its own argument validation. A verb that writes no call never migrates, which is the safe direction,
+  so `migrate`, `-h`/`--help`/no-args, an unrecognized command and any future read-only verb are
+  covered by construction rather than by being remembered. `rollup --registry` stops migrating the
+  invoking project too, as a consequence of the same rule: it sweeps other projects by explicit path
+  and never reads the cwd's own store. **One ordering constraint survives and is now pinned:**
+  `_impact_begin` must run BEFORE `impact_store_enable()`'s unconditional `mkdir -p`, or
+  `_impact_auto_migrate`'s idempotency guard (`[ -d "$store" ] && return 0`) is permanently satisfied
+  by an empty store and the legacy marker is stranded for the life of the project. That invariant was
+  documented but unexecuted — dropping `enable` from the allowlist left the suite fully green — so the
+  pin was added first, and proven to bind by that mutation, before the reordering it protects. Also
+  regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
+  the legacy marker and create no store entry, and — the direction that actually keeps the reorder
+  honest, since a "does not migrate" assertion passes just as well on code where auto-migration was
+  deleted outright — a valid `add` and a valid `event` still migrate.
 - `tools/keel-impact.sh` ran `_impact_auto_migrate` for any command the dispatch guard didn't
   explicitly exempt — so a purely read-only `--help`/`-h`/no-args invocation, or a typo'd/unrecognized
   command, silently migrated a legacy in-tree `.keel/` marker into the external store and deleted the
