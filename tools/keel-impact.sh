@@ -1044,6 +1044,6 @@ case "${1:-}" in
     else
       rollup
     fi ;;
-  -h|--help|"")   usage ;;  # kept in sync with the auto-migrate guard's own case, above
+  -h|--help|"")   usage ;;  # read-only args only — kept as a subset of the auto-migrate guard's case above (migrate has its own dispatch arm)
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac

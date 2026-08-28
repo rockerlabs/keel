@@ -783,11 +783,12 @@ mkdir -p "$hrepo/.keel"
 printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$hrepo" > "$hrepo/.keel/impact-events.log"
 hrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$hrepo")"
 for flag in --help -h ""; do
+  label="${flag:-bare no-arg}"
   run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" $flag
-  check_status "${flag:-bare no-arg} usage succeeds on a legacy in-tree project" 0 "$STATUS"
-  check_contains "${flag:-bare no-arg} still prints usage" "$OUT" "Usage:"
-  check_nodir "${flag:-bare no-arg} does NOT create a store entry" "$hrepo_store"
-  check_file "${flag:-bare no-arg} leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+  check_status "$label usage succeeds on a legacy in-tree project" 0 "$STATUS"
+  check_contains "$label still prints usage" "$OUT" "Usage:"
+  check_nodir "$label does NOT create a store entry" "$hrepo_store"
+  check_file "$label leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
 done
 
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
