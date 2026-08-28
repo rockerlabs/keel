@@ -782,21 +782,13 @@ hrepo="$(new_repo)"
 mkdir -p "$hrepo/.keel"
 printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$hrepo" > "$hrepo/.keel/impact-events.log"
 hrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$hrepo")"
-run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" --help
-check_status "--help on a legacy in-tree project succeeds" 0 "$STATUS"
-check_contains "--help still prints usage" "$OUT" "Usage:"
-check_nodir "--help does NOT create a store entry" "$hrepo_store"
-check_file "--help leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
-
-run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" -h
-check_status "-h on a legacy in-tree project succeeds" 0 "$STATUS"
-check_nodir "-h does NOT create a store entry" "$hrepo_store"
-check_file "-h leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
-
-run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL"
-check_status "bare no-arg usage on a legacy in-tree project succeeds" 0 "$STATUS"
-check_nodir "bare no-arg usage does NOT create a store entry" "$hrepo_store"
-check_file "bare no-arg usage leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+for flag in --help -h ""; do
+  run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" $flag
+  check_status "${flag:-bare no-arg} usage succeeds on a legacy in-tree project" 0 "$STATUS"
+  check_contains "${flag:-bare no-arg} still prints usage" "$OUT" "Usage:"
+  check_nodir "${flag:-bare no-arg} does NOT create a store entry" "$hrepo_store"
+  check_file "${flag:-bare no-arg} leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+done
 
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1

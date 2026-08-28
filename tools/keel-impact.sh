@@ -1017,6 +1017,9 @@ cmd_migrate() {
 # turning a preview into the real thing. `-h`/`--help`/no-args are read-only by contract too: printing
 # usage is not an operation on the project, so it must not be one either. `migrate` resolves everything
 # it needs itself; `usage` needs nothing — neither reads $LEDGER/$LOG/$EVIDENCE.
+#
+# This list must stay a superset of the dispatch case's own `-h|--help|""` below (~line 1044) — a new
+# alias added to one and not the other silently reintroduces this bug for that alias.
 case "${1:-}" in
   migrate|-h|--help|"") ;;
   *)
@@ -1041,6 +1044,6 @@ case "${1:-}" in
     else
       rollup
     fi ;;
-  -h|--help|"")   usage ;;
+  -h|--help|"")   usage ;;  # kept in sync with the auto-migrate guard's own case, above
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac
