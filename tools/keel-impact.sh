@@ -104,11 +104,17 @@ _impact_auto_migrate() {
 # in. Pinned by tests/test_keel_impact.sh ("enable CARRIED the legacy log into the store, not stranded"),
 # which is the only thing standing between that invariant and a silent regression.
 #
-# THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) — the form every real caller uses — and NOT
-# `enable DIR` for a DIR that is not the cwd. _impact_auto_migrate hardcodes `_impact_resolve_top .`,
-# so on that form it inspects the CWD while impact_store_enable mkdir's the TARGET's store: the
-# target's marker is then stranded by exactly the mechanism above, and a legacy CWD gets migrated as a
-# side effect of a command that named a different project. Both halves are PRE-EXISTING and unchanged
+# THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) and NOT `enable DIR` for a DIR that is not the
+# cwd — and the uncovered half is the one that matters more, not less. The covered form is what
+# tools/init-project.sh runs and what this tool's own refusal messages tell you to run, but
+# init-project scaffolds a FRESH project, which by construction has no legacy marker to strand. The
+# two places that address an EXISTING, pre-keel repo — install.sh's post-install output and
+# docs/reference.md's tool table — both steer at `enable <dir>`. That is the dir #251 adopter shape:
+# exactly the repo most likely to carry a legacy in-tree marker, on exactly the path this pin misses.
+# The mechanism: _impact_auto_migrate hardcodes `_impact_resolve_top .`, so on that form it inspects
+# the CWD while impact_store_enable mkdir's the TARGET's store — the target's marker is then stranded
+# by exactly the guard described above, and a legacy CWD gets migrated as a side effect of a command
+# that named a different project. Both halves are PRE-EXISTING and unchanged
 # by the reordering (origin/main runs the identical call from its dispatch allowlist) — stated here
 # rather than silently left inside a sentence that would otherwise read as "this invariant is closed".
 # The real fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.

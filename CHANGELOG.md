@@ -255,9 +255,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   by an empty store and the legacy marker is stranded for the life of the project. That invariant was
   documented but unexecuted — dropping `enable` from the allowlist left the suite fully green — so the
   pin was added first, and proven to bind by that mutation, before the reordering it protects. The pin
-  covers `enable` with no argument (or `.`), the form every real caller uses; `enable DIR` for some
-  other directory is NOT covered, because `_impact_auto_migrate` inspects the cwd rather than the named
-  directory and so strands that target by the same mechanism. Both halves of that are pre-existing and
+  covers `enable` with no argument (or `.`); `enable DIR` for some other directory is NOT covered,
+  because `_impact_auto_migrate` inspects the cwd rather than the named directory and so strands that
+  target by the same mechanism. The uncovered half is the one that matters more: the covered form is
+  what `init-project` runs, on a fresh project that has no legacy marker to strand, while both places
+  that address an existing pre-keel repo — `install.sh`'s post-install output and `docs/reference.md`'s
+  tool table — steer at `enable <dir>`. Both halves of that are pre-existing and
   unchanged here — `origin/main` makes the identical call from its dispatch allowlist — and are now
   named in the code rather than left inside a sentence reading as though the invariant were closed. Also
   regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
