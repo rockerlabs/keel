@@ -474,7 +474,8 @@ cmd_event() {
 cmd_enable() {
   local dir="${1:-.}" top already=0
   # BEFORE impact_store_enable's unconditional mkdir, never after: that is the one ordering constraint
-  # _impact_begin's own comment (top of file) states, and stranding a legacy marker is permanent.
+  # _impact_begin's own comment (top of file) states, and losing auto-migration is permanent — only an
+  # explicit `migrate` recovers a marker left behind, and nothing tells the operator to run it.
   # `enable` takes no flags to validate, so its first line is already the known-valid point.
   _impact_begin
   top="$(_impact_resolve_top "$dir")"
