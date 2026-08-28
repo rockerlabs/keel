@@ -147,7 +147,12 @@ _impact_auto_migrate() {
 # construction: impact_ledger_path's precedence ladder can only move a project ONTO the store (which
 # the first call already did) or leave it on an in-tree file that is still there. Explicit `if`, never
 # a `test &&` chain, for the same set -e reason add_cite states.
-LEDGER=""; LOG=""; EVIDENCE=""
+# _IMPACT_BEGUN is initialised here for a sharper reason than the three above: `_impact_begin` tests it
+# with `${_IMPACT_BEGUN:-}`, so WITHOUT this line an inherited value from the caller's environment turns
+# the whole function into a no-op — `enable` would then create the store without auto-migrating first
+# and strand the marker (the exact invariant below), and `add` would refuse an enabled repo as "not
+# enabled". Found by an operator-run /code-review high on this batch; reproduced both ways.
+LEDGER=""; LOG=""; EVIDENCE=""; _IMPACT_BEGUN=""
 # _impact_auto_migrate calls _impact_merge_ledger/_impact_merge_evidence, defined further down next to
 # ensure_ledger/_ledger_col_pos. That is fine: bash resolves a callee by name at CALL time, and every
 # caller of _impact_begin below is a command function that only runs after this whole file is sourced.
@@ -1109,11 +1114,16 @@ case "${1:-}" in
   enable)         shift; cmd_enable "$@" ;;
   migrate)        shift; cmd_migrate "$@" ;;
   rollup)
-    # rollup is the one verb whose argument validation lives HERE, at the dispatch, rather than in its
-    # function body the way cmd_add's and cmd_event's do. That is safe only because this arm runs
-    # entirely before any _impact_begin (rollup's own is the first line of rollup(), and
-    # rollup_registry has none at all) — so a NEW rollup flag must be parsed in this arm too, never
-    # after the call below, or it reintroduces the exact mutate-before-reject bug the rule above closes.
+    # rollup is the one verb whose flag DISPATCH lives HERE rather than in its function body the way
+    # cmd_add's and cmd_event's argument validation does. That placement is safe for the ordering rule
+    # — this arm runs entirely before any _impact_begin (rollup's own is the first line of rollup(),
+    # and rollup_registry has none at all) — so a NEW rollup flag must be parsed in this arm too, never
+    # after the call below, or it reintroduces the mutate-before-reject bug the rule above closes.
+    # It is NOT validation, though, and don't read it as such: the `else` swallows any unrecognized
+    # flag and runs a plain rollup, so `rollup --registryy FILE` migrates the cwd and prints its trend
+    # instead of reporting a typo. Same mutate-on-typo class BATCH 1 closed at the command word, still
+    # open at the flag; pre-existing here but in range for 0.7.2, and filed rather than fixed in this
+    # batch (the fix is an explicit `*)` arm, which needs its own test).
     shift
     if [ "${1:-}" = "--registry" ]; then
       rollup_registry "${2:?keel-impact: --registry needs an INSTANCE.md FILE}"

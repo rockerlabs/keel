@@ -800,6 +800,20 @@ check_dir "enable created the store entry" "$enrepo_store"
 check_contains "enable CARRIED the legacy log into the store, not stranded" \
   "$(cat "$enrepo_store/impact-events.log" 2>/dev/null)" "carried-by-enable"
 check_nofile "enable removed the now-migrated legacy in-tree log" "$enrepo/.keel/impact-events.log"
+# ...and the same pin with _IMPACT_BEGUN inherited from the caller's environment. _impact_begin tests
+# that flag with `${_IMPACT_BEGUN:-}`, so before it was initialised at top level an ambient value made
+# the whole function a no-op — `enable` then created the store WITHOUT auto-migrating first and left
+# the marker behind, defeating this very invariant while the pin above stayed green because it runs in
+# a clean environment. Found by an operator-run /code-review high; this is the accept direction under
+# a hostile environment, which is the half a clean-env pin cannot see.
+envrepo="$(legacy_log_repo carried-despite-env)"
+envrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$envrepo")"
+run_in "$envrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
+  _IMPACT_BEGUN=1 bash "$TOOL" enable .
+check_status "enable succeeds with _IMPACT_BEGUN set in the environment" 0 "$STATUS"
+check_contains "an inherited _IMPACT_BEGUN does NOT suppress the carry" \
+  "$(cat "$envrepo_store/impact-events.log" 2>/dev/null)" "carried-despite-env"
+check_nofile "an inherited _IMPACT_BEGUN does NOT strand the legacy log" "$envrepo/.keel/impact-events.log"
 # and the loss is not merely deferred: a later plain resolve hits the same already-enabled guard, so
 # if the carry above had not happened no AUTOMATIC path would ever retry it. (An explicit `migrate`
 # still would — reproduced — which is why the harm here is silence rather than data loss.)
@@ -842,8 +856,11 @@ done
 # exit 2 on a usage error. Verified live by the v0.7.1->v0.7.2 delta audit's verifier, on the fixed
 # state of the two guards above. The fix is structural, not a third list: auto-migrate now runs from
 # inside each command, at the point where it knows it will do its work. So this loop is not just the
-# two reported cases — it is every way each of these verbs can be rejected, which is what the guard
-# now covers by construction rather than by enumeration.
+# two reported cases — it is every rejection these verbs reach through their own `case` arms, which the
+# guard now covers by construction rather than by enumeration. Not exhaustive of every possible exit:
+# a flag given with no value at all (`add --gap`, `add --silent`, `add --asof`, `add --since`) dies on
+# the `${2:?}` expansion with exit 1 rather than 2, so it is not in this loop — verified separately that
+# those also migrate nothing, since the expansion is inside the parse loop and so before _impact_begin.
 irepo="$(legacy_log_repo blocked)"
 irepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$irepo")"
 # One fixture for the whole loop on purpose: since no case may migrate, the legacy marker surviving
