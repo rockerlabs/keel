@@ -1020,7 +1020,11 @@ cmd_migrate() {
 # no-args need nothing — `usage` is a static heredoc. An unrecognized command is about to exit 2 without
 # touching project state, so it needs nothing either — the exact case a denylist missed. An allowlist
 # fails SAFE here: a future read-only verb, or a typo of any verb, silently gets no auto-migrate (the
-# same as `-h`/`migrate` already don't) rather than a denylist's blind spot silently granting one.
+# same as `-h`/`migrate` already don't) rather than a denylist's blind spot silently granting one. The
+# cost of that safety: this list must stay a match for the dispatch case's own mutating arms below — a
+# future STATE-CHANGING command added there and forgotten here doesn't reintroduce the mutate-before-
+# reject bug (it just falls through unmigrated, same as `migrate`/`-h` do today), but it does mean that
+# command silently loses auto-migration until this list is updated too.
 case "${1:-}" in
   add|event|enable|rollup)
     _impact_auto_migrate || true
