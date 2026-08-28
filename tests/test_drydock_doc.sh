@@ -272,8 +272,10 @@ marker='DELEGATION RUN: wrap duties are centralized — this session does NOT ru
 pin "fixer.md carries the centralized-wrap marker verbatim" "$fixer" "$marker" \
   "expected fixer.md (the mutator instantiation) to carry the same marker the Mutator template requires"
 
-# --- docs/delta-audit.md §1 and docs/reference.md's inventory row: both called drydock "prose only"
-# and PR2's own Done criterion requires the claim corrected (the dir #256 class) --------------------
+# --- docs/delta-audit.md §1, docs/reference.md's inventory row, and drydock.md's own Incremental
+# runs section all called drydock (or its incremental scope) "prose only" — PR2's own Done criterion
+# requires the claim corrected on every surface (the dir #256 class), not just the two that name the
+# module from outside it --------------------------------------------------------------------------
 check_absent "delta-audit.md §1 no longer calls drydock prose-only" \
   "$(cat "$delta_audit")" 'the whole tree, prose only'
 pin "delta-audit.md §1 now says prose and code" "$delta_audit" 'prose and code both, by default' \
@@ -283,6 +285,11 @@ check_absent "reference.md's inventory row no longer calls it a prose-audit run"
 pin "reference.md's inventory row now says prose and code surface" "$reference" \
   'tracked prose and code surface' \
   "expected the Tools table row to reflect scope C"
+check_absent "drydock.md's own Incremental runs section no longer calls its scope prose-only" \
+  "$(tr '\n' ' ' < "$doc")" "incremental scope is prose"
+pin "drydock.md's own Incremental runs section now says every measured scope" "$doc" \
+  'every measured scope — prose (A, B) and code (C) alike' \
+  "the third surface PR1 left saying \"prose only\": the section's own claim about itself, falsified once --prev started reaching scope C"
 
 # --- /code-review medium findings: three more stale/missing surfaces the fourth template exposed ----
 pin "the file contract section points at code-auditor.md's extension" "$doc" \
