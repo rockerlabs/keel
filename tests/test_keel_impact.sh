@@ -774,6 +774,30 @@ check_dir "auto-migrate created the store entry" "$arepo_store"
 check_contains "auto-migrate carried the legacy log into the store" "$(cat "$arepo_store/impact-events.log" 2>/dev/null)" "secret-guard"
 check_nofile "auto-migrate removed the legacy in-tree log" "$arepo/.keel/impact-events.log"
 
+# --- -h/--help/no-args are read-only: must NOT trigger auto-migrate (found live, delta audit A2a-1) ---
+# _impact_auto_migrate used to run unconditionally at top-level for anything but `migrate` — so a plain
+# `--help` on a legacy in-tree project silently migrated it (real files moved, .keel/ removed) before
+# usage ever printed. Usage is read-only by contract; it must leave the project exactly as found.
+hrepo="$(new_repo)"
+mkdir -p "$hrepo/.keel"
+printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$hrepo" > "$hrepo/.keel/impact-events.log"
+hrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$hrepo")"
+run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" --help
+check_status "--help on a legacy in-tree project succeeds" 0 "$STATUS"
+check_contains "--help still prints usage" "$OUT" "Usage:"
+check_nodir "--help does NOT create a store entry" "$hrepo_store"
+check_file "--help leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+
+run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" -h
+check_status "-h on a legacy in-tree project succeeds" 0 "$STATUS"
+check_nodir "-h does NOT create a store entry" "$hrepo_store"
+check_file "-h leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+
+run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL"
+check_status "bare no-arg usage on a legacy in-tree project succeeds" 0 "$STATUS"
+check_nodir "bare no-arg usage does NOT create a store entry" "$hrepo_store"
+check_file "bare no-arg usage leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1
 run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard "e" --gap none   # 100

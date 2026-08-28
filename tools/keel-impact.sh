@@ -1009,18 +1009,23 @@ cmd_migrate() {
 # Deferred from just after sourcing tools/lib/impact-store.sh (search "EVENT_TYPES=" above): every
 # function _impact_auto_migrate calls now exists, so resolve here, once, before dispatch.
 #
-# NEVER for `migrate` itself (dir #251 review finding): _impact_auto_migrate is keyed off the CWD's
-# main checkout, unconditionally — but `migrate` has its own explicit `[dir]` argument and its own
-# `--dry-run` contract ("prints the plan and writes nothing"). Running auto-migrate first would
-# silently migrate the CWD's project (real files moved and removed) before cmd_migrate's own dry-run
-# logic ever ran, then report "nothing to move" — turning a preview into the real thing. `migrate`
-# resolves everything it needs itself; it never reads $LEDGER/$LOG/$EVIDENCE.
-if [ "${1:-}" != "migrate" ]; then
-  _impact_auto_migrate || true
-  LEDGER="$(impact_ledger_path)"
-  LOG="$(impact_log_path)"
-  EVIDENCE="$(impact_evidence_path)"
-fi
+# NEVER for `migrate`, `-h`/`--help`, or the bare no-arg usage path (dir #251 review finding, extended
+# for the same reasoning): _impact_auto_migrate is keyed off the CWD's main checkout, unconditionally —
+# but `migrate` has its own explicit `[dir]` argument and its own `--dry-run` contract ("prints the plan
+# and writes nothing"). Running auto-migrate first would silently migrate the CWD's project (real files
+# moved and removed) before cmd_migrate's own dry-run logic ever ran, then report "nothing to move" —
+# turning a preview into the real thing. `-h`/`--help`/no-args are read-only by contract too: printing
+# usage is not an operation on the project, so it must not be one either. `migrate` resolves everything
+# it needs itself; `usage` needs nothing — neither reads $LEDGER/$LOG/$EVIDENCE.
+case "${1:-}" in
+  migrate|-h|--help|"") ;;
+  *)
+    _impact_auto_migrate || true
+    LEDGER="$(impact_ledger_path)"
+    LOG="$(impact_log_path)"
+    EVIDENCE="$(impact_evidence_path)"
+    ;;
+esac
 
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
