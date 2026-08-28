@@ -1009,20 +1009,20 @@ cmd_migrate() {
 # Deferred from just after sourcing tools/lib/impact-store.sh (search "EVENT_TYPES=" above): every
 # function _impact_auto_migrate calls now exists, so resolve here, once, before dispatch.
 #
-# NEVER for `migrate`, `-h`/`--help`, or the bare no-arg usage path (dir #251 review finding, extended
-# for the same reasoning): _impact_auto_migrate is keyed off the CWD's main checkout, unconditionally —
-# but `migrate` has its own explicit `[dir]` argument and its own `--dry-run` contract ("prints the plan
-# and writes nothing"). Running auto-migrate first would silently migrate the CWD's project (real files
-# moved and removed) before cmd_migrate's own dry-run logic ever ran, then report "nothing to move" —
-# turning a preview into the real thing. `-h`/`--help`/no-args are read-only by contract too: printing
-# usage is not an operation on the project, so it must not be one either. `migrate` resolves everything
-# it needs itself; `usage` needs nothing — neither reads $LEDGER/$LOG/$EVIDENCE.
-#
-# This list must stay a superset of the dispatch case's own `-h|--help|""` a few lines below — a new
-# alias added to one and not the other silently reintroduces this bug for that alias.
+# ALLOWLIST, not a denylist (dir #251 review finding; a denylist version of this guard was then found
+# live to still auto-migrate on an unrecognized command, e.g. a typo — fix-queue.md BATCH 1 follow-up).
+# Only `add`/`event`/`enable`/`rollup` actually read or write $LEDGER/$LOG/$EVIDENCE, so only those get
+# _impact_auto_migrate run first. Everything else is read-only by contract and must never trigger a real
+# migration as a side effect: `migrate` resolves everything it needs itself via its own `[dir]` argument
+# and `--dry-run` contract ("prints the plan and writes nothing") — running auto-migrate first would
+# silently migrate the CWD's project (real files moved and removed) before cmd_migrate's own dry-run
+# logic ever ran, then report "nothing to move", turning a preview into the real thing. `-h`/`--help`/
+# no-args need nothing — `usage` is a static heredoc. An unrecognized command is about to exit 2 without
+# touching project state, so it needs nothing either — the exact case a denylist missed. An allowlist
+# fails SAFE here: a future read-only verb, or a typo of any verb, silently gets no auto-migrate (the
+# same as `-h`/`migrate` already don't) rather than a denylist's blind spot silently granting one.
 case "${1:-}" in
-  migrate|-h|--help|"") ;;
-  *)
+  add|event|enable|rollup)
     _impact_auto_migrate || true
     LEDGER="$(impact_ledger_path)"
     LOG="$(impact_log_path)"
@@ -1044,6 +1044,6 @@ case "${1:-}" in
     else
       rollup
     fi ;;
-  -h|--help|"")   usage ;;  # read-only args only — kept as a subset of the auto-migrate guard's case above (migrate has its own dispatch arm)
+  -h|--help|"")   usage ;;
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac
