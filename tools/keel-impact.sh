@@ -50,8 +50,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # design (called with `|| true`): any failure here just leaves the legacy file in place for `enable`/
 # `migrate` to handle properly later, never worth aborting a plain `add`/`rollup`/`event` over.
 _impact_auto_migrate() {
+  local dir="${1:-.}"
   local top store f any=0 all_untracked=1
-  top="$(_impact_resolve_top .)"
+  top="$(_impact_resolve_top "$dir")"
   [ -n "$top" ] && [ -d "$top/.keel" ] || return 0
   store="$(impact_store_dir "$top")"
   [ -d "$store" ] && return 0   # already enabled — nothing to auto-migrate
@@ -111,30 +112,25 @@ _impact_auto_migrate() {
 # tests/test_keel_impact.sh ("enable CARRIED the legacy log into the store, not stranded"), which is
 # the only thing standing between that invariant and a silent regression.
 #
-# THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) and NOT `enable DIR` for a DIR that is not the
-# cwd — and the uncovered half is the one that matters more, not less. The covered form is what
-# tools/init-project.sh runs and what this tool's own refusal messages tell you to run — and
-# init-project is safe for a durable reason, not an incidental one: it `cd`s into its target BEFORE
-# calling `enable .`, so it stays on the covered path even when re-run (it is idempotent) against an
-# existing repo that does carry a legacy marker, which is then carried rather than stranded. The
-# two places that address an EXISTING, pre-keel repo — install.sh's post-install output and
-# docs/reference.md's tool table — both steer at `enable <dir>`. That is the dir #251 adopter shape:
-# exactly the repo most likely to carry a legacy in-tree marker, on exactly the path this pin misses.
-# The mechanism: _impact_auto_migrate hardcodes `_impact_resolve_top .`, so on that form it inspects
-# the CWD while impact_store_enable mkdir's the TARGET's store — the target then loses auto-migration
-# by exactly the guard described above (recoverable by an explicit `migrate`, never automatically),
-# and a legacy CWD gets migrated as a side effect of a command that named a different project. This is
-# NOT inherited debt: _impact_auto_migrate does not exist at v0.7.1 (649ae00) at all, so every defect
-# in it belongs to the 0.7.2 range — it predates this reorder, which neither creates nor worsens it,
-# but it is not older than the release. Tracked as its own fix-before-tag batch. It is named here
-# rather than left inside a sentence that would otherwise read as "this invariant is closed". The real
-# fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.
+# UNTIL dir #251 delta finding 5a's fix, the pin above covered only `enable` WITH NO ARGUMENT (or
+# `.`) — `enable DIR` for a DIR that is not the cwd was the uncovered half, and it mattered more, not
+# less: install.sh's post-install output and docs/reference.md's tool table both steer an adopter with
+# an EXISTING, pre-keel repo at exactly that form, which is exactly the shape most likely to carry a
+# legacy in-tree marker. The mechanism was that _impact_auto_migrate hardcoded `_impact_resolve_top .`,
+# so `enable DIR` inspected the CALLER's cwd while impact_store_enable mkdir'd the TARGET's store — the
+# target then permanently lost auto-migration by the guard above (recoverable only by an explicit
+# `migrate`, never automatically), while an unrelated legacy CWD could get migrated as a side effect of
+# a command naming a different project. Fixed by giving _impact_auto_migrate (and _impact_begin) a
+# [DIR] parameter and having cmd_enable pass its own $dir through instead of relying on the default
+# cwd. Pinned by tests/test_keel_impact.sh ("enable DIR from elsewhere carries the TARGET's legacy
+# marker, not the caller's cwd").
 #
 # $LEDGER/$LOG/$EVIDENCE are initialised empty, unconditionally, as a defensive default for a command
 # that never calls _impact_begin: it reads them as "" under `set -u` instead of crashing on an unbound
 # variable. Nothing today relies on it — every read of the three (ensure_ledger, ensure_evidence,
 # _impact_require_enabled, rollup, cmd_add, cmd_event) sits downstream of an _impact_begin, and the
-# commands that skip _impact_begin (`migrate`, usage, an unrecognized command, `rollup --registry`)
+# commands that skip _impact_begin (`migrate`, usage, an unrecognized command, `rollup --registry`,
+# an unrecognized rollup flag)
 # read none of them. So do NOT read this line as the thing that makes those branches safe; the "" they
 # actually see comes from impact_ledger_path returning empty for a never-enabled repo. Its one real
 # cost, worth stating: it turns a FUTURE state-changing command that forgets its _impact_begin call
@@ -160,12 +156,13 @@ LEDGER=""; LOG=""; EVIDENCE=""; _IMPACT_BEGUN=""
 # became a function definition rather than a call, the constraint went away and the definition moved
 # back up here, next to the function it wraps.)
 _impact_begin() {
+  local dir="${1:-.}"
   if [ -n "${_IMPACT_BEGUN:-}" ]; then return 0; fi
   _IMPACT_BEGUN=1
-  _impact_auto_migrate || true
-  LEDGER="$(impact_ledger_path)"
-  LOG="$(impact_log_path)"
-  EVIDENCE="$(impact_evidence_path)"
+  _impact_auto_migrate "$dir" || true
+  LEDGER="$(impact_ledger_path "$dir")"
+  LOG="$(impact_log_path "$dir")"
+  EVIDENCE="$(impact_evidence_path "$dir")"
 }
 EVENT_TYPES="hold guard fire hit miss friction"
 
@@ -483,7 +480,8 @@ cmd_enable() {
   # left behind is recovered only by an explicit `migrate`, which only a separate `doctor` run
   # (W-KEEL-LEGACY) ever tells the operator to run.
   # `enable` takes no flags to validate, so its first line is already the known-valid point.
-  _impact_begin
+  # Pass $dir through, not bare — see _impact_begin's own comment, top of file, dir #251 finding 5a.
+  _impact_begin "$dir"
   top="$(_impact_resolve_top "$dir")"
   impact_enabled "$dir" && already=1
   # The store's own absolute path is an internal implementation detail (never inside the project's own
@@ -1119,19 +1117,18 @@ case "${1:-}" in
     # — this arm runs entirely before any _impact_begin (rollup's own is the first line of rollup(),
     # and rollup_registry has none at all) — so a NEW rollup flag must be parsed in this arm too, never
     # after the call below, or it reintroduces the mutate-before-reject bug the rule above closes.
-    # It is NOT validation, though, and don't read it as such: the `else` swallows any unrecognized
-    # flag and runs a plain rollup, so `rollup --registryy FILE` migrates the cwd and prints its trend
-    # instead of reporting a typo. Same mutate-on-typo class BATCH 1 closed at the command word, still
-    # open at the flag; pre-existing here but in range for 0.7.2, and filed rather than fixed in this
-    # batch (the fix is an explicit `*)` arm, which needs its own test).
+    # The `*)` arm below is what makes this real validation: an earlier version's `else` swallowed any
+    # unrecognized flag and ran a plain rollup, so `rollup --registryy FILE` migrated the cwd and
+    # printed its trend instead of reporting a typo — the same mutate-on-typo class BATCH 1 closed at
+    # the command word, reopened one layer down at the flag (dir #251 delta finding 5b). Reject before
+    # any of the case arms below can call into rollup()/rollup_registry() and touch project state.
     shift
-    if [ "${1:-}" = "--registry" ]; then
-      rollup_registry "${2:?keel-impact: --registry needs an INSTANCE.md FILE}"
-    elif [ "${1:-}" = "--retro" ]; then
-      rollup retro
-    else
-      rollup
-    fi ;;
+    case "${1:-}" in
+      --registry) rollup_registry "${2:?keel-impact: --registry needs an INSTANCE.md FILE}" ;;
+      --retro)    rollup retro ;;
+      "")         rollup ;;
+      *)          printf 'keel-impact: unknown rollup flag %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    esac ;;
   -h|--help|"")   usage ;;
   *) printf 'keel-impact: unknown command %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac

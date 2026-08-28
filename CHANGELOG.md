@@ -275,6 +275,25 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   which would otherwise re-run the whole resolution — measured at 14 `git worktree list` forks for a
   single `add` against 7 before, on the tool's hottest verb, purely to re-derive three variables it
   had already resolved.
+- The two remaining in-range instances of `tools/keel-impact.sh`'s mutate-before-reject class, both
+  named as gaps by the entry above rather than fixed there (dir #251 delta findings 5a and 5b).
+  **`enable DIR`** for some directory other than the caller's cwd stranded the *target's* legacy
+  in-tree marker instead of carrying it: `_impact_auto_migrate` hardcoded `_impact_resolve_top .`, so
+  it inspected the *caller's* cwd while `impact_store_enable` `mkdir`'d the *target's* store — the
+  target's own idempotency guard was then permanently satisfied by an empty store, and no later
+  `add`/`event`/`rollup` from inside it would ever sweep the marker in again (recoverable only by an
+  explicit `migrate`, never automatically). This is exactly the shape `install.sh`'s post-install
+  output and `docs/reference.md`'s tool table steer an adopter with an existing, pre-keel repo at.
+  Fixed by threading a `[DIR]` parameter through `_impact_auto_migrate` and `_impact_begin`, with
+  `cmd_enable` passing its own `$dir` instead of relying on the default cwd. **A typo'd `rollup`
+  flag** — `--registryy` for `--registry`, e.g. — fell through the dispatch's `else` arm into a plain,
+  migrating `rollup` instead of being reported: the third and final layer of this release's
+  mutate-before-reject class (the command word, then validation order, now the flag). Fixed with an
+  explicit `*)` arm that rejects an unrecognized `rollup` flag before any state-touching code runs.
+  Both pinned in `tests/test_keel_impact.sh`, mutation-proven: reverting 5a's fix turns exactly its own
+  new pin red; reverting 5b's turns its own new pin red plus two pre-existing assertions on a shared
+  fixture the reverted code's own migration side effect pollutes, an artifact of fixture reuse rather
+  than of either fix's own scope.
 - `tools/keel-impact.sh` ran `_impact_auto_migrate` for any command the dispatch guard didn't
   explicitly exempt — so a purely read-only `--help`/`-h`/no-args invocation, or a typo'd/unrecognized
   command, silently migrated a legacy in-tree `.keel/` marker into the external store and deleted the

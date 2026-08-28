@@ -822,6 +822,26 @@ check_status "a rollup after enable still succeeds" 0 "$STATUS"
 check_contains "the carried event is still the store's, after enable already ran" \
   "$(cat "$enrepo_store/impact-events.log" 2>/dev/null)" "carried-by-enable"
 
+# --- `enable DIR` from elsewhere must carry the TARGET's legacy marker, not the caller's cwd's
+# (dir #251 delta finding 5a) -------------------------------------------------------------------
+# _impact_auto_migrate used to hardcode _impact_resolve_top ".", so `enable DIR` run from a DIFFERENT
+# cwd inspected the CALLER's cwd instead of the target — the target's store then got mkdir'd empty,
+# its own idempotency guard permanently blocked any later auto-migrate for it, and the legacy marker
+# was stranded with no signal to the operator. install.sh's post-install output and
+# docs/reference.md's tool table both steer an adopter with an EXISTING, pre-keel repo at exactly
+# this form, which is exactly the shape most likely to carry a legacy marker.
+dtrepo="$(legacy_log_repo carried-by-enable-dir)"
+dtrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$dtrepo")"
+elsewhere="$(new_repo)"
+elsewhere_store="$KEEL_IMPACT_STORE/$(store_id_for "$elsewhere")"
+run_in "$elsewhere" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$dtrepo"
+check_status "enable DIR from elsewhere succeeds" 0 "$STATUS"
+check_dir "enable DIR from elsewhere created the TARGET's store entry" "$dtrepo_store"
+check_contains "enable DIR from elsewhere CARRIED the target's legacy log into the store" \
+  "$(cat "$dtrepo_store/impact-events.log" 2>/dev/null)" "carried-by-enable-dir"
+check_nofile "enable DIR from elsewhere removed the target's legacy in-tree log" "$dtrepo/.keel/impact-events.log"
+check_nodir "enable DIR from elsewhere did not create a store for the caller's own cwd" "$elsewhere_store"
+
 # --- -h/--help/no-args are read-only: must NOT trigger auto-migrate (found live, delta audit A2a-1) ---
 # _impact_auto_migrate used to run unconditionally at top-level for anything but `migrate` — so a plain
 # `--help` on a legacy in-tree project silently migrated it (real files moved, .keel/ removed) before
@@ -896,6 +916,19 @@ run_in "$irepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVID
 check_status "a refused registry sweep exits 2" 2 "$STATUS"
 check_nodir "a refused registry sweep does NOT create a store entry" "$irepo_store"
 check_file "a refused registry sweep leaves the legacy log in place" "$irepo/.keel/impact-events.log"
+
+# `rollup --registryy` (one transposed character) is the FLAG layer of the same mutate-before-reject
+# class (dir #251 delta finding 5b): an unrecognized rollup flag used to fall through to a bare
+# `else` and run a plain rollup instead of reporting the typo — migrating the cwd's legacy marker
+# along the way and saying nothing about the bad flag. The fix is an explicit `*)` arm in the rollup
+# dispatch that rejects before any of rollup()/rollup_registry() ever runs, so — like the unrecognized-
+# command case above, and unlike the loop above it — this never reaches _impact_begin at all.
+run_in "$irepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
+  bash "$TOOL" rollup --registryy /no/such/registry
+check_status "an unknown rollup flag exits 2" 2 "$STATUS"
+check_contains "the rejection names the bad flag" "$OUT" "--registryy"
+check_nodir "an unknown rollup flag does NOT create a store entry" "$irepo_store"
+check_file "an unknown rollup flag leaves the legacy log in place" "$irepo/.keel/impact-events.log"
 
 sweepreg="$SANDBOX/INSTANCE-sweep.md"
 {
