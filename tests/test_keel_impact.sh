@@ -856,11 +856,12 @@ done
 # exit 2 on a usage error. Verified live by the v0.7.1->v0.7.2 delta audit's verifier, on the fixed
 # state of the two guards above. The fix is structural, not a third list: auto-migrate now runs from
 # inside each command, at the point where it knows it will do its work. So this loop is not just the
-# two reported cases — it is every rejection these verbs reach through their own `case` arms, which the
-# guard now covers by construction rather than by enumeration. Not exhaustive of every possible exit:
-# a flag given with no value at all (`add --gap`, `add --silent`, `add --asof`, `add --since`) dies on
-# the `${2:?}` expansion with exit 1 rather than 2, so it is not in this loop — verified separately that
-# those also migrate nothing, since the expansion is inside the parse loop and so before _impact_begin.
+# two reported cases: every row is a way one of these verbs refuses with the tool's OWN exit 2, which
+# is precisely what the loop asserts below — the guard now covers them by construction rather than by
+# enumeration. Deliberately not every possible non-zero exit: a flag given with no value at all
+# (`add --gap`, `add --silent`, `add --asof`, `add --since`) dies on bash's `${2:?}` expansion with
+# exit 1, not 2, so it is no row here — verified separately that those migrate nothing either, the
+# expansion being inside the parse loop and so before _impact_begin.
 irepo="$(legacy_log_repo blocked)"
 irepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$irepo")"
 # One fixture for the whole loop on purpose: since no case may migrate, the legacy marker surviving
@@ -883,7 +884,7 @@ event bogustype
 INVALID
 
 # `rollup --registry` belongs to the same class but is protected by a DIFFERENT mechanism, so it gets
-# its own block rather than a row in the loop above: those eight are covered by "validation precedes
+# its own block rather than a row in the loop above: those seven are covered by "validation precedes
 # _impact_begin INSIDE the command", whereas rollup_registry never calls _impact_begin at all — it
 # sweeps other projects by explicit path and never reads the invoking repo's own store. Folding it into
 # the loop would make a future regression here read as a usage-validation bug rather than the scope
