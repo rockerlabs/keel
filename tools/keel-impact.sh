@@ -1018,7 +1018,7 @@ cmd_migrate() {
 # usage is not an operation on the project, so it must not be one either. `migrate` resolves everything
 # it needs itself; `usage` needs nothing — neither reads $LEDGER/$LOG/$EVIDENCE.
 #
-# This list must stay a superset of the dispatch case's own `-h|--help|""` below (~line 1044) — a new
+# This list must stay a superset of the dispatch case's own `-h|--help|""` a few lines below — a new
 # alias added to one and not the other silently reintroduces this bug for that alias.
 case "${1:-}" in
   migrate|-h|--help|"") ;;
