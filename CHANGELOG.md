@@ -241,7 +241,7 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   whether a run will do any work. The guard is therefore gone, not extended a third time — the
   allowlist below was already the second attempt to enumerate the exceptions, after a denylist. Each
   command now calls a new `_impact_begin` itself, at the point where it knows it will proceed: after
-  its own argument validation. A verb that writes no call never migrates, which is the safe direction,
+  its own argument validation. A verb that contains no such call never migrates, which is the safe direction,
   so `migrate`, `-h`/`--help`/no-args, an unrecognized command and any future read-only verb are
   covered by construction rather than by being remembered. **One adopter-visible behaviour change
   falls out of the same rule, beyond the two reported verbs:** `rollup --registry` no longer migrates
@@ -254,7 +254,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `_impact_auto_migrate`'s idempotency guard (`[ -d "$store" ] && return 0`) is permanently satisfied
   by an empty store and the legacy marker is stranded for the life of the project. That invariant was
   documented but unexecuted — dropping `enable` from the allowlist left the suite fully green — so the
-  pin was added first, and proven to bind by that mutation, before the reordering it protects. Also
+  pin was added first, and proven to bind by that mutation, before the reordering it protects. The pin
+  covers `enable` with no argument (or `.`), the form every real caller uses; `enable DIR` for some
+  other directory is NOT covered, because `_impact_auto_migrate` inspects the cwd rather than the named
+  directory and so strands that target by the same mechanism. Both halves of that are pre-existing and
+  unchanged here — `origin/main` makes the identical call from its dispatch allowlist — and are now
+  named in the code rather than left inside a sentence reading as though the invariant were closed. Also
   regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
   the legacy marker and create no store entry, and — the direction that actually keeps the reorder
   honest, since a "does not migrate" assertion passes just as well on code where auto-migration was
@@ -274,7 +279,10 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   read-only verb, or any typo of any verb, now fails safe (no auto-migrate) by construction instead of
   needing to be remembered on a growing exemption list. Regression-tested in `tests/test_keel_impact.sh`
   for `--help`, `-h`, bare no-args, and an unrecognized command, each asserting a legacy `.keel/` marker
-  survives and no store entry is created.
+  survives and no store entry is created. **Superseded within this same release by the entry above**,
+  which removed that allowlist entirely after it was found to still mutate one layer in; the shipped
+  behaviour is the entry above's, and this one is kept only because that entry's account of how the
+  guard got here refers back to it.
 - `uninstall.sh --dry-run`'s manifest-less heuristic listing treated a `keel/` directory or symlink at
   the home root as Keel-owned by existence alone, misreporting "would remove keel" for an unrelated
   user directory that merely shared the name (dir #233). It now checks `keel/CORE.md` ownership

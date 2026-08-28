@@ -104,6 +104,15 @@ _impact_auto_migrate() {
 # in. Pinned by tests/test_keel_impact.sh ("enable CARRIED the legacy log into the store, not stranded"),
 # which is the only thing standing between that invariant and a silent regression.
 #
+# THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) — the form every real caller uses — and NOT
+# `enable DIR` for a DIR that is not the cwd. _impact_auto_migrate hardcodes `_impact_resolve_top .`,
+# so on that form it inspects the CWD while impact_store_enable mkdir's the TARGET's store: the
+# target's marker is then stranded by exactly the mechanism above, and a legacy CWD gets migrated as a
+# side effect of a command that named a different project. Both halves are PRE-EXISTING and unchanged
+# by the reordering (origin/main runs the identical call from its dispatch allowlist) — stated here
+# rather than silently left inside a sentence that would otherwise read as "this invariant is closed".
+# The real fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.
+#
 # $LEDGER/$LOG/$EVIDENCE are initialised empty, unconditionally, as a defensive default for a command
 # that never calls _impact_begin: it reads them as "" under `set -u` instead of crashing on an unbound
 # variable. Nothing today relies on it — every read of the three (ensure_ledger, ensure_evidence,
@@ -427,7 +436,7 @@ cmd_event() {
   local type="${1:-}" source="${2:-}" detail="${3:-}" key
   [ -n "$type" ] || { printf 'keel-impact: event needs a TYPE (%s)\n' "$EVENT_TYPES" >&2; exit 2 ; }
   is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
-  # Known-valid from here — only now may this run touch project state (see _impact_begin, bottom of file).
+  # Known-valid from here — only now may this run touch project state (see _impact_begin, top of file).
   _impact_begin
   if [ -z "$LOG" ]; then
     printf 'keel-impact: impact tracking not enabled — %s event not recorded (run "keel-impact.sh enable")\n' "$type" >&2
@@ -448,7 +457,7 @@ cmd_event() {
 cmd_enable() {
   local dir="${1:-.}" top already=0
   # BEFORE impact_store_enable's unconditional mkdir, never after: that is the one ordering constraint
-  # _impact_begin's own comment (bottom of file) states, and stranding a legacy marker is permanent.
+  # _impact_begin's own comment (top of file) states, and stranding a legacy marker is permanent.
   # `enable` takes no flags to validate, so its first line is already the known-valid point.
   _impact_begin
   top="$(_impact_resolve_top "$dir")"
@@ -667,7 +676,7 @@ add_cite() {
 
 cmd_add() {
   # Argument validation comes FIRST — before _impact_begin, and so before anything this run could
-  # move or delete (see _impact_begin, bottom of file). Everything down to the `--since` check is
+  # move or delete (see _impact_begin, top of file). Everything down to the `--since` check is
   # pure: add_cite/require_count/_is_iso_ts only accumulate and inspect shell variables, no file is
   # read or written, so hoisting the block above the enabled checks costs nothing and buys the
   # ordering — `add --guard` with no citation used to migrate a legacy .keel/ and then exit 2.
