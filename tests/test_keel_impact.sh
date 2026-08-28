@@ -798,8 +798,9 @@ check_dir "enable created the store entry" "$enrepo_store"
 check_contains "enable CARRIED the legacy log into the store, not stranded" \
   "$(cat "$enrepo_store/impact-events.log" 2>/dev/null)" "carried-by-enable"
 check_nofile "enable removed the now-migrated legacy in-tree log" "$enrepo/.keel/impact-events.log"
-# and the stranding is permanent, not merely deferred: a later plain resolve hits the same
-# already-enabled guard, so if the carry above had not happened there is no second chance at it.
+# and the loss is not merely deferred: a later plain resolve hits the same already-enabled guard, so
+# if the carry above had not happened no AUTOMATIC path would ever retry it. (An explicit `migrate`
+# still would — reproduced — which is why the harm here is silence rather than data loss.)
 run_in "$enrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
 check_status "a rollup after enable still succeeds" 0 "$STATUS"
 check_contains "the carried event is still the store's, after enable already ran" \

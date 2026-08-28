@@ -100,9 +100,14 @@ _impact_auto_migrate() {
 # ONE ORDERING CONSTRAINT SURVIVES, and cmd_enable carries it: _impact_begin must run BEFORE
 # impact_store_enable()'s unconditional `mkdir -p`. Otherwise _impact_auto_migrate's own idempotency
 # guard (`[ -d "$store" ] && return 0`) is permanently satisfied by a store that was created empty, and
-# the legacy in-tree marker is stranded forever — no later `enable`/`add`/`event`/`rollup` can sweep it
-# in. Pinned by tests/test_keel_impact.sh ("enable CARRIED the legacy log into the store, not stranded"),
-# which is the only thing standing between that invariant and a silent regression.
+# AUTO-migration is then dead for that project: no later `enable`/`add`/`event`/`rollup` will ever sweep
+# the legacy in-tree marker in. Calibrate the harm correctly, though — it is silence, not data loss.
+# The files keep resolving and working in place via impact_ledger_path's own legacy rungs, and an
+# EXPLICIT `migrate` still recovers them (reproduced: after the stranding, `migrate .` exits 0 and
+# carries the marker into the store). What the operator never gets is any signal that the automatic
+# path stopped; only doctor's W-KEEL-LEGACY names `migrate` for them. Pinned by
+# tests/test_keel_impact.sh ("enable CARRIED the legacy log into the store, not stranded"), which is
+# the only thing standing between that invariant and a silent regression.
 #
 # THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) and NOT `enable DIR` for a DIR that is not the
 # cwd — and the uncovered half is the one that matters more, not less. The covered form is what
@@ -114,9 +119,12 @@ _impact_auto_migrate() {
 # docs/reference.md's tool table — both steer at `enable <dir>`. That is the dir #251 adopter shape:
 # exactly the repo most likely to carry a legacy in-tree marker, on exactly the path this pin misses.
 # The mechanism: _impact_auto_migrate hardcodes `_impact_resolve_top .`, so on that form it inspects
-# the CWD while impact_store_enable mkdir's the TARGET's store — the target's marker is then stranded
-# by exactly the guard described above, and a legacy CWD gets migrated as a side effect of a command
-# that named a different project. Both halves are PRE-EXISTING and unchanged
+# the CWD while impact_store_enable mkdir's the TARGET's store — the target then loses auto-migration
+# by exactly the guard described above (recoverable by an explicit `migrate`, never automatically),
+# and a legacy CWD gets migrated as a side effect of a command that named a different project. This is
+# NOT inherited debt: _impact_auto_migrate does not exist at v0.7.1 (649ae00) at all, so every defect
+# in it belongs to the 0.7.2 range — it predates this reorder, which neither creates nor worsens it,
+# but it is not older than the release. Tracked as its own fix-before-tag batch. Both halves are PRE-EXISTING and unchanged
 # by the reordering (origin/main runs the identical call from its dispatch allowlist) — stated here
 # rather than silently left inside a sentence that would otherwise read as "this invariant is closed".
 # The real fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.

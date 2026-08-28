@@ -252,15 +252,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   **One ordering constraint survives and is now pinned:**
   `_impact_begin` must run BEFORE `impact_store_enable()`'s unconditional `mkdir -p`, or
   `_impact_auto_migrate`'s idempotency guard (`[ -d "$store" ] && return 0`) is permanently satisfied
-  by an empty store and the legacy marker is stranded for the life of the project. That invariant was
+  by an empty store and auto-migration is dead for that project from then on. The harm is silence,
+  not data loss: the files keep resolving in place, and an explicit `migrate` still recovers them —
+  what never arrives is any signal that the automatic path stopped. That invariant was
   documented but unexecuted — dropping `enable` from the allowlist left the suite fully green — so the
   pin was added first, and proven to bind by that mutation, before the reordering it protects. The pin
   covers `enable` with no argument (or `.`); `enable DIR` for some other directory is NOT covered,
   because `_impact_auto_migrate` inspects the cwd rather than the named directory and so strands that
   target by the same mechanism. The uncovered half is the one that matters more: the covered form is
-  what `init-project` runs, on a fresh project that has no legacy marker to strand, while both places
-  that address an existing pre-keel repo — `install.sh`'s post-install output and `docs/reference.md`'s
-  tool table — steer at `enable <dir>`. Both halves of that are pre-existing and
+  what `init-project` runs (safe structurally — it `cd`s into its target before `enable .`), while both
+  places that address an existing pre-keel repo — `install.sh`'s post-install output and
+  `docs/reference.md`'s tool table — steer at `enable <dir>`. That gap is a 0.7.2 delta finding, not
+  inherited debt: `_impact_auto_migrate` does not exist at `v0.7.1` at all, so it was introduced
+  earlier in this same release cycle rather than before it. It predates this reorder, which neither
+  creates nor worsens it, and it is fixed in its own batch rather than folded in here. Both halves of that are pre-existing and
   unchanged here — `origin/main` makes the identical call from its dispatch allowlist — and are now
   named in the code rather than left inside a sentence reading as though the invariant were closed. Also
   regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
