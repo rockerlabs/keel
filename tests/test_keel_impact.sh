@@ -774,6 +774,35 @@ check_dir "auto-migrate created the store entry" "$arepo_store"
 check_contains "auto-migrate carried the legacy log into the store" "$(cat "$arepo_store/impact-events.log" 2>/dev/null)" "secret-guard"
 check_nofile "auto-migrate removed the legacy in-tree log" "$arepo/.keel/impact-events.log"
 
+# --- -h/--help/no-args are read-only: must NOT trigger auto-migrate (found live, delta audit A2a-1) ---
+# _impact_auto_migrate used to run unconditionally at top-level for anything but `migrate` — so a plain
+# `--help` on a legacy in-tree project silently migrated it (real files moved, .keel/ removed) before
+# usage ever printed. Usage is read-only by contract; it must leave the project exactly as found.
+hrepo="$(new_repo)"
+mkdir -p "$hrepo/.keel"
+printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$hrepo" > "$hrepo/.keel/impact-events.log"
+hrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$hrepo")"
+for flag in --help -h ""; do
+  label="${flag:-bare no-arg}"
+  run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" $flag
+  check_status "$label usage succeeds on a legacy in-tree project" 0 "$STATUS"
+  check_contains "$label still prints usage" "$OUT" "Usage:"
+  check_nodir "$label does NOT create a store entry" "$hrepo_store"
+  check_file "$label leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+done
+
+# an unrecognized command (a plausible alias, a typo, or a future verb neither list yet knows) is
+# read-only too — it's about to exit 2 without touching project state, so it must not auto-migrate
+# first either. Found live by the operator on PR #282: the guard above used to be a DENYLIST of exempt
+# commands, which covered `-h`/`--help`/no-args by name but missed everything it hadn't named.
+for cmd in bogus help --hepl --version; do
+  run_in "$hrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" "$cmd"
+  check_status "unknown command '$cmd' exits 2" 2 "$STATUS"
+  check_contains "unknown command '$cmd' reports itself" "$OUT" "unknown command $cmd"
+  check_nodir "unknown command '$cmd' does NOT create a store entry" "$hrepo_store"
+  check_file "unknown command '$cmd' leaves the legacy log in place" "$hrepo/.keel/impact-events.log"
+done
+
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1
 run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard "e" --gap none   # 100

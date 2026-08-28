@@ -232,6 +232,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ### Fixed
 
+- `tools/keel-impact.sh` ran `_impact_auto_migrate` for any command the dispatch guard didn't
+  explicitly exempt — so a purely read-only `--help`/`-h`/no-args invocation, or a typo'd/unrecognized
+  command, silently migrated a legacy in-tree `.keel/` marker into the external store and deleted the
+  in-tree directory before usage or an error message ever printed (found live by the v0.7.1→v0.7.2
+  delta audit's cross-vendor round, A2a finding 1, HIGH; the denylist-shaped first fix still missed the
+  unrecognized-command case, caught live by the operator on the PR itself). The guard is now an
+  ALLOWLIST of the commands that actually read or write `$LEDGER`/`$LOG`/`$EVIDENCE`
+  (`add`/`event`/`enable`/`rollup`) rather than a denylist of the ones exempted by name — a future
+  read-only verb, or any typo of any verb, now fails safe (no auto-migrate) by construction instead of
+  needing to be remembered on a growing exemption list. Regression-tested in `tests/test_keel_impact.sh`
+  for `--help`, `-h`, bare no-args, and an unrecognized command, each asserting a legacy `.keel/` marker
+  survives and no store entry is created.
 - `uninstall.sh --dry-run`'s manifest-less heuristic listing treated a `keel/` directory or symlink at
   the home root as Keel-owned by existence alone, misreporting "would remove keel" for an unrelated
   user directory that merely shared the name (dir #233). It now checks `keel/CORE.md` ownership
