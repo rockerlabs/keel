@@ -3,7 +3,7 @@
 The v0.6.0 campaign (dir #85) invented its own process live: module sweeps, synthesis into tickets,
 batching by file-affinity, a model tier per batch, a narrow release-candidate (RC) pass, tail-triage.
 Every piece of it worked, but none of it was written down — it existed only in session transcripts, so
-the next release would have re-derived all of it from scratch. This doc is that write-up: seven phases,
+the next release would have re-derived all of it from scratch. This doc is that write-up: eight phases,
 each carrying the felt incident from v0.6.0 that shaped it, so the next campaign runs off it instead of
 reinventing it.
 
@@ -211,7 +211,7 @@ own "Running the audit" section states for a harness-upgrade sweep, applied here
 own run followed it.
 
 **This doc is itself subject to phase 0's rule: not a fixed verdict, a checklist to re-evaluate.** If a
-real run's findings don't fit these seven phases or phase 6's three-point mandate — a new recurring class
+real run's findings don't fit these eight phases or phase 6's three-point heuristic — a new recurring class
 of RC finding, a batching shape that didn't hold — revise this doc as part of that audit's own synthesis
 phase, the same way any other drift gets ticketed. A process doc that only one campaign ever shaped stops
 being reusable the moment a second campaign's lessons don't fit it.
