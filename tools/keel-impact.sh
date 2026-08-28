@@ -106,8 +106,10 @@ _impact_auto_migrate() {
 #
 # THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) and NOT `enable DIR` for a DIR that is not the
 # cwd — and the uncovered half is the one that matters more, not less. The covered form is what
-# tools/init-project.sh runs and what this tool's own refusal messages tell you to run, but
-# init-project scaffolds a FRESH project, which by construction has no legacy marker to strand. The
+# tools/init-project.sh runs and what this tool's own refusal messages tell you to run — and
+# init-project is safe for a durable reason, not an incidental one: it `cd`s into its target BEFORE
+# calling `enable .`, so it stays on the covered path even when re-run (it is idempotent) against an
+# existing repo that does carry a legacy marker, which is then carried rather than stranded. The
 # two places that address an EXISTING, pre-keel repo — install.sh's post-install output and
 # docs/reference.md's tool table — both steer at `enable <dir>`. That is the dir #251 adopter shape:
 # exactly the repo most likely to carry a legacy in-tree marker, on exactly the path this pin misses.
