@@ -495,6 +495,16 @@ check_contains "retro preserves the live log" "$(wc -l < "$LOG" | tr -d ' ')" "1
 
 # --- enable: opt a repo into tracking (dir #251 — an EXTERNAL store entry, nothing in-tree) -------
 store_id_for() { printf '%s' "$(cd "$1" && pwd -P)" | tr '/' '-'; }
+# legacy_log_repo MARKER — a fresh repo carrying an UNTRACKED legacy in-tree event log, the fixture
+# every auto-migrate case below needs. MARKER goes in the detail column so a test can assert which
+# repo's line was carried. The timestamp is fixed and far past the 12h ingest cap on purpose: no case
+# here wants the line ingested, only migrated. Prints the repo path; derive its store with
+# store_id_for, which is why this doesn't try to return two values.
+legacy_log_repo() {
+  local d; d="$(new_repo)"; mkdir -p "$d/.keel"
+  printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\t%s\t%s\n' "$1" "$d" > "$d/.keel/impact-events.log"
+  printf '%s' "$d"
+}
 
 erepo="$(new_repo)"
 erepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$erepo")"
@@ -764,9 +774,7 @@ check_contains "add's new row lands in the TRACKED legacy ledger" "$(cat "$prepo
 check_absent "the store's ledger was never created (nothing to write there)" "$(ls "$prepo_store" 2>/dev/null)" "ledger.md"
 
 # --- auto-migrate: an ALL-untracked legacy marker migrates silently on the next plain resolve --------
-arepo="$(new_repo)"
-mkdir -p "$arepo/.keel"
-printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$arepo" > "$arepo/.keel/impact-events.log"
+arepo="$(legacy_log_repo blocked)"
 arepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$arepo")"
 run_in "$arepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
 check_status "a plain rollup on an all-untracked legacy repo auto-migrates and succeeds" 0 "$STATUS"
@@ -782,9 +790,7 @@ check_nofile "auto-migrate removed the legacy in-tree log" "$arepo/.keel/impact-
 # history stranded for the life of the project, silently, with the rest of this suite still green.
 # The invariant is stated in keel-impact.sh's own dispatch comment; before this block nothing
 # executed it, which is exactly why fix-queue BATCH 3 ordered this pin ahead of its reorder.
-enrepo="$(new_repo)"
-mkdir -p "$enrepo/.keel"
-printf '2026-01-03T00:00:00Z\tguard\tsecret-guard\tcarried-by-enable\t%s\n' "$enrepo" > "$enrepo/.keel/impact-events.log"
+enrepo="$(legacy_log_repo carried-by-enable)"
 enrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$enrepo")"
 run_in "$enrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
 check_status "enable on a legacy in-tree project succeeds" 0 "$STATUS"
@@ -803,9 +809,7 @@ check_contains "the carried event is still the store's, after enable already ran
 # _impact_auto_migrate used to run unconditionally at top-level for anything but `migrate` — so a plain
 # `--help` on a legacy in-tree project silently migrated it (real files moved, .keel/ removed) before
 # usage ever printed. Usage is read-only by contract; it must leave the project exactly as found.
-hrepo="$(new_repo)"
-mkdir -p "$hrepo/.keel"
-printf '2026-01-02T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$hrepo" > "$hrepo/.keel/impact-events.log"
+hrepo="$(legacy_log_repo blocked)"
 hrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$hrepo")"
 for flag in --help -h ""; do
   label="${flag:-bare no-arg}"
@@ -837,9 +841,7 @@ done
 # inside each command, at the point where it knows it will do its work. So this loop is not just the
 # two reported cases — it is every way each of these verbs can be rejected, which is what the guard
 # now covers by construction rather than by enumeration.
-irepo="$(new_repo)"
-mkdir -p "$irepo/.keel"
-printf '2026-01-04T00:00:00Z\tguard\tsecret-guard\tblocked\t%s\n' "$irepo" > "$irepo/.keel/impact-events.log"
+irepo="$(legacy_log_repo blocked)"
 irepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$irepo")"
 # One fixture for the whole loop on purpose: since no case may migrate, the legacy marker surviving
 # ALL of them is a stronger assertion than a fresh repo per case would be.
@@ -858,8 +860,33 @@ add --since not-a-timestamp --guard c
 add --silent not-an-int --guard c
 event
 event bogustype
-rollup --registry /no/such/registry
 INVALID
+
+# `rollup --registry` belongs to the same class but is protected by a DIFFERENT mechanism, so it gets
+# its own block rather than a row in the loop above: those eight are covered by "validation precedes
+# _impact_begin INSIDE the command", whereas rollup_registry never calls _impact_begin at all — it
+# sweeps other projects by explicit path and never reads the invoking repo's own store. Folding it into
+# the loop would make a future regression here read as a usage-validation bug rather than the scope
+# change it would actually be. Both directions are pinned: the sweep must leave the marker alone when
+# it REFUSES, and equally when it genuinely RUNS (the case with no reported finding behind it, and so
+# the one most likely to regress unnoticed).
+run_in "$irepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
+  bash "$TOOL" rollup --registry /no/such/registry
+check_status "a refused registry sweep exits 2" 2 "$STATUS"
+check_nodir "a refused registry sweep does NOT create a store entry" "$irepo_store"
+check_file "a refused registry sweep leaves the legacy log in place" "$irepo/.keel/impact-events.log"
+
+sweepreg="$SANDBOX/INSTANCE-sweep.md"
+{
+  printf '## Projects\n\n| Name | Path | Tag |\n|------|------|-----|\n'
+  printf '| other | `%s` | x |\n' "$(new_repo)"
+} > "$sweepreg"
+run_in "$irepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
+  bash "$TOOL" rollup --registry "$sweepreg"
+check_status "a real registry sweep succeeds from a legacy in-tree repo" 0 "$STATUS"
+check_nodir "a real registry sweep does NOT migrate the INVOKING repo" "$irepo_store"
+check_file "a real registry sweep leaves the invoking repo's legacy log in place" \
+  "$irepo/.keel/impact-events.log"
 
 # ...and the ACCEPT direction, which is what actually keeps the reorder honest: an assertion that a
 # rejected run does NOT migrate passes just as happily on code where auto-migrate was deleted outright.
@@ -868,10 +895,7 @@ INVALID
 # `add` runs --no-ingest: without it, `add` would consume the migrated event out of the store log again
 # (it is older than the 12h ingest cap, so it would be stale-skipped AND removed) and the assertion
 # below would read an empty log and fail for a reason that has nothing to do with the migration.
-varepo="$(new_repo)"
-mkdir -p "$varepo/.keel"
-printf '2026-01-05T00:00:00Z\tguard\tsecret-guard\tvalid-add-still-migrates\t%s\n' "$varepo" \
-  > "$varepo/.keel/impact-events.log"
+varepo="$(legacy_log_repo valid-add-still-migrates)"
 varepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$varepo")"
 run_in "$varepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
   bash "$TOOL" add --guard "a real citation" --gap none --no-ingest
@@ -880,19 +904,16 @@ check_contains "a VALID add still auto-migrates the legacy log into the store" \
   "$(cat "$varepo_store/impact-events.log" 2>/dev/null)" "valid-add-still-migrates"
 check_nofile "a VALID add removed the legacy in-tree log" "$varepo/.keel/impact-events.log"
 
-vurepo="$(new_repo)"
-mkdir -p "$vurepo/.keel"
-printf '2026-01-05T00:00:00Z\tguard\tsecret-guard\tvalid-event-still-migrates\t%s\n' "$vurepo" \
-  > "$vurepo/.keel/impact-events.log"
-vurepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$vurepo")"
-run_in "$vurepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
+verepo="$(legacy_log_repo valid-event-still-migrates)"
+verepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$verepo")"
+run_in "$verepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
   bash "$TOOL" event guard some-source some-detail
 check_status "a VALID event succeeds on a legacy in-tree project" 0 "$STATUS"
 check_contains "a VALID event still auto-migrates the legacy log into the store" \
-  "$(cat "$vurepo_store/impact-events.log" 2>/dev/null)" "valid-event-still-migrates"
+  "$(cat "$verepo_store/impact-events.log" 2>/dev/null)" "valid-event-still-migrates"
 check_contains "the VALID event's own line landed in the store log too" \
-  "$(cat "$vurepo_store/impact-events.log" 2>/dev/null)" "some-source"
-check_nofile "a VALID event removed the legacy in-tree log" "$vurepo/.keel/impact-events.log"
+  "$(cat "$verepo_store/impact-events.log" 2>/dev/null)" "some-source"
+check_nofile "a VALID event removed the legacy in-tree log" "$verepo/.keel/impact-events.log"
 
 # --- rollup --registry: cross-project sweep over an INSTANCE.md Projects table -------------------
 pa="$(new_repo)"; run_in "$pa" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable . >/dev/null 2>&1

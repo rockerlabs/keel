@@ -243,9 +243,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   command now calls a new `_impact_begin` itself, at the point where it knows it will proceed: after
   its own argument validation. A verb that writes no call never migrates, which is the safe direction,
   so `migrate`, `-h`/`--help`/no-args, an unrecognized command and any future read-only verb are
-  covered by construction rather than by being remembered. `rollup --registry` stops migrating the
-  invoking project too, as a consequence of the same rule: it sweeps other projects by explicit path
-  and never reads the cwd's own store. **One ordering constraint survives and is now pinned:**
+  covered by construction rather than by being remembered. **One adopter-visible behaviour change
+  falls out of the same rule, beyond the two reported verbs:** `rollup --registry` no longer migrates
+  the project it is invoked from. The cross-project sweep reads every project's store by explicit
+  path and never touches the invoking repo's own, so it now leaves a legacy in-tree `.keel/` marker
+  there exactly as it found it — whether the sweep runs or refuses. Both directions are pinned by
+  tests, since no reported finding covers this one and nothing else would catch a regression.
+  **One ordering constraint survives and is now pinned:**
   `_impact_begin` must run BEFORE `impact_store_enable()`'s unconditional `mkdir -p`, or
   `_impact_auto_migrate`'s idempotency guard (`[ -d "$store" ] && return 0`) is permanently satisfied
   by an empty store and the legacy marker is stranded for the life of the project. That invariant was
@@ -254,7 +258,11 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
   the legacy marker and create no store entry, and — the direction that actually keeps the reorder
   honest, since a "does not migrate" assertion passes just as well on code where auto-migration was
-  deleted outright — a valid `add` and a valid `event` still migrate.
+  deleted outright — a valid `add` and a valid `event` still migrate. `_impact_begin` resolves once
+  per process rather than once per call: `add` ends by calling `rollup` for its trailing trend line,
+  which would otherwise re-run the whole resolution — measured at 14 `git worktree list` forks for a
+  single `add` against 7 before, on the tool's hottest verb, purely to re-derive three variables it
+  had already resolved.
 - `tools/keel-impact.sh` ran `_impact_auto_migrate` for any command the dispatch guard didn't
   explicitly exempt — so a purely read-only `--help`/`-h`/no-args invocation, or a typo'd/unrecognized
   command, silently migrated a legacy in-tree `.keel/` marker into the external store and deleted the
