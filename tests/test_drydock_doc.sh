@@ -285,6 +285,9 @@ check_absent "reference.md's inventory row no longer calls it a prose-audit run"
 pin "reference.md's inventory row now says prose and code surface" "$reference" \
   'tracked prose and code surface' \
   "expected the Tools table row to reflect scope C"
+# Flattened, not a plain `cat`: the retired phrase wraps as "...scope is\nprose..." in the pre-fix
+# doc, and a raw substring check silently passes on a wrapped line it never actually saw (the exact
+# trap fix-queue's V1 verification note names — a bare grep for the phrase returns zero either way).
 check_absent "drydock.md's own Incremental runs section no longer calls its scope prose-only" \
   "$(tr '\n' ' ' < "$doc")" "incremental scope is prose"
 pin "drydock.md's own Incremental runs section now says every measured scope" "$doc" \
