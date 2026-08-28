@@ -19,8 +19,11 @@ gate_installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
 # just makes that coverage visible to the ratchet's own literal-path check too.
 check_file "tools/lib/ledger.sh exists" "$REPO_ROOT/tools/lib/ledger.sh"
 
-# manifest_field FILE KEY — the value of a top-level key=value line (first match).
-manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1; }
+# manifest_field FILE KEY — the value of a top-level key=value line (first match). The sed capture
+# is a plain $(...) (always drains to EOF) fed to head -n1 via a here-string, not `sed ... | head`
+# (dir #280 — the identical SIGPIPE-under-pipefail shape a printf/echo producer has, sed included;
+# found by this ticket's own regression guard once its producer scope widened to include sed).
+manifest_field() { head -n1 <<< "$(sed -n "s/^$2=//p" "$1" 2>/dev/null)"; }
 
 # --- A1: fresh install per mode x layout — manifest exists, fields correct, home= is the resolved
 # target, no .keeltmp litter ------------------------------------------------------------------------

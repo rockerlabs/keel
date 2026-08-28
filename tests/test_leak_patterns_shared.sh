@@ -34,12 +34,13 @@ fi
 # --- the lib itself defines usable patterns ------------------------------------------------------
 # shellcheck source=/dev/null
 . "$lib"
-if printf '/Users/exampleuser/repo' | grep -qE "$HOME_RE"; then
+# match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
+if match '/Users/exampleuser/repo' -qE "$HOME_RE"; then
   pass "HOME_RE matches a home-directory path"
 else
   fail "HOME_RE matches a home-directory path" "did not match: $HOME_RE"
 fi
-if printf 'someone@example-corp.com' | grep -qE "$EMAIL_RE"; then
+if match 'someone@example-corp.com' -qE "$EMAIL_RE"; then
   pass "EMAIL_RE matches an email-shaped string"
 else
   fail "EMAIL_RE matches an email-shaped string" "did not match: $EMAIL_RE"

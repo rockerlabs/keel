@@ -63,16 +63,19 @@ pin "CHANGELOG.md header links docs/release-history.md" \
 headings="$(blank_fenced_blocks "$history" | grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^## //')"
 tags="$(release_tag_versions "$REPO_ROOT")"
 
+# match(), not a direct `printf | grep -qxF` pipe (dir #280 — see tests/lib.sh's match() for why;
+# reproduced live: `test_release_history.sh: line 69: printf: write error: Broken pipe` turned a
+# genuine v0.3.0 heading into a false "no entry" failure — the incident that named this ticket).
 missing_heading=""
 while IFS= read -r t; do
   [ -n "$t" ] || continue
-  printf '%s\n' "$headings" | grep -qxF "$t" || missing_heading="$missing_heading${missing_heading:+, }$t"
+  match "$headings" -qxF "$t" || missing_heading="$missing_heading${missing_heading:+, }$t"
 done <<< "$tags"
 
 missing_tag=""
 while IFS= read -r h; do
   [ -n "$h" ] || continue
-  printf '%s\n' "$tags" | grep -qxF "$h" || missing_tag="$missing_tag${missing_tag:+, }$h"
+  match "$tags" -qxF "$h" || missing_tag="$missing_tag${missing_tag:+, }$h"
 done <<< "$headings"
 
 # Duplicate detection is a separate, single-list pass — `sort | uniq -d`, not the `grep -qxF` idiom

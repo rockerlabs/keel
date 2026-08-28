@@ -301,8 +301,8 @@ fi
 # Two allowlists, deliberately SEPARATE arrays, never collapsed into one (dir #110/dir #129 watch-out):
 # harness-provided commands, each of whose call sites already handles its absence explicitly, and
 # names that are not commands at all (a filesystem path, or prose about a name an adopter may already
-# have). Checked via `printf | grep -qxF`, the same exact-line-membership idiom checks 3 and 6 already
-# use in this file, rather than a hand-rolled space-padded `case` match.
+# have). Checked via a here-string into `grep -qxF`, the same exact-line-membership idiom checks 3
+# and 6 already use in this file, rather than a hand-rolled space-padded `case` match.
 say ""
 say "● slash-command references"
 dead_cmd=0
@@ -317,6 +317,13 @@ while IFS= read -r f; do [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done 
 )
 harness_commands=(code-review simplify review)
 not_commands=(tmp setup)
+# Joined once into a plain string, then fed to grep via `<<<` (a here-string, not a pipe) — the
+# fix shape dir #195 already established just below (see its comment on `cited_in`) and dir #280
+# generalizes: a `printf ... | grep -q` pipe has printf as a live writer process that grep's own
+# early stdin-close (on match) can SIGPIPE, and under `set -o pipefail` that flips a real match into
+# a false "not found". A here-string has bash buffer the content up front, so there's no live writer
+# on the other end of grep's stdin for grep to signal.
+allow_list="$(printf '%s\n' "${harness_commands[@]}" "${not_commands[@]}")"
 if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
   # `|| true`: grep exits 1 on zero matches, which under `set -e` would otherwise abort this whole
   # script at the assignment (unlike the process-substitution loop above, a direct `var=$(cmd)`
@@ -324,7 +331,7 @@ if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
   raw_hits="$(cd "$repo_root" && grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}" 2>/dev/null || true)"
   refs="$(printf '%s\n' "$raw_hits" | cut -d: -f3- | tr -d '`/ ("*' | sort -u)"
   for name in $refs; do
-    printf '%s\n' "${harness_commands[@]}" "${not_commands[@]}" | grep -qxF "$name" && continue
+    grep -qxF "$name" <<< "$allow_list" && continue
     if [ ! -f "$repo_root/commands/$name.md" ]; then
       # `grep -m 1`, not `| head -1` (dir #195, the same SIGPIPE-under-pipefail shape dir #156 fixed for
       # `_pending_release_intro_commit`'s `git log -S`, same fix shape too — `-n 1` there, `-m 1` here):
@@ -381,6 +388,13 @@ if [ -f "$legacy_file" ] && [ -r "$legacy_file" ]; then
     [ -n "$ln" ] && legacy_list+=("$ln")
   done < "$legacy_file"
 fi
+# Joined once, fed via a here-string below (dir #280) — see allow_list above for why a plain
+# `printf ... | grep -q` pipe is unsafe here (a real hit can SIGPIPE-flip into a false miss under
+# load). Guarded on non-empty: `"${legacy_list[@]}"` on a 0-element array is an unbound-variable
+# crash under this file's `set -u` on bash 3.2 (macOS's shipped bash) — the same reason the original
+# call site below gated the expansion on `[ "${#legacy_list[@]}" -gt 0 ]` in the first place.
+legacy_joined=""
+[ "${#legacy_list[@]}" -gt 0 ] && legacy_joined="$(printf '%s\n' "${legacy_list[@]}")"
 ref_files=()
 while IFS= read -r f; do ref_files+=("$f"); done < <(
   git -C "$repo_root" ls-files -- \
@@ -459,9 +473,10 @@ if [ "${#tool_files[@]}" -gt 0 ]; then
         # new or slipped past whoever should have listed it — either way, a hard GAP, not a WARN a
         # release can quietly sail past the way dir #100's whole class did.
         # Exact-line membership test, same idiom check 6's tag/section cross-check already uses
-        # (`printf | grep -qxF`) rather than a hand-rolled loop.
+        # (a here-string into grep, not a hand-rolled loop — see legacy_joined above for why not a
+        # `printf | grep -qxF` pipe).
         legacy_hit=0
-        if [ "${#legacy_list[@]}" -gt 0 ] && printf '%s\n' "${legacy_list[@]}" | grep -qxF "$rel"; then
+        if [ -n "$legacy_joined" ] && grep -qxF "$rel" <<< "$legacy_joined"; then
           legacy_hit=1
         fi
         if [ "$legacy_hit" -eq 1 ]; then
@@ -608,7 +623,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # title (a ticket titled "...whether the RETRACTED ticket process needs revisiting..." or
       # "decide on ✅ emoji conventions"), wrongly treating it as already-tagged. Verified against
       # the real BACKLOG.md: no genuine tag there lacks the "— " prefix.
-      if printf '%s' "$heading_line" | grep -qE '— (✅|⏳|RETRACTED\b)'; then
+      if grep -qE '— (✅|⏳|RETRACTED\b)' <<< "$heading_line"; then
         continue
       fi
       body_start=$((start + 1))
@@ -626,7 +641,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # class: a negated status word ("NOT DONE yet", "explicitly NOT RETRACTED") still matches —
       # this is a cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a
       # GAP.
-      if printf '%s' "$body" | grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b'; then
+      if grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b' <<< "$body"; then
         id="$(heading_dir_id "$heading_line")"
         # WARN, not GAP: the ticket this implements (dir #87) explicitly calls this bug class
         # "Low-severity (cosmetic ... nobody re-opened stale work)" — a hard exit-1 would fail
@@ -918,7 +933,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   while IFS= read -r t; do
     [ -n "$t" ] || continue
     if [ -z "$highest_tag" ] || _semver_gt "$t" "$highest_tag"; then highest_tag="$t"; fi
-    printf '%s\n' "$sections" | grep -qxF "$t" || missing_section="$missing_section${missing_section:+, }$t"
+    grep -qxF "$t" <<< "$sections" || missing_section="$missing_section${missing_section:+, }$t"
   done <<< "$tags"
 
   # A release being PREPARED legitimately has exactly one version section with no tag yet:
@@ -996,7 +1011,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   # bound-unresolvable-fail-open / over-bound / within-bound-pending) end up at one consistent depth.
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    printf '%s\n' "$tags" | grep -qxF "$s" && continue
+    grep -qxF "$s" <<< "$tags" && continue
     # `<<<` runs the loop in this same shell, so assignments here survive it (no subshell). Negating
     # the whole compound condition (rather than manually De Morgan-expanding it) keeps this guard
     # byte-identical in meaning to the version it replaces.
@@ -1163,15 +1178,15 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
   ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body" || true)"
-  # Set difference via the same `printf | grep -qxF` per-item membership idiom check 6's pending-tag
-  # loop already uses above, not `comm` — `comm` needs no extra dependency here (it's coreutils, not
-  # guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this idiom is already
-  # this file's own established style for a small set-membership test.
+  # Set difference via the same here-string-into-`grep -qxF` per-item membership idiom check 6's
+  # pending-tag loop already uses above, not `comm` — `comm` needs no extra dependency here (it's
+  # coreutils, not guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this
+  # idiom is already this file's own established style for a small set-membership test.
   ct_missing=""
   if [ -n "$ct_commit_tickets" ]; then
     while IFS= read -r ticket; do
       [ -n "$ticket" ] || continue
-      if [ -z "$ct_unreleased_tickets" ] || ! printf '%s\n' "$ct_unreleased_tickets" | grep -qxF "$ticket"; then
+      if [ -z "$ct_unreleased_tickets" ] || ! grep -qxF "$ticket" <<< "$ct_unreleased_tickets"; then
         ct_missing="$ct_missing${ct_missing:+, }$ticket"
       fi
     done <<< "$ct_commit_tickets"

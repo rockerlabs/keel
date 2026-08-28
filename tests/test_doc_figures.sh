@@ -80,7 +80,8 @@ assert_figure() {
   # A "~N,NNN+" figure is an open-ended FLOOR — for a monotonically-growing file (CHANGELOG), assert the
   # real size is AT LEAST the floor (never an overclaim) with no upper bound, so steady growth doesn't force
   # a figure bump on every PR. A plain "~N,NNN" is still held to ±10%.
-  if printf '%s' "$row" | grep -qE '~[0-9,]+\+'; then
+  # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
+  if match "$row" -qE '~[0-9,]+\+'; then
     if [ "$actual" -ge "$doc_fig" ]; then
       pass "$label (doc ~$doc_fig+ floor vs actual ~$actual)"
       # dir #105: an open floor has no failing upper bound BY DESIGN (raising it resets the clock
@@ -135,7 +136,8 @@ assert_commands_range() {
     fail "$label" "couldn't parse a LO-HI range from: $row"; return
   fi
   # HI carries a trailing "+" → open ceiling: enforce only the LO floor per file.
-  if printf '%s' "$cell" | grep -qE '[0-9][0-9,]*\+'; then open_upper=1; fi
+  # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
+  if match "$cell" -qE '[0-9][0-9,]*\+'; then open_upper=1; fi
   for f in "$REPO_ROOT"/commands/*.md; do
     [ -f "$f" ] || continue
     [ "$(basename "$f")" = "polish.md" ] && continue
@@ -291,7 +293,9 @@ for h in "Git — mandatory rails" "Before writing code — reconcile first"; do
   else
     fail "template has droppable heading: $h" "renamed in templates/CLAUDE.md? update commands/keel-setup.md + ADAPTING.md + this list"
   fi
-  if tr -s '[:space:]' ' ' < "$REPO_ROOT/commands/keel-setup.md" | grep -qF "$h"; then
+  # The tr capture is a plain $(...) (always drains to EOF) fed to match() via a here-string, not
+  # `tr ... | grep -q` (dir #280 — same SIGPIPE shape as a printf/echo producer, any producer applies).
+  if match "$(tr -s '[:space:]' ' ' < "$REPO_ROOT/commands/keel-setup.md")" -qF "$h"; then
     pass "keel-setup trim quotes the heading: $h"
   else
     fail "keel-setup trim quotes the heading: $h" "the trim instruction no longer names this section"

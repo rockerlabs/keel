@@ -144,7 +144,7 @@ fi
 dirty="$(git status --porcelain)"
 if [ -n "$dirty" ]; then
   refuse "refusing to measure a dirty working tree — the numbers would describe no commit at all.
-$(printf '%s\n' "$dirty" | head -10 | sed 's/^/  /')
+$(head -10 <<< "$dirty" | sed 's/^/  /')
 Commit, stash, or discard the above; if it is the audit run's own output, gitignore that directory
 (ignored files are not dirt and are already excluded here)."
 fi
