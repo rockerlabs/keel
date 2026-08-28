@@ -82,10 +82,91 @@ _impact_auto_migrate() {
   fi
   rmdir "$top/.keel" 2>/dev/null || true   # only succeeds once role-3/4 files are gone too — expected to no-op
 }
-# NOTE: _impact_auto_migrate calls _impact_merge_ledger/_impact_merge_evidence, defined further down
-# next to ensure_ledger/_ledger_col_pos — so the actual call (and the LEDGER/LOG/EVIDENCE resolution
-# that depends on its result) is deferred to the bottom of this file, after every function it needs
-# exists. Search "EVENT_TYPES=" below.
+
+# THE ORDERING RULE: no project state changes until the invocation is known-valid. _impact_auto_migrate
+# MOVES and DELETES an adopter's real files, so it must not run for an invocation that is about to be
+# rejected. Two earlier versions ran it before dispatch and tried to name the exceptions there: first a
+# denylist (`migrate` by name — it still auto-migrated on any typo), then an ALLOWLIST of the four
+# state-touching verbs (which still auto-migrated for `add --guard` with no citation, and for a bare
+# `event` with no TYPE — both move the files, then exit 2 on a usage error). Both failed the same way,
+# and it is structural, not an omission: the validation that decides whether a run does any work lives
+# INSIDE cmd_add/cmd_event, AFTER the dispatch, so no list drawn at the dispatch can see it. So there is
+# no list any more. Each command calls _impact_begin itself, at the point where it knows it will do its
+# work — after its own argument validation. A verb that never calls it never migrates, which is the safe
+# direction: `migrate` (its own `[dir]`/`--dry-run` contract resolves everything itself, and a preview
+# must stay a preview), `-h`/`--help`/no-args (`usage` is a static heredoc) and an unrecognized command
+# each simply contain no call, and a future read-only verb gets that for free.
+#
+# ONE ORDERING CONSTRAINT SURVIVES, and cmd_enable carries it: _impact_begin must run BEFORE
+# impact_store_enable()'s unconditional `mkdir -p`. Otherwise _impact_auto_migrate's own idempotency
+# guard (`[ -d "$store" ] && return 0`) is permanently satisfied by a store that was created empty, and
+# AUTO-migration is then dead for that project: no later `enable`/`add`/`event`/`rollup` will ever sweep
+# the legacy in-tree marker in. Calibrate the harm correctly, though — it is silence, not data loss.
+# Each legacy file keeps resolving and working from wherever it physically is — impact_ledger_path's
+# legacy rung is a PER-FILE test, so a stranded project whose marker is only impact-events.log ends up
+# split, that log in-tree and a later ledger/evidence in the store — and an
+# EXPLICIT `migrate` still recovers them (reproduced: after the stranding, `migrate .` exits 0 and
+# carries the marker into the store). What the operator never gets is any signal that the automatic
+# path stopped; only doctor's W-KEEL-LEGACY names `migrate` for them. Pinned by
+# tests/test_keel_impact.sh ("enable CARRIED the legacy log into the store, not stranded"), which is
+# the only thing standing between that invariant and a silent regression.
+#
+# THAT PIN COVERS `enable` WITH NO ARGUMENT (or `.`) and NOT `enable DIR` for a DIR that is not the
+# cwd — and the uncovered half is the one that matters more, not less. The covered form is what
+# tools/init-project.sh runs and what this tool's own refusal messages tell you to run — and
+# init-project is safe for a durable reason, not an incidental one: it `cd`s into its target BEFORE
+# calling `enable .`, so it stays on the covered path even when re-run (it is idempotent) against an
+# existing repo that does carry a legacy marker, which is then carried rather than stranded. The
+# two places that address an EXISTING, pre-keel repo — install.sh's post-install output and
+# docs/reference.md's tool table — both steer at `enable <dir>`. That is the dir #251 adopter shape:
+# exactly the repo most likely to carry a legacy in-tree marker, on exactly the path this pin misses.
+# The mechanism: _impact_auto_migrate hardcodes `_impact_resolve_top .`, so on that form it inspects
+# the CWD while impact_store_enable mkdir's the TARGET's store — the target then loses auto-migration
+# by exactly the guard described above (recoverable by an explicit `migrate`, never automatically),
+# and a legacy CWD gets migrated as a side effect of a command that named a different project. This is
+# NOT inherited debt: _impact_auto_migrate does not exist at v0.7.1 (649ae00) at all, so every defect
+# in it belongs to the 0.7.2 range — it predates this reorder, which neither creates nor worsens it,
+# but it is not older than the release. Tracked as its own fix-before-tag batch. It is named here
+# rather than left inside a sentence that would otherwise read as "this invariant is closed". The real
+# fix is to give _impact_auto_migrate a [DIR] parameter and pass cmd_enable's own $dir.
+#
+# $LEDGER/$LOG/$EVIDENCE are initialised empty, unconditionally, as a defensive default for a command
+# that never calls _impact_begin: it reads them as "" under `set -u` instead of crashing on an unbound
+# variable. Nothing today relies on it — every read of the three (ensure_ledger, ensure_evidence,
+# _impact_require_enabled, rollup, cmd_add, cmd_event) sits downstream of an _impact_begin, and the
+# commands that skip _impact_begin (`migrate`, usage, an unrecognized command, `rollup --registry`)
+# read none of them. So do NOT read this line as the thing that makes those branches safe; the "" they
+# actually see comes from impact_ledger_path returning empty for a never-enabled repo. Its one real
+# cost, worth stating: it turns a FUTURE state-changing command that forgets its _impact_begin call
+# from a loud unbound-variable abort into a quiet, wrong "not enabled" message.
+#
+# Once per process, not once per call: cmd_add ends by calling rollup() for its trailing trend line, so
+# a second _impact_begin would re-run the whole resolution — measured at 14 `git worktree list` forks
+# for one `add` against 7 before this reordering, on the tool's hottest verb, entirely to re-derive
+# three variables cmd_add had already resolved. Resolution is stable across that window by
+# construction: impact_ledger_path's precedence ladder can only move a project ONTO the store (which
+# the first call already did) or leave it on an in-tree file that is still there. Explicit `if`, never
+# a `test &&` chain, for the same set -e reason add_cite states.
+# _IMPACT_BEGUN is initialised here for a sharper reason than the three above: `_impact_begin` tests it
+# with `${_IMPACT_BEGUN:-}`, so WITHOUT this line an inherited value from the caller's environment turns
+# the whole function into a no-op — `enable` would then create the store without auto-migrating first
+# and strand the marker (the exact invariant below), and `add` would refuse an enabled repo as "not
+# enabled". Found by an operator-run /code-review high on this batch; reproduced both ways.
+LEDGER=""; LOG=""; EVIDENCE=""; _IMPACT_BEGUN=""
+# _impact_auto_migrate calls _impact_merge_ledger/_impact_merge_evidence, defined further down next to
+# ensure_ledger/_ledger_col_pos. That is fine: bash resolves a callee by name at CALL time, and every
+# caller of _impact_begin below is a command function that only runs after this whole file is sourced.
+# (An earlier version executed the auto-migrate at the BOTTOM of the file for that reason; once it
+# became a function definition rather than a call, the constraint went away and the definition moved
+# back up here, next to the function it wraps.)
+_impact_begin() {
+  if [ -n "${_IMPACT_BEGUN:-}" ]; then return 0; fi
+  _IMPACT_BEGUN=1
+  _impact_auto_migrate || true
+  LEDGER="$(impact_ledger_path)"
+  LOG="$(impact_log_path)"
+  EVIDENCE="$(impact_evidence_path)"
+}
 EVENT_TYPES="hold guard fire hit miss friction"
 
 usage() {
@@ -377,6 +458,8 @@ cmd_event() {
   local type="${1:-}" source="${2:-}" detail="${3:-}" key
   [ -n "$type" ] || { printf 'keel-impact: event needs a TYPE (%s)\n' "$EVENT_TYPES" >&2; exit 2 ; }
   is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
+  # Known-valid from here — only now may this run touch project state (see _impact_begin, top of file).
+  _impact_begin
   if [ -z "$LOG" ]; then
     printf 'keel-impact: impact tracking not enabled — %s event not recorded (run "keel-impact.sh enable")\n' "$type" >&2
     return 0
@@ -395,6 +478,12 @@ cmd_event() {
 # into the store, `add` auto-ingests them.
 cmd_enable() {
   local dir="${1:-.}" top already=0
+  # BEFORE impact_store_enable's unconditional mkdir, never after: that is the one ordering constraint
+  # _impact_begin's own comment (top of file) states, and losing auto-migration is permanent — a marker
+  # left behind is recovered only by an explicit `migrate`, which only a separate `doctor` run
+  # (W-KEEL-LEGACY) ever tells the operator to run.
+  # `enable` takes no flags to validate, so its first line is already the known-valid point.
+  _impact_begin
   top="$(_impact_resolve_top "$dir")"
   impact_enabled "$dir" && already=1
   # The store's own absolute path is an internal implementation detail (never inside the project's own
@@ -477,6 +566,10 @@ _impact_require_enabled() {
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
 rollup() {
   local mode="${1:-live}"
+  # This function reads THIS project's ledger, so it migrates. rollup_registry deliberately does not
+  # call _impact_begin: it sweeps OTHER projects' stores by explicit path and never touches the cwd's
+  # own state, so `rollup --registry` now refuses an absent or unnamed FILE having moved nothing.
+  _impact_begin
   _impact_require_enabled || return 2
   ensure_ledger
   # A heredoc always supplies a trailing newline, so `read <<EOF $(cmd) EOF` reads an empty line
@@ -606,17 +699,11 @@ add_cite() {
 }
 
 cmd_add() {
-  _impact_require_enabled || exit 2
-  # $EVIDENCE can resolve empty independently of $LEDGER (a partial env override — only
-  # $KEEL_IMPACT_LEDGER set, not $KEEL_IMPACT_EVIDENCE — on a never-enabled repo), so
-  # _impact_require_enabled's own $LEDGER-only check isn't sufficient here (rollup shares that check
-  # and never touches $EVIDENCE, so broadening it there would wrongly refuse a legitimate rollup).
-  # Caught HERE, before anything is written — not inside ensure_evidence, which only runs partway
-  # through this function's OWN write sequence, after the ledger row is already appended (found live
-  # by an operator-run max-depth review's delta pass: the earlier, narrower fix left `add` able to
-  # half-complete — a scored row with no evidence block, breaking evidence.md's own stated invariant,
-  # "a count in the ledger equals the number of citations here").
-  [ -n "$EVIDENCE" ] || { printf 'keel-impact: no evidence path resolved (a partial env override?) — run keel-impact.sh enable\n' >&2; exit 2; }
+  # Argument validation comes FIRST — before _impact_begin, and so before anything this run could
+  # move or delete (see _impact_begin, top of file). Everything down to the `--since` check is
+  # pure: add_cite/require_count/_is_iso_ts only accumulate and inspect shell variables, no file is
+  # read or written, so hoisting the block above the enabled checks costs nothing and buys the
+  # ordering — `add --guard` with no citation used to migrate a legacy .keel/ and then exit 2.
   local silent="" gap="" ingest=1 retro=0 asof="" since=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -649,6 +736,21 @@ cmd_add() {
   if [ -n "$since" ] && ! _is_iso_ts "$since"; then
     printf 'keel-impact: --since must be an ISO-UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)\n' >&2; exit 2
   fi
+
+  # Known-valid from here: resolve this project's store (auto-migrating a legacy in-tree marker first),
+  # then refuse if it was never enabled at all.
+  _impact_begin
+  _impact_require_enabled || exit 2
+  # $EVIDENCE can resolve empty independently of $LEDGER (a partial env override — only
+  # $KEEL_IMPACT_LEDGER set, not $KEEL_IMPACT_EVIDENCE — on a never-enabled repo), so
+  # _impact_require_enabled's own $LEDGER-only check isn't sufficient here (rollup shares that check
+  # and never touches $EVIDENCE, so broadening it there would wrongly refuse a legitimate rollup).
+  # Caught HERE, before anything is written — not inside ensure_evidence, which only runs partway
+  # through this function's OWN write sequence, after the ledger row is already appended (found live
+  # by an operator-run max-depth review's delta pass: the earlier, narrower fix left `add` able to
+  # half-complete — a scored row with no evidence block, breaking evidence.md's own stated invariant,
+  # "a count in the ledger equals the number of citations here").
+  [ -n "$EVIDENCE" ] || { printf 'keel-impact: no evidence path resolved (a partial env override?) — run keel-impact.sh enable\n' >&2; exit 2; }
 
   # --- auto-ingest deterministic events the shell layer recorded (zero-token, portable) -----------
   # Each logged event becomes a cited event too: its `source | detail` is the citation, so the objective
@@ -1006,44 +1108,22 @@ cmd_migrate() {
   fi
 }
 
-# Deferred from just after sourcing tools/lib/impact-store.sh (search "EVENT_TYPES=" above): every
-# function _impact_auto_migrate calls now exists, so resolve here, once, before dispatch.
-#
-# ALLOWLIST, not a denylist (dir #251 review finding; a denylist version of this guard was then found
-# live to still auto-migrate on an unrecognized command, e.g. a typo — fix-queue.md BATCH 1 follow-up).
-# Only `add`/`event`/`rollup` actually read or write $LEDGER/$LOG/$EVIDENCE; `enable` is on this list
-# for a different reason (impact_store_enable() unconditionally `mkdir -p`s the store) — if it ran
-# BEFORE auto-migrate got a chance to, _impact_auto_migrate's own idempotency guard (`[ -d "$store" ] &&
-# return 0`) would then skip that repo forever, silently stranding a legacy in-tree marker no future
-# call would ever sweep in. So only those four get _impact_auto_migrate run first. Everything else is
-# read-only by contract and must never trigger a real
-# migration as a side effect: `migrate` resolves everything it needs itself via its own `[dir]` argument
-# and `--dry-run` contract ("prints the plan and writes nothing") — running auto-migrate first would
-# silently migrate the CWD's project (real files moved and removed) before cmd_migrate's own dry-run
-# logic ever ran, then report "nothing to move", turning a preview into the real thing. `-h`/`--help`/
-# no-args need nothing — `usage` is a static heredoc. An unrecognized command is about to exit 2 without
-# touching project state, so it needs nothing either — the exact case a denylist missed. An allowlist
-# fails SAFE here: a future read-only verb, or a typo of any verb, silently gets no auto-migrate (the
-# same as `-h`/`migrate` already don't) rather than a denylist's blind spot silently granting one. The
-# cost of that safety: this list must stay a match for the dispatch case's own mutating arms below — a
-# future STATE-CHANGING command added there and forgotten here doesn't reintroduce the mutate-before-
-# reject bug (it just falls through unmigrated, same as `migrate`/`-h` do today), but it does mean that
-# command silently loses auto-migration until this list is updated too.
-case "${1:-}" in
-  add|event|enable|rollup)
-    _impact_auto_migrate || true
-    LEDGER="$(impact_ledger_path)"
-    LOG="$(impact_log_path)"
-    EVIDENCE="$(impact_evidence_path)"
-    ;;
-esac
-
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
   event)          shift; cmd_event "$@" ;;
   enable)         shift; cmd_enable "$@" ;;
   migrate)        shift; cmd_migrate "$@" ;;
   rollup)
+    # rollup is the one verb whose flag DISPATCH lives HERE rather than in its function body the way
+    # cmd_add's and cmd_event's argument validation does. That placement is safe for the ordering rule
+    # — this arm runs entirely before any _impact_begin (rollup's own is the first line of rollup(),
+    # and rollup_registry has none at all) — so a NEW rollup flag must be parsed in this arm too, never
+    # after the call below, or it reintroduces the mutate-before-reject bug the rule above closes.
+    # It is NOT validation, though, and don't read it as such: the `else` swallows any unrecognized
+    # flag and runs a plain rollup, so `rollup --registryy FILE` migrates the cwd and prints its trend
+    # instead of reporting a typo. Same mutate-on-typo class BATCH 1 closed at the command word, still
+    # open at the flag; pre-existing here but in range for 0.7.2, and filed rather than fixed in this
+    # batch (the fix is an explicit `*)` arm, which needs its own test).
     shift
     if [ "${1:-}" = "--registry" ]; then
       rollup_registry "${2:?keel-impact: --registry needs an INSTANCE.md FILE}"

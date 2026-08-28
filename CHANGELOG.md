@@ -232,6 +232,49 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ### Fixed
 
+- `tools/keel-impact.sh` still ran `_impact_auto_migrate` — moving and deleting a project's legacy
+  in-tree `.keel/` files — for an invocation it was about to reject, one layer below the dispatch guard
+  described in the entry below. `add --guard` with no citation and a bare `event` with no TYPE both
+  migrated and then exited 2 on a usage error (found live by the v0.7.1→v0.7.2 delta audit's verifier,
+  on the fixed state of that guard). The dispatch guard could not have caught it: argument validation
+  lives INSIDE `cmd_add`/`cmd_event`, after the dispatch, so no list drawn at the dispatch can see
+  whether a run will do any work. The guard is therefore gone, not extended a third time — the
+  allowlist below was already the second attempt to enumerate the exceptions, after a denylist. Each
+  command now calls a new `_impact_begin` itself, at the point where it knows it will proceed: after
+  its own argument validation. A verb that contains no such call never migrates, which is the safe direction,
+  so `migrate`, `-h`/`--help`/no-args, an unrecognized command and any future read-only verb are
+  covered by construction rather than by being remembered. **One adopter-visible behaviour change
+  falls out of the same rule, beyond the two reported verbs:** `rollup --registry` no longer migrates
+  the project it is invoked from. The cross-project sweep reads every project's store by explicit
+  path and never touches the invoking repo's own, so it now leaves a legacy in-tree `.keel/` marker
+  there exactly as it found it — whether the sweep runs or refuses. Both directions are pinned by
+  tests, since no reported finding covers this one and nothing else would catch a regression.
+  **One ordering constraint survives and is now pinned:**
+  `_impact_begin` must run BEFORE `impact_store_enable()`'s unconditional `mkdir -p`, or
+  `_impact_auto_migrate`'s idempotency guard (`[ -d "$store" ] && return 0`) is permanently satisfied
+  by an empty store and auto-migration is dead for that project from then on. The harm is silence,
+  not data loss: the files keep resolving in place, and an explicit `migrate` still recovers them —
+  what never arrives is any signal that the automatic path stopped. That invariant was
+  documented but unexecuted — dropping `enable` from the allowlist left the suite fully green — so the
+  pin was added first, and proven to bind by that mutation, before the reordering it protects. The pin
+  covers `enable` with no argument (or `.`); `enable DIR` for some other directory is NOT covered,
+  because `_impact_auto_migrate` inspects the cwd rather than the named directory and so strands that
+  target by the same mechanism. The uncovered half is the one that matters more: the covered form is
+  what `init-project` runs (safe structurally — it `cd`s into its target before `enable .`), while both
+  places that address an existing pre-keel repo — `install.sh`'s post-install output and
+  `docs/reference.md`'s tool table — steer at `enable <dir>`. That gap is a 0.7.2 delta finding, not
+  inherited debt: `_impact_auto_migrate` does not exist at `v0.7.1` at all, so it was introduced
+  earlier in this same release cycle rather than before it. It predates this reorder, which neither
+  creates nor worsens it, and it is fixed in its own batch rather than folded in here — named in the
+  code rather than left inside a sentence reading as though the invariant were closed. Also
+  regression-tested: eight distinct rejected invocations across `add`/`event`/`rollup --registry` leave
+  the legacy marker and create no store entry, and — the direction that actually keeps the reorder
+  honest, since a "does not migrate" assertion passes just as well on code where auto-migration was
+  deleted outright — a valid `add` and a valid `event` still migrate. `_impact_begin` resolves once
+  per process rather than once per call: `add` ends by calling `rollup` for its trailing trend line,
+  which would otherwise re-run the whole resolution — measured at 14 `git worktree list` forks for a
+  single `add` against 7 before, on the tool's hottest verb, purely to re-derive three variables it
+  had already resolved.
 - `tools/keel-impact.sh` ran `_impact_auto_migrate` for any command the dispatch guard didn't
   explicitly exempt — so a purely read-only `--help`/`-h`/no-args invocation, or a typo'd/unrecognized
   command, silently migrated a legacy in-tree `.keel/` marker into the external store and deleted the
@@ -243,7 +286,10 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   read-only verb, or any typo of any verb, now fails safe (no auto-migrate) by construction instead of
   needing to be remembered on a growing exemption list. Regression-tested in `tests/test_keel_impact.sh`
   for `--help`, `-h`, bare no-args, and an unrecognized command, each asserting a legacy `.keel/` marker
-  survives and no store entry is created.
+  survives and no store entry is created. **Superseded within this same release by the entry above**,
+  which removed that allowlist entirely after it was found to still mutate one layer in; the shipped
+  behaviour is the entry above's, and this one is kept only because that entry's account of how the
+  guard got here refers back to it.
 - `uninstall.sh --dry-run`'s manifest-less heuristic listing treated a `keel/` directory or symlink at
   the home root as Keel-owned by existence alone, misreporting "would remove keel" for an unrelated
   user directory that merely shared the name (dir #233). It now checks `keel/CORE.md` ownership
