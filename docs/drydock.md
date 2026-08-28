@@ -512,11 +512,11 @@ audit file either has its `## claims` section or is visibly incomplete. Never re
 
 ## Incremental runs
 
-*Not the same shape as [`docs/delta-audit.md`](delta-audit.md): this section's incremental scope is
-prose, keyed to the **previous drydock run's own baseline** — one whole-tree pass diffed against
-another. A delta audit scopes to a **release range** instead, covers every class its own derivation
-script classifies a file into (not prose alone), carries a seam map, and ends in a GO/NO-GO a tag
-actually waits on.*
+*Not the same shape as [`docs/delta-audit.md`](delta-audit.md): this section's incremental runs
+cover every measured scope — prose (A, B) and code (C) alike — keyed to the **previous drydock
+run's own baseline** — one whole-tree pass diffed against another. A delta audit scopes to a
+**release range** instead, covers every class its own derivation script classifies a file into
+(not prose alone), carries a seam map, and ends in a GO/NO-GO a tag actually waits on.*
 
 Run 1 is a full-tree run. Every run after it is **scoped by diff from the previous run's baseline**:
 

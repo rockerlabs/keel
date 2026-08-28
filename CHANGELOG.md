@@ -109,8 +109,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   two harness lessons. `docs/release-audit.md` phase 6 is rewritten into this doc's caller: its
   three-point mandate survives as a depth heuristic applied within the derived universe, no longer
   the rule that chooses the universe itself. `docs/drydock.md`'s "Incremental runs" section gains a
-  cross-reference distinguishing its own prose-only, previous-run-baseline scope from this doc's
-  release-range scope.
+  cross-reference distinguishing its own previous-run-baseline scope — prose and code alike, not
+  prose-only — from this doc's release-range scope.
 - `tests/test_ci_alpine_safe_directory.sh` pins `.github/workflows/ci.yml`'s alpine leg to a
   `--system` (not `--global`) `safe.directory` write ordered before `bash tests/run.sh` (dir #246).
   Nothing previously covered that one line — it's YAML, so shellcheck never reaches it, and neither
