@@ -189,9 +189,11 @@ Steps, in order:
    recommendation **up** one notch — uncertainty favours more review.
 
    Then decide **auto vs ask**:
-   - **`high` or above → always open an `AskUserQuestion` dialog, never auto-run.** High+ is expensive
-     (`ultra` is billed) and may be unwanted or out of budget — spend it only on an explicit yes. (A fixed
-     cost rule, not a live budget check: there is no token-budget signal.)
+   - **`max` or `ultra` → always open an `AskUserQuestion` dialog, never auto-run.** (Raised from
+     `high`-and-above by dir #254, 2026-08-26: the model can now run the review itself — see step 5 — so
+     the ask threshold moves to just the two ends of the scale that spend the human's money or safety
+     margin directly.) `ultra` is billed and `max` is the heaviest automated pass — spend either only on
+     an explicit yes. (A fixed cost rule, not a live budget check: there is no token-budget signal.)
    - **`skip` → also always ask, never auto-select.** The two ends of the scale are exactly where the
      model's own judgement shouldn't be final: one spends the human's money, the other spends their
      safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
@@ -217,8 +219,9 @@ Steps, in order:
      (the operator changed their mind), the written trace line is stale for an honest flow — but an
      honest flow then records a non-skip depth, which the gate checks by its own legs; reading the
      answer itself and not writing the line at all is dir #118.
-   - **`low`/`medium` on a diff that sits clearly inside one bucket → run that level automatically**,
-     no dialog; state which level and why.
+   - **`low`/`medium`/`high` on a diff that sits clearly inside one bucket → run that level automatically**
+     (dir #254: an unasked `high` is now the EXPECTED behaviour here, not a failure), no dialog; state
+     which level and why.
    - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
      the recommended level pre-selected and a **skip** option always present; let the human override.
      This dialog carries NO marker. **If the human picks `skip` here**, open the same marker-carrying
@@ -226,7 +229,7 @@ Steps, in order:
      gate can tell "the operator chose skip for THIS diff" from an inherited or auto-selected one
      (dir #116; the trace records the question's marker, not the chosen answer, which is why the
      confirm dialog exists at all). **The same rule holds for EVERY dialog in this step whose answer
-     lands on `skip`** — the high+/ultra dialog above included: an operator declining an expensive
+     lands on `skip`** — the max+/ultra dialog above included: an operator declining an expensive
      review down to no review at all is still choosing `skip`, and without the marker-carrying confirm
      dialog the gate will deny step 8 and ask for a question that was, from the operator's view,
      already answered. One confirm click closes that gap on every path.
@@ -246,21 +249,27 @@ Steps, in order:
    same-commit skip is narrower now, see step 4's own note, but writing this receipt immediately is still
    the cheap way to never need that). `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
-   alternative attempted. For `low|medium|high|max`, do NOT attempt `Skill(code-review)`: the built-in
-   `/code-review` is not model-invokable in-session — a documented harness policy
-   (`disable-model-invocation`, verified 2026-07-29 against the Claude Code docs) — so the automated path
-   IS branch (a) directly, no attempt first. **That verification date is a last-checked marker, not a
-   freshness guarantee (dir #221):** a docs re-read alone can't fully re-verify it — the docs could
-   themselves be stale, and the authoritative signal is the harness's actual runtime behavior, which this
-   step deliberately never manufactures by attempting the call (that's the "no attempt first" rule just
-   above); observing it live is effectively an operator action. So there is no calendar re-verify cadence
-   for either path — staleness is instead caught event-based, by the **Revisit trigger** immediately
-   below, on EITHER signal: an operator-reported docs/policy change, or a session that observes the
-   harness accepting a model invocation of `/code-review` outright (the `skillOverrides` mechanism
-   becoming applicable, or any other cause). **Revisit trigger:** on either signal, restore attempt-first — the gate's
-   Skill/UserPromptExpansion trace legs and the bare-`<level>` receipt outcome already cover a genuine
-   in-session run natively, so nothing else needs rebuilding. Either way, do not substitute `/review` (a
-   GitHub-PR command, not a working-diff review) and do not guess.
+   alternative attempted. For `low|medium|high|max`, ATTEMPT `Skill(code-review) <level>` directly
+   first (dir #254, 2026-08-26): the harness policy that used to block this (`disable-model-invocation`)
+   has LIFTED — observed live and independently reproduced across multiple sessions/machines
+   (2026-08-25, 2026-08-26), not a single one-off canary. **Establish availability by attempting the
+   call, never by inferring it from the skill listing** (the same attempt-don't-infer discipline step 2
+   uses for `/simplify`) — a listed skill can still refuse invocation, and only the attempt returns the
+   reason. On success, resolve any real findings it reports the same as any review pass (the delta-review
+   budget/terminal-condition rules below govern this run too), then receipt
+   `polish.5-review <level>` (bare — this IS the genuine in-session pass) and continue straight to step
+   6: **no dialog required for this outcome** — the gate's dir #88 mandatory-reminder check only ever
+   applies to `agent:*`-shaped outcomes (it exists to compensate for the fallback subagent's weaker
+   quality, see (a) below), never to a bare `<level>` outcome, and a real built-in `/code-review` pass
+   needs no such compensation. **If the attempt is refused, fall through to (a) below** — dir #70's
+   subagent stays exactly as the fallback it already was, unaffected: same mechanism, same MANDATORY
+   reminder dialog, same add-on machinery, just reached on refusal now instead of unconditionally (this
+   is the "subagent, then its existing dialog" choice among dir #254's open sub-question's candidates —
+   see the PR body for the reasoning). Should the harness ever re-block model invocation, this attempt
+   simply starts failing again and every run falls to (a) on its own — no revisit trigger or calendar
+   re-check needed, since attempting first is now the standing behavior rather than an exception to
+   restore. Either way, do not substitute `/review` (a GitHub-PR command, not a working-diff review) and
+   do not guess.
 
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
    directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
@@ -274,9 +283,9 @@ Steps, in order:
    stays self-reported. The trace only makes "claims a review ran when it didn't" checkable, not either
    reviewer's own thoroughness.
 
-   - **(a) Go straight here for `low|medium|high|max` — an independent subagent reviews instead of you.**
-     `/code-review` is not model-invokable in-session (the standing fact above, not a per-run refusal) — a
-     DIFFERENT, independent reviewer has to run it. Spawn ONE fresh-context Agent-tool subagent,
+   - **(a) Fallback for `low|medium|high|max`, reached when the direct attempt above was refused for
+     THIS run — an independent subagent reviews instead of you.** A DIFFERENT, independent reviewer has
+     to run it. Spawn ONE fresh-context Agent-tool subagent,
      `subagent_type: "general-purpose"`. Its
      prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
      mandate, and an explicit **read-only instruction** — review only, no file edits, no live-environment
@@ -420,8 +429,9 @@ Steps, in order:
      orphaned. Which is why the rule above is to read the live sentinel, never to infer anything from
      the presence or absence of a warning.
 
-     **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — it is
-     not model-invokable in-session.** Wait for them to run it (or report their findings — unchanged,
+     **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — this
+     run's own direct attempt above was refused, which is why we're on this fallback branch at all.**
+     Wait for them to run it (or report their findings — unchanged,
      still waits for the operator, dir #81 fork 4), then resolve what it reported and write the COMBINED
      outcome: `polish.5-review agent:<level>+operator-run` — a new, honest record naming BOTH reviews that
      ran, not an overwrite that erases the agent review the receipt above already established (whichever
@@ -662,8 +672,8 @@ Steps, in order:
    not be your worktree, so a bare `gh pr create` can resolve the wrong branch (or none) and false-deny.
    Compose the title and body from the implementation context (what changed, why, a test plan). **If step
    5's outcome was `agent:<level>`, the PR body must label the review as such** — e.g. "review: independent
-   agent at `<level>` (built-in `/code-review` not model-invokable in-session)" — never presented as if
-   `/code-review` itself ran. **If the outcome carries add-ons — `agent:<level>+<addon>[,<addon>…]` — the
+   agent at `<level>` (direct `Skill(code-review)` invocation was refused this run — dir #254 fallback)" —
+   never presented as if `/code-review` itself ran. **If the outcome carries add-ons — `agent:<level>+<addon>[,<addon>…]` — the
    PR body must name EVERY mechanism the outcome lists, one per add-on, never collapsed into fewer**: the
    standing independent agent review, plus the operator-run `/code-review` for `+operator-run` (dir #81),
    plus the in-session cross-model second opinion *naming its pinned model tier* for `+second-opinion`
@@ -676,8 +686,8 @@ Steps, in order:
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
     review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
-    independent agent review (`review: <level>, independent agent review — built-in /code-review not
-    model-invokable in-session`, matching the PR body's own label); **or, when the outcome carries add-ons
+    independent agent review (`review: <level>, independent agent review — direct Skill(code-review)
+    invocation was refused this run`, matching the PR body's own label); **or, when the outcome carries add-ons
     (`agent:<level>+<addon>[,<addon>…]`), every mechanism it lists — one per add-on, never fewer**: append
     `+ operator-run /code-review` for `+operator-run` (dir #81) and `+ in-session cross-model second
     opinion (<model>)`, naming the pinned tier, for `+second-opinion` (dir #141). So a two-add-on set

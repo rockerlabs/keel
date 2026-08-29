@@ -109,4 +109,54 @@ else
   fi
 fi
 
+# (E) dir #254: `Skill(code-review)`'s model-invocation block has lifted, so step 5 now attempts the
+# real skill directly for `low|medium|high|max` FIRST, and the independent-subagent path (dir #70) is
+# the fallback for a refused attempt, not the standing default. Two windows, same idiom as block (D):
+# assert the new prose is present AND the old, now-false prose it replaces is gone, so a revert or a
+# partial edit both fail loudly instead of going unnoticed.
+ask_line="$(grep -n 'Then decide \*\*auto vs ask\*\*' "$polish" | head -1 | cut -d: -f1)"
+if [ -z "$ask_line" ]; then
+  fail "polish.md: step 4's auto-vs-ask decision still present" "anchor sentence not found"
+else
+  ask_window="$(sed -n "${ask_line},$((ask_line + 10))p" "$polish")"
+  if match "$ask_window" -qE '\`max\`.*\`ultra\`.*always open|always open.*\`max\`.*\`ultra\`'; then
+    pass "polish.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)"
+  else
+    fail "polish.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)" \
+      "expected a '\`max\` or \`ultra\` -> always open' clause"
+  fi
+  if match "$ask_window" -qE '\`high\` or above -> always open|\`high\` or above → always open'; then
+    fail "polish.md: the old, now-false 'high or above -> always ask' sentence is gone" \
+      "found the pre-dir-#254 high-and-above threshold still present alongside the new wording"
+  else
+    pass "polish.md: the old, now-false 'high or above -> always ask' sentence is gone"
+  fi
+fi
+
+review_line="$(grep -n 'one terminal pass, no loop-back' "$polish" | head -1 | cut -d: -f1)"
+if [ -z "$review_line" ]; then
+  fail "polish.md: step 5's review intro still present" "anchor sentence not found"
+else
+  review_window="$(sed -n "${review_line},$((review_line + 15))p" "$polish")"
+  if match "$review_window" -qi 'ATTEMPT `Skill(code-review)'; then
+    pass "polish.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)"
+  else
+    fail "polish.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)" \
+      "expected an 'ATTEMPT \`Skill(code-review)\`' clause ahead of the subagent fallback"
+  fi
+  if match "$review_window" -qi 'do NOT attempt `Skill(code-review)`'; then
+    fail "polish.md: the old, now-false 'do NOT attempt the skill' sentence is gone" \
+      "found the pre-dir-#254 blanket-unavailable sentence still present alongside the new wording"
+  else
+    pass "polish.md: the old, now-false 'do NOT attempt the skill' sentence is gone"
+  fi
+fi
+
+if grep -qi '(a) Fallback for .*reached when the direct attempt above was refused' "$polish"; then
+  pass "polish.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default"
+else
+  fail "polish.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default" \
+    "expected (a)'s intro to name itself as reached on a refused direct attempt"
+fi
+
 summary

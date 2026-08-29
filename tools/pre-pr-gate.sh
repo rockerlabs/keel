@@ -154,9 +154,14 @@
 # outcome on headless hook-firing → that file's own header.
 #
 # --- dir #70: an independent SUBAGENT review when Skill(code-review) itself refuses --------------
-# Root cause: `/code-review` ships `disable-model-invocation: true`, so a session can never call it on
-# its own — every unavailable-case /polish run used to fall back to a same-context inline pass (the
-# author reviewing itself) standing in for a real review. commands/polish.md step 5(a) now spawns ONE
+# Root cause at the time this was built: `/code-review` shipped `disable-model-invocation: true`, so a
+# session could never call it on its own — every unavailable-case /polish run used to fall back to a
+# same-context inline pass (the author reviewing itself) standing in for a real review. **Superseded by
+# dir #254 (2026-08-26): that blanket policy has since lifted, observed live and independently
+# reproduced across sessions/machines** — commands/polish.md step 5 now attempts the real
+# `Skill(code-review)` call FIRST for `low|medium|high|max`, and everything below in this section is
+# reached only as the FALLBACK when that direct attempt is refused for a given run (the block could
+# still return), not as the standing default. commands/polish.md step 5(a) spawns ONE
 # independent Agent-tool subagent (type `general-purpose`, fresh context — no memory of the code-writing
 # session) to do the review instead; this file's job is making THAT claim verifiable too, the same way
 # dir #63 made a real in-session `/code-review` call verifiable.
@@ -2313,13 +2318,16 @@ case "$status" in
                          trace_match_outcome="agent:$outcome_level"
                          needs_dialog=1
                          prov_label="review: $outcome_level, independent agent review (trace-confirmed)$addon_prose"; prov_tag="agent-confirmed" ;;
-      agent:*)          # dir #70: an independent Agent-tool subagent reviewed (Skill(code-review) wasn't
-                         # model-invokable in-session) — trusted stays 0, same as the bare-level case
-                         # below: this outcome is just as self-report-fabricable, so it earns no more
-                         # trust and still needs the SubagentStop trace match (skill-trace, above).
+      agent:*)          # dir #70, re-scoped by dir #254: an independent Agent-tool subagent reviewed
+                         # because the direct `Skill(code-review)` attempt was refused THIS run (the
+                         # harness's blanket `disable-model-invocation` block has lifted — this is now
+                         # the fallback branch, not the standing default) — trusted stays 0, same as the
+                         # bare-level case below: this outcome is just as self-report-fabricable, so it
+                         # earns no more trust and still needs the SubagentStop trace match (skill-trace,
+                         # above).
                          outcome_level="${review_outcome#agent:}"
                          needs_dialog=1
-                         prov_label="review: $outcome_level, independent agent review (Skill(code-review) not model-invokable in-session)"; prov_tag="agent-confirmed" ;;
+                         prov_label="review: $outcome_level, independent agent review (Skill(code-review) invocation refused this run)"; prov_tag="agent-confirmed" ;;
       *)                outcome_level="$review_outcome"
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
