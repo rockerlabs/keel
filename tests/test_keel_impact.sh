@@ -723,6 +723,82 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "migrate on an unreadable source still succeeds (leaves it be)" 0 "$STATUS"
   check_file "the unreadable source is left in place, not deleted" "$urepo/.keel/ledger.md"
   check_nofile "the unreadable source was never merged into the store" "$urepo_store/ledger.md"
+
+  # --- a merge READ FAILURE (the awk that PRODUCES the rows, not the write right after it) must also
+  # never be reported as success (dir #289): both merge helpers used to capture only the WRITE status
+  # (cat/mv, per the review above), never the exit status of the awk that actually READ $target and
+  # $inputs. Neither helper's own pre-check inspects the STORE's existing TARGET file for readability —
+  # only cmd_migrate's own scan checks the untracked SOURCE (exercised above) — so a target that goes
+  # unreadable slips past every existing guard: the awk fails outright, yet the old code still wrote
+  # whatever partial rows/blocks it managed to emit before erroring and called that a success. --------
+  rrepo="$(new_repo)"
+  mkdir -p "$rrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$rrepo/.keel/ledger.md"
+  printf '| 2026-05-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | first-row | none |\n' >> "$rrepo/.keel/ledger.md"
+  rrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$rrepo")"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$rrepo"
+  check_status "setup: first migrate for the ledger read-failure case succeeds" 0 "$STATUS"
+  before_target="$(cat "$rrepo_store/ledger.md")"
+  mkdir -p "$rrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$rrepo/.keel/ledger.md"
+  printf '| 2026-05-02 | 50 | low | 0 | 0 | 0 | 0 | 1 | 0 | 0 | second-row | none |\n' >> "$rrepo/.keel/ledger.md"
+  chmod 000 "$rrepo_store/ledger.md"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$rrepo"
+  chmod 644 "$rrepo_store/ledger.md"
+  check_contains "a failed ledger merge READ is reported non-zero, not silently 0" "$([ "$STATUS" != 0 ] && echo failed)" "failed"
+  check_contains "a failed ledger merge READ leaves the legacy source UNDELETED" "$([ -f "$rrepo/.keel/ledger.md" ] && echo present)" "present"
+  check_contains "the store's ledger is unchanged by the failed read (no partial/lost content)" "$(cat "$rrepo_store/ledger.md")" "$before_target"
+
+  # Same READ-status blind spot in _impact_merge_evidence, same fix.
+  vrepo="$(new_repo)"
+  mkdir -p "$vrepo/.keel"
+  printf '# Keel impact — per-event evidence\n\n## 2026-05-01 — score 100/100 (conf low)\n\n- guard: first-row\n' > "$vrepo/.keel/evidence.md"
+  vrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$vrepo")"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$vrepo"
+  check_status "setup: first migrate for the evidence read-failure case succeeds" 0 "$STATUS"
+  before_evidence="$(cat "$vrepo_store/evidence.md")"
+  mkdir -p "$vrepo/.keel"
+  printf '# Keel impact — per-event evidence\n\n## 2026-05-02 — score 50/100 (conf low)\n\n- miss: second-row\n' > "$vrepo/.keel/evidence.md"
+  chmod 000 "$vrepo_store/evidence.md"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$vrepo"
+  chmod 644 "$vrepo_store/evidence.md"
+  check_contains "a failed evidence merge READ leaves the legacy source UNDELETED" "$([ -f "$vrepo/.keel/evidence.md" ] && echo present)" "present"
+  check_contains "the store's evidence is unchanged by the failed read" "$(cat "$vrepo_store/evidence.md")" "$before_evidence"
+
+  # --- dir #289: a failed auto-migrate pass must retry on the NEXT resolve, not strand forever --------
+  # the store's completion marker (`origin`) used to be written BEFORE the merges ran; a failure
+  # between the two permanently satisfied the old `[ -d "$store" ]` idempotency guard, and no automatic
+  # path (`add`/`event`/`rollup`) would ever try again — recoverable only by an explicit `migrate`,
+  # which nothing prompts the operator to run. `origin` is now written only once every present legacy
+  # file has actually been swept. Reproduce a failure (the store's own target unreadable, same shape as
+  # above) via a PLAIN `rollup` — the AUTOMATIC path this ticket is actually about, not the explicit
+  # `migrate` command — and confirm: (a) rollup itself still succeeds (auto-migrate is best-effort and
+  # must never abort a plain add/rollup/event over this), (b) the legacy source survives untouched, (c)
+  # the completion marker stays unwritten so a retry stays possible, and (d) once the target is
+  # readable again, the VERY NEXT resolve completes the merge on its own, with no operator action. -----
+  strepo="$(new_repo)"
+  strepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$strepo")"
+  mkdir -p "$strepo_store"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$strepo_store/ledger.md"
+  printf '| 2026-05-30 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | already-in-store | none |\n' >> "$strepo_store/ledger.md"
+  chmod 000 "$strepo_store/ledger.md"
+  mkdir -p "$strepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$strepo/.keel/ledger.md"
+  printf '| 2026-06-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | stranding-row | none |\n' >> "$strepo/.keel/ledger.md"
+  run_in "$strepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  check_status "a plain rollup survives a failed auto-migrate attempt (best-effort, never fatal)" 0 "$STATUS"
+  chmod 644 "$strepo_store/ledger.md"
+  check_file "a failed auto-migrate attempt leaves the legacy source in place" "$strepo/.keel/ledger.md"
+  check_nofile "a failed auto-migrate attempt never writes the completion marker" "$strepo_store/origin"
+  check_contains "the store's own pre-existing row is unharmed by the failed attempt" "$(cat "$strepo_store/ledger.md")" "already-in-store"
+  # now that the target is readable again, the very next resolve completes the merge on its own
+  run_in "$strepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  check_status "the retry succeeds" 0 "$STATUS"
+  check_file "the retry writes the completion marker" "$strepo_store/origin"
+  check_nofile "the retry removes the now-merged legacy source" "$strepo/.keel/ledger.md"
+  check_nodir "the retry rmdirs the now-empty .keel/" "$strepo/.keel"
+  check_contains "the retry's merge carries the previously-stranded row" "$(cat "$strepo_store/ledger.md")" "stranding-row"
+  check_contains "the retry's merge kept the pre-existing store row too" "$(cat "$strepo_store/ledger.md")" "already-in-store"
 fi
 
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
