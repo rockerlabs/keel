@@ -437,9 +437,20 @@ ACCEPTED_REVIEW_LEVELS='low medium high max'
 # in the receipt, and it is the receipt half that carried the defects.
 #
 # Two literals, added one `case` arm at a time: `operator-run` (dir #81) and `second-opinion`
-# (dir #141). This is now the ONLY validator of the add-on suffix — with no comma walk between the
-# receipt and this `case`, whatever follows the `+` arrives here as one opaque token, so a set-shaped
-# string like `operator-run,second-opinion` is simply an unknown token and denies.
+# (dir #141). With no comma walk between the receipt and this `case`, whatever follows the `+` arrives
+# as ONE opaque token, so a set-shaped string like `operator-run,second-opinion` is simply an unknown
+# token and denies.
+#
+# **This is the only validator for suffixes that REACH it — which is not all of them, and the gap is a
+# constraint on future add-ons** (found by this ticket's own /code-review max pass, reproduced live).
+# The unlock `case` is first-match-wins and `*-operator-run)` / `*-waived)` sit ABOVE `agent:*+*)`, so
+# an add-on token ENDING in `-operator-run` or `-waived` is captured by those trusted arms and never
+# arrives here at all: `agent:high+pair-operator-run` matches `*-operator-run`, which sets `trusted=1`
+# and thereby SKIPS the trace requirement. It still denies today — `outcome_level` keeps its `agent:`
+# prefix and fails the depth cross-check, whose allowlist holds no such value — so this is a false-deny
+# with a misleading message, not a bypass. But it means a third add-on literal must not end in either
+# suffix; name it so it reaches this allowlist. (The separator half of this hazard — why the add-on
+# separator is `+` and must never be renamed to a hyphen — is on the `agent:*+*` arm itself.)
 #
 # **This function IS the allowlist — deliberately not a separate `ACCEPTED_REVIEW_ADDONS` list.** A
 # first draft had both, and shellcheck caught the list as unused: validation ran through this `case`
@@ -2104,7 +2115,8 @@ case "$status" in
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
                          prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
-      agent:*+*)        # dir #81, generalized to a set by dir #158 and narrowed back to one token by dir #183: the operator additionally ran `/code-review` ON TOP of an
+      agent:*+*)        # dir #81, generalized to a set by dir #158, narrowed back to one token by
+                         # dir #183: the operator additionally ran `/code-review` ON TOP of an
                          # already-standing agent review — an honest combined record, not the old
                          # overwrite that erased the agent half. Placed BEFORE the broader `agent:*`
                          # glob below (case is first-match-wins and this literal also matches that
@@ -2153,34 +2165,36 @@ case "$status" in
                          # trust-boundary parse. A single quoted argument has neither failure mode.
                          addons_ok=1
                          addon_prose=""
-                         if p="$(_addon_label "$addons")"; then
+                         # `[ -n "$p" ]` is load-bearing, not belt-and-braces: `addon_prose` is built by
+                         # PREFIXING a non-empty literal (" + "), so testing `addon_prose` alone would
+                         # only ever restate "the call returned 0" — it can never be empty when the
+                         # success branch is taken, whatever `_addon_label` printed. Found by this
+                         # ticket's own /code-review max pass and reproduced: with a hypothetical arm
+                         # that returns 0 without printing, `$p` is empty, `addon_prose` is " + ", the
+                         # guard below passes, and the receipt unlocks announcing
+                         # "…(trace-confirmed) + " — a combined outcome naming ZERO mechanisms while
+                         # printing the stronger label, which is the exact shape that guard exists to
+                         # stop. Checking `$p` at the source is what makes the invariant real.
+                         if p="$(_addon_label "$addons")" && [ -n "$p" ]; then
                            addon_prose=" + $p"
                          else
                            addons_ok=0
                          fi
-                         # An empty SUFFIX (`agent:<level>+`) is rejected by `_addon_label ""` — the empty
-                         # string hits its `*)` arm and returns 1 — so under the single-token parse this
-                         # guard is defence-in-depth, not the sole rejecter it was under the walk (where
-                         # zero iterations left `addons_ok=1`). **Keep it anyway; do not "simplify" it to
-                         # `-n "$addons"` as now-redundant.** It states the INVARIANT ("at least one
-                         # mechanism was actually named") where `-n "$addons"` states a proxy ("the
-                         # suffix had some text"), so it still holds if the parse is ever loosened. The
-                         # proxy is what the pre-dir-#158 version used, and it accepted `agent:<level>+,`
-                         # — a receipt announcing a combined outcome while naming zero mechanisms, and
-                         # printing the stronger `(trace-confirmed)` label on the bare arm's own evidence.
-                         # Consequence for reading coverage: deleting this guard alone no longer reds a
-                         # test, because `_addon_label` backstops it — stated in tests/test_pre_pr_gate.sh
-                         # test 50l rather than left to be discovered.
-                         # **And say the symmetric thing about `$addons_ok`, so this paragraph isn't read
-                         # as "both halves were audited and both earn their keep":** under the single-token
-                         # parse it is the REDUNDANT half — `_addon_label` succeeds iff it prints a
-                         # non-empty label, so `addons_ok=1` ⟺ `addon_prose` non-empty, and deleting
-                         # `addons_ok` reds nothing either. It is kept because the two say different
-                         # things — one records whether validation SUCCEEDED, the other whether a
-                         # mechanism was NAMED — and under the walk they genuinely diverged (a `break`
-                         # could leave a partially-built prose with `addons_ok=0`). Keeping the pair is a
-                         # deliberate call, not an oversight; collapsing it is a fair future simplification,
-                         # just not one to make while believing the `&&` is doing two jobs today.
+                         # An empty SUFFIX (`agent:<level>+`) is rejected by `_addon_label ""` — the
+                         # empty string hits its `*)` arm and returns 1. So under the single-token parse
+                         # this guard is defence-in-depth, not the sole rejecter it was under the walk
+                         # (where zero iterations left `addons_ok=1`). **Keep it; do not "simplify" it to
+                         # `-n "$addons"`.** With the `[ -n "$p" ]` above it now genuinely states the
+                         # invariant ("a mechanism was actually named") where `-n "$addons"` states a
+                         # proxy ("the suffix had some text") — and the proxy is what the pre-dir-#158
+                         # version used, which accepted `agent:<level>+,`.
+                         # **Coverage, stated rather than left to be discovered:** deleting either
+                         # conjunct ALONE reds no test, because `_addon_label`'s `*)` arm backstops both.
+                         # `addons_ok` and `addon_prose` are now equivalent given the `[ -n "$p" ]` check,
+                         # and the pair is kept because they say different things (validation SUCCEEDED
+                         # vs a mechanism was NAMED) — under the walk they genuinely diverged, since a
+                         # `break` could leave prose half-built with `addons_ok=0`. Collapsing them is a
+                         # fair future simplification; just don't do it believing the `&&` does two jobs.
                          if [ "$addons_ok" -eq 1 ] && [ -n "$addon_prose" ]; then
                            outcome_level="${outcome_level%%+*}"
                          fi
@@ -2212,6 +2226,18 @@ case "$status" in
     if [ "$outcome_level" != "$depth_level" ]; then
       retire_sentinel "$sentinel" "$cwd" "$receipt_key"
       log_event receipt-deny "review-depth-mismatch" "$cwd"
+      # dir #183: every invalid add-on routes through this equality check rather than carrying a deny
+      # of its own — deliberate (no second message to keep in sync), but it means a COMMA-JOINED suffix
+      # lands here with a message that names the depth, which is visibly correct in the outcome string.
+      # That is a stale-copy trap, not a hypothetical: the hook is wired to the checkout's gate by
+      # ABSOLUTE PATH, while `commands/polish.md` is a copy `install.sh` refreshes only on an
+      # interactive prompt that defaults to No. So `git pull` alone gives a new gate plus prose that
+      # still instructs `agent:<level>+operator-run,second-opinion` — the session re-reads it, re-writes
+      # the same string, and loops. Name the cause, the same way the tests-sha-unbound and
+      # skip-dialog-missing denies above already name this exact skew.
+      case "$review_outcome" in
+        agent:*+*,*) deny "Pre-PR gate: step 5's review outcome ('$review_outcome') names more than one review add-on, which is no longer a valid shape — the receipt now carries AT MOST ONE (dir #183), so the comma-joined suffix is read as a single unknown add-on and fails the depth cross-check against step 4's '$depth_level'. If you just pulled Keel, an older copied commands/polish.md still teaches the comma-separated set — re-run install.sh to refresh it. Re-run this receipt naming ONE add-on (operator-run wins the slot when both applied) and name every mechanism that reviewed this commit in the PR body and the step-10 summary instead. Run /polish again." ;;
+      esac
       deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
     fi
     # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real

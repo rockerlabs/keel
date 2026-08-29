@@ -74,9 +74,10 @@ else
   fi
 fi
 
-# (D) dir #183: step 5's add-on paragraph states the SINGLE-add-on rule, its operator-run tie-break, and
-# that nothing warns you any more. This block replaces dir #161's own pin, which asserted the opposite (that the paragraph
-# documents an add-on-drop warning as a MANDATORY read) — dir #183 deleted that warning along with the
+# (D) dir #183: step 5's add-on paragraph states the SINGLE-add-on rule, its operator-run
+# tie-break, and that nothing warns you any more. This block replaces dir #161's own pin, which
+# asserted the opposite (that the paragraph documents an add-on-drop warning as a MANDATORY read) —
+# dir #183 deleted that warning along with the
 # comma-set parser, so the old pin was holding a now-false claim in place. Windowed on the paragraph
 # itself (same idiom as block (C)) rather than a bare file-wide grep: `dir #161` alone is still present
 # in the new paragraph, which explains what was removed and why, so a bare grep for it proves nothing.
@@ -92,7 +93,10 @@ addon_line="$(grep -n 'receipt carries AT MOST ONE add-on' "$polish" | head -1 |
 if [ -z "$addon_line" ]; then
   fail "polish.md: add-on paragraph present" "anchor sentence not found"
 else
-  addon_window="$(sed -n "${addon_line},$((addon_line + 30))p" "$polish")"
+  # +45, not +30: the furthest needle sat 3 lines from a +30 edge, so any clarification added to
+  # this paragraph — or a re-wrap, one of which this ticket itself made — would red a pin whose prose
+  # is entirely correct. The window is a locality check, not a line budget; err wide.
+  addon_window="$(sed -n "${addon_line},$((addon_line + 45))p" "$polish")"
   # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
   if match "$addon_window" -qi 'nothing warns you' && match "$addon_window" -qi 'dir #183'; then
     pass "polish.md: step 5 states that a dropped add-on no longer warns (dir #183)"

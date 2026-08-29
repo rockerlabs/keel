@@ -149,17 +149,32 @@ pin "init-project.sh captures register-project.sh's stderr instead of discarding
 # these pins, a later edit could delete "name EVERY mechanism" from the PR body rule or collapse the
 # step-10 summary back to the receipt's one add-on, and the whole suite would stay green.
 #
-# Pinned on "not off the receipt" rather than on "every mechanism" alone: the load-bearing half is the
-# SOURCE the reporter reads from. A rule saying "name every mechanism" is satisfied, wrongly, by a
-# reporter that enumerates the receipt faithfully — which after dir #183 names one add-on, not both.
-pin "polish.md: step 9's PR-body rule names every mechanism, read off what ran and NOT off the receipt" \
+# **Two clauses per site, not one** (corrected by this ticket's own /code-review max pass, which found
+# the first draft pinned only the SOURCE half): the rule has a source clause ("read it off what ran, not
+# off the receipt") and a completeness clause ("name EVERY mechanism"). Pinning only the source half
+# leaves an edit that keeps "not off the receipt" while dropping "every mechanism" fully green — the
+# guarantee gone, the guard satisfied. Both halves are load-bearing and each gets its own pin.
+#
+# Needles are keyed on a literal UNIQUE TO THAT SITE, per this file's own one-pin-per-site rule, and on
+# a literal that fits on ONE LINE: `pin` is `grep -qF`, so a needle spanning a wrap can never match, and
+# the failure looks like missing prose rather than a mis-written needle (hit once while writing these).
+# The step-9 and step-10 source clauses differ only by the word "them", which is too thin a
+# distinction to rest on: normalize step 9's wording and the step-10 pin would start matching step 9's
+# line, leaving step 10 deletable in silence. So the step-10 pins key on wording only step 10 uses.
+pin "polish.md: step 9's PR-body rule is sourced from what RAN, not from the receipt" \
   "$polish" 'read them off what ACTUALLY RAN, not off the receipt' \
   "expected step 9 to source the PR body's mechanism list from the review history, not the receipt (dir #183 left the receipt naming at most one add-on)"
+pin "polish.md: step 9's PR-body rule demands EVERY mechanism, not just the receipted one" \
+  "$polish" 'must name EVERY mechanism that reviewed' \
+  "expected step 9 to keep dir #81's completeness clause — the source clause alone permits naming one mechanism faithfully"
 pin "polish.md: step 9 says outright that the receipt is no longer the mechanism list" \
   "$polish" '**The receipt is no longer that list.**' \
   "expected step 9 to state the receipt/prose split explicitly, so a reader can't infer the pre-dir-#183 read-off-the-receipt rule"
-pin "polish.md: step 10's summary rule reads off what ran, not off the receipt" \
-  "$polish" 'read off what ACTUALLY RAN, not off the receipt' \
+pin "polish.md: step 10's summary rule is sourced from what RAN, not from the receipt" \
+  "$polish" 'every mechanism that ran — read off what ACTUALLY RAN' \
   "expected step 10's summary to carry the same source rule as step 9's PR body — the two must not drift apart"
+pin "polish.md: step 10's summary names the receipt's one-slot limit as the reason prose must carry the rest" \
+  "$polish" 'even though its receipt names only' \
+  "expected step 10 to say why the summary can exceed the receipt, so the two-mechanism case can't be read as a contradiction"
 
 summary

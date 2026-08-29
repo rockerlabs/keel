@@ -398,8 +398,14 @@ Steps, in order:
      per-commit, and dir #96 refuses to recover a review claim across a commit at all). So a mechanism
      is worth naming while the work it reviewed is still in HEAD, and each fix commit carries its
      predecessor's reviewed content forward. **`--recover` will not carry an add-on for you** —
-     `polish.5-review` is deliberately never restored (dir #96), so an earlier round's add-on survives
-     only in this session's own memory and has to be re-typed.
+     `polish.5-review` is deliberately never restored (dir #96), so an earlier round's add-on is never
+     re-applied automatically. **But it is usually still readable, so do not re-type it from memory**
+     (corrected by this ticket's own review, which found this paragraph claiming memory was the only
+     source — verified by reproduction, both halves): on the CROSS-RUN path, `init` retires the prior
+     round's sentinel into the single-slot backup, where its `polish.5-review` line survives verbatim
+     and one `grep` away. It is best-effort, not a guarantee: the backup holds only the MOST RECENT
+     retirement, and because `init` always leaves a live sentinel behind, a further `init` retires that
+     (add-on-less) file over the backup and the line is gone.
 
      **Nothing warns you when a re-typed receipt loses one (dir #183).** dir #161 added a stderr warning
      for exactly that, and dir #183 deleted it along with the set parser: it compared against the last

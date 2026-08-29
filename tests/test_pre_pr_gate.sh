@@ -1011,64 +1011,82 @@ check_contains "denied for the depth mismatch, not some other reason" "$OUT" "do
 # equal step 4's `high`. Asserting the REASON and not just the deny is what rules out a deny that
 # happens for some unrelated reason while the actual guard does nothing.
 
-# 50i. dir #225, RETIRED BY CONSTRUCTION: a TRAILING comma denied. Under the set parser this PASSED —
-# the comma splitter dropped the trailing empty element, so `agent:<level>+<addon>,` unlocked the gate
-# while the arm's own comment promised a deny. With no comma parse at all the whole string
-# `operator-run,` is one unknown token, so there is no trailing element left to mishandle.
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+operator-run,"
-gate "gh pr create --fill" "$d"
-check_contains "dir #225: a trailing comma ('agent:high+operator-run,') → denied, not unlocked" "$OUT" '"permissionDecision":"deny"'
-check_contains "...denied by the depth cross-check — the comma is part of one unknown token" "$OUT" "doesn't match the depth"
-
-# 50j. dir #227, RETIRED BY CONSTRUCTION: a DUPLICATED add-on denied. Under the set parser both
-# elements validated independently, so `+operator-run,operator-run` unlocked and double-labelled one
-# mechanism in the operator-facing provenance line. Same reason as 50i: one opaque token.
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+operator-run,operator-run"
-gate "gh pr create --fill" "$d"
-check_contains "dir #227: a duplicated add-on ('agent:high+operator-run,operator-run') → denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "...denied by the depth cross-check, so no mechanism is double-labelled" "$OUT" "doesn't match the depth"
-# The provenance line must not name the mechanism at all on a denied receipt — the double-label this
-# ticket removes was in the ALLOW path's prose, so assert it never got built.
-check_absent "...and the deny never prints the operator-run label, let alone twice" "$OUT" "operator-run /code-review (self-reported)"
-
-# 50k. An INVENTED add-on must still deny — `_addon_label` is the allowlist and is now the ONLY
-# validator, so this is the mutation floor for its `*)` arm (dir #128 rule 3, item (e)). A glob arm
-# that accepted any token would be a bypass; that was the security-relevant half of dir #158 and it
-# survives the set deletion unchanged.
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+bogus-addon"
-gate "gh pr create --fill" "$d"
-check_contains "an unknown add-on token → denied, not silently accepted" "$OUT" '"permissionDecision":"deny"'
-check_contains "...denied by the depth cross-check, which is the designed route" "$OUT" "doesn't match the depth"
-
-# 50l. An EMPTY add-on suffix must deny — a receipt announcing a combined outcome while naming zero
-# mechanisms, printing the stronger `(trace-confirmed)` label on the bare arm's own evidence. A stray
-# `+` while re-typing an add-on from session memory reaches this.
+# 50i-50l. Every invalid add-on shape, in two families by the deny they SHOULD get.
 #
-# **What rejects it CHANGED with dir #183, and the distinction is worth keeping straight** (the same
-# "rejected by X" vs "pinned by X" care the deleted dir #158 comment took): under the element walk,
-# `agent:high+` ran ZERO iterations, left `addons_ok=1`, and the `[ -n "$addon_prose" ]` guard was the
-# only rejecter. Under the single-token parse it is `_addon_label ""` that rejects — the empty string
-# hits its `*)` arm and returns 1 — so the guard is now defence-in-depth rather than the sole check.
-# It is deliberately kept anyway (see the gate's own comment): it states the invariant, where
-# `-n "$addons"` states a proxy. Consequence for anyone reading coverage off this file: deleting the
-# guard alone no longer reds any test here, because `_addon_label` backstops it. That is a real
-# coverage change, stated rather than left to be discovered.
+# **No `subagentstop_trace` setup in either loop, deliberately** (found by this ticket's own
+# /code-review max pass): both denies fire strictly BEFORE the trace check, so a trace fixture here
+# would be inert setup implying the trace is part of what is being tested. What rules out a
+# denied-for-some-other-reason false pass is the second assertion in each iteration, which pins the
+# deny REASON — and if the checks are ever reordered so the trace check runs first, that assertion
+# reds, which is the correct outcome.
+#
+# A loop rather than four unrolled copies: after the narrowing every shape in a family takes one
+# identical route, so the shape IS the only thing that varies. This is the form the deleted dir #158
+# block used (`for bad_set in …`), and restoring it is what let the two felt shapes below come back.
+
+# Family 1 — a COMMA-JOINED suffix gets dir #183's own message, not the bare depth-mismatch one.
+# The comma-specific deny exists because this shape is a stale-copy trap: the hook runs the checkout's
+# gate (refreshed by `git pull`) while `commands/polish.md` is a copy `install.sh` re-syncs only on an
+# interactive prompt defaulting to No — so the previous release's prose, which teaches the comma set,
+# outlives the gate that accepted it, and a bare "doesn't match the depth" would send the session back
+# to that same prose to re-type the same string.
+for bad_addon in \
+  "agent:high+operator-run," \
+  "agent:high+operator-run,operator-run" \
+  "agent:high+,second-opinion" \
+  "agent:high+operator-run,,second-opinion" \
+  "agent:high+," \
+  "agent:high+,,"
+do
+  d="$(mkrepo)"
+  write_full_receipt_review "$d" "$bad_addon"
+  gate "gh pr create --fill" "$d"
+  check_contains "a comma-joined add-on ('$bad_addon') → denied" "$OUT" '"permissionDecision":"deny"'
+  check_contains "...naming the retired comma set as the cause, not the depth" "$OUT" "no longer a valid shape"
+  check_contains "...and pointing at the stale-copy fix" "$OUT" "re-run install.sh"
+done
+# The first two shapes above are dir #225 and dir #227 RETIRED BY CONSTRUCTION: under the set parser a
+# trailing comma UNLOCKED the gate (the splitter dropped the empty element) and a duplicated add-on
+# unlocked and then double-labelled one mechanism in the operator-facing provenance line. With no comma
+# parse there is no element to mishandle and no second label to print.
+# The last four are the felt shapes from dir #158's own review — a stray or doubled comma while
+# re-typing an add-on from session memory. They were covered by the deleted `bad_set` loop and are kept
+# covered here rather than dropped as "behaviourally uniform now": uniform TODAY is exactly the property
+# a future change breaks silently.
+
+# Family 2 — a suffix with NO comma is one unknown token and takes the depth cross-check route, which
+# is the designed route (unchanged from dir #158): the unvalidated add-on leaves $outcome_level as the
+# raw remainder (`high+bogus-addon`), which cannot equal step 4's `high`.
+for bad_addon in \
+  "agent:high+bogus-addon" \
+  "agent:high+" \
+  "agent:high+operator-run+second-opinion"
+do
+  d="$(mkrepo)"
+  write_full_receipt_review "$d" "$bad_addon"
+  gate "gh pr create --fill" "$d"
+  check_contains "an unknown single add-on token ('$bad_addon') → denied" "$OUT" '"permissionDecision":"deny"'
+  check_contains "...denied by the depth cross-check, which is the designed route" "$OUT" "doesn't match the depth"
+done
+# `agent:high+bogus-addon` is the mutation floor for `_addon_label`'s `*)` arm (dir #128 rule 3): the
+# allowlist must stay an allowlist, and a glob arm accepting any token would be a bypass.
+# `agent:high+` is the empty suffix — `_addon_label ""` hits that same `*)` arm.
+# `agent:high+operator-run+second-opinion` is the `+`-joined compound: also one opaque token, so the
+# two-mechanism receipt cannot be smuggled back in by swapping the separator.
+
+# 50m. dir #183: `agent:skip+<addon>` — the ONE route by which the rewritten derivation can produce
+# `outcome_level=skip`, and therefore the only test that covers the interaction between this ticket's
+# change and dir #116's skip-suffix guard. The existing skip coverage (`skip-waived`, `skip-waived-waived`)
+# all arrives via the TRUSTED-suffix arms, never through the add-on parse, so a future change to the
+# strip order here would reopen dir #116's shape with the whole suite green.
+# Traced: `agent:skip+operator-run` does NOT match the earlier `*-operator-run` arm (its tail is
+# `+operator-run`, not `-operator-run`), so it reaches the add-on parse, `_addon_label` validates
+# `operator-run`, the level strips to `skip` — and dir #116's guard catches it there.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+"
+write_full_receipt_review "$d" "agent:skip+operator-run"
 gate "gh pr create --fill" "$d"
-check_contains "an empty add-on suffix ('agent:high+') → denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "...denied by the depth cross-check, the same route every unvalidated add-on takes" "$OUT" "doesn't match the depth"
+check_contains "dir #116 x dir #183: 'agent:skip+operator-run' → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "...as a suffixed skip, not as a depth mismatch" "$OUT" "a suffixed 'skip' is not a valid outcome"
 
 # 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
 # adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
@@ -2598,6 +2616,14 @@ check_absent "dir #201/#214/#226: no add-on-drop warning is emitted at all" "$OU
 # The stderr line is the fast signal, but dir #161 also persisted a durable `review-addon-dropped`
 # impact-log event — the half dir #226 called out as the lasting damage, since it outlives the
 # session that ignored the stderr. Assert BOTH channels are silent, not just the visible one.
+# **Positive control first — without it this assertion is vacuous** (found by this ticket's own
+# /code-review max pass and reproduced: neither `init` nor an ordinary `receipt` write calls
+# `log_event`, so `$addon_imp` is never created and the absence check below would run against the
+# empty string — staying green even if the env override never reached the gate at all). One explicit
+# `log` write proves the redirect lands where the assertion reads, so the absence that follows is an
+# absence IN A LOG THIS RUN DEMONSTRABLY WROTE TO.
+run_in "$d" env KEEL_IMPACT_LOG="$addon_imp" bash "$gate" log dir183-probe "positive-control"
+check_contains "the per-test impact log is really the one the gate writes to" "$(cat "$addon_imp" 2>/dev/null || true)" "dir183-probe"
 check_absent "...and no durable review-addon-dropped event is logged either" "$(cat "$addon_imp" 2>/dev/null || true)" "review-addon-dropped"
 
 summary
