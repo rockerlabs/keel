@@ -1099,16 +1099,17 @@ done
 # log reason and the message" — and the first draft of this arm logged the generic
 # `review-depth-mismatch`, which no wording assertion could have caught. This pins the reason that a
 # `sweep`/keel-impact consumer would count to learn whether adopters are hitting the stale-copy skew.
-# Driven through the raw hook JSON with an explicit $KEEL_IMPACT_LOG, the same idiom test 12 uses,
-# because `gate` does not thread an impact-log override.
+# Uses `gate_env` (above) to thread the $KEEL_IMPACT_LOG override — NOT a hand-built payload. `gate`
+# is `gate_env` with no extra env; `gate_env`'s own header gives the reason to route through it
+# ("One place builds the event JSON and captures OUT/STATUS, so a change to the gate's input shape
+# lands once"), and a hand-rolled copy here would be exactly the second copy that header prevents.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
 write_full_receipt_review "$d" "agent:high+operator-run,second-opinion"
 addon_deny_log="$SANDBOX/dir183-addon-deny.log"; rm -f "$addon_deny_log"
-addon_deny_json="$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}')"
-addon_deny_out="$(printf '%s' "$addon_deny_json" | KEEL_IMPACT_LOG="$addon_deny_log" bash "$gate" 2>/dev/null)"
-check_contains "the retired comma set still denies when driven through the raw hook" "$addon_deny_out" '"permissionDecision":"deny"'
+gate_env "gh pr create --fill" "$d" "KEEL_IMPACT_LOG=$addon_deny_log"
+check_contains "the retired comma set still denies" "$OUT" '"permissionDecision":"deny"'
 check_contains "...and logs its OWN deny reason, not the generic depth mismatch" "$(cat "$addon_deny_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-addon-set-retired"
 check_absent "...so a log consumer can tell the stale-copy skew from a real depth mismatch" "$(cat "$addon_deny_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-depth-mismatch"
 
@@ -1120,9 +1121,18 @@ check_absent "...so a log consumer can tell the stale-copy skew from a real dept
 # Traced: `agent:skip+operator-run` does NOT match the earlier `*-operator-run` arm (its tail is
 # `+operator-run`, not `-operator-run`), so it reaches the add-on parse, `_addon_label` validates
 # `operator-run`, the level strips to `skip` — and dir #116's guard catches it there.
+# **No trace setup here, and this is the ONE fixture where that is right** — `skip` is untraceable by
+# design, so the loops' trace-is-load-bearing rule cannot apply. The SubagentStop leg filters the
+# marker through ACCEPTED_REVIEW_LEVELS ('low medium high max'), which deliberately excludes `skip`
+# ("an agent review 'at skip' would vouch for no review at all"), so `level=skip` yields an empty
+# level and the leg returns before writing anything. A `level=skip` trace fixture would therefore be
+# inert setup reading as coverage — the exact trap the loops' own header warns about. Forging an
+# `agent:skip` line by hand was the alternative and is rejected: it models a trace production can
+# never write. Consequence, stated: under the mutation this test guards (dir #116's skip-suffix guard
+# deleted) it denies via the missing-trace route rather than unlocking, so the wording assertion below
+# is what reds, not the deny assertion.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=skip\n')"
+rm -f "$(trace_for "$d")"
 write_full_receipt_review "$d" "agent:skip+operator-run"
 gate "gh pr create --fill" "$d"
 check_contains "dir #116 x dir #183: 'agent:skip+operator-run' → denied" "$OUT" '"permissionDecision":"deny"'
