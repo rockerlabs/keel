@@ -2316,13 +2316,10 @@ case "$status" in
                          trace_match_outcome="agent:$outcome_level"
                          needs_dialog=1
                          prov_label="review: $outcome_level, independent agent review (trace-confirmed)$addon_prose"; prov_tag="agent-confirmed" ;;
-      agent:*)          # dir #70, re-scoped by dir #254: an independent Agent-tool subagent reviewed
-                         # because the direct `Skill(code-review)` attempt was refused THIS run (the
-                         # harness's blanket `disable-model-invocation` block has lifted — this is now
-                         # the fallback branch, not the standing default) — trusted stays 0, same as the
-                         # bare-level case below: this outcome is just as self-report-fabricable, so it
-                         # earns no more trust and still needs the SubagentStop trace match (skill-trace,
-                         # above).
+      agent:*)          # dir #70, now the refusal-fallback per dir #254 — see this file's header above
+                         # for why. Trusted stays 0, same as the bare-level case below: this outcome is
+                         # just as self-report-fabricable, so it earns no more trust and still needs the
+                         # SubagentStop trace match (skill-trace, above).
                          outcome_level="${review_outcome#agent:}"
                          needs_dialog=1
                          prov_label="review: $outcome_level, independent agent review (Skill(code-review) invocation refused this run)"; prov_tag="agent-confirmed" ;;
