@@ -7,6 +7,24 @@ A one-paragraph-per-release summary, newest first. Each entry is a condensed dig
 produces a release) and [`publishing-checklist.md`](publishing-checklist.md) (the mechanics of
 cutting one) — this page is the record of what each one delivered.
 
+## v0.7.2 — 2026-08-29
+
+The external-store release. Keel's impact-scoring ledger moved out of every consuming project's
+working tree into `$KEEL_HOME/.keel/impact/<project-id>/`, keyed by the main checkout's physical
+path, so a linked worktree and its parent now resolve to one store instead of diverging, and
+`keel-impact.sh enable` writes nothing into the project at all. A new `keel-impact.sh migrate` sweeps
+legacy in-tree copies — merging untracked sources and deliberately refusing to touch a tracked one, a
+case found live on two adopter repos. Alongside it, two additions adopters get and one they do not:
+`docs/verification-economics.md` supplies the stopping rule and filing bar that `drydock.md`,
+`delta-audit.md` and `release-audit.md` each assumed and none stated; drydock itself gained a
+code-correctness module beside its prose one; and `tools/self/citation-resolvability.sh` — deliberately
+keel-self-maintenance, never installed downstream — makes every `dir #N` cited under `docs/` resolve or
+fail. It is also the first release whose RC pass had `tools/delta-audit/derive.sh`, a written stop rule
+and that citation check all available at once, and that pass found behavioural defects in this
+release's own migration code that the parallel whole-read wave did not: four were fixed before the
+tag, and two failure windows in the auto-migration path shipped as-is, ticketed. Two
+further known issues are disclosed in the changelog, each also carrying an open ticket.
+
 ## v0.7.1 — 2026-08-21
 
 The audit-tail release. v0.7.0 shipped with a named list of six residuals it deliberately did not
