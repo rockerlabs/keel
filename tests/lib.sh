@@ -282,22 +282,28 @@ trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
 # there was no way to ask this helper for a disagreeing pair — every such test had to open-code the whole
 # 9-line init+receipt sequence by hand instead, and there are now several near-identical copies of it
 # (found by /simplify's reuse AND simplification passes, independently). New mismatch fixtures should
-# pass this rather than add a copy; the existing hand-rolled ones are left alone deliberately — migrating
-# them is churn in tests that currently pass, not part of dir #158.
+# pass this rather than add a copy. **dir #183 migrated test 50h onto it** — not drive-by tidying, but
+# because dir #183 deleted the override's only other caller and a helper parameter with zero callers is
+# dead by accident rather than by decision. The four hand-rolled mismatch fixtures that remain (18b,
+# 18c, 49, 50d) are still left alone deliberately: migrating them is churn in tests that currently pass,
+# and it is dir #163's own ticket.
 write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
 write_full_receipt_review() {
   local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" depth_override="${5:-}" s depth_level
   depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
-  # dir #81/#141/#158: a combined `agent:<level>+<addon>[,<addon>…]` outcome records step 4's depth as
-  # the bare level too, so strip the whole add-on set the same way `-operator-run`/`-waived` are
-  # stripped above (order relative to the `agent:` prefix strip below doesn't matter — prefix and
-  # suffix never overlap — but keeping every suffix-strip grouped here is deliberate). `%%+*` (strip
-  # from the FIRST `+` onward), not a list of per-addon `%+operator-run` / `%+second-opinion` strips:
-  # dir #158 made the suffix a SET, so an enumerated strip here would have to be extended for every new
-  # add-on and, worse, would silently mis-derive the depth for a multi-addon outcome (stripping
-  # `+second-opinion` off `agent:high+operator-run,second-opinion` leaves `high+operator-run`, which
-  # then never matches step 4's `high` and every such fixture would fail for a reason that has nothing
-  # to do with what it tests). No real review level contains `+`, so this cannot over-strip.
+  # dir #81/#141/#183: a combined `agent:<level>+<addon>` outcome records step 4's depth as the bare
+  # level too, so strip the add-on the same way `-operator-run`/`-waived` are stripped above (order
+  # relative to the `agent:` prefix strip below doesn't matter — prefix and suffix never overlap — but
+  # keeping every suffix-strip grouped here is deliberate). `%%+*` (strip from the FIRST `+` onward),
+  # not a list of per-addon `%+operator-run` / `%+second-opinion` strips: an enumerated strip would
+  # have to be extended for every new add-on, and — the property that actually matters here — it would
+  # NOT strip an INVALID add-on at all, which is exactly what the deny-path fixtures pass. A fixture
+  # writing `agent:high+bogus-addon` needs `polish.4-depth high` so the test denies for the reason it
+  # is about (the unknown token) rather than for a depth mismatch the fixture accidentally built in.
+  # The greedy form handles valid and invalid suffixes identically; no real review level contains `+`,
+  # so it cannot over-strip. (Written against dir #158's comma SET, where the enumerated form also
+  # mis-derived multi-addon outcomes; dir #183 removed the set, and the greedy strip's logic needs no
+  # change — only this reasoning did, since the multi-addon example it cited can no longer exist.)
   depth_level="${depth_level%%+*}"
   # dir #70: an `agent:<level>` outcome (the independent-subagent-review leg) records step 4's depth as
   # the bare level too — strip the prefix the same way the `-operator-run`/`-waived` suffixes are stripped

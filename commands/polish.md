@@ -263,7 +263,7 @@ Steps, in order:
    quality, see (a) below), never to a bare `<level>` outcome, and a real built-in `/code-review` pass
    needs no such compensation. **If the attempt is refused, fall through to (a) below** — dir #70's
    subagent stays exactly as the fallback it already was, unaffected: same mechanism, same MANDATORY
-   reminder dialog, same add-on machinery, just reached on refusal now instead of unconditionally (this
+   reminder dialog, same add-on literals, just reached on refusal now instead of unconditionally (this
    is the "subagent, then its existing dialog" choice among dir #254's open sub-question's candidates:
    the dialog exists to compensate for the subagent's weaker quality relative to a real
    `/code-review` pass, per dir #81/#141 — that gap is unaffected by WHY we ended up on the subagent
@@ -380,57 +380,48 @@ Steps, in order:
      trend line. On a later convergence round, re-engage this SAME second-opinion subagent with a
      follow-up message scoped to the fix delta — never a fresh spawn, per dir #127's "same reviewer" rule,
      extended to this subagent too. Once resolved (or if it reported nothing), receipt the combined
-     outcome: `polish.5-review agent:<level>+second-opinion`. **If an operator-run `/code-review` also
-     reviewed work that is still in the commit you are shipping, name both as a SET —
-     `polish.5-review agent:<level>+operator-run,second-opinion`** (dir #158; the suffix is
-     comma-separated and order-free, validated against the gate's own allowlist, so an invented add-on
-     still denies).
+     outcome: `polish.5-review agent:<level>+second-opinion`.
 
-     **The set's unit is the SHIPPED COMMIT, not the round** — state it that way and nowhere else, since
-     everything else in step 5 is per-commit (the trace is HEAD-keyed, the depth cross-check is
-     per-commit, and dir #96 refuses to recover a review claim across a commit at all). This dialog is
-     single-select, so both add-ons can't be *chosen* in one round; they accumulate across rounds
-     instead, and each fix commit carries its predecessor's reviewed content forward. So: an add-on
-     belongs in the set while the work it reviewed is still in HEAD. **`--recover` will not carry it for
-     you** — `polish.5-review` is deliberately never restored (dir #96), so an earlier round's add-on
-     survives only in this session's own memory and has to be re-typed. `--recover` staying silent is
-     unchanged, but writing a step-5 receipt that DROPS an add-on the prior round recorded now prints a
-     warning naming it (dir #161) — advisory, never a deny, because only you know whether the fix commit
-     removed the reviewed work.
+     **The receipt carries AT MOST ONE add-on (dir #183).** The suffix is a single token validated
+     against the gate's own allowlist, so an invented add-on still denies — and so does a comma-joined
+     pair, which the gate reads as one unknown token. **When both add-ons genuinely applied to the
+     commit you are shipping, `operator-run` wins the receipt slot**: it names a human pass, the rarer
+     and more consequential event, and the one a reader is least able to infer from the rest of the
+     record. **The one that loses the slot is not dropped from the RECORD — step 10's summary and the
+     PR body must still name EVERY mechanism that reviewed this commit** (see step 10). That prose
+     disclosure is where dir #81's honesty guarantee has always lived; dir #158 additionally put it in
+     the receipt as a comma-separated set, and dir #183 removed that half — the set parser carried five
+     live defects (dir #201/#214/#225/#226/#227) and deleting it retired all five structurally.
 
-     **This warning is a MANDATORY read, not a line to let scroll past (found by an operator-run
-     `/code-review high` pass, dir #161's own PR).** It is printed to stderr on an ordinary, successful
-     `exit 0` — nothing about the tool call itself flags it, unlike a real deny. Every `receipt
-     polish.5-review <outcome>` call's full output (not just its exit status) must be read before moving
-     on. If it names a dropped add-on: either re-run the receipt with the full set (the reviewed work is
-     still in HEAD — the common case), or, if the fix commit genuinely removed that reviewed work, say so
-     explicitly in the step 10 summary rather than silently letting the narrower outcome stand — a
-     deliberate drop is legitimate, but it still needs to be a stated decision, not an unnoticed one.
+     **An add-on's unit is the SHIPPED COMMIT, not the round** — state it that way and nowhere else,
+     since everything else in step 5 is per-commit (the trace is HEAD-keyed, the depth cross-check is
+     per-commit, and dir #96 refuses to recover a review claim across a commit at all). So a mechanism
+     is worth naming while the work it reviewed is still in HEAD, and each fix commit carries its
+     predecessor's reviewed content forward. **`--recover` will not carry an add-on for you** —
+     `polish.5-review` is deliberately never restored (dir #96), so an earlier round's add-on is never
+     re-applied automatically. **But it is usually still readable, so do not re-type it from memory**
+     (corrected by this ticket's own review, which found this paragraph claiming memory was the only
+     source — verified by reproduction, both halves): on the CROSS-RUN path, `init` retires the prior
+     round's sentinel into the single-slot backup, where its `polish.5-review` line survives verbatim.
+     Read it the same way you read the live sentinel, one path over —
+     `grep polish.5-review /tmp/pre-pr-gate-prev-$(tools/pre-pr-gate.sh receipt-key)`. It is
+     best-effort, not a guarantee: the backup holds only the MOST RECENT retirement, and because `init`
+     always leaves a live sentinel behind, a further `init` retires that (add-on-less) file over the
+     backup and the line is gone. So read it early, and treat a miss as "no record", never as "no add-on".
 
-     **On the IN-RUN path, do that comparison yourself — read this run's own earlier
-     `polish.5-review` line out of the live sentinel (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh
-     receipt-key)`, last write wins) before writing the new one** (found by v0.7.0's RC
-     cross-PR-seam pass, dir #192; ticketed as dir #201). The warning cannot do it for you, because
-     "the prior round" it compares against is read from the RETIRED sentinel backup — never from this
-     run's own earlier line. Resolve a finding in-run (`--amend` and keep going, the path named
-     further down in this step) and nothing is retired, so your in-run drop is judged against whatever
-     the LAST RETIRED round happened to hold. Both outcomes are wrong for you: if that round carried
-     the add-on, the warning fires about IT and merely looks like it caught you; if it did not — an
-     add-on gained and dropped inside this one run, the dir #155 shape this warning exists to catch —
-     you get silence. Neither answer is about the line you actually need to compare against.
-     **A THIRD outcome (dir #214), not covered by that pair:** whether you get either of them at all
-     depends on the lineage guard. Retiring a live sentinel stamps the then-HEAD into the backup as
-     `base-sha`, and the guard requires that sha to still be REACHABLE from current HEAD. A plain
-     `--amend` of the very commit that retirement saw rewrites it rather than extending it, so the sha
-     is orphaned, the guard discards the comparison, and the check is SILENT here too — regardless of
-     what the retired round held. Two things make this hard to predict from the session's own view, so
-     do not try to. **The condition is reachability, not "a fresh commit happened"** — a commit is its
-     own ancestor, so an unmoved HEAD passes the guard. **And the stamp is not necessarily YOUR
-     `init`'s** — retirement runs on every gate deny and on the PASS branch too, and it only stamps when
-     a live sentinel exists, so after a deny or a shipped round your `init` finds nothing to retire,
-     stamps nothing, and the backup still carries an OLDER round's sha, which your own amend may have
-     orphaned. Which is why the rule above is to read the live sentinel, never to infer anything from
-     the presence or absence of a warning.
+     **Nothing warns you when a re-typed receipt loses one (dir #183).** dir #161 added a stderr warning
+     for exactly that, and dir #183 deleted it along with the set parser: it compared against the last
+     RETIRED round, which is the wrong baseline on the in-run `--amend` path (dir #201), goes silent
+     when an `--amend` orphans the retired round's lineage stamp (dir #214), and fires spuriously
+     against an already-SHIPPED round while advising a review that never saw the commit (dir #226). It
+     signalled unreliably in exactly the situations it existed for. **What replaces it: read this run's own
+     earlier `polish.5-review` line out of the live sentinel
+     (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh receipt-key)`, last write wins) before writing a new one,
+     and carry every mechanism into the step-10 disclosure.** On the IN-RUN convergence path (resolve a
+     finding, `--amend`, keep going without re-`init`-ing — the path named further down in this step)
+     nothing is retired, so the live sentinel is the only place your own earlier add-on still exists.
+     Read it; do not try to reason about what was carried forward from session memory. The step-10
+     disclosure is the record that matters anyway, since the receipt now holds one add-on by design.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — this
      run's own direct attempt above was refused, which is why we're on this fallback branch at all.**
@@ -439,10 +430,9 @@ Steps, in order:
      outcome: `polish.5-review agent:<level>+operator-run` — a new, honest record naming BOTH reviews that
      ran, not an overwrite that erases the agent review the receipt above already established (whichever
      receipt is written LAST for this step wins — see (c)). **If a cross-model second opinion also
-     reviewed work still in this commit, write the whole SET —
-     `agent:<level>+operator-run,second-opinion`** (dir #158). Whichever add-on arrives LAST is the one
-     at risk of overwriting the other, so the rule is the same on every branch: write every add-on that
-     applies to the shipped commit, not just the one you just resolved.
+     reviewed work still in this commit, `operator-run` still takes the receipt slot (dir #183) — and
+     step 10's summary and the PR body must name the second opinion too.** The receipt holds one
+     add-on; the prose holds every mechanism.
 
      **Anti-rebundle rule:** if a future edit ever makes the agent review itself optional or something to
      ask about, that must be its OWN separate question — never re-bundled with this one into a single
@@ -477,11 +467,12 @@ Steps, in order:
        it and trying the combined outcome first would only buy a guaranteed step-8 denial before falling
        back anyway. Otherwise, the common case is that this hand-off came from (a) — an agent review
        already ran and was independently receipted before the dialog ever opened — so try the COMBINED
-       outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note) —
-       **or the full SET, `agent:<level>+operator-run,second-opinion`, if a cross-model second opinion
-       also reviewed work still in this commit** (dir #158). This branch is the ORDINARY hand-off path,
-       so it is the one most likely to arrive last and overwrite an earlier round's add-on; write every
-       add-on that applies, not only the one this hand-off resolved.
+       outcome first: `polish.5-review agent:<level>+operator-run` (this also clears the hand-off note).
+       **If a cross-model second opinion also reviewed work still in this commit, `operator-run` keeps
+       the receipt slot and the second opinion is named in step 10's summary and the PR body**
+       (dir #183 — the receipt holds one add-on, the prose holds every mechanism). This branch is the
+       ORDINARY hand-off path, so it is the one most likely to arrive last; what it must not do is let
+       an earlier round's mechanism vanish from the prose record.
        Only if step 8 later denies it for a missing/mismatched agent trace — meaning this hand-off actually
        came from (b), where no agent review ever ran — fall back to the plain outcome,
        `polish.5-review <level>-operator-run`. **A `review-dialog-missing` denial is a DIFFERENT deny
@@ -551,15 +542,17 @@ Steps, in order:
      (`agent:<level>`, its add-on forms, and a bare `<level>` from a genuine in-session `/code-review`)
      go stale the same way `polish.3-tests` does — the trace is keyed to the sha it was written at —
      and need a fresh agent review or add-on, or a hand-off outcome that carries no trace-check at all.
-     **On this exact trigger, compare the add-on set by hand before re-writing the receipt** — the dir
-     #161 drop-warning is silent on this path by construction; see its own paragraph above.
+     **On this exact trigger, read the live sentinel's own earlier `polish.5-review` line before
+     re-writing the receipt** — nothing warns you if the re-write loses a mechanism (dir #183 removed
+     dir #161's warning; see its own paragraph above), and the step-10 disclosure is what has to carry
+     every mechanism forward.
    - **The MANDATORY review dialog (dir #88), on that same later-amend trigger** — per-commit too, but
      only for `agent:*` outcomes (and `skip`, step 4's own dialog): re-answer it for the new HEAD, an
      earlier round's answer does not carry over. The gate never checks it for a bare `<level>` outcome,
      so there is nothing to re-answer there. (Whether this SHA-binding should instead survive a clean
-     delta round WAS an open design question, dir #180 — since SUPERSEDED by dir #183, which removes
-     the mandatory dialog outright rather than relaxing when it re-fires. Until that lands, the
-     SHA-binding holds exactly as described here.)
+     delta round WAS an open design question, dir #180 — since SUPERSEDED by dir #254, which moved the
+     dialog off the primary path: it now fires only on the refusal fallback, making the re-fire
+     question a rare-path one. The SHA-binding holds exactly as described here.)
 
    If you run `tools/pre-pr-gate.sh receipt --recover` anyway to sanity-check state, its `nothing to
    recover` answer is correct and BY DESIGN here — not a signal that this isn't a convergence round;
@@ -600,11 +593,12 @@ Steps, in order:
    - `agent:medium` — the ordinary automated outcome (an independent agent review).
    - `low`/`high` — a genuine operator-typed or revisit-triggered in-session `/code-review` pass.
    - `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip` — the hand-off outcomes.
-   - `agent:<level>+<addon>[,<addon>…]` — a standing agent review PLUS one or more add-ons, as a
-     comma-separated set (dir #158). The add-ons are `operator-run` (the operator additionally ran
-     `/code-review`, dir #81) and `second-opinion` (an in-session cross-model subagent additionally
-     reviewed, dir #141). **Name every mechanism that reviewed this commit, not just the last one** —
-     e.g. `agent:medium+operator-run,second-opinion` when both happened, even across rounds.
+   - `agent:<level>+<addon>` — a standing agent review PLUS exactly one add-on (dir #183). The add-ons
+     are `operator-run` (the operator additionally ran `/code-review`, dir #81) and `second-opinion` (an
+     in-session cross-model subagent additionally reviewed, dir #141). **One per receipt: a
+     comma-joined pair denies.** When both applied, `operator-run` takes the slot — and **step 10's
+     summary and the PR body must name every mechanism that reviewed this commit, not just the one in
+     the receipt.**
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
@@ -676,12 +670,14 @@ Steps, in order:
    Compose the title and body from the implementation context (what changed, why, a test plan). **If step
    5's outcome was `agent:<level>`, the PR body must label the review as such** — e.g. "review: independent
    agent at `<level>` (direct `Skill(code-review)` invocation was refused this run — dir #254 fallback)" —
-   never presented as if `/code-review` itself ran. **If the outcome carries add-ons — `agent:<level>+<addon>[,<addon>…]` — the
-   PR body must name EVERY mechanism the outcome lists, one per add-on, never collapsed into fewer**: the
-   standing independent agent review, plus the operator-run `/code-review` for `+operator-run` (dir #81),
-   plus the in-session cross-model second opinion *naming its pinned model tier* for `+second-opinion`
-   (dir #141). A two-add-on set means three mechanisms in the body (dir #158) — the receipt is the list to
-   read off, so a set with two add-ons cannot be reported as if one review ran. Return the PR URL.
+   never presented as if `/code-review` itself ran. **The PR body must name EVERY mechanism that reviewed
+   this commit — read them off what ACTUALLY RAN, not off the receipt** (dir #183): the standing
+   independent agent review, plus the operator-run `/code-review` if the operator ran one (dir #81),
+   plus the in-session cross-model second opinion *naming its pinned model tier* if one ran (dir #141).
+   **The receipt is no longer that list.** It carries at most one add-on, so a commit reviewed BOTH ways
+   receipts `agent:<level>+operator-run` and the body still has to name three mechanisms. Reading the
+   body off the receipt would silently drop the second opinion — which is precisely the honesty the
+   receipt half was carrying until dir #183 removed it, so the burden is here now. Return the PR URL.
    Invoking `/polish` IS the standing authorization to push the
    branch and run `gh pr create --head <branch>` at this step; do not re-ask. The merge stays the
    operator's.
@@ -690,12 +686,14 @@ Steps, in order:
     self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
     review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
     independent agent review (`review: <level>, independent agent review — direct Skill(code-review)
-    invocation was refused this run`, matching the PR body's own label); **or, when the outcome carries add-ons
-    (`agent:<level>+<addon>[,<addon>…]`), every mechanism it lists — one per add-on, never fewer**: append
-    `+ operator-run /code-review` for `+operator-run` (dir #81) and `+ in-session cross-model second
-    opinion (<model>)`, naming the pinned tier, for `+second-opinion` (dir #141). So a two-add-on set
-    reads `review: <level>, independent agent review + operator-run /code-review + in-session cross-model
-    second opinion (<model>)` — three mechanisms, matching the PR body (dir #158);
+    invocation was refused this run`, matching the PR body's own label); **plus, when an add-on review
+    also ran, every mechanism that ran — read off what ACTUALLY RAN, not off the receipt (dir #183)**:
+    append `+ operator-run /code-review` for an operator-run pass (dir #81) and `+ in-session
+    cross-model second opinion (<model>)`, naming the pinned tier, for a cross-model second opinion
+    (dir #141). So a commit reviewed BOTH ways reads `review: <level>, independent agent review +
+    operator-run /code-review + in-session cross-model second opinion (<model>)` — three mechanisms,
+    matching the PR body — even though its receipt names only `+operator-run`, which is the one add-on
+    slot the receipt has;
     or, if step 5 took the (b) hand-off, that no real review ran in-session and whether the human ran it
     (`-operator-run`) or waived it (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is
     indistinguishable from a genuine in-session review, so reporting one here would re-hide exactly what
