@@ -264,8 +264,11 @@ Steps, in order:
    needs no such compensation. **If the attempt is refused, fall through to (a) below** — dir #70's
    subagent stays exactly as the fallback it already was, unaffected: same mechanism, same MANDATORY
    reminder dialog, same add-on machinery, just reached on refusal now instead of unconditionally (this
-   is the "subagent, then its existing dialog" choice among dir #254's open sub-question's candidates —
-   see the PR body for the reasoning). Should the harness ever re-block model invocation, this attempt
+   is the "subagent, then its existing dialog" choice among dir #254's open sub-question's candidates:
+   the dialog exists to compensate for the subagent's weaker quality relative to a real
+   `/code-review` pass, per dir #81/#141 — that gap is unaffected by WHY we ended up on the subagent
+   path, so the dialog belongs wherever the subagent runs, refusal-triggered or not). Should the
+   harness ever re-block model invocation, this attempt
    simply starts failing again and every run falls to (a) on its own — no revisit trigger or calendar
    re-check needed, since attempting first is now the standing behavior rather than an exception to
    restore. Either way, do not substitute `/review` (a GitHub-PR command, not a working-diff review) and

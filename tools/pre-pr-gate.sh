@@ -157,11 +157,9 @@
 # Root cause at the time this was built: `/code-review` shipped `disable-model-invocation: true`, so a
 # session could never call it on its own — every unavailable-case /polish run used to fall back to a
 # same-context inline pass (the author reviewing itself) standing in for a real review. **Superseded by
-# dir #254 (2026-08-26): that blanket policy has since lifted, observed live and independently
-# reproduced across sessions/machines** — commands/polish.md step 5 now attempts the real
-# `Skill(code-review)` call FIRST for `low|medium|high|max`, and everything below in this section is
-# reached only as the FALLBACK when that direct attempt is refused for a given run (the block could
-# still return), not as the standing default. commands/polish.md step 5(a) spawns ONE
+# dir #254 — see commands/polish.md step 5's own intro for the why/when.** Everything below in this
+# section is reached only as the FALLBACK when a direct `Skill(code-review)` attempt is refused for a
+# given run, not as the standing default. commands/polish.md step 5(a) spawns ONE
 # independent Agent-tool subagent (type `general-purpose`, fresh context — no memory of the code-writing
 # session) to do the review instead; this file's job is making THAT claim verifiable too, the same way
 # dir #63 made a real in-session `/code-review` call verifiable.
