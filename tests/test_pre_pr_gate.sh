@@ -835,7 +835,7 @@ write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_status "agent:<level> receipt + matching trace → exit 0" 0 "$STATUS"
 check_absent "agent:<level> receipt + matching trace → allowed" "$OUT" "deny"
-check_contains "provenance names the independent agent review, not a built-in /code-review run" "$OUT" "review: high, independent agent review (Skill(code-review) not model-invokable in-session)"
+check_contains "provenance names the independent agent review, not a built-in /code-review run" "$OUT" "review: high, independent agent review (Skill(code-review) invocation refused this run)"
 rm -f "$tf"
 
 # 47. Gate DENY: an `agent:<level>` receipt with NO matching trace at all — same bar as a bare-level

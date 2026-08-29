@@ -11,6 +11,27 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`/polish` step 5 attempts the real, built-in `Skill(code-review)` directly again, instead of going
+  straight to dir #70's independent-subagent fallback** (dir #254). The harness policy that blocked model
+  invocation of `/code-review` (`disable-model-invocation`) has lifted — observed live and independently
+  reproduced across multiple sessions/machines on 2026-08-25 and 2026-08-26 — so for `low|medium|high|max`
+  the model now tries the built-in multi-agent pass itself first; only a refusal for that specific run
+  falls through to the dir #70 subagent, which is otherwise unchanged (same mechanism, same MANDATORY
+  `AskUserQuestion` reminder dialog and add-on machinery, dir #81/#141/#158/#161/#201/#214, all preserved
+  as the fallback path rather than deleted). A genuine direct call needs no reminder dialog and no
+  operator hand-off — it receipts a bare `polish.5-review <level>` and continues straight to step 6; the
+  gate's existing dir #63/dir #88 trace legs already covered this outcome shape natively, so
+  `tools/pre-pr-gate.sh` needed no new mechanism, only its `agent:*` provenance label reworded from "not
+  model-invokable in-session" to "invocation refused this run" (the fallback is now per-run, not a
+  standing ban). **Step 4's mandatory-ask threshold also moves, operator-decided 2026-08-26: from
+  `high`-and-above to `max`/`ultra`-and-`skip`** — an unasked `high` is now expected behaviour, since the
+  model can run that review itself with no compensating hand-off needed. Adopter-visible:
+  `commands/polish.md` and `tools/pre-pr-gate.sh` ship in every keel home; `docs/getting-started.md`'s
+  `/polish` section describes the restored capability instead of the old limitation. Pinned by new
+  `tests/test_conveyor_stages.sh` prose-window checks (asserting both the new attempt-first/threshold text
+  and the absence of the old blanket-unavailable/high-threshold text) and an updated
+  `tests/test_pre_pr_gate.sh` fixture for the reworded provenance label.
+
 ## [0.7.2] — 2026-08-29
 
 Known issues: two residuals ship unfixed, each with an open ticket, and neither changes what the tools
