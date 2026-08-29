@@ -323,8 +323,8 @@
 # silent exit 0, same as the other legs.
 #
 # **Gate check** — in the PASS branch, immediately after the existing review-trace check: whenever
-# `$review_outcome` matches `agent:*` (bare `agent:<level>`, or with any add-on set —
-# `agent:<level>+<addon>[,<addon>…]`, dir #158's single arm; the dialog reminder fires identically for
+# `$review_outcome` matches `agent:*` (bare `agent:<level>`, or with an add-on —
+# `agent:<level>+<addon>`, dir #183's single-token shape; the dialog reminder fires identically for
 # every one of them), additionally
 # require a `dialog:<outcome_level>` line for `$current_sha` in the trace file; else deny naming the
 # dialog as missing. Per-SHA by construction (dir #72's convergence-round fork): a fix-commit moves HEAD,
@@ -424,13 +424,22 @@ _expected_step() {
 # loops over the space-separated words instead. `ultra` deliberately excluded: it never reaches either
 # marker path (see commands/polish.md step 5).
 ACCEPTED_REVIEW_LEVELS='low medium high max'
-# dir #158: the review ADD-ONS a step-5 outcome may name on top of a standing agent review, as a set:
-# `agent:<level>+<addon>[,<addon>…]`. Was two hardcoded literals (`+operator-run`, dir #81;
-# `+second-opinion`, dir #141), one per `case` arm, with step 5 holding one value — so a commit that
-# genuinely got BOTH (felt on dir #155: the operator ran `/code-review high`, then a cross-model second
-# opinion in a later round) had to drop one from the record whichever literal was written. Adding a
-# literal per combination grows the arm list combinatorially; one set parse handles every future add-on
-# with no new arm.
+# The review ADD-ON a step-5 outcome may name on top of a standing agent review, as a SINGLE token:
+# `agent:<level>+<addon>`. dir #158 had generalized this into a comma-separated SET, so a commit that
+# got both an operator-run pass and a cross-model second opinion could name both in the receipt (felt
+# on dir #155). **dir #183 reverted that**: the set parser carried five live defects in rare-path code
+# (dir #201/#214/#225/#226/#227) and deleting it retires all five structurally, where fixing them
+# separately would have cost ~3 patches to a fallback branch. The capability is deliberately given up,
+# not overlooked — when both mechanisms genuinely apply, `operator-run` wins the receipt slot (it names
+# a human pass: the rarer, more consequential event, and the one a reader is least able to infer), and
+# `commands/polish.md` step 10 plus the PR body still name EVERY mechanism that reviewed the commit.
+# That prose disclosure is where dir #81's honesty guarantee always lived; dir #158 additionally put it
+# in the receipt, and it is the receipt half that carried the defects.
+#
+# Two literals, added one `case` arm at a time: `operator-run` (dir #81) and `second-opinion`
+# (dir #141). This is now the ONLY validator of the add-on suffix — with no comma walk between the
+# receipt and this `case`, whatever follows the `+` arrives here as one opaque token, so a set-shaped
+# string like `operator-run,second-opinion` is simply an unknown token and denies.
 #
 # **This function IS the allowlist — deliberately not a separate `ACCEPTED_REVIEW_ADDONS` list.** A
 # first draft had both, and shellcheck caught the list as unused: validation ran through this `case`
@@ -453,161 +462,6 @@ _addon_label() {
     second-opinion)  printf 'in-session cross-model second opinion (self-reported — the trace can'"'"'t distinguish one subagent run from two)' ;;
     *)               return 1 ;;
   esac
-}
-
-# dir #161 /code-review high: the "no word-split, no glob" comma-walk shared by BOTH consumers of a
-# `<something>+<addon>[,<addon>...]` suffix — the gate's own unlock-time `agent:*+*` validation arm
-# (below) and `_normalize_addon_set` (below). $1 = the raw text after the `+`. Prints one element per
-# line, EMPTY ELEMENTS INCLUDED (as empty lines) — do not add a `[ -n "$a" ]` filter here. The unlock
-# arm depends on seeing an empty element (`agent:<level>+,` or a trailing `,`) so it can feed it to
-# `_addon_label`, which denies on empty — that is the mechanism dir #158's own tests (50m) pin as
-# proving "at least one mechanism was actually named"; dropping empties in this shared splitter would
-# silently reopen that hole. `_normalize_addon_set` filters empties itself, on the caller side, since it
-# has no such validation to protect. An entirely empty suffix ($1="") emits nothing at all — the
-# `[ -n "$rest" ]` loop guard runs zero iterations there — matching the unlock arm's own prior special
-# case for a bare `agent:<level>+` (its own now-inherited `$addon_prose`-empty check still catches that).
-_split_comma_set() {
-  local rest="$1" a
-  while [ -n "$rest" ]; do
-    a="${rest%%,*}"
-    if [ "$rest" = "$a" ]; then rest=""; else rest="${rest#*,}"; fi
-    printf '%s\n' "$a"
-  done
-}
-
-# dir #161: the add-on SET a `polish.5-review` outcome carries, as one token per line (never printed —
-# consumed by `_warn_dropped_addons` below). Branches on the `agent:` prefix first, then the dash forms,
-# per the ticket's normalization table: only `agent:<level>+<a>[,<b>...]` carries a non-empty set — every
-# other recognized shape (bare `agent:<level>`, `*-waived`, `skip`) is a review with no separately-named
-# mechanism, and `*-operator-run` names exactly one (`operator-run`). An unrecognized shape falls through
-# to the empty set: this function must never manufacture a warn by guessing at a shape it doesn't know.
-# Deliberately NOT validated against `_addon_label` here — that happens once, in `_warn_dropped_addons`,
-# against the PRIOR set only (see its own comment for why: this function's job is only to read what was
-# written, not to judge it).
-_normalize_addon_set() {
-  local outcome="$1" rest a
-  case "$outcome" in
-    agent:*+*)
-      # `_split_comma_set` (above) yields empty elements too — this caller drops them itself, since it
-      # has no validation to protect (unlike the unlock arm, which needs to SEE an empty element to
-      # deny it via `_addon_label`).
-      rest="${outcome#agent:}"
-      rest="${rest#*+}"
-      while IFS= read -r a; do
-        [ -n "$a" ] && printf '%s\n' "$a"
-      done < <(_split_comma_set "$rest")
-      ;;
-    *-operator-run)   printf '%s\n' operator-run ;;
-    # Every other recognized shape (bare `agent:<level>`, `*-waived`, `skip`), and any unrecognized
-    # shape, falls through with no output — bash's own `case` already no-ops on no match, so there is
-    # no need for an explicit catch-all arm here (verified: a `case` with zero matching patterns exits
-    # 0 with nothing printed; simplify pass, dir #161's own /code-review high).
-  esac
-}
-
-# dir #161: advisory-only check, called from the ordinary `receipt polish.5-review <outcome>` write path
-# AFTER the line has already been appended — this never affects the write itself (same appended line,
-# same exit 0). Warns on stderr when the immediately-prior round (the single-slot prev-sentinel backup)
-# named a review add-on this round's outcome does not carry, so a re-typed-from-memory receipt (the dir
-# #155 incident) is noticed at the exact moment the omission is made rather than never. See the ticket
-# (dir #161) for why this fires here and not in `--recover` or the gate's PASS branch, and why it fails
-# SILENT (opposite direction from `--recover`'s fail-closed) on every unverifiable condition: this grants
-# no trust, so an unverifiable prior must never manufacture a warn.
-# **Best-effort, not a guarantee (cross-model second-opinion review, dir #161):** the single-slot prev
-# backup only ever holds the MOST RECENT retirement. If an intermediate round is retired without ever
-# writing a `polish.5-review` receipt (a gate deny at an earlier step, or two `init`s in a row with no
-# review write between them), that round's own prior add-on memory is silently gone from the chain —
-# correctly fail-silent per the rule above, but it means a real drop from two-or-more rounds back can
-# go unnoticed. A nudge for the common case, not a substitute for reading the receipt.
-# **Third case, same family (found 2026-08-20 by dir #192's RC cross-PR-seam pass, dir #201):** on the
-# IN-RUN convergence path (`commands/polish.md` step 5 — resolve, `--amend`, continue without
-# re-`init`-ing, dir #177) nothing is retired, so this run's own earlier `polish.5-review` line stays
-# in the LIVE sentinel, which this function never reads. Note the shape precisely, because it is NOT
-# "silent on the in-run path": the comparison still runs, against whatever the last RETIRED round
-# held. So an in-run drop is judged against the wrong baseline in both directions — silent when that
-# round carried no add-on (an add-on gained and dropped inside one run, the dir #155 shape), and
-# a warning about that OLDER round when it did, which only looks like a catch. Those two were verified
-# live; so, separately, was the third direction below.
-# **A further direction within that third case (dir #214), beyond the two just named:** whether EITHER
-# of them happens depends on the lineage guard. `retire_sentinel` stamps the then-HEAD into the backup
-# as `base-sha`, and `_validated_prev_sentinel` requires that sha to still be REACHABLE from current
-# HEAD. A plain `--amend` of the very commit retirement saw ORPHANS it (a rewrite, not an extension),
-# the guard returns 3, and this check goes SILENT there too, whatever the retired round held. Two
-# details the obvious reading gets wrong, both load-bearing for any test written against this:
-# (1) the condition is REACHABILITY, not "a fresh commit landed since `init`" — a commit is its own
-# ancestor, so a round where HEAD never moved passes the guard and still compares; (2) the stamp is NOT
-# necessarily the current round's `init`. `retire_sentinel` runs on every deny path and on the PASS
-# branch as well (see its call sites and `init`'s own note, "the same retire_sentinel every deny/pass
-# path uses below"), and it stamps only when a live sentinel exists — so after a deny or a shipped
-# round, `init` finds nothing to retire and the backup keeps the EARLIER retirement's sha.
-# Disclosed in that step's own prose rather than fixed here, because dir #186 removes this whole
-# check; keep it in sync with BOTH other copies — `commands/polish.md` step 5 and the `[0.7.0]`
-# CHANGELOG Known-issues block, which now carries the mechanism too, not just an announcement.
-_warn_dropped_addons() {
-  local receipt_key="$1" new_outcome="$2" cwd="${3:-$PWD}"
-  local raw_prev prev prev_outcome prior_set new_set a label missing=""
-  # dir #161 /code-review high: cheap pre-check, no fork of `git`/`awk` beyond the grep below — most
-  # rounds have no prev backup at all, and there is nothing to compare regardless of lineage. Skipping
-  # straight to the expensive lineage check inside `_validated_prev_sentinel` (a `git merge-base` fork)
-  # before knowing whether the prev file even MENTIONS `polish.5-review` was wasted work on the common
-  # no-op path. `-F` (fixed-string): the step id has no regex metacharacters worth treating specially.
-  raw_prev="$(_prev_sentinel_path_for_key "$receipt_key")"
-  [ -f "$raw_prev" ] || return 0
-  # ANSI-C quoting, not `$(printf ...)` (dir #161 /code-review high): the whole point of this
-  # pre-check is avoiding forks on the common no-op path — building its own search pattern via a
-  # command-substitution fork would have undercut that.
-  grep -qF -- $'\tpolish.5-review\t' "$raw_prev" || return 0
-  # Existence/header/lineage validation is shared with `--recover` via `_validated_prev_sentinel`
-  # (defined above, near `retire_sentinel`) — every failure reason (no backup, malformed header,
-  # foreign lineage) is silent here, the opposite of `--recover`'s loud refusal, per this function's
-  # own header.
-  prev="$(_validated_prev_sentinel "$receipt_key" "$cwd")" || return 0
-  # Same header-nonce + last-write-wins idiom `--recover` uses (shared via `_prev_sentinel_outcomes`,
-  # above), filtered to just the one step id this check cares about.
-  prev_outcome="$(_prev_sentinel_outcomes "$prev" polish.5-review)"
-  [ -n "$prev_outcome" ] || return 0
-  prior_set="$(_normalize_addon_set "$prev_outcome")"
-  # Bail before computing `new_set` (a subshell fork) when `prior_set` is empty — the majority case per
-  # the normalization table above (bare `agent:<level>`, `*-waived`, and `skip` all normalize to `{}`)
-  # — the loop below would do nothing with `new_set` in that case anyway.
-  [ -n "$prior_set" ] || return 0
-  new_set="$(_normalize_addon_set "$new_outcome")"
-  while IFS= read -r a; do
-    [ -n "$a" ] || continue
-    # Filter the PRIOR set through `_addon_label` — the add-on allowlist, deliberately not duplicated
-    # here (see its own header) — so this can never advise re-adding a token the gate would then deny.
-    # The NEW set is compared as opaque tokens: the gate already rejects an invented add-on at unlock
-    # time, duplicating that check here buys nothing.
-    label="$(_addon_label "$a")" || continue
-    # Pure-bash exact-line membership test — no `printf | grep` fork per token. `$a` is already
-    # allowlist-filtered by `_addon_label` above (only ever `operator-run`/`second-opinion`, both
-    # glob-metacharacter-free), so it is safe to use as a `case` PATTERN here; `$new_set` is only ever
-    # the VALUE being matched, never itself a pattern, so its content needs no such guarantee.
-    case $'\n'"$new_set"$'\n' in
-      *$'\n'"$a"$'\n'*) : ;;
-      *)
-        # Name the raw TOKEN, not just its human label (found by the cross-model second-opinion review,
-        # dir #161): the label alone (e.g. "in-session cross-model second opinion (self-reported...)")
-        # gives the operator nothing to copy-paste back into the receipt — the token is what actually
-        # goes after the `+` in `agent:<level>+<addon>`.
-        missing="${missing:+$missing, }$a ($label)"
-        ;;
-    esac
-  done <<< "$prior_set"
-  [ -n "$missing" ] || return 0
-  # Advisory only — stderr, and the caller's exit 0 is unaffected either way. Deliberately does not
-  # mention either trace marker literal (KEEL-REVIEW-DIALOG/KEEL-DEPTH-DIALOG followed by ": level=") —
-  # same discipline the skip-dialog deny message follows elsewhere in this file, so a session recapping
-  # this warning inside an AskUserQuestion can never hand a hook the exact line it greps for.
-  printf 'pre-pr-gate: this step-5 receipt drops add-on(s) the prior round recorded: %s. The add-on set applies to the SHIPPED COMMIT, not the round — if that reviewed work is still in HEAD, re-run with the full set (e.g. receipt polish.5-review "agent:<level>+<addon>[,<addon>...]"). If the fix commit removed the reviewed work, dropping it is fine and no action is needed.\n' "$missing" >&2
-  # dir #161 /code-review high (altitude finding): the stderr print is the fastest signal in the
-  # common case, but it relies entirely on being read — nothing forces that. Also persist the fact to
-  # the durable impact log (the same `log_event` primitive `receipt-deny`/`receipt-pass`/etc. already
-  # use throughout this file), so a session that misses the stderr line still leaves a mechanically
-  # recoverable trail rather than none at all. Does not upgrade this into a gate — still advisory,
-  # still `exit 0` either way; a later step is free to grep the log for this event type, but nothing
-  # here requires it to.
-  log_event review-addon-dropped "$missing" "$cwd"
 }
 
 # The hook's OWN observation of HEAD at fire time — never a self-reported field — shared by both
@@ -1042,25 +896,24 @@ retire_sentinel() {
   fi
   rm -f "$sentinel"
 }
-# dir #161: shared by `receipt --recover` and `_warn_dropped_addons` (below) — both need "does key $1's
-# retired backup exist, is its header well-formed, and is it on the SAME lineage as $2 (cwd)'s current
-# HEAD" before trusting anything it says. On success, prints the prev sentinel's path on stdout and
-# returns 0. On failure, returns one of three distinct codes and prints nothing — the two callers need
-# opposite FAIL DIRECTIONS (`--recover` is about to grant trust, so it reports each reason loudly and
-# stops; `_warn_dropped_addons` grants no trust, so an unverifiable prior must never manufacture a warn,
-# and stays silent on all three — see its own header), so the messaging stays with each caller rather
-# than living here:
+# dir #161: answers "does key $1's retired backup exist, is its header well-formed, and is it on the
+# SAME lineage as $2 (cwd)'s current HEAD" before anything trusts what it says. On success, prints the
+# prev sentinel's path on stdout and returns 0. On failure, returns one of three distinct codes and
+# prints nothing, leaving the messaging to the caller rather than living here:
 #   1 = no backup at all (a first-ever round, or nothing retired since the last `init`)
 #   2 = malformed header (no leading `nonce\t…` line)
 #   3 = lineage guard failed (missing/foreign base-sha — not a verified ancestor of current HEAD)
-# Before this (dir #161), `--recover` carried this exact three-check sequence inline and
-# `_warn_dropped_addons` would have been a second, independent copy of it (flagged live in this ticket's
-# own /simplify pass — reuse, simplification and altitude angles all converged on the same finding).
+# Extracted (dir #161) from `--recover`, which carried this exact three-check sequence inline, to be
+# shared with dir #161's own add-on-drop warning. **dir #183 deleted that warning, so `--recover` is
+# once again the only caller** — the extraction is kept rather than re-inlined: it is the shape that
+# keeps the fact-checking separate from the messaging, which is the property the next paragraph is
+# about.
 # **This function itself carries no trust semantics (found by the cross-model /code-review high pass,
-# dir #161) — the "grants trust" / "grants no trust" language above describes its two CURRENT CALLERS,
-# not this function.** It only checks facts and returns a path + a numeric code; a future third caller
-# must consciously choose its own fail direction (loud vs. silent) for its own use case rather than
-# pattern-matching one of the two existing callers off the language in this comment.
+# dir #161).** It only checks facts and returns a path + a numeric code, and it deliberately says
+# nothing about what a failure should MEAN. `--recover` is about to grant trust, so it reports each
+# reason loudly and stops; a future second caller that grants no trust would want the opposite (silent
+# on every unverifiable condition, so an unreadable prior can never manufacture a claim). That choice
+# belongs to each caller — make it consciously rather than pattern-matching `--recover`.
 _validated_prev_sentinel() {
   local key="$1" cwd="${2:-$PWD}" prev prev_header base_sha
   prev="$(_prev_sentinel_path_for_key "$key")"
@@ -1076,9 +929,12 @@ _validated_prev_sentinel() {
   fi
   printf '%s\n' "$prev"
 }
-# dir #161 /code-review high: shared by `receipt --recover`'s own replay (which reads ALL steps) and
-# `_warn_dropped_addons` (which reads only ONE) — both read the RETIRED prev sentinel and need no
-# foreign-nonce/MISSING/REPLAY bookkeeping. Contrast the completeness parser elsewhere in this file
+# dir #161 /code-review high: reads the RETIRED prev sentinel, which needs no foreign-nonce/MISSING/
+# REPLAY bookkeeping. Extracted to be shared with dir #161's add-on-drop warning (which read only ONE
+# step); **dir #183 deleted that warning, so `receipt --recover`'s own replay — which reads ALL steps —
+# is again the only caller.** The `$2` step-id filter below is what the deleted second consumer needed
+# and is kept: it costs one `case` and is the natural read for any future single-step consumer.
+# Contrast the completeness parser elsewhere in this file
 # (search `EXPECTED_STEPS`), which reads the LIVE sentinel and does need that extra state for its
 # PASS/MISSING/REPLAY verdict — dir #72 finding #6 already argued, and this still holds, for why THAT
 # one stays a separate implementation rather than sharing with either of these two. $1 = the prev
@@ -1086,8 +942,7 @@ _validated_prev_sentinel() {
 # $2 = an optional step id filter: given, prints only that step's outcome (nothing if it was never
 # written under the matching nonce); omitted, prints "step<TAB>outcome" for every step, in first-seen
 # order — the shape `--recover` needs to replay them all. If the receipt line FORMAT itself ever
-# changes (delimiter, field count), this is now the ONE place that needs the matching edit for both
-# consumers.
+# changes (delimiter, field count), this is the ONE place that needs the matching edit.
 _prev_sentinel_outcomes() {
   awk -F'\t' -v want="${2:-}" '
     NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
@@ -1242,8 +1097,9 @@ case "${1:-}" in
       # `rc=3` branch below — real, minor duplication, judged not worth complicating a shared,
       # security-adjacent validator's signature to remove.
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
-      # dir #161: the exists/header/lineage checks below now live once, in `_validated_prev_sentinel`
-      # (shared with `_warn_dropped_addons`) — this block keeps its own three distinct, loud messages
+      # dir #161: the exists/header/lineage checks below live once, in `_validated_prev_sentinel`
+      # (extracted there to be shared with dir #161's add-on-drop warning, which dir #183 deleted — so
+      # this is now its only caller) — this block keeps its own three distinct, loud messages
       # (dir #72 findings #3/#5), since `--recover` is about to GRANT trust and must say exactly why it
       # refuses to; only the shared VALIDATION moved, not the reporting.
       _validated_prev_sentinel "$receipt_key" "$PWD" >/dev/null
@@ -1263,8 +1119,9 @@ case "${1:-}" in
         esac
         exit 1
       fi
-      # dir #72 finding #6 / dir #161: reads the RETIRED sentinel via `_prev_sentinel_outcomes` (shared
-      # with `_warn_dropped_addons`, above) — see that function's own header for why it does NOT also
+      # dir #72 finding #6 / dir #161: reads the RETIRED sentinel via `_prev_sentinel_outcomes` (above;
+      # its other consumer was dir #161's add-on-drop warning, deleted by dir #183) — see that
+      # function's own header for why it does NOT also
       # share with the completeness parser below (`EXPECTED_STEPS`), which reads the LIVE sentinel and
       # needs extra MISSING/REPLAY bookkeeping this one doesn't.
       recovered="$(_prev_sentinel_outcomes "$prev")"
@@ -1453,8 +1310,6 @@ case "${1:-}" in
     # hand-off note rather than let it linger past the question it recorded.
     if [ "$step_id" = "polish.5-review" ]; then
       rm -f "$(handoff_path)"
-      # dir #161: advisory-only, never affects this exit 0.
-      _warn_dropped_addons "$receipt_key" "$outcome" "$PWD"
     fi
     exit 0
     ;;
@@ -2191,7 +2046,7 @@ case "$status" in
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
     # decides whether the dir #88 dialog check applies (`$needs_dialog`: every `agent:*`-shaped
-    # outcome — bare, or carrying any add-on set (dir #158) — the outcomes step 5(a)'s
+    # outcome — bare, or carrying an add-on (dir #183) — the outcomes step 5(a)'s
     # reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
     # own skip dialog instead), AND builds the dir #64 tier 2a provenance label +
     # tag (below) from the same match — dir #141 was exactly the "future third suffix" this comment
@@ -2239,7 +2094,7 @@ case "$status" in
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
                          prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
-      agent:*+*)        # dir #81, generalized to a set by dir #158: the operator additionally ran `/code-review` ON TOP of an
+      agent:*+*)        # dir #81, generalized to a set by dir #158 and narrowed back to one token by dir #183: the operator additionally ran `/code-review` ON TOP of an
                          # already-standing agent review — an honest combined record, not the old
                          # overwrite that erased the agent half. Placed BEFORE the broader `agent:*`
                          # glob below (case is first-match-wins and this literal also matches that
@@ -2260,56 +2115,52 @@ case "$status" in
                          # exact string the SubagentStop trace leg writes — true for every `agent:*`
                          # arm, found while simplifying dir #141's sibling arm below.)
                          #
-                         # **dir #158 generalized this into a SET, and this is now the ONLY arm for any
-                         # add-on combination.** Everything above still holds — it is why the separator is
-                         # `+` and why `trusted` stays 0 — but the suffix is `<addon>[,<addon>…]`,
-                         # validated element-wise by `_addon_label`, whose own header carries the why.
+                         # **dir #158 generalized this into a comma-separated SET; dir #183 reverted it
+                         # to a SINGLE token.** Everything above still holds — it is why the separator is
+                         # `+` and why `trusted` stays 0 — but the suffix is one `<addon>`, validated by
+                         # `_addon_label`, whose own header carries the why (five rare-path defects
+                         # retired structurally, and the honesty guarantee moved back to prose).
                          #
                          # An UNKNOWN add-on still denies, via the existing level cross-check rather than
                          # a deny of its own: the unrecognized token leaves $outcome_level as the raw
                          # remainder (`high+bogus`), which cannot equal step 4's level, so the
                          # `outcome_level != depth_level` check below rejects it — the same route that
                          # caught an invented suffix when these were two literal arms. No new bypass
-                         # surface, and no deny message to keep in sync.
-                         #
-                         # $prov_label lists add-ons in the order the RECEIPT spelled them, not a
-                         # canonical one — accepted: the label is human prose, every add-on is named
-                         # either way, and `sweep` classifies on $prov_tag, which this doesn't touch.
+                         # surface, and no deny message to keep in sync. **With no comma walk, every
+                         # set-shaped string takes that same route**: `+operator-run,` (dir #225, which
+                         # the walk UNLOCKED by dropping the trailing empty element) and
+                         # `+operator-run,operator-run` (dir #227, which the walk unlocked and then
+                         # double-labelled) are now each one unknown token containing a comma.
                          outcome_level="${review_outcome#agent:}"
                          addons="${outcome_level#*+}"
-                         # `_split_comma_set` (shared with `_normalize_addon_set`, dir #161's own
-                         # /code-review high pass) does the no-word-split, no-glob comma walk — two
-                         # earlier drafts of THIS walk each shipped a bug this shape avoids, both found
-                         # by review: an `IFS=','` save/restore pair (whose `break` left IFS set inside a
-                         # hook whose \x1f receipt read depends on it), then a `for a in ${addons//,/ }`
-                         # split which — unquoted, and this script sets only `-u`, not `-f` — also ran
-                         # PATHNAME EXPANSION on the set, i.e. a glob in a trust-boundary parse. Consuming
-                         # it via `while read ... done < <(...)` (not a pipe) keeps `addons_ok`/
-                         # `addon_prose` in THIS shell, not a subshell — `break` still works normally.
-                         # The shared splitter yields an empty element too (`+,` or `+,,`), which reaches
-                         # `_addon_label` as the empty string and is DENIED by its own `*)` arm below,
-                         # where a word-split version would have silently produced zero elements and
-                         # accepted the receipt — see the $addon_prose guard below.
+                         # No word-split and no glob: `$addons` is only ever the ARGUMENT to
+                         # `_addon_label`, quoted, and `_addon_label` only ever matches it as a case
+                         # VALUE, never as a pattern. Worth stating because the deleted comma walk got
+                         # this wrong twice, both caught by review: an `IFS=','` save/restore pair (whose
+                         # `break` left IFS set inside a hook whose \x1f receipt read depends on it),
+                         # then a `for a in ${addons//,/ }` split which — unquoted, and this script sets
+                         # only `-u`, not `-f` — ran PATHNAME EXPANSION on the set, i.e. a glob in a
+                         # trust-boundary parse. A single quoted argument has neither failure mode.
                          addons_ok=1
                          addon_prose=""
-                         while IFS= read -r a; do
-                           p="$(_addon_label "$a")" || { addons_ok=0; break; }
-                           addon_prose="$addon_prose + $p"
-                         done < <(_split_comma_set "$addons")
-                         # This guard is what rejects an empty SUFFIX (`agent:<level>+`) — the walk runs
-                         # zero iterations there, so nothing else would. Against the current walk it is
-                         # equivalent to `-n "$addons"`, but it is the right one to WRITE: it states the
-                         # invariant ("at least one mechanism was actually named") where `-n "$addons"`
-                         # states a proxy ("the suffix had some text"), so it still holds if the walk is
-                         # ever loosened to skip empty elements rather than deny them. The proxy is what
-                         # the pre-fix version used, and it accepted `agent:<level>+,` — a receipt
-                         # announcing a combined outcome while naming zero mechanisms, printing the
-                         # stronger `(trace-confirmed)` label on the bare arm's own evidence, reachable
-                         # from one stray comma while re-typing an add-on from session memory (which dir
-                         # #161 says is exactly what has to happen today).
-                         # Which of this guard and the walk above rejects which shape, and which mutation
-                         # reds which test: tests/test_pre_pr_gate.sh's 50m comment — measured there,
-                         # stated once.
+                         if p="$(_addon_label "$addons")"; then
+                           addon_prose=" + $p"
+                         else
+                           addons_ok=0
+                         fi
+                         # An empty SUFFIX (`agent:<level>+`) is rejected by `_addon_label ""` — the empty
+                         # string hits its `*)` arm and returns 1 — so under the single-token parse this
+                         # guard is defence-in-depth, not the sole rejecter it was under the walk (where
+                         # zero iterations left `addons_ok=1`). **Keep it anyway; do not "simplify" it to
+                         # `-n "$addons"` as now-redundant.** It states the INVARIANT ("at least one
+                         # mechanism was actually named") where `-n "$addons"` states a proxy ("the
+                         # suffix had some text"), so it still holds if the parse is ever loosened. The
+                         # proxy is what the pre-dir-#158 version used, and it accepted `agent:<level>+,`
+                         # — a receipt announcing a combined outcome while naming zero mechanisms, and
+                         # printing the stronger `(trace-confirmed)` label on the bare arm's own evidence.
+                         # Consequence for reading coverage: deleting this guard alone no longer reds a
+                         # test, because `_addon_label` backstops it — stated in tests/test_pre_pr_gate.sh
+                         # test 50l rather than left to be discovered.
                          if [ "$addons_ok" -eq 1 ] && [ -n "$addon_prose" ]; then
                            outcome_level="${outcome_level%%+*}"
                          fi
@@ -2350,7 +2201,7 @@ case "$status" in
     # outcomes need no trace — they already name a different, non-fabricable source (the human, or a
     # deliberate no-review choice) and are covered by the depth check above instead. $trace_match_outcome
     # is $review_outcome verbatim UNLESS the combined-outcome arm above overrode it
-    # (any `agent:<level>+<addon>[,…]` set, dir #158) — the only shape where what's being
+    # (an `agent:<level>+<addon>` outcome, dir #183) — the only shape where what's being
     # depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
       # dir #80: $wt here is deliberately still repo-only (not $receipt_key) — the trace stays
@@ -2362,8 +2213,8 @@ case "$status" in
         deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
-    # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying any add-on set,
-    # `agent:<level>+<addon>[,<addon>…]` — dir #158 — the reminder fires
+    # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
+    # `agent:<level>+<addon>` — dir #183 — the reminder fires
     # identically for all of them, `$needs_dialog` set by the SAME case statement above) additionally
     # requires a mechanically-traced, ANSWERED
     # AskUserQuestion dialog for step 5(a)'s MANDATORY reminder — the review claim itself can be

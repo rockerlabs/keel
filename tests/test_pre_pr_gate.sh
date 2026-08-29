@@ -995,103 +995,79 @@ gate "gh pr create --fill" "$d"
 check_contains "'agent:high+second-opinion' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
 
-# --- dir #158: the add-on suffix is a SET, so a commit that got BOTH add-ons can say so -------------
-# Felt on dir #155: that commit genuinely got the standing agent review AND an operator-run
-# `/code-review high` AND a cross-model second opinion, but step 5 holds one value and the gate knew
-# only two single-add-on literals — so whichever was written dropped a real review from the record.
-# 50i. BOTH add-ons in one outcome → allowed, and the provenance names all three mechanisms.
+# --- dir #183: the add-on suffix is a SINGLE token, never a comma set -------------------------------
+# dir #158 generalized the suffix into a comma-separated SET; dir #183 reverted that. The set parser
+# (a shared comma splitter plus the unlock arm's element walk) carried five live defects in rare-path
+# code —
+# dir #201/#214/#225/#226/#227 — and one deletion retires all five structurally instead of paying
+# three separate fixes. The receipt now carries AT MOST ONE add-on; `commands/polish.md` step 10 and
+# the PR body carry every mechanism that reviewed the commit, which is where dir #81's honesty
+# guarantee actually lived. `_addon_label` is now the ONLY validator: whatever follows the `+` is one
+# opaque token handed to the allowlist, so every set-shaped string below is simply an unknown token.
+#
+# All four deny via the depth cross-check, which is the designed route (unchanged from dir #158): an
+# unvalidated add-on leaves $outcome_level as the raw remainder (`high+operator-run,`), which cannot
+# equal step 4's `high`. Asserting the REASON and not just the deny is what rules out a deny that
+# happens for some unrelated reason while the actual guard does nothing.
+
+# 50i. dir #225, RETIRED BY CONSTRUCTION: a TRAILING comma denied. Under the set parser this PASSED —
+# the comma splitter dropped the trailing empty element, so `agent:<level>+<addon>,` unlocked the gate
+# while the arm's own comment promised a deny. With no comma parse at all the whole string
+# `operator-run,` is one unknown token, so there is no trailing element left to mishandle.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+operator-run,second-opinion"
+write_full_receipt_review "$d" "agent:high+operator-run,"
 gate "gh pr create --fill" "$d"
-check_status "two-add-on set receipt + matching agent trace → exit 0" 0 "$STATUS"
-check_absent "two-add-on set + matching trace → allowed" "$OUT" "deny"
-check_contains "provenance names the trace-confirmed agent review" "$OUT" "review: high, independent agent review (trace-confirmed)"
-check_contains "...AND the operator-run pass" "$OUT" "+ operator-run /code-review (self-reported)"
-check_contains "...AND the cross-model second opinion — neither add-on is dropped" "$OUT" "+ in-session cross-model second opinion (self-reported"
+check_contains "dir #225: a trailing comma ('agent:high+operator-run,') → denied, not unlocked" "$OUT" '"permissionDecision":"deny"'
+check_contains "...denied by the depth cross-check — the comma is part of one unknown token" "$OUT" "doesn't match the depth"
 
-# 50j. The set still depth-checks against the BARE level: the whole `+…` suffix must be stripped, not
-# one known add-on at a time (an enumerated strip would leave `high+operator-run` here and deny for a
-# depth mismatch that isn't real). Uses write_full_receipt_review's depth-override (5th arg) rather
-# than open-coding a 5th copy of the manual init+receipt sequence — see tests/lib.sh.
+# 50j. dir #227, RETIRED BY CONSTRUCTION: a DUPLICATED add-on denied. Under the set parser both
+# elements validated independently, so `+operator-run,operator-run` unlocked and double-labelled one
+# mechanism in the operator-facing provenance line. Same reason as 50i: one opaque token.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+operator-run,second-opinion" "" "" "medium"
+write_full_receipt_review "$d" "agent:high+operator-run,operator-run"
 gate "gh pr create --fill" "$d"
-check_contains "two-add-on set at 'high' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "...denied for the depth mismatch, so the set's level parsed as the bare 'high'" "$OUT" "doesn't match the depth"
+check_contains "dir #227: a duplicated add-on ('agent:high+operator-run,operator-run') → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "...denied by the depth cross-check, so no mechanism is double-labelled" "$OUT" "doesn't match the depth"
+# The provenance line must not name the mechanism at all on a denied receipt — the double-label this
+# ticket removes was in the ALLOW path's prose, so assert it never got built.
+check_absent "...and the deny never prints the operator-run label, let alone twice" "$OUT" "operator-run /code-review (self-reported)"
 
-# 50k. An INVENTED add-on must not ride the set parse in. It denies via the existing level
-# cross-check (the unknown token leaves outcome_level as the raw `high+bogus`, which can't equal step
-# 4's `high`) — the same route that caught an invented suffix when these were two literal arms. This
-# is the security-relevant half of dir #158: a glob arm that accepted any suffix would be a bypass.
+# 50k. An INVENTED add-on must still deny — `_addon_label` is the allowlist and is now the ONLY
+# validator, so this is the mutation floor for its `*)` arm (dir #128 rule 3, item (e)). A glob arm
+# that accepted any token would be a bypass; that was the security-relevant half of dir #158 and it
+# survives the set deletion unchanged.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
 write_full_receipt_review "$d" "agent:high+bogus-addon"
 gate "gh pr create --fill" "$d"
 check_contains "an unknown add-on token → denied, not silently accepted" "$OUT" '"permissionDecision":"deny"'
-# Assert the REASON too, not just the deny: the unknown token must leave outcome_level as the raw
-# remainder so the depth cross-check rejects it. A deny for any other reason would pass the check
-# above while the actual guard did nothing — and costs nothing extra to rule out.
 check_contains "...denied by the depth cross-check, which is the designed route" "$OUT" "doesn't match the depth"
 
-# 50l. ...and one unknown token poisons the whole set even when the other element is real — the
-# validation is all-or-nothing, so a real add-on can't smuggle an invented one alongside it.
+# 50l. An EMPTY add-on suffix must deny — a receipt announcing a combined outcome while naming zero
+# mechanisms, printing the stronger `(trace-confirmed)` label on the bare arm's own evidence. A stray
+# `+` while re-typing an add-on from session memory reaches this.
+#
+# **What rejects it CHANGED with dir #183, and the distinction is worth keeping straight** (the same
+# "rejected by X" vs "pinned by X" care the deleted dir #158 comment took): under the element walk,
+# `agent:high+` ran ZERO iterations, left `addons_ok=1`, and the `[ -n "$addon_prose" ]` guard was the
+# only rejecter. Under the single-token parse it is `_addon_label ""` that rejects — the empty string
+# hits its `*)` arm and returns 1 — so the guard is now defence-in-depth rather than the sole check.
+# It is deliberately kept anyway (see the gate's own comment): it states the invariant, where
+# `-n "$addons"` states a proxy. Consequence for anyone reading coverage off this file: deleting the
+# guard alone no longer reds any test here, because `_addon_label` backstops it. That is a real
+# coverage change, stated rather than left to be discovered.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+operator-run,bogus-addon"
+write_full_receipt_review "$d" "agent:high+"
 gate "gh pr create --fill" "$d"
-check_contains "a real add-on + an unknown one → still denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "...also by the depth cross-check — validation is all-or-nothing" "$OUT" "doesn't match the depth"
-
-# 50m. An EMPTY add-on element must deny. Found by an independent high review, reproduced live: the
-# first implementation gated the suffix-strip on `[ -n "$addons" ]` (the raw text being non-empty) when
-# the property that matters is "at least one element validated". `agent:high+,` word-split to ZERO
-# elements, so the validation loop never ran, nothing was found invalid, and the receipt was ACCEPTED —
-# announcing a combined outcome while naming no mechanism, and printing the stronger
-# `(trace-confirmed)` provenance label on exactly the evidence the bare `agent:<level>` arm has. A stray
-# comma while re-typing an add-on from session memory reaches this. Now denied: the walk hands the empty
-# string to `_addon_label`, whose `*)` arm rejects it.
-# The loop covers an empty SUFFIX (`agent:high+`) as well as empty ELEMENTS at the leading, doubled and
-# interior positions.
-#
-# **"Rejected by X" describes the current code; "pinned by X" is only true if breaking X reds a test.**
-# Keeping those apart is what the table below is for — conflating them is how earlier revisions of this
-# comment and the gate's went wrong. Measured here:
-#   - REJECTED BY THE WALK: all four comma shapes (each reaches `_addon_label` as the empty string).
-#   - REJECTED BY THE GUARD: `agent:high+` — `$addons` is empty, so the walk runs zero iterations.
-#   - PIN THE WALK: only the two that pair an empty element with a VALID one (`+,second-opinion`,
-#     `+operator-run,,second-opinion`). Loosening the walk leaves `+,` and `+,,` green, because the
-#     guard backstops them.
-#   - PINS THE GUARD'S EXISTENCE: `agent:high+`, and only it — deleting the guard reds exactly that one.
-#
-# **What nothing here pins:** the guard's *predicate*. Swapping `[ -n "$addon_prose" ]` for
-# `[ -n "$addons" ]` leaves this suite green — correctly, since the two are equivalent against the
-# current walk — so that green run is not missing coverage. See the gate's own comment for why the
-# invariant-shaped predicate is still the one worth writing.
-for bad_set in "agent:high+" "agent:high+," "agent:high+,," "agent:high+,second-opinion" "agent:high+operator-run,,second-opinion"; do
-  d="$(mkrepo)"
-  tf="$(trace_for "$d")"; rm -f "$tf"
-  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-  write_full_receipt_review "$d" "$bad_set"
-  gate "gh pr create --fill" "$d"
-  check_contains "an empty add-on suffix or element ('$bad_set') → denied" "$OUT" '"permissionDecision":"deny"'
-done
-
-# 50n. ...and the positive control for the same guard: a TRAILING comma is tolerated, because every
-# element it produces did validate. Pinned so the fix above can't be tightened into rejecting a set
-# that is merely untidy — the guard is about naming zero mechanisms, not about punctuation.
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
-write_full_receipt_review "$d" "agent:high+operator-run,"
-gate "gh pr create --fill" "$d"
-check_status "a trailing comma on an otherwise-valid set → exit 0" 0 "$STATUS"
-check_absent "trailing comma → allowed, every element validated" "$OUT" "deny"
+check_contains "an empty add-on suffix ('agent:high+') → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "...denied by the depth cross-check, the same route every unvalidated add-on takes" "$OUT" "doesn't match the depth"
 
 # 51. Regression guard: a `receipt-pass` row with NO 5th field at all (the shape any repo that
 # adopted the gate between dir #49 and dir #64 has in its real history, predating prov_tag) must NOT
@@ -2585,163 +2561,40 @@ gate "gh pr create --head someone:crossfork-feature --fill" "$d"
 check_status "dir #152: cross-fork PR pushed to the contributor's own remote → exit 0" 0 "$STATUS"
 check_absent "dir #152: cross-fork PR pushed to the contributor's own remote → allowed" "$OUT" "deny"
 
-# --- dir #161: writing a step-5 receipt that DROPS a prior round's add-on now warns -----------------
-# The setup below never needs a fix commit or a full gate PASS: `init` retires whatever the LIVE
+# --- dir #183: dir #161's add-on-drop warning is GONE, and nothing can fire it ----------------------
+# dir #161's add-on-drop warning compared a step-5 receipt against the single-slot prev-sentinel backup
+# and warned on stderr when the new outcome dropped an add-on the prior round had named. It carried three
+# of this ticket's five retired defects, all in the same family — the baseline it compared against was
+# the wrong one: blind on the IN-RUN `--amend` path where nothing is retired (dir #201), silent when a
+# plain `--amend` orphaned the retired round's base-sha stamp (dir #214), and spuriously warning
+# against a PASS-retired (SHIPPED) round, complete with a durable `review-addon-dropped` log event
+# advising the operator to re-assert a review that never saw the commit (dir #226). With the receipt
+# carrying at most one add-on there is no set to lose, and the whole check goes.
+#
+# The setup is test 103's felt case verbatim, so the assertion binds against the exact input that used
+# to warn — a fresh shape would prove nothing about the removal. `init` retires whatever the LIVE
 # sentinel holds into the single-slot prev backup unconditionally (retire_sentinel runs on every
-# invalidation path, `init`'s overwrite included — see its own header comment), stamping base-sha at
-# CURRENT HEAD. So "init; receipt polish.5-review <outcome>; init" alone leaves a well-formed,
-# same-lineage prev backup carrying that outcome — exactly what `_warn_dropped_addons` reads. No
-# `write_full_receipt`/`subagentstop_trace`/gate-PASS machinery is needed: this check runs on the
-# ordinary `receipt` write path, independent of whether the rest of the round's steps exist at all.
+# invalidation path, `init`'s overwrite included), stamping base-sha at CURRENT HEAD, so
+# "init; receipt polish.5-review <outcome>; init" leaves a well-formed, same-lineage prev backup
+# carrying that outcome — precisely the state the deleted warning read.
 
-# 103. The felt case, set form. Round N's polish.5-review names {operator-run}; round N+1 drops it.
+# 103. Round N's polish.5-review names {operator-run}; round N+1 drops it. Formerly warned; now silent.
 d="$(mkrepo)"
 rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-check_status "dropping a recorded add-on → the receipt write itself still exits 0" 0 "$STATUS"
-check_contains "...stderr names the dropped add-on" "$OUT" "operator-run"
-sentinel_body="$(cat "$(sentinel_for "$d")")"
-# Anchored with a trailing newline (cross-model second-opinion review, dir #161): a bare
-# 'polish.5-review\tagent:medium' needle is a PREFIX of '...agent:medium+operator-run' too, so an
-# un-anchored check_contains would pass even if the old, un-dropped outcome were still what got
-# written — exactly the bug this assertion exists to catch. The anchor forces the outcome field to
-# end exactly at "medium".
-check_contains "...and the sentinel still holds the NEW (dropped) outcome verbatim" "$sentinel_body" "$(printf 'polish.5-review\tagent:medium\n')"
-check_absent "...and NOT the old, un-dropped outcome" "$sentinel_body" "agent:medium+operator-run"
-
-# 104. The cross-shape case (fork 2's whole reason): prior round hands off as the dash form
-# `medium-operator-run` (dir #155's own shape), this round writes a plain `agent:medium` — the same
-# regression through a different outcome shape must still warn. Mutation-floor item 2 (dir #128):
-# collapsing the normalizer's dash-form arm into its fail-open default turns this test red.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-check_contains "dash-form prior + bare agent: this round → still warns, naming operator-run" "$OUT" "operator-run"
-
-# 105. Subset satisfied → silent. This round's set is a SUPERSET of the prior one (gained
-# second-opinion, kept operator-run) — nothing was dropped.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run,second-opinion"
-check_absent "prior set ⊆ new set → silent, nothing dropped" "$OUT" "drops add-on"
-
-# 106. Equal sets → silent.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-check_absent "identical add-on set re-written → silent" "$OUT" "drops add-on"
-
-# 107. Empty prior set → silent, for EVERY shape that normalizes to {} — not just the bare `agent:
-# <level>` case (the ticket's own test plan names all three; a prior pass covered only the first,
-# leaving the other two arms of `_normalize_addon_set`'s catch-all unexercised — found by the
-# cross-model second-opinion review on this ticket's own diff).
-for empty_prior in "agent:medium" "skip" "medium-waived"; do
-  d="$(mkrepo)"
-  rm -f "$(prev_sentinel_for "$d")"
-  run_in "$d" bash "$gate" init
-  run_in "$d" bash "$gate" receipt polish.5-review "$empty_prior"
-  run_in "$d" bash "$gate" init
-  run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-  check_absent "empty prior add-on set ('$empty_prior') → silent" "$OUT" "drops add-on"
-done
-
-# 108. No prior run at all → silent. A fresh repo's very first /polish round has no prev-sentinel to
-# compare against.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-check_absent "first-ever round, no prev backup → silent" "$OUT" "drops add-on"
-
-# 109. Foreign lineage → silent, no error. Same orphan-branch trick as test 58's `--recover` lineage
-# guard: the retired backup's base-sha predates a branch history rewrite (an unrelated worktree/branch,
-# or a rebase/amend, in the felt shape), so it must never be trusted — but unlike `--recover`, this is
-# advisory, so the fail direction is silence, not a loud refusal.
-d="$(mkrepo)"
-orig_branch="$(git -C "$d" branch --show-current)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-run_in "$d" bash "$gate" init                     # retires into prev; base-sha = mkrepo's own commit
-git -C "$d" checkout -q --orphan unrelated
-git -C "$d" commit --allow-empty -qm "totally unrelated history"
-git -C "$d" branch -M "$orig_branch"              # same (repo, branch) receipt key, unrelated HEAD
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-check_status "foreign-lineage prev backup → the write itself still exits 0" 0 "$STATUS"
-check_absent "...and stays silent — an unverifiable prior must never manufacture a warn" "$OUT" "drops add-on"
-
-# 110. Malformed prev (no nonce header) → silent — contrast with `--recover`, which errors loudly on
-# the SAME file. Both behaviours coexist: the malformed-prev guard is shared code, but the two callers
-# react to it differently (one is a gate-adjacent recovery the operator must notice; the other is a
-# best-effort advisory that has nothing useful to say about a file it can't parse).
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-run_in "$d" bash "$gate" init
-printf 'not-a-nonce-header\tgarbage\n' > "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" receipt --recover
-check_status "recover on the same malformed prev → still exit 1" 1 "$STATUS"
-check_contains "...and still errors loudly" "$OUT" "malformed"
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-check_status "...but the step-5 write itself stays exit 0" 0 "$STATUS"
-check_absent "...and the drop warning stays silent on a prev it can't parse" "$OUT" "drops add-on"
-
-# 111. Other step ids never consult prev — the check is wired ONLY to polish.5-review.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.2-simplify
-check_status "a non-review step's own receipt write → exit 0" 0 "$STATUS"
-check_absent "...and emits nothing about a dropped add-on" "$OUT" "drops add-on"
-
-# 112. The warn is advisory, proven directly: re-run test 103's felt case and assert BOTH halves
-# explicitly — exit 0 AND the sentinel accepts the new (dropped) outcome. A deliberate drop (the fix
-# commit removed the reviewed work) must still be receiptable; this is a printout, never a gate.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:high+operator-run,second-opinion"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:high"
-check_status "warn fires (both add-ons dropped) but the write is still allowed" 0 "$STATUS"
-check_contains "...naming operator-run" "$OUT" "operator-run"
-check_contains "...naming second-opinion" "$OUT" "second opinion"
-sentinel_body="$(cat "$(sentinel_for "$d")")"
-# Anchored the same way test 103 is (cross-model second-opinion review, dir #161) — a bare
-# 'agent:high' needle is a prefix of 'agent:high+operator-run,second-opinion' too.
-check_contains "...and the sentinel reflects the fully-dropped new outcome, not the old set" "$sentinel_body" "$(printf 'polish.5-review\tagent:high\n')"
-check_absent "...and NOT the old, un-dropped set" "$sentinel_body" "agent:high+operator-run,second-opinion"
-
-# 113. Mutation-floor item 3 (dir #128): a hand-written PRIOR outcome naming an UNKNOWN token must never
-# reach the warning as advised text — `_addon_label` is the allowlist and the prior set is filtered
-# through it before comparison. Dropping that filter would print "not-a-real-addon" as a missing
-# add-on, advising the operator to re-add a token the gate's own unlock check would then deny (the
-# ticket's own "never advise garbage" framing). Items 1 and 2 of the mutation floor (deleting the
-# subset guard; collapsing the dash-form normalizer arm) are pinned by tests 103 and 104 themselves —
-# each is written to demonstrate the exact behavior that guard/arm produces, not just a passing shape.
-d="$(mkrepo)"
-rm -f "$(prev_sentinel_for "$d")"
-printf 'nonce\tprior-nonce\nbase-sha\t%s\nprior-nonce\tpolish.5-review\tagent:medium+not-a-real-addon\n' \
-  "$(git -C "$d" rev-parse HEAD)" > "$(prev_sentinel_for "$d")"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
-check_status "hand-written unknown prior add-on → the write itself still exits 0" 0 "$STATUS"
-check_absent "...and the unknown token is never advised as a dropped add-on" "$OUT" "not-a-real-addon"
-check_absent "...silent altogether, not just wrong-worded" "$OUT" "drops add-on"
+# Pinned to a per-test log rather than the suite-wide $KEEL_IMPACT_LOG (tests/lib.sh) so the absence
+# assertion below binds to THIS run's events only — an absence check against a shared, append-only
+# file proves less the further into the suite it sits.
+addon_imp="$SANDBOX/dir183-addon-drop.log"
+rm -f "$addon_imp"
+run_in "$d" env KEEL_IMPACT_LOG="$addon_imp" bash "$gate" init
+run_in "$d" env KEEL_IMPACT_LOG="$addon_imp" bash "$gate" receipt polish.5-review "agent:medium+operator-run"
+run_in "$d" env KEEL_IMPACT_LOG="$addon_imp" bash "$gate" init
+run_in "$d" env KEEL_IMPACT_LOG="$addon_imp" bash "$gate" receipt polish.5-review "agent:medium"
+check_status "dropping a prior round's add-on → the write still exits 0" 0 "$STATUS"
+check_absent "dir #201/#214/#226: no add-on-drop warning is emitted at all" "$OUT" "drops add-on"
+# The stderr line is the fast signal, but dir #161 also persisted a durable `review-addon-dropped`
+# impact-log event — the half dir #226 called out as the lasting damage, since it outlives the
+# session that ignored the stderr. Assert BOTH channels are silent, not just the visible one.
+check_absent "...and no durable review-addon-dropped event is logged either" "$(cat "$addon_imp" 2>/dev/null || true)" "review-addon-dropped"
 
 summary

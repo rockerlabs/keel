@@ -11,6 +11,35 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **A step-5 review receipt now carries at most ONE add-on; the comma-separated add-on SET is gone**
+  (dir #183). dir #158 had generalized the suffix into `agent:<level>+<addon>[,<addon>…]` so a commit
+  reviewed several ways could record every mechanism in the receipt itself. The parser behind that set
+  accumulated five live defects, all of them in the demoted refusal-fallback path the entry above moved
+  off `/polish`'s primary route: a trailing comma unlocked the gate while the arm's own comment promised
+  a deny (dir #225); a duplicated add-on unlocked and then double-labelled one mechanism in the
+  operator-facing provenance line (dir #227); and dir #161's advisory add-on-drop warning compared
+  against the wrong baseline in three separate directions — blind on the in-run `--amend` path
+  (dir #201), silent when an `--amend` orphaned the retired round's lineage stamp (dir #214), and
+  spuriously firing against an already-shipped round, complete with a durable `review-addon-dropped`
+  log event advising a review that never saw the commit (dir #226). Deleting the set parser and the
+  warning retires **all five structurally** rather than paying three separate fixes in rare-path code.
+  Removed: the shared comma splitter, the outcome-set normalizer, dir #161's warning and its call site,
+  and the unlock arm's element walk, which becomes a single allowlist call. **Kept, deliberately and
+  unchanged:** the whole refusal-fallback branch (dir #70's subagent, the MANDATORY reminder dialog and
+  its gate leg, the hand-off subcommands, `<level>-operator-run`, `<level>-waived`, `skip`), both add-on
+  literals `+operator-run` (dir #81) and `+second-opinion` (dir #141) with their exact label strings,
+  and dir #254's primary bare-`<level>` path. **The accepted loss, stated plainly:** a commit reviewed by
+  BOTH an operator-run pass and a cross-model second opinion across rounds now records **one** of them
+  in the receipt — `operator-run` wins the slot, as the human pass is the rarer event and the one a
+  reader is least able to infer — and **both in prose**. dir #81's honesty guarantee was always "the
+  operator-facing record names every mechanism"; dir #158 additionally put that in the receipt, and it is
+  the receipt half that carried the defects, so `commands/polish.md` steps 9 and 10 now require the PR
+  body and the closing summary to name every mechanism that actually ran, read off the review history
+  rather than off the receipt. Adopter-visible: `commands/polish.md` and `tools/pre-pr-gate.sh` ship in
+  every keel home, and `docs/getting-started.md`'s `/polish` section states the one-add-on rule and the
+  prose-disclosure rule that replaces it. A comma-joined receipt now denies as one unknown token via the
+  existing depth cross-check — no new deny message, no new bypass surface.
+
 - **`/polish` step 5 attempts the real, built-in `Skill(code-review)` directly again, instead of going
   straight to dir #70's independent-subagent fallback** (dir #254). The harness policy that blocked model
   invocation of `/code-review` (`disable-model-invocation`) has lifted — observed live and independently
@@ -18,7 +47,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the model now tries the built-in multi-agent pass itself first; only a refusal for that specific run
   falls through to the dir #70 subagent, which is otherwise unchanged (same mechanism, same MANDATORY
   `AskUserQuestion` reminder dialog and add-on machinery, dir #81/#141/#158/#161/#201/#214, all preserved
-  as the fallback path rather than deleted). A genuine direct call needs no reminder dialog and no
+  as the fallback path rather than deleted — though the entry below narrows the add-on half of that
+  fallback, which this change's own demotion is what made affordable). A genuine direct call needs no reminder dialog and no
   operator hand-off — it receipts a bare `polish.5-review <level>` and continues straight to step 6; the
   gate's existing dir #63/dir #88 trace legs already covered this outcome shape natively, so
   `tools/pre-pr-gate.sh` needed no new mechanism, only its `agent:*` provenance label reworded from "not

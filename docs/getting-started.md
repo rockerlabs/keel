@@ -271,9 +271,13 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   self-reported (visible in the receipt as `-operator-run` / `-waived`, not a bare level or `agent:<level>`).
   If you choose to run `/code-review` ON TOP of a review that already ran, the receipt records both — the
   mechanically-traced half stays trace-confirmed, only the operator half is self-reported
-  (`agent:<level>+operator-run`). Add-ons accumulate as a comma-separated set, so a commit reviewed several
-  ways records all of them (`agent:<level>+operator-run,second-opinion`) rather than only the one written
-  last.
+  (`agent:<level>+operator-run`). **The receipt carries at most one add-on**, and when both an
+  operator-run pass and an in-session cross-model second opinion applied, `operator-run` takes the slot
+  — it names a human pass, the rarer event and the one you're least able to infer. **The one that loses
+  the slot is not lost from the record: the closing summary and the PR body name every mechanism that
+  reviewed the commit**, so the receipt is the short form and the prose is the complete one. (A
+  comma-separated set used to record all of them; the parser behind it carried several rare-path
+  defects and was removed in favour of the prose rule.)
 - **A one-line banner at session start** (the `SessionStart` hook, `rollout-check`) if the model or
   Claude Code version changed since your last session here — a silent rollout is exactly how a pipeline
   step like `/code-review` can quietly stop being callable without anyone noticing.
