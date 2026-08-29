@@ -1050,7 +1050,8 @@ do
   gate "gh pr create --fill" "$d"
   check_contains "a comma-joined add-on ('$bad_addon') → denied" "$OUT" '"permissionDecision":"deny"'
   check_contains "...naming the retired comma set as the cause, not the depth" "$OUT" "no longer a valid shape"
-  check_contains "...and pointing at the stale-copy fix" "$OUT" "re-run install.sh"
+  check_contains "...and pointing at a stale-copy fix that does not route through install.sh's prompt" "$OUT" "copy the shipped file over your own"
+  check_absent "...so it never prescribes a bare install.sh re-run, which does not update a drifted file" "$OUT" "re-run install.sh"
   # Cross-family: this must NOT be the generic depth-mismatch message. Pins the two denies apart, so a
   # future edit that lets one route swallow the other is caught — including the double-`deny`
   # fall-through shape (two JSON objects, last-key-wins) that the gate's own dir #96 rail forbids and
