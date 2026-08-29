@@ -119,13 +119,18 @@ if [ -z "$ask_line" ]; then
   fail "polish.md: step 4's auto-vs-ask decision still present" "anchor sentence not found"
 else
   ask_window="$(sed -n "${ask_line},$((ask_line + 10))p" "$polish")"
-  if match "$ask_window" -qE '\`max\`.*\`ultra\`.*always open'; then
+  # No backslash before the backtick: inside single quotes it's already a shell-literal backtick, and
+  # `\`` is a GNU grep extension meaning "start of buffer" (paired with `\'`) — escaping it here matched
+  # BSD grep/busybox (backtick taken literally either way) but silently failed on GNU grep/Linux CI,
+  # since the pattern then required three buffer-starts in one line and could never match mid-string
+  # (found live via Docker ubuntu:24.04 + GNU grep 3.11, cross-checked against BSD grep 2.6.0-FreeBSD).
+  if match "$ask_window" -qE '`max`.*`ultra`.*always open'; then
     pass "polish.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)"
   else
     fail "polish.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)" \
       "expected a '\`max\` or \`ultra\` -> always open' clause"
   fi
-  if match "$ask_window" -qE '\`high\` or above → always open'; then
+  if match "$ask_window" -qE '`high` or above → always open'; then
     fail "polish.md: the old, now-false 'high or above -> always ask' sentence is gone" \
       "found the pre-dir-#254 high-and-above threshold still present alongside the new wording"
   else
