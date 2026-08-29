@@ -32,6 +32,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   and the absence of the old blanket-unavailable/high-threshold text) and an updated
   `tests/test_pre_pr_gate.sh` fixture for the reworded provenance label.
 
+- **`tools/keel-impact.sh`'s auto-migration no longer risks losing an adopter's legacy ledger/evidence,
+  and no longer strands a partially-migrated project forever** (dir #289). `_impact_merge_ledger`/
+  `_impact_merge_evidence` used to report success from only their final write's exit status, never the
+  awk read that fed it, a source going unreadable between the caller's own readability check and the
+  awk's open() could report success and let the caller delete the source, or silently drop rows from the
+  store's own copy. Both now capture each awk's own exit status explicitly (`PIPESTATUS` for the piped
+  ledger case) and refuse to write on a bad read. Separately, `_impact_auto_migrate`'s completion marker
+  (`$store/origin`) used to be written before its merges ran, so a failure partway through permanently
+  satisfied its idempotency guard and stranded the legacy file with no automatic retry, recoverable only
+  by an explicit `migrate` nothing prompted the operator to run; the marker is now written only once
+  every present legacy file has actually been swept, so a later call retries exactly what's left.
+  Adopter-visible: ships in every keel home via `tools/keel-impact.sh`. Two related, narrower hazards
+  surfaced during review and are tracked separately rather than folded in here: `cmd_migrate` and
+  `impact_store_enable` can still strand a project via the same `origin` mechanism (pre-existing, not
+  worsened by this fix), and deferring the write also widens a concurrent-session race window on a
+  project's first-ever legacy migration (backlog dir #304).
+
 ## [0.7.2] — 2026-08-29
 
 Known issues: two residuals ship unfixed, each with an open ticket, and neither changes what the tools
