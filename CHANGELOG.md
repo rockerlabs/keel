@@ -11,6 +11,24 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-08-29
+
+Known issues: two residuals ship unfixed, each with an open ticket, and neither changes what the tools
+do. First, `keel-impact.sh enable` reports `impact tracking already enabled` — and omits the follow-up
+line naming `/keel-score` — on a project whose only tracking state is a pre-0.7.2 in-tree `.keel/`
+marker, even when that enable is genuinely its first. Both forms are affected, `enable .` and
+`enable <dir>` from another directory. The migration itself is correct: the legacy log is carried into
+the external store and the in-tree marker removed, so the state the command leaves behind is right and
+only the sentence it prints is wrong. It is wrong *because of* this release — before 0.7.2 the in-tree
+marker WAS the enabled signal, which made the same sentence true, and dir #251's move to an external
+store redefined enabled-ness as "the store exists" without revisiting the message that reads it
+(backlog dir #287). Second, `tools/self/doctor.sh`'s changelog-citation check (dir #237) enumerates
+every `dir #N` cited in commits since the last tag and diffs that against every `dir #N` cited inside
+`[Unreleased]` — so what it verifies is that a ticket's NUMBER appears somewhere in the section, not
+that its work is described there, and any incidental mention vouches for it. Only the
+shorthand-extraction half of dir #273 shipped; this check is keel-self-maintenance and is never
+installed for adopters (backlog dir #273).
+
 ### Added
 
 - **`docs/release-history.md`** (dir #232): a one-paragraph-per-release digest page, newest first,
