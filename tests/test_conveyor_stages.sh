@@ -74,8 +74,8 @@ else
   fi
 fi
 
-# (D) dir #183: step 5's add-on paragraph states the SINGLE-add-on rule and that nothing warns you any
-# more. This block replaces dir #161's own pin, which asserted the opposite (that the paragraph
+# (D) dir #183: step 5's add-on paragraph states the SINGLE-add-on rule, its operator-run tie-break, and
+# that nothing warns you any more. This block replaces dir #161's own pin, which asserted the opposite (that the paragraph
 # documents an add-on-drop warning as a MANDATORY read) — dir #183 deleted that warning along with the
 # comma-set parser, so the old pin was holding a now-false claim in place. Windowed on the paragraph
 # itself (same idiom as block (C)) rather than a bare file-wide grep: `dir #161` alone is still present
@@ -83,11 +83,16 @@ fi
 # The window also asserts the old "prints a warning naming it" wording is actually GONE, not merely
 # supplemented — the same GONE-not-supplemented discipline dir #161's own pin used, pointed the other
 # way.
-addon_line="$(grep -n "add-on's unit is the SHIPPED COMMIT" "$polish" | head -1 | cut -d: -f1)"
+# **Anchored on the single-add-on rule, not on the SHIPPED-COMMIT sentence, and widened to +30**
+# (both corrected during this ticket's own /simplify pass): the earlier anchor sat BELOW the rule it
+# claimed to pin, so the window covered the "nothing warns you" half only and the header's "states the
+# SINGLE-add-on rule" was an overclaim — a pin whose comment promises more than its window reaches is
+# worse than no pin, since it reads as coverage.
+addon_line="$(grep -n 'receipt carries AT MOST ONE add-on' "$polish" | head -1 | cut -d: -f1)"
 if [ -z "$addon_line" ]; then
   fail "polish.md: add-on paragraph present" "anchor sentence not found"
 else
-  addon_window="$(sed -n "${addon_line},$((addon_line + 20))p" "$polish")"
+  addon_window="$(sed -n "${addon_line},$((addon_line + 30))p" "$polish")"
   # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
   if match "$addon_window" -qi 'nothing warns you' && match "$addon_window" -qi 'dir #183'; then
     pass "polish.md: step 5 states that a dropped add-on no longer warns (dir #183)"
@@ -101,15 +106,33 @@ else
   else
     pass "polish.md: the old, now-false 'prints a warning' sentence is gone"
   fi
-  # The warning is gone, so what replaces it must be named, not merely omitted: the session's own read
-  # of the live sentinel. Otherwise the deletion reads as "one fewer thing to do" rather than "the same
-  # obligation, now yours" — the silent-degradation shape dir #161's own MANDATORY-read pin guarded
-  # against from the other direction.
-  if match "$addon_window" -qi 'live sentinel' || match "$addon_window" -qi 'step-10 disclosure'; then
-    pass "polish.md: step 5 names what replaces the deleted warning"
+  # The single-add-on rule and its tie-break — the half the old anchor never reached. This is where
+  # dir #183 moved dir #81's honesty guarantee OUT of the mechanically-validated receipt, so it is the
+  # sentence with the least other protection in the tree.
+  if match "$addon_window" -qi 'operator-run` wins the receipt slot'; then
+    pass "polish.md: step 5 states the operator-run-wins tie-break for the single add-on slot"
   else
-    fail "polish.md: step 5 names what replaces the deleted warning" \
-      "expected the paragraph to point at the live sentinel read and/or the step-10 disclosure"
+    fail "polish.md: step 5 states the operator-run-wins tie-break for the single add-on slot" \
+      "expected the rule naming which add-on takes the receipt slot when both applied"
+  fi
+  # The warning is gone, so what replaces it must be named, not merely omitted: the session's own read
+  # of the live sentinel AND the step-10 disclosure. Otherwise the deletion reads as "one fewer thing to
+  # do" rather than "the same obligation, now yours" — the silent-degradation shape dir #161's own
+  # MANDATORY-read pin guarded against from the other direction. **Two separate assertions, not one
+  # `||`** (corrected in this ticket's own /simplify pass): an OR is satisfied by either phrase, so
+  # deleting the concrete live-sentinel instruction would have left this green on the leftover mention
+  # of the other — neither replacement individually pinned, which is the whole point of the pin.
+  if match "$addon_window" -qi 'live sentinel'; then
+    pass "polish.md: step 5 names the live-sentinel read that replaces the deleted warning"
+  else
+    fail "polish.md: step 5 names the live-sentinel read that replaces the deleted warning" \
+      "expected the concrete instruction to read this run's earlier polish.5-review line"
+  fi
+  if match "$addon_window" -qi 'step-10 disclosure'; then
+    pass "polish.md: step 5 names the step-10 disclosure as the record that now carries every mechanism"
+  else
+    fail "polish.md: step 5 names the step-10 disclosure as the record that now carries every mechanism" \
+      "expected the paragraph to point at the step-10 disclosure, not only the sentinel read"
   fi
 fi
 

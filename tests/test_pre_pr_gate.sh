@@ -467,8 +467,10 @@ check_contains "denied for the depth mismatch, not some other reason" "$OUT" "do
 # actually sized "high" must not unlock the gate either — write_full_receipt_review DERIVES
 # polish.4-depth from the given outcome by default, so a deliberate mismatch has to be asked for.
 # This block predates the helper's `depth_override` 5th argument (dir #158) and is still hand-rolled;
-# so are 18b, 49, 50d and 50h. Only 50j uses the override, which leaves two idioms for one fixture
-# shape 30 lines apart — migrating the five is its own cleanup, filed as dir #163, not folded in here.
+# so are 18b, 49 and 50d. **50h was migrated onto the override by dir #183** — not as drive-by tidying,
+# but because dir #183 deleted the override's only other caller, and a helper parameter with zero
+# callers is dead by accident rather than by decision. That still leaves two idioms for one fixture
+# shape — migrating the remaining four is its own cleanup, filed as dir #163, not folded in here.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.1-diff
@@ -981,16 +983,15 @@ rm -f "$tf"
 
 # 50h. dir #141: Gate DENY when the combined outcome's level doesn't match polish.4-depth's OWN
 # recorded level — same depth-consistency cross-check dir #81 built for `+operator-run`, mirrored here.
+# Uses write_full_receipt_review's `depth_override` (5th arg) rather than a 9-line hand-rolled copy.
+# **Migrated here by dir #183, and not as drive-by tidying:** dir #183 deleted the override's only
+# other caller (dir #158's two-add-on depth-strip fixture), which would have left a documented helper
+# parameter with zero callers — dead by accident rather than by decision. Behaviour-equivalent to the
+# hand-rolled form: lib.sh writes `polish.4-depth <level>:test-fixture` and the gate compares only
+# `${depth_outcome%%:*}`, and neither form writes a trace (this deny fires at the depth cross-check,
+# which runs before the trace check). The remaining hand-rolled blocks are dir #163's own cleanup.
 d="$(mkrepo)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
-run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
-run_in "$d" bash "$gate" receipt polish.5-review "agent:high+second-opinion"
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+write_full_receipt_review "$d" "agent:high+second-opinion" "" "" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "'agent:high+second-opinion' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
@@ -2571,8 +2572,10 @@ check_absent "dir #152: cross-fork PR pushed to the contributor's own remote →
 # advising the operator to re-assert a review that never saw the commit (dir #226). With the receipt
 # carrying at most one add-on there is no set to lose, and the whole check goes.
 #
-# The setup is test 103's felt case verbatim, so the assertion binds against the exact input that used
-# to warn — a fresh shape would prove nothing about the removal. `init` retires whatever the LIVE
+# The setup reproduces the DELETED test 103's felt case verbatim, so the assertion binds against the
+# exact input that used to warn — a fresh shape would prove nothing about the removal. (Numbered 103
+# again to keep the file's numbering contiguous; the reference is to the pre-dir-#183 test, not to
+# this one.) `init` retires whatever the LIVE
 # sentinel holds into the single-slot prev backup unconditionally (retire_sentinel runs on every
 # invalidation path, `init`'s overwrite included), stamping base-sha at CURRENT HEAD, so
 # "init; receipt polish.5-review <outcome>; init" leaves a well-formed, same-lineage prev backup

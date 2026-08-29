@@ -932,8 +932,14 @@ _validated_prev_sentinel() {
 # dir #161 /code-review high: reads the RETIRED prev sentinel, which needs no foreign-nonce/MISSING/
 # REPLAY bookkeeping. Extracted to be shared with dir #161's add-on-drop warning (which read only ONE
 # step); **dir #183 deleted that warning, so `receipt --recover`'s own replay — which reads ALL steps —
-# is again the only caller.** The `$2` step-id filter below is what the deleted second consumer needed
-# and is kept: it costs one `case` and is the natural read for any future single-step consumer.
+# is again the only caller.** The `$2` step-id filter below is what the deleted second consumer needed.
+# It is kept — it costs one `case` and is the natural read for a future single-step consumer — but be
+# precise about its state: with no caller passing `$2`, that branch is now **unused AND unreachable by
+# any test** (the suite drives the CLI, never sources this file, and the tests that exercised the
+# filtered path were deleted with the warning). So the "ONE place that needs the matching edit" claim
+# below holds for the receipt-line FORMAT, which both branches share — not as a promise that a future
+# format change would be caught by a test on the filtered half. Delete it rather than let it rot if no
+# second consumer arrives.
 # Contrast the completeness parser elsewhere in this file
 # (search `EXPECTED_STEPS`), which reads the LIVE sentinel and does need that extra state for its
 # PASS/MISSING/REPLAY verdict — dir #72 finding #6 already argued, and this still holds, for why THAT
@@ -1092,8 +1098,12 @@ case "${1:-}" in
       # `prev`'s path is recomputed here even though `_validated_prev_sentinel` (below) derives the
       # identical value internally — reviewed live (cross-model /code-review high, dir #161) and kept
       # deliberately: this block's own message #2 needs `$prev`'s VALUE for its text, and the shared
-      # function's bare 1/2/3 return-code signature has no channel to hand it back without widening that
-      # signature for a caller-specific need. Same reasoning covers the `base_sha` re-derivation on the
+      # function DOES have such a channel — it prints the path on stdout — but only on SUCCESS, and every
+      # consumer of `$prev` below is on a FAILURE path, where it prints nothing. So the re-derivation is
+      # real and unavoidable, just not for the reason this comment gave until dir #183 (it claimed no
+      # channel existed at all). Corollary worth knowing before touching either: with dir #183's deletion
+      # of the second caller, that stdout contract now has NO consumer — this call discards it with
+      # `>/dev/null`. Same reasoning covers the `base_sha` re-derivation on the
       # `rc=3` branch below — real, minor duplication, judged not worth complicating a shared,
       # security-adjacent validator's signature to remove.
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
@@ -2161,6 +2171,16 @@ case "$status" in
                          # Consequence for reading coverage: deleting this guard alone no longer reds a
                          # test, because `_addon_label` backstops it — stated in tests/test_pre_pr_gate.sh
                          # test 50l rather than left to be discovered.
+                         # **And say the symmetric thing about `$addons_ok`, so this paragraph isn't read
+                         # as "both halves were audited and both earn their keep":** under the single-token
+                         # parse it is the REDUNDANT half — `_addon_label` succeeds iff it prints a
+                         # non-empty label, so `addons_ok=1` ⟺ `addon_prose` non-empty, and deleting
+                         # `addons_ok` reds nothing either. It is kept because the two say different
+                         # things — one records whether validation SUCCEEDED, the other whether a
+                         # mechanism was NAMED — and under the walk they genuinely diverged (a `break`
+                         # could leave a partially-built prose with `addons_ok=0`). Keeping the pair is a
+                         # deliberate call, not an oversight; collapsing it is a fair future simplification,
+                         # just not one to make while believing the `&&` is doing two jobs today.
                          if [ "$addons_ok" -eq 1 ] && [ -n "$addon_prose" ]; then
                            outcome_level="${outcome_level%%+*}"
                          fi

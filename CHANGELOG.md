@@ -14,7 +14,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 - **A step-5 review receipt now carries at most ONE add-on; the comma-separated add-on SET is gone**
   (dir #183). dir #158 had generalized the suffix into `agent:<level>+<addon>[,<addon>…]` so a commit
   reviewed several ways could record every mechanism in the receipt itself. The parser behind that set
-  accumulated five live defects, all of them in the demoted refusal-fallback path the entry above moved
+  accumulated five live defects, all of them in the demoted refusal-fallback path the dir #254 entry
+  below moved
   off `/polish`'s primary route: a trailing comma unlocked the gate while the arm's own comment promised
   a deny (dir #225); a duplicated add-on unlocked and then double-labelled one mechanism in the
   operator-facing provenance line (dir #227); and dir #161's advisory add-on-drop warning compared
@@ -31,7 +32,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   and dir #254's primary bare-`<level>` path. **The accepted loss, stated plainly:** a commit reviewed by
   BOTH an operator-run pass and a cross-model second opinion across rounds now records **one** of them
   in the receipt — `operator-run` wins the slot, as the human pass is the rarer event and the one a
-  reader is least able to infer — and **both in prose**. dir #81's honesty guarantee was always "the
+  reader is least able to infer — and **both in prose**. **The loss reaches one step further than the
+  receipt, and is worth naming precisely:** the gate derives its PR-time provenance line and its durable
+  `receipt-pass` impact-log event from the same add-on, so that tool-emitted record — the one dir #64
+  added specifically so provenance survives without transcript archaeology — now also names the one
+  add-on rather than both. So an operator reading the impact log sees the standing agent review plus
+  whichever add-on took the slot, and the complete list lives in the PR body and the closing summary. dir #81's honesty guarantee was always "the
   operator-facing record names every mechanism"; dir #158 additionally put that in the receipt, and it is
   the receipt half that carried the defects, so `commands/polish.md` steps 9 and 10 now require the PR
   body and the closing summary to name every mechanism that actually ran, read off the review history
@@ -47,7 +53,7 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the model now tries the built-in multi-agent pass itself first; only a refusal for that specific run
   falls through to the dir #70 subagent, which is otherwise unchanged (same mechanism, same MANDATORY
   `AskUserQuestion` reminder dialog and add-on machinery, dir #81/#141/#158/#161/#201/#214, all preserved
-  as the fallback path rather than deleted — though the entry below narrows the add-on half of that
+  as the fallback path rather than deleted — though the dir #183 entry above narrows the add-on half of that
   fallback, which this change's own demotion is what made affordable). A genuine direct call needs no reminder dialog and no
   operator hand-off — it receipts a bare `polish.5-review <level>` and continues straight to step 6; the
   gate's existing dir #63/dir #88 trace legs already covered this outcome shape natively, so

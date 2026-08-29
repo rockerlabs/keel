@@ -406,16 +406,14 @@ Steps, in order:
      RETIRED round, which is the wrong baseline on the in-run `--amend` path (dir #201), goes silent
      when an `--amend` orphans the retired round's lineage stamp (dir #214), and fires spuriously
      against an already-SHIPPED round while advising a review that never saw the commit (dir #226). It
-     signalled unreliably in exactly the situations it existed for. **What replaces it is your own read
-     of this run's earlier `polish.5-review` line, and the step-10 disclosure** — which is the record
-     that matters anyway, since the receipt now holds one add-on by design.
-
-     **Read this run's own earlier `polish.5-review` line out of the live sentinel
-     (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh receipt-key)`, last write wins) before writing a new
-     one.** On the IN-RUN convergence path (resolve a finding, `--amend`, keep going without re-`init`-
-     ing — the path named further down in this step) nothing is retired, so the live sentinel is the
-     only place your own earlier add-on still exists. Read it; do not try to reason about what was
-     carried forward from session memory.
+     signalled unreliably in exactly the situations it existed for. **What replaces it: read this run's own
+     earlier `polish.5-review` line out of the live sentinel
+     (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh receipt-key)`, last write wins) before writing a new one,
+     and carry every mechanism into the step-10 disclosure.** On the IN-RUN convergence path (resolve a
+     finding, `--amend`, keep going without re-`init`-ing — the path named further down in this step)
+     nothing is retired, so the live sentinel is the only place your own earlier add-on still exists.
+     Read it; do not try to reason about what was carried forward from session memory. The step-10
+     disclosure is the record that matters anyway, since the receipt now holds one add-on by design.
 
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — this
      run's own direct attempt above was refused, which is why we're on this fallback branch at all.**

@@ -139,4 +139,27 @@ pin "init-project.sh captures register-project.sh's stderr instead of discarding
   'register_err="$("$here/register-project.sh"' \
   "expected the fix: capture stderr so the printed follow-up can name the actual cause"
 
+# dir #183: the honesty guarantee dir #81 built — "the operator-facing record names EVERY mechanism that
+# reviewed this commit" — used to be carried in two places at once: the receipt (dir #158's add-on SET,
+# mechanically validated by the gate and pinned by its own tests) and the step 9/10 prose. dir #183
+# deleted the receipt half, because that is where five live defects sat. **That makes these two
+# sentences the only surviving carrier of the guarantee, which is exactly this file's remit** — its
+# header names "a shipped rail described a guarantee it does not give" as the failure mode, and the
+# mirror case is a rail that still gives the guarantee only in prose nothing holds in place. Without
+# these pins, a later edit could delete "name EVERY mechanism" from the PR body rule or collapse the
+# step-10 summary back to the receipt's one add-on, and the whole suite would stay green.
+#
+# Pinned on "not off the receipt" rather than on "every mechanism" alone: the load-bearing half is the
+# SOURCE the reporter reads from. A rule saying "name every mechanism" is satisfied, wrongly, by a
+# reporter that enumerates the receipt faithfully — which after dir #183 names one add-on, not both.
+pin "polish.md: step 9's PR-body rule names every mechanism, read off what ran and NOT off the receipt" \
+  "$polish" 'read them off what ACTUALLY RAN, not off the receipt' \
+  "expected step 9 to source the PR body's mechanism list from the review history, not the receipt (dir #183 left the receipt naming at most one add-on)"
+pin "polish.md: step 9 says outright that the receipt is no longer the mechanism list" \
+  "$polish" '**The receipt is no longer that list.**' \
+  "expected step 9 to state the receipt/prose split explicitly, so a reader can't infer the pre-dir-#183 read-off-the-receipt rule"
+pin "polish.md: step 10's summary rule reads off what ran, not off the receipt" \
+  "$polish" 'read off what ACTUALLY RAN, not off the receipt' \
+  "expected step 10's summary to carry the same source rule as step 9's PR body — the two must not drift apart"
+
 summary
