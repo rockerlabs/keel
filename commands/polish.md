@@ -402,10 +402,12 @@ Steps, in order:
      re-applied automatically. **But it is usually still readable, so do not re-type it from memory**
      (corrected by this ticket's own review, which found this paragraph claiming memory was the only
      source — verified by reproduction, both halves): on the CROSS-RUN path, `init` retires the prior
-     round's sentinel into the single-slot backup, where its `polish.5-review` line survives verbatim
-     and one `grep` away. It is best-effort, not a guarantee: the backup holds only the MOST RECENT
-     retirement, and because `init` always leaves a live sentinel behind, a further `init` retires that
-     (add-on-less) file over the backup and the line is gone.
+     round's sentinel into the single-slot backup, where its `polish.5-review` line survives verbatim.
+     Read it the same way you read the live sentinel, one path over —
+     `grep polish.5-review /tmp/pre-pr-gate-prev-$(tools/pre-pr-gate.sh receipt-key)`. It is
+     best-effort, not a guarantee: the backup holds only the MOST RECENT retirement, and because `init`
+     always leaves a live sentinel behind, a further `init` retires that (add-on-less) file over the
+     backup and the line is gone. So read it early, and treat a miss as "no record", never as "no add-on".
 
      **Nothing warns you when a re-typed receipt loses one (dir #183).** dir #161 added a stderr warning
      for exactly that, and dir #183 deleted it along with the set parser: it compared against the last

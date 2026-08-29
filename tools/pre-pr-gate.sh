@@ -2225,20 +2225,45 @@ case "$status" in
     fi
     if [ "$outcome_level" != "$depth_level" ]; then
       retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-      log_event receipt-deny "review-depth-mismatch" "$cwd"
       # dir #183: every invalid add-on routes through this equality check rather than carrying a deny
       # of its own — deliberate (no second message to keep in sync), but it means a COMMA-JOINED suffix
       # lands here with a message that names the depth, which is visibly correct in the outcome string.
       # That is a stale-copy trap, not a hypothetical: the hook is wired to the checkout's gate by
-      # ABSOLUTE PATH, while `commands/polish.md` is a copy `install.sh` refreshes only on an
-      # interactive prompt that defaults to No. So `git pull` alone gives a new gate plus prose that
-      # still instructs `agent:<level>+operator-run,second-opinion` — the session re-reads it, re-writes
-      # the same string, and loops. Name the cause, the same way the tests-sha-unbound and
-      # skip-dialog-missing denies above already name this exact skew.
+      # ABSOLUTE PATH, while under the DEFAULT copy install `commands/polish.md` is a copy `install.sh`
+      # refreshes only on an interactive prompt that defaults to No — and a non-interactive re-run takes
+      # the WARN branch and updates nothing at all, which is the ordinary agent-driven case. So
+      # `git pull` alone gives a new gate plus prose that still instructs
+      # `agent:<level>+operator-run,second-opinion` — the session re-reads it, re-writes the same
+      # string, and loops. (Under `install.sh --link` the command file is a symlink into the checkout
+      # and refreshes in lockstep with the gate, so the skew cannot arise there at all.) Name the
+      # cause, the same way the tests-sha-unbound and skip-dialog-missing denies above already name
+      # this exact skew.
+      #
+      # **An explicit reason/message pair, then ONE deny — never a deny inside the case plus a deny
+      # after it** (found by this ticket's own /code-review max delta round; the first draft did
+      # exactly that). It is the same rail the dir #116 skip/review dialog pair below states in full:
+      # two `deny` calls relying on `deny()`'s own `exit` would emit two concatenated JSON objects the
+      # day that exit ever becomes conditional, and last-key-wins parsing would surface the GENERIC
+      # decision. The differentiated log reason is the same rail's other half — a recurring stale-copy
+      # loop is exactly what a `sweep`/impact consumer wants to count separately from a real mismatch.
+      depth_deny_reason="review-depth-mismatch"
+      depth_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
       case "$review_outcome" in
-        agent:*+*,*) deny "Pre-PR gate: step 5's review outcome ('$review_outcome') names more than one review add-on, which is no longer a valid shape — the receipt now carries AT MOST ONE (dir #183), so the comma-joined suffix is read as a single unknown add-on and fails the depth cross-check against step 4's '$depth_level'. If you just pulled Keel, an older copied commands/polish.md still teaches the comma-separated set — re-run install.sh to refresh it. Re-run this receipt naming ONE add-on (operator-run wins the slot when both applied) and name every mechanism that reviewed this commit in the PR body and the step-10 summary instead. Run /polish again." ;;
+        agent:*+*,*)
+          # Match on the ADD-ON region, not merely on the shape: the pre-`+` part must be a bare
+          # `agent:<level>` with no second colon, or a step-4 depth measurement pasted into step 5
+          # (`agent:medium:+412-96,10f,code` — comma-bearing by nature) would be told it names two
+          # add-ons and to re-run install.sh, which is the wrong cause and the wrong fix.
+          addon_pre="${review_outcome%%+*}"; addon_pre="${addon_pre#agent:}"
+          case "$addon_pre" in
+            *:*) : ;;
+            *)   depth_deny_reason="review-addon-set-retired"
+                 depth_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') carries a COMMA-JOINED add-on suffix, which is no longer a valid shape — the receipt now names AT MOST ONE add-on (dir #183), so everything after the '+' is read as a single unknown add-on and fails the depth cross-check against step 4's '$depth_level'. If you just pulled Keel, an older COPIED commands/polish.md still teaches the comma-separated set — re-run install.sh AND answer 'y' at its overwrite prompt (it defaults to No, and a non-interactive run only warns), or re-install with --link so the command file tracks the checkout. Then re-run this receipt naming exactly ONE add-on (operator-run takes the slot when both applied) and name every mechanism that reviewed this commit in the PR body and the step-10 summary instead. Run /polish again." ;;
+          esac
+          ;;
       esac
-      deny "Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
+      log_event receipt-deny "$depth_deny_reason" "$cwd"
+      deny "$depth_deny_msg"
     fi
     # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real
     # in-session /code-review run — cross-check the mechanically-written trace (skill-trace, above) so
