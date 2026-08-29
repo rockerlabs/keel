@@ -724,13 +724,15 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_file "the unreadable source is left in place, not deleted" "$urepo/.keel/ledger.md"
   check_nofile "the unreadable source was never merged into the store" "$urepo_store/ledger.md"
 
-  # --- a merge READ FAILURE (the awk that PRODUCES the rows, not the write right after it) must also
-  # never be reported as success (dir #289): both merge helpers used to capture only the WRITE status
-  # (cat/mv, per the review above), never the exit status of the awk that actually READ $target and
-  # $inputs. Neither helper's own pre-check inspects the STORE's existing TARGET file for readability —
-  # only cmd_migrate's own scan checks the untracked SOURCE (exercised above) — so a target that goes
-  # unreadable slips past every existing guard: the awk fails outright, yet the old code still wrote
-  # whatever partial rows/blocks it managed to emit before erroring and called that a success. --------
+  # --- cmd_migrate must also stay safe when the merge's READ (not its write) fails: a target that goes
+  # unreadable slips past every existing pre-check (cmd_migrate's own scan only inspects the untracked
+  # SOURCE's readability, exercised above — never the STORE's existing target). This is verified via
+  # `migrate` for parity with the write-failure/unreadable-source tests above, but its safety net here is
+  # `set -e` catching the awk's own bare, unguarded failure inside cmd_migrate — NOT this diff's own
+  # header_status/rows_status/read_status gating, which is reachable only through _impact_auto_migrate's
+  # own `&&`/`||`-wrapped calls (see the dir #289 retry test below, which exercises that path directly).
+  # Confirmed by re-running this exact scenario against the pre-dir-#289 code: identical outcome, same
+  # exit status, same undeleted source — this pins cmd_migrate's overall behavior, not the new mechanism. ---
   rrepo="$(new_repo)"
   mkdir -p "$rrepo/.keel"
   printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$rrepo/.keel/ledger.md"
@@ -799,6 +801,32 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_nodir "the retry rmdirs the now-empty .keel/" "$strepo/.keel"
   check_contains "the retry's merge carries the previously-stranded row" "$(cat "$strepo_store/ledger.md")" "stranding-row"
   check_contains "the retry's merge kept the pre-existing store row too" "$(cat "$strepo_store/ledger.md")" "already-in-store"
+
+  # Same shape as strepo above, but for _impact_merge_evidence — the ledger case above goes through
+  # _impact_auto_migrate's own `&&`/`||`-wrapped call, which is the ONLY context where this diff's own
+  # read-status gating is actually reachable (a bare call, like cmd_migrate's, hits `set -e` before ever
+  # reaching it — see the rrepo/vrepo comment above). Evidence needs its own instance of this test: the
+  # two merge helpers are separate functions with separate awk programs, and nothing else in this file
+  # exercises evidence's read-status capture through a reachable call path.
+  sverepo="$(new_repo)"
+  sverepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$sverepo")"
+  mkdir -p "$sverepo_store"
+  printf '# Keel impact — per-event evidence\n\n## 2026-05-30 — score 100/100 (conf low)\n\n- guard: already-in-store\n' > "$sverepo_store/evidence.md"
+  chmod 000 "$sverepo_store/evidence.md"
+  mkdir -p "$sverepo/.keel"
+  printf '# Keel impact — per-event evidence\n\n## 2026-06-01 — score 100/100 (conf low)\n\n- guard: stranding-row\n' > "$sverepo/.keel/evidence.md"
+  run_in "$sverepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  check_status "a plain rollup survives a failed evidence auto-migrate attempt" 0 "$STATUS"
+  chmod 644 "$sverepo_store/evidence.md"
+  check_file "the failed evidence attempt leaves the legacy source in place" "$sverepo/.keel/evidence.md"
+  check_nofile "the failed evidence attempt never writes the completion marker" "$sverepo_store/origin"
+  check_contains "the store's own pre-existing evidence block is unharmed" "$(cat "$sverepo_store/evidence.md")" "already-in-store"
+  run_in "$sverepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  check_status "the evidence retry succeeds" 0 "$STATUS"
+  check_file "the evidence retry writes the completion marker" "$sverepo_store/origin"
+  check_nofile "the evidence retry removes the now-merged legacy source" "$sverepo/.keel/evidence.md"
+  check_contains "the evidence retry carries the previously-stranded block" "$(cat "$sverepo_store/evidence.md")" "stranding-row"
+  check_contains "the evidence retry kept the pre-existing store block too" "$(cat "$sverepo_store/evidence.md")" "already-in-store"
 fi
 
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead

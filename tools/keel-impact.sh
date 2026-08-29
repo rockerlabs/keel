@@ -421,8 +421,8 @@ _impact_merge_evidence() {
   # Same read-vs-write blind spot as _impact_merge_ledger above (see its dir #289 comment) — this awk
   # has no pipe, so a plain `$?` right after it is already the real read status; gate the `mv` on it
   # the same way.
-  local read_status write_status
-  awk '
+  local write_status
+  if awk '
     function flush_block() { if (block != "") { n++; blocks[n] = block; dates[n] = date } }
     FNR==1 { flush_block(); block=""; date="" }
     /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / { flush_block(); block=$0 "\n"; date=substr($0,4,10); next }
@@ -441,15 +441,13 @@ _impact_merge_evidence() {
         if (!dup) { seen_n++; seen[seen_n]=blocks[i]; printf "%s", blocks[i] }
       }
     }
-  ' "${inputs[@]}" > "$tmp"
-  read_status=$?
-  if [ "$read_status" -eq 0 ]; then
+  ' "${inputs[@]}" > "$tmp"; then
     mv -f "$tmp" "$target"
     write_status=$?
   else
     write_status=1
+    rm -f "$tmp"
   fi
-  rm -f "$tmp"
   return "$write_status"
 }
 
