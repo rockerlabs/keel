@@ -49,13 +49,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # W-KEEL-LEGACY names the explicit `migrate` path for the operator to run. Best-effort and silent by
 # design (called with `|| true`): any failure here just leaves the legacy file in place for `enable`/
 # `migrate` to handle properly later, never worth aborting a plain `add`/`rollup`/`event` over.
+#
+# dir #289's fix, both halves: the idempotency guard below is `[ -f "$store/origin" ]`, NOT `[ -d
+# "$store" ]` — `origin` is now written ONLY after every present legacy file has been swept
+# successfully (`ok=1`), never before. A failure partway through (a merge helper genuinely reporting
+# failure — see _impact_merge_ledger/_impact_merge_evidence below) leaves `origin` unwritten, so the
+# NEXT call re-scans and retries exactly the files still sitting in `.keel/` (already-merged ones were
+# already `rm -f`'d, so a retry never re-merges them, just picks up where the failure left off). A
+# repo where auto-migrate legitimately has nothing to do (no legacy files, or what's left is
+# tracked/unreadable) never gets `origin` written by THIS function either, so it costs the same small
+# rescan on every call it always did pre-fix — no new cost there. The one case that IS a new per-call
+# cost relative to pre-fix: a repo where a merge is attempted and genuinely fails (`ok=0`) now retries
+# the scan + merge attempt on every subsequent call for as long as the failure persists, where pre-fix a
+# single failed attempt already wrote `origin`/`$store` and silently stopped trying forever. That
+# repeated cost is the deliberate trade (retry-until-success beats permanent silent stranding) and stays
+# small (a handful of `[ -f ]`/`git ls-files` checks, no repo-wide walk) — never a false "done" for a
+# repo that never migrated at all. `mkdir -p "$store"` still happens up front (unconditionally, on the
+# success path) — only the marker file, not the directory, moved to the end.
 _impact_auto_migrate() {
   local dir="${1:-.}"
   local top store f any=0 all_untracked=1
   top="$(_impact_resolve_top "$dir")"
   [ -n "$top" ] && [ -d "$top/.keel" ] || return 0
   store="$(impact_store_dir "$top")"
-  [ -d "$store" ] && return 0   # already enabled — nothing to auto-migrate
+  [ -f "$store/origin" ] && return 0   # a prior pass already finished — nothing left to auto-migrate
   for f in $IMPACT_LEGACY_NAMES; do
     [ -f "$top/.keel/$f" ] || continue
     any=1
@@ -71,17 +88,20 @@ _impact_auto_migrate() {
   done
   { [ "$any" -eq 1 ] && [ "$all_untracked" -eq 1 ]; } || return 0
   mkdir -p "$store" || return 0
-  printf '%s\n' "$top" > "$store/origin"
+  local ok=1
   if [ -f "$top/.keel/ledger.md" ]; then
-    _impact_merge_ledger "$store/ledger.md" "$top/.keel/ledger.md" && rm -f "$top/.keel/ledger.md"
+    _impact_merge_ledger "$store/ledger.md" "$top/.keel/ledger.md" && rm -f "$top/.keel/ledger.md" || ok=0
   fi
   if [ -f "$top/.keel/evidence.md" ]; then
-    _impact_merge_evidence "$store/evidence.md" "$top/.keel/evidence.md" && rm -f "$top/.keel/evidence.md"
+    _impact_merge_evidence "$store/evidence.md" "$top/.keel/evidence.md" && rm -f "$top/.keel/evidence.md" || ok=0
   fi
   if [ -f "$top/.keel/impact-events.log" ]; then
-    cat "$top/.keel/impact-events.log" >> "$store/impact-events.log" && rm -f "$top/.keel/impact-events.log"
+    cat "$top/.keel/impact-events.log" >> "$store/impact-events.log" && rm -f "$top/.keel/impact-events.log" || ok=0
   fi
   rmdir "$top/.keel" 2>/dev/null || true   # only succeeds once role-3/4 files are gone too — expected to no-op
+  # Written last, and only once every present file was actually swept — see the comment above.
+  [ "$ok" -eq 1 ] && printf '%s\n' "$top" > "$store/origin"
+  return 0
 }
 
 # THE ORDERING RULE: no project state changes until the invocation is known-valid. _impact_auto_migrate
@@ -99,10 +119,23 @@ _impact_auto_migrate() {
 # each simply contain no call, and a future read-only verb gets that for free.
 #
 # ONE ORDERING CONSTRAINT SURVIVES, and cmd_enable carries it: _impact_begin must run BEFORE
-# impact_store_enable()'s unconditional `mkdir -p`. Otherwise _impact_auto_migrate's own idempotency
-# guard (`[ -d "$store" ] && return 0`) is permanently satisfied by a store that was created empty, and
-# AUTO-migration is then dead for that project: no later `enable`/`add`/`event`/`rollup` will ever sweep
-# the legacy in-tree marker in. Calibrate the harm correctly, though — it is silence, not data loss.
+# impact_store_enable()'s unconditional `mkdir -p` + `origin` write. Otherwise _impact_auto_migrate's
+# own idempotency guard (`[ -f "$store/origin" ]`, dir #289) is permanently satisfied by an `origin`
+# written before any merge ran, and AUTO-migration is then dead for that project: no later
+# `enable`/`add`/`event`/`rollup` will ever sweep the legacy in-tree marker in. This is the ONE case
+# dir #289's own retry-on-failure fix (see _impact_auto_migrate's own comment) does NOT self-heal —
+# that fix retries when auto_migrate's OWN attempt fails partway through and leaves `origin` unwritten;
+# it can't retry a stranding caused by a DIFFERENT function writing `origin` first, before auto-migrate
+# ever got to run. `impact_store_enable` is one such function; `cmd_migrate` (below) is a second,
+# independent one — it also writes `$store/origin` before calling the same merge helpers, so a genuine
+# merge failure there (caught by `set -e`, which aborts before its own `rm -f` — see the merge helpers'
+# own dir #289 comment) still leaves `origin` behind. Neither is a hole dir #289 OPENED: pre-dir-#289,
+# `[ -d "$store" ]` was satisfied by these same two functions' own unconditional `mkdir -p "$store"`, at
+# the same point, for the same permanent effect — the guard's file changed, the interaction with callers
+# outside _impact_auto_migrate's own attempt did not. Closing it needs one success-gated `origin` writer
+# shared by all three call sites, which is a real refactor of tools/lib/impact-store.sh's own store
+# abstraction, not a fix scoped to this ticket's two named failure windows — tracked as a follow-up
+# rather than folded in here. Calibrate the harm correctly, though — it is silence, not data loss.
 # Each legacy file keeps resolving and working from wherever it physically is — impact_ledger_path's
 # legacy rung is a PER-FILE test, so a stranded project whose marker is only impact-events.log ends up
 # split, that log in-tree and a later ledger/evidence in the store — and an
@@ -332,23 +365,39 @@ _impact_merge_ledger() {
   LEDGER="$target" ensure_ledger
   local header_tmp rows_tmp
   header_tmp="$(mktemp)"; rows_tmp="$(mktemp)"
+  # dir #289: the WRITE status below (cat/mv) says nothing about whether the READ that fed it actually
+  # saw all of $target/"${inputs[@]}" — an input that goes unreadable between the caller's own `[ -r ]`
+  # check and this awk's open() fails the READ, not the WRITE, and a write of whatever partial rows
+  # awk DID manage to print would still report success. Capture each awk's own exit status explicitly:
+  # header_tmp's awk is a plain redirect (its exit status is right there in `$?`); rows_tmp's awk is the
+  # FIRST stage of a pipe, so without `pipefail` (never set file-wide — it would silently change every
+  # other pipeline's failure semantics in this file, per the ticket's own fork) only `${PIPESTATUS[0]}`,
+  # read immediately after the pipe and before any other command touches it, gives its real status.
+  local header_status rows_status
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { exit }
     { print }
   ' "$target" > "$header_tmp"
+  header_status=$?
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { print }
   ' "$target" "${inputs[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
+  rows_status="${PIPESTATUS[0]}"
   # Capture the write's own exit status explicitly — a bare `cmd1 && cmd2` as this function's LAST
   # statement would otherwise report whatever the following `rm -f` cleanup returns (almost always 0),
   # silently masking a real write failure (disk-full, a transiently unwritable store dir, a concurrent-
   # process race) from every caller that gates a source-file deletion on this function's return status
   # (`_impact_merge_ledger ... && rm -f "$legacy_source"`) — found live by an operator-run max-depth
   # review: a masked failure here would delete the legacy ledger while never having durably written its
-  # rows anywhere.
+  # rows anywhere. A bad READ status (above) short-circuits this the same way, never even attempting
+  # the write — a partial read must never look like a durable write of everything it read.
   local write_status
-  cat "$header_tmp" "$rows_tmp" > "$target.keelmerge.$$" && mv -f "$target.keelmerge.$$" "$target"
-  write_status=$?
+  if [ "$header_status" -eq 0 ] && [ "$rows_status" -eq 0 ]; then
+    cat "$header_tmp" "$rows_tmp" > "$target.keelmerge.$$" && mv -f "$target.keelmerge.$$" "$target"
+    write_status=$?
+  else
+    write_status=1
+  fi
   rm -f "$header_tmp" "$rows_tmp" "$target.keelmerge.$$"
   return "$write_status"
 }
@@ -369,7 +418,11 @@ _impact_merge_evidence() {
   # (the external store, or a legacy in-tree path), and `mv` across filesystems degrades to copy-then-
   # unlink — no longer the single atomic rename() a same-filesystem `mv` gets for free.
   local tmp="$target.keelmerge.$$"
-  awk '
+  # Same read-vs-write blind spot as _impact_merge_ledger above (see its dir #289 comment) — this awk
+  # has no pipe, so a plain `$?` right after it is already the real read status; gate the `mv` on it
+  # the same way.
+  local write_status
+  if awk '
     function flush_block() { if (block != "") { n++; blocks[n] = block; dates[n] = date } }
     FNR==1 { flush_block(); block=""; date="" }
     /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / { flush_block(); block=$0 "\n"; date=substr($0,4,10); next }
@@ -388,8 +441,14 @@ _impact_merge_evidence() {
         if (!dup) { seen_n++; seen[seen_n]=blocks[i]; printf "%s", blocks[i] }
       }
     }
-  ' "${inputs[@]}" > "$tmp"
-  mv -f "$tmp" "$target"
+  ' "${inputs[@]}" > "$tmp"; then
+    mv -f "$tmp" "$target"
+    write_status=$?
+  else
+    write_status=1
+    rm -f "$tmp"
+  fi
+  return "$write_status"
 }
 
 # require a non-negative integer; empty defaults to 0. Digit-shape AND magnitude checked via
