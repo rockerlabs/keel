@@ -11,6 +11,16 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Removed two dead contracts in `tools/pre-pr-gate.sh` left behind by dir #183's deletion of the
+  add-on-drop warning** (dir #301, found by dir #183's own `/code-review max` — six of ten review
+  angles flagged them independently). `_prev_sentinel_outcomes`'s `$2` step-id filter branch and
+  `_validated_prev_sentinel`'s stdout path were both extracted to be shared with that warning; with
+  it gone, `receipt --recover` is the only caller of each, and neither used the deleted half — the
+  filter branch was unreachable by any test, and the stdout contract's one caller already discarded
+  it with `>/dev/null`. Zero behaviour change: `receipt --recover`'s own coverage (tests 58/59, the
+  foreign-lineage and malformed-header cases) stays green, verified additionally via a live mutation
+  proof on the surviving path. Adopter-visible: `tools/pre-pr-gate.sh` ships in every keel home with
+  the gate wired.
 - **`docs/reference.md`'s `tools/keel-impact.sh` row now names `migrate`** (dir #298, found the same
   day dir #297's `/simplify` reuse pass surfaced it): the command an adopter upgrading from a
   pre-0.7.2 install must run to carry a legacy in-tree `.keel/` ledger into the external store had no
