@@ -155,6 +155,36 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   chmod 644 "$d/BACKLOG.md"
 fi
 
+# --- dir #291: an unreadable (not just absent) archive is announced as absent, not as present --------
+# The script's own BACKLOG check already uses `-r` for exactly this reason (see above); the archive path
+# used `-f`, so a present-but-unreadable archive was announced with the "archive: <path>" (in-use) line
+# instead of the "archive: absent" line, misreporting what actually happened even though the citation
+# still ends up DEAD either way (an unreadable file yields no hits same as a missing one). Not
+# `--quiet` here: that line is exactly what this test needs to observe.
+#
+# BOTH assertions below live inside the root guard, unlike the usual split (content under the
+# guard, exit code unconditional) — deliberately, not an oversight (raised by a peer session's
+# review of PR #295 while it sat open, dir #291). Under root `chmod 000` is a no-op, so the archive
+# is genuinely READABLE there, and its "dir #202" line then resolves the citation via the archive
+# path (see the "archived (not live) ticket resolves via the archive -> exit 0" case above) — exit
+# 0, not 1. That's a REAL divergence in outcome, not just in the announcement text, so `check_status`
+# has to sit under the guard too. Contrast the BACKLOG.md guard above: there, an unreadable-vs-root
+# BACKLOG.md happens to reconcile to the same exit code either way (its fixture's citations already
+# match live headings), which is why check_status could be written unconditionally there — this case
+# is not that case.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  archive_dir="$(mktemp -d)"
+  archive_file="$archive_dir/CLAUDE-archive.md"
+  printf -- '- 2026-08-21 dir #202 CLOSED — moved out of the live backlog\n' > "$archive_file"
+  chmod 000 "$archive_file"
+  d="$(mk_repo "$backlog_ok" "$doc_dead")"
+  KEEL_CITATION_ARCHIVE_FILE="$archive_file" run "$cr" "$d"
+  check_status "an unreadable archive still ends in exit 1 (citation stays dead)" 1 "$STATUS"
+  check_contains "announced as absent, not as an in-use archive" "$OUT" "archive: absent"
+  chmod 644 "$archive_file"
+  rm -rf "$archive_dir"
+fi
+
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
 # ~/.claude/projects/.../CLAUDE-archive.md is invisible to this run regardless of REPO_DIR, and a
