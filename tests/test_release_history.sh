@@ -6,10 +6,11 @@
 # it, so a cut release whose digest paragraph was forgotten reads as identical to one that never
 # happened — exactly the failure `tools/self/doctor.sh`'s CHANGELOG<->tag reconciliation (dir #139)
 # already guards CHANGELOG.md against. Mirrors that check's two invariants for this file: every
-# release tag has a matching `## v<tag>` heading, and every heading has a matching tag. Deliberately
-# NOT the full doctor.sh machinery (semver-max, pending-release allowance, section-count arithmetic)
-# — this file has no "in preparation" section and no [Unreleased]-equivalent, so that complexity has
-# nothing to earn its keep against here.
+# release tag has a matching `## v<tag>` heading, and every heading has a matching tag, PLUS (dir #299)
+# its commit-distance-bounded pending-release allowance — without it the two invariants above are
+# structurally impossible to keep green across a release. Still deliberately NOT the one piece of
+# doctor.sh machinery that has nothing to earn its keep against here: section-count arithmetic, since
+# this file has no `[Unreleased]`-equivalent for a count invariant to reconcile against.
 #
 # Tag collection uses lib.sh's own `release_tag_versions()` — promoted there (dir #232's own
 # /code-review medium pass) once a THIRD copy of doctor.sh's `_release_tag_versions()` regex turned up
@@ -65,13 +66,36 @@ pin "CHANGELOG.md header links docs/release-history.md" \
 headings="$(blank_fenced_blocks "$history" | grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^## //')"
 tags="$(release_tag_versions "$REPO_ROOT")"
 
+# _semver_gt A B — true iff v-prefixed semver A is strictly greater than v-prefixed semver B. Own copy,
+# not a shared lib call: doctor.sh's own `_semver_gt` (mirrored, not shared, here — dir #299) operates
+# on bare `x.y.z` (it strips `v` off tags itself) while this file's tags/headings keep the `v` prefix
+# throughout (`release_tag_versions`'s own contract) — same three-integer-component logic, `v` stripped
+# locally instead of upstream. Integers, not a string/`sort -V` compare, for the same reason doctor.sh's
+# copy gives: `sort -V` isn't available on the alpine-busybox CI leg and a string compare ranks 1.10.0
+# below 1.9.0.
+_semver_gt() {
+  local a="${1#v}" b="${2#v}" a1 a2 a3 b1 b2 b3
+  IFS=. read -r a1 a2 a3 <<< "$a"
+  IFS=. read -r b1 b2 b3 <<< "$b"
+  if [ "$a1" -ne "$b1" ]; then [ "$a1" -gt "$b1" ]; return; fi
+  if [ "$a2" -ne "$b2" ]; then [ "$a2" -gt "$b2" ]; return; fi
+  [ "$a3" -gt "$b3" ]
+}
+
 # match(), not a direct `printf | grep -qxF` pipe (dir #280 — see tests/lib.sh's match() for why;
 # reproduced live: `test_release_history.sh: line 69: printf: write error: Broken pipe` turned a
 # genuine v0.3.0 heading into a false "no entry" failure — the incident that named this ticket).
+#
+# One pass over $tags derives BOTH $missing_heading and $highest_tag (dir #299 — the pending-release
+# allowance below needs the latter) — folded together rather than run as two separate loops over the
+# identical stream, the same don't-spell-the-same-scan-twice point doctor.sh's own check 6 makes beside
+# its own identical fold.
 missing_heading=""
+highest_tag=""
 while IFS= read -r t; do
   [ -n "$t" ] || continue
   match "$headings" -qxF "$t" || missing_heading="$missing_heading${missing_heading:+, }$t"
+  if [ -z "$highest_tag" ] || _semver_gt "$t" "$highest_tag"; then highest_tag="$t"; fi
 done <<< "$tags"
 
 # --- release-in-preparation allowance (dir #299) -----------------------------------------------------
@@ -93,28 +117,13 @@ done <<< "$tags"
 pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
 pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 
-# _semver_gt A B — true iff v-prefixed semver A is strictly greater than v-prefixed semver B. Own copy,
-# not a shared lib call: doctor.sh's own `_semver_gt` operates on bare `x.y.z` (it strips `v` off tags
-# itself) while this file's tags/headings keep the `v` prefix throughout (`release_tag_versions`'s own
-# contract) — same three-integer-component logic, `v` stripped locally instead of upstream. Integers,
-# not a string/`sort -V` compare, for the same reason doctor.sh's copy gives: `sort -V` isn't available
-# on the alpine-busybox CI leg and a string compare ranks 1.10.0 below 1.9.0.
-_semver_gt() {
-  local a="${1#v}" b="${2#v}" a1 a2 a3 b1 b2 b3
-  IFS=. read -r a1 a2 a3 <<< "$a"
-  IFS=. read -r b1 b2 b3 <<< "$b"
-  if [ "$a1" -ne "$b1" ]; then [ "$a1" -gt "$b1" ]; return; fi
-  if [ "$a2" -ne "$b2" ]; then [ "$a2" -gt "$b2" ]; return; fi
-  [ "$a3" -gt "$b3" ]
-}
-
 # _pending_release_intro_commit VERSION — SHA of the commit that most recently introduced the exact
-# text "## VERSION" into docs/release-history.md's tracked history, outside any fenced block. Ported
-# from doctor.sh's own `_pending_release_intro_commit` (dir #156): `git log -S` (the pickaxe) newest
-# first, verified per-candidate against its immediate parent (fence-blanked both sides) so a fenced
-# example elsewhere in the file can't be mistaken for the heading's real introduction. Prints nothing
-# if no candidate resolves; the caller below fails OPEN (keeps the allowance) on that empty case rather
-# than inventing a distance it couldn't measure.
+# text "## VERSION" into docs/release-history.md's tracked history, outside any fenced block. Mirrored
+# from doctor.sh's own `_pending_release_intro_commit` (dir #156, not shared — dir #299): `git log -S`
+# (the pickaxe) newest first, verified per-candidate against its immediate parent (fence-blanked both
+# sides) so a fenced example elsewhere in the file can't be mistaken for the heading's real
+# introduction. Prints nothing if no candidate resolves; the caller below fails OPEN (keeps the
+# allowance) on that empty case rather than inventing a distance it couldn't measure.
 _pending_release_intro_commit() {
   local heading="## $1" rel sha now before
   rel="${history#"$REPO_ROOT"/}"
@@ -129,14 +138,8 @@ _pending_release_intro_commit() {
 }
 
 # $headings is already in file order (this page's own "newest first" convention, unsorted by the scan
-# above), so its first line is the newest heading. $highest_tag folds $tags through `_semver_gt` the
-# same way doctor.sh's check 6 does.
+# above), so its first line is the newest heading.
 newest_heading="$(head -1 <<< "$headings")"
-highest_tag=""
-while IFS= read -r t; do
-  [ -n "$t" ] || continue
-  if [ -z "$highest_tag" ] || _semver_gt "$t" "$highest_tag"; then highest_tag="$t"; fi
-done <<< "$tags"
 
 # Guard-clause shaped (same as doctor.sh's own check 6 loop, found reusable by /code-review high there):
 # each non-candidate falls straight into $missing_tag and moves on, so the three pending outcomes

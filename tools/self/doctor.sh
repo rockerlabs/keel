@@ -732,8 +732,11 @@ fi
 # (the anchored ERE below is what guarantees that shape for tags; CHANGELOG sections are matched by
 # the same three-number pattern). Components compared as INTEGERS in pure bash — a string compare
 # would rank 1.10.0 below 1.9.0, and `sort -V` isn't dependable on the alpine-busybox CI leg. Single
-# consumer (the pending-release allowance below), so it lives here rather than with the file's
-# general helpers.
+# consumer WITHIN THIS FILE (the pending-release allowance below), so it lives here rather than with
+# the file's general helpers — but not this codebase's only copy: `tests/test_release_history.sh`
+# mirrors it, v-prefix-stripping variant, for docs/release-history.md's own pending-release allowance
+# (dir #299). Not shared (this file is documented elsewhere as non-sourceable, and that test file
+# already sources tests/lib.sh instead), so a fix here doesn't propagate — check that file too.
 _semver_gt() {
   local a1 a2 a3 b1 b2 b3
   IFS=. read -r a1 a2 a3 <<< "$1"
@@ -839,9 +842,11 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # — an untracked or freshly-added-but-uncommitted CHANGELOG.md, a history rewrite, or (the fenced case)
 # a heading whose every occurrence-count change happened inside an example. The pending-release
 # allowance's commit-distance bound below (dir #156) FAILS OPEN on that empty case rather than inventing
-# drift from a measurement it couldn't make — see the comment there. Single consumer (that bound), so —
-# like `_semver_gt` just above — it lives here beside check 6 rather than with the file's general
-# helpers.
+# drift from a measurement it couldn't make — see the comment there. Single consumer WITHIN THIS FILE
+# (that bound), so — like `_semver_gt` just above — it lives here beside check 6 rather than with the
+# file's general helpers. Mirrored (not shared — same reasoning as `_semver_gt` above), scanning
+# docs/release-history.md instead of CHANGELOG.md, by `tests/test_release_history.sh`'s own
+# pending-release allowance (dir #299) — check that file too when fixing this one.
 _pending_release_intro_commit() {
   local heading="## [$1]" rel sha now before
   rel="${changelog_file#"$repo_root"/}"
