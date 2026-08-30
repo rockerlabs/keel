@@ -433,6 +433,9 @@ write_full_receipt_review "$d" "max"
 gate "gh pr create --fill" "$d"
 check_contains "right commit, wrong trace level → still denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "right commit, wrong trace level → denied for the trace, not some other reason" "$OUT" "no trace matching"
+# dir #296: the deny now also NAMES what was actually traced, so a wrong-level mismatch reads as
+# self-explaining rather than an opaque "nothing found" (see _trace_levels_for in pre-pr-gate.sh).
+check_contains "right commit, wrong trace level → deny names the level that WAS traced" "$OUT" "trace recorded 'low' for this commit instead"
 rm -f "$tf"
 
 # 18. A trace line matching the CURRENT HEAD SHA → the bare outcome is now trusted, gate passes.
@@ -517,6 +520,106 @@ json="$(jq -n --arg cwd "$d" '{hook_event_name:"UserPromptExpansion", cwd:$cwd, 
 printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
 check_file "skill-trace(UserPromptExpansion code-review) writes a trace file" "$tf"
 check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	ultra"
+rm -f "$tf"
+
+# 21b. dir #296: a `Skill(code-review)` call with NO args (a documented, supported shape — the skill's
+# own description says it reuses the level typed last) used to write the RAW empty string as the trace
+# level, an unmatchable tag no bare-level receipt could ever hit. Now it writes an explicit `unparsed:`
+# marker instead of an empty/blank level, so the trace file still records SOMETHING for this commit.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, no args) still writes a trace file" "$tf"
+check_contains "no-args trace line is marked unparsed, not a blank/empty level" "$(cat "$tf" 2>/dev/null)" "$sha	unparsed:"
+rm -f "$tf"
+
+# 21c. dir #296: a `Skill(code-review)` call whose args carry a real level PLUS a flag ("high --fix")
+# used to write the WHOLE string ("high --fix") as the trace level — unmatchable against a bare `high`
+# receipt even though a genuine `high` review just ran. Now the leading token is extracted and validated,
+# so the trace records the resolved level a bare receipt CAN match.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high --fix"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, flag-carrying args) writes a trace file" "$tf"
+check_contains "flag-carrying args resolve to the bare leading level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
+# 21d. dir #296 end-to-end: the flag-carrying-args recovery from 21c actually unlocks a bare `high`
+# receipt — this is the false-deny the ticket describes, closed for real, not just at the trace layer.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high --fix"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+write_full_receipt_review "$d" "high"
+gate "gh pr create --fill" "$d"
+check_status "dir #296: flag-carrying Skill args no longer false-deny a genuine review" 0 "$STATUS"
+check_absent "dir #296: ...the gate allows" "$OUT" "deny"
+rm -f "$tf"
+
+# 21e. dir #296 end-to-end: the no-args case, in contrast, must still deny (there is genuinely no
+# resolvable level to trust) — but the deny now names the unparsed trace instead of claiming nothing
+# was found at all.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+write_full_receipt_review "$d" "high"
+gate "gh pr create --fill" "$d"
+check_contains "dir #296: no-args Skill call still denies a bare receipt" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #296: ...and names the unparsed trace, not a blank one" "$OUT" "trace recorded 'unparsed:"
+rm -f "$tf"
+
+# 21f. dir #296 (found by this ticket's own /code-review high pass, live-reproduced): a TAB-separated
+# flag-carrying args string ("high<TAB>--fix") used to bypass the `*' '*` glob (which only matches a
+# literal space), fall to the verbatim catch-all, and write a raw tab straight into the trace file —
+# corrupting its own tab-delimited `sha\tlevel` schema with an extra column. The write side now uses
+# `read` (splits on any whitespace, not just a literal space glob), so a tab-separated flag resolves to
+# the leading level exactly like a space-separated one — no corrupted extra column.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" --arg args "$(printf 'high\t--fix')" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:$args}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, tab-separated flag args) writes a trace file" "$tf"
+check_contains "tab-separated args resolve to the bare leading level, no extra column" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+tf_fields="$(awk -F'\t' 'END{print NF}' "$tf" 2>/dev/null)"
+if [ "$tf_fields" = "2" ]; then
+  pass "tab-separated args do not add a 3rd tab-delimited column"
+else
+  fail "tab-separated args do not add a 3rd tab-delimited column" "expected 2 tab-delimited fields, got $tf_fields"
+fi
+rm -f "$tf"
+
+# 21g. dir #296 (same live-reproduced pass): a LEADING-SPACE single-token args string (" high") used to
+# make `${st_level%% *}` strip the ENTIRE string (the whole thing is a suffix match for " *"), silently
+# downgrading a genuine level to an empty, unmatchable token. `read`-based extraction trims leading
+# whitespace naturally, so a padded single token still resolves to its real (trimmed) level.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:" high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, leading-space args) writes a trace file" "$tf"
+check_contains "leading-space single-token args resolve to the trimmed level, not unparsed" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
+# 21h. dir #296 (a SECOND live-reproduced pass on the 21f/21g fix itself): `read` treats a newline as a
+# LINE terminator, not a field separator — an EMBEDDED-NEWLINE args string ("high<NEWLINE>low --fix")
+# used to make `read` see only the first line, silently dropping everything after the newline instead of
+# folding it into the leading-token extraction the way a space or tab does. Flattening embedded newlines
+# into spaces before the `read` closes this: the leading token ("high") still resolves correctly, and
+# nothing after the newline is silently lost.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" --arg args "$(printf 'high\nlow --fix')" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:$args}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, embedded-newline args) writes a trace file" "$tf"
+check_contains "embedded-newline args still resolve to the leading token's level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
