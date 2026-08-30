@@ -11,6 +11,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`docs/release-audit.md`'s phase 7 now tells the release-prep session to write the
+  `docs/release-history.md` entry, in the same cut-and-land PR, before the tag** (dir #310). dir
+  #299 made a `## [x.y.z]` heading with no tag yet writable to `docs/release-history.md` (the
+  pre-tag allowance below), but the procedure itself never said to use it for that file — without
+  this step the v0.8.0 tag would have repeated 2026-08-29's repo-wide release-history reconciliation
+  red. Keel-self-maintenance: `docs/release-audit.md` governs keel's own release process and is
+  never installed into an adopter project.
 - **`tests/test_release_history.sh`'s tag<->heading reconciliation gained a bounded
   release-in-preparation allowance** (dir #299), closing the guaranteed red window dir #297's own
   `/simplify` pass found: the release-prep PR adds the new `## vX.Y.Z` heading before the tag exists,
