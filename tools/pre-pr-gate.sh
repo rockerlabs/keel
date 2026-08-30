@@ -1517,7 +1517,14 @@ case "${1:-}" in
     # made `${st_level%% *}` strip the WHOLE string, silently downgrading a genuine level to unparsed.
     # `read` sidesteps both: it trims leading/trailing IFS whitespace and splits on ANY run of it, so
     # `sk_word` is always the real leading token and `sk_rest` tells us whether anything followed.
-    read -r sk_word sk_rest <<<"$st_level"
+    # A SECOND round of this same operator's /code-review high pass caught one more gap live: `read`
+    # treats a newline as a LINE terminator, not a field separator — `read -r sk_word sk_rest <<<"$st_level"`
+    # on an embedded-newline string only ever sees the first line, silently losing everything after the
+    # first `\n` instead of folding it into `sk_rest` the way a space or tab does. Flattening every
+    # embedded newline into a space FIRST makes `read` treat the whole string as one line, so a newline
+    # is a separator like any other whitespace, matching what the comment above already claims.
+    st_level_flat="${st_level//$'\n'/ }"
+    read -r sk_word sk_rest <<<"$st_level_flat"
     if [ -z "$sk_word" ]; then
       _append_trace_line "$st_cwd" "unparsed:<none>"
     elif [ -z "$sk_rest" ]; then

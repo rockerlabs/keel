@@ -607,6 +607,21 @@ check_file "skill-trace(PostToolUse code-review, leading-space args) writes a tr
 check_contains "leading-space single-token args resolve to the trimmed level, not unparsed" "$(cat "$tf" 2>/dev/null)" "$sha	high"
 rm -f "$tf"
 
+# 21h. dir #296 (a SECOND live-reproduced pass on the 21f/21g fix itself): `read` treats a newline as a
+# LINE terminator, not a field separator — an EMBEDDED-NEWLINE args string ("high<NEWLINE>low --fix")
+# used to make `read` see only the first line, silently dropping everything after the newline instead of
+# folding it into the leading-token extraction the way a space or tab does. Flattening embedded newlines
+# into spaces before the `read` closes this: the leading token ("high") still resolves correctly, and
+# nothing after the newline is silently lost.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" --arg args "$(printf 'high\nlow --fix')" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:$args}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, embedded-newline args) writes a trace file" "$tf"
+check_contains "embedded-newline args still resolve to the leading token's level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
 # handoff_for/real_handoff_for live in lib.sh, next to sentinel_for/real_sentinel_for (dir #80: this
 # ticket's own /code-review found they'd drifted apart — see lib.sh for the naive-vs-real distinction
