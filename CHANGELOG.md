@@ -11,6 +11,11 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tools/self/citation-resolvability.sh`'s archive check now uses `-r`, not `-f`** (dir #291): a
+  present-but-unreadable `CLAUDE-archive.md` was announced as an in-use archive when it was actually
+  silently unreadable, misreporting what happened even though the affected citation still ended up
+  DEAD either way. Matches the same `-r` check the script's own BACKLOG.md path already used for
+  exactly this reason. Keel-self-maintenance: this script has no consumer-facing counterpart.
 - **`docs/release-audit.md`'s phase 7 now tells the release-prep session to write the
   `docs/release-history.md` entry, in the same cut-and-land PR, before the tag** (dir #310). dir
   #299 made a `## [x.y.z]` heading with no tag yet writable to `docs/release-history.md` (the
