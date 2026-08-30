@@ -573,6 +573,40 @@ check_contains "dir #296: no-args Skill call still denies a bare receipt" "$OUT"
 check_contains "dir #296: ...and names the unparsed trace, not a blank one" "$OUT" "trace recorded 'unparsed:"
 rm -f "$tf"
 
+# 21f. dir #296 (found by this ticket's own /code-review high pass, live-reproduced): a TAB-separated
+# flag-carrying args string ("high<TAB>--fix") used to bypass the `*' '*` glob (which only matches a
+# literal space), fall to the verbatim catch-all, and write a raw tab straight into the trace file —
+# corrupting its own tab-delimited `sha\tlevel` schema with an extra column. The write side now uses
+# `read` (splits on any whitespace, not just a literal space glob), so a tab-separated flag resolves to
+# the leading level exactly like a space-separated one — no corrupted extra column.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" --arg args "$(printf 'high\t--fix')" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:$args}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, tab-separated flag args) writes a trace file" "$tf"
+check_contains "tab-separated args resolve to the bare leading level, no extra column" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+tf_fields="$(awk -F'\t' 'END{print NF}' "$tf" 2>/dev/null)"
+if [ "$tf_fields" = "2" ]; then
+  pass "tab-separated args do not add a 3rd tab-delimited column"
+else
+  fail "tab-separated args do not add a 3rd tab-delimited column" "expected 2 tab-delimited fields, got $tf_fields"
+fi
+rm -f "$tf"
+
+# 21g. dir #296 (same live-reproduced pass): a LEADING-SPACE single-token args string (" high") used to
+# make `${st_level%% *}` strip the ENTIRE string (the whole thing is a suffix match for " *"), silently
+# downgrading a genuine level to an empty, unmatchable token. `read`-based extraction trims leading
+# whitespace naturally, so a padded single token still resolves to its real (trimmed) level.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:" high"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, leading-space args) writes a trace file" "$tf"
+check_contains "leading-space single-token args resolve to the trimmed level, not unparsed" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
 # handoff_for/real_handoff_for live in lib.sh, next to sentinel_for/real_sentinel_for (dir #80: this
 # ticket's own /code-review found they'd drifted apart — see lib.sh for the naive-vs-real distinction

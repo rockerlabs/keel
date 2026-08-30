@@ -427,9 +427,12 @@ ACCEPTED_REVIEW_LEVELS='low medium high max'
 # dir #296 simplify pass: the dialog leg and the skill-trace leg (below) both need "does this word
 # resolve to a real review level" — a loop over $ACCEPTED_REVIEW_LEVELS, deliberately not a `case`
 # pattern list (see $ACCEPTED_REVIEW_LEVELS's own comment on why an unquoted `|`-join can't be a case
-# pattern). Factored once dir #296 made it a second occurrence of the same idiom, before a third leg
-# copies it again. Prints the matched level and returns 0 on a hit, prints nothing and returns 1
-# otherwise — callers do `lvl="$(_match_review_level "$word")" || lvl=""`.
+# pattern). Factored once dir #296 made it a second occurrence of the same idiom. Prints the matched
+# level and returns 0 on a hit, prints nothing and returns 1 otherwise — callers do
+# `lvl="$(_match_review_level "$word")" || lvl=""`. **Not a drop-in for the depth-check loop's own
+# `for lvl in $ACCEPTED_REVIEW_LEVELS ultra skip` (below, dir #116)** — that one validates against a
+# strictly larger set (`ultra`/`skip` are real depths this helper deliberately excludes, same as
+# `ACCEPTED_REVIEW_LEVELS` itself does), so migrating it here would silently break both.
 _match_review_level() {
   local word="$1" lvl
   for lvl in $ACCEPTED_REVIEW_LEVELS; do
@@ -1505,23 +1508,36 @@ case "${1:-}" in
     # $ACCEPTED_REVIEW_LEVELS. An unresolved token still gets a trace line — an `unparsed:<raw>` tag,
     # never silently dropped — so the PASS-branch deny below can name what was actually traced instead
     # of a bare "no trace found".
-    case "$st_level" in
-      '')
-        _append_trace_line "$st_cwd" "unparsed:<empty>"
-        ;;
-      *' '*)
-        sk_word="${st_level%% *}"
-        sk_level="$(_match_review_level "$sk_word")" || sk_level=""
-        if [ -n "$sk_level" ]; then
-          _append_trace_line "$st_cwd" "$sk_level"
-        else
-          _append_trace_line "$st_cwd" "unparsed:$st_level"
-        fi
-        ;;
-      *)
-        _append_trace_line "$st_cwd" "$st_level"
-        ;;
-    esac
+    #
+    # `read` (default IFS, so any run of space/tab/newline splits), not a `*' '*` glob-on-literal-space
+    # case pattern — an earlier draft used the glob and this operator's own /code-review high pass caught
+    # it live: a leading space or a TAB separator (instead of a plain space) neither matches the glob nor
+    # gets flagged, so it fell through to the verbatim catch-all — writing a raw tab straight into the
+    # trace file corrupts its own `sha\tlevel` tab-delimited schema (an extra column), and a leading space
+    # made `${st_level%% *}` strip the WHOLE string, silently downgrading a genuine level to unparsed.
+    # `read` sidesteps both: it trims leading/trailing IFS whitespace and splits on ANY run of it, so
+    # `sk_word` is always the real leading token and `sk_rest` tells us whether anything followed.
+    read -r sk_word sk_rest <<<"$st_level"
+    if [ -z "$sk_word" ]; then
+      _append_trace_line "$st_cwd" "unparsed:<none>"
+    elif [ -z "$sk_rest" ]; then
+      # A single token, possibly whitespace-padded — dir #186's permissive pass-through, using the
+      # TRIMMED word: a padded single token never matched anything under the old raw-verbatim write
+      # either, so trimming here only ever helps, never regresses a previously-working match.
+      _append_trace_line "$st_cwd" "$sk_word"
+    else
+      sk_level="$(_match_review_level "$sk_word")" || sk_level=""
+      if [ -n "$sk_level" ]; then
+        _append_trace_line "$st_cwd" "$sk_level"
+      else
+        # Sanitize embedded tabs/newlines/commas out of the raw fallback before it ever reaches the
+        # trace file: a tab or newline would corrupt the tab-delimited `sha\tlevel` schema the same way
+        # the glob-pattern bug above did, and a comma would make _trace_levels_for's comma-joined deny
+        # listing ambiguous with a genuinely second traced tag. `tr` needs equal-length in/out sets.
+        sk_raw="$(printf '%s' "$st_level" | tr '\t\n,' '   ')"
+        _append_trace_line "$st_cwd" "unparsed:$sk_raw"
+      fi
+    fi
     exit 0
     ;;
   rollout-check)
@@ -2141,6 +2157,8 @@ case "$status" in
     # whole class in one place: the `outcome_level != depth_level` equality check below transitively
     # constrains step 5's level to the same set. `ultra` is a real depth here (the (b) hand-off path)
     # even though it never reaches the marker legs; `skip` is a real depth with its own dialog check.
+    # dir #296: deliberately NOT `_match_review_level` — this set is `$ACCEPTED_REVIEW_LEVELS` PLUS
+    # `ultra`/`skip` (real depths, see the comment above), a strict superset that helper doesn't accept.
     depth_level_ok=0
     for lvl in $ACCEPTED_REVIEW_LEVELS ultra skip; do
       [ "$depth_level" = "$lvl" ] && depth_level_ok=1 && break
