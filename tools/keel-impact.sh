@@ -529,15 +529,19 @@ cmd_event() {
 # into the store, `add` auto-ingests them.
 cmd_enable() {
   local dir="${1:-.}" top already=0
+  # Captured BEFORE _impact_begin, not after: _impact_begin runs _impact_auto_migrate, which creates
+  # the store as a side effect of carrying a legacy marker in. Checking impact_enabled afterward means
+  # a legacy-marker project's genuinely FIRST enable already has a store by the time the check runs, so
+  # it wrongly reports "already enabled" and skips the /keel-score onboarding line below (dir #287).
+  # `enable` takes no flags to validate, so its first line is already the known-valid point.
+  impact_enabled "$dir" && already=1
   # BEFORE impact_store_enable's unconditional mkdir, never after: that is the one ordering constraint
   # _impact_begin's own comment (top of file) states, and losing auto-migration is permanent — a marker
   # left behind is recovered only by an explicit `migrate`, which only a separate `doctor` run
   # (W-KEEL-LEGACY) ever tells the operator to run.
-  # `enable` takes no flags to validate, so its first line is already the known-valid point.
   # Pass $dir through, not bare — see _impact_begin's own comment, top of file, dir #251 finding 5a.
   _impact_begin "$dir"
   top="$(_impact_resolve_top "$dir")"
-  impact_enabled "$dir" && already=1
   # The store's own absolute path is an internal implementation detail (never inside the project's own
   # tree, never something an adopter browses directly) — deliberately NOT echoed here, unlike the old
   # in-tree marker message: that path was actionable ("here's the file to `git add`"), this one isn't.

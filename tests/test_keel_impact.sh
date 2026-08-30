@@ -961,6 +961,12 @@ enrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$enrepo")"
 run_in "$enrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
 check_status "enable on a legacy in-tree project succeeds" 0 "$STATUS"
 check_dir "enable created the store entry" "$enrepo_store"
+# dir #287: this is the project's genuinely FIRST enable — auto-migrate's side effect (creating the
+# store to carry the legacy marker in) must not make the printed message claim it was already enabled,
+# and skip the /keel-score onboarding line, for exactly the population upgrading from a pre-0.7.2 install.
+check_contains "enable on a legacy in-tree project reports NEWLY enabled, not already" "$OUT" "impact tracking enabled"
+check_absent "enable on a legacy in-tree project does not claim already-enabled" "$OUT" "already enabled"
+check_contains "enable on a legacy in-tree project still prints the /keel-score onboarding line" "$OUT" "/keel-score"
 check_contains "enable CARRIED the legacy log into the store, not stranded" \
   "$(cat "$enrepo_store/impact-events.log" 2>/dev/null)" "carried-by-enable"
 check_nofile "enable removed the now-migrated legacy in-tree log" "$enrepo/.keel/impact-events.log"
@@ -1001,6 +1007,9 @@ elsewhere_store="$KEEL_IMPACT_STORE/$(store_id_for "$elsewhere")"
 run_in "$elsewhere" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$dtrepo"
 check_status "enable DIR from elsewhere succeeds" 0 "$STATUS"
 check_dir "enable DIR from elsewhere created the TARGET's store entry" "$dtrepo_store"
+# dir #287: same wrong-message bug, the `enable DIR` variant.
+check_contains "enable DIR from elsewhere reports NEWLY enabled, not already" "$OUT" "impact tracking enabled"
+check_absent "enable DIR from elsewhere does not claim already-enabled" "$OUT" "already enabled"
 check_contains "enable DIR from elsewhere CARRIED the target's legacy log into the store" \
   "$(cat "$dtrepo_store/impact-events.log" 2>/dev/null)" "carried-by-enable-dir"
 check_nofile "enable DIR from elsewhere removed the target's legacy in-tree log" "$dtrepo/.keel/impact-events.log"
