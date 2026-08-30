@@ -727,11 +727,14 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   # --- cmd_migrate must also stay safe when the merge's READ (not its write) fails: a target that goes
   # unreadable slips past every existing pre-check (cmd_migrate's own scan only inspects the untracked
   # SOURCE's readability, exercised above — never the STORE's existing target). This is verified via
-  # `migrate` for parity with the write-failure/unreadable-source tests above, but its safety net here is
-  # `set -e` catching the awk's own bare, unguarded failure inside cmd_migrate — NOT this diff's own
-  # header_status/rows_status/read_status gating, which is reachable only through _impact_auto_migrate's
-  # own `&&`/`||`-wrapped calls (see the dir #289 retry test below, which exercises that path directly).
-  # Confirmed by re-running this exact scenario against the pre-dir-#289 code: identical outcome, same
+  # `migrate` for parity with the write-failure/unreadable-source tests above. dir #304: cmd_migrate's
+  # own merge calls are now `&&`/`||`-gated the same way _impact_auto_migrate's always were (an explicit
+  # `ok` variable, checked before the completion marker is written and before the function returns) —
+  # before that fix this scenario's non-zero exit came from `set -e` catching the awk's own bare,
+  # unguarded failure and aborting the whole script; now it comes from cmd_migrate's own explicit
+  # `return 1`, and along the way `$store/origin` is no longer written on this failure either (pinned
+  # below via the mgrepo fixture, which — unlike this one — starts from no prior origin at all).
+  # Confirmed by re-running this exact scenario against the pre-dir-#304 code: identical outcome, same
   # exit status, same undeleted source — this pins cmd_migrate's overall behavior, not the new mechanism. ---
   rrepo="$(new_repo)"
   mkdir -p "$rrepo/.keel"
@@ -827,6 +830,63 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_nofile "the evidence retry removes the now-merged legacy source" "$sverepo/.keel/evidence.md"
   check_contains "the evidence retry carries the previously-stranded block" "$(cat "$sverepo_store/evidence.md")" "stranding-row"
   check_contains "the evidence retry kept the pre-existing store block too" "$(cat "$sverepo_store/evidence.md")" "already-in-store"
+
+  # --- dir #304, scenario 1: an EXPLICIT `migrate` that fails mid-merge must not strand the
+  # completion marker either — before this ticket cmd_migrate wrote `$store/origin` up front,
+  # unconditionally, before ever attempting the merge (unlike _impact_auto_migrate, which already
+  # gated it, dir #289). Same shape as strepo/sverepo above (a fresh store with a pre-existing
+  # unreadable target ledger and a legacy source waiting to be merged), but driven through the
+  # explicit `migrate` command itself, not an automatic resolve. ------------------------------------
+  mgrepo="$(new_repo)"
+  mgrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$mgrepo")"
+  mkdir -p "$mgrepo_store"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$mgrepo_store/ledger.md"
+  printf '| 2026-07-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | already-in-store | none |\n' >> "$mgrepo_store/ledger.md"
+  chmod 000 "$mgrepo_store/ledger.md"
+  mkdir -p "$mgrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$mgrepo/.keel/ledger.md"
+  printf '| 2026-07-02 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | migrate-stranding-row | none |\n' >> "$mgrepo/.keel/ledger.md"
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$mgrepo"
+  check_contains "an explicit migrate that fails mid-merge is reported non-zero" "$([ "$STATUS" != 0 ] && echo failed)" "failed"
+  chmod 644 "$mgrepo_store/ledger.md"
+  check_file "the failed explicit migrate leaves the legacy source in place" "$mgrepo/.keel/ledger.md"
+  check_nofile "the failed explicit migrate never writes the completion marker" "$mgrepo_store/origin"
+  check_contains "the store's own pre-existing row survives the failed migrate" "$(cat "$mgrepo_store/ledger.md")" "already-in-store"
+  # once the target is readable again, re-running migrate completes it — no state to hand-repair first
+  run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$mgrepo"
+  check_status "re-running the explicit migrate succeeds" 0 "$STATUS"
+  check_file "the retried migrate writes the completion marker" "$mgrepo_store/origin"
+  check_nofile "the retried migrate removes the now-merged legacy source" "$mgrepo/.keel/ledger.md"
+  check_contains "the retried migrate carries the previously-stranded row" "$(cat "$mgrepo_store/ledger.md")" "migrate-stranding-row"
+  check_contains "the retried migrate kept the pre-existing store row too" "$(cat "$mgrepo_store/ledger.md")" "already-in-store"
+
+  # --- dir #304, scenario 2: `enable` must not have `impact_store_enable` write the completion
+  # marker over a genuinely FAILED auto-migrate attempt either — before this ticket
+  # impact_store_enable wrote `$store/origin` unconditionally, with no merge of its own to gate on,
+  # so it would silently paper over a failure `_impact_begin`'s own auto-migrate just had (swallowed
+  # via `|| true`, so `enable` itself always reports success) and permanently block the next
+  # automatic retry. --------------------------------------------------------------------------------
+  enfrepo="$(new_repo)"
+  enfrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$enfrepo")"
+  mkdir -p "$enfrepo_store"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$enfrepo_store/ledger.md"
+  printf '| 2026-07-10 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | already-in-store | none |\n' >> "$enfrepo_store/ledger.md"
+  chmod 000 "$enfrepo_store/ledger.md"
+  mkdir -p "$enfrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$enfrepo/.keel/ledger.md"
+  printf '| 2026-07-11 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | enable-stranding-row | none |\n' >> "$enfrepo/.keel/ledger.md"
+  run_in "$enfrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+  check_status "enable succeeds even though its own auto-migrate attempt just failed" 0 "$STATUS"
+  chmod 644 "$enfrepo_store/ledger.md"
+  check_file "the failed auto-migrate attempt (via enable) leaves the legacy source in place" "$enfrepo/.keel/ledger.md"
+  check_nofile "enable does not write the completion marker over a failed auto-migrate" "$enfrepo_store/origin"
+  check_contains "the store's own pre-existing row survives the failed attempt" "$(cat "$enfrepo_store/ledger.md")" "already-in-store"
+  # the failure is not permanently stranded: a later plain resolve still retries automatically
+  run_in "$enfrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  check_status "a later resolve after the failed enable succeeds" 0 "$STATUS"
+  check_file "the later resolve writes the completion marker" "$enfrepo_store/origin"
+  check_nofile "the later resolve removes the now-merged legacy source" "$enfrepo/.keel/ledger.md"
+  check_contains "the later resolve carries the previously-stranded row" "$(cat "$enfrepo_store/ledger.md")" "enable-stranding-row"
 fi
 
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
