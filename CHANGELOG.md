@@ -11,6 +11,16 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`keel-impact.sh enable` now reports a legacy-marker project's genuinely first enable as newly
+  enabled, not already enabled** (dir #287, disclosed as a known issue in v0.7.2's release notes).
+  `cmd_enable` checked `impact_enabled` AFTER calling `_impact_begin`, which runs
+  `_impact_auto_migrate` and creates the external store as a side effect of carrying the legacy
+  in-tree marker in — so by the time the check ran, the store already existed and the "already
+  enabled" branch was wrongly taken on that project's very first enable, skipping the `/keel-score`
+  onboarding line for exactly the population upgrading from a pre-0.7.2 install. Fix: capture
+  `impact_enabled` before `_impact_begin` runs. The state the command left behind was already
+  correct (the legacy log was carried in, the marker removed) — only the printed message and the
+  onboarding line were wrong.
 - **`docs/release-audit.md`'s phase 7 now tells the release-prep session to write the
   `docs/release-history.md` entry, in the same cut-and-land PR, before the tag** (dir #310). dir
   #299 made a `## [x.y.z]` heading with no tag yet writable to `docs/release-history.md` (the
