@@ -954,7 +954,7 @@ retire_sentinel() {
 # keeps the fact-checking separate from the messaging, which is the property the next paragraph is
 # about.
 # **This function itself carries no trust semantics (found by the cross-model /code-review high pass,
-# dir #161).** It only checks facts and returns a path + a numeric code, and it deliberately says
+# dir #161).** It only checks facts and returns a numeric code, and it deliberately says
 # nothing about what a failure should MEAN. `--recover` is about to grant trust, so it reports each
 # reason loudly and stops; a future second caller that grants no trust would want the opposite (silent
 # on every unverifiable condition, so an unreadable prior can never manufacture a claim). That choice
