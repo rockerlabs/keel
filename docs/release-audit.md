@@ -156,6 +156,12 @@ the merge commit and publish the release. A tag is outward-facing and effectivel
 sits behind the same rail as a merge: the session prepares everything up to "tag ready to cut," names
 the exact SHA, and stops.
 
+**In that same cut-and-land PR, add the entry to [`docs/release-history.md`](release-history.md),
+following the house form described at the top of that file** — a digest of the `CHANGELOG.md` section
+just cut. This is the pre-tag side of dir #299's allowance: a `## [x.y.z]` heading with no tag yet is
+writable here precisely because the tag hasn't landed; write it now, not in `publishing-checklist.md`
+§4, which only starts once the tag is already cut.
+
 **Before that PR lands, re-check `docs/loading-and-cost.md`'s open-floor figures** — run
 `tests/test_doc_figures.sh` and read its output, not just its exit code: an open-floor row
 (`CHANGELOG.md`, `commands/polish.md`) passes by design once actual size is above the floor (dir #105),
