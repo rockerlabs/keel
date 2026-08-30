@@ -433,6 +433,9 @@ write_full_receipt_review "$d" "max"
 gate "gh pr create --fill" "$d"
 check_contains "right commit, wrong trace level → still denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "right commit, wrong trace level → denied for the trace, not some other reason" "$OUT" "no trace matching"
+# dir #296: the deny now also NAMES what was actually traced, so a wrong-level mismatch reads as
+# self-explaining rather than an opaque "nothing found" (see _trace_levels_for in pre-pr-gate.sh).
+check_contains "right commit, wrong trace level → deny names the level that WAS traced" "$OUT" "trace recorded 'low' for this commit instead"
 rm -f "$tf"
 
 # 18. A trace line matching the CURRENT HEAD SHA → the bare outcome is now trusted, gate passes.
@@ -517,6 +520,57 @@ json="$(jq -n --arg cwd "$d" '{hook_event_name:"UserPromptExpansion", cwd:$cwd, 
 printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
 check_file "skill-trace(UserPromptExpansion code-review) writes a trace file" "$tf"
 check_contains "operator-typed trace line carries the SHA and level" "$(cat "$tf" 2>/dev/null)" "$sha	ultra"
+rm -f "$tf"
+
+# 21b. dir #296: a `Skill(code-review)` call with NO args (a documented, supported shape — the skill's
+# own description says it reuses the level typed last) used to write the RAW empty string as the trace
+# level, an unmatchable tag no bare-level receipt could ever hit. Now it writes an explicit `unparsed:`
+# marker instead of an empty/blank level, so the trace file still records SOMETHING for this commit.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, no args) still writes a trace file" "$tf"
+check_contains "no-args trace line is marked unparsed, not a blank/empty level" "$(cat "$tf" 2>/dev/null)" "$sha	unparsed:"
+rm -f "$tf"
+
+# 21c. dir #296: a `Skill(code-review)` call whose args carry a real level PLUS a flag ("high --fix")
+# used to write the WHOLE string ("high --fix") as the trace level — unmatchable against a bare `high`
+# receipt even though a genuine `high` review just ran. Now the leading token is extracted and validated,
+# so the trace records the resolved level a bare receipt CAN match.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high --fix"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_file "skill-trace(PostToolUse code-review, flag-carrying args) writes a trace file" "$tf"
+check_contains "flag-carrying args resolve to the bare leading level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
+# 21d. dir #296 end-to-end: the flag-carrying-args recovery from 21c actually unlocks a bare `high`
+# receipt — this is the false-deny the ticket describes, closed for real, not just at the trace layer.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:"high --fix"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+write_full_receipt_review "$d" "high"
+gate "gh pr create --fill" "$d"
+check_status "dir #296: flag-carrying Skill args no longer false-deny a genuine review" 0 "$STATUS"
+check_absent "dir #296: ...the gate allows" "$OUT" "deny"
+rm -f "$tf"
+
+# 21e. dir #296 end-to-end: the no-args case, in contrast, must still deny (there is genuinely no
+# resolvable level to trust) — but the deny now names the unparsed trace instead of claiming nothing
+# was found at all.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review"}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+write_full_receipt_review "$d" "high"
+gate "gh pr create --fill" "$d"
+check_contains "dir #296: no-args Skill call still denies a bare receipt" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #296: ...and names the unparsed trace, not a blank one" "$OUT" "trace recorded 'unparsed:"
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------

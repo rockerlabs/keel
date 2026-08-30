@@ -862,6 +862,17 @@ _trace_has_line() {
   tp="/tmp/pre-pr-gate-trace-$wt_key"
   [ -f "$tp" ] && awk -F'\t' -v sha="$sha" -v lvl="$lvl" '$1==sha && $2==lvl{f=1} END{exit !f}' "$tp"
 }
+# dir #296: names what a `review-trace-missing` deny found instead of just that it found nothing —
+# every distinct tag recorded for this exact sha, comma-joined (deduped, insertion order), or "" if the
+# trace file has no line for this sha at all. Lets the deny message tell "no review ran" apart from "a
+# review ran but at the wrong level / with unparseable args", the second being self-inflicted and
+# recoverable by re-invoking cleanly rather than by running a whole new review.
+_trace_levels_for() {
+  local wt_key="$1" sha="$2" tp
+  tp="/tmp/pre-pr-gate-trace-$wt_key"
+  [ -f "$tp" ] || return 0
+  awk -F'\t' -v sha="$sha" '$1==sha && !seen[$2]++{if(out!="")out=out","; out=out$2} END{print out}' "$tp"
+}
 # dir #72: a single-slot backup of whatever receipt was just invalidated — by `init` minting a fresh
 # nonce, or by the gate denying and discarding the sentinel. `retire_sentinel` (below) is the ONE place
 # that both writes this and clears the live sentinel, so every invalidation path (there are several —
@@ -1465,7 +1476,37 @@ case "${1:-}" in
       code-review|*:code-review|/code-review) ;;
       *) exit 0 ;;
     esac
-    _append_trace_line "$st_cwd" "$st_level"
+    # dir #296: $st_level is the RAW args string (`.tool_input.args`/`.command_args`), not a bare level.
+    # A single clean token (incl. "ultra"/"skip" — dir #186's own PERMISSIVE case: no level validation
+    # here is what lets a genuine operator-typed `/code-review ultra` trace even though that word is
+    # outside $ACCEPTED_REVIEW_LEVELS) still passes through verbatim, unchanged from before this fix.
+    # Only the two shapes dir #186 never covered are handled specially: absent args (empty string) and a
+    # token carrying a trailing flag ("high --fix") — both ordinary, documented call shapes that used to
+    # write the raw string (or nothing) as the trace level itself, an unmatchable tag no bare-level
+    # receipt could ever hit. For those, extract the leading token (same idiom as the dialog leg's own
+    # $dlg_word above) and validate it against $ACCEPTED_REVIEW_LEVELS. An unresolved token still gets a
+    # trace line — an `unparsed:<raw>` tag, never silently dropped — so the PASS-branch deny below can
+    # name what was actually traced instead of a bare "no trace found".
+    case "$st_level" in
+      '')
+        _append_trace_line "$st_cwd" "unparsed:<empty>"
+        ;;
+      *' '*)
+        sk_word="${st_level%% *}"
+        sk_level=""
+        for lvl in $ACCEPTED_REVIEW_LEVELS; do
+          [ "$sk_word" = "$lvl" ] && sk_level="$lvl" && break
+        done
+        if [ -n "$sk_level" ]; then
+          _append_trace_line "$st_cwd" "$sk_level"
+        else
+          _append_trace_line "$st_cwd" "unparsed:$st_level"
+        fi
+        ;;
+      *)
+        _append_trace_line "$st_cwd" "$st_level"
+        ;;
+    esac
     exit 0
     ;;
   rollout-check)
@@ -2281,7 +2322,16 @@ case "$status" in
       if ! _trace_has_line "$wt" "$current_sha" "$trace_match_outcome"; then
         retire_sentinel "$sentinel" "$cwd" "$receipt_key"
         log_event receipt-deny "review-trace-missing" "$cwd"
-        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found. If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
+        # dir #296: name what WAS traced for this commit, if anything, as an ADDITION to the existing
+        # "no trace matching" wording (kept verbatim — several tests already pin that exact substring).
+        # An empty $traced_levels means no review mechanism fired at all, unchanged from before this fix.
+        # A non-empty one (possibly an `unparsed:<raw>` tag, dir #296's own fix on the write side) means a
+        # review DID run but didn't resolve to the receipted level — a different, usually self-inflicted,
+        # failure the operator can fix by re-invoking cleanly rather than running a whole new review.
+        traced_levels="$(_trace_levels_for "$wt" "$current_sha")"
+        trace_deny_detail=""
+        [ -n "$traced_levels" ] && trace_deny_detail=" The trace recorded '$traced_levels' for this commit instead — re-run the review with a bare level (no extra flags) if that's unexpected."
+        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
       fi
     fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
