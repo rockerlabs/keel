@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **The `/polish` gate's Skill(code-review) trace leg no longer writes raw `args` verbatim as the
+  review level** (dir #296, found the same day dir #254 promoted this leg to the primary review
+  path). Absent args (a documented, supported shape — the skill reuses the level typed last) or args
+  carrying a flag (`"high --fix"`, also documented) produced an unmatchable trace line and a false
+  `review-trace-missing` deny at `/polish`'s last step, even after a genuine review ran. Fix: extract
+  and validate the leading token (`read`-based, not a space-only glob — a tab separator or leading
+  space both broke an earlier glob-based draft, live-reproduced and closed by this ticket's own
+  `/code-review high` pass), preserving dir #186's permissive pass-through for a clean single token
+  outside the accepted set (an operator-typed `/code-review ultra`). An unresolved token still gets a
+  trace line (`unparsed:<raw>`, sanitized against corrupting the trace file's tab-delimited schema),
+  so the deny message can now name what was actually traced for the commit instead of a bare "nothing
+  found". Adopter-visible: `tools/pre-pr-gate.sh` ships in every keel home with the gate wired.
 - **`keel-impact.sh enable` now reports a legacy-marker project's genuinely first enable as newly
   enabled, not already enabled** (dir #287, disclosed as a known issue in v0.7.2's release notes).
   `cmd_enable` checked `impact_enabled` AFTER calling `_impact_begin`, which runs
