@@ -158,31 +158,65 @@ _impact_file_path() {
   return 0
 }
 
-# impact_store_enable [DIR] — idempotently create/refresh the store entry for DIR's project (the
-# opt-in marker itself, D1's `origin` file included) and print its path. Nothing is ever written
-# inside DIR's own working tree.
-impact_store_enable() {
-  local dir="${1:-.}" top store
-  top="$(_impact_resolve_top "$dir")"
-  store="$(impact_store_dir "$dir")"
-  mkdir -p "$store"
-  printf '%s\n' "$top" > "$store/origin"
-  printf '%s' "$store"
-}
-
 # IMPACT_LEGACY_NAMES — the impact-triple's filenames, relative to a project's `.keel/`, named in this
 # ONE place so `doctor.sh`'s W-KEEL-LEGACY check and keel-impact.sh's `migrate`/auto-migrate don't each
 # hand-list the same three strings independently.
 IMPACT_LEGACY_NAMES="ledger.md evidence.md impact-events.log"
 
-# impact_has_legacy_files [DIR] — true iff DIR's project has at least one in-tree
+# impact_has_legacy_files [DIR] [TOP] — true iff DIR's project has at least one in-tree
 # .keel/{ledger.md,evidence.md,impact-events.log} left over from before the external store existed.
+# TOP, when given, is used as-is instead of re-resolving it — the same avoid-a-redundant-fork
+# convention _impact_file_path already follows (see _impact_resolve_top's own header comment): a
+# caller that already has DIR's resolved top in hand (impact_store_enable does) should pass it
+# through rather than pay for a second `_impact_resolve_top` subshell to re-derive the same value.
 impact_has_legacy_files() {
-  local dir="${1:-.}" top name
-  top="$(_impact_resolve_top "$dir")"
+  local dir="${1:-.}" top="${2:-}" name
+  [ -n "$top" ] || top="$(_impact_resolve_top "$dir")"
   [ -n "$top" ] || return 1
   for name in $IMPACT_LEGACY_NAMES; do
     [ -f "$top/.keel/$name" ] && return 0
   done
   return 1
+}
+
+# impact_store_mark_migrated STORE TOP — dir #304: the ONE place that writes $STORE/origin, the
+# signal `_impact_auto_migrate`, `cmd_migrate`, and `impact_store_enable` all use to mean "this store
+# entry is fully migrated" (and, per D1's own comment at the top of this file, the provenance record
+# orphan-detection reads). Before this ticket the three call sites each wrote the file directly and
+# unconditionally, which is how two of them (cmd_migrate, impact_store_enable) ended up writing it
+# BEFORE confirming the merge it is supposed to attest to actually succeeded — a genuine merge failure
+# then permanently satisfied _impact_auto_migrate's own idempotency guard ([-f "$store/origin"], dir
+# #289) and killed automatic retry for that project. This function does not decide success; it is a
+# pure writer. Every caller is responsible for calling it only once IT has confirmed there is nothing
+# left un-migrated (or, for impact_store_enable, that there was never anything to migrate in the first
+# place) — see each call site's own comment.
+impact_store_mark_migrated() {
+  local store="$1" top="$2"
+  printf '%s\n' "$top" > "$store/origin"
+}
+
+# impact_store_enable [DIR] — idempotently create/refresh the store entry for DIR's project (the
+# opt-in marker itself) and print its path. Nothing is ever written inside DIR's own working tree.
+#
+# dir #304: `origin` is written only when DIR carries no in-tree legacy file at all — i.e. either this
+# project never had one, or `_impact_begin` (which cmd_enable always calls first — see the ordering
+# rule in keel-impact.sh) already swept every untracked one in successfully. If a legacy file is still
+# there — a genuine auto-migrate failure (unreadable/unwritable target), or a TRACKED file D4
+# deliberately leaves in place forever — writing `origin` anyway would falsely claim "fully migrated"
+# and permanently block `_impact_auto_migrate`'s own retry (the failure case), or claim a completion
+# that D4's supported partial-migration state never reaches by design (the tracked case; auto-migrate
+# itself never writes `origin` for that repo either — see its own `all_untracked` guard). `enable`
+# itself is unaffected either way: `impact_enabled()`/`_impact_file_path` key off the store DIRECTORY
+# existing, not this file (the LEANING recorded at dir #304, kept deliberately narrow because
+# tests/test_keel_impact.sh's "PARTIAL migration regression" pin depends on it) — so a repo missing
+# `origin` still reports itself enabled, and a legacy file left behind is not silent: doctor.sh's
+# W-KEEL-LEGACY names `migrate` for the tracked case, and any later automatic resolve retries the
+# untracked-failure case on its own.
+impact_store_enable() {
+  local dir="${1:-.}" top store
+  top="$(_impact_resolve_top "$dir")"
+  store="$(impact_store_dir "$dir")"
+  mkdir -p "$store"
+  impact_has_legacy_files "$dir" "$top" || impact_store_mark_migrated "$store" "$top"
+  printf '%s' "$store"
 }
