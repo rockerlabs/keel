@@ -15,12 +15,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   release-in-preparation allowance** (dir #299), closing the guaranteed red window dir #297's own
   `/simplify` pass found: the release-prep PR adds the new `## vX.Y.Z` heading before the tag exists,
   and nothing re-runs the suite at the instant the tag is later cut, so every release cut this check
-  red for a window with no PR that could ever fix it. Borrows `tools/self/doctor.sh`'s own
-  commit-distance-bounded allowance for CHANGELOG.md (dir #156) rather than inventing a new one
-  (operator decision 2026-08-30): the untagged heading is exempt only if it is the newest heading, its
-  version genuinely sorts above every existing tag, and HEAD is no more than
-  `KEEL_PENDING_RELEASE_MAX_COMMITS` (default 40) commits past the commit that introduced it — a bound
-  that is strictly narrowing, so it can only turn a false GAP into a true one, never the reverse. Two
+  red for a window no release-prep PR could close — only a separate, post-tag PR ever could. Borrows
+  `tools/self/doctor.sh`'s own commit-distance-bounded allowance for CHANGELOG.md (dir #156) rather
+  than inventing a new one (operator decision 2026-08-30): the untagged heading is exempt only if it
+  is the newest heading, its version genuinely sorts above every existing tag, and HEAD is no more
+  than `KEEL_PENDING_RELEASE_MAX_COMMITS` (default 40) commits past the commit that introduced it — a
+  bound that is strictly narrowing, so it can only turn a silent, forever-uncaught pass into a
+  correctly-firing failure, never the reverse. Two
   bugs surfaced and were fixed during an `/code-review high` pass before this shipped, both verified
   live against synthetic scratch repos: an unanchored substring match on the version heading could
   resolve the wrong introducing commit when one version's digits are a numeric prefix of another's
