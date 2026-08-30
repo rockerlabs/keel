@@ -424,6 +424,22 @@ _expected_step() {
 # loops over the space-separated words instead. `ultra` deliberately excluded: it never reaches either
 # marker path (see commands/polish.md step 5).
 ACCEPTED_REVIEW_LEVELS='low medium high max'
+# dir #296 simplify pass: the dialog leg and the skill-trace leg (below) both need "does this word
+# resolve to a real review level" — a loop over $ACCEPTED_REVIEW_LEVELS, deliberately not a `case`
+# pattern list (see $ACCEPTED_REVIEW_LEVELS's own comment on why an unquoted `|`-join can't be a case
+# pattern). Factored once dir #296 made it a second occurrence of the same idiom, before a third leg
+# copies it again. Prints the matched level and returns 0 on a hit, prints nothing and returns 1
+# otherwise — callers do `lvl="$(_match_review_level "$word")" || lvl=""`.
+_match_review_level() {
+  local word="$1" lvl
+  for lvl in $ACCEPTED_REVIEW_LEVELS; do
+    if [ "$word" = "$lvl" ]; then
+      printf '%s' "$lvl"
+      return 0
+    fi
+  done
+  return 1
+}
 # The review ADD-ON a step-5 outcome may name on top of a standing agent review, as a SINGLE token:
 # `agent:<level>+<addon>`. dir #158 had generalized this into a comma-separated SET, so a commit that
 # got both an operator-run pass and a cross-model second opinion could name both in the receipt (felt
@@ -830,9 +846,13 @@ _prev_sentinel_path_for_key() { printf '/tmp/pre-pr-gate-prev-%s' "$1"; }
 # sentinel — not lines folded into the sentinel itself. Keeping them separate means `init`'s nonce reset
 # (the sentinel's job: wipe the PREVIOUS run's receipts, dir #49) never has to know the hand-off note
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
+# dir #296 simplify pass: the raw `/tmp/pre-pr-gate-trace-<key>` formula, factored so `_trace_has_line`/
+# `_trace_levels_for` (below — both already have the KEY resolved, not a cwd) stop re-typing it; `trace_path_for`
+# itself keeps the cwd-taking signature every existing caller uses.
+_trace_path_for_key() { printf '/tmp/pre-pr-gate-trace-%s' "$1"; }
 # dir #80: trace_path_for stays per-repo (NOT $RECEIPT_KEY) — see the dir #80 header section above for
 # why (append-only, matched by sha+level, concurrent branches already interleave harmlessly).
-trace_path_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(_repo_key "${1:-$PWD}")"; }
+trace_path_for() { _trace_path_for_key "$(_repo_key "${1:-$PWD}")"; }
 # dir #80: reads the already-resolved $RECEIPT_KEY (set by _require_receipt_key, called inline by
 # every CLI subcommand that uses this below) rather than re-deriving it itself — deriving it here
 # would mean calling the detached-HEAD-checking _require_receipt_key from inside a function that's
@@ -859,7 +879,7 @@ _append_trace_line() {
 # reasoning: don't re-fork `_repo_key` for a key already on hand).
 _trace_has_line() {
   local wt_key="$1" sha="$2" lvl="$3" tp
-  tp="/tmp/pre-pr-gate-trace-$wt_key"
+  tp="$(_trace_path_for_key "$wt_key")"
   [ -f "$tp" ] && awk -F'\t' -v sha="$sha" -v lvl="$lvl" '$1==sha && $2==lvl{f=1} END{exit !f}' "$tp"
 }
 # dir #296: names what a `review-trace-missing` deny found instead of just that it found nothing —
@@ -869,7 +889,7 @@ _trace_has_line() {
 # recoverable by re-invoking cleanly rather than by running a whole new review.
 _trace_levels_for() {
   local wt_key="$1" sha="$2" tp
-  tp="/tmp/pre-pr-gate-trace-$wt_key"
+  tp="$(_trace_path_for_key "$wt_key")"
   [ -f "$tp" ] || return 0
   awk -F'\t' -v sha="$sha" '$1==sha && !seen[$2]++{if(out!="")out=out","; out=out$2} END{print out}' "$tp"
 }
@@ -1459,10 +1479,7 @@ case "${1:-}" in
       fi
       dlg_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=[a-zA-Z0-9_-]+' | tail -n1)"
       dlg_word="${dlg_word#KEEL-REVIEW-DIALOG: level=}"
-      dlg_level=""
-      for lvl in $ACCEPTED_REVIEW_LEVELS; do
-        [ "$dlg_word" = "$lvl" ] && dlg_level="$lvl" && break
-      done
+      dlg_level="$(_match_review_level "$dlg_word")" || dlg_level=""
       [ -n "$dlg_level" ] && _append_trace_line "$st_cwd" "dialog:$dlg_level"
       exit 0
     fi
@@ -1484,19 +1501,17 @@ case "${1:-}" in
     # token carrying a trailing flag ("high --fix") — both ordinary, documented call shapes that used to
     # write the raw string (or nothing) as the trace level itself, an unmatchable tag no bare-level
     # receipt could ever hit. For those, extract the leading token (same idiom as the dialog leg's own
-    # $dlg_word above) and validate it against $ACCEPTED_REVIEW_LEVELS. An unresolved token still gets a
-    # trace line — an `unparsed:<raw>` tag, never silently dropped — so the PASS-branch deny below can
-    # name what was actually traced instead of a bare "no trace found".
+    # $dlg_word above — both now share `_match_review_level`, dir #296) and validate it against
+    # $ACCEPTED_REVIEW_LEVELS. An unresolved token still gets a trace line — an `unparsed:<raw>` tag,
+    # never silently dropped — so the PASS-branch deny below can name what was actually traced instead
+    # of a bare "no trace found".
     case "$st_level" in
       '')
         _append_trace_line "$st_cwd" "unparsed:<empty>"
         ;;
       *' '*)
         sk_word="${st_level%% *}"
-        sk_level=""
-        for lvl in $ACCEPTED_REVIEW_LEVELS; do
-          [ "$sk_word" = "$lvl" ] && sk_level="$lvl" && break
-        done
+        sk_level="$(_match_review_level "$sk_word")" || sk_level=""
         if [ -n "$sk_level" ]; then
           _append_trace_line "$st_cwd" "$sk_level"
         else
