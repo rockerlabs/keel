@@ -942,9 +942,9 @@ retire_sentinel() {
   rm -f "$sentinel"
 }
 # dir #161: answers "does key $1's retired backup exist, is its header well-formed, and is it on the
-# SAME lineage as $2 (cwd)'s current HEAD" before anything trusts what it says. On success, prints the
-# prev sentinel's path on stdout and returns 0. On failure, returns one of three distinct codes and
-# prints nothing, leaving the messaging to the caller rather than living here:
+# SAME lineage as $2 (cwd)'s current HEAD" before anything trusts what it says. On success, returns 0.
+# On failure, returns one of three distinct codes and prints nothing, leaving the messaging to the
+# caller rather than living here:
 #   1 = no backup at all (a first-ever round, or nothing retired since the last `init`)
 #   2 = malformed header (no leading `nonce\t…` line)
 #   3 = lineage guard failed (missing/foreign base-sha — not a verified ancestor of current HEAD)
@@ -972,43 +972,26 @@ _validated_prev_sentinel() {
   if [ -z "$base_sha" ] || ! git -C "$cwd" merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null; then
     return 3
   fi
-  printf '%s\n' "$prev"
 }
 # dir #161 /code-review high: reads the RETIRED prev sentinel, which needs no foreign-nonce/MISSING/
-# REPLAY bookkeeping. Extracted to be shared with dir #161's add-on-drop warning (which read only ONE
-# step); **dir #183 deleted that warning, so `receipt --recover`'s own replay — which reads ALL steps —
-# is again the only caller.** The `$2` step-id filter below is what the deleted second consumer needed.
-# It is kept — it costs one `case` and is the natural read for a future single-step consumer — but be
-# precise about its state: with no caller passing `$2`, that branch is now **unused AND unreachable by
-# any test** (the suite drives the CLI, never sources this file, and the tests that exercised the
-# filtered path were deleted with the warning). So the "ONE place that needs the matching edit" claim
-# below holds for the receipt-line FORMAT, which both branches share — not as a promise that a future
-# format change would be caught by a test on the filtered half. Delete it rather than let it rot if no
-# second consumer arrives.
+# REPLAY bookkeeping. Extracted to be shared with dir #161's add-on-drop warning; **dir #183 deleted
+# that warning, so `receipt --recover`'s own replay — which reads ALL steps — is the only caller.**
 # Contrast the completeness parser elsewhere in this file
-# (search `EXPECTED_STEPS`), which reads the LIVE sentinel and does need that extra state for its
+# (search `EXPECTED_STEPS`), which reads the LIVE sentinel and does need extra state for its
 # PASS/MISSING/REPLAY verdict — dir #72 finding #6 already argued, and this still holds, for why THAT
-# one stays a separate implementation rather than sharing with either of these two. $1 = the prev
+# one stays a separate implementation rather than sharing with this one. $1 = the prev
 # sentinel file (assumed already header-validated by the caller, e.g. via `_validated_prev_sentinel`).
-# $2 = an optional step id filter: given, prints only that step's outcome (nothing if it was never
-# written under the matching nonce); omitted, prints "step<TAB>outcome" for every step, in first-seen
-# order — the shape `--recover` needs to replay them all. If the receipt line FORMAT itself ever
-# changes (delimiter, field count), this is the ONE place that needs the matching edit.
+# Prints "step<TAB>outcome" for every step, in first-seen order — the shape `--recover` needs to
+# replay them all. If the receipt line FORMAT itself ever changes (delimiter, field count), this is
+# the ONE place that needs the matching edit.
 _prev_sentinel_outcomes() {
-  awk -F'\t' -v want="${2:-}" '
+  awk -F'\t' '
     NR==1 { if ($1=="nonce" && $2!="") pnonce=$2; next }
     NF>=3 && pnonce!="" && $1==pnonce {
-      # Filtered call (dir #161 /code-review high): track a plain scalar, not the order[]/val[]
-      # array pair — that bookkeeping is only needed to replay ALL steps in first-seen order for
-      # `--recover`, which this branch never does. Building it anyway on every matching line, only
-      # to have `END` never read it, was wasted work. The nonce guard above still applies either
-      # way — only lines under the CURRENT nonce ever reach here.
-      if (want!="") { if ($2==want) scalar=$3; next }
       if (!($2 in val)) order[++n]=$2
       val[$2]=$3
     }
     END {
-      if (want!="") { print scalar; exit }
       for (i=1;i<=n;i++) print order[i] "\t" val[order[i]]
     }
   ' "$1"
@@ -1143,21 +1126,17 @@ case "${1:-}" in
       # `prev`'s path is recomputed here even though `_validated_prev_sentinel` (below) derives the
       # identical value internally — reviewed live (cross-model /code-review high, dir #161) and kept
       # deliberately: this block's own message #2 needs `$prev`'s VALUE for its text, and the shared
-      # function DOES have such a channel — it prints the path on stdout — but only on SUCCESS, and every
-      # consumer of `$prev` below is on a FAILURE path, where it prints nothing. So the re-derivation is
-      # real and unavoidable, just not for the reason this comment gave until dir #183 (it claimed no
-      # channel existed at all). Corollary worth knowing before touching either: with dir #183's deletion
-      # of the second caller, that stdout contract now has NO consumer — this call discards it with
-      # `>/dev/null`. Same reasoning covers the `base_sha` re-derivation on the
-      # `rc=3` branch below — real, minor duplication, judged not worth complicating a shared,
-      # security-adjacent validator's signature to remove.
+      # function has no channel to hand it back — it only reports facts via its return code. Same
+      # reasoning covers the `base_sha` re-derivation on the `rc=3` branch below — real, minor
+      # duplication, judged not worth complicating a shared, security-adjacent validator's signature
+      # to remove.
       prev="$(_prev_sentinel_path_for_key "$receipt_key")"
       # dir #161: the exists/header/lineage checks below live once, in `_validated_prev_sentinel`
       # (extracted there to be shared with dir #161's add-on-drop warning, which dir #183 deleted — so
       # this is now its only caller) — this block keeps its own three distinct, loud messages
       # (dir #72 findings #3/#5), since `--recover` is about to GRANT trust and must say exactly why it
       # refuses to; only the shared VALIDATION moved, not the reporting.
-      _validated_prev_sentinel "$receipt_key" "$PWD" >/dev/null
+      _validated_prev_sentinel "$receipt_key" "$PWD"
       rc=$?
       if [ "$rc" -ne 0 ]; then
         case "$rc" in
@@ -1176,9 +1155,9 @@ case "${1:-}" in
       fi
       # dir #72 finding #6 / dir #161: reads the RETIRED sentinel via `_prev_sentinel_outcomes` (above;
       # its other consumer was dir #161's add-on-drop warning, deleted by dir #183) — see that
-      # function's own header for why it does NOT also
-      # share with the completeness parser below (`EXPECTED_STEPS`), which reads the LIVE sentinel and
-      # needs extra MISSING/REPLAY bookkeeping this one doesn't.
+      # function's own header for why it does NOT also share with the completeness parser below
+      # (`EXPECTED_STEPS`), which reads the LIVE sentinel and needs extra MISSING/REPLAY bookkeeping
+      # this one doesn't.
       recovered="$(_prev_sentinel_outcomes "$prev")"
       if [ -z "$recovered" ]; then
         printf 'pre-pr-gate: prior receipt had no completed steps to recover\n' >&2
