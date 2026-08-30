@@ -99,8 +99,9 @@ _impact_auto_migrate() {
     cat "$top/.keel/impact-events.log" >> "$store/impact-events.log" && rm -f "$top/.keel/impact-events.log" || ok=0
   fi
   rmdir "$top/.keel" 2>/dev/null || true   # only succeeds once role-3/4 files are gone too — expected to no-op
-  # Written last, and only once every present file was actually swept — see the comment above.
-  [ "$ok" -eq 1 ] && printf '%s\n' "$top" > "$store/origin"
+  # Written last, and only once every present file was actually swept — see the comment above. dir
+  # #304: routed through impact_store_mark_migrated, the one shared writer all three call sites use.
+  [ "$ok" -eq 1 ] && impact_store_mark_migrated "$store" "$top"
   return 0
 }
 
@@ -119,23 +120,17 @@ _impact_auto_migrate() {
 # each simply contain no call, and a future read-only verb gets that for free.
 #
 # ONE ORDERING CONSTRAINT SURVIVES, and cmd_enable carries it: _impact_begin must run BEFORE
-# impact_store_enable()'s unconditional `mkdir -p` + `origin` write. Otherwise _impact_auto_migrate's
-# own idempotency guard (`[ -f "$store/origin" ]`, dir #289) is permanently satisfied by an `origin`
-# written before any merge ran, and AUTO-migration is then dead for that project: no later
-# `enable`/`add`/`event`/`rollup` will ever sweep the legacy in-tree marker in. This is the ONE case
-# dir #289's own retry-on-failure fix (see _impact_auto_migrate's own comment) does NOT self-heal —
-# that fix retries when auto_migrate's OWN attempt fails partway through and leaves `origin` unwritten;
-# it can't retry a stranding caused by a DIFFERENT function writing `origin` first, before auto-migrate
-# ever got to run. `impact_store_enable` is one such function; `cmd_migrate` (below) is a second,
-# independent one — it also writes `$store/origin` before calling the same merge helpers, so a genuine
-# merge failure there (caught by `set -e`, which aborts before its own `rm -f` — see the merge helpers'
-# own dir #289 comment) still leaves `origin` behind. Neither is a hole dir #289 OPENED: pre-dir-#289,
-# `[ -d "$store" ]` was satisfied by these same two functions' own unconditional `mkdir -p "$store"`, at
-# the same point, for the same permanent effect — the guard's file changed, the interaction with callers
-# outside _impact_auto_migrate's own attempt did not. Closing it needs one success-gated `origin` writer
-# shared by all three call sites, which is a real refactor of tools/lib/impact-store.sh's own store
-# abstraction, not a fix scoped to this ticket's two named failure windows — tracked as a follow-up
-# rather than folded in here. Calibrate the harm correctly, though — it is silence, not data loss.
+# impact_store_enable()'s `mkdir -p` + (conditional, dir #304) `origin` write. Otherwise
+# _impact_auto_migrate's own idempotency guard (`[ -f "$store/origin" ]`, dir #289) could be
+# permanently satisfied before any merge ran, and AUTO-migration would then be dead for that project:
+# no later `enable`/`add`/`event`/`rollup` would ever sweep the legacy in-tree marker in.
+#
+# dir #304 closed the wider hole this comment used to describe (`impact_store_enable` and
+# `cmd_migrate` below each used to write `$store/origin` unconditionally/before their own merge
+# attempt, permanently satisfying the guard above through a path _impact_auto_migrate's own
+# retry-on-failure fix cannot self-heal): both now route through the single success-gated writer,
+# `impact_store_mark_migrated` in tools/lib/impact-store.sh — see THAT function's own comment for the
+# full history, and cmd_migrate's below for how it decides success before calling it.
 # Each legacy file keeps resolving and working from wherever it physically is — impact_ledger_path's
 # legacy rung is a PER-FILE test, so a stranded project whose marker is only impact-events.log ends up
 # split, that log in-tree and a later ledger/evidence in the store — and an
@@ -1131,27 +1126,44 @@ cmd_migrate() {
     return 0
   fi
 
+  # dir #304: `ok` tracks whether every attempted merge actually succeeded — mirroring
+  # _impact_auto_migrate's own `ok` pattern — so the completion marker (impact_store_mark_migrated)
+  # is written only once, at the end, and only on full success. Before this fix `origin` was written
+  # unconditionally, up front: a genuine merge failure aborted the whole script under `set -e` (a bare
+  # call, not `&&`/`||`-gated, so unlike _impact_auto_migrate's own calls it could not have retried
+  # even if written last) with `origin` already stranding the idempotency guard behind it. Each `&&
+  # ... || ok=0` here is deliberately exempt from `set -e` the same way _impact_auto_migrate's own
+  # calls are — the trailing `|| ok=0` makes the whole compound statement's exit status always 0.
+  # `ok` tracks only the untracked-merge outcome, never `tracked_left` (below) — deliberately: an
+  # explicit `migrate` legitimately completes and writes `origin` once the untracked portion merges,
+  # even with a TRACKED legacy file still left behind by D4's own design (see the printed "three
+  # options" block below). `_impact_auto_migrate` differs on purpose, not by oversight: it refuses to
+  # run at all on a mixed repo (its own `all_untracked` guard), since the automatic path has no way to
+  # ask which of the three options the operator wants for the tracked leftover.
+  local ok=1
   if [ "$any_untracked" -eq 1 ]; then
     mkdir -p "$store"
-    printf '%s\n' "$top" > "$store/origin"
     if [ "${#ledger_srcs[@]}" -gt 0 ]; then
-      _impact_merge_ledger "$store/ledger.md" "${ledger_srcs[@]}"
-      rm -f "${ledger_srcs[@]}"
+      _impact_merge_ledger "$store/ledger.md" "${ledger_srcs[@]}" && rm -f "${ledger_srcs[@]}" || ok=0
     fi
     if [ "${#evidence_srcs[@]}" -gt 0 ]; then
-      _impact_merge_evidence "$store/evidence.md" "${evidence_srcs[@]}"
-      rm -f "${evidence_srcs[@]}"
+      _impact_merge_evidence "$store/evidence.md" "${evidence_srcs[@]}" && rm -f "${evidence_srcs[@]}" || ok=0
     fi
     if [ "${#log_srcs[@]}" -gt 0 ]; then
       # Same-directory temp name (dir #251 review, same reasoning as _impact_merge_evidence above): a
       # bare `mktemp` defaults into $TMPDIR, not necessarily $store's own filesystem.
       local log_tmp="$store/impact-events.log.keelmerge.$$"
       touch "$store/impact-events.log"
-      LC_ALL=C sort -u "$store/impact-events.log" "${log_srcs[@]}" > "$log_tmp"
-      mv -f "$log_tmp" "$store/impact-events.log"
-      rm -f "${log_srcs[@]}"
+      LC_ALL=C sort -u "$store/impact-events.log" "${log_srcs[@]}" > "$log_tmp" \
+        && mv -f "$log_tmp" "$store/impact-events.log" && rm -f "${log_srcs[@]}" \
+        || { rm -f "$log_tmp"; ok=0; }
     fi
-    printf 'keel-impact: migrated into %s\n' "$store"
+    if [ "$ok" -eq 1 ]; then
+      impact_store_mark_migrated "$store" "$top"
+      printf 'keel-impact: migrated into %s\n' "$store"
+    else
+      printf 'keel-impact: migrate: one or more sources failed to merge for %s — re-run migrate to retry; already-merged sources were removed, the rest remain untouched\n' "$top" >&2
+    fi
     for f in "${dirs[@]}"; do rmdir "$f/.keel" 2>/dev/null || true; done
   fi
 
@@ -1163,6 +1175,8 @@ cmd_migrate() {
     printf '    2. git rm --cached them, then commit, so future runs stop tracking them\n'
     printf '    3. rewrite history to remove them entirely (a separate, deliberate operation)\n'
   fi
+
+  [ "$ok" -eq 1 ] || return 1
 }
 
 case "${1:-}" in

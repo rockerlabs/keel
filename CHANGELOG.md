@@ -112,6 +112,25 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   worsened by this fix), and deferring the write also widens a concurrent-session race window on a
   project's first-ever legacy migration (backlog dir #304).
 
+- **The first of those two hazards is closed: `cmd_migrate` and `impact_store_enable` no longer strand
+  a project via `$store/origin` either** (dir #304). Both used to write the completion marker
+  unconditionally/before confirming their own operation succeeded — `cmd_migrate` up front, before
+  attempting any merge (a genuine failure then aborted the whole script under `set -e`, with `origin`
+  already stranded behind it); `impact_store_enable` on every call, with no merge of its own to gate on.
+  Either path could permanently satisfy `_impact_auto_migrate`'s idempotency guard (dir #289) through a
+  route its own retry-on-failure fix cannot self-heal. All three writers now route through one shared,
+  success-gated function, `impact_store_mark_migrated` in `tools/lib/impact-store.sh`: `cmd_migrate`
+  gained explicit `&&`/`||`-tracked success (mirroring `_impact_auto_migrate`'s own pattern) and an
+  explicit `return 1` on failure; `impact_store_enable` gates its write on `impact_has_legacy_files`
+  returning false. `impact_enabled()`/`_impact_file_path` keep their existing narrow
+  `[ -d "$store" ]` meaning, deliberately — `tests/test_keel_impact.sh`'s "PARTIAL migration regression"
+  pin depends on it, and moving the signal would have silently reversed that evidenced decision.
+  Adopter-visible: ships in every keel home via `tools/keel-impact.sh` and `tools/lib/impact-store.sh`.
+  The second hazard (the concurrent-session race widening) is unaffected by this fix and remains tracked
+  separately as backlog dir #306, needing its own locking/claim design. Pinned by two new
+  red-then-green fixtures in `tests/test_keel_impact.sh` reproducing both failure windows against the
+  pre-fix code.
+
 ## [0.7.2] — 2026-08-29
 
 Known issues: two residuals ship unfixed, each with an open ticket, and neither changes what the tools
