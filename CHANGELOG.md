@@ -21,6 +21,16 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   foreign-lineage and malformed-header cases) stays green, verified additionally via a live mutation
   proof on the surviving path. Adopter-visible: `tools/pre-pr-gate.sh` ships in every keel home with
   the gate wired.
+- **`docs/reference.md`'s `tools/keel-impact.sh` row now names `migrate`** (dir #298, found the same
+  day dir #297's `/simplify` reuse pass surfaced it): the command an adopter upgrading from a
+  pre-0.7.2 install must run to carry a legacy in-tree `.keel/` ledger into the external store had no
+  owning doc anywhere under `docs/` — the row described only `enable`, and `docs/keel-impact.md` is a
+  frozen historical artifact that predates the store move. The row now names `keel-impact.sh migrate
+  [dir] [--dry-run]` and the one behaviour an operator must know before running it: an untracked
+  legacy source is merged and removed automatically, but a **tracked** one is left in place with the
+  choice (keep / `git rm --cached` / rewrite history) printed for them to make. Adjacent, same
+  release, not fixed here: dir #287 (the other half of this population's pre-0.7.2 upgrade
+  experience).
 - **The `/polish` gate's Skill(code-review) trace leg no longer writes raw `args` verbatim as the
   review level** (dir #296, found the same day dir #254 promoted this leg to the primary review
   path). Absent args (a documented, supported shape — the skill reuses the level typed last) or args
