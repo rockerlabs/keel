@@ -115,7 +115,7 @@ if [ -n "${KEEL_CITATION_ARCHIVE_FILE:-}" ]; then
 else
   archive_file="${HOME:-}/.claude/projects/$(printf '%s' "$backlog_root" | tr '/' '-')/CLAUDE-archive.md"
 fi
-if [ -f "$archive_file" ]; then
+if [ -r "$archive_file" ]; then
   say "  archive: $archive_file"
 else
   say "  archive: absent ($archive_file) — a moved-to-archive ticket will read as dead"
