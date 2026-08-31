@@ -11,6 +11,21 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tools/pre-pr-gate.sh`'s three composed-marker names now derive from one constant** (dir #147,
+  found 2026-08-12 by dir #146's own `/simplify` altitude pass): `KEEL-AGENT-REVIEW` /
+  `KEEL-DEPTH-DIALOG` / `KEEL-REVIEW-DIALOG` used to be hardcoded independently at each of their
+  three grep call sites, and `tests/test_pre_pr_gate.sh`'s dir #116/#146 repo-wide sweep hardcoded
+  the same three names again in its own regex — two lists kept in sync by hand, the second time
+  that had happened. `COMPOSED_MARKER_NAMES` is now the single source, same pattern as the existing
+  `ACCEPTED_REVIEW_LEVELS`; the test extracts and evals that one assignment line instead of
+  hand-typing the tokens again, so a fourth marker is a one-place edit. A peer session's review of
+  this PR caught a follow-on defect before merge: an intermediate draft indexed the array directly
+  at each of the six call sites and claimed in a comment that doing so carried no index-to-name
+  binding a reorder could break — false, since (unlike `ACCEPTED_REVIEW_LEVELS`, always consumed as
+  a loop) this array is consumed positionally; fixed by naming each index once, in three scalars
+  next to the array declaration, so a reorder needs updating in one place instead of hunting it down
+  at six call sites. Adopter-visible: `tools/pre-pr-gate.sh` ships in every keel home with the gate
+  wired.
 - **Removed two dead contracts in `tools/pre-pr-gate.sh` left behind by dir #183's deletion of the
   add-on-drop warning** (dir #301, found by dir #183's own `/code-review max` — six of ten review
   angles flagged them independently). `_prev_sentinel_outcomes`'s `$2` step-id filter branch and
