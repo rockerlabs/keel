@@ -424,6 +424,18 @@ _expected_step() {
 # loops over the space-separated words instead. `ultra` deliberately excluded: it never reaches either
 # marker path (see commands/polish.md step 5).
 ACCEPTED_REVIEW_LEVELS='low medium high max'
+# dir #147: the three composed-marker tokens below (KEEL-AGENT-REVIEW / KEEL-DEPTH-DIALOG /
+# KEEL-REVIEW-DIALOG) used to be hardcoded independently at each of their three grep call sites
+# further down, and tests/test_pre_pr_gate.sh's own dir #116/#146 repo-wide sweep hardcoded the same
+# three names again in its own regex — two copies that had to be kept in sync by hand (dir #146 just
+# did this once). Single source of truth here, same spirit as $ACCEPTED_REVIEW_LEVELS just above: an
+# array rather than a space-separated string, since the call sites below need one name each by
+# purpose, not a loop over the whole set. The test file extracts this exact assignment line and evals
+# it rather than hand-typing the three tokens again, so a fourth marker added here is a one-place edit.
+COMPOSED_MARKER_NAMES=(KEEL-AGENT-REVIEW KEEL-DEPTH-DIALOG KEEL-REVIEW-DIALOG)
+MARKER_AGENT_REVIEW="${COMPOSED_MARKER_NAMES[0]}"
+MARKER_DEPTH_DIALOG="${COMPOSED_MARKER_NAMES[1]}"
+MARKER_REVIEW_DIALOG="${COMPOSED_MARKER_NAMES[2]}"
 # dir #296 simplify pass: the dialog leg and the skill-trace leg (below) both need "does this word
 # resolve to a real review level" — a loop over $ACCEPTED_REVIEW_LEVELS, deliberately not a `case`
 # pattern list (see $ACCEPTED_REVIEW_LEVELS's own comment on why an unquoted `|`-join can't be a case
@@ -1407,8 +1419,8 @@ case "${1:-}" in
       # ever wired by hand (same double-check style as the PostToolUse/Skill leg below).
       [ "$st_agent" = "general-purpose" ] || exit 0
       st_msg="$(printf '%s' "$st_input" | jq -r '.last_assistant_message // ""' 2>/dev/null)"
-      sa_level="$(printf '%s' "$st_msg" | grep -Eo "^KEEL-AGENT-REVIEW: level=(${ACCEPTED_REVIEW_LEVELS// /|})\$" | tail -n1)"
-      sa_level="${sa_level#KEEL-AGENT-REVIEW: level=}"
+      sa_level="$(printf '%s' "$st_msg" | grep -Eo "^${MARKER_AGENT_REVIEW}: level=(${ACCEPTED_REVIEW_LEVELS// /|})\$" | tail -n1)"
+      sa_level="${sa_level#${MARKER_AGENT_REVIEW}: level=}"
       [ -n "$sa_level" ] || exit 0
       _append_trace_line "$st_cwd" "agent:$sa_level"
       exit 0
@@ -1455,12 +1467,12 @@ case "${1:-}" in
         *KEEL-*-DIALOG:*) : ;;
         *) exit 0 ;;
       esac
-      dpt_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-DEPTH-DIALOG: level=[a-zA-Z0-9_-]+' | tail -n1)"
-      if [ "${dpt_word#KEEL-DEPTH-DIALOG: level=}" = "skip" ]; then
+      dpt_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_DEPTH_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
+      if [ "${dpt_word#${MARKER_DEPTH_DIALOG}: level=}" = "skip" ]; then
         _append_trace_line "$st_cwd" "dialog:skip"
       fi
-      dlg_word="$(printf '%s' "$st_input" | grep -Eo 'KEEL-REVIEW-DIALOG: level=[a-zA-Z0-9_-]+' | tail -n1)"
-      dlg_word="${dlg_word#KEEL-REVIEW-DIALOG: level=}"
+      dlg_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_REVIEW_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
+      dlg_word="${dlg_word#${MARKER_REVIEW_DIALOG}: level=}"
       dlg_level="$(_match_review_level "$dlg_word")" || dlg_level=""
       [ -n "$dlg_level" ] && _append_trace_line "$st_cwd" "dialog:$dlg_level"
       exit 0

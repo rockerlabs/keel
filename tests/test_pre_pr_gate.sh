@@ -2616,9 +2616,21 @@ check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$
 # agent review pass; a first draft of this fixture planted its bait directly in the real, gitignored
 # $REPO_ROOT/BACKLOG.md, which risked clobbering an operator's real uncommitted ticket text on a
 # concurrent edit even with a backup/restore trap around it).
+# dir #147: the marker alternation used to be hand-typed here, a second copy of the same three
+# tokens tools/pre-pr-gate.sh's own call sites hardcoded separately — two lists to keep in sync by
+# hand. Extract just the one `COMPOSED_MARKER_NAMES=(...)` assignment line from the gate script
+# (not a full `source`, which would run the hook's own top-level logic) and eval it to build the
+# alternation, so a fourth marker added there needs no matching edit here.
+_gate_marker_alternation() {
+  local line
+  line="$(grep -m1 '^COMPOSED_MARKER_NAMES=' "$REPO_ROOT/tools/pre-pr-gate.sh")"
+  eval "$line"
+  local IFS='|'
+  printf '%s' "${COMPOSED_MARKER_NAMES[*]}"
+}
 _composed_marker_sweep() {
   local dir="${1:-$REPO_ROOT}"
-  (cd "$dir" && git grep -lE '(KEEL-DEPTH-DIALOG|KEEL-REVIEW-DIALOG|KEEL-AGENT-REVIEW): level=(skip|low|medium|high|max|ultra)' \
+  (cd "$dir" && git grep -lE "($(_gate_marker_alternation)): level=(skip|low|medium|high|max|ultra)" \
     -- . ':!tests' 2>/dev/null || true)
 }
 composed="$(_composed_marker_sweep)"
