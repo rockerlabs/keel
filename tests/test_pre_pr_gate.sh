@@ -2622,8 +2622,13 @@ check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$
 # (not a full `source`, which would run the hook's own top-level logic) and eval it to build the
 # alternation, so a fourth marker added there needs no matching edit here.
 _gate_marker_alternation() {
-  local line
+  local line COMPOSED_MARKER_NAMES=()
   line="$(grep -m1 '^COMPOSED_MARKER_NAMES=' "$REPO_ROOT/tools/pre-pr-gate.sh")"
+  # dir #147 review finding: fail loudly on a reformatted/missing assignment line, rather than
+  # `eval ""` silently leaving COMPOSED_MARKER_NAMES empty — under this suite's `set -u`
+  # (tests/lib.sh), an unguarded empty array reference below would abort the whole test FILE with
+  # an opaque "unbound variable" instead of failing just this one check.
+  [ -n "$line" ] || { echo "_gate_marker_alternation: no COMPOSED_MARKER_NAMES= line found in tools/pre-pr-gate.sh" >&2; exit 1; }
   eval "$line"
   local IFS='|'
   printf '%s' "${COMPOSED_MARKER_NAMES[*]}"

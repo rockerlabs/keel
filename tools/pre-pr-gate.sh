@@ -432,10 +432,10 @@ ACCEPTED_REVIEW_LEVELS='low medium high max'
 # array rather than a space-separated string, since the call sites below need one name each by
 # purpose, not a loop over the whole set. The test file extracts this exact assignment line and evals
 # it rather than hand-typing the three tokens again, so a fourth marker added here is a one-place edit.
+# Call sites index this array directly — not unpacked into per-name scalars — same idiom as
+# $ACCEPTED_REVIEW_LEVELS just above (always consumed as a whole), so there's no separate
+# index-to-name binding a future reorder could silently break.
 COMPOSED_MARKER_NAMES=(KEEL-AGENT-REVIEW KEEL-DEPTH-DIALOG KEEL-REVIEW-DIALOG)
-MARKER_AGENT_REVIEW="${COMPOSED_MARKER_NAMES[0]}"
-MARKER_DEPTH_DIALOG="${COMPOSED_MARKER_NAMES[1]}"
-MARKER_REVIEW_DIALOG="${COMPOSED_MARKER_NAMES[2]}"
 # dir #296 simplify pass: the dialog leg and the skill-trace leg (below) both need "does this word
 # resolve to a real review level" — a loop over $ACCEPTED_REVIEW_LEVELS, deliberately not a `case`
 # pattern list (see $ACCEPTED_REVIEW_LEVELS's own comment on why an unquoted `|`-join can't be a case
@@ -1419,8 +1419,8 @@ case "${1:-}" in
       # ever wired by hand (same double-check style as the PostToolUse/Skill leg below).
       [ "$st_agent" = "general-purpose" ] || exit 0
       st_msg="$(printf '%s' "$st_input" | jq -r '.last_assistant_message // ""' 2>/dev/null)"
-      sa_level="$(printf '%s' "$st_msg" | grep -Eo "^${MARKER_AGENT_REVIEW}: level=(${ACCEPTED_REVIEW_LEVELS// /|})\$" | tail -n1)"
-      sa_level="${sa_level#${MARKER_AGENT_REVIEW}: level=}"
+      sa_level="$(printf '%s' "$st_msg" | grep -Eo "^${COMPOSED_MARKER_NAMES[0]}: level=(${ACCEPTED_REVIEW_LEVELS// /|})\$" | tail -n1)"
+      sa_level="${sa_level#${COMPOSED_MARKER_NAMES[0]}: level=}"
       [ -n "$sa_level" ] || exit 0
       _append_trace_line "$st_cwd" "agent:$sa_level"
       exit 0
@@ -1467,12 +1467,12 @@ case "${1:-}" in
         *KEEL-*-DIALOG:*) : ;;
         *) exit 0 ;;
       esac
-      dpt_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_DEPTH_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
-      if [ "${dpt_word#${MARKER_DEPTH_DIALOG}: level=}" = "skip" ]; then
+      dpt_word="$(printf '%s' "$st_input" | grep -Eo "${COMPOSED_MARKER_NAMES[1]}: level=[a-zA-Z0-9_-]+" | tail -n1)"
+      if [ "${dpt_word#${COMPOSED_MARKER_NAMES[1]}: level=}" = "skip" ]; then
         _append_trace_line "$st_cwd" "dialog:skip"
       fi
-      dlg_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_REVIEW_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
-      dlg_word="${dlg_word#${MARKER_REVIEW_DIALOG}: level=}"
+      dlg_word="$(printf '%s' "$st_input" | grep -Eo "${COMPOSED_MARKER_NAMES[2]}: level=[a-zA-Z0-9_-]+" | tail -n1)"
+      dlg_word="${dlg_word#${COMPOSED_MARKER_NAMES[2]}: level=}"
       dlg_level="$(_match_review_level "$dlg_word")" || dlg_level=""
       [ -n "$dlg_level" ] && _append_trace_line "$st_cwd" "dialog:$dlg_level"
       exit 0
