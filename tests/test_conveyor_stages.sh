@@ -195,4 +195,29 @@ else
     "expected (a)'s intro to name itself as reached on a refused direct attempt"
 fi
 
+# (F) dir #206: step 9 gains an already-open-PR branch (a review finding corrected the source after the
+# PR opened, and nothing re-derived the body) — named triggers with a concrete check each, not a general
+# re-read; step 1 points at it from the convergence-round sequence sentence.
+if grep -qi 'Already-open-PR branch' "$polish"; then
+  pass "polish.md: step 9 gains an already-open-PR branch"
+else
+  fail "polish.md: step 9 gains an already-open-PR branch" \
+    "expected an 'Already-open-PR branch' heading in step 9"
+fi
+pin "polish.md step 9's already-open-PR branch carries the test/CI-outcome trigger row" \
+  "$polish" '| a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |' \
+  "expected the trigger table's test/CI-outcome row naming a re-derive-from-current-HEAD check"
+if grep -qi 'every recorded catch of this class came from a cross-session reviewer' "$polish"; then
+  pass "polish.md: step 9 states the known cross-session-only weakness of the already-open-PR branch"
+else
+  fail "polish.md: step 9 states the known cross-session-only weakness of the already-open-PR branch" \
+    "expected a clause naming that every recorded catch came from a cross-session reviewer"
+fi
+if grep -qi "step 9's already-open-PR" "$polish"; then
+  pass "polish.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch"
+else
+  fail "polish.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \
+    "expected step 1's sequence sentence to point at step 9 for an already-open PR"
+fi
+
 summary

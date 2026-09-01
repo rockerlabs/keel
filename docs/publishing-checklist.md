@@ -76,6 +76,13 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       the editor exits 0 (`<notes-file>` is never touched otherwise). It extracts the section, not
       the release note itself; the curation is still human by nature, so this line stays `[you]`
       either way.
+      **`<notes-file>` is composed at this step, from the CHANGELOG section as it stands on the
+      merged commit being tagged, and never earlier in the release pass.** A notes file that already
+      exists when you reach this step was cut from a pre-fix source — discard it and recompose, don't
+      review it. *Felt case: v0.7.0's notes file was handed over before a review correction landed to
+      the CHANGELOG section it was cut from, and the documented `--notes-file` hand-off would have
+      published into a GitHub Release a claim the same PR proved false — the one release artifact no
+      repo-side check ever sees and that no commit amend can fix (dir #206).*
 - [ ] **Give the release a title and real notes**, then check them: `gh release view <tag> --json
       name,body,assets`. `--notes-from-tag` alone yields a blank title and a one-line body, and an empty
       title is invisible from the command that created it. **[you]**

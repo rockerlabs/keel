@@ -161,4 +161,17 @@ else
     "phase(s) with no 'Felt incident' tag in their own section: ${bare_phases:-<none found — check numbered_phase_count=$numbered_phase_count>}"
 fi
 
+# --- dir #206: a release pass's DERIVED copies (release-notes file, PR body) — publishing-checklist.md
+# §4's "composed at this step, never earlier" clause and release-audit.md phase 7's "source with two
+# derivatives" sentence, which cites §4 rather than restating it. ------------------------------------
+pin "publishing-checklist.md §4 states the notes-file is composed at that step, never earlier" \
+  "$checklist" 'is composed at this step, from the CHANGELOG section as it stands on the' \
+  "expected §4's stamped-bootstrap bullet to gain the 'composed at this step, never earlier' clause (dir #206)"
+pin "release-audit.md phase 7 names the CHANGELOG section as a source with two derivatives" \
+  "$audit" 'is a source with two derivatives' \
+  "expected phase 7 to name the release-notes file and the PR narrative as the CHANGELOG section's two derivatives (dir #206)"
+pin "release-audit.md phase 7 cites §4 and polish.md step 9 rather than restating either rule" \
+  "$audit" 'this phase doesn'"'"'t restate either' \
+  "expected phase 7's derivatives sentence to cite publishing-checklist.md §4 and commands/polish.md step 9, not restate them"
+
 summary
