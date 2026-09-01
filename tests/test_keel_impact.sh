@@ -950,8 +950,7 @@ run_in "$mvrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVI
 check_status "a plain rollup survives a failed mv in auto-migrate's evidence merge (best-effort, never fatal)" 0 "$STATUS"
 check_file "a failed mv leaves the legacy evidence source UNDELETED" "$mvrepo/.keel/evidence.md"
 check_nofile "a failed mv never writes the completion marker" "$mvrepo_store/origin"
-orphan="$(ls "$mvrepo_store"/evidence.md.keelmerge.* 2>/dev/null)"
-check_contains "a failed mv leaves NO orphaned merge temp file behind" "${orphan:-none}" "none"
+check_absent "a failed mv leaves NO orphaned merge temp file behind" "$(ls "$mvrepo_store" 2>/dev/null)" "evidence.md.keelmerge."
 # the failure is not permanently stranded: with a working mv, the very next resolve completes it
 run_in "$mvrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
 check_status "the retry (real mv) succeeds" 0 "$STATUS"
