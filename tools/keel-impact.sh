@@ -53,19 +53,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # dir #289's fix, both halves: the idempotency guard below is `[ -f "$store/origin" ]`, NOT `[ -d
 # "$store" ]` — `origin` is now written ONLY after every present legacy file has been swept
 # successfully (`ok=1`), never before. A failure partway through (a merge helper genuinely reporting
-# failure — see _impact_merge_ledger/_impact_merge_evidence below) leaves `origin` unwritten, so the
-# NEXT call re-scans and retries exactly the files still sitting in `.keel/` (already-merged ones were
-# already `rm -f`'d, so a retry never re-merges them, just picks up where the failure left off). A
-# repo where auto-migrate legitimately has nothing to do (no legacy files, or what's left is
-# tracked/unreadable) never gets `origin` written by THIS function either, so it costs the same small
-# rescan on every call it always did pre-fix — no new cost there. The one case that IS a new per-call
-# cost relative to pre-fix: a repo where a merge is attempted and genuinely fails (`ok=0`) now retries
-# the scan + merge attempt on every subsequent call for as long as the failure persists, where pre-fix a
-# single failed attempt already wrote `origin`/`$store` and silently stopped trying forever. That
-# repeated cost is the deliberate trade (retry-until-success beats permanent silent stranding) and stays
-# small (a handful of `[ -f ]`/`git ls-files` checks, no repo-wide walk) — never a false "done" for a
-# repo that never migrated at all. `mkdir -p "$store"` still happens up front (unconditionally, on the
-# success path) — only the marker file, not the directory, moved to the end.
+# failure — see _impact_merge_ledger/_impact_merge_evidence/_impact_merge_log below) leaves `origin`
+# unwritten, so the NEXT call re-scans and retries exactly the files still sitting in `.keel/`
+# (already-merged ones were already `rm -f`'d, so a retry never re-merges them, just picks up where
+# the failure left off). A repo where auto-migrate legitimately has nothing to do (no legacy files,
+# or what's left is tracked/unreadable) never gets `origin` written by THIS function either, so it
+# costs the same small rescan on every call it always did pre-fix — no new cost there. The one case
+# that IS a new per-call cost relative to pre-fix: a repo where a merge is attempted and genuinely
+# fails (`ok=0`) now retries the scan + merge attempt on every subsequent call for as long as the
+# failure persists, where pre-fix a single failed attempt already wrote `origin`/`$store` and
+# silently stopped trying forever. That repeated cost is the deliberate trade (retry-until-success
+# beats permanent silent stranding) and stays small (a handful of `[ -f ]`/`git ls-files` checks, no
+# repo-wide walk) — never a false "done" for a repo that never migrated at all. `mkdir -p "$store"`
+# still happens up front (unconditionally, on the success path) — only the marker file, not the
+# directory, moved to the end.
+#
+# v0.8.0 delta audit F-05: the retry-until-success trade above only holds if EVERY sweep below is
+# re-entry-safe — the log sweep now routes through _impact_merge_log below for the same reason the
+# ledger/evidence sweeps already did (see its own docstring for what used to go wrong without it).
 _impact_auto_migrate() {
   local dir="${1:-.}"
   local top store f any=0 all_untracked=1
@@ -96,7 +101,7 @@ _impact_auto_migrate() {
     _impact_merge_evidence "$store/evidence.md" "$top/.keel/evidence.md" && rm -f "$top/.keel/evidence.md" || ok=0
   fi
   if [ -f "$top/.keel/impact-events.log" ]; then
-    cat "$top/.keel/impact-events.log" >> "$store/impact-events.log" && rm -f "$top/.keel/impact-events.log" || ok=0
+    _impact_merge_log "$store/impact-events.log" "$top/.keel/impact-events.log" && rm -f "$top/.keel/impact-events.log" || ok=0
   fi
   rmdir "$top/.keel" 2>/dev/null || true   # only succeeds once role-3/4 files are gone too — expected to no-op
   # Written last, and only once every present file was actually swept — see the comment above. dir
@@ -344,7 +349,8 @@ ensure_evidence() {
   fi
 }
 
-# --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate -----------------------
+# --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate (_impact_merge_log added
+# by the v0.8.0 delta audit's F-05, for the same reason and the same two call sites) -----------------
 # _impact_merge_ledger TARGET SRC... — merge TARGET's existing data rows (if any) plus each SRC
 # ledger.md's data rows into TARGET (created with the standard header first if it doesn't exist yet):
 # sorted by the date column, byte-identical duplicate rows dropped. A no-op when there is nothing to
@@ -363,11 +369,21 @@ _impact_merge_ledger() {
   # dir #289: the WRITE status below (cat/mv) says nothing about whether the READ that fed it actually
   # saw all of $target/"${inputs[@]}" — an input that goes unreadable between the caller's own `[ -r ]`
   # check and this awk's open() fails the READ, not the WRITE, and a write of whatever partial rows
-  # awk DID manage to print would still report success. Capture each awk's own exit status explicitly:
-  # header_tmp's awk is a plain redirect (its exit status is right there in `$?`); rows_tmp's awk is the
-  # FIRST stage of a pipe, so without `pipefail` (never set file-wide — it would silently change every
-  # other pipeline's failure semantics in this file, per the ticket's own fork) only `${PIPESTATUS[0]}`,
-  # read immediately after the pipe and before any other command touches it, gives its real status.
+  # awk DID manage to print would still report success. Capture each stage's own exit status
+  # explicitly: header_tmp's awk is a plain redirect (its exit status is right there in `$?`);
+  # rows_tmp's pipeline is `awk | sort -u | sort -t...`, and `pipefail` IS set file-wide (line 36) —
+  # so `$?` read right after the pipe already reflects the whole pipeline (the rightmost non-zero
+  # stage, or 0 if all succeeded), not just awk's own status. v0.8.0 delta audit F-06: this line used
+  # to read `${PIPESTATUS[0]}` instead — awk's status alone, discarding what `pipefail` already
+  # computed correctly in `$?` — on the belief (recorded, and wrong, in this comment's own prior
+  # wording) that pipefail was never set file-wide. That discarded status is what let a failure in
+  # EITHER `sort` stage slip through as `rows_status=0`: reproduced live via a `sort`-stage stub that
+  # fails while this function is called the way _impact_auto_migrate/cmd_migrate actually call it —
+  # as the tested command of an `&&`/`||` list — where `set -e` is exempt for the call, so the
+  # pipeline's non-zero status does not abort the script; it just needs to actually be read, which
+  # `${PIPESTATUS[0]}` never did. (A BARE call, by contrast, never reaches this line on a pipeline
+  # failure at all — `errexit`+`pipefail` together abort the script the moment the pipe fails, before
+  # `rows_status` is even assigned; that path was never the bug.)
   local header_status rows_status
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { exit }
@@ -377,7 +393,10 @@ _impact_merge_ledger() {
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { print }
   ' "$target" "${inputs[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
-  rows_status="${PIPESTATUS[0]}"
+  # rows_status must stay the VERY NEXT statement after the pipe above — unlike PIPESTATUS, $? is
+  # clobbered by the next simple command, so an inserted line here would silently break this
+  # capture the same way ${PIPESTATUS[0]} silently broke it before.
+  rows_status=$?
   # Capture the write's own exit status explicitly — a bare `cmd1 && cmd2` as this function's LAST
   # statement would otherwise report whatever the following `rm -f` cleanup returns (almost always 0),
   # silently masking a real write failure (disk-full, a transiently unwritable store dir, a concurrent-
@@ -443,6 +462,39 @@ _impact_merge_evidence() {
     write_status=1
     rm -f "$tmp"
   fi
+  return "$write_status"
+}
+
+# _impact_merge_log TARGET SRC... — merge TARGET's existing lines (if any) plus each SRC
+# impact-events.log's lines into TARGET via `LC_ALL=C sort -u`, byte-identical duplicate lines
+# dropped. A no-op when there is nothing to merge. v0.8.0 delta audit F-05: this is what makes a log
+# sweep re-entry-safe, the same way _impact_merge_ledger/_impact_merge_evidence already are — a
+# caller that retries after an already-merged SRC failed only its own `rm` (a read-only source dir,
+# an immutable file) merges the SAME lines back in, and `sort -u` drops them as duplicates instead
+# of doubling them the way a plain `cat >>` would. `sort` is a single command with no pipe, so a bad
+# READ (an input going unreadable between the caller's own `[ -r ]` check and here) already fails
+# LOUDLY via `sort`'s own exit status — no PIPESTATUS-style capture needed, unlike the ledger/
+# evidence helpers above, which must extract a specific column via awk first.
+_impact_merge_log() {
+  local target="$1"; shift
+  local inputs=()
+  [ -f "$target" ] && inputs+=("$target")
+  local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
+  [ "${#inputs[@]}" -gt 0 ] || return 0
+  local tmp="$target.keelmerge.$$"
+  local write_status
+  if LC_ALL=C sort -u "${inputs[@]}" > "$tmp"; then
+    mv -f "$tmp" "$target"
+    write_status=$?
+  else
+    write_status=1
+  fi
+  # Unconditional, not just on the sort/write-failure branch above (found by a /code-review max
+  # finder): a `mv` failure AFTER a successful sort left `$tmp` orphaned under the old two-branch
+  # cleanup — `write_status` was still correctly nonzero (so no data-loss risk), just a stray
+  # `impact-events.log.keelmerge.$$` file left behind. Matches _impact_merge_ledger's own trailing
+  # `rm -f` below, which already covers this case for its own temp files.
+  rm -f "$tmp"
   return "$write_status"
 }
 
@@ -1154,13 +1206,10 @@ cmd_migrate() {
       _impact_merge_evidence "$store/evidence.md" "${evidence_srcs[@]}" && rm -f "${evidence_srcs[@]}" || ok=0
     fi
     if [ "${#log_srcs[@]}" -gt 0 ]; then
-      # Same-directory temp name (dir #251 review, same reasoning as _impact_merge_evidence above): a
-      # bare `mktemp` defaults into $TMPDIR, not necessarily $store's own filesystem.
-      local log_tmp="$store/impact-events.log.keelmerge.$$"
-      touch "$store/impact-events.log"
-      LC_ALL=C sort -u "$store/impact-events.log" "${log_srcs[@]}" > "$log_tmp" \
-        && mv -f "$log_tmp" "$store/impact-events.log" && rm -f "${log_srcs[@]}" \
-        || { rm -f "$log_tmp"; ok=0; }
+      # v0.8.0 delta audit F-05: routed through the shared _impact_merge_log (was a hand-rolled
+      # sort/mv here, duplicating what _impact_auto_migrate's own log sweep should have been using
+      # all along) — one implementation for both call sites, not two that can drift apart.
+      _impact_merge_log "$store/impact-events.log" "${log_srcs[@]}" && rm -f "${log_srcs[@]}" || ok=0
     fi
     if [ "$ok" -eq 1 ]; then
       impact_store_mark_migrated "$store" "$top"
