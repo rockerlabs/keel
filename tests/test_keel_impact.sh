@@ -929,6 +929,35 @@ check_file "the retry writes the completion marker" "$sfrepo_store/origin"
 check_nofile "the retry removes the now-merged legacy source" "$sfrepo/.keel/ledger.md"
 check_contains "the retry carries the row that the sort failure had blocked" "$(cat "$sfrepo_store/ledger.md")" "sort-fail-row"
 
+# --- a `mv` failure AFTER a successful merge write must never leave an orphaned temp file behind:
+# found by a /code-review delta pass on this same fix — the sibling _impact_merge_log's identical
+# leak (mv failing after a successful sort — see its own "Unconditional, not just on the
+# awk/write-failure branch above" comment) was fixed by moving its `rm -f "$tmp"` out of the
+# else-branch-only cleanup to an unconditional trailing statement; _impact_merge_evidence had the
+# SAME two-branch cleanup and the SAME gap, just guarding its own awk write instead of a sort. No
+# data-loss risk either way (`write_status` was already correctly nonzero on a failed mv) — only a
+# stray `evidence.md.keelmerge.$$` left in the store dir. Driven through the PRODUCTION call path (a
+# plain automatic resolve, like sfrepo above) with a stubbed `mv` on $PATH that always fails; no
+# chmod/root-guard needed. -----------------------------------------------------------------------
+mvrepo="$(new_repo)"
+mkdir -p "$mvrepo/.keel"
+printf '# Keel impact — per-event evidence\n\n## 2026-08-02 — score 100/100 (conf low)\n\n- guard: mv-fail-row\n' > "$mvrepo/.keel/evidence.md"
+mvrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$mvrepo")"
+mv_stub_bin="$SANDBOX/mv-stub-bin"; mkdir -p "$mv_stub_bin"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$mv_stub_bin/mv"
+chmod +x "$mv_stub_bin/mv"
+run_in "$mvrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE PATH="$mv_stub_bin:$PATH" bash "$TOOL" rollup
+check_status "a plain rollup survives a failed mv in auto-migrate's evidence merge (best-effort, never fatal)" 0 "$STATUS"
+check_file "a failed mv leaves the legacy evidence source UNDELETED" "$mvrepo/.keel/evidence.md"
+check_nofile "a failed mv never writes the completion marker" "$mvrepo_store/origin"
+check_absent "a failed mv leaves NO orphaned merge temp file behind" "$(ls "$mvrepo_store" 2>/dev/null)" "evidence.md.keelmerge."
+# the failure is not permanently stranded: with a working mv, the very next resolve completes it
+run_in "$mvrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "the retry (real mv) succeeds" 0 "$STATUS"
+check_file "the retry writes the completion marker" "$mvrepo_store/origin"
+check_nofile "the retry removes the now-merged legacy source" "$mvrepo/.keel/evidence.md"
+check_contains "the retry carries the block that the mv failure had blocked" "$(cat "$mvrepo_store/evidence.md")" "mv-fail-row"
+
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
 trepo="$(new_repo)"
 mkdir -p "$trepo/.keel"
