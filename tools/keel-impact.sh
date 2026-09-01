@@ -351,6 +351,39 @@ ensure_evidence() {
 
 # --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate (_impact_merge_log added
 # by the v0.8.0 delta audit's F-05, for the same reason and the same two call sites) -----------------
+# _impact_atomic_write TARGET PRODUCER_FN [ARGS...] — the same-directory atomic-write scaffold shared
+# by all three merge helpers below (extracted from what used to be three hand-copies of the same
+# discipline). PRODUCER_FN is invoked as `PRODUCER_FN ARGS...` with its stdout captured straight into
+# a same-directory temp file ($TARGET.keelmerge.$$, not a bare `mktemp`: `$TMPDIR`/`/tmp` is not
+# guaranteed to share a filesystem with $TARGET's own directory — the external store, or a legacy
+# in-tree path — and a cross-filesystem `mv` degrades to copy-then-unlink, losing the single atomic
+# rename() a same-filesystem `mv` gets for free). PRODUCER_FN's OWN exit status is what gates the
+# `mv` — never the temp-write redirect's status in isolation and never a later cleanup command's
+# (dir #289's original finding: every caller here gates a legacy source's `rm -f` on this function's
+# return value, so a masked write failure would delete the one copy of data that was never durably
+# written anywhere else). A producer that is itself a multi-stage pipeline (see
+# _impact_merge_ledger_produce below, which must combine two separately-read temp files and capture
+# each stage's own read status before writing anything) is responsible for resolving that down to its
+# own single, honest exit status first — this helper only ever trusts the one status PRODUCER_FN
+# reports. The trailing `rm -f "$tmp"` runs UNCONDITIONALLY, not just on the write-failure branch
+# (dir #251 review, folding in a `/code-review max` finding against the old hand-rolled
+# _impact_merge_log): a `mv` failure AFTER a successful write would otherwise leave `$tmp` orphaned —
+# `status` is still correctly non-zero either way (no data-loss risk), just a stray temp file left
+# behind under a two-branch-only cleanup.
+_impact_atomic_write() {
+  local target="$1"; shift
+  local tmp="$target.keelmerge.$$"
+  local status
+  if "$@" > "$tmp"; then
+    mv -f "$tmp" "$target"
+    status=$?
+  else
+    status=1
+  fi
+  rm -f "$tmp"
+  return "$status"
+}
+
 # _impact_merge_ledger TARGET SRC... — merge TARGET's existing data rows (if any) plus each SRC
 # ledger.md's data rows into TARGET (created with the standard header first if it doesn't exist yet):
 # sorted by the date column, byte-identical duplicate rows dropped. A no-op when there is nothing to
@@ -364,26 +397,32 @@ _impact_merge_ledger() {
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
   LEDGER="$target" ensure_ledger
+  _impact_atomic_write "$target" _impact_merge_ledger_produce "$target" "$date_col" "${inputs[@]}"
+}
+
+# _impact_merge_ledger's own producer (called only via _impact_atomic_write above): reads TARGET's
+# header and TARGET+SRC's data rows into two separate mktemp'd scratch files — its own READ, distinct
+# from _impact_atomic_write's WRITE side — combines them onto stdout only once both reads are
+# confirmed good, and returns exactly that combined status.
+# dir #289: the WRITE status alone (handled by _impact_atomic_write) says nothing about whether the
+# READ here actually saw all of $target/"$@" — an input that goes unreadable between the caller's own
+# `[ -r ]` check and this awk's open() fails the READ, not the WRITE, and printing whatever partial
+# rows awk DID manage to read would still look like a successful write to the caller. Capture each
+# stage's own exit status explicitly: header_tmp's awk is a plain redirect (its exit status is right
+# there in `$?`); rows_tmp's pipeline is `awk | sort -u | sort -t...`, and `pipefail` IS set file-wide
+# (line 36) — so `$?` read right after the pipe already reflects the whole pipeline (the rightmost
+# non-zero stage, or 0 if all succeeded), not just awk's own status. v0.8.0 delta audit F-06: this
+# used to read `${PIPESTATUS[0]}` instead — awk's status alone, discarding what `pipefail` already
+# computed correctly in `$?`. That discarded status is what let a failure in EITHER `sort` stage slip
+# through as `rows_status=0`: reproduced live via a `sort`-stage stub that fails while this function is
+# called the way _impact_auto_migrate/cmd_migrate actually call it — as the tested command of an
+# `&&`/`||` list, via _impact_atomic_write — where `set -e` is exempt for the call, so the pipeline's
+# non-zero status does not abort the script; it just needs to actually be read, which `${PIPESTATUS[0]}`
+# never did.
+_impact_merge_ledger_produce() {
+  local target="$1" date_col="$2"; shift 2
   local header_tmp rows_tmp
   header_tmp="$(mktemp)"; rows_tmp="$(mktemp)"
-  # dir #289: the WRITE status below (cat/mv) says nothing about whether the READ that fed it actually
-  # saw all of $target/"${inputs[@]}" — an input that goes unreadable between the caller's own `[ -r ]`
-  # check and this awk's open() fails the READ, not the WRITE, and a write of whatever partial rows
-  # awk DID manage to print would still report success. Capture each stage's own exit status
-  # explicitly: header_tmp's awk is a plain redirect (its exit status is right there in `$?`);
-  # rows_tmp's pipeline is `awk | sort -u | sort -t...`, and `pipefail` IS set file-wide (line 36) —
-  # so `$?` read right after the pipe already reflects the whole pipeline (the rightmost non-zero
-  # stage, or 0 if all succeeded), not just awk's own status. v0.8.0 delta audit F-06: this line used
-  # to read `${PIPESTATUS[0]}` instead — awk's status alone, discarding what `pipefail` already
-  # computed correctly in `$?` — on the belief (recorded, and wrong, in this comment's own prior
-  # wording) that pipefail was never set file-wide. That discarded status is what let a failure in
-  # EITHER `sort` stage slip through as `rows_status=0`: reproduced live via a `sort`-stage stub that
-  # fails while this function is called the way _impact_auto_migrate/cmd_migrate actually call it —
-  # as the tested command of an `&&`/`||` list — where `set -e` is exempt for the call, so the
-  # pipeline's non-zero status does not abort the script; it just needs to actually be read, which
-  # `${PIPESTATUS[0]}` never did. (A BARE call, by contrast, never reaches this line on a pipeline
-  # failure at all — `errexit`+`pipefail` together abort the script the moment the pipe fails, before
-  # `rows_status` is even assigned; that path was never the bug.)
   local header_status rows_status
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { exit }
@@ -392,28 +431,22 @@ _impact_merge_ledger() {
   header_status=$?
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { print }
-  ' "$target" "${inputs[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
+  ' "$target" "$@" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
   # rows_status must stay the VERY NEXT statement after the pipe above — unlike PIPESTATUS, $? is
-  # clobbered by the next simple command, so an inserted line here would silently break this
-  # capture the same way ${PIPESTATUS[0]} silently broke it before.
+  # clobbered by the next simple command, so an inserted line here would silently break this capture
+  # the same way ${PIPESTATUS[0]} silently broke it before.
   rows_status=$?
-  # Capture the write's own exit status explicitly — a bare `cmd1 && cmd2` as this function's LAST
-  # statement would otherwise report whatever the following `rm -f` cleanup returns (almost always 0),
-  # silently masking a real write failure (disk-full, a transiently unwritable store dir, a concurrent-
-  # process race) from every caller that gates a source-file deletion on this function's return status
-  # (`_impact_merge_ledger ... && rm -f "$legacy_source"`) — found live by an operator-run max-depth
-  # review: a masked failure here would delete the legacy ledger while never having durably written its
-  # rows anywhere. A bad READ status (above) short-circuits this the same way, never even attempting
-  # the write — a partial read must never look like a durable write of everything it read.
-  local write_status
+  # A bad READ status short-circuits here, never even attempting to print anything — a partial read
+  # must never look like a durable write of everything it read.
+  local status
   if [ "$header_status" -eq 0 ] && [ "$rows_status" -eq 0 ]; then
-    cat "$header_tmp" "$rows_tmp" > "$target.keelmerge.$$" && mv -f "$target.keelmerge.$$" "$target"
-    write_status=$?
+    cat "$header_tmp" "$rows_tmp"
+    status=$?
   else
-    write_status=1
+    status=1
   fi
-  rm -f "$header_tmp" "$rows_tmp" "$target.keelmerge.$$"
-  return "$write_status"
+  rm -f "$header_tmp" "$rows_tmp"
+  return "$status"
 }
 
 # _impact_merge_evidence TARGET SRC... — merge TARGET's existing blocks (if any) plus each SRC
@@ -427,16 +460,15 @@ _impact_merge_evidence() {
   [ -f "$target" ] && inputs+=("$target")
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
-  # Same-directory temp name, not a bare `mktemp` (dir #251 review — matches _impact_merge_ledger's own
-  # discipline above): `$TMPDIR`/`/tmp` is not guaranteed to share a filesystem with $target's directory
-  # (the external store, or a legacy in-tree path), and `mv` across filesystems degrades to copy-then-
-  # unlink — no longer the single atomic rename() a same-filesystem `mv` gets for free.
-  local tmp="$target.keelmerge.$$"
-  # Same read-vs-write blind spot as _impact_merge_ledger above (see its dir #289 comment) — this awk
-  # has no pipe, so a plain `$?` right after it is already the real read status; gate the `mv` on it
-  # the same way.
-  local write_status
-  if awk '
+  _impact_atomic_write "$target" _impact_merge_evidence_produce "${inputs[@]}"
+}
+
+# _impact_merge_evidence's own producer (called only via _impact_atomic_write above) — no pipe, so its
+# plain `$?` (what _impact_atomic_write reads as PRODUCER_FN's own exit status) is already the real
+# read status; same read-vs-write discipline as _impact_merge_ledger_produce above, needing no separate
+# capture here since read and write are the same single awk-to-redirect step.
+_impact_merge_evidence_produce() {
+  awk '
     function flush_block() { if (block != "") { n++; blocks[n] = block; dates[n] = date } }
     FNR==1 { flush_block(); block=""; date="" }
     /^## [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] / { flush_block(); block=$0 "\n"; date=substr($0,4,10); next }
@@ -455,14 +487,7 @@ _impact_merge_evidence() {
         if (!dup) { seen_n++; seen[seen_n]=blocks[i]; printf "%s", blocks[i] }
       }
     }
-  ' "${inputs[@]}" > "$tmp"; then
-    mv -f "$tmp" "$target"
-    write_status=$?
-  else
-    write_status=1
-    rm -f "$tmp"
-  fi
-  return "$write_status"
+  ' "$@"
 }
 
 # _impact_merge_log TARGET SRC... — merge TARGET's existing lines (if any) plus each SRC
@@ -471,31 +496,22 @@ _impact_merge_evidence() {
 # sweep re-entry-safe, the same way _impact_merge_ledger/_impact_merge_evidence already are — a
 # caller that retries after an already-merged SRC failed only its own `rm` (a read-only source dir,
 # an immutable file) merges the SAME lines back in, and `sort -u` drops them as duplicates instead
-# of doubling them the way a plain `cat >>` would. `sort` is a single command with no pipe, so a bad
-# READ (an input going unreadable between the caller's own `[ -r ]` check and here) already fails
-# LOUDLY via `sort`'s own exit status — no PIPESTATUS-style capture needed, unlike the ledger/
-# evidence helpers above, which must extract a specific column via awk first.
+# of doubling them the way a plain `cat >>` would.
 _impact_merge_log() {
   local target="$1"; shift
   local inputs=()
   [ -f "$target" ] && inputs+=("$target")
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
-  local tmp="$target.keelmerge.$$"
-  local write_status
-  if LC_ALL=C sort -u "${inputs[@]}" > "$tmp"; then
-    mv -f "$tmp" "$target"
-    write_status=$?
-  else
-    write_status=1
-  fi
-  # Unconditional, not just on the sort/write-failure branch above (found by a /code-review max
-  # finder): a `mv` failure AFTER a successful sort left `$tmp` orphaned under the old two-branch
-  # cleanup — `write_status` was still correctly nonzero (so no data-loss risk), just a stray
-  # `impact-events.log.keelmerge.$$` file left behind. Matches _impact_merge_ledger's own trailing
-  # `rm -f` below, which already covers this case for its own temp files.
-  rm -f "$tmp"
-  return "$write_status"
+  _impact_atomic_write "$target" _impact_merge_log_produce "${inputs[@]}"
+}
+
+# _impact_merge_log's own producer — `sort` is a single command with no pipe, so a bad READ (an input
+# going unreadable between the caller's own `[ -r ]` check and here) already fails LOUDLY via `sort`'s
+# own exit status — no PIPESTATUS-style capture needed, unlike _impact_merge_ledger_produce above,
+# which must extract a specific column via awk first.
+_impact_merge_log_produce() {
+  LC_ALL=C sort -u "$@"
 }
 
 # require a non-negative integer; empty defaults to 0. Digit-shape AND magnitude checked via
