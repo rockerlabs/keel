@@ -305,7 +305,14 @@
 # lands in (`tool_input` vs `tool_response`) is PLAUSIBLE, not doc-confirmed — same unresolved-schema
 # shape as dir #63's own point (2). Mitigated the same way design pt 3 below does it: `skill-trace` greps
 # the RAW event JSON for the marker rather than reading a named field, so the exact field name is not
-# load-bearing. (3) No documented cancel/interrupt path exists for `AskUserQuestion` separate from
+# load-bearing. **Resolved empirically, dir #118:** a live PostToolUse(AskUserQuestion) event, dumped and
+# inspected via a throwaway debug hook, confirmed `tool_input.questions[].question` for the question text
+# (as assumed here) AND `tool_response.answers` for the chosen answer — an object keyed by the exact
+# question text, valued by the chosen option label (a plain string for a single-select question, an array
+# of strings for multiSelect). The dir #88 marker below still doesn't need the answer (any answer proves
+# the dialog fired) so it stays a pure presence check; the dir #118 `KEEL-DEPTH-DIALOG` leg further below
+# is the one that reads `tool_response.answers`, now that the field name is confirmed rather than assumed.
+# (3) No documented cancel/interrupt path exists for `AskUserQuestion` separate from
 # "answered" or "timed out" (which itself submits) — nothing here currently distinguishes a hypothetical
 # future interrupt path from an ordinary miss, and none is assumed.
 #
@@ -1453,30 +1460,53 @@ case "${1:-}" in
       # its own `^...$` anchoring. A loop, not a `case` pattern list, deliberately: an unquoted `|`-joined
       # variable in a case pattern is matched as ONE literal glob string, not split into alternatives at
       # runtime — confirmed the hard way while building this fix, see $ACCEPTED_REVIEW_LEVELS's own comment.
-      # dir #116: step 4's mandatory skip dialog carries its OWN `KEEL-DEPTH-DIALOG` skip marker
-      # — never the review marker below. A distinct token keeps the namespaces mechanically separate:
-      # a sizing dialog cannot pre-satisfy step 5(a)'s dir #88 check (its token never yields a
-      # `dialog:<review-level>` line), and the review marker cannot vouch for a skip (skip stays out of
-      # $ACCEPTED_REVIEW_LEVELS — the SubagentStop leg shares that set, and an agent review "at skip"
-      # would vouch for no review at all). Only `skip` is accepted on this token, parsed by the SAME
-      # extract-then-exact-compare idiom as the review token (one discipline, one word class); both
-      # tokens converge on the same `dialog:<level>` trace shape, so the PASS-branch check reads them
-      # uniformly. The two parses are INDEPENDENT, not exclusive — an event carrying both tokens writes
-      # both lines. Exclusivity was the first cut and produced a real false-deny: a step 5(a) reminder
-      # dialog merely QUOTING the depth token lost its own `dialog:<level>` line and denied a genuine
-      # agent unlock. The residual this direction accepts instead — one deliberately dual-marked dialog
-      # satisfying both checks — needs the model to compose both literals into one question against
-      # commands/polish.md's explicit one-marker-per-dialog instructions: fabrication-class, not the
-      # momentum-class miss these dialog checks exist to stop, and every dialog renders to the human.
-      # Common case first: most AskUserQuestion events (step 4's own sizing dialog, ordinary clarifying
-      # questions) carry NO marker — one builtin glob check keeps that dominant path fork-free.
+      # dir #116/dir #118: step 4's mandatory skip dialog carries its OWN `KEEL-DEPTH-DIALOG` skip
+      # marker — never the review marker below. A distinct token keeps the namespaces mechanically
+      # separate: a sizing dialog cannot pre-satisfy step 5(a)'s dir #88 check (its token never yields
+      # a `dialog:<review-level>` line), and the review marker cannot vouch for a skip (skip stays out
+      # of $ACCEPTED_REVIEW_LEVELS — the SubagentStop leg shares that set, and an agent review "at
+      # skip" would vouch for no review at all). The two parses are INDEPENDENT, not exclusive — an
+      # event carrying both tokens writes both lines. Exclusivity was the first cut and produced a real
+      # false-deny: a step 5(a) reminder dialog merely QUOTING the depth token lost its own
+      # `dialog:<level>` line and denied a genuine agent unlock.
+      # Common case first: most AskUserQuestion events (ordinary clarifying questions with neither
+      # marker) carry NO marker — one builtin glob check keeps that dominant path fork-free. Unlike
+      # `KEEL-REVIEW-DIALOG:`, the depth marker below (dir #118) has no `:` suffix at all, so the glob
+      # can't require one — it only needs "some KEEL-*-DIALOG token is present somewhere".
       case "$st_input" in
-        *KEEL-*-DIALOG:*) : ;;
+        *KEEL-*-DIALOG*) : ;;
         *) exit 0 ;;
       esac
-      dpt_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_DEPTH_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
-      if [ "${dpt_word#${MARKER_DEPTH_DIALOG}: level=}" = "skip" ]; then
-        _append_trace_line "$st_cwd" "dialog:skip"
+      # dir #118: the OLD design wrote `dialog:skip` whenever the question text carried the
+      # composed marker with a `level=skip` suffix, regardless of what the operator actually
+      # answered — an operator overriding to `medium` still left a skip credential for this sha
+      # (found by the operator's own second-opinion review). Empirically confirmed live (dir #118's
+      # own probe, an
+      # actual PostToolUse(AskUserQuestion) event dumped and inspected): the event carries
+      # `tool_response.answers`, an object keyed by the exact question text and valued by the chosen
+      # option label(s) — a plain string for a single-select question, an array of strings for
+      # multiSelect. The marker below is therefore now a BARE literal, `KEEL-DEPTH-DIALOG` with no
+      # `level=` suffix — it no longer encodes an outcome in the question text at all (that's what let
+      # commands/polish.md collapse the old two-dialog ask-then-confirm dance into a single dialog,
+      # since the marker's only job now is "this question's answer is skip-trackable"; the ANSWER, not
+      # the question, decides the outcome). Only the question(s) that actually CONTAIN the marker are
+      # consulted — via `tool_response.questions[].question` — so an unrelated question sharing the
+      # same multi-question event can't leak its own answer in. A missing/malformed `tool_response` (a
+      # future harness schema drift this probe didn't anticipate) makes the lookup come back empty,
+      # which compares unequal to "skip" and simply doesn't trace — failing closed, same direction as
+      # every other residual in this file, never failing open into an unverified skip.
+      if printf '%s' "$st_input" | grep -qF "$MARKER_DEPTH_DIALOG"; then
+        dpt_hit="$(printf '%s' "$st_input" | jq -r --arg marker "$MARKER_DEPTH_DIALOG" '
+          def str: if . == null then "" elif type == "string" then . else tostring end;
+          (.tool_response.answers // {}) as $answers
+          | ([(.tool_response.questions // [])[]?
+              | (.question // "" | str)
+              | select(contains($marker))
+             ][0] // "") as $q
+          | ($answers[$q] // "") as $a
+          | ($a | if type == "array" then any(.[]; . == "skip") else . == "skip" end)
+        ' 2>/dev/null)"
+        [ "$dpt_hit" = "true" ] && _append_trace_line "$st_cwd" "dialog:skip"
       fi
       dlg_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_REVIEW_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
       dlg_word="${dlg_word#${MARKER_REVIEW_DIALOG}: level=}"
@@ -2394,14 +2424,13 @@ case "$status" in
         # ever stopped being terminal.
         if [ "$outcome_level" = "skip" ]; then
           dlg_deny_reason="skip-dialog-missing"
-          # This message must NEVER contain the matchable marker string itself (the token followed by
-          # ': level=' and the word skip): a session recapping this deny inside an AskUserQuestion
-          # would hand the hook exactly the line it greps for, and the deny would unlock itself —
-          # reproduced end-to-end by the operator's third /code-review pass (DENY → dialog quoting
-          # the deny → trace line → ALLOW). Same discipline as dir #88's deny, which describes its
-          # marker without spelling it. A meta-test feeds this very message through the dialog leg
-          # and asserts no trace is written.
-          dlg_deny_msg="Pre-PR gate: step 5 recorded 'skip', but no step-4 skip dialog was answered for this commit — the confirm dialog's KEEL-DEPTH-DIALOG skip marker (spelled in polish.md step 4; if your step 4 doesn't mention the marker, your polish.md is a stale copy — re-run install.sh to refresh it) was never traced for current HEAD. An inherited or auto-selected skip doesn't count; a fix commit needs the skip dialog re-answered for ITS diff. Re-run step 4's confirm dialog for current HEAD, or size a real review. Run /polish again."
+          # This message must NEVER spell the matchable marker string itself: even though dir #118
+          # made the depth leg require a matching ANSWER too (not just marker presence), a session
+          # recapping this deny inside a NEW AskUserQuestion dialog that happens to offer a `skip`
+          # option would still hand the hook both halves it needs. Same discipline as dir #88's deny,
+          # which describes its marker without spelling it. A meta-test feeds this very message
+          # through the dialog leg and asserts no trace is written.
+          dlg_deny_msg="Pre-PR gate: step 5 recorded 'skip', but no step-4 skip dialog was traced as answered 'skip' for this commit (spelled in polish.md step 4; if your step 4 doesn't carry that dialog's marker at all, your polish.md is a stale copy — re-run install.sh to refresh it). An inherited or auto-selected skip doesn't count; a fix commit needs that dialog re-answered for ITS diff. Re-run step 4's ask-dialog for current HEAD, or size a real review. Run /polish again."
         else
           dlg_deny_reason="review-dialog-missing"
           dlg_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."

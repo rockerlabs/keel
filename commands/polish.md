@@ -199,40 +199,34 @@ Steps, in order:
      safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
      leaving it auto-selectable gives back, in one word, the decision step 5 stops to obtain. Whenever
      the review is expensive or unavailable, sizing the diff down is the cheapest way out of it, and
-     this step's sizing is the model's own and unchecked. **This ask-dialog itself carries NO marker**
-     — like every sizing dialog in this step. The marker lives ONLY in the follow-up confirm dialog
-     below: a marker in the ask-dialog's own question would write the `dialog:skip` trace at
-     answer time regardless of WHAT was answered, so an operator overriding to `medium` would still
-     leave a skip credential for this sha (found by the operator's second-opinion review — the exact
-     stale-line class dir #116 exists to close). **When the answer here is `skip`, open one follow-up
-     confirm dialog whose question text carries the literal line `KEEL-DEPTH-DIALOG: level=<level>`
-     with `<level>` replaced by the word `skip`** — plain text, no markdown formatting, the same
-     literal-match and placeholder discipline as step 5(a)'s marker. This instruction deliberately
-     never spells the composed line: the hook greps raw question text, so any dialog QUOTING a
-     spelled-out marker (this file, a deny recap) would mint the trace credential without the skip
-     question ever being asked — found and reproduced by the operator's third review pass; the `<...>`
-     placeholder is exactly how step 5(a) avoids the same self-quote hole, and the composed line only
-     ever exists inside a genuine confirm dialog. The gate denies a `skip` unlock unless that confirm
-     dialog was answered for the exact commit being shipped. The token is deliberately DIFFERENT from
-     step 5(a)'s `KEEL-REVIEW-DIALOG` — the trace leg accepts only `skip` on it, so no step-4 dialog
-     can pre-satisfy step 5(a)'s own dialog check by construction. If the confirm answer is NOT skip
-     (the operator changed their mind), the written trace line is stale for an honest flow — but an
-     honest flow then records a non-skip depth, which the gate checks by its own legs; reading the
-     answer itself and not writing the line at all is dir #118.
+     this step's sizing is the model's own and unchecked.
    - **`low`/`medium`/`high` on a diff that sits clearly inside one bucket → run that level automatically**
      (dir #254: an unasked `high` is now the EXPECTED behaviour here, not a failure), no dialog; state
      which level and why.
    - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
      the recommended level pre-selected and a **skip** option always present; let the human override.
-     This dialog carries NO marker. **If the human picks `skip` here**, open the same marker-carrying
-     confirm dialog the skip bullet above specifies — one extra click, and the only way the
-     gate can tell "the operator chose skip for THIS diff" from an inherited or auto-selected one
-     (dir #116; the trace records the question's marker, not the chosen answer, which is why the
-     confirm dialog exists at all). **The same rule holds for EVERY dialog in this step whose answer
-     lands on `skip`** — the max+/ultra dialog above included: an operator declining an expensive
-     review down to no review at all is still choosing `skip`, and without the marker-carrying confirm
-     dialog the gate will deny step 8 and ask for a question that was, from the operator's view,
-     already answered. One confirm click closes that gap on every path.
+
+   **Marker rule, shared by every dialog above that offers a `skip` option (dir #118):** that dialog's own
+   question text must carry the literal line `KEEL-DEPTH-DIALOG` — plain text, no markdown formatting, no
+   `level=` suffix — somewhere in the question, in the SAME dialog the human sees the choice in, never a
+   follow-up. Unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`, this marker never encodes an outcome
+   in the question text, so it is safe to spell out exactly like this — no `<...>` placeholder needed, and
+   doing so does not trip the composed-marker sweep (dir #116), which only flags a marker immediately
+   followed by a real `level=<word>`. The gate reads which option the operator actually CHOSE from the
+   `AskUserQuestion` event's own answer data (confirmed live, dir #118: a `PostToolUse(AskUserQuestion)`
+   event carries `tool_response.answers`, an object keyed by the exact question text and valued by the
+   chosen option label), so the marker's only job is to flag "this question's answer is skip-trackable" —
+   the ANSWER, not the question text, decides whether `dialog:skip` gets written. This closes the old hole
+   where a marker-carrying dialog minted `dialog:skip` no matter what was answered (an operator overriding
+   to `medium` used to still leave a skip credential for this sha — found by the operator's second-opinion
+   review, the exact stale-line class dir #116 first tried to close by moving the marker into a confirm
+   dialog, and dir #118 now closes for real by reading the answer instead). It also collapses what used to
+   be a two-dialog dance — ask, then a marker-carrying confirm — into the ONE ask-dialog the operator
+   already sees: there is no follow-up confirm dialog anymore, on any of the three paths above. Use the
+   option label `skip` verbatim for the skip choice in every such dialog, so the gate's exact match on the
+   chosen answer lines up with what is on screen. The token stays deliberately DIFFERENT from step 5(a)'s
+   `KEEL-REVIEW-DIALOG` — the depth leg accepts only an answer of exactly `skip`, so no step-4 dialog can
+   pre-satisfy step 5(a)'s own dialog check by construction.
 
    Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>` — e.g.
    `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
