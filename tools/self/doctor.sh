@@ -37,6 +37,10 @@
 #   WARN  a `dir #N` referenced in a commit message since the previous release tag is absent from
 #         CHANGELOG.md's own `[Unreleased]` section — per-TICKET, not per-file, so a PR that DOES
 #         touch CHANGELOG.md (for a different ticket) still trips it (dir #237)
+#   WARN  a tracked .sh file sets `pipefail` AND reads `${PIPESTATUS[0]}`/`$PIPESTATUS` — once
+#         pipefail is active a plain `$?` right after the pipe already gives the real status, so
+#         reaching for PIPESTATUS specifically is usually a leftover belief, not a need (dir #321,
+#         the exact shape tools/keel-impact.sh's F-06 fix corrected)
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -1206,6 +1210,55 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
 else
   say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping commit-ticket reconciliation"
 fi
+
+# --- 8. reading PIPESTATUS in a file that sets pipefail (dir #321) --------------------------------
+# `pipefail` (once active for a pipeline) already makes a bare `$?`, read right after that pipeline,
+# reflect the RIGHTMOST non-zero stage's exit status — so a capture that reaches for PIPESTATUS's
+# first element specifically throws that away and keeps only stage 0's status, silently discarding a
+# LATER stage's failure. tools/keel-impact.sh's `_impact_merge_ledger` hit exactly this shape (v0.8.0
+# delta audit F-06): a stale comment believed pipefail was never set file-wide, so
+# `rows_status="${PIPESTATUS[0]}"` was read to recover a status `$?` already gave correctly once
+# pipefail took effect — the masked capture then reported success on a real sort-stage failure that
+# should have aborted the merge. That function had already hit a milder version of the same family
+# once before (dir #289), the review that flagged this check's own need noted — the same function,
+# twice, with only a periodic manual delta-audit catching either one.
+#
+# WARN, never GAP: reaching for an EARLIER stage's status specifically (not stage 0 by a stale
+# belief, a LATER stage's status genuinely, deliberately wanted) is sometimes correct — telling that
+# apart from the leftover-belief case needs a human reading the surrounding code, which this grep
+# cannot do.
+#
+# Heuristic, not a shell parser, and file-level rather than scope-aware: "sets pipefail" means a
+# `set` line (after comment-stripping) turning pipefail on ANYWHERE in the file — a file that scopes
+# it to one function, or flips it off again later, still counts as "sets pipefail" here, same as a
+# file that sets it once at the top and never touches it again. Narrowing further needs real shell
+# parsing, disproportionate to what a WARN needs to be useful.
+say ""
+say "● PIPESTATUS read in a file that sets pipefail (dir #321)"
+# The needle is built from two pieces, never written as one `\$PIPESTATUS`-shaped literal — THIS file
+# sets pipefail (line 56) and is itself a tracked .sh file this very check scans, so a literal needle
+# here would make doctor.sh flag itself the moment this check existed at all. Same self-reference
+# problem tests/lib.sh's key() helper solves for test fixtures that must not hold a real secret/path
+# intact in their own source.
+ps_var="PIPESTATUS"
+ps_pattern='\$\{?'"$ps_var"
+ps_files=()
+while IFS= read -r f; do ps_files+=("$f"); done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel')
+ps_hit=0
+if [ "${#ps_files[@]}" -gt 0 ]; then
+  for rel in "${ps_files[@]}"; do
+    [ -f "$repo_root/$rel" ] || continue
+    stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel" 2>/dev/null)"
+    if grep -qE '(^|[[:space:];&|])set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail\b' <<< "$stripped" \
+       && grep -qE "$ps_pattern" <<< "$stripped"; then
+      ps_hit=1
+      ps_lines="$(grep -noE "$ps_pattern" <<< "$stripped" | cut -d: -f1 | paste -sd, -)"
+      ps_display='$'"$ps_var"
+      warn "$rel:$ps_lines sets pipefail and reads $ps_display (dir #321) — verify it isn't the F-06 shape (pipefail's own \$? already gives the real pipeline status once it's active; ${ps_display}[0] is only right if an EARLIER stage's status is deliberately, specifically wanted)"
+    fi
+  done
+fi
+[ "$ps_hit" -eq 0 ] && say "  OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
 run_check() {

@@ -35,6 +35,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   path via a `sort` stub on `$PATH` (no chmod/root-guard needed, so it holds under a root CI leg
   too).
 
+- **`tools/self/doctor.sh` now catches the F-06 shape mechanically instead of relying on the next
+  manual delta audit to find it** (dir #321, found by a max-depth `/code-review` altitude-angle pass
+  on the F-05/F-06 bugfix PR above): `_impact_merge_ledger` had hit "`${PIPESTATUS[0]}` read in a
+  file that already sets `pipefail` file-wide, silently discarding the pipeline's real status" twice
+  in the same function family (dir #289's history, then F-06 above), with only a periodic manual
+  audit catching either one. A new native check (self/doctor.sh's own check 8) scans every tracked
+  `.sh` file for a `set ... pipefail` line coexisting with a `${PIPESTATUS[0]}`/`$PIPESTATUS` read.
+  WARN, not a hard GAP: once `pipefail` is active, a bare `$?` right after the pipeline already gives
+  the real (rightmost non-zero) status, so reaching for `PIPESTATUS`'s first element specifically is
+  usually a leftover belief — but reaching for an EARLIER stage's status specifically is sometimes the
+  deliberate, correct behavior, and telling the two apart needs a human reading the surrounding code,
+  not a grep. The needle is built from two string pieces rather than one `$PIPESTATUS`-shaped
+  literal so the check's own source (itself a tracked `.sh` file that sets `pipefail`) never
+  self-flags — the same self-reference problem `tests/lib.sh`'s `key()` helper already solves for
+  fixtures. `tests/test_self_doctor.sh` pins the positive shape and both legitimate negatives (no
+  `pipefail` set at all; `pipefail` set but `PIPESTATUS` never read).
+
 - **A release pass's derived copies (the curated release-notes file, the release-prep PR's own body)
   now have a named home for the "review corrects the source, nothing re-derives the copy" class**
   (dir #206, found 2026-08-20, twice in one PR, dir #192's own PR #238): `docs/publishing-checklist.md`
