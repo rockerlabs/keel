@@ -1537,6 +1537,28 @@ askuserquestion_trace() {
   STATUS=$?
 }
 
+# dir #118: like askuserquestion_trace above, but also populates tool_response.answers — the schema
+# confirmed live against a real PostToolUse(AskUserQuestion) event (dir #118's own empirical probe):
+# an object keyed by the exact question text, valued by the chosen option label. $3 is that chosen
+# answer, a plain string — single-select is all this helper models. `--arg` always binds it as a raw
+# jq string, never re-parsed as JSON, so this helper cannot express a multiSelect (array-valued)
+# answer at all; the multiSelect/two-question/malformed-answers tests below build their event JSON
+# inline instead, precisely because they need a shape this helper doesn't support.
+# tools/pre-pr-gate.sh never reads `tool_response.questions` (only `.answers`, keyed by the question
+# text itself), so this helper doesn't populate it either. Exercises the answer-reading depth-dialog
+# leg, which the plain helper above cannot: it never sets tool_response at all, so it can only ever
+# prove the "no answer data" negative case.
+askuserquestion_trace_answered() {
+  local d="$1" question="$2" answer="$3" json
+  json="$(jq -n --arg cwd "$d" --arg q "$question" --arg a "$answer" \
+    '{question:$q, header:"Review", options:[{label:"skip"},{label:"medium"}]} as $ques
+     | {hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+        tool_input:{questions:[$ques]},
+        tool_response:{answers:{($q):$a}}}')"
+  OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
+  STATUS=$?
+}
+
 # Arms the dir #88 dialog-check leg for repo $1 by wiring a PostToolUse/AskUserQuestion matcher naming
 # this gate into its project settings.json — the shape tools/install-pre-pr-gate.sh itself writes,
 # reproduced directly here so this test doesn't depend on that installer running first.
@@ -2376,34 +2398,102 @@ gate "gh pr create --fill" "$d"
 check_status "dir #236: retry unlocks with no fresh step-4 dialog" 0 "$STATUS"
 check_absent "dir #236: retry unlocks with no fresh step-4 dialog → allowed" "$OUT" "deny"
 
-# 94. dir #116: step 4's mandatory skip dialog carries its OWN token (KEEL-DEPTH-DIALOG: level=skip),
-# which must leave a `dialog:skip` trace the gate can check. The token is deliberately distinct from
-# step 5(a)'s KEEL-REVIEW-DIALOG: the trace leg accepts only `skip` on it, so a sizing dialog can never
-# pre-satisfy step 5(a)'s dir #88 check — and the review token conversely rejects `skip` (it validates
-# against $ACCEPTED_REVIEW_LEVELS, which the SubagentStop leg shares: an agent review "at skip" would
-# vouch for no review at all).
+# 94. dir #118: step 4's skip-trackable dialog carries a BARE literal marker, `KEEL-DEPTH-DIALOG` — no
+# `level=` suffix at all (unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`), because the level
+# now comes from the operator's ANSWER (tool_response.answers), not the question text. The token is
+# deliberately distinct from KEEL-REVIEW-DIALOG: the depth leg only ever writes `dialog:skip`, never
+# any other level, and the review token conversely rejects `skip` (it validates against
+# $ACCEPTED_REVIEW_LEVELS, which the SubagentStop leg shares: an agent review "at skip" would vouch
+# for no review at all).
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
-askuserquestion_trace "$d" "This diff sized as pure docs. Confirm skipping the review? KEEL-DEPTH-DIALOG: level=skip"
-check_status "dir #116: depth-dialog marker level=skip → exit 0" 0 "$STATUS"
-check_contains "dir #116: dialog:skip trace line written at the observed sha" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+askuserquestion_trace_answered "$d" "This diff sized as pure docs. Pick a review depth. KEEL-DEPTH-DIALOG" "skip"
+check_status "dir #118: depth-dialog marker + answer=skip → exit 0" 0 "$STATUS"
+check_contains "dir #118: dialog:skip trace line written at the observed sha" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
 rm -f "$tf"
-# The depth token accepts ONLY skip — a review level on it must be inert (this is what keeps a sizing
-# dialog from pre-satisfying step 5(a)'s check), and a near-miss word must not truncate to skip (same
-# right-anchor discipline as test 70a).
+# dir #118's whole point: the SAME marker-carrying dialog, answered with anything other than the exact
+# word `skip`, must NOT mint dialog:skip — the old design minted it off the question's marker alone,
+# regardless of the answer (an operator overriding to medium still left a skip credential for that
+# sha, found by the operator's own second-opinion review).
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "Sized as ordinary code. KEEL-DEPTH-DIALOG: level=high"
-check_nofile "dir #116: depth-dialog token with a review level (high) is inert" "$tf"
+askuserquestion_trace_answered "$d" "Sized as ordinary code. KEEL-DEPTH-DIALOG" "medium"
+check_nofile "dir #118: depth-dialog marker answered 'medium' is inert — no dialog:skip" "$tf"
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skipped"
-check_nofile "dir #116: depth-dialog near-miss (skipped) is rejected, not truncated to skip" "$tf"
+askuserquestion_trace_answered "$d" "KEEL-DEPTH-DIALOG" "no"
+check_nofile "dir #118: depth-dialog marker answered 'no' is inert — no dialog:skip" "$tf"
+# A near-miss answer (not an exact 'skip') must not count either — same exact-match discipline the
+# review token already uses via _match_review_level, now applied to the answer instead of the marker.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skip2"
-check_nofile "dir #116: depth-dialog near-miss (skip2) is rejected too" "$tf"
+askuserquestion_trace_answered "$d" "KEEL-DEPTH-DIALOG" "skipped"
+check_nofile "dir #118: depth-dialog answer near-miss (skipped) is rejected, not treated as skip" "$tf"
+# The marker's PRESENCE with NO answer data at all (the old, unverified-schema shape this helper
+# still simulates) must not mint a trace either — dir #118 fails closed rather than falling back to a
+# presence-only match.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace "$d" "No answer data at all — mentions the marker: KEEL-DEPTH-DIALOG"
+check_nofile "dir #118: marker present but no answer data → fails closed, no trace" "$tf"
+# dir #118 (found live by this ticket's own /code-review max pass, reproduced against the real
+# script): a bare `contains`-style match on the marker let an ORDINARY SENTENCE that merely mentions
+# the token mid-clause — not a genuine machine-authored dialog — count as marker-carrying, so an
+# unrelated "skip" answer to a totally different question still minted a false dialog:skip. Fixed by
+# requiring the marker to be the LAST thing in the question (trailing whitespace aside); a decoy
+# mention buried mid-sentence, even followed elsewhere in the same string by a literal "skip", must
+# not trace.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace_answered "$d" "While discussing the KEEL-DEPTH-DIALOG format, should we handle multiSelect now, or skip that for later?" "skip"
+check_nofile "dir #118: a mid-sentence marker mention (not trailing) is inert even with answer=skip" "$tf"
+# The answer comparison case-folds — this is the first leg whose exact-match target is text that
+# reaches the model second-hand, through a human's own UI click, where "Skip" vs "skip" is an
+# ordinary labeling choice, not a fabrication attempt (unlike _match_review_level, which only ever
+# validates text the model itself composed).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+askuserquestion_trace_answered "$d" "Pick a review depth. KEEL-DEPTH-DIALOG" "Skip"
+check_contains "dir #118: a capitalized 'Skip' answer still traces (case-folded)" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+rm -f "$tf"
+# Two questions in ONE event both ending with the marker is ambiguous — the gate must not guess via
+# first-or-last match; it fails closed on BOTH ends (a genuine skip on the second question doesn't
+# leak through, and a decoy skip on the first doesn't either), rather than resolving unpredictably by
+# JSON key order the way an earlier draft of this fix did (found live, same review pass).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"Decoy. KEEL-DEPTH-DIALOG"},{question:"Real. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:{"Decoy. KEEL-DEPTH-DIALOG":"skip", "Real. KEEL-DEPTH-DIALOG":"medium"}}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_nofile "dir #118: two marker-ending questions in one event → ambiguous, fails closed" "$tf"
+# A malformed tool_response.answers (not an object — e.g. an array, a future schema-drift shape) must
+# not crash jq into a silently-swallowed stderr error; the filter is type-guarded so this resolves
+# through the same explicit false path a genuinely missing answer does.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"Pick a depth. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:["skip"]}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_status "dir #118: malformed (array-shaped) tool_response.answers doesn't crash the hook" 0 "$STATUS"
+check_nofile "dir #118: ...and mints no trace either" "$tf"
+# multiSelect answers arrive as an array of chosen option labels (dir #118's own empirical probe) —
+# skip must be detected as one element among several, not only as the sole/whole answer.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"Pick. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:{"Pick. KEEL-DEPTH-DIALOG":["Something else","skip"]}}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_contains "dir #118: multiSelect array answer containing skip still traces" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+rm -f "$tf"
 # The review token still rejects skip, on both legs that share the accepted set.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
@@ -2411,35 +2501,31 @@ askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=skip"
 check_nofile "dir #116: the review-dialog token rejects level=skip" "$tf"
 # Digit near-miss on the REVIEW token (operator-run /code-review high on this ticket): a letters-only
 # capture class truncated `level=high2` to a false-accepted `high` — the same leftmost-longest gap
-# test 70a closed for alphabetic near-misses only. Underscore too, on both tokens.
+# test 70a closed for alphabetic near-misses only.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high2"
 check_nofile "dir #116: review-dialog near-miss (high2) is rejected, not truncated to high" "$tf"
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skip_x"
-check_nofile "dir #116: depth-dialog near-miss (skip_x) is rejected, not truncated to skip" "$tf"
-# Hyphen is the separator this file's own outcome vocabulary uses (skip-waived, high-operator-run) —
-# found by the operator's second-opinion /code-review pass: a hyphen-less class truncated
-# `level=skip-waived` (the exact string the receipt path denies) into a minted `dialog:skip`.
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG: level=skip-waived"
-check_nofile "dir #116: depth-dialog near-miss (skip-waived) is rejected, not truncated to skip" "$tf"
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high-ish"
 check_nofile "dir #116: review-dialog near-miss (high-ish) is rejected, not truncated to high" "$tf"
-# BOTH tokens in one event write BOTH lines (operator-run /code-review high on this ticket): the first
-# cut exit-0'd on the depth match, so a review-reminder dialog merely QUOTING the depth token lost its
-# own dialog:<level> line and false-denied a genuine agent unlock. The parses are now independent.
+# BOTH markers in one event write BOTH lines — the parses stay independent (dir #116, extended by dir
+# #118): a review-reminder dialog whose text happens to mention the depth marker must still get its
+# own dialog:<level> line, and a genuinely-answered depth dialog embedded in the SAME event still
+# writes dialog:skip off its OWN question+answer pair, never the review question's answer.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
-askuserquestion_trace "$d" "Agent review ran. KEEL-REVIEW-DIALOG: level=high (step 4's own dialog would carry KEEL-DEPTH-DIALOG: level=skip instead)"
-check_contains "dir #116: dual-token event still writes the review line" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:high"
-check_contains "dir #116: dual-token event writes the depth line too" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+json="$(jq -n --arg cwd "$d" \
+  --arg rq "Agent review ran. KEEL-REVIEW-DIALOG: level=high" \
+  --arg dq "Also, step 4's own dialog: KEEL-DEPTH-DIALOG" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:$rq},{question:$dq}]},
+    tool_response:{answers:{($rq):"proceed", ($dq):"skip"}}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_contains "dir #116/#118: dual-question event still writes the review line" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:high"
+check_contains "dir #116/#118: dual-question event writes the depth line off its own answer" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
 rm -f "$tf"
 d="$(mkrepo)"
 agent_trace "$d" "$(printf 'Reviewed nothing.\nKEEL-AGENT-REVIEW: level=skip\n')"
@@ -2465,7 +2551,7 @@ check_contains "dir #116: ...for the missing step-4 skip dialog" "$OUT" "no step
 d="$(mkrepo)"
 arm_dialog_leg "$d"
 tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "Pure docs diff. Skip the review? KEEL-DEPTH-DIALOG: level=skip"
+askuserquestion_trace_answered "$d" "Pure docs diff. Pick a review depth. KEEL-DEPTH-DIALOG" "skip"
 write_full_receipt_review "$d" "skip"
 gate "gh pr create --fill" "$d"
 check_status "dir #116: ARMED round 1, skip + answered skip dialog → exit 0" 0 "$STATUS"
@@ -2479,7 +2565,7 @@ check_contains "dir #116: denied naming step 4's skip dialog, not 5(a)'s reminde
 # Same repo, fresh dialog answered for the NEW commit → allow again: the deny above is a missing
 # choice, not a ban — and proving it on the exact repo that was just denied is the per-SHA claim
 # end-to-end (the stale round-1 dialog line is still sitting in the trace file, and doesn't count).
-askuserquestion_trace "$d" "Still docs-only after the fix. Skip? KEEL-DEPTH-DIALOG: level=skip"
+askuserquestion_trace_answered "$d" "Still docs-only after the fix. Pick a review depth. KEEL-DEPTH-DIALOG" "skip"
 write_full_receipt_review "$d" "skip"
 gate "gh pr create --fill" "$d"
 check_status "dir #116: ARMED, skip re-chosen via dialog for the new commit → exit 0" 0 "$STATUS"
@@ -2586,6 +2672,13 @@ _gate_marker_alternation() {
 }
 _composed_marker_sweep() {
   local dir="${1:-$REPO_ROOT}"
+  # dir #118: the `: level=(...)` suffix in this pattern means `KEEL-DEPTH-DIALOG` — a bare marker
+  # since dir #118, no longer taking that suffix at all — can never match here. This sweep now only
+  # actually protects `KEEL-AGENT-REVIEW` and `KEEL-REVIEW-DIALOG`, the two names that still are
+  # "composed" in the sense this function's name means. That's fine (a bare marker has no encoded
+  # outcome for a tracked file to leak), not a coverage gap — see COMPOSED_MARKER_NAMES' own comment
+  # in tools/pre-pr-gate.sh for why the array stays shared even though this sweep no longer covers all
+  # of it.
   (cd "$dir" && git grep -lE "($(_gate_marker_alternation)): level=(skip|low|medium|high|max|ultra)" \
     -- . ':!tests' 2>/dev/null || true)
 }

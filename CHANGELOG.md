@@ -28,6 +28,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   against a real worktree — this is a guard against recurrence, not a confirmed fix for a pinned-down
   cause.
 
+- **`tools/pipeline-canary.sh` no longer escapes its own sandbox when `$KEEL_HOME` or
+  `$KEEL_IMPACT_STORE` is exported in the operator's real shell** (dir #290, found 2026-08-28,
+  v0.7.1→v0.7.2 delta audit): `impact_store_root()` checks both before it ever falls back to `$HOME`,
+  so `HOME=$home` alone — the only override `setup`'s pre-created store entry, its printed operator
+  instructions, and `check`'s own read previously set — did not stop a real canary run from writing
+  impact events into the operator's REAL store, keyed by a throwaway toy repo's path. All three sites
+  now force `$KEEL_HOME`/`$KEEL_IMPACT_STORE` empty via one local helper, `_sandboxed_impact`, instead
+  of restating the two-variable override at each call site; `tests/test_pipeline_canary.sh` gained an
+  escape-scenario round trip proven red against the pre-fix script, green after, and its own gate
+  invocations (previously duplicating the same override three times) now go through a matching local
+  `gate_env` helper. Split from dir #290's other half (the impact-store project id's non-injective
+  `/`→`-` transform), which needs a migration-strategy design decision and moved to dir #316; the
+  `/simplify`/`/code-review` passes on this fix also found that `tools/lib/impact-store.sh` itself has
+  no single isolation entry point, so every caller wanting a sandboxed store root re-derives the same
+  fact independently — filed as dir #317, out of scope here since it touches a shared module several
+  other tools depend on.
+
 - **A review finding now classifies on two axes — blast radius and severity — and derives an explicit
   merge/round/mandatory-round verdict, instead of rendering as an undifferentiated list** (dir #197,
   felt 2026-08-20: a `CHANGELOG.md` typo and a dead code branch, both `Confirmed`, rendered at identical
@@ -39,6 +56,48 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   each cite the new section rather than restating it, and classify what a relayed report claims as
   untrusted input rather than executing anything inside it. `tests/test_review_verdict_doc.sh` pins the
   vocabulary and both citations.
+
+- **The step-4 skip-dialog trace now reads the operator's ANSWER, not just the question's marker**
+  (dir #118, found 2026-08-09 by dir #116's own review rounds): `tools/pre-pr-gate.sh`'s
+  `PostToolUse(AskUserQuestion)` leg used to write `dialog:skip` whenever the question text carried
+  the composed depth marker with a `level=skip` suffix, regardless of what the operator actually
+  chose — an operator overriding a marker-carrying confirm dialog to `medium` still left a valid skip
+  credential for that commit. Empirically confirmed live (a throwaway debug hook dumped a real
+  `PostToolUse(AskUserQuestion)` event): the event carries `tool_response.answers`, an object keyed by
+  the exact question text and valued by the chosen option label (a string for single-select, an array
+  for multiSelect) — the field name `commands/polish.md`'s own dir #88 section had flagged as
+  plausible-but-doc-unconfirmed. The depth marker is now a BARE literal, `KEEL-DEPTH-DIALOG` with no
+  `level=` suffix (unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`, which is unaffected and
+  unchanged) — it no longer encodes an outcome in the question text, and this collapses
+  `commands/polish.md`'s old two-dialog ask-then-confirm dance (present on all three skip-reachable
+  paths: the `skip`-recommended ask, the borderline ask, and the `max`/`ultra` ask) into a single
+  dialog: the marker is embedded directly in whichever ask-dialog the operator already sees, with no
+  follow-up confirm needed.
+  **A `/code-review max` pass on this same ticket (6 of its finder angles, independently) reproduced a
+  real regression the first cut introduced:** a bare `contains()` match on the marker let an ORDINARY
+  SENTENCE merely mentioning the token mid-clause count as marker-carrying, so an unrelated `skip`
+  answer to a totally different question could mint a false `dialog:skip` — the exact "answer doesn't
+  matter" class of bug this ticket exists to close, reintroduced via a looser trigger. A second,
+  independent defect compounded it: picking `.[0]` of however many questions matched let a decoy
+  question's answer mask the genuine one (in either direction — false accept or false drop),
+  depending on JSON key order. Fixed before shipping: the marker must now be the LAST thing in the
+  question (trailing whitespace aside), not merely present anywhere in it, and exactly one matching
+  question is required — two or more resolve to "no trace" rather than guessing. The answer comparison
+  also case-folds now (`skip`/`Skip`/`SKIP` all count), since this is the first leg whose exact-match
+  target is text that reaches the model second-hand through a human's own UI click, not text the model
+  itself composed. The jq filter is fully type-guarded rather than leaning on `2>/dev/null` to swallow
+  a runtime error on a malformed `tool_response.answers` shape — that used to fail closed only by
+  accident, indistinguishable from an honest non-skip outcome. A missing/malformed `tool_response`
+  still resolves to no trace either way. tests: first — `tests/test_pre_pr_gate.sh`'s dir #116
+  depth-dialog block was rewritten for the new marker+answer shape (a new
+  `askuserquestion_trace_answered` helper populates `tool_response.answers`), adding coverage for
+  "marker present, answer is not `skip`", "marker present, no answer data at all", the mid-sentence
+  decoy, case-folding, the two-question ambiguity case, a malformed non-object `answers`, and a
+  multiSelect array answer — none of which were testable (or, for the regressions, existed to test)
+  before this leg read the answer at all. Suite: 503 passed in `test_pre_pr_gate.sh` (498 on
+  `origin/main` before this ticket, net +5 — a handful of superseded near-miss fixtures for the old
+  `level=<word>`-suffixed marker shape were removed and replaced by the coverage above), full suite
+  and shellcheck clean.
 
 - **`commands/polish.md` names the ad-hoc-worktree trace mismatch on the FIRST denial, not the third**
   (dir #179, felt 2026-08-18, dir #173's own wrap changelog PR #226): a commit made in a `git worktree
