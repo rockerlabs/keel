@@ -147,10 +147,40 @@ rep() { printf "%*s" "$2" '' | tr ' ' "$1"; }
 # ASCII string -> UTF-16LE bytes (NUL-interleaved), no iconv needed — for binary-fixture tests
 utf16le() { local s="$1" i; for ((i=0; i<${#s}; i++)); do printf '%s\000' "${s:i:1}"; done; }
 
+# dir #318: guards a freshly-mktemp'd fixture dir before the first `git -C` call touches it. A path
+# that resolves to empty, ".", or anything outside $SANDBOX (mktemp failing silently under `set -uo
+# pipefail` — no `-e` here, so a failed mktemp's empty stdout would otherwise flow straight into an
+# unguarded `git -C "" init`/`git -C "$d" commit`) is the one way new_repo()/new_bare_origin() could
+# point real git mutations at the caller's actual cwd instead of a throwaway dir. Not reproduced live
+# (see BACKLOG.md), but the fixture branch/commit shapes this suite deliberately creates
+# (crossfork-feature, "substantial follow-up commit", etc.) would corrupt a real checkout's history
+# if it ever did. $2 names the caller in the error message.
+#
+# Every real caller invokes new_repo()/new_bare_origin() via command substitution
+# (`d="$(new_repo)"`), which forks a subshell — a plain `exit` here would only kill THAT subshell, not
+# the test file, leaving the caller's `d` empty and STILL free to run the next `git -C "$d" ...` call
+# against its own cwd (reproduced live: a bare `exit 90` in this position is a silent no-op on the
+# exact path it exists to close, found by /code-review high on this ticket's own diff). `kill -TERM
+# $$` reaches past the subshell — bash keeps `$$` equal to the top-level script's pid even inside a
+# `$(...)` subshell (verified on both GNU bash 5 and the bash 3.2 this suite must also run under) — so
+# it terminates the whole test file's process, not just this call. `exit 90` right after is a fallback
+# in case the signal is not yet delivered by the time this function would otherwise return.
+require_sandbox_path() {
+  case "$1" in
+    "$SANDBOX"/*) ;;
+    *)
+      printf '%s: mktemp did not return a sandbox-scoped path (got %s) — refusing to touch it\n' "$2" "$1" >&2
+      kill -TERM $$
+      exit 90
+      ;;
+  esac
+}
+
 # A throwaway git repo under the sandbox; prints its path.
 new_repo() {
   local d
   d="$(mktemp -d "$SANDBOX/repo.XXXXXX")"
+  require_sandbox_path "$d" new_repo
   git -C "$d" init -q
   printf '%s' "$d"
 }
@@ -163,6 +193,7 @@ new_repo() {
 new_bare_origin() {
   local bare
   bare="$(mktemp -d "$SANDBOX/origin.XXXXXX")"
+  require_sandbox_path "$bare" new_bare_origin
   git init -q --bare "$bare"
   git -C "$1" remote add origin "$bare"
   printf '%s' "$bare"

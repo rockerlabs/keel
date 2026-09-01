@@ -24,6 +24,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   restating either rule. `tests/test_conveyor_stages.sh` and `tests/test_release_audit_doc.sh` pin all
   three.
 
+- **The test suite's own fixture helpers now guard against leaking a real git mutation outside their
+  sandbox, and `tests/run.sh` carries a corruption canary to catch it if it recurs** (dir #318, felt in
+  an earlier `/polish` session: `git reflog` on a real worktree showed fixture commit
+  messages/branch names from `tests/test_pre_pr_gate.sh`'s own cross-fork-PR fixtures appended to the
+  real branch's history, rewriting its ref). `tests/lib.sh`'s `new_repo()`/`new_bare_origin()` now
+  route through a shared `require_sandbox_path()` guard that signals the whole test-file process
+  (`kill -TERM $$`, not a bare `exit`) if `mktemp` doesn't return a path actually under the sandbox,
+  before the first `git -C` call touches it — a plain `exit` was tried first and turned out to be a
+  silent no-op on exactly this path, since every real caller reaches the guard through command
+  substitution (`d="$(new_repo)"`), which only the subshell would have died from (caught by an
+  in-session `/code-review high` pass on this ticket's own diff; `tests/test_lib_sandbox_guard.sh`
+  regression-tests the fix by observing the failure from outside the subprocess). `tests/run.sh`
+  records the real checkout's branch, HEAD, and working-tree status before launching the suite and
+  fails loudly if any changed after. Not reproduced under repeated single-file or full concurrent runs
+  against a real worktree — this is a guard against recurrence, not a confirmed fix for a pinned-down
+  cause.
+
 - **`tools/pipeline-canary.sh` no longer escapes its own sandbox when `$KEEL_HOME` or
   `$KEEL_IMPACT_STORE` is exported in the operator's real shell** (dir #290, found 2026-08-28,
   v0.7.1→v0.7.2 delta audit): `impact_store_root()` checks both before it ever falls back to `$HOME`,
