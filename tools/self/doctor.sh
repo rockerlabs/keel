@@ -1232,27 +1232,38 @@ fi
 # `set` line (after comment-stripping) turning pipefail on ANYWHERE in the file — a file that scopes
 # it to one function, or flips it off again later, still counts as "sets pipefail" here, same as a
 # file that sets it once at the top and never touches it again. Narrowing further needs real shell
-# parsing, disproportionate to what a WARN needs to be useful.
+# parsing, disproportionate to what a WARN needs to be useful. Two named blind spots for the same
+# reason: a `set` line naming pipefail among OTHER flags in an order this check doesn't scan past
+# (e.g. `set -o errexit -o pipefail` — the regex below allows anything between "set" and "pipefail"
+# specifically to catch this) is still just a heuristic, not a guarantee against every legal spelling;
+# and comment-stripping is line-based, not quote-aware, so `PIPESTATUS` appearing after a `#` INSIDE a
+# string literal (not a real comment) is invisible to this check the same way check 3's own comment
+# documents for its own sed-based strip.
 say ""
 say "● PIPESTATUS read in a file that sets pipefail (dir #321)"
 # THIS file (tools/self/doctor.sh) sets pipefail (line 56) and, now that this check's own code exists,
 # also contains the literal `${PIPESTATUS[0]}` shape in its own message text below — so it is excluded
-# from the scan by path, explicitly, rather than via a needle built to dodge self-matching: a plain
-# `continue` is more robust than a fragile string-splitting trick (a future edit here could easily
-# reintroduce a literal match), and it is the same kind of self-exclusion any later self-referential
-# check in this file can reuse without reinventing one.
+# from the scan, declaratively, by pathspec (the same way this file's other exclusions work, e.g. the
+# CHANGELOG.md/adopter-docs handling above) rather than a runtime string comparison inside the loop.
+# Not derived from `$self_dir`/`${BASH_SOURCE[0]}`: in the REPO_ARG sandbox tests this same file runs
+# against, `$repo_root` is a throwaway fixture directory that does not contain this real script at
+# all, so a path derived from where the script physically lives would never strip down to a
+# git-ls-files-relative path there and the exclusion would silently no-op — the literal
+# "tools/self/doctor.sh" names the canonical repo-relative install location this check's own value is
+# actually compared against ($rel, always repo-relative), not wherever this particular process happens
+# to be running from.
 ps_hit=0
 while IFS= read -r rel; do
-  [ "$rel" = "tools/self/doctor.sh" ] && continue
   [ -f "$repo_root/$rel" ] || continue
   stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel" 2>/dev/null)"
-  if grep -qE '(^|[[:space:];&|])set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail\b' <<< "$stripped" \
-     && grep -qE '\$\{?PIPESTATUS' <<< "$stripped"; then
-    ps_hit=1
-    ps_lines="$(grep -nE '\$\{?PIPESTATUS' <<< "$stripped" | cut -d: -f1 | paste -sd, -)"
-    warn "$rel:$ps_lines sets pipefail and reads \$PIPESTATUS (dir #321) — verify it isn't the F-06 shape (pipefail's own \$? already gives the real pipeline status once it's active; \${PIPESTATUS[0]} is only right if an EARLIER stage's status is deliberately, specifically wanted)"
+  if grep -qE '(^|[[:space:];&|])set[[:space:]].*\bpipefail\b' <<< "$stripped"; then
+    ps_lines="$(grep -nE '\$\{?PIPESTATUS' <<< "$stripped" | cut -d: -f1 | paste -sd, - || true)"
+    if [ -n "$ps_lines" ]; then
+      ps_hit=1
+      warn "$rel:$ps_lines sets pipefail and reads \$PIPESTATUS (dir #321) — verify it isn't the F-06 shape (pipefail's own \$? already gives the real pipeline status once it's active; \${PIPESTATUS[0]} is only right if an EARLIER stage's status is deliberately, specifically wanted)"
+    fi
   fi
-done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel')
+done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel' ':!tools/self/doctor.sh')
 [ "$ps_hit" -eq 0 ] && say "  OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
