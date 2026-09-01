@@ -6,6 +6,8 @@
 # suite never touches a real, in-progress canary session on the machine.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
+# shellcheck source=tools/lib/impact-store.sh
+. "$REPO_ROOT/tools/lib/impact-store.sh"
 
 canary="$REPO_ROOT/tools/pipeline-canary.sh"
 check_file "pipeline-canary.sh exists" "$canary"
@@ -67,6 +69,17 @@ check_contains "check before any run → no trace file yet (dir #102)" "$OUT" "I
 # steps, matching the real flow: the hook decides, the harness executes on ALLOW.
 # write_full_receipt_review lives in lib.sh (shared with test_pre_pr_gate.sh) — expects $gate set.
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
+# gate_env: the same helper test_pre_pr_gate.sh/test_keel_check_gate.sh already define locally for a
+# test that must FEED stdin (tests/lib.sh's own `run` redirects </dev/null, per its header comment) —
+# $1 = command string, $2 = cwd, $3... = extra `env` assignments. One place builds the event JSON, so
+# a change to the gate's input shape (or, dir #290, to what isolation an escape-scenario call needs)
+# lands once instead of being re-typed at every call site in this file.
+gate_env() {
+  local json
+  json="$(jq -n --arg c "$1" --arg d "$2" '{tool_input:{command:$c}, cwd:$d}')"
+  shift 2
+  printf '%s' "$json" | env "$@" bash "$gate"
+}
 write_full_receipt_review "$repo" "low-operator-run"
 
 # dir #102: with a full receipt written but the gate not yet asked to unlock, the sentinel is still
@@ -75,9 +88,12 @@ write_full_receipt_review "$repo" "low-operator-run"
 run env KEEL_CANARY_STATE="$STATE" env -u KEEL_IMPACT_LOG bash "$canary" check
 check_contains "check with a not-yet-consumed sentinel → INFO, not PASS/FAIL" "$OUT" "INFO  a receipt sentinel is still present"
 
-# -u KEEL_IMPACT_LOG: lib.sh exports a sandbox-wide default for the whole test run, which would
-# otherwise outrank the toy repo's own .keel/ marker — unset it so the event lands where `check` reads.
-gate_decision="$(jq -n --arg c "gh pr create --fill" --arg d "$repo" '{tool_input:{command:$c}, cwd:$d}' | env -u KEEL_IMPACT_LOG bash "$gate")"
+# dir #290: HOME="$home" KEEL_HOME= KEEL_IMPACT_STORE= — matches how cmd_setup's printed instructions
+# now launch the real /polish session (fixed by this ticket), so this simulated gate/ALLOW call writes
+# its receipt-pass event into the canary's OWN sandboxed store, the same place `check` (fixed below)
+# now reads from. -u KEEL_IMPACT_LOG: lib.sh exports a sandbox-wide default for the whole test run,
+# which would otherwise outrank that resolution — unset it so the event lands where `check` reads.
+gate_decision="$(gate_env "gh pr create --fill" "$repo" -u KEEL_IMPACT_LOG HOME="$sandbox/home" KEEL_HOME= KEEL_IMPACT_STORE=)"
 check_contains "the gate itself allows the simulated run" "$gate_decision" '"permissionDecision":"allow"'
 "$sandbox/bin/gh" pr create --fill >/dev/null
 
@@ -115,8 +131,7 @@ sandbox3="$(awk -F'\t' '$1=="sandbox"{print $2}' "$SANDBOX/canary-state-3")"
 repo3="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-3")"
 extlog="$SANDBOX/external-impact.log"; rm -f "$extlog"
 write_full_receipt_review "$repo3" "low-operator-run"
-jq -n --arg c "gh pr create --fill" --arg d "$repo3" '{tool_input:{command:$c}, cwd:$d}' |
-  KEEL_IMPACT_LOG="$extlog" bash "$gate" >/dev/null
+gate_env "gh pr create --fill" "$repo3" KEEL_IMPACT_LOG="$extlog" >/dev/null
 "$sandbox3/bin/gh" pr create --fill >/dev/null
 
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" KEEL_IMPACT_LOG="$extlog" bash "$canary" check
@@ -154,5 +169,40 @@ run env KEEL_CANARY_STATE="$SANDBOX/canary-state-5" bash "$canary" clean
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-never-existed" bash "$canary" clean
 check_status "clean with no state file → exit 0" 0 "$STATUS"
 check_contains "clean reports nothing to remove" "$OUT" "no sandbox to remove"
+
+# --- dir #290: the sandbox must not escape when the OPERATOR's real shell has $KEEL_IMPACT_STORE or
+# $KEEL_HOME exported — plausible, since those are exactly the two overrides this project's own docs
+# tell an adopter to set. impact_store_root() checks both BEFORE it ever falls back to $HOME, so
+# `HOME=$home` alone (the pre-fix code) does not stop either from redirecting the canary's own
+# pre-created store entry, and its printed instructions, at the operator's REAL store.
+escape_store="$SANDBOX/operator-real-store"
+mkdir -p "$escape_store"
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-6" KEEL_IMPACT_STORE="$escape_store" bash "$canary" setup
+check_contains "setup's printed instructions neutralize KEEL_HOME/KEEL_IMPACT_STORE for the real session" "$OUT" 'KEEL_HOME= KEEL_IMPACT_STORE='
+sandbox6="$(awk -F'\t' '$1=="sandbox"{print $2}' "$SANDBOX/canary-state-6")"
+repo6="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-6")"
+home6="$sandbox6/home"
+# impact_project_id (sourced above), not a hand-rolled tr '/' '-': the resolved top can differ from
+# $repo6 itself (a macOS /var/folders temp path resolves through /private via git), so only the real
+# function gives the id production actually uses.
+id6="$(impact_project_id "$repo6")"
+check_dir "setup's pre-created store entry lands inside the sandbox HOME, not the operator's KEEL_IMPACT_STORE" "$home6/.claude/.keel/impact/$id6"
+check_nodir "setup's store entry must not exist under the operator's real KEEL_IMPACT_STORE" "$escape_store/$id6"
+
+# Drive a full run the way the FIXED printed instructions actually tell the operator to (HOME=$home6,
+# KEEL_HOME/KEEL_IMPACT_STORE forced empty) despite their real shell exporting $escape_store — and
+# confirm both the write and the read (`check`, run below with $escape_store still ambient) land in,
+# and agree on, the sandboxed location, never the operator's real store.
+write_full_receipt_review "$repo6" "low-operator-run"
+gate_decision6="$(gate_env "gh pr create --fill" "$repo6" -u KEEL_IMPACT_LOG HOME="$home6" KEEL_HOME= KEEL_IMPACT_STORE=)"
+check_contains "the gate allows the escape-scenario simulated run" "$gate_decision6" '"permissionDecision":"allow"'
+"$sandbox6/bin/gh" pr create --fill >/dev/null
+
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-6" KEEL_IMPACT_STORE="$escape_store" env -u KEEL_IMPACT_LOG bash "$canary" check
+check_status "check after the escape-scenario run → exit 0" 0 "$STATUS"
+check_contains "check finds the receipt-pass event without escaping to KEEL_IMPACT_STORE" "$OUT" "PASS  a receipt-pass event was recorded"
+check_nodir "the completed run must not have written into the operator's real KEEL_IMPACT_STORE" "$escape_store/$id6"
+
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-6" KEEL_IMPACT_STORE="$escape_store" bash "$canary" clean
 
 summary

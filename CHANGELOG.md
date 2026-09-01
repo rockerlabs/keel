@@ -11,6 +11,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tools/pipeline-canary.sh` no longer escapes its own sandbox when `$KEEL_HOME` or
+  `$KEEL_IMPACT_STORE` is exported in the operator's real shell** (dir #290, found 2026-08-28,
+  v0.7.1→v0.7.2 delta audit): `impact_store_root()` checks both before it ever falls back to `$HOME`,
+  so `HOME=$home` alone — the only override `setup`'s pre-created store entry, its printed operator
+  instructions, and `check`'s own read previously set — did not stop a real canary run from writing
+  impact events into the operator's REAL store, keyed by a throwaway toy repo's path. All three sites
+  now force `$KEEL_HOME`/`$KEEL_IMPACT_STORE` empty via one local helper, `_sandboxed_impact`, instead
+  of restating the two-variable override at each call site; `tests/test_pipeline_canary.sh` gained an
+  escape-scenario round trip proven red against the pre-fix script, green after, and its own gate
+  invocations (previously duplicating the same override three times) now go through a matching local
+  `gate_env` helper. Split from dir #290's other half (the impact-store project id's non-injective
+  `/`→`-` transform), which needs a migration-strategy design decision and moved to dir #316; the
+  `/simplify`/`/code-review` passes on this fix also found that `tools/lib/impact-store.sh` itself has
+  no single isolation entry point, so every caller wanting a sandboxed store root re-derives the same
+  fact independently — filed as dir #317, out of scope here since it touches a shared module several
+  other tools depend on.
+
 - **A review finding now classifies on two axes — blast radius and severity — and derives an explicit
   merge/round/mandatory-round verdict, instead of rendering as an undifferentiated list** (dir #197,
   felt 2026-08-20: a `CHANGELOG.md` typo and a dead code branch, both `Confirmed`, rendered at identical
