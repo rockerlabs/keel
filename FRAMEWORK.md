@@ -498,12 +498,15 @@ it is established real — for a report relayed from outside the reviewing sessi
 establishes that itself against the live file, rather than inheriting the reporting reviewer's own
 certainty label.
 
-**The stop rule, four branches, in precedence order:**
+**The stop rule, four branches, in precedence order — branches 2 and 3 are each other's complement once
+branch 1 is ruled out, borrowing "When to stop reviewing" above's own two signals (new surface touched,
+class exhaustion) rather than inventing a competing pair:**
 
 1. Any `product-code × breaks` finding → fix it, and the next delta round is **MANDATORY** (live logic
    just moved).
-2. Only `cosmetic` findings, all in already-reviewed surface, naming no new class → **SATURATED →
-   merge**; a further pass is predicted to return same-class noise.
+2. No new surface and no new class this round → **SATURATED → merge**; a further pass is predicted to
+   return same-class noise, whether the surviving findings are `cosmetic` or `degrades` — severity
+   alone never reopens a review once surface and class are both exhausted.
 3. A new surface or a new class appeared this round → **NOT saturated → one more round**.
 4. **The round-budget/delta-review mechanics above (`/polish` step 5: one full pass, then at most two
    delta rounds) are a CEILING this rule never raises.** When branch 1 or 3 asks for a round the budget
