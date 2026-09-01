@@ -393,9 +393,10 @@ _impact_merge_ledger() {
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { print }
   ' "$target" "${inputs[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
-  rows_status=$?   # must stay the VERY NEXT statement after the pipe — unlike PIPESTATUS, $? is
-                    # clobbered by the next simple command, so an inserted line here would silently
-                    # break this capture the same way ${PIPESTATUS[0]} silently broke it before.
+  # rows_status must stay the VERY NEXT statement after the pipe above — unlike PIPESTATUS, $? is
+  # clobbered by the next simple command, so an inserted line here would silently break this
+  # capture the same way ${PIPESTATUS[0]} silently broke it before.
+  rows_status=$?
   # Capture the write's own exit status explicitly — a bare `cmd1 && cmd2` as this function's LAST
   # statement would otherwise report whatever the following `rm -f` cleanup returns (almost always 0),
   # silently masking a real write failure (disk-full, a transiently unwritable store dir, a concurrent-
