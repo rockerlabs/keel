@@ -1492,30 +1492,62 @@ case "${1:-}" in
       # composed marker with a `level=skip` suffix, regardless of what the operator actually
       # answered — an operator overriding to `medium` still left a skip credential for this sha
       # (found by the operator's own second-opinion review). Empirically confirmed live (dir #118's
-      # own probe, an
-      # actual PostToolUse(AskUserQuestion) event dumped and inspected): the event carries
-      # `tool_response.answers`, an object keyed by the exact question text and valued by the chosen
-      # option label(s) — a plain string for a single-select question, an array of strings for
-      # multiSelect. The marker below is therefore now a BARE literal, `KEEL-DEPTH-DIALOG` with no
-      # `level=` suffix — it no longer encodes an outcome in the question text at all (that's what let
-      # commands/polish.md collapse the old two-dialog ask-then-confirm dance into a single dialog,
-      # since the marker's only job now is "this question's answer is skip-trackable"; the ANSWER, not
-      # the question, decides the outcome). Only the question(s) that actually CONTAIN the marker are
-      # consulted — via `tool_response.questions[].question` — so an unrelated question sharing the
-      # same multi-question event can't leak its own answer in. A missing/malformed `tool_response` (a
-      # future harness schema drift this probe didn't anticipate) makes the lookup come back empty,
-      # which compares unequal to "skip" and simply doesn't trace — failing closed, same direction as
-      # every other residual in this file, never failing open into an unverified skip. Looked up
-      # directly by `tool_response.answers`' OWN keys (not via a `tool_response.questions[].question`
-      # round-trip) — that object is already keyed by the exact question text (dir #118's own probe),
-      # so there's no need to separately fetch the question list just to re-find the same string. No
-      # separate presence pre-check either: jq's own `// ""`/`// {}` defaults already make an absent
-      # marker resolve to "false" on their own, so a `grep -qF` guard in front would only re-scan
-      # `$st_input` a second time to answer a question jq already answers for free.
+      # own probe, an actual PostToolUse(AskUserQuestion) event dumped and inspected): the event
+      # carries `tool_response.answers`, an object keyed by the exact question text and valued by
+      # the chosen option label(s) — a plain string for a single-select question, an array of
+      # strings for multiSelect. The marker below is therefore now a BARE literal,
+      # `KEEL-DEPTH-DIALOG` with no `level=` suffix — it no longer encodes an outcome in the question
+      # text at all (that's what let commands/polish.md collapse the old two-dialog ask-then-confirm
+      # dance into a single dialog, since the marker's only job now is "this question's answer is
+      # skip-trackable"; the ANSWER, not the question, decides the outcome). Looked up directly by
+      # `tool_response.answers`' OWN keys (never `tool_response.questions` — that object is already
+      # keyed by the exact question text, dir #118's own probe, so there's nothing else to fetch).
+      #
+      # **Correctness fix, found live by 6+ independent /code-review max finder passes on this
+      # ticket, empirically reproduced against the real script (not just reasoned about):** a first
+      # cut matched via bare `contains($marker)` and took `.[0]` of whatever matched. Both halves
+      # were exploitable, and NOT hypothetically — reproduced end-to-end:
+      #   (1) `contains` alone matches a MID-SENTENCE mention: a dialog whose question merely
+      #       discusses "the KEEL-DEPTH-DIALOG format" in passing, answered "skip" for an unrelated
+      #       reason, minted a `dialog:skip` credential — the exact "answer doesn't matter" class of
+      #       bug this ticket exists to close, reintroduced via a looser trigger (a plain English
+      #       "skip" instead of the old suspicious composed literal).
+      #   (2) `.[0]` on a MULTI-question event picks whichever matching entry sorts first, not the
+      #       genuine one: a decoy question mentioning the marker (answered "skip") ordered before
+      #       the real depth dialog (answered "medium") minted a false `dialog:skip`; the reverse
+      #       order silently dropped a GENUINE skip answer instead.
+      # Fixed by requiring the marker to sit at the END of the question (after any human-readable
+      # lead-in text, ignoring only trailing whitespace) rather than anywhere in it — an ordinary
+      # English sentence mentioning the token mid-clause no longer matches, while "Pick a depth.
+      # KEEL-DEPTH-DIALOG" still does — and by requiring EXACTLY ONE question in the event to match:
+      # zero or multiple matches resolve to "no trace" rather than guessing via first-or-last, so an
+      # ambiguous/decoy-bearing event fails closed on BOTH ends (nothing minted, nothing silently
+      # dropped) instead of resolving unpredictably by JSON key order.
+      #
+      # The answer comparison also case-folds (`ascii_downcase`) — the exact-match discipline this
+      # file uses elsewhere (`_match_review_level`) only ever validates text the MODEL itself
+      # composed into a marker; this is the first leg whose exact-match target is text that reaches
+      # the model second-hand, through a human's own UI click, where "Skip" vs "skip" is an ordinary
+      # labeling choice, not a fabrication attempt — same finder-pass reproduction, live. And the
+      # whole filter is type-guarded (`if type == "object"`/`"array"`/`"string"` at every step) rather
+      # than leaning on the trailing `2>/dev/null` to swallow a jq runtime error on a malformed
+      # `tool_response.answers` shape (an array, a string, whatever future schema drift) — that used
+      # to fail closed only by accident, indistinguishable from an honest "no skip" outcome with zero
+      # diagnostic signal; now a malformed shape provably takes the same explicit `else false` path a
+      # missing one does, no crash involved at all. A missing/malformed `tool_response` still resolves
+      # to no trace either way — failing closed, same direction as every other residual in this file,
+      # never failing open into an unverified skip.
       dpt_hit="$(printf '%s' "$st_input" | jq -r --arg marker "$MARKER_DEPTH_DIALOG" '
+        def rstrip: sub("[ \t\r\n]+$"; "");
         (.tool_response.answers // {}) as $answers
-        | ($answers | to_entries | map(select(.key | contains($marker))) | (.[0].value // "")) as $a
-        | ($a | if type == "array" then any(.[]; . == "skip") else . == "skip" end)
+        | ($answers | if type == "object" then to_entries else [] end
+           | map(select(.key | type == "string" and (rstrip | endswith($marker))))
+          ) as $matches
+        | (if ($matches | length) == 1 then $matches[0].value else null end) as $a
+        | ($a != null) and
+          ($a | if type == "array"
+                then any(.[]; type == "string" and (ascii_downcase == "skip"))
+                else (type == "string" and (ascii_downcase == "skip")) end)
       ' 2>/dev/null)"
       [ "$dpt_hit" = "true" ] && _append_trace_line "$st_cwd" "dialog:skip"
       dlg_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_REVIEW_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"

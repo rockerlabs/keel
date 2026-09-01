@@ -1537,19 +1537,23 @@ askuserquestion_trace() {
   STATUS=$?
 }
 
-# dir #118: like askuserquestion_trace above, but also populates tool_response.{questions,answers} —
-# the schema confirmed live against a real PostToolUse(AskUserQuestion) event (dir #118's own
-# empirical probe): an object keyed by the exact question text, valued by the chosen option label. $3
-# is that chosen answer (a plain string — single-select is all these tests need). Exercises the
-# answer-reading depth-dialog leg, which the plain helper above cannot: it never sets tool_response at
-# all, so it can only ever prove the "no answer data" negative case.
+# dir #118: like askuserquestion_trace above, but also populates tool_response.answers — the schema
+# confirmed live against a real PostToolUse(AskUserQuestion) event (dir #118's own empirical probe):
+# an object keyed by the exact question text, valued by the chosen option label. $3 is that chosen
+# answer (a plain string — single-select is all these tests need; a JSON array literal string works
+# too for the multiSelect cases below, since jq -n's --arg still treats it as one raw string that the
+# gate's own filter re-parses via the shape it expects — see the multiSelect test's own note).
+# tools/pre-pr-gate.sh never reads `tool_response.questions` (only `.answers`, keyed by the question
+# text itself), so this helper doesn't populate it either. Exercises the answer-reading depth-dialog
+# leg, which the plain helper above cannot: it never sets tool_response at all, so it can only ever
+# prove the "no answer data" negative case.
 askuserquestion_trace_answered() {
   local d="$1" question="$2" answer="$3" json
   json="$(jq -n --arg cwd "$d" --arg q "$question" --arg a "$answer" \
     '{question:$q, header:"Review", options:[{label:"skip"},{label:"medium"}]} as $ques
      | {hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
         tool_input:{questions:[$ques]},
-        tool_response:{questions:[$ques], answers:{($q):$a}}}')"
+        tool_response:{answers:{($q):$a}}}')"
   OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
   STATUS=$?
 }
@@ -2430,8 +2434,65 @@ check_nofile "dir #118: depth-dialog answer near-miss (skipped) is rejected, not
 # presence-only match.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "KEEL-DEPTH-DIALOG present with no tool_response at all"
+askuserquestion_trace "$d" "No answer data at all — mentions the marker: KEEL-DEPTH-DIALOG"
 check_nofile "dir #118: marker present but no answer data → fails closed, no trace" "$tf"
+# dir #118 (found live by this ticket's own /code-review max pass, reproduced against the real
+# script): a bare `contains`-style match on the marker let an ORDINARY SENTENCE that merely mentions
+# the token mid-clause — not a genuine machine-authored dialog — count as marker-carrying, so an
+# unrelated "skip" answer to a totally different question still minted a false dialog:skip. Fixed by
+# requiring the marker to be the LAST thing in the question (trailing whitespace aside); a decoy
+# mention buried mid-sentence, even followed elsewhere in the same string by a literal "skip", must
+# not trace.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+askuserquestion_trace_answered "$d" "While discussing the KEEL-DEPTH-DIALOG format, should we handle multiSelect now, or skip that for later?" "skip"
+check_nofile "dir #118: a mid-sentence marker mention (not trailing) is inert even with answer=skip" "$tf"
+# The answer comparison case-folds — this is the first leg whose exact-match target is text that
+# reaches the model second-hand, through a human's own UI click, where "Skip" vs "skip" is an
+# ordinary labeling choice, not a fabrication attempt (unlike _match_review_level, which only ever
+# validates text the model itself composed).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+askuserquestion_trace_answered "$d" "Pick a review depth. KEEL-DEPTH-DIALOG" "Skip"
+check_contains "dir #118: a capitalized 'Skip' answer still traces (case-folded)" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+rm -f "$tf"
+# Two questions in ONE event both ending with the marker is ambiguous — the gate must not guess via
+# first-or-last match; it fails closed on BOTH ends (a genuine skip on the second question doesn't
+# leak through, and a decoy skip on the first doesn't either), rather than resolving unpredictably by
+# JSON key order the way an earlier draft of this fix did (found live, same review pass).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"Decoy. KEEL-DEPTH-DIALOG"},{question:"Real. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:{"Decoy. KEEL-DEPTH-DIALOG":"skip", "Real. KEEL-DEPTH-DIALOG":"medium"}}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_nofile "dir #118: two marker-ending questions in one event → ambiguous, fails closed" "$tf"
+# A malformed tool_response.answers (not an object — e.g. an array, a future schema-drift shape) must
+# not crash jq into a silently-swallowed stderr error; the filter is type-guarded so this resolves
+# through the same explicit false path a genuinely missing answer does.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"Pick a depth. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:["skip"]}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_status "dir #118: malformed (array-shaped) tool_response.answers doesn't crash the hook" 0 "$STATUS"
+check_nofile "dir #118: ...and mints no trace either" "$tf"
+# multiSelect answers arrive as an array of chosen option labels (dir #118's own empirical probe) —
+# skip must be detected as one element among several, not only as the sole/whole answer.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+sha="$(git -C "$d" rev-parse HEAD)"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"Pick. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:{"Pick. KEEL-DEPTH-DIALOG":["Something else","skip"]}}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_contains "dir #118: multiSelect array answer containing skip still traces" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
+rm -f "$tf"
 # The review token still rejects skip, on both legs that share the accepted set.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
@@ -2460,8 +2521,7 @@ json="$(jq -n --arg cwd "$d" \
   --arg dq "Also, step 4's own dialog: KEEL-DEPTH-DIALOG" \
   '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
     tool_input:{questions:[{question:$rq},{question:$dq}]},
-    tool_response:{questions:[{question:$rq},{question:$dq}],
-                   answers:{($rq):"proceed", ($dq):"skip"}}}')"
+    tool_response:{answers:{($rq):"proceed", ($dq):"skip"}}}')"
 OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
 check_contains "dir #116/#118: dual-question event still writes the review line" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:high"
 check_contains "dir #116/#118: dual-question event writes the depth line off its own answer" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"

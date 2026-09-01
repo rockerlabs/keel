@@ -189,11 +189,13 @@ Steps, in order:
    recommendation **up** one notch — uncertainty favours more review.
 
    Then decide **auto vs ask**:
-   - **`max` or `ultra` → always open an `AskUserQuestion` dialog, never auto-run.** (Raised from
-     `high`-and-above by dir #254, 2026-08-26: the model can now run the review itself — see step 5 — so
-     the ask threshold moves to just the two ends of the scale that spend the human's money or safety
-     margin directly.) `ultra` is billed and `max` is the heaviest automated pass — spend either only on
-     an explicit yes. (A fixed cost rule, not a live budget check: there is no token-budget signal.)
+   - **`max` or `ultra` → always open an `AskUserQuestion` dialog, never auto-run, with a `skip` option
+     always present.** (Raised from `high`-and-above by dir #254, 2026-08-26: the model can now run the
+     review itself — see step 5 — so the ask threshold moves to just the two ends of the scale that spend
+     the human's money or safety margin directly.) `ultra` is billed and `max` is the heaviest automated
+     pass — spend either only on an explicit yes. (A fixed cost rule, not a live budget check: there is no
+     token-budget signal.) An operator declining an expensive review all the way down is still choosing
+     `skip` — the marker rule below applies to this dialog exactly as it does to the other two.
    - **`skip` → also always ask, never auto-select.** The two ends of the scale are exactly where the
      model's own judgement shouldn't be final: one spends the human's money, the other spends their
      safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
@@ -206,27 +208,26 @@ Steps, in order:
    - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
      the recommended level pre-selected and a **skip** option always present; let the human override.
 
-   **Marker rule, shared by every dialog above that offers a `skip` option (dir #118):** that dialog's own
-   question text must carry the literal line `KEEL-DEPTH-DIALOG` — plain text, no markdown formatting, no
-   `level=` suffix — somewhere in the question, in the SAME dialog the human sees the choice in, never a
-   follow-up. Unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`, this marker never encodes an outcome
-   in the question text, so it is safe to spell out exactly like this — no `<...>` placeholder needed, and
-   doing so does not trip the composed-marker sweep (dir #116), which only flags a marker immediately
-   followed by a real `level=<word>`. The gate reads which option the operator actually CHOSE from the
-   `AskUserQuestion` event's own answer data (confirmed live, dir #118: a `PostToolUse(AskUserQuestion)`
-   event carries `tool_response.answers`, an object keyed by the exact question text and valued by the
-   chosen option label), so the marker's only job is to flag "this question's answer is skip-trackable" —
-   the ANSWER, not the question text, decides whether `dialog:skip` gets written. This closes the old hole
-   where a marker-carrying dialog minted `dialog:skip` no matter what was answered (an operator overriding
-   to `medium` used to still leave a skip credential for this sha — found by the operator's second-opinion
-   review, the exact stale-line class dir #116 first tried to close by moving the marker into a confirm
-   dialog, and dir #118 now closes for real by reading the answer instead). It also collapses what used to
-   be a two-dialog dance — ask, then a marker-carrying confirm — into the ONE ask-dialog the operator
-   already sees: there is no follow-up confirm dialog anymore, on any of the three paths above. Use the
-   option label `skip` verbatim for the skip choice in every such dialog, so the gate's exact match on the
-   chosen answer lines up with what is on screen. The token stays deliberately DIFFERENT from step 5(a)'s
-   `KEEL-REVIEW-DIALOG` — the depth leg accepts only an answer of exactly `skip`, so no step-4 dialog can
-   pre-satisfy step 5(a)'s own dialog check by construction.
+   **Marker rule, shared by every dialog above that offers a `skip` option (dir #118):** end that dialog's
+   own question with the literal line `KEEL-DEPTH-DIALOG` — plain text, no markdown formatting, no
+   `level=` suffix, nothing after it but optional trailing whitespace — in the SAME dialog the human sees
+   the choice in, never a follow-up. It must be the LAST thing in the question, after any human-readable
+   lead-in ("Pick a review depth. KEEL-DEPTH-DIALOG"), not merely present somewhere in it — the gate
+   matches on trailing position, not on containment, precisely so an ordinary sentence that happens to
+   mention this token mid-clause can't be mistaken for the genuine marker (dir #118, found live by this
+   ticket's own `/code-review max` pass). Unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`, this
+   marker never encodes an outcome in the question text, so it is safe to spell out exactly like this — no
+   `<...>` placeholder needed, and doing so does not trip the composed-marker sweep (dir #116), which only
+   flags a marker immediately followed by a real `level=<word>`. The gate reads which option the operator
+   actually CHOSE from the `AskUserQuestion` event's own answer data (`tool_response.answers`, confirmed
+   live dir #118 — see `tools/pre-pr-gate.sh`'s own dir #118 comment for the full incident and the
+   uniqueness/case-fold rules the trace check applies), so the marker's only job is to flag "this
+   question's answer is skip-trackable" — the ANSWER, not the question text, decides whether `dialog:skip`
+   gets written, which is also what collapses what used to be a two-dialog ask-then-confirm dance into the
+   ONE ask-dialog the operator already sees on all three paths above. Use the option label `skip` (any
+   case) verbatim for the skip choice in every such dialog. The token stays deliberately DIFFERENT from
+   step 5(a)'s `KEEL-REVIEW-DIALOG` — the depth leg accepts only an answer of `skip`, so no step-4 dialog
+   can pre-satisfy step 5(a)'s own dialog check by construction.
 
    Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>` — e.g.
    `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
@@ -239,7 +240,7 @@ Steps, in order:
    dialog, no wait) — the gate's completeness check treats all eight steps as mandatory, `skip` included,
    and a missing step 5 receipt denies `gh pr create` on its own, independent of whether step 4's
    decision was sound (dir #236: "do nothing" describing the review was misread as "no receipt either,"
-   and a forgotten receipt then forced a full re-ask of both step 4 dialogs on retry — recovering a
+   and a forgotten receipt then forced a full re-ask of step 4's dialog on retry — recovering a
    same-commit skip is narrower now, see step 4's own note, but writing this receipt immediately is still
    the cheap way to never need that). `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
