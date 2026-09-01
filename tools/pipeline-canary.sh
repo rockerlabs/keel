@@ -29,7 +29,10 @@
 # touches the real HOME: `setup` builds a throwaway sandbox HOME and prints it explicitly in every
 # instruction; setting HOME alone is also not treated as sufficient by itself (dir #24 finding: a
 # user-level ~/.claude/CLAUDE.md can still leak into an "isolated" session) — the printed command also
-# passes `--setting-sources project,local` to exclude the user scope.
+# passes `--setting-sources project,local` to exclude the user scope, and forces $KEEL_HOME/
+# $KEEL_IMPACT_STORE empty (dir #290 finding: both outrank HOME in tools/lib/impact-store.sh's own
+# resolution, so either one being exported in the operator's real shell would otherwise redirect the
+# canary's impact events into the operator's REAL store, keyed by the throwaway toy repo's path).
 # The rule governs WRITES: a probe that only READS the machine's own configuration is exempt — see
 # docs/rollout-audit.md's Layer 0 carve-out for when that read has to face the real environment
 # (dir #97).
@@ -71,6 +74,13 @@ EOF
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
+
+# dir #290: the ONE place that knows what neutralizes tools/lib/impact-store.sh's isolation escape —
+# $KEEL_IMPACT_STORE, then $KEEL_HOME, both checked by impact_store_root() BEFORE it ever falls back
+# to $HOME. Used at every call into that lib below (cmd_setup's pre-create, cmd_check's read) so the
+# two-variable knowledge is stated once, not re-derived at each site (the exact way this ticket's own
+# bug happened: one call site had it, the other didn't).
+_sandboxed_impact() { HOME="$1" KEEL_HOME='' KEEL_IMPACT_STORE='' "${@:2}"; }
 
 # The authoritative repo-key resolution (worktree-aware — dir #61) lives in pre-pr-gate.sh itself;
 # calling its own `repo-key` subcommand instead of re-deriving the algorithm here means this stays
@@ -123,11 +133,11 @@ GHEOF
   HOME="$home" git -C "$repo" config user.name "Keel Canary"
   printf 'canary toy project\n' > "$repo/README.md"
   # dir #251: impact events now live in an EXTERNAL store, $KEEL_HOME/.keel/impact/<project-id>/, never
-  # inside the repo itself. The real /polish session below runs with HOME=$home, so
-  # ${KEEL_HOME:-$HOME/.claude} lands inside this sandbox on its own — pre-create that store entry
-  # (mirrors keel-impact.sh's own `enable`) so a real run's impact events land somewhere `check` can
-  # read without extra env. `cmd_check` recomputes the identical path (search "impact_store_dir").
-  mkdir -p "$(HOME="$home" impact_store_dir "$repo")"
+  # inside the repo itself. The real /polish session below runs sandboxed (see _sandboxed_impact, dir
+  # #290) so its own store resolution lands inside this sandbox on its own — pre-create that store
+  # entry (mirrors keel-impact.sh's own `enable`) so a real run's impact events land somewhere `check`
+  # can read without extra env. `cmd_check` recomputes the identical path (search "impact_store_dir").
+  mkdir -p "$(_sandboxed_impact "$home" impact_store_dir "$repo")"
   git -C "$repo" add README.md
   HOME="$home" git -C "$repo" commit -q -m "init"
 
@@ -171,7 +181,10 @@ pipeline-canary: sandbox ready at $sandbox
 Run the real /polish scenario yourself, isolated from your real HOME/hooks:
 
   cd $repo
-  HOME=$home PATH=$bin:\$PATH claude --settings $settings --setting-sources project,local
+  HOME=$home KEEL_HOME= KEEL_IMPACT_STORE= PATH=$bin:\$PATH claude --settings $settings --setting-sources project,local
+
+(dir #290: KEEL_HOME= and KEEL_IMPACT_STORE= are not decorative — if either is exported in your real
+shell, HOME=$home alone would NOT stop the session's impact events from landing in your real store.)
 
 Then, inside that session: make a small edit (toy.py is already staged as a starter diff), run /polish
 for real through to \`gh pr create\` (the stubbed gh above accepts it without touching the network), and
@@ -215,14 +228,15 @@ cmd_check() {
   fi
 
   # resolve_impact_log() in pre-pr-gate.sh prefers $KEEL_IMPACT_LOG over the repo's own store entry —
-  # match that precedence here, or an operator with that env var set (plausible if they use it for
-  # their real repos, and it's inherited into the sandboxed `claude --settings ...` session) would see
-  # a fully successful canary run misreported as "no receipt-pass event recorded" (found in the
-  # operator-run /code-review high pass on this ticket). dir #251: the store entry itself lives at
+  # match that precedence here (via _sandboxed_impact, dir #290, which leaves $KEEL_IMPACT_LOG alone
+  # on purpose), or an operator with that env var set (plausible if they use it for their real repos,
+  # and it's inherited into the sandboxed `claude --settings ...` session) would see a fully successful
+  # canary run misreported as "no receipt-pass event recorded" (found in the operator-run /code-review
+  # high pass on this ticket). dir #251: the store entry itself lives at
   # $home/.claude/.keel/impact/<project-id>/ — `home` is deterministic from `sandbox` (cmd_setup always
   # sets it to "$sandbox/home"), so it needs no CANARY_STATE field of its own.
   home="$sandbox/home"
-  ilog="$(HOME="$home" impact_log_path "$repo")"
+  ilog="$(_sandboxed_impact "$home" impact_log_path "$repo")"
   if [ -f "$ilog" ] && grep -q 'receipt-pass' "$ilog" 2>/dev/null; then
     printf 'PASS  a receipt-pass event was recorded: %s\n' "$(grep 'receipt-pass' "$ilog" | tail -n1)"
   else
