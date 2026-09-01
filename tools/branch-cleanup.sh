@@ -48,6 +48,8 @@ set -euo pipefail
 _bc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_bc_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/stat-portable.sh
+. "$_bc_dir/lib/stat-portable.sh"
 unset _bc_dir
 
 usage() {
@@ -170,19 +172,10 @@ EOF
   printf 'clean\n'
 }
 
-# Portable file mtime, epoch seconds: GNU/busybox stat use -c '%Y'; BSD stat (macOS) uses -f '%m'. Detected
-# ONCE below (STAT_FMT) rather than trying both forms per file.
-epoch_mtime() {
-  case "$STAT_FMT" in
-    c) stat -c '%Y' "$1" 2>/dev/null ;;
-    f) stat -f '%m' "$1" 2>/dev/null ;;
-  esac
-}
-# Probed against $0 (this script's own path), which relies on being invoked by path (`bash
-# tools/branch-cleanup.sh ...`, as wrap.md and every test do) rather than piped via stdin -- a stdin
-# invocation would make $0 unstat-able and silently pin STAT_FMT to the BSD form.
-STAT_FMT=c
-stat -c '%Y' "$0" >/dev/null 2>&1 || STAT_FMT=f
+# Portable file mtime, epoch seconds — tools/lib/stat-portable.sh probes the local `stat` flavor once
+# (against its own path, not this script's) and caches it; called here as a plain statement, eagerly,
+# so every later `stat_portable_mtime` call below just reads the cache.
+_stat_portable_ensure_flavor
 
 # Is any file under the worktree (including its .git link file) touched within --live-hours? A merged,
 # git-clean worktree with fresh file activity is plausibly a parallel session still mid-wrap, not a dead
@@ -198,7 +191,7 @@ worktree_live() {
   threshold=$(( now - LIVE_HOURS * 3600 ))
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    m="$(epoch_mtime "$f")"
+    m="$(stat_portable_mtime "$f")"
     # A 13-digit cap (not the 10-digit default — see tools/lib/nonneg-int.sh): unlike an env-var
     # override, `$m` is a real unix epoch from `stat`, already 10 digits today and not due to reach 11
     # until the year 2286 — a 10-digit cap here would reject every legitimate mtime right now

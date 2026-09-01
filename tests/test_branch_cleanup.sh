@@ -144,7 +144,7 @@ check_contains "live-hours 0 disables the probe: fresh-mtime worktree is ASK aga
 check_absent   "live-hours 0: fresh-mtime worktree no longer FLAGged" \
   "$(line_for claude/wt-fresh)" "FLAG"
 
-# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): `epoch_mtime`'s own `stat` output
+# dir #196 (same overflow class dir #156 fixed in self/doctor.sh): `stat_portable_mtime`'s own `stat` output
 # feeds the same `''|*[!0-9]*)`-shaped guard, digit-shape only until this ticket. A corrupted/hostile
 # `stat` returning a huge all-digit string must be skipped (fail open to "not live"), not crash the
 # `-gt` comparison with "integer expression expected". A stub `stat` on PATH stands in for a genuinely

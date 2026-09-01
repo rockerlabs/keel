@@ -1027,23 +1027,18 @@ check_contains "the retry carries the line that the mv failure had blocked" "$(c
 # between the two merges (022 for the first, 000 for the second): a mode test that holds the umask
 # fixed proves less than it looks (the same trap F-17 above is about), so this varies it rather than
 # assume one value generalizes. -----------------------------------------------------------------------
-# Portable octal-mode probe for this assertion only (mirrors keel-impact.sh's own _impact_file_mode
-# probe — not sourced from the tool itself, which dispatches a command on load rather than staying
-# inert as a library).
-_test_stat_fmt=c
-stat -c '%a' "$TOOL" >/dev/null 2>&1 || _test_stat_fmt=f
-_test_file_mode() {
-  case "$_test_stat_fmt" in
-    c) stat -c '%a' "$1" 2>/dev/null ;;
-    f) stat -f '%Lp' "$1" 2>/dev/null ;;
-  esac
-}
+# Portable octal-mode probe for this assertion only — sources the same shared lib keel-impact.sh
+# itself now uses (dir #322: tools/lib/stat-portable.sh), rather than hand-mirroring the probe. This
+# file can source it directly (unlike keel-impact.sh, which dispatches a command on load) since a
+# tools/lib/*.sh file is inert.
+# shellcheck source=tools/lib/stat-portable.sh
+. "$REPO_ROOT/tools/lib/stat-portable.sh"
 mmrepo="$(legacy_log_repo mode-first-row)"
 mmrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$mmrepo")"
 run bash -c 'umask 022; exec env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$1" migrate "$2"' _ "$TOOL" "$mmrepo"
 check_status "setup: first migrate (umask 022) creates the store log" 0 "$STATUS"
 check_file "setup: the store log exists" "$mmrepo_store/impact-events.log"
-first_mode="$(_test_file_mode "$mmrepo_store/impact-events.log")"
+first_mode="$(stat_portable_mode "$mmrepo_store/impact-events.log")"
 check_contains "a first-ever create keeps ordinary umask behaviour (022 -> 644), not a hard-coded mode" "$first_mode" "644"
 chmod 600 "$mmrepo_store/impact-events.log"
 mkdir -p "$mmrepo/.keel"
@@ -1052,7 +1047,7 @@ run bash -c 'umask 000; exec env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEE
 check_status "the second migrate (umask 000, deliberately different) succeeds" 0 "$STATUS"
 check_contains "the second migrate still carries the first row" "$(cat "$mmrepo_store/impact-events.log")" "mode-first-row"
 check_contains "the second migrate carries the new row too" "$(cat "$mmrepo_store/impact-events.log")" "mode-second-row"
-second_mode="$(_test_file_mode "$mmrepo_store/impact-events.log")"
+second_mode="$(stat_portable_mode "$mmrepo_store/impact-events.log")"
 check_contains "the pre-existing target's mode SURVIVES the merge — 600, not umask-000's 666" "$second_mode" "600"
 
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
