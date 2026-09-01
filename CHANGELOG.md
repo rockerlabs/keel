@@ -11,6 +11,19 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **A release pass's derived copies (the curated release-notes file, the release-prep PR's own body)
+  now have a named home for the "review corrects the source, nothing re-derives the copy" class**
+  (dir #206, found 2026-08-20, twice in one PR, dir #192's own PR #238): `docs/publishing-checklist.md`
+  §4 states the notes file is composed at that step, from the CHANGELOG section as it stands on the
+  merged commit being tagged, and never earlier — a pre-existing one is discarded and recomposed, not
+  reviewed. `commands/polish.md` step 9 gains an already-open-PR branch, written as a table of named
+  triggers with a concrete check each rather than a general re-read — every recorded catch of this
+  class came from a cross-session reviewer, not the authoring session, and step 1's convergence-round
+  sequence now points at it. `docs/release-audit.md`
+  phase 7 names the CHANGELOG section as a source with two derivatives and cites both docs rather than
+  restating either rule. `tests/test_conveyor_stages.sh` and `tests/test_release_audit_doc.sh` pin all
+  three.
+
 - **The test suite's own fixture helpers now guard against leaking a real git mutation outside their
   sandbox, and `tests/run.sh` carries a corruption canary to catch it if it recurs** (dir #318, felt in
   an earlier `/polish` session: `git reflog` on a real worktree showed fixture commit

@@ -104,7 +104,9 @@ Steps, in order:
    there): in that case go run step 7 again this round and write the receipt fresh, or step 8 denies for
    a missing step id. So the round is 5 (delta) → 6 → 8 after a WARN trigger, and
    5 (delta) → 6 → **7** → 8 after a GAP one (either way, step 3 only re-enters if step 8 denies for a
-   stale test binding, per above) — the sequence is the only thing the two differ in. And
+   stale test binding, per above) — the sequence is the only thing the two differ in. **If this branch's
+   PR is already open, the fix just committed may have invalidated its body — step 9's already-open-PR
+   branch says what to do.** And
    even where the receipt does recover, it attests the *prior* run's self-check, taken before your fix
    existed: re-run `tools/self/doctor.sh` by hand and confirm the finding is gone before unlocking. That
    hand-run is verification, not a step — no receipt, no change to the sequence. If it surfaces something
@@ -695,6 +697,28 @@ Steps, in order:
    receipts `agent:<level>+operator-run` and the body still has to name three mechanisms. Reading the
    body off the receipt would silently drop the second opinion — which is precisely the honesty the
    receipt half was carrying until dir #183 removed it, so the burden is here now. Return the PR URL.
+
+   **Already-open-PR branch (dir #206).** `gh pr create` fails against an existing PR — this is a
+   convergence round on a branch whose PR is already open (step 1's pointer sent you here). In that
+   case this step's job is not to create a PR but to bring the open body back into agreement with what
+   actually shipped, then return the same PR URL. **Do not write it as "re-read the body."** Instead,
+   check for these named triggers — each with the check it fires:
+
+   | the body says… | the check |
+   | --- | --- |
+   | a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |
+   | `dir #N` (or any ticket citation) | confirm that ticket resolves — the same resolution `tools/self/citation-resolvability.sh` performs (see its own header for the lookup mechanics) |
+   | what a finding was, or what the diff does | re-read against the tree **as fixed this round** — a convergence round exists because that description changed |
+
+   Where a trigger fires and the body is now wrong, correct it with `gh pr edit --body-file`. **Cite
+   `citation-resolvability.sh` for the ticket-citation row's resolution rule only, not for coverage** —
+   its file set is `docs/*.md` only, so it has never looked at this file or any other root-level doc
+   (dir #315); it doesn't already cover a PR body.
+   **Scope it to those triggers and stop** — not a general re-verification of the page (dir #229: a
+   re-derive rule that widens into "verify everything" gets ignored). **Known weakness, stated plainly:**
+   every recorded catch of this class came from a cross-session reviewer, not the authoring session, so
+   a session that finds nothing here has confirmed very little.
+
    Invoking `/polish` IS the standing authorization to push the
    branch and run `gh pr create --head <branch>` at this step; do not re-ask. The merge stays the
    operator's.
