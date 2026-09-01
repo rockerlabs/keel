@@ -476,6 +476,76 @@ stopping rule and cites the campaign evidence above as the prior art for its
 fix-rounds-are-a-defect-source section. Read it when deciding whether an *audit* is finished; the two
 signals here stay the answer inside a single review.
 
+### Classifying a finding — the two per-finding axes, and the verdict they derive
+
+A different pair from `docs/verification-economics.md`'s "two axes": that section's axes live in
+finding-count space within a run versus class space across runs, and answer whether reviewing more
+would help. The axes below classify one already-established finding, to answer a different question —
+does it block the merge — and feed a verdict, not a stopping decision.
+
+A finished review round that renders only a list of findings answers "is this real" but not "does it
+matter" — a hygiene nit in a comment and a correctness bug in shipped code can both be 100% confirmed
+and render at identical visual weight. Two axes fix that:
+
+- **Blast radius:** `product-code` (ships and runs for adopters) · `tests` · `prose-docs` ·
+  `metadata` (changelog, backlog, comments).
+- **Severity:** `breaks` (breaks correctness) · `degrades` (degrades behavior) · `cosmetic`
+  (hygiene-cosmetic).
+
+**Certainty is a third, pre-existing axis, and it is not one of these two.** "Confirmed" answers "is
+this real"; these two axes answer "does it matter" given that it is. A finding is classified only once
+it is established real — for a report relayed from outside the reviewing session, the receiving session
+establishes that itself against the live file, rather than inheriting the reporting reviewer's own
+certainty label.
+
+**The stop rule, four branches, in precedence order:**
+
+1. Any `product-code × breaks` finding → fix it, and the next delta round is **MANDATORY** (live logic
+   just moved).
+2. Only `cosmetic` findings, all in already-reviewed surface, naming no new class → **SATURATED →
+   merge**; a further pass is predicted to return same-class noise.
+3. A new surface or a new class appeared this round → **NOT saturated → one more round**.
+4. **The round-budget/delta-review mechanics above (`/polish` step 5: one full pass, then at most two
+   delta rounds) are a CEILING this rule never raises.** When branch 1 or 3 asks for a round the budget
+   does not allow, the verdict says so and takes the residual-ticket exit instead of inventing an
+   allowance: file the remaining work as a numbered ticket, name it in the PR body, and open the PR
+   as-is.
+
+**The verdict — one line, human- and machine-readable, so the operator can disagree with the
+derivation rather than with an opaque call:**
+
+```
+verdict: <MERGE|ROUND|ROUND-MANDATORY|MERGE-RESIDUAL> — findings <b>/<d>/<c> (breaks/degrades/cosmetic),
+max-blast <product-code|tests|prose-docs|metadata>, surface <same|new>, class <named|new>,
+rule <branch>, source <in-flow|relayed>, self-reported
+```
+
+Every token is a literal from the vocabulary above, printed beside the verdict on purpose — a bare
+"safe to merge" gives the reader nothing to check the call against. `self-reported` is mandatory and
+literal: a hook that observes a review ran can never recount its findings, so the verdict names itself
+as self-reported the same way a second-opinion review's provenance is labeled elsewhere in this doc.
+
+**Recommend a manual, deliberate review pass** (the mandatory baseline above) when the last round was
+NOT saturated, or when the diff touches invariant-bearing surface (gate semantics, security,
+install/uninstall paths) regardless of saturation — the class where a fresh, independent pass has found
+real bugs after clean automatic rounds, more than once on gate-semantics diffs and once on a pure-prose
+one.
+
+**No-loop boundary.** `ROUND` means running the delta round the budget above already allows, never a
+fresh allowance — a verdict that lets itself be re-run until it says `MERGE` recreates exactly the
+open-ended review loop the round budget exists to prevent.
+
+**Worked example, so this is falsifiable rather than advisory.** Two findings from one round: an inline
+command missing a flag in a changelog entry (`metadata × cosmetic`), and a dead branch in a case
+pattern (`product-code × cosmetic` — dead code does not break correctness). Same surface, no new class,
+neither `breaks` → branch 2 → **`MERGE`**.
+
+**Why the rule is worth having.** Measured across three real implementation runs, `/code-review` was
+the single largest stage of a ticket's total spend in every one — 32%, 45%, and 45% of the total,
+against 9–12% for the implementation step itself, with 32% (the one run that absorbed no extra
+post-review fix rounds) as the honest floor. Ending a review round early, correctly, is the single
+largest economy available in the whole pipeline — and branch 2 above is where that saving concentrates.
+
 ### Full pass or cheap delta?
 
 Once another round is worth running, a second question follows: full pass, or a cheap delta over the

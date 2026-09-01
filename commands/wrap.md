@@ -60,7 +60,11 @@ mechanical traces of a lesson — each becomes a backlog ticket, a promoted rule
 `LEARNINGS.md` candidate (bump its `[n×]`; promote on the 2nd hit), an `IDEAS.md` entry, or an explicit
 recorded drop. Never end
 with floating chat-only ideas (the next session starts cold; you forget); if any remain, flag them
-prominently rather than closing silently.
+prominently rather than closing silently. **A `/code-review` report relayed after the PR already
+opened** gets the same classification and verdict as an in-flow one, per FRAMEWORK.md's "Classifying a
+finding" section, with `source relayed` — this is the post-PR entry point for that classification. A
+`product-code × breaks` finding found this way is not a wrap note: name it as a new round or a numbered
+follow-up ticket instead.
 
 **3. Memory** — only reusable invariants not present in code/git. One file = one topic; update the existing
 file, don't spawn duplicates; the index carries a one-line hook, not a copy of the content.
