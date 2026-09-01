@@ -11,6 +11,33 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Four bugs found by the v0.8.0 delta audit's CLOSING round — auditing the audit's own fix round —
+  are fixed, gating the v0.8.0 tag.** F-16 (the tag-blocker, found by the cross-vendor leg and
+  independently re-reproduced by the blind leg): F-05's fix (below) swapped `_impact_merge_log`'s
+  in-place `cat >>` append for a temp-file + `mv -f` replacement, and `mv` gives the target the TEMP
+  file's mode, not the mode the target already had — an `impact-events.log` sitting at 600 came back
+  at 644 on the next auto-migrate retry. `_impact_merge_ledger`/`_impact_merge_evidence` already
+  replaced via `mv` too, with the same unguarded hazard pre-existing in both; this closes it in all
+  three rather than only the one F-05 touched, turning an induced regression into a net improvement
+  (the operator's explicit scope call). Each helper now captures the target's mode — a portable
+  `stat -c '%a'`/`stat -f '%Lp'` probe, cached once — before the write and restores it after a
+  successful `mv`, only when the target already existed; a first-ever create still gets ordinary
+  umask behaviour. F-18: `_impact_auto_migrate`'s own comment claimed an already-merged source "was
+  already `rm -f`'d, so a retry never re-merges it" — F-05's entire scenario is an `rm` that FAILS
+  and a retry that DOES re-merge, safely deduped since F-05, but re-merge it does; corrected in
+  place. CA-01 (found by the blind leg): the orphaned-temp-file fix (commit 2575500) got a mirrored
+  regression test at `_impact_merge_evidence` (PR #310) but never one of its own at the sibling
+  `_impact_merge_log` — proved missing by mutation (reintroducing the leak still passed the full
+  suite); added. F-17: the F-06 fix's own regression test only exercises a `sort` stub failing the
+  SECOND pipeline stage, which `$?` catches with or without `pipefail` set — it never proved
+  `pipefail` (the fix's actual mechanism) was load-bearing. A second stub failing the FIRST stage
+  while the last stage still succeeds closes the gap: reproduced live that removing `pipefail` makes
+  exactly this new test fail while the original one stays green. Adopter-visible: ships in every
+  keel home via `tools/keel-impact.sh`. `tests/test_keel_impact.sh` pins all four by mutation, driven
+  through the production call path (`migrate`/`_impact_auto_migrate`, never a bare function call),
+  with the mode-preservation proof deliberately varying the ambient umask between merges rather than
+  holding it fixed.
+
 - **Two `tools/pre-pr-gate.sh` deny messages sent a blocked operator to `install.sh` to refresh a
   drifted `commands/polish.md` — the one remedy the same file elsewhere says does not work** (F-10,
   found by the v0.8.0 delta audit's RC cross-vendor pass and extended by the orchestrator's own sweep,

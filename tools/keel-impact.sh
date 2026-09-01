@@ -41,6 +41,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/impact-store.sh
 . "$SCRIPT_DIR/lib/impact-store.sh"
 
+# Portable octal file-mode probe (e.g. "600"): GNU/busybox `stat` use `-c '%a'`; BSD/macOS `stat`
+# uses `-f '%Lp'`. Probed lazily — only the three merge helpers need it, and only when they find
+# legacy files to sweep, so a plain `add`/`event`/`status`/`-h` never pays an unused `stat` fork.
+# `_impact_ensure_stat_fmt` MUST be called as a plain statement, never via `$(...)`: every call site
+# below captures `_impact_file_mode`'s OWN output through a command substitution, which always runs
+# in a subshell — an assignment made inside one is discarded the instant it exits, so probing (and
+# trying to cache the result) from inside `_impact_file_mode` itself can never actually persist back
+# to the caller. Each call site therefore calls the ensure function directly first (a real function
+# call, not a subshell, so its assignment sticks for the rest of the process), then captures
+# `_impact_file_mode`'s output separately.
+_IMPACT_STAT_FMT=""
+_impact_ensure_stat_fmt() {
+  [ -n "$_IMPACT_STAT_FMT" ] && return 0
+  _IMPACT_STAT_FMT=c
+  stat -c '%a' "${BASH_SOURCE[0]}" >/dev/null 2>&1 || _IMPACT_STAT_FMT=f
+}
+_impact_file_mode() {
+  case "$_IMPACT_STAT_FMT" in
+    c) stat -c '%a' "$1" 2>/dev/null ;;
+    f) stat -f '%Lp' "$1" 2>/dev/null ;;
+  esac
+}
+
 # dir #251 D4's automatic half: a project with a legacy in-tree .keel/ marker and no store entry yet
 # gets migrated the moment this script next resolves for it — main checkout only, no worktree sweep
 # (that is cmd_migrate's job), and ONLY when every legacy file present is untracked. A repo with even
@@ -54,10 +77,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # "$store" ]` — `origin` is now written ONLY after every present legacy file has been swept
 # successfully (`ok=1`), never before. A failure partway through (a merge helper genuinely reporting
 # failure — see _impact_merge_ledger/_impact_merge_evidence/_impact_merge_log below) leaves `origin`
-# unwritten, so the NEXT call re-scans and retries exactly the files still sitting in `.keel/`
-# (already-merged ones were already `rm -f`'d, so a retry never re-merges them, just picks up where
-# the failure left off). A repo where auto-migrate legitimately has nothing to do (no legacy files,
-# or what's left is tracked/unreadable) never gets `origin` written by THIS function either, so it
+# unwritten, so the NEXT call re-scans and retries exactly the files still sitting in `.keel/`. A
+# source whose merge AND `rm -f` both succeeded is gone, so a retry skips it — but one whose merge
+# succeeded while its own `rm -f` failed (the file wasn't removed) stays present and DOES get
+# re-merged on the next retry: v0.8.0 delta audit F-05 is what makes that safe (each merge helper
+# dedups its rows/blocks/lines, so re-merging already-merged content is a no-op, never a duplicate),
+# not what prevents the re-merge from happening. A repo where auto-migrate legitimately has nothing
+# to do (no legacy files, or what's left is tracked/unreadable) never gets `origin` written by THIS
+# function either, so it
 # costs the same small rescan on every call it always did pre-fix — no new cost there. The one case
 # that IS a new per-call cost relative to pre-fix: a repo where a merge is attempted and genuinely
 # fails (`ok=0`) now retries the scan + merge attempt on every subsequent call for as long as the
@@ -363,6 +390,16 @@ _impact_merge_ledger() {
   local inputs=()
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
+  # v0.8.0 delta audit F-16: captured BEFORE `ensure_ledger` below, not just before the write —
+  # `ensure_ledger` itself creates $target (under the ambient umask) when it doesn't already exist,
+  # so capturing AFTER it would find a target that always "already existed" and never take the
+  # first-create carve-out this comment promises. See _impact_merge_evidence's own comment for the
+  # rest of the mode-preserve rationale (same hazard, same fix, shared with _impact_merge_log too).
+  local old_mode=""
+  if [ -f "$target" ]; then
+    _impact_ensure_stat_fmt
+    old_mode="$(_impact_file_mode "$target")"
+  fi
   LEDGER="$target" ensure_ledger
   local header_tmp rows_tmp
   header_tmp="$(mktemp)"; rows_tmp="$(mktemp)"
@@ -409,6 +446,16 @@ _impact_merge_ledger() {
   if [ "$header_status" -eq 0 ] && [ "$rows_status" -eq 0 ]; then
     cat "$header_tmp" "$rows_tmp" > "$target.keelmerge.$$" && mv -f "$target.keelmerge.$$" "$target"
     write_status=$?
+    # Best-effort: the merge already landed durably by this point, so a chmod failure (e.g. an
+    # unwritable-by-this-uid target on an odd filesystem) doesn't retroactively make the write fail —
+    # matches this file's own convention for a degraded-but-nonfatal path (line 128/1190/1266's own
+    # `|| true`), and surfaces the same way the OTHER best-effort branches in this file do instead of
+    # going fully dark.
+    if [ "$write_status" -eq 0 ] && [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$target" 2>/dev/null || printf \
+        'keel-impact: could not restore %s'"'"'s prior mode (%s) after merge — continuing\n' \
+        "$target" "$old_mode" >&2
+    fi
   else
     write_status=1
   fi
@@ -432,6 +479,13 @@ _impact_merge_evidence() {
   # (the external store, or a legacy in-tree path), and `mv` across filesystems degrades to copy-then-
   # unlink — no longer the single atomic rename() a same-filesystem `mv` gets for free.
   local tmp="$target.keelmerge.$$"
+  # v0.8.0 delta audit F-16: capture TARGET's mode before the write so it survives the `mv` below —
+  # see _impact_merge_ledger's own comment for why (same hazard, same fix, same first-create carve-out).
+  local old_mode=""
+  if [ -f "$target" ]; then
+    _impact_ensure_stat_fmt
+    old_mode="$(_impact_file_mode "$target")"
+  fi
   # Same read-vs-write blind spot as _impact_merge_ledger above (see its dir #289 comment) — this awk
   # has no pipe, so a plain `$?` right after it is already the real read status; gate the `mv` on it
   # the same way.
@@ -458,6 +512,13 @@ _impact_merge_evidence() {
   ' "${inputs[@]}" > "$tmp"; then
     mv -f "$tmp" "$target"
     write_status=$?
+    # Best-effort — see _impact_merge_ledger's own comment for why this stays non-fatal and why it
+    # surfaces a note instead of going fully dark on a chmod failure.
+    if [ "$write_status" -eq 0 ] && [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$target" 2>/dev/null || printf \
+        'keel-impact: could not restore %s'"'"'s prior mode (%s) after merge — continuing\n' \
+        "$target" "$old_mode" >&2
+    fi
   else
     write_status=1
   fi
@@ -487,10 +548,24 @@ _impact_merge_log() {
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
   local tmp="$target.keelmerge.$$"
+  # v0.8.0 delta audit F-16: capture TARGET's mode before the write so it survives the `mv` below —
+  # see _impact_merge_ledger's own comment for why (same hazard, same fix, same first-create carve-out).
+  local old_mode=""
+  if [ -f "$target" ]; then
+    _impact_ensure_stat_fmt
+    old_mode="$(_impact_file_mode "$target")"
+  fi
   local write_status
   if LC_ALL=C sort -u "${inputs[@]}" > "$tmp"; then
     mv -f "$tmp" "$target"
     write_status=$?
+    # Best-effort — see _impact_merge_ledger's own comment for why this stays non-fatal and why it
+    # surfaces a note instead of going fully dark on a chmod failure.
+    if [ "$write_status" -eq 0 ] && [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$target" 2>/dev/null || printf \
+        'keel-impact: could not restore %s'"'"'s prior mode (%s) after merge — continuing\n' \
+        "$target" "$old_mode" >&2
+    fi
   else
     write_status=1
   fi
