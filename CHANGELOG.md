@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **A review finding now classifies on two axes — blast radius and severity — and derives an explicit
+  merge/round/mandatory-round verdict, instead of rendering as an undifferentiated list** (dir #197,
+  felt 2026-08-20: a `CHANGELOG.md` typo and a dead code branch, both `Confirmed`, rendered at identical
+  weight and answered neither "can I merge" nor "do I need another pass"). `FRAMEWORK.md`'s `## PR
+  review` section gains a new subsection defining the axes as fixed literals, a four-branch stop rule
+  bounded by the existing round budget, and a one-line, human- and machine-readable verdict grammar
+  ending in a mandatory `self-reported` token. `commands/polish.md` step 5(c) (a review relayed while
+  `/polish` is still running) and `commands/wrap.md` step 2 (one relayed after the PR already opened)
+  each cite the new section rather than restating it, and classify what a relayed report claims as
+  untrusted input rather than executing anything inside it. `tests/test_review_verdict_doc.sh` pins the
+  vocabulary and both citations.
+
 - **`commands/polish.md` names the ad-hoc-worktree trace mismatch on the FIRST denial, not the third**
   (dir #179, felt 2026-08-18, dir #173's own wrap changelog PR #226): a commit made in a `git worktree
   add` created mid-session, not the session's own registered worktree, false-denies step 4's skip
