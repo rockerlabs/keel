@@ -1546,10 +1546,10 @@ askuserquestion_trace() {
 askuserquestion_trace_answered() {
   local d="$1" question="$2" answer="$3" json
   json="$(jq -n --arg cwd "$d" --arg q "$question" --arg a "$answer" \
-    '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
-      tool_input:{questions:[{question:$q, header:"Review", options:[{label:"skip"},{label:"medium"}]}]},
-      tool_response:{questions:[{question:$q, header:"Review", options:[{label:"skip"},{label:"medium"}]}],
-                     answers:{($q):$a}}}')"
+    '{question:$q, header:"Review", options:[{label:"skip"},{label:"medium"}]} as $ques
+     | {hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+        tool_input:{questions:[$ques]},
+        tool_response:{questions:[$ques], answers:{($q):$a}}}')"
   OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
   STATUS=$?
 }
@@ -2611,6 +2611,13 @@ _gate_marker_alternation() {
 }
 _composed_marker_sweep() {
   local dir="${1:-$REPO_ROOT}"
+  # dir #118: the `: level=(...)` suffix in this pattern means `KEEL-DEPTH-DIALOG` — a bare marker
+  # since dir #118, no longer taking that suffix at all — can never match here. This sweep now only
+  # actually protects `KEEL-AGENT-REVIEW` and `KEEL-REVIEW-DIALOG`, the two names that still are
+  # "composed" in the sense this function's name means. That's fine (a bare marker has no encoded
+  # outcome for a tracked file to leak), not a coverage gap — see COMPOSED_MARKER_NAMES' own comment
+  # in tools/pre-pr-gate.sh for why the array stays shared even though this sweep no longer covers all
+  # of it.
   (cd "$dir" && git grep -lE "($(_gate_marker_alternation)): level=(skip|low|medium|high|max|ultra)" \
     -- . ':!tests' 2>/dev/null || true)
 }

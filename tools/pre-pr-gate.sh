@@ -446,6 +446,17 @@ ACCEPTED_REVIEW_LEVELS='low medium high max'
 # call sites further down. A future reorder still has to be reflected here, but only here — not
 # hunted down at each of the six sites separately (caught live by a peer session's review of this
 # ticket: an earlier draft of this comment claimed no such binding existed at all, which was false).
+# dir #118: since this array was built, `KEEL-DEPTH-DIALOG` stopped being a "composed" token in the
+# sense the name and the dir #147 comment above describe — it no longer takes a `: level=<word>`
+# suffix at all (the outcome now comes from the operator's ANSWER, not the question text; see its own
+# call site below). `tests/test_pre_pr_gate.sh`'s `_composed_marker_sweep` still runs its alternation
+# over all three names here, but its pattern requires the `: level=(skip|...)` suffix, which
+# `KEEL-DEPTH-DIALOG` can no longer carry — so that sweep now only ever protects the other two names in
+# practice. This is deliberate, not a gap to close: a bare marker with no encoded outcome has nothing
+# for the sweep to catch (see the dir #118 call site's own comment on why spelling it verbatim is
+# safe). Kept in ONE array anyway rather than split into two, since every other consumer (the six grep
+# call sites) still benefits from the single positional source of truth dir #147 describes — only the
+# sweep's own coverage differs per name, and its test file says so directly.
 COMPOSED_MARKER_NAMES=(KEEL-AGENT-REVIEW KEEL-DEPTH-DIALOG KEEL-REVIEW-DIALOG)
 MARKER_AGENT_REVIEW="${COMPOSED_MARKER_NAMES[0]}"
 MARKER_DEPTH_DIALOG="${COMPOSED_MARKER_NAMES[1]}"
@@ -1494,20 +1505,19 @@ case "${1:-}" in
       # same multi-question event can't leak its own answer in. A missing/malformed `tool_response` (a
       # future harness schema drift this probe didn't anticipate) makes the lookup come back empty,
       # which compares unequal to "skip" and simply doesn't trace — failing closed, same direction as
-      # every other residual in this file, never failing open into an unverified skip.
-      if printf '%s' "$st_input" | grep -qF "$MARKER_DEPTH_DIALOG"; then
-        dpt_hit="$(printf '%s' "$st_input" | jq -r --arg marker "$MARKER_DEPTH_DIALOG" '
-          def str: if . == null then "" elif type == "string" then . else tostring end;
-          (.tool_response.answers // {}) as $answers
-          | ([(.tool_response.questions // [])[]?
-              | (.question // "" | str)
-              | select(contains($marker))
-             ][0] // "") as $q
-          | ($answers[$q] // "") as $a
-          | ($a | if type == "array" then any(.[]; . == "skip") else . == "skip" end)
-        ' 2>/dev/null)"
-        [ "$dpt_hit" = "true" ] && _append_trace_line "$st_cwd" "dialog:skip"
-      fi
+      # every other residual in this file, never failing open into an unverified skip. Looked up
+      # directly by `tool_response.answers`' OWN keys (not via a `tool_response.questions[].question`
+      # round-trip) — that object is already keyed by the exact question text (dir #118's own probe),
+      # so there's no need to separately fetch the question list just to re-find the same string. No
+      # separate presence pre-check either: jq's own `// ""`/`// {}` defaults already make an absent
+      # marker resolve to "false" on their own, so a `grep -qF` guard in front would only re-scan
+      # `$st_input` a second time to answer a question jq already answers for free.
+      dpt_hit="$(printf '%s' "$st_input" | jq -r --arg marker "$MARKER_DEPTH_DIALOG" '
+        (.tool_response.answers // {}) as $answers
+        | ($answers | to_entries | map(select(.key | contains($marker))) | (.[0].value // "")) as $a
+        | ($a | if type == "array" then any(.[]; . == "skip") else . == "skip" end)
+      ' 2>/dev/null)"
+      [ "$dpt_hit" = "true" ] && _append_trace_line "$st_cwd" "dialog:skip"
       dlg_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_REVIEW_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
       dlg_word="${dlg_word#${MARKER_REVIEW_DIALOG}: level=}"
       dlg_level="$(_match_review_level "$dlg_word")" || dlg_level=""
