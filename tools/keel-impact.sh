@@ -460,8 +460,13 @@ _impact_merge_evidence() {
     write_status=$?
   else
     write_status=1
-    rm -f "$tmp"
   fi
+  # Unconditional, not just on the awk/write-failure branch above (same class of bug the sibling
+  # _impact_merge_log below was found to have by a /code-review max finder): a `mv` failure AFTER a
+  # successful awk left `$tmp` orphaned under the old two-branch cleanup — `write_status` was still
+  # correctly nonzero (so no data-loss risk), just a stray `evidence.md.keelmerge.$$` file left
+  # behind. Matches _impact_merge_ledger's own trailing `rm -f` above and _impact_merge_log's below.
+  rm -f "$tmp"
   return "$write_status"
 }
 
