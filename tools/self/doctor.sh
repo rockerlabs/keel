@@ -1235,29 +1235,24 @@ fi
 # parsing, disproportionate to what a WARN needs to be useful.
 say ""
 say "● PIPESTATUS read in a file that sets pipefail (dir #321)"
-# The needle is built from two pieces, never written as one `\$PIPESTATUS`-shaped literal — THIS file
-# sets pipefail (line 56) and is itself a tracked .sh file this very check scans, so a literal needle
-# here would make doctor.sh flag itself the moment this check existed at all. Same self-reference
-# problem tests/lib.sh's key() helper solves for test fixtures that must not hold a real secret/path
-# intact in their own source.
-ps_var="PIPESTATUS"
-ps_pattern='\$\{?'"$ps_var"
-ps_files=()
-while IFS= read -r f; do ps_files+=("$f"); done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel')
+# THIS file (tools/self/doctor.sh) sets pipefail (line 56) and, now that this check's own code exists,
+# also contains the literal `${PIPESTATUS[0]}` shape in its own message text below — so it is excluded
+# from the scan by path, explicitly, rather than via a needle built to dodge self-matching: a plain
+# `continue` is more robust than a fragile string-splitting trick (a future edit here could easily
+# reintroduce a literal match), and it is the same kind of self-exclusion any later self-referential
+# check in this file can reuse without reinventing one.
 ps_hit=0
-if [ "${#ps_files[@]}" -gt 0 ]; then
-  for rel in "${ps_files[@]}"; do
-    [ -f "$repo_root/$rel" ] || continue
-    stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel" 2>/dev/null)"
-    if grep -qE '(^|[[:space:];&|])set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail\b' <<< "$stripped" \
-       && grep -qE "$ps_pattern" <<< "$stripped"; then
-      ps_hit=1
-      ps_lines="$(grep -noE "$ps_pattern" <<< "$stripped" | cut -d: -f1 | paste -sd, -)"
-      ps_display='$'"$ps_var"
-      warn "$rel:$ps_lines sets pipefail and reads $ps_display (dir #321) — verify it isn't the F-06 shape (pipefail's own \$? already gives the real pipeline status once it's active; ${ps_display}[0] is only right if an EARLIER stage's status is deliberately, specifically wanted)"
-    fi
-  done
-fi
+while IFS= read -r rel; do
+  [ "$rel" = "tools/self/doctor.sh" ] && continue
+  [ -f "$repo_root/$rel" ] || continue
+  stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel" 2>/dev/null)"
+  if grep -qE '(^|[[:space:];&|])set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail\b' <<< "$stripped" \
+     && grep -qE '\$\{?PIPESTATUS' <<< "$stripped"; then
+    ps_hit=1
+    ps_lines="$(grep -nE '\$\{?PIPESTATUS' <<< "$stripped" | cut -d: -f1 | paste -sd, -)"
+    warn "$rel:$ps_lines sets pipefail and reads \$PIPESTATUS (dir #321) — verify it isn't the F-06 shape (pipefail's own \$? already gives the real pipeline status once it's active; \${PIPESTATUS[0]} is only right if an EARLIER stage's status is deliberately, specifically wanted)"
+  fi
+done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel')
 [ "$ps_hit" -eq 0 ] && say "  OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
