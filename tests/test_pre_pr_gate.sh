@@ -453,15 +453,7 @@ rm -f "$tf"
 # `polish.5-review skip` — `skip` needs no trace, so without this cross-check it unlocks the gate on
 # one lied-about word regardless of what was actually sized.
 d="$(mkrepo)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
-run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
-run_in "$d" bash "$gate" receipt polish.5-review skip
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+write_full_receipt_review "$d" "skip" "" "" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "review 'skip' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
@@ -469,21 +461,8 @@ check_contains "denied for the depth mismatch, not some other reason" "$OUT" "do
 # 18c. Same shape for a trusted -operator-run outcome: claiming "low-operator-run" against a depth
 # actually sized "high" must not unlock the gate either — write_full_receipt_review DERIVES
 # polish.4-depth from the given outcome by default, so a deliberate mismatch has to be asked for.
-# This block predates the helper's `depth_override` 5th argument (dir #158) and is still hand-rolled;
-# so are 18b, 49 and 50d. **50h was migrated onto the override by dir #183** — not as drive-by tidying,
-# but because dir #183 deleted the override's only other caller, and a helper parameter with zero
-# callers is dead by accident rather than by decision. That still leaves two idioms for one fixture
-# shape — migrating the remaining four is its own cleanup, filed as dir #163, not folded in here.
 d="$(mkrepo)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
-run_in "$d" bash "$gate" receipt polish.4-depth "high:+900-50,15f,code"
-run_in "$d" bash "$gate" receipt polish.5-review low-operator-run
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+write_full_receipt_review "$d" "low-operator-run" "" "" "high"
 gate "gh pr create --fill" "$d"
 check_contains "'low-operator-run' against a sized-high depth → denied" "$OUT" '"permissionDecision":"deny"'
 
@@ -973,15 +952,7 @@ rm -f "$tf"
 # an agent review claiming `high` must not unlock a diff step 4 actually sized `medium` (same
 # depth-consistency cross-check dir #63 built for the bare-level case, extended to this leg).
 d="$(mkrepo)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
-run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
-run_in "$d" bash "$gate" receipt polish.5-review "agent:high"
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+write_full_receipt_review "$d" "agent:high" "" "" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "'agent:high' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
@@ -1038,15 +1009,7 @@ rm -f "$tf"
 # recorded level — same depth-consistency cross-check dir #63 built for the bare-level case and dir
 # #70 extended to the plain agent:<level> case, extended again to the combined shape.
 d="$(mkrepo)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests "$(git -C "$d" rev-parse HEAD)"
-run_in "$d" bash "$gate" receipt polish.4-depth "medium:+412-96,10f,code"
-run_in "$d" bash "$gate" receipt polish.5-review "agent:high+operator-run"
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck "skipped:no-doctor"
-run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+write_full_receipt_review "$d" "agent:high+operator-run" "" "" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "'agent:high+operator-run' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
@@ -1095,7 +1058,8 @@ rm -f "$tf"
 # parameter with zero callers — dead by accident rather than by decision. Behaviour-equivalent to the
 # hand-rolled form: lib.sh writes `polish.4-depth <level>:test-fixture` and the gate compares only
 # `${depth_outcome%%:*}`, and neither form writes a trace (this deny fires at the depth cross-check,
-# which runs before the trace check). The remaining hand-rolled blocks are dir #163's own cleanup.
+# which runs before the trace check). dir #163 migrated the remaining hand-rolled blocks (18b, 18c,
+# 49, 50d) onto the same override.
 d="$(mkrepo)"
 write_full_receipt_review "$d" "agent:high+second-opinion" "" "" "medium"
 gate "gh pr create --fill" "$d"
