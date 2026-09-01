@@ -11,6 +11,29 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Two `tools/pre-pr-gate.sh` deny messages sent a blocked operator to `install.sh` to refresh a
+  drifted `commands/polish.md` — the one remedy the same file elsewhere says does not work** (F-10,
+  found by the v0.8.0 delta audit's RC cross-vendor pass and extended by the orchestrator's own sweep,
+  which caught the second site; gating the v0.8.0 tag). The tests-not-bound deny (dir #96's legacy
+  bare-`done` step 3) and the skip-dialog deny (dir #116's) both ended in "re-run install.sh", while dir #183's
+  depth deny — added in this same release, a few lines away — prescribes an explicit `cp` and a
+  comment beside it calls the re-run "the wrong cause and the wrong fix". Both now prescribe the same
+  `cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md`. **dir #183's own
+  justification for that remedy was itself imprecise and is corrected rather than propagated into two
+  more messages:** it read "install.sh's drift prompt does NOT update it by default, in any mode",
+  but `sync_product`'s three-way `[u]/[a]/[N]` prompt *does* overwrite a drifted `polish.md` when
+  answered `u` — it just only ever asks from a terminal, defaults to no, and asks at all only while no
+  `keel-polish.md` alias exists. A non-interactive install (`curl | sh`, CI, an agent) creates that
+  alias silently instead of prompting, and every run afterwards — interactive included — takes the
+  resolved-collision branch (`polish.md left untouched (yours; Keel's version lives at
+  keel-polish.md)`), so from that point no re-run in any mode can ever refresh the file. Established
+  empirically against scratch homes with a deliberately drifted `polish.md`, driven through a real pty
+  (a first attempt via `script` was discarded: it grants a tty but delivers piped stdin as `^D`
+  *before* the `read`, so every answer silently registered as the default). `tests/test_pre_pr_gate.sh`
+  pins both messages' new wording plus a `check_absent` on the retired advice, mirroring the pair
+  dir #183 already had; the assertion that pinned the old advice is flipped deliberately, with the
+  reason recorded at the callsite.
+
 - **Two `tools/keel-impact.sh` bugs found by the v0.8.0 delta audit's RC pass (F-05, F-06 — the
   cross-vendor leg, after the same-family whole-read wave had already read the file clean) are
   fixed, gating the v0.8.0 tag.** F-05: `_impact_auto_migrate`'s legacy `impact-events.log` sweep
