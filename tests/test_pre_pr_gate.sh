@@ -884,13 +884,22 @@ subagentstop_trace() {
   STATUS=$?
 }
 
+# dir #164: clears any stale trace for $d, then feeds it a SubagentStop(general-purpose) event
+# carrying $2 (default: a level=high marker with generic review text). Sets $tf to the trace path
+# for the caller to assert on — collapses the repeated `tf=...; rm -f "$tf"` + subagentstop_trace
+# preamble that appeared 22+ times across this file into one line per call site.
+agent_trace() {
+  local d="$1" msg="${2:-$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')}"
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  subagentstop_trace "$d" "general-purpose" "$msg"
+}
+
 # 41. A SubagentStop(general-purpose) event whose final text carries the marker line (on its own
 # line, amid other prose — a real review write-up isn't just the marker) writes an `agent:<level>`
 # trace line keyed by the hook's OWN observed HEAD sha, never a self-reported one.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed the diff, no issues found.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d" "$(printf 'Reviewed the diff, no issues found.\nKEEL-AGENT-REVIEW: level=high\n')"
 check_status "SubagentStop(general-purpose) with marker → exit 0" 0 "$STATUS"
 check_file "SubagentStop(general-purpose) with marker writes a trace file" "$tf"
 check_contains "trace line carries the sha and the agent:<level> tag" "$(cat "$tf" 2>/dev/null)" "$sha	agent:high"
@@ -902,8 +911,7 @@ rm -f "$tf"
 # only the message's FIRST line — above the marker — and never find it. The marker line above is
 # NOT the first line, so this only passes if the multi-line message is read in full.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Line one.\nLine two.\nLine three.\nKEEL-AGENT-REVIEW: level=medium\n')"
+agent_trace "$d" "$(printf 'Line one.\nLine two.\nLine three.\nKEEL-AGENT-REVIEW: level=medium\n')"
 check_file "marker found even several lines into the message (no newline truncation)" "$tf"
 rm -f "$tf"
 
@@ -918,24 +926,21 @@ check_nofile "SubagentStop for a non-general-purpose agent_type is ignored" "$tf
 # ordinary general-purpose subagent call in a session, not just polish's review, so silence here is
 # the common case, not an error.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "Just some unrelated subagent output, no marker here."
+agent_trace "$d" "Just some unrelated subagent output, no marker here."
 check_nofile "SubagentStop with no marker line is ignored" "$tf"
 
 # 45. A marker naming a level outside the accepted set (skip/ultra never reach this leg — skip does
 # no review at all, ultra always hands off to the human) is ignored, not trusted verbatim.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=ultra\n')"
+agent_trace "$d" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=ultra\n')"
 check_nofile "SubagentStop marker with an out-of-set level (ultra) is ignored" "$tf"
 
 # 46. Gate PASS: an `agent:<level>` receipt backed by a matching SubagentStop trace at the SAME
 # commit and level unlocks the gate, with a provenance line naming the independent agent review
 # (never presented as if the built-in /code-review itself ran).
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_status "agent:<level> receipt + matching trace → exit 0" 0 "$STATUS"
@@ -1001,8 +1006,7 @@ check_status "an agent-confirmed pass within the window → exit 0 (breaks the s
 # nothing of it), so the gate must strip `+operator-run` before matching, not require the trace to
 # carry the suffix too. The provenance line must name BOTH mechanisms, never collapse into one.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high+operator-run"
 gate "gh pr create --fill" "$d"
 check_status "combined agent:<level>+operator-run receipt + matching agent trace → exit 0" 0 "$STATUS"
@@ -1054,8 +1058,7 @@ check_contains "denied for the depth mismatch, not some other reason" "$OUT" "do
 # line (it matches on agent_type + marker text alone), so the standing review's own trace line already
 # satisfies this check without the second subagent needing to write a distinguishable trace of its own.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high+second-opinion"
 gate "gh pr create --fill" "$d"
 check_status "combined agent:<level>+second-opinion receipt + matching agent trace → exit 0" 0 "$STATUS"
@@ -1147,8 +1150,7 @@ for bad_addon in \
   "agent:high+,,"
 do
   d="$(mkrepo)"
-  tf="$(trace_for "$d")"; rm -f "$tf"
-  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+  agent_trace "$d"
   write_full_receipt_review "$d" "$bad_addon"
   gate "gh pr create --fill" "$d"
   check_contains "a comma-joined add-on ('$bad_addon') → denied" "$OUT" '"permissionDecision":"deny"'
@@ -1179,8 +1181,7 @@ for bad_addon in \
   "agent:high+operator-run+second-opinion"
 do
   d="$(mkrepo)"
-  tf="$(trace_for "$d")"; rm -f "$tf"
-  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+  agent_trace "$d"
   write_full_receipt_review "$d" "$bad_addon"
   gate "gh pr create --fill" "$d"
   check_contains "an unknown single add-on token ('$bad_addon') → denied" "$OUT" '"permissionDecision":"deny"'
@@ -1208,8 +1209,7 @@ done
 # ("One place builds the event JSON and captures OUT/STATUS, so a change to the gate's input shape
 # lands once"), and a hand-rolled copy here would be exactly the second copy that header prevents.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high+operator-run,second-opinion"
 addon_deny_log="$SANDBOX/dir183-addon-deny.log"; rm -f "$addon_deny_log"
 gate_env "gh pr create --fill" "$d" "KEEL_IMPACT_LOG=$addon_deny_log"
@@ -1637,8 +1637,7 @@ check_nofile "PostToolUse for a non-AskUserQuestion tool never reaches the dialo
 # rule's own rejected alternative (i), see tools/pre-pr-gate.sh's dir #88 header). This also locks in
 # that every earlier `agent:*` test in this file (46, 50a, etc.) keeps passing unmodified.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_status "UNARMED: agent:<level> receipt, no dialog line → still exit 0" 0 "$STATUS"
@@ -1650,8 +1649,7 @@ rm -f "$tf"
 # opened/answered for this commit.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_contains "ARMED: agent:<level> receipt, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
@@ -1662,8 +1660,7 @@ rm -f "$tf"
 # PASS.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=high Run /code-review too?"
 write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
@@ -1689,8 +1686,7 @@ rm -f "$tf"
 # the reminder fires identically for both agent:* shapes.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high+operator-run"
 gate "gh pr create --fill" "$d"
 check_contains "ARMED: combined agent:<level>+operator-run, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
@@ -1700,8 +1696,7 @@ rm -f "$tf"
 # 76b. ARMED: same combined outcome, this time with a matching dialog:<level> trace line → PASS.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high"
 write_full_receipt_review "$d" "agent:high+operator-run"
 gate "gh pr create --fill" "$d"
@@ -1713,8 +1708,7 @@ rm -f "$tf"
 # too — the reminder fires identically for all three agent:* shapes.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high+second-opinion"
 gate "gh pr create --fill" "$d"
 check_contains "ARMED: combined agent:<level>+second-opinion, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
@@ -1724,8 +1718,7 @@ rm -f "$tf"
 # 76d. dir #141: same combined outcome, this time with a matching dialog:<level> trace line → PASS.
 d="$(mkrepo)"
 arm_dialog_leg "$d"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 askuserquestion_trace "$d" "KEEL-REVIEW-DIALOG: level=high"
 write_full_receipt_review "$d" "agent:high+second-opinion"
 gate "gh pr create --fill" "$d"
@@ -1763,8 +1756,7 @@ t78_ledger="$SANDBOX/t78-ledger"
 run env HOME="$empty_home" KEEL_HOME="$kh" "KEEL_LEDGER_FILE=$t78_ledger" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
 check_status "install-pre-pr-gate.sh --global under a custom KEEL_HOME → exit 0" 0 "$STATUS"
 check_file "…and it wrote settings.json inside KEEL_HOME, not \$HOME/.claude" "$kh/settings.json"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
 gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$kh" "KEEL_LEDGER_FILE=$t78_ledger"
 check_contains "KEEL_HOME-armed dialog leg is seen as ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
@@ -1772,8 +1764,7 @@ check_contains "KEEL_HOME-armed leg denies for the missing dialog specifically" 
 # ...and with no arming anywhere (same empty HOME, no KEEL_HOME) the same receipt still passes, so the
 # assertion above really is about the KEEL_HOME file and not about some unrelated deny.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
 gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$SANDBOX/no-such-keel-home"
 check_status "no arming anywhere → the same receipt still passes" 0 "$STATUS"
@@ -1790,8 +1781,7 @@ home_armed="$SANDBOX/home-armed"; mkdir -p "$home_armed/.claude"
 jq -n --arg gate "$gate" \
   '{hooks:{PostToolUse:[{matcher:"AskUserQuestion", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
   > "$home_armed/.claude/settings.json"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
 gate_env "gh pr create --fill" "$d" "HOME=$home_armed" "KEEL_HOME=$SANDBOX/some-unrelated-keel-home"
 check_contains "an unrelated KEEL_HOME does not hide a hook wired in \$HOME/.claude" "$OUT" '"permissionDecision":"deny"'
@@ -1815,8 +1805,7 @@ rm -f "$tf"
 # call per case (found by an independent /simplify pass).
 assert_dialog_arming() {
   local d="$1" expect="$2" label="$3" tf; shift 3
-  tf="$(trace_for "$d")"; rm -f "$tf"
-  subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+  agent_trace "$d"
   write_full_receipt_review "$d" "agent:high"
   gate_env "gh pr create --fill" "$d" "$@"
   if [ "$expect" = "armed" ]; then
@@ -1869,8 +1858,7 @@ mv "$b2_gate_manifest.orig" "$b2_gate_manifest"
 # "finish the job" edit — would pass the whole suite while quietly breaking the design. Assert it
 # directly: a trace written while on branch A is still the trace the gate reads on branch B.
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
+agent_trace "$d" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
 check_file "trace is written on the starting branch" "$tf"
 trace_before="$(cat "$tf")"
 git -C "$d" checkout -q -b other-branch
@@ -2490,8 +2478,7 @@ check_contains "dir #116: dual-token event still writes the review line" "$(cat 
 check_contains "dir #116: dual-token event writes the depth line too" "$(cat "$tf" 2>/dev/null)" "$sha	dialog:skip"
 rm -f "$tf"
 d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed nothing.\nKEEL-AGENT-REVIEW: level=skip\n')"
+agent_trace "$d" "$(printf 'Reviewed nothing.\nKEEL-AGENT-REVIEW: level=skip\n')"
 check_nofile "dir #116: the SubagentStop leg still rejects level=skip" "$tf"
 
 # 95-pre. dir #116: ARMED, bare skip, and NO trace file at all — the commonest real deny shape (fresh

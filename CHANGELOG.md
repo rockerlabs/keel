@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tests/test_pre_pr_gate.sh`'s repeated agent-trace fixture preamble collapses into one helper**
+  (dir #164, found 2026-08-14 by dir #158's own `/simplify` pass): the sequence
+  `tf="$(trace_for "$d")"; rm -f "$tf"` + `subagentstop_trace "$d" "general-purpose" "<payload>"`
+  appeared at every site that fed the gate a synthetic SubagentStop(general-purpose) trace — 22
+  sites when the ticket was filed, 24 by the time this landed. New file-local `agent_trace` clears
+  the stale trace and feeds the event in one call, defaulting to the common
+  `level=high`/"Reviewed. No issues." payload and taking an explicit message where a test needs a
+  different one (multi-line text, a different level, no marker at all). Migrated uniformly — no
+  partial migration — leaving only the handful of sites that don't fit the shape (a non-`general-
+  purpose` agent_type test, and two append-to-an-existing-trace tests) untouched. Suite assertion
+  count unchanged (498 in `test_pre_pr_gate.sh`); this is a refactor of setup, not of coverage.
+
 - **`tools/pre-pr-gate.sh`'s three composed-marker names now derive from one constant** (dir #147,
   found 2026-08-12 by dir #146's own `/simplify` altitude pass): `KEEL-AGENT-REVIEW` /
   `KEEL-DEPTH-DIALOG` / `KEEL-REVIEW-DIALOG` used to be hardcoded independently at each of their
