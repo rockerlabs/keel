@@ -898,7 +898,7 @@ fi
 # reproduces via a `sort` stub on $PATH that fails only the SECOND stage (the `-t'|' -k... -s`
 # date-column sort), so it works identically under a root CI leg. Driven through the PRODUCTION
 # call path — a plain automatic resolve on a legacy in-tree repo, i.e. _impact_auto_migrate's own
-# `&&`/`||`-exempt call (line 101, formerly line 93) — not a bare call: `set -e` is exempt for the
+# `&&`/`||`-exempt call to _impact_merge_ledger — not a bare call: `set -e` is exempt for the
 # whole nested call there, so unlike a bare invocation (which `pipefail`+`errexit` would abort
 # immediately, before `rows_status` is even read) the pipeline's failure must actually be READ to be
 # caught; that is exactly the gap `${PIPESTATUS[0]}` left open. Verified live before writing this

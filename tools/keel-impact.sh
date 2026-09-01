@@ -378,8 +378,8 @@ _impact_merge_ledger() {
   # computed correctly in `$?` — on the belief (recorded, and wrong, in this comment's own prior
   # wording) that pipefail was never set file-wide. That discarded status is what let a failure in
   # EITHER `sort` stage slip through as `rows_status=0`: reproduced live via a `sort`-stage stub that
-  # fails while this function is called the way _impact_auto_migrate:93/cmd_migrate actually call it
-  # — as the tested command of an `&&`/`||` list — where `set -e` is exempt for the call, so the
+  # fails while this function is called the way _impact_auto_migrate/cmd_migrate actually call it —
+  # as the tested command of an `&&`/`||` list — where `set -e` is exempt for the call, so the
   # pipeline's non-zero status does not abort the script; it just needs to actually be read, which
   # `${PIPESTATUS[0]}` never did. (A BARE call, by contrast, never reaches this line on a pipeline
   # failure at all — `errexit`+`pipefail` together abort the script the moment the pipe fails, before
@@ -393,7 +393,9 @@ _impact_merge_ledger() {
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { print }
   ' "$target" "${inputs[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t'|' -k"${date_col},${date_col}" -s > "$rows_tmp"
-  rows_status=$?
+  rows_status=$?   # must stay the VERY NEXT statement after the pipe — unlike PIPESTATUS, $? is
+                    # clobbered by the next simple command, so an inserted line here would silently
+                    # break this capture the same way ${PIPESTATUS[0]} silently broke it before.
   # Capture the write's own exit status explicitly — a bare `cmd1 && cmd2` as this function's LAST
   # statement would otherwise report whatever the following `rm -f` cleanup returns (almost always 0),
   # silently masking a real write failure (disk-full, a transiently unwritable store dir, a concurrent-
@@ -485,8 +487,13 @@ _impact_merge_log() {
     write_status=$?
   else
     write_status=1
-    rm -f "$tmp"
   fi
+  # Unconditional, not just on the sort/write-failure branch above (found by a /code-review max
+  # finder): a `mv` failure AFTER a successful sort left `$tmp` orphaned under the old two-branch
+  # cleanup — `write_status` was still correctly nonzero (so no data-loss risk), just a stray
+  # `impact-events.log.keelmerge.$$` file left behind. Matches _impact_merge_ledger's own trailing
+  # `rm -f` below, which already covers this case for its own temp files.
+  rm -f "$tmp"
   return "$write_status"
 }
 
