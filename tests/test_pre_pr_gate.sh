@@ -1540,9 +1540,10 @@ askuserquestion_trace() {
 # dir #118: like askuserquestion_trace above, but also populates tool_response.answers — the schema
 # confirmed live against a real PostToolUse(AskUserQuestion) event (dir #118's own empirical probe):
 # an object keyed by the exact question text, valued by the chosen option label. $3 is that chosen
-# answer (a plain string — single-select is all these tests need; a JSON array literal string works
-# too for the multiSelect cases below, since jq -n's --arg still treats it as one raw string that the
-# gate's own filter re-parses via the shape it expects — see the multiSelect test's own note).
+# answer, a plain string — single-select is all this helper models. `--arg` always binds it as a raw
+# jq string, never re-parsed as JSON, so this helper cannot express a multiSelect (array-valued)
+# answer at all; the multiSelect/two-question/malformed-answers tests below build their event JSON
+# inline instead, precisely because they need a shape this helper doesn't support.
 # tools/pre-pr-gate.sh never reads `tool_response.questions` (only `.answers`, keyed by the question
 # text itself), so this helper doesn't populate it either. Exercises the answer-reading depth-dialog
 # leg, which the plain helper above cannot: it never sets tool_response at all, so it can only ever

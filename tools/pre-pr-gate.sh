@@ -1541,7 +1541,7 @@ case "${1:-}" in
         def rstrip: sub("[ \t\r\n]+$"; "");
         (.tool_response.answers // {}) as $answers
         | ($answers | if type == "object" then to_entries else [] end
-           | map(select(.key | type == "string" and (rstrip | endswith($marker))))
+           | map(select(.key | rstrip | endswith($marker)))
           ) as $matches
         | (if ($matches | length) == 1 then $matches[0].value else null end) as $a
         | ($a != null) and
