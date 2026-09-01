@@ -12,6 +12,24 @@
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
+# dir #318: a corruption canary for the checkout this suite itself runs from — every test file's
+# fixtures are supposed to mutate only their own tests/lib.sh sandbox (mktemp'd HOME/repo dirs), never
+# the real repo the process happened to start in. A rare, non-deterministic leak of that kind was found
+# once via `git reflog` (fixture commit messages and branch names from test_pre_pr_gate.sh's own
+# crossfork-PR fixtures, appended to a real feature branch) but was not reproduced under repeated single-
+# file and full concurrent runs against a real worktree. Record this real checkout's branch/HEAD/working-
+# tree status before the suite runs so a recurrence is caught loudly instead of silently, whether or not
+# the individual test files themselves report a failure. The status snapshot is a before/after COMPARE,
+# not an assert-clean — a developer may genuinely run this suite with uncommitted changes already
+# present, and only a change in that snapshot (not its mere non-emptiness) means something moved.
+guard_repo_root="$(cd "$here/.." && pwd)"
+guard_before_branch="" guard_before_head="" guard_before_status=""
+if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
+  guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
+  guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
+  guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+fi
+
 # KEEL_TEST_JOBS overrides the concurrency cap (e.g. `KEEL_TEST_JOBS=1 ./tests/run.sh` to force the
 # old fully-sequential behavior for debugging a suspected cross-file interaction).
 #
@@ -117,6 +135,30 @@ for t in "$here"/test_*.sh; do
   active_logs+=("$log")
 done
 wait_until_at_most 0
+
+# Trip the canary set up above: if the real checkout's branch, HEAD, or working-tree status changed
+# during the run, a test fixture leaked a real git mutation outside its sandbox — flag it loudly
+# regardless of whether any individual test file reported a failure of its own. The status half catches
+# a leak that dirties the tree/index without moving HEAD (a stray file write, a staged-but-uncommitted
+# change) that the branch/HEAD compare alone would miss.
+if [ -n "$guard_before_head" ]; then
+  guard_after_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
+  guard_after_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
+  guard_after_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+  if [ "$guard_after_branch" != "$guard_before_branch" ] || [ "$guard_after_head" != "$guard_before_head" ] \
+      || [ "$guard_after_status" != "$guard_before_status" ]; then
+    printf '\n!!! TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318) !!!\n'
+    printf 'the real checkout this suite ran from changed during the run:\n'
+    printf '  before: branch=%s head=%s\n' "$guard_before_branch" "$guard_before_head"
+    printf '  after:  branch=%s head=%s\n' "$guard_after_branch" "$guard_after_head"
+    if [ "$guard_after_status" != "$guard_before_status" ]; then
+      printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
+    fi
+    printf 'a fixture helper mutated the real repo instead of its own sandbox — do not push this\n'
+    printf 'branch until the real history is reconciled by hand.\n'
+    failed=$((failed + 1))
+  fi
+fi
 
 printf '\n========================================\n'
 if [ "$failed" -eq 0 ]; then
