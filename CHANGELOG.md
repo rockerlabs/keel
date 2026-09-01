@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`commands/polish.md` names the ad-hoc-worktree trace mismatch on the FIRST denial, not the third**
+  (dir #179, felt 2026-08-18, dir #173's own wrap changelog PR #226): a commit made in a `git worktree
+  add` created mid-session, not the session's own registered worktree, false-denies step 4's skip
+  dialog and step 5(a)'s review dialog the same way it was already known to false-deny the SubagentStop
+  agent-review trace — `tools/pre-pr-gate.sh`'s own already-named residual limit (dir #63 limit (2),
+  reused by dir #70/#88): the trace SHA is the bare `HEAD` of the hook event's `.cwd`, which is the
+  harness's tracked session-root cwd and never follows a mid-session `cd` into a new worktree, so
+  `_append_trace_line` stamps the session-root worktree's own HEAD instead of the ad-hoc worktree's
+  branch tip. A fresh `init` + re-receipt + a genuinely re-answered dialog cannot fix a structural
+  cwd/worktree mismatch. Step 8's existing operator hand-off now names this pattern explicitly, so a
+  future session recognizes it immediately instead of burning three clean attempts first.
+
 - **`tests/test_pre_pr_gate.sh`'s remaining hand-rolled depth-mismatch fixtures move onto
   `write_full_receipt_review`'s `depth_override` argument** (dir #163, found 2026-08-14 by dir #158's
   own `/simplify` pass): tests 18b, 18c, 49, and 50d each open-coded the same 9-line

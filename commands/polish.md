@@ -664,6 +664,20 @@ Steps, in order:
    the operator to run from their own terminal — a manually-run command bypasses the PreToolUse hook
    pipeline entirely, so it isn't subject to the race at all. Last resort, after one honest retry.
 
+   **A denial naming a missing step-4 skip dialog or step-5(a) review dialog trace, on a commit made in an
+   AD-HOC `git worktree add` created mid-session (not this session's own registered worktree), will not
+   clear on retry — recognize it on the FIRST denial, not the third.** This is `tools/pre-pr-gate.sh`'s own
+   already-named residual limit — "sha keyed to the event cwd, not the eventual `--head`", dir #63 limit
+   (2), reused as-is by dir #70/#88 for the SubagentStop and `AskUserQuestion` trace legs alike — hitting
+   its worst case: an ad-hoc worktree's `.cwd` never reaches the harness's tracked session-root event
+   `.cwd` at all, so `_append_trace_line` stamps every trace line with the session-root worktree's own
+   HEAD, never the ad-hoc worktree's branch tip that step 8's `--head`-driven SHA check expects. A fresh
+   `init` + re-receipt + a genuinely re-answered dialog cannot fix it — the mismatch is structural (a
+   git-worktree-on-disk problem, not a hooks-wiring one), not a receipt bookkeeping gap. Skip straight to
+   this step's operator hand-off instead. Prefer `git checkout -b` inside your own registered worktree over
+   `git worktree add` for a follow-up commit whenever the only reason for a new worktree was a spent
+   branch — that keeps the trace mechanism intact and avoids this entirely.
+
 9. **Open the PR.** After the gate passes, run `gh pr create --head <branch>` — **the `--head` flag is
    mandatory, not optional**: the gate keys its receipt by branch (dir #80), and the hook's event cwd may
    not be your worktree, so a bare `gh pr create` can resolve the wrong branch (or none) and false-deny.
