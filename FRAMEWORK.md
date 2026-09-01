@@ -528,6 +528,12 @@ Every token is a literal from the vocabulary above, printed beside the verdict o
 literal: a hook that observes a review ran can never recount its findings, so the verdict names itself
 as self-reported the same way a second-opinion review's provenance is labeled elsewhere in this doc.
 
+**`surface` and `class` here are this per-finding vocabulary's own fields, distinct from `/polish`
+step 5's separate per-round trend line** (`round N: ... surface: same|new, class: named|exhausted,
+...`), which tracks a different question — how a whole round compares to the ones before it, not one
+finding's blast radius and severity. The two are not yet reconciled into one rendering; that is
+`/polish`'s own agent rounds' job, explicitly out of this ticket's scope.
+
 **Recommend a manual, deliberate review pass** (the mandatory baseline above) when the last round was
 NOT saturated, or when the diff touches invariant-bearing surface (gate semantics, security,
 install/uninstall paths) regardless of saturation — the class where a fresh, independent pass has found
