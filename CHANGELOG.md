@@ -11,6 +11,15 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tests/test_pre_pr_gate.sh`'s remaining hand-rolled depth-mismatch fixtures move onto
+  `write_full_receipt_review`'s `depth_override` argument** (dir #163, found 2026-08-14 by dir #158's
+  own `/simplify` pass): tests 18b, 18c, 49, and 50d each open-coded the same 9-line
+  init+receipt sequence to ask for a `polish.4-depth` deliberately disagreeing with the `polish.5-review`
+  outcome — the exact shape `depth_override` (dir #158) exists for, and the one test 50h was already
+  migrated onto by dir #183. Collapses each to a one-liner; the ticket was filed against a stale count
+  of five before dir #183 rewrote much of this file, re-verified as four on pickup. Suite assertion
+  count unchanged (498 in `test_pre_pr_gate.sh`); this is a refactor of setup, not of coverage.
+
 - **`tests/test_pre_pr_gate.sh`'s repeated agent-trace fixture preamble collapses into one helper**
   (dir #164, found 2026-08-14 by dir #158's own `/simplify` pass): the sequence
   `tf="$(trace_for "$d")"; rm -f "$tf"` + `subagentstop_trace "$d" "general-purpose" "<payload>"`

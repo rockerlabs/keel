@@ -284,9 +284,8 @@ trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
 # (found by /simplify's reuse AND simplification passes, independently). New mismatch fixtures should
 # pass this rather than add a copy. **dir #183 migrated test 50h onto it** — not drive-by tidying, but
 # because dir #183 deleted the override's only other caller and a helper parameter with zero callers is
-# dead by accident rather than by decision. The four hand-rolled mismatch fixtures that remain (18b,
-# 18c, 49, 50d) are still left alone deliberately: migrating them is churn in tests that currently pass,
-# and it is dir #163's own ticket.
+# dead by accident rather than by decision. **dir #163 migrated the remaining four (18b, 18c, 49, 50d)**,
+# so every deliberate-depth-mismatch fixture now goes through this one idiom.
 write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
 write_full_receipt_review() {
   local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" depth_override="${5:-}" s depth_level
