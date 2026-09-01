@@ -889,6 +889,46 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_contains "the later resolve carries the previously-stranded row" "$(cat "$enfrepo_store/ledger.md")" "enable-stranding-row"
 fi
 
+# --- v0.8.0 delta audit F-06: a failure in EITHER `sort` stage of _impact_merge_ledger's rows
+# pipeline must be detected, not silently reported as success. The line used to read
+# `rows_status="${PIPESTATUS[0]}"` — awk's exit status alone — discarding what `pipefail` (set
+# file-wide at line 36) already computes correctly in a plain `$?` read right after the pipe. A
+# masked failure here would let _impact_auto_migrate's caller `rm -f` the legacy
+# source after writing nothing durable, losing the row entirely. No chmod/root-guard needed — this
+# reproduces via a `sort` stub on $PATH that fails only the SECOND stage (the `-t'|' -k... -s`
+# date-column sort), so it works identically under a root CI leg. Driven through the PRODUCTION
+# call path — a plain automatic resolve on a legacy in-tree repo, i.e. _impact_auto_migrate's own
+# `&&`/`||`-exempt call (line 101, formerly line 93) — not a bare call: `set -e` is exempt for the
+# whole nested call there, so unlike a bare invocation (which `pipefail`+`errexit` would abort
+# immediately, before `rows_status` is even read) the pipeline's failure must actually be READ to be
+# caught; that is exactly the gap `${PIPESTATUS[0]}` left open. Verified live before writing this
+# test: the pre-fix line reports rows_status=0 (masked success) called this exact way; `$?` reports
+# the real nonzero status. ----------------------------------------------------------------------
+sfrepo="$(new_repo)"
+mkdir -p "$sfrepo/.keel"
+printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$sfrepo/.keel/ledger.md"
+printf '| 2026-08-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | sort-fail-row | none |\n' >> "$sfrepo/.keel/ledger.md"
+sfrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$sfrepo")"
+sort_stub_bin="$SANDBOX/sort-stub-bin"; mkdir -p "$sort_stub_bin"
+real_sort="$(command -v sort)"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'for a in "$@"; do case "$a" in -t*) exit 3 ;; esac; done\n'
+  printf 'exec %q "$@"\n' "$real_sort"
+} > "$sort_stub_bin/sort"
+chmod +x "$sort_stub_bin/sort"
+run_in "$sfrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE PATH="$sort_stub_bin:$PATH" bash "$TOOL" rollup
+check_status "a plain rollup survives a sort-stage failure in auto-migrate's ledger merge (best-effort, never fatal)" 0 "$STATUS"
+check_file "a sort-stage failure leaves the legacy ledger source UNDELETED (rm never fires on a masked failure)" "$sfrepo/.keel/ledger.md"
+check_contains "the source's row survives — never silently lost" "$(cat "$sfrepo/.keel/ledger.md")" "sort-fail-row"
+check_nofile "a sort-stage failure never writes the completion marker" "$sfrepo_store/origin"
+# the failure is not permanently stranded: with a working sort, the very next resolve completes it
+run_in "$sfrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "the retry (real sort) succeeds" 0 "$STATUS"
+check_file "the retry writes the completion marker" "$sfrepo_store/origin"
+check_nofile "the retry removes the now-merged legacy source" "$sfrepo/.keel/ledger.md"
+check_contains "the retry carries the row that the sort failure had blocked" "$(cat "$sfrepo_store/ledger.md")" "sort-fail-row"
+
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
 trepo="$(new_repo)"
 mkdir -p "$trepo/.keel"
@@ -945,6 +985,36 @@ check_status "a plain rollup on an all-untracked legacy repo auto-migrates and s
 check_dir "auto-migrate created the store entry" "$arepo_store"
 check_contains "auto-migrate carried the legacy log into the store" "$(cat "$arepo_store/impact-events.log" 2>/dev/null)" "secret-guard"
 check_nofile "auto-migrate removed the legacy in-tree log" "$arepo/.keel/impact-events.log"
+
+# --- v0.8.0 delta audit F-05: a failed `rm` on an already-merged legacy LOG must not double it on
+# retry. _impact_auto_migrate's log sweep used to be a bare `cat >>` (append, not merge): if the
+# append durably landed in the store but the source's own `rm` then failed (a read-only project dir,
+# an immutable file), `ok` went to 0, the completion marker stayed unwritten, and the VERY NEXT
+# resolve re-appended the SAME lines again — and again on every retry after that, once per call, for
+# as long as the `rm` kept failing. Root can write through any permission bits (a read-only .keel/
+# dir wouldn't block root's own rm), so this only tests under a non-root reader — same guard this
+# project's other chmod-based tests already use. Reproduce with a read-only .keel/ dir: the source
+# file stays readable (the dir keeps r-x) but `rm -f` on a file inside it fails (the dir lacks w) —
+# verified live before writing this test. -----------------------------------------------------------
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  drepo="$(legacy_log_repo doubling-check)"
+  drepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$drepo")"
+  chmod 555 "$drepo/.keel"
+  run_in "$drepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  chmod 755 "$drepo/.keel"
+  check_status "a plain rollup survives a failed auto-migrate rm (best-effort, never fatal)" 0 "$STATUS"
+  check_file "the legacy source survives the failed rm (still readable, still there)" "$drepo/.keel/impact-events.log"
+  check_nofile "a failed rm never writes the completion marker" "$drepo_store/origin"
+  first_count="$(grep -c doubling-check "$drepo_store/impact-events.log" 2>/dev/null || true)"
+  check_contains "the first sweep's merge already landed the row durably, exactly once" "${first_count:-0}" "1"
+  # the source is writable again: the very next resolve retries the sweep on the SAME un-removed line
+  run_in "$drepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+  check_status "the retry succeeds" 0 "$STATUS"
+  check_file "the retry writes the completion marker" "$drepo_store/origin"
+  check_nofile "the retry removes the now-merged legacy source" "$drepo/.keel/impact-events.log"
+  second_count="$(grep -c doubling-check "$drepo_store/impact-events.log" 2>/dev/null || true)"
+  check_contains "the retry's re-merge does NOT double the row — still exactly one copy" "${second_count:-0}" "1"
+fi
 
 # --- `enable` must auto-migrate BEFORE it creates the store entry (the ordering invariant) --------
 # impact_store_enable() unconditionally `mkdir -p`s the store, and _impact_auto_migrate's own

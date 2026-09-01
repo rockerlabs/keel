@@ -11,6 +11,30 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Two `tools/keel-impact.sh` bugs found by the v0.8.0 delta audit's RC pass (F-05, F-06 — the
+  cross-vendor leg, after the same-family whole-read wave had already read the file clean) are
+  fixed, gating the v0.8.0 tag.** F-05: `_impact_auto_migrate`'s legacy `impact-events.log` sweep
+  was a bare `cat >>` (append, not merge) — if the append landed durably in the external store but
+  the source's own `rm` then failed (a read-only project dir, an immutable file), the completion
+  marker stayed unwritten and the very next resolve re-appended the same lines again, doubling
+  them, and again on every retry after that. It now routes through a new shared `_impact_merge_log`
+  helper (`LC_ALL=C sort -u`, matching `_impact_merge_ledger`/`_impact_merge_evidence`'s own
+  re-entry-safe dedup) — `cmd_migrate`'s own log merge is switched to it too, so both call sites
+  share one implementation instead of two that could drift apart. F-06: `_impact_merge_ledger`'s
+  rows pipeline (`awk | sort -u | sort -t'|' -k...`) captured its own status via
+  `rows_status="${PIPESTATUS[0]}"` — awk's exit status alone — on a comment's mistaken belief that
+  `pipefail` was never set file-wide; it is, at line 36, so a plain `$?` read right after the pipe
+  already reflects the whole pipeline's status. The masked capture let a failure in either `sort`
+  stage report success on the production call path (`_impact_auto_migrate`/`cmd_migrate` calling the
+  merge helper as the tested command of an `&&`/`||` list, where `set -e` is exempt for the whole
+  nested call — a bare call instead aborts immediately via `errexit`+`pipefail`, before
+  `rows_status` is even assigned, which is why that path was never the bug), and reproduced live to
+  silently `rm` the legacy source after writing nothing durable, losing the row entirely. Now a
+  plain `$?`; the comment's false premise about `pipefail` is corrected in place, not just the code.
+  `tests/test_keel_impact.sh` pins both by mutation, F-06 through the exact `&&`/`||`-exempt call
+  path via a `sort` stub on `$PATH` (no chmod/root-guard needed, so it holds under a root CI leg
+  too).
+
 - **A release pass's derived copies (the curated release-notes file, the release-prep PR's own body)
   now have a named home for the "review corrects the source, nothing re-derives the copy" class**
   (dir #206, found 2026-08-20, twice in one PR, dir #192's own PR #238): `docs/publishing-checklist.md`
