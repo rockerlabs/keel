@@ -69,11 +69,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # directory, moved to the end.
 #
 # v0.8.0 delta audit F-05: the retry-until-success trade above only holds if EVERY sweep below is
-# re-entry-safe — the log sweep used to be a bare `cat >>` (append, not merge), so a `rm` failure on
-# an already-appended source (a read-only project dir, an immutable file) left `ok=0` with the append
-# already durable; the NEXT call appended the same lines again, and again, once per call, for as long
-# as the `rm` kept failing. Routed through _impact_merge_log below so all three sweeps share the same
-# dedup-on-retry property.
+# re-entry-safe — the log sweep now routes through _impact_merge_log below for the same reason the
+# ledger/evidence sweeps already did (see its own docstring for what used to go wrong without it).
 _impact_auto_migrate() {
   local dir="${1:-.}"
   local top store f any=0 all_untracked=1
