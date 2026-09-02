@@ -145,9 +145,10 @@ severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning instead tell the
   the canonical file, the one an adopter's own `chmod` decision was ever about — is never observable
   with the wrong mode; a crash can no longer catch the target widened, and there is no self-cementing
   retry to lock it in. **Not "no window to crash in" outright — a residual one remains, pre-existing and
-  unrelated to the fix above, filed separately rather than fixed here:** the temp file is created fresh by
-  its producer (`cat`/`awk`/`sort -u`, one per helper) under the ambient umask, and the `chmod` lands
-  only after that write finishes — so the window isn't a gap between two syscalls the way the ledger/
+  unrelated to either the mode-preservation fix or this reorder, filed separately rather than fixed
+  here:** the temp file is created fresh by its producer (`cat`/`awk`/`sort -u`, one per helper) under
+  the ambient umask, and the `chmod` lands only after that write finishes — so the window isn't a gap
+  between two syscalls the way the ledger/
   target one was, it spans the FULL content write, holding the complete merged content at the ambient
   (looser) mode for as long as that write takes, sitting right beside the target whose restrictive mode
   it's supposed to match. A crash or a concurrent reader in that window sees real content at the wrong
