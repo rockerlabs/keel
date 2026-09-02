@@ -20,7 +20,10 @@
 #   --digest    print only the section's opening prose (everything before its first `### ` heading)
 #               plus the `### ` heading lines themselves, not the full body
 #   --edit      extract the section to a scratch file, open it in $EDITOR, and copy the result to
-#               <notes-file> only if the editor exits 0 — <notes-file> is never touched otherwise
+#               <notes-file> only if the editor exits 0 — <notes-file> is never touched otherwise.
+#               Also prints two non-fatal warnings (dir #326), best-effort, both to stderr only:
+#               HEAD not matching the `v<version>` release tag (composing from a stale checkout),
+#               and <notes-file> landing within 80% of the section's own size (a copy, not a digest).
 set -euo pipefail
 
 usage() {
@@ -103,7 +106,35 @@ else
 fi
 section="$(sed -n "${start_line},${end_line}p" "$changelog_file")"
 
+warn() { echo "changelog-section: WARNING: $1" >&2; }
+
 if [ "$mode" = "--edit" ]; then
+  # dir #326 guard (b): notes are composed from the WORKING TREE, which need not be at the commit a
+  # release tag actually points to — so a stale checkout composes notes for a different commit than
+  # the one being released, silently (felt: a checkout 5 commits behind origin/main at this step).
+  # Comparing HEAD against the already-pushed `v<version>` tag needs no new argument: a release
+  # workflow that tags before composing notes (this repo's own docs/publishing-checklist.md §4 does)
+  # already has that tag in place by the time `--edit` runs. Best-effort and kept generic — no
+  # keel-specific assumption baked into the message, per this file's own copy-portable header:
+  # silently skip when this isn't a git repo at all (the copy-portable use case —
+  # tests/test_changelog_section.sh's own fixture copies just this file into a plain, non-git
+  # sandbox), but say so when it IS a repo and the tag simply isn't there yet, so a decline reads as
+  # "not checked" rather than being mistaken for "checked, and it matched".
+  if git_head="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null)"; then
+    tag_name="v$version"
+    # `^{commit}` peels an ANNOTATED tag to the commit it points at — an annotated tag (`git tag -a`,
+    # what docs/publishing-checklist.md §4 itself uses) is its own object with its own SHA, which
+    # would otherwise never equal a commit SHA and make this guard fire on every correct checkout,
+    # never just the stale ones (found live: `git rev-parse refs/tags/v1.0.0` returned the tag
+    # object's SHA even at the exact tagged commit). A no-op for a lightweight tag, which already
+    # points straight at a commit.
+    if ! tag_sha="$(git -C "$repo_root" rev-parse -q --verify "refs/tags/${tag_name}^{commit}" 2>/dev/null)"; then
+      warn "no tag $tag_name found yet — skipping the HEAD-vs-tag check (run this again once the release tag is pushed)"
+    elif [ "$git_head" != "$tag_sha" ]; then
+      warn "HEAD ($git_head) does not match tag $tag_name ($tag_sha) — notes may be composed from a different commit than the one being released"
+    fi
+  fi
+
   # The compose recipe itself, formerly hand-typed shell prose in docs/publishing-checklist.md §4
   # (dir #189): extract to a mktemp scratch file, guard $EDITOR being unset with a message that
   # spells the variable name out in plain words (no `$` sigil) — no single backslash-escaping of a
@@ -132,6 +163,20 @@ if [ "$mode" = "--edit" ]; then
     trap - EXIT
     echo "changelog-section: could not write $notes_file — your edited draft is preserved at $scratch_file" >&2
     exit 1
+  fi
+
+  # dir #326 guard (a): release notes should be CURATED from the section, not a copy of it — but
+  # nothing checked that the curation actually happened (felt: a 42,090-byte body against a
+  # 42,274-byte section, 99.6%, the section pasted whole). 80% is comfortably inside the gap between
+  # a genuinely curated digest (typically well under half the section's size) and the felt failure,
+  # so it doesn't need per-release tuning to separate the two.
+  section_bytes="$(printf '%s' "$section" | wc -c | tr -d ' ')"
+  notes_bytes="$(wc -c < "$notes_file" | tr -d ' ')"
+  if [ "$section_bytes" -gt 0 ]; then
+    pct=$(( notes_bytes * 100 / section_bytes ))
+    if [ "$pct" -ge 80 ]; then
+      warn "$notes_file is ${pct}% of the CHANGELOG section's size ($notes_bytes/$section_bytes bytes) — this looks like a copy, not a curated digest"
+    fi
   fi
   exit 0
 fi

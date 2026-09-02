@@ -28,6 +28,19 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   W-CLI-UNWIRED advice, and `install.sh`'s own refused-alias/refused-CLI messages, now all name
   `--force` as the remedy instead of pointing at a re-run that could never have worked.
 
+- **`tools/changelog-section.sh --edit` now prints two non-fatal composition guards at the release-notes
+  step (dir #326).** `docs/publishing-checklist.md` §4 states the rules — notes are CURATED from the
+  CHANGELOG section, not a copy of it, and composed from the commit being tagged — but nothing checked
+  either held: v0.8.0 shipped a 42,090-byte release body against a 42,274-byte section (99.6%, the
+  section pasted whole), and a separate incident on the same tag found the checkout 5 commits behind
+  `origin/main` at this exact step. `--edit` now warns to stderr, best-effort, when `<notes-file>` lands
+  within 80% of the section's own byte size (a copy, not a digest), and when the working tree's HEAD
+  doesn't match the `v<version>` release tag — using the tag §4's own bullet 1 already pushed before
+  this step, so no new argument was needed. Neither guard hard-fails, per the ticket's own resolved
+  fork: the failure mode is not noticing, not disagreeing. A repo with no tag yet for `<version>` gets
+  an explicit decline message rather than silence, so "nothing printed" is never mistaken for "checked,
+  and it matched"; a non-git copy (the tool's own copy-portable design) stays silent, as before.
+
 - **Extracted `_impact_atomic_write`, the same-directory atomic-write scaffold the three
   `keel-impact.sh` merge helpers each hand-rolled (dir #345).** `_impact_merge_ledger`,
   `_impact_merge_evidence` and `_impact_merge_log` independently repeated the same discipline —

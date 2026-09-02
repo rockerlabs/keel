@@ -83,6 +83,15 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       the CHANGELOG section it was cut from, and the documented `--notes-file` hand-off would have
       published into a GitHub Release a claim the same PR proved false — the one release artifact no
       repo-side check ever sees and that no commit amend can fix (dir #206).*
+
+      `--edit` also prints two non-fatal warnings at this step (dir #326), best-effort and to stderr
+      only — read them, don't just check the exit code: **HEAD not matching the `v<version>` tag**
+      (this step reads the working tree, and a stale checkout composes notes from a different commit
+      than the one just tagged, silently, unless you're at the tagged commit — *felt: the checkout sat
+      5 commits behind `origin/main` at this exact step*), and **`<notes-file>` landing within 80% of
+      the section's own byte size** (curation didn't happen — *felt: a 42,090-byte body against a
+      42,274-byte section, 99.6%, the section pasted whole*). Neither is a hard fail; a printed
+      warning is enough because the failure mode here is not noticing, not disagreeing.
 - [ ] **Give the release a title and real notes**, then check them: `gh release view <tag> --json
       name,body,assets`. `--notes-from-tag` alone yields a blank title and a one-line body, and an empty
       title is invisible from the command that created it. **[you]**
