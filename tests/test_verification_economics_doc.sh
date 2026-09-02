@@ -78,6 +78,45 @@ pin "the character test is scoped as corroborating, not independently licensing"
   "$doc" 'it does not independently license stopping' \
   "expected the character test scoped as corroboration; character alone must not license stopping"
 
+# --- dir #327: Clause A's severity/reachability carve-out, parallel to the guard-gap one ---------
+# Needle pins the AND connective on purpose: flipping "both" to "either" turns a narrow, judged
+# exception into a loophole that reopens the hole the carve-out exists to keep shut.
+pin "the carve-out requires BOTH reachability and severity, not either alone" \
+  "$doc" 'does not reset the clock when **both** hold' \
+  "expected the two-condition AND; either condition alone is the loophole this carve-out must avoid"
+pin "the carve-out's severity call comes from the diverse leg, not the fix's own author" \
+  "$doc" 'not the fix'"'"'s own author, and not the round' \
+  "expected the non-self-grading condition; a self-graded severity call is not independent"
+pin "the carve-out states why it must exist: literal zero makes Clause A unsatisfiable" \
+  "$doc" 'makes Clause A unsatisfiable by construction' \
+  "expected the motivating ground; without it the carve-out reads as arbitrary generosity"
+# The carve-out anchors to delta-audit.md §8's own disposition set rather than inventing a fresh
+# "non-blocking" vocabulary that duplicates it — an altitude finding from this ticket's own /simplify
+# pass. Needle pins the real enum, not a paraphrase, so a regression back to invented wording is caught.
+pin "the carve-out's condition (2) uses §8's real disposition set, not invented vocabulary" \
+  "$doc" 'own `ticket-next`,' \
+  "expected condition (2) anchored to §8's ticket-next/known-issue/no-action set, per the altitude fix"
+pin "the carve-out weighs condition (2) by demonstrated discrimination, not bare independence" \
+  "$doc" 'Independence alone is not calibration' \
+  "expected the calibration weighting; a leg that never disposes fix-before-tag trivially satisfies (2)"
+# A peer review found the founding case (keel-impact.sh's single-operator exclusion) would fail
+# condition (1) literally, since that design is stated nowhere in the tree — the fix makes stating
+# it part of invoking the carve-out, rather than weakening "stated" into an unfalsifiable appeal.
+pin "invoking condition (1) obliges the verifier to name where the design is stated" \
+  "$doc" 'obliges the verifier to point at where the excluding design is stated' \
+  "expected the verifier obligation; without it condition (1) can be invoked with nothing to check"
+pin "condition (1)'s obligation extends to writing the assumption down when it is missing" \
+  "$doc" 'never been written anywhere — record it in the artifact' \
+  "expected the shift-left remedy for an artifact whose design was never written down anywhere"
+
+# --- dir #327: §8's coverage bar is named in Clause A's own 'does NOT license' list --------------
+pin "the doc names §8's verdict contract as NOT licensing a stop on its own" \
+  "$doc" "delta-audit.md\`](delta-audit.md) §8's verdict contract is satisfied" \
+  "expected the coverage bar named alongside the clean-round/budget/repeat-reviewer non-licenses"
+pin "the doc distinguishes the verdict contract's coverage question from Clause A's stopping one" \
+  "$doc" 'different question from whether a diverse round has gone silent' \
+  "expected coverage and stopping named as two different questions, not treated as one"
+
 # --- D4: the filing bar's three criteria, all present --------------------------------------------
 pin "filing bar criterion (a) — behavioural" "$doc" 'it is (a) behavioural' \
   "expected the bar's first criterion stated verbatim as a criterion"

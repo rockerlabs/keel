@@ -103,6 +103,42 @@ the same test: a known-class instance on an invariant-bearing surface earns a ti
 third criterion while leaving the stop condition satisfied. That criterion exists to catch *placement*
 risk, not novelty.
 
+**Nor does every behavioural finding — a severity/reachability carve-out, the same shape as the
+guard-gap one above.** A behavioural finding does not reset the clock when **both** hold: (1) it is
+reachable only under a condition the artifact's own stated design excludes, not one that occurs in its
+actual operation, and (2) the diverse leg that found it — not the fix's own author, and not the round
+being judged — gives it [`docs/delta-audit.md`](delta-audit.md) §8's own `ticket-next`,
+`known-issue-in-changelog`, or `no-action` disposition, not `fix-before-tag`. Neither condition alone
+is enough, and that is deliberate: reachability alone would license waving off a `fix-before-tag`
+finding as "unlikely," and disposition alone would license waving off anything a reviewer chooses not
+to mark `fix-before-tag`.
+
+**Invoking condition (1) obliges the verifier to point at where the excluding design is stated — the
+doc, header comment, or spec line the exclusion rests on — and to write it down if it is nowhere yet.**
+"Stated" is there to block an unfalsifiable appeal to how the reviewer imagines the artifact works. When
+no such line exists — the assumption has simply never been written anywhere — record it in the artifact
+itself as part of the ruling, not only in the verdict prose. This is §8's own bootstrapping shape,
+applied to the carve-out's own precondition rather than to the class registry: the first invocation on
+a given artifact may have to write the design assumption down before it can rely on it; every later
+invocation on that same artifact then finds it already checkable.
+
+**Independence alone is not calibration, so weigh condition (2) by what else the same leg disposed this
+run.** A leg that never disposes anything `fix-before-tag` satisfies condition (2) on paper while
+licensing a stop regardless — the realistic failure mode. A non-`fix-before-tag` disposition from a leg
+that has *also*, in this same run, disposed something `fix-before-tag` is the strong case: it has
+demonstrably discriminated rather than defaulting away from the blocking disposition. The same
+disposition from a leg with no `fix-before-tag` finding to its name yet is weaker — plausible, not
+demonstrated. State which case applies; do not treat the two as equivalent. This is deliberately not a
+hard requirement — a run whose only behavioural finding is the carved-out one leaves no earlier
+`fix-before-tag` finding for any leg to have disposed, and requiring one would make the carve-out
+unusable exactly where it is needed.
+
+Read this the way you read the character test above — a judgement a human reads and states explicitly,
+not a threshold a script computes. **Why the carve-out has to exist at all:** treating literally zero
+behavioural findings, of any severity, as the bar makes Clause A unsatisfiable by construction for any
+codebase a sufficiently thorough reviewer keeps re-reading — defeating its own purpose of saying when a
+run gets to stop.
+
 **A second trigger, alongside the two-leg condition — new surface touched.** Independently of what
 the last round returned, another round is worth running when a fix has reached surface no earlier
 round examined. This is [`FRAMEWORK.md`](../FRAMEWORK.md)'s field-tested signal, folded in here as a
@@ -120,8 +156,13 @@ it does not independently license stopping. The two-leg condition is the rule; t
 tells you the rule is about to be satisfiable.
 
 **What Clause A explicitly does NOT license:** stopping because *a* round was clean, because the
-budget ran out, or because the same reviewer has now read it N times. Only a *diverse* round's
-silence counts, and only on the current state.
+budget ran out, because the same reviewer has now read it N times, or because
+[`docs/delta-audit.md`](delta-audit.md) §8's verdict contract is satisfied — *coverage*, not
+*stopping*, a different question from whether a diverse round has gone silent (that document's §8
+states the distinction in its own words; this rail is the one it points back to). A felt case: a real
+run's coverage bar read satisfied from the first closing round onward, while the run's only two induced
+defects were caught by Clause A itself failing twice more on the rounds after that. Only a *diverse*
+round's silence counts, and only on the current state.
 
 **Clause B — across runs.** A run yielding only *instances* of known classes
 **indicts the demotion pipeline**, not the review count.
