@@ -151,7 +151,7 @@ advise_install="install.sh$mode_flag$home_flag"      # re-run THIS install
 advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
 # advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
 # THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
-# install prefers `keel sync --force` (keel:126 forwards its args straight through, no extra wiring
+# install prefers `keel sync --force` (keel:128 forwards its args straight through, no extra wiring
 # needed); an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so neither a bare re-run
 # nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form can (verified against
 # README.md:84 / docs/getting-started.md:114; bootstrap.sh:141 forwards "$@").
@@ -238,7 +238,13 @@ mkdir -p "$manifest_dir"
 # A checkout this minimal (a test fixture, or a corrupted install) may not ship tools/ at all — degrade
 # to "provenance unavailable" rather than aborting the whole install over an optional refinement; every
 # other real gap in a broken checkout (e.g. the secret-guard step below) still surfaces its own error.
-if [ -f "$root/tools/lib/manifest.sh" ]; then
+# `bash -n` syntax-checks the file BEFORE sourcing it (found by this ticket's own /code-review high
+# pass, reproduced live): under `set -e`, a `.`/source of a file with a genuine syntax error aborts the
+# WHOLE script immediately — no `if`/`&&` guard around the `.` command itself can catch that, since it's
+# a parse-time failure, not a runtime one — which would silently break the "optional refinement" promise
+# this comment makes for a present-but-corrupted file (a partial write, a disk error), not just a
+# missing one.
+if [ -f "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/manifest.sh
   . "$root/tools/lib/manifest.sh"
 else
@@ -250,6 +256,16 @@ fi
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
 # reads THIS, never $manifest_file directly, so a future reordering of the write block below can never
 # make the provenance check observe this run's own placement instead of the run before it.
+# Sweep any stray snapshot a PRIOR run's crash/abort left behind before creating this run's own (found
+# by this ticket's own /code-review high pass, reproduced live: any failure between here and this run's
+# own cleanup near the manifest-write step — e.g. a corrupted checkout missing a shipped source file —
+# leaves a `.prior-manifest.<pid>` behind with nothing to sweep it, since each run's own is uniquely
+# named by that run's PID). A `trap ... EXIT` was considered and rejected: verified live on this
+# machine's bash (3.2.57) that a bare EXIT trap masks a genuine crash — e.g. an unset-variable abort
+# under `set -u` — into a false exit 0, which is a far worse failure mode than a leftover scratch file.
+# This sweep instead just bounds the litter to at most the PREVIOUS run's leftover, cleaned up by the
+# NEXT run regardless of how that run itself ends.
+rm -f "$manifest_dir"/.prior-manifest.* 2>/dev/null || true
 prior_manifest="$manifest_dir/.prior-manifest.$$"
 if [ -f "$manifest_file" ]; then cp "$manifest_file" "$prior_manifest"; else : > "$prior_manifest"; fi
 # Computed ONCE here rather than inside keel_own_untouched's own per-call body: the snapshot above is
@@ -479,13 +495,17 @@ copy_gap() {
 # installed copy might be yours we ask before overwriting — interactively when a terminal is attached
 # (default no, so your copy is never lost without a yes), else a WARN naming --force. Non-interactive
 # (curl|sh, CI) never blocks on input: no TTY → WARN path, not a hang. --force skips every prompt/WARN
-# outright (an explicit answer already) and takes the file over, backed up first (dir #323 Part 2).
+# outright (an explicit answer already) and takes the file over, backed up first (dir #323 Part 2) —
+# EXCEPT a still-virgin alias-eligible collision (see ALIAS_DEST below): there, --force is scoped OUT
+# on purpose (found by this ticket's own /code-review high pass), so it never overrides the alias fork's
+# already-safe, non-destructive default with a destructive one on a file Keel has never touched before.
 #
 # Optional ALIAS_DEST (commands only): on a name collision with the adopter's OWN command (a pre-existing
 # /go is likely), Keel's version goes alongside as keel-<name> instead of overwrite-or-nothing — the
 # collision fallback of the naming rule in ADAPTING.md. Once the alias exists, the unprefixed name is the
 # user's for good: re-runs never touch or re-create it, and the drift check routes to the alias — unless
-# keel_own_untouched proves $dest was never the adopter's to begin with, or --force says take it anyway.
+# keel_own_untouched proves $dest was never the adopter's to begin with, or --force says take it anyway
+# (only once the collision is ALREADY resolved — see the exception above for a virgin one).
 sync_product() {
   local src="$1" dest="$2" alias_dest="${3:-}" name reply=""; name="$(basename "$dest")"
   # alias_exists — computed once rather than re-testing the same three clauses at each of the two
@@ -514,8 +534,16 @@ sync_product() {
       force_backup "$dest"
       place "$src" "$dest"
       echo "  +    $name updated (--force); $(basename "$alias_dest") is now redundant — remove it: rm \"$alias_dest\""
+      # Same reasoning as the keel_own_untouched branch above: the alias is Keel's own file too, so it
+      # still gets its own drift check this run instead of waiting for the next one (found missing by
+      # this ticket's own /code-review high pass — it had silently diverged from that sibling branch).
+      sync_product "$src" "$alias_dest"
     else
-      if [ "$dest_differs" = 1 ]; then
+      # Printed whenever $dest exists, matching the ORIGINAL (pre-dir-#323) unconditional behavior —
+      # even byte-identical content is "yours" here, since $dest is the adopter's space once the
+      # collision resolves to the alias (found by this ticket's own /code-review high pass: an earlier
+      # draft gated this on $dest_differs too, which silently dropped the line for that edge case).
+      if [ -f "$dest" ]; then
         echo "  =    $name left untouched (yours; Keel's version lives at $(basename "$alias_dest")). Reclaim it: $advise_refresh_force"
       fi
       sync_product "$src" "$alias_dest"
@@ -534,9 +562,17 @@ sync_product() {
     # checkout (a re-link after a move or re-clone): converge to the canonical link either way.
     place "$src" "$dest"
     echo "  ^    $name — identical copy upgraded to a symlink (now updates with git pull)"
-  elif [ "$FORCE" = 1 ]; then
+  elif [ "$FORCE" = 1 ] && [ -z "$alias_dest" ]; then
     # Every remaining branch below is a decline (a prompt defaulting to no, or a flat refusal) —
-    # --force overrides all of them the same way: back up, take it, done (dir #323 Part 2).
+    # --force overrides all of them the same way: back up, take it, done (dir #323 Part 2). Scoped OUT
+    # when $alias_dest is set (found by this ticket's own /code-review high pass, reproduced live): an
+    # alias-eligible file with NO alias yet is a VIRGIN collision, not a decline — the branches below
+    # already resolve it safely (fork a keel-<name> alias, non-destructive) rather than refuse, so
+    # --force has nothing here to override yet. Letting it intercept anyway would silently replace an
+    # adopter's own same-named command (e.g. their own /go) with Keel's version on the very first run
+    # that happens to combine --force with a name it had never seen before — a materially different,
+    # riskier act than every other --force use in this diff, all of which override an actual refusal.
+    # Once the collision genuinely resolves (the alias exists), the branch above handles --force instead.
     force_backup "$dest"
     place "$src" "$dest"
     echo "  +    $name updated (--force)"
@@ -547,7 +583,7 @@ sync_product() {
     case "$reply" in
       [uU]) place "$src" "$dest"; echo "  +    $name updated" ;;
       [aA]) sync_product "$src" "$alias_dest" ;;
-      *)    echo "  =    $name left untouched (add Keel's alongside later:  $FIX \"$src\" \"$alias_dest\", or take over: $advise_refresh_force)" ;;
+      *)    echo "  =    $name left untouched (add Keel's alongside later:  $FIX \"$src\" \"$alias_dest\")" ;;
     esac
   elif [ -t 0 ]; then
     echo "  ~    $name differs from Keel's shipped version — an older release, or you edited it."
@@ -811,20 +847,20 @@ if [ "$EPHEMERAL" = 1 ]; then
 elif [ -f "$root/keel" ]; then
   mkdir -p "$HOME_DIR/bin"
   keel_link="$HOME_DIR/bin/keel"
-  if [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
-    if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
-      echo "  =    bin/keel already wired"
-      record_placed "$keel_link"
-    else
-      make_link "$root/keel" "$keel_link"
-      record_placed "$keel_link"
-      echo "  +    bin/keel → $root/keel  (run 'keel help')"
+  if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
+    echo "  =    bin/keel already wired"
+    record_placed "$keel_link"
+  elif [ -L "$keel_link" ] || [ ! -e "$keel_link" ] || [ "$FORCE" = 1 ]; then
+    # Real file + --force is the only case needing a backup first; every other case reaching here
+    # (absent, or a dangling/stale symlink) has nothing of the adopter's to preserve.
+    keel_link_suffix=""
+    if [ ! -L "$keel_link" ] && [ -e "$keel_link" ]; then
+      force_backup "$keel_link"
+      keel_link_suffix=" — real file backed up first (--force)"
     fi
-  elif [ "$FORCE" = 1 ]; then
-    force_backup "$keel_link"
     make_link "$root/keel" "$keel_link"
     record_placed "$keel_link"
-    echo "  +    bin/keel → $root/keel  (run 'keel help') — real file backed up first (--force)"
+    echo "  +    bin/keel → $root/keel  (run 'keel help')$keel_link_suffix"
   else
     echo "  !    $keel_link exists and is not a Keel symlink — left it untouched (remove it, or take over: $advise_refresh_force)."
   fi

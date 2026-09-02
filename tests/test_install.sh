@@ -362,4 +362,34 @@ check_status "T6 a bin/keel backup was created" 1 "$t6_bak_count"
 # uninstall.sh removes by manifest, so a recorded .bak would make uninstall delete a backup).
 check_absent "T7 manifest never records a .bak artifact" "$(cat "$fhome/.keel/install-manifest.claude")" ".bak"
 
+# T8 — dir #323 (found by this ticket's own /code-review high pass): --force on a VIRGIN alias-eligible
+# collision must NOT overwrite the adopter's own same-named command. The collision here was never a
+# refusal — the alias fork already resolves it safely and non-destructively — so --force has nothing to
+# override on a name Keel has never seen before; it only reclaims once the collision is ALREADY
+# resolved (as T3 above does, from the state T2 sets up).
+t8home="$SANDBOX/force-virgin-home"; mkdir -p "$t8home/commands"
+printf '# my own go command, never touched by Keel\n' > "$t8home/commands/go.md"
+fresh_home_env "$t8home"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$t8home" --no-hooks --force
+check_status "T8 --force on a virgin collision → exit 0" 0 "$STATUS"
+check_contains "T8 adopter's own go.md is untouched" "$(cat "$t8home/commands/go.md")" "never touched by Keel"
+check_file "T8 keel-go.md forked alongside, not an overwrite" "$t8home/commands/keel-go.md"
+t8_bak_count="$(ls "$t8home"/commands/go.md.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T8 no backup was created (nothing was overwritten)" 0 "$t8_bak_count"
+
+# T9 — dir #323 (found by this ticket's own /code-review high pass): a PRESENT but CORRUPTED
+# tools/lib/manifest.sh must degrade to "provenance unavailable", never abort the whole install — the
+# comment above the sourcing site promises exactly that, but only a missing-file guard was there to
+# back it; a syntax error inside a sourced file aborts the whole script under `set -e` regardless of any
+# if/&& wrapped around the `.` command itself (verified live), so the fix pre-checks with `bash -n`.
+t9ck="$SANDBOX/force-checkout-corrupt"
+cp -r "$ckdir" "$t9ck"
+printf 'this is not valid bash (\n' > "$t9ck/tools/lib/manifest.sh"
+t9home="$SANDBOX/force-corrupt-manifest-home"; mkdir -p "$t9home"
+fresh_home_env "$t9home"
+run env "${FRESH_HOME_ENV[@]}" "$t9ck/install.sh" --home "$t9home" --no-hooks
+check_status "T9 corrupted tools/lib/manifest.sh → still exit 0" 0 "$STATUS"
+check_file "T9 install still lands the core despite the corruption" "$t9home/FRAMEWORK.md"
+check_file "T9 install still lands commands" "$t9home/commands/wrap.md"
+
 summary
