@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-02
+
+Known issues: two RC-pass findings ship unfixed, both adopter-facing, each with an open ticket. First,
+the standard non-interactive `install.sh` run creates the `keel-polish.md` alias on its own, and from
+that moment no re-run in any mode refreshes a drifted `commands/polish.md` again — see the deny-message
+entry below for the mechanism and the affected messages. Those messages now describe this root cause
+accurately, but do not fix it (dir #323). Second, a real-file (non-symlink) `bin/keel` is left untouched
+by `install.sh`, whose refusal message says "remove it to let Keel wire the CLI." Both `bin/keel`'s own
+severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning instead tell the reader to re-run
+`install.sh`, so the one correct remedy is reachable only by reading `install.sh`'s own refusal message
+(dir #324).
+
 - **Four bugs found by the v0.8.0 delta audit's CLOSING round — auditing the audit's own fix round —
   are fixed, gating the v0.8.0 tag.** F-16 (the tag-blocker, found by the cross-vendor leg and
   independently re-reproduced by the blind leg): F-05's fix (below) swapped `_impact_merge_log`'s
