@@ -242,8 +242,9 @@ if [ -f "$root/tools/lib/manifest.sh" ]; then
   # shellcheck source=tools/lib/manifest.sh
   . "$root/tools/lib/manifest.sh"
 else
+  # Only manifest_usable — the one function keel_own_untouched below actually calls; install.sh never
+  # calls manifest_field.
   manifest_usable() { return 1; }
-  manifest_field() { :; }
 fi
 
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
@@ -251,6 +252,11 @@ fi
 # make the provenance check observe this run's own placement instead of the run before it.
 prior_manifest="$manifest_dir/.prior-manifest.$$"
 if [ -f "$manifest_file" ]; then cp "$manifest_file" "$prior_manifest"; else : > "$prior_manifest"; fi
+# Computed ONCE here rather than inside keel_own_untouched's own per-call body: the snapshot above is
+# frozen for the rest of the run, so this can't change between calls, and re-checking it per synced
+# file (one fork of manifest_field's sed|head pipeline each time) would be pure waste.
+prior_manifest_usable=0
+manifest_usable "$prior_manifest" && prior_manifest_usable=1
 
 # force_backup DEST — DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
 # preserved is the content the adopter actually saw at that path). A fresh timestamp every call — never
@@ -341,7 +347,7 @@ record_placed() {
 keel_own_untouched() {
   local src="$1" dest="$2" rel prior_extra
   cmp -s "$src" "$dest" 2>/dev/null && return 1
-  manifest_usable "$prior_manifest" || return 1
+  [ "$prior_manifest_usable" = 1 ] || return 1
   rel="${dest#"$HOME_DIR"/}"
   prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest")"
   [ -n "$prior_extra" ] && [ "$prior_extra" = "$(artifact_cksum "$dest")" ]
@@ -482,28 +488,34 @@ copy_gap() {
 # keel_own_untouched proves $dest was never the adopter's to begin with, or --force says take it anyway.
 sync_product() {
   local src="$1" dest="$2" alias_dest="${3:-}" name reply=""; name="$(basename "$dest")"
+  # alias_exists — computed once rather than re-testing the same three clauses at each of the two
+  # sites below that ask it (dir #323 /simplify pass): does an alias file, or even a dangling alias
+  # symlink (the checkout moved), already sit at $alias_dest?
+  local alias_exists=0
+  [ -n "$alias_dest" ] && { [ -e "$alias_dest" ] || [ -L "$alias_dest" ]; } && alias_exists=1
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
     return 1
   elif keel_own_untouched "$src" "$dest"; then
     place "$src" "$dest"
     echo "  ^    $name refreshed (Keel's own copy, unedited)"
-    if [ -n "$alias_dest" ] && { [ -e "$alias_dest" ] || [ -L "$alias_dest" ]; }; then
+    if [ "$alias_exists" = 1 ]; then
       echo "       $(basename "$alias_dest") is now redundant ($name is Keel's own place again) — remove it: rm \"$alias_dest\""
       sync_product "$src" "$alias_dest"
     fi
-  elif [ -n "$alias_dest" ] && { [ -e "$alias_dest" ] || [ -L "$alias_dest" ]; }; then
+  elif [ "$alias_exists" = 1 ]; then
     # resolved collision: Keel's copy lives at the alias; $dest — present, absent, or even identical to
     # the shipped file — is the user's space now. Route the drift check to the alias, always — unless
     # --force says otherwise: an adopter stuck here can reclaim $dest for Keel explicitly, backed up
     # first. The alias is never deleted either way (only the adopter's own hand removes it).
-    # (-e OR -L: a dangling alias symlink — e.g. the checkout moved — still marks the resolved state.)
-    if [ "$FORCE" = 1 ] && [ -f "$dest" ] && ! cmp -s "$src" "$dest"; then
+    local dest_differs=0
+    [ -f "$dest" ] && ! cmp -s "$src" "$dest" && dest_differs=1
+    if [ "$FORCE" = 1 ] && [ "$dest_differs" = 1 ]; then
       force_backup "$dest"
       place "$src" "$dest"
       echo "  +    $name updated (--force); $(basename "$alias_dest") is now redundant — remove it: rm \"$alias_dest\""
     else
-      if [ -f "$dest" ] && ! cmp -s "$src" "$dest"; then
+      if [ "$dest_differs" = 1 ]; then
         echo "  =    $name left untouched (yours; Keel's version lives at $(basename "$alias_dest")). Reclaim it: $advise_refresh_force"
       fi
       sync_product "$src" "$alias_dest"

@@ -85,7 +85,7 @@ if [ ! -f "$CHECKOUT/install.sh" ] || [ ! -d "$CHECKOUT/tools" ]; then
     fi
   fi
   echo "$prog: cannot find the Keel checkout next to me ($CHECKOUT has no install script or tools/)." >&2
-  echo "      keel must stay a symlink into its checkout — re-run install.sh$mode_flag$home_flag --force to re-wire it (a real file there is backed up first)." >&2
+  echo "      keel must stay a symlink into its checkout — re-run install.sh$mode_flag$home_flag to re-wire it (add --force if a real file, not a symlink, sits there — it gets backed up first)." >&2
   exit 1
 fi
 
