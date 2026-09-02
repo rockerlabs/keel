@@ -47,3 +47,24 @@ stat_portable_mode() {
     f) stat -f '%Lp' "$1" 2>/dev/null ;;
   esac
 }
+
+# `stat_portable_nlink FILE` — FILE's hard-link count ("1" for an ordinary file, ">1" when something
+# else names the same inode), or empty if FILE is unstattable.
+# Measured on both flavors rather than assumed: BusyBox v1.37.0 (the alpine-busybox CI leg's own image)
+# answers `stat -c '%h'` with 2 for a hard-linked file and 1 for a plain one, exit 0; macOS's BSD stat
+# answers `stat -f '%l'` identically.
+# Two things a caller must not assume, both measured rather than reasoned:
+#   - It does NOT follow symlinks. Given a link to a 2-link target it answers 1 — the LINK's own inode.
+#     None of the three functions here pass `-L`, so this matches stat_portable_mode, which likewise
+#     reports a symlink's own bits (755) rather than its target's (600). A caller that must reason
+#     about the target has to resolve the path first. This matters in the under-reporting direction:
+#     a symlink reads as "1", i.e. indistinguishable from an ordinary file.
+#   - Callers that must fail CLOSED have to treat an EMPTY answer as "unknown", not as "1" — an
+#     unstattable file is exactly the case where guessing is unsafe.
+stat_portable_nlink() {
+  _stat_portable_ensure_flavor
+  case "$_STAT_PORTABLE_FLAVOR" in
+    c) stat -c '%h' "$1" 2>/dev/null ;;
+    f) stat -f '%l' "$1" 2>/dev/null ;;
+  esac
+}

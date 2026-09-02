@@ -11,6 +11,110 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
+  one batch.** The audit ran four independent legs — two cross-vendor, two blind same-vendor — plus an
+  orchestrator over `v0.8.0..e5f151b`, and every finding was reproduced live before it was written down.
+  The headline blocker is a never-clobber regression against v0.8.0 that needed **no `--force` at all**:
+  `record_placed` classifies a Keel-placed artifact as `symlink` or `file`, but `keel_own_untouched`
+  only required the RECORDED kind to be `file` and never checked the dest's CURRENT kind — and `cksum`
+  reads straight through a symlink. An adopter who moves a Keel-placed command into a dotfiles repo and
+  symlinks it back (byte-identical by construction) therefore still satisfied the "Keel's own unedited
+  copy" predicate, and `place` → `atomic_copy`'s `mv -f` replaced the SYMLINK ITSELF — taking no backup,
+  since that branch skips `force_backup` on the strength of the predicate, and printing a message
+  asserting the file was unedited. No content was destroyed (the dotfiles copy survived at the old link
+  target), but the adopter's wiring was severed silently and their dotfiles repo left holding an orphan
+  the harness no longer reads. The predicate now refuses any dest whose current form disagrees with the
+  recorded kind. **That check is unconditional, in both modes**, which is not where this landed first:
+  the fix was drafted with a `$LINK` exemption, on the reasoning that linked mode's `place` makes a
+  symlink anyway so nothing is severed. Reproduced, that reasoning fails — the resulting form being a
+  symlink is not the same thing as no wiring having been destroyed; linked mode re-pointed the adopter's
+  dotfiles link at the checkout with the same silence, the same absent backup and the same "unedited"
+  message. The exemption also protected nothing: the copy→linked migration it was meant to preserve has
+  a regular FILE as its dest (an earlier copy-mode run's copy), which the check passes on its own. A
+  comment declaring that migration a "deliberate non-behaviour" — false, since `commands/<name>.md` has
+  the same home-relative key in both modes and `manifest_mode` keys on `$CODEX`, not on `$LINK`, and it
+  is the wording that motivated the exemption — is corrected, and the predicate's docstring now states
+  what it can and cannot observe: it compares bytes, so re-forming a file as a symlink IS the adopter
+  touching it, invisibly.
+  Second blocker, also a regression: the manifest snapshot's `cp` sat in an `if` BODY at top level
+  under `set -euo pipefail`, so a manifest that EXISTS but cannot be READ killed the run before any
+  file was placed — upstream of the degradation logic in `manifest_field`/`manifest_usable` that both
+  `install.sh`'s own comment and `tools/lib/manifest.sh`'s versioning contract promise handles exactly
+  this case "never a crash". The read is now the condition; a genuinely unwritable `$manifest_dir`
+  stays loud. Third, the linked `--force` advice dropped the `--home` suffix both its siblings carry:
+  `keel sync` forwards its args verbatim, so following the advised remedy from a `--link --home DIR`
+  install built a SECOND Keel at `$HOME/.claude` and left the file the message was about untouched
+  (`dir #98`'s class, re-opened at a new site; the `EPHEMERAL` bootstrap form gets the same treatment).
+  Five non-blocking fixes ride along: the `bin/keel` header comment still promised to replace only
+  Keel's own symlink and "never a real file you put at bin/keel" while `dir #324`'s own `--force`
+  takeover sits twelve lines below it; the `Verify:` WARN for an unwired `bin/keel` still advised a
+  bare re-run that reproduces the identical warning, contradicting the refusal the same run prints
+  about that file (and `tools/doctor.sh`'s W-CLI-UNWIRED, which `dir #324` had already updated); both
+  `install.sh` lines now carry the same conditional `--force` wording, and neither advises `keel sync`
+  any more — that dispatches through the very `bin/keel` both lines report is not wired, so it is
+  command-not-found at best and runs the adopter's own program at worst; `artifact_cksum`'s
+  `cksum:0:0` failure sentinel was self-equal, so a manifest that ever
+  recorded it would compare EQUAL to any currently-unreadable dest and the never-clobber rail would
+  fail OPEN (now rejected on the manifest side, which is enough to close the dest side too, since the
+  sentinel can only compare equal to itself — `install.sh` only; see the known issue below for the
+  removal rail);
+  `tools/keel-impact.sh`'s `_impact_prior_mode` docstring justified its `[ -f ]` guard as preventing a
+  `set -e` abort no live call path can reach (the three merge helpers that reach it are invoked from
+  six sites, every one `… && rm -f … || ok=0`, and that exemption propagates into the callee — verified
+  live by stripping the guard, which leaves the suite green), restated as what the guard actually buys:
+  a status-0 answer for an absent target, so the helper stays safe from a non-exempt caller; and
+  `force_backup`'s uniqueness claim is narrowed to the
+  second-granularity it actually has — deliberately a COMMENT fix, since two legs independently failed
+  to construct a reachable same-second double backup and a counter suffix would be complexity for an
+  unreachable case. `tests/test_install.sh` pins the four behavioural fixes red-first against the
+  unfixed code: the two symlink tests are split by mode, with the linked one binding on the link's
+  TARGET (asserting merely that a symlink survives passes even when the adopter's has been re-pointed —
+  the exact conflation the `$LINK` exemption rested on); one test holds the copy→linked migration that
+  must not break; and the permission halves are root-guarded for CI's alpine-busybox leg, with the
+  unconditional halves chosen to converge across both readers.
+  Four changes came out of the batch's own `/code-review max` pass rather than the nine findings. Two
+  close regressions the fix round itself introduced, one closes a pre-existing `dir #324` defect the
+  pass surfaced while checking them, and one closes the hard-link twin described below: `[ -f "$manifest_file" ]` is kept INSIDE the new
+  `cp` condition (dropping it made a FIFO at that path block `cp` forever in `open()`, hanging the
+  install before it placed anything — measured against v0.8.0's 2-second success); the stale-scratch
+  sweep now covers the merge step's `.artifacts.<pid>` as well, which surviving the snapshot read made
+  reachable for the first time, and the read of that temp now fails loudly rather than writing an
+  artifact-less manifest on the bash versions that do not abort there by themselves (measured: 3.2 does
+  not, 5.2 does — so this speaks for the macos-14 leg); and, pre-existing rather than self-inflicted,
+  the `bin/keel` refusal has advised `keel sync` since `dir #324`, which dispatches through the very
+  `bin/keel` it reports is unwired — it moves to the same reachable command as the WARN.
+
+  **A HARD link to a Keel-owned file was severed exactly as the symlink was, and is now refused too.**
+  A hard link is a regular file, so `[ ! -L ]` passes it, its cksum matches, and `mv -f` breaks it
+  under the same "Keel's own copy, unedited" message — the same never-clobber harm reached through `ln`
+  instead of `ln -s`. It was the unreleased twin of the headline regression, not a pre-existing wart:
+  `v0.8.0` has no `keel_own_untouched` at all, and there the link survives (measured link count 2 → 2,
+  alias fork) against 2 → 1 before this fix. The predicate now also refuses a dest whose link count is
+  not 1, via a new `stat_portable_nlink` in the existing `tools/lib/stat-portable.sh` — reused rather
+  than re-inlined, since that helper already carries the GNU/busybox-vs-BSD flavor split and its own
+  tests. An unanswerable count (no `tools/lib`, an unstattable dest) is treated as UNKNOWN and refused,
+  which is the fail-closed direction — pinned by T9b, on a checkout with the lib removed, since that is
+  the one place an unanswerable count is observable. **This one nearly shipped as a documented known
+  issue**: the
+  batch's first attempt to validate the probe on busybox returned empty for a plain file too, and that
+  broken result was written down as a platform fact and used to justify deferring. A review round
+  re-measured it on the CI image itself — BusyBox v1.37.0, `stat -c '%h'` → 2 for a hard link, 1 for a
+  plain file, exit 0 — and the premise dissolved.
+
+  **Known issue, shipping unfixed — the removal rail has both of these same gaps.** `uninstall.sh`'s
+  `artifact=file` branch guards with `[ -f "$apath" ]` and reads the cksum through it, so it is
+  symlink-blind exactly the way `keel_own_untouched` was: an adopter's dotfiles symlink is judged
+  Keel's own and swept. It also carries an output-identical hand-copy of `artifact_cksum` (its own
+  header requires that) with the `cksum:0:0` literal inline and no sentinel guard, so the fail-open is
+  open there too. A third route needs no drift and no cksum coincidence at all: a byte-identical
+  symlinked dest takes `install.sh`'s own `in_sync` branch, whose `record_placed` classifies by current
+  form and so rewrites the record from `file <cksum>` to `symlink -` — and `uninstall.sh`'s `symlink`
+  arm has no content or provenance check whatsoever, so the adopter's link is swept on the next
+  uninstall (reproduced end to end). Both are less severe than their install-side twins — `uninstall.sh` moves what it
+  removes into a `.keel-uninstall-<UTC>/` backup rather than deleting it, which is what its own prompt
+  promises — but the wiring is severed just the same. The RC audit scoped its findings to `install.sh`
+  and this PR did not widen them; the sibling wants its own ticket and its own tests.
+
 - **`docs/verification-economics.md`'s Clause A gets a severity/reachability carve-out and names
   §8's coverage bar as a non-license (dir #327).** The v0.7.2→v0.8.0 RC pass found two behavioural
   defects that the audit's own fix round induced; both were caught only because Clause A kept

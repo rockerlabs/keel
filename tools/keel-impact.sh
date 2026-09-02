@@ -358,12 +358,23 @@ ensure_evidence() {
 # --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate (_impact_merge_log added
 # by the v0.8.0 delta audit's F-05, for the same reason and the same two call sites) -----------------
 # _impact_prior_mode TARGET — TARGET's octal permission bits if it ALREADY EXISTS, empty otherwise.
-# Its own function for two reasons, neither cosmetic. First, the `[ -f ]` guard is load-bearing under
-# this file's `set -e`: `stat` on a missing path fails, and a bare `mode="$(stat …)"` assignment
-# propagates that failure and aborts the script — the guard is what makes "absent" an empty string
-# instead of a crash. Second, WHEN a caller captures differs per caller (see _impact_merge_ledger,
-# which must capture before `ensure_ledger` creates the file), so the capture cannot simply move into
-# _impact_atomic_write below; only its logic is shared, not its placement.
+# Its own function for two reasons, neither cosmetic. First, the `[ -f ]` guard owns the RETURN STATUS:
+# `stat` on a missing path exits non-zero, and the callers' `local old_mode;
+# old_mode="$(_impact_prior_mode …)"` takes THAT as the assignment's own status — the guard is what
+# makes "TARGET is absent" a normal, SUCCESSFUL answer instead of a failing one, so the function stays
+# safe if it is ever called from a non-exempt context (a plain `old_mode="$(_impact_prior_mode "$t")"`
+# outside an `&&`/`||` list would otherwise abort the script on the entirely legitimate first-create
+# path). What the guard is NOT — stated because the obvious reading claims it: it is not what keeps the
+# ANSWER empty when it is stripped. Remove it and an absent TARGET still yields an empty string,
+# because `stat` prints nothing on failure and `stat_portable_mode`'s own `2>/dev/null`
+# (tools/lib/stat-portable.sh) keeps its complaint off the console; only the STATUS changes, to 1. And
+# that status aborts nothing on any LIVE path: the three merge helpers that reach this are invoked from
+# six sites, every one of them `_impact_merge_* … && rm -f … || ok=0`, and that `&&` list's errexit
+# exemption propagates into the callee's body (verified by stripping the guard: `migrate` still exits
+# 0, suite still green). Second, WHEN a caller captures
+# differs per caller (see
+# _impact_merge_ledger, which must capture before `ensure_ledger` creates the file), so the capture
+# cannot simply move into _impact_atomic_write below; only its logic is shared, not its placement.
 _impact_prior_mode() {
   local target="$1"
   [ -f "$target" ] || return 0

@@ -91,6 +91,39 @@ check_contains "stat_portable_mode: chmod 755 reads back as 755" "$mode755" "755
 mode_missing="$(stat_portable_mode "$d/does-not-exist.txt")"
 check_contains "stat_portable_mode: a missing file yields empty output" "[$mode_missing]" "[]"
 
+# --- stat_portable_nlink: an ordinary file is 1, a hard-linked one is >1 ----------------------------
+# install.sh's never-clobber predicate keys on exactly this: a hard link is a regular file, so it is
+# the only thing distinguishing "Keel's own copy" from "a name the adopter also reaches another way".
+printf 'hello\n' > "$d/nlink.txt"
+nlink_plain="$(stat_portable_nlink "$d/nlink.txt")"
+check_status "stat_portable_nlink: an ordinary file reads back as 1" "1" "$nlink_plain"
+
+ln "$d/nlink.txt" "$d/nlink-hard.txt"
+nlink_hard="$(stat_portable_nlink "$d/nlink.txt")"
+check_status "stat_portable_nlink: a hard-linked file reads back as 2" "2" "$nlink_hard"
+check_status "stat_portable_nlink: …from either name" "2" "$(stat_portable_nlink "$d/nlink-hard.txt")"
+
+# It does NOT follow symlinks: given a link to a target that HAS 2 links, it answers 1 — the link's own
+# inode. Pinned in the discriminating shape, with the hard link still in place: an earlier version of
+# this test removed the hard link first, which dropped the target to 1 and made "follows" and "does not
+# follow" both answer 1, so it could not fail either way. install.sh is safe regardless (it rejects
+# symlinks on an earlier clause), but the contract is what the next caller reads, and the error is in
+# the under-reporting direction — a symlink looks exactly like an ordinary file.
+ln -s "$d/nlink.txt" "$d/nlink-sym.txt"
+check_status "stat_portable_nlink: a symlink reports its OWN count, not the 2-link target's" "1" "$(stat_portable_nlink "$d/nlink-sym.txt")"
+check_status "stat_portable_nlink: …while the target itself still reads 2" "2" "$(stat_portable_nlink "$d/nlink.txt")"
+# The sibling behaves the same way, which is why the docstring no longer claims either follows.
+chmod 600 "$d/nlink.txt"
+check_absent "stat_portable_mode: a symlink likewise reports its own bits, not the target's 600" \
+  "[$(stat_portable_mode "$d/nlink-sym.txt")]" "[600]"
+rm -f "$d/nlink-hard.txt"
+
+# --- stat_portable_nlink: a nonexistent file yields empty, not a crash ------------------------------
+# The caller (install.sh's keel_own_untouched) treats empty as UNKNOWN and refuses, so this empty is
+# load-bearing in the fail-closed direction, not merely tidy.
+nlink_missing="$(stat_portable_nlink "$d/does-not-exist.txt")"
+check_contains "stat_portable_nlink: a missing file yields empty output" "[$nlink_missing]" "[]"
+
 # --- the known consumer sources the shared lib, not a private inline copy of the probe ---------------
 check_contains "tools/branch-cleanup.sh sources tools/lib/stat-portable.sh" \
   "$(cat "$REPO_ROOT/tools/branch-cleanup.sh")" 'lib/stat-portable.sh'

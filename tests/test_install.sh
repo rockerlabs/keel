@@ -392,4 +392,394 @@ check_status "T9 corrupted tools/lib/manifest.sh → still exit 0" 0 "$STATUS"
 check_file "T9 install still lands the core despite the corruption" "$t9home/FRAMEWORK.md"
 check_file "T9 install still lands commands" "$t9home/commands/wrap.md"
 
+# T9b — the same degradation promise for tools/lib/stat-portable.sh, which keel_own_untouched now needs
+# for its hard-link count. Two directions, and the second is the one that matters: a MISSING lib must
+# not abort (the fallback stub answers empty), and an empty count must make the predicate refuse —
+# fail CLOSED. That direction had no coverage until now: a mutation flipping the clause to allow an
+# unanswerable count passes every other test in this file, because everywhere else the count IS
+# answerable. Here it is not, so this is the one place the direction is observable.
+t9bck="$SANDBOX/force-checkout-nostatlib"
+cp -r "$ckdir" "$t9bck"
+rm -f "$t9bck/tools/lib/stat-portable.sh"
+t9bhome="$SANDBOX/force-nostatlib-home"; mkdir -p "$t9bhome"
+fresh_home_env "$t9bhome"
+run env "${FRESH_HOME_ENV[@]}" "$t9bck/install.sh" --home "$t9bhome" --no-hooks
+check_status "T9b missing tools/lib/stat-portable.sh → still exit 0" 0 "$STATUS"
+check_file "T9b install still lands the core despite the missing lib" "$t9bhome/FRAMEWORK.md"
+printf '\nNOSTATLIB-RELEASE\n' >> "$t9bck/commands/polish.md"
+run env "${FRESH_HOME_ENV[@]}" "$t9bck/install.sh" --home "$t9bhome" --no-hooks
+check_status "T9b re-run with a drifted command → exit 0" 0 "$STATUS"
+check_absent "T9b an unanswerable link count refuses, never auto-refreshes (fail closed)" "$OUT" "polish.md refreshed (Keel's own copy, unedited)"
+check_contains "T9b …routing to the never-clobber path instead" "$OUT" "polish.md is your own command"
+
+# --- v0.8.1 RC audit: the never-clobber rail, the manifest snapshot, and the retargeting suffix -----
+
+# T10 — the RC audit's headline blocker, a regression against v0.8.0 that needed NO --force at all.
+# record_placed is symlink-aware (`symlink -` for a link, a `cksum:` only for a regular file);
+# keel_own_untouched was not — it required the RECORDED kind to be `file` but never checked the dest's
+# CURRENT kind, and `cksum` reads straight THROUGH a symlink. So an adopter who moves a Keel-placed
+# command into a dotfiles repo and symlinks it back (byte-identical by construction) still satisfied
+# the predicate, and place() → atomic_copy's `mv -f` replaced the SYMLINK ITSELF — no backup (that
+# branch skips force_backup on the strength of the predicate) and a message asserting the file was
+# "unedited". No content is destroyed, but the adopter's wiring is severed silently and their dotfiles
+# repo is left holding an orphan the harness no longer reads.
+symhome="$SANDBOX/symlink-dest-home"; mkdir -p "$symhome"
+symdots="$SANDBOX/symlink-dest-dotfiles"; mkdir -p "$symdots"
+fresh_home_env "$symhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symhome" --no-hooks
+check_status "T10 copy install into the symlink fixture → exit 0" 0 "$STATUS"
+check_file "T10 backlog.md installed" "$symhome/commands/backlog.md"
+# The dotfiles move: same bytes, different form. Nothing here edits the content.
+mv "$symhome/commands/backlog.md" "$symdots/backlog.md"
+ln -s "$symdots/backlog.md" "$symhome/commands/backlog.md"
+printf '\nSYMLINK-DEST-RELEASE\n' >> "$ckdir/commands/backlog.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symhome" --no-hooks
+check_status "T10 plain re-run over a symlinked dest → exit 0" 0 "$STATUS"
+check_link "T10 the adopter's symlink survives (never-clobber holds with no --force)" "$symhome/commands/backlog.md"
+# The two named below — "the linked-to file was not rewritten" and the .bak count, NOT the "unedited"
+# absence between them, which DOES bind — do not bind the kind check. Measured: both stay green, because
+# `mv -f` replaces the LINK, so the dotfiles target keeps its old bytes, and taking no backup IS the
+# defect. They guard a different implementation class (a fix that wrote THROUGH the link, or that
+# backed up and then clobbered). The three that bind are the check_link, the "unedited" absence, and
+# the decline message below.
+check_absent "T10 the linked-to file was not rewritten either" "$(cat "$symdots/backlog.md")" "SYMLINK-DEST-RELEASE"
+check_absent "T10 no bogus 'Keel's own copy, unedited' claim about it" "$OUT" "backlog.md refreshed (Keel's own copy, unedited)"
+t10_bak_count="$(ls "$symhome"/commands/backlog.md.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T10 no backup was needed (nothing was overwritten)" 0 "$t10_bak_count"
+check_contains "T10 the decline is still actionable" "$OUT" "backlog.md is your own command"
+
+# T10b — the same never-clobber rail, in LINKED mode. The first draft of T10's fix exempted linked
+# mode (`[ "$LINK" = 1 ] || [ ! -L "$dest" ]`) on the reasoning that place() makes a symlink there
+# anyway, so nothing is severed. Reproduced live, that is false: the resulting form being a symlink is
+# not the same thing as no wiring having been destroyed — the run re-pointed the adopter's dotfiles
+# link at the checkout, took no backup, and printed the same "unedited" message. The dest here is a
+# symlink with a copy-mode `file` record, which is exactly the case such an exemption would admit.
+symlinkhome="$SANDBOX/symlink-dest-linked-home"; mkdir -p "$symlinkhome"
+symlinkdots="$SANDBOX/symlink-dest-linked-dotfiles"; mkdir -p "$symlinkdots"
+fresh_home_env "$symlinkhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symlinkhome" --no-hooks
+check_status "T10b copy install into the linked-mode symlink fixture → exit 0" 0 "$STATUS"
+mv "$symlinkhome/commands/wrap.md" "$symlinkdots/wrap.md"
+ln -s "$symlinkdots/wrap.md" "$symlinkhome/commands/wrap.md"
+printf '\nLINKED-SYMLINK-RELEASE\n' >> "$ckdir/commands/wrap.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symlinkhome" --no-hooks --link
+check_status "T10b --link re-run over a symlinked dest → exit 0" 0 "$STATUS"
+check_absent "T10b no bogus 'Keel's own copy, unedited' claim in linked mode either" "$OUT" "wrap.md refreshed (Keel's own copy, unedited)"
+check_contains "T10b …the linked-mode symlink branch declines it by name instead" "$OUT" "wrap.md is a symlink to a different target"
+check_link "T10b the adopter's symlink survives" "$symlinkhome/commands/wrap.md"
+check_file "T10b the dotfiles copy is still there" "$symlinkdots/wrap.md"
+# -ef, not a readlink string compare: same reason in_sync gives for its own (install.sh) — the same
+# file is reachable through different path spellings (/tmp vs /private/tmp on macOS). Asserting that
+# a symlink merely SURVIVES is not enough here: place() makes a symlink in linked mode too, so the
+# broken behaviour also leaves one — it just points at the checkout. Identity is what binds.
+run test "$symlinkhome/commands/wrap.md" -ef "$symlinkdots/wrap.md"
+check_status "T10b …still resolving to their own dotfiles copy, not re-pointed at the checkout" 0 "$STATUS"
+
+# T10c — the HARD-link twin. `[ ! -L ]` cannot see it: a hard link is a regular file, so the bytes
+# match and `mv -f` severs it exactly as it severed the symlink, under the same "unedited" message.
+# Not pre-existing — v0.8.0 has no such predicate at all and the link survives there (2 → 2, alias
+# fork), so this was the unreleased twin of T10's own regression. The link COUNT is what binds; the
+# file existing proves nothing, since `mv -f` leaves a file at that path either way.
+hardhome="$SANDBOX/hardlink-dest-home"; mkdir -p "$hardhome"
+harddots="$SANDBOX/hardlink-dest-dotfiles"; mkdir -p "$harddots"
+fresh_home_env "$hardhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$hardhome" --no-hooks
+check_status "T10c copy install into the hardlink fixture → exit 0" 0 "$STATUS"
+mv "$hardhome/commands/global-review.md" "$harddots/global-review.md"
+ln "$harddots/global-review.md" "$hardhome/commands/global-review.md"   # HARD link, not symbolic
+printf '\nHARDLINK-DEST-RELEASE\n' >> "$ckdir/commands/global-review.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$hardhome" --no-hooks
+check_status "T10c plain re-run over a hardlinked dest → exit 0" 0 "$STATUS"
+check_absent "T10c no bogus 'Keel's own copy, unedited' claim about it" "$OUT" "global-review.md refreshed (Keel's own copy, unedited)"
+# Does NOT bind, and is kept only as a statement of the intended end state: under the fix nothing is
+# written, and under the defect `mv -f` gives the DEST a new inode while this path keeps the old bytes
+# — absent either way (mutation-confirmed). The count assertion below is what binds.
+check_absent "T10c the adopter's other name still holds the original content" "$(cat "$harddots/global-review.md")" "HARDLINK-DEST-RELEASE"
+# -ef, not the helper: device+inode identity IS what a hard link is, it is the discriminator T10b
+# already uses, and it does not go through stat_portable_nlink — so a broken helper cannot make this
+# test green (measured: stubbing the helper to always answer 2 left all five of T10c's assertions
+# passing when it read the count through it). It also drops a `bash -c` sourcing of a bash-only lib,
+# which is a construct this suite has already been bitten by on the dash/busybox CI legs.
+run test "$hardhome/commands/global-review.md" -ef "$harddots/global-review.md"
+check_status "T10c …because the hard link itself survives (same inode as the adopter's other name)" 0 "$STATUS"
+
+# T11 — the behaviour T10's fix must NOT break: the copy→linked migration still runs, and it needs no
+# $LINK exemption in the predicate because its dest is a regular FILE, not a link (see T10b).
+# `commands/<name>.md` has the same home-relative key in both modes and both modes read the same
+# manifest file (manifest_mode keys on $CODEX, not on $LINK), so a `file` + `cksum:` record written by
+# an earlier COPY-mode run IS visible to a later `--link` run and DOES drive the provenance branch.
+# That is the intended copy→linked migration of a DRIFTED command (v0.8.0 left a stale copy shadowing
+# the link forever) — a $LINK-blind "reject every symlinked dest" fix would have silently killed it.
+mighome="$SANDBOX/copy-to-link-home"; mkdir -p "$mighome"
+fresh_home_env "$mighome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$mighome" --no-hooks
+check_status "T11 copy install → exit 0" 0 "$STATUS"
+check_nolink "T11 polish.md starts as a regular copy" "$mighome/commands/polish.md"
+printf '\nMIGRATION-RELEASE\n' >> "$ckdir/commands/polish.md"   # the installed copy is now drifted
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$mighome" --no-hooks --link
+check_status "T11 --link over the copy-mode home → exit 0" 0 "$STATUS"
+check_contains "T11 …via the provenance branch, not a decline" "$OUT" "polish.md refreshed (Keel's own copy, unedited)"
+check_link "T11 the drifted copy became the canonical symlink" "$mighome/commands/polish.md"
+run test "$mighome/commands/polish.md" -ef "$ckdir/commands/polish.md"   # clobbers $OUT — assert on it last
+check_status "T11 …resolving into the checkout" 0 "$STATUS"
+
+# T12 — the manifest snapshot's own read must not be able to kill the run. The `cp` that takes it sat
+# in an `if` BODY at top level under `set -euo pipefail`, upstream of the degradation logic in
+# manifest_field/manifest_usable that the versioning contract points at — so a manifest that EXISTS
+# but cannot be READ aborted the whole install before a single file was placed (a regression against
+# v0.8.0, which completed the install and failed only on trailing bookkeeping).
+#
+# The unconditional half is "the install completes": it converges across readers, since a root reader
+# (CI's alpine-busybox leg, where chmod 000 is a no-op) simply reads the manifest and installs anyway.
+# Coverage map, stated so "alpine green" is not misread as evidence: the permission-dependent halves
+# here and in T12b/T13/T14d bind ONLY on the non-root matrix legs (ubuntu-24.04, macos-14). On the
+# alpine-busybox leg those guards skip, and a regression in finding 2, finding 7 or T14d's own target
+# would ship green there — measured by forcing the guards false. The T12 scratch-hygiene assertion
+# below is NOT inside a guard but is equally root-blind: on the root leg the sweep regression it
+# pins ships green too, because a root reader leaves no leftover to sweep.
+# The exit STATUS does not converge — non-root still exits non-zero on the trailing manifest-merge
+# bookkeeping, exactly as v0.8.0 did — so it is deliberately not asserted here; what the fix owes is
+# placement, not that pre-existing wart.
+umhome="$SANDBOX/unreadable-manifest-home"; mkdir -p "$umhome/.keel"
+printf 'keel_manifest_version=1\n' > "$umhome/.keel/install-manifest.claude"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 000 "$umhome/.keel/install-manifest.claude"; fi
+fresh_home_env "$umhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umhome" --no-hooks
+if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 644 "$umhome/.keel/install-manifest.claude"; fi
+check_file "T12 an unreadable manifest still lands the core" "$umhome/FRAMEWORK.md"
+check_file "T12 …and the commands" "$umhome/commands/wrap.md"
+check_contains "T12 …and the run reaches its Verify block" "$OUT" "Verify:"
+
+# Scratch hygiene, pinned on T12's own fixture rather than a new one: surviving the snapshot read is
+# what first made the merge step's `.artifacts.<pid>` reachable on an abort, so the sweep that reaps it
+# is this batch's own addition. The contract is BOUNDED litter — at most the previous run's leftover —
+# not zero, and it converges across readers: a root reader reads the manifest fine and leaves 0, a
+# non-root one aborts at the merge and leaves exactly 1, which the NEXT run reaps.
+um_scratch_a="$(find "$umhome/.keel" -name '.artifacts.*' 2>/dev/null | wc -l | tr -d ' ')"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 000 "$umhome/.keel/install-manifest.claude"; fi
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umhome" --no-hooks
+if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 644 "$umhome/.keel/install-manifest.claude"; fi
+um_scratch_b="$(find "$umhome/.keel" -name '.artifacts.*' 2>/dev/null | wc -l | tr -d ' ')"
+if [ "$um_scratch_a" -le 1 ] && [ "$um_scratch_b" -le 1 ]; then
+  pass "T12 merge scratch stays bounded at one leftover, never accumulating"
+else
+  fail "T12 merge scratch stays bounded at one leftover, never accumulating" "run1=$um_scratch_a run2=$um_scratch_b"
+fi
+
+# T12b — the other half of the contract: provenance DEGRADES to unavailable rather than misfiring.
+# Root-guarded on its own, and for the opposite reason to T12's: a root reader gets a perfectly
+# readable manifest here, so the provenance branch legitimately fires for it and this assertion would
+# be false for a correct run.
+# The whole fixture — baseline install included — sits inside the guard: on the root leg every
+# assertion below is skipped, so an unguarded baseline would spend a full install.sh run (and mutate
+# the shared fixture checkout) for a claim T10/T11/T12 each already make there.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  umdrift="$SANDBOX/unreadable-manifest-drift-home"; mkdir -p "$umdrift"
+  fresh_home_env "$umdrift"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
+  check_status "T12b baseline install → exit 0" 0 "$STATUS"
+  printf '\nUNREADABLE-MANIFEST-RELEASE\n' >> "$ckdir/commands/wrap.md"   # would refresh if provenance worked
+  chmod 000 "$umdrift/.keel/install-manifest.claude"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
+  chmod 644 "$umdrift/.keel/install-manifest.claude"   # restore so cleanup can remove the sandbox
+  check_absent "T12b provenance degrades to unavailable, never a misfire" "$OUT" "wrap.md refreshed (Keel's own copy, unedited)"
+  check_file "T12b …the drifted command routes to the never-clobber path instead" "$umdrift/commands/keel-wrap.md"
+  check_contains "T12b …the install still placed the core that run" "$OUT" "Verify:"
+fi
+
+# T13 — the self-equal error sentinel. artifact_cksum yields $CKSUM_UNREADABLE ("cksum:0:0") for a file
+# it cannot read, and keel_own_untouched decides provenance by STRING EQUALITY — so a manifest that
+# ever recorded that sentinel compared EQUAL to any currently-unreadable dest, and the predicate
+# answered "Keel's own unedited copy, refresh it without asking" for a file it could not read one byte
+# of: failing OPEN on the rail whose whole job is to fail closed. Root-guarded (chmod 000 is a no-op
+# for root, so the dest would simply be readable and the sentinel never produced).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  senthome="$SANDBOX/cksum-sentinel-home"; mkdir -p "$senthome"
+  fresh_home_env "$senthome"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$senthome" --no-hooks
+  check_status "T13 baseline install → exit 0" 0 "$STATUS"
+  sentman="$senthome/.keel/install-manifest.claude"
+  # Plant the sentinel on the PRIOR side — the only construction that makes both sides equal.
+  sed 's|^artifact=file	commands/go.md	cksum:.*|artifact=file	commands/go.md	cksum:0:0|' "$sentman" > "$sentman.tmp"
+  mv "$sentman.tmp" "$sentman"
+  check_contains "T13 the sentinel is planted in the prior manifest" "$(cat "$sentman")" "artifact=file	commands/go.md	cksum:0:0"
+  printf '\nSENTINEL-RELEASE\n' >> "$ckdir/commands/go.md"
+  sent_before="$(cat "$senthome/commands/go.md")"
+  chmod 000 "$senthome/commands/go.md"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$senthome" --no-hooks
+  chmod 644 "$senthome/commands/go.md" 2>/dev/null || true
+  sent_after="$(cat "$senthome/commands/go.md")"
+  # Liveness FIRST: every other assertion here is a check_absent or a content check that holds
+  # trivially on a run that died before placing anything, so without this anchor a change making an
+  # unreadable dest abort under `set -euo pipefail` — the very defect class finding 2 fixes, on the
+  # very path this test walks — would ship with T13 green (proved by injecting an early exit).
+  check_contains "T13 the run completed rather than dying on the unreadable dest" "$OUT" "Verify:"
+  check_absent "T13 an unreadable dest is never judged Keel's own unedited copy" "$OUT" "go.md refreshed (Keel's own copy, unedited)"
+  # Exact equality, NOT check_contains: the "newer release" is $sent_before plus an appended marker,
+  # so a fully clobbered dest still CONTAINS $sent_before — a substring check passes under the exact
+  # defect it names (proved: it stayed green while its siblings went red under mutation).
+  # "content", not "byte for byte": both sides come from $(cat …), which strips trailing newlines, so
+  # a trailing-newline-only difference would slip through. The paired SENTINEL-RELEASE absence below
+  # covers the real clobber; this pins that nothing else changed.
+  check_status "T13 …and its content is left alone, exactly" "$sent_before" "$sent_after"
+  check_absent "T13 …so the newer release was not written over it" "$sent_after" "SENTINEL-RELEASE"
+fi
+
+# T14 — the retargeting suffix on the linked --force advice. `keel sync` forwards its args verbatim
+# and adds nothing (keel:128), so a bare `keel sync --force` becomes `install.sh --force`, whose home
+# re-resolves to ${KEEL_HOME:-$HOME/.claude}: following the advised remedy from a `--link --home DIR`
+# install built a SECOND Keel at the default home and left the file the message was about untouched.
+# Both siblings (advise_install/advise_uninstall) already carried the suffix.
+ladvhome="$SANDBOX/link-advice-home"; mkdir -p "$ladvhome/commands"
+printf '# my own polish command, never touched by Keel\n' > "$ladvhome/commands/polish.md"
+fresh_home_env "$ladvhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$ladvhome" --no-hooks
+check_status "T14 linked retargeted install → exit 0" 0 "$STATUS"
+check_contains "T14 the linked --force advice carries the --home suffix" "$OUT" "keel sync --home \"$ladvhome\" --force"
+
+# T14b — the EPHEMERAL half of the same fix, which had no pin at all: a bootstrap run's checkout is a
+# temp clone reaped on exit, so the piped bootstrap form is the adopter's ONLY remaining remedy — the
+# mode where an un-retargeted advice string costs the most. KEEL_EPHEMERAL is the env signal
+# bootstrap.sh sets (install.sh's header documents it as exactly that internal signal).
+eadvhome="$SANDBOX/ephemeral-advice-home"; mkdir -p "$eadvhome/commands"
+printf '# my own polish command, never touched by Keel\n' > "$eadvhome/commands/polish.md"
+fresh_home_env "$eadvhome"
+run env "${FRESH_HOME_ENV[@]}" KEEL_EPHEMERAL=1 "$ckdir/install.sh" --home "$eadvhome" --no-hooks
+check_status "T14b ephemeral retargeted install → exit 0" 0 "$STATUS"
+check_contains "T14b the ephemeral --force advice carries the --home suffix too" "$OUT" "sh -s -- --home \"$eadvhome\" --force"
+
+# T14c — the Verify WARN for an unwired bin/keel (finding 6) had no test anywhere in the tree: proved
+# by mutation that reverting it to the bare-re-run wording left the whole file green. T6 above covers
+# the REFUSAL line; this covers the WARN, which is a separate line in the same run — the pair being
+# contradictory was the finding. Both must name --force, and neither may advise `keel sync`, which
+# dispatches through the very bin/keel both lines report is not wired.
+warnhome="$SANDBOX/cli-warn-home"; mkdir -p "$warnhome/bin"
+printf '#!/bin/sh\necho not-keel\n' > "$warnhome/bin/keel"
+fresh_home_env "$warnhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$warnhome" --no-hooks
+check_status "T14c linked install over a real-file bin/keel → exit 0" 0 "$STATUS"
+check_contains "T14c the Verify WARN fires for the unwired CLI" "$OUT" "keel CLI not wired"
+# The needle runs THROUGH the carve-out on purpose: mutation-proved that stopping at "(add --force"
+# leaves a WARN-only regression green, because T14e's own carve-out check is whole-output and the
+# refusal satisfies it. This is the likely single-site regression — the WARN is the line that mirrors
+# tools/doctor.sh:734, whose string still says only "not a symlink".
+check_contains "T14c …and advises install.sh, reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there already"
+# The needle carries the CONDITIONAL wording, not just the line's identity: mutation-proved that a
+# needle of "is not a Keel symlink" alone leaves a flat `--force` regression green, and a flat --force
+# is what aborts the run at force_backup's `cp` when a DIRECTORY sits there.
+check_contains "T14c the refusal line names --force conditionally, carving out a directory" "$OUT" "with --force if a real file, not a symlink or a directory, sits there"
+# Scoped to the bin/keel lines, NOT the whole output: `keel sync` is the documented linked-mode verb
+# (README.md names it), so a whole-output needle would go red the day anyone aligns the linked closing
+# summary with that — a failure with nothing to do with this invariant, which the next session would
+# have to re-derive. What must hold is narrower: neither line this run prints ABOUT bin/keel may
+# advise a command that dispatches through the bin/keel they report is missing.
+warn_lines="$(printf '%s\n' "$OUT" | grep -E 'bin/keel|keel CLI not wired' || true)"
+check_contains "T14c the scoped needle actually caught both lines" "$warn_lines" "is not a Keel symlink"
+check_absent "T14c neither line advises keel sync, which needs the bin/keel they say is missing" "$warn_lines" "keel sync"
+
+# T14e — the DIRECTORY case, which three comments now cite as the whole reason the --force advice is
+# CONDITIONAL and which nothing planted until now. force_backup is a plain `cp`: handed a directory it
+# fails, and it is called from an `if` body under `set -euo pipefail`, so a flat --force here aborts
+# the run mid-sync with the commands already placed. The carve-out is the only thing standing between
+# an adopter and that, so it gets a fixture, not just a string match.
+dirhome="$SANDBOX/dir-bin-keel-home"; mkdir -p "$dirhome/bin/keel"
+printf 'not keel\n' > "$dirhome/bin/keel/something"
+fresh_home_env "$dirhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$dirhome" --no-hooks
+check_status "T14e a directory at bin/keel → the plain run still completes" 0 "$STATUS"
+check_dir "T14e …the adopter's directory is left untouched" "$dirhome/bin/keel"
+check_file "T14e …with its contents intact" "$dirhome/bin/keel/something"
+check_contains "T14e …and the advice carves a directory out of --force" "$OUT" "not a symlink or a directory"
+
+# T14d — finding 2's other half, unpinned until now: the degradation must NOT swallow a genuinely
+# unwritable \$manifest_dir. That is the deliberate asymmetry of the fix — `cp` sits in the condition
+# so an unreadable manifest degrades, while `: > "\$prior_manifest"` stays in the body so a directory
+# that cannot be written to still aborts loudly. Without this pin, a later "consistency" cleanup adding
+# `|| true` to the second half would silently install over a snapshot that was never created, making
+# every Keel-owned file read as foreign. Root-guarded: chmod is a no-op for root.
+# The binding assertion is the check_nofile, NOT the exit status: under that exact mutation the run
+# still exits 1, because it reaches the merge step and dies writing into the same unwritable dir. So
+# the exit code cannot tell the intended abort from the incidental one — do not trim the check_nofile
+# as redundant, it is the half that discriminates (measured, not assumed).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  wrhome="$SANDBOX/unwritable-manifest-dir-home"; mkdir -p "$wrhome/.keel"
+  chmod 500 "$wrhome/.keel"
+  fresh_home_env "$wrhome"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$wrhome" --no-hooks
+  chmod 700 "$wrhome/.keel"   # restore so cleanup can remove the sandbox
+  # Labelled for what it actually binds. The exit status alone does NOT discriminate — under the
+  # `|| true` mutation the run still exits 1, later, on the trailing manifest write into the same
+  # unwritable dir (measured). The two below are the discriminators: nothing placed, and the run never
+  # reached its Verify block, i.e. it died at the snapshot, not at the end.
+  check_status "T14d an unwritable .keel dir fails, rather than installing over a missing snapshot" 1 "$STATUS"
+  check_nofile "T14d …having placed nothing" "$wrhome/FRAMEWORK.md"
+  check_absent "T14d …and having aborted before Verify, i.e. at the snapshot" "$OUT" "Verify:"
+fi
+
+# T14f — the `[ -f "$manifest_file" ]` inside that same condition, which is load-bearing and was
+# unpinned: it is what confines the snapshot read to a REGULAR file. Without it a FIFO there makes `cp`
+# block forever in open(), hanging the installer with nothing placed — a worse failure than the bug the
+# condition was introduced to fix, and one a "the cp failure already covers it" simplification would
+# reintroduce. Run in the BACKGROUND with a bounded wait on purpose: the suite ships no timeout helper
+# and `timeout` is absent on macOS, so a naive foreground version would hang CI instead of failing it.
+# The wait is only ever paid in full when the defect is present; the healthy path exits in about a second.
+if command -v mkfifo >/dev/null 2>&1; then
+  fifohome="$SANDBOX/fifo-manifest-home"; mkdir -p "$fifohome/.keel"
+  mkfifo "$fifohome/.keel/install-manifest.claude" 2>/dev/null || true
+  # `command -v mkfifo` proves the TOOL exists, not that the fixture does — a filesystem without
+  # FIFO support or a sandbox denying mknod would turn this whole test into a plain fresh install
+  # reporting two passes (mutation-proved: 198/0 while exercising nothing).
+  if [ ! -p "$fifohome/.keel/install-manifest.claude" ]; then
+    fail "T14f the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  fresh_home_env "$fifohome"
+  env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fifohome" --no-hooks >/dev/null 2>&1 </dev/null &
+  fifo_pid=$!
+  fifo_waited=0
+  while kill -0 "$fifo_pid" 2>/dev/null && [ "$fifo_waited" -lt 30 ]; do
+    sleep 1; fifo_waited=$((fifo_waited + 1))
+  done
+  if kill -0 "$fifo_pid" 2>/dev/null; then
+    # Release the blocked reader BEFORE killing, then reap the children too: `kill -9` on the
+    # backgrounded shell does not touch the `cp` blocked in open() on the FIFO — it is reparented to
+    # PID 1 and stays blocked forever, and unlinking the FIFO does not release a pending open. Found
+    # live: five such orphans had accumulated on one machine from this batch's own probes.
+    : > "$fifohome/.keel/install-manifest.claude" 2>/dev/null &
+    fifo_writer=$!
+    pkill -P "$fifo_pid" 2>/dev/null || true
+    kill -9 "$fifo_pid" 2>/dev/null || true
+    wait "$fifo_pid" 2>/dev/null || true
+    # The writer itself can become the orphan it was added to prevent: if pkill reaps the reader first,
+    # `: >` blocks forever opening a FIFO with nobody on the other end, and unlinking does not release
+    # a pending open. In practice the writer wins, which is why this is belt-and-braces rather than the
+    # fix — but a latent unkillable process in a test's failure path is not worth leaving to luck.
+    kill -9 "$fifo_writer" 2>/dev/null || true
+    wait "$fifo_writer" 2>/dev/null || true
+    fail "T14f a FIFO at the manifest path must not hang the install" "still running after ${fifo_waited}s"
+  else
+    wait "$fifo_pid"; fifo_st=$?
+    check_status "T14f a FIFO at the manifest path does not hang the install" 0 "$fifo_st"
+    check_file "T14f …and the core is still placed" "$fifohome/FRAMEWORK.md"
+  fi
+  rm -f "$fifohome/.keel/install-manifest.claude"
+else
+  pass "T14f mkfifo unavailable — FIFO manifest guard not exercised here"
+fi
+
+# T14g — a STATIC pin for the merge-scratch guard, which resists a deterministic fixture (it guards a
+# genuine microsecond race between two installs into one home) and was mutation-proved to have no
+# coverage at all: deleting the whole block left 198/0. The behaviour it protects is version-dependent
+# — bash 3.2 continues past a failed `done < file` and writes an artifact-less manifest, bash 5.2
+# aborts — so on the leg where it matters most nobody would notice it disappearing. Pinning the guard's
+# own text is the honest substitute, and it holds on every leg. THREE needles, because two were not
+# enough: the condition, the message, and the abort itself. Mutation-proved that with only the first
+# two, deleting the `exit 1` — so the guard warns and then falls straight into the read that writes the
+# artifact-less manifest, the exact silent failure it exists to prevent — left the file 210/0.
+pin "T14g install.sh guards the merge scratch before reading it" "$REPO_ROOT/install.sh" \
+  '[ ! -f "$merge_tmp" ]' "the merge-temp existence guard is gone — see T14g"
+pin "T14g …and says so" "$REPO_ROOT/install.sh" \
+  'manifest merge scratch vanished' "the merge-temp guard no longer reports the cause — see T14g"
+pin "T14g …and actually aborts rather than falling through" "$REPO_ROOT/install.sh" \
+  'exit 1   # merge-scratch guard' "the merge-temp guard no longer aborts — see T14g"
+
 summary
