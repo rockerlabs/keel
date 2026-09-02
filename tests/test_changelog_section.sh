@@ -268,4 +268,103 @@ run env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section
 check_status "--edit whose cp destination fails -> nonzero exit" 1 "$STATUS"
 check_contains "failure names a recoverable scratch-file path, not silent data loss" "$OUT" "your edited draft is preserved at"
 
+# --- --edit composition guards (dir #326) --------------------------------------------------------
+# Two independent, non-fatal warnings at the notes-composition step: (a) the composed notes-file
+# looking like a copy of the section rather than a curated digest, and (b) the working tree's HEAD
+# not matching the release tag it's supposedly composing notes for. Both print to stderr and exit 0
+# — a hard fail was explicitly rejected by the ticket ("the failure mode is not noticing, not
+# disagreeing").
+
+# (a) size guard: an editor that leaves the section untouched copies it verbatim -> flagged.
+cat > "$edit_repo/bin/editor-noop.sh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$edit_repo/bin/editor-noop.sh"
+
+cat > "$edit_repo/bin/editor-curate.sh" <<'EOF'
+#!/bin/sh
+eval 'f="${'"$#"'}"'
+printf 'Short curated summary.\n' > "$f"
+EOF
+chmod +x "$edit_repo/bin/editor-curate.sh"
+
+notes_copy="$SANDBOX/edit-notes-copy.md"
+rm -f "$notes_copy"
+run env "EDITOR=$edit_repo/bin/editor-noop.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_copy"
+check_status "--edit whose editor leaves the section untouched -> exit 0 (warning, not a hard fail)" 0 "$STATUS"
+check_contains "size guard warns when notes-file is ~the section's own size" "$OUT" "looks like a copy, not a curated digest"
+check_contains "notes-file is still written despite the warning" "$(cat "$notes_copy" 2>/dev/null)" "Real release."
+
+notes_curated="$SANDBOX/edit-notes-curated.md"
+rm -f "$notes_curated"
+run env "EDITOR=$edit_repo/bin/editor-curate.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_curated"
+check_status "--edit whose editor curates a short digest -> exit 0" 0 "$STATUS"
+check_absent "size guard stays quiet on a genuinely curated digest" "$OUT" "looks like a copy"
+
+# (b) HEAD-vs-tag guard: needs a real git repo, so it's a fresh fixture (edit_repo above is
+# deliberately non-git, proving the copy-portable no-git case stays silent).
+head_repo="$(new_repo)"
+mkdir -p "$head_repo/tools" "$head_repo/bin"
+cp "$helper" "$head_repo/tools/changelog-section.sh"
+cat > "$head_repo/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [2.0.0] — 2026-02-01
+
+Second release, never tagged in this fixture.
+
+### Added
+- something else
+
+## [1.0.0] — 2026-01-01
+
+Real release.
+
+### Added
+- the real thing
+EOF
+git -C "$head_repo" add -A
+git -C "$head_repo" commit -q -m "first"
+# Annotated, not lightweight (`-a`): the shape docs/publishing-checklist.md §4 itself uses
+# (`git tag -a <tag> <sha> -m "..."`), and the one a lightweight tag doesn't exercise — an annotated
+# tag is its own object with its own SHA, distinct from the commit it points at, so a guard that
+# compares HEAD against the tag's raw SHA (instead of peeling to `^{commit}`) would misfire "does
+# not match" on this exact, correct checkout. Regression coverage for that bug class.
+git -C "$head_repo" tag -a v1.0.0 -m "release"
+
+cat > "$head_repo/bin/editor-ok.sh" <<'EOF'
+#!/bin/sh
+eval 'f="${'"$#"'}"'
+printf 'Short curated summary.\n' >> "$f"
+EOF
+chmod +x "$head_repo/bin/editor-ok.sh"
+
+notes_match="$SANDBOX/head-notes-match.md"
+rm -f "$notes_match"
+run env "EDITOR=$head_repo/bin/editor-ok.sh" "$head_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_match"
+check_status "--edit at the tagged commit -> exit 0" 0 "$STATUS"
+check_absent "HEAD-vs-tag guard stays quiet when the checkout matches the tag" "$OUT" "does not match tag"
+
+# no tag yet for this version -> decline explicitly, not silently (so a decline never reads as "checked, and it matched")
+notes_notag="$SANDBOX/head-notes-notag.md"
+rm -f "$notes_notag"
+run env "EDITOR=$head_repo/bin/editor-ok.sh" "$head_repo/tools/changelog-section.sh" --edit 2.0.0 "$notes_notag"
+check_status "--edit for a version with no tag yet -> exit 0" 0 "$STATUS"
+check_contains "HEAD-vs-tag guard names its own decline when there's nothing to compare against" "$OUT" "no tag v2.0.0 found yet"
+
+# advance HEAD past the tag -> stale checkout, the felt dir #326 case
+echo more >> "$head_repo/README.md"
+git -C "$head_repo" add -A
+git -C "$head_repo" commit -q -m "second"
+
+notes_stale="$SANDBOX/head-notes-stale.md"
+rm -f "$notes_stale"
+run env "EDITOR=$head_repo/bin/editor-ok.sh" "$head_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_stale"
+check_status "--edit with HEAD past the tag -> exit 0 (warning, not a hard fail)" 0 "$STATUS"
+check_contains "HEAD-vs-tag guard warns on a stale checkout" "$OUT" "does not match tag v1.0.0"
+check_contains "notes-file is still written despite the warning" "$(cat "$notes_stale" 2>/dev/null)" "Real release."
+
 summary
