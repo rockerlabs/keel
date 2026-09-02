@@ -11,6 +11,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-02
+
+Known issues: two RC-pass findings ship unfixed, both adopter-facing, and neither is yet a numbered
+ticket — both are queued for the post-tag grooming pass recorded in `BACKLOG.md`'s "v0.8.0 RC pass"
+section, per `private/audit/delta-0.7.2-0.8.0/tickets-to-file.md` (F-14, F-15). First, a
+non-interactive `install.sh` run (`curl | sh`, CI, an agent) silently creates the `keel-polish.md`
+alias instead of prompting, and once that alias exists no re-run in any mode — interactive included —
+ever offers to refresh a drifted `commands/polish.md` again; the three deny messages fixed below
+(F-10) now describe this root cause accurately, but do not fix it. Second, a real-file (non-symlink)
+`bin/keel` is left untouched by `install.sh`, with "remove it to let Keel wire the CLI" — but both
+`bin/keel`'s own severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning tell the reader to
+re-run `install.sh` instead, so the one correct remedy is reachable only by reading `install.sh`'s own
+refusal message, not from either place that actually surfaces the problem.
+
 - **Four bugs found by the v0.8.0 delta audit's CLOSING round — auditing the audit's own fix round —
   are fixed, gating the v0.8.0 tag.** F-16 (the tag-blocker, found by the cross-vendor leg and
   independently re-reproduced by the blind leg): F-05's fix (below) swapped `_impact_merge_log`'s
