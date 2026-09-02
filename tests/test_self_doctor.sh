@@ -1504,4 +1504,40 @@ run "$sd" "$d" --quiet
 check_contains "backtick guard: the real citation outside backticks is still flagged" "$OUT" "dir #945"
 check_absent "backtick guard: an illustrative example inside backticks isn't fabricated into a ticket" "$OUT" "dir #946"
 
+# --- 10. PIPESTATUS read in a file that sets pipefail -> WARN (dir #321) ---------------------------
+# The F-06 shape (tools/keel-impact.sh's _impact_merge_ledger, v0.8.0 delta audit): once pipefail is
+# active, a bare `$?` right after a pipeline already gives the real (rightmost non-zero) status, so
+# reading PIPESTATUS's first element specifically discards that and keeps only stage 0's status.
+# $fake_widget is reused (not a fresh path) so it stays referenced+test-covered per mk_clean_repo's
+# own wiring — content, not path, is what each fixture below changes, keeping the coverage ratchet
+# (dir #142) and orphan-tool check (section 3) silent so only THIS check's own signal shows.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\nset -euo pipefail\nfoo | bar > /tmp/x\nst="${PIPESTATUS[0]}"\necho "$st"\n' \
+  > "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "pipestatus after pipefail" )
+run "$sd" "$d" --quiet
+check_status "PIPESTATUS-after-pipefail is advisory only -> exit 0" 0 "$STATUS"
+check_contains "flags the file" "$OUT" "$fake_widget"
+check_contains "names the F-06 shape by ticket" "$OUT" "dir #321"
+check_contains "explains WHY: pipefail's own \$? already covers it" "$OUT" "pipefail's own \$? already gives the real pipeline status"
+
+# no pipefail set anywhere in the file -> reading PIPESTATUS[0] is the CORRECT, necessary way to get
+# the first pipe stage's status (a bare `$?` right after an un-pipefail'd pipe gives only the LAST
+# stage's status) -- the legitimate case this check must stay silent on.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\nfoo | bar > /tmp/x\nst="${PIPESTATUS[0]}"\necho "$st"\n' > "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "pipestatus without pipefail" )
+run "$sd" "$d" --quiet
+check_absent "PIPESTATUS without pipefail is not flagged" "$OUT" "sets pipefail and reads"
+
+# pipefail set, but PIPESTATUS never read anywhere in the file -> nothing to flag either.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\nset -euo pipefail\nfoo | bar > /tmp/x\necho "$?"\n' > "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "pipefail without pipestatus" )
+run "$sd" "$d" --quiet
+check_absent "pipefail alone (no PIPESTATUS) is not flagged" "$OUT" "sets pipefail and reads"
+run "$sd" "$d"
+check_contains "clean pipefail-only file reports the explicit OK (non-quiet)" "$OUT" \
+  "no tracked .sh file both sets pipefail and reads PIPESTATUS"
+
 summary

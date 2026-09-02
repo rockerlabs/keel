@@ -420,24 +420,29 @@ _impact_merge_ledger() {
   # review: a masked failure here would delete the legacy ledger while never having durably written its
   # rows anywhere. A bad READ status (above) short-circuits this the same way, never even attempting
   # the write — a partial read must never look like a durable write of everything it read.
-  local write_status
-  if [ "$header_status" -eq 0 ] && [ "$rows_status" -eq 0 ]; then
-    cat "$header_tmp" "$rows_tmp" > "$target.keelmerge.$$" && mv -f "$target.keelmerge.$$" "$target"
-    write_status=$?
-    # Best-effort: the merge already landed durably by this point, so a chmod failure (e.g. an
-    # unwritable-by-this-uid target on an odd filesystem) doesn't retroactively make the write fail —
-    # matches this file's own convention for a degraded-but-nonfatal path (line 128/1190/1266's own
-    # `|| true`), and surfaces the same way the OTHER best-effort branches in this file do instead of
-    # going fully dark.
-    if [ "$write_status" -eq 0 ] && [ -n "$old_mode" ]; then
-      chmod "$old_mode" "$target" 2>/dev/null || printf \
-        'keel-impact: could not restore %s'"'"'s prior mode (%s) after merge — continuing\n' \
+  local tmp="$target.keelmerge.$$"
+  local write_status=1
+  if [ "$header_status" -eq 0 ] && [ "$rows_status" -eq 0 ] && cat "$header_tmp" "$rows_tmp" > "$tmp"; then
+    # v0.8.0 delta audit F-19: chmod the TEMP file HERE, before the `mv` below — not the target
+    # after it, which is what F-16's fix originally did. Same-filesystem `mv` is a rename(2): it
+    # installs the temp's mode atomically along with its content, so the target is never observable
+    # with the wrong mode and there is no window between "renamed" and "restored" for a crash/kill/
+    # full-disk to catch it widened. The old post-mv order also self-cemented — the NEXT run's
+    # old_mode capture reads it FROM THE TARGET, so once a crash caught it widened, every later
+    # "restore" faithfully preserved the widened mode forever. Best-effort, same as before: the
+    # content write hasn't landed yet at this point, so a chmod failure here doesn't retroactively
+    # make the write fail — matches this file's own convention for a degraded-but-nonfatal path
+    # (line 128/1190/1266's own `|| true`), and surfaces the same way the OTHER best-effort branches
+    # in this file do instead of going fully dark.
+    if [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$tmp" 2>/dev/null || printf \
+        'keel-impact: could not set %s'"'"'s prior mode (%s) on the merge temp file before rename — continuing\n' \
         "$target" "$old_mode" >&2
     fi
-  else
-    write_status=1
+    mv -f "$tmp" "$target"
+    write_status=$?
   fi
-  rm -f "$header_tmp" "$rows_tmp" "$target.keelmerge.$$"
+  rm -f "$header_tmp" "$rows_tmp" "$tmp"
   return "$write_status"
 }
 
@@ -457,8 +462,9 @@ _impact_merge_evidence() {
   # (the external store, or a legacy in-tree path), and `mv` across filesystems degrades to copy-then-
   # unlink — no longer the single atomic rename() a same-filesystem `mv` gets for free.
   local tmp="$target.keelmerge.$$"
-  # v0.8.0 delta audit F-16: capture TARGET's mode before the write so it survives the `mv` below —
-  # see _impact_merge_ledger's own comment for why (same hazard, same fix, same first-create carve-out).
+  # v0.8.0 delta audit F-16/F-19: capture TARGET's mode before the write so it can be applied to the
+  # TEMP file before the `mv` below — see _impact_merge_ledger's own comment for why (same hazard,
+  # same fix, same first-create carve-out).
   local old_mode=""
   if [ -f "$target" ]; then
     old_mode="$(stat_portable_mode "$target")"
@@ -487,15 +493,16 @@ _impact_merge_evidence() {
       }
     }
   ' "${inputs[@]}" > "$tmp"; then
-    mv -f "$tmp" "$target"
-    write_status=$?
-    # Best-effort — see _impact_merge_ledger's own comment for why this stays non-fatal and why it
-    # surfaces a note instead of going fully dark on a chmod failure.
-    if [ "$write_status" -eq 0 ] && [ -n "$old_mode" ]; then
-      chmod "$old_mode" "$target" 2>/dev/null || printf \
-        'keel-impact: could not restore %s'"'"'s prior mode (%s) after merge — continuing\n' \
+    # v0.8.0 delta audit F-19: chmod the TEMP file HERE, before the `mv` below — see
+    # _impact_merge_ledger's own comment for the full rationale (same hazard, same fix). Best-effort,
+    # same as before — see _impact_merge_ledger's own comment for why this stays non-fatal.
+    if [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$tmp" 2>/dev/null || printf \
+        'keel-impact: could not set %s'"'"'s prior mode (%s) on the merge temp file before rename — continuing\n' \
         "$target" "$old_mode" >&2
     fi
+    mv -f "$tmp" "$target"
+    write_status=$?
   else
     write_status=1
   fi
@@ -525,23 +532,25 @@ _impact_merge_log() {
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
   local tmp="$target.keelmerge.$$"
-  # v0.8.0 delta audit F-16: capture TARGET's mode before the write so it survives the `mv` below —
-  # see _impact_merge_ledger's own comment for why (same hazard, same fix, same first-create carve-out).
+  # v0.8.0 delta audit F-16/F-19: capture TARGET's mode before the write so it can be applied to the
+  # TEMP file before the `mv` below — see _impact_merge_ledger's own comment for why (same hazard,
+  # same fix, same first-create carve-out).
   local old_mode=""
   if [ -f "$target" ]; then
     old_mode="$(stat_portable_mode "$target")"
   fi
   local write_status
   if LC_ALL=C sort -u "${inputs[@]}" > "$tmp"; then
-    mv -f "$tmp" "$target"
-    write_status=$?
-    # Best-effort — see _impact_merge_ledger's own comment for why this stays non-fatal and why it
-    # surfaces a note instead of going fully dark on a chmod failure.
-    if [ "$write_status" -eq 0 ] && [ -n "$old_mode" ]; then
-      chmod "$old_mode" "$target" 2>/dev/null || printf \
-        'keel-impact: could not restore %s'"'"'s prior mode (%s) after merge — continuing\n' \
+    # v0.8.0 delta audit F-19: chmod the TEMP file HERE, before the `mv` below — see
+    # _impact_merge_ledger's own comment for the full rationale (same hazard, same fix). Best-effort,
+    # same as before — see _impact_merge_ledger's own comment for why this stays non-fatal.
+    if [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$tmp" 2>/dev/null || printf \
+        'keel-impact: could not set %s'"'"'s prior mode (%s) on the merge temp file before rename — continuing\n' \
         "$target" "$old_mode" >&2
     fi
+    mv -f "$tmp" "$target"
+    write_status=$?
   else
     write_status=1
   fi

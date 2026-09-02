@@ -29,6 +29,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   mode-preservation tests (umask-varied, both `stat` flavors) pass unmodified against the migrated
   code. Adds `tests/test_stat_portable_lib.sh` for direct unit coverage of the shared lib itself.
 
+## [0.8.0] — 2026-09-02
+
+Known issues: two RC-pass findings ship unfixed, both adopter-facing, each with an open ticket. First,
+the standard non-interactive `install.sh` run creates the `keel-polish.md` alias on its own, and from
+that moment no re-run in any mode refreshes a drifted `commands/polish.md` again — see the deny-message
+entry below for the mechanism and the affected messages. Those messages now describe this root cause
+accurately, but do not fix it (dir #323). Second, a real-file (non-symlink) `bin/keel` is left untouched
+by `install.sh`, whose refusal message says "remove it to let Keel wire the CLI." Both `bin/keel`'s own
+severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning instead tell the reader to re-run
+`install.sh`, so the one correct remedy is reachable only by reading `install.sh`'s own refusal message
+(dir #324).
+
 - **Four bugs found by the v0.8.0 delta audit's CLOSING round — auditing the audit's own fix round —
   are fixed, gating the v0.8.0 tag.** F-16 (the tag-blocker, found by the cross-vendor leg and
   independently re-reproduced by the blind leg): F-05's fix (below) swapped `_impact_merge_log`'s
@@ -55,6 +67,57 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   through the production call path (`migrate`/`_impact_auto_migrate`, never a bare function call),
   with the mode-preservation proof deliberately varying the ambient umask between merges rather than
   holding it fixed.
+
+- **F-16's own mode-preservation fix (above) closed the leak but left a race, and the race
+  self-cements — found by a Clause A closing-round re-pass, cross-vendor leg, on its second attempt at
+  that round; gating the v0.8.0 tag** (F-19). All three merge helpers wrote in the wrong order: temp
+  file, `mv` onto the target, THEN `chmod` the target back to its captured mode — leaving a window,
+  between the rename and the restore, where the target sits on disk with the temp file's (umask-derived)
+  mode instead of its own. A crash, kill, or full disk in that window leaves it widened permanently: the
+  NEXT run's `old_mode` capture reads the mode back FROM THE TARGET, which is now the widened one, and
+  faithfully "restores" it — the original mode is gone and a retry cannot heal it, it locks it in. Fixed
+  by reordering to the standard write-temp → chmod-temp → rename sequence: each helper now `chmod`s the
+  *temp* file to the captured mode before the `mv`, not the target after it. A same-filesystem `mv` is a
+  `rename(2)`, which installs the temp's mode atomically along with its content, so **the target** —
+  the canonical file, the one an adopter's own `chmod` decision was ever about — is never observable
+  with the wrong mode; a crash can no longer catch the target widened, and there is no self-cementing
+  retry to lock it in. **Not "no window to crash in" outright — a residual one remains, pre-existing and
+  unrelated to F-19/F-16, filed separately rather than fixed here:** the temp file is created fresh by
+  its producer (`cat`/`awk`/`sort -u`, one per helper) under the ambient umask, and the `chmod` lands
+  only after that write finishes — so the window isn't a gap between two syscalls the way the ledger/
+  target one was, it spans the FULL content write, holding the complete merged content at the ambient
+  (looser) mode for as long as that write takes, sitting right beside the target whose restrictive mode
+  it's supposed to match. A crash or a concurrent reader in that window sees real content at the wrong
+  mode; unlike the target hazard this batch closes, it does not self-cement (the target's own mode is
+  untouched, so the next run's capture is still correct) and any orphaned temp file left behind is
+  cleaned up by the unconditional trailing `rm -f` on the next ordinary run. Ticketed rather than folded
+  in here — it touches three different producers across three call sites for a fix shaped differently
+  from this batch's single reorder (pre-create the temp empty, `chmod` it, then append the content,
+  rather than write-then-chmod), which is a second change, not a widening of this one. The post-`mv`
+  `chmod` is dropped as dead code, and its failure-warning wording changed from "after merge" to "before
+  rename" to match.
+  **This cannot heal a file the shipped F-16 code already widened** — an `impact-events.log` (or
+  ledger/evidence file) already caught in the old window has already lost its original mode; the first
+  post-fix run captures 644 (or whatever it widened to) and faithfully preserves that. An adopter who
+  cares about a specific file's mode should re-`chmod` it by hand once after upgrading. Adopter-visible:
+  ships in every keel home via `tools/keel-impact.sh`. **What the tests do and do not prove:** a
+  crash-in-the-window race is not mechanically testable — there is no seam to stub that fails exactly
+  between a real `mv` and a real `chmod` without faking the syscalls themselves — so no test claims to
+  prove the window is gone; that rests on the structural argument above (`rename(2)`'s atomicity is a
+  kernel guarantee, not something this codebase can assert). Confirmed by mutation, and worth stating
+  precisely because a *weaker* mutation looked like it would pass: reordering chmod-before-mv back to
+  chmod-after-mv while leaving the rest of this diff intact does NOT make
+  `tests/test_keel_impact.sh`'s existing F-16 mode-preservation assertion (mmrepo, varying umask across
+  two merges) fail — checked live. That assertion only inspects the FINAL mode after a clean run with no
+  crash injected, and the final mode is identical either way absent a crash, so it cannot and does not
+  distinguish the two orderings; treating it as proof of the ordering would have been the "test that
+  passes for the wrong reason" this project's own record warns against. What that assertion DOES still
+  bind against, verified the same way: removing the `chmod` altogether (not just reordering it) makes it
+  fail exactly as before — the mode-preservation behavior itself, as opposed to its ordering relative to
+  the `mv`, is unchanged by this fix and the existing test still catches its absence. A `/simplify` pass
+  also collapsed `_impact_merge_ledger`'s write-status handling from two nested `if`/`else` levels (one
+  extra, left over from threading the new `chmod` between the read-status check and the write) to one
+  flattened condition — cleanup, no behavior change, `tests/test_keel_impact.sh` stays green.
 
 - **Two `tools/pre-pr-gate.sh` deny messages sent a blocked operator to `install.sh` to refresh a
   drifted `commands/polish.md` — the one remedy the same file elsewhere says does not work** (F-10,
@@ -102,6 +165,33 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `tests/test_keel_impact.sh` pins both by mutation, F-06 through the exact `&&`/`||`-exempt call
   path via a `sort` stub on `$PATH` (no chmod/root-guard needed, so it holds under a root CI leg
   too).
+
+- **`tools/self/doctor.sh` now catches the F-06 shape mechanically instead of relying on the next
+  manual delta audit to find it** (dir #321, found by a max-depth `/code-review` altitude-angle pass
+  on the F-05/F-06 bugfix PR above): `_impact_merge_ledger` had hit "`${PIPESTATUS[0]}` read in a
+  file that already sets `pipefail` file-wide, silently discarding the pipeline's real status" twice
+  in the same function family (dir #289's history, then F-06 above), with only a periodic manual
+  audit catching either one. A new native check (self/doctor.sh's own check 8) scans every tracked
+  `.sh` file for a `set ... pipefail` line (any spelling, e.g. `set -euo pipefail` or `set -o errexit
+  -o pipefail`) coexisting with a `${PIPESTATUS[0]}`/`$PIPESTATUS` read. WARN, not a hard GAP: once
+  `pipefail` is active, a bare `$?` right after the pipeline already gives the real (rightmost
+  non-zero) status, so reaching for `PIPESTATUS`'s first element specifically is usually a leftover
+  belief — but reaching for an EARLIER stage's status specifically is sometimes the deliberate,
+  correct behavior, and telling the two apart needs a human reading the surrounding code, not a grep.
+  The check excludes its own file from the scan by pathspec (not a runtime string comparison, and not
+  the string-splitting trick an earlier draft used) — this file both sets `pipefail` and, once the
+  check's own code exists, names `${PIPESTATUS[0]}` in its own message text, so it would otherwise
+  self-flag every run. `tests/test_self_doctor.sh` pins the positive shape and both legitimate
+  negatives (no `pipefail` set at all; `pipefail` set but `PIPESTATUS` never read).
+
+  **A real crash, caught by this same PR's own `/code-review medium` pass before it shipped:** the
+  first draft computed the matched line numbers unconditionally once a file was confirmed to set
+  `pipefail`, via a pipeline (`grep -nE ... | cut ... | paste ...`) assigned directly into a variable.
+  Under this file's own `set -euo pipefail`, that pipeline's exit status is 1 whenever `PIPESTATUS`
+  simply never appears in the file — the common case, since most files that set `pipefail` never touch
+  `PIPESTATUS` at all — so the assignment itself failed and `errexit` aborted the whole `doctor.sh` run
+  partway through this very check, on the real repo, on the first such file. Guarded with `|| true` on
+  the pipeline, matching this file's own established idiom for exactly this shape elsewhere.
 
 - **A release pass's derived copies (the curated release-notes file, the release-prep PR's own body)
   now have a named home for the "review corrects the source, nothing re-derives the copy" class**
