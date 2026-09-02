@@ -148,6 +148,33 @@ severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning instead tell the
   path via a `sort` stub on `$PATH` (no chmod/root-guard needed, so it holds under a root CI leg
   too).
 
+- **`tools/self/doctor.sh` now catches the F-06 shape mechanically instead of relying on the next
+  manual delta audit to find it** (dir #321, found by a max-depth `/code-review` altitude-angle pass
+  on the F-05/F-06 bugfix PR above): `_impact_merge_ledger` had hit "`${PIPESTATUS[0]}` read in a
+  file that already sets `pipefail` file-wide, silently discarding the pipeline's real status" twice
+  in the same function family (dir #289's history, then F-06 above), with only a periodic manual
+  audit catching either one. A new native check (self/doctor.sh's own check 8) scans every tracked
+  `.sh` file for a `set ... pipefail` line (any spelling, e.g. `set -euo pipefail` or `set -o errexit
+  -o pipefail`) coexisting with a `${PIPESTATUS[0]}`/`$PIPESTATUS` read. WARN, not a hard GAP: once
+  `pipefail` is active, a bare `$?` right after the pipeline already gives the real (rightmost
+  non-zero) status, so reaching for `PIPESTATUS`'s first element specifically is usually a leftover
+  belief — but reaching for an EARLIER stage's status specifically is sometimes the deliberate,
+  correct behavior, and telling the two apart needs a human reading the surrounding code, not a grep.
+  The check excludes its own file from the scan by pathspec (not a runtime string comparison, and not
+  the string-splitting trick an earlier draft used) — this file both sets `pipefail` and, once the
+  check's own code exists, names `${PIPESTATUS[0]}` in its own message text, so it would otherwise
+  self-flag every run. `tests/test_self_doctor.sh` pins the positive shape and both legitimate
+  negatives (no `pipefail` set at all; `pipefail` set but `PIPESTATUS` never read).
+
+  **A real crash, caught by this same PR's own `/code-review medium` pass before it shipped:** the
+  first draft computed the matched line numbers unconditionally once a file was confirmed to set
+  `pipefail`, via a pipeline (`grep -nE ... | cut ... | paste ...`) assigned directly into a variable.
+  Under this file's own `set -euo pipefail`, that pipeline's exit status is 1 whenever `PIPESTATUS`
+  simply never appears in the file — the common case, since most files that set `pipefail` never touch
+  `PIPESTATUS` at all — so the assignment itself failed and `errexit` aborted the whole `doctor.sh` run
+  partway through this very check, on the real repo, on the first such file. Guarded with `|| true` on
+  the pipeline, matching this file's own established idiom for exactly this shape elsewhere.
+
 - **A release pass's derived copies (the curated release-notes file, the release-prep PR's own body)
   now have a named home for the "review corrects the source, nothing re-derives the copy" class**
   (dir #206, found 2026-08-20, twice in one PR, dir #192's own PR #238): `docs/publishing-checklist.md`
