@@ -364,13 +364,12 @@ ensure_evidence() {
 # makes "TARGET is absent" a normal, SUCCESSFUL answer instead of a failing one, so the function stays
 # safe if it is ever called from a non-exempt context (a plain `old_mode="$(_impact_prior_mode "$t")"`
 # outside an `&&`/`||` list would otherwise abort the script on the entirely legitimate first-create
-# path). Two things the guard does NOT do today, both of which an earlier wording of this docstring
-# claimed: it is not what keeps the returned string empty — `stat_portable_mode`'s own `2>/dev/null`
-# (tools/lib/stat-portable.sh) is — and it prevents no abort on any LIVE call path, since all six live
-# call sites of the three merge helpers are `_impact_merge_* … && rm -f … || ok=0` and an errexit
-# exemption earned by the `&&` list propagates down into the called function's body. Verified live by
-# stripping the guard: `migrate` still exits 0 and still takes the first-create carve-out, and the
-# keel-impact suite stays green. Second, WHEN a caller captures differs per caller (see
+# path). Two things it does NOT do — stated because the obvious reading claims both: the empty string
+# comes from `stat_portable_mode`'s own `2>/dev/null` (tools/lib/stat-portable.sh), not from here; and
+# it prevents no abort on any LIVE path, since all six call sites are `_impact_merge_* … && rm -f …
+# || ok=0` and that `&&` list's errexit exemption propagates into the callee's body (verified by
+# stripping the guard: `migrate` still exits 0, suite still green). Second, WHEN a caller captures
+# differs per caller (see
 # _impact_merge_ledger, which must capture before `ensure_ledger` creates the file), so the capture
 # cannot simply move into _impact_atomic_write below; only its logic is shared, not its placement.
 _impact_prior_mode() {

@@ -151,20 +151,18 @@ advise_install="install.sh$mode_flag$home_flag"      # re-run THIS install
 advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
 # advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
 # THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
-# install prefers `keel sync` (keel:128 forwards its args straight through — which is exactly why the
-# retargeting suffix has to be spelled here rather than assumed, see the branch itself); an EPHEMERAL
-# bootstrap run's $root is a temp clone reaped on exit, so neither a bare re-run
-# nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form can (verified against
-# README.md:84 / docs/getting-started.md:114; bootstrap.sh:141 forwards "$@").
+# install prefers `keel sync`; an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so
+# neither a bare re-run nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form
+# can (verified against README.md:84 / docs/getting-started.md:114).
+# BOTH of those forward their args straight through to install.sh and add nothing of their own
+# (keel:128, bootstrap.sh:141) — which is precisely why each has to carry the retargeting suffix here
+# rather than inherit it: without it, `keel sync --force` becomes a bare `install.sh --force` whose
+# home re-resolves to ${KEEL_HOME:-$HOME/.claude}, so a `--link --home DIR` adopter following the
+# advice builds a SECOND Keel at the default home and never touches the file it was about.
 if [ "$EPHEMERAL" = 1 ]; then
   advise_refresh_force="curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s --$mode_flag$home_flag --force"
 elif [ "$LINK" = 1 ]; then
-  # $home_flag, same as both siblings above: `keel sync` forwards its args verbatim and adds nothing
-  # (keel:128), so a bare `keel sync --force` becomes `install.sh --force`, whose home re-resolves to
-  # ${KEEL_HOME:-$HOME/.claude} — from a `--link --home DIR` install that builds a SECOND Keel at the
-  # default home and never touches the file the message is about. ($mode_flag is structurally empty
-  # here: --codex + --link is refused at the top of this script.) bootstrap.sh forwards "$@" to
-  # install.sh the same way (bootstrap.sh:141), so the EPHEMERAL form above carries both suffixes too.
+  # $mode_flag is structurally empty here — --codex + --link is refused at the top of this script.
   advise_refresh_force="keel sync$home_flag --force"
 else
   advise_refresh_force="$advise_install --force"
@@ -347,11 +345,14 @@ make_link() {
 # foreign/edited file is never claimed as ours.
 manifest_artifacts=()
 record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
-# CKSUM_UNREADABLE — what artifact_cksum yields when it cannot read the file at all. Spelled ONCE,
-# here, because it has to be recognised at BOTH ends of keel_own_untouched's string comparison: a
-# self-equal error sentinel on a never-clobber rail fails OPEN (an unreadable dest would compare equal
-# to a manifest that ever recorded the same sentinel, and the predicate would answer "Keel's own
-# unedited copy, refresh it without asking" for a file it could not read a single byte of).
+# CKSUM_UNREADABLE — what artifact_cksum yields when it cannot read the file at all. Named because
+# keel_own_untouched has to RECOGNISE it, not merely produce it: a self-equal error sentinel on a
+# never-clobber rail fails OPEN (an unreadable dest would compare equal to a manifest that ever
+# recorded the same sentinel, and the predicate would answer "Keel's own unedited copy, refresh it
+# without asking" for a file it could not read a single byte of).
+# NOT the only spelling of this value in the tree: uninstall.sh carries a deliberately output-identical
+# hand-copy of artifact_cksum (see its own header) with the literal inline, and its own cksum equality
+# test has no sentinel guard. Out of this fix's scope — but a change to the VALUE here has to go there.
 CKSUM_UNREADABLE='cksum:0:0'
 # artifact_cksum FILE — "cksum:<sum>:<size>", POSIX cksum's first two fields (portable across
 # coreutils/busybox — both are POSIX cksum implementations; the filename field is dropped since a
@@ -392,6 +393,17 @@ record_placed() {
 # a dest whose CURRENT form disagrees with the recorded one. Same for mode/ownership/xattr changes: not
 # observed, and not claimed.
 #
+# That check is UNCONDITIONAL, not gated on $LINK, and the reason is worth stating because the obvious
+# reading says otherwise. The copy→linked migration below legitimately drives this branch (see the
+# first non-behaviour), so it looks like linked mode needs an exemption — it does not: that migration's
+# dest is a regular FILE (a copy an earlier copy-mode run placed), which `[ ! -L ]` passes on its own.
+# The only dest an exemption would additionally admit is one that is ALREADY a symlink in linked mode,
+# and there it does exactly the harm this whole check exists to stop: `place` would re-point an
+# adopter's dotfiles link at the checkout, silently, with no backup, under the same "unedited" message
+# — the resulting form being a symlink is not the same thing as no wiring having been destroyed. Such
+# a dest is a foreign link or a stale-checkout one, and the linked-mode symlink branch further down
+# already declines it by name with a re-point hint. (Reproduced both ways before this was written.)
+#
 # Two deliberate non-behaviours:
 #   - A dest a LINKED run recorded is unaffected: record_placed writes `symlink -` there, never a
 #     `cksum:` string, so the artifact=file lookup below cannot match it — that dest is already handled
@@ -400,28 +412,30 @@ record_placed() {
 #     read the same manifest file (manifest_mode keys on $CODEX, not on $LINK), so a `file` + `cksum:`
 #     record written by an earlier COPY-mode run IS visible to a later `--link` run, and does drive
 #     this branch. That is intended and load-bearing: it is the copy→linked migration of a DRIFTED
-#     command (v0.8.0 left a stale copy shadowing the link forever), which is why the kind check below
-#     is conditioned on $LINK rather than rejecting every symlinked dest outright.
+#     command (v0.8.0 left a stale copy shadowing the link forever), and it survives the kind check
+#     above for the reason given there — its dest is a regular file, not a link.
 #   - A manifest-less home (pre-0.7, or an unreadable/unversioned manifest) makes manifest_usable false
 #     and the predicate false — falls through to today's behaviour (plus --force), never a crash. The
 #     branch it falls through to always prints something actionable, so the decline is never silent.
+# Cheapest rejections first, then one fork, then two: the two builtins below decide the whole predicate
+# on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every symlinked dest, so
+# running them ahead of `cmp` saves that fork per synced file rather than spending it to reach a
+# verdict already settled. Order is presentation only — each clause returns 1 on its own.
 keel_own_untouched() {
-  local src="$1" dest="$2" rel prior_extra dest_extra
-  cmp -s "$src" "$dest" 2>/dev/null && return 1
-  # Copy mode only: a dest that is now a SYMLINK is not the regular file a `file` record describes,
-  # whatever its bytes say. Refusing here routes it to the ordinary never-clobber branches, which
-  # leave the adopter's wiring intact — place() would call atomic_copy, whose `mv -f` replaces the
-  # LINK ITSELF, and this branch deliberately takes no backup on the strength of this predicate.
-  # In linked mode place() makes a symlink anyway, so nothing is severed and the migration above stands.
-  [ "$LINK" = 1 ] || [ ! -L "$dest" ] || return 1
+  local src="$1" dest="$2" rel prior_extra
   [ "$prior_manifest_usable" = 1 ] || return 1
+  # A dest that is now a SYMLINK is not the regular file a `file` record describes, whatever its bytes
+  # say — see the docstring's own symlink case above. Unconditional, in BOTH modes, and deliberately
+  # not a `$LINK` special case: see the docstring for why the copy→linked migration doesn't need one.
+  [ ! -L "$dest" ] || return 1
+  cmp -s "$src" "$dest" 2>/dev/null && return 1
   rel="${dest#"$HOME_DIR"/}"
   prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest")"
-  dest_extra="$(artifact_cksum "$dest")"
-  # $CKSUM_UNREADABLE on EITHER side is "not ours", never a match: it is an error marker, not a digest,
-  # so letting it compare equal to itself would refresh-without-asking a file neither side could read.
-  [ "$dest_extra" != "$CKSUM_UNREADABLE" ] || return 1
-  [ -n "$prior_extra" ] && [ "$prior_extra" != "$CKSUM_UNREADABLE" ] && [ "$prior_extra" = "$dest_extra" ]
+  # Rejecting $CKSUM_UNREADABLE on the PRIOR side is what closes the self-equal case, and it closes it
+  # on both: an unreadable DEST yields the sentinel too, and the sentinel can only ever compare equal
+  # to itself — so a guard here alone is enough, and it keeps artifact_cksum's fork behind the `&&`
+  # where a dest with no prior record never pays for it.
+  [ -n "$prior_extra" ] && [ "$prior_extra" != "$CKSUM_UNREADABLE" ] && [ "$prior_extra" = "$(artifact_cksum "$dest")" ]
 }
 
 # place / in_sync / FIX — the one seam between copy mode and linked mode: how Keel-owned content

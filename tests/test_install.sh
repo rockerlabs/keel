@@ -422,7 +422,31 @@ t10_bak_count="$(ls "$symhome"/commands/backlog.md.*.bak 2>/dev/null | wc -l | t
 check_status "T10 no backup was needed (nothing was overwritten)" 0 "$t10_bak_count"
 check_contains "T10 the decline is still actionable" "$OUT" "backlog.md is your own command"
 
-# T11 — the behaviour T10's fix must NOT break, and the reason that fix is conditioned on $LINK.
+# T10b — the same never-clobber rail, in LINKED mode. The first draft of T10's fix exempted linked
+# mode (`[ "$LINK" = 1 ] || [ ! -L "$dest" ]`) on the reasoning that place() makes a symlink there
+# anyway, so nothing is severed. Reproduced live, that is false: the resulting form being a symlink is
+# not the same thing as no wiring having been destroyed — the run re-pointed the adopter's dotfiles
+# link at the checkout, took no backup, and printed the same "unedited" message. The dest here is a
+# symlink with a copy-mode `file` record, which is exactly the case such an exemption would admit.
+symlinkhome="$SANDBOX/symlink-dest-linked-home"; mkdir -p "$symlinkhome"
+symlinkdots="$SANDBOX/symlink-dest-linked-dotfiles"; mkdir -p "$symlinkdots"
+fresh_home_env "$symlinkhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symlinkhome" --no-hooks
+check_status "T10b copy install into the linked-mode symlink fixture → exit 0" 0 "$STATUS"
+mv "$symlinkhome/commands/wrap.md" "$symlinkdots/wrap.md"
+ln -s "$symlinkdots/wrap.md" "$symlinkhome/commands/wrap.md"
+printf '\nLINKED-SYMLINK-RELEASE\n' >> "$ckdir/commands/wrap.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symlinkhome" --no-hooks --link
+check_status "T10b --link re-run over a symlinked dest → exit 0" 0 "$STATUS"
+check_absent "T10b no bogus 'Keel's own copy, unedited' claim in linked mode either" "$OUT" "wrap.md refreshed (Keel's own copy, unedited)"
+check_contains "T10b …the linked-mode symlink branch declines it by name instead" "$OUT" "wrap.md is a symlink to a different target"
+check_link "T10b the adopter's symlink survives" "$symlinkhome/commands/wrap.md"
+run readlink "$symlinkhome/commands/wrap.md"   # clobbers $OUT — assert on it last
+check_status "T10b …still pointing at their own dotfiles copy, not re-pointed at the checkout" "$symlinkdots/wrap.md" "$OUT"
+check_file "T10b the dotfiles copy is still there" "$symlinkdots/wrap.md"
+
+# T11 — the behaviour T10's fix must NOT break: the copy→linked migration still runs, and it needs no
+# $LINK exemption in the predicate because its dest is a regular FILE, not a link (see T10b).
 # `commands/<name>.md` has the same home-relative key in both modes and both modes read the same
 # manifest file (manifest_mode keys on $CODEX, not on $LINK), so a `file` + `cksum:` record written by
 # an earlier COPY-mode run IS visible to a later `--link` run and DOES drive the provenance branch.
@@ -436,11 +460,10 @@ check_nolink "T11 polish.md starts as a regular copy" "$mighome/commands/polish.
 printf '\nMIGRATION-RELEASE\n' >> "$ckdir/commands/polish.md"   # the installed copy is now drifted
 run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$mighome" --no-hooks --link
 check_status "T11 --link over the copy-mode home → exit 0" 0 "$STATUS"
-t11_out="$OUT"   # the `run test` below overwrites $OUT before the message assertion
+check_contains "T11 …via the provenance branch, not a decline" "$OUT" "polish.md refreshed (Keel's own copy, unedited)"
 check_link "T11 the drifted copy became the canonical symlink" "$mighome/commands/polish.md"
-run test "$mighome/commands/polish.md" -ef "$ckdir/commands/polish.md"
+run test "$mighome/commands/polish.md" -ef "$ckdir/commands/polish.md"   # clobbers $OUT — assert on it last
 check_status "T11 …resolving into the checkout" 0 "$STATUS"
-check_contains "T11 …via the provenance branch, not a decline" "$t11_out" "polish.md refreshed (Keel's own copy, unedited)"
 
 # T12 — the manifest snapshot's own read must not be able to kill the run. The `cp` that takes it sat
 # in an `if` BODY at top level under `set -euo pipefail`, upstream of the degradation logic in
@@ -467,12 +490,15 @@ check_contains "T12 …and the run reaches its Verify block" "$OUT" "Verify:"
 # Root-guarded on its own, and for the opposite reason to T12's: a root reader gets a perfectly
 # readable manifest here, so the provenance branch legitimately fires for it and this assertion would
 # be false for a correct run.
-umdrift="$SANDBOX/unreadable-manifest-drift-home"; mkdir -p "$umdrift"
-fresh_home_env "$umdrift"
-run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
-check_status "T12b baseline install → exit 0" 0 "$STATUS"
-printf '\nUNREADABLE-MANIFEST-RELEASE\n' >> "$ckdir/commands/wrap.md"   # would refresh if provenance worked
+# The whole fixture — baseline install included — sits inside the guard: on the root leg every
+# assertion below is skipped, so an unguarded baseline would spend a full install.sh run (and mutate
+# the shared fixture checkout) for a claim T10/T11/T12 each already make there.
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  umdrift="$SANDBOX/unreadable-manifest-drift-home"; mkdir -p "$umdrift"
+  fresh_home_env "$umdrift"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
+  check_status "T12b baseline install → exit 0" 0 "$STATUS"
+  printf '\nUNREADABLE-MANIFEST-RELEASE\n' >> "$ckdir/commands/wrap.md"   # would refresh if provenance worked
   chmod 000 "$umdrift/.keel/install-manifest.claude"
   run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
   chmod 644 "$umdrift/.keel/install-manifest.claude"   # restore so cleanup can remove the sandbox
@@ -502,9 +528,10 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   chmod 000 "$senthome/commands/go.md"
   run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$senthome" --no-hooks
   chmod 644 "$senthome/commands/go.md" 2>/dev/null || true
+  sent_after="$(cat "$senthome/commands/go.md")"
   check_absent "T13 an unreadable dest is never judged Keel's own unedited copy" "$OUT" "go.md refreshed (Keel's own copy, unedited)"
-  check_contains "T13 …and its bytes are left alone" "$(cat "$senthome/commands/go.md")" "$sent_before"
-  check_absent "T13 …so the newer release was not written over it" "$(cat "$senthome/commands/go.md")" "SENTINEL-RELEASE"
+  check_contains "T13 …and its bytes are left alone" "$sent_after" "$sent_before"
+  check_absent "T13 …so the newer release was not written over it" "$sent_after" "SENTINEL-RELEASE"
 fi
 
 # T14 — the retargeting suffix on the linked --force advice. `keel sync` forwards its args verbatim

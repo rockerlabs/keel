@@ -23,15 +23,19 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   since that branch skips `force_backup` on the strength of the predicate, and printing a message
   asserting the file was unedited. No content was destroyed (the dotfiles copy survived at the old link
   target), but the adopter's wiring was severed silently and their dotfiles repo left holding an orphan
-  the harness no longer reads. The predicate now refuses a dest whose current form disagrees with the
-  recorded kind — conditioned on `$LINK`, because in linked mode `place` makes a symlink anyway and
-  because that same branch legitimately drives the copy→linked migration of a drifted command (a
-  copy-mode `file` record is fully visible to a later `--link` run: `commands/<name>.md` has the same
-  home-relative key in both modes and `manifest_mode` keys on `$CODEX`, not on `$LINK`). A comment
-  claiming that migration as a "deliberate non-behaviour" — the wording that would have led a
-  maintainer to write the `$LINK`-blind version of this fix and silently kill the migration — is
-  corrected, and the predicate's docstring now states what it can and cannot observe: it compares
-  bytes, and re-forming a file as a symlink IS the adopter touching it.
+  the harness no longer reads. The predicate now refuses any dest whose current form disagrees with the
+  recorded kind. **That check is unconditional, in both modes**, which is not where this landed first:
+  the fix was drafted with a `$LINK` exemption, on the reasoning that linked mode's `place` makes a
+  symlink anyway so nothing is severed. Reproduced, that reasoning fails — the resulting form being a
+  symlink is not the same thing as no wiring having been destroyed; linked mode re-pointed the adopter's
+  dotfiles link at the checkout with the same silence, the same absent backup and the same "unedited"
+  message. The exemption also protected nothing: the copy→linked migration it was meant to preserve has
+  a regular FILE as its dest (an earlier copy-mode run's copy), which the check passes on its own. A
+  comment declaring that migration a "deliberate non-behaviour" — false, since `commands/<name>.md` has
+  the same home-relative key in both modes and `manifest_mode` keys on `$CODEX`, not on `$LINK`, and it
+  is the wording that motivated the exemption — is corrected, and the predicate's docstring now states
+  what it can and cannot observe: it compares bytes, so re-forming a file as a symlink IS the adopter
+  touching it, invisibly.
   Second blocker, also a regression: the manifest snapshot's `cp` sat in an `if` BODY at top level
   under `set -euo pipefail`, so a manifest that EXISTS but cannot be READ killed the run before any
   file was placed — upstream of the degradation logic in `manifest_field`/`manifest_usable` that both
@@ -47,18 +51,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the identical warning, contradicting the two sibling messages the same run prints about the same
   file; `artifact_cksum`'s `cksum:0:0` failure sentinel was self-equal, so a manifest that ever recorded
   it would compare EQUAL to any currently-unreadable dest and the never-clobber rail would fail OPEN
-  (now rejected on either side); `tools/keel-impact.sh`'s `_impact_prior_mode` docstring justified its
-  `[ -f ]` guard as preventing a `set -e` abort that no live call path can reach (all six callers are
-  `… && rm -f … || ok=0`, and the exemption propagates into the body — verified live by stripping the
-  guard, which leaves the suite green), restated as what the guard actually buys: a status-0 answer for
-  an absent target, so the helper stays safe from a non-exempt caller; and `force_backup`'s uniqueness
-  claim is narrowed to the second-granularity it actually has — deliberately a COMMENT fix, since two
-  legs independently failed to construct a reachable same-second double backup and a counter suffix
-  would be complexity for an unreachable case. `tests/test_install.sh` pins the four behavioural fixes
-  with regression tests shown red-first against the unfixed code, including one asserting the
-  copy→linked migration still works (the behaviour the blocker-1 fix must not break) and two whose
-  permission halves are root-guarded for CI's alpine-busybox leg, with the unconditional halves chosen
-  to converge across both readers.
+  (now rejected, which closes both sides at once — the sentinel can only ever compare equal to itself);
+  `tools/keel-impact.sh`'s `_impact_prior_mode` docstring justified its `[ -f ]` guard as preventing a
+  `set -e` abort no live call path can reach (all six callers are `… && rm -f … || ok=0`, and that
+  exemption propagates into the callee — verified live by stripping the guard, which leaves the suite
+  green), restated as what the guard actually buys: a status-0 answer for an absent target, so the
+  helper stays safe from a non-exempt caller; and `force_backup`'s uniqueness claim is narrowed to the
+  second-granularity it actually has — deliberately a COMMENT fix, since two legs independently failed
+  to construct a reachable same-second double backup and a counter suffix would be complexity for an
+  unreachable case. `tests/test_install.sh` pins the four behavioural fixes red-first against the
+  unfixed code: the two symlink tests are split by mode, with the linked one binding on the link's
+  TARGET (asserting merely that a symlink survives passes even when the adopter's has been re-pointed —
+  the exact conflation the `$LINK` exemption rested on); one test holds the copy→linked migration that
+  must not break; and the permission halves are root-guarded for CI's alpine-busybox leg, with the
+  unconditional halves chosen to converge across both readers.
 
 - **`docs/verification-economics.md`'s Clause A gets a severity/reachability carve-out and names
   §8's coverage bar as a non-license (dir #327).** The v0.7.2→v0.8.0 RC pass found two behavioural
