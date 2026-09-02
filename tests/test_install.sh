@@ -416,7 +416,8 @@ printf '\nSYMLINK-DEST-RELEASE\n' >> "$ckdir/commands/backlog.md"
 run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$symhome" --no-hooks
 check_status "T10 plain re-run over a symlinked dest → exit 0" 0 "$STATUS"
 check_link "T10 the adopter's symlink survives (never-clobber holds with no --force)" "$symhome/commands/backlog.md"
-# These two do NOT bind the kind check — measured: both stay green when it is removed, because
+# The two named below — "the linked-to file was not rewritten" and the .bak count, NOT the "unedited"
+# absence between them, which DOES bind — do not bind the kind check. Measured: both stay green, because
 # `mv -f` replaces the LINK, so the dotfiles target keeps its old bytes, and taking no backup IS the
 # defect. They guard a different implementation class (a fix that wrote THROUGH the link, or that
 # backed up and then clobbered). The three that bind are the check_link, the "unedited" absence, and
@@ -454,6 +455,26 @@ check_file "T10b the dotfiles copy is still there" "$symlinkdots/wrap.md"
 run test "$symlinkhome/commands/wrap.md" -ef "$symlinkdots/wrap.md"
 check_status "T10b …still resolving to their own dotfiles copy, not re-pointed at the checkout" 0 "$STATUS"
 
+# T10c — the HARD-link twin. `[ ! -L ]` cannot see it: a hard link is a regular file, so the bytes
+# match and `mv -f` severs it exactly as it severed the symlink, under the same "unedited" message.
+# Not pre-existing — v0.8.0 has no such predicate at all and the link survives there (2 → 2, alias
+# fork), so this was the unreleased twin of T10's own regression. The link COUNT is what binds; the
+# file existing proves nothing, since `mv -f` leaves a file at that path either way.
+hardhome="$SANDBOX/hardlink-dest-home"; mkdir -p "$hardhome"
+harddots="$SANDBOX/hardlink-dest-dotfiles"; mkdir -p "$harddots"
+fresh_home_env "$hardhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$hardhome" --no-hooks
+check_status "T10c copy install into the hardlink fixture → exit 0" 0 "$STATUS"
+mv "$hardhome/commands/global-review.md" "$harddots/global-review.md"
+ln "$harddots/global-review.md" "$hardhome/commands/global-review.md"   # HARD link, not symbolic
+printf '\nHARDLINK-DEST-RELEASE\n' >> "$ckdir/commands/global-review.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$hardhome" --no-hooks
+check_status "T10c plain re-run over a hardlinked dest → exit 0" 0 "$STATUS"
+check_absent "T10c no bogus 'Keel's own copy, unedited' claim about it" "$OUT" "global-review.md refreshed (Keel's own copy, unedited)"
+check_absent "T10c the adopter's other name for the file was not left stale" "$(cat "$harddots/global-review.md")" "HARDLINK-DEST-RELEASE"
+run env HOMEDIR_UNUSED=1 sh -c "cd '$REPO_ROOT' && . tools/lib/stat-portable.sh && stat_portable_nlink '$hardhome/commands/global-review.md'"
+check_status "T10c …because the hard link itself survives (link count still 2)" "2" "$OUT"
+
 # T11 — the behaviour T10's fix must NOT break: the copy→linked migration still runs, and it needs no
 # $LINK exemption in the predicate because its dest is a regular FILE, not a link (see T10b).
 # `commands/<name>.md` has the same home-relative key in both modes and both modes read the same
@@ -485,7 +506,9 @@ check_status "T11 …resolving into the checkout" 0 "$STATUS"
 # Coverage map, stated so "alpine green" is not misread as evidence: the permission-dependent halves
 # here and in T12b/T13/T14d bind ONLY on the non-root matrix legs (ubuntu-24.04, macos-14). On the
 # alpine-busybox leg those guards skip, and a regression in finding 2, finding 7 or T14d's own target
-# would ship green there — measured by forcing the guards false, which drops 12 assertions.
+# would ship green there — measured by forcing the guards false. The T12 scratch-hygiene assertion
+# below is NOT inside a guard but is equally root-blind: on the root leg the sweep regression it
+# pins ships green too, because a root reader leaves no leftover to sweep.
 # The exit STATUS does not converge — non-root still exits non-zero on the trailing manifest-merge
 # bookkeeping, exactly as v0.8.0 did — so it is deliberately not asserted here; what the fix owes is
 # placement, not that pre-existing wart.
@@ -608,7 +631,11 @@ fresh_home_env "$warnhome"
 run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$warnhome" --no-hooks
 check_status "T14c linked install over a real-file bin/keel → exit 0" 0 "$STATUS"
 check_contains "T14c the Verify WARN fires for the unwired CLI" "$OUT" "keel CLI not wired"
-check_contains "T14c …and advises install.sh, reachable without bin/keel" "$OUT" "re-run 'install.sh --home \"$warnhome\"' (add --force"
+# The needle runs THROUGH the carve-out on purpose: mutation-proved that stopping at "(add --force"
+# leaves a WARN-only regression green, because T14e's own carve-out check is whole-output and the
+# refusal satisfies it. This is the likely single-site regression — the WARN is the line that mirrors
+# tools/doctor.sh:734, whose string still says only "not a symlink".
+check_contains "T14c …and advises install.sh, reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there already"
 # The needle carries the CONDITIONAL wording, not just the line's identity: mutation-proved that a
 # needle of "is not a Keel symlink" alone leaves a flat `--force` regression green, and a flat --force
 # is what aborts the run at force_backup's `cp` when a DIRECTORY sits there.
@@ -670,7 +697,13 @@ fi
 # The wait is only ever paid in full when the defect is present; the healthy path exits in about a second.
 if command -v mkfifo >/dev/null 2>&1; then
   fifohome="$SANDBOX/fifo-manifest-home"; mkdir -p "$fifohome/.keel"
-  mkfifo "$fifohome/.keel/install-manifest.claude"
+  mkfifo "$fifohome/.keel/install-manifest.claude" 2>/dev/null || true
+  # `command -v mkfifo` proves the TOOL exists, not that the fixture does — a filesystem without
+  # FIFO support or a sandbox denying mknod would turn this whole test into a plain fresh install
+  # reporting two passes (mutation-proved: 198/0 while exercising nothing).
+  if [ ! -p "$fifohome/.keel/install-manifest.claude" ]; then
+    fail "T14f the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
   fresh_home_env "$fifohome"
   env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fifohome" --no-hooks >/dev/null 2>&1 </dev/null &
   fifo_pid=$!
@@ -679,7 +712,14 @@ if command -v mkfifo >/dev/null 2>&1; then
     sleep 1; fifo_waited=$((fifo_waited + 1))
   done
   if kill -0 "$fifo_pid" 2>/dev/null; then
+    # Release the blocked reader BEFORE killing, then reap the children too: `kill -9` on the
+    # backgrounded shell does not touch the `cp` blocked in open() on the FIFO — it is reparented to
+    # PID 1 and stays blocked forever, and unlinking the FIFO does not release a pending open. Found
+    # live: five such orphans had accumulated on one machine from this batch's own probes.
+    : > "$fifohome/.keel/install-manifest.claude" 2>/dev/null &
+    pkill -P "$fifo_pid" 2>/dev/null || true
     kill -9 "$fifo_pid" 2>/dev/null || true
+    wait "$fifo_pid" 2>/dev/null || true
     fail "T14f a FIFO at the manifest path must not hang the install" "still running after ${fifo_waited}s"
   else
     wait "$fifo_pid"; fifo_st=$?
@@ -690,5 +730,17 @@ if command -v mkfifo >/dev/null 2>&1; then
 else
   pass "T14f mkfifo unavailable — FIFO manifest guard not exercised here"
 fi
+
+# T14g — a STATIC pin for the merge-scratch guard, which resists a deterministic fixture (it guards a
+# genuine microsecond race between two installs into one home) and was mutation-proved to have no
+# coverage at all: deleting the whole block left 198/0. The behaviour it protects is version-dependent
+# — bash 3.2 continues past a failed `done < file` and writes an artifact-less manifest, bash 5.2
+# aborts — so on the leg where it matters most nobody would notice it disappearing. Pinning the guard's
+# own text is the honest substitute, and it holds on every leg. The two needles are the condition and
+# the exit, so neither a silenced abort nor a removed test survives.
+pin "T14g install.sh guards the merge scratch before reading it" "$REPO_ROOT/install.sh" \
+  '[ ! -f "$merge_tmp" ]' "the merge-temp existence guard is gone — see T14g"
+pin "T14g …and that guard actually aborts" "$REPO_ROOT/install.sh" \
+  'manifest merge scratch vanished' "the merge-temp guard no longer fails loudly — see T14g"
 
 summary

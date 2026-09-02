@@ -72,22 +72,32 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the exact conflation the `$LINK` exemption rested on); one test holds the copy→linked migration that
   must not break; and the permission halves are root-guarded for CI's alpine-busybox leg, with the
   unconditional halves chosen to converge across both readers.
-  Three changes came out of the batch's own `/code-review max` pass rather than the nine findings, all
-  closing regressions the fix round itself introduced: `[ -f "$manifest_file" ]` is kept INSIDE the new
+  Four changes came out of the batch's own `/code-review max` pass rather than the nine findings. Two
+  close regressions the fix round itself introduced, one closes a pre-existing `dir #324` defect the
+  pass surfaced while checking them, and one closes the hard-link twin described below: `[ -f "$manifest_file" ]` is kept INSIDE the new
   `cp` condition (dropping it made a FIFO at that path block `cp` forever in `open()`, hanging the
   install before it placed anything — measured against v0.8.0's 2-second success); the stale-scratch
   sweep now covers the merge step's `.artifacts.<pid>` as well, which surviving the snapshot read made
-  reachable for the first time, and the read of that temp fails loudly instead of writing an
-  artifact-less manifest; and the `bin/keel` refusal moved to the same reachable command as the WARN.
+  reachable for the first time, and the read of that temp now fails loudly rather than writing an
+  artifact-less manifest on the bash versions that do not abort there by themselves (measured: 3.2 does
+  not, 5.2 does — so this speaks for the macos-14 leg); and, pre-existing rather than self-inflicted,
+  the `bin/keel` refusal has advised `keel sync` since `dir #324`, which dispatches through the very
+  `bin/keel` it reports is unwired — it moves to the same reachable command as the WARN.
 
-  **Known issue, shipping unfixed — a HARD link to a Keel-owned file is severed exactly as the symlink
-  was.** A hard link is a regular file, so the new kind check passes it, its cksum matches, and
-  `mv -f` breaks it under the same "Keel's own copy, unedited" message. This is the unreleased twin of
-  the headline regression, not a pre-existing wart: `v0.8.0` has no `keel_own_untouched` at all, and
-  there the link survives (measured link count 2 → 2, alias fork) against 2 → 1 here. It is left open
-  deliberately — detecting it needs a link-count probe whose busybox behaviour this batch could not
-  validate, and shipping an unvalidated platform probe into the rail the release is gated on is the
-  worse trade. It is owed to the closing round before the tag.
+  **A HARD link to a Keel-owned file was severed exactly as the symlink was, and is now refused too.**
+  A hard link is a regular file, so `[ ! -L ]` passes it, its cksum matches, and `mv -f` breaks it
+  under the same "Keel's own copy, unedited" message — the same never-clobber harm reached through `ln`
+  instead of `ln -s`. It was the unreleased twin of the headline regression, not a pre-existing wart:
+  `v0.8.0` has no `keel_own_untouched` at all, and there the link survives (measured link count 2 → 2,
+  alias fork) against 2 → 1 before this fix. The predicate now also refuses a dest whose link count is
+  not 1, via a new `stat_portable_nlink` in the existing `tools/lib/stat-portable.sh` — reused rather
+  than re-inlined, since that helper already carries the GNU/busybox-vs-BSD flavor split and its own
+  tests. An unanswerable count (no `tools/lib`, an unstattable dest) is treated as UNKNOWN and refused,
+  which is the fail-closed direction. **This one nearly shipped as a documented known issue**: the
+  batch's first attempt to validate the probe on busybox returned empty for a plain file too, and that
+  broken result was written down as a platform fact and used to justify deferring. A review round
+  re-measured it on the CI image itself — BusyBox v1.37.0, `stat -c '%h'` → 2 for a hard link, 1 for a
+  plain file, exit 0 — and the premise dissolved.
 
   **Known issue, shipping unfixed — the removal rail has both of these same gaps.** `uninstall.sh`'s
   `artifact=file` branch guards with `[ -f "$apath" ]` and reads the cksum through it, so it is

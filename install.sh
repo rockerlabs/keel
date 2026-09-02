@@ -260,6 +260,19 @@ else
   manifest_usable() { return 1; }
 fi
 
+# stat-portable, sourced the same conditional way and for the same reason: keel_own_untouched needs a
+# hard-link count, and that is the one thing POSIX gives no portable spelling for (GNU/busybox
+# `stat -c '%h'` vs BSD `stat -f '%l'`). Reused rather than re-inlined — the flavor probe already ships
+# here with its own tests. If the lib is missing or corrupt the fallback answers empty, and the
+# predicate below treats an empty count as UNKNOWN and refuses, which is the fail-closed direction:
+# a checkout too broken to carry tools/ is not one to auto-refresh an adopter's files from.
+if [ -f "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/stat-portable.sh
+  . "$root/tools/lib/stat-portable.sh"
+else
+  stat_portable_nlink() { :; }
+fi
+
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
 # reads THIS, never $manifest_file directly, so a future reordering of the write block below can never
 # make the provenance check observe this run's own placement instead of the run before it.
@@ -406,18 +419,14 @@ record_placed() {
 # digest still matches, while record_placed classified the original as a regular `file`. The kind check
 # below is what closes that gap — the predicate cannot see the re-forming, so it refuses to answer for
 # a dest whose CURRENT form disagrees with the recorded one. Same for mode/ownership/xattr changes: not
-# observed, and not claimed. Nor is a HARD link — and that one is a KNOWN OPEN DEFECT, not a caveat.
-# A hard link IS a regular file, so `[ ! -L ]` passes it, its cksum matches, and `atomic_copy`'s
-# `mv -f` breaks the link exactly as the symlink case severs one: the same never-clobber harm, reached
-# through `ln` instead of `ln -s`. It is NOT pre-existing — an earlier draft of this comment said so
-# and was wrong. v0.8.0 has no keel_own_untouched at all (the whole dir #323 machinery is unreleased),
-# and there the hard link SURVIVES: measured link count 2 -> 2 with the alias fork, against 2 -> 1 and
-# "refreshed (Keel's own copy, unedited)" here. So it is the unreleased twin of the symlink regression
-# this very check closes. Left open deliberately, on the operator's call: detecting it needs a link
-# COUNT probe whose busybox behaviour this batch could not validate (the Alpine check came back empty
-# for a plain file too, i.e. broken, not informative), and shipping an unvalidated platform probe into
-# the rail the release is gated on is the worse trade. Tracked as a known issue in CHANGELOG.md and
-# owed to the closing round before the tag.
+# observed, and not claimed. A HARD link IS observed, by the nlink clause below — and it had to be:
+# a hard link is a regular file, so `[ ! -L ]` passes it, its cksum matches, and `atomic_copy`'s
+# `mv -f` breaks the link exactly as the symlink case severs one. Same never-clobber harm, reached
+# through `ln` instead of `ln -s`, and NOT pre-existing: v0.8.0 has no keel_own_untouched at all (the
+# whole dir #323 machinery is unreleased), and there the hard link survives — measured link count
+# 2 -> 2 with the alias fork, against 2 -> 1 and "refreshed (Keel's own copy, unedited)" before this
+# clause. It was the unreleased twin of the symlink regression, and it is closed here for the same
+# reason and by the same rejection.
 #
 # That check is UNCONDITIONAL, not gated on $LINK, and the reason is worth stating because the obvious
 # reading says otherwise. The copy→linked migration below legitimately drives this branch (see the
@@ -467,12 +476,18 @@ record_placed() {
 # returning 1 on its own — but it is not free to permute: moving `cmp` back to the front gives that
 # saving up, so reorder for readability only if you are willing to pay the fork.
 keel_own_untouched() {
-  local src="$1" dest="$2" rel prior_extra
+  local src="$1" dest="$2" rel prior_extra dest_nlink
   [ "$prior_manifest_usable" = 1 ] || return 1
   # A dest that is now a SYMLINK is not the regular file a `file` record describes, whatever its bytes
   # say — see the docstring's own symlink case above. Unconditional, in BOTH modes, and deliberately
   # not a `$LINK` special case: see the docstring for why the copy→linked migration doesn't need one.
   [ ! -L "$dest" ] || return 1
+  # …and neither is a HARD link, which `[ ! -L ]` cannot see: it IS a regular file, so its bytes match
+  # and `atomic_copy`'s `mv -f` would sever it just as silently. Same rejection, same reason. An empty
+  # count means the probe could not answer (no tools/lib, an unstattable dest) and is treated as
+  # UNKNOWN, not as 1 — fail closed on the rail whose job is to fail closed.
+  dest_nlink="$(stat_portable_nlink "$dest")"
+  [ "$dest_nlink" = 1 ] || return 1
   cmp -s "$src" "$dest" 2>/dev/null && return 1
   rel="${dest#"$HOME_DIR"/}"
   prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest")"
@@ -1122,7 +1137,9 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     # verbatim any more: the "or a directory" carve-out is spelled here and at the refusal above, while
     # tools/doctor.sh:734 and keel:88 still say only "not a symlink" — and doctor's own else-arm DOES
     # fire for a directory, so it advises the --force that aborts. Left as-is here: those two lines are
-    # outside this batch's findings and doctor's exact string is pinned by tests/test_install_link.sh.
+    # outside this batch's findings. (An earlier draft also claimed doctor's exact string is pinned by
+    # tests/test_install_link.sh — it is not: that helper asserts the bracketed finding code and exit 0,
+    # nothing about the wording. Closing the drift is a one-line string edit, not an expensive one.)
     # Noted in the PR body; it wants its own ticket. It is
     # deliberately NOT $advise_refresh_force, whose linked form is `keel sync`: that dispatches THROUGH
     # the very bin/keel this line reports is not wired — command-not-found at best, and running the
@@ -1232,11 +1249,16 @@ merge_tmp="$manifest_dir/.artifacts.$$"
 } | awk -F'\t' '{a[$1] = $0} END {for (k in a) print a[k]}' | sort > "$merge_tmp"
 
 manifest_artifact_lines=()
-# Fail LOUD if the merge temp vanished between the write above and this read. bash does NOT errexit on
-# a failed `done < file` redirection (verified: `set -euo pipefail; while read x; do :; done
-# < /nonexistent; echo AFTER` prints AFTER and exits 0), so without this the loop would simply never
-# run and the manifest would be written with zero artifact records while the files sit on disk — an
-# exit-0 success summary over an install uninstall can no longer see. Newly reachable because this
+# Fail LOUD if the merge temp vanished between the write above and this read. Whether bash errexits on
+# a failed `done < file` redirection is VERSION-DEPENDENT, measured on the snippet itself: bash 3.2.57
+# (macOS's own, the macos-14 leg) prints AFTER and exits 0, while bash 5.2 (ubuntu-24.04's, and the
+# alpine leg's apk bash) aborts. So on macOS the loop would simply never run and the manifest would be
+# written with zero artifact records while the files sit on disk — an exit-0 success summary over an
+# install uninstall can no longer see. This guard normalizes all three legs and names the cause instead
+# of leaving a bare "No such file or directory"; do NOT delete it after reproducing the one-liner on a
+# Linux box and concluding it is dead weight — that is precisely the leg it does not speak for.
+# The check is EXISTENCE only: a temp that exists but cannot be read still takes the read path below.
+# Newly reachable because this
 # batch widened the stale-scratch sweep above to `.artifacts.*`: a concurrent install into the SAME
 # home can now delete this run's temp. Microseconds wide and rare, but it must not fail silently —
 # the sibling .prior-manifest race degrades provenance, which is recoverable; this one would not say
