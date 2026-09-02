@@ -11,6 +11,26 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`docs/verification-economics.md`'s Clause A gets a severity/reachability carve-out and names
+  §8's coverage bar as a non-license (dir #327).** The v0.7.2→v0.8.0 RC pass found two behavioural
+  defects that the audit's own fix round induced; both were caught only because Clause A kept
+  failing on the two closing rounds after `docs/delta-audit.md` §8's verdict contract — every ledger
+  row verdicted, GO SHA re-resolved, CI green — was already satisfied. Clause A's own "what it does
+  NOT license" list now names that contract explicitly, so a future run does not read coverage as
+  permission to stop. Separately, the verifier that closed that run had to invent, on the spot, a
+  severity/reachability carve-out to keep two findings out of `fix-before-tag` without silently
+  stretching Clause A's literal text — that reasoning is now written into the clause itself, parallel to its
+  existing guard-gap carve-out: a behavioural finding doesn't reset the clock only when it is
+  unreachable under the artifact's own stated design *and* given §8's own `ticket-next` /
+  `known-issue-in-changelog` / `no-action` disposition (never `fix-before-tag`) by the diverse leg
+  that found it, not by the fix's own author — weighted by whether that same leg has *also*
+  disposed something `fix-before-tag` this run, since independence alone doesn't rule out a leg that
+  just never calls anything blocking. Invoking the "stated design" half of the carve-out now also
+  obliges the verifier to name where that design is actually written, and to write it down in the
+  artifact itself if it is nowhere yet — a review caught that the founding case's own exclusion
+  (a single-operator CLI, not a concurrent service) was never stated anywhere in the tree it was
+  ruled about, which would have failed the clause on its own precedent.
+
 - **`install.sh --force`, plus manifest-based provenance for drifted `commands/*.md` (dir #323,
   dir #324).** A non-interactive `install.sh` re-run used to permanently foreclose refreshing a
   drifted Keel-owned command: on the first content mismatch it silently forked a `keel-<name>.md`
