@@ -11,6 +11,55 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
+  one batch.** The audit ran four independent legs — two cross-vendor, two blind same-vendor — plus an
+  orchestrator over `v0.8.0..e5f151b`, and every finding was reproduced live before it was written down.
+  The headline blocker is a never-clobber regression against v0.8.0 that needed **no `--force` at all**:
+  `record_placed` classifies a Keel-placed artifact as `symlink` or `file`, but `keel_own_untouched`
+  only required the RECORDED kind to be `file` and never checked the dest's CURRENT kind — and `cksum`
+  reads straight through a symlink. An adopter who moves a Keel-placed command into a dotfiles repo and
+  symlinks it back (byte-identical by construction) therefore still satisfied the "Keel's own unedited
+  copy" predicate, and `place` → `atomic_copy`'s `mv -f` replaced the SYMLINK ITSELF — taking no backup,
+  since that branch skips `force_backup` on the strength of the predicate, and printing a message
+  asserting the file was unedited. No content was destroyed (the dotfiles copy survived at the old link
+  target), but the adopter's wiring was severed silently and their dotfiles repo left holding an orphan
+  the harness no longer reads. The predicate now refuses a dest whose current form disagrees with the
+  recorded kind — conditioned on `$LINK`, because in linked mode `place` makes a symlink anyway and
+  because that same branch legitimately drives the copy→linked migration of a drifted command (a
+  copy-mode `file` record is fully visible to a later `--link` run: `commands/<name>.md` has the same
+  home-relative key in both modes and `manifest_mode` keys on `$CODEX`, not on `$LINK`). A comment
+  claiming that migration as a "deliberate non-behaviour" — the wording that would have led a
+  maintainer to write the `$LINK`-blind version of this fix and silently kill the migration — is
+  corrected, and the predicate's docstring now states what it can and cannot observe: it compares
+  bytes, and re-forming a file as a symlink IS the adopter touching it.
+  Second blocker, also a regression: the manifest snapshot's `cp` sat in an `if` BODY at top level
+  under `set -euo pipefail`, so a manifest that EXISTS but cannot be READ killed the run before any
+  file was placed — upstream of the degradation logic in `manifest_field`/`manifest_usable` that both
+  `install.sh`'s own comment and `tools/lib/manifest.sh`'s versioning contract promise handles exactly
+  this case "never a crash". The read is now the condition; a genuinely unwritable `$manifest_dir`
+  stays loud. Third, the linked `--force` advice dropped the `--home` suffix both its siblings carry:
+  `keel sync` forwards its args verbatim, so following the advised remedy from a `--link --home DIR`
+  install built a SECOND Keel at `$HOME/.claude` and left the file the message was about untouched
+  (`dir #98`'s class, re-opened at a new site; the `EPHEMERAL` bootstrap form gets the same treatment).
+  Five non-blocking fixes ride along: the `bin/keel` header comment still claimed Keel would "never
+  replace a real file you put at bin/keel" while `dir #324`'s own `--force` takeover sits twelve lines
+  below it; the `Verify:` WARN for an unwired `bin/keel` still advised a bare re-run that reproduces
+  the identical warning, contradicting the two sibling messages the same run prints about the same
+  file; `artifact_cksum`'s `cksum:0:0` failure sentinel was self-equal, so a manifest that ever recorded
+  it would compare EQUAL to any currently-unreadable dest and the never-clobber rail would fail OPEN
+  (now rejected on either side); `tools/keel-impact.sh`'s `_impact_prior_mode` docstring justified its
+  `[ -f ]` guard as preventing a `set -e` abort that no live call path can reach (all six callers are
+  `… && rm -f … || ok=0`, and the exemption propagates into the body — verified live by stripping the
+  guard, which leaves the suite green), restated as what the guard actually buys: a status-0 answer for
+  an absent target, so the helper stays safe from a non-exempt caller; and `force_backup`'s uniqueness
+  claim is narrowed to the second-granularity it actually has — deliberately a COMMENT fix, since two
+  legs independently failed to construct a reachable same-second double backup and a counter suffix
+  would be complexity for an unreachable case. `tests/test_install.sh` pins the four behavioural fixes
+  with regression tests shown red-first against the unfixed code, including one asserting the
+  copy→linked migration still works (the behaviour the blocker-1 fix must not break) and two whose
+  permission halves are root-guarded for CI's alpine-busybox leg, with the unconditional halves chosen
+  to converge across both readers.
+
 - **`docs/verification-economics.md`'s Clause A gets a severity/reachability carve-out and names
   §8's coverage bar as a non-license (dir #327).** The v0.7.2→v0.8.0 RC pass found two behavioural
   defects that the audit's own fix round induced; both were caught only because Clause A kept

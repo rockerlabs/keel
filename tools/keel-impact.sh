@@ -358,12 +358,21 @@ ensure_evidence() {
 # --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate (_impact_merge_log added
 # by the v0.8.0 delta audit's F-05, for the same reason and the same two call sites) -----------------
 # _impact_prior_mode TARGET — TARGET's octal permission bits if it ALREADY EXISTS, empty otherwise.
-# Its own function for two reasons, neither cosmetic. First, the `[ -f ]` guard is load-bearing under
-# this file's `set -e`: `stat` on a missing path fails, and a bare `mode="$(stat …)"` assignment
-# propagates that failure and aborts the script — the guard is what makes "absent" an empty string
-# instead of a crash. Second, WHEN a caller captures differs per caller (see _impact_merge_ledger,
-# which must capture before `ensure_ledger` creates the file), so the capture cannot simply move into
-# _impact_atomic_write below; only its logic is shared, not its placement.
+# Its own function for two reasons, neither cosmetic. First, the `[ -f ]` guard owns the RETURN STATUS:
+# `stat` on a missing path exits non-zero, and the callers' `local old_mode;
+# old_mode="$(_impact_prior_mode …)"` takes THAT as the assignment's own status — the guard is what
+# makes "TARGET is absent" a normal, SUCCESSFUL answer instead of a failing one, so the function stays
+# safe if it is ever called from a non-exempt context (a plain `old_mode="$(_impact_prior_mode "$t")"`
+# outside an `&&`/`||` list would otherwise abort the script on the entirely legitimate first-create
+# path). Two things the guard does NOT do today, both of which an earlier wording of this docstring
+# claimed: it is not what keeps the returned string empty — `stat_portable_mode`'s own `2>/dev/null`
+# (tools/lib/stat-portable.sh) is — and it prevents no abort on any LIVE call path, since all six live
+# call sites of the three merge helpers are `_impact_merge_* … && rm -f … || ok=0` and an errexit
+# exemption earned by the `&&` list propagates down into the called function's body. Verified live by
+# stripping the guard: `migrate` still exits 0 and still takes the first-create carve-out, and the
+# keel-impact suite stays green. Second, WHEN a caller captures differs per caller (see
+# _impact_merge_ledger, which must capture before `ensure_ledger` creates the file), so the capture
+# cannot simply move into _impact_atomic_write below; only its logic is shared, not its placement.
 _impact_prior_mode() {
   local target="$1"
   [ -f "$target" ] || return 0
