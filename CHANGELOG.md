@@ -33,15 +33,16 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   out as a small producer callback. As a side effect of centralizing the write side,
   `_impact_merge_evidence`'s pre-existing temp-file leak on a post-write `mv` failure closes for free.
   **The extraction was widened before landing, per the ticket that held it:** batches 3 and 4 of the
-  v0.8.0 audit's own fix round (F-16, then F-19) added an identical mode-capture and
-  mode-application block to all three helpers *after* this refactor was written, so extracting only
+  v0.8.0 audit's own fix round (the mode-preservation fix, then the fix for the crash race it left
+  behind) added an identical mode-capture and mode-application block to all three helpers *after* this
+  refactor was written, so extracting only
   the original duplication would have left the newer copies behind — the exact one-site-not-its-twin
   shape dir #344 exists to mechanize. The mode APPLICATION (chmod the temp before the `mv`, never the
   target after) moves into the scaffold; the mode CAPTURE stays at each call site behind a shared
   `_impact_prior_mode`, because `_impact_merge_ledger` must capture before `ensure_ledger` creates the
   file and the other two must not. Behaviour is otherwise unchanged, and was mutation-proved rather
   than assumed: stubbing the mode probe, and separately deleting the scaffold's `chmod`, each turn the
-  F-16/F-19 mode-preservation assertions red; moving the ledger's capture below `ensure_ledger` turns
+  mode-preservation assertions red; moving the ledger's capture below `ensure_ledger` turns
   nothing red, and the entry above the code records why that is correct rather than a coverage gap.
 
 - **Extracted `tools/lib/stat-portable.sh`, the one portable-`stat`-flavor cache for every tool that
@@ -58,7 +59,7 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   pass, cross-model second-opinion angle) while this session's branch had forked just before that
   merge landed — the migration originally shipped scoped to only `branch-cleanup.sh`, deferring
   `keel-impact.sh` on a since-stale "still unmerged" premise; corrected in the same session rather
-  than left as a known-stale follow-up ticket. Pure refactor, no behavior change: the existing F-16
+  than left as a known-stale follow-up ticket. Pure refactor, no behavior change: the existing
   mode-preservation tests (umask-varied, both `stat` flavors) pass unmodified against the migrated
   code. Adds `tests/test_stat_portable_lib.sh` for direct unit coverage of the shared lib itself.
 
@@ -114,8 +115,9 @@ severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning instead tell the
   portable `stat -c '%a'`/`stat -f '%Lp'` probe, cached once — before the write and restores it after a
   successful `mv`, only when the target already existed; a first-ever create still gets ordinary
   umask behaviour. Second, `_impact_auto_migrate`'s own comment claimed an already-merged source "was
-  already `rm -f`'d, so a retry never re-merges it" — the actual failure scenario above is an `rm` that
-  FAILS and a retry that DOES re-merge, safely deduped now, but re-merge it does; corrected in place.
+  already `rm -f`'d, so a retry never re-merges it" — the log-merge fix's own failure scenario below is
+  an `rm` that FAILS and a retry that DOES re-merge, safely deduped now, but re-merge it does; corrected
+  in place.
   Third (found by the blind leg): the orphaned-temp-file fix (commit 2575500) got a mirrored
   regression test at `_impact_merge_evidence` (PR #310) but never one of its own at the sibling
   `_impact_merge_log` — proved missing by mutation (reintroducing the leak still passed the full
