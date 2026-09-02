@@ -11,6 +11,26 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Extracted `_impact_atomic_write`, the same-directory atomic-write scaffold the three
+  `keel-impact.sh` merge helpers each hand-rolled (dir #345).** `_impact_merge_ledger`,
+  `_impact_merge_evidence` and `_impact_merge_log` independently repeated the same discipline —
+  same-directory temp file (never a bare `mktemp`: `$TMPDIR` may not share a filesystem with the
+  target, and a cross-filesystem `mv` is no longer one atomic `rename()`), explicit write-status
+  capture, and an unconditional temp cleanup — with each function's own read/filter logic now split
+  out as a small producer callback. As a side effect of centralizing the write side,
+  `_impact_merge_evidence`'s pre-existing temp-file leak on a post-write `mv` failure closes for free.
+  **The extraction was widened before landing, per the ticket that held it:** batches 3 and 4 of the
+  v0.8.0 audit's own fix round (F-16, then F-19) added an identical mode-capture and
+  mode-application block to all three helpers *after* this refactor was written, so extracting only
+  the original duplication would have left the newer copies behind — the exact one-site-not-its-twin
+  shape dir #344 exists to mechanize. The mode APPLICATION (chmod the temp before the `mv`, never the
+  target after) moves into the scaffold; the mode CAPTURE stays at each call site behind a shared
+  `_impact_prior_mode`, because `_impact_merge_ledger` must capture before `ensure_ledger` creates the
+  file and the other two must not. Behaviour is otherwise unchanged, and was mutation-proved rather
+  than assumed: stubbing the mode probe, and separately deleting the scaffold's `chmod`, each turn the
+  F-16/F-19 mode-preservation assertions red; moving the ledger's capture below `ensure_ledger` turns
+  nothing red, and the entry above the code records why that is correct rather than a coverage gap.
+
 - **Extracted `tools/lib/stat-portable.sh`, the one portable-`stat`-flavor cache for every tool that
   needs an epoch mtime or an octal mode (dir #322).** `tools/branch-cleanup.sh`'s `STAT_FMT`/
   `epoch_mtime` and `tools/keel-impact.sh`'s `_impact_ensure_stat_fmt`/`_impact_file_mode` (added by
