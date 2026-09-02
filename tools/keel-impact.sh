@@ -40,6 +40,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$SCRIPT_DIR/lib/impact-store.sh"
+# shellcheck source=tools/lib/stat-portable.sh
+. "$SCRIPT_DIR/lib/stat-portable.sh"
 
 # dir #251 D4's automatic half: a project with a legacy in-tree .keel/ marker and no store entry yet
 # gets migrated the moment this script next resolves for it — main checkout only, no worktree sweep
@@ -54,10 +56,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # "$store" ]` — `origin` is now written ONLY after every present legacy file has been swept
 # successfully (`ok=1`), never before. A failure partway through (a merge helper genuinely reporting
 # failure — see _impact_merge_ledger/_impact_merge_evidence/_impact_merge_log below) leaves `origin`
-# unwritten, so the NEXT call re-scans and retries exactly the files still sitting in `.keel/`
-# (already-merged ones were already `rm -f`'d, so a retry never re-merges them, just picks up where
-# the failure left off). A repo where auto-migrate legitimately has nothing to do (no legacy files,
-# or what's left is tracked/unreadable) never gets `origin` written by THIS function either, so it
+# unwritten, so the NEXT call re-scans and retries exactly the files still sitting in `.keel/`. A
+# source whose merge AND `rm -f` both succeeded is gone, so a retry skips it — but one whose merge
+# succeeded while its own `rm -f` failed (the file wasn't removed) stays present and DOES get
+# re-merged on the next retry: v0.8.0 delta audit F-05 is what makes that safe (each merge helper
+# dedups its rows/blocks/lines, so re-merging already-merged content is a no-op, never a duplicate),
+# not what prevents the re-merge from happening. A repo where auto-migrate legitimately has nothing
+# to do (no legacy files, or what's left is tracked/unreadable) never gets `origin` written by THIS
+# function either, so it
 # costs the same small rescan on every call it always did pre-fix — no new cost there. The one case
 # that IS a new per-call cost relative to pre-fix: a repo where a merge is attempted and genuinely
 # fails (`ok=0`) now retries the scan + merge attempt on every subsequent call for as long as the
@@ -351,30 +357,65 @@ ensure_evidence() {
 
 # --- dir #251: merge helpers shared by cmd_migrate and _impact_auto_migrate (_impact_merge_log added
 # by the v0.8.0 delta audit's F-05, for the same reason and the same two call sites) -----------------
-# _impact_atomic_write TARGET PRODUCER_FN [ARGS...] — the same-directory atomic-write scaffold shared
-# by all three merge helpers below (extracted from what used to be three hand-copies of the same
-# discipline). PRODUCER_FN is invoked as `PRODUCER_FN ARGS...` with its stdout captured straight into
-# a same-directory temp file ($TARGET.keelmerge.$$, not a bare `mktemp`: `$TMPDIR`/`/tmp` is not
-# guaranteed to share a filesystem with $TARGET's own directory — the external store, or a legacy
-# in-tree path — and a cross-filesystem `mv` degrades to copy-then-unlink, losing the single atomic
-# rename() a same-filesystem `mv` gets for free). PRODUCER_FN's OWN exit status is what gates the
-# `mv` — never the temp-write redirect's status in isolation and never a later cleanup command's
-# (dir #289's original finding: every caller here gates a legacy source's `rm -f` on this function's
-# return value, so a masked write failure would delete the one copy of data that was never durably
-# written anywhere else). A producer that is itself a multi-stage pipeline (see
-# _impact_merge_ledger_produce below, which must combine two separately-read temp files and capture
-# each stage's own read status before writing anything) is responsible for resolving that down to its
-# own single, honest exit status first — this helper only ever trusts the one status PRODUCER_FN
-# reports. The trailing `rm -f "$tmp"` runs UNCONDITIONALLY, not just on the write-failure branch
-# (dir #251 review, folding in a `/code-review max` finding against the old hand-rolled
-# _impact_merge_log): a `mv` failure AFTER a successful write would otherwise leave `$tmp` orphaned —
-# `status` is still correctly non-zero either way (no data-loss risk), just a stray temp file left
-# behind under a two-branch-only cleanup.
+# _impact_prior_mode TARGET — TARGET's octal permission bits if it ALREADY EXISTS, empty otherwise.
+# Its own function for two reasons, neither cosmetic. First, the `[ -f ]` guard is load-bearing under
+# this file's `set -e`: `stat` on a missing path fails, and a bare `mode="$(stat …)"` assignment
+# propagates that failure and aborts the script — the guard is what makes "absent" an empty string
+# instead of a crash. Second, WHEN a caller captures differs per caller (see _impact_merge_ledger,
+# which must capture before `ensure_ledger` creates the file), so the capture cannot simply move into
+# _impact_atomic_write below; only its logic is shared, not its placement.
+_impact_prior_mode() {
+  local target="$1"
+  [ -f "$target" ] || return 0
+  stat_portable_mode "$target"
+}
+
+# _impact_atomic_write TARGET OLD_MODE PRODUCER_FN [ARGS...] — the same-directory atomic-write
+# scaffold shared by all three merge helpers below (extracted from what used to be three hand-copies
+# of the same discipline). PRODUCER_FN is invoked as `PRODUCER_FN ARGS...` with its stdout captured
+# straight into a same-directory temp file ($TARGET.keelmerge.$$, not a bare `mktemp`: `$TMPDIR`/`/tmp`
+# is not guaranteed to share a filesystem with $TARGET's own directory — the external store, or a
+# legacy in-tree path — and a cross-filesystem `mv` degrades to copy-then-unlink, losing the single
+# atomic rename() a same-filesystem `mv` gets for free).
+#
+# PRODUCER_FN's OWN exit status is what gates the `mv` — never the temp-write redirect's status in
+# isolation and never a later cleanup command's (dir #289's original finding: every caller here gates
+# a legacy source's `rm -f` on this function's return value, so a masked write failure would delete
+# the one copy of data that was never durably written anywhere else). A producer that is itself a
+# multi-stage pipeline (see _impact_merge_ledger_produce below, which must combine two separately-read
+# temp files and capture each stage's own read status before writing anything) is responsible for
+# resolving that down to its own single, honest exit status first — this helper only ever trusts the
+# one status PRODUCER_FN reports.
+#
+# OLD_MODE is TARGET's mode as its CALLER captured it (via _impact_prior_mode above), or empty for a
+# first-ever create. v0.8.0 delta audit F-16/F-19: applied to the TEMP file here, before the `mv` —
+# not to the target after it, which is what F-16's own fix originally did. A same-filesystem `mv` is
+# a rename(2): it installs the temp's mode atomically along with its content, so the target is never
+# observable with the wrong mode and there is no window between "renamed" and "restored" for a
+# crash/kill/full-disk to catch it widened. The old post-mv order also SELF-CEMENTED — the next run's
+# capture reads the mode back FROM THE TARGET, so once a crash caught it widened, every later
+# "restore" faithfully preserved the widened mode forever. Best-effort, and deliberately non-fatal:
+# the content write has not landed at this point, so a chmod failure does not retroactively make the
+# write fail — matches this file's own convention for a degraded-but-nonfatal path (line 128/1190/
+# 1266's own `|| true`) and surfaces instead of going dark. An empty OLD_MODE skips it entirely, which
+# is the first-create carve-out: a brand-new file keeps ordinary umask behaviour rather than inheriting
+# a hard-coded mode.
+#
+# The trailing `rm -f "$tmp"` runs UNCONDITIONALLY, not just on the write-failure branch (dir #251
+# review, folding in a `/code-review max` finding against the old hand-rolled _impact_merge_log): a
+# `mv` failure AFTER a successful write would otherwise leave `$tmp` orphaned — `status` is still
+# correctly non-zero either way (no data-loss risk), just a stray temp file left behind under a
+# two-branch-only cleanup.
 _impact_atomic_write() {
-  local target="$1"; shift
+  local target="$1" old_mode="$2"; shift 2
   local tmp="$target.keelmerge.$$"
   local status
   if "$@" > "$tmp"; then
+    if [ -n "$old_mode" ]; then
+      chmod "$old_mode" "$tmp" 2>/dev/null || printf \
+        'keel-impact: could not set %s'"'"'s prior mode (%s) on the merge temp file before rename — continuing\n' \
+        "$target" "$old_mode" >&2
+    fi
     mv -f "$tmp" "$target"
     status=$?
   else
@@ -396,8 +437,24 @@ _impact_merge_ledger() {
   local inputs=()
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
+  # v0.8.0 delta audit F-16: captured BEFORE `ensure_ledger` below, and therefore NOT inside
+  # _impact_atomic_write (which runs after it) — `ensure_ledger` creates $target when it doesn't
+  # already exist, so a capture placed any later always finds a target that "already existed" and
+  # never takes the first-create carve-out. **That ordering is why the capture stays at the call site
+  # while only its logic (_impact_prior_mode) and its application (_impact_atomic_write) are shared.**
+  #
+  # Measured, not assumed, while extracting the scaffold: moving this capture below `ensure_ledger`
+  # changes no observable mode today and breaks no test, because `ensure_ledger` creates the file with
+  # a plain `>` redirect — under the ambient umask — so a capture taken afterwards reads back exactly
+  # the mode the carve-out would have left alone, and re-applies it. The ordering is load-bearing for
+  # what it PROTECTS, not for what it currently produces: it stays correct if `ensure_ledger` ever
+  # creates with an explicit mode. Recorded here because the next reader to "simplify" this by folding
+  # the capture into _impact_atomic_write will find the suite green and conclude the ordering is
+  # decorative — it is not, and no test binds it, because right now there is nothing to bind.
+  local old_mode; old_mode="$(_impact_prior_mode "$target")"
   LEDGER="$target" ensure_ledger
-  _impact_atomic_write "$target" _impact_merge_ledger_produce "$target" "$date_col" "${inputs[@]}"
+  _impact_atomic_write "$target" "$old_mode" \
+    _impact_merge_ledger_produce "$target" "$date_col" "${inputs[@]}"
 }
 
 # _impact_merge_ledger's own producer (called only via _impact_atomic_write above): reads TARGET's
@@ -450,17 +507,16 @@ _impact_merge_ledger_produce() {
 }
 
 # _impact_merge_evidence TARGET SRC... — merge TARGET's existing blocks (if any) plus each SRC
-# evidence.md's blocks (a block = a `## YYYY-MM-DD ...` line through the next such line or EOF, the
-# shared EVIDENCE_HEADER text counting as one no-date block) into TARGET, sorted by block date,
-# byte-identical duplicate blocks dropped (so the header, appearing verbatim in every source, survives
-# as exactly one copy — its empty date key sorts first). A no-op when there is nothing to merge.
+# evidence.md's blocks into TARGET, sorted by each block's own `## YYYY-MM-DD` date and byte-identical
+# duplicate blocks dropped. A no-op when there is nothing to merge.
 _impact_merge_evidence() {
   local target="$1"; shift
   local inputs=()
   [ -f "$target" ] && inputs+=("$target")
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
-  _impact_atomic_write "$target" _impact_merge_evidence_produce "${inputs[@]}"
+  local old_mode; old_mode="$(_impact_prior_mode "$target")"
+  _impact_atomic_write "$target" "$old_mode" _impact_merge_evidence_produce "${inputs[@]}"
 }
 
 # _impact_merge_evidence's own producer (called only via _impact_atomic_write above) — no pipe, so its
@@ -503,7 +559,8 @@ _impact_merge_log() {
   [ -f "$target" ] && inputs+=("$target")
   local s; for s in "$@"; do [ -f "$s" ] && inputs+=("$s"); done
   [ "${#inputs[@]}" -gt 0 ] || return 0
-  _impact_atomic_write "$target" _impact_merge_log_produce "${inputs[@]}"
+  local old_mode; old_mode="$(_impact_prior_mode "$target")"
+  _impact_atomic_write "$target" "$old_mode" _impact_merge_log_produce "${inputs[@]}"
 }
 
 # _impact_merge_log's own producer — `sort` is a single command with no pipe, so a bad READ (an input
@@ -547,9 +604,10 @@ _is_iso_ts() {
 }
 
 # Portable epoch(seconds)->ISO-UTC, for the auto-ingest age-cap cutoff (backlog #59). Same portability
-# problem branch-cleanup.sh's epoch_mtime solves for mtimes; here the direction is reversed (epoch -> ISO,
-# not file -> epoch), so it's a fallback chain of `date` invocations rather than one `stat` format. Three
-# tiers, first one that succeeds wins: BSD/macOS `-r SECONDS`, GNU `-d @SECONDS`, busybox `-D %s -d SECONDS`
+# problem tools/lib/stat-portable.sh's stat_portable_mtime solves for mtimes; here the direction is
+# reversed (epoch -> ISO, not file -> epoch), so it's a fallback chain of `date` invocations rather
+# than one `stat` format. Three tiers, first one that succeeds wins: BSD/macOS `-r SECONDS`, GNU
+# `-d @SECONDS`, busybox `-D %s -d SECONDS`
 # (TO VERIFY on the alpine CI leg — some busybox builds accept GNU's `@` form directly, in which case this
 # third branch never fires there). All three failing means an unrecognized `date` implementation; the
 # caller fails OPEN rather than crash or silently drop events.

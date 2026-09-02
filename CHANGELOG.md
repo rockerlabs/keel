@@ -11,6 +11,157 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Extracted `_impact_atomic_write`, the same-directory atomic-write scaffold the three
+  `keel-impact.sh` merge helpers each hand-rolled (dir #345).** `_impact_merge_ledger`,
+  `_impact_merge_evidence` and `_impact_merge_log` independently repeated the same discipline —
+  same-directory temp file (never a bare `mktemp`: `$TMPDIR` may not share a filesystem with the
+  target, and a cross-filesystem `mv` is no longer one atomic `rename()`), explicit write-status
+  capture, and an unconditional temp cleanup — with each function's own read/filter logic now split
+  out as a small producer callback. As a side effect of centralizing the write side,
+  `_impact_merge_evidence`'s pre-existing temp-file leak on a post-write `mv` failure closes for free.
+  **The extraction was widened before landing, per the ticket that held it:** batches 3 and 4 of the
+  v0.8.0 audit's own fix round (F-16, then F-19) added an identical mode-capture and
+  mode-application block to all three helpers *after* this refactor was written, so extracting only
+  the original duplication would have left the newer copies behind — the exact one-site-not-its-twin
+  shape dir #344 exists to mechanize. The mode APPLICATION (chmod the temp before the `mv`, never the
+  target after) moves into the scaffold; the mode CAPTURE stays at each call site behind a shared
+  `_impact_prior_mode`, because `_impact_merge_ledger` must capture before `ensure_ledger` creates the
+  file and the other two must not. Behaviour is otherwise unchanged, and was mutation-proved rather
+  than assumed: stubbing the mode probe, and separately deleting the scaffold's `chmod`, each turn the
+  F-16/F-19 mode-preservation assertions red; moving the ledger's capture below `ensure_ledger` turns
+  nothing red, and the entry above the code records why that is correct rather than a coverage gap.
+
+- **Extracted `tools/lib/stat-portable.sh`, the one portable-`stat`-flavor cache for every tool that
+  needs an epoch mtime or an octal mode (dir #322).** `tools/branch-cleanup.sh`'s `STAT_FMT`/
+  `epoch_mtime` and `tools/keel-impact.sh`'s `_impact_ensure_stat_fmt`/`_impact_file_mode` (added by
+  PR #314) independently reimplemented the identical "probe GNU-vs-BSD `stat` flavor once, cache it"
+  pattern — found duplicated by two independent `/code-review` finder agents during PR #314's own
+  review. Both callers are migrated onto the shared lib; `tests/test_keel_impact.sh`'s own hand-mirrored
+  mode probe now sources it directly instead. `stat_portable_mtime`/`stat_portable_mode` self-prime
+  (call the lib's own cache-priming function as their first statement), so a caller that forgets to
+  prime the cache explicitly still gets a correct answer instead of a silent empty one; an eager,
+  explicit prime (kept in `branch-cleanup.sh`'s hot loop) still avoids the per-call recheck cost.
+  **Found mid-review that PR #314 had merged into `main`** (this ticket's own `/code-review medium`
+  pass, cross-model second-opinion angle) while this session's branch had forked just before that
+  merge landed — the migration originally shipped scoped to only `branch-cleanup.sh`, deferring
+  `keel-impact.sh` on a since-stale "still unmerged" premise; corrected in the same session rather
+  than left as a known-stale follow-up ticket. Pure refactor, no behavior change: the existing F-16
+  mode-preservation tests (umask-varied, both `stat` flavors) pass unmodified against the migrated
+  code. Adds `tests/test_stat_portable_lib.sh` for direct unit coverage of the shared lib itself.
+
+## [0.8.0] — 2026-09-02
+
+Known issues: two RC-pass findings ship unfixed, both adopter-facing, each with an open ticket. First,
+the standard non-interactive `install.sh` run creates the `keel-polish.md` alias on its own, and from
+that moment no re-run in any mode refreshes a drifted `commands/polish.md` again — see the deny-message
+entry below for the mechanism and the affected messages. Those messages now describe this root cause
+accurately, but do not fix it (dir #323). Second, a real-file (non-symlink) `bin/keel` is left untouched
+by `install.sh`, whose refusal message says "remove it to let Keel wire the CLI." Both `bin/keel`'s own
+severed-checkout advice and `doctor.sh`'s W-CLI-UNWIRED warning instead tell the reader to re-run
+`install.sh`, so the one correct remedy is reachable only by reading `install.sh`'s own refusal message
+(dir #324).
+
+- **Four bugs found by the v0.8.0 delta audit's CLOSING round — auditing the audit's own fix round —
+  are fixed, gating the v0.8.0 tag.** F-16 (the tag-blocker, found by the cross-vendor leg and
+  independently re-reproduced by the blind leg): F-05's fix (below) swapped `_impact_merge_log`'s
+  in-place `cat >>` append for a temp-file + `mv -f` replacement, and `mv` gives the target the TEMP
+  file's mode, not the mode the target already had — an `impact-events.log` sitting at 600 came back
+  at 644 on the next auto-migrate retry. `_impact_merge_ledger`/`_impact_merge_evidence` already
+  replaced via `mv` too, with the same unguarded hazard pre-existing in both; this closes it in all
+  three rather than only the one F-05 touched, turning an induced regression into a net improvement
+  (the operator's explicit scope call). Each helper now captures the target's mode — a portable
+  `stat -c '%a'`/`stat -f '%Lp'` probe, cached once — before the write and restores it after a
+  successful `mv`, only when the target already existed; a first-ever create still gets ordinary
+  umask behaviour. F-18: `_impact_auto_migrate`'s own comment claimed an already-merged source "was
+  already `rm -f`'d, so a retry never re-merges it" — F-05's entire scenario is an `rm` that FAILS
+  and a retry that DOES re-merge, safely deduped since F-05, but re-merge it does; corrected in
+  place. CA-01 (found by the blind leg): the orphaned-temp-file fix (commit 2575500) got a mirrored
+  regression test at `_impact_merge_evidence` (PR #310) but never one of its own at the sibling
+  `_impact_merge_log` — proved missing by mutation (reintroducing the leak still passed the full
+  suite); added. F-17: the F-06 fix's own regression test only exercises a `sort` stub failing the
+  SECOND pipeline stage, which `$?` catches with or without `pipefail` set — it never proved
+  `pipefail` (the fix's actual mechanism) was load-bearing. A second stub failing the FIRST stage
+  while the last stage still succeeds closes the gap: reproduced live that removing `pipefail` makes
+  exactly this new test fail while the original one stays green. Adopter-visible: ships in every
+  keel home via `tools/keel-impact.sh`. `tests/test_keel_impact.sh` pins all four by mutation, driven
+  through the production call path (`migrate`/`_impact_auto_migrate`, never a bare function call),
+  with the mode-preservation proof deliberately varying the ambient umask between merges rather than
+  holding it fixed.
+
+- **F-16's own mode-preservation fix (above) closed the leak but left a race, and the race
+  self-cements — found by a Clause A closing-round re-pass, cross-vendor leg, on its second attempt at
+  that round; gating the v0.8.0 tag** (F-19). All three merge helpers wrote in the wrong order: temp
+  file, `mv` onto the target, THEN `chmod` the target back to its captured mode — leaving a window,
+  between the rename and the restore, where the target sits on disk with the temp file's (umask-derived)
+  mode instead of its own. A crash, kill, or full disk in that window leaves it widened permanently: the
+  NEXT run's `old_mode` capture reads the mode back FROM THE TARGET, which is now the widened one, and
+  faithfully "restores" it — the original mode is gone and a retry cannot heal it, it locks it in. Fixed
+  by reordering to the standard write-temp → chmod-temp → rename sequence: each helper now `chmod`s the
+  *temp* file to the captured mode before the `mv`, not the target after it. A same-filesystem `mv` is a
+  `rename(2)`, which installs the temp's mode atomically along with its content, so **the target** —
+  the canonical file, the one an adopter's own `chmod` decision was ever about — is never observable
+  with the wrong mode; a crash can no longer catch the target widened, and there is no self-cementing
+  retry to lock it in. **Not "no window to crash in" outright — a residual one remains, pre-existing and
+  unrelated to F-19/F-16, filed separately rather than fixed here:** the temp file is created fresh by
+  its producer (`cat`/`awk`/`sort -u`, one per helper) under the ambient umask, and the `chmod` lands
+  only after that write finishes — so the window isn't a gap between two syscalls the way the ledger/
+  target one was, it spans the FULL content write, holding the complete merged content at the ambient
+  (looser) mode for as long as that write takes, sitting right beside the target whose restrictive mode
+  it's supposed to match. A crash or a concurrent reader in that window sees real content at the wrong
+  mode; unlike the target hazard this batch closes, it does not self-cement (the target's own mode is
+  untouched, so the next run's capture is still correct) and any orphaned temp file left behind is
+  cleaned up by the unconditional trailing `rm -f` on the next ordinary run. Ticketed rather than folded
+  in here — it touches three different producers across three call sites for a fix shaped differently
+  from this batch's single reorder (pre-create the temp empty, `chmod` it, then append the content,
+  rather than write-then-chmod), which is a second change, not a widening of this one. The post-`mv`
+  `chmod` is dropped as dead code, and its failure-warning wording changed from "after merge" to "before
+  rename" to match.
+  **This cannot heal a file the shipped F-16 code already widened** — an `impact-events.log` (or
+  ledger/evidence file) already caught in the old window has already lost its original mode; the first
+  post-fix run captures 644 (or whatever it widened to) and faithfully preserves that. An adopter who
+  cares about a specific file's mode should re-`chmod` it by hand once after upgrading. Adopter-visible:
+  ships in every keel home via `tools/keel-impact.sh`. **What the tests do and do not prove:** a
+  crash-in-the-window race is not mechanically testable — there is no seam to stub that fails exactly
+  between a real `mv` and a real `chmod` without faking the syscalls themselves — so no test claims to
+  prove the window is gone; that rests on the structural argument above (`rename(2)`'s atomicity is a
+  kernel guarantee, not something this codebase can assert). Confirmed by mutation, and worth stating
+  precisely because a *weaker* mutation looked like it would pass: reordering chmod-before-mv back to
+  chmod-after-mv while leaving the rest of this diff intact does NOT make
+  `tests/test_keel_impact.sh`'s existing F-16 mode-preservation assertion (mmrepo, varying umask across
+  two merges) fail — checked live. That assertion only inspects the FINAL mode after a clean run with no
+  crash injected, and the final mode is identical either way absent a crash, so it cannot and does not
+  distinguish the two orderings; treating it as proof of the ordering would have been the "test that
+  passes for the wrong reason" this project's own record warns against. What that assertion DOES still
+  bind against, verified the same way: removing the `chmod` altogether (not just reordering it) makes it
+  fail exactly as before — the mode-preservation behavior itself, as opposed to its ordering relative to
+  the `mv`, is unchanged by this fix and the existing test still catches its absence. A `/simplify` pass
+  also collapsed `_impact_merge_ledger`'s write-status handling from two nested `if`/`else` levels (one
+  extra, left over from threading the new `chmod` between the read-status check and the write) to one
+  flattened condition — cleanup, no behavior change, `tests/test_keel_impact.sh` stays green.
+
+- **Two `tools/pre-pr-gate.sh` deny messages sent a blocked operator to `install.sh` to refresh a
+  drifted `commands/polish.md` — the one remedy the same file elsewhere says does not work** (F-10,
+  found by the v0.8.0 delta audit's RC cross-vendor pass and extended by the orchestrator's own sweep,
+  which caught the second site; gating the v0.8.0 tag). The tests-not-bound deny (dir #96's legacy
+  bare-`done` step 3) and the skip-dialog deny (dir #116's) both ended in "re-run install.sh", while dir #183's
+  depth deny — added in this same release, a few lines away — prescribes an explicit `cp` and a
+  comment beside it calls the re-run "the wrong cause and the wrong fix". Both now prescribe the same
+  `cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md`. **dir #183's own
+  justification for that remedy was itself imprecise and is corrected rather than propagated into two
+  more messages:** it read "install.sh's drift prompt does NOT update it by default, in any mode",
+  but `sync_product`'s three-way `[u]/[a]/[N]` prompt *does* overwrite a drifted `polish.md` when
+  answered `u` — it just only ever asks from a terminal, defaults to no, and asks at all only while no
+  `keel-polish.md` alias exists. A non-interactive install (`curl | sh`, CI, an agent) creates that
+  alias silently instead of prompting, and every run afterwards — interactive included — takes the
+  resolved-collision branch (`polish.md left untouched (yours; Keel's version lives at
+  keel-polish.md)`), so from that point no re-run in any mode can ever refresh the file. Established
+  empirically against scratch homes with a deliberately drifted `polish.md`, driven through a real pty
+  (a first attempt via `script` was discarded: it grants a tty but delivers piped stdin as `^D`
+  *before* the `read`, so every answer silently registered as the default). `tests/test_pre_pr_gate.sh`
+  pins both messages' new wording plus a `check_absent` on the retired advice, mirroring the pair
+  dir #183 already had; the assertion that pinned the old advice is flipped deliberately, with the
+  reason recorded at the callsite.
+
 - **Two `tools/keel-impact.sh` bugs found by the v0.8.0 delta audit's RC pass (F-05, F-06 — the
   cross-vendor leg, after the same-family whole-read wave had already read the file clean) are
   fixed, gating the v0.8.0 tag.** F-05: `_impact_auto_migrate`'s legacy `impact-events.log` sweep
@@ -34,6 +185,33 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `tests/test_keel_impact.sh` pins both by mutation, F-06 through the exact `&&`/`||`-exempt call
   path via a `sort` stub on `$PATH` (no chmod/root-guard needed, so it holds under a root CI leg
   too).
+
+- **`tools/self/doctor.sh` now catches the F-06 shape mechanically instead of relying on the next
+  manual delta audit to find it** (dir #321, found by a max-depth `/code-review` altitude-angle pass
+  on the F-05/F-06 bugfix PR above): `_impact_merge_ledger` had hit "`${PIPESTATUS[0]}` read in a
+  file that already sets `pipefail` file-wide, silently discarding the pipeline's real status" twice
+  in the same function family (dir #289's history, then F-06 above), with only a periodic manual
+  audit catching either one. A new native check (self/doctor.sh's own check 8) scans every tracked
+  `.sh` file for a `set ... pipefail` line (any spelling, e.g. `set -euo pipefail` or `set -o errexit
+  -o pipefail`) coexisting with a `${PIPESTATUS[0]}`/`$PIPESTATUS` read. WARN, not a hard GAP: once
+  `pipefail` is active, a bare `$?` right after the pipeline already gives the real (rightmost
+  non-zero) status, so reaching for `PIPESTATUS`'s first element specifically is usually a leftover
+  belief — but reaching for an EARLIER stage's status specifically is sometimes the deliberate,
+  correct behavior, and telling the two apart needs a human reading the surrounding code, not a grep.
+  The check excludes its own file from the scan by pathspec (not a runtime string comparison, and not
+  the string-splitting trick an earlier draft used) — this file both sets `pipefail` and, once the
+  check's own code exists, names `${PIPESTATUS[0]}` in its own message text, so it would otherwise
+  self-flag every run. `tests/test_self_doctor.sh` pins the positive shape and both legitimate
+  negatives (no `pipefail` set at all; `pipefail` set but `PIPESTATUS` never read).
+
+  **A real crash, caught by this same PR's own `/code-review medium` pass before it shipped:** the
+  first draft computed the matched line numbers unconditionally once a file was confirmed to set
+  `pipefail`, via a pipeline (`grep -nE ... | cut ... | paste ...`) assigned directly into a variable.
+  Under this file's own `set -euo pipefail`, that pipeline's exit status is 1 whenever `PIPESTATUS`
+  simply never appears in the file — the common case, since most files that set `pipefail` never touch
+  `PIPESTATUS` at all — so the assignment itself failed and `errexit` aborted the whole `doctor.sh` run
+  partway through this very check, on the real repo, on the first such file. Guarded with `|| true` on
+  the pipeline, matching this file's own established idiom for exactly this shape elsewhere.
 
 - **A release pass's derived copies (the curated release-notes file, the release-prep PR's own body)
   now have a named home for the "review corrects the source, nothing re-derives the copy" class**

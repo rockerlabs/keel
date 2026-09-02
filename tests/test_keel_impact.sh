@@ -929,6 +929,43 @@ check_file "the retry writes the completion marker" "$sfrepo_store/origin"
 check_nofile "the retry removes the now-merged legacy source" "$sfrepo/.keel/ledger.md"
 check_contains "the retry carries the row that the sort failure had blocked" "$(cat "$sfrepo_store/ledger.md")" "sort-fail-row"
 
+# --- v0.8.0 delta audit F-17: the block above only fails the SECOND `sort` stage (its stub matches
+# `-t*`, which only that stage's date-column sort passes) — the FIRST stage, `LC_ALL=C sort -u` with
+# no `-t` flag, always passes through untouched. So that block alone does not prove `pipefail` (set
+# file-wide at line 36) is actually load-bearing: `$?` read right after a pipe reflects the LAST
+# stage's status even withOUT pipefail, so a stub that only ever fails the last stage would report
+# the same `rows_status` either way. Reproduced live before writing this: with `pipefail` removed and
+# only the SECOND stage failing, `$?` is still nonzero. The gap is a stub that fails an EARLIER stage
+# while the LAST stage still succeeds (on whatever partial/empty input the earlier failure left it) —
+# that is the one shape where plain `$?` (no pipefail) reports 0/masked-success and pipefail alone
+# catches it. This stub fails the first `sort -u` (matches a bare `-u` arg, which only that call
+# passes — the second sort's `-t'|' -k... -s` never does), leaving the downstream `sort -t...` to
+# receive nothing and exit 0 on its own — exactly the shape that needs pipefail to be read as a
+# failure. -------------------------------------------------------------------------------------------
+pf2repo="$(new_repo)"
+mkdir -p "$pf2repo/.keel"
+printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$pf2repo/.keel/ledger.md"
+printf '| 2026-08-01 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | pipefail-fail-row | none |\n' >> "$pf2repo/.keel/ledger.md"
+pf2repo_store="$KEEL_IMPACT_STORE/$(store_id_for "$pf2repo")"
+sort_stub_bin2="$SANDBOX/sort-stub-bin2"; mkdir -p "$sort_stub_bin2"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'for a in "$@"; do case "$a" in -u) exit 3 ;; esac; done\n'
+  printf 'exec %q "$@"\n' "$real_sort"
+} > "$sort_stub_bin2/sort"
+chmod +x "$sort_stub_bin2/sort"
+run_in "$pf2repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE PATH="$sort_stub_bin2:$PATH" bash "$TOOL" rollup
+check_status "a plain rollup survives a FIRST-stage sort failure in auto-migrate's ledger merge (best-effort, never fatal)" 0 "$STATUS"
+check_file "a first-stage sort failure leaves the legacy ledger source UNDELETED (rm never fires on a masked failure)" "$pf2repo/.keel/ledger.md"
+check_contains "the source's row survives — never silently lost" "$(cat "$pf2repo/.keel/ledger.md")" "pipefail-fail-row"
+check_nofile "a first-stage sort failure never writes the completion marker" "$pf2repo_store/origin"
+# not permanently stranded: with a working sort, the very next resolve completes it
+run_in "$pf2repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "the retry (real sort) succeeds" 0 "$STATUS"
+check_file "the retry writes the completion marker" "$pf2repo_store/origin"
+check_nofile "the retry removes the now-merged legacy source" "$pf2repo/.keel/ledger.md"
+check_contains "the retry carries the row that the first-stage sort failure had blocked" "$(cat "$pf2repo_store/ledger.md")" "pipefail-fail-row"
+
 # --- a `mv` failure AFTER a successful merge write must never leave an orphaned temp file behind:
 # found by a /code-review delta pass on this same fix — the sibling _impact_merge_log's identical
 # leak (mv failing after a successful sort — see its own "Unconditional, not just on the
@@ -957,6 +994,61 @@ check_status "the retry (real mv) succeeds" 0 "$STATUS"
 check_file "the retry writes the completion marker" "$mvrepo_store/origin"
 check_nofile "the retry removes the now-merged legacy source" "$mvrepo/.keel/evidence.md"
 check_contains "the retry carries the block that the mv failure had blocked" "$(cat "$mvrepo_store/evidence.md")" "mv-fail-row"
+
+# --- v0.8.0 delta audit CA-01: the orphaned-temp-file fix above (commit 2575500, `_impact_merge_log`)
+# got a mirrored regression test at `_impact_merge_evidence` (mvrepo, above — PR #310) but never one of
+# its own. Proved missing by mutation before writing this: reintroducing the two-branch cleanup in
+# `_impact_merge_log` (moving its `rm -f "$tmp"` back inside the `if` so a `mv` failure after a
+# successful sort leaks `$tmp`) still passed the full suite. Same shape as mvrepo above, same stubbed
+# `mv` on $PATH, driven through the PRODUCTION call path — just a log source instead of an evidence
+# one. ---------------------------------------------------------------------------------------------
+mlrepo="$(legacy_log_repo mv-fail-log-row)"
+mlrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$mlrepo")"
+run_in "$mlrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE PATH="$mv_stub_bin:$PATH" bash "$TOOL" rollup
+check_status "a plain rollup survives a failed mv in auto-migrate's log merge (best-effort, never fatal)" 0 "$STATUS"
+check_file "a failed mv leaves the legacy log source UNDELETED" "$mlrepo/.keel/impact-events.log"
+check_nofile "a failed mv never writes the completion marker" "$mlrepo_store/origin"
+check_absent "a failed mv leaves NO orphaned merge temp file behind" "$(ls "$mlrepo_store" 2>/dev/null)" "impact-events.log.keelmerge."
+# the failure is not permanently stranded: with a working mv, the very next resolve completes it
+run_in "$mlrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "the retry (real mv) succeeds" 0 "$STATUS"
+check_file "the retry writes the completion marker" "$mlrepo_store/origin"
+check_nofile "the retry removes the now-merged legacy source" "$mlrepo/.keel/impact-events.log"
+check_contains "the retry carries the line that the mv failure had blocked" "$(cat "$mlrepo_store/impact-events.log")" "mv-fail-log-row"
+
+# --- v0.8.0 delta audit F-16: the temp-file+`mv` shape all three merge helpers use gives TARGET the
+# TEMP file's mode, not the mode TARGET already had — `mv` inside the same filesystem is a rename, and
+# a rename keeps the DESTINATION inode's old permissions only when there's no destination yet; when one
+# already exists, `mv -f` still replaces its CONTENT via the source inode, and that source (the temp
+# file) was created under the ambient umask, same as any other redirect. Reproduced live before this
+# fix: a store log at 600, re-merged via `_impact_merge_log`, came back at 644. Driven through the
+# PRODUCTION call path — an explicit `migrate` re-run against an EXISTING store target, the same shape
+# as the wrepo second-legacy-ledger scenario above — with the ambient umask DELIBERATELY DIFFERENT
+# between the two merges (022 for the first, 000 for the second): a mode test that holds the umask
+# fixed proves less than it looks (the same trap F-17 above is about), so this varies it rather than
+# assume one value generalizes. -----------------------------------------------------------------------
+# Portable octal-mode probe for this assertion only — sources the same shared lib keel-impact.sh
+# itself now uses (dir #322: tools/lib/stat-portable.sh), rather than hand-mirroring the probe. This
+# file can source it directly (unlike keel-impact.sh, which dispatches a command on load) since a
+# tools/lib/*.sh file is inert.
+# shellcheck source=tools/lib/stat-portable.sh
+. "$REPO_ROOT/tools/lib/stat-portable.sh"
+mmrepo="$(legacy_log_repo mode-first-row)"
+mmrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$mmrepo")"
+run bash -c 'umask 022; exec env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$1" migrate "$2"' _ "$TOOL" "$mmrepo"
+check_status "setup: first migrate (umask 022) creates the store log" 0 "$STATUS"
+check_file "setup: the store log exists" "$mmrepo_store/impact-events.log"
+first_mode="$(stat_portable_mode "$mmrepo_store/impact-events.log")"
+check_contains "a first-ever create keeps ordinary umask behaviour (022 -> 644), not a hard-coded mode" "$first_mode" "644"
+chmod 600 "$mmrepo_store/impact-events.log"
+mkdir -p "$mmrepo/.keel"
+printf '2026-06-02T00:00:00Z\tguard\tsecret-guard\t%s\t%s\n' "mode-second-row" "$mmrepo" > "$mmrepo/.keel/impact-events.log"
+run bash -c 'umask 000; exec env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$1" migrate "$2"' _ "$TOOL" "$mmrepo"
+check_status "the second migrate (umask 000, deliberately different) succeeds" 0 "$STATUS"
+check_contains "the second migrate still carries the first row" "$(cat "$mmrepo_store/impact-events.log")" "mode-first-row"
+check_contains "the second migrate carries the new row too" "$(cat "$mmrepo_store/impact-events.log")" "mode-second-row"
+second_mode="$(stat_portable_mode "$mmrepo_store/impact-events.log")"
+check_contains "the pre-existing target's mode SURVIVES the merge — 600, not umask-000's 666" "$second_mode" "600"
 
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
 trepo="$(new_repo)"
