@@ -9,29 +9,22 @@ cutting one) — this page is the record of what each one delivered.
 
 ## v0.8.0 — 2026-09-02
 
-The delta-audit-on-itself release. The RC pass's own closing round audited the audit's own prior fix
-round and found four more bugs in `tools/keel-impact.sh`'s merge helpers: a `mv`-based rewrite lost a
-target file's mode on every merge (F-16), and the first fix for that left a crash window where a
-widened mode could self-cement, healed by writing the mode onto the temp file before the atomic
-rename instead of the target after it (F-19), plus a missing regression test and a stale comment
-(CA-01, F-18). Two `tools/pre-pr-gate.sh` deny messages sent an operator to `install.sh` to refresh a
-drifted `commands/polish.md` — the one remedy the same file elsewhere says does not work — and now
-both point at the correct manual `cp` (F-10). Earlier in the same RC pass, two `keel-impact.sh` bugs
-(F-05, F-06) were fixed: a legacy-log sweep that doubled rows on a failed cleanup, and a masked pipeline
-status that could silently drop a merged row. Two hazards named in the prior release closed too:
-`_impact_auto_migrate`'s completion marker no longer strands a partially-migrated project (dir #289),
-and neither does `cmd_migrate` or `impact_store_enable` (dir #304). Alongside the audit fixes: a
-review finding now classifies on blast radius and severity with an explicit merge/round verdict
-instead of an undifferentiated list (dir #197); the step-4 skip-dialog trace reads the operator's
-actual answer instead of trusting a marker's mere presence, closing a real false-skip regression found
-by review before it shipped (dir #118); `/polish` step 5 tries the built-in `Skill(code-review)`
-directly again now that the harness policy blocking it has lifted, falling back to the independent
-subagent only on a refusal (dir #254); and the test suite's fixture helpers now guard against leaking
-a real git mutation outside their sandbox, with a corruption canary in `tests/run.sh` to catch a
-recurrence (dir #318). Two adopter-facing findings from this same RC pass ship unfixed, disclosed in the changelog rather
-than fixed: a non-interactive install permanently forecloses refreshing a drifted
-`commands/polish.md`, and a closed advice loop across `bin/keel`/`install.sh`/`doctor.sh` never
-surfaces the one remedy that actually works.
+The audit-on-the-audit release. The RC pass's closing round re-audited its own prior fix round and
+found two more bugs in `tools/keel-impact.sh`'s merge helpers: a lost file mode on every merge, and a
+crash window the first fix left behind that could self-cement a widened mode — both closed by writing
+the mode onto the temp file before the atomic rename rather than the target after it. Earlier in the
+same pass, a legacy-log sweep that could double rows on a failed cleanup and a masked pipeline status
+that could silently drop a merged row were fixed too, and two `tools/pre-pr-gate.sh` deny messages that
+sent an operator toward a remedy that doesn't work now point at the one that does. Two hazards named in
+the prior release also closed: neither `_impact_auto_migrate`'s completion marker (dir #289) nor
+`cmd_migrate`/`impact_store_enable`'s (dir #304) can strand a partially-migrated project any longer.
+Alongside the audit fixes: a review finding now classifies on blast radius and severity with an
+explicit merge/round verdict (dir #197); the step-4 skip-dialog trace reads the operator's actual
+answer instead of a marker's mere presence (dir #118); `/polish` tries the built-in
+`Skill(code-review)` directly again now that the harness policy blocking it has lifted (dir #254); and
+the test suite's fixture helpers guard against leaking a real git mutation outside their sandbox, with
+a corruption canary to catch a recurrence (dir #318). Two known issues ship unfixed, disclosed in the
+changelog, each carrying an open ticket (dir #323, dir #324).
 
 ## v0.7.2 — 2026-08-29
 
