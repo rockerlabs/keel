@@ -1272,7 +1272,7 @@ manifest_artifact_lines=()
 # anything at all.
 if [ ! -f "$merge_tmp" ]; then
   echo "install: manifest merge scratch vanished ($merge_tmp) — another install into this home?" >&2
-  exit 1
+  exit 1   # merge-scratch guard: abort, never fall through and write an artifact-less manifest
 fi
 while IFS=$'\t' read -r rel kind extra; do
   [ -n "$rel" ] || continue

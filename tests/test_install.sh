@@ -495,12 +495,13 @@ check_absent "T10c no bogus 'Keel's own copy, unedited' claim about it" "$OUT" "
 # written, and under the defect `mv -f` gives the DEST a new inode while this path keeps the old bytes
 # — absent either way (mutation-confirmed). The count assertion below is what binds.
 check_absent "T10c the adopter's other name still holds the original content" "$(cat "$harddots/global-review.md")" "HARDLINK-DEST-RELEASE"
-# bash -c, NOT sh -c: tools/lib/stat-portable.sh is `# shellcheck shell=bash` and expands
-# ${BASH_SOURCE[0]}. macOS's /bin/sh is bash in POSIX mode and swallows it, so an `sh -c` here passes
-# locally and fails ONLY on CI — measured: alpine's busybox sh says "bad substitution", ubuntu's dash
-# says "Bad substitution", both non-empty, and this is the one assertion T10c calls load-bearing.
-run bash -c "cd '$REPO_ROOT' && . tools/lib/stat-portable.sh && stat_portable_nlink '$hardhome/commands/global-review.md'"
-check_status "T10c …because the hard link itself survives (link count still 2)" "2" "$OUT"
+# -ef, not the helper: device+inode identity IS what a hard link is, it is the discriminator T10b
+# already uses, and it does not go through stat_portable_nlink — so a broken helper cannot make this
+# test green (measured: stubbing the helper to always answer 2 left all five of T10c's assertions
+# passing when it read the count through it). It also drops a `bash -c` sourcing of a bash-only lib,
+# which is a construct this suite has already been bitten by on the dash/busybox CI legs.
+run test "$hardhome/commands/global-review.md" -ef "$harddots/global-review.md"
+check_status "T10c …because the hard link itself survives (same inode as the adopter's other name)" 0 "$STATUS"
 
 # T11 — the behaviour T10's fix must NOT break: the copy→linked migration still runs, and it needs no
 # $LINK exemption in the predicate because its dest is a regular FILE, not a link (see T10b).
@@ -744,9 +745,16 @@ if command -v mkfifo >/dev/null 2>&1; then
     # PID 1 and stays blocked forever, and unlinking the FIFO does not release a pending open. Found
     # live: five such orphans had accumulated on one machine from this batch's own probes.
     : > "$fifohome/.keel/install-manifest.claude" 2>/dev/null &
+    fifo_writer=$!
     pkill -P "$fifo_pid" 2>/dev/null || true
     kill -9 "$fifo_pid" 2>/dev/null || true
     wait "$fifo_pid" 2>/dev/null || true
+    # The writer itself can become the orphan it was added to prevent: if pkill reaps the reader first,
+    # `: >` blocks forever opening a FIFO with nobody on the other end, and unlinking does not release
+    # a pending open. In practice the writer wins, which is why this is belt-and-braces rather than the
+    # fix — but a latent unkillable process in a test's failure path is not worth leaving to luck.
+    kill -9 "$fifo_writer" 2>/dev/null || true
+    wait "$fifo_writer" 2>/dev/null || true
     fail "T14f a FIFO at the manifest path must not hang the install" "still running after ${fifo_waited}s"
   else
     wait "$fifo_pid"; fifo_st=$?
@@ -763,11 +771,15 @@ fi
 # coverage at all: deleting the whole block left 198/0. The behaviour it protects is version-dependent
 # — bash 3.2 continues past a failed `done < file` and writes an artifact-less manifest, bash 5.2
 # aborts — so on the leg where it matters most nobody would notice it disappearing. Pinning the guard's
-# own text is the honest substitute, and it holds on every leg. The two needles are the condition and
-# the exit, so neither a silenced abort nor a removed test survives.
+# own text is the honest substitute, and it holds on every leg. THREE needles, because two were not
+# enough: the condition, the message, and the abort itself. Mutation-proved that with only the first
+# two, deleting the `exit 1` — so the guard warns and then falls straight into the read that writes the
+# artifact-less manifest, the exact silent failure it exists to prevent — left the file 210/0.
 pin "T14g install.sh guards the merge scratch before reading it" "$REPO_ROOT/install.sh" \
   '[ ! -f "$merge_tmp" ]' "the merge-temp existence guard is gone — see T14g"
-pin "T14g …and that guard actually aborts" "$REPO_ROOT/install.sh" \
-  'manifest merge scratch vanished' "the merge-temp guard no longer fails loudly — see T14g"
+pin "T14g …and says so" "$REPO_ROOT/install.sh" \
+  'manifest merge scratch vanished' "the merge-temp guard no longer reports the cause — see T14g"
+pin "T14g …and actually aborts rather than falling through" "$REPO_ROOT/install.sh" \
+  'exit 1   # merge-scratch guard' "the merge-temp guard no longer aborts — see T14g"
 
 summary

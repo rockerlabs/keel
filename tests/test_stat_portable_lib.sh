@@ -103,12 +103,20 @@ nlink_hard="$(stat_portable_nlink "$d/nlink.txt")"
 check_status "stat_portable_nlink: a hard-linked file reads back as 2" "2" "$nlink_hard"
 check_status "stat_portable_nlink: …from either name" "2" "$(stat_portable_nlink "$d/nlink-hard.txt")"
 
-# A SYMLINK's own count is 1 — the function follows the link, like its two siblings, so this reports
-# the TARGET's count. Pinned because install.sh rejects symlinks on a separate clause and must not
-# double-count: were this to report the link's own inode, a symlinked dest would read as 1 and pass.
-rm -f "$d/nlink-hard.txt"
+# It does NOT follow symlinks: given a link to a target that HAS 2 links, it answers 1 — the link's own
+# inode. Pinned in the discriminating shape, with the hard link still in place: an earlier version of
+# this test removed the hard link first, which dropped the target to 1 and made "follows" and "does not
+# follow" both answer 1, so it could not fail either way. install.sh is safe regardless (it rejects
+# symlinks on an earlier clause), but the contract is what the next caller reads, and the error is in
+# the under-reporting direction — a symlink looks exactly like an ordinary file.
 ln -s "$d/nlink.txt" "$d/nlink-sym.txt"
-check_status "stat_portable_nlink: follows a symlink to report the target's count" "1" "$(stat_portable_nlink "$d/nlink-sym.txt")"
+check_status "stat_portable_nlink: a symlink reports its OWN count, not the 2-link target's" "1" "$(stat_portable_nlink "$d/nlink-sym.txt")"
+check_status "stat_portable_nlink: …while the target itself still reads 2" "2" "$(stat_portable_nlink "$d/nlink.txt")"
+# The sibling behaves the same way, which is why the docstring no longer claims either follows.
+chmod 600 "$d/nlink.txt"
+check_absent "stat_portable_mode: a symlink likewise reports its own bits, not the target's 600" \
+  "[$(stat_portable_mode "$d/nlink-sym.txt")]" "[600]"
+rm -f "$d/nlink-hard.txt"
 
 # --- stat_portable_nlink: a nonexistent file yields empty, not a crash ------------------------------
 # The caller (install.sh's keel_own_untouched) treats empty as UNKNOWN and refuses, so this empty is
