@@ -441,9 +441,13 @@ check_status "T10b --link re-run over a symlinked dest → exit 0" 0 "$STATUS"
 check_absent "T10b no bogus 'Keel's own copy, unedited' claim in linked mode either" "$OUT" "wrap.md refreshed (Keel's own copy, unedited)"
 check_contains "T10b …the linked-mode symlink branch declines it by name instead" "$OUT" "wrap.md is a symlink to a different target"
 check_link "T10b the adopter's symlink survives" "$symlinkhome/commands/wrap.md"
-run readlink "$symlinkhome/commands/wrap.md"   # clobbers $OUT — assert on it last
-check_status "T10b …still pointing at their own dotfiles copy, not re-pointed at the checkout" "$symlinkdots/wrap.md" "$OUT"
 check_file "T10b the dotfiles copy is still there" "$symlinkdots/wrap.md"
+# -ef, not a readlink string compare: same reason in_sync gives for its own (install.sh) — the same
+# file is reachable through different path spellings (/tmp vs /private/tmp on macOS). Asserting that
+# a symlink merely SURVIVES is not enough here: place() makes a symlink in linked mode too, so the
+# broken behaviour also leaves one — it just points at the checkout. Identity is what binds.
+run test "$symlinkhome/commands/wrap.md" -ef "$symlinkdots/wrap.md"
+check_status "T10b …still resolving to their own dotfiles copy, not re-pointed at the checkout" 0 "$STATUS"
 
 # T11 — the behaviour T10's fix must NOT break: the copy→linked migration still runs, and it needs no
 # $LINK exemption in the predicate because its dest is a regular FILE, not a link (see T10b).
@@ -529,8 +533,16 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$senthome" --no-hooks
   chmod 644 "$senthome/commands/go.md" 2>/dev/null || true
   sent_after="$(cat "$senthome/commands/go.md")"
+  # Liveness FIRST: every other assertion here is a check_absent or a content check that holds
+  # trivially on a run that died before placing anything, so without this anchor a change making an
+  # unreadable dest abort under `set -euo pipefail` — the very defect class finding 2 fixes, on the
+  # very path this test walks — would ship with T13 green (proved by injecting an early exit).
+  check_contains "T13 the run completed rather than dying on the unreadable dest" "$OUT" "Verify:"
   check_absent "T13 an unreadable dest is never judged Keel's own unedited copy" "$OUT" "go.md refreshed (Keel's own copy, unedited)"
-  check_contains "T13 …and its bytes are left alone" "$sent_after" "$sent_before"
+  # Exact equality, NOT check_contains: the "newer release" is $sent_before plus an appended marker,
+  # so a fully clobbered dest still CONTAINS $sent_before — a substring check passes under the exact
+  # defect it names (proved: it stayed green while its siblings went red under mutation).
+  check_status "T13 …and its bytes are left alone, byte for byte" "$sent_before" "$sent_after"
   check_absent "T13 …so the newer release was not written over it" "$sent_after" "SENTINEL-RELEASE"
 fi
 
@@ -545,5 +557,49 @@ fresh_home_env "$ladvhome"
 run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$ladvhome" --no-hooks
 check_status "T14 linked retargeted install → exit 0" 0 "$STATUS"
 check_contains "T14 the linked --force advice carries the --home suffix" "$OUT" "keel sync --home \"$ladvhome\" --force"
+
+# T14b — the EPHEMERAL half of the same fix, which had no pin at all: a bootstrap run's checkout is a
+# temp clone reaped on exit, so the piped bootstrap form is the adopter's ONLY remaining remedy — the
+# mode where an un-retargeted advice string costs the most. KEEL_EPHEMERAL is the env signal
+# bootstrap.sh sets (install.sh's header documents it as exactly that internal signal).
+eadvhome="$SANDBOX/ephemeral-advice-home"; mkdir -p "$eadvhome/commands"
+printf '# my own polish command, never touched by Keel\n' > "$eadvhome/commands/polish.md"
+fresh_home_env "$eadvhome"
+run env "${FRESH_HOME_ENV[@]}" KEEL_EPHEMERAL=1 "$ckdir/install.sh" --home "$eadvhome" --no-hooks
+check_status "T14b ephemeral retargeted install → exit 0" 0 "$STATUS"
+check_contains "T14b the ephemeral --force advice carries the --home suffix too" "$OUT" "sh -s -- --home \"$eadvhome\" --force"
+
+# T14c — the Verify WARN for an unwired bin/keel (finding 6) had no test anywhere in the tree: proved
+# by mutation that reverting it to the bare-re-run wording left the whole file green. T6 above covers
+# the REFUSAL line; this covers the WARN, which is a separate line in the same run — the pair being
+# contradictory was the finding. Both must name --force, and neither may advise `keel sync`, which
+# dispatches through the very bin/keel both lines report is not wired.
+warnhome="$SANDBOX/cli-warn-home"; mkdir -p "$warnhome/bin"
+printf '#!/bin/sh\necho not-keel\n' > "$warnhome/bin/keel"
+fresh_home_env "$warnhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$warnhome" --no-hooks
+check_status "T14c linked install over a real-file bin/keel → exit 0" 0 "$STATUS"
+check_contains "T14c the Verify WARN fires for the unwired CLI" "$OUT" "keel CLI not wired"
+check_contains "T14c …and advises install.sh, reachable without bin/keel" "$OUT" "re-run 'install.sh --home \"$warnhome\"' (add --force"
+check_contains "T14c the refusal line names --force too, conditionally" "$OUT" "is not a Keel symlink"
+# Whole-output, not a per-line needle: NEITHER of the two lines this run prints about bin/keel may
+# advise `keel sync`, and this home has no command collision, so nothing else legitimately emits it.
+check_absent "T14c neither line advises keel sync, which needs the bin/keel they say is missing" "$OUT" "keel sync"
+
+# T14d — finding 2's other half, unpinned until now: the degradation must NOT swallow a genuinely
+# unwritable \$manifest_dir. That is the deliberate asymmetry of the fix — `cp` sits in the condition
+# so an unreadable manifest degrades, while `: > "\$prior_manifest"` stays in the body so a directory
+# that cannot be written to still aborts loudly. Without this pin, a later "consistency" cleanup adding
+# `|| true` to the second half would silently install over a snapshot that was never created, making
+# every Keel-owned file read as foreign. Root-guarded: chmod is a no-op for root.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  wrhome="$SANDBOX/unwritable-manifest-dir-home"; mkdir -p "$wrhome/.keel"
+  chmod 500 "$wrhome/.keel"
+  fresh_home_env "$wrhome"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$wrhome" --no-hooks
+  chmod 700 "$wrhome/.keel"   # restore so cleanup can remove the sandbox
+  check_status "T14d an unwritable .keel dir still fails loudly, never silently" 1 "$STATUS"
+  check_nofile "T14d …before placing anything" "$wrhome/FRAMEWORK.md"
+fi
 
 summary

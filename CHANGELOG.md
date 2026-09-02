@@ -45,18 +45,21 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `keel sync` forwards its args verbatim, so following the advised remedy from a `--link --home DIR`
   install built a SECOND Keel at `$HOME/.claude` and left the file the message was about untouched
   (`dir #98`'s class, re-opened at a new site; the `EPHEMERAL` bootstrap form gets the same treatment).
-  Five non-blocking fixes ride along: the `bin/keel` header comment still claimed Keel would "never
-  replace a real file you put at bin/keel" while `dir #324`'s own `--force` takeover sits twelve lines
-  below it; the `Verify:` WARN for an unwired `bin/keel` still advised a bare re-run that reproduces
-  the identical warning, contradicting the two sibling messages the same run prints about the same
-  file; `artifact_cksum`'s `cksum:0:0` failure sentinel was self-equal, so a manifest that ever recorded
-  it would compare EQUAL to any currently-unreadable dest and the never-clobber rail would fail OPEN
-  (now rejected, which closes both sides at once — the sentinel can only ever compare equal to itself);
+  Five non-blocking fixes ride along: the `bin/keel` header comment still promised to replace only
+  Keel's own symlink and "never a real file you put at bin/keel" while `dir #324`'s own `--force`
+  takeover sits twelve lines below it; the `Verify:` WARN for an unwired `bin/keel` still advised a
+  bare re-run that reproduces the identical warning, contradicting the only other line the same run
+  prints about that file (and `tools/doctor.sh`'s W-CLI-UNWIRED, which `dir #324` had already
+  updated); `artifact_cksum`'s `cksum:0:0` failure sentinel was self-equal, so a manifest that ever
+  recorded it would compare EQUAL to any currently-unreadable dest and the never-clobber rail would
+  fail OPEN (now rejected on the manifest side, which is enough to close the dest side too, since the
+  sentinel can only compare equal to itself — `install.sh` only; see the known issue below for the
+  removal rail);
   `tools/keel-impact.sh`'s `_impact_prior_mode` docstring justified its `[ -f ]` guard as preventing a
-  `set -e` abort no live call path can reach (all six callers are `… && rm -f … || ok=0`, and that
-  exemption propagates into the callee — verified live by stripping the guard, which leaves the suite
-  green), restated as what the guard actually buys: a status-0 answer for an absent target, so the
-  helper stays safe from a non-exempt caller; and `force_backup`'s uniqueness claim is narrowed to the
+  `set -e` abort no live call path can reach (the three merge helpers that reach it are invoked from
+  six sites, every one `… && rm -f … || ok=0`, and that exemption propagates into the callee — verified
+  live by stripping the guard, which leaves the suite green), restated as what the guard actually buys:
+  a status-0 answer for an absent target, so the helper stays safe from a non-exempt caller; and `force_backup`'s uniqueness claim is narrowed to the
   second-granularity it actually has — deliberately a COMMENT fix, since two legs independently failed
   to construct a reachable same-second double backup and a counter suffix would be complexity for an
   unreachable case. `tests/test_install.sh` pins the four behavioural fixes red-first against the
@@ -65,6 +68,15 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the exact conflation the `$LINK` exemption rested on); one test holds the copy→linked migration that
   must not break; and the permission halves are root-guarded for CI's alpine-busybox leg, with the
   unconditional halves chosen to converge across both readers.
+  **Known issue, shipping unfixed — the removal rail has both of these same gaps.** `uninstall.sh`'s
+  `artifact=file` branch guards with `[ -f "$apath" ]` and reads the cksum through it, so it is
+  symlink-blind exactly the way `keel_own_untouched` was: an adopter's dotfiles symlink is judged
+  Keel's own and swept. It also carries an output-identical hand-copy of `artifact_cksum` (its own
+  header requires that) with the `cksum:0:0` literal inline and no sentinel guard, so the fail-open is
+  open there too. Both are less severe than their install-side twins — `uninstall.sh` moves what it
+  removes into a `.keel-uninstall-<UTC>/` backup rather than deleting it, which is what its own prompt
+  promises — but the wiring is severed just the same. The RC audit scoped its findings to `install.sh`
+  and this PR did not widen them; the sibling wants its own ticket and its own tests.
 
 - **`docs/verification-economics.md`'s Clause A gets a severity/reachability carve-out and names
   §8's coverage bar as a non-license (dir #327).** The v0.7.2→v0.8.0 RC pass found two behavioural

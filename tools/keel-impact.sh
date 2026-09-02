@@ -364,11 +364,14 @@ ensure_evidence() {
 # makes "TARGET is absent" a normal, SUCCESSFUL answer instead of a failing one, so the function stays
 # safe if it is ever called from a non-exempt context (a plain `old_mode="$(_impact_prior_mode "$t")"`
 # outside an `&&`/`||` list would otherwise abort the script on the entirely legitimate first-create
-# path). Two things it does NOT do — stated because the obvious reading claims both: the empty string
-# comes from `stat_portable_mode`'s own `2>/dev/null` (tools/lib/stat-portable.sh), not from here; and
-# it prevents no abort on any LIVE path, since all six call sites are `_impact_merge_* … && rm -f …
-# || ok=0` and that `&&` list's errexit exemption propagates into the callee's body (verified by
-# stripping the guard: `migrate` still exits 0, suite still green). Second, WHEN a caller captures
+# path). What the guard is NOT — stated because the obvious reading claims it: it is not what keeps the
+# ANSWER empty when it is stripped. Remove it and an absent TARGET still yields an empty string,
+# because `stat` prints nothing on failure and `stat_portable_mode`'s own `2>/dev/null`
+# (tools/lib/stat-portable.sh) keeps its complaint off the console; only the STATUS changes, to 1. And
+# that status aborts nothing on any LIVE path: the three merge helpers that reach this are invoked from
+# six sites, every one of them `_impact_merge_* … && rm -f … || ok=0`, and that `&&` list's errexit
+# exemption propagates into the callee's body (verified by stripping the guard: `migrate` still exits
+# 0, suite still green). Second, WHEN a caller captures
 # differs per caller (see
 # _impact_merge_ledger, which must capture before `ensure_ledger` creates the file), so the capture
 # cannot simply move into _impact_atomic_write below; only its logic is shared, not its placement.
