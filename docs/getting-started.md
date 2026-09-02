@@ -89,9 +89,11 @@ delete it; park it anywhere out of the way (e.g. `~/keel`). It's Keel itself, no
 don't register it or point `/keel-setup` at it. To update later, run `git pull && ./install.sh` in the clone.
 
 `install.sh` is safe to re-run. It **never touches the files you own** (`CLAUDE.md`, `INSTANCE.md`,
-`LEARNINGS.md`, `IDEAS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run offers to update a
-copy that has **drifted** from the shipped version — asking first (default *no*) when run from a terminal,
-or printing the `cp` to run otherwise. It:
+`LEARNINGS.md`, `IDEAS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run
+refreshes a copy that has **drifted** automatically when it provably is Keel's own older release, never
+touched since — otherwise it asks first (default *no*) when run from a terminal, or flags it
+non-interactively. Pass `--force` to take over a drifted or refused file anyway (backed up first; it
+never reaches the files you own). It:
 
 - copies the always-on files into your config folder (`~/.claude` by default),
 - adds the commands into `<config>/commands/` (so `/wrap`, `/go`, `/init-project`, … are commands on Claude

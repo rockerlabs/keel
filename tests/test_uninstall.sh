@@ -531,6 +531,22 @@ check_status "B11b uninstall exits 0" 0 "$STATUS"
 check_file "B11b user-edited PRINCIPLES.md kept (cksum mismatch)" "$B11B/PRINCIPLES.md"
 check_contains "B11b the edit survives" "$(cat "$B11B/PRINCIPLES.md")" "my own edit at the end"
 
+# --- B11C: dir #323's own test 9 — a `.bak` an install.sh --force run left behind survives uninstall.
+# Holds BY CONSTRUCTION, same guarantee B11 above just pinned from the other end: uninstall removes by
+# MANIFEST (this file's own header — "one recorded state this script reads instead of re-deriving
+# ownership heuristically at every site", dir #125), and install.sh --force never records a backup as a
+# manifest artifact (dir #323 Part 2) — so uninstall has no record of the .bak to act on either way. -----
+B11C="$SANDBOX/b11c-force-backup-survives/.claude"
+inst --home "$B11C" --no-hooks
+printf '\nmy own edit\n' >> "$B11C/FRAMEWORK.md"
+inst --home "$B11C" --no-hooks --force
+b11c_bak="$(ls "$B11C"/FRAMEWORK.md.*.bak 2>/dev/null | head -1)"
+check_contains "B11c a --force backup exists before uninstall" "$b11c_bak" ".bak"
+check_absent "B11c the backup is not itself a manifest artifact" "$(cat "$B11C/.keel/install-manifest.claude")" ".bak"
+unin --home "$B11C" --yes
+check_status "B11c uninstall exits 0" 0 "$STATUS"
+check_file "B11c the .bak file survives uninstall" "$b11c_bak"
+
 # --- B12: ledger-driven other_mode_hint names an other-mode install at a NON-DEFAULT home
 # (impossible under the old $HOME/<leaf>-only probe); a foreign-core other-mode install is still
 # named too; and it fires cleanly on the earliest "no such home" exit, with no undefined-function
