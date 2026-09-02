@@ -11,6 +11,24 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **Extracted `tools/lib/stat-portable.sh`, the one portable-`stat`-flavor cache for every tool that
+  needs an epoch mtime or an octal mode (dir #322).** `tools/branch-cleanup.sh`'s `STAT_FMT`/
+  `epoch_mtime` and `tools/keel-impact.sh`'s `_impact_ensure_stat_fmt`/`_impact_file_mode` (added by
+  PR #314) independently reimplemented the identical "probe GNU-vs-BSD `stat` flavor once, cache it"
+  pattern — found duplicated by two independent `/code-review` finder agents during PR #314's own
+  review. Both callers are migrated onto the shared lib; `tests/test_keel_impact.sh`'s own hand-mirrored
+  mode probe now sources it directly instead. `stat_portable_mtime`/`stat_portable_mode` self-prime
+  (call the lib's own cache-priming function as their first statement), so a caller that forgets to
+  prime the cache explicitly still gets a correct answer instead of a silent empty one; an eager,
+  explicit prime (kept in `branch-cleanup.sh`'s hot loop) still avoids the per-call recheck cost.
+  **Found mid-review that PR #314 had merged into `main`** (this ticket's own `/code-review medium`
+  pass, cross-model second-opinion angle) while this session's branch had forked just before that
+  merge landed — the migration originally shipped scoped to only `branch-cleanup.sh`, deferring
+  `keel-impact.sh` on a since-stale "still unmerged" premise; corrected in the same session rather
+  than left as a known-stale follow-up ticket. Pure refactor, no behavior change: the existing F-16
+  mode-preservation tests (umask-varied, both `stat` flavors) pass unmodified against the migrated
+  code. Adds `tests/test_stat_portable_lib.sh` for direct unit coverage of the shared lib itself.
+
 ## [0.8.0] — 2026-09-02
 
 Known issues: two RC-pass findings ship unfixed, both adopter-facing, each with an open ticket. First,
