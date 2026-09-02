@@ -406,11 +406,18 @@ record_placed() {
 # digest still matches, while record_placed classified the original as a regular `file`. The kind check
 # below is what closes that gap — the predicate cannot see the re-forming, so it refuses to answer for
 # a dest whose CURRENT form disagrees with the recorded one. Same for mode/ownership/xattr changes: not
-# observed, and not claimed. Nor is a HARD link (verified live): it IS a regular file, so `[ ! -L ]`
-# passes it, its cksum matches, and `atomic_copy`'s `mv -f` breaks the link exactly the way the symlink
-# case severs one — the same harm reached through `ln` instead of `ln -s`. Detecting it means a link
-# COUNT, which needs a `stat` fork per file and differs across platforms; it is pre-existing (v0.8.0
-# behaves identically), was outside this batch's findings, and is named here rather than left implied.
+# observed, and not claimed. Nor is a HARD link — and that one is a KNOWN OPEN DEFECT, not a caveat.
+# A hard link IS a regular file, so `[ ! -L ]` passes it, its cksum matches, and `atomic_copy`'s
+# `mv -f` breaks the link exactly as the symlink case severs one: the same never-clobber harm, reached
+# through `ln` instead of `ln -s`. It is NOT pre-existing — an earlier draft of this comment said so
+# and was wrong. v0.8.0 has no keel_own_untouched at all (the whole dir #323 machinery is unreleased),
+# and there the hard link SURVIVES: measured link count 2 -> 2 with the alias fork, against 2 -> 1 and
+# "refreshed (Keel's own copy, unedited)" here. So it is the unreleased twin of the symlink regression
+# this very check closes. Left open deliberately, on the operator's call: detecting it needs a link
+# COUNT probe whose busybox behaviour this batch could not validate (the Alpine check came back empty
+# for a plain file too, i.e. broken, not informative), and shipping an unvalidated platform probe into
+# the rail the release is gated on is the worse trade. Tracked as a known issue in CHANGELOG.md and
+# owed to the closing round before the tag.
 #
 # That check is UNCONDITIONAL, not gated on $LINK, and the reason is worth stating because the obvious
 # reading says otherwise. The copy→linked migration below legitimately drives this branch (see the
@@ -427,12 +434,18 @@ record_placed() {
 #
 # What that does NOT reach, stated because the sentence above invites the wrong inference: a symlinked
 # dest whose content is byte-IDENTICAL to the source is rejected here too (by the same clause), and
-# then sync_product routes it by MODE — copy mode to in_sync ("up to date", the link untouched, which
-# is correct), but linked mode to the `cmp -s` migration branch, which converges it to a checkout link
-# and so re-points the very dotfiles wiring this predicate protects in the drifted case. That is
-# pre-existing behaviour, unchanged since v0.8.0 (reproduced against v0.8.0: identical outcome) and
-# outside this batch's findings — so do not read this predicate as closing the symlinked-dest case
-# in general. It closes the path that runs THROUGH it, not every path a symlinked dest can take.
+# then sync_product routes it by MODE, neither route being this predicate's doing:
+#   - linked mode -> the `cmp -s` migration branch, which converges it to a checkout link and so
+#     re-points the very dotfiles wiring this predicate protects in the drifted case;
+#   - copy mode -> in_sync, which prints "up to date" and leaves the link ON DISK untouched — but
+#     calls record_placed, which classifies by CURRENT form and so rewrites the manifest record from
+#     `file <cksum>` to `symlink -`. uninstall.sh treats a `symlink` record as unconditionally owned,
+#     so the adopter's link is then swept on uninstall, with no release drift needed at all. "The link
+#     is untouched" is true of this run and false of the next uninstall; an earlier draft of this
+#     comment called that outcome "correct", which it is not.
+# Both are pre-existing, unchanged since v0.8.0 (reproduced there: identical outcomes) and outside this
+# batch's findings — so do not read this predicate as closing the symlinked-dest case in general. It
+# closes the path that runs THROUGH it, not every path a symlinked dest can take.
 #
 # Two deliberate non-behaviours:
 #   - A dest a LINKED run recorded is unaffected: record_placed writes `symlink -` there, never a
@@ -942,10 +955,12 @@ fi
 # a copy severed from the checkout couldn't dispatch. Refuse-to-clobber, with an explicit opt-out
 # (dir #324): a real FILE you put at bin/keel is left untouched by a plain run — the refusal below
 # names the remedy — and --force takes it over, backing the file up first. A SYMLINK is replaced either
-# way, and the branch does not ask whose it is: Keel's own, a stale or dangling one, and an adopter's
-# own live link all get re-pointed with no backup and no --force (verified live; the backup arm runs
-# only for `[ ! -L ] && [ -e ]`). That is pre-existing and outside this batch, but it is what the code
-# does, so it is what this comment says. $HOME_DIR/bin keeps Keel's whole footprint under one
+# way, and the branch does not ask whose it is: a stale one, a dangling one, and an ADOPTER'S OWN live
+# link all get re-pointed with no backup and no --force (verified live; the backup arm runs only for
+# `[ ! -L ] && [ -e ]`). Keel's own correctly-wired link is the exception, and only because the branch
+# above catches it first on `-ef` and returns without writing. That is pre-existing and outside this
+# batch, but it is what the code does, so it is what this comment says.
+# $HOME_DIR/bin keeps Keel's whole footprint under one
 # root (clean uninstall) at the cost of a PATH line the summary prints if the dir isn't already on PATH.
 # Ephemeral bootstrap run (see header): $root is reaped right after — a symlink would dangle.
 if [ "$EPHEMERAL" = 1 ]; then
@@ -1101,15 +1116,20 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   else
     # What was wrong here was the silence about --force, not the command: a BARE re-run reproduces
     # this identical WARN, so the two lines one run prints about the SAME file contradicted each other.
-    # This mirrors tools/doctor.sh:734's W-CLI-UNWIRED wording verbatim — the conditional form, not a
+    # This follows tools/doctor.sh:734's W-CLI-UNWIRED shape — the conditional form, not a
     # flat `--force`, because the branch that lands here also fires for a DIRECTORY at that path, and
-    # force_backup's plain `cp` cannot copy one (it would abort the run mid-way; verified live). It is
+    # force_backup's plain `cp` cannot copy one (it would abort the run mid-way; verified live). NOT
+    # verbatim any more: the "or a directory" carve-out is spelled here and at the refusal above, while
+    # tools/doctor.sh:734 and keel:88 still say only "not a symlink" — and doctor's own else-arm DOES
+    # fire for a directory, so it advises the --force that aborts. Left as-is here: those two lines are
+    # outside this batch's findings and doctor's exact string is pinned by tests/test_install_link.sh.
+    # Noted in the PR body; it wants its own ticket. It is
     # deliberately NOT $advise_refresh_force, whose linked form is `keel sync`: that dispatches THROUGH
     # the very bin/keel this line reports is not wired — command-not-found at best, and running the
     # ADOPTER'S OWN program at worst. Two independent legs of this batch's /code-review max pass
     # reproduced that; the refusal above is fixed the same way for the same reason.
     # EPHEMERAL never reaches this block, so $advise_install is always reachable here.
-    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink, sits there already — it gets backed up first), or add an alias by hand."
+    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
   fi
 fi
 
@@ -1212,6 +1232,19 @@ merge_tmp="$manifest_dir/.artifacts.$$"
 } | awk -F'\t' '{a[$1] = $0} END {for (k in a) print a[k]}' | sort > "$merge_tmp"
 
 manifest_artifact_lines=()
+# Fail LOUD if the merge temp vanished between the write above and this read. bash does NOT errexit on
+# a failed `done < file` redirection (verified: `set -euo pipefail; while read x; do :; done
+# < /nonexistent; echo AFTER` prints AFTER and exits 0), so without this the loop would simply never
+# run and the manifest would be written with zero artifact records while the files sit on disk — an
+# exit-0 success summary over an install uninstall can no longer see. Newly reachable because this
+# batch widened the stale-scratch sweep above to `.artifacts.*`: a concurrent install into the SAME
+# home can now delete this run's temp. Microseconds wide and rare, but it must not fail silently —
+# the sibling .prior-manifest race degrades provenance, which is recoverable; this one would not say
+# anything at all.
+if [ ! -f "$merge_tmp" ]; then
+  echo "install: manifest merge scratch vanished ($merge_tmp) — another install into this home?" >&2
+  exit 1
+fi
 while IFS=$'\t' read -r rel kind extra; do
   [ -n "$rel" ] || continue
   if [ -e "$HOME_DIR/$rel" ] || [ -L "$HOME_DIR/$rel" ]; then

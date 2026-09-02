@@ -48,9 +48,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   Five non-blocking fixes ride along: the `bin/keel` header comment still promised to replace only
   Keel's own symlink and "never a real file you put at bin/keel" while `dir #324`'s own `--force`
   takeover sits twelve lines below it; the `Verify:` WARN for an unwired `bin/keel` still advised a
-  bare re-run that reproduces the identical warning, contradicting the only other line the same run
-  prints about that file (and `tools/doctor.sh`'s W-CLI-UNWIRED, which `dir #324` had already
-  updated); `artifact_cksum`'s `cksum:0:0` failure sentinel was self-equal, so a manifest that ever
+  bare re-run that reproduces the identical warning, contradicting the refusal the same run prints
+  about that file (and `tools/doctor.sh`'s W-CLI-UNWIRED, which `dir #324` had already updated); both
+  `install.sh` lines now carry the same conditional `--force` wording, and neither advises `keel sync`
+  any more — that dispatches through the very `bin/keel` both lines report is not wired, so it is
+  command-not-found at best and runs the adopter's own program at worst; `artifact_cksum`'s
+  `cksum:0:0` failure sentinel was self-equal, so a manifest that ever
   recorded it would compare EQUAL to any currently-unreadable dest and the never-clobber rail would
   fail OPEN (now rejected on the manifest side, which is enough to close the dest side too, since the
   sentinel can only compare equal to itself — `install.sh` only; see the known issue below for the
@@ -59,7 +62,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `set -e` abort no live call path can reach (the three merge helpers that reach it are invoked from
   six sites, every one `… && rm -f … || ok=0`, and that exemption propagates into the callee — verified
   live by stripping the guard, which leaves the suite green), restated as what the guard actually buys:
-  a status-0 answer for an absent target, so the helper stays safe from a non-exempt caller; and `force_backup`'s uniqueness claim is narrowed to the
+  a status-0 answer for an absent target, so the helper stays safe from a non-exempt caller; and
+  `force_backup`'s uniqueness claim is narrowed to the
   second-granularity it actually has — deliberately a COMMENT fix, since two legs independently failed
   to construct a reachable same-second double backup and a counter suffix would be complexity for an
   unreachable case. `tests/test_install.sh` pins the four behavioural fixes red-first against the
@@ -68,12 +72,33 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the exact conflation the `$LINK` exemption rested on); one test holds the copy→linked migration that
   must not break; and the permission halves are root-guarded for CI's alpine-busybox leg, with the
   unconditional halves chosen to converge across both readers.
+  Three changes came out of the batch's own `/code-review max` pass rather than the nine findings, all
+  closing regressions the fix round itself introduced: `[ -f "$manifest_file" ]` is kept INSIDE the new
+  `cp` condition (dropping it made a FIFO at that path block `cp` forever in `open()`, hanging the
+  install before it placed anything — measured against v0.8.0's 2-second success); the stale-scratch
+  sweep now covers the merge step's `.artifacts.<pid>` as well, which surviving the snapshot read made
+  reachable for the first time, and the read of that temp fails loudly instead of writing an
+  artifact-less manifest; and the `bin/keel` refusal moved to the same reachable command as the WARN.
+
+  **Known issue, shipping unfixed — a HARD link to a Keel-owned file is severed exactly as the symlink
+  was.** A hard link is a regular file, so the new kind check passes it, its cksum matches, and
+  `mv -f` breaks it under the same "Keel's own copy, unedited" message. This is the unreleased twin of
+  the headline regression, not a pre-existing wart: `v0.8.0` has no `keel_own_untouched` at all, and
+  there the link survives (measured link count 2 → 2, alias fork) against 2 → 1 here. It is left open
+  deliberately — detecting it needs a link-count probe whose busybox behaviour this batch could not
+  validate, and shipping an unvalidated platform probe into the rail the release is gated on is the
+  worse trade. It is owed to the closing round before the tag.
+
   **Known issue, shipping unfixed — the removal rail has both of these same gaps.** `uninstall.sh`'s
   `artifact=file` branch guards with `[ -f "$apath" ]` and reads the cksum through it, so it is
   symlink-blind exactly the way `keel_own_untouched` was: an adopter's dotfiles symlink is judged
   Keel's own and swept. It also carries an output-identical hand-copy of `artifact_cksum` (its own
   header requires that) with the `cksum:0:0` literal inline and no sentinel guard, so the fail-open is
-  open there too. Both are less severe than their install-side twins — `uninstall.sh` moves what it
+  open there too. A third route needs no drift and no cksum coincidence at all: a byte-identical
+  symlinked dest takes `install.sh`'s own `in_sync` branch, whose `record_placed` classifies by current
+  form and so rewrites the record from `file <cksum>` to `symlink -` — and `uninstall.sh`'s `symlink`
+  arm has no content or provenance check whatsoever, so the adopter's link is swept on the next
+  uninstall (reproduced end to end). Both are less severe than their install-side twins — `uninstall.sh` moves what it
   removes into a `.keel-uninstall-<UTC>/` backup rather than deleting it, which is what its own prompt
   promises — but the wiring is severed just the same. The RC audit scoped its findings to `install.sh`
   and this PR did not widen them; the sibling wants its own ticket and its own tests.
