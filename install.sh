@@ -269,6 +269,10 @@ fi
 if [ -f "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/stat-portable.sh
   . "$root/tools/lib/stat-portable.sh"
+  # Prime the flavor cache HERE, once, as that lib's own header instructs for a hot loop: the predicate
+  # calls stat_portable_nlink inside a `$( )`, so a lazily-probed flavor would be cached in a subshell
+  # that dies immediately and re-probed — one extra `stat` exec per synced file, every run.
+  _stat_portable_ensure_flavor
 else
   stat_portable_nlink() { :; }
 fi
@@ -469,12 +473,12 @@ record_placed() {
 #   - A manifest-less home (pre-0.7, or an unreadable/unversioned manifest) makes manifest_usable false
 #     and the predicate false — falls through to today's behaviour (plus --force), never a crash. The
 #     branch it falls through to always prints something actionable, so the decline is never silent.
-# Cheapest rejections first, then one fork, then two: the two builtins below decide the whole predicate
-# on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every symlinked dest, so
-# running them ahead of `cmp` saves that fork per synced file rather than spending it to reach a
-# verdict already settled. The order is semantically neutral — each clause is an independent rejection
-# returning 1 on its own — but it is not free to permute: moving `cmp` back to the front gives that
-# saving up, so reorder for readability only if you are willing to pay the fork.
+# Ordered by COST, not by narrative: every clause is an independent rejection returning 1 on its own, so
+# the order is semantically free — and therefore chosen. The two builtins come first because they settle
+# the whole predicate on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every
+# symlinked dest, saving `cmp`'s fork per synced file. `cmp` comes next, and the two forking clauses
+# LAST, so an up-to-date dest never pays for a `stat` or a `cksum`. Permuting is not free: each move
+# up of a forking clause buys that fork on every file the clauses above it would have rejected.
 keel_own_untouched() {
   local src="$1" dest="$2" rel prior_extra dest_nlink
   [ "$prior_manifest_usable" = 1 ] || return 1
@@ -482,13 +486,16 @@ keel_own_untouched() {
   # say — see the docstring's own symlink case above. Unconditional, in BOTH modes, and deliberately
   # not a `$LINK` special case: see the docstring for why the copy→linked migration doesn't need one.
   [ ! -L "$dest" ] || return 1
+  cmp -s "$src" "$dest" 2>/dev/null && return 1
   # …and neither is a HARD link, which `[ ! -L ]` cannot see: it IS a regular file, so its bytes match
   # and `atomic_copy`'s `mv -f` would sever it just as silently. Same rejection, same reason. An empty
   # count means the probe could not answer (no tools/lib, an unstattable dest) and is treated as
   # UNKNOWN, not as 1 — fail closed on the rail whose job is to fail closed.
+  # LAST because it is the only clause here that forks: every up-to-date dest is already rejected by
+  # `cmp` above, so the `stat` is paid only for a dest that actually drifted. Order is free to choose
+  # (each clause is an independent rejection), so it is chosen by cost.
   dest_nlink="$(stat_portable_nlink "$dest")"
   [ "$dest_nlink" = 1 ] || return 1
-  cmp -s "$src" "$dest" 2>/dev/null && return 1
   rel="${dest#"$HOME_DIR"/}"
   prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest")"
   # Rejecting $CKSUM_UNREADABLE on the PRIOR side is what closes the self-equal case, and it closes it

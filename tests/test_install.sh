@@ -491,8 +491,15 @@ printf '\nHARDLINK-DEST-RELEASE\n' >> "$ckdir/commands/global-review.md"
 run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$hardhome" --no-hooks
 check_status "T10c plain re-run over a hardlinked dest → exit 0" 0 "$STATUS"
 check_absent "T10c no bogus 'Keel's own copy, unedited' claim about it" "$OUT" "global-review.md refreshed (Keel's own copy, unedited)"
-check_absent "T10c the adopter's other name for the file was not left stale" "$(cat "$harddots/global-review.md")" "HARDLINK-DEST-RELEASE"
-run env HOMEDIR_UNUSED=1 sh -c "cd '$REPO_ROOT' && . tools/lib/stat-portable.sh && stat_portable_nlink '$hardhome/commands/global-review.md'"
+# Does NOT bind, and is kept only as a statement of the intended end state: under the fix nothing is
+# written, and under the defect `mv -f` gives the DEST a new inode while this path keeps the old bytes
+# — absent either way (mutation-confirmed). The count assertion below is what binds.
+check_absent "T10c the adopter's other name still holds the original content" "$(cat "$harddots/global-review.md")" "HARDLINK-DEST-RELEASE"
+# bash -c, NOT sh -c: tools/lib/stat-portable.sh is `# shellcheck shell=bash` and expands
+# ${BASH_SOURCE[0]}. macOS's /bin/sh is bash in POSIX mode and swallows it, so an `sh -c` here passes
+# locally and fails ONLY on CI — measured: alpine's busybox sh says "bad substitution", ubuntu's dash
+# says "Bad substitution", both non-empty, and this is the one assertion T10c calls load-bearing.
+run bash -c "cd '$REPO_ROOT' && . tools/lib/stat-portable.sh && stat_portable_nlink '$hardhome/commands/global-review.md'"
 check_status "T10c …because the hard link itself survives (link count still 2)" "2" "$OUT"
 
 # T11 — the behaviour T10's fix must NOT break: the copy→linked migration still runs, and it needs no
