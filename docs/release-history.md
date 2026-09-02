@@ -16,15 +16,16 @@ the mode onto the temp file before the atomic rename rather than the target afte
 same pass, a legacy-log sweep that could double rows on a failed cleanup and a masked pipeline status
 that could silently drop a merged row were fixed too, and two `tools/pre-pr-gate.sh` deny messages that
 sent an operator toward a remedy that doesn't work now point at the one that does. Two hazards named in
-the prior release also closed: neither `_impact_auto_migrate`'s completion marker (dir #289) nor
+the prior release were also closed: neither `_impact_auto_migrate`'s completion marker (dir #289) nor
 `cmd_migrate`/`impact_store_enable`'s (dir #304) can strand a partially-migrated project any longer.
-Alongside the audit fixes: a review finding now classifies on blast radius and severity with an
+Alongside the audit fixes: a review finding now classifies by blast radius and severity with an
 explicit merge/round verdict (dir #197); the step-4 skip-dialog trace reads the operator's actual
 answer instead of a marker's mere presence (dir #118); `/polish` tries the built-in
 `Skill(code-review)` directly again now that the harness policy blocking it has lifted (dir #254); and
 the test suite's fixture helpers guard against leaking a real git mutation outside their sandbox, with
-a corruption canary to catch a recurrence (dir #318). Two known issues ship unfixed, disclosed in the
-changelog, each carrying an open ticket (dir #323, dir #324).
+a corruption canary to catch a recurrence (dir #318). Two known issues ship unfixed: an install-created
+alias that forecloses ever refreshing a drifted `commands/polish.md` again, and an unwired `bin/keel`
+whose only working remedy sits in a message neither of its own pointers reads (dir #323, dir #324).
 
 ## v0.7.2 — 2026-08-29
 
