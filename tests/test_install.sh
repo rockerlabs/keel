@@ -392,6 +392,26 @@ check_status "T9 corrupted tools/lib/manifest.sh → still exit 0" 0 "$STATUS"
 check_file "T9 install still lands the core despite the corruption" "$t9home/FRAMEWORK.md"
 check_file "T9 install still lands commands" "$t9home/commands/wrap.md"
 
+# T9b — the same degradation promise for tools/lib/stat-portable.sh, which keel_own_untouched now needs
+# for its hard-link count. Two directions, and the second is the one that matters: a MISSING lib must
+# not abort (the fallback stub answers empty), and an empty count must make the predicate refuse —
+# fail CLOSED. That direction had no coverage until now: a mutation flipping the clause to allow an
+# unanswerable count passes every other test in this file, because everywhere else the count IS
+# answerable. Here it is not, so this is the one place the direction is observable.
+t9bck="$SANDBOX/force-checkout-nostatlib"
+cp -r "$ckdir" "$t9bck"
+rm -f "$t9bck/tools/lib/stat-portable.sh"
+t9bhome="$SANDBOX/force-nostatlib-home"; mkdir -p "$t9bhome"
+fresh_home_env "$t9bhome"
+run env "${FRESH_HOME_ENV[@]}" "$t9bck/install.sh" --home "$t9bhome" --no-hooks
+check_status "T9b missing tools/lib/stat-portable.sh → still exit 0" 0 "$STATUS"
+check_file "T9b install still lands the core despite the missing lib" "$t9bhome/FRAMEWORK.md"
+printf '\nNOSTATLIB-RELEASE\n' >> "$t9bck/commands/polish.md"
+run env "${FRESH_HOME_ENV[@]}" "$t9bck/install.sh" --home "$t9bhome" --no-hooks
+check_status "T9b re-run with a drifted command → exit 0" 0 "$STATUS"
+check_absent "T9b an unanswerable link count refuses, never auto-refreshes (fail closed)" "$OUT" "polish.md refreshed (Keel's own copy, unedited)"
+check_contains "T9b …routing to the never-clobber path instead" "$OUT" "polish.md is your own command"
+
 # --- v0.8.1 RC audit: the never-clobber rail, the manifest snapshot, and the retargeting suffix -----
 
 # T10 — the RC audit's headline blocker, a regression against v0.8.0 that needed NO --force at all.

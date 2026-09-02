@@ -93,7 +93,9 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   not 1, via a new `stat_portable_nlink` in the existing `tools/lib/stat-portable.sh` — reused rather
   than re-inlined, since that helper already carries the GNU/busybox-vs-BSD flavor split and its own
   tests. An unanswerable count (no `tools/lib`, an unstattable dest) is treated as UNKNOWN and refused,
-  which is the fail-closed direction. **This one nearly shipped as a documented known issue**: the
+  which is the fail-closed direction — pinned by T9b, on a checkout with the lib removed, since that is
+  the one place an unanswerable count is observable. **This one nearly shipped as a documented known
+  issue**: the
   batch's first attempt to validate the probe on busybox returned empty for a plain file too, and that
   broken result was written down as a platform fact and used to justify deferring. A review round
   re-measured it on the CI image itself — BusyBox v1.37.0, `stat -c '%h'` → 2 for a hard link, 1 for a
