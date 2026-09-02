@@ -1102,7 +1102,9 @@ check_contains "denied for the depth mismatch, not some other reason" "$OUT" "do
 # Family 1 — a COMMA-JOINED suffix gets dir #183's own message, not the bare depth-mismatch one.
 # The comma-specific deny exists because this shape is a stale-copy trap: the hook runs the checkout's
 # gate (refreshed by `git pull`) while `commands/polish.md` is a copy `install.sh` re-syncs only on an
-# interactive prompt defaulting to No — so the previous release's prose, which teaches the comma set,
+# interactive prompt defaulting to No — and not even that once a `keel-polish.md` alias exists, which a
+# non-interactive install creates on its own, after which the file counts as the adopter's and is never
+# offered for update again — so the previous release's prose, which teaches the comma set,
 # outlives the gate that accepted it, and a bare "doesn't match the depth" would send the session back
 # to that same prose to re-type the same string.
 for bad_addon in \
@@ -2139,7 +2141,14 @@ run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
 run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
 gate "gh pr create --fill" "$d"
 check_contains "dir #96: a legacy bare-done step 3 → denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "dir #96: the deny names the stale-polish.md cause" "$OUT" "re-run install.sh"
+check_contains "dir #96: the deny names the stale-polish.md cause" "$OUT" "an older copied commands/polish.md"
+# …and prescribes the hand-copy rather than an install.sh re-run. This assertion pinned the re-run
+# advice until the v0.8.0 delta audit found it contradicted the same file's own dir #183 message: for a
+# DRIFTED polish.md a re-run is not a reliable refresh (terminal-only offer, defaulting to no, and once
+# a keel-polish.md alias exists — a non-interactive install creates one on its own — the file counts as
+# the adopter's and is never offered again). Flipped deliberately, not mechanically.
+check_contains "dir #96: ...and points at the hand-copy fix, not install.sh" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
+check_absent "dir #96: ...so it never prescribes a bare install.sh re-run" "$OUT" "re-run install.sh"
 
 # 86. dir #96: `--recover` must never clobber a receipt this run already wrote. Recovery appends and the
 # parser takes the last write per step id, so before this guard a value the session had deliberately
@@ -2542,6 +2551,11 @@ write_full_receipt_review "$d" "skip"
 gate "gh pr create --fill" "$d"
 check_contains "dir #116: ARMED, skip with no trace file → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #116: ...for the missing step-4 skip dialog" "$OUT" "no step-4 skip dialog"
+# The stale-copy branch of the same message must prescribe the hand-copy, not an install.sh re-run —
+# same stale-copy reasoning as the dir #96 block above, and the same assertion pair as the dir #183
+# depth deny, which is where this remedy was first established.
+check_contains "...and points at the hand-copy fix, not install.sh" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
+check_absent "...so it never prescribes a bare install.sh re-run, which does not update a drifted file" "$OUT" "re-run install.sh"
 
 # 95. dir #116: ARMED, the reproduction from the ticket must not reach allow. Round 1 sizes a trivial
 # diff `skip` with an answered skip dialog and passes; a substantial commit lands (HEAD moves); the
