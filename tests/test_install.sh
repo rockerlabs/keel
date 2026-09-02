@@ -55,6 +55,9 @@ check_contains "warns the installed FRAMEWORK differs" "$OUT" "FRAMEWORK.md diff
 check_contains "preserves the drifted copy (no clobber without a yes)" "$(cat "$HOME/.claude/FRAMEWORK.md")" "DRIFTED-FRAMEWORK"
 check_contains "own /go preserved" "$(cat "$HOME/.claude/commands/go.md")" "my own go command"
 check_contains "collision announces the alongside install" "$OUT" "go.md is your own command"
+# dir #323 Part 3 (reachability): the non-tty alias-creation branch used to print no remedy at all —
+# it now names --force as the way to reclaim the name.
+check_contains "alias-creation names --force as the reclaim remedy" "$OUT" "--force"
 check_file "keel-go.md auto-installed alongside" "$HOME/.claude/commands/keel-go.md"
 check_absent "no keel-keel-* alias" "$OUT" "keel-keel-setup"
 check_contains "keel-setup drift still flagged" "$OUT" "keel-setup.md differs"
@@ -265,5 +268,128 @@ check_status "--no-hooks over a foreign hooksPath → exit 0" 0 "$STATUS"
 check_contains "--no-hooks still names the foreign hooksPath as the reason" "$OUT" "foreign global core.hooksPath"
 check_contains "…and names the path itself" "$OUT" "$SANDBOX/someone-elses-hooks"
 check_absent "…instead of blaming --no-hooks for it" "$OUT" "this run did not touch git hooks"
+
+# --- dir #323/#324: provenance auto-refresh + --force ------------------------------------------------
+# A disposable copy of the checkout (never the real $REPO_ROOT) so we can edit its shipped
+# commands/polish.md to simulate a newer release without touching the actual repo. .git is stripped:
+# these tests need no git functionality from the fixture, and dropping it avoids any risk of touching
+# the real worktree's shared .git state (a worktree's .git is a small file pointing back at it).
+ckdir="$SANDBOX/force-checkout"
+cp -r "$REPO_ROOT" "$ckdir"
+rm -rf "$ckdir/.git"
+fhome="$SANDBOX/force-home"; mkdir -p "$fhome"
+fresh_home_env "$fhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks
+check_status "force-fixture: initial install → exit 0" 0 "$STATUS"
+check_file "force-fixture: polish.md installed" "$fhome/commands/polish.md"
+
+# T1 — the headline regression, shown red-first against unfixed code (dir #323's own done-criterion):
+# bump the shipped polish.md (an unedited older Keel copy is now installed) and re-run non-interactively.
+# It must refresh in place, with NO keel-polish.md alias created.
+printf '\nNEWER-RELEASE\n' >> "$ckdir/commands/polish.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks
+check_status "T1 provenance refresh re-run → exit 0" 0 "$STATUS"
+check_contains "T1 polish.md refreshed to the newer release" "$(cat "$fhome/commands/polish.md")" "NEWER-RELEASE"
+check_nofile "T1 no keel-polish.md alias created" "$fhome/commands/keel-polish.md"
+check_contains "T1 announces the provenance refresh" "$OUT" "polish.md refreshed (Keel's own copy, unedited)"
+
+# T2 — the negative that must keep working: an ADOPTER edit to the installed file still forks the alias,
+# exactly as before dir #323.
+printf '\nADOPTER-EDIT\n' >> "$fhome/commands/polish.md"
+t2_before="$(cat "$fhome/commands/polish.md")"
+printf '\nEVEN-NEWER-RELEASE\n' >> "$ckdir/commands/polish.md"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks
+check_status "T2 re-run over an adopter edit → exit 0" 0 "$STATUS"
+check_contains "T2 polish.md byte-unchanged (adopter edit preserved)" "$(cat "$fhome/commands/polish.md")" "$t2_before"
+check_file "T2 keel-polish.md created alongside" "$fhome/commands/keel-polish.md"
+# (first time the alias is created — the non-tty alias-creation branch fires, not resolved-collision;
+# T3 below re-runs into the NOW-resolved state and exercises resolved-collision's own --force text.)
+check_contains "T2 alias-creation names --force as the reclaim remedy" "$OUT" "reclaim the name later"
+
+# T2b — a plain (non-force) re-run now that the alias exists: exercises resolved-collision's own
+# non-force message, the OTHER previously hint-less branch (dir #323 Part 3).
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks
+check_status "T2b resolved-collision re-run → exit 0" 0 "$STATUS"
+check_contains "T2b resolved-collision names --force as the reclaim remedy" "$OUT" "Reclaim it:"
+check_contains "T2b polish.md still left untouched" "$(cat "$fhome/commands/polish.md")" "$t2_before"
+
+# T3 — --force from the resolved-alias state: reclaims polish.md for Keel, backs up the adopter's
+# edited bytes, and never deletes the alias.
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks --force
+check_status "T3 --force re-run → exit 0" 0 "$STATUS"
+run cmp -s "$ckdir/commands/polish.md" "$fhome/commands/polish.md"
+check_status "T3 polish.md now equals shipped" 0 "$STATUS"
+t3_bak="$(ls "$fhome"/commands/polish.md.*.bak 2>/dev/null | head -1)"
+check_contains "T3 a .bak file was created" "$t3_bak" ".bak"
+check_contains "T3 backup holds the adopter's edited bytes" "$(cat "$t3_bak" 2>/dev/null)" "ADOPTER-EDIT"
+check_file "T3 keel-polish.md still exists (never deleted)" "$fhome/commands/keel-polish.md"
+
+# T4 — --force idempotence: a second --force on an already-converged home writes nothing new — the
+# obvious wrong implementation backs up on every forced run regardless of whether anything changed.
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks --force
+check_status "T4 second --force → exit 0" 0 "$STATUS"
+t4_bak_count="$(ls "$fhome"/commands/polish.md.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T4 .bak count still exactly 1" 1 "$t4_bak_count"
+
+# T5 — --force never reaches the files an adopter owns.
+printf '# my own global notes\n' > "$fhome/CLAUDE.md"
+printf 'my own instance data\n' > "$fhome/INSTANCE.md"
+t5_claude_before="$(cat "$fhome/CLAUDE.md")"; t5_instance_before="$(cat "$fhome/INSTANCE.md")"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks --force
+check_status "T5 --force over custom CLAUDE.md/INSTANCE.md → exit 0" 0 "$STATUS"
+check_contains "T5 CLAUDE.md byte-unchanged" "$(cat "$fhome/CLAUDE.md")" "$t5_claude_before"
+check_contains "T5 INSTANCE.md byte-unchanged" "$(cat "$fhome/INSTANCE.md")" "$t5_instance_before"
+t5_bak_count="$(ls "$fhome"/{CLAUDE.md,INSTANCE.md}.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T5 no backup created for either" 0 "$t5_bak_count"
+
+# T6 — bin/keel (dir #324): a real file there is left untouched by a plain run (refusal names
+# --force), and --force takes it over, backed up first.
+rm -f "$fhome/bin/keel"; mkdir -p "$fhome/bin"
+printf '#!/bin/sh\necho fake\n' > "$fhome/bin/keel"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks
+check_status "T6 plain run over a real bin/keel → exit 0" 0 "$STATUS"
+check_nolink "T6 bin/keel still a real file (not wired)" "$fhome/bin/keel"
+check_contains "T6 refusal names --force" "$OUT" "--force"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fhome" --no-hooks --force
+check_status "T6 --force takeover → exit 0" 0 "$STATUS"
+check_link "T6 bin/keel now a symlink" "$fhome/bin/keel"
+run test "$fhome/bin/keel" -ef "$ckdir/keel"
+check_status "T6 bin/keel resolves into the checkout" 0 "$STATUS"
+t6_bak_count="$(ls "$fhome"/bin/keel.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T6 a bin/keel backup was created" 1 "$t6_bak_count"
+
+# T7 — manifest hygiene: no artifact= line ever references a .bak path (backups are adopter data;
+# uninstall.sh removes by manifest, so a recorded .bak would make uninstall delete a backup).
+check_absent "T7 manifest never records a .bak artifact" "$(cat "$fhome/.keel/install-manifest.claude")" ".bak"
+
+# T8 — dir #323 (found by this ticket's own /code-review high pass): --force on a VIRGIN alias-eligible
+# collision must NOT overwrite the adopter's own same-named command. The collision here was never a
+# refusal — the alias fork already resolves it safely and non-destructively — so --force has nothing to
+# override on a name Keel has never seen before; it only reclaims once the collision is ALREADY
+# resolved (as T3 above does, from the state T2 sets up).
+t8home="$SANDBOX/force-virgin-home"; mkdir -p "$t8home/commands"
+printf '# my own go command, never touched by Keel\n' > "$t8home/commands/go.md"
+fresh_home_env "$t8home"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$t8home" --no-hooks --force
+check_status "T8 --force on a virgin collision → exit 0" 0 "$STATUS"
+check_contains "T8 adopter's own go.md is untouched" "$(cat "$t8home/commands/go.md")" "never touched by Keel"
+check_file "T8 keel-go.md forked alongside, not an overwrite" "$t8home/commands/keel-go.md"
+t8_bak_count="$(ls "$t8home"/commands/go.md.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T8 no backup was created (nothing was overwritten)" 0 "$t8_bak_count"
+
+# T9 — dir #323 (found by this ticket's own /code-review high pass): a PRESENT but CORRUPTED
+# tools/lib/manifest.sh must degrade to "provenance unavailable", never abort the whole install — the
+# comment above the sourcing site promises exactly that, but only a missing-file guard was there to
+# back it; a syntax error inside a sourced file aborts the whole script under `set -e` regardless of any
+# if/&& wrapped around the `.` command itself (verified live), so the fix pre-checks with `bash -n`.
+t9ck="$SANDBOX/force-checkout-corrupt"
+cp -r "$ckdir" "$t9ck"
+printf 'this is not valid bash (\n' > "$t9ck/tools/lib/manifest.sh"
+t9home="$SANDBOX/force-corrupt-manifest-home"; mkdir -p "$t9home"
+fresh_home_env "$t9home"
+run env "${FRESH_HOME_ENV[@]}" "$t9ck/install.sh" --home "$t9home" --no-hooks
+check_status "T9 corrupted tools/lib/manifest.sh → still exit 0" 0 "$STATUS"
+check_file "T9 install still lands the core despite the corruption" "$t9home/FRAMEWORK.md"
+check_file "T9 install still lands commands" "$t9home/commands/wrap.md"
 
 summary

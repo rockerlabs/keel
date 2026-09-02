@@ -11,6 +11,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`install.sh --force`, plus manifest-based provenance for drifted `commands/*.md` (dir #323,
+  dir #324).** A non-interactive `install.sh` re-run used to permanently foreclose refreshing a
+  drifted Keel-owned command: on the first content mismatch it silently forked a `keel-<name>.md`
+  alias and never touched the original again, in any mode, even after the fork was itself an artifact
+  of the bug rather than an adopter edit. Two independent fixes land together: (1) a drifted
+  Keel-owned file whose on-disk cksum still matches what a prior install's own manifest recorded for
+  it — i.e. Keel's own untouched older release, never touched since — now refreshes automatically,
+  with no prompt, in every mode; a pre-existing `keel-<name>.md` alias is kept, never deleted, and
+  flagged as redundant. (2) A new `install.sh --force` flag takes over a drifted or refused
+  Keel-owned file explicitly, backing it up to `<file>.<UTC-timestamp>.bak` first — the one remedy
+  that reaches an adopter already stuck in the resolved-alias state with a genuinely edited file, and
+  that also takes over a real-file `bin/keel` Keel previously refused to touch. `--force` never
+  reaches `CLAUDE.md`/`AGENTS.md`/`INSTANCE.md`/`LEARNINGS.md`/`IDEAS.md`, hooks, or `settings.json` —
+  those keep their own opt-in overwrites, or none at all. The `keel:88` / `tools/doctor.sh`'s
+  W-CLI-UNWIRED advice, and `install.sh`'s own refused-alias/refused-CLI messages, now all name
+  `--force` as the remedy instead of pointing at a re-run that could never have worked.
+
 - **`tools/changelog-section.sh --edit` now prints two non-fatal composition guards at the release-notes
   step (dir #326).** `docs/publishing-checklist.md` §4 states the rules — notes are CURATED from the
   CHANGELOG section, not a copy of it, and composed from the commit being tagged — but nothing checked

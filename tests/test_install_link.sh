@@ -49,6 +49,14 @@ check_contains "re-run sees links up to date" "$OUT" "CORE.md (up to date)"
 n="$(grep -c '^@' "$HOME/.claude/CLAUDE.md")"
 check_status "exactly one import line after a re-run" 1 "$n"
 
+# dir #323 test 10 (linked-mode no-op): a linked Keel-owned file is manifested as `symlink -`, never a
+# `cksum:` — keel_own_untouched's artifact=file lookup can never match it, so the provenance branch
+# structurally never fires in linked mode; the drift behaviour above (byte-identical to before dir #323)
+# is what it falls through to instead.
+lman="$(cat "$HOME/.claude/.keel/install-manifest.claude")"
+check_contains "linked FRAMEWORK.md is manifested as a symlink, not a cksum" "$lman" "$(printf 'artifact=symlink\tkeel/FRAMEWORK.md\t-')"
+check_absent "no artifact=file line exists for it" "$lman" "$(printf 'artifact=file\tkeel/FRAMEWORK.md')"
+
 # --- doctor --install: complete → OK; missing command → WARN (exit 0); dangling link → GAP (exit 1)
 run "$doctor" --install "$HOME/.claude"
 check_status "doctor --install on a complete install → exit 0" 0 "$STATUS"
