@@ -334,7 +334,7 @@ if command -v jq >/dev/null 2>&1; then
 
   unin --home "$GH" --yes
   check_status "uninstall over a home with a wired gate exits 0" 0 "$STATUS"
-  check_contains "the summary names the leftover gate hooks" "$OUT" "pre-pr-gate"
+  check_contains "the summary names the leftover gate hooks" "$OUT" "pre-PR gate hooks are still wired"
   check_contains "and points at the tested removal path" "$OUT" "install-pre-pr-gate.sh --uninstall"
   check_file "settings.json itself is left in place (uninstall.sh doesn't touch it)" "$GH/settings.json"
   check_contains "and the hooks are still really there (nothing silently stripped)" "$(cat "$GH/settings.json")" "pre-pr-gate.sh"
@@ -346,7 +346,7 @@ if command -v jq >/dev/null 2>&1; then
   unin --home "$GH" --yes
   check_status "second uninstall over the same home exits 0" 0 "$STATUS"
   check_contains "second run still reports nothing (else) to remove" "$OUT" "nothing removed"
-  check_contains "and STILL names the leftover gate hooks" "$OUT" "pre-pr-gate"
+  check_contains "and STILL names the leftover gate hooks" "$OUT" "pre-PR gate hooks are still wired"
 
   GH2="$SANDBOX/gate-leftover-dryrun/.claude"
   inst --home "$GH2" --no-hooks
@@ -354,14 +354,14 @@ if command -v jq >/dev/null 2>&1; then
   check_status "wiring the gate for the dry-run fixture succeeds" 0 "$STATUS"
   unin --home "$GH2" --dry-run
   check_status "dry-run over a home with a wired gate exits 0" 0 "$STATUS"
-  check_contains "a dry-run preview also names the leftover gate hooks" "$OUT" "pre-pr-gate"
+  check_contains "a dry-run preview also names the leftover gate hooks" "$OUT" "pre-PR gate hooks are still wired"
 
   # No gate ever wired at this home → no leftover-hooks note (nothing to report).
   NG="$SANDBOX/no-gate-leftover/.claude"
   inst --home "$NG" --no-hooks
   unin --home "$NG" --yes
   check_status "uninstall over a home with no gate exits 0" 0 "$STATUS"
-  check_absent "no leftover-hooks note when nothing was ever wired" "$OUT" "pre-pr-gate"
+  check_absent "no leftover-hooks note when nothing was ever wired" "$OUT" "pre-PR gate hooks are still wired"
 
   # regression (2nd operator-run /code-review pass): an UNRELATED mention of "pre-pr-gate.sh" (e.g. a
   # permissions rule allowlisting it) must NOT trigger the leftover-hooks note — only a real wired
@@ -375,7 +375,7 @@ EOF
   unin --home "$FP" --yes
   check_status "uninstall over a settings.json that only MENTIONS pre-pr-gate.sh exits 0" 0 "$STATUS"
   check_absent "no false leftover-hooks note from an unrelated mention (permissions rule, not a hook)" \
-    "$OUT" "pre-pr-gate"
+    "$OUT" "pre-PR gate hooks are still wired"
 else
   pass "jq not available — gate-leftover summary tests skipped (install-pre-pr-gate.sh requires jq)"
 fi
