@@ -241,21 +241,33 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   means for an adopter). `keel_own_untouched`'s docstring gets a second, unrelated correction (a
   termination-vs-correctness fix, not a known issue of its own). Two follow-ups this round could name but
   not fix are filed in `BACKLOG.md`: dir #350 (the real concurrency fix — locking vs.
-  skip-if-pid-alive, a design question) and dir #351 (`cmp -s` blocking forever on a non-regular dest,
-  reproduced live against a FIFO, reachable from more than one call site). No tests: this round changes
+  skip-if-pid-alive, a design question) and dir #351 (every unguarded read of a possibly-non-regular
+  dest that can block forever — `cmp -s` and `artifact_cksum`'s `cksum`, reproduced live against a FIFO,
+  reachable from more than one call site). No tests: this round changes
   zero lines of executable behaviour, so there is nothing new to bind. `./tests/run.sh` and `shellcheck`
   were still run clean, though, since a comment edit can break a heredoc or a quoting context.
 
-  **Known issue, shipping unfixed — a concurrent install into the same home can now abort.** That
-  assumption predates v0.8.1: the manifest-merge step's unlocked read-then-`atomic_write` has raced on
-  whose artifact records survive since at least v0.8.0, silently. The LOUD failure mode does not predate
-  it — this release's stale-scratch sweep and its guard, both introduced mid-cycle after v0.8.0, can now
-  delete a still-running sibling install's live snapshot file, which surfaces as `install: manifest merge
-  scratch vanished (...) — another install into this home?` followed by exit 1, rather than falling
-  through silently. Loud and recoverable — re-run the aborted install — but a real behaviour change under
-  an already-unsupported condition, not a pure improvement. Real fix: dir #350, described above.
-  Separately, the `cmp -s`/FIFO issue described above (dir #351) is also pre-existing since at least
-  v0.8.0, not fixed here.
+  **Known issue, shipping unfixed — a concurrent install into the same home can race two different
+  ways.** The unlocked read-then-`atomic_write` race predates v0.8.1 (silent, since v0.8.0). What's new
+  mid-cycle: for nearly the whole run, a sibling can delete this run's own `.prior-manifest.<pid>`
+  snapshot, which can abort a later provenance check with a bare `awk: can't open file` error, never the
+  guard's own message. Only in a narrow window
+  near the end can a sibling instead delete the merge step's `.artifacts.<pid>` scratch, which is what
+  trips the actual guard: `install: manifest merge scratch vanished (...) — another install into this
+  home?`, exit 1. The wide-window case is the likelier outcome of an overlap, not the guarded one.
+  Either way: re-run. Real fix: dir #350, described above. Separately, `cmp -s` and `artifact_cksum`'s
+  `cksum` blocking forever on a non-regular dest (dir #351) also predates v0.8.0, not fixed here.
+
+- **A second correction round for the same v0.8.1 disclosure, three more false statements found by an
+  independent two-leg verification pass.** The known-issue paragraph above and `install.sh`'s own
+  concurrent-install comment both attributed the loud `manifest merge scratch vanished` failure to the
+  wrong file (the live `.prior-manifest.<pid>` snapshot, not the merge step's `.artifacts.<pid>` scratch
+  the guard actually checks); both are corrected in place, and `dir #351` widens accordingly.
+  `keel_own_untouched`'s docstring also claimed `stat_portable_nlink` and `artifact_cksum`'s `cksum`
+  were both non-blocking, but `cksum` isn't (reproduced live against a FIFO). It also said, ten lines
+  apart, that `cmp`'s position both is and is not free on the termination axis. Both are corrected. No
+  executable code changed and no tests are added: none of the three was a behavioural claim, so there is
+  nothing new to bind.
 
 ## [0.8.0] — 2026-09-02
 
