@@ -250,19 +250,25 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   **Known issue, shipping unfixed — a concurrent install into the same home can race two different
   ways.** The unlocked read-then-`atomic_write` race predates v0.8.1 (silent, since v0.8.0). What's new
   mid-cycle: for nearly the whole run, a sibling can delete this run's own `.prior-manifest.<pid>`
-  snapshot, which can abort a later provenance check with a bare `awk: can't open file` error, never the
-  guard's own message. Only in a narrow window
-  near the end can a sibling instead delete the merge step's `.artifacts.<pid>` scratch, which is what
-  trips the actual guard: `install: manifest merge scratch vanished (...) — another install into this
-  home?`, exit 1. The wide-window case is the likelier outcome of an overlap, not the guarded one.
-  Either way: re-run. Real fix: dir #350, described above. Separately, `cmp -s` and `artifact_cksum`'s
-  `cksum` blocking forever on a non-regular dest (dir #351) also predates v0.8.0, not fixed here.
+  snapshot — this doesn't abort the run (dir #356); for a drifted artifact that still reaches the
+  provenance check, it leaks a raw `awk: can't open file` error to stderr before falling through to the
+  ordinary decline, with none of the guard's own message. Only in a
+  narrow window near the end can a sibling instead delete the merge step's `.artifacts.<pid>` scratch,
+  which is what trips the actual guard: `install: manifest merge scratch vanished (...) — another
+  install into this home?`, exit 1. The wide-window case is the likelier outcome of an overlap, not the
+  guarded one — but it never fails the run, only the narrow-window `exit 1` does, and only that one
+  needs a re-run to recover. Real fix: dir #350, described above. Separately, `cmp -s` and
+  `artifact_cksum`'s `cksum` blocking forever on a non-regular dest (dir #351) predates v0.8.0; the raw
+  `awk` stderr leak itself (dir #356) is new this release, alongside `keel_own_untouched`. Neither is
+  fixed here.
 
 - **A second correction round for the same v0.8.1 disclosure, three more false statements found by an
   independent two-leg verification pass.** The known-issue paragraph above and `install.sh`'s own
   concurrent-install comment both attributed the loud `manifest merge scratch vanished` failure to the
   wrong file (the live `.prior-manifest.<pid>` snapshot, not the merge step's `.artifacts.<pid>` scratch
-  the guard actually checks); both are corrected in place, and `dir #351` widens accordingly.
+  the guard actually checks); both are corrected in place, dir #351 widens accordingly, and a follow-up
+  investigation of what the snapshot deletion actually does (it doesn't abort; it leaks raw `awk` stderr)
+  is filed as dir #356.
   `keel_own_untouched`'s docstring also claimed `stat_portable_nlink` and `artifact_cksum`'s `cksum`
   were both non-blocking, but `cksum` isn't (reproduced live against a FIFO). It also said, ten lines
   apart, that `cmp`'s position both is and is not free on the termination axis. Both are corrected. No

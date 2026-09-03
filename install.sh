@@ -309,12 +309,15 @@ rm -f "$manifest_dir"/.prior-manifest.* "$manifest_dir"/.artifacts.* 2>/dev/null
 # the same sweep line was added shortly after, in the same v0.8.1 cycle. The sweep's glob matches ANY
 # pid's scratch file, so a second concurrent install can now delete a first, still-running install's own
 # scratch — two different collisions. Deleting the live `.prior-manifest.<pid>` snapshot (open nearly the
-# whole run) can abort a later provenance check on this run with a bare `awk: can't open file` error,
-# never the guard's own message. Deleting the merge step's `.artifacts.<pid>` scratch instead (open only
-# in the guard's own narrow window, below) is what actually trips its loud `exit 1` ("manifest merge
-# scratch vanished … — another install into this
-# home?"). The wide-window case is the likelier one, and it's the unguarded one. Recoverable either way
-# (re-run). Adopter-facing framing: CHANGELOG.md's [Unreleased] known-issue line.
+# whole run) doesn't abort this run (dir #356: the later provenance check's `awk` read runs inside an
+# `elif` condition, `set -e`-exempt); for a drifted artifact that still reaches that check, it leaks a
+# raw `awk: can't open file` error to stderr before falling through to the ordinary decline, with none
+# of the guard's own message. Deleting the merge step's `.artifacts.<pid>` scratch instead (open only in
+# the guard's own narrow window, below) is what actually trips its loud `exit 1` ("manifest merge scratch
+# vanished … — another install into this home?"). The wide-window case is the likelier one, and it's
+# the unguarded one — but it never fails the run, only the narrow-window `exit 1` does, and only that
+# one needs a re-run to recover. Adopter-facing
+# framing: CHANGELOG.md's [Unreleased] known-issue line.
 prior_manifest="$manifest_dir/.prior-manifest.$$"
 # The `cp` is the CONDITION, never the body: a manifest that exists but cannot be READ (bad perms, a
 # disk error) would otherwise kill the whole run right here, under `set -euo pipefail`, before a single
