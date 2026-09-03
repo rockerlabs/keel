@@ -338,7 +338,26 @@ each counted event and the citation that backs it — so a score is a checkable 
 trust. A count in the ledger equals the number of citations here: no citation, no count. Guard citations
 are captured from the guardrail hooks (`source | detail`); the rest are supplied at score time.'
 
+# dir #343 follow-up (found by this ticket's own /code-review high pass, reproduced live): a bare
+# `[ ! -f "$LEDGER" ]` treats a FIFO/directory/device the same as a genuinely-absent file and falls
+# through to the `printf ... > "$LEDGER"` below — for a directory that's an immediate `Is a directory`
+# error; for a FIFO with no reader, `printf`'s open() blocks FOREVER (reproduced live: the whole
+# process hangs, no output, no timeout). `_impact_merge_ledger` calls this BEFORE
+# `_impact_atomic_write`'s own non-regular-target guard ever runs, so that guard alone does not save
+# this call site. Reports the decline itself, deliberately — of `ensure_ledger`'s three callers (this
+# one, `rollup`, `cmd_add`), only this one has a downstream guard to fall back on; the other two call
+# it bare, under `set -euo pipefail`, so a silent `return 1` here would abort the whole script with NO
+# diagnostic at all (found by the same review pass, reproduced live: an earlier silent-decline draft of
+# this guard turned a directory-shaped $LEDGER into a bare, message-less exit for `rollup`/`add`, worse
+# than the noisy-but-visible `Is a directory` error it replaced). The merge path prints this message
+# twice as a result — once here, once from `_impact_atomic_write`'s own guard a few lines later — an
+# accepted, harmless redundancy in exchange for every caller getting a real message.
 ensure_ledger() {
+  if [ -e "$LEDGER" ] && [ ! -f "$LEDGER" ]; then
+    printf 'keel-impact: %s exists and is not a regular file — refusing to overwrite it\n' \
+      "$LEDGER" >&2
+    return 1
+  fi
   if [ ! -f "$LEDGER" ]; then
     mkdir -p "$(dirname "$LEDGER")"
     printf '%s\n%s\n' "$LEDGER_HEADER_PROSE" "$(_ledger_table_header)" > "$LEDGER"

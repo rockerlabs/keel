@@ -1041,6 +1041,113 @@ check_file "the retry writes the completion marker" "$drepo_store/origin"
 check_nofile "the retry removes the now-merged legacy source" "$drepo/.keel/impact-events.log"
 check_contains "the retry carries the line the directory target had blocked" "$(cat "$drepo_store/impact-events.log")" "dir-target-log-row"
 
+# --- dir #343 follow-up (found by this ticket's own /code-review high pass, reproduced live before
+# this fix): `ensure_ledger` writes directly to $LEDGER — via `printf ... > "$LEDGER"` — BEFORE
+# `_impact_merge_ledger` ever reaches `_impact_atomic_write`'s own non-regular-target guard above, so
+# that guard alone did not protect the ledger path. A directory-shaped store target used to leak a raw
+# `Is a directory` shell error ahead of the intended refusal message. Real directory target, driven
+# through the PRODUCTION call path. ---------------------------------------------------------------
+lgrepo="$(new_repo)"
+mkdir -p "$lgrepo/.keel"
+printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$lgrepo/.keel/ledger.md"
+printf '| 2026-04-05 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | ledger-dir-target-row | none |\n' >> "$lgrepo/.keel/ledger.md"
+lgrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$lgrepo")"
+mkdir -p "$lgrepo_store/ledger.md"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$lgrepo"
+check_status "an explicit migrate against a directory-shaped store ledger target is reported non-zero" 1 "$STATUS"
+check_contains "the guard reports refusing to overwrite, not a raw shell error" "$OUT" "refusing to overwrite"
+check_absent "no raw 'Is a directory' shell error leaks to the operator" "$OUT" "Is a directory"
+check_file "a directory target leaves the legacy ledger source UNDELETED" "$lgrepo/.keel/ledger.md"
+check_dir "the directory target itself is untouched, not replaced" "$lgrepo_store/ledger.md"
+# not permanently stranded: once the directory is cleared out of the way, the very next migrate completes it
+rmdir "$lgrepo_store/ledger.md"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$lgrepo"
+check_status "the retry (target cleared) succeeds" 0 "$STATUS"
+check_file "the retry writes the store's ledger" "$lgrepo_store/ledger.md"
+check_nofile "the retry removes the now-merged legacy source" "$lgrepo/.keel/ledger.md"
+check_contains "the retry carries the row the directory target had blocked" "$(cat "$lgrepo_store/ledger.md")" "ledger-dir-target-row"
+
+# --- same follow-up, the actually-severe half: a FIFO-shaped store ledger target used to HANG the
+# whole process forever (reproduced live: `printf ... > FIFO` blocks in open() with no reader, no
+# output, no timeout — worse than any error). Run in the BACKGROUND with a bounded wait, matching
+# tests/test_install.sh's own T14f pattern for the identical class of bug: the suite ships no timeout
+# helper and `timeout` is absent on macOS, so a naive foreground call would hang CI instead of failing
+# it. The wait is only ever paid in full when the defect is present; the healthy path exits in about a
+# second. ------------------------------------------------------------------------------------------
+if command -v mkfifo >/dev/null 2>&1; then
+  lfrepo="$(new_repo)"
+  mkdir -p "$lfrepo/.keel"
+  printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$lfrepo/.keel/ledger.md"
+  printf '| 2026-04-06 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | ledger-fifo-target-row | none |\n' >> "$lfrepo/.keel/ledger.md"
+  lfrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$lfrepo")"
+  mkdir -p "$lfrepo_store"
+  mkfifo "$lfrepo_store/ledger.md" 2>/dev/null || true
+  if [ ! -p "$lfrepo_store/ledger.md" ]; then
+    fail "the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$lfrepo" >"$SANDBOX/lfrepo.out" 2>&1 </dev/null &
+  lf_pid=$!
+  lf_waited=0
+  while kill -0 "$lf_pid" 2>/dev/null && [ "$lf_waited" -lt 10 ]; do
+    sleep 1; lf_waited=$((lf_waited + 1))
+  done
+  if kill -0 "$lf_pid" 2>/dev/null; then
+    # Release the blocked writer BEFORE killing, then reap: `kill -9` on the backgrounded shell does
+    # not touch the `printf` blocked in open() on the FIFO — it is reparented to PID 1 and stays
+    # blocked forever, and unlinking the FIFO does not release a pending open.
+    : < "$lfrepo_store/ledger.md" >/dev/null 2>&1 &
+    lf_reader=$!
+    pkill -P "$lf_pid" 2>/dev/null || true
+    kill -9 "$lf_pid" 2>/dev/null || true
+    wait "$lf_pid" 2>/dev/null || true
+    kill -9 "$lf_reader" 2>/dev/null || true
+    wait "$lf_reader" 2>/dev/null || true
+    fail "a FIFO-shaped store ledger target must not hang migrate" "still running after ${lf_waited}s"
+  else
+    wait "$lf_pid"; lf_status=$?
+    check_status "a FIFO-shaped store ledger target does not hang migrate, and is reported non-zero" 1 "$lf_status"
+    check_contains "the guard reports refusing to overwrite the FIFO target" "$(cat "$SANDBOX/lfrepo.out")" "refusing to overwrite"
+    check_file "the FIFO target leaves the legacy ledger source UNDELETED" "$lfrepo/.keel/ledger.md"
+  fi
+  rm -f "$lfrepo_store/ledger.md"
+else
+  pass "mkfifo unavailable — FIFO ledger-target guard not exercised here"
+fi
+
+# --- same `ensure_ledger` guard, the OTHER two call sites (found by this ticket's own /code-review high
+# pass): `rollup` and `cmd_add` call `ensure_ledger` bare, with no `&&`/`||`, under `set -euo pipefail` —
+# unlike `_impact_merge_ledger`, neither has a downstream `_impact_atomic_write` guard to fall back on
+# for a message. An early silent-decline draft of the guard turned a directory-shaped store ledger into
+# a bare, message-less script abort for these two paths — worse than the raw `Is a directory` error it
+# replaced. `ensure_ledger` now reports the decline itself. Driven through a REAL enabled repo (not the
+# migrate path above, which never reaches these two call sites at all). -----------------------------
+lrgrepo="$(new_repo)"
+run_in "$lrgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+check_status "setup: enable succeeds" 0 "$STATUS"
+lrgrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$lrgrepo")"
+rm -f "$lrgrepo_store/ledger.md"
+mkdir -p "$lrgrepo_store/ledger.md"
+run_in "$lrgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "rollup against a directory-shaped ENABLED store ledger aborts cleanly, not silently" 1 "$STATUS"
+check_contains "the abort carries a real message, not silence" "$OUT" "refusing to overwrite"
+# not permanently stranded: once the directory is cleared out of the way, the very next rollup completes it
+rmdir "$lrgrepo_store/ledger.md"
+run_in "$lrgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "the retry (target cleared) succeeds" 0 "$STATUS"
+
+# `cmd_add`'s own bare call site (found by this ticket's own delta review round: the rollup test above
+# does not exercise it, and the two call sites could silently desync) — same repo, same store, a fresh
+# directory swap. `rm -f` first: the prior rollup retry left a real regular ledger.md there, and a bare
+# `mkdir -p` over an existing regular file fails without replacing it — the swap would silently no-op.
+rm -f "$lrgrepo_store/ledger.md"
+mkdir -p "$lrgrepo_store/ledger.md"
+run_in "$lrgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none
+check_status "add against a directory-shaped ENABLED store ledger aborts cleanly, not silently" 1 "$STATUS"
+check_contains "the abort carries a real message, not silence" "$OUT" "refusing to overwrite"
+rmdir "$lrgrepo_store/ledger.md"
+run_in "$lrgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none
+check_status "the retry (target cleared) succeeds" 0 "$STATUS"
+
 # --- v0.8.0 delta audit F-16: the temp-file+`mv` shape all three merge helpers use gives TARGET the
 # TEMP file's mode, not the mode TARGET already had — `mv` inside the same filesystem is a rename, and
 # a rename keeps the DESTINATION inode's old permissions only when there's no destination yet; when one
