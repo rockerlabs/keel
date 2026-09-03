@@ -364,10 +364,27 @@ ensure_ledger() {
   fi
 }
 
+# dir #343 follow-up (found live by the v0.8.2 release-manager session's own review of this PR,
+# reproduced live before this fix): `ensure_ledger`'s identical gap, one function up, has an identical
+# twin here — a bare `[ ! -f "$EVIDENCE" ]` is true for a FIFO/directory/device exactly as it is for a
+# genuinely-absent file, so both fell through to the `printf ... > "$EVIDENCE"` below. A directory-shaped
+# store `evidence.md` leaked the same raw `Is a directory` shell error `ensure_ledger` used to leak; a
+# FIFO-shaped one hung the whole process forever (reproduced live: still running after 3s, no output, no
+# timeout). Declines and reports itself the same way, for the same reason: `ensure_evidence`'s two call
+# sites (both inside `cmd_add`) call it bare, as the first statement of an `if` body, under
+# `set -euo pipefail` — not part of an exempt `&&`/`||` list — so the `return 1` here aborts the script
+# before the write that follows it (`{ ... } >> "$EVIDENCE"`) is ever reached; a silent decline would
+# have left that write to hit the same directory/FIFO hazard right behind it.
 ensure_evidence() {
+  if [ -e "$EVIDENCE" ] && [ ! -f "$EVIDENCE" ]; then
+    printf 'keel-impact: %s exists and is not a regular file — refusing to overwrite it\n' \
+      "$EVIDENCE" >&2
+    return 1
+  fi
   # $EVIDENCE is guaranteed non-empty by the time this runs — cmd_add (this function's only caller)
   # refuses at its own top, before any write, on an empty $EVIDENCE (a partial env override on a
-  # never-enabled repo: found live by an operator-run max-depth review). No redundant check here.
+  # never-enabled repo: found live by an operator-run max-depth review). No redundant EMPTINESS check
+  # here — a different axis from the regular-file guard just above.
   if [ ! -f "$EVIDENCE" ]; then
     mkdir -p "$(dirname "$EVIDENCE")"
     printf '%s\n' "$EVIDENCE_HEADER" > "$EVIDENCE"

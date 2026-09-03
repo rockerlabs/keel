@@ -1148,6 +1148,65 @@ rmdir "$lrgrepo_store/ledger.md"
 run_in "$lrgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none
 check_status "the retry (target cleared) succeeds" 0 "$STATUS"
 
+# --- ensure_evidence's identical twin gap (found live by the v0.8.2 release-manager session's own
+# review of this PR, reproduced live before this fix): a bare `[ ! -f "$EVIDENCE" ]` treats a
+# FIFO/directory the same as absent, exactly the bug just fixed one function up in `ensure_ledger`. A
+# directory-shaped store evidence.md leaked the same raw `Is a directory` error; a FIFO-shaped one hung
+# the whole process forever. Real fixtures, driven through the PRODUCTION `add` call path. -----------
+evgrepo="$(new_repo)"
+run_in "$evgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+check_status "setup: enable succeeds" 0 "$STATUS"
+evgrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$evgrepo")"
+rm -f "$evgrepo_store/evidence.md"
+mkdir -p "$evgrepo_store/evidence.md"
+run_in "$evgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none
+check_status "add against a directory-shaped ENABLED store evidence.md aborts cleanly, not silently" 1 "$STATUS"
+check_contains "the abort carries a real message, not silence" "$OUT" "refusing to overwrite"
+check_absent "no raw 'Is a directory' shell error leaks to the operator" "$OUT" "Is a directory"
+check_dir "the directory target itself is untouched, not replaced" "$evgrepo_store/evidence.md"
+rmdir "$evgrepo_store/evidence.md"
+run_in "$evgrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none
+check_status "the retry (target cleared) succeeds" 0 "$STATUS"
+check_file "the retry writes the store's evidence file" "$evgrepo_store/evidence.md"
+
+# Same follow-up, the actually-severe half: a FIFO-shaped store evidence.md target used to HANG the
+# whole process forever. Bounded-wait harness, same pattern as the ledger FIFO test above and
+# tests/test_install.sh's own T14f.
+if command -v mkfifo >/dev/null 2>&1; then
+  evfrepo="$(new_repo)"
+  run_in "$evfrepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+  check_status "setup: enable succeeds" 0 "$STATUS"
+  evfrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$evfrepo")"
+  rm -f "$evfrepo_store/evidence.md"
+  mkfifo "$evfrepo_store/evidence.md" 2>/dev/null || true
+  if [ ! -p "$evfrepo_store/evidence.md" ]; then
+    fail "the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  ( cd "$evfrepo" && env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none >"$SANDBOX/evfrepo.out" 2>&1 </dev/null ) &
+  evf_pid=$!
+  evf_waited=0
+  while kill -0 "$evf_pid" 2>/dev/null && [ "$evf_waited" -lt 10 ]; do
+    sleep 1; evf_waited=$((evf_waited + 1))
+  done
+  if kill -0 "$evf_pid" 2>/dev/null; then
+    : < "$evfrepo_store/evidence.md" >/dev/null 2>&1 &
+    evf_reader=$!
+    pkill -P "$evf_pid" 2>/dev/null || true
+    kill -9 "$evf_pid" 2>/dev/null || true
+    wait "$evf_pid" 2>/dev/null || true
+    kill -9 "$evf_reader" 2>/dev/null || true
+    wait "$evf_reader" 2>/dev/null || true
+    fail "a FIFO-shaped store evidence.md target must not hang add" "still running after ${evf_waited}s"
+  else
+    wait "$evf_pid"; evf_status=$?
+    check_status "a FIFO-shaped store evidence.md target does not hang add, and is reported non-zero" 1 "$evf_status"
+    check_contains "the guard reports refusing to overwrite the FIFO target" "$(cat "$SANDBOX/evfrepo.out")" "refusing to overwrite"
+  fi
+  rm -f "$evfrepo_store/evidence.md"
+else
+  pass "mkfifo unavailable — FIFO evidence-target guard not exercised here"
+fi
+
 # --- v0.8.0 delta audit F-16: the temp-file+`mv` shape all three merge helpers use gives TARGET the
 # TEMP file's mode, not the mode TARGET already had — `mv` inside the same filesystem is a rename, and
 # a rename keeps the DESTINATION inode's old permissions only when there's no destination yet; when one

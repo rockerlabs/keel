@@ -22,9 +22,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   (reproduced live — no output, no timeout, confirmed via a bounded-wait harness). `ensure_ledger` now
   declines the same non-regular target and reports it itself, since two of its three call sites
   (`rollup`, `cmd_add`) have no downstream guard to fall back on for a message. dir #342 itself — the
-  same `mv`'s inode replacement racing a concurrent writer — resolves as documentation only: the risk is
-  real but not independently fixable (no portable "another process holds this path open" check exists),
-  and is now stated plainly next to the code as an accepted single-operator design assumption.
+  same `mv`'s inode replacement racing a concurrent writer — resolves as documentation only, not a code
+  change: the fix that would preserve the inode (rewrite the target in place instead of renaming a temp
+  file over it) is available but deliberately not taken, since it would reopen the atomicity gap this
+  same scaffold's extraction (PR #311) exists to close; the tool's single-operator design means the
+  concurrent writer this trade-off would protect against does not arise in practice, so the trade is
+  now stated plainly next to the code as an accepted design assumption rather than left silent.
 
 ## [0.8.1] — 2026-09-03
 
