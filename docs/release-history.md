@@ -7,6 +7,29 @@ A one-paragraph-per-release summary, newest first. Each entry is a condensed dig
 produces a release) and [`publishing-checklist.md`](publishing-checklist.md) (the mechanics of
 cutting one) — this page is the record of what each one delivered.
 
+## v0.8.1 — 2026-09-03
+
+The never-clobber-regression release. A release-candidate delta audit found nine issues, four
+tag-blocking, fixed as one batch. The headline needed no `--force` at all: `keel_own_untouched`
+checked only the RECORDED kind of a Keel-placed artifact, never its CURRENT kind, so an adopter who
+replaced a Keel-placed file with a symlink or hard link back to the same bytes still passed the
+"unedited copy" predicate — the next install then silently severed the link with no backup. The
+predicate now refuses any dest whose current form disagrees with the recorded kind, unconditionally
+in both copy and linked mode, and a new `stat_portable_nlink` check closes the hard-link twin the
+same way. Two more regressions closed in the same batch: a manifest-snapshot `cp` that killed the
+whole run on an unreadable (not just missing) manifest, and linked-mode `--force` advice that dropped
+the `--home` suffix and could bootstrap a second Keel. Alongside the audit fixes: `install.sh --force`
+takes over a drifted or refused Keel-owned file explicitly (dir #323, dir #324); `verification-economics.md`'s
+Clause A gets a severity/reachability carve-out (dir #327); `changelog-section.sh --edit` warns when
+release notes look copied rather than curated (dir #326); the portable-`stat` cache (two independent
+reimplementations, dir #322) and the impact-ledger's atomic-write scaffold (three hand-rolled copies,
+dir #345) are each extracted into one shared helper; and `tools/self/doctor.sh` now catches the
+`${PIPESTATUS[0]}`-after-`pipefail` bug shape mechanically (dir #321). A disclosure-only round —
+corrected twice after independent verification passes found false statements in its own prose — ships
+two known issues unfixed: a concurrent install into the same home can still race two different ways
+(dir #350), and `uninstall.sh`'s removal rail carries the same symlink-blindness and fail-open cksum
+gaps the install-side fix just closed, scoped out of this release as its own ticket.
+
 ## v0.8.0 — 2026-09-02
 
 The audit-on-the-audit release. The RC pass's closing round re-audited its own prior fix round and
