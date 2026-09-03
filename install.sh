@@ -307,11 +307,16 @@ rm -f "$manifest_dir"/.prior-manifest.* "$manifest_dir"/.artifacts.* 2>/dev/null
 # The prior_manifest snapshot below and the .prior-manifest.* sweep on the line above it were introduced
 # together, mid-cycle, well after v0.8.0 (neither existed at v0.8.0^{commit}). The .artifacts.* half of
 # the same sweep line was added shortly after, in the same v0.8.1 cycle. The sweep's glob matches ANY
-# pid's scratch file, so a second concurrent install can now delete a first, still-running install's
-# live snapshot mid-run — and the merge-scratch guard below (search this file for that tag) turns
-# that collision into a loud `exit 1` ("manifest merge scratch vanished … — another install into this
-# home?") instead of letting the run fall through and write an artifact-less manifest silently.
-# A silent race became a loud one — recoverable (re-run), but a real behaviour change. Adopter-facing
+# pid's scratch file, so a second concurrent install can now delete a first, still-running install's own
+# scratch — two different collisions. Deleting the live `.prior-manifest.<pid>` snapshot (open nearly the
+# whole run) doesn't abort this run (dir #356: the later provenance check's `awk` read runs inside an
+# `elif` condition, `set -e`-exempt); for a drifted artifact that still reaches that check, it leaks a
+# raw `awk: can't open file` error to stderr before falling through to the ordinary decline, with none
+# of the guard's own message. Deleting the merge step's `.artifacts.<pid>` scratch instead (open only in
+# the guard's own narrow window, below) is what actually trips its loud `exit 1` ("manifest merge scratch
+# vanished … — another install into this home?"). The wide-window case is the likelier one, and it's
+# the unguarded one — but it never fails the run, only the narrow-window `exit 1` does, and only that
+# one needs a re-run to recover. Adopter-facing
 # framing: CHANGELOG.md's [Unreleased] known-issue line.
 prior_manifest="$manifest_dir/.prior-manifest.$$"
 # The `cp` is the CONDITION, never the body: a manifest that exists but cannot be READ (bad perms, a
@@ -499,11 +504,12 @@ record_placed() {
 # CALLING `cmp`, on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every symlinked
 # dest; moving `cmp` ahead of either would make those calls attempt it too, widening exposure to the
 # same hang rather than merely shifting a cost. `cmp` comes next, and the two forking clauses LAST, so
-# an up-to-date dest never pays for a `stat` or a `cksum`. That pair is NOT interchangeable either,
-# despite both being non-blocking: `stat_portable_nlink`'s rejection gates the `cksum` lookup below it
-# behind an early `return 1`, so swapping them would make every hard-linked dest pay for a `cksum` fork
-# it currently never reaches. Termination is the one axis `cmp`'s own position is free on; cost still
-# orders everything else here.
+# an up-to-date dest never pays for a `stat` or a `cksum`. That pair is NOT interchangeable either:
+# `stat_portable_nlink`'s rejection gates the `cksum` lookup below it behind an early `return 1`, so
+# swapping them would make every hard-linked dest pay for a `cksum` fork it currently never reaches —
+# and `cksum` isn't non-blocking at all: `artifact_cksum` runs `cksum` with no
+# `[ -f ]` guard, so it can hang on a non-regular dest exactly as `cmp` does, unreached today only
+# because `cmp` blocks first. Cost orders everything else here.
 keel_own_untouched() {
   local src="$1" dest="$2" rel prior_extra dest_nlink
   [ "$prior_manifest_usable" = 1 ] || return 1
