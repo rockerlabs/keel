@@ -240,8 +240,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   never supported two concurrent installs into the same home (see the known issue below for what that
   means for an adopter). `keel_own_untouched`'s docstring gets a second, unrelated correction (a
   termination-vs-correctness fix, not a known issue of its own). Two follow-ups this round could name but
-  not fix are filed in `BACKLOG.md`: `dir #350` (the real concurrency fix — locking vs.
-  skip-if-pid-alive, a design question) and `dir #351` (`cmp -s` blocking forever on a non-regular dest,
+  not fix are filed in `BACKLOG.md`: dir #350 (the real concurrency fix — locking vs.
+  skip-if-pid-alive, a design question) and dir #351 (`cmp -s` blocking forever on a non-regular dest,
   reproduced live against a FIFO, reachable from more than one call site). No tests: this round changes
   zero lines of executable behaviour, so there is nothing new to bind. `./tests/run.sh` and `shellcheck`
   were still run clean, though, since a comment edit can break a heredoc or a quoting context.
@@ -253,10 +253,9 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   delete a still-running sibling install's live snapshot file, which surfaces as `install: manifest merge
   scratch vanished (...) — another install into this home?` followed by exit 1, rather than falling
   through silently. Loud and recoverable — re-run the aborted install — but a real behaviour change under
-  an already-unsupported condition, not a pure improvement. Real fix: `dir #350` (locking vs.
-  skip-if-pid-alive, a design question). Separately, `cmp -s` blocking forever against a non-regular dest
-  (a FIFO, reproduced live) is pre-existing since at least v0.8.0 and reachable from more than one call
-  site: `dir #351`, not fixed here.
+  an already-unsupported condition, not a pure improvement. Real fix: dir #350, described above.
+  Separately, the `cmp -s`/FIFO issue described above (dir #351) is also pre-existing since at least
+  v0.8.0, not fixed here.
 
 ## [0.8.0] — 2026-09-02
 

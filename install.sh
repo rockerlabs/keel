@@ -308,9 +308,9 @@ rm -f "$manifest_dir"/.prior-manifest.* "$manifest_dir"/.artifacts.* 2>/dev/null
 # together, mid-cycle, well after v0.8.0 (neither existed at v0.8.0^{commit}). The .artifacts.* half of
 # the same sweep line was added shortly after, in the same v0.8.1 cycle. The sweep's glob matches ANY
 # pid's scratch file, so a second concurrent install can now delete a first, still-running install's
-# live snapshot mid-run — and the guard at install.sh:1295-1297 turns that collision into a loud
-# `exit 1` ("manifest merge scratch vanished … — another install into this home?") instead of letting
-# the run fall through and write an artifact-less manifest silently.
+# live snapshot mid-run — and the merge-scratch guard below (search this file for that tag) turns
+# that collision into a loud `exit 1` ("manifest merge scratch vanished … — another install into this
+# home?") instead of letting the run fall through and write an artifact-less manifest silently.
 # A silent race became a loud one — recoverable (re-run), but a real behaviour change. Adopter-facing
 # framing: CHANGELOG.md's [Unreleased] known-issue line.
 prior_manifest="$manifest_dir/.prior-manifest.$$"
