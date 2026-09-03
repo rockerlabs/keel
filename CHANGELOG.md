@@ -11,6 +11,21 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #342/#343: a non-regular-file merge target in `tools/keel-impact.sh`'s shared atomic-write
+  scaffold could silently lose data or hang the whole process.** `_impact_atomic_write`'s `mv -f` used
+  to succeed by moving the merge's temp file INSIDE an existing directory target rather than replacing
+  it, so a caller's success-gated `rm -f` on the legacy source fired even though no merge had happened;
+  it now refuses (fails closed) any target that exists and is not a regular file, checked before the
+  merge is even attempted. The same class of gap existed one call earlier, in `ensure_ledger`: it wrote
+  straight to `$LEDGER` before `_impact_atomic_write`'s own guard ever ran, so a directory-shaped store
+  ledger leaked a raw `Is a directory` shell error and a FIFO-shaped one hung the process forever
+  (reproduced live — no output, no timeout, confirmed via a bounded-wait harness). `ensure_ledger` now
+  declines the same non-regular target and reports it itself, since two of its three call sites
+  (`rollup`, `cmd_add`) have no downstream guard to fall back on for a message. dir #342 itself — the
+  same `mv`'s inode replacement racing a concurrent writer — resolves as documentation only: the risk is
+  real but not independently fixable (no portable "another process holds this path open" check exists),
+  and is now stated plainly next to the code as an accepted single-operator design assumption.
+
 ## [0.8.1] — 2026-09-03
 
 - **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
