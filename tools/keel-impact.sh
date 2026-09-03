@@ -417,10 +417,40 @@ _impact_prior_mode() {
 # `mv` failure AFTER a successful write would otherwise leave `$tmp` orphaned — `status` is still
 # correctly non-zero either way (no data-loss risk), just a stray temp file left behind under a
 # two-branch-only cleanup.
+#
+# dir #342: the same-filesystem `mv` below REPLACES $target's inode rather than rewriting it in
+# place. Any process that already had $target open before this ran — e.g. `keel-impact.sh event
+# ...`'s `>> "$LOG"` append (`cmd_event`, below) — keeps writing into the now-unlinked old inode, and
+# those writes are lost: nothing ever reads that inode again once this function returns. The
+# alternative that would preserve the inode — rewrite $target IN PLACE instead of renaming a temp
+# file over it — is available and deliberately NOT taken: an in-place write reopens exactly the window
+# this whole scaffold exists to close (dir #251/#289 — a crash or kill mid-write leaves $target
+# half-written, observable and durable), which is the atomicity PR #311's extraction was for. Traded
+# off, not guarded against: the race needs a WRITER overlapping a MIGRATION SWEEP of the same store,
+# which this tool's single-operator design does not produce in practice, so the atomicity is kept and
+# the inode replacement is accepted. That is a design assumption resting on how the tool is used, not
+# a property this code enforces — worth stating plainly since F-05's fix chain already introduced two
+# prior defects in this exact function family (F-16, F-19), and a silent assumption here is how a
+# fourth one would start.
+#
+# dir #343: TARGET's regular-file-ness is guarded on the READ side by every caller (`[ -f "$target" ]`
+# before adding it to `inputs`) but was, before this guard, unchecked on the WRITE side — `mv -f` into
+# an existing DIRECTORY succeeds by moving $tmp inside it rather than replacing it, so `status` came
+# back 0 and a caller's `&& rm -f "$legacy_source"` deleted the one copy of the data while the merge
+# never actually happened. Refuses and fails closed instead, matching dir #351's identical semantics
+# for install.sh's own non-regular-`$dest` reads: existing-and-not-a-regular-file is refused
+# unconditionally, with no caller-side override (this function takes none). Checked BEFORE running
+# PRODUCER_FN, not after — a bad target is knowable up front, so a directory-shaped one pays no merge
+# work and never gets a temp file written beside it at all.
 _impact_atomic_write() {
   local target="$1" old_mode="$2"; shift 2
   local tmp="$target.keelmerge.$$"
   local status
+  if [ -e "$target" ] && [ ! -f "$target" ]; then
+    printf 'keel-impact: %s exists and is not a regular file — refusing to overwrite it\n' \
+      "$target" >&2
+    return 1
+  fi
   if "$@" > "$tmp"; then
     if [ -n "$old_mode" ]; then
       chmod "$old_mode" "$tmp" 2>/dev/null || printf \

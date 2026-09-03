@@ -1016,6 +1016,31 @@ check_file "the retry writes the completion marker" "$mlrepo_store/origin"
 check_nofile "the retry removes the now-merged legacy source" "$mlrepo/.keel/impact-events.log"
 check_contains "the retry carries the line that the mv failure had blocked" "$(cat "$mlrepo_store/impact-events.log")" "mv-fail-log-row"
 
+# --- dir #343: _impact_atomic_write's write side used to trust a bare `mv -f`, which succeeds by
+# moving $tmp INSIDE an existing DIRECTORY target rather than replacing it — `status` came back 0, and
+# the caller's `&& rm -f "$legacy_source"` then deleted the one copy of the data while no merge had
+# actually happened. A REAL directory target (not a mocked `mv`), driven through the PRODUCTION call
+# path — same shape as mlrepo above, just pre-seeding the store target as a directory instead of
+# stubbing `mv`. --------------------------------------------------------------------------------------
+drepo="$(legacy_log_repo dir-target-log-row)"
+drepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$drepo")"
+mkdir -p "$drepo_store/impact-events.log"
+run_in "$drepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "a plain rollup survives a directory-shaped log target (best-effort, never fatal)" 0 "$STATUS"
+check_contains "the guard reports refusing to overwrite a non-regular target" "$OUT" "refusing to overwrite"
+check_file "a directory target leaves the legacy log source UNDELETED" "$drepo/.keel/impact-events.log"
+check_nofile "a directory target never writes the completion marker" "$drepo_store/origin"
+check_dir "the directory target itself is untouched, not replaced" "$drepo_store/impact-events.log"
+check_absent "the guard never moved the merge temp file INSIDE the directory" "$(ls "$drepo_store/impact-events.log" 2>/dev/null)" "keelmerge."
+check_absent "the guard leaves no orphaned merge temp file NEXT TO the directory either" "$(ls "$drepo_store" 2>/dev/null)" "impact-events.log.keelmerge."
+# not permanently stranded: once the directory is cleared out of the way, the very next resolve completes it
+rmdir "$drepo_store/impact-events.log"
+run_in "$drepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" rollup
+check_status "the retry (target cleared) succeeds" 0 "$STATUS"
+check_file "the retry writes the completion marker" "$drepo_store/origin"
+check_nofile "the retry removes the now-merged legacy source" "$drepo/.keel/impact-events.log"
+check_contains "the retry carries the line the directory target had blocked" "$(cat "$drepo_store/impact-events.log")" "dir-target-log-row"
+
 # --- v0.8.0 delta audit F-16: the temp-file+`mv` shape all three merge helpers use gives TARGET the
 # TEMP file's mode, not the mode TARGET already had — `mv` inside the same filesystem is a rename, and
 # a rename keeps the DESTINATION inode's old permissions only when there's no destination yet; when one
