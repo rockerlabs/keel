@@ -296,6 +296,23 @@ fi
 # scratch file per failed run in the adopter's home with nothing to reap it. Same bounded-litter
 # contract the .prior-manifest sweep already provides: at most the previous run's leftover.
 rm -f "$manifest_dir"/.prior-manifest.* "$manifest_dir"/.artifacts.* 2>/dev/null || true
+# Concurrent-install disclosure (BACKLOG.md dir #350 carries the real fix): this script has never
+# supported two concurrent installs into the same $HOME_DIR, and until now nothing in the tree said so.
+# The ASSUMPTION is not new — it predates this release: the manifest-merge step below reads
+# $manifest_file with a plain `awk` pass immediately before its own atomic_write, no lock, so two
+# concurrent installs into the same home have always been able to race on whose artifact records
+# survive (last writer wins, silently). This has been present unchanged since v0.8.0 (`git show
+# v0.8.0^{commit}:install.sh`: the same unguarded read-then-atomic_write shape).
+# What v0.8.1 changed is the ENFORCEMENT, not the assumption, and it did not predate the release either.
+# The prior_manifest snapshot below and the .prior-manifest.* sweep on the line above it were introduced
+# together, mid-cycle, well after v0.8.0 (neither existed at v0.8.0^{commit}). The .artifacts.* half of
+# the same sweep line was added shortly after, in the same v0.8.1 cycle. The sweep's glob matches ANY
+# pid's scratch file, so a second concurrent install can now delete a first, still-running install's
+# live snapshot mid-run — and the guard at install.sh:1295-1297 turns that collision into a loud
+# `exit 1` ("manifest merge scratch vanished … — another install into this home?") instead of letting
+# the run fall through and write an artifact-less manifest silently.
+# A silent race became a loud one — recoverable (re-run), but a real behaviour change. Adopter-facing
+# framing: CHANGELOG.md's [Unreleased] known-issue line.
 prior_manifest="$manifest_dir/.prior-manifest.$$"
 # The `cp` is the CONDITION, never the body: a manifest that exists but cannot be READ (bad perms, a
 # disk error) would otherwise kill the whole run right here, under `set -euo pipefail`, before a single
@@ -473,12 +490,20 @@ record_placed() {
 #   - A manifest-less home (pre-0.7, or an unreadable/unversioned manifest) makes manifest_usable false
 #     and the predicate false — falls through to today's behaviour (plus --force), never a crash. The
 #     branch it falls through to always prints something actionable, so the decline is never silent.
-# Ordered by COST, not by narrative: every clause is an independent rejection returning 1 on its own, so
-# the order is semantically free — and therefore chosen. The two builtins come first because they settle
-# the whole predicate on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every
-# symlinked dest, saving `cmp`'s fork per synced file. `cmp` comes next, and the two forking clauses
-# LAST, so an up-to-date dest never pays for a `stat` or a `cksum`. Permuting is not free: each move
-# up of a forking clause buys that fork on every file the clauses above it would have rejected.
+# Ordered by COST, not by narrative, except where termination requires otherwise. Every clause is an
+# independent rejection returning 1 on its own, so the order is free for CORRECTNESS: any permutation
+# gives the same final answer. It is NOT free for TERMINATION: `cmp` on a non-regular `$dest` can block
+# forever — reproduced live: a FIFO at `$dest` hangs `cmp -s` indefinitely, the same failure this batch
+# already had to fix once for the manifest snapshot's own `cp` (see its `[ -f ]` guard above). The
+# two cheap, non-forking builtins come first because they settle the whole predicate, WITHOUT EVER
+# CALLING `cmp`, on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every symlinked
+# dest; moving `cmp` ahead of either would make those calls attempt it too, widening exposure to the
+# same hang rather than merely shifting a cost. `cmp` comes next, and the two forking clauses LAST, so
+# an up-to-date dest never pays for a `stat` or a `cksum`. That pair is NOT interchangeable either,
+# despite both being non-blocking: `stat_portable_nlink`'s rejection gates the `cksum` lookup below it
+# behind an early `return 1`, so swapping them would make every hard-linked dest pay for a `cksum` fork
+# it currently never reaches. Termination is the one axis `cmp`'s own position is free on; cost still
+# orders everything else here.
 keel_own_untouched() {
   local src="$1" dest="$2" rel prior_extra dest_nlink
   [ "$prior_manifest_usable" = 1 ] || return 1
@@ -491,9 +516,10 @@ keel_own_untouched() {
   # and `atomic_copy`'s `mv -f` would sever it just as silently. Same rejection, same reason. An empty
   # count means the probe could not answer (no tools/lib, an unstattable dest) and is treated as
   # UNKNOWN, not as 1 — fail closed on the rail whose job is to fail closed.
-  # LAST because it is the only clause here that forks: every up-to-date dest is already rejected by
-  # `cmp` above, so the `stat` is paid only for a dest that actually drifted. Order is free to choose
-  # (each clause is an independent rejection), so it is chosen by cost.
+  # LAST because it is the only remaining clause that forks: every up-to-date dest is already rejected
+  # by `cmp` above, so the `stat` is paid only for a dest that actually drifted. NOT free to swap with
+  # the cksum lookup below: this rejection gates it, via the early `return 1` — a hard-linked dest is
+  # rejected right here and never reaches `rel`/`prior_extra`/the cksum fork at all.
   dest_nlink="$(stat_portable_nlink "$dest")"
   [ "$dest_nlink" = 1 ] || return 1
   rel="${dest#"$HOME_DIR"/}"

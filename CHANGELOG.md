@@ -232,6 +232,32 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   partway through this very check, on the real repo, on the first such file. Guarded with `|| true` on
   the pipeline, matching this file's own established idiom for exactly this shape elsewhere.
 
+- **A disclosure-only round for v0.8.1: no executable code changed.** `docs/delta-audit.md` §10 names
+  this instrument for exactly the situation the release was in — a late leg re-scoped an already-shipped
+  residual rather than finding new breakage, and the honest pre-tag action is to widen the disclosure
+  and ticket the code fix rather than write a concurrency fix under tag-day time pressure. Two comment
+  corrections: `install.sh`'s stale-scratch sweep now states, next to the code, that this script has
+  never supported two concurrent installs into the same home (see the known issue below for what that
+  means for an adopter). `keel_own_untouched`'s docstring gets a second, unrelated correction (a
+  termination-vs-correctness fix, not a known issue of its own). Two follow-ups this round could name but
+  not fix are filed in `BACKLOG.md`: `dir #350` (the real concurrency fix — locking vs.
+  skip-if-pid-alive, a design question) and `dir #351` (`cmp -s` blocking forever on a non-regular dest,
+  reproduced live against a FIFO, reachable from more than one call site). No tests: this round changes
+  zero lines of executable behaviour, so there is nothing new to bind. `./tests/run.sh` and `shellcheck`
+  were still run clean, though, since a comment edit can break a heredoc or a quoting context.
+
+  **Known issue, shipping unfixed — a concurrent install into the same home can now abort.** That
+  assumption predates v0.8.1: the manifest-merge step's unlocked read-then-`atomic_write` has raced on
+  whose artifact records survive since at least v0.8.0, silently. The LOUD failure mode does not predate
+  it — this release's stale-scratch sweep and its guard, both introduced mid-cycle after v0.8.0, can now
+  delete a still-running sibling install's live snapshot file, which surfaces as `install: manifest merge
+  scratch vanished (...) — another install into this home?` followed by exit 1, rather than falling
+  through silently. Loud and recoverable — re-run the aborted install — but a real behaviour change under
+  an already-unsupported condition, not a pure improvement. Real fix: `dir #350` (locking vs.
+  skip-if-pid-alive, a design question). Separately, `cmp -s` blocking forever against a non-regular dest
+  (a FIFO, reproduced live) is pre-existing since at least v0.8.0 and reachable from more than one call
+  site: `dir #351`, not fixed here.
+
 ## [0.8.0] — 2026-09-02
 
 Known issues: two RC-pass findings ship unfixed, both adopter-facing, each with an open ticket. First,
