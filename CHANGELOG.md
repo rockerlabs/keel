@@ -11,6 +11,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-09-03
+
 - **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
   one batch.** The audit ran four independent legs — two cross-vendor, two blind same-vendor — plus an
   orchestrator over `v0.8.0..e5f151b`, and every finding was reproduced live before it was written down.
@@ -257,10 +259,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   which is what trips the actual guard: `install: manifest merge scratch vanished (...) — another
   install into this home?`, exit 1. The wide-window case is the likelier outcome of an overlap, not the
   guarded one — but it never fails the run, only the narrow-window `exit 1` does, and only that one
-  needs a re-run to recover. Real fix: dir #350, described above. Separately, `cmp -s` and
-  `artifact_cksum`'s `cksum` blocking forever on a non-regular dest (dir #351) predates v0.8.0; the raw
-  `awk` stderr leak itself (dir #356) is new this release, alongside `keel_own_untouched`. Neither is
-  fixed here.
+  needs a re-run to recover. Real fix: dir #350, described above. The raw `awk` stderr leak itself
+  (dir #356) is new this release and is not fixed here.
 
 - **A second correction round for the same v0.8.1 disclosure, three more false statements found by an
   independent two-leg verification pass.** The known-issue paragraph above and `install.sh`'s own
