@@ -1023,4 +1023,35 @@ check_contains "B26 names the exact recovery command" "$OUT" "install.sh --home"
 assert_shared_half_removed B26 "$B26"
 check_contains "B26 the foreign CLAUDE.md itself is untouched" "$(cat "$B26/CLAUDE.md")" "My own global notes"
 
+# --- B27: dir #362 — a missing/corrupted tools/lib/artifact-cksum.sh must make uninstall REFUSE
+# outright (non-zero exit, one actionable stderr line), not degrade like manifest.sh/stat-portable.sh
+# do. Unlike those two optional libs, this one is required: uninstall's own removal decision at its
+# cksum-comparison call site trusts install.sh's recorded value, so a stub/degraded answer there would
+# risk a silent wrong removal choice rather than a merely-slower one. A disposable copy of the checkout
+# (never the real $REPO_ROOT) is used so corrupting the lib for this test can't affect any other test
+# file — a real install is done first (this checkout's own install.sh, uncorrupted), then the lib is
+# corrupted/removed only for the uninstall half.
+b27ck="$SANDBOX/force-checkout-uninstall-cksum"
+cp -r "$REPO_ROOT" "$b27ck"
+rm -rf "$b27ck/.git"
+B27="$SANDBOX/b27-corrupt-cksum-lib/.claude"; mkdir -p "$B27"
+fresh_home_env "$SANDBOX/b27-corrupt-cksum-lib"
+run env "${FRESH_HOME_ENV[@]}" "$b27ck/install.sh" --home "$B27" --no-hooks
+check_status "B27 fixture: install succeeds before corruption" 0 "$STATUS"
+
+printf 'this is not valid bash (\n' > "$b27ck/tools/lib/artifact-cksum.sh"
+run env "${FRESH_HOME_ENV[@]}" "$b27ck/uninstall.sh" --home "$B27" --yes
+check_status "B27 corrupted tools/lib/artifact-cksum.sh → non-zero exit" 1 "$STATUS"
+check_contains "B27 one actionable message naming the incomplete checkout" "$OUT" "tools/lib/artifact-cksum.sh is missing or corrupted"
+# No separate "not a raw bash parse-error dump" assertion — see tests/test_install.sh's T9c for why:
+# uninstall.sh's own `bash -n ... 2>/dev/null` already discards that text at the source, so a runtime
+# check for its absence in $OUT would be tautological. check_contains above is the real assertion.
+check_file "B27 corrupted-lib refusal removed nothing" "$B27/FRAMEWORK.md"
+
+rm -f "$b27ck/tools/lib/artifact-cksum.sh"
+run env "${FRESH_HOME_ENV[@]}" "$b27ck/uninstall.sh" --home "$B27" --yes
+check_status "B27 missing tools/lib/artifact-cksum.sh → non-zero exit" 1 "$STATUS"
+check_contains "B27 one actionable message naming the incomplete checkout (missing case)" "$OUT" "tools/lib/artifact-cksum.sh is missing or corrupted"
+check_file "B27 missing-lib refusal removed nothing" "$B27/FRAMEWORK.md"
+
 summary

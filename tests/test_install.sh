@@ -412,6 +412,37 @@ check_status "T9b re-run with a drifted command → exit 0" 0 "$STATUS"
 check_absent "T9b an unanswerable link count refuses, never auto-refreshes (fail closed)" "$OUT" "polish.md refreshed (Keel's own copy, unedited)"
 check_contains "T9b …routing to the never-clobber path instead" "$OUT" "polish.md is your own command"
 
+# T9c/T9d — dir #362: unlike manifest.sh/stat-portable.sh above, tools/lib/artifact-cksum.sh is
+# REQUIRED, not optional — its output is written unconditionally into a manifest `file` record that
+# uninstall.sh later trusts for a destructive decision, so a missing/corrupted copy must refuse the
+# whole install rather than degrade. Opposite assertion from T9/T9b: non-zero exit, one actionable
+# stderr line naming the incomplete checkout, and nothing landed. One disposable checkout copy,
+# corrupted then removed in place — same two-step-on-one-copy shape as tests/test_uninstall.sh's B27 —
+# since each phase installs into its OWN fresh home anyway, there is nothing state-bearing in the
+# checkout itself that the second phase needs the first to have left alone.
+t9cdck="$SANDBOX/force-checkout-nocksumlib"
+cp -r "$ckdir" "$t9cdck"
+
+printf 'this is not valid bash (\n' > "$t9cdck/tools/lib/artifact-cksum.sh"
+t9chome="$SANDBOX/force-corrupt-cksum-home"; mkdir -p "$t9chome"
+fresh_home_env "$t9chome"
+run env "${FRESH_HOME_ENV[@]}" "$t9cdck/install.sh" --home "$t9chome" --no-hooks
+check_status "T9c corrupted tools/lib/artifact-cksum.sh → non-zero exit" 1 "$STATUS"
+check_contains "T9c one actionable message naming the incomplete checkout" "$OUT" "tools/lib/artifact-cksum.sh is missing or corrupted"
+# No separate "not a raw bash parse-error dump" assertion: install.sh's own `bash -n ... 2>/dev/null`
+# already discards that text at the source (see install.sh's guard), so a runtime check for its
+# absence in $OUT would be tautological — it can never appear, pass or fail. check_contains above is
+# the real assertion: the refusal names the incomplete checkout, in install.sh's own words.
+[ -e "$t9chome/FRAMEWORK.md" ] && fail "T9c nothing lands" "FRAMEWORK.md should not exist" || pass "T9c nothing lands"
+
+rm -f "$t9cdck/tools/lib/artifact-cksum.sh"
+t9dhome="$SANDBOX/force-nocksumlib-home"; mkdir -p "$t9dhome"
+fresh_home_env "$t9dhome"
+run env "${FRESH_HOME_ENV[@]}" "$t9cdck/install.sh" --home "$t9dhome" --no-hooks
+check_status "T9d missing tools/lib/artifact-cksum.sh → non-zero exit" 1 "$STATUS"
+check_contains "T9d one actionable message naming the incomplete checkout" "$OUT" "tools/lib/artifact-cksum.sh is missing or corrupted"
+[ -e "$t9dhome/FRAMEWORK.md" ] && fail "T9d nothing lands" "FRAMEWORK.md should not exist" || pass "T9d nothing lands"
+
 # --- v0.8.1 RC audit: the never-clobber rail, the manifest snapshot, and the retargeting suffix -----
 
 # T10 — the RC audit's headline blocker, a regression against v0.8.0 that needed NO --force at all.

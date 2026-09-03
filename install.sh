@@ -277,6 +277,23 @@ else
   stat_portable_nlink() { :; }
 fi
 
+# artifact-cksum (dir #362) — REQUIRED, not optional, unlike the two libs above: its output
+# (CKSUM_UNREADABLE/artifact_cksum) is written unconditionally into a manifest `file` record below,
+# which uninstall.sh later trusts for a destructive (removal) decision. A same-shape "degrade and
+# continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
+# checkout instead of only the rare truly-unreadable file, and uninstall.sh's own comparison has no
+# sentinel guard on either side (dir #347's gap) — so a stubbed fallback would make every artifact
+# compare as a self-equal match. Same `[ -f ] && bash -n` pre-check as the two libs above (a bare `.`
+# can't be guarded against a parse-time syntax-error abort under `set -e`), but the else branch refuses
+# outright instead of degrading.
+if [ -f "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/artifact-cksum.sh
+  . "$root/tools/lib/artifact-cksum.sh"
+else
+  echo "install: tools/lib/artifact-cksum.sh is missing or corrupted — this checkout is incomplete and cannot safely record what it installs; re-clone or re-download Keel and re-run '$advise_install'" >&2
+  exit 1
+fi
+
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
 # reads THIS, never $manifest_file directly, so a future reordering of the write block below can never
 # make the provenance check observe this run's own placement instead of the run before it.
@@ -399,24 +416,7 @@ make_link() {
 # foreign/edited file is never claimed as ours.
 manifest_artifacts=()
 record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
-# CKSUM_UNREADABLE — what artifact_cksum yields when it cannot read the file at all. Named because
-# keel_own_untouched has to RECOGNISE it, not merely produce it: a self-equal error sentinel on a
-# never-clobber rail fails OPEN (an unreadable dest would compare equal to a manifest that ever
-# recorded the same sentinel, and the predicate would answer "Keel's own unedited copy, refresh it
-# without asking" for a file it could not read a single byte of).
-# NOT the only spelling of this value in the tree: uninstall.sh carries a deliberately output-identical
-# hand-copy of artifact_cksum (see its own header) with the literal inline, and its own cksum equality
-# test has no sentinel guard. Out of this fix's scope — but a change to the VALUE here has to go there.
-CKSUM_UNREADABLE='cksum:0:0'
-# artifact_cksum FILE — "cksum:<sum>:<size>", POSIX cksum's first two fields (portable across
-# coreutils/busybox — both are POSIX cksum implementations; the filename field is dropped since a
-# home-relative path is already the record's own key). $CKSUM_UNREADABLE when FILE can't be read —
-# never equal to any real digest as far as keel_own_untouched is concerned (see there).
-artifact_cksum() {
-  local sum size
-  read -r sum size _ < <(cksum "$1" 2>/dev/null) || { printf '%s' "$CKSUM_UNREADABLE"; return; }
-  printf 'cksum:%s:%s' "$sum" "$size"
-}
+# CKSUM_UNREADABLE/artifact_cksum — sourced from tools/lib/artifact-cksum.sh above (dir #362).
 # record_placed DEST — DEST is confirmed Keel content as of right now; classify symlink vs file and
 # record it relative to $HOME_DIR. The one call every write/up-to-date site below routes through.
 record_placed() {

@@ -1540,4 +1540,50 @@ run "$sd" "$d"
 check_contains "clean pipefail-only file reports the explicit OK (non-quiet)" "$OUT" \
   "no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
+# --- 11. artifact_cksum single-definition (dir #362) ------------------------------------------------
+# Same absence-is-valid shape as check 1b above: mk_clean_repo's fixtures carry no artifact_cksum
+# definition at all, which is fine — the drift this check exists to catch is a definition surviving
+# somewhere OTHER than tools/lib/artifact-cksum.sh, or in more than one place (the hand-copy shape
+# dir #362 removed from install.sh/uninstall.sh).
+# plant_cksum_lib DIR — a shipped, wired, shellcheck-clean fixture lib so this check's own signal
+# isn't drowned out by check 2/2's orphan-tool/ratchet GAPs (an unreferenced, uncovered new script)
+# or check "shellcheck clean" (a body with no shebang) — none of which are what this check tests.
+# tests/test_tools.sh is overwritten (not appended to) so it stays the sole wiring reference, same
+# convention mk_clean_repo's own comment documents for $fake_widget/tools/doctor.sh.
+plant_cksum_lib() {
+  mkdir -p "$1/tools/lib"
+  printf '#!/usr/bin/env bash\nartifact_cksum() {\n  :\n}\n' > "$1/tools/lib/artifact-cksum.sh"
+  printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, and tools/lib/artifact-cksum.sh"\n' \
+    "$fake_widget" > "$1/tests/test_tools.sh"
+}
+
+d="$(mk_clean_repo)"; plant_cksum_lib "$d"
+( cd "$d" && git add -A && git commit -qm "single definition, in the shared lib" )
+run "$sd" "$d" --quiet
+check_status "one definition, in the shared lib -> exit 0" 0 "$STATUS"
+check_absent "no GAP for the correct shape" "$OUT" "GAP"
+
+# a hand-copy re-appears alongside the shared lib — the exact drift dir #362 removed
+d="$(mk_clean_repo)"; plant_cksum_lib "$d"
+printf '#!/usr/bin/env bash\nartifact_cksum() {\n  :\n}\n' >> "$d/uninstall.sh"
+( cd "$d" && git add -A && git commit -qm "hand-copy reappears in uninstall.sh" )
+run "$sd" "$d" --quiet
+check_status "a hand-copy alongside the shared lib -> exit 1" 1 "$STATUS"
+check_contains "names both files it was found in" "$OUT" "tools/lib/artifact-cksum.sh"
+check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
+
+# defined only in the wrong place (the shared lib itself never got it)
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\nartifact_cksum() {\n  :\n}\n' >> "$d/install.sh"
+( cd "$d" && git add -A && git commit -qm "only a hand-copy, no shared lib" )
+run "$sd" "$d" --quiet
+check_status "defined only outside the shared lib -> exit 1" 1 "$STATUS"
+check_contains "names the wrong location" "$OUT" "install.sh"
+
+# a repo that defines it nowhere has no rule to keep in sync — silent, not a GAP
+d="$(mk_clean_repo)"
+run "$sd" "$d"
+check_status "no definitions anywhere -> exit 0" 0 "$STATUS"
+check_absent "and reports no GAP over it" "$OUT" "GAP"
+
 summary

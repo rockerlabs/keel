@@ -11,6 +11,22 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`artifact_cksum`/`CKSUM_UNREADABLE` extracted into a new `tools/lib/artifact-cksum.sh`, shared by
+  `install.sh` and `uninstall.sh` (dir #362).** Previously `install.sh` defined both inline and
+  `uninstall.sh` carried an output-identical hand-copy with the sentinel literal inlined instead of
+  named — now there is exactly one definition, sourced by both. **This creates a deliberate,
+  user-visible three-way asymmetry in how a broken checkout's `tools/lib/` dependencies are handled**,
+  worth naming explicitly: `tools/lib/manifest.sh` and `tools/lib/stat-portable.sh` guard an *optional*
+  refinement, so a missing or corrupted copy of either degrades the install (the smart-refresh
+  shortcut is disabled) and still finishes with exit 0. `tools/lib/artifact-cksum.sh` guards a value
+  written *unconditionally* into every manifest `file` record, which `uninstall.sh` later trusts for a
+  destructive removal decision — a same-shape "degrade and continue" fallback here would silently make
+  every artifact compare as a false match, so instead a missing or corrupted copy makes both
+  `install.sh` and `uninstall.sh` refuse outright, with one actionable message, rather than complete
+  under a value that can no longer be trusted. In every real-world install (`bootstrap.sh` always
+  clones or downloads a full checkout) this file is always present, so no adopter install is affected —
+  the divergence is only observable in a deliberately minimal/corrupted checkout.
+
 ## [0.8.1] — 2026-09-03
 
 - **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
