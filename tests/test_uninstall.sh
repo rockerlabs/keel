@@ -1122,6 +1122,6 @@ check_contains "B30 the drift is named, not silently swept" "$OUT" "symlink no l
 check_file "B30 the adopter's own target file is itself untouched" "$b30_target"
 # A sibling symlink this run never touched is still correctly identified and removed — the fix narrows
 # ownership, it doesn't blanket-refuse every symlink in the manifest.
-if [ -e "$B30/bin/keel" ]; then fail "B30 an untouched sibling symlink is still correctly removed" "still present"; else pass "B30 an untouched sibling symlink is still correctly removed"; fi
+check_nolink "B30 an untouched sibling symlink is still correctly removed" "$B30/bin/keel"
 
 summary

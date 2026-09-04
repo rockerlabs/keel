@@ -319,6 +319,14 @@ home_has_keel_content() {
 # core_import_re/has_keel_rails's own "no established cross-sourcing convention" note above), is more
 # machinery than this print-only, rarely-exercised (manifest-less --dry-run only) listing's blast radius
 # earns on its own — worth a dedicated ticket if a fifth copy ever appears, not a same-round respin.
+# **THE FIFTH COPY HAS NOW APPEARED (dir #347, /simplify's reuse pass):** expected_symlink_source(),
+# defined further down near the manifest-driven removal loop, independently re-derives this same
+# keel-<name> alias/base-name relationship (in the reverse direction — home-relative path back to
+# checkout source). Still not unified this round, for the same reason as above plus the one named at
+# its own definition (a data-driven, manifest-recorded-target replacement is the deeper fix and is
+# deliberately deferred to a follow-up ticket rather than widening this diff into install.sh) — flagged
+# to the release manager so the ticket this comment has called for since before this diff actually gets
+# filed, covering the alias-mapping duplication as a whole rather than one copy at a time.
 # **take() reuse considered and REJECTED, not just deferred** (the /code-review pass's own suggestion,
 # verified empirically wrong): take() is defined far below (near the real removal loop), and this
 # function is CALLED from the manifest-less branch above that definition in the script's own top-to-
@@ -649,6 +657,11 @@ take() {
 # one an adopter later re-pointed at their own file after install.sh's in_sync branch had recorded a
 # genuinely-Keel link there as `symlink -`.
 #
+# THE FIFTH COPY of the keel-<name> alias/base-name mapping (reuse pass, /simplify on this same diff):
+# dry_run_heuristic_listing's own comment, ~350 lines above, already tracks four hand-copies of this
+# relationship and says a fifth is worth a dedicated ticket rather than a same-round unification — this
+# function is that fifth copy, re-deriving the same rule in the reverse direction. See that comment.
+#
 # NAMED DRIFT RISK, not closed by this ticket (v0.8.2 release-manager review of dir #347): this table
 # is a HAND-MAINTAINED MIRROR of install.sh's own symlink wiring, with nothing enforcing the two stay
 # in sync — exactly the class of hand-copy dir #362 just removed between these two files (the shared
@@ -670,18 +683,15 @@ expected_symlink_source() {
     keel/FRAMEWORK.md)  printf '%s' "$root/FRAMEWORK.md" ;;
     keel/PRINCIPLES.md) printf '%s' "$root/PRINCIPLES.md" ;;
     commands/*.md)
+      # `${base#keel-}` is a no-op when base has no keel- prefix, so trying it unconditionally as the
+      # second candidate is safe: a direct (non-alias) command just fails the same already-failed check
+      # a second time, harmlessly (/simplify pass, dir #347).
       base="${rel#commands/}"
+      alias_base="${base#keel-}"
       if [ -f "$root/commands/$base" ]; then
         printf '%s' "$root/commands/$base"
-      else
-        case "$base" in
-          keel-*)
-            alias_base="${base#keel-}"
-            if [ -f "$root/commands/$alias_base" ]; then
-              printf '%s' "$root/commands/$alias_base"
-            fi
-            ;;
-        esac
+      elif [ -f "$root/commands/$alias_base" ]; then
+        printf '%s' "$root/commands/$alias_base"
       fi
       ;;
   esac
