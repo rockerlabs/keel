@@ -1130,7 +1130,11 @@ check_nolink "B30 an untouched sibling symlink is still correctly removed" "$B30
 # missing the mirror-image third branch, so a manifest `file` record whose slot is now a directory (or
 # fifo/device) fell through both `-L` and `-f` with no diagnostic at all — fail-closed (never removed)
 # but silent, unlike the symlink arm's equivalent case. Fixture trap from this same round: `mkdir -p`
-# over an existing REGULAR FILE fails and leaves the file in place, so `rm -f` first is required. --------
+# over an existing REGULAR FILE fails and leaves the file in place, so `rm -f` first is required.
+# Known, tracked flake (dir #372): this test's own `$OUT` capture has been observed to drop the
+# "disagreement is named" line under load in roughly 1 of ~19 runs (fork contention, not a logic
+# defect — the underlying `-e` branch itself fires correctly every time it was traced directly).
+# Distinct from dir #368 (the local Alpine environment); fixing either leaves the other standing. --------
 B31="$SANDBOX/b31-file-arm-directory-mismatch/.claude"
 inst --home "$B31" --no-hooks
 check_status "B31 install succeeds" 0 "$STATUS"
