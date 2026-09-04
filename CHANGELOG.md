@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tests/test_uninstall.sh`'s gate-leftover assertions matched a bare token that also occurs in a
+  checkout's own path** (dir #329, found 2026-09-02, v0.8.0 RC pass, F-13): five assertions
+  substring-matched command output against the literal `pre-pr-gate`, and that output also carries the
+  checkout path — so on any checkout whose path contains that token (a worktree named after the gate
+  itself is the likely case, making the test least trustworthy exactly on the sessions working on the
+  gate), the negative `check_absent` assertions failed and the positive `check_contains` ones passed for
+  the wrong reason, matching the path rather than the note. All five now anchor on the note's own wording,
+  `pre-PR gate hooks are still wired` — the same needle an existing assertion (B20) already used for a
+  related check, rather than a second, shorter spelling of it. Verified from both a neutral path and a
+  path containing the token: 367 passed/2 failed pre-fix on the token path (0 failed on the neutral
+  path), 369 passed/0 failed post-fix on both.
+
 ## [0.8.1] — 2026-09-03
 
 - **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
