@@ -75,20 +75,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   clause in `sync_product`'s own chain (`[ ! -f "$dest" ]`, true for both "truly absent" and "a FIFO
   sits here") would have routed straight into `place()`, silently overwriting whatever special file was
   there with no prompt and no backup — worse than the hang it replaces. `sync_product` gained a new
-  branch, inserted ahead of that clause, that declines a non-regular, non-symlink `$dest` explicitly
-  instead; `--force` does not override it, since `force_backup` is a plain `cp` and would hang on a FIFO
-  the same way the original bug did. Folded in from dir #356: `keel_own_untouched`'s per-artifact `awk`
+  branch, inserted ahead of that clause, that declines a non-regular `$dest` explicitly instead —
+  including a *symlink* whose target is non-regular (see the third gap below); only a dangling symlink
+  or a symlink to a regular file still falls through to the existing behavior. `--force` does not
+  override the decline, since `force_backup` is a plain `cp` and would hang on a FIFO the same way the
+  original bug did. Folded in from dir #356: `keel_own_untouched`'s per-artifact `awk`
   read of the prior manifest snapshot leaked a raw `awk: can't open file` to stderr when the snapshot
   vanished mid-run under the known sibling-sweep race (dir #350) instead of degrading silently, the same
   contract every other manifest-less-home path already honors — fixed with `2>/dev/null` and `|| true`,
   and deliberately kept silent rather than made loud like dir #350's own merge-scratch guard, since
   losing this read only narrows an optimization (whether a dest can be auto-refreshed with no prompt),
   never threatens anything the run is about to write. Regression-tested against a FIFO through the
-  fresh-install, drifted-Keel-copy, and cksum-reachable paths (the last as a static mutation-guard pin,
-  since a live run of the fully-fixed code can no longer distinguish "guarded" from "merely unreached"),
-  a plain directory through the same new `sync_product` branch, and dir #356's own snapshot-vanishes
-  race via a small, permanent, test-only fault-injection hook mirroring the existing crash-checkpoint
-  one. **A second gap, found by review after the fix above first landed: the new decline branch sits
+  fresh-install, drifted-Keel-copy, alias-collision, and cksum-reachable paths (the last as a static
+  mutation-guard pin, since a live run of the fully-fixed code can no longer distinguish "guarded" from
+  "merely unreached"), a plain directory through the same new `sync_product` branch, a symlink whose
+  target is a FIFO (the third gap below), and dir #356's own snapshot-vanishes race via a small,
+  permanent, test-only fault-injection hook mirroring the existing crash-checkpoint one. **A second gap,
+  found by review after the fix above first landed: the new decline branch sits
   after `sync_product`'s own alias-collision branch in its `elif` chain, so a non-regular `$dest` at a
   path whose name collision was already resolved to a `keel-<name>` alias reached that branch first and
   printed nothing at all** — no hang, no clobber (the alias branch's own drift check is itself
@@ -100,7 +103,17 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   — a FIFO sitting at one of those instead correctly still fails the whole run's exit code, via
   `install.sh`'s own pre-existing Verify block (which checks core files present by name, unrelated to
   this fix), not the silent hang or clobber this fix targets. That interaction is intentional and
-  out of scope for this ticket, not a gap in the fix itself.
+  out of scope for this ticket, not a gap in the fix itself. **A third gap, found by this ticket's own
+  in-session `/code-review high` pass on the fix above: every guard so far explicitly excluded
+  symlinks** (`[ ! -L "$dest" ]`), correct for `keel_own_untouched`'s own pre-existing, unrelated
+  symlink-preservation contract (dir #323) but wrong for the new non-regular-dest decline — a *symlink
+  whose target is a FIFO/char-device/directory* fell through every guard and reached `place()`'s
+  `mv -f`, which replaces whatever dentry sits at `$dest`, symlink included, silently destroying the
+  adopter's link with none of this same fix's own decline message. Closed by dropping the now-redundant
+  `[ ! -L ]` clause: `-e`/`-f` both already follow a symlink to its target, so the same predicate
+  declines a bare non-regular file and a symlink pointing at one, while a dangling symlink (`-e` false)
+  and a symlink to a regular file (`-f` true — the v0.8.1 headline never-clobber case, dir #323) are
+  still correctly left alone.
 
 ## [0.8.1] — 2026-09-03
 
