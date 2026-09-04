@@ -18,9 +18,11 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `[ ! -L ] && [ -e ]`), hand it to `force_backup`, and die under `set -euo pipefail` with earlier
   placements already on disk and `bin/keel` never wired — reproduced live. `force_backup` now refuses
   a non-regular dest itself (returns cleanly instead of letting `cp` abort — one guard covers all
-  three call sites), and the `bin/keel` block's `--force` arm now excludes a non-regular dest so it
-  never reaches `force_backup` there in the first place, mirroring `sync_product`'s own
-  `$dest_nonregular` guard (dir #351): declined unconditionally, `--force` included. Separately,
+  three call sites), and the `bin/keel` block tests that return value directly
+  (`elif force_backup "$keel_link"; then`) so a decline falls through with nothing further to
+  print — `force_backup`'s own message already said why — mirroring `sync_product`'s own
+  `$dest_nonregular` guard (dir #351): declined unconditionally, `--force` included, one message either
+  way. Separately,
   `tools/doctor.sh`'s W-CLI-UNWIRED finding and the `keel` CLI's own re-wire message still said only
   "not a symlink" (dir #98's advice class — every command Keel advises has to actually reach the
   install it's about — missed these two sites; `install.sh`'s own two messages already carried the

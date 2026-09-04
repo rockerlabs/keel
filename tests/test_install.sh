@@ -760,7 +760,15 @@ check_dir "T14i …the adopter's directory is left untouched, --force included" 
 check_file "T14i …with its contents intact" "$dirforcehome/bin/keel/something"
 t14i_bak_count="$(ls "$dirforcehome"/bin/keel.*.bak 2>/dev/null | wc -l | tr -d ' ')"
 check_status "T14i …no backup was attempted (there was nothing safe to back up)" 0 "$t14i_bak_count"
-check_contains "T14i …and the run still reports the decline, not a crash" "$OUT" "not a symlink or a directory"
+# force_backup's own decline (its $NON_REGULAR_MSG line) is the message here, not the FORCE=0 branch's
+# "not a symlink" text — the wiring block's `elif [ "$FORCE" = 1 ] && force_backup ...` folds the call
+# into the condition specifically so a decline falls through with NOTHING further to print (a fresh
+# /code-review pass caught an earlier draft printing BOTH lines for this one refusal — a real,
+# reproduced double-message bug, not a style nit). Pin both halves of that fix: the message that must
+# fire, and the one that must not, so a regression back to double-printing shows up as a diff, not a
+# still-green substring match.
+check_contains "T14i …and the run still reports the decline, not a crash" "$OUT" "a non-regular file already exists there — left in place"
+check_absent "T14i …exactly once — not also the FORCE=0 branch's own wording" "$OUT" "exists and is not a Keel symlink"
 # Other Keel-owned files this same --force run touches must still land — proves the directory decline
 # is scoped to bin/keel alone, not a run-wide bail-out (the pre-fix failure mode killed the whole run
 # via set -e, so every later placement was lost too).

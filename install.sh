@@ -96,11 +96,14 @@ CODEX=0
 FORCE=0
 EPHEMERAL="${KEEL_EPHEMERAL:-0}"   # env, not a flag: an internal bootstrap→install signal (see header)
 # NON_REGULAR_MSG — the one decline wording for "a FIFO/device/socket/directory sits where a Keel-
-# owned file belongs" (dir #351's own $non_regular_msg inside sync_product, and force_backup's matching
-# guard, dir #349). A shared top-level constant rather than each call site restating the string: the
-# duplication dir #351 already eliminated once (two sync_product call sites, same function) would
-# otherwise reappear one level up (two separate FUNCTIONS), which is exactly what a /simplify pass on
-# this ticket found.
+# owned file belongs" (dir #351's own two sync_product call sites, and force_backup's matching guard,
+# dir #349 — three readers in total, all in this same shared constant now). The duplication dir #351
+# already eliminated once (two sync_product call sites, same function) would otherwise reappear one
+# level up (two separate FUNCTIONS), which is exactly what a /simplify pass on this ticket found. Named
+# for the STATEMENT it makes ("a non-regular file is there, we left it, remove it and re-run" — true
+# whether the caller was about to place a fresh copy or take a backup first), not for any one call
+# site — if they ever need to say something genuinely different, un-share them rather than bending one
+# message to cover both; sharing is only correct while every reader means the same thing.
 NON_REGULAR_MSG="a non-regular file already exists there — left in place; remove or move it by hand, then re-run"
 
 while [ "$#" -gt 0 ]; do
@@ -396,11 +399,25 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # used to abort the whole run under `set -euo pipefail`, verified). One guard here covers all three call
 # sites, present and future, instead of asking each to re-derive it — same reasoning, and the same
 # $NON_REGULAR_MSG wording, as sync_product's own $dest_nonregular (dir #351). Declines, prints why, and
-# returns 1 rather than letting `cp` abort — self-contained, so a future call site that never checks the
-# return value still gets a clear one-line explanation instead of a silent decline (the bin/keel site
-# below DOES check it, since that is the one path that can actually reach this today: its own `elif`
-# folds the check into `[ "$FORCE" = 1 ] && force_backup "$dest"`, so a decline here falls through to
-# that site's existing untouched-message the same way a plain non-force run already does).
+# returns 1 rather than letting `cp` abort.
+#
+# CALLER CONTRACT — this only protects a caller that either tests the return value, or is upstream-gated
+# to never see a non-regular dest in the first place. `return 1` from a BARE statement still aborts the
+# whole script under `set -euo pipefail`; this function cannot change that for a caller that doesn't
+# account for it. The three call sites split across both worlds today:
+#   - bin/keel (below) tests the return value directly (`elif force_backup "$keel_link"; then`), so a
+#     decline is the tested command of that `elif` — exempt from `set -e` — and falls through with
+#     nothing further to print, since this function's own message above already explained why. This is
+#     the one site that can actually reach a decline today.
+#   - sync_product's two call sites are bare statements and rely entirely on an upstream gate instead:
+#     the first is reached only when `dest_differs=1`, which itself requires `[ -f "$dest" ]`; the
+#     second sits below dir #351's own `dest_nonregular` decline branch, which already intercepts and
+#     returns before this call is ever reached. Neither site checks this function's return value, so a
+#     decline there is unreachable ONLY as long as its one upstream gate keeps holding.
+# A future bare call site added without its own gate, or the removal of either gate above, silently
+# turns this guard from a clean decline back into the mid-sync abort dir #349 exists to remove — the
+# exact shape that bit dir #342/#343's `ensure_ledger` the same week. Whoever adds a fourth call site
+# needs to land in one of the two worlds above on purpose, not by accident.
 force_backup() {
   local dest="$1" ts
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
@@ -738,9 +755,11 @@ sync_product() {
   # symlink (the checkout moved), already sit at $alias_dest?
   local alias_exists=0
   [ -n "$alias_dest" ] && { [ -e "$alias_dest" ] || [ -L "$alias_dest" ]; } && alias_exists=1
-  # dest_nonregular/non_regular_msg (dir #351) — computed once, same reasoning as $alias_exists above,
-  # for the two sites below that both need to recognize and decline a non-regular $dest (a code-review
-  # high pass on this ticket found the condition and message string duplicated verbatim between them).
+  # dest_nonregular (dir #351) — computed once, same reasoning as $alias_exists above, for the two
+  # sites below that both need to recognize and decline a non-regular $dest (a code-review high pass on
+  # this ticket found the condition duplicated verbatim between them). The two echo sites reference the
+  # shared top-level $NON_REGULAR_MSG (dir #349) directly rather than through a local alias — a local
+  # that only ever forwarded the constant's value added a name to chase with nothing of its own to say.
   # DELIBERATELY no `[ ! -L "$dest" ]` clause: `-e`/`-f` both follow a symlink to its target, so this
   # is true for a BARE FIFO/char-device/directory at $dest (a symlink can never itself report as one of
   # those — `-L` and that shape are mutually exclusive at the dentry level, so dropping `! -L` changes
@@ -752,7 +771,7 @@ sync_product() {
   # checkout) and a symlink-to-regular-file (dir #323's own, unrelated, already-settled territory) are
   # both still correctly excluded: `-e`/`-f` are false for the former (nothing to follow to) and true
   # for the latter, so neither trips this flag.
-  local dest_nonregular=0 non_regular_msg="$NON_REGULAR_MSG"
+  local dest_nonregular=0
   [ -e "$dest" ] && [ ! -f "$dest" ] && dest_nonregular=1
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
@@ -793,9 +812,9 @@ sync_product() {
         # above stays 0 for it (gated on `[ -f "$dest" ]` too), which correctly keeps --force from ever
         # touching it — but that same gating also skipped this branch's own "left untouched" message, so
         # the adopter got silence instead of the decline this ticket's own done-criterion promises. Same
-        # $non_regular_msg as the dedicated decline branch further down (the one this collision-resolved
+        # $NON_REGULAR_MSG as the dedicated decline branch further down (the one this collision-resolved
         # path would otherwise never reach), so the two read as one contract rather than two.
-        echo "  !    $name: $non_regular_msg"
+        echo "  !    $name: $NON_REGULAR_MSG"
       fi
       sync_product "$src" "$alias_dest"
     fi
@@ -808,7 +827,7 @@ sync_product() {
     # force_backup (above) is a plain `cp "$dest" ...`, which hangs on a FIFO exactly the way `cmp` did
     # (dir #351) — extending --force here would trade one hang for another, not remove one. Left as
     # explicitly out of scope; an adopter who genuinely wants this dest reclaimed removes it by hand.
-    echo "  !    $name: $non_regular_msg"
+    echo "  !    $name: $NON_REGULAR_MSG"
   elif [ ! -f "$dest" ]; then
     # absent — or a dangling symlink (a moved/reaped checkout): place() replaces it atomically either way.
     place "$src" "$dest"
@@ -1120,31 +1139,34 @@ elif [ -f "$root/keel" ]; then
     make_link "$root/keel" "$keel_link"
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help')"
-  elif [ "$FORCE" = 1 ] && force_backup "$keel_link"; then
-    # A real file + --force is the only case needing a backup first, and the only one force_backup
-    # actually performs: its own internal guard (dir #349) declines and returns 1 for a non-regular
-    # $keel_link — a DIRECTORY/FIFO/device/socket satisfies `[ ! -L ] && [ -e ]` too, and a plain `cp`
-    # cannot copy one (verified live: it used to abort the whole run mid-sync under `set -euo
-    # pipefail`). Folding the call into the `elif` condition itself means a decline falls straight
-    # through to the SAME else branch below the non-force case already uses — no separate message to
-    # keep in sync, and --force simply never reaches a non-regular file, mirroring sync_product's own
-    # $dest_nonregular guard (dir #351): unconditional decline, --force included.
+  elif [ "$FORCE" != 1 ]; then
+    # A real file, no --force. $advise_install, matching the Verify WARN below and tools/doctor.sh's
+    # own W-CLI-UNWIRED, and NOT $advise_refresh_force: its linked form is `keel sync`, which
+    # dispatches through the bin/keel this very line reports is occupied by something that is not
+    # Keel's symlink — so it is command-not-found at best, and runs the ADOPTER'S OWN program at worst
+    # (reproduced live by this batch's own /code-review max pass, on two independent legs). dir #324
+    # gave this line --force but kept the unreachable command; making the two lines one run prints
+    # AGREE is the point, and agreeing on a command that cannot run is not a fix. --force is
+    # CONDITIONAL here for the same reason: a DIRECTORY at that path takes the elif below instead (dir
+    # #349), so the wording stays accurate — --force helps for a real file, never for a directory.
+    echo "  !    $keel_link exists and is not a Keel symlink — left it untouched (remove it, or re-run '$advise_install' with --force if a real file, not a symlink or a directory, sits there — it gets backed up first)."
+  elif force_backup "$keel_link"; then
+    # $FORCE=1 from here on. force_backup is the only thing that can still say no: its own internal
+    # guard (dir #349) declines and returns 1 for a non-regular $keel_link — a DIRECTORY/FIFO/
+    # device/socket satisfies `[ ! -L ] && [ -e ]` too, and a plain `cp` cannot copy one (verified live:
+    # it used to abort the whole run mid-sync under `set -euo pipefail`). A decline here falls through
+    # this `elif` with NOTHING further to print — force_backup already explained why (its own
+    # $NON_REGULAR_MSG line), and printing the FORCE=0 branch's message too would just be a second,
+    # differently-worded line about the same refusal (an earlier draft did exactly that; a fresh
+    # /code-review pass on this ticket caught the double message live and this split is the fix). So
+    # --force never reaches a non-regular file, mirroring sync_product's own $dest_nonregular guard
+    # (dir #351): unconditional decline, --force included — and there is exactly one message either way.
     make_link "$root/keel" "$keel_link"
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help') — real file backed up first (--force)"
-  else
-    # Reached by: a real file with no --force, OR --force against a non-regular $keel_link (force_backup
-    # above declined and already explained why). $advise_install, matching the Verify WARN below and
-    # tools/doctor.sh's own W-CLI-UNWIRED, and NOT $advise_refresh_force: its linked form is `keel
-    # sync`, which dispatches through the bin/keel this very line reports is occupied by something that
-    # is not Keel's symlink — so it is command-not-found at best, and runs the ADOPTER'S OWN program at
-    # worst (reproduced live by this batch's own /code-review max pass, on two independent legs). dir
-    # #324 gave this line --force but kept the unreachable command; making the two lines one run prints
-    # AGREE is the point, and agreeing on a command that cannot run is not a fix. --force is CONDITIONAL
-    # here for the same reason: a DIRECTORY at that path lands here too (dir #349), so the wording stays
-    # accurate — --force helps for a real file, never for a directory.
-    echo "  !    $keel_link exists and is not a Keel symlink — left it untouched (remove it, or re-run '$advise_install' with --force if a real file, not a symlink or a directory, sits there — it gets backed up first)."
   fi
+  # else: $FORCE=1 and force_backup declined (non-regular $keel_link) — its own message above already
+  # said why; nothing more to print here.
 fi
 
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.
@@ -1269,15 +1291,11 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     # this identical WARN, so the two lines one run prints about the SAME file contradicted each other.
     # This matches tools/doctor.sh's own W-CLI-UNWIRED wording (dir #349 brought all four sites — this
     # line, the refusal above, tools/doctor.sh's W-CLI-UNWIRED, and keel:88 — into agreement) — the
-    # conditional form, not a flat `--force`, because the branch above also used to fire for a
-    # DIRECTORY at that path and hand it to force_backup's plain `cp`, which cannot copy one. Fixed
-    # structurally (dir #349): force_backup itself now declines a non-regular $keel_link, and the
-    # branch above folds that call into its own `elif` condition, so a decline falls straight through
-    # to this same wording either way — with or without --force. It is
-    # deliberately NOT $advise_refresh_force, whose linked form is `keel sync`: that dispatches THROUGH
-    # the very bin/keel this line reports is not wired — command-not-found at best, and running the
-    # ADOPTER'S OWN program at worst. Two independent legs of this batch's /code-review max pass
-    # reproduced that; the refusal above is fixed the same way for the same reason.
+    # conditional form, not a flat `--force`, because the wiring branch above used to fire for a
+    # DIRECTORY at that path too and hand it to force_backup's plain `cp`, which cannot copy one. Fixed
+    # structurally (dir #349): force_backup itself now declines a non-regular $keel_link — see that
+    # branch's own comment for the mechanics. Same $advise_install-not-$advise_refresh_force reasoning
+    # as the refusal above (bin/keel wiring block) applies to this WARN too — see there for why.
     # EPHEMERAL never reaches this block, so $advise_install is always reachable here.
     echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
   fi
