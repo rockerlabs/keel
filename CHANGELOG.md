@@ -340,8 +340,12 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   audit's own three named lines, is corrected here too so it doesn't contradict the fix right above it).
   The same file's own header (`tools/lib/artifact-cksum.sh:20`) is corrected from
   `[ -f ] && bash -n` to the guard actually shipped everywhere, `[ -s ] && bash -n` — the one lib
-  whose own header comment was missed when dir #362's own `/code-review max` pass changed all seven real
-  guard sites tree-wide. `install.sh:434`'s lock-residual cross-reference miscounted and mis-directed its
+  whose own header comment was missed when dir #363/#369's own `/code-review max` pass changed all nine
+  real guard sites tree-wide (four in `install.sh`, three in `uninstall.sh`, two in `tools/doctor.sh`).
+  This bullet's first draft misattributed the pass to dir #362 (which shipped the guard being described,
+  not the pass that fixed it) and miscounted the sites as seven, the count correct only when scoped to
+  `install.sh`/`uninstall.sh` alone, as stated above; both are corrected here, caught by this round's own
+  verifier. `install.sh:434`'s lock-residual cross-reference miscounted and mis-directed its
   siblings ("the three below": there are four named residuals at three sites — two above the citing
   line, one below, not three below); reworded to a form ("the three others in this lock section") that
   survives reordering. `install.sh:1425-1427`'s trailing comment after the `bin/keel` wiring chain named
