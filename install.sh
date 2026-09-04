@@ -358,6 +358,14 @@ fi
 # file (one fork of manifest_field's sed|head pipeline each time) would be pure waste.
 prior_manifest_usable=0
 manifest_usable "$prior_manifest" && prior_manifest_usable=1
+# Test-only fault injection (dir #351/#356): deletes $prior_manifest when
+# KEEL_TEST_DROP_PRIOR_MANIFEST=1, right after prior_manifest_usable is cached, so the regression test
+# can reproduce dir #350's sibling-sweep race deterministically instead of racing a real concurrent
+# install. No-op (empty effect) in every real run. A single-call-site, single-caller check like this
+# one needs no function wrapper — unlike _keel_test_checkpoint below, which earns its function form by
+# being generic (parameterized by checkpoint NAME) and called from many sites. Same top-level `&&`-list
+# idiom as the `manifest_usable` line right above: exempt from `set -e` the same way.
+[ "${KEEL_TEST_DROP_PRIOR_MANIFEST:-}" = 1 ] && rm -f "$prior_manifest"
 
 # force_backup DEST — DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
 # preserved is the content the adopter actually saw at that path). A fresh timestamp every call — never
@@ -500,7 +508,7 @@ record_placed() {
 # gives the same final answer. It is NOT free for TERMINATION: `cmp` on a non-regular `$dest` can block
 # forever — reproduced live: a FIFO at `$dest` hangs `cmp -s` indefinitely, the same failure this batch
 # already had to fix once for the manifest snapshot's own `cp` (see its `[ -f ]` guard above). The
-# two cheap, non-forking builtins come first because they settle the whole predicate, WITHOUT EVER
+# three cheap, non-forking builtins come first because they settle the whole predicate, WITHOUT EVER
 # CALLING `cmp`, on every manifest-less home (a fresh install, a pre-0.7 adopter) and on every symlinked
 # dest; moving `cmp` ahead of either would make those calls attempt it too, widening exposure to the
 # same hang rather than merely shifting a cost. `cmp` comes next, and the two forking clauses LAST, so
@@ -517,6 +525,12 @@ keel_own_untouched() {
   # say — see the docstring's own symlink case above. Unconditional, in BOTH modes, and deliberately
   # not a `$LINK` special case: see the docstring for why the copy→linked migration doesn't need one.
   [ ! -L "$dest" ] || return 1
+  # A FIFO/char-device/block-device/socket/directory at $dest blocks `cmp` forever, reproduced live
+  # (dir #351) — reject by type before the call, same idiom as the clause above. Explicit `|| return 1`,
+  # not a bare `[ -f ] &&` prefix on the `cmp` line, for the same set -e reason the clause above uses
+  # one: this function's own return status is what the caller sees, and an explicit return doesn't
+  # depend on the call site staying an exempt `elif` test forever.
+  [ -f "$dest" ] || return 1
   cmp -s "$src" "$dest" 2>/dev/null && return 1
   # …and neither is a HARD link, which `[ ! -L ]` cannot see: it IS a regular file, so its bytes match
   # and `atomic_copy`'s `mv -f` would sever it just as silently. Same rejection, same reason. An empty
@@ -529,7 +543,20 @@ keel_own_untouched() {
   dest_nlink="$(stat_portable_nlink "$dest")"
   [ "$dest_nlink" = 1 ] || return 1
   rel="${dest#"$HOME_DIR"/}"
-  prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest")"
+  # dir #356 (absorbed here): $prior_manifest can vanish mid-run under dir #350's own sibling-sweep
+  # race — a REGULAR file's continued existence is in question, not its type (contrast the `[ -f ]`
+  # guards above/below, which reject by type). Degrade silently on a missing/unreadable snapshot,
+  # exactly like every other manifest-less-home path this predicate already falls through for
+  # (`prior_manifest_usable=0` above) — losing this read only narrows what the predicate can
+  # OPTIMISTICALLY refresh with no prompt, it never threatens anything this run is about to WRITE
+  # (contrast dir #350's own merge-scratch guard, which is loud because losing ITS file would risk
+  # this run overwriting the manifest with un-trustworthy state). `2>/dev/null` suppresses the actual
+  # leak (a raw `awk: can't open file` on stderr); `|| true` matches manifest_field's own convention
+  # (tools/lib/manifest.sh) and is defensive rather than load-bearing — this statement is already
+  # set -e-safe at its one call site today (the `elif keel_own_untouched ...; then` exemption
+  # propagates into the function body), but `|| true` keeps it correct independent of that exemption
+  # ever holding at some future, non-exempt call site.
+  prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null)" || true
   # Rejecting $CKSUM_UNREADABLE on the PRIOR side is what closes the self-equal case, and it closes it
   # on both: an unreadable DEST yields the sentinel too, and the sentinel can only ever compare equal
   # to itself — so a guard here alone is enough, and it keeps artifact_cksum's fork behind the `&&`
@@ -552,7 +579,10 @@ in_sync() {
     # file is in sync however it's spelled. A link to a DIFFERENT checkout stays out of sync.
     [ -L "$2" ] && [ "$2" -ef "$1" ]
   else
-    cmp -s "$1" "$2"
+    # `[ -f "$2" ]` first (dir #351): a FIFO/char-device/etc. at $2 blocks `cmp` forever, and this is
+    # reachable independently of keel_own_untouched's own guard — a fresh install (no prior manifest)
+    # routes straight here without ever attempting `cmp` inside that predicate.
+    [ -f "$2" ] && cmp -s "$1" "$2"
   fi
 }
 if [ "$LINK" = 1 ]; then FIX="ln -sf"; else FIX="cp"; fi
@@ -681,6 +711,22 @@ sync_product() {
   # symlink (the checkout moved), already sit at $alias_dest?
   local alias_exists=0
   [ -n "$alias_dest" ] && { [ -e "$alias_dest" ] || [ -L "$alias_dest" ]; } && alias_exists=1
+  # dest_nonregular/non_regular_msg (dir #351) — computed once, same reasoning as $alias_exists above,
+  # for the two sites below that both need to recognize and decline a non-regular $dest (a code-review
+  # high pass on this ticket found the condition and message string duplicated verbatim between them).
+  # DELIBERATELY no `[ ! -L "$dest" ]` clause: `-e`/`-f` both follow a symlink to its target, so this
+  # is true for a BARE FIFO/char-device/directory at $dest (a symlink can never itself report as one of
+  # those — `-L` and that shape are mutually exclusive at the dentry level, so dropping `! -L` changes
+  # nothing for that case) AND for a symlink whose TARGET is one of those (found by this same review
+  # pass: every earlier guard in this diff explicitly excluded symlinks, so a dest that reaches Keel via
+  # `~/.claude/commands/wrap.md -> /some/fifo` fell through every check and reached `place()`'s `mv -f`,
+  # which replaces whatever dentry sits at $dest — symlink or not — silently destroying the adopter's
+  # link with none of this same predicate's own decline message). A dangling symlink (a moved/reaped
+  # checkout) and a symlink-to-regular-file (dir #323's own, unrelated, already-settled territory) are
+  # both still correctly excluded: `-e`/`-f` are false for the former (nothing to follow to) and true
+  # for the latter, so neither trips this flag.
+  local dest_nonregular=0 non_regular_msg="a non-regular file already exists there — left in place; remove or move it by hand, then re-run"
+  [ -e "$dest" ] && [ ! -f "$dest" ] && dest_nonregular=1
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
     return 1
@@ -713,12 +759,29 @@ sync_product() {
       # draft gated this on $dest_differs too, which silently dropped the line for that edge case).
       if [ -f "$dest" ]; then
         echo "  =    $name left untouched (yours; Keel's version lives at $(basename "$alias_dest")). Reclaim it: $advise_refresh_force"
+      elif [ "$dest_nonregular" = 1 ]; then
+        # dir #351 (found by the release-manager's own validation pass on this ticket, after the
+        # done-criterion's decline branch below was already written): reachable here too — a non-regular
+        # $dest can equally exist once a collision has already resolved to an alias, and $dest_differs
+        # above stays 0 for it (gated on `[ -f "$dest" ]` too), which correctly keeps --force from ever
+        # touching it — but that same gating also skipped this branch's own "left untouched" message, so
+        # the adopter got silence instead of the decline this ticket's own done-criterion promises. Same
+        # $non_regular_msg as the dedicated decline branch further down (the one this collision-resolved
+        # path would otherwise never reach), so the two read as one contract rather than two.
+        echo "  !    $name: $non_regular_msg"
       fi
       sync_product "$src" "$alias_dest"
     fi
   elif in_sync "$src" "$dest"; then
     echo "  =    $name (up to date)"
     record_placed "$dest"
+  elif [ "$dest_nonregular" = 1 ]; then
+    # dest exists as, or resolves through a symlink to, a non-regular file (FIFO, char/block device,
+    # socket, directory) — never silently placed over. Unconditional decline, --force included:
+    # force_backup (above) is a plain `cp "$dest" ...`, which hangs on a FIFO exactly the way `cmp` did
+    # (dir #351) — extending --force here would trade one hang for another, not remove one. Left as
+    # explicitly out of scope; an adopter who genuinely wants this dest reclaimed removes it by hand.
+    echo "  !    $name: $non_regular_msg"
   elif [ ! -f "$dest" ]; then
     # absent — or a dangling symlink (a moved/reaped checkout): place() replaces it atomically either way.
     place "$src" "$dest"

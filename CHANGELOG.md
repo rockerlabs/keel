@@ -61,6 +61,46 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   gained a matching drift check (check 9, not 8 — check 8 was already claimed by dir #321's PIPESTATUS
   check) asserting `artifact_cksum()` has exactly one definition tree-wide, scanning both `*.sh` files
   and the extensionless `keel` script.
+- **A non-regular file (a FIFO, a character/block device, or a directory) sitting at an install
+  destination could hang `install.sh` forever, or — once the hang was fixed at only one of the two
+  reachable call sites — be silently overwritten instead (dir #351, folding in dir #356).** `cmp -s`
+  blocks indefinitely on a FIFO, and that gap existed at three separate reads: `keel_own_untouched`'s
+  own `cmp` call, `in_sync`'s copy-mode `cmp` call (reached independently on every fresh install, before
+  `keel_own_untouched` ever runs), and `artifact_cksum`'s `cksum` call (unreachable only because the
+  `cmp` calls blocked first — a fix guarding `cmp` alone would have just moved the hang one clause
+  later). All three now reject a non-regular `$dest`/file by type before the blocking call, each with an
+  explicit `return 1`/decline rather than a bare conditional, so the guard's own correctness never
+  depends on staying inside a `set -e`-exempt `elif` test. Fixing only the hangs would have traded a
+  loud failure for a silent one: with both predicates guarded to decline a non-regular `$dest`, the next
+  clause in `sync_product`'s own chain (`[ ! -f "$dest" ]`, true for both "truly absent" and "a FIFO
+  sits here") would have routed straight into `place()`, silently overwriting whatever special file was
+  there with no prompt and no backup — worse than the hang it replaces. `sync_product` gained a new
+  branch, inserted ahead of that clause, that declines a non-regular, non-symlink `$dest` explicitly
+  instead; `--force` does not override it, since `force_backup` is a plain `cp` and would hang on a FIFO
+  the same way the original bug did. Folded in from dir #356: `keel_own_untouched`'s per-artifact `awk`
+  read of the prior manifest snapshot leaked a raw `awk: can't open file` to stderr when the snapshot
+  vanished mid-run under the known sibling-sweep race (dir #350) instead of degrading silently, the same
+  contract every other manifest-less-home path already honors — fixed with `2>/dev/null` and `|| true`,
+  and deliberately kept silent rather than made loud like dir #350's own merge-scratch guard, since
+  losing this read only narrows an optimization (whether a dest can be auto-refreshed with no prompt),
+  never threatens anything the run is about to write. Regression-tested against a FIFO through the
+  fresh-install, drifted-Keel-copy, and cksum-reachable paths (the last as a static mutation-guard pin,
+  since a live run of the fully-fixed code can no longer distinguish "guarded" from "merely unreached"),
+  a plain directory through the same new `sync_product` branch, and dir #356's own snapshot-vanishes
+  race via a small, permanent, test-only fault-injection hook mirroring the existing crash-checkpoint
+  one. **A second gap, found by review after the fix above first landed: the new decline branch sits
+  after `sync_product`'s own alias-collision branch in its `elif` chain, so a non-regular `$dest` at a
+  path whose name collision was already resolved to a `keel-<name>` alias reached that branch first and
+  printed nothing at all** — no hang, no clobber (the alias branch's own drift check is itself
+  `[ -f "$dest" ]`-gated, so `--force` correctly never touched it either), but also none of the "left in
+  place" message the done-criterion promises. The alias branch's own non-force arm now prints the same
+  decline line for that case. **Coverage limit, stated here rather than only in a test comment:** the
+  regression test for the drifted-Keel-copy path (a FIFO reached through `keel_own_untouched`'s own
+  guard) uses a command file (`commands/polish.md`), not a core doc file (`FRAMEWORK.md`/`PRINCIPLES.md`)
+  — a FIFO sitting at one of those instead correctly still fails the whole run's exit code, via
+  `install.sh`'s own pre-existing Verify block (which checks core files present by name, unrelated to
+  this fix), not the silent hang or clobber this fix targets. That interaction is intentional and
+  out of scope for this ticket, not a gap in the fix itself.
 
 ## [0.8.1] — 2026-09-03
 

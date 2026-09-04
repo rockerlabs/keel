@@ -30,8 +30,14 @@ CKSUM_UNREADABLE='cksum:0:0'
 # coreutils/busybox — both are POSIX cksum implementations; the filename field is dropped since a
 # home-relative path is already the record's own key). $CKSUM_UNREADABLE when FILE can't be read —
 # never equal to any real digest as far as a caller's own sentinel guard is concerned.
+# `[ -f "$1" ]` guard (dir #351): a FIFO/char-device FILE blocks `cksum` forever, the same hang this
+# batch already fixed for `cmp` — reject by type before the fork instead of hanging in it. A no-op for
+# both current callers (install.sh's own call is upstream-guarded by keel_own_untouched's own `[ -f ]`
+# clause; uninstall.sh's is upstream-guarded by its own `[ -f "$apath" ]`), and correct regardless of
+# who calls it next.
 artifact_cksum() {
   local sum size
+  [ -f "$1" ] || { printf '%s' "$CKSUM_UNREADABLE"; return; }
   read -r sum size _ < <(cksum "$1" 2>/dev/null) || { printf '%s' "$CKSUM_UNREADABLE"; return; }
   printf 'cksum:%s:%s' "$sum" "$size"
 }

@@ -813,4 +813,234 @@ pin "T14g …and says so" "$REPO_ROOT/install.sh" \
 pin "T14g …and actually aborts rather than falling through" "$REPO_ROOT/install.sh" \
   'exit 1   # merge-scratch guard' "the merge-temp guard no longer aborts — see T14g"
 
+# --- dir #351/#356: a non-regular $dest must never hang the install, nor be silently placed over -----
+# A dedicated disposable checkout, separate from $ckdir above (that one accumulates drift from T1-T14g's
+# own alias/force scenarios; these tests need a pristine copy of their own to drift independently).
+d351ck="$SANDBOX/dir351-checkout"
+cp -r "$REPO_ROOT" "$d351ck"
+rm -rf "$d351ck/.git"
+
+# T15 (fresh install, Fork 4 / path 1) — a FIFO sits at commands/wrap.md BEFORE any install ever ran
+# into this home: no manifest, prior_manifest_usable=0, so keel_own_untouched declines on its very
+# first clause without ever attempting `cmp` — this run's only guarded call site is in_sync's copy-mode
+# `cmp`, reached because sync_product's elif chain falls through keel_own_untouched straight to it.
+# Same bounded-wait + orphan-cleanup pattern as T14f (tests/test_install.sh's own established idiom for
+# a FIFO fixture): a mistake here does not go red, it hangs the whole suite.
+if command -v mkfifo >/dev/null 2>&1; then
+  t15home="$SANDBOX/fifo-fresh-install-home"; mkdir -p "$t15home/commands"
+  mkfifo "$t15home/commands/wrap.md" 2>/dev/null || true
+  if [ ! -p "$t15home/commands/wrap.md" ]; then
+    fail "T15 the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  fresh_home_env "$t15home"
+  t15_outfile="$SANDBOX/t15.out"
+  env "${FRESH_HOME_ENV[@]}" "$install" --home "$t15home" --no-hooks > "$t15_outfile" 2>&1 </dev/null &
+  t15_pid=$!
+  t15_waited=0
+  while kill -0 "$t15_pid" 2>/dev/null && [ "$t15_waited" -lt 30 ]; do
+    sleep 1; t15_waited=$((t15_waited + 1))
+  done
+  if kill -0 "$t15_pid" 2>/dev/null; then
+    : > "$t15home/commands/wrap.md" 2>/dev/null &
+    t15_writer=$!
+    pkill -P "$t15_pid" 2>/dev/null || true
+    kill -9 "$t15_pid" 2>/dev/null || true
+    wait "$t15_pid" 2>/dev/null || true
+    kill -9 "$t15_writer" 2>/dev/null || true
+    wait "$t15_writer" 2>/dev/null || true
+    fail "T15 a FIFO at a sync_product dest must not hang the install" "still running after ${t15_waited}s"
+  else
+    wait "$t15_pid"; t15_st=$?
+    # T15d (in_sync's guard, isolated): this run structurally exercises ONLY in_sync's copy-mode `cmp`
+    # guard (keel_own_untouched already declined on prior_manifest_usable=0 above, before its own `cmp`)
+    # — no separate fixture needed, per the spec's own "if T15 above doesn't already isolate it cleanly
+    # (it should, since fresh-install routes straight to in_sync)".
+    check_status "T15 a FIFO dest does not hang the install" 0 "$t15_st"
+    check_file "T15 …every OTHER shipped file still lands" "$t15home/FRAMEWORK.md"
+    t15out="$(cat "$t15_outfile" 2>/dev/null)"
+    check_contains "T15 …the new decline message names the non-regular dest" "$t15out" "wrap.md: a non-regular file already exists there"
+    if [ -p "$t15home/commands/wrap.md" ]; then
+      pass "T15 …the FIFO itself is untouched, never silently placed over"
+    else
+      fail "T15 …the FIFO itself is untouched, never silently placed over" "wrap.md is no longer a FIFO after the run"
+    fi
+  fi
+  rm -f "$t15home/commands/wrap.md" 2>/dev/null || true
+else
+  pass "T15 mkfifo unavailable — FIFO fresh-install guard not exercised here"
+fi
+
+# T15b (drifted-Keel-copy, Fork 1 / path 2) — baseline install places a real file; out of band the
+# adopter's dest is replaced with a FIFO; the checkout's own src then drifts. Re-run has
+# prior_manifest_usable=1 and a symlink-free dest, so this exercises keel_own_untouched's OWN `cmp`
+# guard (the new `[ -f "$dest" ] || return 1` clause), not in_sync's. commands/polish.md, not a core
+# doc file: the Verify block (install.sh's own, out of this ticket's scope) checks FRAMEWORK.md et al
+# by name and correctly fails the whole run's exit code if one is unusable — a FIFO sitting at a CORE
+# file would make this test conflate "the new decline branch fired" with "Verify also failed", which
+# isn't this ticket's fix. A command dest keeps the assertion scoped to Fork 2's own decline branch,
+# same as T15's own commands/wrap.md choice.
+if command -v mkfifo >/dev/null 2>&1; then
+  t15bhome="$SANDBOX/fifo-drifted-home"; mkdir -p "$t15bhome"
+  fresh_home_env "$t15bhome"
+  run env "${FRESH_HOME_ENV[@]}" "$d351ck/install.sh" --home "$t15bhome" --no-hooks
+  check_status "T15b baseline install → exit 0" 0 "$STATUS"
+  check_file "T15b baseline placed commands/polish.md" "$t15bhome/commands/polish.md"
+  t15b_manifest_before="$(grep -F 'artifact=file	commands/polish.md	' "$t15bhome/.keel/install-manifest.claude" 2>/dev/null)"
+  rm -f "$t15bhome/commands/polish.md"
+  mkfifo "$t15bhome/commands/polish.md" 2>/dev/null || true
+  if [ ! -p "$t15bhome/commands/polish.md" ]; then
+    fail "T15b the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  printf '\nT15B-DRIFTED-RELEASE\n' >> "$d351ck/commands/polish.md"
+  t15b_outfile="$SANDBOX/t15b.out"
+  env "${FRESH_HOME_ENV[@]}" "$d351ck/install.sh" --home "$t15bhome" --no-hooks > "$t15b_outfile" 2>&1 </dev/null &
+  t15b_pid=$!
+  t15b_waited=0
+  while kill -0 "$t15b_pid" 2>/dev/null && [ "$t15b_waited" -lt 30 ]; do
+    sleep 1; t15b_waited=$((t15b_waited + 1))
+  done
+  if kill -0 "$t15b_pid" 2>/dev/null; then
+    : > "$t15bhome/commands/polish.md" 2>/dev/null &
+    t15b_writer=$!
+    pkill -P "$t15b_pid" 2>/dev/null || true
+    kill -9 "$t15b_pid" 2>/dev/null || true
+    wait "$t15b_pid" 2>/dev/null || true
+    kill -9 "$t15b_writer" 2>/dev/null || true
+    wait "$t15b_writer" 2>/dev/null || true
+    fail "T15b a FIFO'd drifted dest must not hang the install" "still running after ${t15b_waited}s"
+  else
+    wait "$t15b_pid"; t15b_st=$?
+    check_status "T15b a FIFO'd drifted dest does not hang the install" 0 "$t15b_st"
+    t15bout="$(cat "$t15b_outfile" 2>/dev/null)"
+    check_contains "T15b …the new decline message names the non-regular dest" "$t15bout" "polish.md: a non-regular file already exists there"
+    if [ -p "$t15bhome/commands/polish.md" ]; then
+      pass "T15b …the FIFO itself is untouched, never silently placed over"
+    else
+      fail "T15b …the FIFO itself is untouched, never silently placed over" "commands/polish.md is no longer a FIFO after the run"
+    fi
+    t15b_manifest_after="$(grep -F 'artifact=file	commands/polish.md	' "$t15bhome/.keel/install-manifest.claude" 2>/dev/null)"
+    if [ "$t15b_manifest_after" = "$t15b_manifest_before" ]; then
+      pass "T15b …manifest record for the FIFO'd artifact is untouched (record_placed never called on it)"
+    else
+      fail "T15b …manifest record for the FIFO'd artifact is untouched (record_placed never called on it)" \
+        "before=$t15b_manifest_before after=$t15b_manifest_after"
+    fi
+  fi
+  rm -f "$t15bhome/commands/polish.md" 2>/dev/null || true
+else
+  pass "T15b mkfifo unavailable — drifted-copy FIFO guard not exercised here"
+fi
+
+# T15c (deep-path mutation guard, path 3) — a pre-fix code base would have hung one clause LATER at the
+# `cksum` call inside artifact_cksum, had `cmp` alone been guarded without also guarding `cksum` (the
+# ticket's own "moves the hang one clause later" warning). A live FIFO run of the FULLY-fixed code
+# cannot distinguish "cksum is guarded" from "cksum is merely unreached" (cmp's own guard rejects first)
+# — so this is a deliberate belt-and-braces STATIC pin, same shape as T14g, not a redundant live test.
+pin "T15c keel_own_untouched guards its own cmp call against a non-regular dest" "$REPO_ROOT/install.sh" \
+  '[ -f "$dest" ] || return 1' "the keel_own_untouched cmp guard is gone — see T15c"
+pin "T15c artifact_cksum guards its own cksum call against a non-regular file" "$REPO_ROOT/tools/lib/artifact-cksum.sh" \
+  '[ -f "$1" ] || { printf' "the artifact_cksum guard is gone — see T15c"
+
+# T15e (alias-collision gap, found by the release manager's own validation pass on this ticket) — the
+# alias-collision branch (`elif [ "$alias_exists" = 1 ]`) sits ABOVE the new decline branch in
+# sync_product's elif chain, so a non-regular $dest at a path whose name collision was already resolved
+# to a keel-<name> alias never reaches the decline branch at all. Not a hang risk (keel_own_untouched's
+# own `[ -f "$dest" ]` guard, proven safe by T15b, declines before the alias branch is even reached) and
+# not a clobber risk ($dest_differs stays 0 for a non-regular dest, so --force can't fire either) — but
+# pre-fix it was also NOT a decline message, silently violating the done-criterion. No bounded-wait
+# harness needed: the only new behavior under test is the message text, and hang-safety at this call
+# site is already covered by T15b's own guard on the identical `keel_own_untouched` predicate.
+if command -v mkfifo >/dev/null 2>&1; then
+  t15ehome="$SANDBOX/fifo-alias-collision-home"; mkdir -p "$t15ehome/commands"
+  printf '# my own go command, never touched by Keel\n' > "$t15ehome/commands/go.md"
+  fresh_home_env "$t15ehome"
+  run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t15ehome" --no-hooks
+  check_status "T15e baseline (virgin collision → alias created) → exit 0" 0 "$STATUS"
+  check_file "T15e keel-go.md alias created alongside" "$t15ehome/commands/keel-go.md"
+  rm -f "$t15ehome/commands/go.md"
+  mkfifo "$t15ehome/commands/go.md" 2>/dev/null || true
+  if [ ! -p "$t15ehome/commands/go.md" ]; then
+    fail "T15e the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t15ehome" --no-hooks
+  check_status "T15e a FIFO at a resolved-collision dest → exit 0 (no hang)" 0 "$STATUS"
+  check_contains "T15e …the alias branch's own non-force arm now prints the decline too" "$OUT" \
+    "go.md: a non-regular file already exists there"
+  if [ -p "$t15ehome/commands/go.md" ]; then
+    pass "T15e …the FIFO itself is untouched, never silently placed over"
+  else
+    fail "T15e …the FIFO itself is untouched, never silently placed over" "commands/go.md is no longer a FIFO after the run"
+  fi
+  check_file "T15e …the alias itself still gets its own drift check, unaffected" "$t15ehome/commands/keel-go.md"
+  rm -f "$t15ehome/commands/go.md" 2>/dev/null || true
+else
+  pass "T15e mkfifo unavailable — alias-collision FIFO guard not exercised here"
+fi
+
+# T15f (symlink-to-non-regular-target gap, found by this ticket's own /code-review high pass) — every
+# earlier guard in this diff explicitly excludes symlinks (`[ ! -L "$dest" ]`), which is correct for
+# `keel_own_untouched`'s OWN pre-existing symlink check (dir #323's unrelated, already-settled
+# contract) but was wrong for the new non-regular-dest decline: a symlink whose TARGET is a FIFO fell
+# through every guard here and reached `place()`'s `mv -f`, which replaces whatever dentry sits at
+# $dest — symlink included — silently destroying the adopter's link. Fixed by dropping the `[ ! -L ]`
+# clause from `$dest_nonregular` (`-e`/`-f` already follow the symlink to its target, and a dangling
+# symlink/symlink-to-regular-file are still correctly excluded — see the comment at sync_product's own
+# top). No hang risk to bound-wait for: `keel_own_untouched` declines any symlink dest on its own
+# pre-existing, unrelated `[ ! -L ]` clause before ever reaching this ticket's guards, and `in_sync`'s
+# `[ -f "$2" ]` already follows-and-declines a symlink-to-FIFO without calling `cmp` (T15's own guard,
+# proven safe) — this test is purely about the DECLINE MESSAGE and the symlink surviving, not liveness.
+if command -v mkfifo >/dev/null 2>&1; then
+  t15fhome="$SANDBOX/symlink-to-fifo-home"; mkdir -p "$t15fhome/commands"
+  mkfifo "$t15fhome/.the-real-fifo" 2>/dev/null || true
+  if [ ! -p "$t15fhome/.the-real-fifo" ]; then
+    fail "T15f the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
+  fi
+  ln -s "$t15fhome/.the-real-fifo" "$t15fhome/commands/wrap.md"
+  fresh_home_env "$t15fhome"
+  run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t15fhome" --no-hooks
+  check_status "T15f a symlink-to-FIFO dest → exit 0 (no hang)" 0 "$STATUS"
+  check_file "T15f …every OTHER shipped file still lands" "$t15fhome/FRAMEWORK.md"
+  check_contains "T15f …the decline message fires for the symlink's target, not just a bare FIFO" "$OUT" \
+    "wrap.md: a non-regular file already exists there"
+  if [ -L "$t15fhome/commands/wrap.md" ]; then
+    pass "T15f …the symlink itself is untouched, never silently replaced by place()"
+  else
+    fail "T15f …the symlink itself is untouched, never silently replaced by place()" "commands/wrap.md is no longer a symlink after the run"
+  fi
+  check_contains "T15f …and still points at the same FIFO" "$(readlink "$t15fhome/commands/wrap.md" 2>/dev/null)" \
+    "$t15fhome/.the-real-fifo"
+  rm -f "$t15fhome/commands/wrap.md" "$t15fhome/.the-real-fifo" 2>/dev/null || true
+else
+  pass "T15f mkfifo unavailable — symlink-to-non-regular-target guard not exercised here"
+fi
+
+# T16 (dir #356 fault injection) — KEEL_TEST_DROP_PRIOR_MANIFEST=1 deletes $prior_manifest right after
+# it's cached usable, deterministically reproducing dir #350's sibling-sweep race instead of racing a
+# real concurrent install. One core artifact is drifted first so keel_own_untouched is guaranteed to
+# reach the awk read rather than short-circuit on cmp matching.
+t16home="$SANDBOX/drop-prior-manifest-home"; mkdir -p "$t16home"
+fresh_home_env "$t16home"
+run env "${FRESH_HOME_ENV[@]}" "$d351ck/install.sh" --home "$t16home" --no-hooks
+check_status "T16 baseline install → exit 0" 0 "$STATUS"
+printf '\nT16-DRIFTED-RELEASE\n' >> "$d351ck/PRINCIPLES.md"
+run env "${FRESH_HOME_ENV[@]}" KEEL_TEST_DROP_PRIOR_MANIFEST=1 "$d351ck/install.sh" --home "$t16home" --no-hooks
+check_status "T16 a dropped prior-manifest snapshot still exits 0" 0 "$STATUS"
+check_absent "T16 no raw awk stderr leaks through" "$OUT" "awk: can't open file"
+check_absent "T16 …nor a bare source line number" "$OUT" "source line number"
+check_contains "T16 …and the run reaches Verify (liveness first — see T13's own comment on why)" "$OUT" "Verify:"
+
+# T17 (Fork 2's decline branch, non-FIFO case) — a plain empty DIRECTORY at $dest hits the identical new
+# sync_product branch, portable everywhere mkdir is (no mkfifo dependency). Pre-fix, `mv -f` inside
+# atomic_write silently succeeds by moving the temp file INSIDE the directory (POSIX mv semantics),
+# leaving a *.keeltmp.* orphan and no record — worse than a loud abort. Confirm the new branch prevents
+# that instead of merely not hanging.
+t17home="$SANDBOX/dir-at-dest-home"; mkdir -p "$t17home/commands/wrap.md"
+fresh_home_env "$t17home"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t17home" --no-hooks
+check_status "T17 a directory at a sync_product dest → exit 0 (no hang, no crash)" 0 "$STATUS"
+check_dir "T17 …the adopter's directory is left in place" "$t17home/commands/wrap.md"
+check_contains "T17 …the new decline message fires" "$OUT" "wrap.md: a non-regular file already exists there"
+check_status "T17 …no *.keeltmp.* orphan left anywhere under the directory" 0 \
+  "$(find "$t17home/commands/wrap.md" -name '*.keeltmp.*' 2>/dev/null | wc -l | tr -d ' ')"
+
 summary
