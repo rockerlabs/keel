@@ -302,12 +302,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   for the same tolerance. (2) `uninstall.sh`'s new `live_target="$(readlink ... 2>/dev/null)"` was a
   bare (non-`local`, non-guarded) command-substitution assignment, which — under `set -euo pipefail` —
   DOES propagate a failing `readlink` to `errexit`; a concurrent install/uninstall racing the same
-  home could silently abort mid-removal-loop with no diagnostic. Fixed with `|| true`. (3) The new
-  `[ -f ] && bash -n` guards on `tools/lib/manifest.sh`/`tools/lib/core-ownership.sh` (and, brought
-  into line for consistency, `tools/lib/artifact-cksum.sh`'s pre-existing dir #362 guards) didn't
-  detect a zero-byte file as corrupted — `bash -n` passes empty input, so a required lib would source
-  "successfully" while defining nothing, and the first call would crash with a raw "command not
-  found" instead of the guard's own intended clean message. Changed `-f` to `-s` everywhere. (4)
+  home could silently abort mid-removal-loop with no diagnostic. Fixed with `|| true`. (3) **Every
+  `[ -f ] && bash -n` lib-sourcing guard in this checkout — not just the two this round added — never
+  detected a zero-byte file as corrupted.** `bash -n` passes empty input (it's syntactically valid), so
+  a required lib would source "successfully" while defining nothing, and the first call would crash
+  with a raw "command not found" instead of the guard's own intended clean message — the exact failure
+  the guard exists to prevent, just for a different corruption shape (truncation, e.g. an interrupted
+  `bootstrap.sh` tarball fetch) than the one it was written against (a syntax error). This is not only
+  a hole in the two guards this round added: `tools/lib/artifact-cksum.sh`'s guards (dir #362) and
+  `tools/lib/stat-portable.sh`'s (dir #323) — both **already shipped, in earlier v0.8.2 PRs** — carried
+  the identical gap since the day each landed. Changed `-f` to `-s` in all seven `[ -f ] && bash -n`
+  sites across `install.sh`/`uninstall.sh` (found by this ticket's own `/code-review max` pass; not
+  limited to this ticket's own two new libs). (4)
   `tools/doctor.sh`'s two new REQUIRED guards ran unconditionally at file load, before any argument
   parsing — but every real call site lives inside `--install` mode, so an ORDINARY project audit
   (`doctor.sh [DIR...]`, unrelated to any install) with a corrupted `tools/lib/` would fail with a
