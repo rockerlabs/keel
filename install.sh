@@ -95,6 +95,13 @@ CODEX=0
 # precisely because of this — an alias refresh can legitimately produce its own backup too.
 FORCE=0
 EPHEMERAL="${KEEL_EPHEMERAL:-0}"   # env, not a flag: an internal bootstrap→install signal (see header)
+# NON_REGULAR_MSG — the one decline wording for "a FIFO/device/socket/directory sits where a Keel-
+# owned file belongs" (dir #351's own $non_regular_msg inside sync_product, and force_backup's matching
+# guard, dir #349). A shared top-level constant rather than each call site restating the string: the
+# duplication dir #351 already eliminated once (two sync_product call sites, same function) would
+# otherwise reappear one level up (two separate FUNCTIONS), which is exactly what a /simplify pass on
+# this ticket found.
+NON_REGULAR_MSG="a non-regular file already exists there — left in place; remove or move it by hand, then re-run"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -150,25 +157,6 @@ mode_flag=""
 [ "$CODEX" = 1 ] && mode_flag=" --codex"
 advise_install="install.sh$mode_flag$home_flag"      # re-run THIS install
 advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
-# advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
-# THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
-# install prefers `keel sync`; an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so
-# neither a bare re-run nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form
-# can (verified against README.md:84 / docs/getting-started.md:116).
-# BOTH of those forward their args straight through to install.sh and add no ARGUMENTS of their own
-# (keel:128, bootstrap.sh:141 — each does add something else: `keel sync` pulls the checkout first,
-# bootstrap sets KEEL_EPHEMERAL=1) — which is precisely why each has to carry the retargeting suffix
-# here rather than inherit it: without it, `keel sync --force` becomes a bare `install.sh --force` whose
-# home re-resolves to ${KEEL_HOME:-$HOME/.claude}, so a `--link --home DIR` adopter following the
-# advice builds a SECOND Keel at the default home and never touches the file it was about.
-if [ "$EPHEMERAL" = 1 ]; then
-  advise_refresh_force="curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s --$mode_flag$home_flag --force"
-elif [ "$LINK" = 1 ]; then
-  # $mode_flag is structurally empty here — --codex + --link is refused at the top of this script.
-  advise_refresh_force="keel sync$home_flag --force"
-else
-  advise_refresh_force="$advise_install --force"
-fi
 
 # CONTEXT_FILE — the harness's global always-loaded file name. Everywhere copy mode below writes or
 # mentions "the global context file", it routes through this instead of a hardcoded CLAUDE.md.
@@ -197,6 +185,31 @@ if [ "$CODEX" = 0 ] && [ -f "$HOME_DIR/keel/CORE.md" ] && [ ! -L "$HOME_DIR/keel
     NOGIT=1
     echo "install: this home is a --no-git install — keeping the trim (restore the git rails: install.sh --link$home_flag --with-git)"
   fi
+fi
+
+# advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
+# THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
+# install prefers `keel sync`; an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so
+# neither a bare re-run nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form
+# can (verified against README.md:84 / docs/getting-started.md:116).
+# BOTH of those forward their args straight through to install.sh and add no ARGUMENTS of their own
+# (keel:128, bootstrap.sh:141 — each does add something else: `keel sync` pulls the checkout first,
+# bootstrap sets KEEL_EPHEMERAL=1) — which is precisely why each has to carry the retargeting suffix
+# here rather than inherit it: without it, `keel sync --force` becomes a bare `install.sh --force` whose
+# home re-resolves to ${KEEL_HOME:-$HOME/.claude}, so a `--link --home DIR` adopter following the
+# advice builds a SECOND Keel at the default home and never touches the file it was about.
+# Computed here, AFTER both sticky linked-mode auto-detect blocks above have finalized $LINK (dir #349
+# — an earlier draft computed this ~16 lines above the sticky detect, so `keel sync` and every plain
+# `./install.sh` re-run over a linked home fell to the copy-mode form below even though the home is
+# linked; not data loss, since $home_flag still points at the right home, but the adopter was handed
+# the cwd-dependent form in exactly the case `keel sync` exists to avoid).
+if [ "$EPHEMERAL" = 1 ]; then
+  advise_refresh_force="curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh | sh -s --$mode_flag$home_flag --force"
+elif [ "$LINK" = 1 ]; then
+  # $mode_flag is structurally empty here — --codex + --link is refused at the top of this script.
+  advise_refresh_force="keel sync$home_flag --force"
+else
+  advise_refresh_force="$advise_install --force"
 fi
 
 # --no-git / --with-git are linked-mode verbs: the trim lives in a generated keel/CORE.md, which only
@@ -378,8 +391,22 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # SEPARATE runs, which is the case dir #323 actually needed. Never recorded in the manifest: a backup is
 # adopter data, so uninstall.sh (which removes by manifest, never by heuristic) must leave it behind —
 # a backup uninstall removes is not a backup.
+# Guarded against a non-regular DEST (dir #349): a plain `cp` hangs on a FIFO and fails outright on a
+# directory/device/socket — reached live at the bin/keel call site below (a directory there + --force
+# used to abort the whole run under `set -euo pipefail`, verified). One guard here covers all three call
+# sites, present and future, instead of asking each to re-derive it — same reasoning, and the same
+# $NON_REGULAR_MSG wording, as sync_product's own $dest_nonregular (dir #351). Declines, prints why, and
+# returns 1 rather than letting `cp` abort — self-contained, so a future call site that never checks the
+# return value still gets a clear one-line explanation instead of a silent decline (the bin/keel site
+# below DOES check it, since that is the one path that can actually reach this today: its own `elif`
+# folds the check into `[ "$FORCE" = 1 ] && force_backup "$dest"`, so a decline here falls through to
+# that site's existing untouched-message the same way a plain non-force run already does).
 force_backup() {
   local dest="$1" ts
+  if [ -e "$dest" ] && [ ! -f "$dest" ]; then
+    echo "  !    $(basename "$dest"): $NON_REGULAR_MSG"
+    return 1
+  fi
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   cp "$dest" "$dest.$ts.bak"
   echo "  ~    $(basename "$dest") backed up → $(basename "$dest").$ts.bak (--force)"
@@ -725,7 +752,7 @@ sync_product() {
   # checkout) and a symlink-to-regular-file (dir #323's own, unrelated, already-settled territory) are
   # both still correctly excluded: `-e`/`-f` are false for the former (nothing to follow to) and true
   # for the latter, so neither trips this flag.
-  local dest_nonregular=0 non_regular_msg="a non-regular file already exists there — left in place; remove or move it by hand, then re-run"
+  local dest_nonregular=0 non_regular_msg="$NON_REGULAR_MSG"
   [ -e "$dest" ] && [ ! -f "$dest" ] && dest_nonregular=1
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
@@ -1088,27 +1115,34 @@ elif [ -f "$root/keel" ]; then
   if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
     echo "  =    bin/keel already wired"
     record_placed "$keel_link"
-  elif [ -L "$keel_link" ] || [ ! -e "$keel_link" ] || [ "$FORCE" = 1 ]; then
-    # Real file + --force is the only case needing a backup first; every other case reaching here
-    # (absent, or a dangling/stale symlink) has nothing of the adopter's to preserve.
-    keel_link_suffix=""
-    if [ ! -L "$keel_link" ] && [ -e "$keel_link" ]; then
-      force_backup "$keel_link"
-      keel_link_suffix=" — real file backed up first (--force)"
-    fi
+  elif [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
+    # Absent, or a dangling/stale symlink — nothing of the adopter's to preserve.
     make_link "$root/keel" "$keel_link"
     record_placed "$keel_link"
-    echo "  +    bin/keel → $root/keel  (run 'keel help')$keel_link_suffix"
+    echo "  +    bin/keel → $root/keel  (run 'keel help')"
+  elif [ "$FORCE" = 1 ] && force_backup "$keel_link"; then
+    # A real file + --force is the only case needing a backup first, and the only one force_backup
+    # actually performs: its own internal guard (dir #349) declines and returns 1 for a non-regular
+    # $keel_link — a DIRECTORY/FIFO/device/socket satisfies `[ ! -L ] && [ -e ]` too, and a plain `cp`
+    # cannot copy one (verified live: it used to abort the whole run mid-sync under `set -euo
+    # pipefail`). Folding the call into the `elif` condition itself means a decline falls straight
+    # through to the SAME else branch below the non-force case already uses — no separate message to
+    # keep in sync, and --force simply never reaches a non-regular file, mirroring sync_product's own
+    # $dest_nonregular guard (dir #351): unconditional decline, --force included.
+    make_link "$root/keel" "$keel_link"
+    record_placed "$keel_link"
+    echo "  +    bin/keel → $root/keel  (run 'keel help') — real file backed up first (--force)"
   else
-    # $advise_install, matching the Verify WARN below and tools/doctor.sh:734, and NOT
-    # $advise_refresh_force: its linked form is `keel sync`, which dispatches through the bin/keel this
-    # very line reports is occupied by something that is not Keel's symlink — so it is command-not-found
-    # at best, and runs the ADOPTER'S OWN program at worst (reproduced live by this batch's own
-    # /code-review max pass, on two independent legs). dir #324 gave this line --force but kept the
-    # unreachable command; making the two lines one run prints AGREE is the point, and agreeing on a
-    # command that cannot run is not a fix. --force is CONDITIONAL here for the same reason it is
-    # below: this branch also fires for a DIRECTORY at that path, and force_backup's plain `cp` cannot
-    # copy one — following a flat --force would abort the run mid-sync (verified live).
+    # Reached by: a real file with no --force, OR --force against a non-regular $keel_link (force_backup
+    # above declined and already explained why). $advise_install, matching the Verify WARN below and
+    # tools/doctor.sh's own W-CLI-UNWIRED, and NOT $advise_refresh_force: its linked form is `keel
+    # sync`, which dispatches through the bin/keel this very line reports is occupied by something that
+    # is not Keel's symlink — so it is command-not-found at best, and runs the ADOPTER'S OWN program at
+    # worst (reproduced live by this batch's own /code-review max pass, on two independent legs). dir
+    # #324 gave this line --force but kept the unreachable command; making the two lines one run prints
+    # AGREE is the point, and agreeing on a command that cannot run is not a fix. --force is CONDITIONAL
+    # here for the same reason: a DIRECTORY at that path lands here too (dir #349), so the wording stays
+    # accurate — --force helps for a real file, never for a directory.
     echo "  !    $keel_link exists and is not a Keel symlink — left it untouched (remove it, or re-run '$advise_install' with --force if a real file, not a symlink or a directory, sits there — it gets backed up first)."
   fi
 fi
@@ -1233,16 +1267,13 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
   else
     # What was wrong here was the silence about --force, not the command: a BARE re-run reproduces
     # this identical WARN, so the two lines one run prints about the SAME file contradicted each other.
-    # This follows tools/doctor.sh:734's W-CLI-UNWIRED shape — the conditional form, not a
-    # flat `--force`, because the branch that lands here also fires for a DIRECTORY at that path, and
-    # force_backup's plain `cp` cannot copy one (it would abort the run mid-way; verified live). NOT
-    # verbatim any more: the "or a directory" carve-out is spelled here and at the refusal above, while
-    # tools/doctor.sh:734 and keel:88 still say only "not a symlink" — and doctor's own else-arm DOES
-    # fire for a directory, so it advises the --force that aborts. Left as-is here: those two lines are
-    # outside this batch's findings. (An earlier draft also claimed doctor's exact string is pinned by
-    # tests/test_install_link.sh — it is not: that helper asserts the bracketed finding code and exit 0,
-    # nothing about the wording. Closing the drift is a one-line string edit, not an expensive one.)
-    # Noted in the PR body; it wants its own ticket. It is
+    # This matches tools/doctor.sh's own W-CLI-UNWIRED wording (dir #349 brought all four sites — this
+    # line, the refusal above, tools/doctor.sh's W-CLI-UNWIRED, and keel:88 — into agreement) — the
+    # conditional form, not a flat `--force`, because the branch above also used to fire for a
+    # DIRECTORY at that path and hand it to force_backup's plain `cp`, which cannot copy one. Fixed
+    # structurally (dir #349): force_backup itself now declines a non-regular $keel_link, and the
+    # branch above folds that call into its own `elif` condition, so a decline falls straight through
+    # to this same wording either way — with or without --force. It is
     # deliberately NOT $advise_refresh_force, whose linked form is `keel sync`: that dispatches THROUGH
     # the very bin/keel this line reports is not wired — command-not-found at best, and running the
     # ADOPTER'S OWN program at worst. Two independent legs of this batch's /code-review max pass
