@@ -1266,6 +1266,32 @@ while IFS= read -r rel; do
 done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel' ':!tools/self/doctor.sh')
 [ "$ps_hit" -eq 0 ] && say "  OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
+# --- 9. artifact_cksum has exactly one definition tree-wide (dir #362) ----------------------------
+# dir #362 extracted install.sh's own artifact_cksum/CKSUM_UNREADABLE (previously ALSO hand-copied,
+# output-identical, inside uninstall.sh) into tools/lib/artifact-cksum.sh, sourced (required, not
+# optional — see that file's own header) by both. Same class as check 1/1b above: a promise that the
+# two callers no longer keep a local copy, verified instead of trusted, so a future hand-copy is caught
+# structurally the moment it's added rather than waiting for behaviour to drift apart. Unlike dir
+# #363's ownership-predicate lib, neither install.sh nor uninstall.sh keeps an inline FALLBACK function
+# for this one (the guard's else branch errors out, it doesn't degrade) — so there is no exempt copy to
+# carve out here, only the shared lib's own definition.
+say ""
+say "● artifact_cksum single-definition (dir #362)"
+# Absence graded the same way check 1b grades an absent core-@import pattern above: a repo that
+# defines artifact_cksum() NOWHERE (e.g. this file's own test fixtures, which model only the specific
+# rule under test) simply doesn't have this function at all — valid, not a drift. The drift this check
+# exists to catch is a definition surviving somewhere OTHER than the shared lib, or in more than one
+# place — the hand-copy shape dir #362 removed.
+cksum_def_re='^[[:space:]]*artifact_cksum[[:space:]]*\(\)[[:space:]]*\{'
+cksum_defs="$(git -C "$repo_root" grep -lE "$cksum_def_re" -- '*.sh' 'keel' 2>/dev/null || true)"
+if [ -z "$cksum_defs" ]; then
+  :   # no definition anywhere — no rule to keep in sync here
+elif [ "$cksum_defs" != "tools/lib/artifact-cksum.sh" ]; then
+  gap "artifact_cksum() is defined in {$cksum_defs} — expected exactly one definition, in tools/lib/artifact-cksum.sh (dir #362: install.sh/uninstall.sh must source it, never hand-copy it)"
+else
+  say "  OK   artifact_cksum() has exactly one definition, in tools/lib/artifact-cksum.sh"
+fi
+
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
 run_check() {
   local label="$1"; shift

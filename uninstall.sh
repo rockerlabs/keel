@@ -120,13 +120,21 @@ manifest_usable() {
 # "is THIS/THE OTHER mode's manifest here usable" reads these instead of re-deriving the same answer.
 this_usable=0;  manifest_usable "$this_manifest"  && this_usable=1
 other_usable=0; manifest_usable "$other_manifest" && other_usable=1
-# artifact_cksum FILE — mirror of install.sh's own (must stay byte-identical: its output is compared
-# against what install.sh itself recorded, not re-derived independently).
-artifact_cksum() {
-  local sum size
-  read -r sum size _ < <(cksum "$1" 2>/dev/null) || { printf 'cksum:0:0'; return; }
-  printf 'cksum:%s:%s' "$sum" "$size"
-}
+# artifact-cksum (dir #362) — REQUIRED, not optional: install.sh writes CKSUM_UNREADABLE/
+# artifact_cksum's output unconditionally into a manifest `file` record, and the removal decision
+# below (the `artifact_cksum "$apath" = "$extra"` comparison) trusts that value for a destructive
+# choice. Refusing outright on a missing/corrupted lib — rather than degrading to a fallback stub — is
+# the same "an ownership decision needs a real cksum comparison" posture install.sh's own copy of this
+# guard documents; see tools/lib/artifact-cksum.sh's own header for the full reasoning. Same
+# `[ -f ] && bash -n` pre-check as install.sh: a bare `.` can't be guarded against a parse-time
+# syntax-error abort under `set -e`.
+if [ -f "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/artifact-cksum.sh
+  . "$root/tools/lib/artifact-cksum.sh"
+else
+  echo "uninstall: tools/lib/artifact-cksum.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real cksum comparison; re-clone or re-download Keel and re-run uninstall.sh" >&2
+  exit 1
+fi
 # artifact_shared_with_other REL — dir #124's structural closure: true iff REL is ALSO a recorded
 # artifact in the OTHER mode's manifest at this SAME home. Presence, not cksum agreement — the question
 # is "does the other install still need this file to exist", not "do the two installs agree on its

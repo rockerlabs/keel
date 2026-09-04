@@ -71,8 +71,12 @@ check_contains "explains the refusal" "$OUT" "already-stamped"
 # naming it, never by cloning the branch tip. That isolates "did KEEL_DEFAULT_REF's tag actually get
 # used" from "the branch tip happened to already have the marker".
 fixture="$SANDBOX/fixture-repo"
-mkdir -p "$fixture/templates" "$fixture/tools"
+mkdir -p "$fixture/templates" "$fixture/tools/lib"
 cp "$REPO_ROOT/install.sh" "$fixture/install.sh"
+# tools/lib/artifact-cksum.sh (dir #362) is REQUIRED, not optional, unlike manifest.sh/stat-portable.sh
+# — install.sh refuses outright without it, so this fixture (otherwise deliberately tools/-lib-less)
+# must carry this one file for the end-to-end install below to succeed at all.
+cp "$REPO_ROOT/tools/lib/artifact-cksum.sh" "$fixture/tools/lib/artifact-cksum.sh"
 cp "$REPO_ROOT/CORE.md" "$REPO_ROOT/FRAMEWORK.md" "$REPO_ROOT/PRINCIPLES.md" "$fixture/"
 cp "$REPO_ROOT/templates/CLAUDE.md" "$REPO_ROOT/templates/INSTANCE.md" \
    "$REPO_ROOT/templates/LEARNINGS.md" "$REPO_ROOT/templates/IDEAS.md" "$fixture/templates/"

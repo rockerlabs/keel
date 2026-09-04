@@ -43,6 +43,24 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   extraction (PR #311) exists to close; the tool's single-operator design means the concurrent writer
   this trade-off would protect against does not arise in practice, so the trade is now stated plainly
   next to the code as an accepted design assumption rather than left silent.
+- **`artifact_cksum`/`CKSUM_UNREADABLE` extracted into a new `tools/lib/artifact-cksum.sh`, shared by
+  `install.sh` and `uninstall.sh` (dir #362).** Previously `install.sh` defined both inline and
+  `uninstall.sh` carried an output-identical hand-copy with the sentinel literal inlined instead of
+  named — now there is exactly one definition, sourced by both. **This creates a deliberate,
+  user-visible three-way asymmetry in how a broken checkout's `tools/lib/` dependencies are handled**,
+  worth naming explicitly: `tools/lib/manifest.sh` and `tools/lib/stat-portable.sh` guard an *optional*
+  refinement, so a missing or corrupted copy of either degrades the install (the smart-refresh
+  shortcut is disabled) and still finishes with exit 0. `tools/lib/artifact-cksum.sh` guards a value
+  written *unconditionally* into every manifest `file` record, which `uninstall.sh` later trusts for a
+  destructive removal decision — a same-shape "degrade and continue" fallback here would silently make
+  every artifact compare as a false match, so instead a missing or corrupted copy makes both
+  `install.sh` and `uninstall.sh` refuse outright, with one actionable message, rather than complete
+  under a value that can no longer be trusted. In every real-world install (`bootstrap.sh` always
+  clones or downloads a full checkout) this file is always present, so no adopter install is affected —
+  the divergence is only observable in a deliberately minimal/corrupted checkout. `tools/self/doctor.sh`
+  gained a matching drift check (check 9, not 8 — check 8 was already claimed by dir #321's PIPESTATUS
+  check) asserting `artifact_cksum()` has exactly one definition tree-wide, scanning both `*.sh` files
+  and the extensionless `keel` script.
 
 ## [0.8.1] — 2026-09-03
 
