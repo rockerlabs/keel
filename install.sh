@@ -182,8 +182,12 @@ if [ -f "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-o
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
 else
-  keel_core_is_link() { [ -L "$1" ]; }
-  keel_core_is_nogit_trim() { [ -f "$1" ] && [ ! -L "$1" ] && grep -q 'KEEL-NOGIT' "$1" 2>/dev/null; }
+  keel_core_is_link() {
+    [ -L "$1" ]
+  }
+  keel_core_is_nogit_trim() {
+    [ -f "$1" ] && [ ! -L "$1" ] && grep -q 'KEEL-NOGIT' "$1" 2>/dev/null
+  }
 fi
 
 # Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES

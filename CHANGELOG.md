@@ -210,7 +210,15 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   check (check 10, immediately after dir #362's own check 9) asserting each of the four functions has
   exactly one real definition tree-wide, with `install.sh`'s two documented fallback/stub copies
   (`manifest_usable`'s pre-existing dir #323 stub, and the ownership predicate's dir #363 fallback)
-  carved out as the one exempt case each — a hand-copy anywhere else still fails the check.
+  carved out as the one exempt case each — a hand-copy anywhere else still fails the check. **The
+  ownership predicate's fallback copy is additionally compared BODY-FOR-BODY against the canonical
+  definition** (found by this ticket's own altitude review): counting copies and locations alone would
+  say OK for a fallback that has silently drifted from the real predicate, since the shape (one
+  canonical definition plus one documented exempt copy) stays correct either way — exactly the
+  invariant the "byte-identical" contract claims but a count-only check never verified. `install.sh`'s
+  fallback was reformatted to genuinely match `tools/lib/core-ownership.sh`'s own multi-line body
+  (previously a one-liner with the same logic but different text, an unintentional overstatement of
+  "byte-identical" in its own comment) so the two are now provably the same, not merely claimed to be.
 - **The manifest's `artifact=symlink <rel> -` record carried no target of its own, so `uninstall.sh`
   could not ask the manifest whether a symlink was still Keel's and had to hand-mirror `install.sh`'s
   own wiring in a table instead (dir #369, a passenger riding with dir #363 since both touch the same
@@ -227,14 +235,25 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `artifact=symlink\t<rel>\t<extra>`), and neither script's parser cared what that field held before
   now, so a manifest written by an OLDER `install.sh` — carrying the literal `-` placeholder forever,
   since nothing rewrites an old record until its own artifact is next re-placed — stays fully readable.
-  **That old placeholder fails closed by construction, not as a bolted-on special case:** `-` can never
-  equal a real `readlink` target, so the plain string comparison declines ownership for it the same way
-  it declines a genuine mismatch, with no separate code path needed — the adopter regains
-  auto-removal for that one artifact the next time `install.sh` re-places it. New regression coverage
-  (`tests/test_uninstall.sh` B34) proves the actual gap this closes: a symlinked artifact recorded under
-  a `rel` the old table never covered (no fixed case, no `commands/*.md`-shaped match) is now correctly
-  recognized and removed via the manifest's recorded target alone — reproduced red against the pre-fix
-  table (declined, left behind forever) and green after.
+  New regression coverage (`tests/test_uninstall.sh` B34) proves the actual gap this closes: a
+  symlinked artifact recorded under a `rel` the old table never covered (no fixed case, no
+  `commands/*.md`-shaped match) is now correctly recognized and removed via the manifest's recorded
+  target alone — reproduced red against the pre-fix table (declined, left behind forever) and green
+  after.
+  **What happens to a manifest written before this change (revised after the release-manager session's
+  review caught the first draft shipping a false claim):** a `-` record can never equal a real
+  `readlink` target, so an exact-match comparison alone declines it — the right direction (fail
+  closed), but the FIRST draft printed the SAME message a genuine re-pointed-symlink mismatch uses,
+  which is **false** for this population (the link is exactly where Keel wired it; the manifest simply
+  predates the field) and would have made every pre-0.8.2 install permanently un-uninstallable for its
+  symlinks (`bin/keel`, `keel/CORE.md`, every command), reported as a success. Fixed with a structural
+  fallback scoped to legacy (`-`/empty) records only: does the live symlink resolve into THIS checkout
+  (`$root`) — one predicate, not the deleted per-path table, so it reintroduces no hand-copy. A legacy
+  install whose symlinks are untouched is now correctly recognized and cleanly removable again; one
+  that was genuinely re-pointed outside the checkout still declines, now with an honest message naming
+  the real reason ("recorded by an install predating the target field") and the remedy (re-run
+  `install.sh` to refresh the manifest, then uninstall) instead of the false "moved" claim. New
+  regression coverage (`tests/test_uninstall.sh` B35/B36) covers both legacy-record outcomes.
 
 ## [0.8.1] — 2026-09-03
 

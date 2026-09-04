@@ -717,17 +717,30 @@ take() {
 # The manifest is already the contract between the two scripts; this makes it the ONLY one for symlink
 # provenance, with no separate table to fall out of sync.
 #
-# OLD-MANIFEST FAIL-CLOSED (dir #369's own compatibility decision, not left to fall out of the code):
-# a manifest written by a PRE-dir-369 install.sh still carries the literal `-` placeholder in this
-# field forever (nothing rewrites an old record until its own artifact is re-placed) — no manifest
-# version bump for this, since the line format/arity is unchanged and neither script's parser cared
-# what this field held before now. `-` can never equal a real `readlink` target, so the plain string
-# comparison below already declines ownership for it without a special case — fail-closed, matching
-# route 3's own original direction, just for a wider reason (no data recorded at all, not merely "no
-# rule matched a fixed table"). The adopter regains auto-removal for that one artifact the next time
-# install.sh re-places it (any drift-refresh or a plain re-run that still confirms the file, since
-# record_placed re-derives EXTRA from the live symlink every time it's called) — until then it is kept,
-# never removed, which costs nothing since removal is the destructive direction.
+# OLD-MANIFEST COMPATIBILITY (dir #369's own decision, revised after the release-manager session's
+# review caught the first draft shipping a false claim to adopters): a manifest written by a
+# PRE-dir-369 install.sh still carries the literal `-` placeholder in this field forever (nothing
+# rewrites an old record until its own artifact is re-placed) — no manifest version bump for this,
+# since the line format/arity is unchanged and neither script's parser cared what this field held
+# before now.
+#
+# The FIRST draft of this fix declined ownership outright for `-` (an exact-match comparison against
+# a placeholder that can never equal a real `readlink` target, no special case needed) and printed the
+# SAME "symlink no longer points where Keel would have wired it" message the genuine-mismatch case
+# uses. That message is FALSE for this population: the link is exactly where Keel wired it, the
+# manifest simply predates the field — and it made every pre-dir-369 install permanently
+# un-uninstallable for its symlinks (bin/keel, keel/CORE.md, every command), reported as a success.
+# Fail-closed was the right DIRECTION; the message and the completeness were wrong.
+#
+# Fixed with a structural fallback SCOPED TO LEGACY RECORDS ONLY (the removal loop's own comment below
+# has the exact shape): `-`/empty EXTRA falls back to one predicate — does the live symlink resolve
+# into THIS checkout ($root) — instead of the deleted per-path table, so it reintroduces no hand-copy
+# and no drift risk. Looser than the exact-match case (any file in the checkout, not the one specific
+# intended source), but that slack is bounded to "removes a symlink that points somewhere inside the
+# Keel checkout" — never outside it — and only for manifests this old. A legacy record whose symlink
+# does NOT resolve into $root (genuinely re-pointed elsewhere) still declines, now with an honest
+# message naming the actual reason (predates the field, not "moved") and the actual remedy (re-run
+# install.sh to refresh the manifest, then uninstall).
 #
 # kind_mismatch REL WAS NOW — the one wording for a manifest/filesystem kind disagreement, shared by
 # the removal loop's three call sites (symlink recorded, now some other kind; file recorded, now a
@@ -769,10 +782,36 @@ if [ "$this_usable" = 1 ]; then
     owned=0
     if [ "$akind" = "symlink" ]; then
       if [ -L "$apath" ]; then
-        if [ -n "$extra" ] && [ "$extra" != "-" ] && [ "$(readlink "$apath" 2>/dev/null)" = "$extra" ]; then
-          owned=1
+        live_target="$(readlink "$apath" 2>/dev/null)"
+        if [ -n "$extra" ] && [ "$extra" != "-" ]; then
+          if [ "$live_target" = "$extra" ]; then
+            owned=1
+          else
+            echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+          fi
         else
-          echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+          # Legacy record (extra is the pre-dir-369 `-` placeholder, or empty) — no target was
+          # recorded at install time, so there is nothing to exact-match against. Falling straight to
+          # the mismatch message above would be FALSE for this population: the link is exactly where
+          # Keel wired it, the manifest simply predates the field (found by the release-manager
+          # session's own review of this ticket) — and it would make every pre-dir-369 install
+          # permanently un-uninstallable for its symlinks, reported as a success. Fall back to one
+          # structural check instead of re-adding the per-path table dir #369 removed: a symlink Keel
+          # actually placed always resolves into THIS checkout ($root, computed the same way
+          # install.sh's own is) — looser than the exact-match case above (any file in the checkout,
+          # not the one specific intended source), but table-free and scoped to legacy records only.
+          case "$live_target" in
+            "$root"/*)
+              owned=1
+              ;;
+            *)
+              # dir #98 advice class: install.sh has to be reachable from THIS home, same as every
+              # other advised command in this file (other_mode_install_flag below is the same
+              # locally-computed-at-use-site shape).
+              legacy_mode_flag=""; [ "$CODEX" = 1 ] && legacy_mode_flag=" --codex"
+              echo "  !    $rel: symlink recorded by an install predating the target field — can't confirm it's still Keel's (it doesn't resolve inside this checkout) — left in place (kept; re-run install.sh$legacy_mode_flag --home \"$HOME_DIR\" to refresh the manifest, then uninstall)"
+              ;;
+          esac
         fi
       elif [ -e "$apath" ]; then
         kind_mismatch "$rel" symlink "a regular file"

@@ -1593,17 +1593,26 @@ check_absent "and reports no GAP over it" "$OUT" "GAP"
 # tools/lib/core-ownership.sh) — plus install.sh's own documented, EXEMPT fallback/stub copies of
 # manifest_usable (dir #323, predates this ticket) and both ownership-predicate functions (dir #363's
 # own degradation contract), which must NOT themselves trigger a GAP — that exemption is the one part
-# of this check that isn't a copy of check 11's own shape.
+# of this check that isn't a copy of check 11's own shape. The ownership-predicate pair's fallback copy
+# is additionally BODY-compared against the canonical one (found by this ticket's own altitude review:
+# an earlier draft of this check verified only count/location, so the one duplicate the design
+# deliberately permits — install.sh's fallback — was exactly the one whose "byte-identical" contract
+# went unverified) — the fixture below therefore uses the SAME real predicate text in both copies for
+# keel_core_is_link/keel_core_is_nogit_trim, not a `:` placeholder, so the clean case genuinely proves
+# the comparison passes rather than never running it.
 plant_manifest_and_ownership_libs() {
   mkdir -p "$1/tools/lib"
   printf '#!/usr/bin/env bash\nmanifest_field() {\n  :\n}\nmanifest_usable() {\n  :\n}\n' \
     > "$1/tools/lib/manifest.sh"
-  printf '#!/usr/bin/env bash\nkeel_core_is_link() {\n  :\n}\nkeel_core_is_nogit_trim() {\n  :\n}\n' \
+  printf '#!/usr/bin/env bash\nkeel_core_is_link() {\n  [ -L "$1" ]\n}\nkeel_core_is_nogit_trim() {\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q '"'"'KEEL-NOGIT'"'"' "$1" 2>/dev/null\n}\n' \
     > "$1/tools/lib/core-ownership.sh"
   # install.sh's own documented, exempt fallback/stub copies — proving these don't themselves trip
   # the check, same shape as its real optional-source else branch (manifest_field is NOT among them:
-  # install.sh's real code never calls it, so it carries no stub of that one).
-  printf '#!/usr/bin/env bash\nmanifest_usable() { return 1; }\nkeel_core_is_link() { [ -L "$1" ]; }\nkeel_core_is_nogit_trim() { [ -f "$1" ]; }\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
+  # install.sh's real code never calls it, so it carries no stub of that one). The ownership-predicate
+  # pair is body-identical to tools/lib/core-ownership.sh's own copy above (modulo indentation, which
+  # extract_fn_body normalizes away) — manifest_usable's stub is deliberately NOT (a `return 1;` stub
+  # is never claimed to match anything, so it carries no body check).
+  printf '#!/usr/bin/env bash\nmanifest_usable() { return 1; }\nkeel_core_is_link() {\n  [ -L "$1" ]\n}\nkeel_core_is_nogit_trim() {\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q '"'"'KEEL-NOGIT'"'"' "$1" 2>/dev/null\n}\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
     > "$1/install.sh"
   printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, and tools/lib/core-ownership.sh"\n' \
     "$fake_widget" > "$1/tests/test_tools.sh"
@@ -1632,6 +1641,18 @@ run "$sd" "$d" --quiet
 check_status "keel_core_is_link hand-copy in tools/doctor.sh -> exit 1" 1 "$STATUS"
 check_contains "names the shared lib" "$OUT" "tools/lib/core-ownership.sh"
 check_contains "…and the hand-copy location" "$OUT" "tools/doctor.sh"
+
+# install.sh's fallback copy drifts from the canonical body — the gap this check's altitude review
+# found: counting copies/locations alone would say OK here, since there's still exactly one canonical
+# definition plus one exempt one. The body comparison is what catches it.
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+sed -i.bak 's/\[ -L "\$1" \]$/[ -f "$1" ]/' "$d/install.sh" && rm -f "$d/install.sh.bak"
+( cd "$d" && git add -A && git commit -qm "install.sh fallback drifts from the canonical body" )
+run "$sd" "$d" --quiet
+check_status "fallback body drift -> exit 1" 1 "$STATUS"
+check_contains "names the drifted function" "$OUT" "keel_core_is_link()"
+check_contains "names the canonical location" "$OUT" "tools/lib/core-ownership.sh"
+check_contains "states the contract, not just the mismatch" "$OUT" "byte-identical fallback"
 
 # a repo that defines none of these has no rule to keep in sync — silent, not a GAP (baseline coverage
 # already exercised by the plain "clean sandbox" case near the top of this file)
