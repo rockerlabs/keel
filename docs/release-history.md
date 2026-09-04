@@ -7,6 +7,35 @@ A one-paragraph-per-release summary, newest first. Each entry is a condensed dig
 produces a release) and [`publishing-checklist.md`](publishing-checklist.md) (the mechanics of
 cutting one) — this page is the record of what each one delivered.
 
+## v0.8.2 — 2026-09-04
+
+The removal-rail release. v0.8.1 hardened `install.sh` against clobbering an adopter's files and
+disclosed, in its own notes, that `uninstall.sh` carried the same gaps with deletion rather than
+overwrite as the harm; this patch closes them and the residue around them. `uninstall.sh` now refuses
+to claim ownership of a dest whose current form disagrees with its recorded kind, rejects the
+self-equal unreadable-cksum sentinel that let a fail-open comparison authorise a removal, and checks a
+symlink's provenance by reading the target the manifest now records — retiring the hand-maintained
+path table an earlier fix had been forced to introduce (dir #347, dir #369). On the install side every
+unguarded read of a possibly-non-regular dest is closed: a FIFO used to hang the run forever rather
+than fail, and a directory is now declined explicitly instead of silently replaced (dir #351,
+absorbing dir #356). `install.sh` gained a run-duration lock — an `mkdir` lock directory, no `flock`
+dependency — so two installs into one home no longer race over whose records survive, and a manifest
+it cannot read now stops the run before anything is placed rather than after, deliberately reverting
+part of v0.8.1's own handling for that one case: a run that knows it cannot record what it places
+should not place it (dir #350, folding in dir #348). Three hand-copied helper families were extracted
+into shared libraries with a mechanical drift check, closing a class dir #278 had named a release
+earlier (dir #362, dir #363). Smaller fixes: an ambiguity warning that fired on an ordinary supported
+flow with a false premise and advice that would have undone the operator's own previous command (dir
+#248); a dry-run preview under-reporting a directory that still held Keel content (dir #279); merge
+helpers in `tools/keel-impact.sh` that moved a temp file inside a directory target and reported a
+merge that never happened (dir #343, with dir #342's inode question resolved as a documented
+assumption); and a test matching a bare token also present in a checkout's own path, so it was least
+trustworthy exactly where it was most likely to run (dir #329). Reviews during the release found four
+defects the tickets had not, including a TOCTOU race inside the new lock and a zero-byte-file hole in
+every `bash -n` sourcing guard in the tree, two of which had already shipped. Four known issues ship
+unfixed, each ticketed — the sharpest being that a crashed install leaves a scratch file that makes a
+later uninstall's own cleanup silently fail (dir #377).
+
 ## v0.8.1 — 2026-09-03
 
 The never-clobber-regression release. A release-candidate delta audit found nine issues, four
