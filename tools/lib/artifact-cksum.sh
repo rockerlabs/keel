@@ -12,18 +12,20 @@
 # stat-portable.sh's "missing → degrade and continue" contract. Those two guard an optional refinement
 # with a safe slower path behind it. This one guards a value written unconditionally into a manifest
 # record that uninstall.sh later trusts for a destructive (removal) decision: a same-shape fallback
-# stub here would make every artifact_cksum call answer the sentinel, which uninstall.sh's un-guarded
-# comparison (dir #347's own gap) would then treat as a self-equal match for every artifact, not just
-# the rare truly-unreadable one. Both install.sh and uninstall.sh source this file behind a
-# `[ -f ] && bash -n` pre-check and refuse outright (one actionable message, exit 1) rather than
-# sourcing unguarded or degrading — see each call site's own comment for why.
+# stub here would make every artifact_cksum call answer the sentinel — indistinguishable, in the
+# manifest, from a genuinely-unreadable file's record, for every artifact, not just the rare
+# truly-unreadable one. dir #347 has since closed uninstall.sh's own comparison's sentinel guard at its
+# call site (uninstall.sh:882), but that guards uninstall.sh's REMOVAL decision, not the manifest
+# record itself, which a stubbed fallback here would still corrupt. Both install.sh and uninstall.sh
+# source this file behind a `[ -s ] && bash -n` pre-check and refuse outright (one actionable message,
+# exit 1) rather than sourcing unguarded or degrading — see each call site's own comment for why.
 
 # CKSUM_UNREADABLE — what artifact_cksum yields when it cannot read the file at all. Named because
 # keel_own_untouched (install.sh) has to RECOGNISE it, not merely produce it: a self-equal error
 # sentinel on a never-clobber rail fails OPEN (an unreadable dest would compare equal to a manifest
 # that ever recorded the same sentinel, and the predicate would answer "Keel's own unedited copy,
 # refresh it without asking" for a file it could not read a single byte of). uninstall.sh's own
-# comparison at its call site has no such guard today — that gap is dir #347's fix, not this file's.
+# comparison at its call site gained that same guard this release (dir #347, uninstall.sh:882).
 CKSUM_UNREADABLE='cksum:0:0'
 
 # artifact_cksum FILE — "cksum:<sum>:<size>", POSIX cksum's first two fields (portable across
