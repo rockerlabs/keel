@@ -61,6 +61,26 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   gained a matching drift check (check 9, not 8 — check 8 was already claimed by dir #321's PIPESTATUS
   check) asserting `artifact_cksum()` has exactly one definition tree-wide, scanning both `*.sh` files
   and the extensionless `keel` script.
+- **`uninstall.sh` closed the three never-clobber gaps on the removal side that dir #362's own
+  refactor left unaddressed (dir #347).** The manifest-driven removal loop trusted its `akind`/cksum
+  records more than the filesystem let it: (1) an `artifact=file` record whose slot had since been
+  re-formed as a symlink (an adopter moving a Keel-placed copy into their dotfiles and linking it back)
+  was read *through* the link via `[ -f "$apath" ]`, so a byte-identical target let the symlink itself
+  be swept — the mirror-image kind check the `artifact=symlink` arm already had is now applied here too.
+  (2) The cksum comparison trusted a *recorded* `cksum:0:0` (the unreadable sentinel from
+  `tools/lib/artifact-cksum.sh`) as ownership evidence whenever the live file also happened to be
+  unreadable, removing a file neither install time nor uninstall time had ever actually read a single
+  byte of — the comparison now refuses whenever the recorded value is the sentinel, regardless of what
+  the live cksum comes back as. (3) An `artifact=symlink` record carries no target of its own
+  (`record_placed` classifies purely by current form), so the removal loop accepted *any* symlink found
+  at the recorded path as Keel's — including one an adopter later re-pointed at their own file after an
+  earlier `in_sync` run had recorded a genuinely-Keel link there as `symlink -`. The symlink arm now
+  verifies, via `-ef` against the small fixed set of paths install.sh ever wires a symlink to (the CLI
+  entry, the linked-mode `keel/` copies, and `commands/*.md` including its `keel-*` alias slots), that
+  the link still points where Keel would have put it, and declines (leaving the file in place, named
+  loudly) when it can't confirm that. All three fail closed — the file survives, uninstall keeps
+  running — never a crash and never a silent sweep; each has a regression test in
+  `tests/test_uninstall.sh`, shown red against the pre-fix code before the guard landed.
 
 ## [0.8.1] — 2026-09-03
 

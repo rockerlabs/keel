@@ -638,13 +638,60 @@ take() {
   removed=$((removed + 1))
 }
 
+# expected_symlink_source REL (dir #347 route 3) — the checkout-relative file a Keel-placed symlink at
+# REL should currently point to, mirroring install.sh's own fixed, small set of symlink wiring
+# (make_link/sync_product call sites: the bin/keel CLI entry, the --link-mode keel/ copies of
+# CORE.md/FRAMEWORK.md/PRINCIPLES.md, and commands/*.md including its keel-* alias slots). Prints
+# nothing when REL matches none of them — the removal loop below then can't confirm provenance and
+# says so instead of assuming "any symlink here is ours", which is the gap this route closes: a manifest
+# `symlink -` record carries no target of its own (record_placed's classify-by-current-form never
+# stores one — see its own comment), so before this fix ANY symlink found at REL was swept, including
+# one an adopter later re-pointed at their own file after install.sh's in_sync branch had recorded a
+# genuinely-Keel link there as `symlink -`.
+expected_symlink_source() {
+  local rel="$1" base alias_base
+  case "$rel" in
+    bin/keel)           printf '%s' "$root/keel" ;;
+    keel/CORE.md)       printf '%s' "$root/CORE.md" ;;
+    keel/FRAMEWORK.md)  printf '%s' "$root/FRAMEWORK.md" ;;
+    keel/PRINCIPLES.md) printf '%s' "$root/PRINCIPLES.md" ;;
+    commands/*.md)
+      base="${rel#commands/}"
+      if [ -f "$root/commands/$base" ]; then
+        printf '%s' "$root/commands/$base"
+      else
+        case "$base" in
+          keel-*)
+            alias_base="${base#keel-}"
+            if [ -f "$root/commands/$alias_base" ]; then
+              printf '%s' "$root/commands/$alias_base"
+            fi
+            ;;
+        esac
+      fi
+      ;;
+  esac
+  # Explicit — not relying on the case/if chain's own trailing status: a "no match" (or a matched
+  # keel-* alias whose target is gone) leaves nothing printed, which the caller reads as "unknown" via
+  # `[ -n "$expected_src" ]`, never via this function's exit code. Called as a plain `var="$(...)"`
+  # assignment (not inside an if/&&/|| test), so under `set -e` a nonzero status here would abort the
+  # whole script — reproduced live: the keel-* branch's own `if [ -f ... ]` can leave the chain's status
+  # at 1 with nothing else to un-fail it.
+  return 0
+}
+
 # 1-4 (dir #125, manifest-driven): the manifest IS the removal-candidate set — walk every artifact IT
 # recorded, never the checkout's current file list (which is blind to what a later release added or an
 # older release actually delivered — cmp-to-current-checkout wrongly kept an old release's untouched
 # file the moment the checkout itself moved on). Ownership per recorded artifact:
-#   symlink -> Keel's iff it's STILL a symlink on disk (a fs/manifest disagreement is named, never
-#              acted on — the manifest never authorizes a blind rm)
-#   file    -> Keel's iff its CURRENT bytes match the RECORDED cksum
+#   symlink -> Keel's iff it's STILL a symlink on disk AND it still points where Keel would have wired
+#              it (dir #347 route 3 — a fs/manifest KIND disagreement, or a symlink pointing somewhere
+#              else now, is named, never acted on — the manifest never authorizes a blind rm)
+#   file    -> Keel's iff it's STILL a regular file (not re-formed as a symlink, dir #347 route 1 — the
+#              mirror-image kind check the symlink arm already had) AND its CURRENT bytes match the
+#              RECORDED cksum, with the RECORDED cksum itself never allowed to be the unreadable
+#              sentinel (dir #347 route 2 — see tools/lib/artifact-cksum.sh's own header for why a
+#              self-equal sentinel match must never authorize a removal)
 # Cross-manifest refcount (dir #124's structural closure): an artifact ALSO listed in the OTHER mode's
 # manifest at this same home is shared — kept and named, never silently stripped from under a rail the
 # other install still loads.
@@ -660,13 +707,20 @@ if [ "$this_usable" = 1 ]; then
     owned=0
     if [ "$akind" = "symlink" ]; then
       if [ -L "$apath" ]; then
-        owned=1
+        expected_src="$(expected_symlink_source "$rel")"
+        if [ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]; then
+          owned=1
+        else
+          echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+        fi
       elif [ -e "$apath" ]; then
         echo "  !    $rel: manifest recorded a symlink, but it's a regular file now — left in place (manifest/filesystem disagree)"
       fi
     elif [ "$akind" = "file" ]; then
-      if [ -f "$apath" ]; then
-        if [ "$(artifact_cksum "$apath")" = "$extra" ]; then
+      if [ -L "$apath" ]; then
+        echo "  !    $rel: manifest recorded a file, but it's a symlink now — left in place (manifest/filesystem disagree)"
+      elif [ -f "$apath" ]; then
+        if [ "$extra" != "$CKSUM_UNREADABLE" ] && [ "$(artifact_cksum "$apath")" = "$extra" ]; then
           owned=1
         else
           echo "  =    $rel differs from what Keel installed — kept (yours)"
