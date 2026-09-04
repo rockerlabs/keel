@@ -1150,12 +1150,14 @@ check_status "B31 uninstall exits 0" 0 "$STATUS"
 check_dir "B31 the directory survives (kind disagreement, never swept)" "$B31/FRAMEWORK.md"
 check_contains "B31 the disagreement is named, not silently skipped" "$OUT" "manifest recorded a file, but it's neither a file nor a symlink now"
 
-# --- B32: dir #347 /code-review max finding — a manifest `artifact=symlink` record whose rel matches
-# NONE of expected_symlink_source's known categories (bin/keel, keel/*.md, commands/*.md) must decline
-# the same way a recognized-but-wrong-target symlink does (B30), not be silently swept nor silently kept
-# with no explanation — the empty-`expected_src` branch and the wrong-target branch share the exact same
-# guard (`[ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]`) and this exercises the "empty"
-# half, which B30 (a recognized rel) never reaches. -----------------------------------------------------
+# --- B32: dir #347 /code-review max finding, updated for dir #369's data-driven rewrite AND for the
+# legacy-manifest fix (release-manager review, same round as B35/B36 below) — a manifest
+# `artifact=symlink` record carrying the OLD `-` placeholder (pre-dir-369: a manifest install.sh wrote
+# before it started recording a real readlink target) must decline a symlink that genuinely doesn't
+# resolve into this checkout, not be silently swept nor silently kept with no explanation — but with
+# the HONEST legacy-record message (B36's own wording), not the genuine-mismatch one: this fixture's
+# rel was never Keel's to begin with, so there is nothing to distinguish it from an old install's own
+# untouched symlink except that it points outside $root, which the message now says plainly. -----------
 B32="$SANDBOX/b32-symlink-unmapped-rel/.claude"
 inst --home "$B32" --link --no-hooks
 check_status "B32 linked install succeeds" 0 "$STATUS"
@@ -1168,7 +1170,7 @@ printf 'artifact=symlink\tnot-a-real-keel-artifact.md\t-\n' >> "$b32man"
 unin --home "$B32" --yes
 check_status "B32 uninstall exits 0" 0 "$STATUS"
 check_link "B32 the unmapped-rel symlink survives (no rule to confirm it, declined)" "$B32/not-a-real-keel-artifact.md"
-check_contains "B32 the decline is named" "$OUT" "symlink no longer points where Keel would have wired it"
+check_contains "B32 the decline is named honestly (legacy record, not a false 'moved' claim)" "$OUT" "symlink recorded by an install predating the target field"
 check_file "B32 its target is untouched" "$b32_target"
 
 # --- B33: dir #279 — dry_run_heuristic_listing()'s "would remove keel" line must not depend solely on
@@ -1188,5 +1190,90 @@ unin --home "$B33" --dry-run
 check_status "B33 dry-run over a manifest-less home falls through -> exit 0" 0 "$STATUS"
 check_contains "B33 dry-run still lists keel as would-remove despite CORE.md alone being gone (dir #279)" "$OUT" "would remove  keel"
 check_link "B33 dry-run left the surviving siblings in place" "$B33/keel/FRAMEWORK.md"
+
+# --- B34: dir #369 — a symlinked artifact recorded under a rel the OLD expected_symlink_source()
+# table never covered (no fixed case, no commands/*.md-shaped wildcard match) is now correctly
+# recognized as Keel's own via the manifest's recorded target alone, with no table entry required —
+# this is the drift risk dir #369 closes: a future symlinked artifact needs no matching case added
+# anywhere for uninstall.sh to recognize it, only a real manifest record. Reproduces RED against the
+# pre-dir-369 table (expected_symlink_source("docs/EXTRA.md") matches none of its cases -> declined,
+# left behind forever) and GREEN after (the plain readlink-vs-recorded-extra comparison owns it). -----
+B34="$SANDBOX/b34-symlink-no-table-entry/.claude"
+inst --home "$B34" --link --no-hooks
+check_status "B34 linked install succeeds" 0 "$STATUS"
+b34man="$B34/.keel/install-manifest.claude"
+mkdir -p "$B34/docs"
+ln -s "$REPO_ROOT/CHANGELOG.md" "$B34/docs/EXTRA.md"
+printf 'artifact=symlink\tdocs/EXTRA.md\t%s\n' "$REPO_ROOT/CHANGELOG.md" >> "$b34man"
+
+unin --home "$B34" --yes
+check_status "B34 uninstall exits 0" 0 "$STATUS"
+check_nolink "B34 the untabled symlink is correctly recognized and removed" "$B34/docs/EXTRA.md"
+
+# --- B35/B36: dir #369 legacy-manifest fix (release-manager review) — a manifest record still
+# carrying the PRE-dir-369 `-` placeholder (nothing rewrites an old record until its own artifact is
+# re-placed) must not be declined with the false "no longer points where Keel would have wired it"
+# message — the link is exactly where Keel wired it, the manifest simply predates the target field.
+# B35: the live symlink still resolves inside this checkout -> the structural fallback recognizes it
+# and it's correctly removed (regains auto-removal for a pre-dir-369 install, not left behind forever).
+# B36: the live symlink was genuinely re-pointed OUTSIDE the checkout -> still declined, but with the
+# HONEST message naming the actual reason (predates the field) and the actual remedy (re-run
+# install.sh to refresh the manifest, then uninstall) — never the genuine-mismatch wording. --------
+B35="$SANDBOX/b35-legacy-manifest-still-keels/.claude"
+inst --home "$B35" --link --no-hooks
+check_status "B35 linked install succeeds" 0 "$STATUS"
+b35man="$B35/.keel/install-manifest.claude"
+check_link "B35 fixture: go.md installed as a symlink" "$B35/commands/go.md"
+# Simulate a manifest written before dir #369: this rel's own recorded target reverts to the old `-`
+# placeholder; the live symlink itself is untouched (still genuinely Keel's).
+sed -i.bak "s|^artifact=symlink	commands/go.md	.*|artifact=symlink	commands/go.md	-|" "$b35man" && rm -f "$b35man.bak"
+check_contains "B35 fixture: manifest now carries the legacy placeholder for go.md" "$(cat "$b35man")" "$(printf 'artifact=symlink\tcommands/go.md\t-')"
+
+unin --home "$B35" --yes
+check_status "B35 uninstall exits 0" 0 "$STATUS"
+check_nolink "B35 the untouched legacy-recorded symlink is still correctly removed" "$B35/commands/go.md"
+check_contains "B35 the weaker-evidence basis is named, not silently removed like a confirmed match" "$OUT" "removed on the legacy structural check"
+
+B36="$SANDBOX/b36-legacy-manifest-repointed/.claude"
+inst --home "$B36" --link --no-hooks
+check_status "B36 linked install succeeds" 0 "$STATUS"
+b36man="$B36/.keel/install-manifest.claude"
+sed -i.bak "s|^artifact=symlink	commands/go.md	.*|artifact=symlink	commands/go.md	-|" "$b36man" && rm -f "$b36man.bak"
+b36_target="$SANDBOX/b36-not-keels-own.md"
+printf "adopter's own script, not Keel's\n" > "$b36_target"
+rm -f "$B36/commands/go.md"
+ln -s "$b36_target" "$B36/commands/go.md"
+
+unin --home "$B36" --yes
+check_status "B36 uninstall exits 0" 0 "$STATUS"
+check_link "B36 the re-pointed symlink survives (provenance still can't be confirmed)" "$B36/commands/go.md"
+check_contains "B36 it still points at the adopter's own file" "$(readlink "$B36/commands/go.md")" "$b36_target"
+check_contains "B36 the message is HONEST about why (predates the field), not a false 'moved' claim" "$OUT" "symlink recorded by an install predating the target field"
+check_absent "B36 does NOT use the genuine-mismatch wording for this population" "$OUT" "no longer points where Keel would have wired it"
+check_file "B36 the adopter's own target file is itself untouched" "$b36_target"
+
+# --- B37: dir #369 legacy-record fallback must tolerate PATH-SPELLING drift, not just an untouched
+# live symlink (found by this ticket's own /code-review max pass, reproduced live 5 independent ways
+# — including through the real `keel` CLI wrapper's own `pwd -P` resolution differing from a bare
+# `./uninstall.sh` invocation of the identical checkout, an entirely ordinary way to trigger it). A
+# FIRST draft of B35's fallback (`case "$live_target" in "$root"/*)`, a plain string-prefix test)
+# passes B35 itself (same spelling throughout) but fails exactly this shape: install through a
+# SYMLINKED ALIAS of $REPO_ROOT (baking that spelling into the recorded/live symlink targets), then
+# uninstall through $REPO_ROOT directly — same physical checkout, different string. Portable across
+# platforms on purpose (a real `ln -s`, not relying on macOS's own /tmp -> /private/tmp quirk, which
+# doesn't exist on Alpine CI). Reproduces RED against the string-prefix draft (declined, "doesn't
+# resolve inside this checkout") and GREEN after (`path_under_root`'s `-ef`-based walk). -------------
+B37_alias="$SANDBOX/b37-repo-alias"
+ln -s "$REPO_ROOT" "$B37_alias"
+B37="$SANDBOX/b37-legacy-manifest-path-spelling/.claude"
+run "$B37_alias/install.sh" --link --home "$B37" --no-hooks
+check_status "B37 linked install (via a symlinked checkout alias) succeeds" 0 "$STATUS"
+b37man="$B37/.keel/install-manifest.claude"
+check_contains "B37 fixture: go.md's recorded target is spelled through the alias" "$(cat "$b37man")" "$B37_alias/commands/go.md"
+sed -i.bak "s|^artifact=symlink	commands/go.md	.*|artifact=symlink	commands/go.md	-|" "$b37man" && rm -f "$b37man.bak"
+
+unin --home "$B37" --yes
+check_status "B37 uninstall (via the REAL, un-aliased checkout path) exits 0" 0 "$STATUS"
+check_nolink "B37 the legacy-recorded symlink is still correctly removed despite the path-spelling drift" "$B37/commands/go.md"
 
 summary

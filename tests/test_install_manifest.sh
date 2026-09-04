@@ -49,7 +49,9 @@ run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-hooks
 check_status "fresh link install -> exit 0" 0 "$STATUS"
 lman="$link_home/.claude/.keel/install-manifest.claude"
 check_status "linked layout=link" "link" "$(manifest_field "$lman" layout)"
-check_contains "keel/CORE.md recorded as a symlink" "$(cat "$lman")" "artifact=symlink	keel/CORE.md	-"
+check_contains "keel/CORE.md recorded as a symlink" "$(cat "$lman")" "artifact=symlink	keel/CORE.md	"
+# dir #369: the third field is the link's real readlink target now, not the old `-` placeholder.
+check_contains "keel/CORE.md's recorded target is its real readlink target" "$(cat "$lman")" "artifact=symlink	keel/CORE.md	$REPO_ROOT/CORE.md"
 check_contains "linked edit artifact is import-line" "$(cat "$lman")" "artifact=edit	CLAUDE.md	import-line"
 run bash -c "find '$link_home' -name '*.keeltmp.*'"
 check_status "no .keeltmp litter after a fresh link install" "" "$OUT"

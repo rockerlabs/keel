@@ -216,6 +216,117 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   check now also treats either sibling being Keel-owned (the same `is_keel_owned` test already used for
   the top-level `FRAMEWORK.md`/`PRINCIPLES.md` preview lines) as sufficient evidence.
 
+- **`manifest_field`/`manifest_usable` and the `keel/CORE.md` ownership predicate, the two remaining
+  hand-copied families dir #278 named, extracted to close out the refactor dir #362 started (dir
+  #363).** `uninstall.sh` and `tools/doctor.sh` each carried their own copy of `manifest_field`/
+  `manifest_usable` (verified output-identical to `tools/lib/manifest.sh`'s own, already sourced by
+  `install.sh`); both now source that lib instead. The `keel/CORE.md` ownership predicate — `[ -L
+  keel/CORE.md ]` for an ordinary linked install, or a regular file carrying the `KEEL-NOGIT` marker
+  for a `--no-git` trim — was independently inline at eight call sites across all three scripts (three
+  in `install.sh`, one in `uninstall.sh`, four in `tools/doctor.sh`); a new `tools/lib/core-ownership.sh`
+  gives it two functions, `keel_core_is_link`/`keel_core_is_nogit_trim`, sourced by all three. **The
+  degradation contract is not uniform, and the divergence is deliberate:** `manifest_field`/
+  `manifest_usable` and the ownership predicate, for `uninstall.sh`/`tools/doctor.sh`, are
+  hard-required — neither script has an established "must survive a `tools/`-less checkout" contract to
+  preserve — AND guarded the same way `tools/lib/artifact-cksum.sh` already is (dir #362): a
+  `[ -f ] && bash -n` pre-check, one actionable message, `exit 1`. Not bare like `uninstall.sh`'s own
+  pre-existing `tools/lib/ledger.sh` source (an unaudited, out-of-scope precedent) — dir #362's own
+  reasoning for guarding a *required* lib is about corruption, not about what the function's output
+  feeds: an unguarded `.` of a present-but-corrupted file aborts at parse time under `set -e`, which no
+  `if`/`&&` can catch, so a bare required source hands the operator a raw bash parse-error stack instead
+  of a clean, actionable one. That reasoning applies here exactly as it did there, so both new sources
+  are guarded rather than repeating the gap. The ownership predicate stays **optional** for
+  `install.sh`, with a byte-identical inline fallback (not guarded-and-required like the other two):
+  unlike `tools/lib/artifact-cksum.sh` (dir #362), `install.sh`'s three call sites are pure filesystem
+  checks with zero `tools/` dependency today (the first runs before `install.sh` sources anything from
+  `tools/lib/` at all), driving only that run's own `LINK`/`NOGIT` control flow and a printed message —
+  never a manifest record another script later trusts for a destructive decision, so there is no
+  cross-script poisoning risk to refuse outright over. `tools/self/doctor.sh` gained a matching drift
+  check (check 10, immediately after dir #362's own check 9) asserting each of the four functions has
+  exactly one real definition tree-wide, with `install.sh`'s two documented fallback/stub copies
+  (`manifest_usable`'s pre-existing dir #323 stub, and the ownership predicate's dir #363 fallback)
+  carved out as the one exempt case each — a hand-copy anywhere else still fails the check. **The
+  ownership predicate's fallback copy is additionally compared BODY-FOR-BODY against the canonical
+  definition** (found by this ticket's own altitude review): counting copies and locations alone would
+  say OK for a fallback that has silently drifted from the real predicate, since the shape (one
+  canonical definition plus one documented exempt copy) stays correct either way — exactly the
+  invariant the "byte-identical" contract claims but a count-only check never verified. `install.sh`'s
+  fallback was reformatted to genuinely match `tools/lib/core-ownership.sh`'s own multi-line body
+  (previously a one-liner with the same logic but different text, an unintentional overstatement of
+  "byte-identical" in its own comment) so the two are now provably the same, not merely claimed to be.
+- **The manifest's `artifact=symlink <rel> -` record carried no target of its own, so `uninstall.sh`
+  could not ask the manifest whether a symlink was still Keel's and had to hand-mirror `install.sh`'s
+  own wiring in a table instead (dir #369, a passenger riding with dir #363 since both touch the same
+  three files).** dir #347 needed exactly that missing answer for its removal-safety route 3 (an
+  adopter re-pointing a Keel-placed symlink at their own file, same path, same kind) and, having no
+  data to read, added `expected_symlink_source()` — a hand-maintained table of every path `install.sh`
+  ever wires as a symlink, with nothing enforcing the two stay in sync: a future symlinked artifact
+  added to `install.sh` with no matching table entry would have been silently left behind by every
+  uninstall, forever (fail-closed, so not destructive, but silently wrong). `record_placed` now records
+  `readlink DEST` — the actual target that run wired, always an absolute path into that run's own
+  `$root` — in the third field instead of the placeholder; `uninstall.sh`'s removal loop compares the
+  live symlink's current target against that recorded one directly, and `expected_symlink_source()` and
+  its table are deleted. **No manifest version bump:** the line format/arity is unchanged (still
+  `artifact=symlink\t<rel>\t<extra>`), and neither script's parser cared what that field held before
+  now, so a manifest written by an OLDER `install.sh` — carrying the literal `-` placeholder forever,
+  since nothing rewrites an old record until its own artifact is next re-placed — stays fully readable.
+  New regression coverage (`tests/test_uninstall.sh` B34) proves the actual gap this closes: a
+  symlinked artifact recorded under a `rel` the old table never covered (no fixed case, no
+  `commands/*.md`-shaped match) is now correctly recognized and removed via the manifest's recorded
+  target alone — reproduced red against the pre-fix table (declined, left behind forever) and green
+  after.
+  **What happens to a manifest written before this change (revised after the release-manager session's
+  review caught the first draft shipping a false claim):** a `-` record can never equal a real
+  `readlink` target, so an exact-match comparison alone declines it — the right direction (fail
+  closed), but the FIRST draft printed the SAME message a genuine re-pointed-symlink mismatch uses,
+  which is **false** for this population (the link is exactly where Keel wired it; the manifest simply
+  predates the field) and would have made every pre-0.8.2 install permanently un-uninstallable for its
+  symlinks (`bin/keel`, `keel/CORE.md`, every command), reported as a success. Fixed with a structural
+  fallback scoped to legacy (`-`/empty) records only: does the live symlink resolve into THIS checkout
+  (`$root`) — one predicate, not the deleted per-path table, so it reintroduces no hand-copy. A legacy
+  install whose symlinks are untouched is now correctly recognized and cleanly removable again; one
+  that was genuinely re-pointed outside the checkout still declines, now with an honest message naming
+  the real reason ("recorded by an install predating the target field") and the remedy (re-run
+  `install.sh` to refresh the manifest, then uninstall) instead of the false "moved" claim. New
+  regression coverage (`tests/test_uninstall.sh` B35/B36) covers both legacy-record outcomes.
+- **A `/code-review max` pass on the two entries above (before their PR opened) found and fixed five
+  further real issues, three of them correctness bugs — disclosed here rather than only in the PR
+  body, since all five ship in the same commits.** (1) The legacy-record structural fallback above
+  used a plain string-prefix test (`case "$live_target" in "$root"/*)`) rather than `-ef`, reproduced
+  live 5 independent ways as vulnerable to the exact path-spelling drift `install.sh`'s own
+  `in_sync()` already names and avoids ("`/tmp` vs `/private/tmp` on macOS, a symlinked parent") —
+  including through the real `keel` CLI wrapper's own `pwd -P` resolution differing from a bare
+  `./uninstall.sh` invocation of the identical checkout, an entirely ordinary way to trigger it, not
+  an exotic edge case. Replaced with `path_under_root()`, an `-ef`-based walk up the live target's own
+  directory chain; the exact-match branch also gained an `-ef` check ahead of its string comparison,
+  for the same tolerance. (2) `uninstall.sh`'s new `live_target="$(readlink ... 2>/dev/null)"` was a
+  bare (non-`local`, non-guarded) command-substitution assignment, which — under `set -euo pipefail` —
+  DOES propagate a failing `readlink` to `errexit`; a concurrent install/uninstall racing the same
+  home could silently abort mid-removal-loop with no diagnostic. Fixed with `|| true`. (3) **Every
+  `[ -f ] && bash -n` lib-sourcing guard in this checkout — not just the two this round added — never
+  detected a zero-byte file as corrupted.** `bash -n` passes empty input (it's syntactically valid), so
+  a required lib would source "successfully" while defining nothing, and the first call would crash
+  with a raw "command not found" instead of the guard's own intended clean message — the exact failure
+  the guard exists to prevent, just for a different corruption shape (truncation, e.g. an interrupted
+  `bootstrap.sh` tarball fetch) than the one it was written against (a syntax error). This is not only
+  a hole in the two guards this round added: `tools/lib/artifact-cksum.sh`'s guards (dir #362) and
+  `tools/lib/stat-portable.sh`'s (dir #323) — both **already shipped, in earlier v0.8.2 PRs** — carried
+  the identical gap since the day each landed. Changed `-f` to `-s` in all seven `[ -f ] && bash -n`
+  sites across `install.sh`/`uninstall.sh` (found by this ticket's own `/code-review max` pass; not
+  limited to this ticket's own two new libs). (4)
+  `tools/doctor.sh`'s two new REQUIRED guards ran unconditionally at file load, before any argument
+  parsing — but every real call site lives inside `--install` mode, so an ORDINARY project audit
+  (`doctor.sh [DIR...]`, unrelated to any install) with a corrupted `tools/lib/` would fail with a
+  message actively wrong for what that run was doing. Moved inside the `--install` branch, at the
+  point the dependency actually exists. (5) `tools/self/doctor.sh` check 10's `single_def_check`
+  (dir #363) and its `extract_fn_body` helper used different whitespace tolerances for a function's
+  opening line — a purely cosmetic reformat of `install.sh`'s fallback (`fn () {` instead of `fn() {`)
+  would have false-positive GAP'd as "drifted from the canonical definition." Aligned the two regexes.
+  Also fixed: two stale header comments (`tools/lib/manifest.sh`, `tools/lib/core-ownership.sh`) left
+  describing pre-diff behavior, and an undercounted call-site total (eight, not six — `tools/doctor.sh`
+  has four, not two). All five verified with a live reproduction before and after the fix, not reasoned
+  about only; `tests/run.sh` and `shellcheck -x --severity=warning` both stayed green throughout.
+
 ## [0.8.1] — 2026-09-03
 
 - **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as

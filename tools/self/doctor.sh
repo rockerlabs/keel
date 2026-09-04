@@ -1292,6 +1292,83 @@ else
   say "  OK   artifact_cksum() has exactly one definition, in tools/lib/artifact-cksum.sh"
 fi
 
+# --- 10. manifest_field/manifest_usable and the CORE.md ownership predicate have exactly one real
+# definition tree-wide (dir #363) -------------------------------------------------------------------
+# dir #363 made uninstall.sh/tools/doctor.sh consumers of the existing tools/lib/manifest.sh
+# (manifest_field/manifest_usable, previously hand-copied in both) instead of hand-copying it, and gave
+# the keel/CORE.md ownership predicate (keel_core_is_link/keel_core_is_nogit_trim) its own new
+# tools/lib/core-ownership.sh, sourced by all three of install.sh/uninstall.sh/tools/doctor.sh. Same
+# class as check 9: a promise that the non-owning consumers keep no local copy, verified instead of
+# trusted, so a future hand-copy is caught structurally the moment it's added rather than waiting for
+# behaviour to drift apart.
+say ""
+say "● manifest_field/manifest_usable/core-ownership-predicate single-definition (dir #363)"
+
+# extract_fn_body FILE FN — FN's body, one normalized line per statement (each line's own
+# leading/trailing whitespace stripped, so a difference in INDENTATION alone — install.sh's fallback
+# copies live inside an `else` block, the lib files' own copies don't — never counts as a difference).
+# Assumes the shape every copy this check compares actually uses: `fn() {` alone on its opening line,
+# a bare `}` alone on its closing line, no nested braces (both functions here are one test expression).
+# The opening-line pattern must tolerate the SAME whitespace `single_def_check`'s own `def_re` does
+# (`[[:space:]]*` between the name and `(`) — found by this ticket's own /code-review max pass,
+# reproduced live: the two were written with different tolerances, so a purely cosmetic reformat
+# (`fn () {` instead of `fn() {`) would still count as exactly one real definition per `def_re`, but
+# `extract_fn_body` would silently return empty for it, comparing unequal to the real body and firing
+# a false "drifted" GAP for a behavior-preserving edit.
+extract_fn_body() {
+  awk -v fn="$2" '
+    $0 ~ "^[[:space:]]*" fn "[[:space:]]*\\(\\)[[:space:]]*\\{[[:space:]]*$" { infn = 1; next }
+    infn && $0 ~ /^[[:space:]]*\}[[:space:]]*$/ { infn = 0; next }
+    infn { line = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); print line }
+  ' "$1"
+}
+
+# single_def_check FN HOME [EXEMPT] — GAP unless FN's only real definition tree-wide is in HOME, with
+# at most one further exemption at EXEMPT: a documented, pre-existing degrade-stub or fallback copy,
+# not a hand-copy this check exists to catch — install.sh's own optional-source pattern keeps exactly
+# one of each: manifest_usable() { return 1; } (dir #323, predates this ticket — install.sh never calls
+# manifest_field, so only manifest_usable gets a stub, and a stub is deliberately NOT body-compared
+# below: it isn't claimed to match anything) and keel_core_is_link/keel_core_is_nogit_trim's
+# byte-identical fallback copies (dir #363's own documented degradation contract — see
+# tools/lib/core-ownership.sh's own header for why install.sh, alone of the three consumers, keeps one).
+# **The "byte-identical" half of that contract is itself checked here, not merely asserted in a
+# comment** (found by this ticket's own altitude review: an earlier draft counted copies and locations
+# only, so the one duplicate the design deliberately permits was exactly the one whose invariant went
+# unverified — a future edit to core-ownership.sh's real predicate could silently drift out of sync
+# with install.sh's fallback and this check would still say OK). `is_fallback` distinguishes the two
+# EXEMPT shapes: a body worth diffing (keel_core_is_link/keel_core_is_nogit_trim) from a stub that
+# isn't (manifest_usable's `return 1`) — passed explicitly rather than inferred, since inferring it from
+# body content would be exactly the kind of guess this check exists to replace with a real comparison.
+# Scoped away from tests/ (`:!tests/`, unlike check 9's plain `'*.sh' 'keel'`): a test fixture
+# legitimately keeps its OWN small, independent reader for isolation from production code under test
+# (e.g. tests/test_install_manifest.sh's own manifest_field(), pre-existing this ticket) — a real,
+# deliberate local definition, not a hand-copy, and outside what this check's drift risk is about.
+# Absence graded the same way check 9 grades an absent artifact_cksum: a repo defining FN nowhere
+# simply doesn't have the rule to keep in sync.
+single_def_check() {
+  local fn="$1" home="$2" exempt="${3-}" is_fallback="${4-0}" def_re defs rest note=""
+  def_re="^[[:space:]]*${fn}[[:space:]]*\\(\\)[[:space:]]*\\{"
+  defs="$(git -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/' 2>/dev/null || true)"
+  [ -z "$defs" ] && return   # no definition anywhere — no rule to keep in sync here
+  rest="$defs"
+  if [ -n "$exempt" ]; then
+    rest="$(printf '%s\n' "$defs" | grep -vxF "$exempt" || true)"
+    note=" ($exempt carries a documented fallback/stub, not a hand-copy)"
+  fi
+  if [ "$rest" != "$home" ]; then
+    gap "${fn}() is defined in {$defs} — expected exactly one real definition, in $home$( [ -n "$exempt" ] && printf ' (plus its documented %s fallback/stub)' "$exempt" ) (dir #363: source it, never hand-copy it)"
+  elif [ "$is_fallback" = 1 ] \
+       && [ "$(extract_fn_body "$repo_root/$home" "$fn")" != "$(extract_fn_body "$repo_root/$exempt" "$fn")" ]; then
+    gap "${fn}()'s fallback copy in $exempt has drifted from the canonical definition in $home — the documented contract is a byte-identical fallback, not a stub; keep them in sync or degrade the contract explicitly"
+  else
+    say "  OK   ${fn}() has exactly one real definition, in $home$note"
+  fi
+}
+single_def_check manifest_field          tools/lib/manifest.sh
+single_def_check manifest_usable         tools/lib/manifest.sh       install.sh   0
+single_def_check keel_core_is_link       tools/lib/core-ownership.sh install.sh   1
+single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh install.sh   1
+
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
 run_check() {
   local label="$1"; shift

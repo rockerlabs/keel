@@ -94,11 +94,30 @@ ledger_file="${KEEL_LEDGER_FILE:-$root/.keel/installed-homes}"
 # "no such home" early exit below is exactly that case, and there's nothing to canonicalize against.
 home_canon="$(cd "$HOME_DIR" 2>/dev/null && pwd || printf '%s' "$HOME_DIR")"
 
-# manifest_field FILE KEY — mirror of tools/doctor.sh's own copy (no established cross-sourcing
-# convention between the two files — keep them in sync on drift, same note as core_import_re/
-# has_keel_rails below). `|| true`: an existing-but-unreadable manifest must degrade to absent, never
-# abort this script under set -euo pipefail.
-manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true; }
+# manifest_field/manifest_usable (dir #125) — sourced from the shared tools/lib/manifest.sh (dir #363:
+# previously a hand-copy here, verified output-identical to install.sh's own consumption of the same
+# lib). REQUIRED, not optional — this script's whole removal decision is keyed off manifest state, so a
+# checkout missing this lib cannot safely reason about ownership at all. Guarded the same way as
+# tools/lib/artifact-cksum.sh just below (`[ -s ] && bash -n` pre-check, one actionable message, exit
+# 1) — NOT bare like tools/lib/ledger.sh's own pre-existing, unaudited source further down: dir #362's
+# own reasoning for guarding a required lib is about CORRUPTION, not about what the function's output
+# feeds — a bare `.` of a present-but-corrupted file aborts at parse time under `set -e`, and no
+# `if`/`&&` around the `.` command itself can catch that, so an unguarded required source hands the
+# adopter a raw bash parse-error stack instead of a clean message. That reasoning applies here exactly
+# as it does to artifact_cksum; matching ledger.sh's bare precedent instead would carry the same gap
+# forward into two more libs rather than close it. (ledger.sh itself is untouched — out of scope here.)
+# `-s`, not `-f` (every guard in this file and install.sh's own — found by this ticket's own
+# /code-review max pass, reproduced live): a zero-byte file passes `bash -n` (empty input is
+# syntactically valid) and would source "successfully" while defining nothing, silently reproducing
+# the exact raw "command not found" crash this guard exists to prevent, just for a different
+# corruption shape (truncation) than the one it was written against (a syntax error).
+if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/manifest.sh
+  . "$root/tools/lib/manifest.sh"
+else
+  echo "uninstall: tools/lib/manifest.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real manifest read; re-clone or re-download Keel and re-run uninstall.sh" >&2
+  exit 1
+fi
 # manifest_recorded_home/mode FILE DEFAULT — the manifest's own recorded home=/mode=, falling back to
 # DEFAULT when the field is empty (a well-formed-but-sparse manifest, in practice never hit against a
 # real install.sh write, but the same "don't trust a possibly-missing field" posture manifest_field's
@@ -106,14 +125,6 @@ manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true; }
 # mismatch refusal below (this run's own $other_manifest).
 manifest_recorded_home() { local v; v="$(manifest_field "$1" home)"; [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"; }
 manifest_recorded_mode() { local v; v="$(manifest_field "$1" mode)"; [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"; }
-# manifest_usable FILE — the versioning contract: present, readable, AND a keel_manifest_version this
-# script knows how to read. Anything else (absent, corrupt, a future major version) is ABSENT — treated
-# as "no manifest recorded", never a crash (dir #150: that now means the refusal further down, not a
-# heuristic fallback).
-manifest_usable() {
-  [ -f "$1" ] || return 1
-  [ "$(manifest_field "$1" keel_manifest_version)" = "1" ]
-}
 # this_usable/other_usable — manifest_usable "$this_manifest"/"$other_manifest" computed ONCE: both
 # files are fixed for the whole run (only $HOME_DIR's ledger-loop candidates in other_mode_hint vary,
 # so that call site still calls manifest_usable directly, per home). Everything below that asks
@@ -126,13 +137,24 @@ other_usable=0; manifest_usable "$other_manifest" && other_usable=1
 # choice. Refusing outright on a missing/corrupted lib — rather than degrading to a fallback stub — is
 # the same "an ownership decision needs a real cksum comparison" posture install.sh's own copy of this
 # guard documents; see tools/lib/artifact-cksum.sh's own header for the full reasoning. Same
-# `[ -f ] && bash -n` pre-check as install.sh: a bare `.` can't be guarded against a parse-time
-# syntax-error abort under `set -e`.
-if [ -f "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
+# `[ -s ] && bash -n` pre-check as install.sh (`-s`, not `-f` — see tools/lib/manifest.sh's own guard
+# above for why): a bare `.` can't be guarded against a parse-time syntax-error abort under `set -e`.
+if [ -s "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/artifact-cksum.sh
   . "$root/tools/lib/artifact-cksum.sh"
 else
   echo "uninstall: tools/lib/artifact-cksum.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real cksum comparison; re-clone or re-download Keel and re-run uninstall.sh" >&2
+  exit 1
+fi
+# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim) — REQUIRED, same
+# guarded-and-required posture as tools/lib/manifest.sh above (see its own comment for why bare would
+# be wrong here); see tools/lib/core-ownership.sh's own header for why install.sh's consumption
+# differs (optional, with a byte-identical inline fallback).
+if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/core-ownership.sh
+  . "$root/tools/lib/core-ownership.sh"
+else
+  echo "uninstall: tools/lib/core-ownership.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real predicate; re-clone or re-download Keel and re-run uninstall.sh" >&2
   exit 1
 fi
 # artifact_shared_with_other REL — dir #124's structural closure: true iff REL is ALSO a recorded
@@ -351,14 +373,13 @@ home_has_keel_content() {
 # core_import_re/has_keel_rails's own "no established cross-sourcing convention" note above), is more
 # machinery than this print-only, rarely-exercised (manifest-less --dry-run only) listing's blast radius
 # earns on its own — worth a dedicated ticket if a fifth copy ever appears, not a same-round respin.
-# **THE FIFTH COPY HAS NOW APPEARED (dir #347, /simplify's reuse pass):** expected_symlink_source(),
-# defined further down near the manifest-driven removal loop, independently re-derives this same
-# keel-<name> alias/base-name relationship (in the reverse direction — home-relative path back to
-# checkout source). Still not unified this round, for the same reason as above plus the one named at
-# its own definition (a data-driven, manifest-recorded-target replacement is the deeper fix and is
-# deliberately deferred to a follow-up ticket rather than widening this diff into install.sh) — flagged
-# to the release manager so the ticket this comment has called for since before this diff actually gets
-# filed, covering the alias-mapping duplication as a whole rather than one copy at a time.
+# **A FIFTH COPY APPEARED AND WAS THEN CLOSED (dir #347 added expected_symlink_source(), a
+# hand-maintained mirror of this same keel-<name> alias/base-name relationship, near the
+# manifest-driven removal loop further down; dir #369 replaced it with a data-driven read of the
+# manifest's own recorded symlink target, so that copy no longer exists).** This function's own
+# duplication (four copies) is untouched by that fix and stays exactly as described above — dir #369's
+# scope was the manifest-driven removal loop, not this manifest-less dry-run heuristic, which still
+# has no manifest data to read from and so still needs its own alias-mapping copy.
 # **take() reuse considered and REJECTED, not just deferred** (the /code-review pass's own suggestion,
 # verified empirically wrong): take() is defined far below (near the real removal loop), and this
 # function is CALLED from the manifest-less branch above that definition in the script's own top-to-
@@ -389,7 +410,7 @@ dry_run_heuristic_listing() {
   # true" trap dry_run_heuristic_listing's own is_keel_owned-based checks below were written to avoid
   # (see artifact_shared_with_other's comment for the general shape of that trap).
   keel_dir_owned=0
-  if [ -L "$HOME_DIR/keel/CORE.md" ] || { [ -f "$HOME_DIR/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$HOME_DIR/keel/CORE.md" 2>/dev/null; }; then
+  if keel_core_is_link "$HOME_DIR/keel/CORE.md" || keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
     keel_dir_owned=1
   elif is_keel_owned "$HOME_DIR/keel/FRAMEWORK.md" "$root/FRAMEWORK.md" || is_keel_owned "$HOME_DIR/keel/PRINCIPLES.md" "$root/PRINCIPLES.md"; then
     keel_dir_owned=1
@@ -690,35 +711,42 @@ take() {
   removed=$((removed + 1))
 }
 
-# expected_symlink_source REL (dir #347 route 3) — the checkout-relative file a Keel-placed symlink at
-# REL should currently point to, mirroring install.sh's own fixed, small set of symlink wiring
-# (make_link/sync_product call sites: the bin/keel CLI entry, the --link-mode keel/ copies of
-# CORE.md/FRAMEWORK.md/PRINCIPLES.md, and commands/*.md including its keel-* alias slots). Prints
-# nothing when REL matches none of them — the removal loop below then can't confirm provenance and
-# says so instead of assuming "any symlink here is ours", which is the gap this route closes: a manifest
-# `symlink -` record carries no target of its own (record_placed's classify-by-current-form never
-# stores one — see its own comment), so before this fix ANY symlink found at REL was swept, including
-# one an adopter later re-pointed at their own file after install.sh's in_sync branch had recorded a
-# genuinely-Keel link there as `symlink -`.
+# symlink ownership (dir #369, replacing dir #347 route 3's expected_symlink_source() table): a
+# manifest `symlink` record's third field is now the TARGET install.sh actually wired at record time
+# (dir #369's change to record_placed — `readlink DEST`, always an absolute path into that run's own
+# $root), not the empty `-` placeholder it used to be. The removal loop below compares the live link's
+# CURRENT target against that RECORDED one directly — no re-derivation of "what install.sh would wire
+# TODAY" (which is what the deleted table did, hand-mirroring install.sh's own wiring with nothing
+# enforcing the two stay in sync — exactly the hand-copy class dir #362 removed between these two files
+# for artifact_cksum, and dir #363 removed more of for manifest_field/the CORE.md ownership predicate).
+# The manifest is already the contract between the two scripts; this makes it the ONLY one for symlink
+# provenance, with no separate table to fall out of sync.
 #
-# THE FIFTH COPY of the keel-<name> alias/base-name mapping (reuse pass, /simplify on this same diff):
-# dry_run_heuristic_listing's own comment, ~350 lines above, already tracks four hand-copies of this
-# relationship and says a fifth is worth a dedicated ticket rather than a same-round unification — this
-# function is that fifth copy, re-deriving the same rule in the reverse direction. See that comment.
+# OLD-MANIFEST COMPATIBILITY (dir #369's own decision, revised after the release-manager session's
+# review caught the first draft shipping a false claim to adopters): a manifest written by a
+# PRE-dir-369 install.sh still carries the literal `-` placeholder in this field forever (nothing
+# rewrites an old record until its own artifact is re-placed) — no manifest version bump for this,
+# since the line format/arity is unchanged and neither script's parser cared what this field held
+# before now.
 #
-# NAMED DRIFT RISK, not closed by this ticket (v0.8.2 release-manager review of dir #347): this table
-# is a HAND-MAINTAINED MIRROR of install.sh's own symlink wiring, with nothing enforcing the two stay
-# in sync — exactly the class of hand-copy dir #362 just removed between these two files (the shared
-# artifact_cksum extraction) and dir #363 is scheduled to remove more of. A future symlinked artifact
-# added to install.sh with no matching case added here does NOT error: this function prints nothing,
-# the removal loop's `-ef` check then has nothing to compare against, ownership is declined, and the
-# new artifact is silently left behind by every uninstall from then on — fail-closed, so not
-# destructive, but silently wrong and easy for nobody to notice. The better mechanism is already
-# half-built: the manifest's `artifact=symlink <rel> -` record has an EMPTY third field; if install.sh
-# recorded the link's actual target there instead, this table could be replaced by a data-driven
-# comparison against what the placing run itself recorded, with no table to fall out of sync at all.
-# Deliberately not built here — it changes what install.sh writes, and widening this ticket into that
-# script mid-flight is the same scope creep PR #322 explicitly declined. Follow-up ticket to add.
+# The FIRST draft of this fix declined ownership outright for `-` (an exact-match comparison against
+# a placeholder that can never equal a real `readlink` target, no special case needed) and printed the
+# SAME "symlink no longer points where Keel would have wired it" message the genuine-mismatch case
+# uses. That message is FALSE for this population: the link is exactly where Keel wired it, the
+# manifest simply predates the field — and it made every pre-dir-369 install permanently
+# un-uninstallable for its symlinks (bin/keel, keel/CORE.md, every command), reported as a success.
+# Fail-closed was the right DIRECTION; the message and the completeness were wrong.
+#
+# Fixed with a structural fallback SCOPED TO LEGACY RECORDS ONLY (the removal loop's own comment below
+# has the exact shape): `-`/empty EXTRA falls back to one predicate — does the live symlink resolve
+# into THIS checkout ($root) — instead of the deleted per-path table, so it reintroduces no hand-copy
+# and no drift risk. Looser than the exact-match case (any file in the checkout, not the one specific
+# intended source), but that slack is bounded to "removes a symlink that points somewhere inside the
+# Keel checkout" — never outside it — and only for manifests this old. A legacy record whose symlink
+# does NOT resolve into $root (genuinely re-pointed elsewhere) still declines, now with an honest
+# message naming the actual reason (predates the field, not "moved") and the actual remedy (re-run
+# install.sh to refresh the manifest, then uninstall).
+#
 # kind_mismatch REL WAS NOW — the one wording for a manifest/filesystem kind disagreement, shared by
 # the removal loop's three call sites (symlink recorded, now some other kind; file recorded, now a
 # symlink; file recorded, now neither). Extracted by /code-review max's delta round (dir #347) once this
@@ -730,42 +758,45 @@ kind_mismatch() {
   echo "  !    $1: manifest recorded a $2, but it's $3 now — left in place (manifest/filesystem disagree)"
 }
 
-expected_symlink_source() {
-  local rel="$1" base alias_base
-  case "$rel" in
-    bin/keel)           printf '%s' "$root/keel" ;;
-    keel/CORE.md)       printf '%s' "$root/CORE.md" ;;
-    keel/FRAMEWORK.md)  printf '%s' "$root/FRAMEWORK.md" ;;
-    keel/PRINCIPLES.md) printf '%s' "$root/PRINCIPLES.md" ;;
-    commands/*.md)
-      # `${base#keel-}` is a no-op when base has no keel- prefix, so trying it unconditionally as the
-      # second candidate is safe: a direct (non-alias) command just fails the same already-failed check
-      # a second time, harmlessly (/simplify pass, dir #347).
-      base="${rel#commands/}"
-      alias_base="${base#keel-}"
-      if [ -f "$root/commands/$base" ]; then
-        printf '%s' "$root/commands/$base"
-      elif [ -f "$root/commands/$alias_base" ]; then
-        printf '%s' "$root/commands/$alias_base"
-      fi
-      ;;
+# path_under_root TARGET — true iff the absolute path TARGET resolves into somewhere inside THIS
+# checkout ($root), tolerant of path-spelling drift (the same class install.sh's own in_sync()
+# names: "/tmp vs /private/tmp on macOS, a symlinked parent" — a link to the same physical file is
+# in sync however it's spelled) — found missing from an earlier draft of this file's legacy-record
+# fallback by this ticket's own /code-review max pass, reproduced live 5 independent ways, including
+# through the real `keel` CLI wrapper's own `pwd -P` resolution differing from a bare
+# `./uninstall.sh` invocation of the identical checkout. A plain `case "$target" in "$root"/*)`
+# string-prefix test — what the first draft used — fails exactly there: $root is freshly recomputed
+# from THIS run's own `$0`, so it can be spelled differently than whatever a PRIOR run's `readlink`
+# baked into the symlink, even though both name the same directory.
+#
+# Walks UP from TARGET's own directory (never resolving TARGET itself through the filesystem, so a
+# dangling symlink's target string still walks correctly) testing `-ef` against $root at each level
+# that currently exists — `-ef` is what actually tolerates the spelling drift, since it compares by
+# device+inode after resolving both operands, not by string. A level whose directory doesn't exist
+# (unrelated to the drift this exists to catch — e.g. an intermediate directory itself removed) is
+# skipped, not treated as a mismatch: the walk continues to its parent rather than failing outright.
+path_under_root() {
+  local target="$1" dir
+  case "$target" in
+    /*) : ;;
+    *) return 1 ;;   # empty, or a relative target Keel never writes — nothing to walk
   esac
-  # Explicit — not relying on the case/if chain's own trailing status: a "no match" (or a matched
-  # keel-* alias whose target is gone) leaves nothing printed, which the caller reads as "unknown" via
-  # `[ -n "$expected_src" ]`, never via this function's exit code. Called as a plain `var="$(...)"`
-  # assignment (not inside an if/&&/|| test), so under `set -e` a nonzero status here would abort the
-  # whole script — reproduced live: the keel-* branch's own `if [ -f ... ]` can leave the chain's status
-  # at 1 with nothing else to un-fail it.
-  return 0
+  dir="$(dirname "$target")"
+  while :; do
+    if [ -d "$dir" ] && [ "$dir" -ef "$root" ] 2>/dev/null; then return 0; fi
+    [ "$dir" = "/" ] && return 1
+    dir="$(dirname "$dir")"
+  done
 }
 
 # 1-4 (dir #125, manifest-driven): the manifest IS the removal-candidate set — walk every artifact IT
 # recorded, never the checkout's current file list (which is blind to what a later release added or an
 # older release actually delivered — cmp-to-current-checkout wrongly kept an old release's untouched
 # file the moment the checkout itself moved on). Ownership per recorded artifact:
-#   symlink -> Keel's iff it's STILL a symlink on disk AND it still points where Keel would have wired
-#              it (dir #347 route 3 — a fs/manifest KIND disagreement, or a symlink pointing somewhere
-#              else now, is named, never acted on — the manifest never authorizes a blind rm)
+#   symlink -> Keel's iff it's STILL a symlink on disk AND its CURRENT target matches the RECORDED one
+#              (dir #369 — a fs/manifest KIND disagreement, or a symlink pointing somewhere else now,
+#              is named, never acted on — the manifest never authorizes a blind rm; a pre-dir-369
+#              record's `-` placeholder never matches a real target, so an old manifest fails closed)
 #   file    -> Keel's iff it's STILL a regular file (not re-formed as a symlink, dir #347 route 1, nor
 #              re-formed as anything else non-regular — both kind disagreements are named, never acted
 #              on, same as the symlink arm's own two-way kind check) AND its CURRENT bytes match the
@@ -785,13 +816,61 @@ if [ "$this_usable" = 1 ]; then
     [ -n "$rel" ] || continue
     apath="$HOME_DIR/$rel"
     owned=0
+    legacy_weak_evidence=0
     if [ "$akind" = "symlink" ]; then
       if [ -L "$apath" ]; then
-        expected_src="$(expected_symlink_source "$rel")"
-        if [ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]; then
-          owned=1
+        # `|| true`: under set -euo pipefail a bare `var="$(cmd)"` assignment (not inside an
+        # if/&&/|| test) DOES propagate a failing cmd's exit status to errexit (found by this
+        # ticket's own /code-review max pass, reproduced live) — unlike the classic `local
+        # var=$(cmd)` masking gotcha this codebase already guards against elsewhere, this is the
+        # mirror-image failure: readlink can genuinely fail here (a concurrent install/uninstall
+        # racing the same home, a transient I/O error), and an uncaught abort mid-removal-loop
+        # would silently stop before empty-dir pruning, the rails strip, and the summary, with no
+        # diagnostic at all under errexit.
+        live_target="$(readlink "$apath" 2>/dev/null || true)"
+        if [ -n "$extra" ] && [ "$extra" != "-" ]; then
+          # `-ef` first, string-equality fallback (found missing by this ticket's own
+          # /code-review max pass, reproduced live): `-ef` resolves both sides and compares by
+          # device+inode, tolerant of the same path-spelling drift install.sh's own in_sync()
+          # already names ("/tmp vs /private/tmp on macOS, a symlinked parent") — a live symlink
+          # reached through a different-but-identical-file spelling than what was recorded still
+          # matches. The string fallback stays for the case `-ef` can't answer: $extra's target no
+          # longer exists (a moved/reaped checkout) but the live symlink's own text still matches
+          # exactly what was recorded — the manifest-is-a-snapshot design this whole mechanism
+          # relies on, which a live-resolution-only test would break.
+          if [ "$apath" -ef "$extra" ] 2>/dev/null || [ "$live_target" = "$extra" ]; then
+            owned=1
+          else
+            echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+          fi
         else
-          echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+          # Legacy record (extra is the pre-dir-369 `-` placeholder, or empty) — no target was
+          # recorded at install time, so there is nothing to exact-match against. Falling straight to
+          # the mismatch message above would be FALSE for this population: the link is exactly where
+          # Keel wired it, the manifest simply predates the field (found by the release-manager
+          # session's own review of this ticket) — and it would make every pre-dir-369 install
+          # permanently un-uninstallable for its symlinks, reported as a success. Fall back to one
+          # structural check instead of re-adding the per-path table dir #369 removed: a symlink Keel
+          # actually placed always resolves into THIS checkout ($root, computed the same way
+          # install.sh's own is) — looser than the exact-match case above (any file in the checkout,
+          # not the one specific intended source), but table-free and scoped to legacy records only.
+          # path_under_root (not a `case "$live_target" in "$root"/*)` string-prefix test — an
+          # earlier draft of this fix used exactly that and this ticket's own /code-review max pass
+          # reproduced it live, 5 independent ways, as the SAME path-spelling bug the exact-match
+          # branch's own -ef fix above closes, including through the real `keel` CLI wrapper's own
+          # `pwd -P` resolution differing from a bare `./uninstall.sh` invocation — an entirely
+          # ordinary way to trigger it, not an exotic edge case): walks up from the live target's own
+          # directory, testing `-ef` against $root at each level that currently exists.
+          if path_under_root "$live_target"; then
+            owned=1
+            legacy_weak_evidence=1
+          else
+            # dir #98 advice class: install.sh has to be reachable from THIS home, same as every
+            # other advised command in this file (other_mode_install_flag below is the same
+            # locally-computed-at-use-site shape).
+            legacy_mode_flag=""; [ "$CODEX" = 1 ] && legacy_mode_flag=" --codex"
+            echo "  !    $rel: symlink recorded by an install predating the target field — can't confirm it's still Keel's (it doesn't resolve inside this checkout) — left in place (kept; re-run install.sh$legacy_mode_flag --home \"$HOME_DIR\" to refresh the manifest, then uninstall)"
+          fi
         fi
       elif [ -e "$apath" ]; then
         kind_mismatch "$rel" symlink "a regular file"
@@ -828,6 +907,17 @@ if [ "$this_usable" = 1 ]; then
         other_mode_install_flag=""; [ "$other_manifest_mode" = "codex" ] && other_mode_install_flag=" --codex"
         echo "  !    $rel: no evidence $other_context is gone (unconfirmed, no manifest/rails/sentinel) — removing anyway." >&2
         echo "       If that install is still real, restore it:  $root/install.sh$other_mode_install_flag --home \"$HOME_DIR\"" >&2
+      fi
+      if [ "$legacy_weak_evidence" = 1 ]; then
+        # Same "name it when proceeding on weaker evidence" convention as $other_context_ambiguous
+        # just above (found missing here by this ticket's own /code-review max pass): this artifact's
+        # ownership rests on the legacy structural fallback (any file inside this checkout, not the
+        # one specific recorded target) rather than an exact-match confirmation — removing anyway is
+        # still the right call (see this record's own comment for why), but a silent removal here read
+        # identically to a fully-confirmed one, unlike this same loop's other weaker-evidence removal.
+        # dir #98 advice class, same locally-computed-at-use-site shape as legacy_mode_flag above.
+        weak_mode_flag=""; [ "$CODEX" = 1 ] && weak_mode_flag=" --codex"
+        echo "  !    $rel: removed on the legacy structural check (resolves inside this checkout, not an exact recorded-target match) — re-run install.sh$weak_mode_flag --home \"$HOME_DIR\" to record a real target and avoid this next time." >&2
       fi
       take "$apath"
     fi
