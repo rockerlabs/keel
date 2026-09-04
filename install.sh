@@ -306,12 +306,20 @@ fi
 # it), held through the final atomic_write far below, bracketing the stale-scratch sweep and the
 # prior_manifest snapshot region without rewriting either.
 #
+# Lives at $HOME_DIR/.install.lock, a SIBLING of $manifest_dir ($HOME_DIR/.keel) — deliberately NOT
+# nested inside it. uninstall.sh's own cleanup ends with `rmdir "$HOME_DIR/.keel" 2>/dev/null || true`,
+# which only succeeds on an EMPTY directory; a lock dir left behind by a crashed install (no EXIT trap
+# releases it — see the release site far below) would sit inside .keel forever if the lock lived there,
+# silently defeating that rmdir on every future uninstall until some LATER install happened to reclaim
+# it first. Nothing else about $manifest_dir needs that .keel nesting — the lock doesn't gate or record
+# anything manifest-specific — so it costs nothing to keep it out.
+#
 # Cost accepted: a second install into the same home now fails fast (exit 1, before touching anything)
 # instead of possibly racing to completion — a genuine behavior change, but not a contradiction of
 # anything documented (the disclosure already says concurrent installs were never supported). No
 # wait-loop: retrying on contention would need timeout tuning and risks masking a genuinely hung install
 # behind a long wait — a live holder means immediate refusal, never a sleep-and-retry.
-install_lock_dir="$manifest_dir/.install.lock"
+install_lock_dir="$HOME_DIR/.install.lock"
 install_lock_acquired=0
 while :; do
   if mkdir "$install_lock_dir" 2>/dev/null; then
@@ -321,13 +329,14 @@ while :; do
   fi
   # mkdir failed — two different causes, and only one of them is contention. If the lock dir does NOT
   # exist, mkdir didn't lose a race, it couldn't create the dir at all (permission denied, a read-only
-  # filesystem, $manifest_dir itself gone) — a fatal condition, not something a retry ever resolves.
-  # Without this check, a $manifest_dir with no write permission (T14d's own fixture, dir #142) sends
-  # this loop into a genuine infinite spin: mkdir fails EACCES forever, never EEXIST, so the contention
-  # branch below would never see a lock dir to reclaim (found live — this exact loop hung the test suite
-  # before this guard was added).
+  # filesystem, $HOME_DIR itself gone) — a fatal condition, not something a retry ever resolves. Without
+  # this check, an unwritable $HOME_DIR sends this loop into a genuine infinite spin: mkdir fails EACCES
+  # forever, never EEXIST, so the contention branch below would never see a lock dir to reclaim (found
+  # live against T14d's own unwritable-.keel fixture before this guard was added — that specific fixture
+  # no longer reaches this loop's failure path at all now that the lock lives outside .keel, but the
+  # class of bug is real independent of that one fixture, so the guard stays).
   if [ ! -d "$install_lock_dir" ]; then
-    echo "install: cannot create $install_lock_dir — $manifest_dir may not be writable" >&2
+    echo "install: cannot create $install_lock_dir — $HOME_DIR may not be writable" >&2
     exit 1
   fi
   # Genuine contention: the lock dir exists — either a live sibling holds it, or a crashed run left it
