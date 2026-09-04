@@ -711,8 +711,9 @@ expected_symlink_source() {
 #   symlink -> Keel's iff it's STILL a symlink on disk AND it still points where Keel would have wired
 #              it (dir #347 route 3 — a fs/manifest KIND disagreement, or a symlink pointing somewhere
 #              else now, is named, never acted on — the manifest never authorizes a blind rm)
-#   file    -> Keel's iff it's STILL a regular file (not re-formed as a symlink, dir #347 route 1 — the
-#              mirror-image kind check the symlink arm already had) AND its CURRENT bytes match the
+#   file    -> Keel's iff it's STILL a regular file (not re-formed as a symlink, dir #347 route 1, nor
+#              re-formed as anything else non-regular — both kind disagreements are named, never acted
+#              on, same as the symlink arm's own two-way kind check) AND its CURRENT bytes match the
 #              RECORDED cksum, with the RECORDED cksum itself never allowed to be the unreadable
 #              sentinel (dir #347 route 2 — see tools/lib/artifact-cksum.sh's own header for why a
 #              self-equal sentinel match must never authorize a removal)
@@ -749,6 +750,15 @@ if [ "$this_usable" = 1 ]; then
         else
           echo "  =    $rel differs from what Keel installed — kept (yours)"
         fi
+      elif [ -e "$apath" ]; then
+        # The file-arm mirror of the symlink arm's own `-e` catch-all above (dir #347 /code-review max
+        # finding): without this, a manifest `file` record whose slot is now a directory/fifo/device
+        # falls through both `-L` and `-f` silently — fails closed (no owned=1, so still never removed)
+        # but with no diagnostic at all, unlike the symlink arm's equivalent case. Worded to say what it
+        # actually knows (neither a file nor a symlink), not "a regular file now" — the symlink arm's own
+        # `-e` message says that, which is imprecise for a directory too, but that line predates this
+        # diff and is left alone here.
+        echo "  !    $rel: manifest recorded a file, but it's neither a file nor a symlink now — left in place (manifest/filesystem disagree)"
       fi
     fi
     [ "$owned" = 1 ] || continue

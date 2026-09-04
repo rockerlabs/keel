@@ -1124,4 +1124,42 @@ check_file "B30 the adopter's own target file is itself untouched" "$b30_target"
 # ownership, it doesn't blanket-refuse every symlink in the manifest.
 check_nolink "B30 an untouched sibling symlink is still correctly removed" "$B30/bin/keel"
 
+# --- B31: dir #347 /code-review max finding — the file arm's kind-mismatch catch-all. The symlink arm
+# has always had an `elif [ -e "$apath" ]` fallback naming ANY non-symlink kind found where a symlink
+# was recorded; the file arm's own two-way kind check (route 1 above, `[ -L ]` before `[ -f ]`) was
+# missing the mirror-image third branch, so a manifest `file` record whose slot is now a directory (or
+# fifo/device) fell through both `-L` and `-f` with no diagnostic at all — fail-closed (never removed)
+# but silent, unlike the symlink arm's equivalent case. Fixture trap from this same round: `mkdir -p`
+# over an existing REGULAR FILE fails and leaves the file in place, so `rm -f` first is required. --------
+B31="$SANDBOX/b31-file-arm-directory-mismatch/.claude"
+inst --home "$B31" --no-hooks
+check_status "B31 install succeeds" 0 "$STATUS"
+rm -f "$B31/FRAMEWORK.md" && mkdir -p "$B31/FRAMEWORK.md"
+
+unin --home "$B31" --yes
+check_status "B31 uninstall exits 0" 0 "$STATUS"
+check_dir "B31 the directory survives (kind disagreement, never swept)" "$B31/FRAMEWORK.md"
+check_contains "B31 the disagreement is named, not silently skipped" "$OUT" "manifest recorded a file, but it's neither a file nor a symlink now"
+
+# --- B32: dir #347 /code-review max finding — a manifest `artifact=symlink` record whose rel matches
+# NONE of expected_symlink_source's known categories (bin/keel, keel/*.md, commands/*.md) must decline
+# the same way a recognized-but-wrong-target symlink does (B30), not be silently swept nor silently kept
+# with no explanation — the empty-`expected_src` branch and the wrong-target branch share the exact same
+# guard (`[ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]`) and this exercises the "empty"
+# half, which B30 (a recognized rel) never reaches. -----------------------------------------------------
+B32="$SANDBOX/b32-symlink-unmapped-rel/.claude"
+inst --home "$B32" --link --no-hooks
+check_status "B32 linked install succeeds" 0 "$STATUS"
+b32man="$B32/.keel/install-manifest.claude"
+b32_target="$SANDBOX/b32-somewhere.md"
+printf 'unrelated content, not Keel wiring\n' > "$b32_target"
+ln -s "$b32_target" "$B32/not-a-real-keel-artifact.md"
+printf 'artifact=symlink\tnot-a-real-keel-artifact.md\t-\n' >> "$b32man"
+
+unin --home "$B32" --yes
+check_status "B32 uninstall exits 0" 0 "$STATUS"
+check_link "B32 the unmapped-rel symlink survives (no rule to confirm it, declined)" "$B32/not-a-real-keel-artifact.md"
+check_contains "B32 the decline is named" "$OUT" "symlink no longer points where Keel would have wired it"
+check_file "B32 its target is untouched" "$b32_target"
+
 summary
