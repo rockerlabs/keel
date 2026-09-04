@@ -6,14 +6,16 @@
 # A Keel-owned keel/CORE.md takes one of two shapes: an ordinary linked install (CORE.md is a symlink
 # into the checkout) or a --no-git trim (CORE.md is a generated regular file, code/git rails stripped,
 # carrying the KEEL-NOGIT marker so a later run can recognize and heal it). install.sh's three call
-# sites, uninstall.sh's one, and tools/doctor.sh's two each asked one or both of these two questions
+# sites, uninstall.sh's one, and tools/doctor.sh's four each asked one or both of these two questions
 # with their own hand-copied test before this file existed — two functions here, one definition each.
 #
-# REQUIRED, not optional, for uninstall.sh and tools/doctor.sh (bare, unconditional source — no
-# `[ -f ] && bash -n` guard, matching tools/lib/manifest.sh's own contract for those same two scripts
-# and uninstall.sh's existing tools/lib/ledger.sh precedent): neither script has an established "must
-# survive a tools/-less checkout" contract to preserve here, so `set -euo pipefail` aborting the whole
-# run on a missing/corrupted copy is the right failure mode, not a silent degrade.
+# REQUIRED, not optional, for uninstall.sh and tools/doctor.sh — GUARDED (`[ -s ] && bash -n`
+# pre-check, one actionable message, exit 1), matching tools/lib/manifest.sh's own contract for those
+# same two scripts, NOT a bare source like tools/lib/ledger.sh's own pre-existing, unaudited precedent
+# (an earlier draft of this header claimed bare sourcing; found stale by this ticket's own
+# /code-review max pass — the actual call sites in both scripts have always been guarded). Neither
+# script has an established "must survive a tools/-less checkout" contract to preserve here, so
+# refusing outright on a missing/corrupted copy is the right failure mode, not a silent degrade.
 #
 # OPTIONAL for install.sh, with a byte-identical inline fallback in its own sourcing block — unlike
 # tools/lib/artifact-cksum.sh, install.sh's three call sites are pure filesystem checks with zero

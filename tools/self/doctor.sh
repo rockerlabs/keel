@@ -1309,9 +1309,15 @@ say "● manifest_field/manifest_usable/core-ownership-predicate single-definiti
 # copies live inside an `else` block, the lib files' own copies don't — never counts as a difference).
 # Assumes the shape every copy this check compares actually uses: `fn() {` alone on its opening line,
 # a bare `}` alone on its closing line, no nested braces (both functions here are one test expression).
+# The opening-line pattern must tolerate the SAME whitespace `single_def_check`'s own `def_re` does
+# (`[[:space:]]*` between the name and `(`) — found by this ticket's own /code-review max pass,
+# reproduced live: the two were written with different tolerances, so a purely cosmetic reformat
+# (`fn () {` instead of `fn() {`) would still count as exactly one real definition per `def_re`, but
+# `extract_fn_body` would silently return empty for it, comparing unequal to the real body and firing
+# a false "drifted" GAP for a behavior-preserving edit.
 extract_fn_body() {
   awk -v fn="$2" '
-    $0 ~ "^[[:space:]]*" fn "\\(\\)[[:space:]]*\\{[[:space:]]*$" { infn = 1; next }
+    $0 ~ "^[[:space:]]*" fn "[[:space:]]*\\(\\)[[:space:]]*\\{[[:space:]]*$" { infn = 1; next }
     infn && $0 ~ /^[[:space:]]*\}[[:space:]]*$/ { infn = 0; next }
     infn { line = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); print line }
   ' "$1"

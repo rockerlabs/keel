@@ -98,7 +98,7 @@ home_canon="$(cd "$HOME_DIR" 2>/dev/null && pwd || printf '%s' "$HOME_DIR")"
 # previously a hand-copy here, verified output-identical to install.sh's own consumption of the same
 # lib). REQUIRED, not optional — this script's whole removal decision is keyed off manifest state, so a
 # checkout missing this lib cannot safely reason about ownership at all. Guarded the same way as
-# tools/lib/artifact-cksum.sh just below (`[ -f ] && bash -n` pre-check, one actionable message, exit
+# tools/lib/artifact-cksum.sh just below (`[ -s ] && bash -n` pre-check, one actionable message, exit
 # 1) — NOT bare like tools/lib/ledger.sh's own pre-existing, unaudited source further down: dir #362's
 # own reasoning for guarding a required lib is about CORRUPTION, not about what the function's output
 # feeds — a bare `.` of a present-but-corrupted file aborts at parse time under `set -e`, and no
@@ -106,7 +106,12 @@ home_canon="$(cd "$HOME_DIR" 2>/dev/null && pwd || printf '%s' "$HOME_DIR")"
 # adopter a raw bash parse-error stack instead of a clean message. That reasoning applies here exactly
 # as it does to artifact_cksum; matching ledger.sh's bare precedent instead would carry the same gap
 # forward into two more libs rather than close it. (ledger.sh itself is untouched — out of scope here.)
-if [ -f "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
+# `-s`, not `-f` (every guard in this file and install.sh's own — found by this ticket's own
+# /code-review max pass, reproduced live): a zero-byte file passes `bash -n` (empty input is
+# syntactically valid) and would source "successfully" while defining nothing, silently reproducing
+# the exact raw "command not found" crash this guard exists to prevent, just for a different
+# corruption shape (truncation) than the one it was written against (a syntax error).
+if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/manifest.sh
   . "$root/tools/lib/manifest.sh"
 else
@@ -132,9 +137,9 @@ other_usable=0; manifest_usable "$other_manifest" && other_usable=1
 # choice. Refusing outright on a missing/corrupted lib — rather than degrading to a fallback stub — is
 # the same "an ownership decision needs a real cksum comparison" posture install.sh's own copy of this
 # guard documents; see tools/lib/artifact-cksum.sh's own header for the full reasoning. Same
-# `[ -f ] && bash -n` pre-check as install.sh: a bare `.` can't be guarded against a parse-time
-# syntax-error abort under `set -e`.
-if [ -f "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
+# `[ -s ] && bash -n` pre-check as install.sh (`-s`, not `-f` — see tools/lib/manifest.sh's own guard
+# above for why): a bare `.` can't be guarded against a parse-time syntax-error abort under `set -e`.
+if [ -s "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/artifact-cksum.sh
   . "$root/tools/lib/artifact-cksum.sh"
 else
@@ -145,7 +150,7 @@ fi
 # guarded-and-required posture as tools/lib/manifest.sh above (see its own comment for why bare would
 # be wrong here); see tools/lib/core-ownership.sh's own header for why install.sh's consumption
 # differs (optional, with a byte-identical inline fallback).
-if [ -f "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
+if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
 else
@@ -753,6 +758,37 @@ kind_mismatch() {
   echo "  !    $1: manifest recorded a $2, but it's $3 now — left in place (manifest/filesystem disagree)"
 }
 
+# path_under_root TARGET — true iff the absolute path TARGET resolves into somewhere inside THIS
+# checkout ($root), tolerant of path-spelling drift (the same class install.sh's own in_sync()
+# names: "/tmp vs /private/tmp on macOS, a symlinked parent" — a link to the same physical file is
+# in sync however it's spelled) — found missing from an earlier draft of this file's legacy-record
+# fallback by this ticket's own /code-review max pass, reproduced live 5 independent ways, including
+# through the real `keel` CLI wrapper's own `pwd -P` resolution differing from a bare
+# `./uninstall.sh` invocation of the identical checkout. A plain `case "$target" in "$root"/*)`
+# string-prefix test — what the first draft used — fails exactly there: $root is freshly recomputed
+# from THIS run's own `$0`, so it can be spelled differently than whatever a PRIOR run's `readlink`
+# baked into the symlink, even though both name the same directory.
+#
+# Walks UP from TARGET's own directory (never resolving TARGET itself through the filesystem, so a
+# dangling symlink's target string still walks correctly) testing `-ef` against $root at each level
+# that currently exists — `-ef` is what actually tolerates the spelling drift, since it compares by
+# device+inode after resolving both operands, not by string. A level whose directory doesn't exist
+# (unrelated to the drift this exists to catch — e.g. an intermediate directory itself removed) is
+# skipped, not treated as a mismatch: the walk continues to its parent rather than failing outright.
+path_under_root() {
+  local target="$1" dir
+  case "$target" in
+    /*) : ;;
+    *) return 1 ;;   # empty, or a relative target Keel never writes — nothing to walk
+  esac
+  dir="$(dirname "$target")"
+  while :; do
+    if [ -d "$dir" ] && [ "$dir" -ef "$root" ] 2>/dev/null; then return 0; fi
+    [ "$dir" = "/" ] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
 # 1-4 (dir #125, manifest-driven): the manifest IS the removal-candidate set — walk every artifact IT
 # recorded, never the checkout's current file list (which is blind to what a later release added or an
 # older release actually delivered — cmp-to-current-checkout wrongly kept an old release's untouched
@@ -780,11 +816,29 @@ if [ "$this_usable" = 1 ]; then
     [ -n "$rel" ] || continue
     apath="$HOME_DIR/$rel"
     owned=0
+    legacy_weak_evidence=0
     if [ "$akind" = "symlink" ]; then
       if [ -L "$apath" ]; then
-        live_target="$(readlink "$apath" 2>/dev/null)"
+        # `|| true`: under set -euo pipefail a bare `var="$(cmd)"` assignment (not inside an
+        # if/&&/|| test) DOES propagate a failing cmd's exit status to errexit (found by this
+        # ticket's own /code-review max pass, reproduced live) — unlike the classic `local
+        # var=$(cmd)` masking gotcha this codebase already guards against elsewhere, this is the
+        # mirror-image failure: readlink can genuinely fail here (a concurrent install/uninstall
+        # racing the same home, a transient I/O error), and an uncaught abort mid-removal-loop
+        # would silently stop before empty-dir pruning, the rails strip, and the summary, with no
+        # diagnostic at all under errexit.
+        live_target="$(readlink "$apath" 2>/dev/null || true)"
         if [ -n "$extra" ] && [ "$extra" != "-" ]; then
-          if [ "$live_target" = "$extra" ]; then
+          # `-ef` first, string-equality fallback (found missing by this ticket's own
+          # /code-review max pass, reproduced live): `-ef` resolves both sides and compares by
+          # device+inode, tolerant of the same path-spelling drift install.sh's own in_sync()
+          # already names ("/tmp vs /private/tmp on macOS, a symlinked parent") — a live symlink
+          # reached through a different-but-identical-file spelling than what was recorded still
+          # matches. The string fallback stays for the case `-ef` can't answer: $extra's target no
+          # longer exists (a moved/reaped checkout) but the live symlink's own text still matches
+          # exactly what was recorded — the manifest-is-a-snapshot design this whole mechanism
+          # relies on, which a live-resolution-only test would break.
+          if [ "$apath" -ef "$extra" ] 2>/dev/null || [ "$live_target" = "$extra" ]; then
             owned=1
           else
             echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
@@ -800,18 +854,23 @@ if [ "$this_usable" = 1 ]; then
           # actually placed always resolves into THIS checkout ($root, computed the same way
           # install.sh's own is) — looser than the exact-match case above (any file in the checkout,
           # not the one specific intended source), but table-free and scoped to legacy records only.
-          case "$live_target" in
-            "$root"/*)
-              owned=1
-              ;;
-            *)
-              # dir #98 advice class: install.sh has to be reachable from THIS home, same as every
-              # other advised command in this file (other_mode_install_flag below is the same
-              # locally-computed-at-use-site shape).
-              legacy_mode_flag=""; [ "$CODEX" = 1 ] && legacy_mode_flag=" --codex"
-              echo "  !    $rel: symlink recorded by an install predating the target field — can't confirm it's still Keel's (it doesn't resolve inside this checkout) — left in place (kept; re-run install.sh$legacy_mode_flag --home \"$HOME_DIR\" to refresh the manifest, then uninstall)"
-              ;;
-          esac
+          # path_under_root (not a `case "$live_target" in "$root"/*)` string-prefix test — an
+          # earlier draft of this fix used exactly that and this ticket's own /code-review max pass
+          # reproduced it live, 5 independent ways, as the SAME path-spelling bug the exact-match
+          # branch's own -ef fix above closes, including through the real `keel` CLI wrapper's own
+          # `pwd -P` resolution differing from a bare `./uninstall.sh` invocation — an entirely
+          # ordinary way to trigger it, not an exotic edge case): walks up from the live target's own
+          # directory, testing `-ef` against $root at each level that currently exists.
+          if path_under_root "$live_target"; then
+            owned=1
+            legacy_weak_evidence=1
+          else
+            # dir #98 advice class: install.sh has to be reachable from THIS home, same as every
+            # other advised command in this file (other_mode_install_flag below is the same
+            # locally-computed-at-use-site shape).
+            legacy_mode_flag=""; [ "$CODEX" = 1 ] && legacy_mode_flag=" --codex"
+            echo "  !    $rel: symlink recorded by an install predating the target field — can't confirm it's still Keel's (it doesn't resolve inside this checkout) — left in place (kept; re-run install.sh$legacy_mode_flag --home \"$HOME_DIR\" to refresh the manifest, then uninstall)"
+          fi
         fi
       elif [ -e "$apath" ]; then
         kind_mismatch "$rel" symlink "a regular file"
@@ -848,6 +907,17 @@ if [ "$this_usable" = 1 ]; then
         other_mode_install_flag=""; [ "$other_manifest_mode" = "codex" ] && other_mode_install_flag=" --codex"
         echo "  !    $rel: no evidence $other_context is gone (unconfirmed, no manifest/rails/sentinel) — removing anyway." >&2
         echo "       If that install is still real, restore it:  $root/install.sh$other_mode_install_flag --home \"$HOME_DIR\"" >&2
+      fi
+      if [ "$legacy_weak_evidence" = 1 ]; then
+        # Same "name it when proceeding on weaker evidence" convention as $other_context_ambiguous
+        # just above (found missing here by this ticket's own /code-review max pass): this artifact's
+        # ownership rests on the legacy structural fallback (any file inside this checkout, not the
+        # one specific recorded target) rather than an exact-match confirmation — removing anyway is
+        # still the right call (see this record's own comment for why), but a silent removal here read
+        # identically to a fully-confirmed one, unlike this same loop's other weaker-evidence removal.
+        # dir #98 advice class, same locally-computed-at-use-site shape as legacy_mode_flag above.
+        weak_mode_flag=""; [ "$CODEX" = 1 ] && weak_mode_flag=" --codex"
+        echo "  !    $rel: removed on the legacy structural check (resolves inside this checkout, not an exact recorded-target match) — re-run install.sh$weak_mode_flag --home \"$HOME_DIR\" to record a real target and avoid this next time." >&2
       fi
       take "$apath"
     fi

@@ -174,11 +174,12 @@ CONTEXT_FILE="CLAUDE.md"
 # zero tools/ dependency today, driving only this run's own LINK/NOGIT control flow and a printed
 # message — never a manifest record another script later trusts for a destructive decision, so there's
 # no cross-script poisoning risk to refuse outright over (contrast tools/lib/artifact-cksum.sh below).
-# Same `[ -f ] && bash -n` pre-check as the libs below (a bare `.` can't be guarded against a
-# parse-time syntax-error abort under `set -e`); the fallback is today's inline logic moved verbatim —
+# Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see tools/lib/manifest.sh's
+# own guard further down for why; a bare `.` can't be guarded against a parse-time syntax-error abort
+# under `set -e`); the fallback is today's inline logic moved verbatim —
 # byte-identical to tools/lib/core-ownership.sh's own copy, not a stub, so a tools/-less checkout keeps
 # today's exact behaviour.
-if [ -f "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
+if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
 else
@@ -467,7 +468,14 @@ done
 # a parse-time failure, not a runtime one — which would silently break the "optional refinement" promise
 # this comment makes for a present-but-corrupted file (a partial write, a disk error), not just a
 # missing one.
-if [ -f "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
+# `-s`, not `-f` (every guard in this file and uninstall.sh's own — found by this ticket's own
+# /code-review max pass, reproduced live): a zero-byte file passes `bash -n` (empty input is
+# syntactically valid) and would source "successfully" while defining nothing — a required lib then
+# crashes with a raw "command not found" instead of this guard's clean message, and an optional one
+# (this block) silently keeps the missing function undefined instead of falling to its own `else`
+# fallback, for a different corruption shape (truncation) than the one the guard was written against
+# (a syntax error).
+if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/manifest.sh
   . "$root/tools/lib/manifest.sh"
 else
@@ -482,7 +490,7 @@ fi
 # here with its own tests. If the lib is missing or corrupt the fallback answers empty, and the
 # predicate below treats an empty count as UNKNOWN and refuses, which is the fail-closed direction:
 # a checkout too broken to carry tools/ is not one to auto-refresh an adopter's files from.
-if [ -f "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
+if [ -s "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/stat-portable.sh
   . "$root/tools/lib/stat-portable.sh"
   # Prime the flavor cache HERE, once, as that lib's own header instructs for a hot loop: the predicate
@@ -499,10 +507,11 @@ fi
 # continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
 # checkout instead of only the rare truly-unreadable file, and uninstall.sh's own comparison has no
 # sentinel guard on either side (dir #347's gap) — so a stubbed fallback would make every artifact
-# compare as a self-equal match. Same `[ -f ] && bash -n` pre-check as the two libs above (a bare `.`
-# can't be guarded against a parse-time syntax-error abort under `set -e`), but the else branch refuses
-# outright instead of degrading.
-if [ -f "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
+# compare as a self-equal match. Same `[ -s ] && bash -n` pre-check as the two libs above (`-s`, not
+# `-f` — see tools/lib/manifest.sh's own guard for why; a bare `.` can't be guarded against a
+# parse-time syntax-error abort under `set -e`), but the else branch refuses outright instead of
+# degrading.
+if [ -s "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/artifact-cksum.sh
   . "$root/tools/lib/artifact-cksum.sh"
 else
@@ -766,19 +775,25 @@ record_placed() {
 #     re-points the very dotfiles wiring this predicate protects in the drifted case;
 #   - copy mode -> in_sync, which prints "up to date" and leaves the link ON DISK untouched — but
 #     calls record_placed, which classifies by CURRENT form and so rewrites the manifest record from
-#     `file <cksum>` to `symlink -`. uninstall.sh treats a `symlink` record as unconditionally owned,
-#     so the adopter's link is then swept on uninstall, with no release drift needed at all. "The link
-#     is untouched" is true of this run and false of the next uninstall; an earlier draft of this
-#     comment called that outcome "correct", which it is not.
+#     `file <cksum>` to `symlink <readlink target>` (dir #369: the target is now the adopter's OWN
+#     current link target, captured at the moment record_placed runs here — no longer the `-`
+#     placeholder this comment used to describe). uninstall.sh's removal loop still ends up matching
+#     it: the recorded extra IS exactly what the live link currently points to, since both were read
+#     from the same symlink moments apart, so the adopter's link is swept on uninstall with no release
+#     drift needed at all — dir #369 changed HOW uninstall.sh decides ownership (exact match against a
+#     real recorded target, not unconditional trust of any `symlink`-kind record) but not THIS outcome.
+#     "The link is untouched" is true of this run and false of the next uninstall; an earlier draft of
+#     this comment called that outcome "correct", which it is not.
 # Both are pre-existing, unchanged since v0.8.0 (reproduced there: identical outcomes) and outside this
 # batch's findings — so do not read this predicate as closing the symlinked-dest case in general. It
 # closes the path that runs THROUGH it, not every path a symlinked dest can take.
 #
 # Two deliberate non-behaviours:
-#   - A dest a LINKED run recorded is unaffected: record_placed writes `symlink -` there, never a
-#     `cksum:` string, so the artifact=file lookup below cannot match it — that dest is already handled
-#     by in_sync/the migration branch. This is a statement about the RECORD, not about the mode of the
-#     run reading it: `commands/<name>.md` has the same home-relative key in both modes and both modes
+#   - A dest a LINKED run recorded is unaffected: record_placed writes `symlink <target>` there (dir
+#     #369: the target, not the old `-` placeholder — the exact text doesn't matter here, only the
+#     KIND), never a `cksum:` string, so the artifact=file lookup below cannot match it — that dest is
+#     already handled by in_sync/the migration branch. This is a statement about the RECORD, not about
+#     the mode of the run reading it: `commands/<name>.md` has the same home-relative key in both modes and both modes
 #     read the same manifest file (manifest_mode keys on $CODEX, not on $LINK), so a `file` + `cksum:`
 #     record written by an earlier COPY-mode run IS visible to a later `--link` run, and does drive
 #     this branch. That is intended and load-bearing: it is the copy→linked migration of a DRIFTED

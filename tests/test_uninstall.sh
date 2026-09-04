@@ -1232,6 +1232,7 @@ check_contains "B35 fixture: manifest now carries the legacy placeholder for go.
 unin --home "$B35" --yes
 check_status "B35 uninstall exits 0" 0 "$STATUS"
 check_nolink "B35 the untouched legacy-recorded symlink is still correctly removed" "$B35/commands/go.md"
+check_contains "B35 the weaker-evidence basis is named, not silently removed like a confirmed match" "$OUT" "removed on the legacy structural check"
 
 B36="$SANDBOX/b36-legacy-manifest-repointed/.claude"
 inst --home "$B36" --link --no-hooks
@@ -1250,5 +1251,29 @@ check_contains "B36 it still points at the adopter's own file" "$(readlink "$B36
 check_contains "B36 the message is HONEST about why (predates the field), not a false 'moved' claim" "$OUT" "symlink recorded by an install predating the target field"
 check_absent "B36 does NOT use the genuine-mismatch wording for this population" "$OUT" "no longer points where Keel would have wired it"
 check_file "B36 the adopter's own target file is itself untouched" "$b36_target"
+
+# --- B37: dir #369 legacy-record fallback must tolerate PATH-SPELLING drift, not just an untouched
+# live symlink (found by this ticket's own /code-review max pass, reproduced live 5 independent ways
+# — including through the real `keel` CLI wrapper's own `pwd -P` resolution differing from a bare
+# `./uninstall.sh` invocation of the identical checkout, an entirely ordinary way to trigger it). A
+# FIRST draft of B35's fallback (`case "$live_target" in "$root"/*)`, a plain string-prefix test)
+# passes B35 itself (same spelling throughout) but fails exactly this shape: install through a
+# SYMLINKED ALIAS of $REPO_ROOT (baking that spelling into the recorded/live symlink targets), then
+# uninstall through $REPO_ROOT directly — same physical checkout, different string. Portable across
+# platforms on purpose (a real `ln -s`, not relying on macOS's own /tmp -> /private/tmp quirk, which
+# doesn't exist on Alpine CI). Reproduces RED against the string-prefix draft (declined, "doesn't
+# resolve inside this checkout") and GREEN after (`path_under_root`'s `-ef`-based walk). -------------
+B37_alias="$SANDBOX/b37-repo-alias"
+ln -s "$REPO_ROOT" "$B37_alias"
+B37="$SANDBOX/b37-legacy-manifest-path-spelling/.claude"
+run "$B37_alias/install.sh" --link --home "$B37" --no-hooks
+check_status "B37 linked install (via a symlinked checkout alias) succeeds" 0 "$STATUS"
+b37man="$B37/.keel/install-manifest.claude"
+check_contains "B37 fixture: go.md's recorded target is spelled through the alias" "$(cat "$b37man")" "$B37_alias/commands/go.md"
+sed -i.bak "s|^artifact=symlink	commands/go.md	.*|artifact=symlink	commands/go.md	-|" "$b37man" && rm -f "$b37man.bak"
+
+unin --home "$B37" --yes
+check_status "B37 uninstall (via the REAL, un-aliased checkout path) exits 0" 0 "$STATUS"
+check_nolink "B37 the legacy-recorded symlink is still correctly removed despite the path-spelling drift" "$B37/commands/go.md"
 
 summary

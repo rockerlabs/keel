@@ -62,31 +62,6 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_doctor_dir/lib/impact-store.sh"
-# manifest_field/manifest_usable (dir #125) and keel_core_is_link/keel_core_is_nogit_trim (dir #363) —
-# REQUIRED: this file has no established "must survive a tools/-less checkout" contract, so aborting on
-# a missing/corrupted copy is correct, not a silent degrade. dir #363: previously a hand-copy of
-# manifest_field and six independently hand-copied CORE.md predicate tests; see each lib's own header.
-# Guarded (`[ -f ] && bash -n`, one actionable message, exit 1) — NOT bare like nonneg-int.sh/
-# impact-store.sh just above (pre-existing, unaudited, out of scope here): a bare `.` of a
-# present-but-corrupted file aborts at parse time under `set -e`, which no `if`/`&&` around the `.`
-# itself can catch, so an unguarded required source hands the operator a raw bash parse-error stack
-# instead of a clean, actionable one — the same reasoning tools/lib/artifact-cksum.sh's own guard
-# documents (dir #362), applied here since it's about corruption, not about what the function's output
-# feeds.
-if [ -f "$_doctor_dir/lib/manifest.sh" ] && bash -n "$_doctor_dir/lib/manifest.sh" 2>/dev/null; then
-  # shellcheck source=tools/lib/manifest.sh
-  . "$_doctor_dir/lib/manifest.sh"
-else
-  echo "doctor: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh" >&2
-  exit 1
-fi
-if [ -f "$_doctor_dir/lib/core-ownership.sh" ] && bash -n "$_doctor_dir/lib/core-ownership.sh" 2>/dev/null; then
-  # shellcheck source=tools/lib/core-ownership.sh
-  . "$_doctor_dir/lib/core-ownership.sh"
-else
-  echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh" >&2
-  exit 1
-fi
 unset _doctor_dir
 
 QUIET=0
@@ -549,6 +524,43 @@ if [ "$INSTALL_MODE" = 1 ]; then
   idefault="${KEEL_HOME:-${HOME:-}/$idefault_leaf}"
   if [ "$ihome" = "$idefault" ]; then ihome_flag=""
   else                                 ihome_flag=" --home \"$ihome\""; fi
+  # manifest_field/manifest_usable (dir #125) and keel_core_is_link/keel_core_is_nogit_trim (dir
+  # #363) — REQUIRED, but ONLY inside --install mode: every real call site of all four lives inside
+  # this block, and an ordinary (non-install) `doctor.sh [DIR...]` project audit never touches any of
+  # them. Sourcing them unconditionally at file load — an earlier draft of this block did exactly
+  # that — was found by this ticket's own /code-review max pass, reproduced live, to widen the blast
+  # radius of a corrupted/missing tools/lib/ file: a plain project audit that never asked to audit an
+  # install would fail with "cannot safely audit an install", a message actively wrong for what that
+  # run was doing. Scoped here instead, at the one point the dependency actually exists — after
+  # $imode_flag/$ihome_flag above so the failure message can carry the dir #98 home-reaching marker
+  # too, same as every other advice line in this mode (an earlier draft sourced these at the very top
+  # of this block, before those flags existed, and its error message named a plain `tools/doctor.sh
+  # --install` that couldn't reach a retargeted home — caught by this ticket's own check 1c).
+  # Guarded (`[ -s ] && bash -n`, one actionable message, exit 1) — NOT bare like nonneg-int.sh/
+  # impact-store.sh above (pre-existing, unaudited, out of scope here): a bare `.` of a
+  # present-but-corrupted file aborts at parse time under `set -e`, which no `if`/`&&` around the `.`
+  # itself can catch, so an unguarded required source hands the operator a raw bash parse-error stack
+  # instead of a clean, actionable one — the same reasoning tools/lib/artifact-cksum.sh's own guard
+  # documents (dir #362), applied here since it's about corruption, not about what the function's
+  # output feeds. `-s`, not `-f`: a zero-byte file (a partial write/interrupted fetch — bootstrap.sh's
+  # no-git path downloads a tarball, a believable way to leave one file empty) passes `bash -n` (empty
+  # input is syntactically valid) and would source successfully while defining nothing, so a required
+  # function ends up undefined and the FIRST call crashes with a raw "command not found" instead of
+  # this guard's own clean message — found by this ticket's own /code-review max pass, reproduced live.
+  if [ -s "$tools_dir/lib/manifest.sh" ] && bash -n "$tools_dir/lib/manifest.sh" 2>/dev/null; then
+    # shellcheck source=tools/lib/manifest.sh
+    . "$tools_dir/lib/manifest.sh"
+  else
+    echo "doctor: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$ihome_flag" >&2
+    exit 1
+  fi
+  if [ -s "$tools_dir/lib/core-ownership.sh" ] && bash -n "$tools_dir/lib/core-ownership.sh" 2>/dev/null; then
+    # shellcheck source=tools/lib/core-ownership.sh
+    . "$tools_dir/lib/core-ownership.sh"
+  else
+    echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$ihome_flag" >&2
+    exit 1
+  fi
   # iother_home_flag — the SAME home-reaching suffix, but computed against the OTHER mode's default
   # (via $iother_leaf, the mirror of $idefault_leaf), for the one advice site (the mode-mismatch
   # redirect below) that recommends switching modes. Using plain $ihome_flag there was a real bug

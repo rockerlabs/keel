@@ -222,8 +222,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `manifest_usable` (verified output-identical to `tools/lib/manifest.sh`'s own, already sourced by
   `install.sh`); both now source that lib instead. The `keel/CORE.md` ownership predicate — `[ -L
   keel/CORE.md ]` for an ordinary linked install, or a regular file carrying the `KEEL-NOGIT` marker
-  for a `--no-git` trim — was independently inline at six call sites across all three scripts (three in
-  `install.sh`, one in `uninstall.sh`, two in `tools/doctor.sh`); a new `tools/lib/core-ownership.sh`
+  for a `--no-git` trim — was independently inline at eight call sites across all three scripts (three
+  in `install.sh`, one in `uninstall.sh`, four in `tools/doctor.sh`); a new `tools/lib/core-ownership.sh`
   gives it two functions, `keel_core_is_link`/`keel_core_is_nogit_trim`, sourced by all three. **The
   degradation contract is not uniform, and the divergence is deliberate:** `manifest_field`/
   `manifest_usable` and the ownership predicate, for `uninstall.sh`/`tools/doctor.sh`, are
@@ -289,6 +289,37 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the real reason ("recorded by an install predating the target field") and the remedy (re-run
   `install.sh` to refresh the manifest, then uninstall) instead of the false "moved" claim. New
   regression coverage (`tests/test_uninstall.sh` B35/B36) covers both legacy-record outcomes.
+- **A `/code-review max` pass on the two entries above (before their PR opened) found and fixed five
+  further real issues, three of them correctness bugs — disclosed here rather than only in the PR
+  body, since all five ship in the same commits.** (1) The legacy-record structural fallback above
+  used a plain string-prefix test (`case "$live_target" in "$root"/*)`) rather than `-ef`, reproduced
+  live 5 independent ways as vulnerable to the exact path-spelling drift `install.sh`'s own
+  `in_sync()` already names and avoids ("`/tmp` vs `/private/tmp` on macOS, a symlinked parent") —
+  including through the real `keel` CLI wrapper's own `pwd -P` resolution differing from a bare
+  `./uninstall.sh` invocation of the identical checkout, an entirely ordinary way to trigger it, not
+  an exotic edge case. Replaced with `path_under_root()`, an `-ef`-based walk up the live target's own
+  directory chain; the exact-match branch also gained an `-ef` check ahead of its string comparison,
+  for the same tolerance. (2) `uninstall.sh`'s new `live_target="$(readlink ... 2>/dev/null)"` was a
+  bare (non-`local`, non-guarded) command-substitution assignment, which — under `set -euo pipefail` —
+  DOES propagate a failing `readlink` to `errexit`; a concurrent install/uninstall racing the same
+  home could silently abort mid-removal-loop with no diagnostic. Fixed with `|| true`. (3) The new
+  `[ -f ] && bash -n` guards on `tools/lib/manifest.sh`/`tools/lib/core-ownership.sh` (and, brought
+  into line for consistency, `tools/lib/artifact-cksum.sh`'s pre-existing dir #362 guards) didn't
+  detect a zero-byte file as corrupted — `bash -n` passes empty input, so a required lib would source
+  "successfully" while defining nothing, and the first call would crash with a raw "command not
+  found" instead of the guard's own intended clean message. Changed `-f` to `-s` everywhere. (4)
+  `tools/doctor.sh`'s two new REQUIRED guards ran unconditionally at file load, before any argument
+  parsing — but every real call site lives inside `--install` mode, so an ORDINARY project audit
+  (`doctor.sh [DIR...]`, unrelated to any install) with a corrupted `tools/lib/` would fail with a
+  message actively wrong for what that run was doing. Moved inside the `--install` branch, at the
+  point the dependency actually exists. (5) `tools/self/doctor.sh` check 10's `single_def_check`
+  (dir #363) and its `extract_fn_body` helper used different whitespace tolerances for a function's
+  opening line — a purely cosmetic reformat of `install.sh`'s fallback (`fn () {` instead of `fn() {`)
+  would have false-positive GAP'd as "drifted from the canonical definition." Aligned the two regexes.
+  Also fixed: two stale header comments (`tools/lib/manifest.sh`, `tools/lib/core-ownership.sh`) left
+  describing pre-diff behavior, and an undercounted call-site total (eight, not six — `tools/doctor.sh`
+  has four, not two). All five verified with a live reproduction before and after the fix, not reasoned
+  about only; `tests/run.sh` and `shellcheck -x --severity=warning` both stayed green throughout.
 
 ## [0.8.1] — 2026-09-03
 
