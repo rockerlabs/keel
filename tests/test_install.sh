@@ -668,6 +668,29 @@ run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$ladvhome" --n
 check_status "T14 linked retargeted install → exit 0" 0 "$STATUS"
 check_contains "T14 the linked --force advice carries the --home suffix" "$OUT" "keel sync --home \"$ladvhome\" --force"
 
+# T14h — dir #349's OTHER half: advise_refresh_force must reflect the STICKY-linked LINK value, not
+# just an explicit --link on THIS invocation. Before the fix, advise_refresh_force was computed ~16
+# lines above the sticky linked-home auto-detect (install.sh's own comment there names the exact gap),
+# so a PLAIN `./install.sh` re-run — or `keel sync`, which execs install.sh with no --link of its own
+# (keel:128) — over an already-linked home fell to the copy-mode remedy (a bare `install.sh --force`)
+# instead of the cwd-independent `keel sync --force`, in exactly the case `keel sync` exists to cover.
+# Own /go collides on the first (explicit --link) run, forking a keel-go.md alias — same shape as the
+# copy-mode T2/T2b pair above, just under linked placement (commands are symlinks there too).
+stickyhome="$SANDBOX/sticky-link-home"; mkdir -p "$stickyhome/commands"
+printf '# my own go command, never touched by Keel\n' > "$stickyhome/commands/go.md"
+fresh_home_env "$stickyhome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --link --home "$stickyhome" --no-hooks
+check_status "T14h initial linked install (own go.md collides) → exit 0" 0 "$STATUS"
+check_file "T14h keel-go.md alias created" "$stickyhome/commands/keel-go.md"
+# The regression check: re-run WITHOUT --link — the sticky auto-detect must flip LINK back to 1
+# BEFORE advise_refresh_force is computed, so the resolved-collision reclaim line still names `keel
+# sync`, never a bare `install.sh` (which would build a second, unlinked Keel at this same home).
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$stickyhome" --no-hooks
+check_status "T14h plain re-run over the sticky-linked home → exit 0" 0 "$STATUS"
+check_contains "T14h sticky linked mode was detected" "$OUT" "this home is a LINKED install"
+check_contains "T14h reclaim advice uses keel sync, not a bare install.sh re-run" "$OUT" "Reclaim it: keel sync --home \"$stickyhome\" --force"
+check_absent "T14h never advises the cwd-dependent copy-mode form" "$OUT" "Reclaim it: install.sh"
+
 # T14b — the EPHEMERAL half of the same fix, which had no pin at all: a bootstrap run's checkout is a
 # temp clone reaped on exit, so the piped bootstrap form is the adopter's ONLY remaining remedy — the
 # mode where an un-retargeted advice string costs the most. KEEL_EPHEMERAL is the env signal
@@ -693,7 +716,8 @@ check_contains "T14c the Verify WARN fires for the unwired CLI" "$OUT" "keel CLI
 # The needle runs THROUGH the carve-out on purpose: mutation-proved that stopping at "(add --force"
 # leaves a WARN-only regression green, because T14e's own carve-out check is whole-output and the
 # refusal satisfies it. This is the likely single-site regression — the WARN is the line that mirrors
-# tools/doctor.sh:734, whose string still says only "not a symlink".
+# tools/doctor.sh's own W-CLI-UNWIRED string (dir #349 brought the two into agreement; pinned
+# separately in test_install_link.sh, next to the finding itself).
 check_contains "T14c …and advises install.sh, reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there already"
 # The needle carries the CONDITIONAL wording, not just the line's identity: mutation-proved that a
 # needle of "is not a Keel symlink" alone leaves a flat `--force` regression green, and a flat --force
@@ -709,10 +733,9 @@ check_contains "T14c the scoped needle actually caught both lines" "$warn_lines"
 check_absent "T14c neither line advises keel sync, which needs the bin/keel they say is missing" "$warn_lines" "keel sync"
 
 # T14e — the DIRECTORY case, which three comments now cite as the whole reason the --force advice is
-# CONDITIONAL and which nothing planted until now. force_backup is a plain `cp`: handed a directory it
-# fails, and it is called from an `if` body under `set -euo pipefail`, so a flat --force here aborts
-# the run mid-sync with the commands already placed. The carve-out is the only thing standing between
-# an adopter and that, so it gets a fixture, not just a string match.
+# CONDITIONAL and which nothing planted until now (the plain, non-force run). force_backup is a plain
+# `cp`: handed a directory it fails. The carve-out is the only thing standing between an adopter and
+# that, so it gets a fixture, not just a string match.
 dirhome="$SANDBOX/dir-bin-keel-home"; mkdir -p "$dirhome/bin/keel"
 printf 'not keel\n' > "$dirhome/bin/keel/something"
 fresh_home_env "$dirhome"
@@ -721,6 +744,59 @@ check_status "T14e a directory at bin/keel → the plain run still completes" 0 
 check_dir "T14e …the adopter's directory is left untouched" "$dirhome/bin/keel"
 check_file "T14e …with its contents intact" "$dirhome/bin/keel/something"
 check_contains "T14e …and the advice carves a directory out of --force" "$OUT" "not a symlink or a directory"
+
+# T14i — dir #349's WIDENED half: the same directory, but now WITH --force, which T14e never exercised.
+# Before the fix, this is exactly the case the T14e/W-CLI-UNWIRED comments only ever warned ABOUT: the
+# --force arm admitted a directory (it satisfies `[ ! -L ] && [ -e ]`), handed it to force_backup's
+# plain `cp`, and the run aborted mid-sync under `set -euo pipefail` — verified live before this fix,
+# with earlier-placed commands already on disk and bin/keel never wired. The run must now complete
+# cleanly instead, declining the directory the same way the non-force run does.
+dirforcehome="$SANDBOX/dir-bin-keel-force-home"; mkdir -p "$dirforcehome/bin/keel"
+printf 'not keel\n' > "$dirforcehome/bin/keel/something"
+fresh_home_env "$dirforcehome"
+run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$dirforcehome" --no-hooks --force
+check_status "T14i a directory at bin/keel + --force → the run still completes, not an abort" 0 "$STATUS"
+check_dir "T14i …the adopter's directory is left untouched, --force included" "$dirforcehome/bin/keel"
+check_file "T14i …with its contents intact" "$dirforcehome/bin/keel/something"
+t14i_bak_count="$(ls "$dirforcehome"/bin/keel.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+check_status "T14i …no backup was attempted (there was nothing safe to back up)" 0 "$t14i_bak_count"
+# force_backup's own decline (its $NON_REGULAR_MSG line) is the message here, not the FORCE=0 branch's
+# "not a symlink" text — the wiring block's `elif [ "$FORCE" = 1 ] && force_backup ...` folds the call
+# into the condition specifically so a decline falls through with NOTHING further to print (a fresh
+# /code-review pass caught an earlier draft printing BOTH lines for this one refusal — a real,
+# reproduced double-message bug, not a style nit). Pin both halves of that fix: the message that must
+# fire, and the one that must not, so a regression back to double-printing shows up as a diff, not a
+# still-green substring match.
+check_contains "T14i …and the run still reports the decline, not a crash" "$OUT" "a non-regular file already exists there — left in place"
+check_absent "T14i …exactly once — not also the FORCE=0 branch's own wording" "$OUT" "exists and is not a Keel symlink"
+# Other Keel-owned files this same --force run touches must still land — proves the directory decline
+# is scoped to bin/keel alone, not a run-wide bail-out (the pre-fix failure mode killed the whole run
+# via set -e, so every later placement was lost too).
+check_file "T14i …and the rest of the --force run still completed (CLAUDE.md placed)" "$dirforcehome/CLAUDE.md"
+check_file "T14i …commands/polish.md placed too" "$dirforcehome/commands/polish.md"
+
+# T14j — a fresh /code-review pass on this ticket found a real, previously-unpinned bug: testing
+# force_backup's return value in an `elif` (the bin/keel site) suspends `set -e` for the function's
+# WHOLE body, not just its own `return 1` — including the `cp` a few lines later. Before this test,
+# force_backup's `cp` had no explicit failure check of its own; a genuine `cp` failure (permission
+# denied, disk full) would have silently fallen through to the success echo and returned 0, so the
+# caller would believe a backup was taken and proceed to overwrite the adopter's real file with
+# nothing actually backed up. Root-guarded: chmod is a no-op for root, so this can't be reproduced
+# there (same trap as T14d above).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  cpfailhome="$SANDBOX/cp-fail-home"; mkdir -p "$cpfailhome/bin"
+  printf 'my own keel-ish thing, never touched by Keel\n' > "$cpfailhome/bin/keel"
+  chmod 555 "$cpfailhome/bin"   # cp can read $dest but can't create a NEW .bak sibling in this dir
+  fresh_home_env "$cpfailhome"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$cpfailhome" --no-hooks --force
+  chmod 755 "$cpfailhome/bin"   # restore so later checks (and sandbox cleanup) can read/remove it
+  check_status "T14j a backup that genuinely fails to write → the run still completes" 0 "$STATUS"
+  check_contains "T14j …and reports the backup failure, not a false success" "$OUT" "backup failed — left untouched"
+  check_absent "T14j …never claims the file was backed up" "$OUT" "backed up →"
+  check_contains "T14j …the adopter's real content is intact" "$(cat "$cpfailhome/bin/keel")" "my own keel-ish thing"
+  cpfail_bak_count="$(ls "$cpfailhome"/bin/keel.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+  check_status "T14j …no partial/empty .bak file was left behind" 0 "$cpfail_bak_count"
+fi
 
 # T14d — finding 2's other half, unpinned until now: the degradation must NOT swallow a genuinely
 # unwritable \$manifest_dir. That is the deliberate asymmetry of the fix — `cp` sits in the condition

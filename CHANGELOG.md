@@ -11,6 +11,29 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #349: a directory at `bin/keel` plus `--force` aborted the whole `install.sh` run mid-sync,
+  and two of the four "directory, not just a symlink" advice sites still said only "not a symlink".**
+  `force_backup` is a plain `cp`, which fails outright on a directory (or hangs on a FIFO); the
+  `bin/keel` wiring block's `--force` arm used to admit a directory there (it satisfies
+  `[ ! -L ] && [ -e ]`), hand it to `force_backup`, and die under `set -euo pipefail` with earlier
+  placements already on disk and `bin/keel` never wired — reproduced live. `force_backup` now refuses
+  a non-regular dest itself (returns cleanly instead of letting `cp` abort — one guard covers all
+  three call sites), and the `bin/keel` block tests that return value directly
+  (`elif force_backup "$keel_link"; then`) so a decline falls through with nothing further to
+  print — `force_backup`'s own message already said why — mirroring `sync_product`'s own
+  `$dest_nonregular` guard (dir #351): declined unconditionally, `--force` included, one message either
+  way. Separately,
+  `tools/doctor.sh`'s W-CLI-UNWIRED finding and the `keel` CLI's own re-wire message still said only
+  "not a symlink" (dir #98's advice class — every command Keel advises has to actually reach the
+  install it's about — missed these two sites; `install.sh`'s own two messages already carried the
+  carve-out); both now agree with `install.sh`'s wording. Also fixed: `advise_refresh_force` (the
+  `keel sync`-vs-`install.sh` remedy dir #323/#324 introduced) was computed ~16 lines above the sticky
+  linked-home auto-detect, so a plain `./install.sh` re-run or `keel sync` (which execs `install.sh`
+  with no `--link` of its own) over an already-linked home advised the cwd-dependent copy-mode form
+  instead of `keel sync` — reachable in exactly the case `keel sync` exists to cover. Moved after both
+  sticky-detect blocks finalize `$LINK`. New regression coverage: a directory at `bin/keel` with
+  `--force` (the run now completes, and every other file the run touches still lands), the sticky
+  linked-home reclaim advice, and the wording match across all four carve-out sites.
 - **`tests/test_uninstall.sh`'s gate-leftover assertions matched a bare token that also occurs in a
   checkout's own path** (dir #329, found 2026-09-02, v0.8.0 RC pass, F-13): five assertions
   substring-matched command output against the literal `pre-pr-gate`, and that output also carries the

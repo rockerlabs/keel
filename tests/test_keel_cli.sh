@@ -95,6 +95,10 @@ run "$rehome/bin/keel" doctor
 check_status "severed keel in a retargeted home -> exit 1" 1 "$STATUS"
 check_contains "and its re-wire advice names that home" "$OUT" "install.sh --home \"$rehome_p\""
 check_absent "no --codex on a CLAUDE.md home" "$OUT" "--codex"
+# dir #349: the carve-out wording (a directory, not just a symlink, can sit at bin/keel) must match
+# install.sh's own bin/keel messages and tools/doctor.sh's W-CLI-UNWIRED — a flat --force here would
+# advise the same abort-on-directory `cp` that force_backup hits inside install.sh.
+check_contains "re-wire advice carves a directory out of --force, matching install.sh/doctor.sh" "$OUT" "not a symlink or a directory"
 
 # ...and the MODE travels with it: bin/keel is wired in both modes, so a Codex home must not be told
 # to re-run Claude copy mode into itself. dir #150 audit (kept, not removed — BACKLOG.md's own dir #125
