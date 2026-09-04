@@ -407,6 +407,12 @@ while :; do
     # 1s total (20 x 0.05s): comfortably longer than any real pid write, short enough that the rare
     # genuinely-orphaned case (something external deleted only the pid file, the directory surviving)
     # still resolves promptly once the retries are exhausted, via the same reclaim path below.
+    # Named residual, not fixed, same kind as the three below: "comfortably longer than any real pid
+    # write" is an engineering judgement about the ordinary case, not a proof the window can't be wider.
+    # A live sibling descheduled for MORE than this 1s bound between its own mkdir and its own pid write
+    # — a real possibility under heavy scheduling pressure, not just a crash — has its still-live lock
+    # reclaimed here once the retries exhaust, reopening the exact concurrent-install race this ticket
+    # exists to close, just with a ~1s window instead of a sub-millisecond one. Revisit only if felt.
     install_lock_wait=0
     while [ -z "$install_lock_holder" ] && [ "$install_lock_wait" -lt 20 ]; do
       sleep 0.05
