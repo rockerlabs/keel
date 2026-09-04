@@ -329,6 +329,32 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   has four, not two). All five verified with a live reproduction before and after the fix, not reasoned
   about only; `tests/run.sh` and `shellcheck -x --severity=warning` both stayed green throughout.
 
+- **A disclosure-only round for v0.8.2: no executable code changed.** `docs/delta-audit.md` §10 names
+  this instrument for exactly this situation — the delta audit's O4/O1/O5b/O2 findings are comment and
+  digest drift describing a guard state or a count this same release had already changed, not new
+  breakage, so the honest pre-tag action is to correct the record rather than touch already-green code
+  under tag-day pressure. Four comments claimed `uninstall.sh`'s removal-decision comparison at its
+  call site (`uninstall.sh:882`) has no sentinel guard on either side — false since dir #347 (PR #330)
+  added one; `install.sh:505-515` and `tools/lib/artifact-cksum.sh:15-19,28` are corrected to say so
+  (a fourth instance of the same stale claim, found nearby while verifying this fix rather than in the
+  audit's own three named lines, is corrected here too so it doesn't contradict the fix right above it).
+  The same file's own header (`tools/lib/artifact-cksum.sh:20`) is corrected from
+  `[ -f ] && bash -n` to the guard actually shipped everywhere, `[ -s ] && bash -n` — the one lib
+  whose own header comment was missed when dir #362's own `/code-review max` pass changed all seven real
+  guard sites tree-wide. `install.sh:434`'s lock-residual cross-reference miscounted and mis-directed its
+  siblings ("the three below": there are four named residuals at three sites — two above the citing
+  line, one below, not three below); reworded to a form ("the three others in this lock section") that
+  survives reordering. `install.sh:1425-1427`'s trailing comment after the `bin/keel` wiring chain named
+  only one of `force_backup`'s two decline paths (a non-regular `$keel_link`, or a genuine `cp` failure
+  backing up a regular one) — both land in the same branch, now named as both; the branch's own
+  behaviour is unchanged. `docs/release-history.md`'s v0.8.2 digest undercounted this release's own
+  review yield as four; the real count is eleven — ten attributed within `CHANGELOG.md`'s own v0.8.2
+  section, plus the lock TOCTOU that `install.sh:383-386` attributes to a review and that the digest
+  sentence itself already names as one of its two examples. No tests: this round changes
+  zero lines of executable behaviour, so there is nothing new to bind. `./tests/run.sh` and
+  `shellcheck -x --severity=warning` were still run clean, though, since a comment edit can break a
+  heredoc or a quoting context.
+
 Known issues: four residuals ship unfixed, each with an open ticket, and one of them is on the very
 rail this release exists to repair. First, and the one that matters: a run that dies between writing
 its manifest merge scratch and its own cleanup leaves `.artifacts.<pid>` inside `<home>/.keel`, and

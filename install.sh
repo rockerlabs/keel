@@ -431,8 +431,9 @@ while :; do
     # 1s total (20 x 0.05s): comfortably longer than any real pid write, short enough that the rare
     # genuinely-orphaned case (something external deleted only the pid file, the directory surviving)
     # still resolves promptly once the retries are exhausted, via the same reclaim path below.
-    # Named residual, not fixed, same kind as the three below: "comfortably longer than any real pid
-    # write" is an engineering judgement about the ordinary case, not a proof the window can't be wider.
+    # Named residual, not fixed, same kind as the three others in this lock section: "comfortably
+    # longer than any real pid write" is an engineering judgement about the ordinary case, not a proof
+    # the window can't be wider.
     # A live sibling descheduled for MORE than this 1s bound between its own mkdir and its own pid write
     # — a real possibility under heavy scheduling pressure, not just a crash — has its still-live lock
     # reclaimed here once the retries exhaust, reopening the exact concurrent-install race this ticket
@@ -505,12 +506,13 @@ fi
 # (CKSUM_UNREADABLE/artifact_cksum) is written unconditionally into a manifest `file` record below,
 # which uninstall.sh later trusts for a destructive (removal) decision. A same-shape "degrade and
 # continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
-# checkout instead of only the rare truly-unreadable file, and uninstall.sh's own comparison has no
-# sentinel guard on either side (dir #347's gap) — so a stubbed fallback would make every artifact
-# compare as a self-equal match. Same `[ -s ] && bash -n` pre-check as the two libs above (`-s`, not
-# `-f` — see tools/lib/manifest.sh's own guard for why; a bare `.` can't be guarded against a
-# parse-time syntax-error abort under `set -e`), but the else branch refuses outright instead of
-# degrading.
+# checkout instead of only the rare truly-unreadable file, indistinguishable in that manifest record
+# from a genuinely-unreadable one. dir #347 has since closed uninstall.sh's own comparison's sentinel
+# guard at its call site (uninstall.sh:882) — but that guards uninstall.sh's REMOVAL decision, not the
+# manifest record itself, which a stubbed fallback here would still corrupt. Same `[ -s ] && bash -n`
+# pre-check as the two libs above (`-s`, not `-f` — see tools/lib/manifest.sh's own guard for why; a
+# bare `.` can't be guarded against a parse-time syntax-error abort under `set -e`), but the else
+# branch refuses outright instead of degrading.
 if [ -s "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/artifact-cksum.sh
   . "$root/tools/lib/artifact-cksum.sh"
@@ -1420,8 +1422,9 @@ elif [ -f "$root/keel" ]; then
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help') — real file backed up first (--force)"
   fi
-  # else: $FORCE=1 and force_backup declined (non-regular $keel_link) — its own message above already
-  # said why; nothing more to print here.
+  # else: $FORCE=1 and force_backup declined — either a non-regular $keel_link, or a genuine `cp`
+  # failure backing up a regular one; its own message above already said which, so nothing more to
+  # print here.
 fi
 
 # 2. Secret-guard — machine-global, but never clobber an existing global hooksPath.

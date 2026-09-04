@@ -30,7 +30,7 @@ flow with a false premise and advice that would have undone the operator's own p
 helpers in `tools/keel-impact.sh` that moved a temp file inside a directory target and reported a
 merge that never happened (dir #343, with dir #342's inode question resolved as a documented
 assumption); and a test matching a bare token also present in a checkout's own path, so it was least
-trustworthy exactly where it was most likely to run (dir #329). Reviews during the release found four
+trustworthy exactly where it was most likely to run (dir #329). Reviews during the release found eleven
 defects the tickets had not, including a TOCTOU race inside the new lock and a zero-byte-file hole in
 every `bash -n` sourcing guard in the tree, two of which had already shipped. Four known issues ship
 unfixed, each ticketed — the sharpest being that a crashed install leaves a scratch file that makes a
