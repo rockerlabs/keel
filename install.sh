@@ -320,11 +320,9 @@ fi
 # wait-loop: retrying on contention would need timeout tuning and risks masking a genuinely hung install
 # behind a long wait — a live holder means immediate refusal, never a sleep-and-retry.
 install_lock_dir="$HOME_DIR/.install.lock"
-install_lock_acquired=0
 while :; do
   if mkdir "$install_lock_dir" 2>/dev/null; then
     echo "$$" > "$install_lock_dir/pid"
-    install_lock_acquired=1
     break
   fi
   # mkdir failed — two different causes, and only one of them is contention. If the lock dir does NOT
@@ -341,7 +339,7 @@ while :; do
   fi
   # Genuine contention: the lock dir exists — either a live sibling holds it, or a crashed run left it
   # behind. Read the holder's recorded pid and check liveness with `kill -0`.
-  install_lock_holder="$(cat "$install_lock_dir/pid" 2>/dev/null || true)"
+  IFS= read -r install_lock_holder < "$install_lock_dir/pid" 2>/dev/null || install_lock_holder=""
   if [ -n "$install_lock_holder" ] && kill -0 "$install_lock_holder" 2>/dev/null; then
     echo "install: another install is already running in $HOME_DIR (pid $install_lock_holder) — refusing" >&2
     echo "         to run concurrently (lock: $install_lock_dir). Wait for it to finish and re-run." >&2
@@ -1599,8 +1597,11 @@ echo "  +    install manifest ($manifest_file)"
 # mechanism this script's own history already ruled out at the citation above.
 # `|| true` at the end: a failed release must not abort an otherwise-successful run under `set -euo
 # pipefail` — worst case it leaves the lock behind, which the next install's own stale-pid check already
-# knows how to reclaim, exactly as an abort-before-this-line would.
-[ "$install_lock_acquired" = 1 ] && rm -rf "$install_lock_dir" 2>/dev/null || true
+# knows how to reclaim, exactly as an abort-before-this-line would. No acquired-flag guard needed: the
+# acquire loop above only ever reaches code past itself via its own `break`, which always follows a
+# successful `mkdir` — every other exit from that loop is a bare `exit 1`, so reaching this line at all
+# already proves the lock is held.
+rm -rf "$install_lock_dir" 2>/dev/null || true
 
 # Checkout-side ledger — the discovery index consumers use to find every recorded home from the
 # checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own
