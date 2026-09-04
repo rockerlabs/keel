@@ -251,13 +251,45 @@ has_keel_rails() {
 other_context_shared_evidence=0
 other_context_ambiguous=0
 if [ "$other_usable" = 0 ] && [ -f "$HOME_DIR/$other_context" ]; then
+  # other_manifest_backed_up — dir #248: a backup dir from THIS TOOL's own prior removal
+  # (_ensure_backup/take() below, "$HOME_DIR/.keel-uninstall-<ts>") that still holds the OTHER mode's
+  # manifest is evidence from Keel's own bookkeeping, not a guess about the context file's current
+  # shape: it means an `uninstall.sh --<other-mode>` run against THIS SAME HOME consumed that manifest
+  # at some point, which is exactly dir #124's ordinary both-modes sequence (install claude, install
+  # codex, uninstall claude, uninstall codex) — the surviving $other_context (never deleted, by design)
+  # is a stripped-rails residual of a real completed uninstall, not an unconfirmed sibling. A manifest
+  # deleted by hand rather than through this tool's own take() (dir #150's fixture) never creates this
+  # backup dir. Computed here, inside the gate, rather than unconditionally above it — its only reader
+  # is the elif below, so there's nothing to compute when other_usable=1 (both modes' manifests usable)
+  # short-circuits this whole block anyway (/code-review high finding, this diff).
+  # MONOTONIC, not a live-state check: backup dirs are never cleaned up, so once true for a mode at this
+  # home it stays true forever — including after that mode is later reinstalled. Only ever consulted
+  # below to narrow the AMBIGUOUS branch (neither rails nor sentinel confirm or refute); it must never
+  # gate the has_keel_rails/sentinel check itself, which answers a live-state question this permanent
+  # signal cannot (release-manager review, dir #248: an earlier version of this fix gated the whole block
+  # on it, which skipped that check entirely whenever a stale backup dir existed and silently fell through
+  # to "not shared" even for a live sibling install with intact rails — fail-open, reproduced live).
+  # A stale backup dir surviving a LATER, independent loss of a reinstalled other mode's manifest (no
+  # rails, no sentinel, no fresh backup — e.g. an old foreign-core reinstall whose manifest is hand-lost)
+  # can still suppress this warning on that later run (/code-review high finding, this diff, CONFIRMED
+  # but warning-only): reaching that population already requires dir #150's own accepted foreign-core/
+  # no-sentinel gap, and removal was never gated on this warning either before or after this diff — see
+  # artifact_shared_with_other's own comment and the removal loop below, which take()s regardless of
+  # other_context_ambiguous. This narrows an already-accepted residual; it does not create a new one.
+  other_manifest_backed_up=0
+  for backup_manifest in "$HOME_DIR"/.keel-uninstall-*/.keel/install-manifest."$other_manifest_mode"; do
+    [ -f "$backup_manifest" ] && other_manifest_backed_up=1 && break
+  done
+
   if has_keel_rails "$HOME_DIR/$other_context" || [ -f "$HOME_DIR/.keel/foreign-core.$other_manifest_mode" ]; then
     other_context_shared_evidence=1
-  else
+  elif [ "$other_manifest_backed_up" = 0 ]; then
     # dir #190 /code-review high (CONFIRMED, live-reproduced): other_context exists but nothing confirms
     # OR refutes a live sibling install — the removal loop below names this explicitly instead of
     # silently guessing "not shared" the way this used to. See artifact_shared_with_other's own comment
     # for why "refuse" or "keep" here isn't available either, structurally, not just as an unmade choice.
+    # (see other_manifest_backed_up's own comment above for why this is reserved for the population
+    # neither signal can confirm or refute.)
     other_context_ambiguous=1
   fi
 fi
@@ -335,7 +367,7 @@ home_has_keel_content() {
 # Calling take() here would abort with "command not found" the first time this path runs, not silently
 # reuse it — reproduced live with a minimal two-function repro mirroring this exact ordering.
 dry_run_heuristic_listing() {
-  local install_flag="$1" f slot cmd name alias_slot
+  local install_flag="$1" f slot cmd name alias_slot keel_dir_owned
   echo "  no usable manifest — this listing is heuristic (content-sniffed, not manifest-confirmed)."
   echo "  a REAL (non-dry) run in this same state refuses rather than removing — this listing only"
   echo "  previews what a manifest-driven removal would find, it is not a preview of what dropping"
@@ -348,9 +380,21 @@ dry_run_heuristic_listing() {
   # either a symlink (an ordinary linked install) or a regular file carrying the KEEL-NOGIT token (a
   # --no-git trim) — that is the actual ownership signal install.sh relies on to recognize its own
   # linked home (see its LINK-stickiness check near CONTEXT_FILE), not "a keel/ entry exists".
+  # dir #279: CORE.md's own identity is not the ONLY evidence the keel/ dir is real — install.sh's
+  # --link mode syncs keel/FRAMEWORK.md and keel/PRINCIPLES.md alongside it (sync_product, same
+  # is_keel_owned test the FRAMEWORK.md/PRINCIPLES.md lines below use for the top-level copies), so a
+  # home where only CORE.md was deleted or hand-edited but those siblings survive untouched still holds
+  # real Keel content. NOT home_has_keel_content() — that question is home-wide (unconditionally true
+  # the moment any of THIS mode's own artifacts exist) and would fold this line into the same "always
+  # true" trap dry_run_heuristic_listing's own is_keel_owned-based checks below were written to avoid
+  # (see artifact_shared_with_other's comment for the general shape of that trap).
+  keel_dir_owned=0
   if [ -L "$HOME_DIR/keel/CORE.md" ] || { [ -f "$HOME_DIR/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$HOME_DIR/keel/CORE.md" 2>/dev/null; }; then
-    echo "  would remove  keel"
+    keel_dir_owned=1
+  elif is_keel_owned "$HOME_DIR/keel/FRAMEWORK.md" "$root/FRAMEWORK.md" || is_keel_owned "$HOME_DIR/keel/PRINCIPLES.md" "$root/PRINCIPLES.md"; then
+    keel_dir_owned=1
   fi
+  [ "$keel_dir_owned" = 1 ] && echo "  would remove  keel"
   if [ -L "$HOME_DIR/bin/keel" ]; then
     echo "  would remove  bin/keel"
   fi

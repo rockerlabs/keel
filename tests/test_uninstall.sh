@@ -930,7 +930,12 @@ check_file "B23 shared bin/keel survives the first uninstall (codex still needs 
 unin --codex --home "$B23" --yes
 check_status "B23 second (codex) uninstall exits 0" 0 "$STATUS"
 check_absent "B23 second uninstall no longer misreports a claude sharer" "$OUT" "shared with the claude install"
-check_contains "B23 the strip is announced as an unconfirmed guess, not silent (code-review high finding)" "$OUT" "no evidence CLAUDE.md is gone"
+# dir #248: the first uninstall's own backup dir still holds the consumed claude manifest — strong,
+# mode-specific evidence the claude install genuinely is gone, not merely unconfirmed. The ambiguity
+# warning (and its now-wrong "restore it" advice, which would undo the operator's own prior uninstall)
+# must NOT fire here; B24 below pins that the warning still fires when that backup-dir signal is absent.
+check_absent "B23 no longer misfires the ambiguity warning against its own backed-up sibling manifest (dir #248)" "$OUT" "no evidence CLAUDE.md is gone"
+check_absent "B23 no longer prints the stale restore advice (dir #248)" "$OUT" "If that install is still real, restore it"
 # no orphaned shared half:
 assert_shared_half_removed B23 "$B23"
 check_nofile "B23 codex manifest removed" "$B23/.keel/install-manifest.codex"
@@ -1165,5 +1170,23 @@ check_status "B32 uninstall exits 0" 0 "$STATUS"
 check_link "B32 the unmapped-rel symlink survives (no rule to confirm it, declined)" "$B32/not-a-real-keel-artifact.md"
 check_contains "B32 the decline is named" "$OUT" "symlink no longer points where Keel would have wired it"
 check_file "B32 its target is untouched" "$b32_target"
+
+# --- B33: dir #279 — dry_run_heuristic_listing()'s "would remove keel" line must not depend solely on
+# keel/CORE.md's own identity. A linked, manifest-less home where CORE.md alone was deleted (or
+# hand-edited past its symlink/KEEL-NOGIT identity) while the sibling keel/FRAMEWORK.md/PRINCIPLES.md
+# symlinks survive untouched still holds real Keel-owned content — the preview must still say so. -------
+B33="$SANDBOX/b33-core-md-tampered-siblings-intact/.claude"
+inst --home "$B33" --link --no-hooks
+check_status "B33 linked install succeeds" 0 "$STATUS"
+rm -f "$B33/.keel/install-manifest.claude"   # simulate a pre-0.7 (manifest-less) home
+rm -f "$B33/keel/CORE.md"                    # CORE.md itself deleted; siblings left alone
+check_nofile "B33 fixture: CORE.md gone" "$B33/keel/CORE.md"
+check_link "B33 fixture: keel/FRAMEWORK.md sibling symlink still intact" "$B33/keel/FRAMEWORK.md"
+check_link "B33 fixture: keel/PRINCIPLES.md sibling symlink still intact" "$B33/keel/PRINCIPLES.md"
+
+unin --home "$B33" --dry-run
+check_status "B33 dry-run over a manifest-less home falls through -> exit 0" 0 "$STATUS"
+check_contains "B33 dry-run still lists keel as would-remove despite CORE.md alone being gone (dir #279)" "$OUT" "would remove  keel"
+check_link "B33 dry-run left the surviving siblings in place" "$B33/keel/FRAMEWORK.md"
 
 summary
