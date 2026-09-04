@@ -160,7 +160,9 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 - **The concurrent-install race disclosed as a known issue in 0.8.1 is fixed (dir #350, folding in
   dir #348).** `install.sh` never supported two installs racing into the same home; a run-duration lock
   (an `mkdir`-based lock directory — atomic everywhere this script runs, no `flock` dependency) now
-  serializes them: a second install into a home another install is actively working on refuses
+  serializes install-vs-install runs (`uninstall.sh` does not participate in this lock — a concurrent
+  install-vs-uninstall race is a separate, still-open gap, out of this ticket's scope): a second install
+  into a home another install is actively working on refuses
   immediately (exit 1, before touching anything) instead of possibly racing to completion or, as
   0.8.1 shipped, sometimes deleting a live sibling's own scratch file and either leaking a raw
   `awk: can't open file` error or tripping a `manifest merge scratch vanished` abort. A crashed run

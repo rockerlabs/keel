@@ -258,6 +258,27 @@ manifest_dir="$HOME_DIR/.keel"
 manifest_file="$manifest_dir/install-manifest.$manifest_mode"
 mkdir -p "$manifest_dir"
 
+# _keel_test_pause_after NAME — test-only synchronization checkpoint (dir #350), same no-op-in-real-runs
+# family as _keel_test_checkpoint (defined further down this file, alongside its own crash-simulation
+# checkpoint) and _keel_test_drop_prior_manifest (dir #351): when KEEL_TEST_PAUSE_AFTER equals NAME,
+# touches "$KEEL_TEST_PAUSE_MARKER.ready" (so a test harness knows this run has reached the checkpoint
+# and is genuinely paused, not merely slow) and then blocks until $KEEL_TEST_PAUSE_MARKER is removed —
+# letting the regression test synchronize a SECOND, real install process against this one's exact point
+# in the run, instead of racing a real concurrent install against a fixed sleep and hoping the timing
+# lines up. A no-op in every real run (KEEL_TEST_PAUSE_AFTER unset). Same `return 0` reasoning as
+# _keel_test_checkpoint: a function's own exit status is what the caller sees under `set -e`, so this
+# must not let a false top-level `[ cond ]` return 1 and abort.
+# Defined here, earlier than the rest of this file's `_keel_test_*` family, because the run-duration
+# lock below (dir #350's own TOCTOU-window checkpoint) needs it — bash only registers a function once
+# the `name() { ... }` line itself executes, so a call before that point fails with "command not found";
+# this is the earliest call site in the file, so the definition has to lead it.
+_keel_test_pause_after() {
+  [ "${KEEL_TEST_PAUSE_AFTER:-}" = "$1" ] || return 0
+  : > "${KEEL_TEST_PAUSE_MARKER:?}.ready"
+  while [ -e "$KEEL_TEST_PAUSE_MARKER" ]; do sleep 0.1; done
+  return 0
+}
+
 # Unreadable-manifest gate (dir #348/#350) — the FIRST thing checked once $manifest_dir exists: before
 # the stale-scratch sweep below, before the prior_manifest snapshot, before the lock further down is
 # even acquired. If $manifest_file exists but this process cannot read it, refuse immediately — nothing
@@ -317,40 +338,94 @@ fi
 # Cost accepted: a second install into the same home now fails fast (exit 1, before touching anything)
 # instead of possibly racing to completion — a genuine behavior change, but not a contradiction of
 # anything documented (the disclosure already says concurrent installs were never supported). No
-# wait-loop: retrying on contention would need timeout tuning and risks masking a genuinely hung install
-# behind a long wait — a live holder means immediate refusal, never a sleep-and-retry.
+# wait-loop against a CONFIRMED live holder: retrying there would need timeout tuning and risks masking
+# a genuinely hung install behind a long wait — once a live holder is identified, refusal is immediate,
+# never a sleep-and-retry. The one exception, below, waits a bounded fraction of a second for this
+# process's OWN pid write to land — a different thing from waiting on a sibling's whole run.
+#
+# Named residuals, not fixed (both are generally-accepted limitations of pid-file locking, not gaps this
+# ticket introduced; closing either portably — a process start-time/nonce check, or distinguishing kill
+# -0's ESRCH from EPERM — needs OS-specific mechanisms this script's cross-platform reach doesn't have):
+# (1) PID reuse — if a crashed install's recorded pid is later reassigned by the OS to an unrelated
+# long-lived process, every subsequent install falsely reads it as still holding the lock and refuses,
+# indefinitely, until that unrelated process exits. (2) A live holder under a DIFFERENT uid (a shared
+# $HOME_DIR across users, reachable via --home/KEEL_HOME even though the default $HOME/.claude is
+# inherently per-user) makes this process's own `kill -0` fail with EPERM, indistinguishable from ESRCH
+# (pid gone) — the code below cannot tell "alive, not mine to signal" from "dead," so it wrongly reclaims
+# a lock that's still genuinely held. Revisit either only if actually felt.
 install_lock_dir="$HOME_DIR/.install.lock"
 while :; do
   if mkdir "$install_lock_dir" 2>/dev/null; then
+    # TOCTOU window: mkdir (the atomic acquire) and the pid write two lines down are NOT one atomic
+    # step — a scheduler preemption of THIS process right here, between the two, is a real window (found
+    # live by this ticket's own /code-review high pass, three independent finder angles converging on
+    # it): a concurrently-racing sibling whose own mkdir loses the race would read this process's pid
+    # file before it exists, get an empty holder, misjudge that as "stale" (nobody home), and rm -rf this
+    # still-live lock out from under it — reproducing the exact race dir #350 exists to close, just moved
+    # one layer down. The checkpoint below lets the regression test hold this exact window open
+    # deterministically; the retry loop after a missing pid-read (further down this same loop) is what
+    # actually closes it in production.
+    _keel_test_pause_after lock-acquired-before-pid-write
     echo "$$" > "$install_lock_dir/pid"
     break
   fi
-  # mkdir failed — two different causes, and only one of them is contention. If the lock dir does NOT
-  # exist, mkdir didn't lose a race, it couldn't create the dir at all (permission denied, a read-only
-  # filesystem, $HOME_DIR itself gone) — a fatal condition, not something a retry ever resolves. Without
-  # this check, an unwritable $HOME_DIR sends this loop into a genuine infinite spin: mkdir fails EACCES
-  # forever, never EEXIST, so the contention branch below would never see a lock dir to reclaim (found
-  # live against T14d's own unwritable-.keel fixture before this guard was added — that specific fixture
-  # no longer reaches this loop's failure path at all now that the lock lives outside .keel, but the
-  # class of bug is real independent of that one fixture, so the guard stays).
+  # mkdir failed — three different causes, and only one of them is ordinary contention.
+  if [ -e "$install_lock_dir" ] && [ ! -d "$install_lock_dir" ]; then
+    # A stray non-directory (a plain file, or a symlink to one) sits exactly at the lock path. `mkdir`
+    # fails EEXIST identically whether a directory or a file already occupies the target, and `[ -d ]`
+    # can't tell them apart — found live by this ticket's own /code-review high pass: without this
+    # branch, a stray file here permanently misdiagnoses as "$HOME_DIR may not be writable" below and
+    # NEVER self-heals, since the stale-lock reclaim path further down is only reached past that fatal
+    # exit. This path is Keel's own lock namespace (nothing else in the tree ever writes here — only
+    # this loop's own `mkdir` ever creates it, always as a directory), not adopter data, so removing a
+    # stray non-directory occupant and retrying is safe, the same "self-heal Keel's own state" posture
+    # the stale-lock reclaim below already takes.
+    rm -f "$install_lock_dir" 2>/dev/null || true
+    continue
+  fi
   if [ ! -d "$install_lock_dir" ]; then
     echo "install: cannot create $install_lock_dir — $HOME_DIR may not be writable" >&2
     exit 1
   fi
-  # Genuine contention: the lock dir exists — either a live sibling holds it, or a crashed run left it
-  # behind. Read the holder's recorded pid and check liveness with `kill -0`.
-  IFS= read -r install_lock_holder < "$install_lock_dir/pid" 2>/dev/null || install_lock_holder=""
+  # Genuine contention: the lock dir exists — a live sibling holds it, a crashed run left it behind, or
+  # (the TOCTOU window above) a live sibling holds it but hasn't written its pid yet. Read the recorded
+  # holder pid. `2>/dev/null` deliberately comes BEFORE `< file` on this line: bash sets up a command's
+  # own redirects left-to-right, and a failed `<` on a missing file prints straight to whatever stderr is
+  # already in effect at that point — putting `2>/dev/null` first means it's already active when `<`
+  # fails, so the raw "No such file or directory" never leaks; the opposite order (found live while
+  # testing the retry loop below, which hits this exact missing-file case on every genuine race) prints
+  # it every time despite the trailing `2>/dev/null` looking like it should suppress it too.
+  IFS= read -r install_lock_holder 2>/dev/null < "$install_lock_dir/pid" || install_lock_holder=""
+  if [ -z "$install_lock_holder" ]; then
+    # No pid recorded (yet). This is normally NOT a stale lock: a live sibling's own successful mkdir is
+    # always followed, one line later in ITS process, by exactly this pid write — an empty read almost
+    # always means we landed in that sub-millisecond gap, not that the lock is orphaned. Reclaiming
+    # unconditionally here is the TOCTOU bug named above. Retry briefly instead: this waits on one
+    # sibling's single redirect, never on a sibling's whole run, so it does not reopen the "no wait-loop
+    # against a confirmed live holder" decision above — that decision is about NOT waiting once a live
+    # holder IS identified; this is the step that identifies one correctly in the first place. Bounded at
+    # 1s total (20 x 0.05s): comfortably longer than any real pid write, short enough that the rare
+    # genuinely-orphaned case (something external deleted only the pid file, the directory surviving)
+    # still resolves promptly once the retries are exhausted, via the same reclaim path below.
+    install_lock_wait=0
+    while [ -z "$install_lock_holder" ] && [ "$install_lock_wait" -lt 20 ]; do
+      sleep 0.05
+      IFS= read -r install_lock_holder 2>/dev/null < "$install_lock_dir/pid" || install_lock_holder=""
+      install_lock_wait=$((install_lock_wait + 1))
+    done
+  fi
   if [ -n "$install_lock_holder" ] && kill -0 "$install_lock_holder" 2>/dev/null; then
     echo "install: another install is already running in $HOME_DIR (pid $install_lock_holder) — refusing" >&2
     echo "         to run concurrently (lock: $install_lock_dir). Wait for it to finish and re-run." >&2
     exit 1
   fi
-  # Stale lock — the recorded holder is gone. No EXIT trap released it (see the release site far below,
-  # right after the final atomic_write, for why: the prior_manifest snapshot's own comment further down
-  # this file already measured live, on this repo's own bash 3.2.57, that a bare EXIT trap masks a
-  # genuine crash — an unset-variable abort — into a false exit 0, which is worse than a leftover lock).
-  # Reclaim it and retry. Named residual, not fixed: two fresh installs finding the same stale lock at
-  # the same instant could both recover it — revisit only if ever actually felt.
+  # Stale lock — the recorded holder is gone (or never recorded, per the retry above). No EXIT trap
+  # released it (see the release site far below, right after the final atomic_write, for why: the
+  # prior_manifest snapshot's own comment further down this file already measured live, on this repo's
+  # own bash 3.2.57, that a bare EXIT trap masks a genuine crash — an unset-variable abort — into a false
+  # exit 0, which is worse than a leftover lock). Reclaim it and retry. Named residual, not fixed: two
+  # fresh installs finding the same stale lock at the same instant could both recover it — revisit only
+  # if ever actually felt.
   rm -rf "$install_lock_dir" 2>/dev/null || true
 done
 
@@ -425,13 +500,18 @@ fi
 # scratch file per failed run in the adopter's home with nothing to reap it. Same bounded-litter
 # contract the .prior-manifest sweep already provides: at most the previous run's leftover.
 rm -f "$manifest_dir"/.prior-manifest.* "$manifest_dir"/.artifacts.* 2>/dev/null || true
-# Concurrent-install disclosure (BACKLOG.md dir #350 carries the real fix): this script has never
-# supported two concurrent installs into the same $HOME_DIR, and until now nothing in the tree said so.
-# The ASSUMPTION is not new — it predates this release: the manifest-merge step below reads
-# $manifest_file with a plain `awk` pass immediately before its own atomic_write, no lock, so two
-# concurrent installs into the same home have always been able to race on whose artifact records
-# survive (last writer wins, silently). This has been present unchanged since v0.8.0 (`git show
-# v0.8.0^{commit}:install.sh`: the same unguarded read-then-atomic_write shape).
+# Concurrent-install disclosure — HISTORICAL, kept for the timeline it documents (dir #350's own fix
+# landed above, at the run-duration lock right after $manifest_dir is created; read this block as "what
+# the problem was and where it came from," not "what's still true"). The paragraphs below still describe
+# the ASSUMPTION correctly (it predates this release: the manifest-merge step further down reads
+# $manifest_file with a plain `awk` pass immediately before its own atomic_write, present unchanged since
+# v0.8.0 — `git show v0.8.0^{commit}:install.sh`, the same unguarded read-then-atomic_write shape) — what
+# they get wrong, post-fix, is present tense: two FULL install.sh processes can no longer race into the
+# same $HOME_DIR at all (the lock above serializes them before either reaches this sweep), so the
+# specific collision this block goes on to describe is now unreachable via that path. Narrower gaps this
+# fix does NOT close are still real and separately tracked: uninstall.sh remains lock-unaware (a
+# concurrent install-vs-uninstall race is untouched), and a crash's own merge-scratch litter can still
+# defeat uninstall's cleanup (dir #377).
 # What v0.8.1 changed is the ENFORCEMENT, not the assumption, and it did not predate the release either.
 # The prior_manifest snapshot below and the .prior-manifest.* sweep on the line above it were introduced
 # together, mid-cycle, well after v0.8.0 (neither existed at v0.8.0^{commit}). The .artifacts.* half of
@@ -445,8 +525,11 @@ rm -f "$manifest_dir"/.prior-manifest.* "$manifest_dir"/.artifacts.* 2>/dev/null
 # the guard's own narrow window, below) is what actually trips its loud `exit 1` ("manifest merge scratch
 # vanished … — another install into this home?"). The wide-window case is the likelier one, and it's
 # the unguarded one — but it never fails the run, only the narrow-window `exit 1` does, and only that
-# one needs a re-run to recover. Adopter-facing
-# framing: CHANGELOG.md's [Unreleased] known-issue line.
+# one needs a re-run to recover. This whole "second install deletes a first's own scratch" scenario is
+# ALSO unreachable post-fix: the lock is acquired well before this sweep runs, so only one install at a
+# time ever gets this far. Adopter-facing framing, updated for the fix: CHANGELOG.md's 0.8.1 section
+# carries the original "known issue, shipping unfixed" disclosure as history; the current [Unreleased]
+# entry states it's now fixed.
 prior_manifest="$manifest_dir/.prior-manifest.$$"
 # The `cp` is the CONDITION, never the body: a manifest that exists but cannot be READ (bad perms, a
 # disk error) would otherwise kill the whole run right here, under `set -euo pipefail`, before a single
@@ -568,22 +651,6 @@ atomic_copy() {
 # whole function return 1 and abort the script even when no crash was requested.
 _keel_test_checkpoint() {
   [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
-  return 0
-}
-
-# _keel_test_pause_after NAME — test-only synchronization checkpoint (dir #350), same no-op-in-real-runs
-# family as _keel_test_checkpoint above and _keel_test_drop_prior_manifest (dir #351): when
-# KEEL_TEST_PAUSE_AFTER equals NAME, touches "$KEEL_TEST_PAUSE_MARKER.ready" (so a test harness knows
-# this run has reached the checkpoint and is genuinely paused, not merely slow) and then blocks until
-# $KEEL_TEST_PAUSE_MARKER is removed — letting the regression test synchronize a SECOND, real install
-# process against this one's exact point in the run, instead of racing a real concurrent install against
-# a fixed sleep and hoping the timing lines up. A no-op in every real run (KEEL_TEST_PAUSE_AFTER unset).
-# Same `return 0` reasoning as _keel_test_checkpoint above: a function's own exit status is what the
-# caller sees under `set -e`, so this must not let a false top-level `[ cond ]` return 1 and abort.
-_keel_test_pause_after() {
-  [ "${KEEL_TEST_PAUSE_AFTER:-}" = "$1" ] || return 0
-  : > "${KEEL_TEST_PAUSE_MARKER:?}.ready"
-  while [ -e "$KEEL_TEST_PAUSE_MARKER" ]; do sleep 0.1; done
   return 0
 }
 

@@ -615,6 +615,8 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 else
   check_status "T12 (root leg) a readable-to-root manifest installs normally → exit 0" 0 "$STATUS"
   check_file "T12 (root leg) …core lands, since the gate never fires for root" "$umhome/FRAMEWORK.md"
+  check_file "T12 (root leg) …and the commands" "$umhome/commands/wrap.md"
+  check_contains "T12 (root leg) …and the run reaches its Verify block" "$OUT" "Verify:"
 fi
 
 # T12b — the same refusal, now against a home with REAL pre-existing installed content, not an empty
@@ -842,6 +844,11 @@ fi
 # permission guard — the lock is acquired fine, and the run reaches the ORIGINAL prior_manifest guard
 # this test was written to pin, same as before dir #350 existed. Confirmed live: the run still dies at
 # the snapshot ($prior_manifest's own write into the unwritable .keel), not at the lock.
+# The binding assertion is the check_nofile/check_absent pair below, NOT the exit status alone: a
+# hypothetical future "consistency" cleanup adding `|| true` to the second half of the asymmetry above
+# would still exit 1 later, on the trailing manifest write into the same unwritable dir — so the exit
+# code by itself cannot tell the intended abort from that incidental one. check_nofile/check_absent are
+# what discriminate (measured, not assumed); do not trim them as redundant with check_status.
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
   wrhome="$SANDBOX/unwritable-manifest-dir-home"; mkdir -p "$wrhome/.keel"
   chmod 500 "$wrhome/.keel"
@@ -1280,6 +1287,62 @@ if rmdir "$t21home/.keel" 2>/dev/null; then
 else
   fail "T21 …uninstall's own 'rmdir .keel' succeeds — a stale lock next to .keel never blocks it" \
     "rmdir failed: $(ls -la "$t21home/.keel" 2>&1)"
+fi
+
+# T22 (dir #350, /code-review high finding) — a stray non-directory sitting at the lock path self-heals
+# instead of permanently misdiagnosing as "not writable". `mkdir` fails EEXIST identically whether a
+# directory or a plain file already occupies the target, and `[ -d ]` can't tell them apart — reproduced
+# live before this fix: a stray file here took the fatal branch and NEVER recovered on any later run,
+# since the stale-lock reclaim path is only reached past that `exit 1`.
+t22home="$SANDBOX/stray-file-at-lock-path"; mkdir -p "$t22home"
+: > "$t22home/.install.lock"   # a plain FILE, not a directory, at the exact lock path
+fresh_home_env "$t22home"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t22home" --no-hooks
+check_status "T22 a stray file at the lock path self-heals → exit 0" 0 "$STATUS"
+check_file "T22 …and the install completes normally" "$t22home/FRAMEWORK.md"
+check_nodir "T22 …the lock is released normally afterward (self-heal, not a permanent wedge)" "$t22home/.install.lock"
+
+# T23 (dir #350, /code-review high finding — three independent finder angles converged on this one) —
+# the TOCTOU window between `mkdir` succeeding and the pid file being written: a second, REAL install
+# process racing in during that exact window must not misjudge the missing pid as a stale lock and
+# `rm -rf` a sibling that is still genuinely alive. Uses a SECOND test-only checkpoint
+# (KEEL_TEST_PAUSE_AFTER=lock-acquired-before-pid-write, fired right after `mkdir` but before the pid
+# write) to hold the window open deterministically, rather than racing real scheduling.
+t23home="$SANDBOX/lock-toctou-window"; mkdir -p "$t23home"
+fresh_home_env "$t23home"
+t23marker="$SANDBOX/t23-pause.marker"
+: > "$t23marker"
+env "${FRESH_HOME_ENV[@]}" KEEL_TEST_PAUSE_AFTER=lock-acquired-before-pid-write KEEL_TEST_PAUSE_MARKER="$t23marker" \
+  "$install" --home "$t23home" --no-hooks > "$SANDBOX/t23-first.out" 2>&1 </dev/null &
+t23_first_pid=$!
+t23_waited=0
+while [ ! -e "${t23marker}.ready" ] && [ "$t23_waited" -lt 30 ]; do
+  sleep 1; t23_waited=$((t23_waited + 1))
+done
+if [ ! -e "${t23marker}.ready" ]; then
+  rm -f "$t23marker" 2>/dev/null || true
+  kill -9 "$t23_first_pid" 2>/dev/null || true
+  wait "$t23_first_pid" 2>/dev/null || true
+  fail "T23 the first install reached the mkdir-before-pid-write checkpoint" "no ${t23marker}.ready after ${t23_waited}s"
+else
+  # First process holds the lock directory but has NOT yet written its pid file — exactly the TOCTOU
+  # window this fixture targets.
+  check_dir "T23 …the lock directory exists before the pid is written" "$t23home/.install.lock"
+  check_nofile "T23 …and the pid file genuinely doesn't exist yet — the real race window" "$t23home/.install.lock/pid"
+  # Start a second, real install now, WHILE the first is still paused in the window, then release the
+  # first almost immediately — the second's own bounded retry (this fix) should still be waiting when
+  # the first's pid write lands a moment later.
+  env "${FRESH_HOME_ENV[@]}" "$install" --home "$t23home" --no-hooks > "$SANDBOX/t23-second.out" 2>&1 </dev/null &
+  t23_second_pid=$!
+  rm -f "$t23marker"
+  wait "$t23_first_pid"; t23_first_status=$?
+  wait "$t23_second_pid"; t23_second_status=$?
+  t23_second_out="$(cat "$SANDBOX/t23-second.out" 2>/dev/null)"
+  check_status "T23 …the first (true lock holder) completes normally" 0 "$t23_first_status"
+  check_status "T23 …the second, racing into the exact TOCTOU window, refuses instead of double-acquiring" 1 "$t23_second_status"
+  check_contains "T23 …names contention, not a stale-lock false reclaim" "$t23_second_out" "another install is already running"
+  check_absent "T23 …no raw 'No such file or directory' leak from the retry's own reads" "$t23_second_out" "No such file or directory"
+  check_nodir "T23 …the lock is released normally afterward" "$t23home/.install.lock"
 fi
 
 summary
