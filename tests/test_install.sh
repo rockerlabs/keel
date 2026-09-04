@@ -1213,6 +1213,13 @@ fi
 # lock is removed, and a normal install proceeds as sole holder. Distinguishing from pre-fix code: before
 # dir #350 there was no `.install.lock` concept at all, so a stray one left lying around was never
 # cleaned up — check_nodir below is what a pre-fix run fails.
+# Which assertion actually pins this fix, stated plainly rather than left for a reader to guess: the
+# first two below pass against PRE-fix code too, for a real and expected reason unrelated to the fix —
+# pre-#350 code has no `.install.lock` concept at all, so it simply ignores the stray directory and
+# installs normally regardless (exit 0, FRAMEWORK.md lands, same as any other fresh install). That is
+# NOT the same as "never ran" — both genuinely exercise the fixture — but neither one distinguishes the
+# fix from the bug it fixes. Only the third assertion (check_nodir) carries the pin: pre-fix code never
+# touches this path at all, so it's still sitting there, untouched, when a pre-fix run finishes.
 t19home="$SANDBOX/stale-lock-home"; mkdir -p "$t19home"
 ( : ) &
 t19_dead_pid=$!
@@ -1221,9 +1228,9 @@ mkdir -p "$t19home/.install.lock"
 echo "$t19_dead_pid" > "$t19home/.install.lock/pid"
 fresh_home_env "$t19home"
 run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t19home" --no-hooks
-check_status "T19 a stale lock (dead recorded pid) self-heals → exit 0" 0 "$STATUS"
-check_file "T19 …and the install completes normally" "$t19home/FRAMEWORK.md"
-check_nodir "T19 …the reclaimed-then-released lock is gone afterward" "$t19home/.install.lock"
+check_status "T19 a stale lock (dead recorded pid) self-heals → exit 0" 0 "$STATUS"                      # passes pre-fix too, incidental
+check_file "T19 …and the install completes normally" "$t19home/FRAMEWORK.md"                              # passes pre-fix too, incidental
+check_nodir "T19 …the reclaimed-then-released lock is gone afterward" "$t19home/.install.lock"            # THE pin — fails pre-fix
 
 # T20 (dir #350) — the lock's own not-a-directory guard against a fatal mkdir failure, distinct from
 # T14d's fixture: T14d only chmods .keel, which the lock (living OUTSIDE .keel — see T18's own comment)
@@ -1251,9 +1258,16 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   else
     wait "$t20_pid"; t20_st=$?
     t20outc="$(cat "$t20out" 2>/dev/null)"
-    check_status "T20 an unwritable \$HOME_DIR fails fast acquiring the lock, not a hang" 1 "$t20_st"
-    check_contains "T20 …names the cause" "$t20outc" "may not be writable"
-    check_nofile "T20 …nothing placed" "$t20home/FRAMEWORK.md"
+    # Which assertion carries the pin: the "no hang" half above (the bounded-wait-then-fail branch never
+    # firing) passes pre-fix too, but VACUOUSLY — pre-#350 code has no lock at all, so there is nothing
+    # here to hang on regardless of the EACCES-vs-EEXIST guard this test targets; that pass proves nothing
+    # about the guard. check_status/check_nofile below are the same story: something else in a pre-fix
+    # run over a chmod-500 $HOME_DIR would also plausibly exit non-zero and place nothing, incidentally.
+    # Only check_contains, naming the exact "may not be writable" message THIS guard produces, actually
+    # discriminates the fix from its absence.
+    check_status "T20 an unwritable \$HOME_DIR fails fast acquiring the lock, not a hang" 1 "$t20_st"      # incidental, not the pin
+    check_contains "T20 …names the cause" "$t20outc" "may not be writable"                                  # THE pin
+    check_nofile "T20 …nothing placed" "$t20home/FRAMEWORK.md"                                              # incidental, not the pin
   fi
   chmod 700 "$t20home" 2>/dev/null || true   # restore so cleanup can remove the sandbox
 else
