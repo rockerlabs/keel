@@ -418,6 +418,15 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # turns this guard from a clean decline back into the mid-sync abort dir #349 exists to remove — the
 # exact shape that bit dir #342/#343's `ensure_ledger` the same week. Whoever adds a fourth call site
 # needs to land in one of the two worlds above on purpose, not by accident.
+#
+# THE SAME "test position suspends set -e" FACT CUTS BOTH WAYS (found live by a fresh /code-review
+# pass, on the very draft that added the bullets above): testing this function's return value at the
+# bin/keel site doesn't just exempt the non-regular-dest `return 1` from `set -e` — it suspends
+# errexit for EVERY command in this function's body for that invocation, including the `cp` below. A
+# function relying on ambient `set -e` to catch ITS OWN internal failures is only safe when every
+# caller invokes it as a bare statement; the moment ANY caller tests its return value, the function
+# must check its own risky commands explicitly instead of trusting the shell to abort on their
+# failure — which is exactly what the `cp` below now does.
 force_backup() {
   local dest="$1" ts
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
@@ -425,7 +434,20 @@ force_backup() {
     return 1
   fi
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
-  cp "$dest" "$dest.$ts.bak"
+  # Explicit check, not ambient `set -e` (dir #349, found live by a fresh /code-review pass): the
+  # bin/keel call site below tests this function's own return value (`elif force_backup ...; then`),
+  # and bash suspends errexit for the WHOLE body of a command invoked in test position — not just its
+  # final exit status. Without this check, a real `cp` failure (permission denied, disk full, a
+  # transient I/O error) would silently fall through to the success echo below and return 0: the
+  # caller would then believe the backup happened and proceed to overwrite the adopter's real file
+  # with nothing actually backed up — reproduced live. Checking explicitly makes the failure mode the
+  # same regardless of how the caller invokes this function: a bare-statement caller (sync_product's
+  # two call sites) still aborts under `set -e` on a `return 1` here, same as before, but now with a
+  # clear message first instead of a bare `cp` stderr line.
+  if ! cp "$dest" "$dest.$ts.bak"; then
+    echo "  !    $(basename "$dest"): backup failed — left untouched" >&2
+    return 1
+  fi
   echo "  ~    $(basename "$dest") backed up → $(basename "$dest").$ts.bak (--force)"
 }
 

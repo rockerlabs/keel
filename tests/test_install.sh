@@ -775,6 +775,29 @@ check_absent "T14i …exactly once — not also the FORCE=0 branch's own wording
 check_file "T14i …and the rest of the --force run still completed (CLAUDE.md placed)" "$dirforcehome/CLAUDE.md"
 check_file "T14i …commands/polish.md placed too" "$dirforcehome/commands/polish.md"
 
+# T14j — a fresh /code-review pass on this ticket found a real, previously-unpinned bug: testing
+# force_backup's return value in an `elif` (the bin/keel site) suspends `set -e` for the function's
+# WHOLE body, not just its own `return 1` — including the `cp` a few lines later. Before this test,
+# force_backup's `cp` had no explicit failure check of its own; a genuine `cp` failure (permission
+# denied, disk full) would have silently fallen through to the success echo and returned 0, so the
+# caller would believe a backup was taken and proceed to overwrite the adopter's real file with
+# nothing actually backed up. Root-guarded: chmod is a no-op for root, so this can't be reproduced
+# there (same trap as T14d above).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  cpfailhome="$SANDBOX/cp-fail-home"; mkdir -p "$cpfailhome/bin"
+  printf 'my own keel-ish thing, never touched by Keel\n' > "$cpfailhome/bin/keel"
+  chmod 555 "$cpfailhome/bin"   # cp can read $dest but can't create a NEW .bak sibling in this dir
+  fresh_home_env "$cpfailhome"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$cpfailhome" --no-hooks --force
+  chmod 755 "$cpfailhome/bin"   # restore so later checks (and sandbox cleanup) can read/remove it
+  check_status "T14j a backup that genuinely fails to write → the run still completes" 0 "$STATUS"
+  check_contains "T14j …and reports the backup failure, not a false success" "$OUT" "backup failed — left untouched"
+  check_absent "T14j …never claims the file was backed up" "$OUT" "backed up →"
+  check_contains "T14j …the adopter's real content is intact" "$(cat "$cpfailhome/bin/keel")" "my own keel-ish thing"
+  cpfail_bak_count="$(ls "$cpfailhome"/bin/keel.*.bak 2>/dev/null | wc -l | tr -d ' ')"
+  check_status "T14j …no partial/empty .bak file was left behind" 0 "$cpfail_bak_count"
+fi
+
 # T14d — finding 2's other half, unpinned until now: the degradation must NOT swallow a genuinely
 # unwritable \$manifest_dir. That is the deliberate asymmetry of the fix — `cp` sits in the condition
 # so an unreadable manifest degrades, while `: > "\$prior_manifest"` stays in the body so a directory
