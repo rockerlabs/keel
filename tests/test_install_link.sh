@@ -333,5 +333,9 @@ assert_doctor_warn W-CLI-FOREIGN "bin/keel points outside this checkout"
 h="$SANDBOX/w-cli-unwired"; run "$install" --link --home "$h" --no-hooks
 rm "$h/bin/keel"
 assert_doctor_warn W-CLI-UNWIRED "bin/keel missing"
+# dir #349: the carve-out wording (a directory, not just a symlink, sits there) must match install.sh's
+# own bin/keel advice — a code-only pin (above) wouldn't catch a regression back to the pre-#349
+# "not a symlink" text, which advises a flat --force that aborts force_backup's plain `cp` on a directory.
+check_contains "W-CLI-UNWIRED carve-out wording matches install.sh's own advice" "$OUT" "not a symlink or a directory"
 
 summary
