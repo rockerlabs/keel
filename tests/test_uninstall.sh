@@ -1150,12 +1150,13 @@ check_status "B31 uninstall exits 0" 0 "$STATUS"
 check_dir "B31 the directory survives (kind disagreement, never swept)" "$B31/FRAMEWORK.md"
 check_contains "B31 the disagreement is named, not silently skipped" "$OUT" "manifest recorded a file, but it's neither a file nor a symlink now"
 
-# --- B32: dir #347 /code-review max finding — a manifest `artifact=symlink` record whose rel matches
-# NONE of expected_symlink_source's known categories (bin/keel, keel/*.md, commands/*.md) must decline
-# the same way a recognized-but-wrong-target symlink does (B30), not be silently swept nor silently kept
-# with no explanation — the empty-`expected_src` branch and the wrong-target branch share the exact same
-# guard (`[ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]`) and this exercises the "empty"
-# half, which B30 (a recognized rel) never reaches. -----------------------------------------------------
+# --- B32: dir #347 /code-review max finding, updated for dir #369's data-driven rewrite — a manifest
+# `artifact=symlink` record carrying the OLD `-` placeholder (pre-dir-369: a manifest install.sh wrote
+# before it started recording a real readlink target) must decline the same way a wrong-target symlink
+# does (B30), not be silently swept nor silently kept with no explanation. `-` can never equal a real
+# `readlink` output, so the plain string-equality guard below declines it the same way it declines a
+# genuine mismatch — no special case needed, but the fixture directly injects the pre-dir-369 sentinel
+# to prove the old-manifest compatibility path specifically, not just today's happy path. -------------
 B32="$SANDBOX/b32-symlink-unmapped-rel/.claude"
 inst --home "$B32" --link --no-hooks
 check_status "B32 linked install succeeds" 0 "$STATUS"
@@ -1188,5 +1189,24 @@ unin --home "$B33" --dry-run
 check_status "B33 dry-run over a manifest-less home falls through -> exit 0" 0 "$STATUS"
 check_contains "B33 dry-run still lists keel as would-remove despite CORE.md alone being gone (dir #279)" "$OUT" "would remove  keel"
 check_link "B33 dry-run left the surviving siblings in place" "$B33/keel/FRAMEWORK.md"
+
+# --- B34: dir #369 — a symlinked artifact recorded under a rel the OLD expected_symlink_source()
+# table never covered (no fixed case, no commands/*.md-shaped wildcard match) is now correctly
+# recognized as Keel's own via the manifest's recorded target alone, with no table entry required —
+# this is the drift risk dir #369 closes: a future symlinked artifact needs no matching case added
+# anywhere for uninstall.sh to recognize it, only a real manifest record. Reproduces RED against the
+# pre-dir-369 table (expected_symlink_source("docs/EXTRA.md") matches none of its cases -> declined,
+# left behind forever) and GREEN after (the plain readlink-vs-recorded-extra comparison owns it). -----
+B34="$SANDBOX/b34-symlink-no-table-entry/.claude"
+inst --home "$B34" --link --no-hooks
+check_status "B34 linked install succeeds" 0 "$STATUS"
+b34man="$B34/.keel/install-manifest.claude"
+mkdir -p "$B34/docs"
+ln -s "$REPO_ROOT/CHANGELOG.md" "$B34/docs/EXTRA.md"
+printf 'artifact=symlink\tdocs/EXTRA.md\t%s\n' "$REPO_ROOT/CHANGELOG.md" >> "$b34man"
+
+unin --home "$B34" --yes
+check_status "B34 uninstall exits 0" 0 "$STATUS"
+check_nolink "B34 the untabled symlink is correctly recognized and removed" "$B34/docs/EXTRA.md"
 
 summary

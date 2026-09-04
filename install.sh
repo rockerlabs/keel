@@ -512,10 +512,20 @@ record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
 # CKSUM_UNREADABLE/artifact_cksum — sourced from tools/lib/artifact-cksum.sh above (dir #362).
 # record_placed DEST — DEST is confirmed Keel content as of right now; classify symlink vs file and
 # record it relative to $HOME_DIR. The one call every write/up-to-date site below routes through.
+#
+# dir #369: a symlink's EXTRA is now `readlink DEST` — the target THIS run actually wired, always an
+# absolute path into $root (every make_link call site passes one) — not the literal `-` placeholder
+# record_placed used to write. uninstall.sh reads this back and compares it against the live link's
+# current target, instead of hand-mirroring install.sh's own wiring in a table to re-derive what the
+# target SHOULD be. No manifest version bump: the field's position/format is unchanged (still a plain
+# `artifact=symlink\t<rel>\t<extra>` line, same arity), and neither script's parser cared what a
+# symlink record's third field held before this — a manifest written by an OLDER install.sh (extra=`-`)
+# stays fully readable, just uninformative for this one refinement (uninstall.sh's own comment at its
+# call site names how it degrades).
 record_placed() {
   local dest="$1" rel
   rel="${dest#"$HOME_DIR"/}"
-  if [ -L "$dest" ]; then record_artifact "$rel" symlink -
+  if [ -L "$dest" ]; then record_artifact "$rel" symlink "$(readlink "$dest")"
   elif [ -f "$dest" ]; then record_artifact "$rel" file "$(artifact_cksum "$dest")"
   fi
 }

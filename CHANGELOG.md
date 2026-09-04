@@ -211,6 +211,30 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   exactly one real definition tree-wide, with `install.sh`'s two documented fallback/stub copies
   (`manifest_usable`'s pre-existing dir #323 stub, and the ownership predicate's dir #363 fallback)
   carved out as the one exempt case each — a hand-copy anywhere else still fails the check.
+- **The manifest's `artifact=symlink <rel> -` record carried no target of its own, so `uninstall.sh`
+  could not ask the manifest whether a symlink was still Keel's and had to hand-mirror `install.sh`'s
+  own wiring in a table instead (dir #369, a passenger riding with dir #363 since both touch the same
+  three files).** dir #347 needed exactly that missing answer for its removal-safety route 3 (an
+  adopter re-pointing a Keel-placed symlink at their own file, same path, same kind) and, having no
+  data to read, added `expected_symlink_source()` — a hand-maintained table of every path `install.sh`
+  ever wires as a symlink, with nothing enforcing the two stay in sync: a future symlinked artifact
+  added to `install.sh` with no matching table entry would have been silently left behind by every
+  uninstall, forever (fail-closed, so not destructive, but silently wrong). `record_placed` now records
+  `readlink DEST` — the actual target that run wired, always an absolute path into that run's own
+  `$root` — in the third field instead of the placeholder; `uninstall.sh`'s removal loop compares the
+  live symlink's current target against that recorded one directly, and `expected_symlink_source()` and
+  its table are deleted. **No manifest version bump:** the line format/arity is unchanged (still
+  `artifact=symlink\t<rel>\t<extra>`), and neither script's parser cared what that field held before
+  now, so a manifest written by an OLDER `install.sh` — carrying the literal `-` placeholder forever,
+  since nothing rewrites an old record until its own artifact is next re-placed — stays fully readable.
+  **That old placeholder fails closed by construction, not as a bolted-on special case:** `-` can never
+  equal a real `readlink` target, so the plain string comparison declines ownership for it the same way
+  it declines a genuine mismatch, with no separate code path needed — the adopter regains
+  auto-removal for that one artifact the next time `install.sh` re-places it. New regression coverage
+  (`tests/test_uninstall.sh` B34) proves the actual gap this closes: a symlinked artifact recorded under
+  a `rel` the old table never covered (no fixed case, no `commands/*.md`-shaped match) is now correctly
+  recognized and removed via the manifest's recorded target alone — reproduced red against the pre-fix
+  table (declined, left behind forever) and green after.
 
 ## [0.8.1] — 2026-09-03
 

@@ -368,14 +368,13 @@ home_has_keel_content() {
 # core_import_re/has_keel_rails's own "no established cross-sourcing convention" note above), is more
 # machinery than this print-only, rarely-exercised (manifest-less --dry-run only) listing's blast radius
 # earns on its own — worth a dedicated ticket if a fifth copy ever appears, not a same-round respin.
-# **THE FIFTH COPY HAS NOW APPEARED (dir #347, /simplify's reuse pass):** expected_symlink_source(),
-# defined further down near the manifest-driven removal loop, independently re-derives this same
-# keel-<name> alias/base-name relationship (in the reverse direction — home-relative path back to
-# checkout source). Still not unified this round, for the same reason as above plus the one named at
-# its own definition (a data-driven, manifest-recorded-target replacement is the deeper fix and is
-# deliberately deferred to a follow-up ticket rather than widening this diff into install.sh) — flagged
-# to the release manager so the ticket this comment has called for since before this diff actually gets
-# filed, covering the alias-mapping duplication as a whole rather than one copy at a time.
+# **A FIFTH COPY APPEARED AND WAS THEN CLOSED (dir #347 added expected_symlink_source(), a
+# hand-maintained mirror of this same keel-<name> alias/base-name relationship, near the
+# manifest-driven removal loop further down; dir #369 replaced it with a data-driven read of the
+# manifest's own recorded symlink target, so that copy no longer exists).** This function's own
+# duplication (four copies) is untouched by that fix and stays exactly as described above — dir #369's
+# scope was the manifest-driven removal loop, not this manifest-less dry-run heuristic, which still
+# has no manifest data to read from and so still needs its own alias-mapping copy.
 # **take() reuse considered and REJECTED, not just deferred** (the /code-review pass's own suggestion,
 # verified empirically wrong): take() is defined far below (near the real removal loop), and this
 # function is CALLED from the manifest-less branch above that definition in the script's own top-to-
@@ -707,35 +706,29 @@ take() {
   removed=$((removed + 1))
 }
 
-# expected_symlink_source REL (dir #347 route 3) — the checkout-relative file a Keel-placed symlink at
-# REL should currently point to, mirroring install.sh's own fixed, small set of symlink wiring
-# (make_link/sync_product call sites: the bin/keel CLI entry, the --link-mode keel/ copies of
-# CORE.md/FRAMEWORK.md/PRINCIPLES.md, and commands/*.md including its keel-* alias slots). Prints
-# nothing when REL matches none of them — the removal loop below then can't confirm provenance and
-# says so instead of assuming "any symlink here is ours", which is the gap this route closes: a manifest
-# `symlink -` record carries no target of its own (record_placed's classify-by-current-form never
-# stores one — see its own comment), so before this fix ANY symlink found at REL was swept, including
-# one an adopter later re-pointed at their own file after install.sh's in_sync branch had recorded a
-# genuinely-Keel link there as `symlink -`.
+# symlink ownership (dir #369, replacing dir #347 route 3's expected_symlink_source() table): a
+# manifest `symlink` record's third field is now the TARGET install.sh actually wired at record time
+# (dir #369's change to record_placed — `readlink DEST`, always an absolute path into that run's own
+# $root), not the empty `-` placeholder it used to be. The removal loop below compares the live link's
+# CURRENT target against that RECORDED one directly — no re-derivation of "what install.sh would wire
+# TODAY" (which is what the deleted table did, hand-mirroring install.sh's own wiring with nothing
+# enforcing the two stay in sync — exactly the hand-copy class dir #362 removed between these two files
+# for artifact_cksum, and dir #363 removed more of for manifest_field/the CORE.md ownership predicate).
+# The manifest is already the contract between the two scripts; this makes it the ONLY one for symlink
+# provenance, with no separate table to fall out of sync.
 #
-# THE FIFTH COPY of the keel-<name> alias/base-name mapping (reuse pass, /simplify on this same diff):
-# dry_run_heuristic_listing's own comment, ~350 lines above, already tracks four hand-copies of this
-# relationship and says a fifth is worth a dedicated ticket rather than a same-round unification — this
-# function is that fifth copy, re-deriving the same rule in the reverse direction. See that comment.
+# OLD-MANIFEST FAIL-CLOSED (dir #369's own compatibility decision, not left to fall out of the code):
+# a manifest written by a PRE-dir-369 install.sh still carries the literal `-` placeholder in this
+# field forever (nothing rewrites an old record until its own artifact is re-placed) — no manifest
+# version bump for this, since the line format/arity is unchanged and neither script's parser cared
+# what this field held before now. `-` can never equal a real `readlink` target, so the plain string
+# comparison below already declines ownership for it without a special case — fail-closed, matching
+# route 3's own original direction, just for a wider reason (no data recorded at all, not merely "no
+# rule matched a fixed table"). The adopter regains auto-removal for that one artifact the next time
+# install.sh re-places it (any drift-refresh or a plain re-run that still confirms the file, since
+# record_placed re-derives EXTRA from the live symlink every time it's called) — until then it is kept,
+# never removed, which costs nothing since removal is the destructive direction.
 #
-# NAMED DRIFT RISK, not closed by this ticket (v0.8.2 release-manager review of dir #347): this table
-# is a HAND-MAINTAINED MIRROR of install.sh's own symlink wiring, with nothing enforcing the two stay
-# in sync — exactly the class of hand-copy dir #362 just removed between these two files (the shared
-# artifact_cksum extraction) and dir #363 is scheduled to remove more of. A future symlinked artifact
-# added to install.sh with no matching case added here does NOT error: this function prints nothing,
-# the removal loop's `-ef` check then has nothing to compare against, ownership is declined, and the
-# new artifact is silently left behind by every uninstall from then on — fail-closed, so not
-# destructive, but silently wrong and easy for nobody to notice. The better mechanism is already
-# half-built: the manifest's `artifact=symlink <rel> -` record has an EMPTY third field; if install.sh
-# recorded the link's actual target there instead, this table could be replaced by a data-driven
-# comparison against what the placing run itself recorded, with no table to fall out of sync at all.
-# Deliberately not built here — it changes what install.sh writes, and widening this ticket into that
-# script mid-flight is the same scope creep PR #322 explicitly declined. Follow-up ticket to add.
 # kind_mismatch REL WAS NOW — the one wording for a manifest/filesystem kind disagreement, shared by
 # the removal loop's three call sites (symlink recorded, now some other kind; file recorded, now a
 # symlink; file recorded, now neither). Extracted by /code-review max's delta round (dir #347) once this
@@ -747,42 +740,14 @@ kind_mismatch() {
   echo "  !    $1: manifest recorded a $2, but it's $3 now — left in place (manifest/filesystem disagree)"
 }
 
-expected_symlink_source() {
-  local rel="$1" base alias_base
-  case "$rel" in
-    bin/keel)           printf '%s' "$root/keel" ;;
-    keel/CORE.md)       printf '%s' "$root/CORE.md" ;;
-    keel/FRAMEWORK.md)  printf '%s' "$root/FRAMEWORK.md" ;;
-    keel/PRINCIPLES.md) printf '%s' "$root/PRINCIPLES.md" ;;
-    commands/*.md)
-      # `${base#keel-}` is a no-op when base has no keel- prefix, so trying it unconditionally as the
-      # second candidate is safe: a direct (non-alias) command just fails the same already-failed check
-      # a second time, harmlessly (/simplify pass, dir #347).
-      base="${rel#commands/}"
-      alias_base="${base#keel-}"
-      if [ -f "$root/commands/$base" ]; then
-        printf '%s' "$root/commands/$base"
-      elif [ -f "$root/commands/$alias_base" ]; then
-        printf '%s' "$root/commands/$alias_base"
-      fi
-      ;;
-  esac
-  # Explicit — not relying on the case/if chain's own trailing status: a "no match" (or a matched
-  # keel-* alias whose target is gone) leaves nothing printed, which the caller reads as "unknown" via
-  # `[ -n "$expected_src" ]`, never via this function's exit code. Called as a plain `var="$(...)"`
-  # assignment (not inside an if/&&/|| test), so under `set -e` a nonzero status here would abort the
-  # whole script — reproduced live: the keel-* branch's own `if [ -f ... ]` can leave the chain's status
-  # at 1 with nothing else to un-fail it.
-  return 0
-}
-
 # 1-4 (dir #125, manifest-driven): the manifest IS the removal-candidate set — walk every artifact IT
 # recorded, never the checkout's current file list (which is blind to what a later release added or an
 # older release actually delivered — cmp-to-current-checkout wrongly kept an old release's untouched
 # file the moment the checkout itself moved on). Ownership per recorded artifact:
-#   symlink -> Keel's iff it's STILL a symlink on disk AND it still points where Keel would have wired
-#              it (dir #347 route 3 — a fs/manifest KIND disagreement, or a symlink pointing somewhere
-#              else now, is named, never acted on — the manifest never authorizes a blind rm)
+#   symlink -> Keel's iff it's STILL a symlink on disk AND its CURRENT target matches the RECORDED one
+#              (dir #369 — a fs/manifest KIND disagreement, or a symlink pointing somewhere else now,
+#              is named, never acted on — the manifest never authorizes a blind rm; a pre-dir-369
+#              record's `-` placeholder never matches a real target, so an old manifest fails closed)
 #   file    -> Keel's iff it's STILL a regular file (not re-formed as a symlink, dir #347 route 1, nor
 #              re-formed as anything else non-regular — both kind disagreements are named, never acted
 #              on, same as the symlink arm's own two-way kind check) AND its CURRENT bytes match the
@@ -804,8 +769,7 @@ if [ "$this_usable" = 1 ]; then
     owned=0
     if [ "$akind" = "symlink" ]; then
       if [ -L "$apath" ]; then
-        expected_src="$(expected_symlink_source "$rel")"
-        if [ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]; then
+        if [ -n "$extra" ] && [ "$extra" != "-" ] && [ "$(readlink "$apath" 2>/dev/null)" = "$extra" ]; then
           owned=1
         else
           echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"

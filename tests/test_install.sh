@@ -446,7 +446,8 @@ check_contains "T9d one actionable message naming the incomplete checkout" "$OUT
 # --- v0.8.1 RC audit: the never-clobber rail, the manifest snapshot, and the retargeting suffix -----
 
 # T10 — the RC audit's headline blocker, a regression against v0.8.0 that needed NO --force at all.
-# record_placed is symlink-aware (`symlink -` for a link, a `cksum:` only for a regular file);
+# record_placed is symlink-aware (`artifact=symlink` for a link, a `cksum:`-carrying `artifact=file`
+# only for a regular file);
 # keel_own_untouched was not — it required the RECORDED kind to be `file` but never checked the dest's
 # CURRENT kind, and `cksum` reads straight THROUGH a symlink. So an adopter who moves a Keel-placed
 # command into a dotfiles repo and symlinks it back (byte-identical by construction) still satisfied
