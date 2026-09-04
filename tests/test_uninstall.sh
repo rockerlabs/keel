@@ -1054,4 +1054,116 @@ check_status "B27 missing tools/lib/artifact-cksum.sh → non-zero exit" 1 "$STA
 check_contains "B27 one actionable message naming the incomplete checkout (missing case)" "$OUT" "tools/lib/artifact-cksum.sh is missing or corrupted"
 check_file "B27 missing-lib refusal removed nothing" "$B27/FRAMEWORK.md"
 
+# --- B28: dir #347 route 1 — the `artifact=file` arm followed a symlink through `[ -f "$apath" ]` and
+# read a cksum through it, so a Keel-placed copy an adopter later moved into their dotfiles and linked
+# back (byte-identical content, but the CURRENT FORM disagrees with the RECORDED kind) got swept. This
+# is the mirror image of the "manifest recorded a symlink, but it's a regular file now" guard the
+# `artifact=symlink` arm already had — that guard now exists on both sides. --------------------------
+B28="$SANDBOX/b28-route1-file-becomes-symlink/.claude"
+inst --home "$B28" --no-hooks
+check_status "B28 install succeeds" 0 "$STATUS"
+b28_target="$SANDBOX/b28-dotfiles-framework.md"
+cp "$B28/FRAMEWORK.md" "$b28_target"
+rm -f "$B28/FRAMEWORK.md"
+ln -s "$b28_target" "$B28/FRAMEWORK.md"
+
+unin --home "$B28" --yes
+check_status "B28 uninstall exits 0" 0 "$STATUS"
+check_link "B28 the re-formed symlink survives (kind disagreement, never swept)" "$B28/FRAMEWORK.md"
+check_contains "B28 the disagreement is named" "$OUT" "manifest recorded a file, but it's a symlink now"
+check_file "B28 the dotfiles-managed target itself is untouched" "$b28_target"
+
+# --- B29: dir #347 route 2 — the recorded cksum must never be trusted as ownership evidence when it
+# equals the unreadable sentinel (tools/lib/artifact-cksum.sh's CKSUM_UNREADABLE, "cksum:0:0"), even if
+# the file's CURRENT bytes also happen to be unreadable right now and so also compute to that same
+# sentinel. Before this fix, a bare `[ "$(artifact_cksum "$apath")" = "$extra" ]` read that as a match
+# and removed a file neither install time nor uninstall time had ever actually read a byte of.
+# Root-guarded: a root reader ignores chmod 000 (see CLAUDE.md's own note on this), so the live cksum
+# would come back real, not the sentinel, and the scenario this test targets never arises there. -------
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  B29="$SANDBOX/b29-route2-sentinel/.claude"
+  inst --home "$B29" --no-hooks
+  check_status "B29 install succeeds" 0 "$STATUS"
+  b29man="$B29/.keel/install-manifest.claude"
+  # Rewrite the recorded cksum for FRAMEWORK.md to the sentinel, as if install.sh itself had recorded
+  # it unreadable at placement time.
+  awk -F'\t' 'BEGIN{OFS="\t"} $1=="artifact=file" && $2=="FRAMEWORK.md" {$3="cksum:0:0"} {print}' \
+    "$b29man" > "$b29man.testtmp" && mv "$b29man.testtmp" "$b29man"
+  chmod 000 "$B29/FRAMEWORK.md"
+  unin --home "$B29" --yes
+  st29="$STATUS"; out29="$OUT"
+  chmod 644 "$B29/FRAMEWORK.md"
+  check_status "B29 uninstall exits 0" 0 "$st29"
+  check_file "B29 the unreadable file survives — self-equal sentinel never authorizes removal" "$B29/FRAMEWORK.md"
+  check_contains "B29 named as differing, not silently swept" "$out29" "FRAMEWORK.md differs from what Keel installed"
+fi
+
+# --- B30: dir #347 route 3 — a manifest `artifact=symlink` record carries no target of its own
+# (record_placed classifies purely by current FORM), so the removal loop's symlink arm had no way to
+# tell a genuinely Keel-wired link from one an adopter later re-pointed at their own file. Before this
+# fix, `[ -L "$apath" ] && owned=1` accepted ANY symlink at the recorded path, regardless of where it
+# led. Same REL, same recorded KIND (symlink) as the real thing, so routes 1/2's kind-agreement checks
+# see no disagreement at all here — this is a genuinely different gap. -------------------------------
+B30="$SANDBOX/b30-route3-symlink-drift/.claude"
+inst --home "$B30" --link --no-hooks
+check_status "B30 linked install succeeds" 0 "$STATUS"
+check_link "B30 fixture: go.md installed as a symlink" "$B30/commands/go.md"
+
+b30_target="$SANDBOX/b30-not-keels-own.md"
+printf "adopter's own script, not Keel's\n" > "$b30_target"
+rm -f "$B30/commands/go.md"
+ln -s "$b30_target" "$B30/commands/go.md"
+
+unin --home "$B30" --yes
+check_status "B30 uninstall exits 0" 0 "$STATUS"
+check_link "B30 the re-pointed symlink survives (provenance check fails closed)" "$B30/commands/go.md"
+check_contains "B30 it still points at the adopter's own file" "$(readlink "$B30/commands/go.md")" "$b30_target"
+check_contains "B30 the drift is named, not silently swept" "$OUT" "symlink no longer points where Keel would have wired it"
+check_file "B30 the adopter's own target file is itself untouched" "$b30_target"
+# A sibling symlink this run never touched is still correctly identified and removed — the fix narrows
+# ownership, it doesn't blanket-refuse every symlink in the manifest.
+check_nolink "B30 an untouched sibling symlink is still correctly removed" "$B30/bin/keel"
+
+# --- B31: dir #347 /code-review max finding — the file arm's kind-mismatch catch-all. The symlink arm
+# has always had an `elif [ -e "$apath" ]` fallback naming ANY non-symlink kind found where a symlink
+# was recorded; the file arm's own two-way kind check (route 1 above, `[ -L ]` before `[ -f ]`) was
+# missing the mirror-image third branch, so a manifest `file` record whose slot is now a directory (or
+# fifo/device) fell through both `-L` and `-f` with no diagnostic at all — fail-closed (never removed)
+# but silent, unlike the symlink arm's equivalent case. Fixture trap from this same round: `mkdir -p`
+# over an existing REGULAR FILE fails and leaves the file in place, so `rm -f` first is required.
+# Known, tracked flake (dir #372): this test's own `$OUT` capture has been observed to drop the
+# "disagreement is named" line under load in roughly 1 of ~19 runs (fork contention, not a logic
+# defect — the underlying `-e` branch itself fires correctly every time it was traced directly).
+# Distinct from dir #368 (the local Alpine environment); fixing either leaves the other standing. --------
+B31="$SANDBOX/b31-file-arm-directory-mismatch/.claude"
+inst --home "$B31" --no-hooks
+check_status "B31 install succeeds" 0 "$STATUS"
+rm -f "$B31/FRAMEWORK.md" && mkdir -p "$B31/FRAMEWORK.md"
+
+unin --home "$B31" --yes
+check_status "B31 uninstall exits 0" 0 "$STATUS"
+check_dir "B31 the directory survives (kind disagreement, never swept)" "$B31/FRAMEWORK.md"
+check_contains "B31 the disagreement is named, not silently skipped" "$OUT" "manifest recorded a file, but it's neither a file nor a symlink now"
+
+# --- B32: dir #347 /code-review max finding — a manifest `artifact=symlink` record whose rel matches
+# NONE of expected_symlink_source's known categories (bin/keel, keel/*.md, commands/*.md) must decline
+# the same way a recognized-but-wrong-target symlink does (B30), not be silently swept nor silently kept
+# with no explanation — the empty-`expected_src` branch and the wrong-target branch share the exact same
+# guard (`[ -n "$expected_src" ] && [ "$apath" -ef "$expected_src" ]`) and this exercises the "empty"
+# half, which B30 (a recognized rel) never reaches. -----------------------------------------------------
+B32="$SANDBOX/b32-symlink-unmapped-rel/.claude"
+inst --home "$B32" --link --no-hooks
+check_status "B32 linked install succeeds" 0 "$STATUS"
+b32man="$B32/.keel/install-manifest.claude"
+b32_target="$SANDBOX/b32-somewhere.md"
+printf 'unrelated content, not Keel wiring\n' > "$b32_target"
+ln -s "$b32_target" "$B32/not-a-real-keel-artifact.md"
+printf 'artifact=symlink\tnot-a-real-keel-artifact.md\t-\n' >> "$b32man"
+
+unin --home "$B32" --yes
+check_status "B32 uninstall exits 0" 0 "$STATUS"
+check_link "B32 the unmapped-rel symlink survives (no rule to confirm it, declined)" "$B32/not-a-real-keel-artifact.md"
+check_contains "B32 the decline is named" "$OUT" "symlink no longer points where Keel would have wired it"
+check_file "B32 its target is untouched" "$b32_target"
+
 summary
