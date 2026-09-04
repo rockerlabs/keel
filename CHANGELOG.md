@@ -192,6 +192,29 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   regression test exercises two real install.sh processes overlapping in time via a small, permanent,
   test-only pause hook (mirroring the existing crash-checkpoint one) rather than racing a real concurrent
   install, plus a stale-lock self-heal test against a guaranteed-dead recorded pid.
+- **`uninstall.sh`'s cross-mode ambiguity warning fired on dir #124's ordinary both-modes sequence
+  (install claude, install codex, uninstall claude, uninstall codex) with a false premise, and its
+  printed advice would have re-installed the mode the operator had just deliberately removed** (dir
+  #248). The second uninstall's own manifest-less fallback couldn't confirm or refute the first mode's
+  install, because that mode's surviving context file — never deleted, by design — no longer carried
+  rails or a foreign-core sentinel, and printed `no evidence CLAUDE.md is gone (unconfirmed, no
+  manifest/rails/sentinel) — removing anyway`, followed by advice to re-run `install.sh --home` for the
+  install the operator had just uninstalled seconds earlier. The fallback now also checks for a backup
+  directory from this tool's own prior removal (`<home>/.keel-uninstall-<ts>/.keel/install-manifest.
+  <mode>`) — evidence from Keel's own bookkeeping, not a guess, that the sibling mode really was
+  uninstalled here — and treats that population as confirmed-gone rather than ambiguous. The warning
+  still fires for the population it was added to cover: an unrelated stray file at the other mode's
+  context-file path, with no backup-dir evidence either way (`tests/test_uninstall.sh`'s B24 pins that
+  case unchanged; B23, the dir #124 regression fixture, now pins the warning's absence instead).
+- **`uninstall.sh`'s dry-run heuristic preview could under-report a linked home's `keel/` directory as
+  nothing-to-remove** (dir #279, low severity, print-only/dry-run-only — the real, non-dry uninstall in
+  the same state always refuses rather than removing, so this never affected data safety). The "would
+  remove keel" line gated solely on `keel/CORE.md`'s own identity (a symlink, or a regular file carrying
+  the `KEEL-NOGIT` trim marker); a manifest-less home where `CORE.md` alone was deleted or hand-edited
+  past that identity, while the sibling `keel/FRAMEWORK.md`/`keel/PRINCIPLES.md` symlinks survived
+  untouched, silently lost the line even though the directory still held real Keel-owned content. The
+  check now also treats either sibling being Keel-owned (the same `is_keel_owned` test already used for
+  the top-level `FRAMEWORK.md`/`PRINCIPLES.md` preview lines) as sufficient evidence.
 
 ## [0.8.1] — 2026-09-03
 
