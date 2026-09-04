@@ -11,6 +11,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-09-04
+
 - **dir #349: a directory at `bin/keel` plus `--force` aborted the whole `install.sh` run mid-sync,
   and two of the four "directory, not just a symlink" advice sites still said only "not a symlink".**
   `force_backup` is a plain `cp`, which fails outright on a directory (or hangs on a FIFO); the
@@ -326,6 +328,30 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   describing pre-diff behavior, and an undercounted call-site total (eight, not six — `tools/doctor.sh`
   has four, not two). All five verified with a live reproduction before and after the fix, not reasoned
   about only; `tests/run.sh` and `shellcheck -x --severity=warning` both stayed green throughout.
+
+Known issues: four residuals ship unfixed, each with an open ticket, and one of them is on the very
+rail this release exists to repair. First, and the one that matters: a run that dies between writing
+its manifest merge scratch and its own cleanup leaves `.artifacts.<pid>` inside `<home>/.keel`, and
+`uninstall.sh` clears only `install-manifest.*`/`foreign-core.*` before its closing `rmdir`, whose
+failure is swallowed by `|| true` — so an adopter who uninstalls after a crashed install is left with
+a `.keel` directory Keel reported as removed, silently. Found while building a real-crash fixture for
+the new run-duration lock, pre-existing since the scratch mechanism itself, and out of scope for the
+`install.sh` change that surfaced it (dir #377). Second, the lock carries four named limits of its
+own: a recorded holder pid can be reused by an unrelated process, `kill -0` cannot distinguish a live
+foreign-owned process from a dead one, two fresh installs can both reclaim the same stale lock at the
+same instant, and a live sibling descheduled for more than the lock's one-second pid-write window has
+its lock reclaimed — which reopens the very race the lock closes, in a one-second window rather than
+the sub-millisecond one it was written for (dir #350's own comments name all four in place). Third, the
+cross-mode ambiguity fix keys on a backup directory this tool never cleans up, so once a mode has been
+uninstalled at a home the warning stays suppressed for that mode forever, including after that mode is
+reinstalled — verified to suppress only the WARNING and never the removal decision, which is why it
+ships (dir #248). Fourth, test-only and not adopter-facing: `tests/test_uninstall.sh`'s new B31 fails
+about one run in twenty under fork contention, so a red B31 is not on its own evidence of a defect
+(dir #372).
+
+Not a residual but worth stating, since this release's headline is concurrency: the new lock serializes
+install-vs-install only. `uninstall.sh` does not take it, so an install racing an uninstall into the
+same home is unchanged and still unaddressed.
 
 ## [0.8.1] — 2026-09-03
 
