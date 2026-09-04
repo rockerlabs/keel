@@ -22,6 +22,27 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   related check, rather than a second, shorter spelling of it. Verified from both a neutral path and a
   path containing the token: 367 passed/2 failed pre-fix on the token path (0 failed on the neutral
   path), 369 passed/0 failed post-fix on both.
+- **dir #342/#343: a non-regular-file merge target in `tools/keel-impact.sh`'s shared atomic-write
+  scaffold could silently lose data or hang the whole process.** `_impact_atomic_write`'s `mv -f` used
+  to succeed by moving the merge's temp file INSIDE an existing directory target rather than replacing
+  it, so a caller's success-gated `rm -f` on the legacy source fired even though no merge had happened;
+  it now refuses (fails closed) any target that exists and is not a regular file, checked before the
+  merge is even attempted. The same class of gap existed one call earlier, in `ensure_ledger`: it wrote
+  straight to `$LEDGER` before `_impact_atomic_write`'s own guard ever ran, so a directory-shaped store
+  ledger leaked a raw `Is a directory` shell error and a FIFO-shaped one hung the process forever
+  (reproduced live — no output, no timeout, confirmed via a bounded-wait harness). `ensure_ledger` now
+  declines the same non-regular target and reports it itself, since two of its three call sites
+  (`rollup`, `cmd_add`) have no downstream guard to fall back on for a message. `ensure_evidence` had
+  the identical twin gap one function up (found by a second review pass on this same PR) — same
+  directory-EISDIR-leak, same FIFO hang, reproduced live and fixed the same way, including verifying
+  live that both of its own bare call sites (inside `cmd_add`) abort via `set -e` before the ungated
+  write immediately following each one is ever reached. dir #342 itself — the same `mv`'s inode
+  replacement racing a concurrent writer — resolves as documentation only, not a code change: the fix
+  that would preserve the inode (rewrite the target in place instead of renaming a temp file over it)
+  is available but deliberately not taken, since it would reopen the atomicity gap this same scaffold's
+  extraction (PR #311) exists to close; the tool's single-operator design means the concurrent writer
+  this trade-off would protect against does not arise in practice, so the trade is now stated plainly
+  next to the code as an accepted design assumption rather than left silent.
 
 ## [0.8.1] — 2026-09-03
 

@@ -338,17 +338,53 @@ each counted event and the citation that backs it — so a score is a checkable 
 trust. A count in the ledger equals the number of citations here: no citation, no count. Guard citations
 are captured from the guardrail hooks (`source | detail`); the rest are supplied at score time.'
 
+# dir #343 follow-up (found by this ticket's own /code-review high pass, reproduced live): a bare
+# `[ ! -f "$LEDGER" ]` treats a FIFO/directory/device the same as a genuinely-absent file and falls
+# through to the `printf ... > "$LEDGER"` below — for a directory that's an immediate `Is a directory`
+# error; for a FIFO with no reader, `printf`'s open() blocks FOREVER (reproduced live: the whole
+# process hangs, no output, no timeout). `_impact_merge_ledger` calls this BEFORE
+# `_impact_atomic_write`'s own non-regular-target guard ever runs, so that guard alone does not save
+# this call site. Reports the decline itself, deliberately — of `ensure_ledger`'s three callers (this
+# one, `rollup`, `cmd_add`), only this one has a downstream guard to fall back on; the other two call
+# it bare, under `set -euo pipefail`, so a silent `return 1` here would abort the whole script with NO
+# diagnostic at all (found by the same review pass, reproduced live: an earlier silent-decline draft of
+# this guard turned a directory-shaped $LEDGER into a bare, message-less exit for `rollup`/`add`, worse
+# than the noisy-but-visible `Is a directory` error it replaced). The merge path prints this message
+# twice as a result — once here, once from `_impact_atomic_write`'s own guard a few lines later — an
+# accepted, harmless redundancy in exchange for every caller getting a real message.
 ensure_ledger() {
+  if [ -e "$LEDGER" ] && [ ! -f "$LEDGER" ]; then
+    printf 'keel-impact: %s exists and is not a regular file — refusing to overwrite it\n' \
+      "$LEDGER" >&2
+    return 1
+  fi
   if [ ! -f "$LEDGER" ]; then
     mkdir -p "$(dirname "$LEDGER")"
     printf '%s\n%s\n' "$LEDGER_HEADER_PROSE" "$(_ledger_table_header)" > "$LEDGER"
   fi
 }
 
+# dir #343 follow-up (found live by the v0.8.2 release-manager session's own review of this PR,
+# reproduced live before this fix): `ensure_ledger`'s identical gap, one function up, has an identical
+# twin here — a bare `[ ! -f "$EVIDENCE" ]` is true for a FIFO/directory/device exactly as it is for a
+# genuinely-absent file, so both fell through to the `printf ... > "$EVIDENCE"` below. A directory-shaped
+# store `evidence.md` leaked the same raw `Is a directory` shell error `ensure_ledger` used to leak; a
+# FIFO-shaped one hung the whole process forever (reproduced live: still running after 3s, no output, no
+# timeout). Declines and reports itself the same way, for the same reason: `ensure_evidence`'s two call
+# sites (both inside `cmd_add`) call it bare, as the first statement of an `if` body, under
+# `set -euo pipefail` — not part of an exempt `&&`/`||` list — so the `return 1` here aborts the script
+# before the write that follows it (`{ ... } >> "$EVIDENCE"`) is ever reached; a silent decline would
+# have left that write to hit the same directory/FIFO hazard right behind it.
 ensure_evidence() {
+  if [ -e "$EVIDENCE" ] && [ ! -f "$EVIDENCE" ]; then
+    printf 'keel-impact: %s exists and is not a regular file — refusing to overwrite it\n' \
+      "$EVIDENCE" >&2
+    return 1
+  fi
   # $EVIDENCE is guaranteed non-empty by the time this runs — cmd_add (this function's only caller)
   # refuses at its own top, before any write, on an empty $EVIDENCE (a partial env override on a
-  # never-enabled repo: found live by an operator-run max-depth review). No redundant check here.
+  # never-enabled repo: found live by an operator-run max-depth review). No redundant EMPTINESS check
+  # here — a different axis from the regular-file guard just above.
   if [ ! -f "$EVIDENCE" ]; then
     mkdir -p "$(dirname "$EVIDENCE")"
     printf '%s\n' "$EVIDENCE_HEADER" > "$EVIDENCE"
@@ -417,10 +453,40 @@ _impact_prior_mode() {
 # `mv` failure AFTER a successful write would otherwise leave `$tmp` orphaned — `status` is still
 # correctly non-zero either way (no data-loss risk), just a stray temp file left behind under a
 # two-branch-only cleanup.
+#
+# dir #342: the same-filesystem `mv` below REPLACES $target's inode rather than rewriting it in
+# place. Any process that already had $target open before this ran — e.g. `keel-impact.sh event
+# ...`'s `>> "$LOG"` append (`cmd_event`, below) — keeps writing into the now-unlinked old inode, and
+# those writes are lost: nothing ever reads that inode again once this function returns. The
+# alternative that would preserve the inode — rewrite $target IN PLACE instead of renaming a temp
+# file over it — is available and deliberately NOT taken: an in-place write reopens exactly the window
+# this whole scaffold exists to close (dir #251/#289 — a crash or kill mid-write leaves $target
+# half-written, observable and durable), which is the atomicity PR #311's extraction was for. Traded
+# off, not guarded against: the race needs a WRITER overlapping a MIGRATION SWEEP of the same store,
+# which this tool's single-operator design does not produce in practice, so the atomicity is kept and
+# the inode replacement is accepted. That is a design assumption resting on how the tool is used, not
+# a property this code enforces — worth stating plainly since F-05's fix chain already introduced two
+# prior defects in this exact function family (F-16, F-19), and a silent assumption here is how a
+# fourth one would start.
+#
+# dir #343: TARGET's regular-file-ness is guarded on the READ side by every caller (`[ -f "$target" ]`
+# before adding it to `inputs`) but was, before this guard, unchecked on the WRITE side — `mv -f` into
+# an existing DIRECTORY succeeds by moving $tmp inside it rather than replacing it, so `status` came
+# back 0 and a caller's `&& rm -f "$legacy_source"` deleted the one copy of the data while the merge
+# never actually happened. Refuses and fails closed instead, matching dir #351's identical semantics
+# for install.sh's own non-regular-`$dest` reads: existing-and-not-a-regular-file is refused
+# unconditionally, with no caller-side override (this function takes none). Checked BEFORE running
+# PRODUCER_FN, not after — a bad target is knowable up front, so a directory-shaped one pays no merge
+# work and never gets a temp file written beside it at all.
 _impact_atomic_write() {
   local target="$1" old_mode="$2"; shift 2
   local tmp="$target.keelmerge.$$"
   local status
+  if [ -e "$target" ] && [ ! -f "$target" ]; then
+    printf 'keel-impact: %s exists and is not a regular file — refusing to overwrite it\n' \
+      "$target" >&2
+    return 1
+  fi
   if "$@" > "$tmp"; then
     if [ -n "$old_mode" ]; then
       chmod "$old_mode" "$tmp" 2>/dev/null || printf \
