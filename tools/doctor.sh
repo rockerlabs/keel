@@ -62,6 +62,31 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_doctor_dir/lib/impact-store.sh"
+# manifest_field/manifest_usable (dir #125) and keel_core_is_link/keel_core_is_nogit_trim (dir #363) —
+# REQUIRED: this file has no established "must survive a tools/-less checkout" contract, so aborting on
+# a missing/corrupted copy is correct, not a silent degrade. dir #363: previously a hand-copy of
+# manifest_field and six independently hand-copied CORE.md predicate tests; see each lib's own header.
+# Guarded (`[ -f ] && bash -n`, one actionable message, exit 1) — NOT bare like nonneg-int.sh/
+# impact-store.sh just above (pre-existing, unaudited, out of scope here): a bare `.` of a
+# present-but-corrupted file aborts at parse time under `set -e`, which no `if`/`&&` around the `.`
+# itself can catch, so an unguarded required source hands the operator a raw bash parse-error stack
+# instead of a clean, actionable one — the same reasoning tools/lib/artifact-cksum.sh's own guard
+# documents (dir #362), applied here since it's about corruption, not about what the function's output
+# feeds.
+if [ -f "$_doctor_dir/lib/manifest.sh" ] && bash -n "$_doctor_dir/lib/manifest.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/manifest.sh
+  . "$_doctor_dir/lib/manifest.sh"
+else
+  echo "doctor: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh" >&2
+  exit 1
+fi
+if [ -f "$_doctor_dir/lib/core-ownership.sh" ] && bash -n "$_doctor_dir/lib/core-ownership.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/core-ownership.sh
+  . "$_doctor_dir/lib/core-ownership.sh"
+else
+  echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh" >&2
+  exit 1
+fi
 unset _doctor_dir
 
 QUIET=0
@@ -154,19 +179,6 @@ _char_count() {
   n="$(wc -c < "$1" 2>/dev/null | tr -d ' ')" || n=0
   [ -n "$n" ] || n=0
   printf '%s' "$n"
-}
-
-# manifest_field FILE KEY — the value of a top-level `key=value` line in an install manifest (dir
-# #125), first match, "" on any read failure. Used below to read both install-manifest.<mode> and
-# install-manifest.gate — one definition instead of hand-copied sed pipelines. `|| true` at the end: an
-# EXISTING but unreadable manifest (permission-denied) makes `sed` exit non-zero even with stderr silenced, and
-# under this file's own `set -euo pipefail` an unguarded pipeline failure here would abort the WHOLE
-# run mid-unit — losing every finding already buffered in $NOTES and printing no summary line at all
-# (found by an independent /code-review high pass). The manifest-versioning contract says exactly
-# this case degrades to "treated as absent", never a crash — same `|| true` degradation the file's
-# own load_token_set() already uses for the identical unreadable-file risk.
-manifest_field() {
-  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true
 }
 
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
@@ -640,7 +652,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (re-run install.sh$irelink_mode$ihome_flag)"
     elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
       warn W-RAILS-DOUBLE "$icontext imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
-    elif [ ! -L "$ihome/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$ihome/keel/CORE.md"; then
+    elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then
       # A --no-git install: keel/CORE.md is a GENERATED trimmed copy, not a symlink — `git pull`
       # refreshes the checkout but never this file. Two risks only this check notices:
       #   staleness — the copy was generated from an older CORE.md. Compare crumb-insensitively
@@ -670,7 +682,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$git_projects" -gt 0 ]; then
         warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh$irelink_mode$ihome_flag --with-git"
       fi
-    elif [ ! -L "$ihome/keel/CORE.md" ]; then
+    elif ! keel_core_is_link "$ihome/keel/CORE.md"; then
       warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh$irelink_mode$ihome_flag"
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
@@ -756,11 +768,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
       iman_drift=""
       case "$iman_layout" in
         link)
-          if [ -e "$ihome/keel/CORE.md" ] && [ ! -L "$ihome/keel/CORE.md" ]; then
+          if [ -e "$ihome/keel/CORE.md" ] && ! keel_core_is_link "$ihome/keel/CORE.md"; then
             iman_drift="manifest says layout=link but $ihome/keel/CORE.md is a regular file, not a symlink"
           fi ;;
         link-nogit)
-          if [ -L "$ihome/keel/CORE.md" ]; then
+          if keel_core_is_link "$ihome/keel/CORE.md"; then
             iman_drift="manifest says layout=link-nogit but $ihome/keel/CORE.md is a symlink (the --no-git trim looks restored)"
           fi ;;
       esac
@@ -804,7 +816,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # catches one for the install manifest, instead of silently trusting a re-derived guess.
     igate_manifest="$ihome/.keel/install-manifest.gate"
     igate_manifest_usable=0
-    if [ -f "$igate_manifest" ] && [ "$(manifest_field "$igate_manifest" keel_manifest_version)" = "1" ]; then
+    if manifest_usable "$igate_manifest"; then
       igate_manifest_usable=1
       igate_settings="$(manifest_field "$igate_manifest" settings)"
       [ -n "$igate_settings" ] || igate_settings="$ihome/settings.json"

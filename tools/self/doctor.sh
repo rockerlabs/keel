@@ -1292,6 +1292,52 @@ else
   say "  OK   artifact_cksum() has exactly one definition, in tools/lib/artifact-cksum.sh"
 fi
 
+# --- 10. manifest_field/manifest_usable and the CORE.md ownership predicate have exactly one real
+# definition tree-wide (dir #363) -------------------------------------------------------------------
+# dir #363 made uninstall.sh/tools/doctor.sh consumers of the existing tools/lib/manifest.sh
+# (manifest_field/manifest_usable, previously hand-copied in both) instead of hand-copying it, and gave
+# the keel/CORE.md ownership predicate (keel_core_is_link/keel_core_is_nogit_trim) its own new
+# tools/lib/core-ownership.sh, sourced by all three of install.sh/uninstall.sh/tools/doctor.sh. Same
+# class as check 9: a promise that the non-owning consumers keep no local copy, verified instead of
+# trusted, so a future hand-copy is caught structurally the moment it's added rather than waiting for
+# behaviour to drift apart.
+say ""
+say "● manifest_field/manifest_usable/core-ownership-predicate single-definition (dir #363)"
+
+# single_def_check FN HOME [EXEMPT] — GAP unless FN's only real definition tree-wide is in HOME, with
+# at most one further exemption at EXEMPT: a documented, pre-existing degrade-stub or fallback copy,
+# not a hand-copy this check exists to catch — install.sh's own optional-source pattern keeps exactly
+# one of each: manifest_usable() { return 1; } (dir #323, predates this ticket — install.sh never calls
+# manifest_field, so only manifest_usable gets a stub) and keel_core_is_link/keel_core_is_nogit_trim's
+# byte-identical fallback copies (dir #363's own documented degradation contract — see
+# tools/lib/core-ownership.sh's own header for why install.sh, alone of the three consumers, keeps one).
+# Scoped away from tests/ (`:!tests/`, unlike check 9's plain `'*.sh' 'keel'`): a test fixture
+# legitimately keeps its OWN small, independent reader for isolation from production code under test
+# (e.g. tests/test_install_manifest.sh's own manifest_field(), pre-existing this ticket) — a real,
+# deliberate local definition, not a hand-copy, and outside what this check's drift risk is about.
+# Absence graded the same way check 9 grades an absent artifact_cksum: a repo defining FN nowhere
+# simply doesn't have the rule to keep in sync.
+single_def_check() {
+  local fn="$1" home="$2" exempt="${3-}" def_re defs rest note=""
+  def_re="^[[:space:]]*${fn}[[:space:]]*\\(\\)[[:space:]]*\\{"
+  defs="$(git -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/' 2>/dev/null || true)"
+  [ -z "$defs" ] && return   # no definition anywhere — no rule to keep in sync here
+  rest="$defs"
+  if [ -n "$exempt" ]; then
+    rest="$(printf '%s\n' "$defs" | grep -vxF "$exempt" || true)"
+    note=" ($exempt carries a documented fallback/stub, not a hand-copy)"
+  fi
+  if [ "$rest" != "$home" ]; then
+    gap "${fn}() is defined in {$defs} — expected exactly one real definition, in $home$( [ -n "$exempt" ] && printf ' (plus its documented %s fallback/stub)' "$exempt" ) (dir #363: source it, never hand-copy it)"
+  else
+    say "  OK   ${fn}() has exactly one real definition, in $home$note"
+  fi
+}
+single_def_check manifest_field          tools/lib/manifest.sh
+single_def_check manifest_usable         tools/lib/manifest.sh       install.sh
+single_def_check keel_core_is_link       tools/lib/core-ownership.sh install.sh
+single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh install.sh
+
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
 run_check() {
   local label="$1"; shift

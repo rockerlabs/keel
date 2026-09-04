@@ -94,11 +94,25 @@ ledger_file="${KEEL_LEDGER_FILE:-$root/.keel/installed-homes}"
 # "no such home" early exit below is exactly that case, and there's nothing to canonicalize against.
 home_canon="$(cd "$HOME_DIR" 2>/dev/null && pwd || printf '%s' "$HOME_DIR")"
 
-# manifest_field FILE KEY — mirror of tools/doctor.sh's own copy (no established cross-sourcing
-# convention between the two files — keep them in sync on drift, same note as core_import_re/
-# has_keel_rails below). `|| true`: an existing-but-unreadable manifest must degrade to absent, never
-# abort this script under set -euo pipefail.
-manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true; }
+# manifest_field/manifest_usable (dir #125) — sourced from the shared tools/lib/manifest.sh (dir #363:
+# previously a hand-copy here, verified output-identical to install.sh's own consumption of the same
+# lib). REQUIRED, not optional — this script's whole removal decision is keyed off manifest state, so a
+# checkout missing this lib cannot safely reason about ownership at all. Guarded the same way as
+# tools/lib/artifact-cksum.sh just below (`[ -f ] && bash -n` pre-check, one actionable message, exit
+# 1) — NOT bare like tools/lib/ledger.sh's own pre-existing, unaudited source further down: dir #362's
+# own reasoning for guarding a required lib is about CORRUPTION, not about what the function's output
+# feeds — a bare `.` of a present-but-corrupted file aborts at parse time under `set -e`, and no
+# `if`/`&&` around the `.` command itself can catch that, so an unguarded required source hands the
+# adopter a raw bash parse-error stack instead of a clean message. That reasoning applies here exactly
+# as it does to artifact_cksum; matching ledger.sh's bare precedent instead would carry the same gap
+# forward into two more libs rather than close it. (ledger.sh itself is untouched — out of scope here.)
+if [ -f "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/manifest.sh
+  . "$root/tools/lib/manifest.sh"
+else
+  echo "uninstall: tools/lib/manifest.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real manifest read; re-clone or re-download Keel and re-run uninstall.sh" >&2
+  exit 1
+fi
 # manifest_recorded_home/mode FILE DEFAULT — the manifest's own recorded home=/mode=, falling back to
 # DEFAULT when the field is empty (a well-formed-but-sparse manifest, in practice never hit against a
 # real install.sh write, but the same "don't trust a possibly-missing field" posture manifest_field's
@@ -106,14 +120,6 @@ manifest_field() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true; }
 # mismatch refusal below (this run's own $other_manifest).
 manifest_recorded_home() { local v; v="$(manifest_field "$1" home)"; [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"; }
 manifest_recorded_mode() { local v; v="$(manifest_field "$1" mode)"; [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"; }
-# manifest_usable FILE — the versioning contract: present, readable, AND a keel_manifest_version this
-# script knows how to read. Anything else (absent, corrupt, a future major version) is ABSENT — treated
-# as "no manifest recorded", never a crash (dir #150: that now means the refusal further down, not a
-# heuristic fallback).
-manifest_usable() {
-  [ -f "$1" ] || return 1
-  [ "$(manifest_field "$1" keel_manifest_version)" = "1" ]
-}
 # this_usable/other_usable — manifest_usable "$this_manifest"/"$other_manifest" computed ONCE: both
 # files are fixed for the whole run (only $HOME_DIR's ledger-loop candidates in other_mode_hint vary,
 # so that call site still calls manifest_usable directly, per home). Everything below that asks
@@ -133,6 +139,17 @@ if [ -f "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifa
   . "$root/tools/lib/artifact-cksum.sh"
 else
   echo "uninstall: tools/lib/artifact-cksum.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real cksum comparison; re-clone or re-download Keel and re-run uninstall.sh" >&2
+  exit 1
+fi
+# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim) — REQUIRED, same
+# guarded-and-required posture as tools/lib/manifest.sh above (see its own comment for why bare would
+# be wrong here); see tools/lib/core-ownership.sh's own header for why install.sh's consumption
+# differs (optional, with a byte-identical inline fallback).
+if [ -f "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/core-ownership.sh
+  . "$root/tools/lib/core-ownership.sh"
+else
+  echo "uninstall: tools/lib/core-ownership.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real predicate; re-clone or re-download Keel and re-run uninstall.sh" >&2
   exit 1
 fi
 # artifact_shared_with_other REL — dir #124's structural closure: true iff REL is ALSO a recorded
@@ -389,7 +406,7 @@ dry_run_heuristic_listing() {
   # true" trap dry_run_heuristic_listing's own is_keel_owned-based checks below were written to avoid
   # (see artifact_shared_with_other's comment for the general shape of that trap).
   keel_dir_owned=0
-  if [ -L "$HOME_DIR/keel/CORE.md" ] || { [ -f "$HOME_DIR/keel/CORE.md" ] && grep -q 'KEEL-NOGIT' "$HOME_DIR/keel/CORE.md" 2>/dev/null; }; then
+  if keel_core_is_link "$HOME_DIR/keel/CORE.md" || keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
     keel_dir_owned=1
   elif is_keel_owned "$HOME_DIR/keel/FRAMEWORK.md" "$root/FRAMEWORK.md" || is_keel_owned "$HOME_DIR/keel/PRINCIPLES.md" "$root/PRINCIPLES.md"; then
     keel_dir_owned=1

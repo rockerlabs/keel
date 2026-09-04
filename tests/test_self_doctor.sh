@@ -1586,4 +1586,58 @@ run "$sd" "$d"
 check_status "no definitions anywhere -> exit 0" 0 "$STATUS"
 check_absent "and reports no GAP over it" "$OUT" "GAP"
 
+# --- 12. manifest_field/manifest_usable/core-ownership-predicate single-definition (dir #363) ------
+# Same class as check 11 (dir #362) just above, for the OTHER hand-copy families dir #363 removed:
+# manifest_field/manifest_usable (uninstall.sh/tools/doctor.sh, now consumers of tools/lib/manifest.sh)
+# and keel_core_is_link/keel_core_is_nogit_trim (all three scripts, now consumers of the new
+# tools/lib/core-ownership.sh) — plus install.sh's own documented, EXEMPT fallback/stub copies of
+# manifest_usable (dir #323, predates this ticket) and both ownership-predicate functions (dir #363's
+# own degradation contract), which must NOT themselves trigger a GAP — that exemption is the one part
+# of this check that isn't a copy of check 11's own shape.
+plant_manifest_and_ownership_libs() {
+  mkdir -p "$1/tools/lib"
+  printf '#!/usr/bin/env bash\nmanifest_field() {\n  :\n}\nmanifest_usable() {\n  :\n}\n' \
+    > "$1/tools/lib/manifest.sh"
+  printf '#!/usr/bin/env bash\nkeel_core_is_link() {\n  :\n}\nkeel_core_is_nogit_trim() {\n  :\n}\n' \
+    > "$1/tools/lib/core-ownership.sh"
+  # install.sh's own documented, exempt fallback/stub copies — proving these don't themselves trip
+  # the check, same shape as its real optional-source else branch (manifest_field is NOT among them:
+  # install.sh's real code never calls it, so it carries no stub of that one).
+  printf '#!/usr/bin/env bash\nmanifest_usable() { return 1; }\nkeel_core_is_link() { [ -L "$1" ]; }\nkeel_core_is_nogit_trim() { [ -f "$1" ]; }\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
+    > "$1/install.sh"
+  printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, and tools/lib/core-ownership.sh"\n' \
+    "$fake_widget" > "$1/tests/test_tools.sh"
+}
+
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh fallbacks" )
+run "$sd" "$d" --quiet
+check_status "manifest/core-ownership: single defs + exempt install.sh fallbacks -> exit 0" 0 "$STATUS"
+check_absent "no GAP for the correct shape (install.sh's documented fallbacks are not a hand-copy)" "$OUT" "GAP"
+
+# a hand-copy of manifest_field reappears in uninstall.sh — the exact drift dir #363 removed
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+printf '\nmanifest_field() {\n  :\n}\n' >> "$d/uninstall.sh"
+( cd "$d" && git add -A && git commit -qm "manifest_field hand-copy reappears in uninstall.sh" )
+run "$sd" "$d" --quiet
+check_status "manifest_field hand-copy alongside the shared lib -> exit 1" 1 "$STATUS"
+check_contains "names the shared lib" "$OUT" "tools/lib/manifest.sh"
+check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
+
+# a hand-copy of keel_core_is_link reappears in tools/doctor.sh — same drift, the ownership predicate
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+printf '\nkeel_core_is_link() {\n  :\n}\n' >> "$d/tools/doctor.sh"
+( cd "$d" && git add -A && git commit -qm "keel_core_is_link hand-copy reappears in tools/doctor.sh" )
+run "$sd" "$d" --quiet
+check_status "keel_core_is_link hand-copy in tools/doctor.sh -> exit 1" 1 "$STATUS"
+check_contains "names the shared lib" "$OUT" "tools/lib/core-ownership.sh"
+check_contains "…and the hand-copy location" "$OUT" "tools/doctor.sh"
+
+# a repo that defines none of these has no rule to keep in sync — silent, not a GAP (baseline coverage
+# already exercised by the plain "clean sandbox" case near the top of this file)
+d="$(mk_clean_repo)"
+run "$sd" "$d"
+check_status "manifest/core-ownership: no definitions anywhere -> exit 0" 0 "$STATUS"
+check_absent "and reports no GAP over it" "$OUT" "GAP"
+
 summary

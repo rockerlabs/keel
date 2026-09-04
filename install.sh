@@ -166,11 +166,31 @@ advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
 CONTEXT_FILE="CLAUDE.md"
 [ "$CODEX" = 1 ] && CONTEXT_FILE="AGENTS.md"
 
+# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim), hoisted here — before the
+# linked-mode sticky-detect just below, this file's first call site — same reasoning as the self-link
+# guard further down: the earliest sane point either way, so the sticky-detect still fires from a
+# checkout that hasn't got a tools/ dir at all. OPTIONAL, unlike tools/lib/manifest.sh's REQUIRED
+# treatment for uninstall.sh/tools/doctor.sh: every call site below is a pure filesystem check with
+# zero tools/ dependency today, driving only this run's own LINK/NOGIT control flow and a printed
+# message — never a manifest record another script later trusts for a destructive decision, so there's
+# no cross-script poisoning risk to refuse outright over (contrast tools/lib/artifact-cksum.sh below).
+# Same `[ -f ] && bash -n` pre-check as the libs below (a bare `.` can't be guarded against a
+# parse-time syntax-error abort under `set -e`); the fallback is today's inline logic moved verbatim —
+# byte-identical to tools/lib/core-ownership.sh's own copy, not a stub, so a tools/-less checkout keeps
+# today's exact behaviour.
+if [ -f "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/core-ownership.sh
+  . "$root/tools/lib/core-ownership.sh"
+else
+  keel_core_is_link() { [ -L "$1" ]; }
+  keel_core_is_nogit_trim() { [ -f "$1" ] && [ ! -L "$1" ] && grep -q 'KEEL-NOGIT' "$1" 2>/dev/null; }
+fi
+
 # Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES
 # back in as stale shadows — "git pull && ./install.sh" is exactly the muscle-memory the copy-mode
-# docs teach, so detect the linked layout and stay in linked mode. (-L, not -f: even a dangling
-# CORE.md link marks the home as linked — the re-run then heals it.)
-if [ "$CODEX" = 0 ] && [ "$LINK" = 0 ] && [ -L "$HOME_DIR/keel/CORE.md" ]; then
+# docs teach, so detect the linked layout and stay in linked mode. (keel_core_is_link, not -f: even a
+# dangling CORE.md link marks the home as linked — the re-run then heals it.)
+if [ "$CODEX" = 0 ] && [ "$LINK" = 0 ] && keel_core_is_link "$HOME_DIR/keel/CORE.md"; then
   LINK=1
   echo "install: this home is a LINKED install — continuing in linked mode (as if --link was passed)"
 fi
@@ -180,8 +200,7 @@ fi
 # itself sticky: a plain re-run KEEPS the trim and refreshes it from the current CORE.md, so the
 # muscle-memory "git pull && install.sh --link" heals a stale trim instead of silently restoring the
 # git rails. Restoring is explicit: --with-git.
-if [ "$CODEX" = 0 ] && [ -f "$HOME_DIR/keel/CORE.md" ] && [ ! -L "$HOME_DIR/keel/CORE.md" ] \
-   && grep -q 'KEEL-NOGIT' "$HOME_DIR/keel/CORE.md" 2>/dev/null; then
+if [ "$CODEX" = 0 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
   [ "$LINK" = 1 ] || echo "install: this home is a LINKED install — continuing in linked mode (as if --link was passed)"
   LINK=1
   if [ "$NOGIT" = 0 ] && [ "$WITHGIT" = 0 ]; then
@@ -970,7 +989,7 @@ if [ "$LINK" = 1 ]; then
         echo "  +    CORE.md (trimmed --no-git copy — code/git rails removed)"
       fi
     fi
-  elif [ -f "$core_dest" ] && [ ! -L "$core_dest" ] && grep -q 'KEEL-NOGIT' "$core_dest" 2>/dev/null; then
+  elif keel_core_is_nogit_trim "$core_dest"; then
     # --with-git: the generated trimmed copy goes back to the canonical symlink (full rails restored).
     make_link "$root/CORE.md" "$core_dest"
     record_placed "$core_dest"

@@ -181,6 +181,37 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   check now also treats either sibling being Keel-owned (the same `is_keel_owned` test already used for
   the top-level `FRAMEWORK.md`/`PRINCIPLES.md` preview lines) as sufficient evidence.
 
+- **`manifest_field`/`manifest_usable` and the `keel/CORE.md` ownership predicate, the two remaining
+  hand-copied families dir #278 named, extracted to close out the refactor dir #362 started (dir
+  #363).** `uninstall.sh` and `tools/doctor.sh` each carried their own copy of `manifest_field`/
+  `manifest_usable` (verified output-identical to `tools/lib/manifest.sh`'s own, already sourced by
+  `install.sh`); both now source that lib instead. The `keel/CORE.md` ownership predicate — `[ -L
+  keel/CORE.md ]` for an ordinary linked install, or a regular file carrying the `KEEL-NOGIT` marker
+  for a `--no-git` trim — was independently inline at six call sites across all three scripts (three in
+  `install.sh`, one in `uninstall.sh`, two in `tools/doctor.sh`); a new `tools/lib/core-ownership.sh`
+  gives it two functions, `keel_core_is_link`/`keel_core_is_nogit_trim`, sourced by all three. **The
+  degradation contract is not uniform, and the divergence is deliberate:** `manifest_field`/
+  `manifest_usable` and the ownership predicate, for `uninstall.sh`/`tools/doctor.sh`, are
+  hard-required — neither script has an established "must survive a `tools/`-less checkout" contract to
+  preserve — AND guarded the same way `tools/lib/artifact-cksum.sh` already is (dir #362): a
+  `[ -f ] && bash -n` pre-check, one actionable message, `exit 1`. Not bare like `uninstall.sh`'s own
+  pre-existing `tools/lib/ledger.sh` source (an unaudited, out-of-scope precedent) — dir #362's own
+  reasoning for guarding a *required* lib is about corruption, not about what the function's output
+  feeds: an unguarded `.` of a present-but-corrupted file aborts at parse time under `set -e`, which no
+  `if`/`&&` can catch, so a bare required source hands the operator a raw bash parse-error stack instead
+  of a clean, actionable one. That reasoning applies here exactly as it did there, so both new sources
+  are guarded rather than repeating the gap. The ownership predicate stays **optional** for
+  `install.sh`, with a byte-identical inline fallback (not guarded-and-required like the other two):
+  unlike `tools/lib/artifact-cksum.sh` (dir #362), `install.sh`'s three call sites are pure filesystem
+  checks with zero `tools/` dependency today (the first runs before `install.sh` sources anything from
+  `tools/lib/` at all), driving only that run's own `LINK`/`NOGIT` control flow and a printed message —
+  never a manifest record another script later trusts for a destructive decision, so there is no
+  cross-script poisoning risk to refuse outright over. `tools/self/doctor.sh` gained a matching drift
+  check (check 10, immediately after dir #362's own check 9) asserting each of the four functions has
+  exactly one real definition tree-wide, with `install.sh`'s two documented fallback/stub copies
+  (`manifest_usable`'s pre-existing dir #323 stub, and the ownership predicate's dir #363 fallback)
+  carved out as the one exempt case each — a hand-copy anywhere else still fails the check.
+
 ## [0.8.1] — 2026-09-03
 
 - **Nine findings from the v0.8.1 release-candidate delta audit, four of them tag-blocking, fixed as
