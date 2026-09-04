@@ -648,6 +648,20 @@ take() {
 # stores one — see its own comment), so before this fix ANY symlink found at REL was swept, including
 # one an adopter later re-pointed at their own file after install.sh's in_sync branch had recorded a
 # genuinely-Keel link there as `symlink -`.
+#
+# NAMED DRIFT RISK, not closed by this ticket (v0.8.2 release-manager review of dir #347): this table
+# is a HAND-MAINTAINED MIRROR of install.sh's own symlink wiring, with nothing enforcing the two stay
+# in sync — exactly the class of hand-copy dir #362 just removed between these two files (the shared
+# artifact_cksum extraction) and dir #363 is scheduled to remove more of. A future symlinked artifact
+# added to install.sh with no matching case added here does NOT error: this function prints nothing,
+# the removal loop's `-ef` check then has nothing to compare against, ownership is declined, and the
+# new artifact is silently left behind by every uninstall from then on — fail-closed, so not
+# destructive, but silently wrong and easy for nobody to notice. The better mechanism is already
+# half-built: the manifest's `artifact=symlink <rel> -` record has an EMPTY third field; if install.sh
+# recorded the link's actual target there instead, this table could be replaced by a data-driven
+# comparison against what the placing run itself recorded, with no table to fall out of sync at all.
+# Deliberately not built here — it changes what install.sh writes, and widening this ticket into that
+# script mid-flight is the same scope creep PR #322 explicitly declined. Follow-up ticket to add.
 expected_symlink_source() {
   local rel="$1" base alias_base
   case "$rel" in
