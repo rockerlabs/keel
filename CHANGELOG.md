@@ -157,6 +157,39 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   loudly) when it can't confirm that. All three fail closed — the file survives, uninstall keeps
   running — never a crash and never a silent sweep; each has a regression test in
   `tests/test_uninstall.sh`, shown red against the pre-fix code before the guard landed.
+- **The concurrent-install race disclosed as a known issue in 0.8.1 is fixed (dir #350, folding in
+  dir #348).** `install.sh` never supported two installs racing into the same home; a run-duration lock
+  (an `mkdir`-based lock directory — atomic everywhere this script runs, no `flock` dependency) now
+  serializes them: a second install into a home another install is actively working on refuses
+  immediately (exit 1, before touching anything) instead of possibly racing to completion or, as
+  0.8.1 shipped, sometimes deleting a live sibling's own scratch file and either leaking a raw
+  `awk: can't open file` error or tripping a `manifest merge scratch vanished` abort. A crashed run
+  leaves its lock behind; the next install self-heals it via the same liveness check ordinary
+  contention uses (`kill -0` on the recorded holder pid), so a genuinely stuck lock never becomes a
+  permanent wedge. Deliberately no wait-loop (timeout tuning risks masking a genuinely hung install) and
+  deliberately no `trap ... EXIT` of any kind — this script already measured, live, on its own bash
+  (3.2.57), that a bare EXIT trap masks a genuine crash into a false exit 0, so the lock is released by
+  one explicit call on the success path only.
+
+  Folded in from dir #348: a manifest that EXISTS but can no longer be READ now REFUSES BEFORE PLACING
+  ANYTHING, rather than completing the install while silently failing to record what it placed. This
+  PARTIALLY REVERTS PR #322's behavior, in those words, for this one case: v0.8.0 aborted before placing
+  when the manifest was unreadable; PR #322 deliberately moved that to "complete the install anyway,"
+  which turned out to also silently stop recording what it placed — leaving artifacts on disk that
+  `uninstall.sh` could no longer see, with the install still reporting success. This does not contradict
+  PR #322's own degrade-to-treated-as-absent fix, which governs PROVENANCE decisions during a run
+  (whether a single file can be auto-refreshed) and is untouched here, still degrading exactly as PR #322
+  left it; this fix answers a different, narrower question PR #322 never addressed — whether a run that
+  already knows in advance it cannot record what it's about to place should place it anyway. `--force`
+  does not override this refusal, and cannot structurally, not just by policy: `--force` is consulted only
+  much later, inside the sync step — code this refusal never reaches — because `--force` exists to
+  override declines about the ADOPTER's files, not the tool's own inability to record what it is about to
+  write. The refusal is mode-independent, firing identically in copy and linked mode. Running the install
+  twice against the same unreadable manifest now gives the identical resting state both times: nothing
+  placed, manifest untouched, same non-zero exit, same actionable message (chmod, then re-run) — a
+  regression test exercises two real install.sh processes overlapping in time via a small, permanent,
+  test-only pause hook (mirroring the existing crash-checkpoint one) rather than racing a real concurrent
+  install, plus a stale-lock self-heal test against a guaranteed-dead recorded pid.
 
 ## [0.8.1] — 2026-09-03
 

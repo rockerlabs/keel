@@ -258,6 +258,95 @@ manifest_dir="$HOME_DIR/.keel"
 manifest_file="$manifest_dir/install-manifest.$manifest_mode"
 mkdir -p "$manifest_dir"
 
+# Unreadable-manifest gate (dir #348/#350) — the FIRST thing checked once $manifest_dir exists: before
+# the stale-scratch sweep below, before the prior_manifest snapshot, before the lock further down is
+# even acquired. If $manifest_file exists but this process cannot read it, refuse immediately — nothing
+# is placed, nothing is created (not the lock dir, not `.prior-manifest.*`, not `.artifacts.*`).
+#
+# This PARTIALLY REVERTS PR #322's behavior, in those words, for this one case: v0.8.0 aborted before
+# placing anything when the manifest was unreadable; PR #322 (two days earlier, same cycle) deliberately
+# moved that to "complete the install anyway" — and only afterward turned out to also silently stop
+# RECORDING what it placed (dir #348), since the merge step further down reads $manifest_file directly
+# and a crash there left the manifest untouched while ~14 artifacts landed on disk with nothing
+# `uninstall.sh` could see. This ticket moves the abort back, but ONLY for the narrow case a run already
+# knows in advance it cannot record what it's about to write.
+#
+# This does NOT contradict PR #322's degrade-to-treated-as-absent clause. That clause governs PROVENANCE
+# reads DURING a run (manifest_field/manifest_usable, keel_own_untouched and friends, both still sourced
+# below) — untouched by this gate, still degrading exactly as PR #322 left it. This gate answers a
+# different, narrower question PR #322 never addressed: should a run that already knows it cannot record
+# what it's about to place, place it anyway? dir #348's own original done-criterion already named
+# refusing-to-place as an equally valid resolution alongside degrade-and-rewrite, so this is a decision
+# the versioning contract was silent on, not a violation of it.
+#
+# --force does NOT override this refusal, and cannot structurally, not just by policy: $FORCE (parsed
+# near the top of arg parsing) is only ever consulted much later, inside sync_product/force_backup —
+# code this refusal never reaches. --force exists to override declines about the ADOPTER's files, not
+# to override the tool's own inability to record what it's about to write.
+#
+# Mode-independent: fires identically in copy and linked mode — the gate sits well before the first
+# placement-relevant LINK check further down.
+#
+# Running the install twice against the same unreadable manifest gives the identical resting state both
+# times: nothing placed either time, manifest untouched either time, same non-zero exit, same message —
+# self-healing once the adopter fixes permissions (chmod, or restore ownership) and re-runs.
+if [ -f "$manifest_file" ] && [ ! -r "$manifest_file" ]; then
+  echo "install: $manifest_file exists but is not readable — refusing before placing anything (this run" >&2
+  echo "         cannot record what it would install, so it installs nothing). Fix: restore read access" >&2
+  echo "         (e.g. chmod +r \"$manifest_file\") and re-run '$advise_install'." >&2
+  exit 1
+fi
+
+# Run-duration lock (dir #350, Fork 2 — locking, chosen over plain pid-liveness-on-the-sweep because
+# that direction alone leaves the pre-existing last-writer-wins race on the final atomic_write open).
+# A portable mkdir-based lock directory: `mkdir` is atomic everywhere this script runs, so this needs no
+# `flock` dependency (not POSIX, not guaranteed present on a minimal BusyBox image, not built into
+# macOS's shell). Acquired here, immediately after the gate above passes (only reached when the manifest
+# is readable or absent — an unreadable manifest needs no mutual exclusion at all, nothing runs after
+# it), held through the final atomic_write far below, bracketing the stale-scratch sweep and the
+# prior_manifest snapshot region without rewriting either.
+#
+# Cost accepted: a second install into the same home now fails fast (exit 1, before touching anything)
+# instead of possibly racing to completion — a genuine behavior change, but not a contradiction of
+# anything documented (the disclosure already says concurrent installs were never supported). No
+# wait-loop: retrying on contention would need timeout tuning and risks masking a genuinely hung install
+# behind a long wait — a live holder means immediate refusal, never a sleep-and-retry.
+install_lock_dir="$manifest_dir/.install.lock"
+install_lock_acquired=0
+while :; do
+  if mkdir "$install_lock_dir" 2>/dev/null; then
+    echo "$$" > "$install_lock_dir/pid"
+    install_lock_acquired=1
+    break
+  fi
+  # mkdir failed — two different causes, and only one of them is contention. If the lock dir does NOT
+  # exist, mkdir didn't lose a race, it couldn't create the dir at all (permission denied, a read-only
+  # filesystem, $manifest_dir itself gone) — a fatal condition, not something a retry ever resolves.
+  # Without this check, a $manifest_dir with no write permission (T14d's own fixture, dir #142) sends
+  # this loop into a genuine infinite spin: mkdir fails EACCES forever, never EEXIST, so the contention
+  # branch below would never see a lock dir to reclaim (found live — this exact loop hung the test suite
+  # before this guard was added).
+  if [ ! -d "$install_lock_dir" ]; then
+    echo "install: cannot create $install_lock_dir — $manifest_dir may not be writable" >&2
+    exit 1
+  fi
+  # Genuine contention: the lock dir exists — either a live sibling holds it, or a crashed run left it
+  # behind. Read the holder's recorded pid and check liveness with `kill -0`.
+  install_lock_holder="$(cat "$install_lock_dir/pid" 2>/dev/null || true)"
+  if [ -n "$install_lock_holder" ] && kill -0 "$install_lock_holder" 2>/dev/null; then
+    echo "install: another install is already running in $HOME_DIR (pid $install_lock_holder) — refusing" >&2
+    echo "         to run concurrently (lock: $install_lock_dir). Wait for it to finish and re-run." >&2
+    exit 1
+  fi
+  # Stale lock — the recorded holder is gone. No EXIT trap released it (see the release site far below,
+  # right after the final atomic_write, for why: the prior_manifest snapshot's own comment further down
+  # this file already measured live, on this repo's own bash 3.2.57, that a bare EXIT trap masks a
+  # genuine crash — an unset-variable abort — into a false exit 0, which is worse than a leftover lock).
+  # Reclaim it and retry. Named residual, not fixed: two fresh installs finding the same stale lock at
+  # the same instant could both recover it — revisit only if ever actually felt.
+  rm -rf "$install_lock_dir" 2>/dev/null || true
+done
+
 # A checkout this minimal (a test fixture, or a corrupted install) may not ship tools/ at all — degrade
 # to "provenance unavailable" rather than aborting the whole install over an optional refinement; every
 # other real gap in a broken checkout (e.g. the secret-guard step below) still surfaces its own error.
@@ -472,6 +561,22 @@ atomic_copy() {
 # whole function return 1 and abort the script even when no crash was requested.
 _keel_test_checkpoint() {
   [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
+  return 0
+}
+
+# _keel_test_pause_after NAME — test-only synchronization checkpoint (dir #350), same no-op-in-real-runs
+# family as _keel_test_checkpoint above and _keel_test_drop_prior_manifest (dir #351): when
+# KEEL_TEST_PAUSE_AFTER equals NAME, touches "$KEEL_TEST_PAUSE_MARKER.ready" (so a test harness knows
+# this run has reached the checkpoint and is genuinely paused, not merely slow) and then blocks until
+# $KEEL_TEST_PAUSE_MARKER is removed — letting the regression test synchronize a SECOND, real install
+# process against this one's exact point in the run, instead of racing a real concurrent install against
+# a fixed sleep and hoping the timing lines up. A no-op in every real run (KEEL_TEST_PAUSE_AFTER unset).
+# Same `return 0` reasoning as _keel_test_checkpoint above: a function's own exit status is what the
+# caller sees under `set -e`, so this must not let a false top-level `[ cond ]` return 1 and abort.
+_keel_test_pause_after() {
+  [ "${KEEL_TEST_PAUSE_AFTER:-}" = "$1" ] || return 0
+  : > "${KEEL_TEST_PAUSE_MARKER:?}.ready"
+  while [ -e "$KEEL_TEST_PAUSE_MARKER" ]; do sleep 0.1; done
   return 0
 }
 
@@ -1409,6 +1514,13 @@ fi
 # one, and any record whose file is gone from disk is dropped. (Old-manifest lines re-shaped from
 # `artifact=<kind>\t<rel>\t<extra>` to `<rel>\t<kind>\t<extra>` to match record_artifact's own order;
 # awk's `a[$1]=$0` keeps the LAST line per key, so the appended this-run records win on conflict.)
+# The `[ -f "$manifest_file" ]` read right below is, as of dir #350, defense-in-depth rather than the
+# active guard against an unreadable manifest: the gate near $manifest_dir's own creation already
+# refused the whole run before anything reached here whenever $manifest_file exists but can't be read.
+# It stays unchanged (not rewritten to assume readability) since a manifest that's readable at the gate
+# but becomes unreadable mid-run (an adopter or another process re-chmods it) is a distinct, unhandled
+# race outside this ticket's scope — the merge read degrading via `awk`'s own natural failure rather than
+# crashing the run is still the right shape for that case.
 merge_tmp="$manifest_dir/.artifacts.$$"
 {
   if [ -f "$manifest_file" ]; then
@@ -1420,6 +1532,7 @@ merge_tmp="$manifest_dir/.artifacts.$$"
     printf '%s\n' "${manifest_artifacts[@]}"
   fi
 } | awk -F'\t' '{a[$1] = $0} END {for (k in a) print a[k]}' | sort > "$merge_tmp"
+_keel_test_pause_after merge-write
 
 manifest_artifact_lines=()
 # Fail LOUD if the merge temp vanished between the write above and this read. Whether bash errexits on
@@ -1431,11 +1544,11 @@ manifest_artifact_lines=()
 # of leaving a bare "No such file or directory"; do NOT delete it after reproducing the one-liner on a
 # Linux box and concluding it is dead weight — that is precisely the leg it does not speak for.
 # The check is EXISTENCE only: a temp that exists but cannot be read still takes the read path below.
-# Newly reachable because this
-# batch widened the stale-scratch sweep above to `.artifacts.*`: a concurrent install into the SAME
-# home can now delete this run's temp. Microseconds wide and rare, but it must not fail silently —
-# the sibling .prior-manifest race degrades provenance, which is recoverable; this one would not say
-# anything at all.
+# The stale-scratch sweep that used to make this reachable via a SIBLING install (dir #350's own
+# original disclosure) is now defense-in-depth too: the run-duration lock above serializes installs into
+# the same home, so no sibling sweep can delete this run's own temp anymore. Kept, not removed — the
+# lock's own residual (two fresh installs recovering the same stale lock at the same instant) is a named
+# possibility, not an impossibility, and this guard is what makes that residual loud instead of silent.
 if [ ! -f "$merge_tmp" ]; then
   echo "install: manifest merge scratch vanished ($merge_tmp) — another install into this home?" >&2
   exit 1   # merge-scratch guard: abort, never fall through and write an artifact-less manifest
@@ -1465,6 +1578,20 @@ rm -f "$merge_tmp"
   fi
 } | atomic_write "$manifest_file"
 echo "  +    install manifest ($manifest_file)"
+
+# Release the run-duration lock (dir #350, Fork 2) — the SUCCESS path only, one explicit `rmdir`-shaped
+# `rm -rf`, right after the final atomic_write above completes. No `trap ... EXIT`, of any kind: the
+# prior_manifest snapshot's own comment further up this file already measured, live, on this repo's own
+# bash (3.2.57), that a bare EXIT trap masks a genuine crash — e.g. an unset-variable abort under
+# `set -u` — into a false exit 0, which is a far worse failure mode than a leftover lock. If this run
+# aborts for any reason before this line, the lock is simply left behind; the NEXT install's own
+# mkdir-retry loop above reclaims it via the same `kill -0` stale-pid check used for ordinary contention.
+# This is the ONLY cleanup mechanism — do not "improve" this with an EXIT trap, that is the exact
+# mechanism this script's own history already ruled out at the citation above.
+# `|| true` at the end: a failed release must not abort an otherwise-successful run under `set -euo
+# pipefail` — worst case it leaves the lock behind, which the next install's own stale-pid check already
+# knows how to reclaim, exactly as an abort-before-this-line would.
+[ "$install_lock_acquired" = 1 ] && rm -rf "$install_lock_dir" 2>/dev/null || true
 
 # Checkout-side ledger — the discovery index consumers use to find every recorded home from the
 # checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own

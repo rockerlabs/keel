@@ -554,68 +554,99 @@ check_link "T11 the drifted copy became the canonical symlink" "$mighome/command
 run test "$mighome/commands/polish.md" -ef "$ckdir/commands/polish.md"   # clobbers $OUT — assert on it last
 check_status "T11 …resolving into the checkout" 0 "$STATUS"
 
-# T12 — the manifest snapshot's own read must not be able to kill the run. The `cp` that takes it sat
-# in an `if` BODY at top level under `set -euo pipefail`, upstream of the degradation logic in
-# manifest_field/manifest_usable that the versioning contract points at — so a manifest that EXISTS
-# but cannot be READ aborted the whole install before a single file was placed (a regression against
-# v0.8.0, which completed the install and failed only on trailing bookkeeping).
+# T12 — dir #350's final direction (operator decision, two same-day corrections): a manifest that
+# EXISTS but cannot be READ now REFUSES BEFORE PLACING ANYTHING, rather than completing the install with
+# a crippled or absent record of what it placed (dir #348's own disclosure). This flips T12's OLD
+# contract, which asserted the opposite ("still lands the core") — that assertion described a regression
+# against v0.8.0's own abort-before-placing behavior that PR #322 introduced; this ticket is a deliberate
+# partial revert of PR #322 for this one case (see install.sh's own gate comment, right after
+# $manifest_dir is created, for the full reasoning: why this doesn't contradict PR #322's
+# degrade-to-treated-as-absent, why --force can't reach the refusal, mode-independence). The exit status
+# is now asserted too — an earlier version of this comment called it a "pre-existing wart" under the
+# old completes-anyway behavior; it is an INTENTIONAL refusal now, not a leftover crash, and its
+# non-zero-ness is load-bearing for the contract, not incidental to it.
 #
-# The unconditional half is "the install completes": it converges across readers, since a root reader
-# (CI's alpine-busybox leg, where chmod 000 is a no-op) simply reads the manifest and installs anyway.
-# Coverage map, stated so "alpine green" is not misread as evidence: the permission-dependent halves
-# here and in T12b/T13/T14d bind ONLY on the non-root matrix legs (ubuntu-24.04, macos-14). On the
-# alpine-busybox leg those guards skip, and a regression in finding 2, finding 7 or T14d's own target
-# would ship green there — measured by forcing the guards false. The T12 scratch-hygiene assertion
-# below is NOT inside a guard but is equally root-blind: on the root leg the sweep regression it
-# pins ships green too, because a root reader leaves no leftover to sweep.
-# The exit STATUS does not converge — non-root still exits non-zero on the trailing manifest-merge
-# bookkeeping, exactly as v0.8.0 did — so it is deliberately not asserted here; what the fix owes is
-# placement, not that pre-existing wart.
+# Root-conditional, not root-blind: a root reader (CI's alpine-busybox leg, where chmod 000 is a no-op)
+# never sees the manifest as unreadable, so the gate correctly does NOT fire for it — the install
+# proceeds and places normally, same as every other root-leg branch in this file. That is a DIFFERENT
+# outcome from the non-root branch below, not the same claim converging — so, unlike T12's old shape,
+# the placement assertions here are root-conditional rather than unconditional.
 umhome="$SANDBOX/unreadable-manifest-home"; mkdir -p "$umhome/.keel"
 printf 'keel_manifest_version=1\n' > "$umhome/.keel/install-manifest.claude"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 000 "$umhome/.keel/install-manifest.claude"; fi
 fresh_home_env "$umhome"
 run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umhome" --no-hooks
 if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 644 "$umhome/.keel/install-manifest.claude"; fi
-check_file "T12 an unreadable manifest still lands the core" "$umhome/FRAMEWORK.md"
-check_file "T12 …and the commands" "$umhome/commands/wrap.md"
-check_contains "T12 …and the run reaches its Verify block" "$OUT" "Verify:"
-
-# Scratch hygiene, pinned on T12's own fixture rather than a new one: surviving the snapshot read is
-# what first made the merge step's `.artifacts.<pid>` reachable on an abort, so the sweep that reaps it
-# is this batch's own addition. The contract is BOUNDED litter — at most the previous run's leftover —
-# not zero, and it converges across readers: a root reader reads the manifest fine and leaves 0, a
-# non-root one aborts at the merge and leaves exactly 1, which the NEXT run reaps.
-um_scratch_a="$(find "$umhome/.keel" -name '.artifacts.*' 2>/dev/null | wc -l | tr -d ' ')"
-if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 000 "$umhome/.keel/install-manifest.claude"; fi
-run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umhome" --no-hooks
-if [ "$(id -u 2>/dev/null)" != 0 ]; then chmod 644 "$umhome/.keel/install-manifest.claude"; fi
-um_scratch_b="$(find "$umhome/.keel" -name '.artifacts.*' 2>/dev/null | wc -l | tr -d ' ')"
-if [ "$um_scratch_a" -le 1 ] && [ "$um_scratch_b" -le 1 ]; then
-  pass "T12 merge scratch stays bounded at one leftover, never accumulating"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "T12 an unreadable manifest refuses — non-zero exit, deliberately" 1 "$STATUS"
+  # Critically: NOTHING PLACED, not merely "the manifest is unchanged" — a manifest-unchanged assertion
+  # alone doesn't distinguish this fix from the ORIGINAL dir #348 bug, which also left the manifest at
+  # its old content (on the crash path, after files already landed on disk). check_nofile below asserts
+  # the actual placement side, which the bug and the fix disagree on.
+  check_nofile "T12 …nothing placed: no core files land" "$umhome/FRAMEWORK.md"
+  check_nofile "T12 …nor the commands" "$umhome/commands/wrap.md"
+  check_nodir "T12 …not even the run-duration lock — refused before it's ever acquired" "$umhome/.keel/.install.lock"
+  check_contains "T12 …the new message names the cause" "$OUT" "exists but is not readable"
+  check_contains "T12 …and the fix" "$OUT" "chmod"
+  check_absent "T12 …no raw awk stderr — this crash site is unreachable now, not just guarded" "$OUT" "awk: can't open file"
+  # Scratch hygiene, corrected: before dir #350, surviving the snapshot read made the merge step's
+  # `.artifacts.<pid>` reachable on an abort, bounded at one leftover by the sweep — "succeeds and
+  # cleans up" or "skips only the merge" were both accurate descriptions of THAT contract. Neither
+  # describes this one. The gate now fires before $manifest_dir's own sweep, before the lock, before
+  # the prior_manifest snapshot — none of that machinery is ever reached, so a non-root reader leaves
+  # ZERO scratch files of any kind, not "at most one." (find excludes the manifest itself, the one file
+  # this fixture legitimately pre-creates.)
+  um_scratch="$(find "$umhome/.keel" -mindepth 1 ! -name 'install-manifest.*' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$um_scratch" = 0 ]; then
+    pass "T12 …zero scratch files of any kind — none of the sweep/lock/snapshot machinery is reached"
+  else
+    fail "T12 …zero scratch files of any kind — none of the sweep/lock/snapshot machinery is reached" \
+      "found $um_scratch leftover(s) under $umhome/.keel"
+  fi
+  # Idempotence — the operator's own stated requirement: running the install twice against the same
+  # unreadable manifest gives the identical resting state both times.
+  um_status_1="$STATUS"
+  chmod 000 "$umhome/.keel/install-manifest.claude"
+  run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umhome" --no-hooks
+  chmod 644 "$umhome/.keel/install-manifest.claude"
+  check_status "T12 …a second run against the same unreadable manifest: identical exit" "$um_status_1" "$STATUS"
+  check_contains "T12 …identical message" "$OUT" "exists but is not readable"
+  check_nofile "T12 …still nothing placed on the second run either" "$umhome/FRAMEWORK.md"
 else
-  fail "T12 merge scratch stays bounded at one leftover, never accumulating" "run1=$um_scratch_a run2=$um_scratch_b"
+  check_status "T12 (root leg) a readable-to-root manifest installs normally → exit 0" 0 "$STATUS"
+  check_file "T12 (root leg) …core lands, since the gate never fires for root" "$umhome/FRAMEWORK.md"
 fi
 
-# T12b — the other half of the contract: provenance DEGRADES to unavailable rather than misfiring.
-# Root-guarded on its own, and for the opposite reason to T12's: a root reader gets a perfectly
-# readable manifest here, so the provenance branch legitimately fires for it and this assertion would
-# be false for a correct run.
-# The whole fixture — baseline install included — sits inside the guard: on the root leg every
-# assertion below is skipped, so an unguarded baseline would spend a full install.sh run (and mutate
-# the shared fixture checkout) for a claim T10/T11/T12 each already make there.
+# T12b — the same refusal, now against a home with REAL pre-existing installed content, not an empty
+# one: confirms the gate fires unconditionally on read-permission alone, before anything that could
+# reason about what's already on disk (provenance, drift, the never-clobber alias path) is ever
+# consulted. Under the OLD (pre-dir-#350) behavior this fixture exercised graceful DEGRADE-to-unavailable
+# provenance; that whole code path is now unreachable for an unreadable manifest, since the refusal fires
+# far earlier — this replaces that assertion with the stronger one the operator's decision actually
+# requires: every already-installed file, byte for byte, is untouched by the refused run.
+# Root-guarded, same reason as T12's non-root branch: a root reader never sees this manifest as
+# unreadable, so the gate doesn't apply to it — already covered by T10/T11/T12's own root-leg branches.
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
   umdrift="$SANDBOX/unreadable-manifest-drift-home"; mkdir -p "$umdrift"
   fresh_home_env "$umdrift"
   run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
   check_status "T12b baseline install → exit 0" 0 "$STATUS"
-  printf '\nUNREADABLE-MANIFEST-RELEASE\n' >> "$ckdir/commands/wrap.md"   # would refresh if provenance worked
+  printf '\nUNREADABLE-MANIFEST-RELEASE\n' >> "$ckdir/commands/wrap.md"   # checkout source drifts forward — irrelevant now, the run never gets far enough to look
   chmod 000 "$umdrift/.keel/install-manifest.claude"
+  umdrift_before="$(find "$umdrift" -type f ! -path '*/.keel/install-manifest.*' -exec cksum {} + | sort)"
   run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$umdrift" --no-hooks
   chmod 644 "$umdrift/.keel/install-manifest.claude"   # restore so cleanup can remove the sandbox
-  check_absent "T12b provenance degrades to unavailable, never a misfire" "$OUT" "wrap.md refreshed (Keel's own copy, unedited)"
-  check_file "T12b …the drifted command routes to the never-clobber path instead" "$umdrift/commands/keel-wrap.md"
-  check_contains "T12b …the install still placed the core that run" "$OUT" "Verify:"
+  check_status "T12b an unreadable manifest refuses even with real content already installed" 1 "$STATUS"
+  check_contains "T12b …same gate message as T12's fresh-home case" "$OUT" "exists but is not readable"
+  check_absent "T12b …never reaches provenance, never claims a refresh" "$OUT" "wrap.md refreshed (Keel's own copy, unedited)"
+  check_nofile "T12b …no never-clobber alias created either — nothing ran at all" "$umdrift/commands/keel-wrap.md"
+  check_absent "T12b …the run never reaches Verify" "$OUT" "Verify:"
+  umdrift_after="$(find "$umdrift" -type f ! -path '*/.keel/install-manifest.*' -exec cksum {} + | sort)"
+  if [ "$umdrift_before" = "$umdrift_after" ]; then
+    pass "T12b …every already-installed file is untouched, byte for byte"
+  else
+    fail "T12b …every already-installed file is untouched, byte for byte" "cksums differ before vs after the refused run"
+  fi
 fi
 
 # T13 — the self-equal error sentinel. artifact_cksum yields $CKSUM_UNREADABLE ("cksum:0:0") for a file
@@ -798,29 +829,32 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "T14j …no partial/empty .bak file was left behind" 0 "$cpfail_bak_count"
 fi
 
-# T14d — finding 2's other half, unpinned until now: the degradation must NOT swallow a genuinely
-# unwritable \$manifest_dir. That is the deliberate asymmetry of the fix — `cp` sits in the condition
-# so an unreadable manifest degrades, while `: > "\$prior_manifest"` stays in the body so a directory
-# that cannot be written to still aborts loudly. Without this pin, a later "consistency" cleanup adding
-# `|| true` to the second half would silently install over a snapshot that was never created, making
-# every Keel-owned file read as foreign. Root-guarded: chmod is a no-op for root.
-# The binding assertion is the check_nofile, NOT the exit status: under that exact mutation the run
-# still exits 1, because it reaches the merge step and dies writing into the same unwritable dir. So
-# the exit code cannot tell the intended abort from the incidental one — do not trim the check_nofile
-# as redundant, it is the half that discriminates (measured, not assumed).
+# T14d — an unwritable $manifest_dir must abort loudly, not silently degrade or hang. Originally pinned
+# (dir #142) against a mutation to the prior_manifest-snapshot guard's asymmetry — `cp` sits in the
+# condition so an unreadable manifest degrades, while `: > "$prior_manifest"` stays in the body so a
+# directory that cannot be written to still aborts loudly; adding `|| true` to that second half would
+# have silently installed over a snapshot that was never created.
+# dir #350 note: the new run-duration lock now intercepts this exact fixture EARLIER than that guard —
+# `mkdir "$manifest_dir/.install.lock"` fails on the same unwritable directory well before the
+# prior_manifest snapshot code is ever reached (see install.sh's own lock-loop comment on the
+# not-a-directory check it needs for exactly this case). This narrows what THIS fixture actually
+# exercises: the `: > "$prior_manifest"` guard's own asymmetry is still correct and still shipped, but is
+# no longer reachable via a plain unwritable-directory fixture, since creating a new file there and
+# acquiring the lock there fail for the identical underlying reason — the lock always fails first. The
+# assertions below (nothing placed, no Verify reached) still hold and are still worth pinning as the
+# adopter-facing contract; only the ORIGINAL mutation-discrimination reasoning ("the exit code alone
+# doesn't tell the intended abort from an incidental one") no longer applies to this fixture specifically
+# — a mutation to the prior_manifest guard would never even run here now. Root-guarded: chmod is a no-op
+# for root.
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
   wrhome="$SANDBOX/unwritable-manifest-dir-home"; mkdir -p "$wrhome/.keel"
   chmod 500 "$wrhome/.keel"
   fresh_home_env "$wrhome"
   run env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$wrhome" --no-hooks
   chmod 700 "$wrhome/.keel"   # restore so cleanup can remove the sandbox
-  # Labelled for what it actually binds. The exit status alone does NOT discriminate — under the
-  # `|| true` mutation the run still exits 1, later, on the trailing manifest write into the same
-  # unwritable dir (measured). The two below are the discriminators: nothing placed, and the run never
-  # reached its Verify block, i.e. it died at the snapshot, not at the end.
   check_status "T14d an unwritable .keel dir fails, rather than installing over a missing snapshot" 1 "$STATUS"
   check_nofile "T14d …having placed nothing" "$wrhome/FRAMEWORK.md"
-  check_absent "T14d …and having aborted before Verify, i.e. at the snapshot" "$OUT" "Verify:"
+  check_absent "T14d …and having aborted before Verify, i.e. at the lock, before the snapshot is ever attempted" "$OUT" "Verify:"
 fi
 
 # T14f — the `[ -f "$manifest_file" ]` inside that same condition, which is load-bearing and was
@@ -1118,5 +1152,71 @@ check_dir "T17 …the adopter's directory is left in place" "$t17home/commands/w
 check_contains "T17 …the new decline message fires" "$OUT" "wrap.md: a non-regular file already exists there"
 check_status "T17 …no *.keeltmp.* orphan left anywhere under the directory" 0 \
   "$(find "$t17home/commands/wrap.md" -name '*.keeltmp.*' 2>/dev/null | wc -l | tr -d ' ')"
+
+# T18 (dir #350, concurrent sibling — alive) — TWO REAL install.sh PROCESSES into the SAME $HOME_DIR,
+# overlapping in time, not a mocked race. Synchronized via _keel_test_pause_after rather than a
+# wall-clock guess: the first is paused right after it writes its own merge-scratch temp file — deep in
+# the run, well after it has already synced every file and acquired the run-duration lock — so a second,
+# ordinary install started while the first is paused is GUARANTEED to observe a live lock, never a
+# timing accident. This is the regression test the done-criterion asks for.
+t18home="$SANDBOX/concurrent-sibling-home"; mkdir -p "$t18home"
+fresh_home_env "$t18home"
+t18marker="$SANDBOX/t18-pause.marker"
+: > "$t18marker"
+env "${FRESH_HOME_ENV[@]}" KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$t18marker" \
+  "$install" --home "$t18home" --no-hooks > "$SANDBOX/t18-first.out" 2>&1 </dev/null &
+t18_pid=$!
+t18_waited=0
+while [ ! -e "${t18marker}.ready" ] && [ "$t18_waited" -lt 30 ]; do
+  sleep 1; t18_waited=$((t18_waited + 1))
+done
+if [ ! -e "${t18marker}.ready" ]; then
+  rm -f "$t18marker" 2>/dev/null || true
+  kill -9 "$t18_pid" 2>/dev/null || true
+  wait "$t18_pid" 2>/dev/null || true
+  fail "T18 the first install reached its pause checkpoint" "no ${t18marker}.ready after ${t18_waited}s"
+else
+  # First run is paused, mid-run, holding the lock. Snapshot the whole .keel dir so the second run's
+  # refusal can be proven to touch NONE of it — this is the exact class of file (the merge-scratch temp,
+  # dir #350's own original disclosure) a sibling's stale-scratch sweep used to be able to delete.
+  check_dir "T18 …the lock directory exists while the first run is paused" "$t18home/.keel/.install.lock"
+  t18_before="$(find "$t18home/.keel" -mindepth 1 | sort)"
+  run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t18home" --no-hooks
+  check_status "T18 a second, real install refuses while the first is still running" 1 "$STATUS"
+  check_contains "T18 …names contention, not a crash" "$OUT" "another install is already running"
+  t18_after="$(find "$t18home/.keel" -mindepth 1 | sort)"
+  if [ "$t18_before" = "$t18_after" ]; then
+    pass "T18 …the first run's own scratch/lock state is untouched by the refused second run"
+  else
+    fail "T18 …the first run's own scratch/lock state is untouched by the refused second run" \
+      "before=[$t18_before] after=[$t18_after]"
+  fi
+  # Release the first run and let it finish.
+  rm -f "$t18marker"
+  wait "$t18_pid"; t18_first_status=$?
+  t18_first_out="$(cat "$SANDBOX/t18-first.out" 2>/dev/null)"
+  check_status "T18 …released, the first run completes normally" 0 "$t18_first_status"
+  check_contains "T18 …and reaches its own Verify block" "$t18_first_out" "Verify:"
+  check_file "T18 …the first run's own placement lands" "$t18home/FRAMEWORK.md"
+  check_nodir "T18 …the lock is released on the success path once the first run finishes" "$t18home/.keel/.install.lock"
+fi
+
+# T19 (dir #350, stale lock — self-heal) — a lock directory whose recorded pid is GUARANTEED dead (a
+# spawned-and-reaped subprocess, not a guessed-unlikely-to-collide number) is reclaimed automatically:
+# `mkdir` loses the race against the pre-created lock, `kill -0` on the recorded pid fails, the stale
+# lock is removed, and a normal install proceeds as sole holder. Distinguishing from pre-fix code: before
+# dir #350 there was no `.install.lock` concept at all, so a stray one left lying around was never
+# cleaned up — check_nodir below is what a pre-fix run fails.
+t19home="$SANDBOX/stale-lock-home"; mkdir -p "$t19home/.keel"
+( : ) &
+t19_dead_pid=$!
+wait "$t19_dead_pid" 2>/dev/null || true
+mkdir -p "$t19home/.keel/.install.lock"
+echo "$t19_dead_pid" > "$t19home/.keel/.install.lock/pid"
+fresh_home_env "$t19home"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$t19home" --no-hooks
+check_status "T19 a stale lock (dead recorded pid) self-heals → exit 0" 0 "$STATUS"
+check_file "T19 …and the install completes normally" "$t19home/FRAMEWORK.md"
+check_nodir "T19 …the reclaimed-then-released lock is gone afterward" "$t19home/.keel/.install.lock"
 
 summary
