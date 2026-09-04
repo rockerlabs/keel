@@ -675,6 +675,17 @@ take() {
 # comparison against what the placing run itself recorded, with no table to fall out of sync at all.
 # Deliberately not built here — it changes what install.sh writes, and widening this ticket into that
 # script mid-flight is the same scope creep PR #322 explicitly declined. Follow-up ticket to add.
+# kind_mismatch REL WAS NOW — the one wording for a manifest/filesystem kind disagreement, shared by
+# the removal loop's three call sites (symlink recorded, now some other kind; file recorded, now a
+# symlink; file recorded, now neither). Extracted by /code-review max's delta round (dir #347) once this
+# diff's own new third call site made the pattern cross from coincidence to pattern — the same
+# "worth doing once a copy count crosses that line" bar this file already applies to the keel-<name>
+# alias-mapping duplication above. String-only: reproduces each of the three call sites' existing text
+# byte-for-byte, and does not touch any of their own if/elif conditions — only what they print.
+kind_mismatch() {
+  echo "  !    $1: manifest recorded a $2, but it's $3 now — left in place (manifest/filesystem disagree)"
+}
+
 expected_symlink_source() {
   local rel="$1" base alias_base
   case "$rel" in
@@ -739,11 +750,11 @@ if [ "$this_usable" = 1 ]; then
           echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
         fi
       elif [ -e "$apath" ]; then
-        echo "  !    $rel: manifest recorded a symlink, but it's a regular file now — left in place (manifest/filesystem disagree)"
+        kind_mismatch "$rel" symlink "a regular file"
       fi
     elif [ "$akind" = "file" ]; then
       if [ -L "$apath" ]; then
-        echo "  !    $rel: manifest recorded a file, but it's a symlink now — left in place (manifest/filesystem disagree)"
+        kind_mismatch "$rel" file "a symlink"
       elif [ -f "$apath" ]; then
         if [ "$extra" != "$CKSUM_UNREADABLE" ] && [ "$(artifact_cksum "$apath")" = "$extra" ]; then
           owned=1
@@ -758,7 +769,7 @@ if [ "$this_usable" = 1 ]; then
         # actually knows (neither a file nor a symlink), not "a regular file now" — the symlink arm's own
         # `-e` message says that, which is imprecise for a directory too, but that line predates this
         # diff and is left alone here.
-        echo "  !    $rel: manifest recorded a file, but it's neither a file nor a symlink now — left in place (manifest/filesystem disagree)"
+        kind_mismatch "$rel" file "neither a file nor a symlink"
       fi
     fi
     [ "$owned" = 1 ] || continue
