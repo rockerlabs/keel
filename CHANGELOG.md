@@ -11,6 +11,38 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tests/test_uninstall.sh`'s gate-leftover assertions matched a bare token that also occurs in a
+  checkout's own path** (dir #329, found 2026-09-02, v0.8.0 RC pass, F-13): five assertions
+  substring-matched command output against the literal `pre-pr-gate`, and that output also carries the
+  checkout path — so on any checkout whose path contains that token (a worktree named after the gate
+  itself is the likely case, making the test least trustworthy exactly on the sessions working on the
+  gate), the negative `check_absent` assertions failed and the positive `check_contains` ones passed for
+  the wrong reason, matching the path rather than the note. All five now anchor on the note's own wording,
+  `pre-PR gate hooks are still wired` — the same needle an existing assertion (B20) already used for a
+  related check, rather than a second, shorter spelling of it. Verified from both a neutral path and a
+  path containing the token: 367 passed/2 failed pre-fix on the token path (0 failed on the neutral
+  path), 369 passed/0 failed post-fix on both.
+- **dir #342/#343: a non-regular-file merge target in `tools/keel-impact.sh`'s shared atomic-write
+  scaffold could silently lose data or hang the whole process.** `_impact_atomic_write`'s `mv -f` used
+  to succeed by moving the merge's temp file INSIDE an existing directory target rather than replacing
+  it, so a caller's success-gated `rm -f` on the legacy source fired even though no merge had happened;
+  it now refuses (fails closed) any target that exists and is not a regular file, checked before the
+  merge is even attempted. The same class of gap existed one call earlier, in `ensure_ledger`: it wrote
+  straight to `$LEDGER` before `_impact_atomic_write`'s own guard ever ran, so a directory-shaped store
+  ledger leaked a raw `Is a directory` shell error and a FIFO-shaped one hung the process forever
+  (reproduced live — no output, no timeout, confirmed via a bounded-wait harness). `ensure_ledger` now
+  declines the same non-regular target and reports it itself, since two of its three call sites
+  (`rollup`, `cmd_add`) have no downstream guard to fall back on for a message. `ensure_evidence` had
+  the identical twin gap one function up (found by a second review pass on this same PR) — same
+  directory-EISDIR-leak, same FIFO hang, reproduced live and fixed the same way, including verifying
+  live that both of its own bare call sites (inside `cmd_add`) abort via `set -e` before the ungated
+  write immediately following each one is ever reached. dir #342 itself — the same `mv`'s inode
+  replacement racing a concurrent writer — resolves as documentation only, not a code change: the fix
+  that would preserve the inode (rewrite the target in place instead of renaming a temp file over it)
+  is available but deliberately not taken, since it would reopen the atomicity gap this same scaffold's
+  extraction (PR #311) exists to close; the tool's single-operator design means the concurrent writer
+  this trade-off would protect against does not arise in practice, so the trade is now stated plainly
+  next to the code as an accepted design assumption rather than left silent.
 - **`artifact_cksum`/`CKSUM_UNREADABLE` extracted into a new `tools/lib/artifact-cksum.sh`, shared by
   `install.sh` and `uninstall.sh` (dir #362).** Previously `install.sh` defined both inline and
   `uninstall.sh` carried an output-identical hand-copy with the sentinel literal inlined instead of
@@ -25,7 +57,10 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   `install.sh` and `uninstall.sh` refuse outright, with one actionable message, rather than complete
   under a value that can no longer be trusted. In every real-world install (`bootstrap.sh` always
   clones or downloads a full checkout) this file is always present, so no adopter install is affected —
-  the divergence is only observable in a deliberately minimal/corrupted checkout.
+  the divergence is only observable in a deliberately minimal/corrupted checkout. `tools/self/doctor.sh`
+  gained a matching drift check (check 9, not 8 — check 8 was already claimed by dir #321's PIPESTATUS
+  check) asserting `artifact_cksum()` has exactly one definition tree-wide, scanning both `*.sh` files
+  and the extensionless `keel` script.
 
 ## [0.8.1] — 2026-09-03
 
