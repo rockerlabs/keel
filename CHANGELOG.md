@@ -84,11 +84,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the exact failure that made an earlier hand-written re-tag list wrong for 11 of 16 tickets; the
   hygiene sweep that calls the pool report/drain trigger, the staleness marker, the archive re-sweep and
   dedup/absorption with evidence, plus a new accumulator triage for three places findings were dying
-  unscheduled — a `## Standing list` section in `BACKLOG.md` (seeded from the v0.8.2 delta audit's own
-  `no-action` dispositions), the ideas file, and closed audit-run directories; a mandatory fresh-reviewer
-  adjudication round, the one mechanism that actually caught the 2026-09-03 groom's 17 real defects; and
-  a releases cross-run record (`private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`),
-  seeded here with a v0.8.2 row reconstructed from dir #367's own record. `commands/groom.md` is a thin,
+  unscheduled — a `## Standing list` section in `BACKLOG.md`, the ideas file, and closed audit-run
+  directories (the standing list is seeded with the v0.8.2 delta audit's own `no-action` dispositions
+  at the main checkout as part of this ticket's landing — gitignored, outside this commit); a mandatory
+  fresh-reviewer adjudication round, the one mechanism that actually caught the 2026-09-03 groom's 17
+  real defects; and a releases cross-run record (`private/releases/RUNS.md`, the same genre as
+  `private/audit/RUNS.md`), seeded with a v0.8.2 row reconstructed from dir #367's own record, likewise
+  landed at the main checkout outside this commit. `commands/groom.md` is a thin,
   `/go`-sized entrypoint over the doc. `tests/test_grooming_doc.sh` pins the mutual reference and the
   three requirements most likely to be silently dropped in a rewrite (G0/G3/G6), plus the family
   cross-links and the portable `→ <version>`/`→ pool` heading-tag convention. Ships with a deliberate
