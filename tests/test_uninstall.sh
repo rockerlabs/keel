@@ -411,6 +411,21 @@ unin --home "$B7B" --yes
 check_status "B7b uninstall exits 0" 0 "$STATUS"
 check_dir "B7b .keel/ survives (doctor-accept file still there)" "$B7B/.keel"
 check_file "B7b doctor-accept file untouched" "$B7B/.keel/doctor-accept"
+# dir #377 (wider half): a kept .keel/ is now NAMED, not silently swallowed by rmdir's || true.
+check_contains "B7b names what kept .keel/ from being removed" "$OUT" "doctor-accept"
+
+# --- B7c: dir #377 — a crashed install's stranded scratch (`.prior-manifest.<pid>`,
+# `.artifacts.<pid>`) must not make .keel survive a completed uninstall. install.sh only sweeps
+# these on its own NEXT run, which uninstalling never triggers, so uninstall.sh's own removal loop
+# has to clear them before its closing rmdir.
+B7C="$SANDBOX/b7c-crash-scratch/.claude"
+inst --home "$B7C" --no-hooks
+check_status "B7c install succeeds" 0 "$STATUS"
+printf 'stray\n' > "$B7C/.keel/.prior-manifest.99999"
+printf 'stray\n' > "$B7C/.keel/.artifacts.99999"
+unin --home "$B7C" --yes
+check_status "B7c uninstall exits 0" 0 "$STATUS"
+if [ -e "$B7C/.keel" ]; then fail "B7c .keel/ removed (crash scratch swept)" "still present"; else pass "B7c .keel/ removed (crash scratch swept)"; fi
 
 # --- B8: dir #124 reproduction — THE headline test -------------------------------------------------
 B8="$SANDBOX/b8-dir124/.claude"

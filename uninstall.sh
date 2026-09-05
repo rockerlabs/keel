@@ -1002,7 +1002,19 @@ if [ "$DRY_RUN" = 0 ]; then
     # shellcheck source=tools/lib/ledger.sh
     . "$root/tools/lib/ledger.sh"
     ledger_remove "$ledger_file" "$home_canon"
-    rmdir "$HOME_DIR/.keel" 2>/dev/null || true
+    # dir #377: a crashed install can strand its per-pid scratch (`.prior-manifest.<pid>`,
+    # `.artifacts.<pid>`) here — install.sh sweeps stale ones only on its own NEXT run, which an
+    # adopter who is uninstalling never triggers. They are internal junk (never user-authored, never
+    # backed up by install.sh's own normal-path cleanup either), so remove rather than take(): without
+    # this the rmdir below fails on them and .keel survives a completed uninstall.
+    rm -f "$HOME_DIR"/.keel/.prior-manifest.* "$HOME_DIR"/.keel/.artifacts.* 2>/dev/null || true
+    # dir #377 (wider half): the old `rmdir ... || true` swallowed EVERY failure, which is what kept
+    # the scratch residue invisible for a release cycle. Removal stays best-effort — a doctor-accept
+    # file legitimately keeps .keel — but what keeps it is now NAMED instead of silently accepted.
+    if [ -d "$HOME_DIR/.keel" ] && ! rmdir "$HOME_DIR/.keel" 2>/dev/null; then
+      echo "  kept $HOME_DIR/.keel — not empty; still contains:"
+      ls -A "$HOME_DIR/.keel" 2>/dev/null | sed 's/^/    /' || true
+    fi
   fi
 fi
 

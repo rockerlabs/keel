@@ -11,6 +11,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #377: a crashed install could leave `.artifacts.<pid>`/`.prior-manifest.<pid>` scratch files
+  inside `<home>/.keel`, and `uninstall.sh` never swept them, so its closing `rmdir` silently failed
+  and `.keel` survived a completed uninstall.** `install.sh` writes both files under `.keel` and
+  removes them itself on the normal path; a run that dies between the write and that cleanup leaves
+  one behind, and `install.sh` only sweeps a stale copy on its own next run — a run an adopter who
+  uninstalls never triggers. `uninstall.sh`'s pre-`rmdir` housekeeping cleared only
+  `install-manifest.*` and `foreign-core.*`, so the leftover scratch file made the final `rmdir` fail
+  and the `|| true` swallowed it, silently. Fixed by sweeping both scratch globs alongside the
+  existing housekeeping. Taken up with it: the same `rmdir ... || true` also silently accepted every
+  OTHER removal failure, which is what kept this invisible for a release cycle — a kept `.keel/` is
+  now named, listing what still lives inside it, instead of the failure being swallowed unreported.
+  Regression test added (`tests/test_uninstall.sh` B7c: a crashed install's stranded scratch no
+  longer blocks `.keel` removal; B7b: a genuinely kept `.keel/` now names the file that kept it).
+
 ## [0.8.2] — 2026-09-04
 
 - **dir #349: a directory at `bin/keel` plus `--force` aborted the whole `install.sh` run mid-sync,
