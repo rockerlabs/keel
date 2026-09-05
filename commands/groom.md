@@ -18,11 +18,11 @@ whatever the backlog's open, undecided slate needs next.
 
 **G0 — retro first.**
 Read the previous cycle's records before touching the plan: the releases cross-run record, the audits'
-cross-run record rows, the previous release manager's final-numbers block, and every ticket the
-previous cycle's managers filed. Where the project's read-trace tier-2 aggregate exists, it supplies a
-dead-doc signal and a wrap-loss-scale signal too — consume by pointing at the tool that produces it,
-never by citing its internal format; skip both in one line where the mechanism doesn't exist on this
-project. Produce 2-3 process amendments and APPLY them directly into the procedure doc each corrects
+cross-run record rows, the previous release manager's own release-record paragraph, and every ticket
+the previous cycle's managers filed. Where the project's read-trace aggregate exists (keel: `dir #387`),
+it supplies a dead-doc signal and a wrap-loss-scale signal too — consume by pointing at the tool that
+produces it, never by citing its internal format; skip both in one line where the mechanism doesn't
+exist on this project. Produce 2-3 process amendments and APPLY them directly into the procedure doc each corrects
 (`docs/release-audit.md`, `docs/delta-audit.md`, `docs/drydock.md` each carry a self-revision clause
 for exactly this) — a retro that only reports findings in chat has produced nothing. Confirm the
 just-closed audit run's harvest here too (G4(c)).
@@ -44,11 +44,11 @@ a specific tag in prose.
 Call each mechanism another ticket owns, never reimplement it: pool report + drain trigger, where the
 project's own mechanism exists (keel: `dir #360`); staleness marker + cap check, where the project has
 one; archive re-sweep when the closed share crosses its threshold, carrying whatever traps that
-mechanism has recorded against itself. Dedup/absorption with reproduced evidence, never a silent close.
-Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags. **Plus the accumulator
-triage:** (a) re-read the project's standing list (keel: `## Standing list` in `BACKLOG.md`) — promote
-a recurring line to a ticket, drop a mooted one with a reason; (b) a promote-or-drop pass over the
-project's ideas file; (c) confirmed at G0, not repeated here.
+mechanism has recorded against itself (keel: `dir #359`). Dedup/absorption with reproduced evidence,
+never a silent close. Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags.
+**Plus the accumulator triage:** (a) re-read the project's standing list (keel: `## Standing list` in
+`BACKLOG.md`) — promote a recurring line to a ticket, drop a mooted one with a reason; (b) a
+promote-or-drop pass over the project's ideas file; (c) confirmed at G0, not repeated here.
 
 **G5 — every release row, five-plus-two fields.**
 Name, pain (G1), derived ticket list (G3), size against the project's own per-release band, named

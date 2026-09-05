@@ -34,9 +34,11 @@ round. What follows is the procedure extracted from those two runs, not a specif
 ## G0 — retro first
 
 Before touching the plan, read the previous cycle's records: the releases cross-run record (G7 below),
-the audits' cross-run record rows, the release record blocks (the `docs/release-management.md`-style
-FINAL NUMBERS a manager writes at close), and every ticket filed by the previous cycle's managers. Where
-the project's read-trace tier-2 aggregate exists, it supplies two more G0 inputs — a dead-doc signal and
+the audits' cross-run record rows, the release record a manager writes at close (keel's own instance is
+the FINAL NUMBERS paragraph its `dir #367`-style ticket record carries — a project without a ticket
+record of its own writes the equivalent wherever its release-manager procedure lands it), and every
+ticket filed by the previous cycle's managers. Where the project's read-trace aggregate exists (keel's
+own instance is `dir #387`'s tier-2 mechanism), it supplies two more G0 inputs — a dead-doc signal and
 a wrap-loss-scale signal, the two things that mechanism exists to surface. Consume it **by pointing at
 the tool that produces it**, never by citing its internal format: no column names, no file path, no
 output shape — the tool's own doc is where that lives, and it may change there without this doc needing
@@ -102,9 +104,10 @@ settled fact.
   this sweep.
 - **Archive re-sweep.** Where the project's archive-sweep mechanism exists, re-run it when the
   closed-ticket share of the backlog file crosses its threshold again, carrying whatever traps that
-  mechanism has already recorded against itself — keel's own sweep has two on record (a cooldown/
-  datability rule, and a wrapped-heading terminal-marker rule the sweep itself once violated and had to
-  recover from). This procedure calls the sweep; it does not re-specify its traps here.
+  mechanism has already recorded against itself. Keel's instance is `dir #359`, which already records
+  two: a cooldown/datability rule, and a wrapped-heading terminal-marker rule the sweep itself once
+  violated and had to recover from. This procedure calls the sweep and points at its own record of its
+  traps; it does not maintain a second copy of them here.
 - **Dedup and absorption, never a silent close.** A ticket found to duplicate another is closed with
   reproduced evidence in the closing note — a re-run test, a live grep, a reproduction — never a bare
   "duplicate" marker with nothing to check it against.
@@ -118,7 +121,8 @@ owner, never become anything:
 - **(a) The standing list.** Sub-bar `no-action` findings that name a real defect
   (`docs/verification-economics.md` §4's filing bar) belong on a durable, re-read list, never only in
   an audit report body — that doc's own worked case is a defect noticed three separate times, in three
-  different report bodies, and never once scheduled. Keel's instance is a `## Standing list` section in
+  different report bodies, and never once scheduled. Keel's instance — named, and given its
+  create-if-absent duty, by `commands/delta-audit.md`'s A6 — is a `## Standing list` section in
   `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract; a different
   project names its own durable, re-read list here instead — a `KNOWN ISSUES` section, a papercuts
   ticket, whatever it already keeps and actually reads from. Re-read it each cycle: a line that recurs
@@ -143,13 +147,15 @@ make once more than one data point exists.
 
 ## G6 — a fresh-reviewer adjudication round is mandatory
 
-The one proven quality mechanism for a groom: hand the produced plan to a reviewer with no shared
-context, told to read ticket bodies and nothing else, and re-verify every one of its findings against
-the live file before accepting it — the bar is the channel that produced a finding, never the
-reviewer's own authority. This is not optional polish on top of G0-G5; it is where the 2026-09-03
-groom's real defects were actually caught (17 findings, two trimmed on re-verification, none of them
-mechanical — every one came from reading a ticket body or running a command, not from re-reading the
-plan itself). A groom that skips this round is a groom that has not yet found its own mistakes.
+The cheapest, and on the available evidence the strongest, diversity axis
+`docs/verification-economics.md` §5 names — fresh context — applied to the plan itself: hand it to a
+reviewer with no shared context, told to read ticket bodies and nothing else, and re-verify every one
+of its findings against the live file before accepting it — the bar is the channel that produced a
+finding, never the reviewer's own authority. This is not optional polish on top of G0-G5; it is where
+the 2026-09-03 groom's real defects were actually caught (17 findings, two trimmed on re-verification,
+none of them mechanical — every one came from reading a ticket body or running a command, not from
+re-reading the plan itself). A groom that skips this round is a groom that has not yet found its own
+mistakes.
 
 ## G7 — the releases cross-run record
 

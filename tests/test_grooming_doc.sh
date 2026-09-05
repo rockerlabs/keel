@@ -93,24 +93,17 @@ pin "G7 states cost may be recorded unmeasured, never fabricated" "$doc" 'never 
 # --- naming-collision acknowledgment (plain text, no backticked slash-command form — dir #385's own
 # felt incident, a backtick-wrapped /keel-* citation trips doctor.sh's dir #129 dead-reference check)
 # and portability (no keel-only absolute paths), looped over both files ------------------------------
-doc_body="$(cat "$doc")"
-cmd_body="$(cat "$cmd")"
-labels=("docs/grooming.md" "commands/groom.md")
-bodies=("$doc_body" "$cmd_body")
-for i in 0 1; do
-  label="${labels[$i]}"
-  body="${bodies[$i]}"
+for f in "$doc" "$cmd"; do
+  label="${f#"$REPO_ROOT"/}"
+  body="$(cat "$f")"
   check_contains "$label acknowledges the collision alias" "$body" "keel-groom"
   check_absent "$label never backtick-wraps the collision alias as a slash command" "$body" '`/keel-groom`'
   check_absent "$label carries no absolute keel-checkout path" "$body" '/Users/'
 done
 
-pin "grooming.md names the -> <version> heading-tag convention" "$doc" \
-  '`→ <version>`' \
-  "expected G9 to name the portable release-slate convention, not keel's own release-plan table"
-pin "grooming.md names the -> pool heading-tag convention" "$doc" \
-  '`→ pool`' \
-  "expected G9 to name the portable pool-lane convention"
+pin "grooming.md names both -> <version> and -> pool heading-tag conventions" "$doc" \
+  '`→ <version>` and `→ pool`' \
+  "expected G9 to name the portable release-slate/pool-lane convention, not keel's own release-plan table"
 
 # --- the entrypoint stays thin: a pointer-and-checklist, not a second copy of the procedure ----------
 pin "groom.md states it is a pointer, never a restatement" "$cmd" \
