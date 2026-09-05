@@ -194,7 +194,9 @@ feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
 tp="$SANDBOX/transcript.notdelegation.jsonl"
 {
   printf 'ordinary session, no delegation brief\n'
-  printf 'line 2\nline 3\nline 4\nline 5\n'
+  # Pad well past the hook's own head-c byte window (8000) before the marker appears, so this
+  # actually exercises the byte-bound scoping rather than trivially fitting inside it.
+  yes 'padding line to push the marker past the scoped byte window' | head -n 200
   printf 'later turn: discussing read-trace.sh, which greps for the string DELEGATION RUN\n'
 } > "$tp"
 feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end

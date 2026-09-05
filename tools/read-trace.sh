@@ -187,14 +187,21 @@ case "${1:-}" in
     # own worker-brief templates already mandate for the literal "DELEGATION RUN" line (found by this
     # ticket's own /simplify altitude pass: worth naming the dependency here, since a future rewording
     # of those templates would silently break this exclusion with no shared constant to catch it).
-    # Scoped to the transcript's first few messages, NOT the whole file (found by this ticket's own
+    # Scoped to the transcript's OPENING BYTES, NOT the whole file (found by this ticket's own
     # /code-review high pass): a bare whole-transcript grep would misclassify any ordinary session
     # that later reads/edits/discusses this very file (its own source and this comment literally
     # contain the marker string), silently excluding it from the fuse whose entire job is catching
     # exactly a mutating session that forgot to wrap. The worker's brief lives in the transcript's
     # opening turn, so restricting the match there keeps the same text-convention reliance while
     # closing the false-positive surface a later, unrelated mention would otherwise open.
-    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && head -n 5 "$se_transcript" 2>/dev/null | grep -qF "DELEGATION RUN"; then
+    # A BYTE bound (`head -c`), not a LINE bound: a first draft used `head -n 5`, but this repo has
+    # no confirmed JSONL transcript sample to verify the worker's opening brief always lands within a
+    # handful of LINES — a single JSONL record can be one very long line (a large system/task prompt
+    # serialized as one JSON string), which a line-count bound would not protect against at all
+    # (found by this ticket's own delta review round). 8000 bytes comfortably covers this ticket's
+    # own multi-paragraph worker briefs (this file's own header is under 3000) while still bounding
+    # the scan well short of a long session's full transcript.
+    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && head -c 8000 "$se_transcript" 2>/dev/null | grep -qF "DELEGATION RUN"; then
       exit 0
     fi
     se_wd="$(_rt_wrapdone_path "$se_cwd")"
