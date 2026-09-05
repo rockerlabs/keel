@@ -85,13 +85,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   hygiene sweep that calls the pool report/drain trigger, the staleness marker, the archive re-sweep and
   dedup/absorption with evidence, plus a new accumulator triage for three places findings were dying
   unscheduled — a `## Standing list` section in `BACKLOG.md`, the ideas file, and closed audit-run
-  directories (the standing list's own seed text — the v0.8.2 delta audit's `no-action` dispositions —
-  and a `private/releases/RUNS.md` seed row reconstructed from dir #367's own record are delivered
-  separately: both are gitignored, main-checkout-only files this commit cannot carry, so their landing
-  is routed through the release manager rather than shipped here); a mandatory fresh-reviewer
-  adjudication round, the one mechanism that actually caught the 2026-09-03 groom's real defects (17
-  findings, two trimmed on re-verification); and a releases cross-run record
-  (`private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`). `commands/groom.md` is a thin,
+  directories (its own seed text — the v0.8.2 delta audit's `no-action` dispositions — is delivered
+  separately, since `BACKLOG.md` is gitignored and main-checkout-only, a file this commit cannot carry);
+  a mandatory fresh-reviewer adjudication round, the one mechanism that actually caught the 2026-09-03
+  groom's real defects (17 findings, two trimmed on re-verification); and a releases cross-run record
+  (`private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`, likewise seeded separately
+  with a v0.8.2 row reconstructed from dir #367's own record — gitignored, outside this commit).
+  `commands/groom.md` is a thin,
   `/go`-sized entrypoint over the doc. `tests/test_grooming_doc.sh` pins the mutual reference and the
   three requirements most likely to be silently dropped in a rewrite (G0/G3/G6), plus the family
   cross-links and the portable `→ <version>`/`→ pool` heading-tag convention. Ships with a deliberate

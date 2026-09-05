@@ -71,10 +71,10 @@ do
 done
 
 # --- G0's read-trace input degrades cleanly when the mechanism doesn't exist -------------------------
-pin "G0 states the tier-2 aggregate is read generically, by pointer" \
+pin "G0 states the read-trace aggregate is consumed generically, by pointer" \
   "$doc" 'by pointing at' \
   "expected G0 to consume the read-trace aggregate by pointing at its tool, never by hardcoding a path or format"
-pin "G0 states the tier-2 input degrades cleanly when absent" \
+pin "G0 states the read-trace input degrades cleanly when absent" \
   "$doc" 'Degrade cleanly when it does not exist yet' \
   "expected G0 to say explicitly what happens when the aggregate mechanism isn't installed"
 
@@ -101,9 +101,12 @@ for f in "$doc" "$cmd"; do
   check_absent "$label carries no absolute keel-checkout path" "$body" '/Users/'
 done
 
-pin "grooming.md names both -> <version> and -> pool heading-tag conventions" "$doc" \
-  '`→ <version>` and `→ pool`' \
-  "expected G9 to name the portable release-slate/pool-lane convention, not keel's own release-plan table"
+pin "grooming.md names the -> <version> heading-tag convention" "$doc" \
+  '`→ <version>`' \
+  "expected G9 to name the portable release-slate convention, not keel's own release-plan table"
+pin "grooming.md names the -> pool heading-tag convention" "$doc" \
+  '`→ pool`' \
+  "expected G9 to name the portable pool-lane convention"
 
 # --- the entrypoint stays thin: a pointer-and-checklist, not a second copy of the procedure ----------
 pin "groom.md states it is a pointer, never a restatement" "$cmd" \

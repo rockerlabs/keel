@@ -37,12 +37,13 @@ Before touching the plan, read the previous cycle's records: the releases cross-
 the audits' cross-run record rows, the release record a manager writes at close (keel's own instance is
 the FINAL NUMBERS paragraph its `dir #367`-style ticket record carries — a project without a ticket
 record of its own writes the equivalent wherever its release-manager procedure lands it), and every
-ticket filed by the previous cycle's managers. Where the project's read-trace aggregate exists (keel's
-own instance is `dir #387`'s tier-2 mechanism), it supplies two more G0 inputs — a dead-doc signal and
-a wrap-loss-scale signal, the two things that mechanism exists to surface. Consume it **by pointing at
-the tool that produces it**, never by citing its internal format: no column names, no file path, no
-output shape — the tool's own doc is where that lives, and it may change there without this doc needing
-an edit. Degrade cleanly when it does not exist yet, or on a project that never installed it: skip both
+ticket filed by the previous cycle's managers. Where the project's read-trace aggregate exists (keel:
+`dir #387`), it supplies two more G0 inputs — a dead-doc signal and a wrap-loss-scale signal, the two
+things that mechanism exists to surface. Consume it **by pointing at the tool that produces it**, never
+by citing its internal format: no column names, no file path, no output shape — the tool's own doc is
+where that lives, and it may change there without this doc needing an edit.
+
+**Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all.
 
@@ -121,13 +122,12 @@ owner, never become anything:
 - **(a) The standing list.** Sub-bar `no-action` findings that name a real defect
   (`docs/verification-economics.md` §4's filing bar) belong on a durable, re-read list, never only in
   an audit report body — that doc's own worked case is a defect noticed three separate times, in three
-  different report bodies, and never once scheduled. Keel's instance — named, and given its
-  create-if-absent duty, by `commands/delta-audit.md`'s A6 — is a `## Standing list` section in
-  `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract; a different
-  project names its own durable, re-read list here instead — a `KNOWN ISSUES` section, a papercuts
-  ticket, whatever it already keeps and actually reads from. Re-read it each cycle: a line that recurs
-  across cycles promotes to a ticket; a line a later change moots gets dropped with a one-line reason
-  rather than left standing.
+  different report bodies, and never once scheduled. Keel's instance is a `## Standing list` section in
+  `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract — named, and
+  given its create-if-absent duty, by `commands/delta-audit.md`'s A6; a different project names its own
+  durable, re-read list here instead — a `KNOWN ISSUES` section, a papercuts ticket, whatever it already
+  keeps and actually reads from. Re-read it each cycle: a line that recurs across cycles promotes to a
+  ticket; a line a later change moots gets dropped with a one-line reason rather than left standing.
 - **(b) The ideas file.** A project's own free-form ideas/brainstorm file (where one exists) gets a
   promote-or-drop pass each cycle — its own header may already promise a periodic review that nothing
   currently owns; this procedure is the "periodically" that gets an owner.
