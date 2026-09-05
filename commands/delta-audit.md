@@ -8,8 +8,8 @@ derived universe. This command is a POINTER and an ordered checklist, never a re
 Protocol's 8 rules, the role table and the session prompts stay in the doc and are adopted by
 reference. Where this checklist's compression disagrees with the doc's own text, the doc wins.
 (On an install where the adopter already owns the `/delta-audit` name, `install.sh`'s generic
-collision-alias mechanism places this command as `/keel-delta-audit` instead — same file, same
-behavior, prefixed name.)
+collision-alias mechanism places this command under the prefixed name `keel-delta-audit` instead —
+same file, same behavior.)
 
 **A1 — read the doc, then the brief, then resolve the anchor.**
 Read [`docs/delta-audit.md`](../docs/delta-audit.md) WHOLE before anything else — citing it unopened
