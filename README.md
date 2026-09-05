@@ -261,6 +261,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
   workers behind a file contract, keeping every gate in your own session.
 - [`docs/release-management.md`](docs/release-management.md) — running a whole release with one
   manager session and gated worker sessions — the gap between the two docs on either side of it here.
+- [`docs/grooming.md`](docs/grooming.md) — assembling the next release from the backlog on a fixed
+  cadence: retro first, pains supplied only by the operator, a mandatory fresh-reviewer round.
 - [`docs/parallel-sessions.md`](docs/parallel-sessions.md) — running 2+ agent sessions against one
   repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
