@@ -11,6 +11,33 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #367: `/manage-release <version>` — the release-manager pattern, run by hand across several
+  releases, written down as a procedure plus a thin entrypoint.** `docs/release-management.md` sits
+  in the gap between `docs/delegation.md` (read-only subagent fan-out) and `docs/parallel-sessions.md`
+  (N-session safety mechanics): coordinating real, gated `/design`/`/go` worker sessions across a whole
+  release, with one manager session holding the context and the operator's single channel.
+  `commands/manage-release.md` is a thin, `/go`-sized checklist over it, resolving the release against
+  the shipped `→ <version>` backlog-heading convention (never a keel-only release-plan table). Thirteen
+  requirements (R1-R13) carry the release's own paid-for lessons rather than restating advice: the
+  canonical two-way-critique warning where a manager's own approval — not its information — introduced
+  a data-loss path a worker's review caught (a `set -e` exemption suspended for a whole function, not
+  just the tested command); verifying claims against a worker's pushed commit rather than its working
+  tree, after a torn read produced a false discrepancy mid-diff-split; transport requirements stated
+  without naming a tool, since the transport that exists today already broke mid-release once; bounded
+  loops everywhere, since removing the human launch step (the soft-launch amendment) removes the
+  natural rate limiter a human typing every launch used to provide; and one centralized `/wrap` at
+  release close, with per-worker event counting split from per-run scoring so a per-session score
+  survives the centralization. Three named cross-edits close gaps the pattern's own rules would
+  otherwise leave silently contradicted: `docs/delegation.md`'s Mutator row now states the
+  manager-launches-workers exception explicitly; `commands/go.md`'s claim step now names the
+  managed-release override where the manager, not the worker, is the single writer to the backlog;
+  and `docs/publishing-checklist.md` §4's release-notes step now says composing the notes is
+  agent-composed and operator-reviewed, reversing its earlier "curation is still human by nature"
+  framing — publishing itself stays the human, irreversible action. `tests/test_release_management_doc.sh`
+  binds the doc-and-command mutual reference and pins every numbered requirement's heading, with
+  R4/R6/R7 as the three most likely to be silently dropped in a rewrite. Artifacts only: the
+  acceptance run (driving the next release end to end with at least two worker sessions and a
+  recorded cost line) is separate and stays open.
 - **dir #377: a crashed install could leave `.artifacts.<pid>`/`.prior-manifest.<pid>` scratch files
   inside `<home>/.keel`, and `uninstall.sh` never swept them, so its closing `rmdir` silently failed
   and `.keel` survived a completed uninstall.** `install.sh` writes both files under `.keel` and

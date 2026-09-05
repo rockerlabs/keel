@@ -259,6 +259,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
   and filing bar that govern `release-audit.md`, `delta-audit.md` and `drydock.md` runs.
 - [`docs/delegation.md`](docs/delegation.md) — fan bulk read-only analysis out to parallel subagent
   workers behind a file contract, keeping every gate in your own session.
+- [`docs/release-management.md`](docs/release-management.md) — running a whole release with one
+  manager session and gated worker sessions — the gap between the two docs on either side of it here.
 - [`docs/parallel-sessions.md`](docs/parallel-sessions.md) — running 2+ agent sessions against one
   repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.

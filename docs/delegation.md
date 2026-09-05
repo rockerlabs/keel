@@ -27,6 +27,23 @@ wires its own automation around them. Mechanizing any part of this is later work
 | **Verifier** | spawned subagent, a few in parallel | mid tier, **high** (above Worker's) | the `verdict:` lines of the units it was given |
 | **Mutator** | a real, operator-launched session — **never** a subagent | mid tier, medium | one unit of gated mutation |
 
+**Named override (`dir #367`'s R3 soft form):** inside a managed release, the release manager may
+launch a Mutator session itself, where the harness supports launching a real session directly, instead
+of handing a prompt to the operator to paste — one health-line report per launch, and the operator can
+revoke to manual launching at any time. What this table's "operator-launched" wording actually
+protects is **gatedness** — a Mutator passing through your project's own commit/PR/merge gates — not
+literally who typed the launch command. See [`docs/release-management.md`](release-management.md) R3
+for the full requirement.
+
+**A launch-time requirement that follows from the same soft form:** whoever launches a real worker
+session this way can surface a model/effort recommendation, but the operator remains the one who sets
+it — that is a manual gesture on the freshly spawned session, not something a launcher can preset. So
+the launcher verifies, immediately after launch, the session's actual model and effort against the
+recommendation — via harness session metadata where the harness exposes it, else by asking the
+operator to confirm — and on a mismatch, flags the operator at once, before the worker spends
+anything. This is required, not advisory: a real run launched two workers straight onto a harness
+default it never checked, and the mismatch was caught only by the operator's own eye after real spend.
+
 Two of those assignments are load-bearing, and here's why: finding something worth flagging is cheaper
 than proving it right or wrong, and a wrong verdict is the one thing nothing downstream re-checks — so
 the higher effort goes to verification, not discovery. And a mutator is the only role that has to pass
@@ -88,8 +105,9 @@ there.)
    orchestrator's own read catches (see [`docs/drydock.md`](drydock.md)'s own field test for the one
    defect that slipped past both earlier roles and surfaced only here).
 5. **Gated, serialized mutation** *(optional — only present in applications that mutate anything)*. One
-   operator-launched mutator session per accepted unit (or per thematic batch of units), strictly
-   serialized if your project's own gate keeps a single sentinel.
+   operator-launched mutator session per accepted unit (or per thematic batch of units — see the R3
+   soft-form named override above for who may launch it), strictly serialized if your project's own
+   gate keeps a single sentinel.
 6. **Re-check** *(optional)*. One delegated read-only pass at the post-mutation state, confirming the
    mutations actually landed coherently.
 7. **Summary + extraction.** A durable record of the run (see below), and — where the application has
@@ -309,7 +327,9 @@ Never edit the worker's text — append only.
 **Mutator:**
 
 ```
-You are a delegation MUTATOR — a real, operator-launched session, not a subagent.
+You are a delegation MUTATOR — a real session, never a subagent, launched either by the operator
+directly or, under an approved soft-form exception (this doc's R3 named override), by an
+orchestrator — either way you pass through your project's own gates the same way.
 
 Your unit of gated mutation: <one accepted unit's worth of change — a PR, a backlog edit, whatever this
 application mutates>
@@ -354,3 +374,7 @@ Beyond the worked example itself, [`docs/drydock.md`](drydock.md) ships a full s
 templates (auditor, code-auditor, verifier, fixer) — a second, audit-specific reference alongside the
 generic ones above, worth a look if your application is close enough to auditing to start from theirs
 instead.
+
+For coordinating **mutating peer sessions** across a whole release — not this doc's own read-only
+subagent fan-out — see [`docs/release-management.md`](release-management.md), which sits in the gap
+between this doc and [`docs/parallel-sessions.md`](parallel-sessions.md).
