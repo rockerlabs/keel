@@ -101,3 +101,12 @@ solo knowledge-base case → `FRAMEWORK.md`); absent one, use the PR flow — "i
 a carve-out. Then **verify the push landed** — `git push` returned 0 AND `git rev-parse HEAD` equals
 `git rev-parse origin/<the branch you pushed>` — if not, the backup did NOT land (offline / auth /
 rejected): STOP and report it, don't claim it's backed up.
+
+**Read-trace (dir #387), if wired.** If `<keel-checkout>/tools/read-trace.sh` exists, run
+`bash <keel-checkout>/tools/read-trace.sh wrap-done` from the repo root right after the push verifies —
+this stamps *this* session's wrap as complete so the wrap-fuse (a mutating session that ends with no
+`/wrap`) doesn't flag it. Then append the line `bash <keel-checkout>/tools/read-trace.sh docs-line`
+prints to this closing report, verbatim — it is generated from the session's own read log, never
+hand-typed (a hand-typed line would just restate what the session believes it read, defeating the
+mechanism). Both calls are silent no-ops when the tool or its log is absent (the hook is opt-in per
+repo, per `tools/install-read-trace.sh`) — skip this paragraph entirely rather than block on it.

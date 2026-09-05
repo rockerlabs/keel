@@ -686,7 +686,10 @@ Steps, in order:
 9. **Open the PR.** After the gate passes, run `gh pr create --head <branch>` — **the `--head` flag is
    mandatory, not optional**: the gate keys its receipt by branch (dir #80), and the hook's event cwd may
    not be your worktree, so a bare `gh pr create` can resolve the wrong branch (or none) and false-deny.
-   Compose the title and body from the implementation context (what changed, why, a test plan). **If step
+   Compose the title and body from the implementation context (what changed, why, a test plan). **If
+   `<keel-checkout>/tools/read-trace.sh` exists (dir #387, opt-in — silent no-op otherwise), include the
+   line `bash <keel-checkout>/tools/read-trace.sh docs-line` prints, verbatim, in the PR body** — a
+   `docs read: ...` line generated from this run's own read log, never hand-typed. **If step
    5's outcome was `agent:<level>`, the PR body must label the review as such** — e.g. "review: independent
    agent at `<level>` (direct `Skill(code-review)` invocation was refused this run — dir #254 fallback)" —
    never presented as if `/code-review` itself ran. **The PR body must name EVERY mechanism that reviewed
@@ -724,7 +727,8 @@ Steps, in order:
    operator's.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (including any post-review re-run and
-    self-check result), which review depth ran (or that it was skipped), and the PR URL. **Name the exact
+    self-check result), which review depth ran (or that it was skipped), the PR URL, and — when step 9's
+    `docs read:` line was produced — that same line, unchanged (dir #387). **Name the exact
     review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
     independent agent review (`review: <level>, independent agent review — direct Skill(code-review)
     invocation was refused this run`, matching the PR body's own label); **plus, when an add-on review
