@@ -36,12 +36,13 @@ round. What follows is the procedure extracted from those two runs, not a specif
 Before touching the plan, read the previous cycle's records: the releases cross-run record (G7 below),
 the audits' cross-run record rows, the release record blocks (the `docs/release-management.md`-style
 FINAL NUMBERS a manager writes at close), and every ticket filed by the previous cycle's managers. Where
-the project's read-trace tier-2 aggregate exists, it supplies two more G0 inputs generically — consume
-it **by pointing at the tool that produces it**, never by citing its columns, path, or output shape: a
-dead-doc signal (which docs went unread while their surface changed) and a wrap-loss-scale signal (how
-many mutating sessions closed with no wrap run). Degrade cleanly when it does not exist yet, or on a
-project that never installed it: skip both inputs, proceed on the rest, and say so in one line rather
-than blocking the retro on a mechanism that may not exist on this adopter at all.
+the project's read-trace tier-2 aggregate exists, it supplies two more G0 inputs — a dead-doc signal and
+a wrap-loss-scale signal, the two things that mechanism exists to surface. Consume it **by pointing at
+the tool that produces it**, never by citing its internal format: no column names, no file path, no
+output shape — the tool's own doc is where that lives, and it may change there without this doc needing
+an edit. Degrade cleanly when it does not exist yet, or on a project that never installed it: skip both
+inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
+may not exist on this adopter at all.
 
 **Output: 2-3 process amendments, applied, not reported.** Each amendment lands directly in the
 procedure doc it corrects — `docs/release-audit.md`, `docs/delta-audit.md`, and `docs/drydock.md` each
@@ -87,23 +88,23 @@ stale and silently wrong.
 ## G4 — the hygiene sweep
 
 Everything below executes a mechanism another ticket owns; this procedure is the cadence that calls
-each of them, not a reimplementation of any of them.
+each of them, not a reimplementation of any of them. Each mechanism's own shape (its exact fields, its
+exact traps) lives in the ticket or tool that owns it — where that mechanism has not shipped yet, this
+sweep names the gap and moves on rather than asserting an unshipped ticket's own proposed shape as
+settled fact.
 
-- **Pool report and drain trigger.** Report the background pool's size, its oldest entry, its readiness
-  split, and its count excluding structurally-parked tickets (a ticket blocked on something other than
-  agent work, or gated on an explicit future trigger) — that excluded subset is the one that can
-  actually rot, and a check that flags a deliberately-parked ticket trains its reader to ignore the
-  report. If the pool has grown across two consecutive minors, that is the signal to schedule a drain
-  release rather than keep filing into it.
+- **Pool report and drain trigger.** Where the project's pool-measurement mechanism exists, run it as
+  part of this sweep: it reports the background pool's size and health, and names the signal for
+  scheduling a drain release rather than letting filing continue unchecked. Keel's instance is `dir
+  #360`; where it or its equivalent has not shipped, this sweep says so rather than reporting a number.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
-- **Archive re-sweep.** When the closed-ticket share of the backlog file crosses its threshold again,
-  re-run the archive sweep, carrying its two known traps: nothing closed in the current, uncut release
-  may be swept, and nothing whose closure date cannot be read may be swept; and a heading that spans
-  several source lines must keep its terminal marker on a line the sweep actually sees, or a closed
-  ticket reads as open again — the exact defect one archive sweep both introduced and had to recover
-  from on this project.
+- **Archive re-sweep.** Where the project's archive-sweep mechanism exists, re-run it when the
+  closed-ticket share of the backlog file crosses its threshold again, carrying whatever traps that
+  mechanism has already recorded against itself — keel's own sweep has two on record (a cooldown/
+  datability rule, and a wrapped-heading terminal-marker rule the sweep itself once violated and had to
+  recover from). This procedure calls the sweep; it does not re-specify its traps here.
 - **Dedup and absorption, never a silent close.** A ticket found to duplicate another is closed with
   reproduced evidence in the closing note — a re-run test, a live grep, a reproduction — never a bare
   "duplicate" marker with nothing to check it against.
@@ -198,9 +199,8 @@ applied to itself.
 
 ## See also
 
-[`docs/release-management.md`](release-management.md) for the release-manager pattern this procedure's
-plan feeds work into. [`docs/delta-audit.md`](delta-audit.md) for the release-candidate pass a release
-runs before its tag — a sibling closing step this doc's G7 record sits beside, not inside.
-[`docs/verification-economics.md`](verification-economics.md) §4 for the filing bar the standing list
-(G4(a)) exists to satisfy, and for the per-release debt-budget doctrine the pool report (G4) makes
-measurable rather than asserted.
+The sibling docs this procedure's loop runs through — [`docs/release-management.md`](release-management.md)
+and [`docs/delta-audit.md`](delta-audit.md) — are introduced at the top of this page and not re-glossed
+here. The one dependency worth naming that isn't: [`docs/verification-economics.md`](verification-economics.md)
+§4, for the filing bar the standing list (G4(a)) exists to satisfy, and for the per-release debt-budget
+doctrine the pool report (G4) makes measurable rather than asserted.

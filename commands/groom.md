@@ -19,10 +19,10 @@ whatever the backlog's open, undecided slate needs next.
 **G0 — retro first.**
 Read the previous cycle's records before touching the plan: the releases cross-run record, the audits'
 cross-run record rows, the previous release manager's final-numbers block, and every ticket the
-previous cycle's managers filed. Where the project's read-trace tier-2 aggregate exists, read its
-dead-doc report too — by pointing at the tool that produces it, never by hardcoding its path or
-restating its format; skip this input in one line where the mechanism doesn't exist on this project.
-Produce 2-3 process amendments and APPLY them directly into the procedure doc each corrects
+previous cycle's managers filed. Where the project's read-trace tier-2 aggregate exists, it supplies a
+dead-doc signal and a wrap-loss-scale signal too — consume by pointing at the tool that produces it,
+never by citing its internal format; skip both in one line where the mechanism doesn't exist on this
+project. Produce 2-3 process amendments and APPLY them directly into the procedure doc each corrects
 (`docs/release-audit.md`, `docs/delta-audit.md`, `docs/drydock.md` each carry a self-revision clause
 for exactly this) — a retro that only reports findings in chat has produced nothing. Confirm the
 just-closed audit run's harvest here too (G4(c)).
@@ -38,18 +38,17 @@ Read every slate ticket's body before assigning it anywhere.
 **G3 — derive, don't assert.**
 Every list and count in the produced plan is regenerated from live heading tags, never hand-written and
 never carried forward from an earlier cycle. Cite a ticket's release tag by number only — never assert
-a specific tag in prose, since a later re-tag leaves an asserted one silently wrong.
+a specific tag in prose.
 
 **G4 — the hygiene sweep.**
-Pool report + drain trigger (report size, oldest entry, readiness split, and the count excluding
-structurally-parked tickets; two consecutive minors of pool growth → schedule a drain release).
-Staleness marker + cap check, where the project has one. Archive re-sweep when the closed share
-crosses its threshold, carrying its two known traps (cooldown/datability; wrapped-heading terminal
-markers). Dedup/absorption with reproduced evidence, never a silent close. Re-examine on merit any
-ticket carried by ≥2 consecutive mechanical re-tags. **Plus the accumulator triage:** (a) re-read the
-project's standing list (keel: `## Standing list` in `BACKLOG.md`) — promote a recurring line to a
-ticket, drop a mooted one with a reason; (b) a promote-or-drop pass over the project's ideas file; (c)
-confirmed at G0, not repeated here.
+Call each mechanism another ticket owns, never reimplement it: pool report + drain trigger, where the
+project's own mechanism exists (keel: `dir #360`); staleness marker + cap check, where the project has
+one; archive re-sweep when the closed share crosses its threshold, carrying whatever traps that
+mechanism has recorded against itself. Dedup/absorption with reproduced evidence, never a silent close.
+Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags. **Plus the accumulator
+triage:** (a) re-read the project's standing list (keel: `## Standing list` in `BACKLOG.md`) — promote
+a recurring line to a ticket, drop a mooted one with a reason; (b) a promote-or-drop pass over the
+project's ideas file; (c) confirmed at G0, not repeated here.
 
 **G5 — every release row, five-plus-two fields.**
 Name, pain (G1), derived ticket list (G3), size against the project's own per-release band, named
@@ -59,8 +58,7 @@ against spec-return rate) is a report field, not a role — record it, judge it 
 
 **G6 — fresh-reviewer adjudication is MANDATORY.**
 Hand the produced plan to a reviewer with no shared context, told to read ticket bodies. Re-verify every
-one of its findings against the live file before accepting it. Do not skip this round — it is where a
-groom's own real defects get caught, not optional polish after G0-G5.
+one of its findings against the live file before accepting it. Do not skip this round.
 
 **G7 — the releases cross-run record.**
 Append this cycle's row to the project's releases cross-run record (keel: `private/releases/RUNS.md`,

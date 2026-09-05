@@ -90,20 +90,21 @@ pin "G7 names keel's own releases cross-run record path" "$doc" 'private/release
 pin "G7 states cost may be recorded unmeasured, never fabricated" "$doc" 'never a fabricated zero' \
   "expected G7 to preserve the unmeasured-not-fabricated convention shared with the audit record"
 
-# --- naming-collision acknowledgment: plain text, no backticked slash-command form (dir #385's own
-# felt incident — a backtick-wrapped /keel-* citation trips doctor.sh's dir #129 dead-reference check)
+# --- naming-collision acknowledgment (plain text, no backticked slash-command form — dir #385's own
+# felt incident, a backtick-wrapped /keel-* citation trips doctor.sh's dir #129 dead-reference check)
+# and portability (no keel-only absolute paths), looped over both files ------------------------------
 doc_body="$(cat "$doc")"
 cmd_body="$(cat "$cmd")"
-check_contains "docs/grooming.md acknowledges the collision alias" "$doc_body" "keel-groom"
-check_contains "commands/groom.md acknowledges the collision alias" "$cmd_body" "keel-groom"
-check_absent "docs/grooming.md never backtick-wraps the collision alias as a slash command" \
-  "$doc_body" '`/keel-groom`'
-check_absent "commands/groom.md never backtick-wraps the collision alias as a slash command" \
-  "$cmd_body" '`/keel-groom`'
+labels=("docs/grooming.md" "commands/groom.md")
+bodies=("$doc_body" "$cmd_body")
+for i in 0 1; do
+  label="${labels[$i]}"
+  body="${bodies[$i]}"
+  check_contains "$label acknowledges the collision alias" "$body" "keel-groom"
+  check_absent "$label never backtick-wraps the collision alias as a slash command" "$body" '`/keel-groom`'
+  check_absent "$label carries no absolute keel-checkout path" "$body" '/Users/'
+done
 
-# --- portability: no keel-only absolute paths, the shipped -> <version> convention named --------------
-check_absent "grooming.md carries no absolute keel-checkout path" "$doc_body" '/Users/'
-check_absent "groom.md carries no absolute keel-checkout path" "$cmd_body" '/Users/'
 pin "grooming.md names the -> <version> heading-tag convention" "$doc" \
   '`→ <version>`' \
   "expected G9 to name the portable release-slate convention, not keel's own release-plan table"
