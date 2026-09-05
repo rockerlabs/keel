@@ -214,15 +214,26 @@ case "${1:-}" in
       # wrap-done-then-session-end pair), and a strict `>` would misclassify that tie as unwrapped.
       if [ -n "$se_wrap_ts" ] && ! [[ "$se_wrap_ts" < "$se_last_mutate" ]]; then se_wrapped=1; fi
     fi
+    # se_wlog is empty when no persistent-store root resolves (no HOME/KEEL_HOME/
+    # KEEL_READ_TRACE_STORE) — a silent skip of the whole persistent-tier write, never a fallback mkdir
+    # at "." or a write to an empty filename (dir #387 V3: the latter is an ambiguous-redirect error,
+    # which breaks this hook's SILENT contract same as the junk mkdir does).
     se_wlog="$(_rt_wrapfuse_log "$se_cwd")"
-    mkdir -p "$(dirname "$se_wlog")"
-    if [ "$se_wrapped" -eq 1 ]; then
-      printf '%s\twrapped\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
-      rm -f "$(_rt_wrapfuse_flag "$se_cwd")" 2>/dev/null
-    else
-      printf '%s\tno-wrap\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
-      mkdir -p "$(_rt_wrapfuse_flag_dir "$se_cwd")"
-      printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$(_rt_wrapfuse_flag "$se_cwd")" 2>/dev/null
+    if [ -n "$se_wlog" ]; then
+      mkdir -p "$(dirname "$se_wlog")"
+      if [ "$se_wrapped" -eq 1 ]; then
+        printf '%s\twrapped\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
+        se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
+        [ -n "$se_flag" ] && rm -f "$se_flag" 2>/dev/null
+      else
+        printf '%s\tno-wrap\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
+        se_flagdir="$(_rt_wrapfuse_flag_dir "$se_cwd")"
+        if [ -n "$se_flagdir" ]; then
+          mkdir -p "$se_flagdir"
+          se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
+          [ -n "$se_flag" ] && printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$se_flag" 2>/dev/null
+        fi
+      fi
     fi
     exit 0
     ;;

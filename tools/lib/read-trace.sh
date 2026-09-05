@@ -72,16 +72,40 @@ _rt_wrapdone_path() { printf '%s/keel-read-trace-wrapdone-%s' "$(_rt_tmpdir)" "$
 
 # --- persistent external store ----------------------------------------------------------------------
 # KEEL_READ_TRACE_STORE overrides the root outright (test isolation, same convention as
-# KEEL_IMPACT_STORE); else $KEEL_HOME/.keel/read-trace (mirrors impact_store_root's own fallback).
+# KEEL_IMPACT_STORE); else $KEEL_HOME/.keel/read-trace, else $HOME/.claude/.keel/read-trace (mirrors
+# impact_store_root's own fallback).
+#
+# Returns 1 with NO stdout when none of the three resolve — never `${HOME:?...}`. That form used to
+# live here, but it expands inside a command-substitution chain (every caller below), so the `:?`
+# killed only the subshell: three stderr lines leaked out (breaking this whole mechanism's SILENT
+# contract — tools/read-trace.sh's own header) and, on a writable-root platform, the empty root that
+# still reached `mkdir -p` downstream created a junk directory at filesystem root (found live,
+# delta-audit V3, reproduced on both macOS — read-only `/`, three stderr lines, persistent row lost —
+# and alpine:3.21 — writable `/`, one stderr line, row silently written to `/reads.log` instead of the
+# real store). A hook whose headline contract is "silent no-op on any failure" must degrade instead:
+# callers that funnel every write through _rt_plain_append (below) already no-op on an empty file
+# argument, so a failed resolve here quietly drops the persistent-tier write and nothing else.
 read_trace_store_root() {
-  if [ -n "${KEEL_READ_TRACE_STORE:-}" ]; then printf '%s' "$KEEL_READ_TRACE_STORE"; return; fi
-  printf '%s/.keel/read-trace' "${KEEL_HOME:-${HOME:?read-trace: set HOME, or export KEEL_HOME}/.claude}"
+  if [ -n "${KEEL_READ_TRACE_STORE:-}" ]; then printf '%s' "$KEEL_READ_TRACE_STORE"; return 0; fi
+  if [ -n "${KEEL_HOME:-}" ]; then printf '%s/.keel/read-trace' "$KEEL_HOME"; return 0; fi
+  if [ -n "${HOME:-}" ]; then printf '%s/.claude/.keel/read-trace' "$HOME"; return 0; fi
+  return 1
 }
-_rt_store_dir() { printf '%s/%s' "$(read_trace_store_root)" "$(_rt_project_id "${1:-.}" "${2:-}")"; }
-_rt_reads_log() { printf '%s/reads.log' "$(_rt_store_dir "${1:-.}" "${2:-}")"; }
-_rt_wrapfuse_log() { printf '%s/wrap-fuse-events.log' "$(_rt_store_dir "${1:-.}" "${2:-}")"; }
-_rt_wrapfuse_flag_dir() { printf '%s/wrap-fuse' "$(_rt_store_dir "${1:-.}" "${2:-}")"; }
-_rt_wrapfuse_flag() { printf '%s/%s.flag' "$(_rt_wrapfuse_flag_dir "${1:-.}" "${2:-}")" "$(_rt_branch "${1:-.}")"; }
+_rt_store_dir() {
+  local root
+  root="$(read_trace_store_root)" || return 1
+  printf '%s/%s' "$root" "$(_rt_project_id "${1:-.}" "${2:-}")"
+}
+# Each of these propagates an unresolved store root as an EMPTY string (never a bare "/reads.log"-
+# shaped path) — a plain `"$(_rt_store_dir ...)"` concatenation would silently keep the leading "/"
+# from an empty substitution even though the inner call failed, since a failing subshell's exit status
+# is invisible to the string it produced (dir #387 V3: this is exactly how a junk directory got
+# created at filesystem root). `local d; d="$(...)" || return 1` makes the failure visible before it's
+# built into a path.
+_rt_reads_log() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/reads.log' "$d"; }
+_rt_wrapfuse_log() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/wrap-fuse-events.log' "$d"; }
+_rt_wrapfuse_flag_dir() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/wrap-fuse' "$d"; }
+_rt_wrapfuse_flag() { local d; d="$(_rt_wrapfuse_flag_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/%s.flag' "$d" "$(_rt_branch "${1:-.}")"; }
 
 # _rt_normalize_path DIR RAW [TOP] — a repo-relative path for logging, or the literal token "BACKLOG.md" for
 # a main-checkout ticket-body read: that file is gitignored and main-checkout-only, so "repo-relative"
@@ -137,6 +161,10 @@ _rt_in_doc_scope() {
 # this call only ever runs once that gate has already confirmed "not yet seen this session".
 _rt_plain_append() {
   local file="$1" kind="$2" path="$3" dir
+  # An empty FILE means an upstream resolve failed silently (read_trace_store_root's own no-HOME
+  # case) — a silent no-op here, never a fallback path: dirname("") is ".", and appending there would
+  # be exactly the junk-write this guard exists to prevent (dir #387 V3).
+  [ -n "$file" ] || return 0
   dir="$(dirname "$file")"
   # -d first, mkdir only on a genuine miss: this runs on every dedup-miss in log-tool's hot path (the
   # first Read of each doc, every distinct mutated path per session), and the target directory already
@@ -179,4 +207,13 @@ _rt_record_read() {
 # check. Not written to the persistent store — the tier-2 aggregate's per-doc table is about READS;
 # the wrap-fuse's own tier-2 signal (mutating sessions that ended without a wrap) is a separate
 # counter, fed by `read-trace.sh session-end`, not by this per-path log.
-_rt_record_mutate() { _rt_dedup_append "$(_rt_session_log "$1" "$3")" mutate "$2" >/dev/null; }
+#
+# UNCONDITIONAL append, not a dedup one — session-end's `se_last_mutate` (tools/read-trace.sh) takes
+# the LAST mutate row's timestamp to decide whether wrap-done postdates it. A presence-keyed dedup
+# (this used to route through _rt_dedup_append, keyed on kind+path) writes only a path's FIRST mutate
+# in a session: a re-edit of an already-touched path after wrap-done then appends nothing, so
+# session-end's comparison silently runs against the stale first-edit timestamp and misclassifies the
+# session as wrapped (found live, delta-audit V2). Mutate rows are ephemeral, per-session, and read
+# only for this timestamp — there is no reader that needs one row per distinct path, so there is
+# nothing dedup was protecting here.
+_rt_record_mutate() { _rt_plain_append "$(_rt_session_log "$1" "$3")" mutate "$2" >/dev/null; }

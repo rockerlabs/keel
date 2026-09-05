@@ -8,13 +8,15 @@
 #
 # Format: TAB-separated, 3 columns, comments start with '#'.
 #   surface	required_doc	note
-# `surface` is a path (a script/command file) or a `ticket:<STATUS>` pseudo-surface (a ticket carrying
-# that heading tag). `required_doc` is a repo-relative path to the doc that surface's own contract
-# depends on, or the literal token BACKLOG.md for "read the ticket's own body" — never a path that
-# does not resolve (tests/test_read_trace.sh's own binding test checks every row against this repo's
-# live tree, the tools/self/doctor.sh dir #129 dead-reference discipline applied to this file).
-tools/install.sh	docs/reference.md	never-clobber install/uninstall discipline (see reference.md's own tool-table rows for install.sh/uninstall.sh/install-*.sh)
-tools/uninstall.sh	docs/reference.md	never-clobber install/uninstall discipline
+# `surface` is one of three shapes: a bare path (a script/command file); a `ticket:<STATUS>`
+# pseudo-surface (a ticket carrying that heading tag); or a `path:label` pair (a specific step inside a
+# file, e.g. a command's own subagent step) — a cell containing `:` is one of the latter two shapes and
+# is exempted from path resolution. `required_doc` is a repo-relative path to the doc that surface's own
+# contract depends on, or the literal token BACKLOG.md for "read the ticket's own body" — never a path
+# that does not resolve (tests/test_read_trace.sh's own binding test checks every row against this
+# repo's live tree, the tools/self/doctor.sh dir #129 dead-reference discipline applied to this file).
+install.sh	docs/reference.md	never-clobber install/uninstall discipline (see reference.md's own tool-table rows for install.sh/uninstall.sh/install-*.sh)
+uninstall.sh	docs/reference.md	never-clobber install/uninstall discipline
 tools/install-pre-pr-gate.sh	docs/reference.md	never-clobber install discipline (same table)
 tools/install-secret-guard.sh	docs/reference.md	never-clobber install discipline (same table)
 tools/install-read-trace.sh	docs/reference.md	never-clobber install discipline (this ticket's own installer)
