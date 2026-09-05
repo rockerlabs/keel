@@ -10,6 +10,10 @@ universe**: every file the range actually touched, plus the file→PR seam map, 
 hand-picked scope chosen by judgment. Run it late, once a release candidate exists and its CI is
 green, before the tag.
 
+**[`commands/delta-audit.md`](../commands/delta-audit.md) is the entrypoint** — a thin `/delta-audit
+<version>` checklist over this doc, so the procedure below is run as a structural step rather than
+cited from memory (`dir #385`).
+
 Three siblings, and the boundary with each:
 
 - [`docs/release-audit.md`](release-audit.md) **phase 6 is the caller.** Its RC-pass mandate used to
