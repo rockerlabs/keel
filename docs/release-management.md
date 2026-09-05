@@ -82,19 +82,14 @@ recommendation the operator only sees after reading the rest of the brief is one
 to change anything.
 
 **Setting the model and effort is always the operator's own gesture on the freshly spawned session —
-the manager surfaces the recommendation, it cannot preset it.** What the manager (or anyone launching
-in this soft form) *can* and must do is verify: immediately after launch, check the session's actual
-model and effort against the recommendation — via harness session metadata where the harness exposes
-it, else by asking the operator to confirm — and fold `actual vs. rec` into the same one health-line
-report the launch already produces, at zero extra messages. On a mismatch, flag the operator at once,
-before the worker spends anything. **This is required, not advisory** —
-[`docs/delegation.md`](delegation.md)'s own canonical statement, stated there because it binds any
-session that launches a real worker, not only a release manager; this section instantiates it for a
-release. A run that skips the check is not hypothetical — two workers came up on a harness default
-nobody had asked for, caught only by the operator's own eye after real spend. **The requirement
-inherits wherever this R3 soft form is itself adopted by reference** — for example, a
-release-candidate audit's Fixer-launch rule that cites this R3 by pointer inherits the verify step
-too, with no separate edit needed on that surface.
+the manager surfaces the recommendation, it cannot preset it.** [`docs/delegation.md`](delegation.md)
+states the launch-time verify rule that follows from it — check actual model/effort against the
+recommendation right after launch, flag a mismatch before the worker spends.
+**This is required, not advisory.** It binds any session that launches a real worker, not only a
+release manager; this section instantiates it for a release with two additions of its own: fold `actual vs. rec` into the same one health-line report the launch already produces, at zero extra messages;
+and **the requirement inherits wherever this R3 soft form is itself adopted by reference** — for
+example, a release-candidate audit's Fixer-launch rule that cites this R3 by pointer inherits the
+verify step too, with no separate edit needed on that surface.
 
 ## The worker brief — one shape, whether launched or handed over
 
@@ -146,14 +141,12 @@ would report success, and the caller would go on to overwrite the adopter's real
 backup existed. A worker's own review caught it, reproduced live against a read-only directory, and
 fixed it with an explicit exit-status check rather than ambient `set -e`.
 
-Three things this case establishes that no amount of manager diligence would have on its own: the
-error was in the **approval**, not merely in the information cited — a fact was right and its
-consequence was wrong; the failure class was already recorded in the manager's own memory before this
-run and knowing the class did not prevent applying it wrongly at the moment of decision; and the
-failure mode it would have shipped — a never-clobber rail silently overwriting an adopter's file while
-reporting a backup — is the exact genre this pattern's own release existed to close. A hierarchy in
-which the manager has the last word and no worker reviews upward ships this. That is why R4 is not
-etiquette — it is the one rail that catches an approval, not just a fact.
+Three things this case establishes that no amount of manager diligence would have on its own: a fact
+was right and its consequence was wrong; the failure class was already recorded in the manager's own
+memory before this run and knowing the class did not prevent applying it wrongly at the moment of
+decision; and the failure mode it would have shipped — a never-clobber rail silently overwriting an
+adopter's file while reporting a backup — is the exact genre this pattern's own release existed to
+close. That is why R4 is not etiquette — it is the one rail that catches an approval, not just a fact.
 
 The manager is fallible in ordinary, cheaper ways too, and workers should expect it: a claimed check
 slot turned out to be taken because the manager's own grep couldn't see a section-header format it
@@ -297,8 +290,11 @@ diff, never the pair. If this doc says nothing else well, it has to say this wel
 Every automated cycle in this pattern carries an explicit numeric bound **and** a budget precondition:
 max launch retries per worker, max review/fix rounds per PR (per your project's own round-budget
 convention, where it ships one), sessions-per-wave fixed at wave-plan time and never grown mid-wave,
-and a token-budget check before each wave. **Hitting any bound means stop and escalate to the operator
-in one line — never silent continuation, never a silent retry ladder.**
+and a token-budget check before each wave — [`docs/delegation.md`](delegation.md)'s own session-limit
+flow (ask the operator for the live remaining-window percentage, pilot two units spanning the cost
+envelope, do the arithmetic before spawning) is that check, not a separate one this pattern invents.
+**Hitting any bound means stop and escalate to the operator in one line — never silent continuation,
+never a silent retry ladder.**
 
 This is load-bearing, not decoration: R3's soft-form launching removes the natural rate limiter a
 human typing every launch used to provide, and an unbounded manager reproduces at scale the exact
@@ -321,7 +317,12 @@ only shipped conventions:
 
 ## R13 — the wrap is centralized
 
-**One manager `/wrap` closes the manager and every worker.** Workers never run their own wrap — that
+This extends [`docs/delegation.md`](delegation.md)'s own `DELEGATION RUN` line — "wrap duties are
+centralized... the orchestrator owns all bookkeeping" — from that doc's stateless subagents to the real,
+gated sessions this pattern launches, for the same reason: an end-of-session nudge a harness runs will
+otherwise steer every session toward its own wrap-style bookkeeping regardless of whether it's a
+subagent or a real one. **One manager `/wrap` closes the manager and every worker.** Workers never run
+their own wrap — that
 would be a full reconcile-plus-sweep paid once per worker, and an operator step per session, for
 material the manager already needs anyway. Instead, every worker's checkpoint report to the manager
 must carry its wrap-relevant material inline: findings, lessons, incident signals (a force-push, a

@@ -146,19 +146,19 @@ done
 
 # --- naming-collision acknowledgment: plain text, no backticked slash-command form (dir #385's own
 # felt incident — a backtick-wrapped /keel-* citation trips doctor.sh's dir #129 dead-reference check)
-for f in "$doc" "$cmd"; do
-  check_contains "$(basename "$f") acknowledges the collision alias" "$(cat "$f")" "keel-manage-release"
-done
+# Read each file once (not once per check below) — both are re-checked three times in this span.
+doc_body="$(cat "$doc")"
+cmd_body="$(cat "$cmd")"
+check_contains "docs/release-management.md acknowledges the collision alias" "$doc_body" "keel-manage-release"
+check_contains "commands/manage-release.md acknowledges the collision alias" "$cmd_body" "keel-manage-release"
 check_absent "docs/release-management.md never backtick-wraps the collision alias as a slash command" \
-  "$(cat "$doc")" '`/keel-manage-release`'
+  "$doc_body" '`/keel-manage-release`'
 check_absent "commands/manage-release.md never backtick-wraps the collision alias as a slash command" \
-  "$(cat "$cmd")" '`/keel-manage-release`'
+  "$cmd_body" '`/keel-manage-release`'
 
 # --- portability: no keel-only absolute paths, the shipped → <version> convention named --------------
-check_absent "release-management.md carries no absolute keel-checkout path" \
-  "$(cat "$doc")" '/Users/'
-check_absent "manage-release.md carries no absolute keel-checkout path" \
-  "$(cat "$cmd")" '/Users/'
+check_absent "release-management.md carries no absolute keel-checkout path" "$doc_body" '/Users/'
+check_absent "manage-release.md carries no absolute keel-checkout path" "$cmd_body" '/Users/'
 pin "release-management.md names the → <version> heading-tag convention" "$doc" \
   '`→ <version>` tag' \
   "expected R12 to name the portable release-slate convention, not keel's own release-plan table"
