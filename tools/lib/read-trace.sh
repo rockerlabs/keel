@@ -218,4 +218,4 @@ _rt_record_read() {
 # session as wrapped (found live, delta-audit V2). Mutate rows are ephemeral, per-session, and read
 # only for this timestamp — there is no reader that needs one row per distinct path, so there is
 # nothing dedup was protecting here.
-_rt_record_mutate() { _rt_plain_append "$(_rt_session_log "$1" "$3")" mutate "$2" >/dev/null; }
+_rt_record_mutate() { _rt_plain_append "$(_rt_session_log "$1" "$3")" mutate "$2"; }

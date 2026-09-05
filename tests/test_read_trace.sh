@@ -75,6 +75,11 @@ default_id="$OUT"
 run bash -c ". '$lib'; top=\"\$(_impact_resolve_top '$d')\"; _rt_project_id '$d' \"\$top\""
 check_status "_rt_project_id with an explicit TOP agrees with resolve-fresh" "$default_id" "$OUT"
 
+# noenv_bash CMD... — the three-flag `env -u` prefix every "nothing resolves" case below needs,
+# factored out once rather than repeated verbatim at each call site (found by this ticket's own
+# /code-review high pass).
+noenv_bash() { env -u HOME -u KEEL_HOME -u KEEL_READ_TRACE_STORE "$@"; }
+
 # --- lib: read_trace_store_root degrades silently when NOTHING resolves -------------------------------
 # Regression pin (delta-audit V3): this used to be `${HOME:?read-trace: set HOME, or export
 # KEEL_HOME}`, which expands inside a command-substitution chain and so only killed the SUBSHELL —
@@ -82,7 +87,7 @@ check_status "_rt_project_id with an explicit TOP agrees with resolve-fresh" "$d
 # platform, the empty root that still reached a downstream `mkdir -p` created a junk directory at
 # filesystem root. This is the one env-axis the rest of this suite never exercises on its own — every
 # other case sets KEEL_READ_TRACE_STORE via rt_env(), so the unset-everything branch was never entered.
-noenv="$(env -u HOME -u KEEL_HOME -u KEEL_READ_TRACE_STORE bash -c ". '$lib'; read_trace_store_root" 2>"$SANDBOX/noenv.stderr")"
+noenv="$(noenv_bash bash -c ". '$lib'; read_trace_store_root" 2>"$SANDBOX/noenv.stderr")"
 noenv_status=$?
 check_status "read_trace_store_root with nothing set: empty stdout" "" "$noenv"
 check_status "read_trace_store_root with nothing set: exit 1 (a real failure, never a fabricated path)" 1 "$noenv_status"
@@ -94,7 +99,7 @@ check_status "read_trace_store_root with nothing set: zero stderr (never a print
 # write outside its own store.
 d="$(mkrepo)"
 rt_tmp_noenv="$SANDBOX/tmp.noenv"; mkdir -p "$rt_tmp_noenv"
-noenv_hook_out="$(env -u HOME -u KEEL_HOME -u KEEL_READ_TRACE_STORE TMPDIR="$rt_tmp_noenv" bash -c '
+noenv_hook_out="$(noenv_bash TMPDIR="$rt_tmp_noenv" bash -c '
   printf "%s" "$1" | bash "$2" log-tool
 ' _ "$(read_json "$d" Read "$d/docs/foo.md")" "$rt" 2>&1)"
 noenv_hook_status=$?
@@ -288,8 +293,13 @@ bad_surface=0
 # shellcheck disable=SC2034  # note is read for column-shape completeness, not used in this check
 while IFS=$'\t' read -r surface doc note; do
   case "$surface" in ""|"#"*) continue ;; esac
-  [ "$doc" = "BACKLOG.md" ] && continue
-  [ -f "$REPO_ROOT/$doc" ] || { bad=$((bad + 1)); echo "  bad row: $surface -> $doc" >&2; }
+  # BACKLOG.md exempts only the required_doc check (that literal token means "read the ticket's own
+  # body", not a resolvable path) — it must NOT also skip the surface check below via the same
+  # `continue`, or a future BACKLOG.md-doc row with a typo'd bare-path surface would pass silently
+  # (found by this ticket's own /code-review high pass).
+  if [ "$doc" != "BACKLOG.md" ]; then
+    [ -f "$REPO_ROOT/$doc" ] || { bad=$((bad + 1)); echo "  bad row: $surface -> $doc" >&2; }
+  fi
   # a cell containing ':' is a ticket:<STATUS> or path:label pseudo-surface, not a bare path — exempt
   case "$surface" in *:*) continue ;; esac
   [ -f "$REPO_ROOT/$surface" ] || { bad_surface=$((bad_surface + 1)); echo "  bad surface: $surface" >&2; }

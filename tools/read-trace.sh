@@ -223,21 +223,19 @@ case "${1:-}" in
     se_wlog="$(_rt_wrapfuse_log "$se_cwd")"
     [ -n "$se_wlog" ] || exit 0
     mkdir -p "$(dirname "$se_wlog")"
+    # _rt_wrapfuse_flag already resolves its own dir via _rt_wrapfuse_flag_dir internally and fails
+    # exactly when that resolve fails, so checking se_flag alone covers the same empty-root case
+    # without a redundant separate resolve of the same directory — resolved ONCE here rather than once
+    # per branch, since both branches need the identical value (found by this ticket's own
+    # /code-review high pass).
+    se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
+    se_status=wrapped; [ "$se_wrapped" -eq 1 ] || se_status=no-wrap
+    printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_status" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
     if [ "$se_wrapped" -eq 1 ]; then
-      printf '%s\twrapped\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
-      se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
       [ -n "$se_flag" ] && rm -f "$se_flag" 2>/dev/null
-    else
-      printf '%s\tno-wrap\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
-      # _rt_wrapfuse_flag already resolves its own dir via _rt_wrapfuse_flag_dir internally and fails
-      # exactly when that resolve fails, so checking se_flag alone (as the wrapped branch above already
-      # does) covers the same empty-root case without a redundant separate resolve of the same
-      # directory (found by this ticket's own /simplify pass).
-      se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
-      if [ -n "$se_flag" ]; then
-        mkdir -p "$(dirname "$se_flag")"
-        printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$se_flag" 2>/dev/null
-      fi
+    elif [ -n "$se_flag" ]; then
+      mkdir -p "$(dirname "$se_flag")"
+      printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$se_flag" 2>/dev/null
     fi
     exit 0
     ;;
@@ -313,11 +311,10 @@ case "${1:-}" in
     # root (found by this ticket's own /simplify altitude pass: every OTHER _rt_store_dir-derived call
     # site in this file already guards this, `rotate` was the one left over). Unlike the silent hooks,
     # `rotate` is an operator-invoked CLI, so it reports the failure instead of silently no-op'ing.
-    ro_store="$(_rt_store_dir "$ro_dir")"
-    if [ -z "$ro_store" ]; then
+    ro_store="$(_rt_store_dir "$ro_dir")" || {
       printf 'read-trace: no persistent store resolves (set HOME, KEEL_HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
       exit 1
-    fi
+    }
     ro_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     ro_any=0
     for ro_f in reads.log wrap-fuse-events.log; do
