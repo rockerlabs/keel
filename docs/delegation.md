@@ -35,6 +35,15 @@ protects is **gatedness** — a Mutator passing through your project's own commi
 literally who typed the launch command. See [`docs/release-management.md`](release-management.md) R3
 for the full requirement.
 
+**A launch-time requirement that follows from the same soft form:** whoever launches a real worker
+session this way can surface a model/effort recommendation, but the operator remains the one who sets
+it — that is a manual gesture on the freshly spawned session, not something a launcher can preset. So
+the launcher verifies, immediately after launch, the session's actual model and effort against the
+recommendation — via harness session metadata where the harness exposes it, else by asking the
+operator to confirm — and on a mismatch, flags the operator at once, before the worker spends
+anything. This is required, not advisory: a real run launched two workers straight onto a harness
+default it never checked, and the mismatch was caught only by the operator's own eye after real spend.
+
 Two of those assignments are load-bearing, and here's why: finding something worth flagging is cheaper
 than proving it right or wrong, and a wrong verdict is the one thing nothing downstream re-checks — so
 the higher effort goes to verification, not discovery. And a mutator is the only role that has to pass

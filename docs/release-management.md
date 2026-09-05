@@ -31,7 +31,7 @@ makes recording it part of every run rather than a one-time study.
 |---|---|---|---|
 | **Manager** | your own session, long-lived for the release | top tier, high | every phase, all arbitration, the single channel to the operator, **all** bookkeeping |
 | **Worker** | a real, gated session (`/design` or `/go`) — **never a subagent** | mid tier, per ticket | one ticket's worth of the tree, through its own gates |
-| **Operator** | human | — | genuine product forks, ticket-filing disputes, merges, the tag, the release, and the manager's own launch |
+| **Operator** | human | — | genuine product forks, ticket-filing disputes, merges, the tag, the release, each worker's model/effort selection at launch, and the manager's own launch |
 
 Two things about this table that aren't optional. **Workers are real sessions, not subagents**
 (R3) — `docs/delegation.md`'s Mutator row already states why: a subagent that skips your project's
@@ -76,10 +76,25 @@ exact same `/polish`/gate/PR flow a human-launched one would. What
 the command that started the session — see the cross-edit at the bottom of this doc's R3 section in
 `docs/delegation.md` itself, which now states this exception by name.
 
-**Model recommendations belong at launch, not buried in a brief's tail.** A worker session, once
-launched, is already spending tokens under whatever tier it started at — a recommendation the
-operator only sees after reading the rest of the brief is a recommendation that arrived too late to
-change anything. State the model/effort call as the first line of the launch gesture, not a footnote.
+**Model recommendations belong at launch, not buried in a brief's tail** — a practice note, not its own
+numbered requirement: state the model/effort call as the first line of the launch gesture, since a
+recommendation the operator only sees after reading the rest of the brief is one that arrived too late
+to change anything.
+
+**Setting the model and effort is always the operator's own gesture on the freshly spawned session —
+the manager surfaces the recommendation, it cannot preset it.** What the manager (or anyone launching
+in this soft form) *can* and must do is verify: immediately after launch, check the session's actual
+model and effort against the recommendation — via harness session metadata where the harness exposes
+it, else by asking the operator to confirm — and fold `actual vs. rec` into the same one health-line
+report the launch already produces, at zero extra messages. On a mismatch, flag the operator at once,
+before the worker spends anything. This is
+[`docs/delegation.md`](delegation.md)'s own canonical statement, stated there because it binds any
+session that launches a real worker, not only a release manager; this section instantiates it for a
+release. A run that skips the check is not hypothetical — two workers came up on a harness default
+nobody had asked for, caught only by the operator's own eye after real spend. **The requirement
+inherits wherever `docs/release-management.md`'s R3 soft form is itself adopted by reference** — for
+example, a release-candidate audit's Fixer-launch rule that cites this R3 by pointer inherits the
+verify step too, with no separate edit needed on that surface.
 
 ## The worker brief — one shape, whether launched or handed over
 
