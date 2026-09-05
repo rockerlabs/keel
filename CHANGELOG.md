@@ -380,7 +380,8 @@ its manifest merge scratch and its own cleanup leaves `.artifacts.<pid>` inside 
 failure is swallowed by `|| true` — so an adopter who uninstalls after a crashed install is left with
 a `.keel` directory Keel reported as removed, silently. Found while building a real-crash fixture for
 the new run-duration lock, pre-existing since the scratch mechanism itself, and out of scope for the
-`install.sh` change that surfaced it (dir #377). Second, the lock carries four named limits of its
+`install.sh` change that surfaced it (dir #377). Fixed in v0.8.3 — see that release's own entry.
+Second, the lock carries four named limits of its
 own: a recorded holder pid can be reused by an unrelated process, `kill -0` cannot distinguish a live
 foreign-owned process from a dead one, two fresh installs can both reclaim the same stale lock at the
 same instant, and a live sibling descheduled for more than the lock's one-second pid-write window has
