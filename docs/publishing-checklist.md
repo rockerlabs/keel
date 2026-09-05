@@ -70,17 +70,19 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       (or `gh release upload <tag> /tmp/bootstrap.sh` on an existing release). **[you]** — not `[auto]`:
       `<notes-file>` still has to be composed from `CHANGELOG.md`, and reviewed before publishing,
       which is the step whose omission caused v0.6.1's blank release. `tools/changelog-section.sh <version> --digest`
-      prints just the opener + `### ` headings first, to skim before curating; then
+      prints just the opener + `### ` headings first, to skim before composing; then
       `tools/changelog-section.sh --edit <version> <notes-file>` extracts the full section to a
-      scratch file, opens it in `$EDITOR`, and copies your curated result to `<notes-file>` only if
-      the editor exits 0 (`<notes-file>` is never touched otherwise). It extracts the section, not
-      the release note itself; **composing the notes is agent-composed at this step,
+      scratch file and opens it in `$EDITOR` — **the interactive `--edit` path a human runs by
+      hand.** Outside that path, **composing the notes is agent-composed at this step,
       operator-reviewed before publishing** (`dir #367` — reversing this line's earlier "curation is
-      still human by nature" framing: inside a managed release, the manager composes the notes file
-      itself from the tagged commit's `CHANGELOG.md` section, per
-      [`docs/release-management.md`](release-management.md) R9; a standalone session composes its
-      own). Publishing stays irreversible and outward-facing, so the *review*, not the *write*, is
-      what this line still gates.
+      still human by nature"
+      framing): a session — the manager inside a managed release, or a standalone session
+      otherwise — composes `<notes-file>` directly from the tagged commit's `CHANGELOG.md` section,
+      per [`docs/release-management.md`](release-management.md) R9, without needing `--edit`'s
+      `$EDITOR` step at all; `--edit` stays available for a human who wants to curate by hand instead.
+      `<notes-file>` is never touched unless the editor exits 0 on that path. Either way this tool
+      extracts the section, not the release note itself. Publishing stays irreversible and
+      outward-facing, so the *review*, not the *write*, is what this line still gates.
       **`<notes-file>` is composed at this step, from the CHANGELOG section as it stands on the
       merged commit being tagged, and never earlier in the release pass.** A notes file that already
       exists when you reach this step was cut from a pre-fix source — discard it and recompose, don't

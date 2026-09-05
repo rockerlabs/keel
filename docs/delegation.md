@@ -105,8 +105,9 @@ there.)
    orchestrator's own read catches (see [`docs/drydock.md`](drydock.md)'s own field test for the one
    defect that slipped past both earlier roles and surfaced only here).
 5. **Gated, serialized mutation** *(optional — only present in applications that mutate anything)*. One
-   operator-launched mutator session per accepted unit (or per thematic batch of units), strictly
-   serialized if your project's own gate keeps a single sentinel.
+   operator-launched mutator session per accepted unit (or per thematic batch of units — see the R3
+   soft-form named override above for who may launch it), strictly serialized if your project's own
+   gate keeps a single sentinel.
 6. **Re-check** *(optional)*. One delegated read-only pass at the post-mutation state, confirming the
    mutations actually landed coherently.
 7. **Summary + extraction.** A durable record of the run (see below), and — where the application has
@@ -326,7 +327,9 @@ Never edit the worker's text — append only.
 **Mutator:**
 
 ```
-You are a delegation MUTATOR — a real, operator-launched session, not a subagent.
+You are a delegation MUTATOR — a real session, never a subagent, launched either by the operator
+directly or, under an approved soft-form exception (this doc's R3 named override), by an
+orchestrator — either way you pass through your project's own gates the same way.
 
 Your unit of gated mutation: <one accepted unit's worth of change — a PR, a backlog edit, whatever this
 application mutates>
