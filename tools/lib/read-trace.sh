@@ -96,15 +96,17 @@ _rt_store_dir() {
   root="$(read_trace_store_root)" || return 1
   printf '%s/%s' "$root" "$(_rt_project_id "${1:-.}" "${2:-}")"
 }
-# Each of these propagates an unresolved store root as an EMPTY string (never a bare "/reads.log"-
-# shaped path) — a plain `"$(_rt_store_dir ...)"` concatenation would silently keep the leading "/"
-# from an empty substitution even though the inner call failed, since a failing subshell's exit status
-# is invisible to the string it produced (dir #387 V3: this is exactly how a junk directory got
-# created at filesystem root). `local d; d="$(...)" || return 1` makes the failure visible before it's
-# built into a path.
-_rt_reads_log() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/reads.log' "$d"; }
-_rt_wrapfuse_log() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/wrap-fuse-events.log' "$d"; }
-_rt_wrapfuse_flag_dir() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/wrap-fuse' "$d"; }
+# _rt_store_path DIR TOP NAME — _rt_store_dir plus a NAME suffix, propagating an unresolved store root
+# as an EMPTY string (never a bare "/reads.log"-shaped path) — a plain `"$(_rt_store_dir ...)"`
+# concatenation would silently keep the leading "/" from an empty substitution even though the inner
+# call failed, since a failing subshell's exit status is invisible to the string it produced (dir #387
+# V3: this is exactly how a junk directory got created at filesystem root). `local d; d="$(...)" ||
+# return 1` makes the failure visible before it's built into a path — shared here once rather than
+# repeated at each of the three call sites below (found by this ticket's own /simplify pass).
+_rt_store_path() { local d; d="$(_rt_store_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/%s' "$d" "$3"; }
+_rt_reads_log() { _rt_store_path "${1:-.}" "${2:-}" reads.log; }
+_rt_wrapfuse_log() { _rt_store_path "${1:-.}" "${2:-}" wrap-fuse-events.log; }
+_rt_wrapfuse_flag_dir() { _rt_store_path "${1:-.}" "${2:-}" wrap-fuse; }
 _rt_wrapfuse_flag() { local d; d="$(_rt_wrapfuse_flag_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/%s.flag' "$d" "$(_rt_branch "${1:-.}")"; }
 
 # _rt_normalize_path DIR RAW [TOP] — a repo-relative path for logging, or the literal token "BACKLOG.md" for
