@@ -11,6 +11,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-09-06
+
 - **dir #367: `/manage-release <version>` — the release-manager pattern, run by hand across several
   releases, written down as a procedure plus a thin entrypoint.** `docs/release-management.md` sits
   in the gap between `docs/delegation.md` (read-only subagent fan-out) and `docs/parallel-sessions.md`
@@ -123,6 +125,25 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   three requirements most likely to be silently dropped in a rewrite (G0/G3/G6), plus the family
   cross-links and the portable `→ <version>`/`→ pool` heading-tag convention. Ships with a deliberate
   `tests/test_install_link.sh` command-coverage bump (11 → 12).
+
+Known issues: four residuals ship unfixed, each with an open ticket — three found by this release's
+own RC delta audit, one (dir #391) by an implementation wave's own review round, filed at that
+round's budget stop-rule. First: the read-trace mechanism's silent hooks leak
+`mkdir: Permission denied` plus a failed-redirect line to stderr when the store root resolves but is
+UNWRITABLE (HOME set, directory mode 500) — the shipped no-HOME fix closed the unresolvable axis,
+this is the same class one axis over, and the tool's header does not yet state its writable-root
+assumption (dir #393). Second, and older than this release: `bootstrap.sh`'s cleanup trap
+(`rm -rf "$tmp"` at EXIT, unchanged since 2026-06-29) can race macOS filesystem behavior under
+concurrent runs and fail with "Directory not empty" AFTER a fully successful install — and the
+trap's status becomes the script's, so a green install reports FAIL; reproduced under concurrency,
+never serially (dir #394). Third: the wrap-fuse's DELEGATION RUN exclusion is a byte-bound
+transcript heuristic (`head -c 8000`), and a long enough worker brief defeats it — the failure mode
+is a false "ended with no /wrap" banner on a correct worker, noise rather than damage (dir #391).
+Fourth: the `rotate` subcommand ships with zero test coverage — verified working by two independent
+live runs during the RC audit, so unpinned rather than broken (dir #392). By design, not defects:
+the four manager-family commands (dir #367, dir #385, dir #386, dir #387) ship with their acceptance
+runs deliberately open — each closes no later than v0.9.0's own release cycle, the first to run end
+to end ON this toolchain (the groom's may land earlier, at the next on-demand groom).
 
 ## [0.8.2] — 2026-09-04
 

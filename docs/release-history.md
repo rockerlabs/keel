@@ -7,6 +7,24 @@ A one-paragraph-per-release summary, newest first. Each entry is a condensed dig
 produces a release) and [`publishing-checklist.md`](publishing-checklist.md) (the mechanics of
 cutting one) — this page is the record of what each one delivered.
 
+## v0.8.3 — 2026-09-06
+
+The manager-toolchain release, shipped minimal-and-first so that v0.9.0 onward runs ON it. Four
+sibling commands close the loop a release actually runs through — `/manage-release`
+(`docs/release-management.md`, the release-manager pattern practised by hand across v0.8.0–v0.8.3 and
+written down with its thirteen paid-for requirements), `/delta-audit` (a thin entrypoint making the
+release-candidate audit a structural step instead of a memory — the loudest v0.8.2 failure closed),
+`/groom` (the grooming manager: retro first, pains from the operator, derived lists, a mandatory
+fresh-reviewer round), and the read-trace fuses (a silent hook mechanism logging what each session
+actually read, a `docs read:` line on wraps and PRs, a dead-doc aggregate for the groom, and a
+wrap-fuse flagging mutating sessions that never wrapped). Plus the removal-rail residue fix v0.8.2
+disclosed: a crashed install's scratch no longer keeps `.keel` alive through an uninstall, and a kept
+`.keel/` now names what kept it (dir #377). The release was itself run under the pattern it ships —
+one manager session, five manager-launched worker sessions, serialized merges, a NO-GO RC audit whose
+four tag-blocking findings were fixed and re-verified through a literal Clause-A closing round before
+the tag (a different set of four from the residuals its changelog section discloses). Acceptance runs
+for all four commands stay deliberately open into v0.9.0.
+
 ## v0.8.2 — 2026-09-04
 
 The removal-rail release. v0.8.1 hardened `install.sh` against clobbering an adopter's files and
