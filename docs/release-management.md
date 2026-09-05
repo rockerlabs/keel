@@ -5,7 +5,7 @@ covers fanning bulk **read-only** analysis out to parallel **subagent** workers 
 contract, keeping every gate in your own session. [`docs/parallel-sessions.md`](parallel-sessions.md)
 covers the safety mechanics of 2+ sessions against one repo — what a worktree does and does not
 isolate, and the failure catalog. Neither covers what a release actually needs: coordinating
-**mutating peer sessions** — real `/design` and `/go` runs, each gated on its own — across a whole
+**mutating peer sessions** — real design sessions and `/go` runs, each gated on its own — across a whole
 release, with one manager session holding the context and the operator's single channel. Read both
 docs above before this one; several of the rails below are generic concurrency safety restated for
 this one application, and are linked rather than duplicated.
@@ -30,7 +30,7 @@ makes recording it part of every run rather than a one-time study.
 | Role | Runs as | Model + effort | May touch |
 |---|---|---|---|
 | **Manager** | your own session, long-lived for the release | top tier, high | every phase, all arbitration, the single channel to the operator, **all** bookkeeping |
-| **Worker** | a real, gated session (`/design` or `/go`) — **never a subagent** | mid tier, per ticket | one ticket's worth of the tree, through its own gates |
+| **Worker** | a real, gated session (a design session or a `/go` implementation) — **never a subagent** | mid tier, per ticket | one ticket's worth of the tree, through its own gates |
 | **Operator** | human | — | genuine product forks, ticket-filing disputes, merges, the tag, the release, each worker's model/effort selection at launch, and the manager's own launch |
 
 Two things about this table that aren't optional. **Workers are real sessions, not subagents**
@@ -87,14 +87,14 @@ in this soft form) *can* and must do is verify: immediately after launch, check 
 model and effort against the recommendation — via harness session metadata where the harness exposes
 it, else by asking the operator to confirm — and fold `actual vs. rec` into the same one health-line
 report the launch already produces, at zero extra messages. On a mismatch, flag the operator at once,
-before the worker spends anything. This is
+before the worker spends anything. **This is required, not advisory** —
 [`docs/delegation.md`](delegation.md)'s own canonical statement, stated there because it binds any
 session that launches a real worker, not only a release manager; this section instantiates it for a
 release. A run that skips the check is not hypothetical — two workers came up on a harness default
 nobody had asked for, caught only by the operator's own eye after real spend. **The requirement
-inherits wherever `docs/release-management.md`'s R3 soft form is itself adopted by reference** — for
-example, a release-candidate audit's Fixer-launch rule that cites this R3 by pointer inherits the
-verify step too, with no separate edit needed on that surface.
+inherits wherever this R3 soft form is itself adopted by reference** — for example, a
+release-candidate audit's Fixer-launch rule that cites this R3 by pointer inherits the verify step
+too, with no separate edit needed on that surface.
 
 ## The worker brief — one shape, whether launched or handed over
 

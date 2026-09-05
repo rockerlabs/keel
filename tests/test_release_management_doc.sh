@@ -62,6 +62,19 @@ pin "R7 states cost is unmeasured/a real trade, not a free win" \
   "$doc" 'not a free win' \
   "expected R7 to preserve the overridden gate's own unmeasured-cost caveat, not just the requirement to record one"
 
+# --- operator-decided requirement: R3's post-launch model/effort verify step, folded in after the
+# original build (an operator-decided requirement is exactly the class this binding test exists to
+# keep from being silently dropped in a later rewrite) ----------------------------------------------
+pin "R3 states the post-launch model/effort verify step is required, not advisory" "$doc" \
+  'This is required, not advisory' \
+  "expected R3 to state the operator-decided post-launch verify step as a hard requirement"
+pin "R3's verify step folds into the existing one-health-line-per-launch report" "$doc" \
+  'fold `actual vs. rec` into the same one health-line' \
+  "expected the verify step to cost zero extra messages, per the operator's own rationale"
+pin "R3 states the delta-audit inheritance-by-pointer clause" "$doc" \
+  'with no separate edit needed on that surface' \
+  "expected R3 to say a sibling procedure citing this R3 by pointer inherits the verify step, so nobody later duplicates the rule into it"
+
 # --- the other numbered requirements, so a wholesale drop of one doesn't pass silently --------------
 for r in \
   "## R1 — intake is bodies plus re-verification, not headings" \
