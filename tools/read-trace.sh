@@ -116,13 +116,17 @@ case "${1:-}" in
     [ -n "$lt_cwd" ] || lt_cwd="$PWD"
     lt_raw="$lt_path"; [ -n "$lt_raw" ] || lt_raw="$lt_nbpath"
     [ -n "$lt_raw" ] || exit 0
-    lt_norm="$(_rt_normalize_path "$lt_cwd" "$lt_raw")"
+    # Resolved ONCE here, threaded through every call below — NOT a cache (see
+    # tools/lib/read-trace.sh's own _rt_project_id comment for why a global cache is dead on arrival
+    # given this file's command-substitution call shape; a plain parameter survives it fine).
+    lt_top="$(_impact_resolve_top "$lt_cwd")"
+    lt_norm="$(_rt_normalize_path "$lt_cwd" "$lt_raw" "$lt_top")"
     case "$lt_tool" in
       Read)
-        _rt_in_doc_scope "$lt_norm" && _rt_record_read "$lt_cwd" "$lt_norm"
+        _rt_in_doc_scope "$lt_norm" && _rt_record_read "$lt_cwd" "$lt_norm" "$lt_top"
         ;;
       Edit|Write|NotebookEdit)
-        _rt_record_mutate "$lt_cwd" "$lt_norm"
+        _rt_record_mutate "$lt_cwd" "$lt_norm" "$lt_top"
         ;;
     esac
     exit 0
@@ -183,7 +187,14 @@ case "${1:-}" in
     # own worker-brief templates already mandate for the literal "DELEGATION RUN" line (found by this
     # ticket's own /simplify altitude pass: worth naming the dependency here, since a future rewording
     # of those templates would silently break this exclusion with no shared constant to catch it).
-    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && grep -qF "DELEGATION RUN" "$se_transcript" 2>/dev/null; then
+    # Scoped to the transcript's first few messages, NOT the whole file (found by this ticket's own
+    # /code-review high pass): a bare whole-transcript grep would misclassify any ordinary session
+    # that later reads/edits/discusses this very file (its own source and this comment literally
+    # contain the marker string), silently excluding it from the fuse whose entire job is catching
+    # exactly a mutating session that forgot to wrap. The worker's brief lives in the transcript's
+    # opening turn, so restricting the match there keeps the same text-convention reliance while
+    # closing the false-positive surface a later, unrelated mention would otherwise open.
+    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && head -n 5 "$se_transcript" 2>/dev/null | grep -qF "DELEGATION RUN"; then
       exit 0
     fi
     se_wd="$(_rt_wrapdone_path "$se_cwd")"
@@ -247,18 +258,18 @@ case "${1:-}" in
       # found by this ticket's own /simplify efficiency pass.
       ag_is_repo=0
       git -C "$ag_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 && ag_is_repo=1
-      ag_paths="$(awk -F'\t' '$2=="read"{print $3}' "$ag_rlog" 2>/dev/null | LC_ALL=C sort -u)"
-      while IFS= read -r ag_p; do
+      # ONE awk pass builds last-read-date + count per path (was: an enumerate-paths scan, then 2 more
+      # full-file scans PER path) — found by this ticket's own /code-review high pass.
+      ag_summary="$(awk -F'\t' '$2=="read"{last[$3]=$1; cnt[$3]++} END{for (p in last) printf "%s\t%s\t%s\n", p, last[p], cnt[p]}' "$ag_rlog" 2>/dev/null | LC_ALL=C sort)"
+      while IFS=$'\t' read -r ag_p ag_last ag_cnt; do
         [ -n "$ag_p" ] || continue
-        ag_last="$(awk -F'\t' -v p="$ag_p" '$2=="read" && $3==p{d=$1} END{print d}' "$ag_rlog")"
-        ag_cnt="$(awk -F'\t' -v p="$ag_p" '$2=="read" && $3==p' "$ag_rlog" | grep -c .)"
         ag_chg="-"
         if [ "$ag_p" != "BACKLOG.md" ] && [ "$ag_is_repo" -eq 1 ]; then
           ag_since="${ag_last%%T*}"
           ag_chg="$(git -C "$ag_dir" log --oneline --since="$ag_since" -- "$ag_p" 2>/dev/null | grep -c .)"
         fi
         printf '| %s | %s | %s | %s |\n' "$ag_p" "${ag_last:-never}" "$ag_cnt" "$ag_chg"
-      done <<<"$ag_paths"
+      done <<<"$ag_summary"
     fi
     ag_wlog="$(_rt_wrapfuse_log "$ag_dir")"
     if [ -f "$ag_wlog" ]; then

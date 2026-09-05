@@ -206,7 +206,8 @@ reduce $specs[] as $s (.;
     .report += [["KEPT", $s.event, $s.matcher]]
   end
 ) |
-.obj.hooks = (.obj.hooks | with_entries(select(.value | length > 0))) |
+($specs | map(.event) | unique) as $our_events |
+.obj.hooks = (.obj.hooks | with_entries(. as $e | select(($e.value | length > 0) or ($our_events | index($e.key) | not)))) |
 {new: .obj, report: (.report | map(@tsv) | join("\n"))}
 '
   removal="$(jq --argjson specs "$hook_specs" "$remove_prog" <<<"$current")"

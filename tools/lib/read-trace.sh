@@ -33,34 +33,25 @@
 # comparisons — same fix install-pre-pr-gate.sh already applies to its own bootstrap-clone guard).
 _rt_tmpdir() { local t="${TMPDIR:-/tmp}"; printf '%s' "${t%/}"; }
 
-# _rt_resolve_top_cached DIR — memoizes _impact_resolve_top's result for the CURRENT PROCESS.
-# Without this, a single `log-tool` hook invocation resolves the main-checkout top 2-3 times
-# independently (once each via _rt_normalize_path, _rt_key, and _rt_store_dir) — each resolution
-# forks `git worktree list --porcelain`, on a hook that fires on every Read/Edit/Write/NotebookEdit
-# in a gated session (found by this ticket's own /simplify efficiency pass; tools/lib/impact-store.sh's
-# own header already documents fixing this exact anti-pattern once elsewhere, for a different pair of
-# call sites — this one reintroduced it for read-trace's own three). Safe as a plain global (not a
-# per-dir map): every real caller in this file resolves exactly one DIR per hook invocation, so a
-# same-dir cache hit is the only case that matters; a second DIR within one process (untested by any
-# current call site) just misses and re-resolves, never returns a wrong answer.
-_RT_TOP_CACHE_DIR=""
-_RT_TOP_CACHE_VAL=""
-_rt_resolve_top_cached() {
-  local dir="$1"
-  if [ "$dir" = "$_RT_TOP_CACHE_DIR" ]; then
-    printf '%s' "$_RT_TOP_CACHE_VAL"
-    return
-  fi
-  _RT_TOP_CACHE_VAL="$(_impact_resolve_top "$dir")"
-  _RT_TOP_CACHE_DIR="$dir"
-  printf '%s' "$_RT_TOP_CACHE_VAL"
+# _rt_project_id [DIR] [TOP] — impact_project_id's own one-line transform (physical top, '/' -> '-').
+# When TOP is already known (a caller that resolved it once for another reason), pass it to skip a
+# second `_impact_resolve_top` fork instead of resolving again.
+#
+# NOT a memoizing cache — an earlier draft of this file tried exactly that (a pair of process-global
+# `_RT_TOP_CACHE_*` variables written inside a helper), and it was dead on arrival: every real call
+# site here reaches this through command substitution (`x="$(...)"`), which forks a SUBSHELL, so a
+# write to a global inside it never reaches the parent — the "cache" silently never hit, on every
+# call, while its own comment claimed the opposite (confirmed live, /code-review high pass; this is
+# the exact "dead on arrival" anti-pattern tools/lib/impact-store.sh's own header already documents
+# once for `_impact_resolve_top` itself — reintroduced here one file over, ironically while explicitly
+# citing that history). A cache cannot survive this file's own call shape; an explicit parameter can —
+# see `log-tool` in tools/read-trace.sh, which resolves `top` exactly once per hook invocation and
+# threads it through every call below instead.
+_rt_project_id() {
+  local dir="${1:-.}" top="${2:-}"
+  [ -n "$top" ] || top="$(_impact_resolve_top "$dir")"
+  printf '%s' "$top" | tr '/' '-'
 }
-
-# _rt_project_id_cached DIR — impact_project_id's own one-line transform (physical top, '/' -> '-'),
-# recomputed here rather than calling impact_project_id itself so it can share the cache above —
-# impact_project_id (tools/lib/impact-store.sh) always resolves top fresh, with no cache hook to pass
-# one in without editing that shared, independently-tested file.
-_rt_project_id_cached() { printf '%s' "$(_rt_resolve_top_cached "${1:-.}")" | tr '/' '-'; }
 
 # _rt_branch [DIR] — DIR's current branch name, slug-safe ('/' -> '-'), or "detached" for a detached
 # HEAD (never legitimate on a /polish-style flow, but a read-trace fuse must still degrade to SOME
@@ -72,12 +63,12 @@ _rt_branch() {
   printf '%s' "$b" | tr '/' '-'
 }
 
-# _rt_key [DIR] — the (repo, branch) key every path below is built from: <project-id>__<branch-slug>.
-_rt_key() { printf '%s__%s' "$(_rt_project_id_cached "${1:-.}")" "$(_rt_branch "${1:-.}")"; }
+# _rt_key [DIR] [TOP] — the (repo, branch) key every path below is built from: <project-id>__<branch-slug>.
+_rt_key() { printf '%s__%s' "$(_rt_project_id "${1:-.}" "${2:-}")" "$(_rt_branch "${1:-.}")"; }
 
 # --- ephemeral, per-(repo,branch), $TMPDIR-resident ------------------------------------------------
-_rt_session_log() { printf '%s/keel-read-trace-%s.log' "$(_rt_tmpdir)" "$(_rt_key "${1:-.}")"; }
-_rt_wrapdone_path() { printf '%s/keel-read-trace-wrapdone-%s' "$(_rt_tmpdir)" "$(_rt_key "${1:-.}")"; }
+_rt_session_log() { printf '%s/keel-read-trace-%s.log' "$(_rt_tmpdir)" "$(_rt_key "${1:-.}" "${2:-}")"; }
+_rt_wrapdone_path() { printf '%s/keel-read-trace-wrapdone-%s' "$(_rt_tmpdir)" "$(_rt_key "${1:-.}" "${2:-}")"; }
 
 # --- persistent external store ----------------------------------------------------------------------
 # KEEL_READ_TRACE_STORE overrides the root outright (test isolation, same convention as
@@ -86,13 +77,13 @@ read_trace_store_root() {
   if [ -n "${KEEL_READ_TRACE_STORE:-}" ]; then printf '%s' "$KEEL_READ_TRACE_STORE"; return; fi
   printf '%s/.keel/read-trace' "${KEEL_HOME:-${HOME:?read-trace: set HOME, or export KEEL_HOME}/.claude}"
 }
-_rt_store_dir() { printf '%s/%s' "$(read_trace_store_root)" "$(_rt_project_id_cached "${1:-.}")"; }
-_rt_reads_log() { printf '%s/reads.log' "$(_rt_store_dir "${1:-.}")"; }
-_rt_wrapfuse_log() { printf '%s/wrap-fuse-events.log' "$(_rt_store_dir "${1:-.}")"; }
-_rt_wrapfuse_flag_dir() { printf '%s/wrap-fuse' "$(_rt_store_dir "${1:-.}")"; }
-_rt_wrapfuse_flag() { printf '%s/%s.flag' "$(_rt_wrapfuse_flag_dir "${1:-.}")" "$(_rt_branch "${1:-.}")"; }
+_rt_store_dir() { printf '%s/%s' "$(read_trace_store_root)" "$(_rt_project_id "${1:-.}" "${2:-}")"; }
+_rt_reads_log() { printf '%s/reads.log' "$(_rt_store_dir "${1:-.}" "${2:-}")"; }
+_rt_wrapfuse_log() { printf '%s/wrap-fuse-events.log' "$(_rt_store_dir "${1:-.}" "${2:-}")"; }
+_rt_wrapfuse_flag_dir() { printf '%s/wrap-fuse' "$(_rt_store_dir "${1:-.}" "${2:-}")"; }
+_rt_wrapfuse_flag() { printf '%s/%s.flag' "$(_rt_wrapfuse_flag_dir "${1:-.}" "${2:-}")" "$(_rt_branch "${1:-.}")"; }
 
-# _rt_normalize_path DIR RAW — a repo-relative path for logging, or the literal token "BACKLOG.md" for
+# _rt_normalize_path DIR RAW [TOP] — a repo-relative path for logging, or the literal token "BACKLOG.md" for
 # a main-checkout ticket-body read: that file is gitignored and main-checkout-only, so "repo-relative"
 # is undefined for exactly that surface (dir #387's own note) — a canonical single token stands in for
 # whichever physical path a worktree session read it through, so the same doc reads the same across
@@ -107,10 +98,10 @@ _rt_wrapfuse_flag() { printf '%s/%s.flag' "$(_rt_wrapfuse_flag_dir "${1:-.}")" "
 # under it reads as "outside the repo" — reproduced live, not a hypothetical. Fixed by re-resolving
 # RAW's own directory to ITS physical form (`cd ... && pwd -P`) before retrying the prefix match once.
 _rt_normalize_path() {
-  local dir="$1" raw="$2" top base raw_dir raw_phys
+  local dir="$1" raw="$2" top="${3:-}" base raw_dir raw_phys
   base="$(basename -- "$raw" 2>/dev/null)"
   if [ "$base" = "BACKLOG.md" ]; then printf 'BACKLOG.md'; return; fi
-  top="$(_rt_resolve_top_cached "$dir")"
+  [ -n "$top" ] || top="$(_impact_resolve_top "$dir")"
   case "$raw" in
     "$top"/*) printf '%s' "${raw#"$top"/}"; return ;;
   esac
@@ -145,8 +136,13 @@ _rt_in_doc_scope() {
 # produce). The session-scoped dedup already happened at the EPHEMERAL gate in _rt_record_read below;
 # this call only ever runs once that gate has already confirmed "not yet seen this session".
 _rt_plain_append() {
-  local file="$1" kind="$2" path="$3"
-  mkdir -p "$(dirname "$file")"
+  local file="$1" kind="$2" path="$3" dir
+  dir="$(dirname "$file")"
+  # -d first, mkdir only on a genuine miss: this runs on every dedup-miss in log-tool's hot path (the
+  # first Read of each doc, every distinct mutated path per session), and the target directory already
+  # exists on every call but the very first — a `-d` test is a builtin, `dirname`+`mkdir` are forks
+  # (found by this ticket's own /code-review high pass).
+  [ -d "$dir" ] || mkdir -p "$dir"
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" "$path" >> "$file"
 }
 
@@ -165,20 +161,22 @@ _rt_dedup_append() {
   _rt_plain_append "$file" "$kind" "$path"
 }
 
-# _rt_record_read DIR PATH — the session-scoped dedup gate is the EPHEMERAL log: a path already seen
-# this session is not re-appended to either log, so the persistent cross-release log gets exactly one
-# fresh row per path per session (not one per Read call) — a doc opened 50 times in one session still
-# contributes one row to its own cross-release history. The persistent write is a PLAIN append, not a
-# dedup one — see _rt_plain_append's own comment for the cross-session data-loss bug that distinction
-# fixes (confirmed live, review round, prior to this fix landing).
+# _rt_record_read DIR PATH [TOP] — the session-scoped dedup gate is the EPHEMERAL log: a path already
+# seen this session is not re-appended to either log, so the persistent cross-release log gets exactly
+# one fresh row per path per session (not one per Read call) — a doc opened 50 times in one session
+# still contributes one row to its own cross-release history. The persistent write is a PLAIN append,
+# not a dedup one — see _rt_plain_append's own comment for the cross-session data-loss bug that
+# distinction fixes (confirmed live, review round, prior to this fix landing). TOP, when the caller
+# already resolved it, is threaded through to _rt_session_log/_rt_reads_log to avoid a second
+# `_impact_resolve_top` fork — see _rt_project_id's own comment for why a cache can't do this instead.
 _rt_record_read() {
-  local dir="$1" path="$2"
-  _rt_dedup_append "$(_rt_session_log "$dir")" read "$path" || return 0
-  _rt_plain_append "$(_rt_reads_log "$dir")" read "$path"
+  local dir="$1" path="$2" top="${3:-}"
+  _rt_dedup_append "$(_rt_session_log "$dir" "$top")" read "$path" || return 0
+  _rt_plain_append "$(_rt_reads_log "$dir" "$top")" read "$path"
 }
 
-# _rt_record_mutate DIR PATH — ephemeral-only: feeds the wrap-fuse's "did this session mutate" check.
-# Not written to the persistent store — the tier-2 aggregate's per-doc table is about READS; the
-# wrap-fuse's own tier-2 signal (mutating sessions that ended without a wrap) is a separate counter,
-# fed by `read-trace.sh session-end`, not by this per-path log.
-_rt_record_mutate() { _rt_dedup_append "$(_rt_session_log "$1")" mutate "$2" >/dev/null; }
+# _rt_record_mutate DIR PATH [TOP] — ephemeral-only: feeds the wrap-fuse's "did this session mutate"
+# check. Not written to the persistent store — the tier-2 aggregate's per-doc table is about READS;
+# the wrap-fuse's own tier-2 signal (mutating sessions that ended without a wrap) is a separate
+# counter, fed by `read-trace.sh session-end`, not by this per-path log.
+_rt_record_mutate() { _rt_dedup_append "$(_rt_session_log "$1" "$3")" mutate "$2" >/dev/null; }

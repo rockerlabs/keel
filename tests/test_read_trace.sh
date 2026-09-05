@@ -63,6 +63,18 @@ run bash -c ". '$lib'; _rt_in_doc_scope '$cmd_md_path'"; check_status "doc-scope
 run bash -c ". '$lib'; _rt_in_doc_scope 'BACKLOG.md'"; check_status "doc-scope: BACKLOG.md is in scope" 0 "$STATUS"
 run bash -c ". '$lib'; _rt_in_doc_scope 'src.sh'"; check_status "doc-scope: ordinary source is OUT of scope" 1 "$STATUS"
 
+# --- lib: _rt_project_id — with and without a pre-resolved TOP must agree ------------------------------
+# Regression pin: an earlier draft cached _rt_resolve_top_cached's result in a process-global, which
+# never actually cached anything (every real call goes through command substitution, forking a
+# subshell whose writes never reach the parent) — replaced with an explicit optional TOP parameter
+# instead. This pins that the explicit-TOP path produces the SAME id as the resolve-fresh path, so a
+# caller threading a pre-resolved top through (log-tool's hot path) never diverges from one that doesn't.
+d="$(mkrepo)"
+run bash -c ". '$lib'; _rt_project_id '$d'"
+default_id="$OUT"
+run bash -c ". '$lib'; top=\"\$(_impact_resolve_top '$d')\"; _rt_project_id '$d' \"\$top\""
+check_status "_rt_project_id with an explicit TOP agrees with resolve-fresh" "$default_id" "$OUT"
+
 # --- log-tool: SILENCE (ECONOMICS requirement (1) — a printing hook is a red test) --------------------
 d="$(mkrepo)"; rt_env silence
 json="$(read_json "$d" Read "$d/docs/foo.md")"
@@ -170,6 +182,24 @@ tp="$SANDBOX/transcript.delegation.jsonl"
 printf 'YOUR TICKET: dir #999\nDELEGATION RUN: wrap duties are centralized\n' > "$tp"
 feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
 check_nofile "a DELEGATION RUN worker's mutation writes no wrap-fuse-events.log" "$RT_STORE"/*/wrap-fuse-events.log
+
+# --- session-end: an ORDINARY session that later mentions "DELEGATION RUN" (e.g. editing/discussing
+# this very file) is NOT misclassified as a delegation worker ------------------------------------------
+# Regression pin: an earlier draft grepped the WHOLE transcript, so any session whose later turns
+# happen to contain the literal marker string (this file's own source, or a chat about this ticket)
+# would be silently excluded from the fuse whose entire job is catching a forgotten /wrap. Fixed by
+# scoping the match to the transcript's opening turn (where a genuine worker brief actually lives).
+d="$(mkrepo)"; rt_env notdelegation
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tp="$SANDBOX/transcript.notdelegation.jsonl"
+{
+  printf 'ordinary session, no delegation brief\n'
+  printf 'line 2\nline 3\nline 4\nline 5\n'
+  printf 'later turn: discussing read-trace.sh, which greps for the string DELEGATION RUN\n'
+} > "$tp"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_contains "an ordinary session mentioning the marker LATE is still tracked as no-wrap" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
 
 # --- startup: resets the session log and banners+clears a pending flag ---------------------------------
 d="$(mkrepo)"; rt_env startup

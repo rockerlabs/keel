@@ -110,4 +110,21 @@ run "$installer" --uninstall "$urepo"
 check_status "second --uninstall -> nothing left to remove" 0 "$STATUS"
 check_contains "second --uninstall says so" "$OUT" "nothing to remove"
 
+# --- --uninstall must not silently delete an UNRELATED empty hook array ------------------------------
+# Regression pin: the removal jq program used to prune EVERY empty array under .hooks after removing
+# ours, not just the ones this installer's own specs name — so an unrelated event some other tool had
+# wired as an empty array (e.g. a temporarily-disabled hook) vanished too, contradicting this file's
+# own "everything else...left exactly as it was" claim. Fixed by scoping the post-removal prune to only
+# the event names this installer's own hook_specs ever touches.
+erepo="$(new_repo)"
+mkdir -p "$erepo/.claude"
+cat > "$erepo/.claude/settings.json" <<'EOF'
+{"hooks":{"Notification":[]}}
+EOF
+run "$installer" "$erepo"
+check_status "install over a settings.json with an unrelated empty hook array -> exit 0" 0 "$STATUS"
+run "$installer" --uninstall "$erepo"
+check_status "--uninstall -> exit 0" 0 "$STATUS"
+check_contains "the unrelated empty Notification array survives uninstall" "$(cat "$erepo/.claude/settings.json")" '"Notification"'
+
 summary
