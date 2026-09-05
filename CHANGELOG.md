@@ -46,11 +46,17 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   uninstalls never triggers. `uninstall.sh`'s pre-`rmdir` housekeeping cleared only
   `install-manifest.*` and `foreign-core.*`, so the leftover scratch file made the final `rmdir` fail
   and the `|| true` swallowed it, silently. Fixed by sweeping both scratch globs alongside the
-  existing housekeeping. Taken up with it: the same `rmdir ... || true` also silently accepted every
-  OTHER removal failure, which is what kept this invisible for a release cycle — a kept `.keel/` is
-  now named, listing what still lives inside it, instead of the failure being swallowed unreported.
-  Regression test added (`tests/test_uninstall.sh` B7c: a crashed install's stranded scratch no
-  longer blocks `.keel` removal; B7b: a genuinely kept `.keel/` now names the file that kept it).
+  existing housekeeping — but only when `install.sh`'s own run-duration lock (dir #350,
+  `$HOME_DIR/.install.lock`) is not currently held by a LIVE process: `install.sh` only ever sweeps
+  this same scratch itself while holding that lock, precisely so a concurrent process can't delete a
+  run's own in-flight scratch out from under it, and an unconditional sweep here would have reopened
+  exactly that race through a second, lock-unaware binary. Taken up with it: the same
+  `rmdir ... || true` also silently accepted every OTHER removal failure, which is what kept this
+  invisible for a release cycle — a kept `.keel/` is now named, listing what still lives inside it,
+  instead of the failure being swallowed unreported. Regression tests added
+  (`tests/test_uninstall.sh` B7c: a crashed install's stranded scratch no longer blocks `.keel`
+  removal; B7b: a genuinely kept `.keel/` now names the file that kept it; B7d: a LIVE install's own
+  in-flight scratch survives a concurrent uninstall's sweep instead of being reclaimed).
 - **dir #385: `/delta-audit <version>` — an entrypoint command for the RC pass, closing the loudest
   v0.8.2 failure structurally instead of by memory.** The v0.8.2 release manager cited
   `docs/release-audit.md` in tickets all day without opening it, and was saved from tagging without an
