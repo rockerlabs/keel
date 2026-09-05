@@ -12,7 +12,8 @@ green, before the tag.
 
 **[`commands/delta-audit.md`](../commands/delta-audit.md) is the entrypoint** — a thin `/delta-audit
 <version>` checklist over this doc, so the procedure below is run as a structural step rather than
-cited from memory (`dir #385`).
+cited from memory (`dir #385`; on an install where the adopter already owns the `/delta-audit` name,
+`install.sh`'s generic collision-alias mechanism ships it as `/keel-delta-audit` instead).
 
 Three siblings, and the boundary with each:
 
