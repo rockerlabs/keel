@@ -109,7 +109,10 @@ _rt_in_doc_scope() {
 # _rt_dedup_append FILE KIND PATH — append "<ts>\t<KIND>\t<PATH>" unless that exact KIND+PATH pair is
 # already a row in FILE. Returns 0 when it wrote a new row, 1 when the row was already present — the
 # ECONOMICS block's "dedups at write time, one row per path" requirement, and the gate every other
-# writer below composes with to decide whether to ALSO write elsewhere (see _rt_record_read).
+# writer below composes with to decide whether to ALSO write elsewhere (see _rt_record_read). This is
+# an EPHEMERAL-log-only helper: a file that must accumulate one row per SESSION over its whole
+# lifetime (the persistent reads.log) must never be deduped against its own full history this way —
+# see _rt_plain_append and the incident this split fixes, in _rt_record_read's own comment.
 _rt_dedup_append() {
   local file="$1" kind="$2" path="$3"
   if [ -f "$file" ] && awk -F'\t' -v k="$kind" -v p="$path" '$2==k && $3==p{f=1} END{exit !f}' "$file" 2>/dev/null; then
@@ -119,14 +122,31 @@ _rt_dedup_append() {
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" "$path" >> "$file"
 }
 
+# _rt_plain_append FILE KIND PATH — unconditional append, no dedup against FILE's own content. The
+# persistent reads.log's writer: it must accumulate one row per SESSION across its whole cross-release
+# lifetime, so gating it on "does this kind+path already exist ANYWHERE in FILE" (what
+# _rt_dedup_append does) would cap a path's history at its first-ever read forever — every later
+# session's fresh read of the same doc silently dropped, freezing tier-2's "last read" at that first
+# date and its "reads" count at 1 (confirmed live, review round: a doc read every day would eventually
+# read as dead — a false positive on the one signal this mechanism exists to produce). The session-scoped
+# dedup already happened at the EPHEMERAL gate in _rt_record_read below; this call only ever runs once
+# that gate has already confirmed "not yet seen this session".
+_rt_plain_append() {
+  local file="$1" kind="$2" path="$3"
+  mkdir -p "$(dirname "$file")"
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" "$path" >> "$file"
+}
+
 # _rt_record_read DIR PATH — the session-scoped dedup gate is the EPHEMERAL log: a path already seen
 # this session is not re-appended to either log, so the persistent cross-release log gets exactly one
 # fresh row per path per session (not one per Read call) — a doc opened 50 times in one session still
-# contributes one row to its own cross-release history.
+# contributes one row to its own cross-release history. The persistent write is a PLAIN append, not a
+# dedup one — see _rt_plain_append's own comment for the cross-session data-loss bug that distinction
+# fixes (confirmed live, review round, prior to this fix landing).
 _rt_record_read() {
   local dir="$1" path="$2"
   _rt_dedup_append "$(_rt_session_log "$dir")" read "$path" || return 0
-  _rt_dedup_append "$(_rt_reads_log "$dir")" read "$path" >/dev/null
+  _rt_plain_append "$(_rt_reads_log "$dir")" read "$path"
 }
 
 # _rt_record_mutate DIR PATH — ephemeral-only: feeds the wrap-fuse's "did this session mutate" check.

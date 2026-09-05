@@ -95,6 +95,30 @@ check_status "3 identical reads -> exactly 1 row in the session log" 1 "$n"
 n2="$(grep -c . "$RT_STORE"/*/reads.log 2>/dev/null || echo 0)"
 check_status "3 identical reads -> exactly 1 row in the PERSISTENT reads.log too" 1 "$n2"
 
+# --- CROSS-SESSION regression: the persistent log must NOT dedup across sessions ----------------------
+# Confirmed live (manager review round, before this fix landed): _rt_record_read used to gate the
+# PERSISTENT reads.log write with the same dedup helper as the ephemeral one, which checks "does this
+# kind+path exist ANYWHERE in the file" — after the first-ever read of a path, every LATER session's
+# fresh read of that same path was silently dropped, freezing tier-2's "last read" at the first date
+# forever and "reads" at 1. The single-session dedup test above alone stays green under that bug (it
+# never simulates a second session), which is exactly why this second case exists.
+d="$(mkrepo)"; rt_env crosssession
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+first_ts="$(awk -F'\t' '{print $1}' "$RT_STORE"/*/reads.log 2>/dev/null)"
+# Simulate the next session the same way the real SessionStart(startup) hook does: it resets THIS
+# (repo,branch)'s ephemeral log, which is the dedup gate _rt_record_read reads.
+feed_hook "$(jq -n --arg cwd "$d" '{hook_event_name:"SessionStart", cwd:$cwd}')" startup
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+n3="$(grep -c . "$RT_STORE"/*/reads.log 2>/dev/null || printf '0')"
+check_status "the SAME path read in a SECOND session -> 2 rows total in the persistent log, not 1" 2 "$n3"
+last_ts="$(awk -F'\t' 'END{print $1}' "$RT_STORE"/*/reads.log 2>/dev/null)"
+# Not-strictly-less-than, not strictly-greater-than: the two writes can legitimately land in the same
+# UTC second (1-second timestamp resolution) — same tie-tolerant comparison as read-trace.sh's own
+# wrap-fuse classifier uses, for the same reason.
+check_status "the second session's row is at or after the first (never earlier)" 1 "$( ! [[ "$last_ts" < "$first_ts" ]] && printf 1 || printf 0 )"
+run_hook aggregate "$d"
+check_contains "aggregate now reports reads=2 for the doc, not frozen at 1" "$OUT" "| docs/foo.md | $last_ts | 2 |"
+
 # --- docs-line: format + "none" -------------------------------------------------------------------
 d="$(mkrepo)"; rt_env docsline
 run_hook docs-line "$d"
