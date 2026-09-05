@@ -62,6 +62,18 @@ pin "R7 states cost is unmeasured/a real trade, not a free win" \
   "$doc" 'not a free win' \
   "expected R7 to preserve the overridden gate's own unmeasured-cost caveat, not just the requirement to record one"
 
+# --- R6's own felt addition: queued is not processed, countered by a per-amendment ACK requirement
+# (a live crossed-message incident from this very release's own build) -----------------------------
+pin "R6 states queued is not processed" "$doc" \
+  'Queued is not processed, and this needs its own' \
+  "expected R6 to name this as its own countermeasure, distinct from the turn-discipline style rule"
+pin "R6 requires a per-amendment ACK" "$doc" \
+  'explicit **per-amendment ACK**' \
+  "expected R6 to state the concrete countermeasure, not just describe the failure mode"
+pin "R6's ACK requirement treats an un-acked amendment as undelivered" "$doc" \
+  'treat any brief amendment without an acknowledgment from its recipient as undelivered' \
+  "expected the operative rule, not just the incident description"
+
 # --- operator-decided requirement: R3's post-launch model/effort verify step, folded in after the
 # original build (an operator-decided requirement is exactly the class this binding test exists to
 # keep from being silently dropped in a later rewrite) ----------------------------------------------

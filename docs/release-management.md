@@ -210,7 +210,13 @@ incidental and has already broken mid-release once.
   note per message, or the transport chatter eats the low-noise property that's the point.
 - **Explicit turn discipline.** Do not restate status while a reply is outstanding — a style rule
   alone will keep paying the crossed-message toll; a project with a facility for it should carry an
-  acknowledged token or a sequence number instead.
+  acknowledged token or a sequence number instead. **Queued is not processed, and this needs its own
+  countermeasure, not just the style rule above.** A manager amendment sent while a worker is mid-build
+  can queue behind that worker's whole build turn and go silently unprocessed for the length of it —
+  this happened twice inside one release's own build of this very requirement, each amendment crossing
+  the worker's next report before the worker had seen it. The fix is an explicit **per-amendment ACK**:
+  treat any brief amendment without an acknowledgment from its recipient as undelivered, and re-send or
+  escalate rather than assuming a queued message was read.
 
 ## R7 — the cost line
 
