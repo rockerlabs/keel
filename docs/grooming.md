@@ -123,11 +123,12 @@ owner, never become anything:
   (`docs/verification-economics.md` §4's filing bar) belong on a durable, re-read list, never only in
   an audit report body — that doc's own worked case is a defect noticed three separate times, in three
   different report bodies, and never once scheduled. Keel's instance is a `## Standing list` section in
-  `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract — named, and
-  given its create-if-absent duty, by `commands/delta-audit.md`'s A6; a different project names its own
-  durable, re-read list here instead — a `KNOWN ISSUES` section, a papercuts ticket, whatever it already
-  keeps and actually reads from. Re-read it each cycle: a line that recurs across cycles promotes to a
-  ticket; a line a later change moots gets dropped with a one-line reason rather than left standing.
+  `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract.
+  `commands/delta-audit.md`'s A6 already names that section and gives it its create-if-absent duty. A
+  different project names its own durable, re-read list here instead — a `KNOWN ISSUES` section, a
+  papercuts ticket, whatever it already keeps and actually reads from. Re-read it each cycle: a line
+  that recurs across cycles promotes to a ticket; a line a later change moots gets dropped with a
+  one-line reason rather than left standing.
 - **(b) The ideas file.** A project's own free-form ideas/brainstorm file (where one exists) gets a
   promote-or-drop pass each cycle — its own header may already promise a periodic review that nothing
   currently owns; this procedure is the "periodically" that gets an owner.

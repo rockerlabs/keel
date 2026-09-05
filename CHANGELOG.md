@@ -84,9 +84,9 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   the exact failure that made an earlier hand-written re-tag list wrong for 11 of 16 tickets; the
   hygiene sweep that calls the pool report/drain trigger, the staleness marker, the archive re-sweep and
   dedup/absorption with evidence, plus a new accumulator triage for three places findings were dying
-  unscheduled — a `## Standing list` section in `BACKLOG.md`, the ideas file, and closed audit-run
-  directories (its own seed text — the v0.8.2 delta audit's `no-action` dispositions — is delivered
-  separately, since `BACKLOG.md` is gitignored and main-checkout-only, a file this commit cannot carry);
+  unscheduled — a `## Standing list` section in `BACKLOG.md` (its seed text — the v0.8.2 delta audit's
+  `no-action` dispositions — is delivered separately, since `BACKLOG.md` is gitignored and
+  main-checkout-only, a file this commit cannot carry), the ideas file, and closed audit-run directories;
   a mandatory fresh-reviewer adjudication round, the one mechanism that actually caught the 2026-09-03
   groom's real defects (17 findings, two trimmed on re-verification); and a releases cross-run record
   (`private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`, likewise seeded separately
