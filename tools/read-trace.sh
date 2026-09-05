@@ -92,22 +92,24 @@ EOF
 }
 
 case "${1:-}" in
-  -h|--help) usage; exit 0 ;;
-  "") usage >&2; exit 2 ;;
-esac
+  -h|--help)
+    usage; exit 0 ;;
+  "")
+    usage >&2; exit 2 ;;
 
-case "$1" in
   log-tool)
     # PostToolUse(Read|Edit|Write|NotebookEdit) — MUST stay silent (ECONOMICS requirement (1), pinned
     # by test): any parse failure, missing jq, or unrecognized shape is a silent no-op, same discipline
     # as tools/pre-pr-gate.sh's own skill-trace — a missed row is a residual limit, never a false
     # signal, and never a printed line.
     command -v jq >/dev/null 2>&1 || exit 0
-    lt_input=$(cat 2>/dev/null)
     # \x1f, not tab (same reasoning as pre-pr-gate.sh's skill-trace): a NotebookEdit event has no
     # .tool_input.file_path, and a Read/Edit/Write event has no .tool_input.notebook_path — both empty
-    # fields sitting between populated ones, which `read` under IFS=tab would collapse.
-    IFS=$'\x1f' read -r lt_cwd lt_tool lt_path lt_nbpath <<<"$(printf '%s' "$lt_input" | jq -r '
+    # fields sitting between populated ones, which `read` under IFS=tab would collapse. jq reads the
+    # hook's JSON straight off this process's own stdin (no intermediate cat/variable — one fewer
+    # fork on a hook that fires on every logged tool call; found by this ticket's own /simplify
+    # efficiency pass).
+    IFS=$'\x1f' read -r lt_cwd lt_tool lt_path lt_nbpath <<<"$(jq -r '
       def str: if . == null then "" elif type == "string" then . else tostring end;
       [(.cwd|str), (.tool_name|str), (.tool_input.file_path|str), (.tool_input.notebook_path|str)]
       | join("")' 2>/dev/null)"
@@ -150,7 +152,9 @@ case "$1" in
         rm -f "$st_f"
       done
     fi
-    if [ -n "$st_names" ] && command -v jq >/dev/null 2>&1; then
+    if [ -n "$st_names" ]; then
+      # jq's own presence is already established by this case's own top-of-block guard — no need to
+      # re-check it here (found by this ticket's own /simplify simplification pass).
       jq -cn --arg m "read-trace (dir #387): session(s) ended with changes and no /wrap on: $st_names" \
         '{systemMessage:$m}'
     fi
@@ -161,10 +165,11 @@ case "$1" in
     # SessionEnd (any end reason) — silent by construction (see `startup`'s own comment on why: this
     # event's stdout reaches nobody). Writes state only.
     command -v jq >/dev/null 2>&1 || exit 0
-    se_input=$(cat 2>/dev/null)
-    se_cwd="$(printf '%s' "$se_input" | jq -r '.cwd // empty' 2>/dev/null)"
+    # One jq call for both fields, reading stdin directly (same one-call-per-field-set discipline as
+    # log-tool and pre-pr-gate.sh's own skill-trace — this used to be two separate jq invocations,
+    # found by this ticket's own /simplify efficiency pass).
+    IFS=$'\x1f' read -r se_cwd se_transcript <<<"$(jq -r '[(.cwd // ""), (.transcript_path // "")] | join("")' 2>/dev/null)"
     [ -n "$se_cwd" ] || se_cwd="$PWD"
-    se_transcript="$(printf '%s' "$se_input" | jq -r '.transcript_path // empty' 2>/dev/null)"
     se_slog="$(_rt_session_log "$se_cwd")"
     # Exclusion 1 — read-only session: no mutating row at all means nothing for the fuse to flag.
     se_last_mutate="$( [ -f "$se_slog" ] && awk -F'\t' '$2=="mutate"{t=$1} END{print t}' "$se_slog" 2>/dev/null )"
@@ -172,8 +177,13 @@ case "$1" in
     # Exclusion 2 — a DELEGATION RUN worker is FORBIDDEN to wrap by its own brief ("wrap duties are
     # centralized"); no dedicated hook field names this (confirmed against the docs — a hook gets no
     # prompt/system-prompt field), so this greps the session's own transcript for the literal marker
-    # every such worker's brief carries verbatim (dir #387's own resolved TO VERIFY).
-    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && grep -q "DELEGATION RUN" "$se_transcript" 2>/dev/null; then
+    # every such worker's brief carries verbatim (dir #387's own resolved TO VERIFY). This is a
+    # repo-wide, already test-pinned convention — not a bespoke string invented for this file — so it
+    # leans on the same exact-wording discipline docs/delegation.md and commands/manage-release.md's
+    # own worker-brief templates already mandate for the literal "DELEGATION RUN" line (found by this
+    # ticket's own /simplify altitude pass: worth naming the dependency here, since a future rewording
+    # of those templates would silently break this exclusion with no shared constant to catch it).
+    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && grep -qF "DELEGATION RUN" "$se_transcript" 2>/dev/null; then
       exit 0
     fi
     se_wd="$(_rt_wrapdone_path "$se_cwd")"
@@ -233,13 +243,17 @@ case "$1" in
     printf '| doc | last read | reads | surface changes since |\n'
     printf '| --- | --- | --- | --- |\n'
     if [ -f "$ag_rlog" ]; then
+      # Resolved ONCE, not once per doc row (it never varies across paths in the same $ag_dir) —
+      # found by this ticket's own /simplify efficiency pass.
+      ag_is_repo=0
+      git -C "$ag_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 && ag_is_repo=1
       ag_paths="$(awk -F'\t' '$2=="read"{print $3}' "$ag_rlog" 2>/dev/null | LC_ALL=C sort -u)"
       while IFS= read -r ag_p; do
         [ -n "$ag_p" ] || continue
         ag_last="$(awk -F'\t' -v p="$ag_p" '$2=="read" && $3==p{d=$1} END{print d}' "$ag_rlog")"
         ag_cnt="$(awk -F'\t' -v p="$ag_p" '$2=="read" && $3==p' "$ag_rlog" | grep -c .)"
         ag_chg="-"
-        if [ "$ag_p" != "BACKLOG.md" ] && git -C "$ag_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        if [ "$ag_p" != "BACKLOG.md" ] && [ "$ag_is_repo" -eq 1 ]; then
           ag_since="${ag_last%%T*}"
           ag_chg="$(git -C "$ag_dir" log --oneline --since="$ag_since" -- "$ag_p" 2>/dev/null | grep -c .)"
         fi
