@@ -249,7 +249,11 @@ the working directory carries no backup contour.
 **The session-limit flow**, ask-then-arithmetic, run before every wave:
 
 1. **Ask the operator for their live remaining-window percentage.** The agent cannot see it — this is a
-   number only the human can supply.
+   number only the human can supply. **Named override (`dir #385`'s A3 amendment, `docs/delta-audit.md`
+   §7):** a delta audit reads the token-SPEND side of this from its own project's on-disk usage data
+   where that exists, and asks the operator only for the remaining-WINDOW figure this step still can't
+   derive — never a silent contradiction between the two docs, this step's own "ask" stays the fallback
+   for what isn't derivable.
 2. **Budget the wave** as remaining minus roughly 5%, held back as the orchestrator's own reserve — it
    still has to arbitrate and record after the wave lands.
 3. **Pilot two units spanning the cost envelope, and pilot on a work-dense unit, not just a big one.**

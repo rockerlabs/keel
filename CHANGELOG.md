@@ -24,6 +24,27 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   now named, listing what still lives inside it, instead of the failure being swallowed unreported.
   Regression test added (`tests/test_uninstall.sh` B7c: a crashed install's stranded scratch no
   longer blocks `.keel` removal; B7b: a genuinely kept `.keel/` now names the file that kept it).
+- **dir #385: `/delta-audit <version>` — an entrypoint command for the RC pass, closing the loudest
+  v0.8.2 failure structurally instead of by memory.** The v0.8.2 release manager cited
+  `docs/release-audit.md` in tickets all day without opening it, and was saved from tagging without an
+  RC audit only by the operator. `commands/delta-audit.md` is a thin, `/go`-sized checklist (A1-A7) that
+  orchestrates `docs/delta-audit.md`'s roles and legs from the invoking session, adopting the Protocol,
+  role table, and session prompts by reference rather than restating them: reading the doc and any
+  operator brief before resolving the anchor live (A1); deriving the universe mechanically via
+  `tools/delta-audit/derive.sh` (A2); a budget flow before any wave, now reading token-spend data where
+  a project's own on-disk usage data exists and asking the operator only for the remaining-window figure
+  that stays undeliverable (A3, with a matching named-override cross-edit to
+  `docs/delegation.md`'s session-limit flow so the two docs don't silently disagree); the diversity leg
+  as non-waivable except by an explicit, recorded operator decision (A4); Fixers as real, never-subagent
+  sessions, manager-launched inside a managed release (A5); the run record plus a harvest step onto
+  `BACKLOG.md`'s `## Standing list` section (A6); and a GO verdict that hands the operator a
+  copy-paste-ready tag/release command block with an already-composed notes file, never a pointer back
+  to the checklist (A7). `docs/delta-audit.md` §1 now names the command as its entrypoint, so doc and
+  command point at each other and neither can drift silently alone.
+  `tests/test_delta_audit_command.sh` pins the mutual reference and the four checklist items most
+  likely to be silently dropped in a rewrite (A3/A4/A6/A7). dir #367's R9 close-checklist clause
+  already required `/delta-audit <version>` before the tag, cross-edited by this ticket's own design
+  fold; this merge is what makes that clause runnable rather than aspirational.
 
 ## [0.8.2] — 2026-09-04
 
