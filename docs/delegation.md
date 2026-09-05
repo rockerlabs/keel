@@ -27,6 +27,14 @@ wires its own automation around them. Mechanizing any part of this is later work
 | **Verifier** | spawned subagent, a few in parallel | mid tier, **high** (above Worker's) | the `verdict:` lines of the units it was given |
 | **Mutator** | a real, operator-launched session — **never** a subagent | mid tier, medium | one unit of gated mutation |
 
+**Named override (`dir #367`'s R3 soft form):** inside a managed release, the release manager may
+launch a Mutator session itself, where the harness supports launching a real session directly, instead
+of handing a prompt to the operator to paste — one health-line report per launch, and the operator can
+revoke to manual launching at any time. What this table's "operator-launched" wording actually
+protects is **gatedness** — a Mutator passing through your project's own commit/PR/merge gates — not
+literally who typed the launch command. See [`docs/release-management.md`](release-management.md) R3
+for the full requirement.
+
 Two of those assignments are load-bearing, and here's why: finding something worth flagging is cheaper
 than proving it right or wrong, and a wrong verdict is the one thing nothing downstream re-checks — so
 the higher effort goes to verification, not discovery. And a mutator is the only role that has to pass
@@ -354,3 +362,7 @@ Beyond the worked example itself, [`docs/drydock.md`](drydock.md) ships a full s
 templates (auditor, code-auditor, verifier, fixer) — a second, audit-specific reference alongside the
 generic ones above, worth a look if your application is close enough to auditing to start from theirs
 instead.
+
+For coordinating **mutating peer sessions** across a whole release — not this doc's own read-only
+subagent fan-out — see [`docs/release-management.md`](release-management.md), which sits in the gap
+between this doc and [`docs/parallel-sessions.md`](parallel-sessions.md).

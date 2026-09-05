@@ -51,7 +51,11 @@ Never rely on the implicit shell cwd as proof of which working tree you are in.
 **Claim step (right after cutting/confirming the feature branch):** write `⏳ IN FLIGHT (YYYY-MM-DD,
 branch <name>)` onto the ticket's own heading line in the project's backlog file, resolved at the
 **main checkout root** (per the `dir #34` worktree rule above). On merge, the closing sweep replaces
-this with ✅ (existing convention) — don't leave both markers on the same heading. **Come back and
+this with ✅ (existing convention) — don't leave both markers on the same heading. **Named override
+inside a managed release (`dir #367` R8):** the release manager is the single writer to the backlog
+file for the whole release — a worker inside a managed release does NOT write this marker itself;
+request the write through the manager instead, per your brief. This step as written is the standalone
+default. **Come back and
 extend this marker** once the next rail decides — `, tests: first` or `, tests: infeasible — <reason>`:
 the decision doesn't exist yet at claim time, so writing the field now would leave a placeholder
 standing for the ticket's whole life, which is worse than the missing field.

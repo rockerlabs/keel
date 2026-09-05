@@ -65,7 +65,8 @@ check_absent "linked FRAMEWORK.md's manifest record no longer carries the old '-
 run "$doctor" --install "$HOME/.claude"
 check_status "doctor --install on a complete install → exit 0" 0 "$STATUS"
 # deliberate change-detector: shipping (or skipping) another command MUST consciously bump this count
-check_contains "doctor reports full command coverage" "$OUT" "commands: 10 of 10 shipped are wired"
+# dir #367: commands/manage-release.md ships, bumping the count 10 -> 11.
+check_contains "doctor reports full command coverage" "$OUT" "commands: 11 of 11 shipped are wired"
 check_contains "doctor sees the linked core" "$OUT" "core rails: linked"
 # dir #68 pairing check: polish.md is wired but this install has no --no-hooks-skipped gate — WARN.
 check_contains "doctor flags the shipped-but-unwired gate" "$OUT" "no machine-global gate is wired"
