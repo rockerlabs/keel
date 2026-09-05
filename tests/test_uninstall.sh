@@ -427,6 +427,22 @@ unin --home "$B7C" --yes
 check_status "B7c uninstall exits 0" 0 "$STATUS"
 check_nodir "B7c .keel/ removed (crash scratch swept)" "$B7C/.keel"
 
+# --- B7d: dir #377's own fix must not reopen the dir #350 race it names in its comment — a LIVE
+# install.sh (holding $HOME_DIR/.install.lock) must keep its own in-flight scratch untouched by a
+# concurrent uninstall's sweep. Simulated the same way test_install.sh's own T18/T19 fixtures do:
+# hand-plant the lock directory with THIS TEST PROCESS's own pid (guaranteed live) as the holder.
+B7D="$SANDBOX/b7d-live-install-lock/.claude"
+inst --home "$B7D" --no-hooks
+check_status "B7d install succeeds" 0 "$STATUS"
+mkdir -p "$B7D/.install.lock"
+echo "$$" > "$B7D/.install.lock/pid"
+printf 'live-scratch\n' > "$B7D/.keel/.artifacts.99999"
+unin --home "$B7D" --yes
+check_status "B7d uninstall exits 0" 0 "$STATUS"
+check_file "B7d a live install's own scratch survives the concurrent uninstall's sweep" "$B7D/.keel/.artifacts.99999"
+check_dir "B7d .keel/ survives (a live install's own scratch still lives there)" "$B7D/.keel"
+rm -rf "$B7D/.install.lock"
+
 # --- B8: dir #124 reproduction — THE headline test -------------------------------------------------
 B8="$SANDBOX/b8-dir124/.claude"
 inst --home "$B8" --no-hooks

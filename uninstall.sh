@@ -1007,12 +1007,34 @@ if [ "$DRY_RUN" = 0 ]; then
     # adopter who is uninstalling never triggers. They are internal junk (never user-authored, never
     # backed up by install.sh's own normal-path cleanup either), so remove rather than take(): without
     # this the rmdir below fails on them and .keel survives a completed uninstall.
-    rm -f "$HOME_DIR"/.keel/.prior-manifest.* "$HOME_DIR"/.keel/.artifacts.* 2>/dev/null || true
+    #
+    # Only when install.sh's own run-duration lock (dir #350, $HOME_DIR/.install.lock, a SIBLING of
+    # .keel/) is not currently held by a live process: install.sh only ever sweeps this same scratch
+    # itself while holding that lock, precisely so a concurrent process can't delete a run's own
+    # in-flight `.artifacts.$$`/`.prior-manifest.$$` out from under it (install.sh's own comment above
+    # its merge-scratch guard says as much). uninstall.sh was never a party to that guarantee before
+    # this fix — an unconditional sweep here would reopen exactly the race the lock exists to close,
+    # just reached through a second, lock-unaware binary (caught live by this ticket's own review).
+    # A held-but-dead lock (stale pid) is not "live" — install.sh's own `kill -0` check is reused
+    # as-is, so a genuinely stale lock never blocks this sweep.
+    install_lock_live=0
+    install_lock_dir="$HOME_DIR/.install.lock"
+    if [ -d "$install_lock_dir" ] && [ -f "$install_lock_dir/pid" ]; then
+      IFS= read -r install_lock_holder 2>/dev/null < "$install_lock_dir/pid" || install_lock_holder=""
+      [ -n "$install_lock_holder" ] && kill -0 "$install_lock_holder" 2>/dev/null && install_lock_live=1
+    fi
+    if [ "$install_lock_live" = 0 ]; then
+      rm -f "$HOME_DIR"/.keel/.prior-manifest.* "$HOME_DIR"/.keel/.artifacts.* 2>/dev/null || true
+    fi
     # dir #377 (wider half): the old `rmdir ... || true` swallowed EVERY failure, which is what kept
     # the scratch residue invisible for a release cycle. Removal stays best-effort — a doctor-accept
     # file legitimately keeps .keel — but what keeps it is now NAMED instead of silently accepted.
+    # Worded as "could not be removed" rather than asserting "not empty": rmdir can also fail on a
+    # permission or busy-mount error even when .keel IS empty, and the `ls -A` below would then show
+    # nothing, so claiming emptiness as the cause would be a wrong diagnosis in that case (caught live
+    # by this ticket's own review).
     if [ -d "$HOME_DIR/.keel" ] && ! rmdir "$HOME_DIR/.keel" 2>/dev/null; then
-      echo "  kept $HOME_DIR/.keel — not empty; still contains:"
+      echo "  kept $HOME_DIR/.keel — could not remove; it still contains (if anything):"
       ls -A "$HOME_DIR/.keel" 2>/dev/null | sed 's/^/    /' || true
     fi
   fi
