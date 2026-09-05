@@ -1,10 +1,10 @@
 # Grooming — assembling a release from the backlog, on a fixed cadence
 
-This doc closes the manager family's loop: `/design` writes a spec → `/go` implements it →
+This doc closes the manager family's loop: a design session writes a spec → `/go` implements it →
 [`docs/release-management.md`](release-management.md)'s manager coordinates a release built from
 those tickets → [`docs/delta-audit.md`](delta-audit.md) checks the release before it tags → this doc
-assembles the *next* release from whatever the backlog now holds → which feeds `/design` again. The
-grooming duties already existed before this doc did, scattered across tickets that each own one
+assembles the *next* release from whatever the backlog now holds → which feeds another design session.
+The grooming duties already existed before this doc did, scattered across tickets that each own one
 mechanism and none of which owned the *cadence*: a pool report and drain trigger, a staleness marker,
 an archive sweep that goes stale on its own, dedup and absorption practised by hand each time. This
 doc is what gives that work one owner and one place to read it.
@@ -35,13 +35,13 @@ round. What follows is the procedure extracted from those two runs, not a specif
 
 Before touching the plan, read the previous cycle's records: the releases cross-run record (G7 below),
 the audits' cross-run record rows, the release record blocks (the `docs/release-management.md`-style
-FINAL NUMBERS a manager writes at close), and every ticket filed by the previous cycle's managers. When
-the project's read-trace tier-2 aggregate exists — the mechanism that surfaces which docs went unread
-across a cycle, wherever it ships — its dead-doc report is a G0 input too: consume it **by pointing at
-the tool that produces it**, generically, never by restating its output format or hardcoding its path.
-Degrade cleanly when it does not exist yet, or on a project that never installed it: skip that input,
-proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that may not
-exist on this adopter at all.
+FINAL NUMBERS a manager writes at close), and every ticket filed by the previous cycle's managers. Where
+the project's read-trace tier-2 aggregate exists, it supplies two more G0 inputs generically — consume
+it **by pointing at the tool that produces it**, never by citing its columns, path, or output shape: a
+dead-doc signal (which docs went unread while their surface changed) and a wrap-loss-scale signal (how
+many mutating sessions closed with no wrap run). Degrade cleanly when it does not exist yet, or on a
+project that never installed it: skip both inputs, proceed on the rest, and say so in one line rather
+than blocking the retro on a mechanism that may not exist on this adopter at all.
 
 **Output: 2-3 process amendments, applied, not reported.** Each amendment lands directly in the
 procedure doc it corrects — `docs/release-audit.md`, `docs/delta-audit.md`, and `docs/drydock.md` each
