@@ -425,7 +425,7 @@ printf 'stray\n' > "$B7C/.keel/.prior-manifest.99999"
 printf 'stray\n' > "$B7C/.keel/.artifacts.99999"
 unin --home "$B7C" --yes
 check_status "B7c uninstall exits 0" 0 "$STATUS"
-if [ -e "$B7C/.keel" ]; then fail "B7c .keel/ removed (crash scratch swept)" "still present"; else pass "B7c .keel/ removed (crash scratch swept)"; fi
+check_nodir "B7c .keel/ removed (crash scratch swept)" "$B7C/.keel"
 
 # --- B8: dir #124 reproduction — THE headline test -------------------------------------------------
 B8="$SANDBOX/b8-dir124/.claude"
