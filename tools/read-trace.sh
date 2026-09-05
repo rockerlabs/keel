@@ -214,15 +214,28 @@ case "${1:-}" in
       # wrap-done-then-session-end pair), and a strict `>` would misclassify that tie as unwrapped.
       if [ -n "$se_wrap_ts" ] && ! [[ "$se_wrap_ts" < "$se_last_mutate" ]]; then se_wrapped=1; fi
     fi
+    # se_wlog is empty when no persistent-store root resolves (no HOME/KEEL_HOME/
+    # KEEL_READ_TRACE_STORE) — a silent skip of the whole persistent-tier write, never a fallback mkdir
+    # at "." or a write to an empty filename (dir #387 V3: the latter is an ambiguous-redirect error,
+    # which breaks this hook's SILENT contract same as the junk mkdir does). A guard clause, matching
+    # this case's own earlier exclusion checks, rather than wrapping the rest of the branch in an `if`
+    # (found by this ticket's own /simplify pass).
     se_wlog="$(_rt_wrapfuse_log "$se_cwd")"
+    [ -n "$se_wlog" ] || exit 0
     mkdir -p "$(dirname "$se_wlog")"
+    # _rt_wrapfuse_flag already resolves its own dir via _rt_wrapfuse_flag_dir internally and fails
+    # exactly when that resolve fails, so checking se_flag alone covers the same empty-root case
+    # without a redundant separate resolve of the same directory — resolved ONCE here rather than once
+    # per branch, since both branches need the identical value (found by this ticket's own
+    # /code-review high pass).
+    se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
+    se_status=wrapped; [ "$se_wrapped" -eq 1 ] || se_status=no-wrap
+    printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_status" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
     if [ "$se_wrapped" -eq 1 ]; then
-      printf '%s\twrapped\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
-      rm -f "$(_rt_wrapfuse_flag "$se_cwd")" 2>/dev/null
-    else
-      printf '%s\tno-wrap\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
-      mkdir -p "$(_rt_wrapfuse_flag_dir "$se_cwd")"
-      printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$(_rt_wrapfuse_flag "$se_cwd")" 2>/dev/null
+      [ -n "$se_flag" ] && rm -f "$se_flag" 2>/dev/null
+    elif [ -n "$se_flag" ]; then
+      mkdir -p "$(dirname "$se_flag")"
+      printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$se_flag" 2>/dev/null
     fi
     exit 0
     ;;
@@ -293,7 +306,15 @@ case "${1:-}" in
 
   rotate)
     ro_dir="${2:-.}"
-    ro_store="$(_rt_store_dir "$ro_dir")"
+    # Same empty-root guard as session-end's persistent-tier writes (dir #387 V3) — without it, an
+    # unresolved store root reaches `$ro_store/$ro_f` as a bare "/reads.log"-shaped path at filesystem
+    # root (found by this ticket's own /simplify altitude pass: every OTHER _rt_store_dir-derived call
+    # site in this file already guards this, `rotate` was the one left over). Unlike the silent hooks,
+    # `rotate` is an operator-invoked CLI, so it reports the failure instead of silently no-op'ing.
+    ro_store="$(_rt_store_dir "$ro_dir")" || {
+      printf 'read-trace: no persistent store resolves (set HOME, KEEL_HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
+      exit 1
+    }
     ro_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     ro_any=0
     for ro_f in reads.log wrap-fuse-events.log; do

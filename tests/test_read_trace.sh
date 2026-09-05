@@ -75,6 +75,39 @@ default_id="$OUT"
 run bash -c ". '$lib'; top=\"\$(_impact_resolve_top '$d')\"; _rt_project_id '$d' \"\$top\""
 check_status "_rt_project_id with an explicit TOP agrees with resolve-fresh" "$default_id" "$OUT"
 
+# noenv_bash CMD... — the three-flag `env -u` prefix every "nothing resolves" case below needs,
+# factored out once rather than repeated verbatim at each call site (found by this ticket's own
+# /code-review high pass).
+noenv_bash() { env -u HOME -u KEEL_HOME -u KEEL_READ_TRACE_STORE "$@"; }
+
+# --- lib: read_trace_store_root degrades silently when NOTHING resolves -------------------------------
+# Regression pin (delta-audit V3): this used to be `${HOME:?read-trace: set HOME, or export
+# KEEL_HOME}`, which expands inside a command-substitution chain and so only killed the SUBSHELL —
+# three stderr lines leaked out (breaking log-tool's own SILENT contract) and, on a writable-root
+# platform, the empty root that still reached a downstream `mkdir -p` created a junk directory at
+# filesystem root. This is the one env-axis the rest of this suite never exercises on its own — every
+# other case sets KEEL_READ_TRACE_STORE via rt_env(), so the unset-everything branch was never entered.
+noenv="$(noenv_bash bash -c ". '$lib'; read_trace_store_root" 2>"$SANDBOX/noenv.stderr")"
+noenv_status=$?
+check_status "read_trace_store_root with nothing set: empty stdout" "" "$noenv"
+check_status "read_trace_store_root with nothing set: exit 1 (a real failure, never a fabricated path)" 1 "$noenv_status"
+check_status "read_trace_store_root with nothing set: zero stderr (never a printed line)" "" "$(cat "$SANDBOX/noenv.stderr" 2>/dev/null)"
+
+# --- log-tool: full hook stays SILENT end-to-end with no HOME/KEEL_HOME/KEEL_READ_TRACE_STORE ----------
+# The mandated assertion point per the finding: the EPHEMERAL (TMPDIR) tier must keep working
+# (unaffected by HOME) while the PERSISTENT tier degrades to a silent no-op — never stderr, never a
+# write outside its own store.
+d="$(mkrepo)"
+rt_tmp_noenv="$SANDBOX/tmp.noenv"; mkdir -p "$rt_tmp_noenv"
+noenv_hook_out="$(noenv_bash TMPDIR="$rt_tmp_noenv" bash -c '
+  printf "%s" "$1" | bash "$2" log-tool
+' _ "$(read_json "$d" Read "$d/docs/foo.md")" "$rt" 2>&1)"
+noenv_hook_status=$?
+check_status "log-tool with no HOME/KEEL_HOME/KEEL_READ_TRACE_STORE: exit 0" 0 "$noenv_hook_status"
+check_status "log-tool with no HOME/KEEL_HOME/KEEL_READ_TRACE_STORE: stays silent (no stderr leak)" "" "$noenv_hook_out"
+slog_noenv="$(TMPDIR="$rt_tmp_noenv" bash -c ". '$lib'; _rt_session_log \"\$1\"" _ "$d")"
+check_contains "ephemeral session log still records the read (TMPDIR tier unaffected by HOME)" "$(cat "$slog_noenv" 2>/dev/null)" "docs/foo.md"
+
 # --- log-tool: SILENCE (ECONOMICS requirement (1) — a printing hook is a red test) --------------------
 d="$(mkrepo)"; rt_env silence
 json="$(read_json "$d" Read "$d/docs/foo.md")"
@@ -175,6 +208,25 @@ check_contains "mutated then wrapped -> a wrapped row, not no-wrap" "$(cat "$RT_
 check_absent "mutated then wrapped -> NOT classified no-wrap" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
 check_nofile "mutated then wrapped -> no pending flag" "$(find "$RT_STORE" -name '*.flag' 2>/dev/null | head -n1 || printf '/nonexistent')"
 
+# --- session-end: SAME PATH mutated twice, straddling wrap-done -> no-wrap + flag -----------------------
+# Regression pin (delta-audit V2): _rt_record_mutate used to route through the presence-keyed
+# _rt_dedup_append (kind+path), so a re-edit of an already-logged path appended NOTHING — session-end's
+# se_last_mutate then compared wrap-done against the FIRST edit's timestamp and silently classified the
+# session as wrapped, even though the real last edit came after wrap-done. Explicit `sleep 1`s force the
+# three events into distinct UTC seconds (the fuse's own timestamp resolution) so this pins the true
+# ordering rather than an accidental same-second tie either fix or bug would classify identically.
+d="$(mkrepo)"; rt_env straddle
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+sleep 1
+run_hook wrap-done "$d"
+sleep 1
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tp="$SANDBOX/transcript.straddle.jsonl"; printf 'ordinary session\n' > "$tp"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_contains "same path re-edited AFTER wrap-done -> a no-wrap row, not wrapped" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
+check_absent "same path re-edited AFTER wrap-done -> NOT classified wrapped" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" $'\twrapped\t'
+check_file "same path re-edited AFTER wrap-done -> a pending flag file exists" "$(find "$RT_STORE" -name '*.flag' 2>/dev/null | head -n1)"
+
 # --- session-end: DELEGATION RUN worker is excluded even though it mutated ------------------------------
 d="$(mkrepo)"; rt_env delegation
 feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
@@ -237,12 +289,22 @@ check_contains "aggregate: the wrap-fuse summary line, counts derived from the s
 map="$REPO_ROOT/tools/read-trace-map.tsv"
 check_file "tools/read-trace-map.tsv exists" "$map"
 bad=0
+bad_surface=0
 # shellcheck disable=SC2034  # note is read for column-shape completeness, not used in this check
 while IFS=$'\t' read -r surface doc note; do
   case "$surface" in ""|"#"*) continue ;; esac
-  [ "$doc" = "BACKLOG.md" ] && continue
-  [ -f "$REPO_ROOT/$doc" ] || { bad=$((bad + 1)); echo "  bad row: $surface -> $doc" >&2; }
+  # BACKLOG.md exempts only the required_doc check (that literal token means "read the ticket's own
+  # body", not a resolvable path) — it must NOT also skip the surface check below via the same
+  # `continue`, or a future BACKLOG.md-doc row with a typo'd bare-path surface would pass silently
+  # (found by this ticket's own /code-review high pass).
+  if [ "$doc" != "BACKLOG.md" ]; then
+    [ -f "$REPO_ROOT/$doc" ] || { bad=$((bad + 1)); echo "  bad row: $surface -> $doc" >&2; }
+  fi
+  # a cell containing ':' is a ticket:<STATUS> or path:label pseudo-surface, not a bare path — exempt
+  case "$surface" in *:*) continue ;; esac
+  [ -f "$REPO_ROOT/$surface" ] || { bad_surface=$((bad_surface + 1)); echo "  bad surface: $surface" >&2; }
 done < "$map"
 check_status "every non-BACKLOG.md required_doc in read-trace-map.tsv resolves in this repo" 0 "$bad"
+check_status "every bare-path surface in read-trace-map.tsv resolves in this repo" 0 "$bad_surface"
 
 summary
