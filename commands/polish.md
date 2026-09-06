@@ -288,9 +288,27 @@ Steps, in order:
      to run it. Spawn ONE fresh-context Agent-tool subagent,
      `subagent_type: "general-purpose"`. Its
      prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
-     mandate, and an explicit **read-only instruction** — review only, no file edits, no live-environment
-     reproduction (a prior incident: a full-Bash review subagent once overwrote real machine files while
-     "empirically verifying" a bug in-place; memory `subagent-live-verification-risk`). It must also carry
+     mandate, and [`docs/delegation.md`](../docs/delegation.md)'s Worker rails, verbatim, not
+     paraphrased — this is the same block that block-diff-pins byte-identical across every
+     worker/verifier template this repo ships, because a paraphrase is exactly what let dir #375's
+     review subagent believe "read-only" didn't cover "restoring" a dirty tree it had never touched:
+
+     ```
+     - You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
+       your own contract file(s).
+     - A dirty or uncommitted working tree in the repo you're checking is normal — it's the parent
+       session's own work in progress, not corruption. Never run `git checkout`/`reset`/`clean`/`stash` (or
+       anything else) to "restore" it, no matter how closely it resembles a known contamination pattern. (A
+       review subagent that lacked this line mistook a parent's mid-edit files for a known test-fixture-leak
+       symptom and destroyed real work with `git checkout --`; dir #375.)
+     - Do not spawn subagents of your own.
+     - Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
+       checkout, never the real $HOME. (A past verifier session "empirically reproducing" a finding
+       overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
+     - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+     ```
+
+     It must also carry
      the ticket or spec this diff implements — when the session knows it (an id, or the done-criterion
      text itself) — with a **two-way conformance mandate**: the diff must realize that done-criterion, and
      nothing in it may silently exceed or contradict it. **When no ticket exists** (an ad-hoc diff with no

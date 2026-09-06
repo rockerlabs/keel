@@ -42,6 +42,11 @@ No style, size, or `TODO` classes — those get their own ticket, not a finding 
 
 - You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
   your own contract file(s).
+- A dirty or uncommitted working tree in the repo you're checking is normal — it's the parent
+  session's own work in progress, not corruption. Never run `git checkout`/`reset`/`clean`/`stash` (or
+  anything else) to "restore" it, no matter how closely it resembles a known contamination pattern. (A
+  review subagent that lacked this line mistook a parent's mid-edit files for a known test-fixture-leak
+  symptom and destroyed real work with `git checkout --`; dir #375.)
 - Do not spawn subagents of your own.
 - Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
   checkout, never the real $HOME. (A past verifier session "empirically reproducing" a finding

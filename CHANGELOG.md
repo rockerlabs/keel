@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #375: `docs/delegation.md`'s canonical Worker rails block gains a dirty-tree discriminator** —
+  two live incidents in three days (v0.8.2 wave 3, and PR #349's own round-2 review) each had a spawned
+  review subagent mistake a parent session's live, uncommitted dirty tree for `dir #318`/`dir #320`'s
+  known test-fixture-leak symptom and run `git checkout --` on it, rationalizing the "restore" as
+  compatible with "read-only." The block now says explicitly that a dirty tree is normal work in
+  progress, never corruption, and names the git verbs never to run on it; propagated byte-identical to
+  all 8 existing verbatim copies (`docs/drydock/{auditor,verifier,code-auditor}.md`,
+  `docs/delta-audit.md`'s 5 session-prompt copies). `commands/polish.md`'s dir #70 fallback
+  subagent — the one ad-hoc review-spawn point this repo's own commands control, since both incidents
+  actually ran through the built-in `/code-review` skill's own fan-out — used to carry a weaker bespoke
+  paraphrase instead; it now inlines the same canonical block, see `tests/test_polish_review_rails.sh`
+  for the details and rationale.
+
 - **dir #358: Keel gains a doctrine for RETIRING a shipped capability**, closing a gap this backlog had
   never had to face — every open ticket only ever proposed to add, fix, or measure something. `CORE.md`'s
   (and `templates/CLAUDE.md`'s) "Shipped docs" trigger bullet is reworded to also point at retirement, and
