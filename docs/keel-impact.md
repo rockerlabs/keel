@@ -75,6 +75,6 @@ nothing here needed redaction):
 > - miss: [v0.8.3 manager] no pre-loaded fact on how a manager launches real gated sessions in this
 >   harness — discovered spawn_task path by tool enumeration mid-intake (R3 soft-form support)
 
-**Cost, for context.** Ritual overhead is not free: a per-pipeline-stage measurement (dir #314, two
-sessions' cache-read shares) found `/keel-score` itself costs **~12%** of a session's cache-read volume —
-comparable to the implementation work it's measuring (`/go` at 10-12%).
+**Cost, for context.** Ritual overhead is not free: a per-pipeline-stage measurement (dir #313's
+investigation, two sessions' cache-read shares) found `/keel-score` itself costs **~12%** of a session's
+cache-read volume — comparable to the implementation work it's measuring (`/go` at 10-12%).
