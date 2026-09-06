@@ -35,6 +35,45 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   promoted to backlog tickets, one dropped as mooted with the reason recorded, one kept with its
   unfired trigger stamped.
 
+- **dir #255 + dir #352: `tools/self/doctor.sh`'s dir #87 stale-heading check now reads a wrapped
+  heading's whole BLOCK for its tag, and a ticket's own internal `##`/`###` sub-heading no longer
+  truncates its body span.** Two gaps in the same check, picked together per dir #352's own pairing
+  note (adjacent code, same ~100 lines). dir #255: the tag short-circuit read only
+  `stripped_lines[start-1]` — the heading's first physical line — so a heading whose title wraps
+  across source lines (this file's own headings routinely run past 2,000 characters) carried its
+  terminal tag on a continuation line the check never looked at, producing three permanent live
+  false WARNs (dirs #192, #205, #251) an earlier pass had worked around by reflowing those six
+  headings to one line each. The check now assembles the heading line plus continuation lines up to
+  the first blank line and tests that whole block. dir #352: the body-span boundary was any
+  `#{2,3}`-prefixed line, so a spec-carrying ticket's own `## 1. …` / `### 2.1 …` sub-headings ended
+  its body scan early — 13 tickets, 5,807 body lines measured hidden this way, fail-open (a real
+  closure past the cut stayed invisible). The boundary is now the next real `### dir #N` heading or
+  a `## ` section break. Fork resolved as (a) fix the reader, not (b) rewrite the 13 ticket bodies:
+  BACKLOG.md is gitignored, main-checkout-only content no code PR can touch, and (b) would still
+  need a guard of its own to stay durable. Accepted trade-off, unchanged in kind: widening the body
+  span re-exposes more text to the check's own already-documented, already-WARN-only
+  cross-reference false-positive class ("tried and reverted once already"). dir #354 (a per-ticket
+  metadata line, unscheduled) would subsume both gaps at once but is a bigger redesign with no
+  scheduled slot; fixing the reader here is the cheap, mechanical route already tagged into 0.9.0.
+  Left explicitly out of scope: the 68 legacy `### <n>.` headings this check has never scanned at
+  all (dir #352's own "cleanly separate second half") — they predate the tag convention this check
+  assumes, so covering them needs its own design pass. `tests/test_self_doctor.sh` pins dir #255's
+  own "Pin it" spec (a wrapped tag on line 2 → GREEN; a wrapped heading with a body closure and no
+  tag anywhere in the block → still RED), the internal-sub-heading truncation fix, and dir #255's
+  own "second half" — a body that DISCUSSES the tagging convention in prose, not backtick-quoted,
+  still false-positives, documented as a known, accepted limitation, the same shape as the existing
+  cross-reference false positive. Also documented, verified live against the real file: a ticket
+  whose own internal sub-heading is level-2 is a residual of the fix sketch's own boundary choice —
+  dir #311's numbered `## 1. …` case and dir #257's unnumbered-prose case both remain unfixed, since
+  no regex over heading text alone can tell either apart from a genuine file-level section break.
+  `/code-review medium` caught and fixed a real regression before it shipped: an earlier version of
+  this fix started the body-closure scan right after the new heading block instead of right after
+  the heading line, which silently missed an untagged heading whose own closure note immediately
+  followed it with no blank line — reproduced live against `origin/main`, reverted, and pinned with
+  a regression test. It also caught and fixed a real efficiency issue (an unconditional subshell
+  fork per heading measured at ~1.7s across a real BACKLOG.md, a no-op in 326 of 327 real headings)
+  and widened the heading-block scan cap from 20 to 50 lines for a safer margin.
+
 ## [0.8.3] — 2026-09-06
 
 - **dir #367: `/manage-release <version>` — the release-manager pattern, run by hand across several
