@@ -52,6 +52,16 @@
 # defect in this pass: guessing at free text is exactly the overfit-to-one-run's-shape risk dir #267
 # was gated on.
 #
+# Second known limitation (a `/code-review medium` pass, PLAUSIBLE verdict): the cost-table awk state
+# machine indexes each data row by the COLUMN POSITION the header established, with no check that a
+# given data row actually has that many columns. A leg name or notes cell containing a literal `|`
+# shifts every column after it, which could misattribute a neighbouring cell's text as that leg's
+# token count. This repo's own orchestrator-notes.md corpus never puts a `|` inside a cell (legs and
+# tiers are short words), so the risk is real but unobserved; widening the parser to be
+# escaping-aware is future work, not attempted here for the same overfit-avoidance reason as above —
+# and the final rewrite step's own malformed-row warning (below) catches the mirror-image case on
+# run-record.md's side of this same class of input.
+#
 # Exit codes: 0 harvested (fields updated in place) · 2 bad arguments · 3 refused (not a directory /
 # run-record.md absent — nothing to fill).
 set -uo pipefail
@@ -81,6 +91,12 @@ EOF
 err()      { printf 'harvest.sh: %s\n' "$1" >&2; exit "$2"; }
 die_args() { err "$1" 2; }
 refuse()   { err "$1" 3; }
+
+# Captured before any `cd` below, same reasoning as derive.sh's own script_dir: $0 may be a relative
+# path, resolved against the ORIGINAL cwd.
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$script_dir/../lib/nonneg-int.sh"
 
 run_dir=""
 while [ $# -gt 0 ]; do
@@ -173,10 +189,7 @@ cost_value=""
 if [ -n "$cost_pairs" ]; then
   while IFS="$(printf '\t')" read -r leg tok; do
     [ -n "$leg" ] || continue
-    case "$tok" in
-      ''|*[!0-9]*) tok_disp="unmeasured" ;;   # empty, or not a plain digit string -> not a measured figure
-      *)           tok_disp="${tok} tokens" ;;
-    esac
+    if _nonneg_int_valid "$tok"; then tok_disp="${tok} tokens"; else tok_disp="unmeasured"; fi
     if [ -z "$cost_value" ]; then cost_value="$leg: $tok_disp"
     else cost_value="$cost_value · $leg: $tok_disp"
     fi
@@ -212,8 +225,16 @@ fi
 tmp_file="$(mktemp "${TMPDIR:-/tmp}/harvest-record.XXXXXX")"
 trap 'rm -f "$tmp_file"' EXIT
 
+# The strict regex below requires exactly two `|`-delimited cells (no literal `|` inside either).
+# KNOWN LIMITATION: a target row whose value already contains a literal `|` (e.g. a human's partial
+# hand-fill) fails this shape and falls through to the loose check just below it, which recognises
+# the row by its field-name cell alone and WARNS on stderr that it was left unmodified — rather than
+# silently leaving a stale row with no signal at all, which is what a bare pass-through would do.
 awk -v records="$records_value" -v cost="$cost_value" -v induced="$induced_value" '
   function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+  function is_target_field(lf) {
+    return (lf == "records" || index(lf, "cost, per leg") == 1 || index(lf, "induced defects") == 1)
+  }
   {
     if ($0 ~ /^\|[^|]*\|[^|]*\|[ \t]*$/) {
       n = split($0, cell, "|")
@@ -222,10 +243,26 @@ awk -v records="$records_value" -v cost="$cost_value" -v induced="$induced_value
       if (lf == "records") { printf "| %s | %s |\n", field, records; next }
       if (index(lf, "cost, per leg") == 1) { printf "| %s | %s |\n", field, cost; next }
       if (index(lf, "induced defects") == 1) { printf "| %s | %s |\n", field, induced; next }
+      print; next
+    }
+    if ($0 ~ /^\|/) {
+      n = split($0, cell, "|")
+      if (n >= 3) {
+        field = trim(cell[2])
+        if (is_target_field(tolower(field))) {
+          print "harvest.sh: WARNING: the \x27" field "\x27 row has an unexpected shape (not exactly two columns, likely a literal | in its value) -- left unmodified" > "/dev/stderr"
+        }
+      }
     }
     print
   }
 ' "$record_file" > "$tmp_file"
+awk_status=$?
+
+if [ "$awk_status" -ne 0 ]; then
+  rm -f "$tmp_file"
+  refuse "rewriting run-record.md failed (awk exited $awk_status) — original file left untouched"
+fi
 
 mv "$tmp_file" "$record_file"
 trap - EXIT
