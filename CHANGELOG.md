@@ -11,6 +11,29 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #359 + dir #360: two mechanical triggers replace "a human notices `BACKLOG.md` got
+  big/stale again."** `tools/self/archive-sweep-check.sh` reports the closed-ticket line share
+  and WARNs once it crosses a threshold (default 40%, `$KEEL_ARCHIVE_SWEEP_THRESHOLD`) — the
+  signal dir #353's own manual sweep (21,780 → 10,884 lines, 63% closed) had no successor for;
+  it is read-only and does not perform a sweep itself. `tools/self/pool-report.sh` reports the
+  `→ pool` lane's size, oldest entry's age, R-level split, and the count excluding
+  structurally-parked tickets (⛔-blocked or explicit-gate, matched by rule rather than by
+  ticket name), and WARNs when the pool has grown across the last two recorded releases and
+  again this run — dir #360's own two-consecutive-minors drain-release trigger, storage per its
+  FORK RESOLVED (b): an untracked history file beside `BACKLOG.md`, never in the tracked tree.
+  Both share one new heading/body-span scanner, `tools/lib/backlog-blocks.sh`, extracted so
+  the two didn't each re-derive `tools/self/doctor.sh` check 5's wrapped-heading detection
+  (dir #255/#352) independently. `docs/release-audit.md` phase 7 now names both as a step
+  before the release-prep PR lands. Neither ships to any adopter's install — `BACKLOG.md` is
+  gitignored, keel-self-maintenance content.
+
+- **dir #397's doctor-advisory half: `tools/self/doctor.sh` gains a machine-wide WARN for a
+  stray `$HOME/keel*alpine*`-shaped clone living outside the canonical, reused
+  `$HOME/.keel/tmp/alpine-clone` path** — the safety net for a session that ignores dir #397's
+  documented recipe and invents a new ad-hoc name anyway, the exact shape that accumulated 16
+  stray clones (~165MB) at the `$HOME` root by the v0.8.3 close. Advisory only, per dir #399's
+  own SPEC (no fail state).
+
 - **dir #313: `tools/lib/transcript-usage.sh` gives this project its first committed answer to "what
   does a unit of work here actually cost?"** — a shared reader for this machine's Claude Code session
   transcripts, built so this ticket's own `tools/self/session-cost.sh` and the adopter-facing

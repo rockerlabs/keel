@@ -1732,4 +1732,30 @@ run "$sd" "$d"
 check_status "manifest/core-ownership: no definitions anywhere -> exit 0" 0 "$STATUS"
 check_absent "and reports no GAP over it" "$OUT" "GAP"
 
+# --- check 11: stray $HOME/keel*alpine*-shaped clones (dir #397/#399) -----------------------------
+# Machine-wide, not repo-scoped, so it reads $HOME rather than the sandbox repo — isolate via
+# fresh_home_env() the same way any HOME-sensitive tool in this suite does.
+d="$(mk_clean_repo)"
+h="$SANDBOX/home-no-strays"; mkdir -p "$h"
+fresh_home_env "$h"
+run env "${FRESH_HOME_ENV[@]}" "$sd" "$d" --quiet
+check_status "no stray clones -> exit 0" 0 "$STATUS"
+check_absent "no WARN when nothing matches the stray shape" "$OUT" "stray"
+
+h2="$SANDBOX/home-with-stray"; mkdir -p "$h2/keel-alpine-verify-old"
+echo x > "$h2/keel-alpine-verify-old/file"
+fresh_home_env "$h2"
+run env "${FRESH_HOME_ENV[@]}" "$sd" "$d"
+check_status "a stray clone is advisory only -> exit 0 (WARN, not GAP)" 0 "$STATUS"
+check_contains "reports the stray count" "$OUT" "1 stray"
+check_contains "names the canonical path as the fix" "$OUT" '$HOME/.keel/tmp/alpine-clone'
+
+# The canonical path itself must never be counted as a stray.
+h3="$SANDBOX/home-canonical-only"; mkdir -p "$h3/.keel/tmp/alpine-clone"
+echo x > "$h3/.keel/tmp/alpine-clone/file"
+fresh_home_env "$h3"
+run env "${FRESH_HOME_ENV[@]}" "$sd" "$d" --quiet
+check_status "the canonical alpine-clone path alone -> exit 0" 0 "$STATUS"
+check_absent "the canonical path is never counted as a stray" "$OUT" "stray"
+
 summary
