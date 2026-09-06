@@ -135,7 +135,7 @@ Trigger conditions only — open the file once the situation matches, not before
 - Before cutting a release tag → `docs/release-audit.md`
 - Deriving a release-candidate's audit universe from git history → `docs/delta-audit.md`
 - A model or harness upgrade just happened → `docs/rollout-audit.md`
-- Adding to the always-loaded layer, or retiring a shipped capability → `docs/loading-and-cost.md`
+- Adding to the always-on layer, or retiring a shipped capability → `docs/loading-and-cost.md`
 
 ---
 

@@ -11,8 +11,7 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 Keep a Changelog also defines `### Deprecated` and `### Removed` sections, unused in this file so far
 (every release to date has only added). `docs/loading-and-cost.md`'s retirement doctrine gives those
-sections real content going forward: a capability slated for retirement gets a `### Deprecated` entry one
-release ahead of the change, and a `### Removed` entry in the release that performs it.
+sections real content going forward — see that page for exactly when each one applies.
 
 ## [Unreleased]
 

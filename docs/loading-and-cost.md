@@ -186,22 +186,20 @@ asymmetry this page already argues for *adding*, run in reverse.
 rail is judged on **whether the hazard it guards against still exists — not on how often it has fired.**
 A quiet guard and a useless one look identical to a cost/benefit ledger, and the bar would be most
 persuasive exactly when it was most wrong: deleting a safety rail during the quiet period it earned by
-working. This is the remove-side mirror of [`PRINCIPLES.md`](../PRINCIPLES.md)'s P4 prophylactic
-exception — the same irreversibility-over-frequency argument that justifies building a guard before the
-first incident, applied here to justify keeping one after a quiet spell. The exemption excuses the
-*benefit* input only — cost, the record below, and the cooldown still apply. To invoke it: name the
-hazard and show it still exists. "It might matter someday" doesn't qualify; a reproducible failure mode
-does.
+working (the remove-side mirror of [`PRINCIPLES.md`](../PRINCIPLES.md)'s P4 prophylactic exception, run
+in reverse). The exemption excuses the *benefit* input only — cost, the record below, and the cooldown
+still apply. To invoke it, name the hazard: "it might matter someday" doesn't qualify, a reproducible
+failure mode does.
 
 **Five rungs, ordered by reversibility, descended one at a time:**
 
-| Rung | Action | Result |
-|---|---|---|
-| **R0 — Freeze** | stop investing further | nothing changes on disk |
-| **R1 — Unsurface** | drop the trigger reference; it still ships and works | a cheaper always-on layer only |
-| **R2 — Unship** | stop placing it in new/updated installs; source stays in the repo | gone from new installs |
-| **R3 — Off by default** | ship it, wire it, default it inert | present but inactive until turned on |
-| **R4 — Delete** | remove it from the repo | gone |
+| Rung | Action | Result | Available today? |
+|---|---|---|---|
+| **R0 — Freeze** | stop investing further | nothing changes on disk | yes |
+| **R1 — Unsurface** | drop the trigger reference; it still ships and works | a cheaper always-on layer only | yes |
+| **R2 — Unship** | stop placing it in new/updated installs; source stays in the repo | gone from new installs | yes for `docs/*` (no adopter footprint); a placed artifact needs a prune step this project doesn't ship yet |
+| **R3 — Off by default** | ship it, wire it, default it inert | present but inactive until turned on | no — needs an off-switch mechanism this project doesn't have yet |
+| **R4 — Delete** | remove it from the repo | gone | yes for `docs/*`; a placed artifact needs R2's prune first |
 
 R1 is the rung most knowledge bases skip, and the useful one: it separates *"is this worth its always-on
 cost?"* from *"is this capability any good?"*, answering only the first — cheaply, reversibly, with an
@@ -209,23 +207,18 @@ exact, re-measurable cost recovery. Unsurface when something **can't earn a plac
 — never because the index merely feels crowded; a crowded index is a re-measurement problem, not a
 licence to cut. **Cooldown:** descend one rung per release, never skipping — each rung produces the
 evidence the next decision needs, and skipping ahead throws it away. One exception: something that never
-shipped in a tagged release can be deleted outright — no installs to strand.
-
-Not every rung applies to every class. Class A has no "wired but inert" state — a `CORE.md` bullet is
-either in the file or it isn't — so R2/R3 are effectively hollow for it and its real ladder is
-R0/R1/R4. R2 needs somewhere to prune an unshipped artifact from, and R3 needs an off switch, so both
-are class B/C rungs first; the table above is the general case, not a claim that all five steps exist for
-every class.
+shipped in a tagged release can be deleted outright — no installs to strand. Class A never reaches
+R2/R3 in practice, since a `CORE.md` bullet has no "wired but inert" state to occupy — its real ladder is
+R0/R1/R4.
 
 **The record must not manufacture a dead reference.** If your changelog follows [Keep a
 Changelog](https://keepachangelog.com/en/1.1.0/): announce a retirement in `### Deprecated` one release
 ahead of it (the adopter-visible form of the cooldown above), and record it in `### Removed` in the
 release that performs it — naming the capability, the property it claimed, the measured cost recovered,
-and where the reasoning went. **Tombstone what is cited, delete what is not.** A retired capability's
-reasoning is the most valuable part of it — lose it and the same idea gets re-proposed at the same cost
-later — but keeping full prose for every retirement forever just recreates the growth retirement exists
-to stop, so a one-line note survives only where something else still references it; everywhere else, let
-git history be the record.
+the rung it moved from and to, and where the reasoning went. **Tombstone what is cited, delete what is
+not.** A retired capability's reasoning is the most valuable part of it — lose it and the same idea gets
+re-proposed at the same cost later, but keeping full prose for every retirement forever recreates the
+growth retirement exists to stop.
 
 ## Bottom line
 
