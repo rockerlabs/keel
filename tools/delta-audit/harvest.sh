@@ -194,6 +194,8 @@ if [ -n "$cost_pairs" ]; then
     # 15, not the lib's own 10-digit default: a token count legitimately grows well past 10 digits
     # long before it overflows anything, and the default would silently misreport a real >=10-digit
     # figure as unmeasured — exactly the fabrication-adjacent failure this script exists to avoid.
+    # 15 itself is a conservative pick under nonneg-int.sh's own stated ~19-digit shell-integer
+    # range, not a re-derivation of that boundary — comfortable headroom, not a claimed precise cap.
     if _nonneg_int_valid "$tok" 15; then tok_disp="${tok} tokens"; else tok_disp="unmeasured"; fi
     if [ -z "$cost_value" ]; then cost_value="$leg: $tok_disp"
     else cost_value="$cost_value · $leg: $tok_disp"
