@@ -209,6 +209,15 @@ incidental and has already broken mid-release once.
   this happened twice inside one release's own build of this very requirement, each amendment crossing
   the worker's next report before the worker had seen it. The fix is the same acknowledged-token
   facility named above, applied per amendment rather than per status update: an explicit **per-amendment ACK** — treat any brief amendment without an acknowledgment from its recipient as undelivered, and re-send or escalate rather than assuming a queued message was read.
+- **Identity at first contact.** The generic rule lives in [`docs/delegation.md`](delegation.md)'s
+  launch-time requirements, next to the post-launch model-verify rule it mirrors (same placement as
+  R3): every address copied verbatim from the tool's live output, never retyped; the confirmation a
+  named operator touchpoint where the harness's namespaces cannot cross-resolve; a worker's refusal on
+  an unverifiable identity is correct behaviour, not friction. What a release adds: the manager's FIRST
+  message to each worker carries its addresses, and the confirmation paste is counted among the
+  release's operator touchpoints (R7's cost line) rather than arriving as a surprise. The felt case was
+  a release's own fixer launch — the manager quoted a fabricated address fragment from the wrong
+  namespace, and the worker rightly stopped.
 
 ## R7 — the cost line
 

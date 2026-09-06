@@ -394,6 +394,18 @@ claims about the same mechanism into review because each was paraphrased from it
 re-derived from the code. **This round gets a real review pass, not a rubber stamp for "it's only
 prose."**
 
+**The rule is narrower than "re-derive the claim being fixed," and two consecutive runs evidenced the
+narrower form while following the paragraph above correctly.** A correction must re-derive **every
+neighbouring claim in the same sentence it touches** — one run's first disclosure batch corrected four
+findings and introduced one new defect, two false claims inside a single corrected sentence, a 25%
+induced rate on prose alone. And a correction inherits the imprecision of its **measuring platform**,
+not only of its source. The next run's orchestrator corrected a cross-vendor leg's wrong mechanism
+claim from a live macOS reproduction — and one part of that corrected characterization flipped on
+Linux until the verifier measured it there: what lost a row on one platform created a junk directory
+at the filesystem root on the other. A correction that describes platform-dependent behaviour names
+the platform it was measured on, or measures both — "reproduced live" on one platform is one data
+point, not the mechanism.
+
 ## 11. The cross-vendor leg — two harness lessons, as classes
 
 If your diversity leg uses a different model vendor via a raw API rather than an in-session subagent,

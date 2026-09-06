@@ -45,7 +45,12 @@ where that lives, and it may change there without this doc needing an edit.
 
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
-may not exist on this adopter at all.
+may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
+mechanism nobody turned on reports nothing** — and that emptiness is not a dead-doc signal, it is a
+missing sensor. The first `/groom` run met exactly that: the fuses had
+shipped the day before and no hook was wired on the maintainer's own machine. Check the install state
+before reading the aggregate, say which of the two states you are in, and hand the operator the install
+step as a G0 output so the NEXT groom has data.
 
 **Output: 2-3 process amendments, applied, not reported.** Each amendment lands directly in the
 procedure doc it corrects — `docs/release-audit.md`, `docs/delta-audit.md`, and `docs/drydock.md` each
@@ -87,6 +92,18 @@ file — the exact failure this rule exists to close. This includes any prose re
 ticket's release tag: cite the ticket by number and let the reader (or the next groom) resolve its
 current tag live. Never assert a specific release tag in prose — a later re-tag leaves an asserted one
 stale and silently wrong.
+
+**Two extraction rules the first `/groom` run paid for.** A heading's release tag is the **last** `→`
+token on the heading that names a release or the pool — headings carry prose arrows too ("→ ask",
+"→ contest with dir #N", "→ a release of its own"), and an any-match extractor reports phantom
+releases: the first run's first census showed six release names that do not exist, caught only by
+recounting under the last-arrow rule. Exclude closed headings BEFORE extracting — a closure note can
+end in an arrow of its own ("→ 10,884 lines"), which is the one shape where the last arrow is not the
+tag. And a ticket
+that still carries the **just-shipped** release's tag while staying open on an acceptance leg (a run
+that must happen during the next release before the ticket can close) is an **acceptance obligation of
+the new slate**, listed on the plan as such — never re-tagged, never counted as a build item, never
+read as a stale heading.
 
 ## G4 — the hygiene sweep
 

@@ -44,6 +44,21 @@ operator to confirm — and on a mismatch, flags the operator at once, before th
 anything. This is required, not advisory: a real run launched two workers straight onto a harness
 default it never checked, and the mismatch was caught only by the operator's own eye after real spend.
 
+**A second launch-time requirement, same soft form: identity at first contact.** Nothing above says
+how a launched worker knows the session claiming to be its launcher IS its launcher, and a real run
+paid for that gap. The harness exposed two addressing namespaces that do not display each other's
+identifiers. The launcher quoted an address from the wrong one, typed from memory — a fabricated
+fragment. The worker, correctly treating an unverifiable identity as a stop condition before handing
+over audit data, held until the operator vouched by hand. Three rules follow, and they bind ANY
+session that launches a real worker, not only a release manager: (a) the launcher's first message to
+each worker carries **every address the harness gives it, each copied verbatim from the tool's own
+live output, never retyped**; (b) where the namespaces cannot cross-resolve, the identity confirmation
+is a **named operator touchpoint** — one paste into the worker's session — budgeted like any other,
+not a surprise; (c) a worker's refusal to proceed on an unverifiable identity is **correct behaviour,
+not friction** — a brief that punishes it trains workers to trust whoever speaks first. A shared
+secret carried in the launch brief is an optional, cheap mechanization: the brief is launcher-authored,
+so a token in it proves brief-authorship, which is the trust anchor the worker actually needs.
+
 Two of those assignments are load-bearing, and here's why: finding something worth flagging is cheaper
 than proving it right or wrong, and a wrong verdict is the one thing nothing downstream re-checks — so
 the higher effort goes to verification, not discovery. And a mutator is the only role that has to pass
