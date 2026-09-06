@@ -5,6 +5,8 @@
 # both) — introduce a genuinely ambiguous heading, confirm red; remove it, confirm green.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
+# shellcheck source=tools/lib/transcript-usage.sh
+. "$REPO_ROOT/tools/lib/transcript-usage.sh"
 
 cr="$REPO_ROOT/tools/self/citation-resolvability.sh"
 
@@ -184,6 +186,35 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   chmod 644 "$archive_file"
   rm -rf "$archive_dir"
 fi
+
+# --- dir #313 review: the archive path must slug '.' as well as '/', matching the harness's own
+# ~/.claude/projects/ naming — the script now sources dir #313's shared transcript-reader lib
+# (`tools/lib/transcript-usage.sh`) and calls its `tu_project_slug`/`tu_projects_root` directly rather
+# than hand-rolling the transform, so this fixture builds its expected path the SAME way, via the same
+# functions, instead of a second, independent re-derivation that could silently drift from what the
+# script actually calls. Not the impact-store's deliberately different, slash-only transform this
+# script's derivation was originally (wrongly) modeled on. Every other archive case above sets
+# KEEL_CITATION_ARCHIVE_FILE, which bypasses this derivation entirely; this is the only case that
+# exercises the real, un-overridden path. new_repo()'s own mktemp template ("repo.XXXXXX") already
+# puts a literal dot in the repo's path for free, so no special fixture is needed — a repo path with
+# no dot in it is exactly why this bug went unnoticed on this project's own main checkout.
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+# `pwd -P`, not a plain `pwd`: git records a worktree's PHYSICAL path (its own getcwd(), symlinks
+# resolved — e.g. macOS's /var -> /private/var), while bash's builtin `pwd` reports the LOGICAL path
+# as reached by `cd`. A plain `pwd` here silently diverges from what the script's own
+# `_impact_main_top` (via `git worktree list --porcelain`) actually resolves to, on any sandbox whose
+# tmp path crosses a symlink — found live authoring this test on macOS. `tu_project_slug` itself only
+# does a plain (non-physical) `cd && pwd` internally, so it must be fed an already-physical path here to
+# match what the script computes from `_impact_main_top`'s own physical result.
+backlog_root_real="$(cd "$d" && pwd -P)"
+slug="$(tu_project_slug "$backlog_root_real")"
+real_archive_dir="$(tu_projects_root)/$slug"
+mkdir -p "$real_archive_dir"
+printf -- '- 2026-08-21 dir #202 CLOSED — moved out of the live backlog\n' > "$real_archive_dir/CLAUDE-archive.md"
+run "$cr" "$d"
+check_status "a repo path containing a literal dot still finds its real archive" 0 "$STATUS"
+check_contains "the announced path has the dot slugged to a dash, not left literal" "$OUT" "$real_archive_dir/CLAUDE-archive.md"
+rm -rf "$real_archive_dir"
 
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
