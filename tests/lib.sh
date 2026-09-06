@@ -67,6 +67,39 @@ pin() {
   fi
 }
 
+# extract_rails_block FILE [strip_indent] — the delegation-doctrine "Worker rails" block a file
+# carries (docs/delegation.md's canonical text, or a verbatim copy elsewhere), start-to-end-marker
+# inclusive. Promoted here (dir #375) once a THIRD test file (test_polish_review_rails.sh) needed the
+# exact same awk range test_drydock_doc.sh and test_delta_audit_doc.sh had each already defined
+# independently — this file's own "second use = promote" convention (see pin()'s comment above), overdue
+# at three. Pass strip_indent=1 when the copy sits inside a nested list item and needs its leading
+# whitespace normalized before a byte-identity comparison; the two pre-existing call sites stay
+# flush-left and don't need it.
+extract_rails_block() {
+  local file="$1" strip="${2:-}"
+  if [ "$strip" = "1" ]; then
+    awk '/^[[:space:]]*- You are read-only:/,/^[[:space:]]*- DELEGATION RUN:/' "$file" | sed 's/^[[:space:]]*//'
+  else
+    awk '/^- You are read-only:/,/^- DELEGATION RUN:/' "$file"
+  fi
+}
+
+# check_block_equal LABEL A B — assert two block-extracted strings are identical and non-empty,
+# printing a diff on mismatch rather than a bare presence check (dir #209's own finding: a substring
+# pin can survive a drift that deletes or reorders a contract line, since "the text is somewhere in the
+# file" says nothing about whether it is INTACT). Promoted here (dir #375) alongside
+# extract_rails_block above, same convention — test_drydock_doc.sh defined this first,
+# test_polish_review_rails.sh needed the exact same idiom for a third file.
+check_block_equal() {
+  local label="$1" a="$2" b="$3"
+  if [ -n "$a" ] && [ "$a" = "$b" ]; then
+    pass "$label"
+  else
+    fail "$label" "block-extracted text differs or is empty — diff:
+$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
+  fi
+}
+
 # check_count LABEL FILE PATTERN EXPECTED — assert PATTERN (a grep BRE, as-is — callers already anchor
 # their own patterns with `^` where that's the point, same as their pre-promotion call sites did)
 # occurs exactly EXPECTED times in FILE, reporting under LABEL with the actual count on failure.
