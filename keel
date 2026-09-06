@@ -13,6 +13,7 @@
 #   keel audit                 -> tools/public-audit.sh  leak-surface scan before going public
 #   keel init [DIR]            -> tools/init-project.sh  scaffold a project's knowledge base
 #   keel check <cmd...>        -> tools/keel-check.sh    run a check through the stop-mode floor
+#   keel tokens [...]          -> tools/token-report.sh  where your tokens went, and why (dir #314)
 #   keel uninstall             -> uninstall.sh           reverse install.sh (backs up what it removes)
 #   keel version               -> the checkout's version (git describe)
 #   keel help | -h | --help    -> this usage
@@ -103,6 +104,7 @@ Commands:
   audit                scan the leak surface before pushing public
   init [DIR]           scaffold a project's Keel knowledge base
   check <cmd...>       run a verification command through the stop-mode floor
+  tokens [...]         where your tokens went, and what to do about it (--help for its own modes)
   uninstall            reverse install.sh (backs up anything it removes)
   version              print the checkout's version
   help                 show this help
@@ -130,6 +132,14 @@ case "$cmd" in
   audit)     exec "$CHECKOUT/tools/public-audit.sh" "$@" ;;
   init)      exec "$CHECKOUT/tools/init-project.sh" "$@" ;;
   check)     exec "$CHECKOUT/tools/keel-check.sh" "$@" ;;
+  # Verb admission rule (dir #314 §9.4): a verb here is a BARE command an adopter types standalone,
+  # with no other Keel doc/skill as its canonical entry point. tools/keel-impact.sh, pre-pr-gate.sh,
+  # branch-cleanup.sh, changelog-section.sh, delta-audit/derive.sh, pipeline-canary.sh,
+  # drydock/inventory.sh and the two install-*.sh installers are each reached through a documented
+  # procedure that already names its own invocation (commands/keel-score.md:67 is explicit about
+  # spelling out the full tools/ path rather than a shortcut) — so they stay off this list. `tokens`
+  # has no such mediating doc; it is the same shape as `doctor`/`audit`, hence a verb.
+  tokens)    exec "$CHECKOUT/tools/token-report.sh" "$@" ;;
   uninstall) exec "$CHECKOUT/uninstall.sh" "$@" ;;
   version)
     v="$(git -C "$CHECKOUT" describe --tags --always --dirty 2>/dev/null || true)"
