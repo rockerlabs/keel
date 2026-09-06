@@ -117,8 +117,12 @@ fi
 # ITS purpose (keel's own impact-store slug, a different, deliberately different-purpose id) — it was
 # never meant to mirror the harness's own transcript-directory naming and needs no fix here.
 # `tu_projects_root`'s `${HOME:?...}` guard would abort this `set -e` script outright if HOME were
-# ever unset with no KEEL_HOME fallback either; `|| archive_root=""` preserves this script's original,
-# more forgiving degrade-to-absent behavior for that edge case instead.
+# ever unset with no KEEL_HOME fallback either; `|| archive_root=""` keeps this edge case a silent
+# degrade-to-absent rather than a hard abort, same as before — the exit code and DEAD/live reporting
+# are unaffected, though the printed diagnostic path itself is not byte-identical to the old one in
+# this exact edge case (missing the `.claude/projects` segment): still visibly bogus, still
+# self-evidently "nothing found here," just not a claim of exact string parity (found live by this
+# ticket's own review).
 if [ -n "${KEEL_CITATION_ARCHIVE_FILE:-}" ]; then
   archive_file="$KEEL_CITATION_ARCHIVE_FILE"
 else
