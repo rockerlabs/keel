@@ -171,6 +171,32 @@ after="$(cat "$r4/run-record.md")"
 check_status "original run-record.md is untouched byte-for-byte after the refusal" 0 \
   "$([ "$original_before" = "$after" ] && echo 0 || echo 1)"
 
+# --- a 10+ digit token count must still be reported as a real figure, not silently degraded to
+# unmeasured — a `/code-review` delta round on the fix above found the lib's own 10-digit default cap
+# would misreport a legitimate large figure; harvest.sh must pass a larger explicit cap ----------------
+r5="$SANDBOX/run5-large-token-count"
+mk_run "$r5"
+printf '# notes\n\n| leg | model / effort | tokens | tool calls | wall clock |\n|---|---|---|---|---|\n| S1 big | mid tier | 12345678901 | 1 | 1m |\n' \
+  > "$r5/orchestrator-notes.md"
+run "$TOOL" "$r5"
+check_status "10+ digit token count fixture -> exit 0" 0 "$STATUS"
+out5="$(cat "$r5/run-record.md")"
+check_contains "an 11-digit token count is reported as a real figure, not degraded to unmeasured" \
+  "$out5" "S1 big: 12345678901 tokens"
+
+# --- a missing tools/lib/nonneg-int.sh must refuse (exit 3) with a clear message, never degrade
+# silently into treating every cost as unmeasured while still exiting 0 -----------------------------
+r6="$SANDBOX/run6-missing-lib"
+mk_run "$r6"
+lib_copy_dir="$SANDBOX/harvest-copy"
+mkdir -p "$lib_copy_dir/delta-audit"
+cp "$TOOL" "$lib_copy_dir/delta-audit/harvest.sh"
+# lib/ deliberately absent alongside this copy, unlike the real tree's tools/lib/nonneg-int.sh
+run "$lib_copy_dir/delta-audit/harvest.sh" "$r6"
+check_status "a missing tools/lib/nonneg-int.sh -> exit 3 (refuse), not a silent degrade" 3 "$STATUS"
+check_contains "the refusal names the missing lib, not a raw bash sourcing error" "$OUT" \
+  "missing shared lib"
+
 # --- integration: harvest.sh against derive.sh's REAL emitted run-record.md, not a hand-copied
 # fixture — closes the drift-coverage gap a fresh-context review found: mk_run() above hand-types
 # derive.sh's stub text, so a future wording change there could silently desync from harvest.sh's

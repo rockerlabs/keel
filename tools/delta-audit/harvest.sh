@@ -95,8 +95,10 @@ refuse()   { err "$1" 3; }
 # Captured before any `cd` below, same reasoning as derive.sh's own script_dir: $0 may be a relative
 # path, resolved against the ORIGINAL cwd.
 script_dir="$(cd "$(dirname "$0")" && pwd)"
+nonneg_int_lib="$script_dir/../lib/nonneg-int.sh"
+[ -f "$nonneg_int_lib" ] || refuse "missing shared lib: '$nonneg_int_lib' — this checkout looks corrupt"
 # shellcheck source=tools/lib/nonneg-int.sh
-. "$script_dir/../lib/nonneg-int.sh"
+. "$nonneg_int_lib"
 
 run_dir=""
 while [ $# -gt 0 ]; do
@@ -189,7 +191,10 @@ cost_value=""
 if [ -n "$cost_pairs" ]; then
   while IFS="$(printf '\t')" read -r leg tok; do
     [ -n "$leg" ] || continue
-    if _nonneg_int_valid "$tok"; then tok_disp="${tok} tokens"; else tok_disp="unmeasured"; fi
+    # 15, not the lib's own 10-digit default: a token count legitimately grows well past 10 digits
+    # long before it overflows anything, and the default would silently misreport a real >=10-digit
+    # figure as unmeasured — exactly the fabrication-adjacent failure this script exists to avoid.
+    if _nonneg_int_valid "$tok" 15; then tok_disp="${tok} tokens"; else tok_disp="unmeasured"; fi
     if [ -z "$cost_value" ]; then cost_value="$leg: $tok_disp"
     else cost_value="$cost_value · $leg: $tok_disp"
     fi
