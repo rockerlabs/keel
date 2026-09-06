@@ -395,3 +395,5 @@ reusable the moment a second run's lessons don't fit it.
 - [`FRAMEWORK.md`](../FRAMEWORK.md) — "PR review" answers the per-round question this doc extends, and
   already carries §6's core claim.
 - [`docs/delegation.md`](delegation.md) — the fan-out contract behind every parallel leg §5 asks for.
+- [`docs/release-history.md`](release-history.md) — its per-release verification block (dir #268) is
+  this doctrine's public instance, starting at v0.9.0.

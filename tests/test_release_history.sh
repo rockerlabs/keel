@@ -239,4 +239,73 @@ else
     "heading(s) appearing more than once: $dup_heading"
 fi
 
+# --- per-release verification block (dir #268) ---------------------------------------------------------
+# Two checks, both walking the same per-heading block text (everything after a `## vX.Y.Z` heading up
+# to the next one, or EOF) so it is computed once per heading rather than twice:
+#
+# 1. Presence, floored at v0.9.0 (dir #268 §3.2 — "history starts at v0.9.0", no back-fill). This fires
+#    only once a heading at or above the floor exists; none does yet on this release, so today it is
+#    vacuously green by construction, the same shape dir #299's own pending-release allowance uses
+#    elsewhere in this file — no synthetic fixture needed, the check earns its keep the moment the first
+#    v0.9.0 heading lands.
+# 2. The no-private-provenance rule (dir #268 §4.3), scoped to the block region ONLY. The surrounding
+#    digest paragraphs are dir #N-rich by design (dir #269's separate, larger sweep) and an unscoped
+#    assertion here would fail on day one against this file's own existing prose — the exact trap the
+#    reconciliation memo named. A block is identified by its own `**Verification.**` opening marker;
+#    only the text from that marker onward is checked, never the digest paragraph above it.
+#
+# Block boundaries are found by counting occurrences of the SAME general (untargeted) heading regex used
+# for the heading scan above, not by matching a specific version string — so dir #299's both-ends-anchor
+# trap (`## v0.9.1` is a literal substring of `## v0.9.10`) does not apply here: splitting on "any
+# heading line" never confuses one heading with another.
+verification_floor="v0.9.0"
+blocks_blanked="$(blank_fenced_blocks "$history")"
+missing_block=""
+provenance_leak=""
+idx=0
+while IFS= read -r h; do
+  [ -n "$h" ] || continue
+  idx=$((idx + 1))
+  block="$(awk -v target="$idx" '
+    /^## v[0-9]+\.[0-9]+\.[0-9]+/ {
+      c++
+      if (c == target) { capture = 1; next }
+      if (capture) { exit }
+      next
+    }
+    capture { print }
+  ' <<< "$blocks_blanked")"
+
+  if [ "$h" = "$verification_floor" ] || _semver_gt "$h" "$verification_floor"; then
+    for label in '\*\*Verification\.\*\*' '\*\*Scope:\*\*' '\*\*Method:\*\*' '\*\*Coverage:\*\*' \
+                 '\*\*Findings:\*\*' '\*\*Behavioural defects:\*\*' '\*\*Which layer found what:\*\*' \
+                 '\*\*What was NOT checked:\*\*' '\*\*Induced-defect rate:\*\*'; do
+      grep -qE -- "$label" <<< "$block" \
+        || missing_block="$missing_block${missing_block:+, }$h: missing $label"
+    done
+  fi
+
+  verification_part="$(awk '/\*\*Verification\.\*\*/{f=1} f{print}' <<< "$block")"
+  if [ -n "$verification_part" ]; then
+    grep -qE 'private/' <<< "$verification_part" \
+      && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a private/ path"
+    grep -qE 'dir #[0-9]+' <<< "$verification_part" \
+      && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a dir #N ticket"
+  fi
+done <<< "$headings"
+
+if [ -z "$missing_block" ]; then
+  pass "every docs/release-history.md heading at/above the v0.9.0 verification floor carries a verification block"
+else
+  fail "every docs/release-history.md heading at/above the v0.9.0 verification floor carries a verification block" \
+    "$missing_block"
+fi
+
+if [ -z "$provenance_leak" ]; then
+  pass "no docs/release-history.md verification block cites a private/ path or a dir #N ticket"
+else
+  fail "no docs/release-history.md verification block cites a private/ path or a dir #N ticket" \
+    "$provenance_leak"
+fi
+
 summary
