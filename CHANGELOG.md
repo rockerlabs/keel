@@ -20,6 +20,47 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   recent changelog entries, plus a spot-check that a claimed property matches observed behavior.
   Deliberately cheap (P4) — no tag field, no doctor check, no schema, no retro-tagging sweep.
 
+- **dir #371: `CORE.md` gains a trigger-condition index for shipped `docs/` procedures a session was
+  never told about.** The mechanism the ticket measured: `CORE.md` named zero of the fifteen-plus files
+  under `docs/`, so a shipped procedure's value was contingent on a human remembering it exists — the
+  v0.9.0 release-manager session itself never opened `docs/parallel-sessions.md` despite coordinating
+  nine parallel sessions, and came within one operator interjection of tagging a release having skipped
+  `docs/release-audit.md`'s mandated phase entirely. The fix is a new "Shipped docs — situation, not
+  summary" section, eight one-line `situation → docs/file.md` triggers — never a summary of what each
+  file contains: the six the ticket names as its own "whole shipped procedures" example
+  (`parallel-sessions.md`, `drydock.md`, `release-audit.md`, `delta-audit.md`, `rollout-audit.md`,
+  `loading-and-cost.md`), plus two a `/code-review high` pass on this same diff found had zero
+  always-on path in but belonged by the ticket's own definition: `delegation.md` (the ticket's own
+  "four instances" evidence names a subagent destroying its parent's uncommitted work because
+  `delegation.md`'s contract never reached the spawning session — citing "reachable via `FRAMEWORK.md`"
+  doesn't close that gap since `FRAMEWORK.md` is itself on-demand, the exact defect this ticket exists
+  to fix; the trigger fires on spawning *any* subagent, not only one self-described as read-only, since
+  a session about to make the dir #375 mistake wouldn't frame it that way either) and
+  `release-management.md` (a whole shipped procedure with, the review found, no reachable path from any
+  other bullet — `delegation.md`'s own trigger doesn't cover it, since it explicitly forbids subagents
+  for release work). `verification-economics.md` stays out, deliberately scoped against the ticket's own
+  trap warning (`docs/loading-and-cost.md`'s doctrine against bloating the always-loaded layer): it's
+  transitively reachable from the three procedure docs above that already cite it — the same review
+  flagged a further, softer gap here (`FRAMEWORK.md`'s own everyday "keep reviewing?" use of that doc has
+  no always-on path either) but left it unaddressed, absent a cited incident the way `delegation.md` had
+  one, rather than let the index grow past what the evidence supports. Measured, not estimated, by the
+  same chars/4 ruler `tests/test_doc_figures.sh` uses — the exact before/after counts for `CORE.md` and
+  `templates/CLAUDE.md` live in `docs/loading-and-cost.md`'s own table, the one place a test actually
+  pins them, rather than re-typed here as a second, unguarded copy; every figure the addition touches
+  there and in `README.md` was re-derived and updated in the same pass. Demonstrated live, not just
+  argued: a fresh agent given only the new section (isolated from real memory/CLAUDE.md, tools
+  restricted to Read/Glob under `docs/`) reached `docs/parallel-sessions.md` in a single tool call on an
+  unprompted "I'm about to run two sessions against one repo" situation and answered from the file's
+  actual content (the F1–F4 failure modes, the 60-second pre-flight); the same prompt without the new
+  section, run with a realistic session's full access, answered from recalled memory instead and never
+  opened the doc. `tests/test_core_capability_index.sh` is new: it pins the section to exactly eight
+  trigger bullets (a deliberate, re-measured bump required to grow it), that each bullet resolves to a
+  real `docs/*.md` file, and that no bullet runs long enough to have drifted back into summary shape —
+  guarding the exact regression the ticket's own "trap" paragraph warns about. `tests/lib.sh` gains
+  `check_count()` (promoting the "grep -c, compare to an expected count" idiom on its 4th independent
+  occurrence) and `section_body()` (the "slice between headings" idiom on its 2nd), both per the file's
+  own documented "second use = promote" convention.
+
 - **dir #386 leg (b): the first `/groom` run (v0.9.0 planning), and the three G0 retro amendments it
   applied instead of reporting.** The groom ran as `docs/grooming.md` prescribes — retro from the
   v0.8.3 records first, bodies read before assignment, every list derived from live heading tags, a

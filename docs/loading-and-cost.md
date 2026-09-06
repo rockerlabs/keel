@@ -24,8 +24,8 @@ the table above.
 
 | File | When it loads | Why / what it influences | ~Tokens |
 |---|---|---|---|
-| `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~2,210** |
-| `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. (On a machine with no git projects, `install.sh --link --no-git` trims the code/git rails out of the imported core — a couple hundred tokens lighter, and the trim leaves an always-on breadcrumb so the rails come back before git ever enters the workflow.) | ~1,720 |
+| `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, a trigger-condition index of shipped `docs/` procedures, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~2,490** |
+| `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. (On a machine with no git projects, `install.sh --link --no-git` trims the code/git rails out of the imported core — a couple hundred tokens lighter, and the trim leaves an always-on breadcrumb so the rails come back before git ever enters the workflow.) | ~1,920 |
 | `<project>/CLAUDE.md` (from `templates/project-CLAUDE.md`) | when you work **in that project** | Project context: stack, architecture, conventions, roadmap. Shapes decisions inside the project. | ~330 *(as filled)* |
 | `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~12,300 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,950 |
@@ -42,26 +42,26 @@ the table above.
 
 The only thing you pay **every** session is the always-loaded core:
 
-- **Globally, any session:** ~2,210 tokens (~1,720 if you import `CORE.md` and keep the
+- **Globally, any session:** ~2,490 tokens (~1,920 if you import `CORE.md` and keep the
   map/preferences in your own file).
-- **Working inside a project:** + ~330 → **~2,540 tokens** at session start.
+- **Working inside a project:** + ~330 → **~2,820 tokens** at session start.
 
 Everything else is opt-in. A typical session reads **none** of `FRAMEWORK` / `PRINCIPLES` / the commands —
 they open pointwise, under a specific task. The tools cost **zero** context.
 
 Put in perspective:
 
-- A ~200K-token context window means the core is **~1.1%** of it. Practically noise.
+- A ~200K-token context window means the core is **~1.2%** of it. Practically noise.
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
-- Over a month at ~50 sessions, the always-loaded core is ~110K input tokens total — cents, less with caching.
+- Over a month at ~50 sessions, the always-loaded core is ~125K input tokens total — cents, less with caching.
 - Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~18.3K for one decision.
 
 A guard against bloat ships with the whole session's set: `doctor` raises a **HINT** (`H-FOOTPRINT`)
 when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (its `@…/keel/CORE.md` import
 followed, when one is wired) together pass **10,000 tokens** (`KEEL_STARTUP_WARN_TOKENS`), naming both
-figures separately. For scale, the typical project file above is ~330 and the global core ~2,210 —
-together roughly 25% of the budget — so the hint fires only once one side has grown into a roadmap,
+figures separately. For scale, the typical project file above is ~330 and the global core ~2,490 —
+together roughly 28% of the budget — so the hint fires only once one side has grown into a roadmap,
 which is exactly what it then tells you to move to the on-demand tier.
 
 ## With Keel vs without — a concrete moment
@@ -83,7 +83,7 @@ you ▸ "we branch off main… there's already a client in net/… don't hardcod
 Cost: a variable re-explanation tax **every session** (hundreds–thousands of tokens of back-and-forth) +
 your time + a wrong-fact commit to undo. Outcomes drift between sessions.
 
-**With Keel — the rails and project context are already loaded (~2,540 tokens, cached):**
+**With Keel — the rails and project context are already loaded (~2,820 tokens, cached):**
 
 ```
 ~/.claude/CLAUDE.md (always loaded) already encodes:
@@ -98,7 +98,7 @@ agent ▸ greps net/ → finds the existing client, extends it
         (and if it ever stages a key, secret-guard blocks the commit — mechanically)
 ```
 
-Cost: ~2,540 fixed, cacheable tokens — and you **stop paying the re-explanation tax**. Outcomes are
+Cost: ~2,820 fixed, cacheable tokens — and you **stop paying the re-explanation tax**. Outcomes are
 consistent across sessions.
 
 ## The full loop — actor by actor (Claude Code, gate wired)
@@ -149,7 +149,7 @@ Keel is not magic, and this page won't pretend otherwise (see the README's *What
 
 ## Bottom line
 
-You pay a **small, stable, cacheable** fixed cost — ~2,210 tokens globally, ~2,540 inside a project — for
+You pay a **small, stable, cacheable** fixed cost — ~2,490 tokens globally, ~2,820 inside a project — for
 two things: the agent stops re-deriving your project from scratch each session, and a mechanical layer
 guards your commits for free. The heavy material (`PRINCIPLES`, `FRAMEWORK`) stays behind an on-demand
 door, off the startup footprint. That is the whole point of tiering — keep the *always* tier tiny, and let

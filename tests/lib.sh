@@ -67,6 +67,39 @@ pin() {
   fi
 }
 
+# check_count LABEL FILE PATTERN EXPECTED — assert PATTERN (a grep BRE, as-is — callers already anchor
+# their own patterns with `^` where that's the point, same as their pre-promotion call sites did)
+# occurs exactly EXPECTED times in FILE, reporting under LABEL with the actual count on failure.
+# Promoted here (dir #371) once a 4th test file (test_core_capability_index.sh) needed the exact same
+# "grep -c, compare to an expected count, pass/fail" idiom test_core_wrapper_sync.sh,
+# test_parallel_sessions_doc.sh, and test_release_audit_doc.sh had each defined independently — the
+# same "second use = promote" convention pin() above and release_tag_versions() below already follow
+# for their own idioms. The three pre-existing call sites are left as their own inline checks (each
+# has its own local variable name and failure wording already tuned and tested); only new call sites
+# are expected to reach for this helper going forward.
+check_count() {
+  local label="$1" file="$2" pattern="$3" expected="$4" n
+  n="$(grep -c "$pattern" "$file")"
+  if [ "$n" = "$expected" ]; then
+    pass "$label"
+  else
+    fail "$label" "found $n occurrence(s), expected $expected"
+  fi
+}
+
+# section_body HEADING FILE — print the lines strictly between HEADING (matched by exact string
+# equality, never regex) and the next "## " heading in FILE. Promoted here (dir #371) once a 2nd call
+# site (test_core_capability_index.sh) needed the same "flag-based section slicer, stop at the next
+# top-level heading" idiom tests/test_doc_figures.sh's own "What just got set up" section extraction
+# already used ad hoc — same "second use = promote" convention as check_count() above. That 1st call
+# site is left un-retrofitted, same reasoning as check_count()'s 3 pre-existing sites: its own
+# extraction pipes straight into a further filter (`&& /^\|/`) tuned to its one caller, and a shared
+# helper's job here is only the SLICE — a caller needing more filters its own way, same as it always did.
+section_body() {
+  local heading="$1" file="$2"
+  awk -v h="$heading" '$0 == h { f = 1; next } /^## / { f = 0 } f { print }' "$file"
+}
+
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
 #
 # dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always
