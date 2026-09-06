@@ -11,6 +11,15 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #95: new entities name the property they serve, or an honest `unknown`.** `FRAMEWORK.md`'s
+  Changelog section gains the one-line convention: a new entity's changelog entry names the **one**
+  primary property it serves (at most one secondary) from the project's own named-properties list, or
+  `unknown` if none fit — `unknown` parks a backlog ticket or a `LEARNINGS.md` entry and follows that
+  file's own promote-on-recurrence rule, the felt-friction signal to extend the property set.
+  `/global-review`'s L3 review/survey mode gains the natural consumer: a sweep for `unknown` tags in
+  recent changelog entries, plus a spot-check that a claimed property matches observed behavior.
+  Deliberately cheap (P4) — no tag field, no doctor check, no schema, no retro-tagging sweep.
+
 - **dir #386 leg (b): the first `/groom` run (v0.9.0 planning), and the three G0 retro amendments it
   applied instead of reporting.** The groom ran as `docs/grooming.md` prescribes — retro from the
   v0.8.3 records first, bodies read before assignment, every list derived from live heading tags, a
@@ -34,6 +43,14 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   doc's binding test. `IDEAS.md` had its first owned promote-or-drop pass (G4(b)): three entries
   promoted to backlog tickets, one dropped as mooted with the reason recorded, one kept with its
   unfired trigger stamped.
+- **dir #249 (enforcement half): a delta-audit verdict is not complete until the run is recorded.**
+  `docs/release-audit.md` gains phase 8: fill `tools/delta-audit/derive.sh`'s `run-record.md` stub
+  and append the row to the project's cross-run record (keel's own: gitignored `private/audit/RUNS.md`)
+  before calling the release done. Closes the half of dir #249 that decays without a step enforcing
+  it — three prior delta-audit runs each produced their own isolated run directory with zero
+  comparison between them, and `RUNS.md` was appended by hand with nothing requiring it. The
+  token/cost metric (dir #230) and the public-rollup question (dir #232/#268) are named as explicitly
+  deferred, not decided.
 
 - **dir #255 + dir #352: `tools/self/doctor.sh`'s dir #87 stale-heading check now reads a wrapped
   heading's whole BLOCK for its tag, and a ticket's own internal `##`/`###` sub-heading no longer
