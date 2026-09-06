@@ -1816,11 +1816,11 @@ elif [ "$EPHEMERAL" = 1 ]; then
   # uninstall.sh, no tools/ for the commands that shell out) — point checkout-backed verbs elsewhere.
   cat <<EOF
   - installed by the one-line bootstrap: the temporary clone it ran from is removed as it exits, so
-    the files above stand alone. The  keel  CLI,  keel uninstall , tools/install-pre-pr-gate.sh (the
-    /polish gate), and the commands that shell out to Keel's tools/ (/keel-setup project drafting,
-    /init-project) need a KEPT checkout — either re-run the one-liner with  --link  (keeps a checkout
-    at ~/keel and wires everything to it), or git clone the keel repo and run  ./$advise_install  from it
-    (re-runs never clobber your files).
+    the files above stand alone. The  keel  CLI,  keel uninstall ,  keel tokens  (the token-economy
+    report), tools/install-pre-pr-gate.sh (the /polish gate), and the commands that shell out to
+    Keel's tools/ (/keel-setup project drafting, /init-project) need a KEPT checkout — either re-run
+    the one-liner with  --link  (keeps a checkout at ~/keel and wires everything to it), or git clone
+    the keel repo and run  ./$advise_install  from it (re-runs never clobber your files).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
   - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, the

@@ -37,6 +37,30 @@ else
   pass "tu_project_slug fails on a nonexistent directory"
 fi
 
+# --- tu_repo_top: what every tu_session_files caller needs to resolve its REPO_TOP argument ----------
+# Promoted here from a near-verbatim duplicate first written independently in dir #314's own
+# token-report.sh (itself mirroring tools/lib/impact-store.sh's own chain) — one shared implementation
+# instead of two, the same reasoning that keeps the dedupe logic in this file singular.
+plain_repo="$(new_repo)"
+# git reports a worktree's path at its PHYSICAL location (macOS: /tmp and /var/folders are themselves
+# symlinks into /private) — compare against that, not new_repo()'s own unresolved mktemp path
+# (reproduced live: this test failed on macOS before the fix, comparing the wrong form).
+plain_repo_p="$(cd "$plain_repo" && pwd -P)"
+check_status "tu_repo_top resolves a plain (non-worktree) repo to its own toplevel" \
+  "$plain_repo_p" "$(tu_repo_top "$plain_repo")"
+
+git -C "$plain_repo" commit --allow-empty -qm init
+wt_dir="$SANDBOX/repo-worktree"
+git -C "$plain_repo" worktree add -q "$wt_dir" -b wt-branch
+check_status "tu_repo_top folds a worktree back to the MAIN checkout's top" \
+  "$plain_repo_p" "$(tu_repo_top "$wt_dir")"
+
+non_repo="$SANDBOX/not-a-repo"
+mkdir -p "$non_repo"
+non_repo_p="$(cd "$non_repo" && pwd -P)"
+check_status "tu_repo_top falls back to DIR's own physical path outside any git repo" \
+  "$non_repo_p" "$(tu_repo_top "$non_repo")"
+
 # --- tu_session_files: own dir + worktree-prefixed siblings, never an unrelated project -------------
 proj_root="$(tu_projects_root)"
 mkdir -p "$proj_root/$slug_main" "$proj_root/${slug_main}--claude-worktrees-alpha" \

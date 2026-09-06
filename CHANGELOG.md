@@ -15,6 +15,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #314 (first slice): `keel tokens` — a read-only report of where an adopter's own Claude Code
+  token spend went, and three diagnosed patterns instead of only a total.** A number is not advice:
+  the report names fan-out (subagent spend invisible in a session's own transcript, living instead in
+  sibling `subagents/agent-*.jsonl` files), cold prompt-cache resumes (a pause past the cache's TTL
+  re-pays the whole context at full price — detectable from disk as a turn whose cache-write exceeds
+  its cache-read after a >=55-minute gap), and repeated file reads (which file got re-read the most
+  across a session or a project). Ships as one script (`tools/token-report.sh`) and one `keel` verb,
+  built entirely on dir #313's shared `tools/lib/transcript-usage.sh` — no private parser, per that
+  ticket's own split ("it exists so the dedupe bug cannot be reintroduced by a second
+  implementation"). Reports tokens, never USD (no API key exists on a subscription); the weighted
+  comparison column is a labelled ruler, not a price. `docs/token-economy.md` carries the full "what
+  this report is, and what it is not" (seven refusals) plus the keep-alive prose the design pass found
+  but this slice does not ship as code (a bounded, human-installed watcher is positive-value in a
+  narrow band; an unconditional daemon is not — Keel ships neither, only the reasoning). The
+  statusline surface and the full tool are deferred to v0.10.0 on the design pass's own sizing.
+
 - **dir #359 + dir #360: two mechanical triggers replace "a human notices `BACKLOG.md` got
   big/stale again."** `tools/self/archive-sweep-check.sh` reports the closed-ticket line share
   and WARNs once it crosses a threshold (default 40%, `$KEEL_ARCHIVE_SWEEP_THRESHOLD`) — the

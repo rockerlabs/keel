@@ -26,6 +26,8 @@ felt to the reason the project exists:
 
 1. **Economy.** A thin, stable core (~2.5K tokens) instead of a context dump — the re-explanation
    tax ("we branch off main… there's already a client in `net/`…") stops being paid every session.
+   `keel tokens` (see `docs/token-economy.md`) reads your own agent sessions' actual spend, so this
+   claim is checkable on your own machine, not just asserted here.
 2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
    and the unchanged prefix is prime prompt-cache material.
 3. **Constraint.** The mechanized layer — the secret-guard git hook — blocks a key-shaped leak no
@@ -228,8 +230,9 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 > **One command for the rest.** Install drops a `keel` CLI into `~/.claude/bin` (the summary prints a
 > one-line PATH hint if that dir isn't on your PATH) — `keel help` lists the verbs: `keel install`,
 > `keel sync` (pull + re-wire), `keel doctor`, `keel audit`, `keel init`, `keel check`,
-> `keel uninstall` (reverses the install, backing up anything it removes), `keel version`, and
-> `keel help`. It's a thin front-end over the same `tools/*.sh`, so it works from any directory, not
+> `keel tokens` (where your tokens went, and why), `keel uninstall` (reverses the install, backing up
+> anything it removes), `keel version`, and `keel help`. It's a thin front-end over the same
+> `tools/*.sh`, so it works from any directory, not
 > just the clone. The CLI needs a checkout it can
 > point into, so the plain `curl | sh` copy install skips it (its temp clone is deleted right after —
 > the summary says so); the `--link` flow and manual-clone installs wire it.
@@ -242,6 +245,9 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 - [`docs/reference.md`](docs/reference.md) — **what's in the box**: every file, tool, and command at a glance.
 - [`docs/getting-started.md`](docs/getting-started.md) — the longer setup walk-through, install flows, version pinning.
 - [`docs/loading-and-cost.md`](docs/loading-and-cost.md) — what loads when and the per-session token cost.
+- [`docs/token-economy.md`](docs/token-economy.md) — `keel tokens`: where your own agent sessions'
+  tokens went, and three diagnosed patterns (fan-out, cold prompt-cache resumes, repeated file reads)
+  instead of only a total.
 - [`docs/going-public.md`](docs/going-public.md) — a safe step-by-step for making a private repo public.
 - [`docs/rollout-audit.md`](docs/rollout-audit.md) — checklist for verifying a model/harness upgrade
   didn't silently break your pipeline.
