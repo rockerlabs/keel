@@ -36,6 +36,21 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   documented for cost data), so influence×cost — `tools/keel-impact.sh`'s score against dir #313's
   per-ticket cost — was structurally unjoinable until now. The join script itself is not built here.
 
+- **`tools/self/citation-resolvability.sh`'s archive-path derivation now reuses dir #313's
+  `tu_project_slug` (`tools/lib/transcript-usage.sh`) instead of hand-rolling the slug transform**
+  (dir #313 review): the derivation only replaced `/` with `-` when computing the harness's
+  `~/.claude/projects/<slug>/` directory name, modeled — wrongly — on the impact-store's own
+  `impact_project_id`, a deliberately different, slash-only transform for keel's own internal impact
+  store. The harness's real convention also replaces every `.`, which `tu_project_slug` already
+  implements and documents (verified live against real transcript directories). A main-checkout path
+  containing a literal `.` anywhere would have silently looked in the wrong archive directory and read
+  every archived citation as dead; unexercised on this project's own checkout only because its path
+  has no dot. Sourcing the shared helper (rather than duplicating its one-line `tr`) also means this
+  script can no longer drift from the harness convention if it ever changes again. Regression test uses
+  a repo path containing a literal dot — the shared test fixture's own `new_repo()` (`tests/lib.sh`)
+  already puts one there for free via `mktemp`'s `repo.XXXXXX` template. Keel-self-maintenance: this
+  script has no consumer-facing counterpart.
+
 - **dir #267: `tools/delta-audit/harvest.sh` fills `run-record.md`'s mechanical rows from a delta-audit
   run's own artifacts, instead of a human transcribing them.** `derive.sh` already emits `run-record.md`
   as an eleven-row stub; this fills three of them in place — `records` (a sorted directory listing),

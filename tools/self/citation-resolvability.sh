@@ -50,6 +50,8 @@ self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$self_dir/../lib/dir-tickets.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$self_dir/../lib/impact-store.sh"
+# shellcheck source=tools/lib/transcript-usage.sh
+. "$self_dir/../lib/transcript-usage.sh"
 
 QUIET=0
 usage() {
@@ -104,16 +106,25 @@ if [ ! -r "$backlog_file" ]; then
 fi
 
 # Derived per BACKLOG.md:1255's own naming convention: the project dir under ~/.claude/projects/ is
-# the repo's absolute path with every '/' replaced by '-' — the same D2 slug transform
-# `impact_project_id` (tools/lib/impact-store.sh) uses. Not routed through that function itself: it
-# re-resolves the main-checkout top from scratch via `_impact_resolve_top`, which `backlog_root`
-# above already did — calling it here would just re-run the same `git worktree list` a second time
-# for an idempotent result. Overridable for test isolation, since the real archive is personal state
-# outside the repo and outside git entirely.
+# the repo's absolute path with every '/' AND every '.' replaced by '-' — `tu_project_slug`
+# (tools/lib/transcript-usage.sh, dir #313) already implements and documents this exact transform,
+# verified live against real transcript directories, so it's sourced rather than hand-rolled a second
+# time (the same "reuse an EXISTING lib" reasoning `_impact_main_top` above already gets right — dir
+# #26 is about not pre-building a shared lib for an idiom nobody has extracted yet, not about declining
+# to call one that already exists). An earlier draft of this fix duplicated the transform inline before
+# dir #313 had merged; found and corrected by this same review before it shipped. NOT the same
+# transform as `impact_project_id` (tools/lib/impact-store.sh): that one only replaces '/', correct for
+# ITS purpose (keel's own impact-store slug, a different, deliberately different-purpose id) — it was
+# never meant to mirror the harness's own transcript-directory naming and needs no fix here.
+# `tu_projects_root`'s `${HOME:?...}` guard would abort this `set -e` script outright if HOME were
+# ever unset with no KEEL_HOME fallback either; `|| archive_root=""` preserves this script's original,
+# more forgiving degrade-to-absent behavior for that edge case instead.
 if [ -n "${KEEL_CITATION_ARCHIVE_FILE:-}" ]; then
   archive_file="$KEEL_CITATION_ARCHIVE_FILE"
 else
-  archive_file="${HOME:-}/.claude/projects/$(printf '%s' "$backlog_root" | tr '/' '-')/CLAUDE-archive.md"
+  archive_root="$(tu_projects_root 2>/dev/null)" || archive_root=""
+  archive_slug="$(tu_project_slug "$backlog_root" 2>/dev/null)" || archive_slug=""
+  archive_file="$archive_root/$archive_slug/CLAUDE-archive.md"
 fi
 if [ -r "$archive_file" ]; then
   say "  archive: $archive_file"
