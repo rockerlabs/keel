@@ -11,6 +11,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #10 (legacy): `docs/keel-impact.md` gains a reviewed, one-off public snapshot of keel's own
+  impact ledger** — 55 dogfooded sessions, mean 87.9/median 88 out of 100 — per the 2026-07-12 operator
+  decision that the live ledger stays private but its aggregate can be published once. Named honestly as
+  an in-session estimate awaiting dir #94's Keel-vs-cold A/B, not an independently verified effect size.
+  Property: **Accumulation** — evidence that knowledge cited across sessions actually persists and gets
+  reused.
+
 - **dir #95: new entities name the property they serve, or an honest `unknown`.** `FRAMEWORK.md`'s
   Changelog section gains the one-line convention: a new entity's changelog entry names the **one**
   primary property it serves (at most one secondary) from the project's own named-properties list, or
