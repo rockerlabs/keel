@@ -74,19 +74,6 @@ Usage:
 EOF
 }
 
-# _tr_repo_top [DIR] — the project's main-checkout top, folding worktrees into one project the same
-# way tu_session_files's own REPO_TOP argument expects: the first `git worktree list` entry, else the
-# plain toplevel, else DIR's own physical path (not a git repo at all). Mirrors
-# tools/lib/impact-store.sh's _impact_main_top/_impact_resolve_top chain — same shape, kept local since
-# this is a one-script slice (SPEC §2) with no shared lib of its own to add a cross-module dependency to.
-_tr_repo_top() {
-  local dir="${1:-.}" top
-  top="$(git -C "$dir" worktree list --porcelain 2>/dev/null | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}')" || true
-  if [ -z "$top" ]; then top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || true; fi
-  if [ -z "$top" ]; then top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"; fi
-  printf '%s' "$top"
-}
-
 # _tr_resolve_session ARG — ARG is a real file (used as-is), else a bare session UUID searched for
 # under the (possibly overridden) transcript root: <root>/*/ARG.jsonl (worktree sessions live one
 # level down — see tools/lib/transcript-usage.sh's header note on project-directory slugs). Empty
@@ -158,6 +145,16 @@ _tr_build_report() {
     # underlying comparison is exact; nothing downstream depends on sub-token precision.
     def rnd: round;
 
+    # sessionName — a session transcript path down to its bare uuid, for display. Defined once,
+    # applied at both call sites below (fan-out worst-session, repeated-reads worst-session) instead
+    # of restating the same two `sub()` calls twice.
+    def sessionName: sub(".*/";"") | sub("\\.jsonl$";"");
+
+    # pct(a; b) — a%-share, 0 when the denominator is empty (never a division by zero). Defined once,
+    # applied at every share computation below (fan-out per-session, fan-out corpus-wide, cold-resume
+    # corpus-wide) instead of restating the same guarded-division three times.
+    def pct(a; b): if b > 0 then 100*a/b else 0 end;
+
     (sumfield("input_tokens")) as $newinput
     | (sumfield("cache_creation_input_tokens")) as $writes
     | (sumfield("cache_read_input_tokens")) as $reads
@@ -167,12 +164,12 @@ _tr_build_report() {
         [ $T[] | select(.subagent != null) ]
         | map({
             sessionFile: .sessionFile,
-            session: (.sessionFile | sub(".*/";"") | sub("\\.jsonl$";"")),
+            session: (.sessionFile | sessionName),
             agents: .subagent.files,
             subW: turnw(.subagent),
             primW: turnw(.primary)
           })
-        | map(. + { sharePct: (if (.subW+.primW) > 0 then (100*.subW/(.subW+.primW)) else 0 end) })
+        | map(. + { sharePct: pct(.subW; .subW+.primW) })
       ) as $fanoutRows
     | ( [$fanoutRows[].subW] | add // 0 ) as $totalSubW
     | ( $fanoutRows | sort_by(-.sharePct) | first ) as $worstFanout
@@ -216,7 +213,7 @@ _tr_build_report() {
         | group_by([.file, .file_path])
         | map({
             sessionFile: .[0].file,
-            session: (.[0].file | sub(".*/";"") | sub("\\.jsonl$";"")),
+            session: (.[0].file | sessionName),
             file: .[0].file_path,
             count: length
           })
@@ -246,13 +243,13 @@ _tr_build_report() {
           fanout: {
             sessionsWithFanout: ($fanoutRows | length),
             totalAgents: ( [$fanoutRows[].agents] | add // 0 ),
-            sharePct: (if $inputSideTotal > 0 then (100*$totalSubW/$inputSideTotal) else 0 end),
+            sharePct: pct($totalSubW; $inputSideTotal),
             worst: $worstFanout
           },
           coldResumes: {
             events: ($coldEvents | length),
             tokens: $coldRawTokens,
-            sharePct: (if $inputSideTotal > 0 then (100*$coldWeighted/$inputSideTotal) else 0 end),
+            sharePct: pct($coldWeighted; $inputSideTotal),
             band55to90: $coldBand5590
           },
           repeatedReads: {
@@ -279,14 +276,18 @@ _tr_build_report() {
 # read-moment stamp (SPEC §9.5).
 _tr_print_human() {
   local report="$1" label="$2"
+  # jqr QUERY — every jq call below reads the same already-computed report JSON; a local function
+  # (fed via a here-string, not `printf | jq`) says that once instead of restating
+  # `printf '%s' "$report" | jq -r` at each of the six call sites.
+  jqr() { jq -r "$1" <<<"$report"; }
+
   # Numbers print as plain integers, no thousands separators — locale-dependent grouping would be a
   # portability trap for no real gain here (see this project's own memory on shell/date/awk locale
   # gotchas across macOS/GNU/busybox).
   local sessions win_start win_end read_at
-  sessions="$(printf '%s' "$report" | jq -r '.sessions')"
-  win_start="$(printf '%s' "$report" | jq -r '.window.start // "—"')"
-  win_end="$(printf '%s' "$report" | jq -r '.window.end // "—"')"
-  read_at="$(printf '%s' "$report" | jq -r '.readAt')"
+  IFS=$'\t' read -r sessions win_start win_end read_at < <(
+    jqr '[.sessions, (.window.start // "—"), (.window.end // "—"), .readAt] | @tsv'
+  )
 
   printf 'keel tokens — %s        %s session(s) · %s … %s (read %s)\n\n' \
     "$label" "$sessions" "$win_start" "$win_end" "$read_at"
@@ -297,7 +298,7 @@ _tr_print_human() {
     return 0
   fi
 
-  printf '%s\n' "$report" | jq -r '
+  jqr '
     .accounting as $a
     | "  WHERE THE TOKENS WENT                        tokens      weighted*",
       "    new input                                 \($a.new_input)         \($a.weighted.new_input)",
@@ -309,14 +310,15 @@ _tr_print_human() {
   '
   printf '\n  WHAT DRIVES IT — 3 patterns\n'
 
-  printf '%s\n' "$report" | jq -r '
+  jqr '
+    def round1: (.*10|round)/10;
     .patterns.fanout as $f
     | if $f.sessionsWithFanout > 0 then
-        "    fan-out          \($f.sharePct | (.*10|round)/10)% of your spend is subagent work (\($f.totalAgents) agents",
+        "    fan-out          \($f.sharePct | round1)% of your spend is subagent work (\($f.totalAgents) agents",
         "                     across \($f.sessionsWithFanout) session(s)). Your session transcript does not",
         "                     show this; it lives in <session>/subagents/.",
         (if $f.worst then
-          "                     Worst: \($f.worst.session) — \($f.worst.agents) agent(s), \($f.worst.sharePct | (.*10|round)/10)% of that session."
+          "                     Worst: \($f.worst.session) — \($f.worst.agents) agent(s), \($f.worst.sharePct | round1)% of that session."
         else empty end),
         "                     (R7: this cannot say whether the fan-out was worth it — only its size.)"
       else
@@ -324,11 +326,12 @@ _tr_print_human() {
       end
   '
   printf '\n'
-  printf '%s\n' "$report" | jq -r '
+  jqr '
+    def round1: (.*10|round)/10;
     .patterns.coldResumes as $c
     | if $c.events > 0 then
         "    cold resumes     \($c.events) pause(s) outlived the prompt cache and re-paid for the",
-        "                     whole context: \($c.tokens) tokens, \($c.sharePct | (.*10|round)/10)% of the input-side bill.",
+        "                     whole context: \($c.tokens) tokens, \($c.sharePct | round1)% of the input-side bill.",
         "                     \($c.band55to90) of them were in the 55-90 min band — minutes, not hours,",
         "                     past the line.",
         "                     (R6: heuristic — a gap >=55min whose next turn rewrites more than it",
@@ -339,7 +342,7 @@ _tr_print_human() {
       end
   '
   printf '\n'
-  printf '%s\n' "$report" | jq -r '
+  jqr '
     .patterns.repeatedReads as $r
     | if $r.topFile then
         "    repeated reads   \($r.topFile) was read \($r.topCount) time(s) across these sessions.",
@@ -351,7 +354,7 @@ _tr_print_human() {
       end
   '
   printf '\n'
-  printf '%s\n' "$report" | jq -r '
+  jqr '
     .accounting.weights as $w
     | "  * weighted = a fixed comparison vector (new input \($w.input), cache write \($w.write), cache",
       "    read \($w.read)). It is NOT a price. The read ratio matches the cache-hit figure in",
@@ -360,7 +363,7 @@ _tr_print_human() {
       "    docs/token-economy.md, \"What this report is, and what it is not\"."
   '
   local unrec
-  unrec="$(printf '%s' "$report" | jq -r '.selfCheck.unrecognizedTypeRecords')"
+  unrec="$(jqr '.selfCheck.unrecognizedTypeRecords')"
   if [ "$unrec" -gt 0 ]; then
     printf '\n  note: %s record(s) across the scanned files carried a type this tool does not recognize —\n' "$unrec"
     printf '  the transcript format may have moved; figures above may undercount.\n'
@@ -400,7 +403,7 @@ main() {
     files=("$resolved")
     label="session $(basename "$resolved" .jsonl)"
   else
-    local repo_top; repo_top="$(_tr_repo_top ".")"
+    local repo_top; repo_top="$(tu_repo_top ".")"
     label="$(basename "$repo_top")"
     local sf
     while IFS= read -r sf; do

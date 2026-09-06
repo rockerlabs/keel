@@ -80,6 +80,23 @@ tu_project_slug() {
   printf '%s' "$abs" | tr '/.' '--'
 }
 
+# tu_repo_top [DIR] — the project's main-checkout top for DIR (default cwd), folding worktrees into
+# one project: the first `git worktree list` entry, else DIR's own toplevel, else (not a git repo at
+# all) DIR's own physical path. Every caller of tu_session_files needs exactly this resolution for its
+# REPO_TOP argument, so it lives here rather than in each consumer — promoted from a near-verbatim
+# duplicate first written independently in dir #314's own token-report.sh, itself mirroring
+# tools/lib/impact-store.sh's _impact_main_top/_impact_resolve_top chain (dir #313 review: two
+# independent copies of the same non-trivial fallback chain is the exact "second implementation can
+# reintroduce a bug" risk this file's own dedupe logic exists to prevent, applied to repo-top
+# resolution instead of parsing).
+tu_repo_top() {
+  local dir="${1:-.}" top
+  top="$(git -C "$dir" worktree list --porcelain 2>/dev/null | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}')" || true
+  if [ -z "$top" ]; then top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || true; fi
+  if [ -z "$top" ]; then top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"; fi
+  printf '%s' "$top"
+}
+
 # tu_session_files REPO_TOP — every PRIMARY session transcript (`<uuid>.jsonl`, never a subagent
 # sibling) belonging to REPO_TOP: its own checkout's project directory plus every worktree's
 # (`<slug>--claude-worktrees-*`, see header). One absolute path per line, no particular order, nothing
