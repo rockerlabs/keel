@@ -117,4 +117,15 @@ pin "groom.md states it is a pointer, never a restatement" "$cmd" \
 pin "grooming.md carries a self-revision clause" "$doc" '## Self-revision clause' \
   "expected the doc to state it revises itself via its own G0, same discipline it asks of its siblings"
 
+# --- first-run G0 amendments (2026-09-06): the two G0/G3 clauses the first /groom paid for ----------
+pin "G0 distinguishes shipped from installed for an opt-in mechanism" "$doc" \
+  'an empty table is not' \
+  "expected G0 to state that an opt-in mechanism's empty aggregate is a missing sensor, not a signal"
+pin "G3 states the last-arrow tag-extraction rule" "$doc" \
+  'release tag is the **last**' \
+  "expected G3 to name the extraction rule that removes phantom release tags from prose arrows"
+pin "G3 names acceptance-leg tickets as obligations, never re-tagged" "$doc" \
+  'acceptance obligation of' \
+  "expected G3 to keep a just-shipped release's open acceptance legs out of the build count"
+
 summary

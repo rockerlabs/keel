@@ -13,13 +13,19 @@ and that's fine.)
   on PR #106: a coding harness's session-URL commit trailer matched the key-shape patterns and the CI
   scan blocked the push; resolved by stripping the trailer (no allowlist, per the gate's own rule). One
   line in contributor-facing docs would save the next agent session the rediscovery.
+  **Dropped 2026-09-06 (first `/groom` G4(b) pass) — mooted:** `SECURITY.md` now states that the
+  guard blocks agent session-metadata trailers, and `docs/reference.md`'s secret-guard row says the
+  same; there is no `CONTRIBUTING.md` to carry a third copy, and a third copy is the sync-drift class
+  dir #166 names. Nothing left to write.
 - [2026-07-20] **The ladder from the `--no-git` trim to real always-on modules** — from the PR #106
   design discussion: the strip-generation approach was chosen over two-module composition (CORE +
   `CORE-GIT.md`, one `@import` line each) to keep the majority path unchanged; if a *third* optional
   always-on module ever materializes, switch to composition — the `KEEL-GIT` markers already fix the
   module boundary, so the migration stays mechanical. Next module candidate: the Memory section
   (`ADAPTING.md` already tells tools without cwd-keyed auto-memory to drop it). Not actionable until a
-  second real module shows demand.
+  second real module shows demand. **Reviewed 2026-09-06 (first `/groom` G4(b) pass): trigger not
+  fired — no second always-on module has been asked for; kept, with this stamp so the next pass can
+  see it was judged rather than skipped.**
 - [2026-07-23] **openwiki (langchain-ai/openwiki) — auto-generated CLAUDE.md/AGENTS.md, opposite bet from
   Keel's manual curation** — surfaced while triaging six repos from an Instagram post; the only one that
   overlapped with Keel's domain (the other five dropped without action). OpenWiki synthesizes
@@ -55,6 +61,8 @@ and that's fine.)
   relative value of captured non-derivable capital — but only if the pitch says so out loud. Possible
   next step: make "Keel keeps what cannot be derived from the code" a load-bearing line in the README /
   pitch surfaces. Promote to `BACKLOG.md` once a concrete pitch-surface edit is picked.
+  **Promoted 2026-09-06 (first `/groom` G4(b) pass) to dir #400** — the concrete edit is picked
+  there (one load-bearing README line), and it sits in the value-pitch lane the v0.9.0 sprint is about.
 - [2026-08-12] **Session-handoff artifact — a candidate fix for the named L4 mid-task-checkpoint gap** —
   from triaging a practitioner's agent-pipeline video (transcript supplied in chat; the pipeline builds
   on a public skills repo — grill/wayfinder/handoff — links live in the author's channel, repo not
@@ -66,6 +74,7 @@ and that's fine.)
   cousin (`/polish`'s same-SHA hand-off note via `tools/pre-pr-gate.sh handoff`), so the shape is
   proven in-house. Possible next step: a ticket-level checkpoint convention (where the note lives, what
   three fields it carries, when `/go` writes and consumes it) — P2-native, no new tool required.
+  **Promoted 2026-09-06 (first `/groom` G4(b) pass) to dir #401.**
 - [2026-08-12] **Interview-loop refinements: frontier rounds, a closing shared-understanding gate, and
   prototype-resolved forks** — same video triage. Three mechanics their "grilling" skill adds over
   `FRAMEWORK.md`'s Interview loops section: (1) *frontier questions* — each round batches exactly the
@@ -77,6 +86,8 @@ and that's fine.)
   text (UI layout, state-machine logic) is resolved by a *disposable prototype artifact answering one
   question* — 3–5 radically different variants, not one variant in three colors. All three are
   section-sized edits to the existing Interview loops rail, not new machinery.
+  **Promoted 2026-09-06 (first `/groom` G4(b) pass) to dir #402, bundled with the two entries below
+  from the same triage — one `FRAMEWORK.md` touch, three section-sized edits.**
 - [2026-08-12] **Ticket decomposition rails: fits-one-fresh-session sizing, behavior-named vertical
   slices, and ticketed design stages** — same video triage. Their pipeline sizes every ticket to fit
   one fresh-context session *including tests, review, and report* (context budget as the splitting
@@ -87,7 +98,7 @@ and that's fine.)
   its own interview session, converging into one spec with an explicit out-of-scope-with-reasons
   section. Keel's `/go` already assumes a groomed ticket with a done-criterion; these are the missing
   grooming-side rules that make that assumption hold. Candidate home: a short decomposition subsection
-  near the Loop model (L4) in `FRAMEWORK.md`.
+  near the Loop model (L4) in `FRAMEWORK.md`. **Promoted 2026-09-06 to dir #402 (bundled).**
 - [2026-08-12] **Phase-based effort routing as a complement to task-difficulty routing** — same video
   triage. `FRAMEWORK.md`'s model-selection rail routes by task difficulty; their pipeline routes by
   *pipeline phase*: design/spec sessions run at high effort, ticket implementation at low effort —
@@ -95,7 +106,8 @@ and that's fine.)
   reasoning — and independent review back at high effort / a strong model. The underlying claim is
   P3-flavored and worth stating even without adopting their pipeline: *decomposition quality is what
   buys the right to cheap implementation passes* — the better the grooming, the lower the effort tier a
-  ticket needs. One added sentence in the model-selection section would carry it.
+  ticket needs. One added sentence in the model-selection section would carry it. **Promoted
+  2026-09-06 to dir #402 (bundled).**
 - [2026-08-17] **Capability-split delegation pipeline: read-only analysis fans out to cheap spawned
   subagents, gated mutation stays in serialized operator sessions** — surfaced designing drydock
   (dir #165) and field-tested by its run 1 the same day. **Promoted the same day to dir #171** —

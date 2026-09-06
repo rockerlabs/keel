@@ -209,6 +209,19 @@ incidental and has already broken mid-release once.
   this happened twice inside one release's own build of this very requirement, each amendment crossing
   the worker's next report before the worker had seen it. The fix is the same acknowledged-token
   facility named above, applied per amendment rather than per status update: an explicit **per-amendment ACK** — treat any brief amendment without an acknowledgment from its recipient as undelivered, and re-send or escalate rather than assuming a queued message was read.
+- **Identity at first contact.** Nothing above says how a worker knows the session claiming to be its
+  manager IS its manager, and a release paid for that gap at its own fixer launch: the harness exposed
+  two addressing namespaces that do not display each other's identifiers, the manager quoted an address
+  from the wrong one — typed from memory, a fabricated fragment — and the worker, correctly treating an
+  unverifiable identity as a stop condition before handing over audit data, held until the operator
+  vouched by hand. Three rules follow. (a) A manager's first message to each worker carries **every
+  address the harness gives it, each copied verbatim from the tool's own live output, never retyped**.
+  (b) Where the namespaces cannot cross-resolve, the identity confirmation is a **named operator
+  touchpoint** — one paste into the worker's session — budgeted like any other, not a surprise. (c) A
+  worker's refusal to proceed on an unverifiable identity is **correct behaviour, not friction**; a brief
+  that punishes it trains workers to trust whoever speaks first. A shared secret carried in the launch
+  brief is an optional, cheap mechanization — the brief is manager-authored, so a token in it proves
+  brief-authorship, which is the trust anchor the worker actually needs.
 
 ## R7 — the cost line
 

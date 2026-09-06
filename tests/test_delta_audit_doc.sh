@@ -163,4 +163,12 @@ do
   check_contains "...and the read-only rail" "$prompt_block" "You are read-only"
 done
 
+# --- §10's narrower form, evidenced by two runs (v0.8.2 batch 1, v0.8.3 platform flip) --------------
+pin "the disclosure-only round states the neighbouring-claim rule" "$doc" \
+  'neighbouring claim in the same sentence it touches' \
+  "expected section 10 to bind a correction to every claim in the sentence it edits, not only the fixed one"
+pin "the disclosure-only round states the measuring-platform axis" "$doc" \
+  'the platform it was measured on, or measures both' \
+  "expected section 10 to require a platform-dependent correction to name or cover its platform"
+
 summary
