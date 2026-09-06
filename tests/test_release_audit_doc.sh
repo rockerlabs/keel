@@ -192,8 +192,11 @@ pin "release-audit.md phase 8 states the never-a-fabricated-zero clause" \
 pin "release-audit.md phase 8 names dir #230 as the deferred token/cost metric" \
   "$audit" 'dir #230'"'"'s own scope' \
   "expected phase 8 to name dir #230 as owning the token/cost metric, not decided here"
-pin "release-audit.md phase 8 names dir #232/#268 as the deferred public-rollup question" \
-  "$audit" 'dir #232'"'"'s public release-history page and dir #268'"'"'s three-way reconciliation' \
-  "expected phase 8 to name dir #232/#268 as where the public-rollup question is resolved, not decided here"
+pin "release-audit.md phase 8 states the public-rollup question is resolved, with a pointer" \
+  "$audit" 'public-rollup question is resolved (dir #268)' \
+  "expected phase 8's stale 'not decided here' paragraph to be replaced with the decision plus a dir #268 pointer, per dir #268's reconciliation memo §4.2"
+pin "release-audit.md phase 8 points at release-history.md's block, doesn't restate its fields" \
+  "$audit" '[`docs/release-history.md`](release-history.md), written by' \
+  "expected phase 8 to point at the verification block's home, not restate its field list (dir #268 §4.2: 'Point, do not restate')"
 
 summary

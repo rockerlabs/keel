@@ -15,6 +15,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #268: `docs/release-history.md` gains the canonical field list for a public per-release
+  verification statement** — a fixed-shape block, hand-written after each release's digest paragraph
+  starting at v0.9.0, stating what was checked, by what, and what was NOT. Closes a three-way
+  ownership fork against dir #232 (the page this ships on) and dir #249's second half (the
+  public-rollup question, resolved: the run record stays private; this per-release block is its only
+  public projection — `docs/verification-economics.md` §9 forbids the cross-run comparison a rollup
+  would invite). `docs/release-audit.md` phase 8's now-stale "not decided here" paragraph is replaced
+  with the decision plus a pointer, not a restatement. `tests/test_release_history.sh` gains two
+  assertions: a v0.9.0-floored presence check (vacuously green until the first qualifying heading
+  lands) and a no-private-provenance negative scoped to the block region only, since the surrounding
+  digest paragraphs are `dir #N`-rich by design (dir #269's separate scope) and an unscoped assertion
+  would fail on day one. No block is back-filled onto the 14 existing entries. The block's generator —
+  producing it from the private run record instead of hand-writing it — is deliberately deferred as
+  dir #410, gated on two releases shipping hand-written blocks: a redaction bug in it would publish a
+  private path, a risk disproportionate to saving ten minutes once per release.
+
 - **dir #375: `docs/delegation.md`'s canonical Worker rails block gains a dirty-tree discriminator** —
   two live incidents in three days (v0.8.2 wave 3, and PR #349's own round-2 review) each had a spawned
   review subagent mistake a parent session's live, uncommitted dirty tree for `dir #318`/`dir #320`'s

@@ -62,8 +62,16 @@ pin "CHANGELOG.md header links docs/release-history.md" \
 # the heading scan (the same guard doctor.sh's own identical CHANGELOG.md heading scan uses, via the
 # shared tools/lib/fence-blank.sh) — this page is unlikely to ever carry a fenced `## v<x.y.z>`
 # example, but the guard is one sourced line and the failure mode it prevents (a doc example silently
-# counted as a real entry) is exactly the class dir #139 exists to catch.
-headings="$(blank_fenced_blocks "$history" | grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^## //')"
+# counted as a real entry) is exactly the class dir #139 exists to catch. Blanked ONCE into a
+# $SANDBOX-scoped scratch file (tests/lib.sh's own convention; cleaned up by its EXIT trap) rather than
+# per use — the per-release verification-block section below (dir #268) reads the same blanked content
+# again and reuses this file instead of re-running blank_fenced_blocks a second time. Likewise the
+# heading-line scan itself runs once, into $heading_lines: the verification-block section reuses it too
+# instead of a second `grep -E '^## v...'` pass over $blanked_tmp that could silently drift from this one.
+blanked_tmp="$(mktemp "$SANDBOX/release-history-blanked.XXXXXX")"
+blank_fenced_blocks "$history" > "$blanked_tmp"
+heading_lines="$(grep -E '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp")"
+headings="$(sed 's/^## //' <<< "$heading_lines" | grep -oE '^v[0-9]+\.[0-9]+\.[0-9]+')"
 tags="$(release_tag_versions "$REPO_ROOT")"
 
 # _semver_gt A B — true iff v-prefixed semver A is strictly greater than v-prefixed semver B. Own copy,
@@ -237,6 +245,71 @@ if [ -z "$dup_heading" ]; then
 else
   fail "no docs/release-history.md heading is duplicated" \
     "heading(s) appearing more than once: $dup_heading"
+fi
+
+# --- per-release verification block (dir #268) ---------------------------------------------------------
+# Two checks, both walking the same per-heading block text (everything between a `## vX.Y.Z — <date>`
+# heading and the next one, or EOF) via tests/lib.sh's own section_body() — the same "second use =
+# promote" slicer test_core_capability_index.sh already reuses for this identical "slice one heading's
+# body" idiom, so no new bespoke extractor is written here. section_body() matches by exact heading-LINE
+# equality, not a version substring, so it sidesteps dir #299's `## v0.9.1` vs `## v0.9.10` collision on
+# its own: two releases sharing a numeric prefix still have different heading lines (the date differs
+# too). section_body() reads a real FILE, not text, so it reads $blanked_tmp — the same fence-blanked
+# scratch file the heading scan above already wrote, not a second blanking pass over the same doc.
+#
+# 1. Presence, floored at v0.9.0 (dir #268 §3.2 — "history starts at v0.9.0", no back-fill). This fires
+#    only once a heading at or above the floor exists; none does yet on this release, so today it is
+#    vacuously green by construction, the same shape dir #299's own pending-release allowance uses
+#    elsewhere in this file — no synthetic fixture needed, the check earns its keep the moment the first
+#    v0.9.0 heading lands.
+# 2. The no-private-provenance rule (dir #268 §4.3), scoped to the block region ONLY. The surrounding
+#    digest paragraphs are dir #N-rich by design (dir #269's separate, larger sweep) and an unscoped
+#    assertion here would fail on day one against this file's own existing prose — the exact trap the
+#    reconciliation memo named. A block is identified by its own `**Verification.**` opening marker;
+#    only the text from that marker onward is checked, never the digest paragraph above it.
+verification_floor="v0.9.0"
+missing_block=""
+provenance_leak=""
+while IFS= read -r hline; do
+  [ -n "$hline" ] || continue
+  h="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<< "$hline" | head -1)"
+  block="$(section_body "$hline" "$blanked_tmp")"
+
+  # Scoped to the text from the `**Verification.**` marker onward — same region the provenance check
+  # below uses, and for the same reason: without this, a digest paragraph that merely happens to use
+  # bold text (`**Scope:**` in ordinary prose, say) can satisfy a label the block itself never carries
+  # (found live, /code-review medium on this ticket's own first draft).
+  verification_part="$(awk '/\*\*Verification\.\*\*/{f=1} f{print}' <<< "$block")"
+
+  if [ "$h" = "$verification_floor" ] || _semver_gt "$h" "$verification_floor"; then
+    for label in '\*\*Verification\.\*\*' '\*\*Scope:\*\*' '\*\*Method:\*\*' '\*\*Coverage:\*\*' \
+                 '\*\*Findings:\*\*' '\*\*Behavioural defects:\*\*' '\*\*Which layer found what:\*\*' \
+                 '\*\*What was NOT checked:\*\*' '\*\*Induced-defect rate:\*\*'; do
+      match "$verification_part" -qE -- "$label" \
+        || missing_block="$missing_block${missing_block:+, }$h: missing $label"
+    done
+  fi
+
+  if [ -n "$verification_part" ]; then
+    match "$verification_part" -qE 'private/' \
+      && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a private/ path"
+    match "$verification_part" -qE 'dir #[0-9]+' \
+      && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a dir #N ticket"
+  fi
+done <<< "$heading_lines"
+
+if [ -z "$missing_block" ]; then
+  pass "every docs/release-history.md heading at/above the v0.9.0 verification floor carries a verification block"
+else
+  fail "every docs/release-history.md heading at/above the v0.9.0 verification floor carries a verification block" \
+    "$missing_block"
+fi
+
+if [ -z "$provenance_leak" ]; then
+  pass "no docs/release-history.md verification block cites a private/ path or a dir #N ticket"
+else
+  fail "no docs/release-history.md verification block cites a private/ path or a dir #N ticket" \
+    "$provenance_leak"
 fi
 
 summary
