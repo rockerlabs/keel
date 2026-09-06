@@ -19,11 +19,13 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   its own re-derive rule that two consecutive runs evidenced (a correction re-derives every neighbouring
   claim in the sentence it touches, and inherits the imprecision of its measuring platform — a
   characterization reproduced on one platform is one data point, not the mechanism).
-  `docs/release-management.md` R6 gains an identity-at-first-contact rule from the v0.8.3 fixer-launch
-  incident: every address copied verbatim from live tool output, the confirmation a named operator
-  touchpoint where the harness's namespaces cannot cross-resolve, and a worker's refusal on an
-  unverifiable identity documented as correct — the amendment dir #396 asked for, which closes that
-  ticket by the route its own body named. `docs/grooming.md` G0 now distinguishes a shipped opt-in
+  `docs/delegation.md` gains a second launch-time requirement, identity at first contact, from the
+  v0.8.3 fixer-launch incident — every address copied verbatim from live tool output, the confirmation
+  a named operator touchpoint where the harness's namespaces cannot cross-resolve, and a worker's
+  refusal on an unverifiable identity documented as correct — placed next to the post-launch
+  model-verify rule it mirrors, with `docs/release-management.md` R6 instantiating it for a release
+  the way R3 does; this is the amendment dir #396 asked for, which closes that ticket by the route its
+  own body named. `docs/grooming.md` G0 now distinguishes a shipped opt-in
   mechanism from an installed one (the read-trace aggregate printed an empty table on the maintainer's
   own machine — a missing sensor, not a dead-doc signal), and G3 carries the two extraction rules the
   first census paid for: a heading's release tag is its last arrow (prose arrows produced six phantom

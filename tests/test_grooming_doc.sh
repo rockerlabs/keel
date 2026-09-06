@@ -119,10 +119,10 @@ pin "grooming.md carries a self-revision clause" "$doc" '## Self-revision clause
 
 # --- first-run G0 amendments (2026-09-06): the two G0/G3 clauses the first /groom paid for ----------
 pin "G0 distinguishes shipped from installed for an opt-in mechanism" "$doc" \
-  'it is a missing sensor' \
+  'not a dead-doc signal' \
   "expected G0 to state that an opt-in mechanism's empty aggregate is a missing sensor, not a signal"
 pin "G3 states the last-arrow tag-extraction rule" "$doc" \
-  'release tag is the **last**' \
+  'token on the heading that names a release or the pool' \
   "expected G3 to name the extraction rule that removes phantom release tags from prose arrows"
 pin "G3 names acceptance-leg tickets as obligations, never re-tagged" "$doc" \
   'acceptance obligation of' \

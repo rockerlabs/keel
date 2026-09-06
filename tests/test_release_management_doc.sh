@@ -173,13 +173,19 @@ pin "manage-release.md states it is a pointer, never a restatement" "$cmd" \
 
 # --- R6's second felt addition (v0.8.3 fixer launch): identity at first contact ----------------------
 pin "R6 carries the identity-at-first-contact rule" "$doc" \
-  '**Identity at first contact.**' \
+  'Identity at first contact' \
   "expected R6 to say how a worker verifies the session claiming to be its manager"
-pin "R6's identity rule requires addresses copied verbatim, never retyped" "$doc" \
+pin "R6 points at delegation.md for the generic identity rule" "$doc" \
+  'next to the post-launch model-verify rule it mirrors' \
+  "expected R6 to instantiate the generic rule the way R3 does, not carry a second copy"
+pin "delegation.md carries the generic identity-at-first-contact rule" "$delegation" \
+  'identity at first contact' \
+  "expected the launch-time requirement to live where the model-verify rule lives"
+pin "delegation.md's identity rule requires addresses copied verbatim, never retyped" "$delegation" \
   'copied verbatim from the tool' \
   "expected the rule to bind the address source, since a retyped address is what the incident was"
-pin "R6 states a worker's refusal on unverifiable identity is correct" "$doc" \
-  'correct behaviour, not friction' \
-  "expected R6 to protect the worker's stop condition rather than train it away"
+pin "delegation.md states a worker's refusal on unverifiable identity is correct" "$delegation" \
+  'refusal to proceed on an unverifiable identity' \
+  "expected the rule to protect the worker's stop condition rather than train it away"
 
 summary

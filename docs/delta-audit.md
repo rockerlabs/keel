@@ -399,10 +399,10 @@ narrower form while following the paragraph above correctly.** A correction must
 neighbouring claim in the same sentence it touches** — one run's first disclosure batch corrected four
 findings and introduced one new defect, two false claims inside a single corrected sentence, a 25%
 induced rate on prose alone. And a correction inherits the imprecision of its **measuring platform**,
-not only of its source: the next run's orchestrator corrected a cross-vendor leg's wrong mechanism
-claim from a live macOS reproduction, and one part of that corrected characterization flipped on
-Linux (a lost row on one platform was a junk directory created at the filesystem root on the other)
-until the verifier measured it there. A correction that describes platform-dependent behaviour names
+not only of its source. The next run's orchestrator corrected a cross-vendor leg's wrong mechanism
+claim from a live macOS reproduction — and one part of that corrected characterization flipped on
+Linux until the verifier measured it there: what lost a row on one platform created a junk directory
+at the filesystem root on the other. A correction that describes platform-dependent behaviour names
 the platform it was measured on, or measures both — "reproduced live" on one platform is one data
 point, not the mechanism.
 

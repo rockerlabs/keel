@@ -209,19 +209,15 @@ incidental and has already broken mid-release once.
   this happened twice inside one release's own build of this very requirement, each amendment crossing
   the worker's next report before the worker had seen it. The fix is the same acknowledged-token
   facility named above, applied per amendment rather than per status update: an explicit **per-amendment ACK** — treat any brief amendment without an acknowledgment from its recipient as undelivered, and re-send or escalate rather than assuming a queued message was read.
-- **Identity at first contact.** Nothing above says how a worker knows the session claiming to be its
-  manager IS its manager, and a release paid for that gap at its own fixer launch: the harness exposed
-  two addressing namespaces that do not display each other's identifiers, the manager quoted an address
-  from the wrong one — typed from memory, a fabricated fragment — and the worker, correctly treating an
-  unverifiable identity as a stop condition before handing over audit data, held until the operator
-  vouched by hand. Three rules follow. (a) A manager's first message to each worker carries **every
-  address the harness gives it, each copied verbatim from the tool's own live output, never retyped**.
-  (b) Where the namespaces cannot cross-resolve, the identity confirmation is a **named operator
-  touchpoint** — one paste into the worker's session — budgeted like any other, not a surprise. (c) A
-  worker's refusal to proceed on an unverifiable identity is **correct behaviour, not friction**; a brief
-  that punishes it trains workers to trust whoever speaks first. A shared secret carried in the launch
-  brief is an optional, cheap mechanization — the brief is manager-authored, so a token in it proves
-  brief-authorship, which is the trust anchor the worker actually needs.
+- **Identity at first contact.** The generic rule lives in [`docs/delegation.md`](delegation.md)'s
+  launch-time requirements, next to the post-launch model-verify rule it mirrors (same placement as
+  R3): every address copied verbatim from the tool's live output, never retyped; the confirmation a
+  named operator touchpoint where the harness's namespaces cannot cross-resolve; a worker's refusal on
+  an unverifiable identity is correct behaviour, not friction. What a release adds: the manager's FIRST
+  message to each worker carries its addresses, and the confirmation paste is counted among the
+  release's operator touchpoints (R7's cost line) rather than arriving as a surprise. The felt case was
+  a release's own fixer launch — the manager quoted a fabricated address fragment from the wrong
+  namespace, and the worker rightly stopped.
 
 ## R7 — the cost line
 

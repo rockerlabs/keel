@@ -45,9 +45,9 @@ where that lives, and it may change there without this doc needing an edit.
 
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
-may not exist on this adopter at all. **"Shipped" and "installed" are different states, and an opt-in
-mechanism reports NOTHING on a machine that never opted in** — a report with nothing in it is not a
-dead-doc signal, it is a missing sensor, and the first `/groom` run met exactly that: the fuses had
+may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
+mechanism nobody turned on reports nothing** — and that emptiness is not a dead-doc signal, it is a
+missing sensor. The first `/groom` run met exactly that: the fuses had
 shipped the day before and no hook was wired on the maintainer's own machine. Check the install state
 before reading the aggregate, say which of the two states you are in, and hand the operator the install
 step as a G0 output so the NEXT groom has data.
