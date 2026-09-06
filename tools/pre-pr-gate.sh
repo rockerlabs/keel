@@ -203,8 +203,14 @@
 # nothing. Found in the operator-run /code-review high pass on this ticket. Not a new SECURITY hole (a
 # dishonest model already has Bash and could write the trace file directly, the same residual (1)
 # describes) — but it IS a real ACCIDENTAL-collision surface an honest session could hit by coincidence.
-# No structural fix exists today (no more-restricted, adopter-available subagent type ties an event back
-# to /polish's own spawn specifically) — named here so it isn't silently assumed away.
+# **"No structural fix exists today" is STALE (found and corrected 2026-09-06, dir #413/#414
+# feasibility check): a more-restricted subagent type is real — a `tools:` frontmatter allowlist on a
+# committed subagent definition (code.claude.com/docs/en/sub-agents.md) genuinely blocks `Bash`/`Edit`/
+# `Write` for that type, confirmed not assumed, and matching a trace on that dedicated agent_type instead
+# of the catch-all `general-purpose` would close this residual for the dir #70 leg specifically. Not yet
+# built — dir #413/#414 (pooled, its own scope) is queued, not shipped, so this residual still applies to
+# the CURRENT `general-purpose` matcher exactly as described above, for both the dir #70 leg and dir
+# #141's second-opinion leg, until that ticket lands.
 # (3) dir #85 (rails audit M2-6): commands/polish.md step 5(a) mandates that the subagent prompt carry
 # the ticket/spec the diff implements, with a two-way conformance mandate (dir #78). NOTHING here can
 # check that. A `SubagentStop` event carries no prompt/call-argument field (same absence residual (1)

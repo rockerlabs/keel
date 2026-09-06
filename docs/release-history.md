@@ -7,6 +7,27 @@ A one-paragraph-per-release summary, newest first. Each entry is a condensed dig
 produces a release) and [`publishing-checklist.md`](publishing-checklist.md) (the mechanics of
 cutting one) — this page is the record of what each one delivered.
 
+**Starting at v0.9.0, each entry also carries a verification block** — a fixed-shape paragraph
+appended after the digest, stating what was checked, by what, and what was not (dir #268). It is
+written in the same cut-and-land PR as the digest entry itself, by hand — there is no generator. It
+opens with the bold marker `**Verification.**`, followed by each field as a bold label and a colon:
+
+- `**Scope:**` — files, PRs in range.
+- `**Method:**` — how many review legs, of what kind.
+- `**Coverage:**` — rows read out of the total, waived count.
+- `**Findings:**` — fixed before tag / ticketed / shipped disclosed.
+- `**Behavioural defects:**` — in shipped code, the floor figure.
+- `**Which layer found what:**` — which leg found which class of finding.
+- `**What was NOT checked:**` — the column this block exists for; the doc's own named coverage
+  boundaries stated here, not smoothed over.
+- `**Induced-defect rate:**` — defects the release's own fix rounds created, as a fraction of the
+  total found.
+
+The block never cites a `private/` path or a `dir #N` — its provenance is PR numbers, tags, and file
+paths only, all of which a reader without access to the private audit ledger can open. **No block is
+back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
+were never recorded in this comparable shape.
+
 ## v0.8.3 — 2026-09-06
 
 The manager-toolchain release, shipped minimal-and-first so that v0.9.0 onward runs ON it. Four

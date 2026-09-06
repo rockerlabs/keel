@@ -179,6 +179,22 @@ never by a test failure; this step is that noticing, made a named part of the ph
 chance. Placed here, not in `publishing-checklist.md` §4, because §4 only starts once the tag is already
 cut — by then this same PR has already merged and restating the figure would need a second PR.)*
 
+**Also before that PR lands, run the closed-ticket archive-sweep check and the pool report** —
+`tools/self/archive-sweep-check.sh` and `tools/self/pool-report.sh --record <the version being cut>`
+— and read their output, not just their exit code: both always exit 0 (advisory only) and warn on
+stderr instead. This is the mechanical trigger dir #359 filed after `BACKLOG.md` was found holding
+227 closed tickets across 63% of its lines with nothing scheduling the sweep dir #353 eventually had
+to run by hand; and the pool census dir #360 filed once the `→ pool` lane became nameable at all.
+Neither check touches `BACKLOG.md` — a WARN above the archive-sweep threshold (default 40% closed
+line share, `$KEEL_ARCHIVE_SWEEP_THRESHOLD` to override) means a re-sweep is due and should be filed
+or run as its own step, carrying both traps dir #359 records (cooldown/datability — nothing closed
+in the current, uncut release may be swept, and nothing whose closure date can't be read may be
+swept; and wrapped headings, dir #255/#352 — a heading's own closure tag can sit on a continuation
+line, not just its first). A pool-report WARN (the two-consecutive-minors growth trigger) means the
+debt budget is no longer absorbing what audits produce — the doctrine's own signal to schedule a
+drain release rather than keep filing (dir #360). Both scripts are keel-self-maintenance only:
+`BACKLOG.md` is gitignored and main-checkout-only, so neither ships to any adopter's install.
+
 That ordering has a consequence worth stating, because it is otherwise only visible as a CI failure:
 **between the cut and the tag, the newest `## [x.y.z]` section legitimately has no tag** — for the
 whole life of the release-prep PR, and on `main` until the tag lands. Any check reconciling CHANGELOG
@@ -233,10 +249,11 @@ because nothing *required* a run's numbers to leave its own directory. `RUNS.md`
 hand, appended without a step enforcing it; this phase is the other half — the half that decays.
 
 **Deliberately out of scope here:** the token/cost metric (dir #230's own scope — this phase only
-requires its field to be written down, `unmeasured` included, never a fabricated zero) and whether a
-redacted public rollup of this record belongs in the tracked tree. That question is resolved together
-with dir #232's public release-history page and dir #268's three-way reconciliation of both against
-this ticket — not decided here.
+requires its field to be written down, `unmeasured` included, never a fabricated zero). The
+public-rollup question is resolved (dir #268): the run record stays private; its public projection is
+the fixed-shape verification block in [`docs/release-history.md`](release-history.md), written by
+hand in the same cut-and-land PR as the digest entry — phase 7's existing sequencing, nothing new to
+invent.
 
 ## Deliverable
 

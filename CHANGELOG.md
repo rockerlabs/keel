@@ -9,6 +9,10 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 For a condensed one-paragraph-per-release digest instead of the full dated detail below, see
 [`docs/release-history.md`](docs/release-history.md).
 
+Keep a Changelog also defines `### Deprecated` and `### Removed` sections, unused in this file so far
+(every release to date has only added). `docs/loading-and-cost.md`'s retirement doctrine gives those
+sections real content going forward — see that page for exactly when each one applies.
+
 ## [Unreleased]
 
 - **dir #314 (first slice): `keel tokens` — a read-only report of where an adopter's own Claude Code
@@ -26,6 +30,78 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   but this slice does not ship as code (a bounded, human-installed watcher is positive-value in a
   narrow band; an unconditional daemon is not — Keel ships neither, only the reasoning). The
   statusline surface and the full tool are deferred to v0.10.0 on the design pass's own sizing.
+
+- **dir #359 + dir #360: two mechanical triggers replace "a human notices `BACKLOG.md` got
+  big/stale again."** `tools/self/archive-sweep-check.sh` reports the closed-ticket line share
+  and WARNs once it crosses a threshold (default 40%, `$KEEL_ARCHIVE_SWEEP_THRESHOLD`) — the
+  signal dir #353's own manual sweep (21,780 → 10,884 lines, 63% closed) had no successor for;
+  it is read-only and does not perform a sweep itself. `tools/self/pool-report.sh` reports the
+  `→ pool` lane's size, oldest entry's age, R-level split, and the count excluding
+  structurally-parked tickets (⛔-blocked or explicit-gate, matched by rule rather than by
+  ticket name), and WARNs when the pool has grown across the last two recorded releases and
+  again this run — dir #360's own two-consecutive-minors drain-release trigger, storage per its
+  FORK RESOLVED (b): an untracked history file beside `BACKLOG.md`, never in the tracked tree.
+  Both share one new heading/body-span scanner, `tools/lib/backlog-blocks.sh`, extracted so
+  the two didn't each re-derive `tools/self/doctor.sh` check 5's wrapped-heading detection
+  (dir #255/#352) independently. `docs/release-audit.md` phase 7 now names both as a step
+  before the release-prep PR lands. Neither ships to any adopter's install — `BACKLOG.md` is
+  gitignored, keel-self-maintenance content.
+
+- **dir #397's doctor-advisory half: `tools/self/doctor.sh` gains a machine-wide WARN for a
+  stray `$HOME/keel*alpine*`-shaped clone living outside the canonical, reused
+  `$HOME/.keel/tmp/alpine-clone` path** — the safety net for a session that ignores dir #397's
+  documented recipe and invents a new ad-hoc name anyway, the exact shape that accumulated 16
+  stray clones (~165MB) at the `$HOME` root by the v0.8.3 close. Advisory only, per dir #399's
+  own SPEC (no fail state).
+
+- **dir #268: `docs/release-history.md` gains the canonical field list for a public per-release
+  verification statement** — a fixed-shape block, hand-written after each release's digest paragraph
+  starting at v0.9.0, stating what was checked, by what, and what was NOT. Closes a three-way
+  ownership fork against dir #232 (the page this ships on) and dir #249's second half (the
+  public-rollup question, resolved: the run record stays private; this per-release block is its only
+  public projection — `docs/verification-economics.md` §9 forbids the cross-run comparison a rollup
+  would invite). `docs/release-audit.md` phase 8's now-stale "not decided here" paragraph is replaced
+  with the decision plus a pointer, not a restatement. `tests/test_release_history.sh` gains two
+  assertions: a v0.9.0-floored presence check (vacuously green until the first qualifying heading
+  lands) and a no-private-provenance negative scoped to the block region only, since the surrounding
+  digest paragraphs are `dir #N`-rich by design (dir #269's separate scope) and an unscoped assertion
+  would fail on day one. No block is back-filled onto the 14 existing entries. The block's generator —
+  producing it from the private run record instead of hand-writing it — is deliberately deferred as
+  dir #410, gated on two releases shipping hand-written blocks: a redaction bug in it would publish a
+  private path, a risk disproportionate to saving ten minutes once per release.
+
+- **`tools/pre-pr-gate.sh`'s dir #70 header comment corrected: "no structural fix exists today" for a
+  more-restricted subagent type was stale against current harness docs** — a `tools:` frontmatter
+  allowlist on a committed subagent definition genuinely blocks `Bash`/`Edit`/`Write` for that type; a
+  feasibility check for dir #413/#414 (a review-subagent capability floor, now pooled) confirmed this
+  live and left the finding in place of the outdated claim, so a future implementer starts from
+  confirmed feasibility rather than from scratch. Comment-only; no behavior change.
+
+- **dir #375: `docs/delegation.md`'s canonical Worker rails block gains a dirty-tree discriminator** —
+  two live incidents in three days (v0.8.2 wave 3, and PR #349's own round-2 review) each had a spawned
+  review subagent mistake a parent session's live, uncommitted dirty tree for `dir #318`/`dir #320`'s
+  known test-fixture-leak symptom and run `git checkout --` on it, rationalizing the "restore" as
+  compatible with "read-only." The block now says explicitly that a dirty tree is normal work in
+  progress, never corruption, and names the git verbs never to run on it; propagated byte-identical to
+  all 8 existing verbatim copies (`docs/drydock/{auditor,verifier,code-auditor}.md`,
+  `docs/delta-audit.md`'s 5 session-prompt copies). `commands/polish.md`'s dir #70 fallback
+  subagent — the one ad-hoc review-spawn point this repo's own commands control, since both incidents
+  actually ran through the built-in `/code-review` skill's own fan-out — used to carry a weaker bespoke
+  paraphrase instead; it now inlines the same canonical block, see `tests/test_polish_review_rails.sh`
+  for the details and rationale.
+
+- **dir #358: Keel gains a doctrine for RETIRING a shipped capability**, closing a gap this backlog had
+  never had to face — every open ticket only ever proposed to add, fix, or measure something. `CORE.md`'s
+  (and `templates/CLAUDE.md`'s) "Shipped docs" trigger bullet is reworded to also point at retirement, and
+  `docs/loading-and-cost.md` gains a new section carrying the doctrine itself: three delivery-slot classes
+  (always-on / on-demand / mechanism, each with its own cost ruler), a four-input evidence bar (cost,
+  benefit, reach, successor) with a verdict rule, a **tail-risk exemption** that judges a safety rail on
+  whether its hazard still exists rather than how often it has fired, five reversibility rungs (R0 Freeze
+  through R4 Delete, with R1 Unsurface as the cheap, reversible way to separate "worth its always-on cost"
+  from "any good") descended one at a time under a one-release cooldown, and the record rules —
+  tombstone what is cited, delete what is not. `CHANGELOG.md`'s own header now documents the
+  `### Deprecated`/`### Removed` convention this doctrine puts to use. Doctrine only: the adopter-facing
+  install/doctor reconcile that actually retires a placed artifact is dir #408.
 
 - **dir #313: `tools/lib/transcript-usage.sh` gives this project its first committed answer to "what
   does a unit of work here actually cost?"** — a shared reader for this machine's Claude Code session
@@ -51,6 +127,21 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   column collides under same-day concurrent sessions (the exact attribution trap that ticket already
   documented for cost data), so influence×cost — `tools/keel-impact.sh`'s score against dir #313's
   per-ticket cost — was structurally unjoinable until now. The join script itself is not built here.
+
+- **`tools/self/citation-resolvability.sh`'s archive-path derivation now reuses dir #313's
+  `tu_project_slug` (`tools/lib/transcript-usage.sh`) instead of hand-rolling the slug transform**
+  (dir #313 review): the derivation only replaced `/` with `-` when computing the harness's
+  `~/.claude/projects/<slug>/` directory name, modeled — wrongly — on the impact-store's own
+  `impact_project_id`, a deliberately different, slash-only transform for keel's own internal impact
+  store. The harness's real convention also replaces every `.`, which `tu_project_slug` already
+  implements and documents (verified live against real transcript directories). A main-checkout path
+  containing a literal `.` anywhere would have silently looked in the wrong archive directory and read
+  every archived citation as dead; unexercised on this project's own checkout only because its path
+  has no dot. Sourcing the shared helper (rather than duplicating its one-line `tr`) also means this
+  script can no longer drift from the harness convention if it ever changes again. Regression test uses
+  a repo path containing a literal dot — the shared test fixture's own `new_repo()` (`tests/lib.sh`)
+  already puts one there for free via `mktemp`'s `repo.XXXXXX` template. Keel-self-maintenance: this
+  script has no consumer-facing counterpart.
 
 - **dir #267: `tools/delta-audit/harvest.sh` fills `run-record.md`'s mechanical rows from a delta-audit
   run's own artifacts, instead of a human transcribing them.** `derive.sh` already emits `run-record.md`

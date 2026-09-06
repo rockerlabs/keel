@@ -24,7 +24,7 @@ months-long horizon, and/or you're taking a private repo public. If that's you, 
 Four properties, independent of which model or tool you run — ordered from the most immediately
 felt to the reason the project exists:
 
-1. **Economy.** A thin, stable core (~2.4K tokens) instead of a context dump — the re-explanation
+1. **Economy.** A thin, stable core (~2.5K tokens) instead of a context dump — the re-explanation
    tax ("we branch off main… there's already a client in `net/`…") stops being paid every session.
    `keel tokens` (see `docs/token-economy.md`) reads your own agent sessions' actual spend, so this
    claim is checkable on your own machine, not just asserted here.
@@ -122,7 +122,7 @@ Keel rests on three plain ideas:
 
 ```mermaid
 flowchart TD
-    subgraph always["Always loaded — every session (thin core ~2.4K tokens + your project file)"]
+    subgraph always["Always loaded — every session (thin core ~2.5K tokens + your project file)"]
         core["CLAUDE.md — thin core:<br/>ground rules + a map of where the rest lives"]
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end

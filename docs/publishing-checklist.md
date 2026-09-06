@@ -107,7 +107,9 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
       the section itself ran ~31KB at v0.6.1, so pasting it whole gives a release note eight times the
       house length. The section is the source and the authority; the release note is the readable
       digest of it. *(v0.6.1 shipped with a blank title because this list omitted `--title`; see
-      `CHANGELOG.md`'s dir #159 entry.)*
+      `CHANGELOG.md`'s dir #159 entry.)* The notes may **link** to the release's entry in
+      [`docs/release-history.md`](release-history.md), including its verification block (dir #268) —
+      they must not restate it; a copy is the dir #206 derived-copy class by construction.
 
 ## 5. Presentation
 
