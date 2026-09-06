@@ -244,6 +244,12 @@ citation, no count). Each citation is archived to the evidence file so the score
   --friction "cite"  a stale/noisy rule got in the way (demote pressure)
   --silent N         COUNT ONLY (no citation): always-loaded rules that did NOT fire (demote candidates; not scored)
   --gap S            one-line top demote/promote candidate (or "none")
+  --ticket S         the ticket this session worked (dir #406: formalizes the informal
+                     "[v0.8.3 worker dir#377]" evidence-cell tags workers already hand-write). Recommended
+                     shape: "dir #N" (the space matters — tools/lib/dir-tickets.sh's own extractor requires
+                     it) so a ledger row's ticket is machine-resolvable the same way a citation is. Free text
+                     otherwise; not validated. Enables the cost/influence join dir #313 §2 scoped but could
+                     not build (no join key existed until this column).
 
 The script derives score = round(100*HELP/(HELP+COST)), HELP=4*hold+3*guard+2*fire+hit, COST=2*miss+2*friction,
 and a confidence tag from the total event count. No --score flag: the number is computed, never asserted.
@@ -263,11 +269,18 @@ EOF
 
 # --- the ledger's column list: the ONE ordered source of truth for the table's shape (dir #151) ----
 # cmd_add's row-printf (the WRITER), _ledger_parse (the READER), and the table header below all derive
-# their column positions/order from this single array instead of each hand-listing the same 12 columns.
+# their column positions/order from this single array instead of each hand-listing the same 13 columns.
 # Position in the array is the invariant: table field N = array-index + 2 (field 1 is the empty cell
 # before the table's leading "|"; array indices are 0-based, so "date" at index 0 is field 2, "guard"
 # at index 3 is field 5, etc — the same numbering _ledger_parse's old header comment already documented).
-_LEDGER_COLS=(date score conf guard hold fire hit miss fric silent evidence gap)
+#
+# dir #406: `ticket` appended at the END, not inserted — an ADDITIVE column, per that ticket's own
+# SPEC-dir-313 §2 mechanism sketch. Every existing row on disk has exactly 12 fields; a table-splitting
+# reader (awk -F'|') indexes a field past a row's actual width as empty, which is exactly the "existing
+# rows read back with an empty/— value in the new field" behavior the spec calls for — no migration of
+# old rows needed. Appending anywhere but the end would have shifted every column position after it and
+# broken every existing _ledger_col_pos consumer against old rows.
+_LEDGER_COLS=(date score conf guard hold fire hit miss fric silent evidence gap ticket)
 
 # table field number (1-based, counting the empty pre-leading-pipe cell as field 1) for column $1 —
 # the single place that turns a column NAME into a table POSITION. Every reader/writer of ledger rows
@@ -328,6 +341,12 @@ counting it.
 
 Each count equals the number of cited events behind it; the **evidence** cell shows only the single strongest
 citation, and the full per-event trail (every event → its citation) lives in `evidence.md` next to this file.
+
+**ticket** (dir #406) names the backlog ticket this session worked, via `--ticket "dir #N"` — optional,
+empty on a row that predates this column or on a session with no single owning ticket. It is the join key
+that makes influence times cost possible (dir #313 per-ticket cost, joined against a per-session score
+here): a date column collides under same-day concurrent sessions, `gitBranch` is not recorded here, but
+`dir #N` is stable and already resolvable by `tools/lib/dir-tickets.sh`.
 '
 
 # --- the evidence file header, written once when it is first created ------------------------------
@@ -700,6 +719,11 @@ _epoch_to_iso() {
 # load-bearing for both the TSV event log and the evidence trail, so both sanitize through this one place.
 _flatten() { local s="${1//$'\t'/ }"; printf '%s' "${s//$'\n'/ }"; }
 
+# dir #406 review: escape a free-text value for a ledger table CELL — a stray pipe would break the
+# column, a newline would break the row. cmd_add had this exact two-line idiom copy-pasted three times
+# (evidence, gap, and now ticket) with no shared name; factored here once ticket made it a third copy.
+_ledger_cell() { local v="$1"; v="${v//|/\\|}"; printf '%s' "${v//$'\n'/ }"; }
+
 # A citation flag needs a non-empty value (no citation → no count). Reject empty/missing with the tool's own
 # clean exit 2, not bash's cryptic `${2:?}` abort (exit 1). $2 is the flag name, for the message.
 _need_cite() { [ -n "$1" ] || { printf 'keel-impact: %s needs a non-empty citation\n' "$2" >&2; exit 2; }; }
@@ -963,7 +987,7 @@ cmd_add() {
   # pure: add_cite/require_count/_is_iso_ts only accumulate and inspect shell variables, no file is
   # read or written, so hoisting the block above the enabled checks costs nothing and buys the
   # ordering — `add --guard` with no citation used to migrate a legacy .keel/ and then exit 2.
-  local silent="" gap="" ingest=1 retro=0 asof="" since=""
+  local silent="" gap="" ticket="" ingest=1 retro=0 asof="" since=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --hold)      _need_cite "${2:-}" --hold;     add_cite hold     "$2"; shift 2 ;;
@@ -974,6 +998,7 @@ cmd_add() {
       --friction)  _need_cite "${2:-}" --friction; add_cite friction "$2"; shift 2 ;;
       --silent)    silent="${2:?}";                shift 2 ;;
       --gap)       gap="${2:?}";               shift 2 ;;
+      --ticket)    ticket="${2:?}";             shift 2 ;;
       --no-ingest) ingest=0;                   shift 1 ;;
       --retro)     retro=1;                    shift 1 ;;
       --asof)      asof="${2:?}";              shift 2 ;;
@@ -1132,9 +1157,9 @@ cmd_add() {
   for cand in "$_first_hold" "$_first_guard" "$_first_fire" "$_first_hit" "$_first_miss" "$_first_friction"; do
     if [ -n "$cand" ]; then raw_ev="$cand"; break; fi
   done
-  local ev="${raw_ev:-—}" gp="${gap:-—}"
-  ev="${ev//|/\\|}"; ev="${ev//$'\n'/ }"
-  gp="${gp//|/\\|}"; gp="${gp//$'\n'/ }"
+  local ev; ev="$(_ledger_cell "${raw_ev:-—}")"
+  local gp; gp="$(_ledger_cell "${gap:-—}")"
+  local tk; tk="$(_ledger_cell "${ticket:-—}")"
 
   ensure_ledger
   local today; today="${asof:-$(date -u +%Y-%m-%d)}"
@@ -1159,6 +1184,7 @@ cmd_add() {
       silent)   _row_vals+=("$silent") ;;
       evidence) _row_vals+=("$ev") ;;
       gap)      _row_vals+=("$gp") ;;
+      ticket)   _row_vals+=("$tk") ;;
       *) printf 'keel-impact: internal error — no value mapped for ledger column %s\n' "$_col" >&2; exit 1 ;;
     esac
   done
