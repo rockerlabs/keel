@@ -74,14 +74,17 @@ pin() {
 # independently — this file's own "second use = promote" convention (see pin()'s comment above), overdue
 # at three. Pass strip_indent=1 when the copy sits inside a nested list item and needs its leading
 # whitespace normalized before a byte-identity comparison; the two pre-existing call sites stay
-# flush-left and don't need it.
+# flush-left and don't need it. The range markers tolerate leading whitespace unconditionally (zero
+# spaces satisfies `[[:space:]]*` too), so one awk program covers both modes — stripping is then just
+# whether awk's own `sub()` runs on each matched line, never a second `sed` process.
 extract_rails_block() {
   local file="$1" strip="${2:-}"
-  if [ "$strip" = "1" ]; then
-    awk '/^[[:space:]]*- You are read-only:/,/^[[:space:]]*- DELEGATION RUN:/' "$file" | sed 's/^[[:space:]]*//'
-  else
-    awk '/^- You are read-only:/,/^- DELEGATION RUN:/' "$file"
-  fi
+  awk -v strip="$strip" '
+    /^[[:space:]]*- You are read-only:/,/^[[:space:]]*- DELEGATION RUN:/ {
+      if (strip == "1") sub(/^[[:space:]]*/, "")
+      print
+    }
+  ' "$file"
 }
 
 # check_block_equal LABEL A B — assert two block-extracted strings are identical and non-empty,

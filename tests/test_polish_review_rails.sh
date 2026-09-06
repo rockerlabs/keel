@@ -20,11 +20,20 @@ check_file "commands/polish.md exists" "$polish"
 
 # strip_indent=1 on both sides: polish.md's copy sits inside a nested list item and needs its leading
 # whitespace normalized before comparison; it's a no-op on delegation.md's already-flush-left canonical
-# text, so one call shape covers both. The byte-identity check below is sufficient on its own to catch a
-# dropped or reworded dirty-tree discriminator line — no separate substring pin needed alongside it.
+# text, so one call shape covers both.
 canonical_rails="$(extract_rails_block "$delegation" 1)"
 polish_rails="$(extract_rails_block "$polish" 1)"
 check_block_equal "commands/polish.md's dir #70 fallback rails block is byte-identical (mod indent) to docs/delegation.md's canonical text" \
   "$polish_rails" "$canonical_rails"
+
+# The byte-equality check above only catches ASYMMETRIC drift (one side losing the line while the
+# other keeps it) — reproduced live: stripping the dirty-tree bullet from BOTH delegation.md and
+# polish.md at once leaves the two sides equal, so check_block_equal alone stays green (found by this
+# ticket's own /code-review medium pass, angle B, which mutated a scratch clone to confirm). An
+# independent pin on the canonical source closes the gap: if the bullet vanishes from delegation.md —
+# alone or together with every copy — this fails regardless of what any copy still says.
+pin "docs/delegation.md's rails block states the dirty-tree discriminator" \
+  "$delegation" 'is normal — it'"'"'s the parent' \
+  "expected the canonical Worker rails block to say a dirty tree is normal work in progress, not corruption (dir #375)"
 
 summary

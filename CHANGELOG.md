@@ -17,7 +17,7 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   known test-fixture-leak symptom and run `git checkout --` on it, rationalizing the "restore" as
   compatible with "read-only." The block now says explicitly that a dirty tree is normal work in
   progress, never corruption, and names the git verbs never to run on it; propagated byte-identical to
-  all 9 existing verbatim copies (`docs/drydock/{auditor,verifier,code-auditor}.md`,
+  all 8 existing verbatim copies (`docs/drydock/{auditor,verifier,code-auditor}.md`,
   `docs/delta-audit.md`'s 5 session-prompt copies). `commands/polish.md`'s dir #70 fallback
   subagent — the one ad-hoc review-spawn point this repo's own commands control, since both incidents
   actually ran through the built-in `/code-review` skill's own fan-out — used to carry a weaker bespoke
