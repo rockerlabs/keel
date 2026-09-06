@@ -79,9 +79,7 @@ if [ -n "$backlog_arg" ]; then
   backlog_file="$backlog_arg"
   backlog_root="$(cd "$(dirname "$backlog_file")" && pwd)"
 else
-  main_top="$(git -C "$repo_root" worktree list --porcelain 2>/dev/null \
-    | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-  backlog_root="${main_top:-$repo_root}"
+  backlog_root="$(backlog_root_for "$repo_root")"
   backlog_file="$backlog_root/BACKLOG.md"
 fi
 

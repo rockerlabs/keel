@@ -30,8 +30,7 @@ mk_backlog() {
 }
 
 # A closed ticket with a body long enough to dominate line share, plus one open ticket.
-closed_body_lines="$(python3 -c "print('\n'.join(['line ' + str(i) for i in range(1, 80)]))" 2>/dev/null \
-  || for i in $(seq 1 80); do echo "line $i"; done)"
+closed_body_lines="$(for i in $(seq 1 80); do echo "line $i"; done)"
 
 backlog_mostly_closed="### dir #1 — a big closed ticket — R2 — ✅ DONE (2026-08-01, done)
 

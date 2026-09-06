@@ -35,13 +35,22 @@ backlog_ticket_blocks() {
     < <(sed -E 's/`[^`]*`//g' <<< "$fence_blanked")
   local total_lines="${#stripped_lines[@]}"
 
-  local heading_lines=()
-  while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
-    < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) ' <<< "$fence_blanked" | cut -d: -f1)
+  # One grep pass covering both the heading and boundary regexes (the heading regex is a
+  # strict subset), then split in memory — a second full-file grep pass bought nothing since
+  # every heading line is already among the boundary lines this pass finds.
+  local boundary_raw=()
+  while IFS= read -r ln || [ -n "$ln" ]; do boundary_raw+=("$ln"); done \
+    < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) |^## ' <<< "$fence_blanked")
 
-  local boundary_lines=()
-  while IFS= read -r ln || [ -n "$ln" ]; do boundary_lines+=("$ln"); done \
-    < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) |^## ' <<< "$fence_blanked" | cut -d: -f1)
+  local heading_lines=() boundary_lines=() entry lnum ltext
+  for entry in "${boundary_raw[@]}"; do
+    lnum="${entry%%:*}"
+    ltext="${entry#*:}"
+    boundary_lines+=("$lnum")
+    if [[ "$ltext" =~ ^###\ (dir\ \#[0-9]+|[0-9]+\.)\  ]]; then
+      heading_lines+=("$lnum")
+    fi
+  done
 
   [ "${#heading_lines[@]}" -gt 0 ] || return 0
 
@@ -81,4 +90,18 @@ backlog_ticket_blocks() {
     flat="$(tr '\n\t' '  ' <<< "$heading_block")"
     printf '%s\t%s\t%s\t%s\n' "$start" "$end" "$closed" "$flat"
   done
+}
+
+# backlog_root_for REPO_ROOT — resolves BACKLOG.md's home the same way
+# tools/self/doctor.sh's check 5 does (dir #135): the MAIN checkout, via the first
+# `worktree <path>` line of `git worktree list --porcelain`, unless that entry is bare (a
+# no-op in a plain single-checkout repo). Shared here so archive-sweep-check.sh and
+# pool-report.sh don't each keep their own copy of this fragment — dir #26 already tracks
+# its duplication elsewhere in the tree; this keeps these two callers from adding a third
+# and fourth site of their own.
+backlog_root_for() {
+  local repo_root="$1" main_top
+  main_top="$(git -C "$repo_root" worktree list --porcelain 2>/dev/null \
+    | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
+  printf '%s' "${main_top:-$repo_root}"
 }

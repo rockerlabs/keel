@@ -73,13 +73,7 @@ done
 if [ -n "$backlog_arg" ]; then
   backlog_file="$backlog_arg"
 else
-  # Same resolution as tools/self/doctor.sh check 5 (dir #135): the first `worktree <path>`
-  # line of `git worktree list --porcelain`, unless bare — a no-op in a plain single-checkout
-  # repo, which is exactly what makes this correct from a worktree session too.
-  main_top="$(git -C "$repo_root" worktree list --porcelain 2>/dev/null \
-    | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-  backlog_root="${main_top:-$repo_root}"
-  backlog_file="$backlog_root/BACKLOG.md"
+  backlog_file="$(backlog_root_for "$repo_root")/BACKLOG.md"
 fi
 
 if [ ! -f "$backlog_file" ] || [ ! -r "$backlog_file" ]; then
