@@ -174,4 +174,26 @@ pin "release-audit.md phase 7 cites §4 and polish.md step 9 rather than restati
   "$audit" 'this phase doesn'"'"'t restate either' \
   "expected phase 7's derivatives sentence to cite publishing-checklist.md §4 and commands/polish.md step 9, not restate them"
 
+# --- dir #249: phase 8 enforces that a delta-audit run is recorded, or the enforcement decays the
+# same way the ticket's own felt incident did — pin the phase so a later edit can't silently drop or
+# reword it out of existence. -------------------------------------------------------------------------
+pin "release-audit.md has phase 8 (record the run)" \
+  "$audit" '## Phase 8 — record the run' \
+  "expected a '## Phase 8 — record the run' heading (dir #249's enforcement half)"
+pin "release-audit.md phase 8 names the run-record.md stub" \
+  "$audit" '`run-record.md` stub' \
+  "expected phase 8 to name tools/delta-audit/derive.sh's run-record.md stub as the field source"
+pin "release-audit.md phase 8 names the cross-run record RUNS.md" \
+  "$audit" '`private/audit/RUNS.md`' \
+  "expected phase 8 to name private/audit/RUNS.md as keel's own cross-run record"
+pin "release-audit.md phase 8 states the never-a-fabricated-zero clause" \
+  "$audit" 'never a fabricated zero' \
+  "expected phase 8 to state cost may be recorded as unmeasured, never fabricated as zero"
+pin "release-audit.md phase 8 names dir #230 as the deferred token/cost metric" \
+  "$audit" 'dir #230'"'"'s own scope' \
+  "expected phase 8 to name dir #230 as owning the token/cost metric, not decided here"
+pin "release-audit.md phase 8 names dir #232/#268 as the deferred public-rollup question" \
+  "$audit" 'dir #232'"'"'s public release-history page and dir #268'"'"'s three-way reconciliation' \
+  "expected phase 8 to name dir #232/#268 as where the public-rollup question is resolved, not decided here"
+
 summary

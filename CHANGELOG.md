@@ -43,6 +43,14 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   doc's binding test. `IDEAS.md` had its first owned promote-or-drop pass (G4(b)): three entries
   promoted to backlog tickets, one dropped as mooted with the reason recorded, one kept with its
   unfired trigger stamped.
+- **dir #249 (enforcement half): a delta-audit verdict is not complete until the run is recorded.**
+  `docs/release-audit.md` gains phase 8: fill `tools/delta-audit/derive.sh`'s `run-record.md` stub
+  and append the row to the project's cross-run record (keel's own: gitignored `private/audit/RUNS.md`)
+  before calling the release done. Closes the half of dir #249 that decays without a step enforcing
+  it — three prior delta-audit runs each produced their own isolated run directory with zero
+  comparison between them, and `RUNS.md` was appended by hand with nothing requiring it. The
+  token/cost metric (dir #230) and the public-rollup question (dir #232/#268) are named as explicitly
+  deferred, not decided.
 
 ## [0.8.3] — 2026-09-06
 

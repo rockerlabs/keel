@@ -3,9 +3,9 @@
 The v0.6.0 campaign (dir #85) invented its own process live: module sweeps, synthesis into tickets,
 batching by file-affinity, a model tier per batch, a narrow release-candidate (RC) pass, tail-triage.
 Every piece of it worked, but none of it was written down — it existed only in session transcripts, so
-the next release would have re-derived all of it from scratch. This doc is that write-up: eight phases,
-each carrying the felt incident from v0.6.0 that shaped it, so the next campaign runs off it instead of
-reinventing it.
+the next release would have re-derived all of it from scratch. This doc is that write-up: nine phases,
+each carrying the felt incident that shaped it — most from v0.6.0, later ones from whichever campaign
+found the gap — so the next campaign runs off it instead of reinventing it.
 
 It sits next to [`docs/rollout-audit.md`](rollout-audit.md) (checks a *model/harness upgrade* didn't break
 your pipeline) and [`docs/publishing-checklist.md`](publishing-checklist.md) (checks a repo *looks
@@ -214,6 +214,30 @@ found to permanently downgrade one instance of the check's own founding-incident
 after having existed) to a standing green line, with no time bound — found by dir #155's own `/polish`
 altitude pass, closed by dir #156's commit-distance bound.
 
+## Phase 8 — record the run
+
+A delta audit's verdict (phase 6) is not complete until the run itself is recorded — otherwise the
+mechanism decays the same way it already did once. `tools/delta-audit/derive.sh` emits a
+`run-record.md` stub carrying the fields a run needs to leave behind — a handful of named fields
+(scope, method, coverage, findings, behavioural defects, which-layer-found-what, and a few more), never
+a form; see the stub's own header for the full list. `commands/delta-audit.md`'s A6 already names the
+mechanics (fill it in, append the row); this phase is what makes that step load-bearing rather than
+optional — the record before calling the release done, keel's own at the gitignored
+`private/audit/RUNS.md`, main-checkout root.
+
+**Felt incident, in substance:** three delta-audit runs (drydock run 1, v0.6.1→v0.7.0, v0.7.0→v0.7.1)
+each landed in their own isolated run directory with zero comparison between them — the question that
+exposed it: are we recording the audit/release mechanism somewhere, so we can improve it
+retrospectively and see whether the project is getting better? It had no artifact to answer from,
+because nothing *required* a run's numbers to leave its own directory. `RUNS.md` closed half of that by
+hand, appended without a step enforcing it; this phase is the other half — the half that decays.
+
+**Deliberately out of scope here:** the token/cost metric (dir #230's own scope — this phase only
+requires its field to be written down, `unmeasured` included, never a fabricated zero) and whether a
+redacted public rollup of this record belongs in the tracked tree. That question is resolved together
+with dir #232's public release-history page and dir #268's three-way reconciliation of both against
+this ticket — not decided here.
+
 ## Deliverable
 
 Log a dated entry in your own review-history log (or equivalent): surfaces checked per module, the
@@ -222,7 +246,7 @@ own "Running the audit" section states for a harness-upgrade sweep, applied here
 own run followed it.
 
 **This doc is itself subject to phase 0's rule: not a fixed verdict, a checklist to re-evaluate.** If a
-real run's findings don't fit these eight phases or phase 6's three-point heuristic — a new recurring class
+real run's findings don't fit these nine phases or phase 6's three-point heuristic — a new recurring class
 of RC finding, a batching shape that didn't hold — revise this doc as part of that audit's own synthesis
 phase, the same way any other drift gets ticketed. A process doc that only one campaign ever shaped stops
 being reusable the moment a second campaign's lessons don't fit it.
