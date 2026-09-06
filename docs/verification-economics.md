@@ -359,6 +359,9 @@ when it lands in a region a prior round's fix actually touched, AND the triaging
 causal path in one sentence. Both halves are required — file-overlap alone over-counts, and an
 unfalsifiable causal story alone under-counts. **Home:** the mark sits on the finding in the run's own
 report; the run record carries only the derived rate (`induced / total`), never the per-finding marks.
+**Syntax:** write it as a line containing the literal substring `Mark:` (case-insensitive) followed by
+`induced` or `original` — `tools/delta-audit/harvest.sh` tallies exactly this shape into the run
+record's rate; a report using different phrasing for the same judgement is silently undercounted.
 
 The eight-round series in §2 **illustrates** this rate; it does not derive it. Those attributions
 exist only in that session's narrative, with no per-round artifacts to recompute them from. Field 6

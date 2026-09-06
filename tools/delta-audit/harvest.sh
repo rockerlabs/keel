@@ -31,11 +31,12 @@
 #   2. NEVER compute a run-level or cross-leg cost aggregate. Each leg's figure is printed on its own;
 #      this script contains no `+` across legs, and the induced rate is a COUNT of marks, not a cost.
 #
-# The induced-defects convention this script recognises (documented here because it is new, not
-# reverse-engineered from existing reports — this repo's own report corpus predates it and uses
-# free-text phrasing this script deliberately does NOT try to parse; see "Known limitation" below): a
-# report marks each triaged finding with a line containing the literal substring `Mark:` (case-
-# insensitive, backticks/bold markup ignored) followed by `induced` or `original`, e.g.:
+# The induced-defects convention this script recognises is now the prescribed syntax in
+# docs/delta-audit.md's Protocol rule 6 and docs/verification-economics.md's field 6 definition —
+# not invented here in isolation. It postdates this repo's own report corpus, which uses free-text
+# phrasing this script deliberately does NOT try to parse; see "Known limitation" below. A report
+# marks each triaged finding with a line containing the literal substring `Mark:` (case-insensitive,
+# backticks/bold markup ignored) followed by `induced` or `original`, e.g.:
 #   **Mark:** `induced` — one-sentence causal path to the prior round's fix
 #   **Mark:** `original`
 # A report using any other phrasing for the same judgement is silently undercounted, which this
