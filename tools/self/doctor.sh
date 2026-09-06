@@ -41,6 +41,8 @@
 #         pipefail is active a plain `$?` right after the pipe already gives the real status, so
 #         reaching for PIPESTATUS specifically is usually a leftover belief, not a need (dir #321,
 #         the exact shape tools/keel-impact.sh's F-06 fix corrected)
+#   WARN  a stray $HOME/keel*alpine*-shaped clone exists outside the canonical, reused
+#         $HOME/.keel/tmp/alpine-clone path (dir #397/#399) — machine-wide, not repo-scoped
 #
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
@@ -1445,6 +1447,45 @@ single_def_check manifest_field          tools/lib/manifest.sh
 single_def_check manifest_usable         tools/lib/manifest.sh       install.sh   0
 single_def_check keel_core_is_link       tools/lib/core-ownership.sh install.sh   1
 single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh install.sh   1
+
+# --- 11. stray $HOME/keel*alpine*-shaped clones (dir #397's doctor-advisory half, handed to
+# dir #399's design pass) ---------------------------------------------------------------------
+# dir #397 fixed CLAUDE.md's local-Alpine-verify recipe to reuse ONE canonical, refreshed-in-
+# place path ($HOME/.keel/tmp/alpine-clone) instead of a fresh ad-hoc name per session — the
+# felt incident was 16 such stray clones (~165MB) accumulated at the $HOME root by the v0.8.3
+# close, found only by the operator's own eye, not by any check. This is the safety net for a
+# session that ignores the documented recipe and invents a new ad-hoc name anyway. Advisory
+# only (no fail state, dir #399 SPEC §6 — this is a machine-hygiene nudge, not a structural
+# defect) — uses `warn`, never `gap`. Machine-wide, not repo-scoped: reads the real $HOME, not
+# $repo_root, so this check's finding is the same regardless of which checkout invoked it.
+say ""
+say "● stray \$HOME/keel*alpine*-shaped clones (dir #397/#399)"
+stray_count=0
+stray_total_kb=0
+if [ -n "${HOME:-}" ] && [ -d "$HOME" ]; then
+  shopt -s nullglob nocaseglob 2>/dev/null || true
+  for d in "$HOME"/keel*alpine*; do
+    [ -d "$d" ] || continue
+    # The canonical path itself is expected to exist and grow, refreshed in place — it is the
+    # fix, not a stray.
+    [ "$d" = "$HOME/.keel/tmp/alpine-clone" ] && continue
+    stray_count=$((stray_count + 1))
+    # `|| true`: under pipefail, `du` failing on any unreadable subpath (permission-denied
+    # file, root-owned content from a Docker bind mount — plausible for exactly the stray
+    # clones this check exists to find) makes the pipeline's status `du`'s, even though `awk`
+    # itself succeeds on whatever partial output it got. This is a bare top-level assignment,
+    # not exempt from `set -e`, so without the guard one unreadable stray directory would abort
+    # the ENTIRE doctor.sh run at this check instead of just leaving its size uncounted.
+    kb="$(du -sk "$d" 2>/dev/null | awk '{print $1}')" || true
+    stray_total_kb=$((stray_total_kb + ${kb:-0}))
+  done
+  shopt -u nullglob nocaseglob 2>/dev/null || true
+fi
+if [ "$stray_count" -gt 0 ]; then
+  warn "$stray_count stray \$HOME/keel*alpine*-shaped clone(s), ~$((stray_total_kb / 1024))MB total — dir #397's canonical, reused path is \$HOME/.keel/tmp/alpine-clone; delete these and use that instead"
+else
+  say "  OK   no stray \$HOME/keel*alpine*-shaped clones"
+fi
 
 # --- orchestrated checks: run existing tests/CI jobs, fold their result in, never re-implement ---
 run_check() {
