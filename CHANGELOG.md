@@ -138,8 +138,8 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   unit-output contract (~200 lines) to reach the actual safety rail. A short "TL;DR — spawning even one
   subagent? say this" section now sits right after the intro, before the Roles table: it compresses and
   cites the constraint (read-only, no mutation, no further spawns, sandboxed live checks) instead of
-  mirror-copying it — the dir #206/#229/#256 drift class this repo has already paid for — and points via
-  anchor link down to the full "Worker rails" section for anyone building the real fan-out pattern.
+  mirror-copying it — the disclosure-mirror drift class dir #201/#214 already paid for once — and points
+  via anchor link down to the full "Worker rails" section for anyone building the real fan-out pattern.
   Cites dir #375 (a review subagent that mutated its parent session's uncommitted tree while believing
   it was doing safe read-only analysis) as the evidence the constraint is universal, not scoped to full
   delegation runs. No new test file: `tools/self/prose-drift.sh` signal 2 already validates that
