@@ -11,6 +11,31 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #313: `tools/lib/transcript-usage.sh` gives this project its first committed answer to "what
+  does a unit of work here actually cost?"** — a shared reader for this machine's Claude Code session
+  transcripts, built so this ticket's own `tools/self/session-cost.sh` and the adopter-facing
+  token-economy report (dir #314) import the SAME parsing logic rather than each re-deriving it. Fixes,
+  in the shared lib, two correctness defects this release's own design passes found in the ticket's
+  first draft: a `requestId` dedupe miss that inflated every published token figure by roughly 1.89x
+  (one API response spans 2-3 transcript lines sharing a requestId and identical cumulative usage —
+  summing naively counts it 2-3 times), and a subagent blind spot (`isSidechain` is `false` throughout
+  every primary transcript; fan-out spend lives in sibling files the parent never references, roughly a
+  fifth of everything corpus-wide). `tools/self/session-cost.sh` is the method these fixes unlock: cost
+  per ticket, grouped by (R-tier, model) cell, on deduped tokens, reported as a median (not a mean — n is
+  small per cell today). `docs/session-cost.md` carries the method's writeup and the original
+  eight-session table re-run through it, subagent totals now reported alongside the primary figure
+  instead of invisible. Ships nothing adopter-facing — keel-self-maintenance, like `tools/keel-impact.sh`.
+
+- **dir #406: `tools/keel-impact.sh`'s ledger gains a structured `ticket` column**, formalizing the
+  `[v0.8.3 worker dir#377]`-style tag workers were already hand-writing into the free-text `evidence`
+  cell since v0.8.3. `add --ticket "dir #N"` (recommended shape — the space matters, it is what
+  `tools/lib/dir-tickets.sh`'s own citation extractor requires) stamps the row; an existing row with no
+  `--ticket` reads back with the same `—` sentinel `gap`/`evidence` already use for "nothing to show,"
+  no migration needed. This is the join key dir #313's own design pass found missing: a bare `date`
+  column collides under same-day concurrent sessions (the exact attribution trap that ticket already
+  documented for cost data), so influence×cost — `tools/keel-impact.sh`'s score against dir #313's
+  per-ticket cost — was structurally unjoinable until now. The join script itself is not built here.
+
 - **dir #267: `tools/delta-audit/harvest.sh` fills `run-record.md`'s mechanical rows from a delta-audit
   run's own artifacts, instead of a human transcribing them.** `derive.sh` already emits `run-record.md`
   as an eleven-row stub; this fills three of them in place — `records` (a sorted directory listing),

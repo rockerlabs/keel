@@ -97,6 +97,29 @@ check_contains "friction contributes to COST" "$OUT" "derived score 50/100"
 check_contains "friction lands in its own column" "$(cat "$LEDGER")" "| 0 | 0 | 1 | 0 | 0 | 1 |"
 check_contains "friction citation is archived" "$(cat "$EVIDENCE")" "- friction: stale lint rule misled me"
 
+# --- dir #406: the ticket column ------------------------------------------------------------------
+# a row with no --ticket falls back to the same em-dash sentinel gap/evidence already use for "nothing
+# to show" (dir #406's own recommendation: existing rows read back with an empty/— value)
+run bash "$TOOL" add --fire "no ticket given" --gap none
+check_status "add with no --ticket succeeds" 0 "$STATUS"
+check_contains "no --ticket falls back to the em-dash sentinel" "$(tail -1 "$LEDGER")" "| — |"
+
+# a row WITH --ticket carries it verbatim, appended after gap (the array's new last column)
+run bash "$TOOL" add --fire "worked a real ticket" --gap none --ticket "dir #313"
+check_status "add --ticket succeeds" 0 "$STATUS"
+check_contains "ticket value lands in the ledger row" "$(tail -1 "$LEDGER")" "| dir #313 |"
+
+# same table-safety escaping the evidence/gap cells already get (dir #406 is free text, not validated)
+run bash "$TOOL" add --fire "pipe in ticket" --gap none --ticket "v0.8.3 worker | dir#377"
+check_status "add --ticket with an embedded pipe succeeds" 0 "$STATUS"
+check_contains "a pipe inside --ticket is escaped in the table cell" "$(tail -1 "$LEDGER")" 'v0.8.3 worker \| dir#377'
+
+# a --ticket with no value at all fails the same way a bare --gap/--asof/--since does today
+# (`${2:?}`'s own bash-level abort, exit 1 — not the cleaner exit-2 path citation flags get via
+# _need_cite): matching the sibling flags' existing behavior, not introducing a new exit code.
+run bash "$TOOL" add --fire "x" --gap none --ticket
+check_status "a bare --ticket with no value aborts (matches --gap/--asof/--since today)" 1 "$STATUS"
+
 # --- validation --------------------------------------------------------------------------------
 # only --silent is a bare count now; a citation flag takes any string, so "-1" is a valid citation there
 run bash "$TOOL" add --silent -1 --gap x
@@ -1589,7 +1612,7 @@ else
   fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
 fi
 
-# --- dir #151: the ledger's 12 columns must come from ONE ordered array (_LEDGER_COLS), not be
+# --- dir #151: the ledger's 13 columns must come from ONE ordered array (_LEDGER_COLS), not be
 # hand-listed independently by the writer (cmd_add), the reader (_ledger_parse), and the header
 # (_ledger_table_header). dir #107 unified the two READERS behind _ledger_parse; dir #131 then caught, but
 # didn't prevent, the WRITER (cmd_add's row-printf) drifting from it — both still hand-indexed the
@@ -1601,9 +1624,12 @@ fi
 # hardcoding the column list here. Most of the checks below (col-pos-vs-array consistency, cmd_add's
 # per-column mapping coverage) are drift detectors that self-adjust to whatever the array currently
 # holds — no edit needed here when a column is added. Two checks are a deliberate exception: the
-# `n_cols -eq 12` count and `expect_pos`'s literal name:position pairs below PIN dir #151's actual
+# `n_cols -eq 13` count and `expect_pos`'s literal name:position pairs below PIN dir #151's actual
 # column list and positions as of this ticket, on purpose — a real column addition/reorder SHOULD fail
 # them until this file is updated to match, the same way it should fail any other spec-pinning test.
+# dir #406 bumped 12 -> 13, appending `ticket` at the END (never inserted) — see _LEDGER_COLS' own
+# comment in the tool for why appending, not inserting, is what keeps every OTHER column's position
+# (and every existing on-disk row) unaffected.
 ledger_cols_line="$(grep -n '^_LEDGER_COLS=(' "$TOOL" | head -1 | cut -d: -f1)"
 if [ -z "$ledger_cols_line" ]; then
   fail "_LEDGER_COLS array located" "no line matching \"_LEDGER_COLS=(\" found in $TOOL"
@@ -1611,10 +1637,10 @@ else
   eval "$(sed -n "${ledger_cols_line}p" "$TOOL")"
   n_cols="${#_LEDGER_COLS[@]}"
 
-  if [ "$n_cols" -eq 12 ]; then
-    pass "_LEDGER_COLS has the ledger's 12 columns"
+  if [ "$n_cols" -eq 13 ]; then
+    pass "_LEDGER_COLS has the ledger's 13 columns (dir #406 added ticket)"
   else
-    fail "_LEDGER_COLS has the ledger's 12 columns" "found $n_cols: ${_LEDGER_COLS[*]:-<none>}"
+    fail "_LEDGER_COLS has the ledger's 13 columns (dir #406 added ticket)" "found $n_cols: ${_LEDGER_COLS[*]:-<none>}"
   fi
 
   # _ledger_col_pos (the reader-side lookup) must actually answer from the array, not a parallel
@@ -1623,7 +1649,7 @@ else
   pos_fn="$(sed -n '/^_ledger_col_pos() {/,/^}/p' "$TOOL")"
   eval "$pos_fn"
   pos_ok=1
-  expect_pos=(date:2 score:3 conf:4 guard:5 hold:6 fire:7 hit:8 miss:9 fric:10 silent:11 evidence:12 gap:13)
+  expect_pos=(date:2 score:3 conf:4 guard:5 hold:6 fire:7 hit:8 miss:9 fric:10 silent:11 evidence:12 gap:13 ticket:14)
   for pair in "${expect_pos[@]}"; do
     col="${pair%%:*}"; want="${pair#*:}"
     got="$(_ledger_col_pos "$col" 2>/dev/null || true)"
