@@ -18,6 +18,18 @@ delegated actually analyze.
 follows this doc by hand, the same way `/go`/`/polish`/`/wrap` are followed by hand until a project
 wires its own automation around them. Mechanizing any part of this is later work, its own ticket.
 
+## TL;DR — spawning even one subagent? say this
+
+Every subagent — worker, verifier, or a single one-off spawn with no run around it — gets the same
+constraint: read-only, no commits or edits outside its own contract file(s), no spawning further
+subagents, and any live/executable check stays in a sandboxed scratch clone, never the real checkout or
+`$HOME`. This holds even for "just" read-only analysis — a subagent that believed that is exactly what
+mutated the tree once (dir #375).
+
+Building the full multi-worker/verifier/mutator pattern below? Keep reading. Spawning one subagent for a
+quick task? Skip to [Worker rails — verbatim, do not
+paraphrase](#worker-rails--verbatim-do-not-paraphrase) and copy that block into its prompt as-is.
+
 ## Roles — four of them, in separate contexts
 
 | Role | Runs as | Model + effort | May touch |
