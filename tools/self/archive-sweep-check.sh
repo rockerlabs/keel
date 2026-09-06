@@ -44,15 +44,17 @@ repo_root="$(cd "$self_dir/../.." && pwd)"
 . "$self_dir/../lib/fence-blank.sh"
 # shellcheck source=tools/lib/backlog-blocks.sh
 . "$self_dir/../lib/backlog-blocks.sh"
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$self_dir/../lib/nonneg-int.sh"
 
-threshold="${KEEL_ARCHIVE_SWEEP_THRESHOLD:-40}"
+threshold="$(sanitize_nonneg_int "${KEEL_ARCHIVE_SWEEP_THRESHOLD:-40}" 40 3)"
 backlog_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --threshold)
       [ $# -ge 2 ] || { echo "archive-sweep-check: --threshold needs a value" >&2; exit 2; }
-      threshold="$2"; shift 2 ;;
-    --threshold=*) threshold="${1#*=}"; shift ;;
+      threshold="$(sanitize_nonneg_int "$2" 40 3)"; shift 2 ;;
+    --threshold=*) threshold="$(sanitize_nonneg_int "${1#*=}" 40 3)"; shift ;;
     -h|--help)
       cat <<'EOF'
 Usage: archive-sweep-check.sh [--threshold N] [BACKLOG_PATH]

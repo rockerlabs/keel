@@ -43,14 +43,21 @@ backlog_ticket_blocks() {
     < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) |^## ' <<< "$fence_blanked")
 
   local heading_lines=() boundary_lines=() entry lnum ltext
-  for entry in "${boundary_raw[@]}"; do
-    lnum="${entry%%:*}"
-    ltext="${entry#*:}"
-    boundary_lines+=("$lnum")
-    if [[ "$ltext" =~ ^###\ (dir\ \#[0-9]+|[0-9]+\.)\  ]]; then
-      heading_lines+=("$lnum")
-    fi
-  done
+  # `[ -gt 0 ]` guard, not a bare `for ... in "${boundary_raw[@]}"`: bash 3.2 (macOS's stock
+  # /bin/bash) throws "unbound variable" expanding an EMPTY array under `set -u` instead of
+  # iterating zero times — the same trap this project's own memory already tracks (dir #204).
+  # A BACKLOG.md with no matching heading/boundary line at all (a fresh or prose-only file) hits
+  # this on every run without the guard.
+  if [ "${#boundary_raw[@]}" -gt 0 ]; then
+    for entry in "${boundary_raw[@]}"; do
+      lnum="${entry%%:*}"
+      ltext="${entry#*:}"
+      boundary_lines+=("$lnum")
+      if [[ "$ltext" =~ ^###\ (dir\ \#[0-9]+|[0-9]+\.)\  ]]; then
+        heading_lines+=("$lnum")
+      fi
+    done
+  fi
 
   [ "${#heading_lines[@]}" -gt 0 ] || return 0
 

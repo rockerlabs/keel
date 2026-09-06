@@ -79,6 +79,23 @@ else
   fail "no readable BACKLOG.md -> empty output, not an error" "got: $out4"
 fi
 
+# --- a readable file with NO matching heading/boundary line at all -> empty output, not a crash --
+# MUTATION-PROOF: bash 3.2 (macOS's stock /bin/bash) throws "unbound variable" expanding an
+# EMPTY array under `set -u` instead of iterating zero times — a prose-only file (no `### dir
+# #N`/`### <n>.`/`## ` line anywhere) leaves `boundary_raw` empty and reproduces it without the
+# `[ -gt 0 ]` guard around the array-expanding `for`.
+d6="$(new_repo)"
+f6="$d6/BACKLOG.md"
+printf 'just some prose, no ticket headings and no level-2 sections at all\n' > "$f6"
+run bash -c '. "'"$REPO_ROOT"'/tools/lib/fence-blank.sh"; . "'"$lib"'"; backlog_ticket_blocks "'"$f6"'"'
+check_status "a heading-less file does not crash the scanner -> exit 0" 0 "$STATUS"
+check_absent "no unbound-variable error leaks to stderr" "$OUT" "unbound variable"
+if [ -z "$OUT" ]; then
+  pass "a heading-less file -> empty output"
+else
+  fail "a heading-less file -> empty output" "got: $OUT"
+fi
+
 # --- backlog_root_for(): the MAIN checkout's own repo root resolves to itself -------------------
 # `cd ... && pwd` on both sides, not a raw string compare: macOS symlinks $TMPDIR under
 # /var -> /private/var, and `git worktree list` resolves that symlink while the raw mktemp

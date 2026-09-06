@@ -1470,7 +1470,13 @@ if [ -n "${HOME:-}" ] && [ -d "$HOME" ]; then
     # fix, not a stray.
     [ "$d" = "$HOME/.keel/tmp/alpine-clone" ] && continue
     stray_count=$((stray_count + 1))
-    kb="$(du -sk "$d" 2>/dev/null | awk '{print $1}')"
+    # `|| true`: under pipefail, `du` failing on any unreadable subpath (permission-denied
+    # file, root-owned content from a Docker bind mount — plausible for exactly the stray
+    # clones this check exists to find) makes the pipeline's status `du`'s, even though `awk`
+    # itself succeeds on whatever partial output it got. This is a bare top-level assignment,
+    # not exempt from `set -e`, so without the guard one unreadable stray directory would abort
+    # the ENTIRE doctor.sh run at this check instead of just leaving its size uncounted.
+    kb="$(du -sk "$d" 2>/dev/null | awk '{print $1}')" || true
     stray_total_kb=$((stray_total_kb + ${kb:-0}))
   done
   shopt -u nullglob nocaseglob 2>/dev/null || true

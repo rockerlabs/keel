@@ -66,6 +66,23 @@ check_contains "structurally-parked excluded by rule (2 of 4: blocked + gate)" "
   "excluding structurally-parked:  2 (of 4; 2 parked by rule"
 check_contains "oldest entry is the earliest dated pool ticket" "$OUT" "d (dir #1)"
 
+# --- structurally-parked wording variants: "⛔ PARKED" counts, "⛔ UNBLOCKED" does NOT --------------
+# MUTATION-PROOF pair, both real shapes found live in BACKLOG.md: a narrower `⛔.*BLOCKED` match
+# would silently miss "⛔ PARKED ..." tickets (dir #309/#410's own shape); a bare `⛔` match would
+# wrongly count "⛔ UNBLOCKED ..." (BACKLOG.md reuses the glyph for the opposite meaning).
+backlog_parked_wording="### dir #7 — parked, not the legend's literal BLOCKED wording — R3 — ⛔ PARKED on a named trigger — → pool
+
+body
+
+### dir #8 — no longer blocked, must NOT count as parked — R2 — ⛔ UNBLOCKED 2026-08-29: cleared — → pool
+
+body
+"
+fp="$(mk_backlog "$backlog_parked_wording")"
+run "$pr" --history "$SANDBOX/hist-wording.jsonl" "$fp"
+check_contains "MUTATION-PROOF: '⛔ PARKED' wording still counts as structurally-parked" "$OUT" \
+  "excluding structurally-parked:  1 (of 2; 1 parked by rule"
+
 # --- --record idempotency ------------------------------------------------------------------------
 hist="$SANDBOX/hist-record.jsonl"
 run "$pr" --record 0.9.0 --history "$hist" "$f"

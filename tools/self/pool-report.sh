@@ -121,7 +121,16 @@ while IFS=$'\t' read -r start end closed heading_block; do
   esac
 
   parked=0
-  grep -qE '⛔' <<< "$heading_block" && parked=1
+  # Bare `⛔` presence, EXCEPT the two shapes the glyph is also reused for live in this file to
+  # mean the OPPOSITE ("⛔ UNBLOCKED ...", "GATE CLEARED, no longer ⛔") — narrowing to a single
+  # positive shape like `⛔.*BLOCKED` instead would be wrong the other way: real parked headings
+  # here also read "⛔ PARKED ..." or "⛔ tail BLOCKED ...", not just the legend's literal
+  # `⛔ BLOCKED by <ref>`, so excluding the two known false-positive shapes (rather than
+  # requiring one true-positive wording) is what actually matches the live convention.
+  if grep -qE '⛔' <<< "$heading_block" \
+    && ! grep -qiE '⛔[[:space:]]*UN|no longer[[:space:]]+⛔' <<< "$heading_block"; then
+    parked=1
+  fi
   grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1
   [ "$parked" = "1" ] && parked_count=$((parked_count + 1))
 
