@@ -712,3 +712,11 @@ that allowlist to commit a secret-shaped key.
 When a project reaches a milestone (end of a session with big changes, infra upgrade, new version), add an
 entry to a `## Changelog` section of the project `CLAUDE.md`. Format: `| YYYY-MM-DD | what changed — one line |`.
 No need for an entry per commit — only for significant milestones (the git log carries the rest).
+
+**A new entity names the property it serves.** When the milestone introduces a new entity (a tool,
+command, ritual, or convention), its changelog entry also names the **one** primary property it serves
+(at most one secondary) from the project's own named-properties list, or an honest **`unknown`** if none
+fit. One, not an exhaustive list — almost everything touches several properties, so forcing a single
+answer is what makes the tag informative instead of a shrug. `unknown` is the valuable outcome, not a
+failure: park a backlog ticket, or a `LEARNINGS.md` entry and let it follow `LEARNINGS.md`'s own
+promote-on-recurrence rule (recur to `[2×]`, then promote the property set or drop the entry).

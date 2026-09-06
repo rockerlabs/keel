@@ -28,8 +28,13 @@ Then:
   trend, stuck backlog items, prune-tier health, review-over-review improvement (full writeup:
   `FRAMEWORK.md` "Convergence check") — each in a line, and persist this review's advisory-warning count
   somewhere durable enough for the *next* review to diff against: your review log if one exists, otherwise
-  a dated note wherever you already track review state. Report what stands out and what's next; make no
-  edits without direction.
+  a dated note wherever you already track review state.
+  **Property sweep:** grep recent changelog entries for `unknown` property tags (`FRAMEWORK.md` →
+  Changelog, "A new entity names the property it serves") — a second `unknown` clustering with an
+  existing one is the signal to extend the named-properties list, not just re-file the same ticket.
+  Spot-check a handful of tagged entities against observed behavior (an entity tagged *constraint*
+  should be leaving guard events somewhere mechanized; one that never does is a claim/reality gap worth
+  flagging). Report what stands out and what's next; make no edits without direction.
 - **An argument ($ARGUMENTS) → work mode:** do that meta item autonomously. For edits to gitignored files
   with no git undo, back them up first and edit surgically (parallel-session-safe). Persist at the end via
   `/wrap`.
