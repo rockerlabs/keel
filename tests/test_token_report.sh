@@ -166,6 +166,7 @@ check_contains "an unrecognized type is surfaced, not silently absorbed (SPEC §
 # records sharing one unrecognized type name must report 5, not 1 (a `unique`-deduped count collapsed
 # to 1 before this fix).
 run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$weird_root" bash "$tool" --json
+check_status "5-unrecognized-records run exits 0" "0" "$STATUS"
 check_contains "5 records of ONE unrecognized type count as 5, not 1 (distinct-name count bug)" \
   "$OUT" '"unrecognizedTypeRecords":5'
 

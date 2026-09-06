@@ -239,6 +239,15 @@ tu_tool_calls() {
 # known non-usage-bearing types (_TU_KNOWN_OTHER_TYPES above), and — the actual guard — which types
 # this lib has never seen before, named explicitly so a future harness format change is visible rather
 # than silently absorbed into "known_other". Emits one JSON object.
+#
+# INVARIANT a caller may rely on: total/assistant_usage/assistant_no_usage/known_other/
+# unrecognized_types partition every record in the file EXACTLY (no gap, no overlap) — the four
+# `select`s above are pairwise exclusive by construction (assistant-with-usage vs
+# assistant-without-usage vs non-assistant-known vs non-assistant-unrecognized) and jointly exhaustive
+# over every possible `.type`. dir #314's token-report.sh relies on this to derive the true
+# unrecognized RECORD count arithmetically (`total - assistant_usage - assistant_no_usage -
+# known_other`) rather than `unrecognized_types | length`, which is a distinct-NAME count after the
+# `unique`. Keep this partition exact if this function's filters ever change.
 tu_self_check() {
   local file="$1"
   tu_require_jq || return 1

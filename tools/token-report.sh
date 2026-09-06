@@ -99,13 +99,15 @@ _tr_build_report() {
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
 
-  # Every read below is guarded (an `if ! CMD; then warn; continue; fi`, matching tu_session_totals's
-  # own shape just below) rather than a bare command — the corpus is LIVE (docs/token-economy.md: a
-  # self-referential run reads a session transcript it is still writing), so a file changing mid-read
-  # is the ORDINARY case, not a rare one. Under this script's own `set -euo pipefail`, an unguarded
-  # command failing here would abort the WHOLE multi-session report (losing every already-processed
-  # session) instead of skipping the one file that changed underneath it, and would skip the trailing
-  # `rm -f` cleanup, leaking the four mktemp files (code-review high pass).
+  # Every read below is guarded rather than a bare command — the corpus is LIVE
+  # (docs/token-economy.md: a self-referential run reads a session transcript it is still writing), so
+  # a file changing mid-read is the ORDINARY case, not a rare one. Under this script's own
+  # `set -euo pipefail`, an unguarded command failing here would abort the WHOLE multi-session report
+  # (losing every already-processed session) instead of skipping the one file that changed underneath
+  # it, and would skip the trailing `rm -f` cleanup, leaking the four mktemp files (code-review high
+  # pass). Non-capturing guards use this function's own `CMD || { warn; continue; }` idiom (already
+  # established above for the mktemp chain); `tu_session_totals` alone needs `if/else` since it
+  # captures a value for its success branch.
   local f totals sf
   for f in "${files[@]:-}"; do
     [ -f "$f" ] || continue
@@ -117,29 +119,29 @@ _tr_build_report() {
       continue
     fi
 
-    if ! tu_turns primary "$f" | jq -c --arg f "$f" '. + {sessionFile:$f}' >> "$tmp_turns"; then
+    tu_turns primary "$f" | jq -c --arg f "$f" '. + {sessionFile:$f}' >> "$tmp_turns" || {
       printf 'token-report.sh: could not read turns for %s — skipped\n' "$f" >&2
       continue
-    fi
-    if ! tu_tool_calls primary "$f" >> "$tmp_calls"; then
+    }
+    tu_tool_calls primary "$f" >> "$tmp_calls" || {
       printf 'token-report.sh: could not read tool calls for %s — skipped\n' "$f" >&2
       continue
-    fi
-    if ! tu_self_check "$f" >> "$tmp_sc"; then
+    }
+    tu_self_check "$f" >> "$tmp_sc" || {
       printf 'token-report.sh: could not read self-check for %s — skipped\n' "$f" >&2
       continue
-    fi
+    }
 
     while IFS= read -r sf; do
       [ -n "$sf" ] || continue
-      if ! tu_tool_calls subagent "$sf" >> "$tmp_calls"; then
+      tu_tool_calls subagent "$sf" >> "$tmp_calls" || {
         printf 'token-report.sh: could not read tool calls for subagent %s — skipped\n' "$sf" >&2
         continue
-      fi
-      if ! tu_self_check "$sf" >> "$tmp_sc"; then
+      }
+      tu_self_check "$sf" >> "$tmp_sc" || {
         printf 'token-report.sh: could not read self-check for subagent %s — skipped\n' "$sf" >&2
         continue
-      fi
+      }
     done < <(tu_subagent_files "$f")
   done
 
