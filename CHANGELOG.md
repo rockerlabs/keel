@@ -11,6 +11,15 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #95: new entities name the property they serve, or an honest `unknown`.** `FRAMEWORK.md`'s
+  Changelog section gains the one-line convention: a new entity's changelog entry names the **one**
+  primary property it serves (at most one secondary) from the project's own named-properties list, or
+  `unknown` if none fit — `unknown` parks a backlog ticket or a `LEARNINGS.md` entry and follows that
+  file's own promote-on-recurrence rule, the felt-friction signal to extend the property set.
+  `/global-review`'s L3 review/survey mode gains the natural consumer: a sweep for `unknown` tags in
+  recent changelog entries, plus a spot-check that a claimed property matches observed behavior.
+  Deliberately cheap (P4) — no tag field, no doctor check, no schema, no retro-tagging sweep.
+
 - **dir #386 leg (b): the first `/groom` run (v0.9.0 planning), and the three G0 retro amendments it
   applied instead of reporting.** The groom ran as `docs/grooming.md` prescribes — retro from the
   v0.8.3 records first, bodies read before assignment, every list derived from live heading tags, a
