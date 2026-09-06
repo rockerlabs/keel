@@ -75,15 +75,7 @@ pin "drydock.md links the fixer prompt" "$doc" '](drydock/fixer.md)' \
 # dir #209's finding showed (FINDING-S2-3: three drifts injected into one copy, one deleting a
 # contract line outright, left the old per-field loop's 36 checks fully green — presence isn't
 # agreement). "$a" empty and "$b" empty would otherwise match, hence the non-emptiness check too.
-check_block_equal() {
-  local label="$1" a="$2" b="$3"
-  if [ -n "$a" ] && [ "$a" = "$b" ]; then
-    pass "$label"
-  else
-    fail "$label" "block-extracted text differs or is empty — diff:
-$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
-  fi
-}
+# Promoted to tests/lib.sh (dir #375) once a third file needed it — sourced from there now.
 
 # --- the audit-file contract is stated in two places on purpose; the phrasing must agree ---------
 # drydock.md documents it for the operator, auditor.md hands it to the agent — drydock.md:97-98 says
@@ -249,19 +241,18 @@ check_absent "verifier.md's new bullet does not re-cite dir #225 inline" \
 # --- the rails block in code-auditor.md: block-extract and diff against the canonical source, never a
 # substring-presence check (dir #209's own finding against this file's earlier pins was exactly a
 # substring check that a block-level drift survives) --------------------------------------------------
-extract_rails() { awk '/^- You are read-only:/,/^- DELEGATION RUN:/' "$1"; }
-canonical_rails="$(extract_rails "$delegation")"
-code_auditor_rails="$(extract_rails "$code_auditor")"
+canonical_rails="$(extract_rails_block "$delegation")"
+code_auditor_rails="$(extract_rails_block "$code_auditor")"
 check_block_equal "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
   "$code_auditor_rails" "$canonical_rails"
 
 # --- dir #208: delegation.md:189 promises this block is reproduced verbatim "in every worker and
 # verifier prompt this pattern generates" — auditor.md and verifier.md are exactly that (code-auditor.md
 # above is the fourth worker template), so they get the same block-diff treatment, not a substring pin --
-auditor_rails="$(extract_rails "$auditor")"
+auditor_rails="$(extract_rails_block "$auditor")"
 check_block_equal "auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
   "$auditor_rails" "$canonical_rails"
-verifier_rails="$(extract_rails "$verifier")"
+verifier_rails="$(extract_rails_block "$verifier")"
 check_block_equal "verifier.md's rails block is byte-identical to docs/delegation.md's canonical text" \
   "$verifier_rails" "$canonical_rails"
 

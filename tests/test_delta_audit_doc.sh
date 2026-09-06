@@ -122,14 +122,13 @@ pin "reference.md's derive.sh row links delta-audit.md" \
 # substring-presence check. dir #209's own finding against test_drydock_doc.sh:70-75 is the class
 # this guards against: a substring pin can survive a drift that deletes or reorders a contract line,
 # because "the text is somewhere in the file" says nothing about whether it is INTACT. -------------
-extract_rails() {   # $1 = file -> the rails block(s) it contains, back to back, one line each
-  awk '/^- You are read-only:/,/^- DELEGATION RUN:/' "$1"
-}
-canonical_rails="$(extract_rails "$delegation")"
+# extract_rails_block/check_block_equal live in tests/lib.sh (dir #375): promoted once a third file
+# needed the exact same awk range this file had defined independently alongside test_drydock_doc.sh.
+canonical_rails="$(extract_rails_block "$delegation")"
 check_contains "docs/delegation.md's own rails block is non-empty (sanity check on the extractor)" \
   "$canonical_rails" "DELEGATION RUN"
 
-doc_rails_all="$(extract_rails "$doc")"
+doc_rails_all="$(extract_rails_block "$doc")"
 copies_in_doc="$(printf '%s\n' "$doc_rails_all" | grep -c '^- DELEGATION RUN:')"
 if [ "$copies_in_doc" -eq 5 ]; then
   pass "delta-audit.md carries exactly 5 rails-block copies (1 canonical + 1 per of 4 prompts)"

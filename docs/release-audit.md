@@ -249,10 +249,11 @@ because nothing *required* a run's numbers to leave its own directory. `RUNS.md`
 hand, appended without a step enforcing it; this phase is the other half — the half that decays.
 
 **Deliberately out of scope here:** the token/cost metric (dir #230's own scope — this phase only
-requires its field to be written down, `unmeasured` included, never a fabricated zero) and whether a
-redacted public rollup of this record belongs in the tracked tree. That question is resolved together
-with dir #232's public release-history page and dir #268's three-way reconciliation of both against
-this ticket — not decided here.
+requires its field to be written down, `unmeasured` included, never a fabricated zero). The
+public-rollup question is resolved (dir #268): the run record stays private; its public projection is
+the fixed-shape verification block in [`docs/release-history.md`](release-history.md), written by
+hand in the same cut-and-land PR as the digest entry — phase 7's existing sequencing, nothing new to
+invent.
 
 ## Deliverable
 
