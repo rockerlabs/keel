@@ -65,10 +65,13 @@ pin "CHANGELOG.md header links docs/release-history.md" \
 # counted as a real entry) is exactly the class dir #139 exists to catch. Blanked ONCE into a
 # $SANDBOX-scoped scratch file (tests/lib.sh's own convention; cleaned up by its EXIT trap) rather than
 # per use — the per-release verification-block section below (dir #268) reads the same blanked content
-# again and reuses this file instead of re-running blank_fenced_blocks a second time.
+# again and reuses this file instead of re-running blank_fenced_blocks a second time. Likewise the
+# heading-line scan itself runs once, into $heading_lines: the verification-block section reuses it too
+# instead of a second `grep -E '^## v...'` pass over $blanked_tmp that could silently drift from this one.
 blanked_tmp="$(mktemp "$SANDBOX/release-history-blanked.XXXXXX")"
 blank_fenced_blocks "$history" > "$blanked_tmp"
-headings="$(grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp" | sed 's/^## //')"
+heading_lines="$(grep -E '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp")"
+headings="$(sed 's/^## //' <<< "$heading_lines" | grep -oE '^v[0-9]+\.[0-9]+\.[0-9]+')"
 tags="$(release_tag_versions "$REPO_ROOT")"
 
 # _semver_gt A B — true iff v-prefixed semver A is strictly greater than v-prefixed semver B. Own copy,
@@ -269,26 +272,31 @@ missing_block=""
 provenance_leak=""
 while IFS= read -r hline; do
   [ -n "$hline" ] || continue
-  h="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<< "$hline")"
+  h="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<< "$hline" | head -1)"
   block="$(section_body "$hline" "$blanked_tmp")"
+
+  # Scoped to the text from the `**Verification.**` marker onward — same region the provenance check
+  # below uses, and for the same reason: without this, a digest paragraph that merely happens to use
+  # bold text (`**Scope:**` in ordinary prose, say) can satisfy a label the block itself never carries
+  # (found live, /code-review medium on this ticket's own first draft).
+  verification_part="$(awk '/\*\*Verification\.\*\*/{f=1} f{print}' <<< "$block")"
 
   if [ "$h" = "$verification_floor" ] || _semver_gt "$h" "$verification_floor"; then
     for label in '\*\*Verification\.\*\*' '\*\*Scope:\*\*' '\*\*Method:\*\*' '\*\*Coverage:\*\*' \
                  '\*\*Findings:\*\*' '\*\*Behavioural defects:\*\*' '\*\*Which layer found what:\*\*' \
                  '\*\*What was NOT checked:\*\*' '\*\*Induced-defect rate:\*\*'; do
-      grep -qE -- "$label" <<< "$block" \
+      match "$verification_part" -qE -- "$label" \
         || missing_block="$missing_block${missing_block:+, }$h: missing $label"
     done
   fi
 
-  verification_part="$(awk '/\*\*Verification\.\*\*/{f=1} f{print}' <<< "$block")"
   if [ -n "$verification_part" ]; then
-    grep -qE 'private/' <<< "$verification_part" \
+    match "$verification_part" -qE 'private/' \
       && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a private/ path"
-    grep -qE 'dir #[0-9]+' <<< "$verification_part" \
+    match "$verification_part" -qE 'dir #[0-9]+' \
       && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a dir #N ticket"
   fi
-done <<< "$(grep -E '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp")"
+done <<< "$heading_lines"
 
 if [ -z "$missing_block" ]; then
   pass "every docs/release-history.md heading at/above the v0.9.0 verification floor carries a verification block"
