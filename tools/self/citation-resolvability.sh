@@ -104,16 +104,24 @@ if [ ! -r "$backlog_file" ]; then
 fi
 
 # Derived per BACKLOG.md:1255's own naming convention: the project dir under ~/.claude/projects/ is
-# the repo's absolute path with every '/' replaced by '-' — the same D2 slug transform
-# `impact_project_id` (tools/lib/impact-store.sh) uses. Not routed through that function itself: it
-# re-resolves the main-checkout top from scratch via `_impact_resolve_top`, which `backlog_root`
-# above already did — calling it here would just re-run the same `git worktree list` a second time
-# for an idempotent result. Overridable for test isolation, since the real archive is personal state
-# outside the repo and outside git entirely.
+# the repo's absolute path with every '/' AND every '.' replaced by '-' — verified live against real
+# transcript directories on this machine by dir #313's shared transcript-reader lib (its
+# `tu_project_slug` helper, not yet merged as of this fix — see its own PR #353), e.g. a worktree path
+# with a literal dot in it ("keel/.claude/worktrees/X") becomes "keel--claude-worktrees-X", not
+# "keel/.claude-worktrees-X". NOT the same transform as `impact_project_id` (tools/lib/impact-
+# store.sh): that one only replaces '/', which is correct for ITS purpose (keel's own impact-store
+# slug, a different, deliberately different-purpose id) but was wrongly assumed here to also match the
+# harness's OWN project-directory naming — a latent bug found by dir #313's own review, unexercised on
+# this project's own main checkout only because its path happens to contain no dot. Duplicated as a
+# one-line `tr` here rather than sourcing the transcript-reader lib's helper: dir #26 tracks sites that
+# duplicate a shared idiom without forcing extraction, and this file already reuses `_impact_main_top`
+# for the one helper that existed at authoring time — pulling in a whole second lib for one line would
+# be the premature-abstraction direction, not the reuse direction. Overridable for test isolation,
+# since the real archive is personal state outside the repo and outside git entirely.
 if [ -n "${KEEL_CITATION_ARCHIVE_FILE:-}" ]; then
   archive_file="$KEEL_CITATION_ARCHIVE_FILE"
 else
-  archive_file="${HOME:-}/.claude/projects/$(printf '%s' "$backlog_root" | tr '/' '-')/CLAUDE-archive.md"
+  archive_file="${HOME:-}/.claude/projects/$(printf '%s' "$backlog_root" | tr '/.' '--')/CLAUDE-archive.md"
 fi
 if [ -r "$archive_file" ]; then
   say "  archive: $archive_file"

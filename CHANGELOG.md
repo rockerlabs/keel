@@ -11,6 +11,18 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **`tools/self/citation-resolvability.sh`'s archive-path derivation now slugs `.` as well as `/`**
+  (dir #313 review): the harness's real `~/.claude/projects/<slug>/` naming replaces every `/` AND
+  every `.` in a repo's absolute path with `-` (verified live by dir #313's own transcript-reader
+  work), but this script's derivation only replaced `/` — modeled, wrongly, on the impact-store's own
+  `impact_project_id` transform, which is deliberately different (slash-only, a different purpose).
+  A main-checkout path containing a literal `.` anywhere would silently look in the wrong archive
+  directory and read every archived citation as dead. Unexercised on this project's own checkout only
+  because its path has no dot. Regression test uses a repo path containing a literal dot — the
+  shared test fixture's own `new_repo()` (`tests/lib.sh`) already puts one there for free via
+  `mktemp`'s `repo.XXXXXX` template, so no special-cased path was needed. Keel-self-maintenance:
+  this script has no consumer-facing counterpart.
+
 - **dir #267: `tools/delta-audit/harvest.sh` fills `run-record.md`'s mechanical rows from a delta-audit
   run's own artifacts, instead of a human transcribing them.** `derive.sh` already emits `run-record.md`
   as an eleven-row stub; this fills three of them in place — `records` (a sorted directory listing),

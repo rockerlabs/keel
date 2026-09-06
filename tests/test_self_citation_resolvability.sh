@@ -185,6 +185,31 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   rm -rf "$archive_dir"
 fi
 
+# --- dir #313 review: the archive path must slug '.' as well as '/', matching the harness's own
+# ~/.claude/projects/ naming (dir #313's shared transcript-reader lib's `tu_project_slug` helper,
+# verified live there against real transcript directories) — not the impact-store's deliberately
+# different, slash-only transform this script's derivation was wrongly modeled on. Every other
+# archive case above sets KEEL_CITATION_ARCHIVE_FILE, which bypasses this derivation entirely; this
+# is the only case that exercises the real, un-overridden path. new_repo()'s own mktemp template
+# ("repo.XXXXXX") already puts a literal dot in the repo's path for free, so no special fixture is
+# needed — a repo path with no dot in it is exactly why this bug went unnoticed on this project's
+# own main checkout.
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+# `pwd -P`, not a plain `pwd`: git records a worktree's PHYSICAL path (its own getcwd(), symlinks
+# resolved — e.g. macOS's /var -> /private/var), while bash's builtin `pwd` reports the LOGICAL path
+# as reached by `cd`. A plain `pwd` here silently diverges from what the script's own
+# `_impact_main_top` (via `git worktree list --porcelain`) actually resolves to, on any sandbox whose
+# tmp path crosses a symlink — found live authoring this test on macOS.
+backlog_root_real="$(cd "$d" && pwd -P)"
+slug="$(printf '%s' "$backlog_root_real" | tr '/.' '--')"
+real_archive_dir="$HOME/.claude/projects/$slug"
+mkdir -p "$real_archive_dir"
+printf -- '- 2026-08-21 dir #202 CLOSED — moved out of the live backlog\n' > "$real_archive_dir/CLAUDE-archive.md"
+run "$cr" "$d"
+check_status "a repo path containing a literal dot still finds its real archive" 0 "$STATUS"
+check_contains "the announced path has the dot slugged to a dash, not left literal" "$OUT" "$real_archive_dir/CLAUDE-archive.md"
+rm -rf "$real_archive_dir"
+
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
 # ~/.claude/projects/.../CLAUDE-archive.md is invisible to this run regardless of REPO_DIR, and a
