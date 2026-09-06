@@ -132,6 +132,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
   fork per heading measured at ~1.7s across a real BACKLOG.md, a no-op in 326 of 327 real headings)
   and widened the heading-block scan cap from 20 to 50 lines for a safer margin.
 
+- **dir #404: `docs/delegation.md` gains a TL;DR for a single trivial subagent spawn.** The doc is
+  sized for orchestrating a full read-only worker/verifier/mutator fan-out; a session spawning just one
+  quick subagent had to read past the Roles table, the non-delegable set, the phase skeleton, and the
+  unit-output contract (~200 lines) to reach the actual safety rail. A short "TL;DR — spawning even one
+  subagent? say this" section now sits right after the intro, before the Roles table: it compresses and
+  cites the constraint (read-only, no mutation, no further spawns, sandboxed live checks) instead of
+  mirror-copying it — the dir #206/#229/#256 drift class this repo has already paid for — and points via
+  anchor link down to the full "Worker rails" section for anyone building the real fan-out pattern.
+  Cites dir #375 (a review subagent that mutated its parent session's uncommitted tree while believing
+  it was doing safe read-only analysis) as the evidence the constraint is universal, not scoped to full
+  delegation runs. No new test file: `tools/self/prose-drift.sh` signal 2 already validates that
+  in-document anchor links resolve to real headings, wired into `tests/run.sh` and
+  `tools/self/doctor.sh` — verified clean for the new anchor.
+
 ## [0.8.3] — 2026-09-06
 
 - **dir #367: `/manage-release <version>` — the release-manager pattern, run by hand across several
