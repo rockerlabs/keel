@@ -95,8 +95,8 @@ Seven refusals, each earned by something measured while building this tool (per 
   never ranks one session against another. A session that spent more may simply have done more.
 - **The cold-resume line is a labelled heuristic, not a fact.** A pause classified as "cold" is a gap of
   at least 55 minutes whose next turn rewrites more of the context than it reads from cache — but a
-  compaction or a `/clear` can produce the exact same signature with no pause at all. The report prints
-  the rule inline, not only here.
+  compaction or a manual context reset can produce the exact same signature with no pause at all. The
+  report prints the rule inline, not only here.
 - **Fan-out attribution stops at the session.** It can say a session spent 21.6% on subagents; it
   cannot say whether that fan-out was worth what it found. That needs structured review findings this
   data source does not carry.
