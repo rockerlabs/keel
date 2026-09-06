@@ -92,6 +92,21 @@ failure is a missing *cause*, not a missing attempt.
 
 ---
 
+## Shipped docs — situation, not summary
+
+Trigger conditions only — open the file once the situation matches, not before:
+
+- 2+ agent sessions against one repo (worktrees, terminals, a fleet) → `docs/parallel-sessions.md`
+- Spawning any subagent (via the Agent tool) → `docs/delegation.md`
+- Coordinating a release across multiple worker sessions/tickets → `docs/release-management.md`
+- Auditing a whole tree for stale/drifted prose → `docs/drydock.md`
+- Before cutting a release tag → `docs/release-audit.md`
+- Deriving a release-candidate's audit universe from git history → `docs/delta-audit.md`
+- A model or harness upgrade just happened → `docs/rollout-audit.md`
+- Before adding anything to this always-loaded layer → `docs/loading-and-cost.md`
+
+---
+
 ## Persist everything — nothing stays chat-only
 
 Any idea, finding, decision, or loose-end surfaced in a session must be persisted — a backlog ticket, a
