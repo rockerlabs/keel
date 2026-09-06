@@ -579,12 +579,45 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   heading_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do heading_lines+=("$ln"); done \
     < <(grep -nE '^### dir #[0-9]+ ' <<< "$fence_blanked" | cut -d: -f1)
-  # Every ## or ### line, dir-heading or not — used to find where THIS heading's body ends (the
-  # next section boundary of either level), so a body span never bleeds past a `## ` section
-  # break (e.g. into the unrelated `## Recently closed` buffer that follows some dir tickets).
+  # Known, separate gap left OUT of scope here (dir #352's own "cleanly separate second half"): the
+  # 68 legacy `### <n>.` headings in this file's "Post-release backlog (parked)" section (thirteen
+  # of them open) never match this regex at all, so this check never watches them for staleness —
+  # not truncated, never scanned. Extending coverage to them needs its own design pass (they predate
+  # the `— ✅/⏳/RETRACTED` tag convention this check assumes, so whether they even carry a
+  # cross-checkable tag at all is an open question) — not a mechanical widen like the fix below.
+  # The next dir-ticket heading OR a level-2 section break — used to find where THIS heading's
+  # body ends, so a body span never bleeds past a `## ` section break (e.g. into the unrelated
+  # `## Recently closed` buffer that follows some dir tickets). Deliberately NOT every `###` line
+  # (dir #352): a long spec-carrying ticket structures its OWN body with internal `## 1. …` /
+  # `### 2.1 …` sub-headings — real headings by a bare `^#{2,3} ` regex — so treating every one of
+  # those as a boundary truncated the body span before the ticket's own closure marker, 13 tickets
+  # measured live (5,807 body lines hidden in total). Closing on the next REAL ticket heading or a
+  # `^## ` break instead means an internal `###` sub-heading no longer ends the span early.
+  # Trade-off, accepted rather than engineered around: widening the span re-exposes MORE text to
+  # the cross-reference false-positive class already documented below ("tried and reverted once
+  # already") — a closure note further into a long ticket's body that cross-cites a DIFFERENT,
+  # already-closed ticket. That class is pre-existing and WARN-only (not GAP) regardless of span
+  # width; fixing the reader here does not change its shape, only how much text it can fire on.
+  # Fixing the 13 ticket bodies instead (demoting their internal sub-headings to bold lines) was
+  # the other fork and is out of reach from a code PR: BACKLOG.md is gitignored, main-checkout-only
+  # content, not part of any tracked diff this branch can carry.
+  # Known residual, inherited from the ticket's own fix sketch rather than introduced here: a
+  # ticket whose OWN internal outline uses a LEVEL-2 sub-heading (`## 1. …`, not `### 2.1 …`) is
+  # still truncated at that line, same as before — dir #311 ("## 1. The gap", 418 lines) is
+  # exactly this shape and was one of dir #352's own 13 measured tickets. **Broader than just the
+  # numbered case, verified live against the real file (found by /code-review medium's altitude
+  # pass):** a NUMBERED heuristic (treat `^## [0-9]+\.` as ticket-internal, not a real boundary)
+  # would recover dir #311 but NOT dir #257 (729 lines, the second-largest of the 13) — its own
+  # internal outline uses plain prose headings (`## The gap this closes`, `## Design`,
+  # `## Resolved decisions`) syntactically identical to genuine file-level section titles
+  # (`## Recently closed`, `## Standing list`). No regex over the heading text alone can tell
+  # those two apart; doing so needs real document-structure awareness (dir #354's own per-ticket
+  # metadata line, unscheduled, is the actual fix for this). Not attempted here: a partial fix
+  # covering one shape and not the other, at added complexity and risk, for a WARN-only heuristic
+  # that already documents several other accepted gaps of the same kind.
   boundary_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do boundary_lines+=("$ln"); done \
-    < <(grep -nE '^#{2,3} ' <<< "$fence_blanked" | cut -d: -f1)
+    < <(grep -nE '^### dir #[0-9]+ |^## ' <<< "$fence_blanked" | cut -d: -f1)
   # Strip single-backtick inline-code spans ONCE for the whole file, not per heading (a
   # several-thousand-line BACKLOG.md with dozens of headings would otherwise re-scan the file's
   # tail from every heading's own sed call, O(headings x file length) instead of O(file length)).
@@ -614,6 +647,39 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       end="$total_lines"
       [ "$bidx" -lt "$nb" ] && end=$(( boundary_lines[bidx] - 1 ))
       heading_line="${stripped_lines[$((start - 1))]}"
+      # dir #255: a heading whose title text wraps across physical source lines (this file's own
+      # headings routinely run past 2,000 characters, so wrapping is the natural shape, not an
+      # edge case) can carry its terminal tag on a CONTINUATION line rather than the `### …` line
+      # itself — reading only stripped_lines[start-1] below missed the tag entirely and reported
+      # three live false positives (dirs #192, #205, #251) whose tag sat on the 3rd/7th/6th
+      # physical line of their own heading. Build the whole heading BLOCK instead — the heading
+      # line plus continuation lines up to the first blank line (the natural end of a heading's
+      # own text) — and check THAT for the tag.
+      # Scanned to a small fixed cap, not to `end`: `end` is this ticket's full body-span
+      # boundary, which dir #352 just widened (some real tickets run past 1,900 lines) — a
+      # wrapped TITLE realistically never runs past a handful of physical lines even at this
+      # file's own 2,000+-character headings (the historical worst case wrapped to 7 physical
+      # lines), so 50 leaves a comfortable margin while still keeping this loop's cost fully
+      # independent of how far a ticket's body-span happens to reach (found by /simplify's
+      # efficiency pass; the cap's SIZE was then sized up by /code-review medium's altitude pass,
+      # which measured the historical margin above).
+      block_end="$start"
+      probe=$((start + 1))
+      block_scan_end="$end"
+      [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
+      while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ]; do
+        block_end="$probe"
+        probe=$((probe + 1))
+      done
+      # The common case (326 of 327 real headings today) never wraps at all, i.e. block_end ==
+      # start — skip the printf/subshell fork entirely then and reuse heading_line, already read
+      # above. /code-review medium's efficiency pass measured the unconditional fork costing ~2s
+      # across a real BACKLOG.md's headings for zero benefit in that case.
+      if [ "$block_end" -eq "$start" ]; then
+        heading_block="$heading_line"
+      else
+        heading_block="$(printf '%s\n' "${stripped_lines[@]:$((start - 1)):$((block_end - start + 1))}")"
+      fi
       # Scope, per the ticket this implements (dir #87): a MISSING tag (no ✅/⏳/RETRACTED at all)
       # vs. a body that already records closure — not a WRONG tag (e.g. heading stuck on
       # ⏳ IN FLIGHT while the body says ✅ CLOSED). Any existing tag short-circuits below,
@@ -626,10 +692,21 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # them would also fire on the glyph/word showing up as plain prose inside a heading's own
       # title (a ticket titled "...whether the RETRACTED ticket process needs revisiting..." or
       # "decide on ✅ emoji conventions"), wrongly treating it as already-tagged. Verified against
-      # the real BACKLOG.md: no genuine tag there lacks the "— " prefix.
-      if grep -qE '— (✅|⏳|RETRACTED\b)' <<< "$heading_line"; then
+      # the real BACKLOG.md: no genuine tag there lacks the "— " prefix. Checked against
+      # heading_block (not heading_line): the tag itself may sit on a continuation line.
+      if grep -qE '— (✅|⏳|RETRACTED\b)' <<< "$heading_block"; then
         continue
       fi
+      # Deliberately `start + 1`, NOT `block_end + 1`: an earlier version of this fix started the
+      # body scan right after the heading block to avoid re-scanning its own continuation lines,
+      # but the block-detection loop above has no way to tell "a wrapped heading's own
+      # continuation line" apart from "real body text with no blank line before it" — both are
+      # just "non-blank line right after the heading" to that loop. /code-review medium's
+      # correctness pass found and reproduced the false negative live: a heading with no tag,
+      # immediately followed (no blank line) by its own closure note, got silently absorbed into
+      # `heading_block` (which only the TAG regex checks) and then excluded from the body scan
+      # entirely — a real regression from this check's pre-existing behavior. Re-scanning a
+      # wrapped heading's own few continuation lines here is a trivial, accepted cost next to that.
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
       body="$(printf '%s\n' "${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")"

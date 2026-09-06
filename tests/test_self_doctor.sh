@@ -612,6 +612,77 @@ run "$sd" "$d" --quiet
 check_status "no trailing newline doesn't crash -> exit 0" 0 "$STATUS"
 check_contains "still catches the stale heading from the no-trailing-newline file" "$OUT" "dir #5's heading tag looks stale"
 
+# dir #255's own "Pin it" spec, case 1: a heading whose title wraps across physical source lines
+# (this file's own headings routinely exceed 2,000 characters, so wrapping is the natural shape)
+# and whose terminal tag sits on the WRAPPED continuation line, not the `### …` line itself, must
+# still short-circuit as already-tagged -> GREEN, not flagged. Before this fix, the short-circuit
+# read only stripped_lines[start-1] (the first physical line alone) and missed the tag, producing
+# three live false positives in the real file (dirs #192, #205, #251).
+d="$(mk_clean_repo)"
+printf '### dir #30 — some ticket whose title wraps across\nmultiple physical lines — R1 — ✅ CLOSED (2026-01-01, PR #30)\n\ndone.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "a tag on a wrapped heading's continuation line still short-circuits" "$OUT" "dir #30's heading tag looks stale"
+
+# dir #255's "Pin it" spec, case 2: the mirror image — a wrapped heading with NO tag anywhere in
+# the block, whose body (past the wrap) records a real closure, must still go RED. This is what
+# keeps case 1's fix from degrading into "never warn on a wrapped heading".
+d="$(mk_clean_repo)"
+printf '### dir #31 — some ticket whose title wraps across\nmultiple physical lines with no tag at all — R1\n\n✅ CLOSED (2026-01-01, PR #31) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a wrapped heading with no tag anywhere in the block is still caught" "$OUT" "dir #31's heading tag looks stale"
+
+# dir #352: a spec-carrying ticket's OWN internal `##`/`###` sub-heading (e.g. `### 2.1 …`) must not
+# truncate its body span — the boundary is the next REAL dir-ticket heading or a `## ` section
+# break now, not any `#{2,3}` line. Before this fix, the internal sub-heading below ended the body
+# span 4 lines in, before ever reaching the closure marker — a live false NEGATIVE (13 tickets,
+# 5,807 body lines measured hidden this way in the real file).
+d="$(mk_clean_repo)"
+printf '### dir #32 — some spec-heavy ticket — R2\n\nSome intro text.\n\n### 2.1 Internal sub-heading\n\nMore body text.\n\n✅ CLOSED (2026-01-01, PR #32) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "an internal ###-sub-heading no longer truncates the body span" "$OUT" "dir #32's heading tag looks stale"
+
+# Known, documented residual of dir #352's own fix sketch (found by /simplify's altitude pass,
+# then pinned here): a ticket whose OWN internal outline uses a LEVEL-2 sub-heading (`## 1. …`,
+# the real shape of dir #311's own body — one of dir #352's 13 measured tickets) is STILL
+# truncated at that line, same as before this fix. The fix sketch's boundary (any `^## ` line)
+# cannot tell a ticket's own numbered outline apart from a genuine file-level section break
+# (`## Recently closed`) — accepted, not solved, and pinned so a future change to this behavior is
+# a deliberate one, not an accidental regression.
+d="$(mk_clean_repo)"
+printf '### dir #34 — some spec-heavy ticket — R2\n\nSome intro text.\n\n## 1. Internal level-2 sub-heading\n\nMore body text.\n\n✅ CLOSED (2026-01-01, PR #34) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "an internal LEVEL-2 sub-heading still truncates the body span (known, accepted)" "$OUT" "dir #34's heading tag looks stale"
+
+# Regression, found and reproduced live by /code-review medium's correctness pass: an earlier
+# version of the heading-block fix started the body scan right after the heading BLOCK
+# (`block_end + 1`) instead of right after the heading line (`start + 1`), to avoid re-scanning
+# the block's own continuation lines. But the block-detection loop can't tell "a wrapped heading's
+# own continuation line" apart from "real body text with no blank line before it" — an untagged
+# heading immediately followed (NO blank line) by its own closure note got silently absorbed into
+# the tag-only check and never reached the body scan at all, a real false-negative regression from
+# this check's pre-existing behavior. Pinned here so it can't come back.
+d="$(mk_clean_repo)"
+printf '### dir #35 — a ticket with no blank line before its own closure note — R1\n✅ CLOSED (2026-01-01, PR #35) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "closure text with no blank line after the heading is still caught" "$OUT" "dir #35's heading tag looks stale"
+
+# dir #255's second half, documented as a KNOWN/ACCEPTED limitation rather than solved (per the
+# ticket: "wants a fixture ... or the file's own meta-tickets keep paying the paraphrase tax") —
+# same shape as the already-accepted cross-reference false positive above: the body scan is a
+# cheap regex over free-form prose, not a parser, so it cannot tell a ticket that DISCUSSES the
+# tagging convention from one that RECORDS a real closure. Plain prose (no backticks) that happens
+# to say "✅ CLOSED" while talking ABOUT the convention still fires.
+d="$(mk_clean_repo)"
+printf '### dir #33 — some ticket about the tagging convention — R1\n\nWe should decide whether a heading that already says ✅ CLOSED in plain prose while discussing the convention itself should count as done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "prose DISCUSSING the convention (not backtick-quoted) is a known, accepted false positive" "$OUT" "dir #33's heading tag looks stale"
+
 # --- 7. BACKLOG.md heading check resolves the MAIN checkout from a worktree invocation (dir #135) ---
 # BACKLOG.md is gitignored and lives ONLY at the main checkout root (this project's own convention) —
 # a linked worktree never gets its own copy. Before this fix, self_dir/../.. (repo_root) was whatever
