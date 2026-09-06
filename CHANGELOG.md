@@ -11,6 +11,23 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #375: the delegation-doctrine rails block gains a dirty-tree discriminator, closing the
+  loophole two live incidents in three days both found — a review subagent rationalizing a "restore"
+  of the parent session's own uncommitted work as compatible with "read-only."** Both hits (v0.8.2 wave
+  3, and PR #349's own round-2 review) had a spawned reviewer mistake a parent's live, mid-edit dirty
+  tree for `dir #318`/`dir #320`'s known test-fixture-leak symptom and run `git checkout --` on it,
+  destroying real work. `docs/delegation.md`'s canonical Worker rails block — already reproduced
+  verbatim in every worker/verifier template this repo ships (`docs/drydock/{auditor,verifier,
+  code-auditor}.md`, `docs/delta-audit.md`'s 5 session-prompt copies) — now states explicitly that a
+  dirty tree is normal work in progress, never evidence of corruption, and names the git verbs never to
+  run on it. Propagated to all 9 existing verbatim copies (each still byte-diffs identical to the
+  canonical text, per the existing tests). `commands/polish.md`'s dir #70 fallback subagent — the one
+  ad-hoc review-subagent spawn point this repo's own tracked commands control (the built-in
+  `/code-review` skill's internal multi-agent fan-out, where both real incidents actually ran, is not
+  part of this tree) — used to carry a bespoke, weaker paraphrase instead of the canonical block; it now
+  inlines the same verbatim text, so the two can no longer answer the spawn-safety question
+  differently. New test: `tests/test_polish_review_rails.sh`.
+
 - **dir #313: `tools/lib/transcript-usage.sh` gives this project its first committed answer to "what
   does a unit of work here actually cost?"** — a shared reader for this machine's Claude Code session
   transcripts, built so this ticket's own `tools/self/session-cost.sh` and the adopter-facing
