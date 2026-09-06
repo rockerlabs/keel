@@ -62,8 +62,13 @@ pin "CHANGELOG.md header links docs/release-history.md" \
 # the heading scan (the same guard doctor.sh's own identical CHANGELOG.md heading scan uses, via the
 # shared tools/lib/fence-blank.sh) — this page is unlikely to ever carry a fenced `## v<x.y.z>`
 # example, but the guard is one sourced line and the failure mode it prevents (a doc example silently
-# counted as a real entry) is exactly the class dir #139 exists to catch.
-headings="$(blank_fenced_blocks "$history" | grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^## //')"
+# counted as a real entry) is exactly the class dir #139 exists to catch. Blanked ONCE into a
+# $SANDBOX-scoped scratch file (tests/lib.sh's own convention; cleaned up by its EXIT trap) rather than
+# per use — the per-release verification-block section below (dir #268) reads the same blanked content
+# again and reuses this file instead of re-running blank_fenced_blocks a second time.
+blanked_tmp="$(mktemp "$SANDBOX/release-history-blanked.XXXXXX")"
+blank_fenced_blocks "$history" > "$blanked_tmp"
+headings="$(grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp" | sed 's/^## //')"
 tags="$(release_tag_versions "$REPO_ROOT")"
 
 # _semver_gt A B — true iff v-prefixed semver A is strictly greater than v-prefixed semver B. Own copy,
@@ -240,8 +245,14 @@ else
 fi
 
 # --- per-release verification block (dir #268) ---------------------------------------------------------
-# Two checks, both walking the same per-heading block text (everything after a `## vX.Y.Z` heading up
-# to the next one, or EOF) so it is computed once per heading rather than twice:
+# Two checks, both walking the same per-heading block text (everything between a `## vX.Y.Z — <date>`
+# heading and the next one, or EOF) via tests/lib.sh's own section_body() — the same "second use =
+# promote" slicer test_core_capability_index.sh already reuses for this identical "slice one heading's
+# body" idiom, so no new bespoke extractor is written here. section_body() matches by exact heading-LINE
+# equality, not a version substring, so it sidesteps dir #299's `## v0.9.1` vs `## v0.9.10` collision on
+# its own: two releases sharing a numeric prefix still have different heading lines (the date differs
+# too). section_body() reads a real FILE, not text, so it reads $blanked_tmp — the same fence-blanked
+# scratch file the heading scan above already wrote, not a second blanking pass over the same doc.
 #
 # 1. Presence, floored at v0.9.0 (dir #268 §3.2 — "history starts at v0.9.0", no back-fill). This fires
 #    only once a heading at or above the floor exists; none does yet on this release, so today it is
@@ -253,28 +264,13 @@ fi
 #    assertion here would fail on day one against this file's own existing prose — the exact trap the
 #    reconciliation memo named. A block is identified by its own `**Verification.**` opening marker;
 #    only the text from that marker onward is checked, never the digest paragraph above it.
-#
-# Block boundaries are found by counting occurrences of the SAME general (untargeted) heading regex used
-# for the heading scan above, not by matching a specific version string — so dir #299's both-ends-anchor
-# trap (`## v0.9.1` is a literal substring of `## v0.9.10`) does not apply here: splitting on "any
-# heading line" never confuses one heading with another.
 verification_floor="v0.9.0"
-blocks_blanked="$(blank_fenced_blocks "$history")"
 missing_block=""
 provenance_leak=""
-idx=0
-while IFS= read -r h; do
-  [ -n "$h" ] || continue
-  idx=$((idx + 1))
-  block="$(awk -v target="$idx" '
-    /^## v[0-9]+\.[0-9]+\.[0-9]+/ {
-      c++
-      if (c == target) { capture = 1; next }
-      if (capture) { exit }
-      next
-    }
-    capture { print }
-  ' <<< "$blocks_blanked")"
+while IFS= read -r hline; do
+  [ -n "$hline" ] || continue
+  h="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<< "$hline")"
+  block="$(section_body "$hline" "$blanked_tmp")"
 
   if [ "$h" = "$verification_floor" ] || _semver_gt "$h" "$verification_floor"; then
     for label in '\*\*Verification\.\*\*' '\*\*Scope:\*\*' '\*\*Method:\*\*' '\*\*Coverage:\*\*' \
@@ -292,7 +288,7 @@ while IFS= read -r h; do
     grep -qE 'dir #[0-9]+' <<< "$verification_part" \
       && provenance_leak="$provenance_leak${provenance_leak:+, }$h: cites a dir #N ticket"
   fi
-done <<< "$headings"
+done <<< "$(grep -E '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp")"
 
 if [ -z "$missing_block" ]; then
   pass "every docs/release-history.md heading at/above the v0.9.0 verification floor carries a verification block"
