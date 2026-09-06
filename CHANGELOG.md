@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tools/pre-pr-gate.sh`'s dir #70 header comment corrected: "no structural fix exists today" for a
+  more-restricted subagent type was stale against current harness docs** — a `tools:` frontmatter
+  allowlist on a committed subagent definition genuinely blocks `Bash`/`Edit`/`Write` for that type; a
+  feasibility check for dir #413/#414 (a review-subagent capability floor, now pooled) confirmed this
+  live and left the finding in place of the outdated claim, so a future implementer starts from
+  confirmed feasibility rather than from scratch. Comment-only; no behavior change.
+
 - **dir #375: `docs/delegation.md`'s canonical Worker rails block gains a dirty-tree discriminator** —
   two live incidents in three days (v0.8.2 wave 3, and PR #349's own round-2 review) each had a spawned
   review subagent mistake a parent session's live, uncommitted dirty tree for `dir #318`/`dir #320`'s
