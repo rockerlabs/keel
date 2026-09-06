@@ -112,7 +112,12 @@ This is the durable public referent a future run points at instead of re-derivin
      earlier wave's fix actually touched *and* you can state the causal path in one sentence,
      `original` otherwise — both halves required, or the mark over- or under-counts. A run's first
      wave has no prior fix to be induced from, so every finding there is trivially `original`; mark it
-     anyway, since the run record's rate (`induced / total`) needs the denominator too;
+     anyway, since the run record's rate (`induced / total`) needs the denominator too. **Write the
+     mark as a line containing the literal substring `Mark:` (case-insensitive) followed by `induced`
+     or `original`** — e.g. `**Mark:** \`induced\` — one sentence causal path to the prior fix` —
+     this exact shape, not a paraphrase, is what `tools/delta-audit/harvest.sh` tallies into the run
+     record's `induced / total` rate; a differently-worded mark is invisible to it and silently
+     undercounts;
    - `## NOT checked` — anything in scope you skipped or couldn't verify, stated plainly.
 7. **Don't trust a plan's snapshot.** Re-derive counts and lists live at pickup — the repo may have
    moved since the plan was written. The anchor stays FIXED even as `origin/main` moves past it

@@ -11,6 +11,20 @@ For a condensed one-paragraph-per-release digest instead of the full dated detai
 
 ## [Unreleased]
 
+- **dir #267: `tools/delta-audit/harvest.sh` fills `run-record.md`'s mechanical rows from a delta-audit
+  run's own artifacts, instead of a human transcribing them.** `derive.sh` already emits `run-record.md`
+  as an eleven-row stub; this fills three of them in place — `records` (a sorted directory listing),
+  `cost, per leg` (parsed from `orchestrator-notes.md`'s own per-leg token table), and `induced defects
+  (induced / total)` (a tally of explicit `Mark: induced`/`Mark: original` lines under `reports/`) — and
+  leaves every narrative row (method, coverage, findings, behavioural defects, diversity result, new
+  classes vs instances, upstream gate) untouched, per `docs/verification-economics.md` §9's own line
+  that those are a human's judgement call, never a fact a script can read off a file. Two rails enforced
+  live in `tests/test_delta_audit_harvest.sh`: a cost this script cannot find is the literal string
+  `unmeasured`, never a fabricated `0`, and no cell anywhere sums tokens across legs. The `Mark:`
+  convention is new, not reverse-engineered from this repo's own report corpus — the corpus predates it
+  and uses free-text phrasing this script deliberately does not try to parse, disclosed as a known
+  limitation in the script's own header rather than guessed at.
+
 - **dir #10 (legacy): `docs/keel-impact.md` gains a reviewed, one-off public snapshot of keel's own
   impact ledger** — 55 dogfooded sessions, mean 87.9/median 88 out of 100 — per the 2026-07-12 operator
   decision that the live ledger stays private but its aggregate can be published once. Named honestly as
