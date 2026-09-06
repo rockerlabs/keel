@@ -153,9 +153,20 @@ mkdir -p "$weird_root/$weird_slug"
 cat > "$weird_root/$weird_slug/cccccccc-cccc-cccc-cccc-cccccccccccc.jsonl" <<'EOF'
 {"type":"assistant","requestId":"r5","sessionId":"C","timestamp":"2026-09-03T09:00:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1}}}
 {"type":"never-seen-before","sessionId":"C"}
+{"type":"never-seen-before","sessionId":"C"}
+{"type":"never-seen-before","sessionId":"C"}
+{"type":"never-seen-before","sessionId":"C"}
+{"type":"never-seen-before","sessionId":"C"}
 EOF
 run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$weird_root" bash "$tool"
 check_status "an unrecognized record type does not crash the report" "0" "$STATUS"
 check_contains "an unrecognized type is surfaced, not silently absorbed (SPEC §6 req 5)" "$OUT" "does not recognize"
+
+# code-review high pass: the counter must count RECORDS, not distinct unrecognized TYPE NAMES — 5
+# records sharing one unrecognized type name must report 5, not 1 (a `unique`-deduped count collapsed
+# to 1 before this fix).
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$weird_root" bash "$tool" --json
+check_contains "5 records of ONE unrecognized type count as 5, not 1 (distinct-name count bug)" \
+  "$OUT" '"unrecognizedTypeRecords":5'
 
 summary

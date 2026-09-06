@@ -99,6 +99,13 @@ _tr_build_report() {
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
 
+  # Every read below is guarded (an `if ! CMD; then warn; continue; fi`, matching tu_session_totals's
+  # own shape just below) rather than a bare command — the corpus is LIVE (docs/token-economy.md: a
+  # self-referential run reads a session transcript it is still writing), so a file changing mid-read
+  # is the ORDINARY case, not a rare one. Under this script's own `set -euo pipefail`, an unguarded
+  # command failing here would abort the WHOLE multi-session report (losing every already-processed
+  # session) instead of skipping the one file that changed underneath it, and would skip the trailing
+  # `rm -f` cleanup, leaking the four mktemp files (code-review high pass).
   local f totals sf
   for f in "${files[@]:-}"; do
     [ -f "$f" ] || continue
@@ -110,14 +117,29 @@ _tr_build_report() {
       continue
     fi
 
-    tu_turns primary "$f" | jq -c --arg f "$f" '. + {sessionFile:$f}' >> "$tmp_turns"
-    tu_tool_calls primary "$f" >> "$tmp_calls"
-    tu_self_check "$f" >> "$tmp_sc"
+    if ! tu_turns primary "$f" | jq -c --arg f "$f" '. + {sessionFile:$f}' >> "$tmp_turns"; then
+      printf 'token-report.sh: could not read turns for %s — skipped\n' "$f" >&2
+      continue
+    fi
+    if ! tu_tool_calls primary "$f" >> "$tmp_calls"; then
+      printf 'token-report.sh: could not read tool calls for %s — skipped\n' "$f" >&2
+      continue
+    fi
+    if ! tu_self_check "$f" >> "$tmp_sc"; then
+      printf 'token-report.sh: could not read self-check for %s — skipped\n' "$f" >&2
+      continue
+    fi
 
     while IFS= read -r sf; do
       [ -n "$sf" ] || continue
-      tu_tool_calls subagent "$sf" >> "$tmp_calls"
-      tu_self_check "$sf" >> "$tmp_sc"
+      if ! tu_tool_calls subagent "$sf" >> "$tmp_calls"; then
+        printf 'token-report.sh: could not read tool calls for subagent %s — skipped\n' "$sf" >&2
+        continue
+      fi
+      if ! tu_self_check "$sf" >> "$tmp_sc"; then
+        printf 'token-report.sh: could not read self-check for subagent %s — skipped\n' "$sf" >&2
+        continue
+      fi
     done < <(tu_subagent_files "$f")
   done
 
@@ -260,7 +282,17 @@ _tr_build_report() {
         },
         selfCheck: {
           filesScanned: ($SC | length),
-          unrecognizedTypeRecords: ( [$SC[].unrecognized_types | length] | add // 0 )
+          # tu_self_check unrecognized_types is a unique-deduped list of TYPE NAMES per file (named
+          # explicitly so a moved format is visible, per the lib own header) — its length is the
+          # count of distinct names, not of unrecognized RECORDS. Every record in a file is exactly
+          # one of assistant-with-usage / assistant-without-usage / a known other type / an
+          # unrecognized type, so the true per-file unrecognized-record count is derivable
+          # arithmetically from the other three counters tu_self_check already emits, with no lib
+          # change needed (code-review high pass: summing unrecognized_types length undercounted a
+          # file carrying many records of ONE unrecognized type down to 1).
+          unrecognizedTypeRecords: (
+            [$SC[] | (.total - .assistant_usage - .assistant_no_usage - .known_other)] | add // 0
+          )
         }
       }
   ')"
@@ -278,8 +310,10 @@ _tr_print_human() {
   local report="$1" label="$2"
   # jqr QUERY — every jq call below reads the same already-computed report JSON; a local function
   # (fed via a here-string, not `printf | jq`) says that once instead of restating
-  # `printf '%s' "$report" | jq -r` at each of the six call sites.
-  jqr() { jq -r "$1" <<<"$report"; }
+  # `printf '%s' "$report" | jq -r` at each of the six call sites. `round1` is prepended to every
+  # query so the two call sites that need it (fan-out, cold-resumes) share one definition instead of
+  # each restating it (code-review high pass).
+  jqr() { jq -r "def round1: (.*10|round)/10; $1" <<<"$report"; }
 
   # Numbers print as plain integers, no thousands separators — locale-dependent grouping would be a
   # portability trap for no real gain here (see this project's own memory on shell/date/awk locale
@@ -311,7 +345,6 @@ _tr_print_human() {
   printf '\n  WHAT DRIVES IT — 3 patterns\n'
 
   jqr '
-    def round1: (.*10|round)/10;
     .patterns.fanout as $f
     | if $f.sessionsWithFanout > 0 then
         "    fan-out          \($f.sharePct | round1)% of your spend is subagent work (\($f.totalAgents) agents",
@@ -327,7 +360,6 @@ _tr_print_human() {
   '
   printf '\n'
   jqr '
-    def round1: (.*10|round)/10;
     .patterns.coldResumes as $c
     | if $c.events > 0 then
         "    cold resumes     \($c.events) pause(s) outlived the prompt cache and re-paid for the",
