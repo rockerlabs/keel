@@ -147,6 +147,86 @@ Keel is not magic, and this page won't pretend otherwise (see the README's *What
   and blocks a key-shaped secret regardless of what the model decides; `doctor` / `public-audit` answer on
   demand. These cost **zero** context tokens.
 
+## Retiring a shipped capability
+
+Everything above prices *adding* to this tiered structure. The same tiering discipline has a reverse
+direction: retiring something that no longer earns its keep. Without a designed path for that, "add" is
+the only move the process supports, and a knowledge base only ever grows. This is that path. (Doctrine
+origin: `dir #358`.)
+
+**The unit of removal is the delivery slot, not "a capability" in the abstract** — the same three tiers
+from the top of this page, given a cost ruler each rather than just a loading rule:
+
+| Class | What it is | What it costs | Existing ruler |
+|---|---|---|---|
+| **A — always-on** | a `CORE.md`/`templates/CLAUDE.md` section or index bullet | every session, forever | the token figures on this page |
+| **B — on-demand** | `docs/*.md`, `FRAMEWORK.md`, `PRINCIPLES.md`, `commands/*.md` | tokens × how often it's actually reached — frequency is the half nobody measures | tokens only, today |
+| **C — mechanism** | a script, hook, or guard | zero context tokens; the cost is maintenance and friction | tickets and fixes filed against it |
+
+**The evidence bar is a required shape, not a threshold.** A number fixed before the data exists is
+arbitrary; one fixed after is fitted to the verdict you already wanted. A retirement proposal needs all
+four of:
+
+1. **Cost** — measured per the class above, never estimated where a ruler exists.
+2. **Benefit** — measured against the one property the capability itself claims to serve, or explicitly
+   marked absent.
+3. **Reach** — measured: does it have a trigger condition (or an invocation site), and does it fire?
+4. **The successor** — named: a simpler alternative, an absorbing capability, or an explicit "nothing
+   replaces it; the need goes unserved." Cost without a named successor is a measurement, not a proposal.
+
+**Verdict rule:** cost alone never licenses retirement — a cheap useless thing and an expensive vital
+thing both fail a cost-only bar, in opposite and equally wrong directions. Retire only when measured cost
+is non-trivial for its class **and** measured benefit is not distinguishable from zero across repeated
+measurement, never a single point estimate. Zero reach licenses descending exactly one rung (to
+Unsurface, below) — no further, since low reach can be a delivery defect rather than a value one. **Ties
+go to keeping, except in class A**, where the always-on cost is paid by every session forever — the same
+asymmetry this page already argues for *adding*, run in reverse.
+
+**The tail-risk exemption does not bend under cost pressure:** a guard, a refusal, or a never-clobber
+rail is judged on **whether the hazard it guards against still exists — not on how often it has fired.**
+A quiet guard and a useless one look identical to a cost/benefit ledger, and the bar would be most
+persuasive exactly when it was most wrong: deleting a safety rail during the quiet period it earned by
+working. This is the remove-side mirror of [`PRINCIPLES.md`](../PRINCIPLES.md)'s P4 prophylactic
+exception — the same irreversibility-over-frequency argument that justifies building a guard before the
+first incident, applied here to justify keeping one after a quiet spell. The exemption excuses the
+*benefit* input only — cost, the record below, and the cooldown still apply. To invoke it: name the
+hazard and show it still exists. "It might matter someday" doesn't qualify; a reproducible failure mode
+does.
+
+**Five rungs, ordered by reversibility, descended one at a time:**
+
+| Rung | Action | Result |
+|---|---|---|
+| **R0 — Freeze** | stop investing further | nothing changes on disk |
+| **R1 — Unsurface** | drop the trigger reference; it still ships and works | a cheaper always-on layer only |
+| **R2 — Unship** | stop placing it in new/updated installs; source stays in the repo | gone from new installs |
+| **R3 — Off by default** | ship it, wire it, default it inert | present but inactive until turned on |
+| **R4 — Delete** | remove it from the repo | gone |
+
+R1 is the rung most knowledge bases skip, and the useful one: it separates *"is this worth its always-on
+cost?"* from *"is this capability any good?"*, answering only the first — cheaply, reversibly, with an
+exact, re-measurable cost recovery. Unsurface when something **can't earn a place in the trigger index**
+— never because the index merely feels crowded; a crowded index is a re-measurement problem, not a
+licence to cut. **Cooldown:** descend one rung per release, never skipping — each rung produces the
+evidence the next decision needs, and skipping ahead throws it away. One exception: something that never
+shipped in a tagged release can be deleted outright — no installs to strand.
+
+Not every rung applies to every class. Class A has no "wired but inert" state — a `CORE.md` bullet is
+either in the file or it isn't — so R2/R3 are effectively hollow for it and its real ladder is
+R0/R1/R4. R2 needs somewhere to prune an unshipped artifact from, and R3 needs an off switch, so both
+are class B/C rungs first; the table above is the general case, not a claim that all five steps exist for
+every class.
+
+**The record must not manufacture a dead reference.** If your changelog follows [Keep a
+Changelog](https://keepachangelog.com/en/1.1.0/): announce a retirement in `### Deprecated` one release
+ahead of it (the adopter-visible form of the cooldown above), and record it in `### Removed` in the
+release that performs it — naming the capability, the property it claimed, the measured cost recovered,
+and where the reasoning went. **Tombstone what is cited, delete what is not.** A retired capability's
+reasoning is the most valuable part of it — lose it and the same idea gets re-proposed at the same cost
+later — but keeping full prose for every retirement forever just recreates the growth retirement exists
+to stop, so a one-line note survives only where something else still references it; everywhere else, let
+git history be the record.
+
 ## Bottom line
 
 You pay a **small, stable, cacheable** fixed cost — ~2,490 tokens globally, ~2,820 inside a project — for

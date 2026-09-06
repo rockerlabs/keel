@@ -9,7 +9,25 @@ probe, so pre-1.0 minor releases may still carry breaking changes.
 For a condensed one-paragraph-per-release digest instead of the full dated detail below, see
 [`docs/release-history.md`](docs/release-history.md).
 
+Keep a Changelog also defines `### Deprecated` and `### Removed` sections, unused in this file so far
+(every release to date has only added). `docs/loading-and-cost.md`'s retirement doctrine gives those
+sections real content going forward: a capability slated for retirement gets a `### Deprecated` entry one
+release ahead of the change, and a `### Removed` entry in the release that performs it.
+
 ## [Unreleased]
+
+- **dir #358: Keel gains a doctrine for RETIRING a shipped capability**, closing a gap this backlog had
+  never had to face — every open ticket only ever proposed to add, fix, or measure something. `CORE.md`'s
+  (and `templates/CLAUDE.md`'s) "Shipped docs" trigger bullet is reworded to also point at retirement, and
+  `docs/loading-and-cost.md` gains a new section carrying the doctrine itself: three delivery-slot classes
+  (always-on / on-demand / mechanism, each with its own cost ruler), a four-input evidence bar (cost,
+  benefit, reach, successor) with a verdict rule, a **tail-risk exemption** that judges a safety rail on
+  whether its hazard still exists rather than how often it has fired, five reversibility rungs (R0 Freeze
+  through R4 Delete, with R1 Unsurface as the cheap, reversible way to separate "worth its always-on cost"
+  from "any good") descended one at a time under a one-release cooldown, and the record rules —
+  tombstone what is cited, delete what is not. `CHANGELOG.md`'s own header now documents the
+  `### Deprecated`/`### Removed` convention this doctrine puts to use. Doctrine only: the adopter-facing
+  install/doctor reconcile that actually retires a placed artifact is dir #408.
 
 - **dir #313: `tools/lib/transcript-usage.sh` gives this project its first committed answer to "what
   does a unit of work here actually cost?"** — a shared reader for this machine's Claude Code session
