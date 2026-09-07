@@ -15,6 +15,33 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #429: the v0.9.0 retro's five accepted proposals, applied as amendments to the procedure docs
+  they correct rather than reported.** `docs/delta-audit.md` §2 gains the **anchor freeze** as a stated
+  recommendation: post-anchor work rides the next release by default, and landing it now is put to the
+  operator at landing time with its real price named — a re-cut anchor for feature work, at least one
+  more Clause A round for anything else. The release that paid for this took five NO-GO verdicts, every
+  one of them on late-arriving surface and none on coverage; the one surface that never got its diverse
+  pair was rolled back out of the release at the third of them, and two further NO-GOs followed anyway.
+  `docs/release-management.md` gains four: **R1** now prices the slate against the live remaining
+  window at intake and says out loud which of the two numbers it is sizing to; the **worker brief's
+  part 1** gains *derive, don't retell* (a PR/file map diffed against
+  the tool that derives it, a file-class label from `git diff --stat` rather than the author's
+  impression, a figure carrying its measuring moment — from six text defects in one run, each caught by
+  a different party); its **part 4** now carries the keep-alive contract verbatim, placed as a clause so
+  the five-part shape the binding test pins stays intact; and **R11** now closes a worker's row on an
+  observed session state rather than a reported one. `docs/grooming.md` gains two of its own, per its
+  self-revision clause: **G0** must read a sensor against what that sensor can actually see — three
+  coverage gaps, all found by one groom and none of them visible from the output: a harness-injected
+  surface never produces a read tool call, a session reading through the shell is equally invisible,
+  and a trace keying paths against the main checkout while the work happens in a worktree files every
+  doc under a per-worktree prefix, so no two sessions ever accumulate onto the same doc (the measured
+  root cause, now dir #430's headline); separately, a centralized-wrap rule makes every release worker
+  look like it forgot to wrap. And **G4** must **record** the pool
+  reading rather than only read it — two grooms had run that tool and neither recorded, leaving its
+  growth trigger with nothing to compare. Also gitignores `POOL-HISTORY.jsonl`, the file that recording
+  step writes: it landed untracked-but-not-ignored at the main checkout root, one `git add -A` from
+  carrying backlog state into a public repo, against dir #360's own "never in the tracked tree".
+
 - **dir #415: consolidated a duplicated git main-checkout-resolution chain into `tools/lib/repo-top.sh`.**
   `tools/lib/impact-store.sh`'s `_impact_main_top`/`_impact_resolve_top` and
   `tools/lib/transcript-usage.sh`'s `tu_repo_top` (the latter promoted out of `tools/token-report.sh`

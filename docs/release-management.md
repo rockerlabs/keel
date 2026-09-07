@@ -49,6 +49,17 @@ in two tickets that a headings-only read would have shipped as-is. Citations inv
 intervening merge are not a hypothetical: two ticket bodies in one release had exactly this happen
 between grooming and pickup.
 
+**Intake also prices the slate against the budget that actually remains, out loud, before wave 1.**
+State two numbers together at intake — the slate's size and the remaining-window figure R11's
+token-budget check already obtains (that check is [`docs/delegation.md`](delegation.md)'s session-limit
+flow, not a second one this rule invents) — and say which one you are sizing to. The incident: a
+17-item release train started on roughly a third of a usage window, hit 2% twice, and paid a pause
+snapshot, two cold resumes and a wave held for the quota reset before it could finish; nobody had
+decided the slate was worth that, because nobody had put the two numbers next to each other. This is
+an intake check, never a cap this doc sets for you — an operator who sees both numbers and chooses
+the larger slate has made a real decision, and that choice belongs on the release row as a named risk
+rather than as a surprise mid-run.
+
 ## R2 — wave plan by file overlap, merges serialized
 
 Cut waves by file overlap, and **assume every PR collides in `CHANGELOG.md` at the `[Unreleased]`
@@ -101,6 +112,17 @@ conventions that happen to look similar, it's one convention applied at two poin
    the commands the worker re-runs to get its own numbers (`git fetch --prune`, then the project's
    own log/tag commands), not the numbers themselves as fact. [`docs/parallel-sessions.md`](parallel-sessions.md)'s
    "a resumed session's picture is stale" rule is this same rule pointed at a brief's own author.
+   **The manager's own brief text is a defect surface of its own, independent of staleness.** One
+   release produced six text defects from one manager in one run: a PR map missing a PR (which then
+   let ~180 lines of executable shell approach single-reader coverage), a file-class label —
+   "docs-only" — asserted by hand about a diff that was not, a figure snapshot gone stale between
+   measurement and use, a heading decapitated by an edit anchor, a rider contradicting the spec it
+   rode on, and a provenance instruction that was already wrong when sent. Every one had the same shape:
+   hand-compressed text diverging from the artifact it describes. So: a PR/file map is diffed against
+   the tool that derives it before it enters a brief, a file-class label comes from `git diff --stat`
+   and the diff's own modes rather than from the author's impression, and any figure carries the
+   moment it was measured. Note what the record also shows — every one of those six was caught, and
+   each by a *different* party than the last. Cheap machinery beats a more careful author.
 2. **The slate/coupling table.** For a whole-wave brief: ticket, surface, coupling with siblings. For
    a single-worker brief: the ticket plus the neighboring tickets it touches a file or a question with.
    Either way, the point is naming coupling explicitly rather than trusting a worker to notice it from
@@ -111,7 +133,15 @@ conventions that happen to look similar, it's one convention applied at two poin
    defeated the reason it was marked one.
 4. **Rules that bind you — pointers, not paraphrases.** Cite the requirement numbers and one clause
    each; never restate a rule's own reasoning inline, since a paraphrase is exactly what drifts from
-   the source the moment either one is edited.
+   the source the moment either one is edited. **Include the keep-alive contract verbatim**, in
+   whatever wording your project settles on — keel's is "a message that is exactly `ping` gets the
+   fixed reply `ok`, zero tool calls." A manager holding several long-running sessions needs a
+   liveness probe that costs nothing, and the reason a probe must name its own no-op reply is
+   [`docs/token-economy.md`](token-economy.md)'s own sharp edge, not a separate finding: a ping phrased
+   as anything status-shaped triggers real turns and re-prices the whole context. Felt here as well —
+   a ping sent to an auditor mid-run set off a full status sweep of its own legs. What this rule adds
+   is only *where* the contract has to appear: inline in the brief, verbatim, because the receiving
+   session never reads this doc.
 5. **Handed to you.** The line below which every judgment is the worker's own — wave sizing, whether a
    lead is real, anything genuinely open. Everything *above* that line is decided; everything *below*
    it is not, and the line itself is what keeps R4's two-way critique from reading as ambiguity about
@@ -308,6 +338,15 @@ This is load-bearing, not decoration: R3's soft-form launching removes the natur
 human typing every launch used to provide, and an unbounded manager reproduces at scale the exact
 failure this project's own quota-burn incidents already showed can happen **with** a human in the
 loop. Removing the human step without adding an explicit bound trades one risk for a worse one.
+
+**A worker's row closes on an observed session state, never on a reported one.** Mark a worker done
+when its session is actually idle or stopped — the harness's own liveness signal — not when its last
+message said it was finishing. The two diverge in exactly the case that costs the most: a worker
+wedged on an unguarded poll keeps a live session and sends nothing, so a ledger that reads "in
+progress" and a ledger that reads "done" look identical from the manager's side. One release lost two
+hours to precisely this, and the wedge was found by the operator's own eye rather than by anything
+in the pattern. A row that cannot be closed against an observed state is a row to escalate on, under
+this rule's own one-line-stop clause.
 
 ## R12 — portability
 
