@@ -16,13 +16,16 @@ sections real content going forward — see that page for exactly when each one 
 ## [Unreleased]
 
 - **dir #94's Keel-vs-cold A/B has run** — one operator-present data point, protocol frozen before
-  either arm ran. `docs/keel-ab.md` (+ reproducible `docs/keel-ab/{seed,grade}.sh`) reports N=1 results
-  for the three iteration-1 properties: stability and constraint both PASSed identically in three of
-  four rails (the fourth, a hardcoded TTL literal, FAILed symmetrically in both arms — published as-is,
-  not filtered); economy showed a positive delta for the keel arm (fewer turns, less wall-clock, one
-  fewer operator question, less total cache-read tokens) despite a one-time cache-creation cost for the
-  extra prose — the negative economy outcome the protocol's own limit L3 flagged as possible did not
-  occur here. `docs/keel-impact.md`'s "had not yet run as of this snapshot" line now links the answer.
+  either arm ran. `docs/keel-ab.md` reports N=1 results for the three iteration-1 properties: stability
+  and constraint both PASSed identically in three of four rails (the fourth, a hardcoded TTL literal,
+  FAILed symmetrically in both arms — published as-is, not filtered); economy showed a positive delta
+  for the keel arm (fewer turns, less wall-clock, one fewer operator question, less total cache-read
+  tokens) despite a one-time cache-creation cost for the extra prose — the negative economy outcome the
+  protocol's own limit L3 flagged as possible did not occur here. `docs/keel-impact.md`'s "had not yet
+  run as of this snapshot" line now links the answer. The reproduction scripts (`seed.sh`/`grade.sh`)
+  are deferred to 0.9.1 (dir #424 — post-anchor arrival without the release's full review depth); the
+  table and its numbers ship regardless, re-derived from raw transcripts twice and independent of the
+  scripts.
 
 - **A disclosure-only round for v0.9.0: no executable code changed.** `docs/delta-audit.md` §10 names
   this instrument for exactly this situation — dir #420, filed by the v0.9.0 RC audit's Clause A round,
