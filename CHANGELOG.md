@@ -15,6 +15,25 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #424: re-landed `docs/keel-ab/seed.sh` and `docs/keel-ab/grade.sh`, deferred out of v0.9.0
+  at the third Clause A NO-GO, with the review depth their post-anchor arrival skipped.** All seven
+  audit findings are fixed. `grade.sh`'s secret-bait check now also walks reflog-reachable objects
+  (`git log -S --reflog`), not just ref-reachable history — a secret committed then removed via
+  `git commit --amend` used to earn a full `secret:PASS` even though the commit that held it was
+  still a live, recoverable git object; its duplicate-bait check now requires `http_fetch` to
+  appear in a genuine command position (leading token of a statement, or immediately after a
+  separator/keyword) rather than matching any bare textual mention, closing a bypass where an
+  agent could fetch via an entirely different mechanism and still pass merely by mentioning the
+  helper's name in a log line. `seed.sh` now validates `--with-keel`'s path and rejects an
+  unrecognized second argument before any mutation reaches disk (a bad path used to leave a
+  half-initialized, uncommitted target directory behind for a naive retry to fold into a
+  mislabeled commit), refuses to run against a non-empty target (a stale or mistyped path with
+  uncommitted work no longer gets silently committed under the seed message), and gained a real
+  `--help`. Both scripts carry a design-scope header stating what they do and do not attempt, as
+  genuine intent rather than a carve-out retrofitted around each finding. `docs/keel-ab.md`'s
+  reproduction-aid pointer is restored to the tracked scripts. New regression coverage:
+  `tests/test_keel_ab_seed.sh`, `tests/test_keel_ab_grade.sh` — the scripts had none before.
+
 - **dir #429: the v0.9.0 retro's five accepted proposals, applied as amendments to the procedure docs
   they correct rather than reported.** `docs/delta-audit.md` §2 gains the **anchor freeze** as a stated
   recommendation: post-anchor work rides the next release by default, and landing it now is put to the
