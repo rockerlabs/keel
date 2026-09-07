@@ -77,27 +77,23 @@ done
 
 if [ -n "$backlog_arg" ]; then
   backlog_file="$backlog_arg"
-  # v0.9.0 RC audit, final fix round: the missing/unreadable guard below must run BEFORE this
-  # `cd` — `cd` into a nonexistent directory fails under `set -e` and aborts with exit 1 plus raw
-  # stderr, breaking this script's own header promise ("Always exits 0 ... missing/unreadable =
-  # silent skip"). Check existence here, on the raw path, so a bad BACKLOG_PATH arg never reaches
-  # the `cd`; the same guard is re-run below (unchanged) for the `backlog_root_for` branch.
-  if [ ! -f "$backlog_file" ] || [ ! -r "$backlog_file" ]; then
-    echo "pool-report: no readable BACKLOG.md at $backlog_file — skipped, not a failure"
-    exit 0
-  fi
-  backlog_root="$(cd "$(dirname "$backlog_file")" && pwd)"
 else
   backlog_root="$(backlog_root_for "$repo_root")"
   backlog_file="$backlog_root/BACKLOG.md"
 fi
 
-history_file="${history_arg:-$backlog_root/POOL-HISTORY.jsonl}"
-
+# v0.9.0 RC audit, final fix round: this guard must run BEFORE the `cd` below — `cd` into a
+# nonexistent directory fails under `set -e` and aborts with exit 1 plus raw stderr, breaking
+# this script's own header promise ("Always exits 0 ... missing/unreadable = silent skip"). A
+# single guard here (rather than one copy per branch) covers both: the `backlog_arg` branch's
+# `cd` hasn't run yet, and the `backlog_root_for` branch never `cd`s at all.
 if [ ! -f "$backlog_file" ] || [ ! -r "$backlog_file" ]; then
   echo "pool-report: no readable BACKLOG.md at $backlog_file — skipped, not a failure"
   exit 0
 fi
+
+[ -n "$backlog_arg" ] && backlog_root="$(cd "$(dirname "$backlog_file")" && pwd)"
+history_file="${history_arg:-$backlog_root/POOL-HISTORY.jsonl}"
 
 today_epoch="$(date -u +%s)"
 
@@ -123,17 +119,36 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # bash 3.2 (BSD regex) — the same gotcha tools/lib/backlog-blocks.sh's own F-04 comment
   # documents; `([^a-zA-Z]|$)` is the portable word-boundary substitute used here for the same
   # reason.
+  # code-review medium (this fix's own review round): an if/elif/elif chain here would shadow a
+  # genuine own tag whenever a foreign citation ALSO matches elsewhere in the same flattened
+  # block ("### dir #5 — RETRACTED ... superseded by dir #9 — RETRACTED for background") — the
+  # citation branch matches first, its cited num (9) differs from own_num (5) so it doesn't
+  # `continue`, but being an `elif` chain the bare-tag branch that would have caught dir #5's OWN
+  # tag never runs either, wrongly keeping a genuinely-retracted ticket in the pool. Fix: strip
+  # recognised foreign-citation clauses out of a COPY of the block first, then test the bare tag
+  # against what's left — a citation elsewhere can no longer shadow a separate own-tag match.
+  #
+  # A second review pass (delta round) on that first fix found two further gaps, both closed
+  # here: (1) `${heading_block/${BASH_REMATCH[0]}/}` used the match as a GLOB pattern, not a
+  # literal string — a matched clause containing `*`/`?` (e.g. markdown emphasis right after
+  # "RETRACTED") would strip past the intended clause, or not at all; quoting the pattern
+  # (`${.../"${BASH_REMATCH[0]}"/}`) forces literal matching instead. (2) a single if/elif strip
+  # only ever removes ONE foreign citation — a block citing two different retracted siblings
+  # (one via each verb form) left the second one's bare tag behind, wrongly counting as this
+  # ticket's own; looping the strip until neither pattern matches closes that gap for any number
+  # of foreign citations, in either form.
   own_num=""
   [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
-  is_retracted=0
-  if [[ "$heading_block" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]]; then
-    [ "${BASH_REMATCH[3]}" = "$own_num" ] && is_retracted=1
-  elif [[ "$heading_block" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]]; then
-    [ "${BASH_REMATCH[1]}" = "$own_num" ] && is_retracted=1
-  elif [[ "$heading_block" =~ —[[:space:]]*RETRACTED([^a-zA-Z]|$) ]]; then
-    is_retracted=1
-  fi
-  [ "$is_retracted" = "1" ] && continue
+  stripped="$heading_block"
+  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] \
+    && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
+    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  done
+  while [[ "$stripped" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] \
+    && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
+    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  done
+  [[ "$stripped" =~ —[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] && continue
 
   # Last `→` token naming a release or the pool (BACKLOG.md's own G3 extraction rule) — a
   # heading carries prose arrows too ("→ ask", "→ a release of its own"); only these two

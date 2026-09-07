@@ -155,6 +155,69 @@ run "$pr" --history "$SANDBOX/hist-retracted.jsonl" "$fret"
 check_contains "MUTATION-PROOF: a ticket citing a sibling's retraction still counts toward the pool (2, not 1)" \
   "$OUT" "pool size:                     2"
 
+# --- code-review medium (this fix's own review round, found live): a ticket that is BOTH
+# genuinely retracted (its own tag) AND cites a different ticket's retraction must still be
+# excluded — an if/elif/elif chain that stops at the first matched citation branch (regardless
+# of whether that citation's cited number equals own_num) would shadow the own-tag check that
+# would otherwise catch it, since being an `elif` means it never runs. MUTATION-PROOF: reverting
+# to that if/elif/elif shape wrongly keeps dir #700 in the pool (2, not the correct 1).
+own_plus_citation_backlog="### dir #700 — RETRACTED (2026-01-01) — superseded by dir #701 — RETRACTED for background too — R1 — → pool
+
+body
+
+### dir #701 — a plain pool ticket, unaffected (found 2026-01-01) — R2 — → pool
+
+body
+"
+fopc="$(mk_backlog "$own_plus_citation_backlog")"
+run "$pr" --history "$SANDBOX/hist-own-plus-citation.jsonl" "$fopc"
+check_contains "MUTATION-PROOF: a ticket that is BOTH own-retracted AND cites a sibling's retraction is still excluded (1, not 2)" \
+  "$OUT" "pool size:                     1"
+
+# --- code-review medium delta round (found live): a ticket that cites TWO different retracted
+# siblings, one via each recognised verb form ("Supersedes" and "Duplicate of"), but is not
+# itself retracted, must still count toward the pool. A single if/elif strip only ever removes
+# ONE foreign citation, leaving the second one's bare "— RETRACTED" behind to wrongly match.
+# MUTATION-PROOF: reverting the two `while` loops back to a single `if`/`elif` pair wrongly drops
+# dir #710 from the pool (0, not the correct 1).
+two_citations_backlog="### dir #710 — cites two different retracted siblings, not itself retracted — R1 — → pool
+Supersedes dir #711 — RETRACTED for background reasons. Duplicate of dir #712 — RETRACTED as well.
+
+### dir #711 — RETRACTED (2026-01-01) — one of the cited siblings — R1 — → pool
+
+body
+
+### dir #712 — RETRACTED (2026-01-01) — the other cited sibling — R1 — → pool
+
+body
+"
+ftwo="$(mk_backlog "$two_citations_backlog")"
+run "$pr" --history "$SANDBOX/hist-two-citations.jsonl" "$ftwo"
+check_contains "MUTATION-PROOF: a ticket citing two different retracted siblings (one per verb form) still counts toward the pool (1, not 0)" \
+  "$OUT" "pool size:                     1"
+
+# --- code-review medium delta round 2 (found live, coverage gap not a code defect): the case
+# above only exercises ONE citation per verb form, so it would not catch a regression from
+# `while` back to a single `if` on either loop (a single strip per form already suffices for that
+# fixture). This fixture cites the SAME verb form ("Supersedes") twice, closing that gap.
+# MUTATION-PROOF: reverting the Supersedes `while` loop back to a single `if` wrongly drops dir
+# #720 from the pool (0, not the correct 1).
+same_verb_twice_backlog="### dir #720 — cites two different retracted siblings via the SAME verb form, not itself retracted — R1 — → pool
+Supersedes dir #721 — RETRACTED for one reason. Supersedes dir #722 — RETRACTED for another.
+
+### dir #721 — RETRACTED (2026-01-01) — one of the cited siblings — R1 — → pool
+
+body
+
+### dir #722 — RETRACTED (2026-01-01) — the other cited sibling — R1 — → pool
+
+body
+"
+fsame="$(mk_backlog "$same_verb_twice_backlog")"
+run "$pr" --history "$SANDBOX/hist-same-verb-twice.jsonl" "$fsame"
+check_contains "MUTATION-PROOF: a ticket citing two retracted siblings via the SAME verb form still counts toward the pool (1, not 0)" \
+  "$OUT" "pool size:                     1"
+
 # --- v0.9.0 RC audit, final fix round: the `⛔`-exclusion pattern (was `⛔[[:space:]]*UN`,
 # case-insensitive) must name exactly the two documented shapes ("⛔ UNBLOCKED", "no longer ⛔"),
 # not any ⛔-adjacent word starting "un". MUTATION-PROOF: reverting the pattern back to the bare
