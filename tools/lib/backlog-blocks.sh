@@ -106,6 +106,15 @@ backlog_ticket_blocks() {
 # pool-report.sh don't each keep their own copy of this fragment — dir #26 already tracks
 # its duplication elsewhere in the tree; this keeps these two callers from adding a third
 # and fourth site of their own.
+#
+# dir #415 built a ready, dependency-free home for exactly the awk fragment above —
+# tools/lib/repo-top.sh's keel_repo_main_top — for the two sites (tools/lib/impact-store.sh,
+# tools/lib/transcript-usage.sh) that needed the identical FULL 3-step chain byte-for-byte, not for
+# this fragment's dir #26 count in general (whose sites deliberately differ in what they do around
+# it — see doctor.sh's own dir #26 comment). If this function is ever pointed at it, use
+# keel_repo_main_top ALONE, never keel_repo_top: this function's own fallback (line below) stops at
+# the raw $repo_root when not a worktree at all, while keel_repo_top additionally tries
+# `rev-parse --show-toplevel` then `pwd -P` — a silent behavior change, not a pure rename.
 backlog_root_for() {
   local repo_root="$1" main_top
   main_top="$(git -C "$repo_root" worktree list --porcelain 2>/dev/null \
