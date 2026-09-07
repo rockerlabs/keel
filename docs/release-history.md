@@ -28,6 +28,48 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.9.0 — 2026-09-07
+
+The proof-of-value release: the sprint asked whether Keel earns its token budget, whether a session
+can reach what shipped, and what happens when the answer is no — and closed all three with committed
+numbers. What a unit of work costs on this project now has a measured, per-pipeline-stage answer from
+deduplicated, subagent-inclusive transcripts (`docs/session-cost.md`, with the shared reader
+`tools/lib/transcript-usage.sh` behind it and the `keel tokens` report giving any adopter the same
+lens, PRs #353/#360). The always-on layer gained an eight-trigger index of shipped `docs/` procedures
+— +194 tokens, measured not estimated, with a live demonstration of a session reaching a procedure it
+was never told about (PR #349) — and its counterpart: a doctrine for retiring a shipped capability,
+with a four-input evidence bar and a tail-risk exemption for safety rails (PR #354). The first
+controlled Keel-vs-cold A/B ran and published keel-positive economy deltas with its honest symmetric
+failure kept at full prominence (`docs/keel-ab.md`, PR #364; reproduction scripts deferred to 0.9.1
+after the RC audit found them under-reviewed). The backlog now measures itself (archive-sweep and
+pool-lane checks, PR #358), delegation safety was hardened twice over (a TL;DR for trivial spawns and
+a dirty-tree discriminator propagated to every worker template, PRs #350/#356), and the release ran
+end to end on the manager/audit toolchain v0.8.3 shipped — including a five-verdict RC audit whose
+every NO-GO is part of this record.
+
+**Verification.** **Scope:** 59 files across 22 merged PRs (#345–#367, excluding the deliberately
+held #361), range v0.8.3 to the cut. **Method:** 21 legs across five verdicts and four Clause A
+closing rounds — a mechanical baseline, six whole-read/seam legs, a two-axis diversity layer (blind
+and cross-vendor) and a verifier chain; ~3.77M measured subagent tokens, the cross-vendor rounds and
+the orchestrator itself unmeasured. The fifth verdict closed on a single verifier pass with no fifth
+diverse round — a knowingly lowered bar, taken as an explicit informed operator decision and recorded
+with that caveat attached. **Coverage:** 59 ledger rows, every row exactly one verdict; 0 waived, 0
+mechanical-only; 3 rows removed pre-tag with their findings retained, not deleted (the deferred
+reproduction scripts). **Findings:** 8 fixed before tag (PRs #362, #367); 3 shapes shipped disclosed
+(PRs #363, #366); 7 deferred to 0.9.1 with the scripts they live in; 4 ticketed next; 2 recorded on
+the standing no-action list; 2 refuted with live platform controls. **Behavioural defects:** the
+three disclosed shapes are the floor — all in self-maintenance census tooling, all in the under-count
+direction, zero occurrences on this repository's own backlog at cut time; adopter backlogs are
+unbounded, which is why they are disclosed rather than waved. **Which layer found what:** every
+behavioural finding came from a diversity leg or an arbitrating role, none from a same-family
+whole-read alone — the cross-vendor and blind legs each found what the other missed, the verifier
+chain caught three misses the legs and the orchestrator shared, and the orchestrator's own three
+errors were each caught by a leg or an adjudication. **What was NOT checked:** the claim-truth
+residual and model-family blindness beyond the one non-Anthropic family used; no diverse round ran
+after the final three fixes (the lowered bar above); residual reachability was measured on this
+repository's own backlog only. **Induced-defect rate:** 1 of 36 marked findings — the release's own
+fix round created one defect, disclosed above, caught by its closing round.
+
 ## v0.8.3 — 2026-09-06
 
 The manager-toolchain release, shipped minimal-and-first so that v0.9.0 onward runs ON it. Four
