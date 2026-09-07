@@ -130,7 +130,15 @@ backlog_ticket_blocks() {
     #   - a citation separated from its own tag by a further em-dash-bounded clause ("Supersedes
     #     dir #N — because X — ✅ CLOSED") is not caught — the looser form that WOULD catch it is
     #     what caused a real regression during review (dir #299's own tag, unrelated to a later
-    #     citation on the same giant line, was wrongly discarded).
+    #     citation on the same giant line, was wrongly discarded);
+    #   - the inverse regression (dir #420): a genuinely closed ticket whose OWN `— ✅ CLOSED`
+    #     tag sits earlier on the same line than a citation to a different ticket's closure
+    #     ("dir #N — ✅ CLOSED — superseded by dir #M — ✅ CLOSED") is over-discarded — the
+    #     citation match still fires (cited_num=M != own_num=N) and `continue`s past the whole
+    #     line, so the own tag that already matched earlier in that same line is never reached.
+    #     Verified live: such a line reports closed=0 for a ticket that is in fact closed. The
+    #     real cure is dir #354's metadata line, tracked separately; not chased here for the same
+    #     reason as the two limitations above.
     #
     # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's
     # stock bash 3.2 (BSD regex) — confirmed live: even a bare ASCII `CLOSED\b` fails to match
