@@ -1122,12 +1122,9 @@ check_contains "H: dedicated GAP fires, measured from the real (older) intro, no
   "'## [1.1.0]' was cut 8 commits ago"
 check_absent "H: no longer waved through as a release in preparation" "$OUT" "cut but not tagged yet"
 
-# H2 (the v0.9.0 cut, live hit): an INLINE-BACKTICK prose mention of a version heading — which
-# blank_fenced_blocks does NOT blank, unlike fixture H's fenced decoy — sits in an OLD commit; the
-# real heading is cut much later. The unanchored presence test made the newest-first walk skip the
-# real cut (its parent already "contained" the string, in prose) and return the years-old mention,
-# blowing the distance bound with a wildly wrong figure (598 on a 1-commit-old cut, live). The
-# line-anchored heading_re must resolve the REAL cut commit: recent, within bound, pending.
+# H2 (the v0.9.0 cut, live hit — full mechanism at _pending_release_intro_commit's heading_re
+# comment in tools/self/doctor.sh): an inline-backtick PROSE mention of the heading in an old commit
+# must not be taken for the heading — asserts the line-anchored regex resolves the real, recent cut.
 d="$(mk_clean_repo)"
 printf '# Changelog\n\n## [Unreleased]\n\nprose recalling a draft with a stale `## [1.1.0]` hoisted wrongly\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
   > "$d/CHANGELOG.md"

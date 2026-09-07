@@ -18,8 +18,7 @@ sections real content going forward — see that page for exactly when each one 
 ## [0.9.0] — 2026-09-07
 
 **Known issues, disclosed at the cut:** three behavioural shapes in self-maintenance census tooling
-ship disclosed rather than fixed, all in the under-count direction and none occurring on this
-repository's own backlog at cut time — dir #420 (the F-04 fix's induced over-discard and its twin in
+ship disclosed rather than fixed — dir #420 (the F-04 fix's induced over-discard and its twin in
 `archive-sweep-check.sh`), dir #425 (`pool-report.sh`'s line-scoped `⛔` exclusion). The A/B
 reproduction scripts are deferred to 0.9.1 with their seven audit findings (dir #424). Ticketed next:
 dir #417, #418, #421, #422, #426. The RC audit's full verification statement is in
