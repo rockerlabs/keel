@@ -64,7 +64,7 @@ backlog_ticket_blocks() {
   local bidx=0
   local nb="${#boundary_lines[@]}"
   local start end heading_line block_end probe block_scan_end heading_block closed flat
-  local own_num probe_line
+  local own_num hb_line
 
   for start in "${heading_lines[@]}"; do
     while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
@@ -78,16 +78,6 @@ backlog_ticket_blocks() {
     # dir #255: a heading whose title text wraps across physical source lines can carry its
     # terminal tag on a continuation line, not the `### ...` line itself — build the whole
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
-    #
-    # F-04 (dir #267 fixer brief): that block absorbed body text too when no blank line separates
-    # the heading from it, and either shape — a wrapped title OR a no-blank-line body — can cite a
-    # DIFFERENT ticket's own closure tag ("superseding dir #901 — ✅ CLOSED as a duplicate"), which
-    # this ticket's `closed` field then wrongly inherited. Scope the block to the heading's OWN
-    # terminal tag: stop extending at the first continuation line that references another
-    # `dir #<N>` (N != this heading's own number) — a genuine wrapped title (dir #9's own test
-    # fixture) never cites a different ticket right before its own closure tag, so that case is
-    # unaffected; a citation of a sibling's status is excluded from heading_block instead, same as
-    # a blank line already excludes it.
     own_num=""
     [[ "$heading_line" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
 
@@ -96,11 +86,6 @@ backlog_ticket_blocks() {
     block_scan_end="$end"
     [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
     while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ]; do
-      probe_line="${stripped_lines[$((probe - 1))]}"
-      if [ -n "$own_num" ] && [[ "$probe_line" =~ dir\ \#([0-9]+) ]] \
-        && [ "${BASH_REMATCH[1]}" != "$own_num" ]; then
-        break
-      fi
       block_end="$probe"
       probe=$((probe + 1))
     done
@@ -110,8 +95,34 @@ backlog_ticket_blocks() {
       heading_block="$(printf '%s\n' "${stripped_lines[@]:$((start - 1)):$((block_end - start + 1))}")"
     fi
 
+    # F-04 (dir #267 fixer brief): a naive `grep -qE '— ✅ ...' <<< "$heading_block"` counts a
+    # DIFFERENT ticket's own closure tag too, whenever body text absorbed into the block (no blank
+    # line before it) cites a sibling ("superseding dir #901 — ✅ CLOSED as a duplicate"). An
+    # earlier version of this fix stopped block EXTENSION at the first foreign `dir #<N>`
+    # reference, but that also cut off a genuine wrapped title whose own continuation line happens
+    # to mention a different ticket before reaching ITS OWN tag ("...mentioning dir #267's fixer
+    # brief before its own closure tag — R2 — ✅ CLOSED") — trading one false-negative direction
+    # for another. Scope the MATCH instead, per-line: a tag counts as this ticket's own unless a
+    # foreign `dir #<N>` citation sits on the SAME line with no other em-dash between it and the
+    # tag — that shape is specific to "<citation> — ✅ <tag>" prose, and never true of a real
+    # heading's own field-separated form ("title — priority — ✅ status"), which always has at
+    # least one more em-dash between the ticket's own `dir #N` and its terminal tag.
+    # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's
+    # stock bash 3.2 (BSD regex) — confirmed live: even a bare ASCII `CLOSED\b` fails to match
+    # there, while the same pattern via `grep -E` (a separate regex implementation) does match.
+    # `([^a-zA-Z]|$)` is the portable word-boundary substitute this project already uses for the
+    # identical reason in harvest.sh's F-01 fix.
     closed=0
-    grep -qE '— ✅ (DONE|CLOSED)\b' <<< "$heading_block" && closed=1
+    while IFS= read -r hb_line; do
+      if [[ "$hb_line" =~ dir\ \#([0-9]+)[^—]*—\ ✅\ (DONE|CLOSED)([^a-zA-Z]|$) ]] \
+        && { [ -z "$own_num" ] || [ "${BASH_REMATCH[1]}" != "$own_num" ]; }; then
+        continue
+      fi
+      if [[ "$hb_line" =~ —\ ✅\ (DONE|CLOSED)([^a-zA-Z]|$) ]]; then
+        closed=1
+        break
+      fi
+    done <<< "$heading_block"
 
     flat="$(tr '\n\t' '  ' <<< "$heading_block")"
     printf '%s\t%s\t%s\t%s\n' "$start" "$end" "$closed" "$flat"

@@ -102,6 +102,23 @@ out4c="$(backlog_ticket_blocks "$f4b")"
 check_contains "MUTATION-PROOF: a genuine wrapped heading (no sibling citation) still reads closed" \
   "$out4c" "$(printf '\t1\t')"
 
+# --- MUTATION-PROOF: a wrapped heading whose OWN continuation line mentions a different ticket
+# BEFORE reaching its own closure tag must still read closed — an earlier version of the F-04 fix
+# stopped block extension at the first foreign `dir #<N>` reference and cut this case off too,
+# trading one false-negative direction for another (found by a fresh-context altitude review of
+# the fix itself). The genuine tag sits behind a SECOND em-dash after the foreign citation, unlike
+# the "<citation> — ✅ <tag>" shape the other four cases above share. ------------------------------
+d4d="$(new_repo)"
+f4d="$d4d/BACKLOG.md"
+printf '### dir #950 A followup fix that wraps onto a second
+  line mentioning dir #267 fixer brief before its own closure tag — R2 — ✅ CLOSED (2026-09-01, done)
+
+body
+' > "$f4d"
+out4d="$(backlog_ticket_blocks "$f4d")"
+check_contains "MUTATION-PROOF: a wrapped title citing another ticket before its OWN tag still reads closed" \
+  "$out4d" "$(printf '\t1\t')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"
