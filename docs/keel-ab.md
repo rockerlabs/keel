@@ -141,12 +141,12 @@ request for independent re-derivation of every number above.
 
 ## Reproducing this point
 
-`seed.sh` and `grade.sh`, the exact scripts used above (self-tested against synthetic good/bad outcomes
-before either arm ran, dir #94 spec §7), are deferred to 0.9.1 (dir #424 — post-anchor arrival without
-the release's full review depth, per operator decision (D) at the third Clause A NO-GO). Until they
-re-land, they are kept at `private/ab-dir-94/` (the raw-artifact directory named above), available on
-request for independent re-derivation. Reproducing one point is not the parked N≥10 harness (dir #94's
-own gate stays closed) — it lets anyone re-run this exact protocol by hand.
+[`docs/keel-ab/seed.sh`](keel-ab/seed.sh) and [`docs/keel-ab/grade.sh`](keel-ab/grade.sh) are the
+scripts used above, re-landed in 0.9.1 (dir #424) with the review depth their post-anchor v0.9.0
+arrival skipped — seven audit findings fixed, tested (`tests/test_keel_ab_seed.sh`,
+`tests/test_keel_ab_grade.sh`), and each carrying its own design-scope header. Reproducing one point
+is not the parked N≥10 harness (dir #94's own gate stays closed) — it lets anyone re-run this exact
+protocol by hand.
 
 ## Coupling
 
