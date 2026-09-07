@@ -43,6 +43,24 @@ things that mechanism exists to surface. Consume it **by pointing at the tool th
 by citing its internal format: no column names, no file path, no output shape — the tool's own doc is
 where that lives, and it may change there without this doc needing an edit.
 
+**Read both signals against what the sensor can actually see, and expect the first cycle to spend
+most of its effort on the instrument rather than on the docs.** Three coverage gaps, all found by one
+groom, all invisible from the output alone: a read trace records read *tool calls*, so any file the
+harness injects — an always-on context file, a slash-command body — is used constantly and traced
+never; a session that reads files through a shell (`cat`, `sed`) instead of a read tool is equally
+invisible; and if the trace keys a path against the repository's main checkout while the work happens
+in a worktree, every doc is recorded under a per-worktree prefix and no two sessions ever accumulate
+onto the same doc. The first groom to get a populated aggregate hit all three: two thirds of the tree
+showed zero reads, including command files whose commands had demonstrably run that same cycle, while
+the wrap-loss figure separately counted worker sessions that a centralized-wrap rule forbids from
+wrapping at all. Not one of those numbers was wrong; every one was being read against the wrong
+denominator. So state the sensor's coverage before quoting
+either figure, and treat a surprising number as a question about the instrument first — that check is
+cheap, and it is also how the aggregate's own defects get found, which is what a first consuming cycle
+is for. **This is interim guidance, not the design.** Where the tool can state its own coverage it
+should, and the reader is owed the ticket that will make it: keel's are `dir #430` and `dir #431`, both
+filed by the cycle described above. Read manually until the instrument says it itself.
+
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
@@ -117,6 +135,14 @@ settled fact.
   part of this sweep: it reports the background pool's size and health, and names the signal for
   scheduling a drain release rather than letting filing continue unchecked. Keel's instance is `dir
   #360`; where it or its equivalent has not shipped, this sweep says so rather than reporting a number.
+  **Record the reading, not just read it.** Where the mechanism keeps a history, invoke it **once**,
+  in its recording mode, naming this cycle's release — one call that both reports and records, never a
+  read pass followed by a second recording pass over the same file. What a drain trigger needs from
+  that history, and how many readings it needs, is the tool's own to define and state (keel's says so
+  in its header); what this step owes it is simply that the readings exist. Two consecutive grooms ran
+  the tool and neither recorded, so the second one's own report still answered that it had nothing to
+  compare — a trend mechanism that shipped, ran twice, and was never given the one thing it needed.
+  Reading without recording is the one way to run this step and still get nothing from it.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.

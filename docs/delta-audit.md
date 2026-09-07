@@ -50,6 +50,19 @@ post-anchor commit that is **not** an audit fix (new feature work landing mid-au
 operator re-cuts the anchor; it does not mean the running audit silently widens its own scope to
 cover it.
 
+**Recommended default, with its price named: post-anchor work rides the NEXT release.** The paragraph
+above says what the audit *does* once such a commit exists — the operator re-cuts the anchor, and the
+run pays for the wider range. This clause is about the decision made one step earlier, before the
+commit lands, and it does not change that remedy. The run that paid for it took five NO-GO verdicts,
+and every one of them turned on late-arriving surface — never on coverage. Each new surface arriving
+after the anchor re-triggers the diverse-pair rule, so the honest price of landing work now is **a
+re-cut anchor for feature work, or at least one more Clause A round for anything else**, and the one
+surface that never got its pair was rolled back out of the release anyway, which is the expensive way
+to arrive at the same place. So when work becomes ready after the anchor, put that price to the
+operator at the moment it wants to land, as a number: defer, or pay it. This is a recommendation the
+orchestrator states, not a rule the audit enforces — an operator who pays with the cost in view has decided
+something, which is the whole point of naming it.
+
 ## 3. Phase 1 — derive the universe
 
 [`tools/delta-audit/derive.sh`](../tools/delta-audit/derive.sh) does this mechanically. Given

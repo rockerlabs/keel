@@ -3,6 +3,12 @@
 # vendor sibling of CLAUDE.md — always inherits CLAUDE.md's git status (dir #75)
 /AGENTS.md
 /BACKLOG.md
+# pool-report.sh's --record history (dir #360) — backlog state, so it inherits BACKLOG.md's status.
+# Written beside BACKLOG.md at the main checkout root; dir #360's own fork resolution says "never in
+# the tracked tree", and until this line nothing enforced that: the first recorded reading landed as
+# an untracked-but-not-ignored file, one `git add -A` from the public repo (found 2026-09-07 by the
+# 0.9.1 /groom, which created it by running the recording step it had just made mandatory).
+/POOL-HISTORY.jsonl
 /INSTANCE.md
 /.claude/
 
