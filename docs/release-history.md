@@ -48,27 +48,29 @@ end to end on the manager/audit toolchain v0.8.3 shipped — including a five-ve
 every NO-GO is part of this record.
 
 **Verification.** **Scope:** 59 files across 22 merged PRs (#345–#367, excluding the deliberately
-held #361), range v0.8.3 to the cut. **Method:** 21 legs across five verdicts and four Clause A
+held #361), range v0.8.3 to the cut. **Method:** 21 legs (17 measured, 4 unmeasured) across five verdicts and three Clause A
 closing rounds — a mechanical baseline, six whole-read/seam legs, a two-axis diversity layer (blind
 and cross-vendor) and a verifier chain; ~3.77M measured subagent tokens, the cross-vendor rounds and
 the orchestrator itself unmeasured. The fifth verdict closed on a single verifier pass with no fifth
 diverse round — a knowingly lowered bar, taken as an explicit informed operator decision and recorded
-with that caveat attached. **Coverage:** 59 ledger rows, every row exactly one verdict; 0 waived, 0
-mechanical-only; 3 rows removed pre-tag with their findings retained, not deleted (the deferred
-reproduction scripts). **Findings:** 8 fixed before tag (PRs #362, #367); 3 shapes shipped disclosed
-(PRs #363, #366); 7 deferred to 0.9.1 with the scripts they live in; 4 ticketed next; 2 recorded on
+with that caveat attached. **Coverage:** 59 ledger rows — 2 removed pre-tag with their
+findings retained, not deleted (the deferred reproduction scripts), 57 live; every row exactly one
+verdict; 0 waived, 0 mechanical-only. **Findings:** 8 fixed before tag (PRs #362, #367); 3 shapes shipped disclosed
+(PRs #363, #366); 7 deferred to 0.9.1 with the scripts they live in; 5 ticketed next; 2 recorded on
 the standing no-action list; 2 refuted with live platform controls. **Behavioural defects:** the
 three disclosed shapes are the floor — all in self-maintenance census tooling, all in the under-count
 direction, zero occurrences on this repository's own backlog at cut time; adopter backlogs are
 unbounded, which is why they are disclosed rather than waved. **Which layer found what:** every
 behavioural finding came from a diversity leg or an arbitrating role, none from a same-family
 whole-read alone — the cross-vendor and blind legs each found what the other missed, the verifier
-chain caught three misses the legs and the orchestrator shared, and the orchestrator's own three
-errors were each caught by a leg or an adjudication. **What was NOT checked:** the claim-truth
+chain caught three misses the legs and the orchestrator shared, and the orchestrator's own
+errors were each caught by a leg or an adjudication — including three figure errors in this block's
+first draft, caught by the cut PR's review checking the block against the run record. **What was NOT checked:** the claim-truth
 residual and model-family blindness beyond the one non-Anthropic family used; no diverse round ran
 after the final three fixes (the lowered bar above); residual reachability was measured on this
-repository's own backlog only. **Induced-defect rate:** 1 of 36 marked findings — the release's own
-fix round created one defect, disclosed above, caught by its closing round.
+repository's own backlog only. **Induced-defect rate:** 1 of 36 leg-level marks (as each
+leg filed them, before consolidation into the dispositions above) — the release's own fix round
+created one defect, disclosed above, caught by its closing round.
 
 ## v0.8.3 — 2026-09-06
 
