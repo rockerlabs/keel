@@ -59,8 +59,13 @@ committed — this published aggregate is the exception. It covers keel's own do
 **What this score is, and isn't.** Per `commands/keel-score.md`'s own calibration note: *"cited events
 still lean on your guess of what a cold session would do... distrust a long high-score trend until an
 A/B backs it."* These 55 rows are in-session estimates with citations, not a controlled experiment — the
-ground truth they're waiting on is dir #94's Keel-vs-cold A/B (four README-claimed properties, run once
-by hand), which had not yet run as of this snapshot.
+ground truth they were waiting on was dir #94's Keel-vs-cold A/B (four README-claimed properties, run
+once by hand; iteration 1 measures three — accumulation is out of scope, see below). **It has now run**
+— see [`docs/keel-ab.md`](keel-ab.md) (2026-09-07): a positive economy delta and a symmetric stability
+miss both arms shared. **This does not change the calibration note's warning.** The run is N=1 — an
+anchor, not statistics (`keel-ab.md`'s own limit L1) — so the trend above is still not backed by
+repeated evidence; treat this snapshot with the same caution as before, now with one real data point
+behind it instead of zero.
 
 **One evidence excerpt, verbatim** (from `.keel/impact/<project-id>/evidence.md`, 2026-09-05, score
 87/100, a release-manager session — no session or path identifiers beyond backlog ticket numbers, so

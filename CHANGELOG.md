@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #94's Keel-vs-cold A/B has run** — one operator-present data point, protocol frozen before
+  either arm ran. `docs/keel-ab.md` (+ reproducible `docs/keel-ab/{seed,grade}.sh`) reports N=1 results
+  for the three iteration-1 properties: stability and constraint both PASSed identically in three of
+  four rails (the fourth, a hardcoded TTL literal, FAILed symmetrically in both arms — published as-is,
+  not filtered); economy showed a positive delta for the keel arm (fewer turns, less wall-clock, one
+  fewer operator question, less total cache-read tokens) despite a one-time cache-creation cost for the
+  extra prose — the negative economy outcome the protocol's own limit L3 flagged as possible did not
+  occur here. `docs/keel-impact.md`'s "had not yet run as of this snapshot" line now links the answer.
+
 - **Five findings from the v0.9.0 release-candidate delta audit (v0.8.3..5ba4dcb), all fix-before-tag,
   fixed as one batch.** `tools/delta-audit/harvest.sh`'s induced/original tally was wrong in four
   distinct shapes: the `Mark:` label match was unanchored (firing inside `remark:`/`benchmark:`), the
