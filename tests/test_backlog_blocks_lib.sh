@@ -56,6 +56,113 @@ out2="$(backlog_ticket_blocks "$f2")"
 check_contains "MUTATION-PROOF: wrapped heading tag on a continuation line still counts closed" \
   "$out2" "$(printf '\t1\t')"
 
+# --- F-04 (dir #267 fixer brief): the `closed` field must not absorb a DIFFERENT ticket's own
+# closure tag, whether it arrives via a wrapped heading or via body text with no blank line before
+# it — both shapes read the current block-extension rule as "just another non-blank continuation
+# line". Four cases, matching the brief's own wrapped-heading and no-blank-line-body pairs. --------
+d4="$(new_repo)"
+f4="$d4/BACKLOG.md"
+printf '### dir #900 An open ticket whose heading wraps onto a second
+  line that happens to cite a sibling, superseding dir #901 — ✅ CLOSED as a duplicate
+
+### dir #910 Open ticket, single-line heading, body starts immediately
+Supersedes dir #911 — ✅ CLOSED, so this work is now unblocked.
+
+### dir #920 Open ticket, single-line heading, blank line before body
+
+Supersedes dir #921 — ✅ CLOSED, so this work is now unblocked.
+
+### dir #930 — a genuinely closed control — R2 — ✅ CLOSED (2026-08-01, done)
+
+closed body
+' > "$f4"
+out4b="$(backlog_ticket_blocks "$f4")"
+# Each row is `start<TAB>end<TAB>closed<TAB>heading_block` — select by the ticket number inside
+# heading_block (field 4), not by line position, then read that row's own `closed` field (3).
+row_closed() { printf '%s\n' "$out4b" | awk -F'\t' -v n="dir #$1" '$4 ~ n {print $3; exit}'; }
+check_status "MUTATION-PROOF: dir #900 (wrapped heading citing a sibling's closure) stays open" \
+  0 "$(row_closed 900)"
+check_status "MUTATION-PROOF: dir #910 (no-blank-line body citing a sibling's closure) stays open" \
+  0 "$(row_closed 910)"
+check_status "dir #920 (blank line before the sibling citation) already stayed open, still does" \
+  0 "$(row_closed 920)"
+check_status "control: a genuinely closed ticket with its OWN tag still reads closed" \
+  1 "$(row_closed 930)"
+
+# --- the wrapped-heading case F-04's own fix must not regress (dir #255, re-asserted here so a
+# future edit to the F-04 guard cannot silently reintroduce the false negative it replaces) --------
+d4b="$(new_repo)"
+f4b="$d4b/BACKLOG.md"
+printf '### dir #9 — a heading whose title wraps across more than one physical
+source line before its own closure tag — R2 — ✅ DONE (2026-08-01, done)
+
+body
+' > "$f4b"
+out4c="$(backlog_ticket_blocks "$f4b")"
+check_contains "MUTATION-PROOF: a genuine wrapped heading (no sibling citation) still reads closed" \
+  "$out4c" "$(printf '\t1\t')"
+
+# --- MUTATION-PROOF: a wrapped heading whose OWN continuation line mentions a different ticket
+# BEFORE reaching its own closure tag must still read closed — an earlier version of the F-04 fix
+# stopped block extension at the first foreign `dir #<N>` reference and cut this case off too,
+# trading one false-negative direction for another (found by a fresh-context altitude review of
+# the fix itself). The genuine tag sits behind a SECOND em-dash after the foreign citation, unlike
+# the "<citation> — ✅ <tag>" shape the other four cases above share. ------------------------------
+d4d="$(new_repo)"
+f4d="$d4d/BACKLOG.md"
+printf '### dir #950 A followup fix that wraps onto a second
+  line mentioning dir #267 fixer brief before its own closure tag — R2 — ✅ CLOSED (2026-09-01, done)
+
+body
+' > "$f4d"
+out4d="$(backlog_ticket_blocks "$f4d")"
+check_contains "MUTATION-PROOF: a wrapped title citing another ticket before its OWN tag still reads closed" \
+  "$out4d" "$(printf '\t1\t')"
+
+# --- MUTATION-PROOF: a legacy `### <n>.` heading's OWN closure tag must not be discarded just
+# because `own_num` is empty for that heading shape. A fresh-context review found this live: the
+# F-04 skip condition treated an empty `own_num` as "always foreign" rather than "no identity to
+# compare against", so ANY `dir #N` mention adjacent to a legacy ticket's own tag (a real, common
+# shape — attribution like "extracted from dir #4") discarded that ticket's own closure. Reproduced
+# against this project's own real BACKLOG.md before fixing (dir #37: "### 37. SEC4 ... (extracted
+# from dir #4; ...) — ✅ DONE" misread as open). -----------------------------------------------------
+d4e="$(new_repo)"
+f4e="$d4e/BACKLOG.md"
+printf '### 37. Legacy ticket — extracted from dir #4 — ✅ DONE, PR #92 merged\n' > "$f4e"
+out4e="$(backlog_ticket_blocks "$f4e")"
+check_contains "MUTATION-PROOF: a legacy heading citing a dir #N for attribution still reads closed" \
+  "$out4e" "$(printf '\t1\t')"
+
+# --- MUTATION-PROOF: a citation elsewhere on the line, with NO tag adjacent to it, must not
+# discard this ticket's OWN tag that appears earlier on the same line. Found live against this
+# project's own real BACKLOG.md (dir #299: "### dir #299 — ✅ CLOSED ... — supersedes dir #297
+# parts (b) and (c)" — the citation "supersedes dir #297" has no tag anywhere near it; it is just
+# describing what #299 supersedes as part of its own history, not ceding its own tag to #297). ------
+d4f="$(new_repo)"
+f4f="$d4f/BACKLOG.md"
+printf '### dir #299 — ✅ CLOSED (2026-08-30) — a ticket whose own description later mentions what it supersedes dir #297 parts (b) and (c)\n' > "$f4f"
+out4f="$(backlog_ticket_blocks "$f4f")"
+check_contains "MUTATION-PROOF: an own-tag ticket citing a sibling with no adjacent tag stays closed" \
+  "$out4f" "$(printf '\t1\t')"
+
+# --- MUTATION-PROOF: the citation-verb list must recognise "Superseded by" (past tense) and be
+# case-insensitive on "Duplicate of" — a delta review round found this project's own real
+# BACKLOG.md uses "superseded" far more than "supersedes" (29 vs. 8 occurrences), and that the
+# original fix's "duplicate of" branch, unlike its "Supersedes" branch, had no case alternation. ---
+d4g="$(new_repo)"
+f4g="$d4g/BACKLOG.md"
+printf '### dir #500 A ticket still open
+Superseded by dir #900 — ✅ CLOSED as a duplicate.
+
+### dir #501 A ticket still open
+Duplicate of dir #901 — ✅ CLOSED as noted elsewhere.
+' > "$f4g"
+out4g="$(backlog_ticket_blocks "$f4g")"
+check_status "MUTATION-PROOF: 'Superseded by dir #N' (past tense) is recognised as foreign" \
+  0 "$(printf '%s\n' "$out4g" | awk -F'\t' '$4 ~ /dir #500/ {print $3; exit}')"
+check_status "MUTATION-PROOF: capitalized 'Duplicate of' is recognised as foreign, not just lowercase" \
+  0 "$(printf '%s\n' "$out4g" | awk -F'\t' '$4 ~ /dir #501/ {print $3; exit}')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"

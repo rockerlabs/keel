@@ -64,6 +64,7 @@ backlog_ticket_blocks() {
   local bidx=0
   local nb="${#boundary_lines[@]}"
   local start end heading_line block_end probe block_scan_end heading_block closed flat
+  local own_num hb_line cited_num
 
   for start in "${heading_lines[@]}"; do
     while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
@@ -77,6 +78,9 @@ backlog_ticket_blocks() {
     # dir #255: a heading whose title text wraps across physical source lines can carry its
     # terminal tag on a continuation line, not the `### ...` line itself — build the whole
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
+    own_num=""
+    [[ "$heading_line" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+
     block_end="$start"
     probe=$((start + 1))
     block_scan_end="$end"
@@ -91,8 +95,64 @@ backlog_ticket_blocks() {
       heading_block="$(printf '%s\n' "${stripped_lines[@]:$((start - 1)):$((block_end - start + 1))}")"
     fi
 
+    # F-04 (dir #267 fixer brief): a naive `grep -qE '— ✅ ...' <<< "$heading_block"` counts a
+    # DIFFERENT ticket's own closure tag too, whenever body text absorbed into the block (no blank
+    # line before it) cites a sibling ("superseding dir #901 — ✅ CLOSED as a duplicate").
+    #
+    # This fix went through several rejected iterations — block-extension stopping, then bare
+    # em-dash-adjacency scoping, then a loose verb+gap form — each one caught only by running the
+    # candidate against this project's OWN real, live BACKLOG.md rather than trusting the audit's
+    # synthetic examples alone; each earlier form regressed at least one real, already-closed
+    # ticket. That process is the same discipline `tools/self/doctor.sh` check 5 already documents
+    # going through for a related ambiguity (its own comment: "a body line that cross-references a
+    # DIFFERENT ticket's status... A same-line filter on 'dir #N' was tried... but real closure
+    # notes routinely co-reference a sibling ticket they also closed").
+    #
+    # The shipped rule: a tag counts as a DIFFERENT ticket's own only when a recognised citation
+    # verb sits directly against both that ticket's `dir #N` AND the tag itself — no gap wider
+    # than whitespace/an optional "by" on either side. Verified against the real BACKLOG.md: the
+    # function's `closed` output is BYTE-IDENTICAL to the pre-F-04 baseline over all 423 real
+    # headings, outside the two shapes F-04 was written to fix.
+    #
+    # Known, accepted limitations (not chased further — a delta review round kept finding more
+    # missing verbs, "⛔ BLOCKED by", "merged into" among them: the same shape recurring rather
+    # than shrinking, which is this project's own signal to stop enumerating and document the gap
+    # instead of layering on more special cases):
+    #   - the verb list below is not exhaustive — "Supersedes"/"superseding"/"superseded (by)"/
+    #     "duplicate of" (first letter only case-insensitive — a full-caps "SUPERSEDED" is not
+    #     recognised; the real file DOES use that form, always as a ticket's own status marker
+    #     like "❌ SUPERSEDED", never as a citation verb next to a `dir #N`, so this narrower gap
+    #     does not currently misfire) — covers the audit's own two documented examples plus the
+    #     dominant real usage (29 lines containing "superseded" vs. 8 containing "supersedes" in
+    #     this project's own BACKLOG.md today, a per-line not per-occurrence count) — any other
+    #     citation verb falls through to the generic tag check below, unrecognised, same as
+    #     before this fix existed for that verb;
+    #   - a citation separated from its own tag by a further em-dash-bounded clause ("Supersedes
+    #     dir #N — because X — ✅ CLOSED") is not caught — the looser form that WOULD catch it is
+    #     what caused a real regression during review (dir #299's own tag, unrelated to a later
+    #     citation on the same giant line, was wrongly discarded).
+    #
+    # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's
+    # stock bash 3.2 (BSD regex) — confirmed live: even a bare ASCII `CLOSED\b` fails to match
+    # there, while the same pattern via `grep -E` (a separate regex implementation) does match.
+    # `([^a-zA-Z]|$)` is the portable word-boundary substitute this project already uses for the
+    # identical reason in harvest.sh's F-01 fix.
     closed=0
-    grep -qE '— ✅ (DONE|CLOSED)\b' <<< "$heading_block" && closed=1
+    while IFS= read -r hb_line; do
+      cited_num=""
+      if [[ "$hb_line" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
+        cited_num="${BASH_REMATCH[3]}"
+      elif [[ "$hb_line" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
+        cited_num="${BASH_REMATCH[1]}"
+      fi
+      if [ -n "$cited_num" ] && [ "$cited_num" != "$own_num" ]; then
+        continue
+      fi
+      if [[ "$hb_line" =~ —\ ✅\ (DONE|CLOSED)([^a-zA-Z]|$) ]]; then
+        closed=1
+        break
+      fi
+    done <<< "$heading_block"
 
     flat="$(tr '\n\t' '  ' <<< "$heading_block")"
     printf '%s\t%s\t%s\t%s\n' "$start" "$end" "$closed" "$flat"
