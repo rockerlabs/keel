@@ -63,6 +63,11 @@
 # own body confirmed the transcripts never carry those. Context-composition questions ("83 MCP tools
 # cost you 36.6k every turn") are not answerable from here; only the app's own context panel shows that.
 
+# dir #415: tu_repo_top (below) delegates to tools/lib/repo-top.sh's keel_repo_top instead of carrying
+# its own copy of the main-checkout-resolution chain — see that function's own comment for why.
+# shellcheck source=tools/lib/repo-top.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/repo-top.sh"
+
 # tu_projects_root — where this machine keeps Claude Code transcripts. Reuses $KEEL_HOME exactly the
 # way tools/lib/impact-store.sh's impact_store_root already does for "$HOME/.claude" resolution,
 # instead of inventing a second override for the same thing — a caller running under tests/lib.sh's
@@ -81,20 +86,14 @@ tu_project_slug() {
 }
 
 # tu_repo_top [DIR] — the project's main-checkout top for DIR (default cwd), folding worktrees into
-# one project: the first `git worktree list` entry, else DIR's own toplevel, else (not a git repo at
-# all) DIR's own physical path. Every caller of tu_session_files needs exactly this resolution for its
-# REPO_TOP argument, so it lives here rather than in each consumer — promoted from a near-verbatim
-# duplicate first written independently in dir #314's own token-report.sh, itself mirroring
-# tools/lib/impact-store.sh's _impact_main_top/_impact_resolve_top chain (dir #313 review: two
-# independent copies of the same non-trivial fallback chain is the exact "second implementation can
-# reintroduce a bug" risk this file's own dedupe logic exists to prevent, applied to repo-top
-# resolution instead of parsing).
+# one project. Every caller of tu_session_files needs exactly this resolution for its REPO_TOP
+# argument. Delegates to keel_repo_top, sourced above (dir #415) — this function used to carry its own
+# copy of that chain (promoted from a near-verbatim duplicate first written independently in dir
+# #314's own token-report.sh, itself mirroring tools/lib/impact-store.sh's
+# _impact_main_top/_impact_resolve_top chain), which was itself exactly the "second implementation can
+# silently diverge" risk dir #314's own promotion had just closed for token-report.sh, one file over.
 tu_repo_top() {
-  local dir="${1:-.}" top
-  top="$(git -C "$dir" worktree list --porcelain 2>/dev/null | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}')" || true
-  if [ -z "$top" ]; then top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || true; fi
-  if [ -z "$top" ]; then top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"; fi
-  printf '%s' "$top"
+  keel_repo_top "${1:-.}"
 }
 
 # tu_session_files REPO_TOP — every PRIMARY session transcript (`<uuid>.jsonl`, never a subagent

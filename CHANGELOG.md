@@ -15,6 +15,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #415: consolidated a duplicated git main-checkout-resolution chain into `tools/lib/repo-top.sh`.**
+  `tools/lib/impact-store.sh`'s `_impact_main_top`/`_impact_resolve_top` and
+  `tools/lib/transcript-usage.sh`'s `tu_repo_top` (the latter promoted out of `tools/token-report.sh`
+  in dir #314 for the identical reason) independently carried the same non-trivial fallback chain
+  byte-for-byte — the exact "second implementation can silently diverge" risk that earlier promotion
+  existed to close, just one file over. Both libs now source and delegate to a new, small,
+  dependency-free `tools/lib/repo-top.sh` (`keel_repo_main_top`/`keel_repo_top`) instead of each
+  keeping their own copy; the public function names/signatures both libs' other callers already
+  depend on are unchanged. Verified byte-for-byte behavioral equivalence before switching, and added
+  `tests/test_repo_top_lib.sh` for direct coverage of the new file.
+
 ## [0.9.0] — 2026-09-07
 
 **Known issues, disclosed at the cut:** three behavioural shapes in self-maintenance census tooling

@@ -28,37 +28,27 @@
 # this project isn't enabled" — refusing on that (keel-impact.sh's `add`/`rollup`) vs. silently doing
 # nothing (a guardrail hook recording a fire) is each caller's own decision, not this file's.
 
-# _impact_main_top [DIR] — the MAIN checkout's top for DIR (default cwd): the first `git worktree
-# list` entry, empty if DIR is not a repo or that entry is bare (no working tree). Equals DIR's own
-# top in a plain (non-worktree) repo. `|| true`: outside a repo git exits 128, which would trip the
-# caller's `set -e` if this ran unguarded; the awk reads its whole input on purpose (no early exit, no
-# SIGPIPE).
+# dir #415: _impact_main_top/_impact_resolve_top (below) delegate to tools/lib/repo-top.sh's
+# keel_repo_main_top/keel_repo_top instead of each carrying its own copy of the fallback chain — see
+# repo-top.sh's own header for why (and why NOT onto tools/lib/transcript-usage.sh's tu_repo_top
+# directly, an earlier version of this fix's own rejected approach).
+# shellcheck source=tools/lib/repo-top.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/repo-top.sh"
+
+# _impact_main_top [DIR] — the MAIN checkout's top for DIR (default cwd), delegating to
+# tools/lib/repo-top.sh's keel_repo_main_top (dir #415) — kept under this name since
+# tools/self/citation-resolvability.sh still calls it directly.
 _impact_main_top() {
-  git -C "${1:-.}" worktree list --porcelain 2>/dev/null |
-    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
+  keel_repo_main_top "${1:-.}"
 }
 
-# _impact_resolve_top [DIR] — the physical path a project's id is derived from: the main checkout's
-# top; else (a bare-main topology) DIR's own toplevel; else (DIR is not a git repo yet) DIR's own
-# physical path. Mirrors keel-impact.sh's pre-store `cmd_enable` fallback chain exactly, so a project
-# that could `enable` before this ticket can still `enable` now.
-#
-# NOT memoized, on purpose (an earlier version tried a single-slot cache here and it was dead on
-# arrival — found live by an operator-run max-depth review, empirically verified): every call site
-# invokes this via `top="$(_impact_resolve_top "$dir")"`, and command substitution forks a subshell —
-# any cache variable this function writes lives only in that throwaway child and vanishes when it
-# exits, so the parent's "cache" never actually gets populated. A real fix needs the caller to avoid
-# command substitution entirely (an output-variable convention, rewriting every call site across this
-# file and its consumers) — a bigger, separate change, not a quick fix; filed as a follow-up. The
-# actual redundant-fork cost this was meant to address is now addressed differently: see
-# _impact_file_path below, which resolves `top` ONCE per call and reuses it, instead of resolving it
-# twice (once directly, once again inside impact_store_dir) the way the pre-fix code did.
+# _impact_resolve_top [DIR] — the physical path a project's id is derived from, delegating to
+# tools/lib/repo-top.sh's keel_repo_top (dir #415): the main checkout's top; else (a bare-main
+# topology) DIR's own toplevel; else (DIR is not a git repo yet) DIR's own physical path. Mirrors
+# keel-impact.sh's pre-store `cmd_enable` fallback chain exactly, so a project that could `enable`
+# before dir #251 can still `enable` now. See keel_repo_top's own comment for why this isn't memoized.
 _impact_resolve_top() {
-  local dir="${1:-.}" top
-  top="$(_impact_main_top "$dir")"
-  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ -n "$top" ] || top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"
-  printf '%s' "$top"
+  keel_repo_top "${1:-.}"
 }
 
 # impact_project_id [DIR] — D2: the path-slug of DIR's resolved top (physical path, every '/' -> '-').
