@@ -248,6 +248,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 - [`docs/token-economy.md`](docs/token-economy.md) — `keel tokens`: where your own agent sessions'
   tokens went, and three diagnosed patterns (fan-out, cold prompt-cache resumes, repeated file reads)
   instead of only a total.
+- [`docs/keel-ab.md`](docs/keel-ab.md) — the Keel-vs-cold A/B: one operator-present data point measuring
+  the "What Keel brings" claims against a cold baseline, with the frozen protocol and reproducible scripts.
 - [`docs/going-public.md`](docs/going-public.md) — a safe step-by-step for making a private repo public.
 - [`docs/rollout-audit.md`](docs/rollout-audit.md) — checklist for verifying a model/harness upgrade
   didn't silently break your pipeline.
