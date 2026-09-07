@@ -77,18 +77,23 @@ done
 
 if [ -n "$backlog_arg" ]; then
   backlog_file="$backlog_arg"
-  backlog_root="$(cd "$(dirname "$backlog_file")" && pwd)"
 else
   backlog_root="$(backlog_root_for "$repo_root")"
   backlog_file="$backlog_root/BACKLOG.md"
 fi
 
-history_file="${history_arg:-$backlog_root/POOL-HISTORY.jsonl}"
-
+# v0.9.0 RC audit, final fix round: this guard must run BEFORE the `cd` below — `cd` into a
+# nonexistent directory fails under `set -e` and aborts with exit 1 plus raw stderr, breaking
+# this script's own header promise ("Always exits 0 ... missing/unreadable = silent skip"). A
+# single guard here (rather than one copy per branch) covers both: the `backlog_arg` branch's
+# `cd` hasn't run yet, and the `backlog_root_for` branch never `cd`s at all.
 if [ ! -f "$backlog_file" ] || [ ! -r "$backlog_file" ]; then
   echo "pool-report: no readable BACKLOG.md at $backlog_file — skipped, not a failure"
   exit 0
 fi
+
+[ -n "$backlog_arg" ] && backlog_root="$(cd "$(dirname "$backlog_file")" && pwd)"
+history_file="${history_arg:-$backlog_root/POOL-HISTORY.jsonl}"
 
 today_epoch="$(date -u +%s)"
 
@@ -101,7 +106,49 @@ oldest_id="unlabeled"
 while IFS=$'\t' read -r start end closed heading_block; do
   : "$start" "$end"  # body span unused here; block detection alone gives us the heading
   [ "$closed" = "1" ] && continue
-  grep -qE '— RETRACTED\b' <<< "$heading_block" && continue
+
+  # FINDING-CA3-1 (v0.9.0 RC audit, CA3 round): `— RETRACTED\b` matched anywhere in the
+  # flattened heading_block, whole-block scoped — a live `→ pool` ticket whose OWN body cites a
+  # sibling's retraction ("Superseded by dir #3 — RETRACTED for background") got dropped from the
+  # pool census entirely, same shape as the F-04 bug tools/lib/backlog-blocks.sh's closed-tag
+  # detection already fixed (a DIFFERENT ticket's own tag absorbed by this block). Mirroring that
+  # fix's own-tag discipline rather than inventing a third variant: a `— RETRACTED` reached only
+  # via one of backlog-blocks.sh's recognised citation verbs (Supersedes/Superseded/Superseding
+  # [by], Duplicate of) naming a DIFFERENT dir #N does not count as this ticket's own retraction.
+  # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's stock
+  # bash 3.2 (BSD regex) — the same gotcha tools/lib/backlog-blocks.sh's own F-04 comment
+  # documents; `([^a-zA-Z]|$)` is the portable word-boundary substitute used here for the same
+  # reason.
+  # code-review medium (this fix's own review round): an if/elif/elif chain here would shadow a
+  # genuine own tag whenever a foreign citation ALSO matches elsewhere in the same flattened
+  # block ("### dir #5 — RETRACTED ... superseded by dir #9 — RETRACTED for background") — the
+  # citation branch matches first, its cited num (9) differs from own_num (5) so it doesn't
+  # `continue`, but being an `elif` chain the bare-tag branch that would have caught dir #5's OWN
+  # tag never runs either, wrongly keeping a genuinely-retracted ticket in the pool. Fix: strip
+  # recognised foreign-citation clauses out of a COPY of the block first, then test the bare tag
+  # against what's left — a citation elsewhere can no longer shadow a separate own-tag match.
+  #
+  # A second review pass (delta round) on that first fix found two further gaps, both closed
+  # here: (1) `${heading_block/${BASH_REMATCH[0]}/}` used the match as a GLOB pattern, not a
+  # literal string — a matched clause containing `*`/`?` (e.g. markdown emphasis right after
+  # "RETRACTED") would strip past the intended clause, or not at all; quoting the pattern
+  # (`${.../"${BASH_REMATCH[0]}"/}`) forces literal matching instead. (2) a single if/elif strip
+  # only ever removes ONE foreign citation — a block citing two different retracted siblings
+  # (one via each verb form) left the second one's bare tag behind, wrongly counting as this
+  # ticket's own; looping the strip until neither pattern matches closes that gap for any number
+  # of foreign citations, in either form.
+  own_num=""
+  [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+  stripped="$heading_block"
+  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] \
+    && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
+    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  done
+  while [[ "$stripped" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] \
+    && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
+    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  done
+  [[ "$stripped" =~ —[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] && continue
 
   # Last `→` token naming a release or the pool (BACKLOG.md's own G3 extraction rule) — a
   # heading carries prose arrows too ("→ ask", "→ a release of its own"); only these two
@@ -132,8 +179,13 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # own future-unblock clause in one line ("⛔ BLOCKED by X, no longer ⛔ once X lands") matches
   # the exclusion and is wrongly dropped from the parked census — parked=0 where the
   # single-state "⛔ BLOCKED by X" phrasing counts parked=1 (under-count direction).
+  #
+  # v0.9.0 RC audit, final fix round: the exclusion pattern must name exactly the two documented
+  # shapes above ("⛔ UNBLOCKED", "no longer ⛔") — a bare `⛔[[:space:]]*UN` prefix match is
+  # broader than either shape and also swallows any OTHER ⛔-adjacent word starting "un" (unless,
+  # unclear, under review, ...), wrongly excluding those as if they meant "unblocked".
   if grep -qE '⛔' <<< "$heading_block" \
-    && ! grep -qiE '⛔[[:space:]]*UN|no longer[[:space:]]+⛔' <<< "$heading_block"; then
+    && ! grep -qiE '⛔[[:space:]]*UNBLOCKED|no longer[[:space:]]+⛔' <<< "$heading_block"; then
     parked=1
   fi
   grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1

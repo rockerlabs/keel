@@ -130,3 +130,115 @@ body
 fsmall="$(mk_backlog "$small_backlog")"
 run "$pr" --history "$hist_grow" "$fsmall"
 check_absent "shrinking pool does not fire the growth trigger" "$OUT" "WARN"
+
+# --- FINDING-CA3-1 (v0.9.0 RC audit, CA3 round): the RETRACTED exclusion (was line ~104) is
+# whole-block scoped, same "whose tag is it" shape as the F-04 bug tools/lib/backlog-blocks.sh's
+# closed-tag detection already fixed. A live, correctly `→ pool`-tagged ticket whose OWN body
+# cites a genuinely-retracted sibling using the "Superseded by dir #N — RETRACTED" idiom must NOT
+# be dropped from the pool census; the genuinely-retracted sibling itself must still be excluded.
+# MUTATION-PROOF pair: dir #501 (citation only, must count) vs. dir #503 (own tag, must not
+# count) — reverting the own-tag scoping back to a bare whole-block `grep` drops dir #501 too,
+# undercounting the pool from 2 to 1 (the audit's own live-reproduced shape).
+retracted_backlog="### dir #500 — a plain pool ticket (found 2026-01-01) — R2 — → pool
+
+body
+
+### dir #501 — a pool ticket that cites a retracted sibling (found 2026-01-01) — R1 — → pool
+Superseded by dir #503 — RETRACTED for background; this ticket itself is still active.
+
+### dir #503 — RETRACTED (2026-01-01, false positive) — a superseded idea — R1 — → pool
+
+body
+"
+fret="$(mk_backlog "$retracted_backlog")"
+run "$pr" --history "$SANDBOX/hist-retracted.jsonl" "$fret"
+check_contains "MUTATION-PROOF: a ticket citing a sibling's retraction still counts toward the pool (2, not 1)" \
+  "$OUT" "pool size:                     2"
+
+# --- code-review medium (this fix's own review round, found live): a ticket that is BOTH
+# genuinely retracted (its own tag) AND cites a different ticket's retraction must still be
+# excluded — an if/elif/elif chain that stops at the first matched citation branch (regardless
+# of whether that citation's cited number equals own_num) would shadow the own-tag check that
+# would otherwise catch it, since being an `elif` means it never runs. MUTATION-PROOF: reverting
+# to that if/elif/elif shape wrongly keeps dir #700 in the pool (2, not the correct 1).
+own_plus_citation_backlog="### dir #700 — RETRACTED (2026-01-01) — superseded by dir #701 — RETRACTED for background too — R1 — → pool
+
+body
+
+### dir #701 — a plain pool ticket, unaffected (found 2026-01-01) — R2 — → pool
+
+body
+"
+fopc="$(mk_backlog "$own_plus_citation_backlog")"
+run "$pr" --history "$SANDBOX/hist-own-plus-citation.jsonl" "$fopc"
+check_contains "MUTATION-PROOF: a ticket that is BOTH own-retracted AND cites a sibling's retraction is still excluded (1, not 2)" \
+  "$OUT" "pool size:                     1"
+
+# --- code-review medium delta round (found live): a ticket that cites TWO different retracted
+# siblings, one via each recognised verb form ("Supersedes" and "Duplicate of"), but is not
+# itself retracted, must still count toward the pool. A single if/elif strip only ever removes
+# ONE foreign citation, leaving the second one's bare "— RETRACTED" behind to wrongly match.
+# MUTATION-PROOF: reverting the two `while` loops back to a single `if`/`elif` pair wrongly drops
+# dir #710 from the pool (0, not the correct 1).
+two_citations_backlog="### dir #710 — cites two different retracted siblings, not itself retracted — R1 — → pool
+Supersedes dir #711 — RETRACTED for background reasons. Duplicate of dir #712 — RETRACTED as well.
+
+### dir #711 — RETRACTED (2026-01-01) — one of the cited siblings — R1 — → pool
+
+body
+
+### dir #712 — RETRACTED (2026-01-01) — the other cited sibling — R1 — → pool
+
+body
+"
+ftwo="$(mk_backlog "$two_citations_backlog")"
+run "$pr" --history "$SANDBOX/hist-two-citations.jsonl" "$ftwo"
+check_contains "MUTATION-PROOF: a ticket citing two different retracted siblings (one per verb form) still counts toward the pool (1, not 0)" \
+  "$OUT" "pool size:                     1"
+
+# --- code-review medium delta round 2 (found live, coverage gap not a code defect): the case
+# above only exercises ONE citation per verb form, so it would not catch a regression from
+# `while` back to a single `if` on either loop (a single strip per form already suffices for that
+# fixture). This fixture cites the SAME verb form ("Supersedes") twice, closing that gap.
+# MUTATION-PROOF: reverting the Supersedes `while` loop back to a single `if` wrongly drops dir
+# #720 from the pool (0, not the correct 1).
+same_verb_twice_backlog="### dir #720 — cites two different retracted siblings via the SAME verb form, not itself retracted — R1 — → pool
+Supersedes dir #721 — RETRACTED for one reason. Supersedes dir #722 — RETRACTED for another.
+
+### dir #721 — RETRACTED (2026-01-01) — one of the cited siblings — R1 — → pool
+
+body
+
+### dir #722 — RETRACTED (2026-01-01) — the other cited sibling — R1 — → pool
+
+body
+"
+fsame="$(mk_backlog "$same_verb_twice_backlog")"
+run "$pr" --history "$SANDBOX/hist-same-verb-twice.jsonl" "$fsame"
+check_contains "MUTATION-PROOF: a ticket citing two retracted siblings via the SAME verb form still counts toward the pool (1, not 0)" \
+  "$OUT" "pool size:                     1"
+
+# --- v0.9.0 RC audit, final fix round: the `⛔`-exclusion pattern (was `⛔[[:space:]]*UN`,
+# case-insensitive) must name exactly the two documented shapes ("⛔ UNBLOCKED", "no longer ⛔"),
+# not any ⛔-adjacent word starting "un". MUTATION-PROOF: reverting the pattern back to the bare
+# `UN` prefix wrongly treats "⛔ unless a consumer asks" as the unblocked shape and drops it from
+# the parked count (0 instead of 1).
+unless_backlog="### dir #600 — a pool ticket blocked on a soft condition (found 2026-01-01) — R2 — ⛔ unless a consumer asks — → pool
+
+body
+"
+fun="$(mk_backlog "$unless_backlog")"
+run "$pr" --history "$SANDBOX/hist-unless.jsonl" "$fun"
+check_contains "MUTATION-PROOF: '⛔ unless ...' still counts as structurally-parked (not read as UNBLOCKED)" \
+  "$OUT" "excluding structurally-parked:  0 (of 1; 1 parked by rule"
+
+# --- v0.9.0 RC audit, final fix round: a nonexistent BACKLOG_PATH must still hit the "no
+# readable BACKLOG.md" skip and exit 0 — the `cd` deriving backlog_root from its dirname ran
+# BEFORE the missing-file guard, so a nonexistent directory made `cd` fail under `set -e` and
+# abort with exit 1 plus raw stderr instead of the documented silent skip. MUTATION-PROOF: moving
+# the `cd` back above the guard reproduces exit 1 with a "No such file or directory" stderr line
+# instead of this script's own advisory skip message.
+run "$pr" "/no/such/dir/BACKLOG.md"
+check_status "nonexistent BACKLOG_PATH directory -> exit 0 (advisory skip, not a crash)" 0 "$STATUS"
+check_contains "prints the same skip line, not raw cd stderr" "$OUT" "no readable BACKLOG.md"
+check_absent "no raw 'No such file or directory' stderr leaks through" "$OUT" "No such file or directory"

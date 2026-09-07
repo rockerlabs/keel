@@ -371,6 +371,29 @@ sections real content going forward — see that page for exactly when each one 
   in-document anchor links resolve to real headings, wired into `tests/run.sh` and
   `tools/self/doctor.sh` — verified clean for the new anchor.
 
+- **Three more whole-block-scoped bugs in `tools/self/pool-report.sh`, found by the v0.9.0 RC
+  audit's CA3 round and fixed as the release's final fix round.** The RETRACTED-exclusion
+  (FINDING-CA3-1) was scoped to the whole flattened heading block rather than the ticket's own
+  tag: a live, correctly `→ pool`-tagged ticket whose own body cited a genuinely-retracted
+  sibling was wrongly dropped from the pool census entirely — the same "whose tag is it" shape
+  as dir #420 and dir #425, at a sibling site those two disclosures missed. Fixed by reusing
+  `tools/lib/backlog-blocks.sh`'s F-04 own-tag-vs-citation discipline rather than inventing a
+  third variant. Separately, the `⛔`-parked exclusion pattern (`⛔[[:space:]]*UN`,
+  case-insensitive) was broader than its own comment's two documented shapes ("⛔ UNBLOCKED", "no
+  longer ⛔"), also swallowing any other ⛔-adjacent word starting "un" (unless, unclear, under
+  review); narrowed to name exactly `⛔UNBLOCKED`. Last, the guard deriving `backlog_root` via
+  `cd` ran before the missing-file check, so a nonexistent `BACKLOG_PATH` made `cd` fail under
+  `set -e` and abort with exit 1 plus raw stderr instead of the script's own documented silent
+  skip; the guard now runs first. `/code-review medium` caught and fixed a real regression inside
+  the RETRACTED fix itself before it shipped: an `if`/`elif`/`elif` citation-scoping chain meant a
+  foreign citation matching anywhere in the block shadowed the ticket's own bare tag check (elif
+  short-circuits), so a ticket that was BOTH genuinely retracted AND cited a different ticket's
+  retraction stayed wrongly in the pool — two further delta rounds then closed a glob-unsafe
+  string substitution and a single-citation strip limit in that same fix. Six regression
+  fixtures total, each mutation-proofed. `tools/lib/backlog-blocks.sh`'s own-tag discipline is now
+  duplicated rather than shared across two files (both reviewers flagged it; a shared
+  tag-parameterized helper is tracked as a follow-up, out of scope for this contained round).
+
 ## [0.8.3] — 2026-09-06
 
 - **dir #367: `/manage-release <version>` — the release-manager pattern, run by hand across several
