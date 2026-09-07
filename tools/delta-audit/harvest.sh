@@ -285,10 +285,16 @@ fi
 
 # F-02 (dir #267 fixer brief): this script runs `set -uo pipefail`, no `-e` — a failed `mv` (cross-
 # device, permission, disk full) would otherwise fall through to `trap - EXIT; exit 0` uncaught,
-# reporting success while run-record.md is left unchanged and the temp file leaks. Checked explicitly,
-# mirroring the awk-status handling just above it.
-if ! mv "$tmp_file" "$record_file"; then
-  mv_status=$?
+# reporting success while run-record.md is left unchanged and the temp file leaks. Checked
+# explicitly, mirroring the awk-status handling just above it — including capturing `$?`
+# immediately after the command itself, not after a negated `if ! mv ...; then` condition: `$?`
+# inside that branch reflects `! mv`'s own (always-0) exit status, not mv's real one, so the
+# refusal message would have always claimed "mv exited 0" regardless of the actual failure
+# (a /code-review high pass caught this live before it shipped).
+mv "$tmp_file" "$record_file"
+mv_status=$?
+
+if [ "$mv_status" -ne 0 ]; then
   rm -f "$tmp_file"
   refuse "writing run-record.md failed (mv exited $mv_status) — original file left untouched"
 fi

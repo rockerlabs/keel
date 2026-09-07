@@ -119,6 +119,32 @@ out4d="$(backlog_ticket_blocks "$f4d")"
 check_contains "MUTATION-PROOF: a wrapped title citing another ticket before its OWN tag still reads closed" \
   "$out4d" "$(printf '\t1\t')"
 
+# --- MUTATION-PROOF: a legacy `### <n>.` heading's OWN closure tag must not be discarded just
+# because `own_num` is empty for that heading shape. A fresh-context review found this live: the
+# F-04 skip condition treated an empty `own_num` as "always foreign" rather than "no identity to
+# compare against", so ANY `dir #N` mention adjacent to a legacy ticket's own tag (a real, common
+# shape — attribution like "extracted from dir #4") discarded that ticket's own closure. Reproduced
+# against this project's own real BACKLOG.md before fixing (dir #37: "### 37. SEC4 ... (extracted
+# from dir #4; ...) — ✅ DONE" misread as open). -----------------------------------------------------
+d4e="$(new_repo)"
+f4e="$d4e/BACKLOG.md"
+printf '### 37. Legacy ticket — extracted from dir #4 — ✅ DONE, PR #92 merged\n' > "$f4e"
+out4e="$(backlog_ticket_blocks "$f4e")"
+check_contains "MUTATION-PROOF: a legacy heading citing a dir #N for attribution still reads closed" \
+  "$out4e" "$(printf '\t1\t')"
+
+# --- MUTATION-PROOF: a citation elsewhere on the line, with NO tag adjacent to it, must not
+# discard this ticket's OWN tag that appears earlier on the same line. Found live against this
+# project's own real BACKLOG.md (dir #299: "### dir #299 — ✅ CLOSED ... — supersedes dir #297
+# parts (b) and (c)" — the citation "supersedes dir #297" has no tag anywhere near it; it is just
+# describing what #299 supersedes as part of its own history, not ceding its own tag to #297). ------
+d4f="$(new_repo)"
+f4f="$d4f/BACKLOG.md"
+printf '### dir #299 — ✅ CLOSED (2026-08-30) — a ticket whose own description later mentions what it supersedes dir #297 parts (b) and (c)\n' > "$f4f"
+out4f="$(backlog_ticket_blocks "$f4f")"
+check_contains "MUTATION-PROOF: an own-tag ticket citing a sibling with no adjacent tag stays closed" \
+  "$out4f" "$(printf '\t1\t')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"

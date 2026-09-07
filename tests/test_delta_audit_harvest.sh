@@ -173,14 +173,18 @@ check_contains "MUTATION-PROOF: a fenced-block example is blanked, not tallied" 
 
 # --- F-02 (dir #267 fixer brief): a failed final `mv` must refuse (exit 3), never exit 0 claiming
 # success while run-record.md is left unchanged. Forced by shadowing `mv` on PATH, the same
-# technique r4 above uses for awk. -------------------------------------------------------------------
+# technique r4 above uses for awk. A distinctive exit code (42, not 1) proves the refusal message
+# reports mv's REAL exit status rather than a fixed/wrong one — a `/code-review high` pass found
+# `mv_status=$?` captured right after `if ! mv ...; then` reads the negated condition's own status
+# (always 0 inside that branch), not mv's, so the message always claimed "mv exited 0" regardless
+# of the actual failure; a bare exit-1 fake `mv` could not have distinguished the two. ---------------
 r8="$SANDBOX/f02-mv-failure"
 mk_run "$r8"
 original_before_r8="$(cat "$r8/run-record.md")"
 mkdir -p "$SANDBOX/fakebin-mv"
 cat > "$SANDBOX/fakebin-mv/mv" <<'FAKE'
 #!/bin/sh
-exit 1
+exit 42
 FAKE
 chmod +x "$SANDBOX/fakebin-mv/mv"
 run env PATH="$SANDBOX/fakebin-mv:$PATH" "$TOOL" "$r8"
@@ -188,6 +192,8 @@ check_status "MUTATION-PROOF: a failed final mv refuses (exit 3), not a false-su
 after_r8="$(cat "$r8/run-record.md")"
 check_status "run-record.md is untouched byte-for-byte after the mv failure" 0 \
   "$([ "$original_before_r8" = "$after_r8" ] && echo 0 || echo 1)"
+check_contains "MUTATION-PROOF: the refusal reports mv's REAL exit code (42), not always 0" \
+  "$OUT" "mv exited 42"
 
 # --- no orchestrator-notes.md, no reports/: both harvested rows fall back to unmeasured, not 0 or
 # an empty cell ----------------------------------------------------------------------------------
