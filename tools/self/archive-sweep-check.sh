@@ -95,6 +95,11 @@ while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] || continue
   closed_count=$((closed_count + 1))
   closed_lines=$((closed_lines + end - start + 1))
+  # dir #420: this grep shares backlog-blocks.sh's pre-F-04 naive shape — it matches ANY
+  # `✅ (DONE|CLOSED) (date)` anywhere in the flattened heading_block, with no check for whose
+  # tag it is. Verified live: a ticket whose own tag is undated but whose body cites a different,
+  # dated closed ticket ("See also dir #M — ✅ CLOSED (2026-02-02)") is wrongly counted as dated
+  # here — the sibling's date masks this ticket's own missing one, undercounting undated_closed.
   if ! grep -qE '✅ (DONE|CLOSED) \([0-9]{4}-[0-9]{2}-[0-9]{2}' <<< "$heading_block"; then
     undated_closed=$((undated_closed + 1))
   fi

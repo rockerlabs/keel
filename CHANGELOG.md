@@ -24,6 +24,20 @@ sections real content going forward — see that page for exactly when each one 
   extra prose — the negative economy outcome the protocol's own limit L3 flagged as possible did not
   occur here. `docs/keel-impact.md`'s "had not yet run as of this snapshot" line now links the answer.
 
+- **A disclosure-only round for v0.9.0: no executable code changed.** `docs/delta-audit.md` §10 names
+  this instrument for exactly this situation — dir #420, filed by the v0.9.0 RC audit's Clause A round,
+  found that F-04's own closed-ticket fix in `tools/lib/backlog-blocks.sh` induces the inverse
+  regression (a genuinely closed ticket over-discarded as open under a specific line ordering), and the
+  audit's blind leg separately found the same naive, whose-tag-is-it shape untouched in
+  `tools/self/archive-sweep-check.sh`'s own undated-closure grep — see the new comment in each file for
+  the exact mechanism, each independently verified live against a constructed fixture. Both are
+  UNREACHABLE on this project's own real `BACKLOG.md` as of this round (427 headings scanned, 214
+  closed, verified directly against the live file: no currently-open ticket carries its own closure
+  tag, and no currently-closed ticket's own tag is masked by a sibling's dated one), so per §10's rule
+  this round widens the disclosure comment in both files rather than shipping a fix under tag-day
+  pressure; dir #420 owns the actual code fix (scan the whole line for the heading's own tag before
+  discarding a citation match), tracked for a later release.
+
 - **Five findings from the v0.9.0 release-candidate delta audit (v0.8.3..5ba4dcb), all fix-before-tag,
   fixed as one batch.** `tools/delta-audit/harvest.sh`'s induced/original tally was wrong in four
   distinct shapes: the `Mark:` label match was unanchored (firing inside `remark:`/`benchmark:`), the
