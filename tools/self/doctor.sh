@@ -931,8 +931,17 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # docs/release-history.md instead of CHANGELOG.md, by `tests/test_release_history.sh`'s own
 # pending-release allowance (dir #299) — check that file too when fixing this one.
 _pending_release_intro_commit() {
-  local heading="## [$1]" rel sha now before
+  local heading="## [$1]" heading_re rel sha now before
   rel="${changelog_file#"$repo_root"/}"
+  # LINE-ANCHORED presence test, not a substring one (dir #299's anchor-both-ends class, hit live at
+  # the v0.9.0 cut): CHANGELOG prose has QUOTED a release heading inline before (an inline-backtick
+  # mention survives blank_fenced_blocks, which blanks only fenced blocks), and an unanchored
+  # `grep -qF "$heading"` counts that mention as the heading — so the newest-first walk skips the real
+  # cut commit (its ^-parent already "contains" the string, in prose) and returns a years-old commit
+  # that merely introduced the mention, blowing the distance bound. `^` plus the escaped literal
+  # requires an actual heading line; the closing `]` bounds the right edge ([0.9.0] cannot prefix
+  # [0.9.01] — the bracket lands on a digit).
+  heading_re="^$(printf '%s' "$heading" | sed 's/[][\.*^$/]/\\&/g')"
   # dir #213 closes via SHAPE, not the trailing `|| true`: a process substitution's exit status is never
   # checked by the shell (verified live — `done < <(false)` does not trip `set -e`), so a failing `git
   # log` here could never have aborted the run either way. The actual dir #213 fix is that this function
@@ -949,7 +958,7 @@ _pending_release_intro_commit() {
     # live writer process on the other end) tests presence with nothing left to signal.
     now="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha:$rel" 2>/dev/null) 2>/dev/null)"
     before="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha^:$rel" 2>/dev/null) 2>/dev/null)"
-    if grep -qF "$heading" <<< "$now" && ! grep -qF "$heading" <<< "$before"; then
+    if grep -q "$heading_re" <<< "$now" && ! grep -q "$heading_re" <<< "$before"; then
       printf '%s\n' "$sha"
       return 0
     fi
