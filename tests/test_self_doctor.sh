@@ -1122,6 +1122,23 @@ check_contains "H: dedicated GAP fires, measured from the real (older) intro, no
   "'## [1.1.0]' was cut 8 commits ago"
 check_absent "H: no longer waved through as a release in preparation" "$OUT" "cut but not tagged yet"
 
+# H2 (the v0.9.0 cut, live hit — full mechanism at _pending_release_intro_commit's heading_re
+# comment in tools/self/doctor.sh): an inline-backtick PROSE mention of the heading in an old commit
+# must not be taken for the heading — asserts the line-anchored regex resolves the real, recent cut.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\nprose recalling a draft with a stale `## [1.1.0]` hoisted wrongly\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "prose mentions the future heading inline" && git tag v1.0.0 \
+  && for i in 1 2 3 4 5 6; do git commit -q --allow-empty -m "empty $i"; done )
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-09\n- the real cut\n\nprose recalling a draft with a stale `## [1.1.0]` hoisted wrongly\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 for real" )
+KEEL_PENDING_RELEASE_MAX_COMMITS=3 run "$sd" "$d"
+check_status "H2: inline-prose mention is not mistaken for the intro -> exit 0 (pending, within bound)" 0 "$STATUS"
+check_contains "H2: distance measured from the REAL cut (0 commits), not the old mention" "$OUT" \
+  "0 commit(s) since cut"
+check_absent "H2: no overbound GAP from the prose mention" "$OUT" "was cut"
+
 # I (dir #213): an unborn HEAD (no commits at all yet) must not silently abort the whole doctor.sh run.
 # `_pending_release_intro_commit`'s `git log -S` was the loop's FIRST git call reachable with zero
 # commits; on an unborn HEAD `git log` exits 128 rather than printing nothing, which — bare inside a

@@ -179,6 +179,17 @@ _tr_build_report() {
     # corpus-wide) instead of restating the same guarded-division three times.
     def pct(a; b): if b > 0 then 100*a/b else 0 end;
 
+    # safe_epoch — F-03 (dir #314 live-corpus premise, extended to this aggregation): the whole
+    # `jq -nc` program below is ONE expression, so an unguarded `fromdateiso8601` on any single
+    # turn timestamp aborts the entire report — every other session number lost with it, on an
+    # input this project already decided is ordinary (commits 01977a8/a3b94f9: a transcript is
+    # live, a partially-written final record is not corruption). try/catch null degrades that ONE
+    # turn instead of the whole run; a non-string or non-ISO timestamp yields null, filtered out of
+    # the cold-resume gap computation below rather than crashing it.
+    def safe_epoch:
+      if type == "string" then (try (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) catch null)
+      else null end;
+
     (sumfield("input_tokens")) as $newinput
     | (sumfield("cache_creation_input_tokens")) as $writes
     | (sumfield("cache_read_input_tokens")) as $reads
@@ -205,15 +216,19 @@ _tr_build_report() {
         # cache rewrites the whole context instead of reading it). R6: this is a labelled heuristic —
         # F6 found a quarter of events matching the gap alone are compactions/`/clear`, not pauses;
         # the cache_creation>cache_read clause is what the report actually gates on, not the gap alone.
+        # F-03: a turn either side of a gap whose timestamp does not parse (safe_epoch -> null)
+        # contributes no gap at all (`empty`, not a crash) — that one turn is excluded from cold-
+        # resume detection instead of aborting every session report.
         [ $TURNS[] ]
         | group_by(.sessionFile)
         | map(
             sort_by(.timestamp) as $arr
             | [ range(1; ($arr|length))
-                | ($arr[.-1].timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $prev
-                | ($arr[.].timestamp   | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $cur
-                | (($cur-$prev)/60) as $gapmin
-                | $arr[.] + { gapMinutes: $gapmin }
+                | ($arr[.-1].timestamp | safe_epoch) as $prev
+                | ($arr[.].timestamp   | safe_epoch) as $cur
+                | if $prev == null or $cur == null then empty
+                  else $arr[.] + { gapMinutes: (($cur-$prev)/60) }
+                  end
               ]
             | map(select(.gapMinutes >= 55 and .cache_creation_input_tokens > .cache_read_input_tokens))
           )
@@ -222,6 +237,15 @@ _tr_build_report() {
     | ( [$coldEvents[].cache_creation_input_tokens] | add // 0 ) as $coldRawTokens
     | ( $coldRawTokens * $w_write ) as $coldWeighted
     | ( [$coldEvents[] | select(.gapMinutes <= 90)] | length ) as $coldBand5590
+    # F-03: surfaced rather than silently absorbed — a turn whose own timestamp does not parse at
+    # all (missing, or not ISO-8601) is invisible to the gap computation above (it can be neither a
+    # $prev nor a $cur), so this counts it separately for the selfCheck note below.
+    | ( [ $TURNS[] | select((.timestamp | safe_epoch) == null) ] | length ) as $malformedTimestamps
+    # F-05: ride the F-03 degrade-per-record path — an assistant record excluded from every total
+    # above because it carries no usage object (tu_self_check own comment: "should be zero; a
+    # warning sign, never silently dropped") gets the same visible signal here as a malformed
+    # timestamp.
+    | ( [$SC[].assistant_no_usage] | add // 0 ) as $assistantNoUsage
     | (
         # Repeated-reads (SPEC F7): Read tool calls only. file_path is already normalized to
         # repo-relative form by tools/lib/transcript-usage.sh (dir #314 SPEC §6.6) — never re-derived
@@ -294,7 +318,14 @@ _tr_build_report() {
           # file carrying many records of ONE unrecognized type down to 1).
           unrecognizedTypeRecords: (
             [$SC[] | (.total - .assistant_usage - .assistant_no_usage - .known_other)] | add // 0
-          )
+          ),
+          # F-03: a turn whose own timestamp could not be parsed at all — excluded from cold-resume
+          # detection above rather than aborting the whole report.
+          malformedTimestamps: $malformedTimestamps,
+          # F-05: assistant records correctly excluded from every total above because they carry no
+          # usage object, surfaced here per tu_self_check own stated invariant rather than left
+          # silently invisible in both the JSON and human output.
+          assistantNoUsage: $assistantNoUsage
         }
       }
   ')"
@@ -401,6 +432,21 @@ _tr_print_human() {
   if [ "$unrec" -gt 0 ]; then
     printf '\n  note: %s record(s) across the scanned files carried a type this tool does not recognize —\n' "$unrec"
     printf '  the transcript format may have moved; figures above may undercount.\n'
+  fi
+  # F-03: a malformed timestamp used to abort the whole report with zero output; now it degrades
+  # per-record, so say so here rather than leaving the drop invisible.
+  local bad_ts
+  bad_ts="$(jqr '.selfCheck.malformedTimestamps')"
+  if [ "$bad_ts" -gt 0 ]; then
+    printf '\n  note: %s turn(s) had a missing or non-ISO-8601 timestamp — excluded from cold-resume\n' "$bad_ts"
+    printf '  detection above rather than aborting the report.\n'
+  fi
+  # F-05: correctly excluded from every total above (no usage object), but tu_self_check's own
+  # invariant says this "should be zero; a warning sign, never silently dropped" — surface it.
+  local no_usage
+  no_usage="$(jqr '.selfCheck.assistantNoUsage')"
+  if [ "$no_usage" -gt 0 ]; then
+    printf '\n  note: %s assistant record(s) carried no usage object — excluded from the totals above.\n' "$no_usage"
   fi
 }
 

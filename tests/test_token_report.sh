@@ -170,4 +170,63 @@ check_status "5-unrecognized-records run exits 0" "0" "$STATUS"
 check_contains "5 records of ONE unrecognized type count as 5, not 1 (distinct-name count bug)" \
   "$OUT" '"unrecognizedTypeRecords":5'
 
+# --- F-03 (dir #267 fixer brief): one malformed timestamp used to abort the WHOLE aggregation
+# (exit 1, zero output, every session's data lost) — the corpus is live (this project's own
+# commits 01977a8/a3b94f9 already treat a mid-write file as ordinary, not corruption), so this
+# must degrade per-record instead. Both malformed shapes the brief reproduced, plus a control that
+# a well-formed session still reports when a malformed one sits alongside it. ------------------------
+
+# Shape 1: a non-ISO-8601 timestamp string ("t1", the brief's own reproduction).
+bad_ts_root="$SANDBOX/bad-timestamp-nonISO"
+bad_ts_slug="$(printf '%s' "$repo_physical" | tr '/.' '--')"
+mkdir -p "$bad_ts_root/$bad_ts_slug"
+cat > "$bad_ts_root/$bad_ts_slug/dddddddd-dddd-dddd-dddd-dddddddddddd.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r6","sessionId":"D","timestamp":"2026-09-04T09:00:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+EOF
+cat > "$bad_ts_root/$bad_ts_slug/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r7","sessionId":"E","timestamp":"t1","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+EOF
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$bad_ts_root" bash "$tool"
+check_status "MUTATION-PROOF: a non-ISO timestamp does not abort the report -> exit 0" "0" "$STATUS"
+check_contains "both sessions still report (2 session(s)), not zero output" "$OUT" "2 session(s)"
+check_contains "the malformed timestamp is surfaced, not silently absorbed" "$OUT" \
+  "missing or non-ISO-8601 timestamp"
+
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$bad_ts_root" bash "$tool" --json
+check_status "non-ISO timestamp fixture --json exits 0" "0" "$STATUS"
+check_contains "--json surfaces the malformed-timestamp count" "$OUT" '"malformedTimestamps":1'
+
+# Shape 2: a turn with no `timestamp` field at all (the brief's second reproduction).
+bad_ts_root2="$SANDBOX/bad-timestamp-missing"
+mkdir -p "$bad_ts_root2/$bad_ts_slug"
+cat > "$bad_ts_root2/$bad_ts_slug/ffffffff-ffff-ffff-ffff-ffffffffffff.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r8","sessionId":"F","timestamp":"2026-09-04T09:00:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+EOF
+cat > "$bad_ts_root2/$bad_ts_slug/gggggggg-gggg-gggg-gggg-gggggggggggg.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r9","sessionId":"G","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+EOF
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$bad_ts_root2" bash "$tool"
+check_status "MUTATION-PROOF: a missing timestamp field does not abort the report -> exit 0" "0" "$STATUS"
+check_contains "both sessions still report when one turn has no timestamp at all" "$OUT" "2 session(s)"
+check_contains "the missing timestamp is surfaced too" "$OUT" "missing or non-ISO-8601 timestamp"
+
+# --- F-05 (dir #267 fixer brief): an assistant record with no usage object is correctly excluded
+# from every total, but tu_self_check's own comment says this "should be zero; a warning sign,
+# never silently dropped" — it must be visible, not invisible in both outputs. -----------------------
+no_usage_root="$SANDBOX/no-usage-object"
+no_usage_slug="$(printf '%s' "$repo_physical" | tr '/.' '--')"
+mkdir -p "$no_usage_root/$no_usage_slug"
+cat > "$no_usage_root/$no_usage_slug/hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r10","sessionId":"H","timestamp":"2026-09-04T09:00:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+{"type":"assistant","requestId":"r11","sessionId":"H","timestamp":"2026-09-04T09:01:00.000Z","message":{"model":"m","content":[]}}
+EOF
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$no_usage_root" bash "$tool"
+check_status "an assistant record with no usage object does not crash the report" "0" "$STATUS"
+check_contains "the no-usage record is surfaced, not silently dropped" "$OUT" \
+  "carried no usage object"
+
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$no_usage_root" bash "$tool" --json
+check_status "no-usage-object fixture --json exits 0" "0" "$STATUS"
+check_contains "--json surfaces the assistantNoUsage count" "$OUT" '"assistantNoUsage":1'
+
 summary

@@ -891,11 +891,12 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced
 # the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history, OUTSIDE any fenced code
 # block — i.e. how long the section AS IT CURRENTLY STANDS has existed, which is what the
-# pending-release allowance's commit-distance bound below needs. `git log -S` (the pickaxe) reports
-# every commit where the exact occurrence COUNT changed (an add or a remove), newest first — so the
-# FIRST entry is normally the commit that introduced today's occurrence (an earlier `tail -1` version
-# of this function instead picked the OLDEST such commit ever, in ANY add/remove cycle — wrong when a
-# version number is cut, reverted, and later genuinely re-cut with the SAME number).
+# pending-release allowance's commit-distance bound below needs. `git log -G` (the regex pickaxe)
+# reports every commit whose diff has a line matching the anchored heading regex, newest first — so
+# the FIRST entry is normally the commit that introduced today's heading (an earlier `tail -1`+-S
+# version instead picked the OLDEST matching commit ever, in ANY add/remove cycle — wrong when a
+# version number is cut, reverted, and later genuinely re-cut with the SAME number; the -S→-G swap's
+# own rationale is at the loop's `done` line below).
 #
 # **Verify-after-the-fact (dir #194, candidate 1 — the operator's choice over "accept and document" for
 # this fork):** the pickaxe itself has no concept of "inside a fence" — it matches the file's RAW
@@ -931,8 +932,17 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # docs/release-history.md instead of CHANGELOG.md, by `tests/test_release_history.sh`'s own
 # pending-release allowance (dir #299) — check that file too when fixing this one.
 _pending_release_intro_commit() {
-  local heading="## [$1]" rel sha now before
+  local heading="## [$1]" heading_re rel sha now before
   rel="${changelog_file#"$repo_root"/}"
+  # LINE-ANCHORED presence test, not a substring one (dir #299's anchor-both-ends class, hit live at
+  # the v0.9.0 cut): CHANGELOG prose has QUOTED a release heading inline before (an inline-backtick
+  # mention survives blank_fenced_blocks, which blanks only fenced blocks), and an unanchored
+  # `grep -qF "$heading"` counts that mention as the heading — so the newest-first walk skips the real
+  # cut commit (its ^-parent already "contains" the string, in prose) and returns a years-old commit
+  # that merely introduced the mention, blowing the distance bound. `^` plus the escaped literal
+  # requires an actual heading line; the closing `]` bounds the right edge ([0.9.0] cannot prefix
+  # [0.9.01] — the bracket lands on a digit).
+  heading_re="^$(printf '%s' "$heading" | sed 's/[][\.*^$/]/\\&/g')"
   # dir #213 closes via SHAPE, not the trailing `|| true`: a process substitution's exit status is never
   # checked by the shell (verified live — `done < <(false)` does not trip `set -e`), so a failing `git
   # log` here could never have aborted the run either way. The actual dir #213 fix is that this function
@@ -949,11 +959,16 @@ _pending_release_intro_commit() {
     # live writer process on the other end) tests presence with nothing left to signal.
     now="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha:$rel" 2>/dev/null) 2>/dev/null)"
     before="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha^:$rel" 2>/dev/null) 2>/dev/null)"
-    if grep -qF "$heading" <<< "$now" && ! grep -qF "$heading" <<< "$before"; then
+    if grep -q "$heading_re" <<< "$now" && ! grep -q "$heading_re" <<< "$before"; then
       printf '%s\n' "$sha"
       return 0
     fi
-  done < <(git -C "$repo_root" log -S"$heading" --format=%H -- "$changelog_file" 2>/dev/null || true)
+  done < <(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null || true)
+  # -G (regex pickaxe), not -S: -S counts SUBSTRING occurrences, so a count-neutral commit — one that
+  # promotes an existing inline-prose mention into the real heading line, adding one and removing one
+  # — never enters the candidate walk and the function silently fails open (bound not computed). The
+  # mirror in tests/test_release_history.sh already uses -G"$heading_re" for exactly this reason; this
+  # is the -S/-G half of dir #299's anchor class, converged here with the presence test above.
 }
 
 say ""
