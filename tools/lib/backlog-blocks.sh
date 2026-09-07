@@ -119,12 +119,14 @@ backlog_ticket_blocks() {
     # than shrinking, which is this project's own signal to stop enumerating and document the gap
     # instead of layering on more special cases):
     #   - the verb list below is not exhaustive — "Supersedes"/"superseding"/"superseded (by)"/
-    #     "duplicate of" (first letter only case-insensitive, e.g. "SUPERSEDED" in full caps is
-    #     not recognised — matching this project's own real usage, never fully capitalized) —
-    #     covers the audit's own two documented examples plus the dominant real usage (29
-    #     "superseded" vs. 8 "supersedes" in this project's own
-    #     BACKLOG.md today) — any other citation verb falls through to the generic tag check
-    #     below, unrecognised, same as before this fix existed for that verb;
+    #     "duplicate of" (first letter only case-insensitive — a full-caps "SUPERSEDED" is not
+    #     recognised; the real file DOES use that form, always as a ticket's own status marker
+    #     like "❌ SUPERSEDED", never as a citation verb next to a `dir #N`, so this narrower gap
+    #     does not currently misfire) — covers the audit's own two documented examples plus the
+    #     dominant real usage (29 lines containing "superseded" vs. 8 containing "supersedes" in
+    #     this project's own BACKLOG.md today, a per-line not per-occurrence count) — any other
+    #     citation verb falls through to the generic tag check below, unrecognised, same as
+    #     before this fix existed for that verb;
     #   - a citation separated from its own tag by a further em-dash-bounded clause ("Supersedes
     #     dir #N — because X — ✅ CLOSED") is not caught — the looser form that WOULD catch it is
     #     what caused a real regression during review (dir #299's own tag, unrelated to a later
