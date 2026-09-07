@@ -99,62 +99,46 @@ backlog_ticket_blocks() {
     # DIFFERENT ticket's own closure tag too, whenever body text absorbed into the block (no blank
     # line before it) cites a sibling ("superseding dir #901 — ✅ CLOSED as a duplicate").
     #
-    # Two earlier versions of this fix were tried and reverted, both found by a fresh-context
-    # /code-review high pass that ran this function against the REAL, live BACKLOG.md — not just
-    # the audit's own synthetic examples — and reproduced live regressions each time:
-    #   1. Stopping block EXTENSION at the first foreign `dir #<N>` reference also cut off a
-    #      genuine wrapped title whose own continuation line happens to mention a different
-    #      ticket before reaching ITS OWN tag.
-    #   2. Scoping the MATCH by "no other em-dash between citation and tag" broke on any real
-    #      heading whose tag sits behind an ordinary em-dash-bounded clause — INCLUDING every
-    #      real ticket that merely mentions another `dir #N` for attribution/cross-reference
-    #      ("extracted from dir #4", "dir #74's own review") with no relation at all to the tag
-    #      that follows much later in the same giant heading line. 15 real, already-closed
-    #      tickets misread as open. This is the SAME class of ambiguity
-    #      `tools/self/doctor.sh` check 5 already documents trying and reverting once (its own
-    #      comment: "a body line that cross-references a DIFFERENT ticket's status... A
-    #      same-line filter on 'dir #N' was tried... but real closure notes routinely
-    #      co-reference a sibling ticket they also closed").
+    # This fix went through several rejected iterations — block-extension stopping, then bare
+    # em-dash-adjacency scoping, then a loose verb+gap form — each one caught only by running the
+    # candidate against this project's OWN real, live BACKLOG.md rather than trusting the audit's
+    # synthetic examples alone; each earlier form regressed at least one real, already-closed
+    # ticket. That process is the same discipline `tools/self/doctor.sh` check 5 already documents
+    # going through for a related ambiguity (its own comment: "a body line that cross-references a
+    # DIFFERENT ticket's status... A same-line filter on 'dir #N' was tried... but real closure
+    # notes routinely co-reference a sibling ticket they also closed").
     #
-    # The shape doctor.sh's own gap does NOT cover, and what this scopes to instead: both of the
-    # audit's documented examples, and every citation this project's own writing style actually
-    # produces, name the cited ticket with an explicit citation VERB ("Supersedes"/"superseding"/
-    # "duplicate of") IMMEDIATELY before the `dir #N` — no gap wider than one space. A first
-    # attempt at this same verb anchor allowed any non-digit gap ([^0-9]*) between the verb and
-    # the citation, on the theory that "Supersedes ... dir #N" always refers to that N; a
-    # `/code-review high` pass reproduced it misfiring live on real prose whose verb and the
-    # NEXT dir# mention are unrelated ("dir #186 is superseded; dir #183 re-scoped..." — the gap
-    # regex jumped straight past the semicolon and attributed the verb to the wrong, later
-    # number). Requiring immediate adjacency is what both of the audit's own documented examples
-    # already have ("Supersedes dir #911", "superseding dir #901") and closes that gap. Verified
-    # against the real BACKLOG.md: with this tightened form, the function's `closed` output is
-    # BYTE-IDENTICAL to the pre-F-04 baseline on the whole file except for the two shapes F-04 was
-    # written to fix — no real ticket flips in either direction. A tag counts as this ticket's own
-    # unless a citation verb sits directly against a DIFFERENT `dir #N` earlier on the same line.
+    # The shipped rule: a tag counts as a DIFFERENT ticket's own only when a recognised citation
+    # verb sits directly against both that ticket's `dir #N` AND the tag itself — no gap wider
+    # than whitespace/an optional "by" on either side. Verified against the real BACKLOG.md: the
+    # function's `closed` output is BYTE-IDENTICAL to the pre-F-04 baseline over all 423 real
+    # headings, outside the two shapes F-04 was written to fix.
+    #
+    # Known, accepted limitations (not chased further — a delta review round kept finding more
+    # missing verbs, "⛔ BLOCKED by", "merged into" among them: the same shape recurring rather
+    # than shrinking, which is this project's own signal to stop enumerating and document the gap
+    # instead of layering on more special cases):
+    #   - the verb list below is not exhaustive — "Supersedes"/"superseding"/"superseded (by)"/
+    #     "duplicate of", case-insensitive, covers the audit's own two documented examples plus
+    #     the dominant real usage (29 "superseded" vs. 8 "supersedes" in this project's own
+    #     BACKLOG.md today) — any other citation verb falls through to the generic tag check
+    #     below, unrecognised, same as before this fix existed for that verb;
+    #   - a citation separated from its own tag by a further em-dash-bounded clause ("Supersedes
+    #     dir #N — because X — ✅ CLOSED") is not caught — the looser form that WOULD catch it is
+    #     what caused a real regression during review (dir #299's own tag, unrelated to a later
+    #     citation on the same giant line, was wrongly discarded).
     #
     # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's
     # stock bash 3.2 (BSD regex) — confirmed live: even a bare ASCII `CLOSED\b` fails to match
     # there, while the same pattern via `grep -E` (a separate regex implementation) does match.
     # `([^a-zA-Z]|$)` is the portable word-boundary substitute this project already uses for the
     # identical reason in harvest.sh's F-01 fix.
-    # The citation must be tied to a TAG, not just present on the line: dir #299's own real
-    # heading both closes with its OWN tag near the start AND separately says, unrelated,
-    # "supersedes dir #297 parts (b) and (c)" much later with no tag anywhere near it — a
-    # citation-only match (no adjacent tag requirement) skipped dir #299's own tag as foreign,
-    # a third live regression this same `/code-review high` pass caught. Requiring the tag
-    # directly against the citation (no other em-dash between them) is what closes this without
-    # reopening the first regression above — verified byte-identical against the real file with
-    # this exact shape. Known, accepted narrowing versus a looser form: a citation separated
-    # from its own tag by a further em-dash-bounded clause ("Supersedes dir #N — because X — ✅
-    # CLOSED") is not caught — no such shape exists in the real file today, and the looser form
-    # that WOULD catch it is what caused the dir #299 regression, so this is the same accepted
-    # trade-off `tools/self/doctor.sh` check 5 already documents for a related case.
     closed=0
     while IFS= read -r hb_line; do
       cited_num=""
-      if [[ "$hb_line" =~ [Ss]upersed(es|ing)[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
-        cited_num="${BASH_REMATCH[2]}"
-      elif [[ "$hb_line" =~ duplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
+      if [[ "$hb_line" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
+        cited_num="${BASH_REMATCH[3]}"
+      elif [[ "$hb_line" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
         cited_num="${BASH_REMATCH[1]}"
       fi
       if [ -n "$cited_num" ] && [ "$cited_num" != "$own_num" ]; then

@@ -41,19 +41,19 @@ sections real content going forward — see that page for exactly when each one 
   citing a *different* ticket's own closure tag whenever no blank line separated the heading from it
   — misreading the open ticket as closed in `pool-report.sh`'s census (undercounting open work) and
   `archive-sweep-check.sh`'s sweep trigger (over-triggering) in opposite directions from the same
-  wrong predicate. Getting this right took three attempts, the last two caught by running the fix
-  against this project's own real, live `BACKLOG.md` rather than only the audit's synthetic examples
-  — the same discipline `tools/self/doctor.sh` check 5 already documents having gone through for a
-  related check, including the exact same "a same-line `dir #N` filter looks right but breaks on real
-  cross-references" trap. The shipped rule: a closure tag counts as a DIFFERENT ticket's own only when
-  a citation verb ("Supersedes"/"superseding"/"duplicate of") sits directly against that ticket's
-  `dir #N`, immediately followed by the tag — matching both of the audit's own documented examples
-  exactly, and verified byte-identical against all 423 real headings in this project's own backlog
-  before and after (two earlier, broader forms each regressed a real, already-closed ticket: one
-  read a legacy-numbered ticket's own attribution ("extracted from dir #4") as foreign because it had
-  no `dir #N` identity of its own to compare against, another attributed a citation verb to an
-  unrelated later ticket number across a semicolon it should not have crossed). Every fix carries a
-  regression test that failed before and passes after.
+  wrong predicate. This one went through several rejected iterations before shipping, each caught
+  only by running the candidate against this project's own real, live `BACKLOG.md` rather than
+  trusting the audit's synthetic examples alone — the same discipline `tools/self/doctor.sh` check 5
+  already documents going through for a related ambiguity. The shipped rule: a closure tag counts as
+  a DIFFERENT ticket's own only when a recognised citation verb ("Supersedes"/"superseding"/
+  "superseded (by)"/"duplicate of", case-insensitive) sits directly against both that ticket's
+  `dir #N` and the tag itself, matching the audit's own two documented examples exactly and this
+  project's own dominant real usage — verified byte-identical against all 423 real headings in this
+  project's own backlog, outside the two shapes F-04 was written to fix. Known, accepted limitation
+  (not chased further — later review rounds kept finding more missing verbs, the same shape
+  recurring rather than shrinking): the verb list is not exhaustive, and a citation separated from
+  its own tag by a further clause is not caught, both documented in the code itself. Every fix
+  carries a regression test that failed before and passes after.
 
 - **dir #314 (first slice): `keel tokens` — a read-only report of where an adopter's own Claude Code
   token spend went, and three diagnosed patterns instead of only a total.** A number is not advice:

@@ -145,6 +145,24 @@ out4f="$(backlog_ticket_blocks "$f4f")"
 check_contains "MUTATION-PROOF: an own-tag ticket citing a sibling with no adjacent tag stays closed" \
   "$out4f" "$(printf '\t1\t')"
 
+# --- MUTATION-PROOF: the citation-verb list must recognise "Superseded by" (past tense) and be
+# case-insensitive on "Duplicate of" — a delta review round found this project's own real
+# BACKLOG.md uses "superseded" far more than "supersedes" (29 vs. 8 occurrences), and that the
+# original fix's "duplicate of" branch, unlike its "Supersedes" branch, had no case alternation. ---
+d4g="$(new_repo)"
+f4g="$d4g/BACKLOG.md"
+printf '### dir #500 A ticket still open
+Superseded by dir #900 — ✅ CLOSED as a duplicate.
+
+### dir #501 A ticket still open
+Duplicate of dir #901 — ✅ CLOSED as noted elsewhere.
+' > "$f4g"
+out4g="$(backlog_ticket_blocks "$f4g")"
+check_status "MUTATION-PROOF: 'Superseded by dir #N' (past tense) is recognised as foreign" \
+  0 "$(printf '%s\n' "$out4g" | awk -F'\t' '$4 ~ /dir #500/ {print $3; exit}')"
+check_status "MUTATION-PROOF: capitalized 'Duplicate of' is recognised as foreign, not just lowercase" \
+  0 "$(printf '%s\n' "$out4g" | awk -F'\t' '$4 ~ /dir #501/ {print $3; exit}')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"
