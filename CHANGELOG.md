@@ -46,7 +46,8 @@ sections real content going forward — see that page for exactly when each one 
   trusting the audit's synthetic examples alone — the same discipline `tools/self/doctor.sh` check 5
   already documents going through for a related ambiguity. The shipped rule: a closure tag counts as
   a DIFFERENT ticket's own only when a recognised citation verb ("Supersedes"/"superseding"/
-  "superseded (by)"/"duplicate of", case-insensitive) sits directly against both that ticket's
+  "superseded (by)"/"duplicate of", first letter only case-insensitive) sits directly against both
+  that ticket's
   `dir #N` and the tag itself, matching the audit's own two documented examples exactly and this
   project's own dominant real usage — verified byte-identical against all 423 real headings in this
   project's own backlog, outside the two shapes F-04 was written to fix. Known, accepted limitation

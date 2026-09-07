@@ -119,8 +119,10 @@ backlog_ticket_blocks() {
     # than shrinking, which is this project's own signal to stop enumerating and document the gap
     # instead of layering on more special cases):
     #   - the verb list below is not exhaustive — "Supersedes"/"superseding"/"superseded (by)"/
-    #     "duplicate of", case-insensitive, covers the audit's own two documented examples plus
-    #     the dominant real usage (29 "superseded" vs. 8 "supersedes" in this project's own
+    #     "duplicate of" (first letter only case-insensitive, e.g. "SUPERSEDED" in full caps is
+    #     not recognised — matching this project's own real usage, never fully capitalized) —
+    #     covers the audit's own two documented examples plus the dominant real usage (29
+    #     "superseded" vs. 8 "supersedes" in this project's own
     #     BACKLOG.md today) — any other citation verb falls through to the generic tag check
     #     below, unrecognised, same as before this fix existed for that verb;
     #   - a citation separated from its own tag by a further em-dash-bounded clause ("Supersedes
