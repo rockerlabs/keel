@@ -130,3 +130,52 @@ body
 fsmall="$(mk_backlog "$small_backlog")"
 run "$pr" --history "$hist_grow" "$fsmall"
 check_absent "shrinking pool does not fire the growth trigger" "$OUT" "WARN"
+
+# --- FINDING-CA3-1 (v0.9.0 RC audit, CA3 round): the RETRACTED exclusion (was line ~104) is
+# whole-block scoped, same "whose tag is it" shape as the F-04 bug tools/lib/backlog-blocks.sh's
+# closed-tag detection already fixed. A live, correctly `→ pool`-tagged ticket whose OWN body
+# cites a genuinely-retracted sibling using the "Superseded by dir #N — RETRACTED" idiom must NOT
+# be dropped from the pool census; the genuinely-retracted sibling itself must still be excluded.
+# MUTATION-PROOF pair: dir #501 (citation only, must count) vs. dir #503 (own tag, must not
+# count) — reverting the own-tag scoping back to a bare whole-block `grep` drops dir #501 too,
+# undercounting the pool from 2 to 1 (the audit's own live-reproduced shape).
+retracted_backlog="### dir #500 — a plain pool ticket (found 2026-01-01) — R2 — → pool
+
+body
+
+### dir #501 — a pool ticket that cites a retracted sibling (found 2026-01-01) — R1 — → pool
+Superseded by dir #503 — RETRACTED for background; this ticket itself is still active.
+
+### dir #503 — RETRACTED (2026-01-01, false positive) — a superseded idea — R1 — → pool
+
+body
+"
+fret="$(mk_backlog "$retracted_backlog")"
+run "$pr" --history "$SANDBOX/hist-retracted.jsonl" "$fret"
+check_contains "MUTATION-PROOF: a ticket citing a sibling's retraction still counts toward the pool (2, not 1)" \
+  "$OUT" "pool size:                     2"
+
+# --- v0.9.0 RC audit, final fix round: the `⛔`-exclusion pattern (was `⛔[[:space:]]*UN`,
+# case-insensitive) must name exactly the two documented shapes ("⛔ UNBLOCKED", "no longer ⛔"),
+# not any ⛔-adjacent word starting "un". MUTATION-PROOF: reverting the pattern back to the bare
+# `UN` prefix wrongly treats "⛔ unless a consumer asks" as the unblocked shape and drops it from
+# the parked count (0 instead of 1).
+unless_backlog="### dir #600 — a pool ticket blocked on a soft condition (found 2026-01-01) — R2 — ⛔ unless a consumer asks — → pool
+
+body
+"
+fun="$(mk_backlog "$unless_backlog")"
+run "$pr" --history "$SANDBOX/hist-unless.jsonl" "$fun"
+check_contains "MUTATION-PROOF: '⛔ unless ...' still counts as structurally-parked (not read as UNBLOCKED)" \
+  "$OUT" "excluding structurally-parked:  0 (of 1; 1 parked by rule"
+
+# --- v0.9.0 RC audit, final fix round: a nonexistent BACKLOG_PATH must still hit the "no
+# readable BACKLOG.md" skip and exit 0 — the `cd` deriving backlog_root from its dirname ran
+# BEFORE the missing-file guard, so a nonexistent directory made `cd` fail under `set -e` and
+# abort with exit 1 plus raw stderr instead of the documented silent skip. MUTATION-PROOF: moving
+# the `cd` back above the guard reproduces exit 1 with a "No such file or directory" stderr line
+# instead of this script's own advisory skip message.
+run "$pr" "/no/such/dir/BACKLOG.md"
+check_status "nonexistent BACKLOG_PATH directory -> exit 0 (advisory skip, not a crash)" 0 "$STATUS"
+check_contains "prints the same skip line, not raw cd stderr" "$OUT" "no readable BACKLOG.md"
+check_absent "no raw 'No such file or directory' stderr leaks through" "$OUT" "No such file or directory"

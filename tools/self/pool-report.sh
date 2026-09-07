@@ -77,6 +77,15 @@ done
 
 if [ -n "$backlog_arg" ]; then
   backlog_file="$backlog_arg"
+  # v0.9.0 RC audit, final fix round: the missing/unreadable guard below must run BEFORE this
+  # `cd` — `cd` into a nonexistent directory fails under `set -e` and aborts with exit 1 plus raw
+  # stderr, breaking this script's own header promise ("Always exits 0 ... missing/unreadable =
+  # silent skip"). Check existence here, on the raw path, so a bad BACKLOG_PATH arg never reaches
+  # the `cd`; the same guard is re-run below (unchanged) for the `backlog_root_for` branch.
+  if [ ! -f "$backlog_file" ] || [ ! -r "$backlog_file" ]; then
+    echo "pool-report: no readable BACKLOG.md at $backlog_file — skipped, not a failure"
+    exit 0
+  fi
   backlog_root="$(cd "$(dirname "$backlog_file")" && pwd)"
 else
   backlog_root="$(backlog_root_for "$repo_root")"
@@ -101,7 +110,30 @@ oldest_id="unlabeled"
 while IFS=$'\t' read -r start end closed heading_block; do
   : "$start" "$end"  # body span unused here; block detection alone gives us the heading
   [ "$closed" = "1" ] && continue
-  grep -qE '— RETRACTED\b' <<< "$heading_block" && continue
+
+  # FINDING-CA3-1 (v0.9.0 RC audit, CA3 round): `— RETRACTED\b` matched anywhere in the
+  # flattened heading_block, whole-block scoped — a live `→ pool` ticket whose OWN body cites a
+  # sibling's retraction ("Superseded by dir #3 — RETRACTED for background") got dropped from the
+  # pool census entirely, same shape as the F-04 bug tools/lib/backlog-blocks.sh's closed-tag
+  # detection already fixed (a DIFFERENT ticket's own tag absorbed by this block). Mirroring that
+  # fix's own-tag discipline rather than inventing a third variant: a `— RETRACTED` reached only
+  # via one of backlog-blocks.sh's recognised citation verbs (Supersedes/Superseded/Superseding
+  # [by], Duplicate of) naming a DIFFERENT dir #N does not count as this ticket's own retraction.
+  # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's stock
+  # bash 3.2 (BSD regex) — the same gotcha tools/lib/backlog-blocks.sh's own F-04 comment
+  # documents; `([^a-zA-Z]|$)` is the portable word-boundary substitute used here for the same
+  # reason.
+  own_num=""
+  [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+  is_retracted=0
+  if [[ "$heading_block" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]]; then
+    [ "${BASH_REMATCH[3]}" = "$own_num" ] && is_retracted=1
+  elif [[ "$heading_block" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]]; then
+    [ "${BASH_REMATCH[1]}" = "$own_num" ] && is_retracted=1
+  elif [[ "$heading_block" =~ —[[:space:]]*RETRACTED([^a-zA-Z]|$) ]]; then
+    is_retracted=1
+  fi
+  [ "$is_retracted" = "1" ] && continue
 
   # Last `→` token naming a release or the pool (BACKLOG.md's own G3 extraction rule) — a
   # heading carries prose arrows too ("→ ask", "→ a release of its own"); only these two
@@ -132,8 +164,13 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # own future-unblock clause in one line ("⛔ BLOCKED by X, no longer ⛔ once X lands") matches
   # the exclusion and is wrongly dropped from the parked census — parked=0 where the
   # single-state "⛔ BLOCKED by X" phrasing counts parked=1 (under-count direction).
+  #
+  # v0.9.0 RC audit, final fix round: the exclusion pattern must name exactly the two documented
+  # shapes above ("⛔ UNBLOCKED", "no longer ⛔") — a bare `⛔[[:space:]]*UN` prefix match is
+  # broader than either shape and also swallows any OTHER ⛔-adjacent word starting "un" (unless,
+  # unclear, under review, ...), wrongly excluding those as if they meant "unblocked".
   if grep -qE '⛔' <<< "$heading_block" \
-    && ! grep -qiE '⛔[[:space:]]*UN|no longer[[:space:]]+⛔' <<< "$heading_block"; then
+    && ! grep -qiE '⛔[[:space:]]*UNBLOCKED|no longer[[:space:]]+⛔' <<< "$heading_block"; then
     parked=1
   fi
   grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1
