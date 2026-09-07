@@ -41,6 +41,11 @@ sections real content going forward — see that page for exactly when each one 
   pressure; dir #420 owns the actual code fix (scan the whole line for the heading's own tag before
   discarding a citation match), tracked for a later release.
 
+- **Known issue, disclosed pre-tag (dir #425, 0.9.1):** `tools/self/pool-report.sh`'s `⛔`-blocked
+  exclusion is line-scoped, so a heading stating both a current block and its own future-unblock
+  clause in one line is wrongly dropped from the parked census (under-count) — mechanism and observed
+  behaviour in the script's own KNOWN LIMITATION comment, which retires with dir #425's code fix.
+
 - **Five findings from the v0.9.0 release-candidate delta audit (v0.8.3..5ba4dcb), all fix-before-tag,
   fixed as one batch.** `tools/delta-audit/harvest.sh`'s induced/original tally was wrong in four
   distinct shapes: the `Mark:` label match was unanchored (firing inside `remark:`/`benchmark:`), the

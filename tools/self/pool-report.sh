@@ -127,6 +127,11 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # here also read "⛔ PARKED ..." or "⛔ tail BLOCKED ...", not just the legend's literal
   # `⛔ BLOCKED by <ref>`, so excluding the two known false-positive shapes (rather than
   # requiring one true-positive wording) is what actually matches the live convention.
+  # KNOWN LIMITATION (dir #425, 0.9.1 — this disclosure retires with that fix): the exclusion
+  # is line-scoped, not clause-scoped, so a heading stating BOTH a current `⛔` block and its
+  # own future-unblock clause in one line ("⛔ BLOCKED by X, no longer ⛔ once X lands") matches
+  # the exclusion and is wrongly dropped from the parked census — parked=0 where the
+  # single-state "⛔ BLOCKED by X" phrasing counts parked=1 (under-count direction).
   if grep -qE '⛔' <<< "$heading_block" \
     && ! grep -qiE '⛔[[:space:]]*UN|no longer[[:space:]]+⛔' <<< "$heading_block"; then
     parked=1
