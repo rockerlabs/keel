@@ -56,6 +56,52 @@ out2="$(backlog_ticket_blocks "$f2")"
 check_contains "MUTATION-PROOF: wrapped heading tag on a continuation line still counts closed" \
   "$out2" "$(printf '\t1\t')"
 
+# --- F-04 (dir #267 fixer brief): the `closed` field must not absorb a DIFFERENT ticket's own
+# closure tag, whether it arrives via a wrapped heading or via body text with no blank line before
+# it — both shapes read the current block-extension rule as "just another non-blank continuation
+# line". Four cases, matching the brief's own wrapped-heading and no-blank-line-body pairs. --------
+d4="$(new_repo)"
+f4="$d4/BACKLOG.md"
+printf '### dir #900 An open ticket whose heading wraps onto a second
+  line that happens to cite a sibling, superseding dir #901 — ✅ CLOSED as a duplicate
+
+### dir #910 Open ticket, single-line heading, body starts immediately
+Supersedes dir #911 — ✅ CLOSED, so this work is now unblocked.
+
+### dir #920 Open ticket, single-line heading, blank line before body
+
+Supersedes dir #921 — ✅ CLOSED, so this work is now unblocked.
+
+### dir #930 — a genuinely closed control — R2 — ✅ CLOSED (2026-08-01, done)
+
+closed body
+' > "$f4"
+out4b="$(backlog_ticket_blocks "$f4")"
+# Each row is `start<TAB>end<TAB>closed<TAB>heading_block` — select by the ticket number inside
+# heading_block (field 4), not by line position, then read that row's own `closed` field (3).
+row_closed() { printf '%s\n' "$out4b" | awk -F'\t' -v n="dir #$1" '$4 ~ n {print $3; exit}'; }
+check_status "MUTATION-PROOF: dir #900 (wrapped heading citing a sibling's closure) stays open" \
+  0 "$(row_closed 900)"
+check_status "MUTATION-PROOF: dir #910 (no-blank-line body citing a sibling's closure) stays open" \
+  0 "$(row_closed 910)"
+check_status "dir #920 (blank line before the sibling citation) already stayed open, still does" \
+  0 "$(row_closed 920)"
+check_status "control: a genuinely closed ticket with its OWN tag still reads closed" \
+  1 "$(row_closed 930)"
+
+# --- the wrapped-heading case F-04's own fix must not regress (dir #255, re-asserted here so a
+# future edit to the F-04 guard cannot silently reintroduce the false negative it replaces) --------
+d4b="$(new_repo)"
+f4b="$d4b/BACKLOG.md"
+printf '### dir #9 — a heading whose title wraps across more than one physical
+source line before its own closure tag — R2 — ✅ DONE (2026-08-01, done)
+
+body
+' > "$f4b"
+out4c="$(backlog_ticket_blocks "$f4b")"
+check_contains "MUTATION-PROOF: a genuine wrapped heading (no sibling citation) still reads closed" \
+  "$out4c" "$(printf '\t1\t')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"

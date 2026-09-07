@@ -111,6 +111,84 @@ check_contains "records row lists both artifacts, sorted" "$out" \
   "| records | \`orchestrator-notes.md\`, \`reports/\` |"
 check_absent "records row never lists itself" "$out" "run-record.md\`,"
 
+# --- F-01 (dir #267 fixer brief): the five shapes the shipped tally got wrong in four distinct
+# ways. Each fixture necessarily CONTAINS the trigger it demonstrates — kept under $SANDBOX (a
+# throwaway mktemp dir), never under a real run's reports/*.md glob, per the brief's own warning
+# that the orchestrator hit this exact wall authoring its evidence file. -----------------------------
+
+# Row 1 (control): a bare not-induced marker, no prose tail -> 0 induced / 1 marked.
+r7a="$SANDBOX/f01-row1-control"
+mk_run "$r7a"
+mkdir -p "$r7a/reports"
+printf 'Finding. **Mark:** `original`\n' > "$r7a/reports/S1.md"
+run "$TOOL" "$r7a"
+check_status "F-01 row1 (control) -> exit 0" 0 "$STATUS"
+check_contains "F-01 row1: a bare original marker tallies 0 induced / 1 marked" \
+  "$(cat "$r7a/run-record.md")" "| induced defects (induced / total) | 0 induced / 1 marked |"
+
+# Row 2: a not-induced marker whose own descriptive tail contains the OTHER keyword -> must still
+# read 0 induced / 1 marked, not 1 induced / 1 marked (the keyword-anywhere-later bug).
+r7b="$SANDBOX/f01-row2-tail-keyword"
+mk_run "$r7b"
+mkdir -p "$r7b/reports"
+printf 'Finding. **Mark:** `original` — not induced by this round\n' > "$r7b/reports/S1.md"
+run "$TOOL" "$r7b"
+check_status "F-01 row2 (tail contains other keyword) -> exit 0" 0 "$STATUS"
+check_contains "MUTATION-PROOF: an original mark with an 'induced'-containing tail stays original" \
+  "$(cat "$r7b/run-record.md")" "| induced defects (induced / total) | 0 induced / 1 marked |"
+
+# Row 3: the word `benchmark:` in a sentence also containing "original" -> must find NO mark at
+# all (unmeasured), not fabricate one from the unanchored label match.
+r7c="$SANDBOX/f01-row3-benchmark"
+mk_run "$r7c"
+mkdir -p "$r7c/reports"
+printf 'This is a benchmark: of the original approach, with no real Mark: line.\n' > "$r7c/reports/S1.md"
+run "$TOOL" "$r7c"
+check_status "F-01 row3 (benchmark: + original, no real marker) -> exit 0" 0 "$STATUS"
+check_contains "MUTATION-PROOF: 'benchmark:' never fires the label match" \
+  "$(cat "$r7c/run-record.md")" "| induced defects (induced / total) | unmeasured"
+
+# Row 4: the word `remark:` in a sentence also containing "induced" -> same, unmeasured.
+r7d="$SANDBOX/f01-row4-remark"
+mk_run "$r7d"
+mkdir -p "$r7d/reports"
+printf 'A remark: induced confusion here, but no real Mark: line either.\n' > "$r7d/reports/S1.md"
+run "$TOOL" "$r7d"
+check_status "F-01 row4 (remark: + induced, no real marker) -> exit 0" 0 "$STATUS"
+check_contains "MUTATION-PROOF: 'remark:' never fires the label match" \
+  "$(cat "$r7d/run-record.md")" "| induced defects (induced / total) | unmeasured"
+
+# Row 5: the convention quoted inside a fenced code block -> not tallied as a real finding.
+r7e="$SANDBOX/f01-row5-fenced"
+mk_run "$r7e"
+mkdir -p "$r7e/reports"
+{
+  printf 'Methodology note, quoting the convention for illustration:\n\n'
+  printf '```\n**Mark:** `induced` — one sentence causal path to the prior fix\n```\n'
+} > "$r7e/reports/S1.md"
+run "$TOOL" "$r7e"
+check_status "F-01 row5 (marker quoted in a fenced block) -> exit 0" 0 "$STATUS"
+check_contains "MUTATION-PROOF: a fenced-block example is blanked, not tallied" \
+  "$(cat "$r7e/run-record.md")" "| induced defects (induced / total) | unmeasured"
+
+# --- F-02 (dir #267 fixer brief): a failed final `mv` must refuse (exit 3), never exit 0 claiming
+# success while run-record.md is left unchanged. Forced by shadowing `mv` on PATH, the same
+# technique r4 above uses for awk. -------------------------------------------------------------------
+r8="$SANDBOX/f02-mv-failure"
+mk_run "$r8"
+original_before_r8="$(cat "$r8/run-record.md")"
+mkdir -p "$SANDBOX/fakebin-mv"
+cat > "$SANDBOX/fakebin-mv/mv" <<'FAKE'
+#!/bin/sh
+exit 1
+FAKE
+chmod +x "$SANDBOX/fakebin-mv/mv"
+run env PATH="$SANDBOX/fakebin-mv:$PATH" "$TOOL" "$r8"
+check_status "MUTATION-PROOF: a failed final mv refuses (exit 3), not a false-success exit 0" 3 "$STATUS"
+after_r8="$(cat "$r8/run-record.md")"
+check_status "run-record.md is untouched byte-for-byte after the mv failure" 0 \
+  "$([ "$original_before_r8" = "$after_r8" ] && echo 0 || echo 1)"
+
 # --- no orchestrator-notes.md, no reports/: both harvested rows fall back to unmeasured, not 0 or
 # an empty cell ----------------------------------------------------------------------------------
 r2="$SANDBOX/run2-empty"

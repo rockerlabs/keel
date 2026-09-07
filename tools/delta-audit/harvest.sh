@@ -99,6 +99,10 @@ nonneg_int_lib="$script_dir/../lib/nonneg-int.sh"
 [ -f "$nonneg_int_lib" ] || refuse "missing shared lib: '$nonneg_int_lib' — this checkout looks corrupt"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$nonneg_int_lib"
+fence_blank_lib="$script_dir/../lib/fence-blank.sh"
+[ -f "$fence_blank_lib" ] || refuse "missing shared lib: '$fence_blank_lib' — this checkout looks corrupt"
+# shellcheck source=tools/lib/fence-blank.sh
+. "$fence_blank_lib"
 
 run_dir=""
 while [ $# -gt 0 ]; do
@@ -207,6 +211,14 @@ fi
 [ -n "$cost_value" ] || cost_value="unmeasured (no cost table found in orchestrator-notes.md)"
 
 # --- induced defects: tally explicit "Mark: induced|original" lines under reports/ ------------------
+# Anchored two ways past the original glob, both live bugs (F-01, dir #267 fixer brief): the label
+# must stand alone (`(^|[^a-z])mark:`, so it cannot fire inside `remark:`/`benchmark:`/`hallmark:` —
+# every letter preceding "mark" there is itself a lowercase letter, so no boundary exists at that
+# position), and the classification is the single token immediately following the label
+# (`[[:space:]]*(induced|original)([^a-z]|$)`), never a keyword found anywhere later in the line — a
+# "Mark: original — not induced by this round" tail no longer flips the verdict to induced. Fenced
+# code blocks are blanked first (`blank_fenced_blocks`, the same toggle backlog-blocks.sh already
+# uses) so a quoted example of the convention is never counted as a real mark.
 induced_count=0
 total_count=0
 if [ -d "$run_dir/reports" ]; then
@@ -214,11 +226,11 @@ if [ -d "$run_dir/reports" ]; then
     [ -f "$f" ] || continue
     while IFS= read -r line; do
       clean="$(printf '%s' "$line" | tr -d '`*' | tr '[:upper:]' '[:lower:]')"
-      case "$clean" in
-        *mark:*induced*)  induced_count=$((induced_count + 1)); total_count=$((total_count + 1)) ;;
-        *mark:*original*) total_count=$((total_count + 1)) ;;
-      esac
-    done < "$f"
+      if [[ "$clean" =~ (^|[^a-z])mark:[[:space:]]*(induced|original)([^a-z]|$) ]]; then
+        total_count=$((total_count + 1))
+        [ "${BASH_REMATCH[2]}" = induced ] && induced_count=$((induced_count + 1))
+      fi
+    done < <(blank_fenced_blocks "$f")
   done
 fi
 if [ "$total_count" -eq 0 ]; then
@@ -271,6 +283,14 @@ if [ "$awk_status" -ne 0 ]; then
   refuse "rewriting run-record.md failed (awk exited $awk_status) — original file left untouched"
 fi
 
-mv "$tmp_file" "$record_file"
+# F-02 (dir #267 fixer brief): this script runs `set -uo pipefail`, no `-e` — a failed `mv` (cross-
+# device, permission, disk full) would otherwise fall through to `trap - EXIT; exit 0` uncaught,
+# reporting success while run-record.md is left unchanged and the temp file leaks. Checked explicitly,
+# mirroring the awk-status handling just above it.
+if ! mv "$tmp_file" "$record_file"; then
+  mv_status=$?
+  rm -f "$tmp_file"
+  refuse "writing run-record.md failed (mv exited $mv_status) — original file left untouched"
+fi
 trap - EXIT
 exit 0

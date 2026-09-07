@@ -64,6 +64,7 @@ backlog_ticket_blocks() {
   local bidx=0
   local nb="${#boundary_lines[@]}"
   local start end heading_line block_end probe block_scan_end heading_block closed flat
+  local own_num probe_line
 
   for start in "${heading_lines[@]}"; do
     while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
@@ -77,11 +78,29 @@ backlog_ticket_blocks() {
     # dir #255: a heading whose title text wraps across physical source lines can carry its
     # terminal tag on a continuation line, not the `### ...` line itself — build the whole
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
+    #
+    # F-04 (dir #267 fixer brief): that block absorbed body text too when no blank line separates
+    # the heading from it, and either shape — a wrapped title OR a no-blank-line body — can cite a
+    # DIFFERENT ticket's own closure tag ("superseding dir #901 — ✅ CLOSED as a duplicate"), which
+    # this ticket's `closed` field then wrongly inherited. Scope the block to the heading's OWN
+    # terminal tag: stop extending at the first continuation line that references another
+    # `dir #<N>` (N != this heading's own number) — a genuine wrapped title (dir #9's own test
+    # fixture) never cites a different ticket right before its own closure tag, so that case is
+    # unaffected; a citation of a sibling's status is excluded from heading_block instead, same as
+    # a blank line already excludes it.
+    own_num=""
+    [[ "$heading_line" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+
     block_end="$start"
     probe=$((start + 1))
     block_scan_end="$end"
     [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
     while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ]; do
+      probe_line="${stripped_lines[$((probe - 1))]}"
+      if [ -n "$own_num" ] && [[ "$probe_line" =~ dir\ \#([0-9]+) ]] \
+        && [ "${BASH_REMATCH[1]}" != "$own_num" ]; then
+        break
+      fi
       block_end="$probe"
       probe=$((probe + 1))
     done

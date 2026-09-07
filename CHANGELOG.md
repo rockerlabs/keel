@@ -15,6 +15,36 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Five findings from the v0.9.0 release-candidate delta audit (v0.8.3..5ba4dcb), all fix-before-tag,
+  fixed as one batch.** `tools/delta-audit/harvest.sh`'s induced/original tally was wrong in four
+  distinct shapes: the `Mark:` label match was unanchored (firing inside `remark:`/`benchmark:`), the
+  induced/original keyword was matched anywhere later in the line instead of the token immediately
+  after the label (a genuine `original` mark whose own descriptive tail happened to contain the word
+  "induced" flipped to induced), and the loop had no fenced-code-block exclusion (a quoted example of
+  the convention counted as a real finding) — all three fixed together, anchoring the label, reading
+  only the immediate next token, and blanking fenced blocks first via the existing
+  `blank_fenced_blocks` helper. The same script's final `mv` of the rewritten record into place ran
+  under `set -uo pipefail` with no `-e`, so a failed `mv` (cross-device, permission, disk full) fell
+  through to `trap - EXIT; exit 0`, reporting success while `run-record.md` stayed unchanged and the
+  temp file leaked — now checked explicitly, mirroring the adjacent `awk`-status handling. Separately,
+  `tools/token-report.sh`'s final aggregation parsed every turn's timestamp with a strict `jq` date
+  format inside one `jq -nc` expression, so a single missing or non-ISO-8601 timestamp aborted the
+  *entire* report (exit 1, zero output, every other session's numbers lost) — on a live corpus this
+  project's own commits (`01977a8`, `a3b94f9`) already decided must degrade gracefully, not crash. A
+  `safe_epoch` helper (`try...catch null`) now excludes just that one turn from cold-resume detection
+  and surfaces the count, and — riding the same degrade-per-record path — an assistant record already
+  correctly excluded from every total for carrying no usage object is now surfaced too, per
+  `tu_self_check`'s own stated invariant that such a record is "a warning sign, never silently
+  dropped." Last, `tools/lib/backlog-blocks.sh`'s `closed` field absorbed a body line citing a
+  *different* ticket's own closure tag whenever no blank line separated the heading from it — true
+  both for a wrapped heading whose continuation line cited a sibling and for a single-line heading
+  followed immediately by prose doing the same — misreading the open ticket as closed in
+  `pool-report.sh`'s census (undercounting open work) and `archive-sweep-check.sh`'s sweep trigger
+  (over-triggering) in opposite directions from the same wrong predicate. The block now stops
+  extending at the first continuation line that cites another `dir #<N>`, leaving a genuine wrapped
+  title (which never cites a different ticket right before its own tag) unaffected. Every fix carries
+  a regression test that failed before and passes after.
+
 - **dir #314 (first slice): `keel tokens` — a read-only report of where an adopter's own Claude Code
   token spend went, and three diagnosed patterns instead of only a total.** A number is not advice:
   the report names fan-out (subagent spend invisible in a session's own transcript, living instead in
