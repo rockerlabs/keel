@@ -912,6 +912,82 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_contains "the later resolve carries the previously-stranded row" "$(cat "$enfrepo_store/ledger.md")" "enable-stranding-row"
 fi
 
+# --- dir #409: _impact_merge_ledger_produce's header_tmp/rows_tmp mktemp pair had no cleanup for an
+# interruption between creation and the function's own explicit final `rm -f` — an external signal
+# (Ctrl-C, a killed CI job) arriving while the header/rows awk is running left both scratch files
+# stranded. Driven through the PRODUCTION call path (an explicit `migrate DIR` on a legacy in-tree
+# repo, via _impact_merge_ledger -> _impact_atomic_write -> this function), not a synthetic harness.
+#
+# `awk` is stubbed on $PATH, but ONLY intercepted for the date_col-tagged calls this function itself
+# makes (`-v date_col=...`) — _impact_resolve_top's OWN awk call (parsing `git worktree list`, to
+# decide whether $DIR is a linked worktree) runs earlier in the very same `migrate` invocation and
+# would otherwise catch a blanket stub first, hanging before mktemp ever runs and making the whole
+# fixture a false negative (caught live while writing this test: an earlier stub version that slept
+# unconditionally never got as far as creating header_tmp/rows_tmp at all). The date_col match lands
+# right after BOTH mktemps have already produced their files, which is the exact window this ticket
+# is about.
+#
+# `mktemp`'s own directory can't be isolated via $TMPDIR for this check: on macOS, a bare `mktemp`
+# with no args resolves via `_CS_DARWIN_USER_TEMP_DIR` and ignores `$TMPDIR` entirely (confirmed live
+# via `man mktemp` and a direct probe) — the assertion instead diffs the REAL resolved mktemp
+# directory's listing (learned via a throwaway `mktemp` call, so it works identically on Linux CI)
+# before vs. during the run, isolating exactly the two files this invocation created regardless of
+# platform, then checks their survival after the kill. Verified live against the pre-fix code (this
+# exact stub+diff harness against a checkout with both trap lines removed): both files are left
+# behind; with the trap restored, both are gone. ----------------------------------------------------
+sigrepo="$(new_repo)"
+mkdir -p "$sigrepo/.keel"
+printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$sigrepo/.keel/ledger.md"
+printf '| 2026-08-05 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | sig-row | none |\n' >> "$sigrepo/.keel/ledger.md"
+sigrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$sigrepo")"
+awk_stub_bin="$SANDBOX/dir409-awk-stub"; mkdir -p "$awk_stub_bin"
+awk_marker="$SANDBOX/dir409-awk-started"
+rm -f "$awk_marker"
+real_awk="$(command -v awk)"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'case "$*" in\n'
+  printf '  *date_col*) touch %q; exec sleep 30 ;;\n' "$awk_marker"
+  printf '  *) exec %q "$@" ;;\n' "$real_awk"
+  printf 'esac\n'
+} > "$awk_stub_bin/awk"
+chmod +x "$awk_stub_bin/awk"
+dir409_probe="$(mktemp)"; dir409_realtmp="$(dirname "$dir409_probe")"; rm -f "$dir409_probe"
+dir409_before="$(ls -a "$dir409_realtmp" 2>/dev/null | sort)"
+env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
+  PATH="$awk_stub_bin:$PATH" \
+  bash "$TOOL" migrate "$sigrepo" >"$SANDBOX/dir409.out" 2>&1 </dev/null &
+sig_pid=$!
+sig_waited=0
+while [ ! -f "$awk_marker" ] && kill -0 "$sig_pid" 2>/dev/null && [ "$sig_waited" -lt 50 ]; do
+  sleep 0.2; sig_waited=$((sig_waited + 1))
+done
+if [ ! -f "$awk_marker" ]; then
+  pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
+  wait "$sig_pid" 2>/dev/null || true
+  fail "dir #409: the awk stub actually started (fixture reaches the mktemp'd window)" "no marker after ${sig_waited} tries"
+else
+  dir409_during="$(ls -a "$dir409_realtmp" 2>/dev/null | sort)"
+  dir409_new="$(comm -13 <(printf '%s\n' "$dir409_before") <(printf '%s\n' "$dir409_during"))"
+  # kill by command-line pattern, not $sig_pid alone: the tested command sits several process layers
+  # below the backgrounded `env ... bash "$TOOL" migrate ...` job (verified live), so signaling only
+  # $sig_pid leaves the real merge process running as an orphan, holding its temp files open — the
+  # exact false negative this test exists to avoid.
+  pkill -TERM -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
+  sleep 0.5
+  dir409_leftover=""
+  for f in $dir409_new; do
+    [ -e "$dir409_realtmp/$f" ] && dir409_leftover="$dir409_leftover $f"
+  done
+  check_contains "dir #409: header_tmp/rows_tmp don't survive an interrupted merge" \
+    "$([ -z "$dir409_leftover" ] && echo clean)" "clean"
+  check_file "dir #409: the legacy source survives an interrupted merge untouched" "$sigrepo/.keel/ledger.md"
+  check_nofile "dir #409: an interrupted merge never writes the completion marker" "$sigrepo_store/origin"
+  pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
+  wait "$sig_pid" 2>/dev/null
+  for f in $dir409_new; do rm -f "$dir409_realtmp/$f"; done
+fi
+
 # --- v0.8.0 delta audit F-06: a failure in EITHER `sort` stage of _impact_merge_ledger's rows
 # pipeline must be detected, not silently reported as success. The line used to read
 # `rows_status="${PIPESTATUS[0]}"` — awk's exit status alone — discarding what `pipefail` (set

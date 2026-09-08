@@ -15,6 +15,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #409 + dir #418: fixed an untrapped mktemp pair in tools/keel-impact.sh and pinned the
+  `keel tokens` dispatch with its own forwarding test.** dir #409: `_impact_merge_ledger_produce`'s
+  `header_tmp`/`rows_tmp` scratch files are now cleaned up on an interruption (an external SIGTERM,
+  e.g. a killed CI job or Ctrl-C) between their creation and the function's own explicit final
+  `rm -f`, via a `trap ... EXIT` set right after `mktemp` and cleared right before the normal exit
+  path — the same idiom `tools/changelog-section.sh` already uses, chosen over a RETURN trap because
+  this project's own record (`tools/self/session-cost.sh`, `tools/lib/transcript-usage.sh`) found a
+  RETURN trap set inside a function to be a single global handler that can fire on a later, unrelated
+  function's return. Verified live, red then green: a stub-and-signal test drives the real
+  `migrate DIR` call path, diffs the real mktemp directory's listing across the run (no `$TMPDIR`
+  override needed — and none would work on macOS, where a bare `mktemp` resolves via
+  `_CS_DARWIN_USER_TEMP_DIR` and ignores `$TMPDIR` entirely), and confirms both scratch files survive
+  the pre-fix code but not the fixed code. dir #418: `keel tokens` is the same bare-`exec`-forward
+  shape as `doctor`/`audit`/`check`, but had no stub-pinned dispatch test of its own; added to
+  `tests/test_keel_cli.sh` alongside the others.
+
 - **dir #420, dir #425, dir #426, dir #432: fixed the BACKLOG.md census family's own-tag-vs-citation
   bugs and consolidated the duplicated strip logic into one shared helper.** dir #420: a genuinely
   closed ticket whose own closure tag sat earlier on the same line than a citation to a different

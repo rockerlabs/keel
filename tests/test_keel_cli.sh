@@ -29,6 +29,7 @@ stub tools/doctor.sh     0
 stub tools/public-audit.sh 0
 stub tools/init-project.sh 0
 stub tools/keel-check.sh 7   # a non-zero, non-2 code proves genuine pass-through (not keel's own exit)
+stub tools/token-report.sh 0
 
 keel="$fake/keel"
 
@@ -45,6 +46,10 @@ run "$keel" check make test
 check_contains "check -> tools/keel-check.sh"  "$OUT" "STUB tools/keel-check.sh args=[make test]"
 run "$keel" uninstall --dry-run
 check_contains "uninstall -> uninstall.sh"     "$OUT" "STUB uninstall.sh args=[--dry-run]"
+# dir #418: tokens is the same shape as doctor/audit/check — a bare `exec` forward — but had no
+# stub-pinned test of its own; every other verb's dispatch is pinned here, this one was not.
+run "$keel" tokens --since yesterday
+check_contains "tokens -> tools/token-report.sh" "$OUT" "STUB tools/token-report.sh args=[--since yesterday]"
 
 # --- child exit code passes straight through ----------------------------------------------------
 run "$keel" check anything          # stub exits 7
