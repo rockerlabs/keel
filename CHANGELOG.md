@@ -72,6 +72,25 @@ sections real content going forward — see that page for exactly when each one 
   depend on are unchanged. Verified byte-for-byte behavioral equivalence before switching, and added
   `tests/test_repo_top_lib.sh` for direct coverage of the new file.
 
+- **dir #421 and dir #422: closed a CI-blindness gap and hardened `tools/token-report.sh`'s jq-failure
+  cleanup, both in the same aggregation code path.** dir #421 — F-03's own regression fixtures each
+  gave a session file a single turn, so the cold-resume gap computation the fix actually guards
+  (`range(1; ($arr|length))`, which needs at least two turns per file to run at all) never executed;
+  reverting F-03's fix with those fixtures kept still passed every exit-code check, only failing on
+  surfacing assertions for text/JSON fields that simply didn't exist pre-fix — CI would not have caught
+  a re-regression. New fixture adds two turns to one session file, one with a non-ISO timestamp,
+  alongside an unrelated well-formed session; mutation-proved against the true pre-fix revision
+  (`a3b94f9`, parent of the original fix): the new fixture's exit-code assertions now fail as expected
+  (`expected exit 0, got 1`) where the old ones stayed green throughout. dir #422 — the pre-existing
+  `out="$(jq -nc ...)"; status=$?` idiom around the same aggregation call is replaced with an
+  if-capture plus a `trap ... RETURN` covering all four temp files, so cleanup no longer depends on how
+  the function happens to be called. That dependency was real: `_tr_build_report`'s one call site
+  wraps it as `report="$(_tr_build_report ...)" || exit 1`, and testing a command as part of an
+  `&&`/`||` list suspends `set -e` for its entire execution — so contrary to how this ticket was filed,
+  `status=$?` was reachable in the live script all along (verified with three minimal harnesses,
+  including one reproducing the exact call shape); the fix removes the dependency on that incidental
+  caller behavior rather than closing an active leak.
+
 ## [0.9.0] — 2026-09-07
 
 **Known issues, disclosed at the cut:** three behavioural shapes in self-maintenance census tooling

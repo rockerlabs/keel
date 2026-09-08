@@ -99,6 +99,21 @@ _tr_build_report() {
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
 
+  # dir #422: once all four temp files exist, every remaining exit from this function (any `return`,
+  # or falling off the end) goes through this ONE cleanup instead of a rm -f repeated at each return
+  # site. This alone is not sufficient (proved with a minimal harness): under `set -euo pipefail`, a
+  # BARE `out="$(cmd)"` failing would abort the function via errexit WITHOUT a normal return — a
+  # RETURN trap never fires on that path. In THIS script the failure is, in fact, caught today: this
+  # function's only call site wraps it as `report="$(_tr_build_report ...)" || exit 1` (bottom of
+  # file), and that `||` suspends errexit for this whole function's execution (POSIX/bash: a command
+  # tested by && / || is exempt) — so `status=$?` below was reachable all along in the live script,
+  # not dead code, contra how this ticket was filed (its own harness likely called this function
+  # bare, not through that wrapped call site — the same trap this project's own memory names:
+  # "a shared helper's exemption depends on whether ITS caller is &&/||-exempt"). The if-capture
+  # below is kept anyway: it makes this function's own cleanup correct on its own terms, independent
+  # of how any future caller happens to invoke it, rather than silently relying on that one `||`.
+  trap 'rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"' RETURN
+
   # Every read below is guarded rather than a bare command — the corpus is LIVE
   # (docs/token-economy.md: a self-referential run reads a session transcript it is still writing), so
   # a file changing mid-read is the ORDINARY case, not a rare one. Under this script's own
@@ -147,7 +162,13 @@ _tr_build_report() {
 
   local read_at out status
   read_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  out="$(jq -nc \
+  # dir #422: the if-capture form (not a bare `out="$(...)"` followed by `status=$?`) makes this
+  # function correct standing alone, not only when called the one way it happens to be called today
+  # (see the trap comment above for why the bare form was NOT actually dead in the live script — its
+  # one caller's `|| exit 1` already suspended errexit here). Testing the assignment as an `if`
+  # condition is the one context `set -e` exempts on its own terms, so a jq failure lands in the
+  # `else` below as a genuine function return — which is what lets the RETURN trap above actually run.
+  if out="$(jq -nc \
     --slurpfile T "$tmp_totals" --slurpfile TURNS "$tmp_turns" \
     --slurpfile CALLS "$tmp_calls" --slurpfile SC "$tmp_sc" \
     --argjson w_input "$_TR_W_INPUT" --argjson w_write "$_TR_W_WRITE" --argjson w_read "$_TR_W_READ" \
@@ -328,11 +349,12 @@ _tr_build_report() {
           assistantNoUsage: $assistantNoUsage
         }
       }
-  ')"
-  status=$?
-  rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
-  [ "$status" -eq 0 ] || return "$status"
-  printf '%s\n' "$out"
+  ')"; then
+    printf '%s\n' "$out"
+  else
+    status=$?
+    return "$status"
+  fi
 }
 
 # _tr_print_human REPORT_JSON [LABEL] — the report shape from SPEC §3's illustrative sample: an
