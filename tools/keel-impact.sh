@@ -574,16 +574,25 @@ _impact_merge_ledger() {
 # never did.
 _impact_merge_ledger_produce() {
   local target="$1" date_col="$2"; shift 2
-  local header_tmp rows_tmp
+  local header_tmp="" rows_tmp=""
   # dir #409: this is the only mktemp pair in the file with no cleanup on an interruption between
   # creation and the explicit `rm -f` below — mirrors changelog-section.sh's own trap-then-cancel
   # idiom (set right after mktemp, cleared right before the normal exit path) rather than a RETURN
   # trap, which this project's own record (tools/self/session-cost.sh, tools/lib/transcript-usage.sh)
   # found to be a single global handler that can fire on a later, unrelated function's return. Armed
-  # right after the FIRST mktemp (rows_tmp is still unset, but `rm -f ""` is a safe no-op) rather than
-  # after both, so an interrupt between the two mktemp calls can't leak header_tmp with no trap yet
-  # in place (found live by this ticket's own /code-review — the first version armed the trap only
-  # after both mktemps completed).
+  # right after the FIRST mktemp (rows_tmp is still empty) rather than after both, so an interrupt
+  # between the two mktemp calls can't leak header_tmp with no trap yet in place (found live by this
+  # ticket's own /code-review — the first version armed the trap only after both mktemps completed).
+  # v0.9.1 RC audit: `local header_tmp rows_tmp` alone (no `=""`) leaves rows_tmp merely DECLARED, not
+  # SET, on bash >= 4.4 — a semantics change from bash < 4.4, where `local x` already meant "set to
+  # empty". Under this file's `set -u`, expanding an unset `$rows_tmp` inside the trap aborts the trap
+  # itself before `rm -f` ever runs, so the "safe no-op" the comment above used to claim never
+  # happened: header_tmp leaked (exactly what this trap exists to prevent) and the trap's own failure
+  # replaced the real exit status with the unbound-variable error's. Reproduced live on bash 5.2.37: a
+  # SIGTERM between the two mktemps leaked $header_tmp and turned exit 143 into exit 1 before this fix;
+  # `=""` on both locals makes them SET (not just declared), so `rm -f "$header_tmp" "$rows_tmp"` is a
+  # genuine no-op on the not-yet-created one, on every bash version. Invisible on macOS's bash 3.2,
+  # where `local x` already meant "set to empty" — verify any change here on bash >= 4.4.
   header_tmp="$(mktemp)"
   trap 'rm -f "$header_tmp" "$rows_tmp"' EXIT
   rows_tmp="$(mktemp)"

@@ -15,7 +15,7 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
-- **Three findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
+- **Four findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
   batch.** `tests/test_self_pool_report.sh` and `tests/test_self_archive_sweep_check.sh` — the only two
   test files in the tree with no `summary` call, both edited by the census-family commit `aa5573c` —
   printed `FAIL` lines on a failing check but always exited 0: `tests/run.sh` aggregates purely on exit
@@ -25,12 +25,25 @@ sections real content going forward — see that page for exactly when each one 
   deliberately failing assertion placed BEFORE the new `summary` call, confirmed to flip the exit code to
   1, then removed — rather than appended after `summary`, which proves nothing. `docs/release-management.md`'s
   close-checklist section pointed at "item 4 below" for the keep-alive contract; item 4 sits 268 lines
-  above, not below, a seam defect from a since-superseded insert. And `docs/keel-impact.md`'s (and this
+  above, not below, a seam defect from a since-superseded insert. `docs/keel-impact.md`'s (and this
   file's own) re-derived `/keel-score` cost figure (dir #417) stated a single "11-13%" range against
   "each session's deduped cache-read total," but its own supporting numbers split across two different
   denominators — 12%/13% of attributed cache-read, 10.5%/11.6% of the deduped grand total — and 10.5%
   falls outside the stated range; both surfaces now name both denominators with their own correct ranges
-  instead of blending them into one figure a reader can't check against its own parenthetical.
+  instead of blending them into one figure a reader can't check against its own parenthetical. And
+  `tools/keel-impact.sh`'s own dir #409 fix (PR #376) doesn't hold on bash >= 4.4: `local header_tmp
+  rows_tmp` alone leaves `rows_tmp` merely DECLARED, not SET — a bash 4.4 semantics change, since
+  bash < 4.4's `local x` already meant "set to empty" — so under this file's `set -u` the EXIT trap's
+  own `"$rows_tmp"` expansion aborts before its `rm -f` ever runs, leaking `header_tmp` (the exact leak
+  the trap exists to prevent) and replacing the real exit status with the unbound-variable error's.
+  Reproduced live on bash 5.2.37 (a SIGTERM sent between the two `mktemp` calls): before the fix, exit
+  143 became exit 1 and `header_tmp` leaked; after, exit 143 is preserved and the file is cleaned up.
+  Invisible on macOS's bash 3.2, where `local x` already means "set to empty" — the same
+  verify-on-bash->=4.4 asymmetry this project's own record already carries, now hit in production code
+  rather than a test. Fixed by initializing both locals (`local header_tmp="" rows_tmp=""`);
+  `tests/test_keel_impact.sh`'s own dir #409 regression test still passes unchanged, because it signals
+  during a later stage where both variables are already assigned and so never exercises the window this
+  fix targets — a test-coverage gap left as a follow-up, not addressed in this batch.
 
 - **dir #409 follow-up: fixed a macOS-CI-only flake in the dir #409 regression test, found post-merge
   when `main` went red on `tests (macos-14)` while `tests (ubuntu-24.04)`, `tests (alpine-busybox)`,
