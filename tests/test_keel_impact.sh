@@ -1022,7 +1022,13 @@ else
     "$([ -z "$dir409_leftover" ] && echo clean)" "clean"
   check_file "dir #409: the legacy source survives an interrupted merge untouched" "$sigrepo/.keel/ledger.md"
   check_nofile "dir #409: an interrupted merge never writes the completion marker" "$sigrepo_store/origin"
-  # Reap anything TERM didn't catch — unconditional cleanup, not part of the assertion above.
+  # Reap anything TERM didn't catch — unconditional cleanup, not part of the assertion above. The
+  # first kill is a no-op in the common case (the rendezvous loop above already confirmed
+  # $dir409_target is dead); it only does real work if that loop hit its 10s timeout instead of
+  # observing death. The pattern-based pkill below is deliberately still the fuzzy, non-exact kill
+  # this fix's whole point was to stop relying on for the ASSERTION — kept here only as a mop-up for
+  # any OTHER bash-fork layer of the same invocation that isn't $dir409_target, not as a second
+  # correctness check.
   [ -n "$dir409_target" ] && kill -9 "$dir409_target" 2>/dev/null
   pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
   [ -f "$awk_pidfile" ] && kill -9 "$(cat "$awk_pidfile")" 2>/dev/null
