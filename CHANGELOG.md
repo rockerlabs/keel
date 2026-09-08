@@ -31,6 +31,14 @@ sections real content going forward — see that page for exactly when each one 
   shape as `doctor`/`audit`/`check`, but had no stub-pinned dispatch test of its own; added to
   `tests/test_keel_cli.sh` alongside the others.
 
+- **dir #417: re-derived `docs/keel-impact.md`'s `/keel-score` cost figure through the deduped
+  transcript reader and confirmed it stands.** The published ~12% figure was measured before
+  `tools/lib/transcript-usage.sh`'s requestId dedupe fix (dir #313/PR #353) existed; re-run on the same
+  two transcripts (dir #298, dir #301) the share holds at 11-13% of each session's deduped cache-read
+  total, because the requestId-duplication multiplier — though not uniform across pipeline stages
+  (~1.7x-2.4x per stage) — varies too little to move any one stage's share by more than a point or two.
+  One sentence naming the measurement basis and the re-derived numbers now ships alongside the figure.
+
 - **dir #420, dir #425, dir #426, dir #432: fixed the BACKLOG.md census family's own-tag-vs-citation
   bugs and consolidated the duplicated strip logic into one shared helper.** dir #420: a genuinely
   closed ticket whose own closure tag sat earlier on the same line than a citation to a different
