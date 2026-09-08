@@ -69,6 +69,29 @@ bb_strip_foreign_citations() {
   printf '%s' "$stripped"
 }
 
+# dir #426 (simplify pass): the closure-tag vocabulary is one fact (dir #432's honestly-enumerated
+# verb list) shared by every site that needs to recognise a closure tag — this file's own `closed`
+# detection, and tools/self/archive-sweep-check.sh's dated-closure check. One constant here, not a
+# copy-pasted ERE literal per site, so the next vocabulary widening dir #432's own comment predicts
+# is a one-line change instead of a multi-file hunt that can silently miss a site.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)'
+
+# bb_own_ticket_num <heading_line_or_block>
+#   dir #426 (simplify pass): the "extract this heading's own `dir #N`" one-liner was copy-pasted
+#   into tools/self/pool-report.sh and tools/self/archive-sweep-check.sh right after this ticket
+#   consolidated the bigger strip-then-test loop into bb_strip_foreign_citations above — closing
+#   the small duplicate the same way. Matches only the FIRST line's own heading (`^###\ dir\
+#   \#N`), same as this file's own prior inline use; a legacy `### <n>.` heading has no `dir #N`
+#   of its own and correctly returns empty (see bb_strip_foreign_citations' own_num semantics: an
+#   empty own_num can never equal a cited number, so every citation in the block is still treated
+#   as foreign for a legacy heading — the existing, deliberate behaviour, unchanged by this
+#   extraction).
+bb_own_ticket_num() {
+  local text="$1" num=""
+  [[ "$text" =~ ^###\ dir\ \#([0-9]+) ]] && num="${BASH_REMATCH[1]}"
+  printf '%s' "$num"
+}
+
 backlog_ticket_blocks() {
   local file="$1"
   [ -f "$file" ] && [ -r "$file" ] || return 0
@@ -124,8 +147,7 @@ backlog_ticket_blocks() {
     # dir #255: a heading whose title text wraps across physical source lines can carry its
     # terminal tag on a continuation line, not the `### ...` line itself — build the whole
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
-    own_num=""
-    [[ "$heading_line" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+    own_num="$(bb_own_ticket_num "$heading_line")"
 
     block_end="$start"
     probe=$((start + 1))
@@ -220,9 +242,8 @@ backlog_ticket_blocks() {
     # `([^a-zA-Z]|$)` is the portable word-boundary substitute this project already uses for the
     # identical reason in harvest.sh's F-01 fix.
     closed=0
-    stripped_block="$(bb_strip_foreign_citations "$heading_block" "$own_num" \
-      '(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)')"
-    if [[ "$stripped_block" =~ (—[[:space:]]*)?(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)([^a-zA-Z]|$) ]]; then
+    stripped_block="$(bb_strip_foreign_citations "$heading_block" "$own_num" "$BB_CLOSURE_TAG_PATTERN")"
+    if [[ "$stripped_block" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
       closed=1
     fi
 

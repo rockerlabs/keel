@@ -119,8 +119,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # about. See that function's own header for the full history (two independent review rounds:
   # the if/elif-shadowing gap, the glob-vs-literal quoting gap, and the single-strip-per-form
   # gap) — nothing here diverges from it any more.
-  own_num=""
-  [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+  own_num="$(bb_own_ticket_num "$heading_block")"
   stripped="$(bb_strip_foreign_citations "$heading_block" "$own_num" 'RETRACTED')"
   [[ "$stripped" =~ —[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] && continue
 
@@ -165,15 +164,21 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # unclear, under review, ...), wrongly excluding those as if they meant "unblocked". Still true
   # per-clause: this fix only narrows WHICH TEXT the exclusion pattern is tested against, not the
   # pattern itself.
-  clause_split="${heading_block//;/,}"
-  clause_split="${clause_split// — /,}"
-  clause_split="${clause_split//,/$'\n'}"
-  while IFS= read -r clause; do
-    [[ "$clause" == *⛔* ]] || continue
-    if ! grep -qiE '⛔[[:space:]]*UNBLOCKED|no longer[[:space:]]+⛔' <<< "$clause"; then
-      parked=1
-    fi
-  done <<< "$clause_split"
+  # code-review efficiency pass: gate the clause split behind a cheap whole-block presence check
+  # first, same as the old whole-block `grep -qE '⛔'` did — most heading blocks carry no `⛔` at
+  # all, and splitting+looping unconditionally would spend three string rewrites plus a per-clause
+  # grep on every one of them for nothing.
+  if [[ "$heading_block" == *⛔* ]]; then
+    clause_split="${heading_block//;/,}"
+    clause_split="${clause_split// — /,}"
+    clause_split="${clause_split//,/$'\n'}"
+    while IFS= read -r clause; do
+      [[ "$clause" == *⛔* ]] || continue
+      if ! grep -qiE '⛔[[:space:]]*UNBLOCKED|no longer[[:space:]]+⛔' <<< "$clause"; then
+        parked=1
+      fi
+    done <<< "$clause_split"
+  fi
   grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1
   [ "$parked" = "1" ] && parked_count=$((parked_count + 1))
 

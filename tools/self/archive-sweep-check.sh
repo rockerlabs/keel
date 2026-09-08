@@ -106,11 +106,9 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # vocabulary matches dir #432's widened set (backlog-blocks.sh's own `closed` field already
   # reflects it — this only needs to recognise the SAME shapes to test whether the surviving tag
   # carries a date, not to redecide closure).
-  own_num=""
-  [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
-  stripped="$(bb_strip_foreign_citations "$heading_block" "$own_num" \
-    '(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)')"
-  if ! grep -qE '(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)[[:space:]]*\([0-9]{4}-[0-9]{2}-[0-9]{2}' <<< "$stripped"; then
+  own_num="$(bb_own_ticket_num "$heading_block")"
+  stripped="$(bb_strip_foreign_citations "$heading_block" "$own_num" "$BB_CLOSURE_TAG_PATTERN")"
+  if ! [[ "$stripped" =~ ${BB_CLOSURE_TAG_PATTERN}[[:space:]]*\([0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
     undated_closed=$((undated_closed + 1))
   fi
 done < <(backlog_ticket_blocks "$backlog_file")
