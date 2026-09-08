@@ -109,34 +109,101 @@ _rt_wrapfuse_log() { _rt_store_path "${1:-.}" "${2:-}" wrap-fuse-events.log; }
 _rt_wrapfuse_flag_dir() { _rt_store_path "${1:-.}" "${2:-}" wrap-fuse; }
 _rt_wrapfuse_flag() { local d; d="$(_rt_wrapfuse_flag_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/%s.flag' "$d" "$(_rt_branch "${1:-.}")"; }
 
-# _rt_normalize_path DIR RAW [TOP] — a repo-relative path for logging, or the literal token "BACKLOG.md" for
-# a main-checkout ticket-body read: that file is gitignored and main-checkout-only, so "repo-relative"
-# is undefined for exactly that surface (dir #387's own note) — a canonical single token stands in for
-# whichever physical path a worktree session read it through, so the same doc reads the same across
-# every worktree of the repo. Falls back to RAW unchanged (minus a leading "./") when it resolves
-# outside the repo's main-checkout top — an out-of-scope read the caller filters, not this function.
+# _rt_normalize_path DIR RAW [OWNTOP] — a repo-relative path for logging, or the literal token
+# "BACKLOG.md" for a main-checkout ticket-body read: that file is gitignored and main-checkout-only,
+# so "repo-relative" is undefined for exactly that surface (dir #387's own note) — a canonical single
+# token stands in for whichever physical path a worktree session read it through, so the same doc
+# reads the same across every worktree of the repo. Falls back to RAW unchanged (minus a leading
+# "./") when it resolves outside DIR's own repo top — an out-of-scope read the caller filters, not
+# this function.
 #
-# macOS symlink trap (reproduced live at this ticket's implementation): `_impact_resolve_top` walks
-# through `git worktree list --porcelain`, which reports the PHYSICAL path (`/private/var/...` on
-# macOS) — but a hook's own `cwd`/`tool_input.file_path` fields reflect whatever form the session's
+# OWNTOP is DIR's OWN checkout top (tools/lib/repo-top.sh's `keel_repo_own_top`), deliberately NOT
+# the main-checkout top `_impact_resolve_top`/`_rt_project_id` resolve for the STORE KEY (dir #430,
+# measured root cause). Those two questions look like the same "top" but are not: the store key wants
+# every worktree of a repo folded onto one project id (so cross-worktree activity accumulates instead
+# of fragmenting), while path normalization wants the path relative to the checkout the read actually
+# happened IN. Threading the main-checkout top through here instead (the original bug) left a
+# worktree session's read of `docs/grooming.md` logged as
+# `.claude/worktrees/<name>/docs/grooming.md` — a path that both never matches any other worktree's
+# read of the same doc (fragmenting per-doc counts across worktrees, the opposite of the store key's
+# own merge) and never matches the tracked `docs/*` path a dead-doc report looks for
+# (`docs-line` printing `none` for a session that plainly read docs). Callers keep resolving the
+# main-checkout top separately (once, for the key) and now also resolve OWNTOP (once, for this) —
+# see `log-tool` in tools/read-trace.sh for both threaded through the same hook invocation.
+#
+# macOS symlink trap (reproduced live at this ticket's implementation): a `git rev-parse
+# --show-toplevel`/`git worktree list --porcelain` walk reports the PHYSICAL path (`/private/var/...`
+# on macOS) — but a hook's own `cwd`/`tool_input.file_path` fields reflect whatever form the session's
 # own cwd took, typically the SYMLINKED form (`/var/...`, since `/var` -> `/private/var` on macOS). A
-# plain `"$top"/*` prefix match against the raw path then silently never matches there, and every read
-# under it reads as "outside the repo" — reproduced live, not a hypothetical. Fixed by re-resolving
-# RAW's own directory to ITS physical form (`cd ... && pwd -P`) before retrying the prefix match once.
-_rt_normalize_path() {
-  local dir="$1" raw="$2" top="${3:-}" base raw_dir raw_phys
-  base="$(basename -- "$raw" 2>/dev/null)"
-  if [ "$base" = "BACKLOG.md" ]; then printf 'BACKLOG.md'; return; fi
-  [ -n "$top" ] || top="$(_impact_resolve_top "$dir")"
+# plain `"$owntop"/*` prefix match against the raw path then silently never matches there, and every
+# read under it reads as "outside the repo" — reproduced live, not a hypothetical. Fixed by
+# re-resolving RAW's own directory to ITS physical form (`cd ... && pwd -P`) before retrying the
+# prefix match once.
+#
+# SECONDARY fallback against the main-checkout top (found by this ticket's own /code-review high
+# pass): a worktree session that reads a TRACKED doc via the MAIN checkout's own absolute path —
+# rather than its own worktree's copy of the same file, e.g. deliberately checking the canonical
+# committed state — used to normalize correctly under the pre-dir-#430 (main-top-only) behavior.
+# OWNTOP alone would silently regress that case to the raw absolute path (never matching, since it's
+# outside DIR's own checkout). Only resolved when the primary OWNTOP match already failed — the
+# common case (a worktree session reading its own files) never pays for this second `git` call.
+#
+# EXCLUDING a SIBLING worktree's own tree (found by a second /code-review high pass, on the fallback
+# above): every worktree of this repo physically nests under the main checkout's own top, at
+# `.claude/worktrees/<name>/` — so a plain prefix match against a checkout top also fires for a read
+# of a DIFFERENT worktree's file (e.g. an orchestrator session inspecting a worker's own worktree),
+# stripping only the top prefix and leaving `.claude/worktrees/<other-name>/docs/foo.md` — a path
+# `_rt_in_doc_scope` never recognizes, so the read silently vanishes instead of being tracked. That
+# reproduces dir #430's own defect through a narrower door. `_rt_under_sibling_worktree` rejects
+# exactly that shape.
+_rt_under_sibling_worktree() {
+  case "$1" in
+    .claude/worktrees/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+# _rt_try_top TOP RAW RAW_PHYS — TOP-relative candidate from RAW or its physical retry, or empty when
+# neither matches. A THIRD /code-review high pass found the sibling-worktree guard above applied only
+# to the maintop fallback branch, not to the primary owntop match — which matters whenever DIR's own
+# top already equals the main-checkout top (a session running directly in the main checkout, not
+# inside any worktree at all — exactly the orchestrator topology dir #431's own R13 examples describe).
+# There, a sibling worktree's file matches the PRIMARY `"$owntop"/*` branch before the guarded
+# fallback ever runs, reproducing the same silent-drop through the other door (empirically confirmed
+# live: `_rt_normalize_path "$maintop" "$maintop/.claude/worktrees/A/docs/x.md"` returned the
+# unrejected `.claude/worktrees/A/docs/x.md` before this fix). Factored into one helper so the guard
+# applies uniformly regardless of which top produced the match, rather than duplicating the check at
+# a second call site the same way the second pass already had to add it to the first.
+_rt_try_top() {
+  local top="$1" raw="$2" raw_phys="$3"
   case "$raw" in
     "$top"/*) printf '%s' "${raw#"$top"/}"; return ;;
   esac
-  raw_dir="$(dirname -- "$raw" 2>/dev/null)"
-  if [ -n "$raw_dir" ] && [ -d "$raw_dir" ]; then
-    raw_phys="$(cd "$raw_dir" 2>/dev/null && pwd -P)/$base"
+  if [ -n "$raw_phys" ]; then
     case "$raw_phys" in
       "$top"/*) printf '%s' "${raw_phys#"$top"/}"; return ;;
     esac
+  fi
+}
+_rt_normalize_path() {
+  local dir="$1" raw="$2" owntop="${3:-}" base raw_dir raw_phys maintop candidate
+  base="$(basename -- "$raw" 2>/dev/null)"
+  if [ "$base" = "BACKLOG.md" ]; then printf 'BACKLOG.md'; return; fi
+  [ -n "$owntop" ] || owntop="$(keel_repo_own_top "$dir")"
+  raw_dir="$(dirname -- "$raw" 2>/dev/null)"
+  raw_phys=""
+  if [ -n "$raw_dir" ] && [ -d "$raw_dir" ]; then
+    raw_phys="$(cd "$raw_dir" 2>/dev/null && pwd -P)/$base"
+  fi
+  candidate="$(_rt_try_top "$owntop" "$raw" "$raw_phys")"
+  if [ -n "$candidate" ] && ! _rt_under_sibling_worktree "$candidate"; then
+    printf '%s' "$candidate"; return
+  fi
+  maintop="$(_impact_resolve_top "$dir")"
+  if [ "$maintop" != "$owntop" ]; then
+    candidate="$(_rt_try_top "$maintop" "$raw" "$raw_phys")"
+    if [ -n "$candidate" ] && ! _rt_under_sibling_worktree "$candidate"; then
+      printf '%s' "$candidate"; return
+    fi
   fi
   printf '%s' "${raw#./}"
 }
@@ -219,3 +286,39 @@ _rt_record_read() {
 # only for this timestamp — there is no reader that needs one row per distinct path, so there is
 # nothing dedup was protecting here.
 _rt_record_mutate() { _rt_plain_append "$(_rt_session_log "$1" "$3")" mutate "$2"; }
+
+# --- output contract: one canonical coverage/denominator disclosure (dir #430 + dir #431) ----------
+# `aggregate`'s two halves (the doc-read table, the wrap-fuse line) each surfaced a false reading
+# this cycle for the same underlying reason: nothing in the output says what the counts do and do not
+# include. dir #430 needed "the aggregate names its own coverage"; dir #431 needed "the denominator
+# must be stated" — two tickets, the same shape of gap in the same command's output, so this is ONE
+# disclosure written once and printed once by `aggregate` (tools/read-trace.sh), not two prose
+# passages drifting apart in two fix rounds (`docs/delegation.md`'s own "one canonical text, not
+# mirrors" rule, applied here).
+#
+# Three facts a reader needs before pricing either half of the table:
+#   1. Doc-scope coverage — only docs/*, commands/*.md, and BACKLOG.md opened via the Read tool, in a
+#      session with this hook installed, are ever counted. A harness-injected surface (always-on
+#      context, a slash-command body) and anything read through the shell (cat/sed/grep — this
+#      ticket's own implementation used exactly that under an auto-mode instruction) never produce a
+#      Read tool call and so can never appear here, at any count, ever. A zero row is silence, not
+#      evidence of "never opened".
+#   2. The `reads` column is SESSIONS, not tool calls — one row per (repo,branch) session that read a
+#      doc at least once (_rt_plain_append's own dedup-at-the-ephemeral-gate design), not a count of
+#      every Read call. A manual raw grep of Read tool-call events across the same window counts a
+#      different thing and will not match this column — confirmed live, dir #430: the v0.9.0 close's
+#      manual `private/releases/RUNS.md` figure (BACKLOG.md read 75×, undeduped, across every session
+#      that touched it) and this store's own deduped count for the same doc are both correct, for two
+#      different questions.
+#   3. wrap-fuse's denominator excludes two kinds of session from "mutating sessions this cycle": a
+#      read-only session (no mutate row at all — nothing to flag), and a session whose transcript
+#      opens with either the `DELEGATION RUN` marker (a stateless subagent, `docs/delegation.md`) or
+#      the `WRAP CENTRALIZED` marker (a managed-release worker, `docs/release-management.md` R13) —
+#      both forbidden from running their own `/wrap` by the brief that launched them, so a session
+#      that never wraps by design is not a session that "forgot".
+_rt_coverage_note() {
+  cat <<'EOF'
+coverage: doc-read counts include only docs/*, commands/*.md, and BACKLOG.md opened via the Read tool in a session with this hook installed — a harness-injected surface (always-on context, a slash-command body) or a file read via the shell (cat/sed/grep) never appears here, at any count; a zero row is silence, not evidence of "never opened". The `reads` column counts SESSIONS that read a doc at least once, not raw Read tool calls — a manual count of tool-call events over the same window measures something else and will not match this figure.
+wrap-fuse denominator: "mutating sessions this cycle" excludes read-only sessions (no mutation to flag) and sessions whose transcript opens with the `DELEGATION RUN` or `WRAP CENTRALIZED` marker — both are forbidden from running their own /wrap by the brief that launched them (docs/delegation.md; docs/release-management.md R13), so their absence from /wrap is by design, not a miss.
+EOF
+}

@@ -34,6 +34,40 @@ sections real content going forward — see that page for exactly when each one 
   instead of whole-block-scoped, so a heading stating both a current block and its own
   future-unblock clause in one line is no longer wrongly excluded from the parked count.
 
+- **dir #430 + dir #431: two read-trace fuse defects the v0.9.0 groom's own consumption of the
+  tier-2 aggregate found, fixed as one unit.** dir #430's measured root cause: path normalization
+  resolved a worktree session's raw file path against the MAIN checkout's top instead of the
+  worktree's own top, so a worktree read of `docs/grooming.md` logged as
+  `.claude/worktrees/<name>/docs/grooming.md` — fragmenting per-doc counts across worktrees and
+  never matching the tracked path a dead-doc report looks for. `tools/lib/repo-top.sh` gains
+  `keel_repo_own_top` (a worktree's own toplevel, never folded back to the main checkout), and
+  `tools/lib/read-trace.sh`'s `_rt_normalize_path` now resolves against it, while the STORE KEY
+  (`_rt_project_id`) keeps resolving the main-checkout top unchanged — worktrees still merge onto
+  one project id, only the logged path changed. The aggregate's separate 25-vs-75 BACKLOG.md
+  read-count discrepancy against the v0.9.0 close's manual figure resolved as two different
+  measurements, not a bug: the aggregate's `reads` column counts distinct SESSIONS that read a doc
+  at least once (by design — one row per session, not per Read call), while the manual
+  `private/releases/RUNS.md` figure counted raw Read tool-call events across the same window,
+  undeduped. Both are correct for what they measure; nothing said which the aggregate's own column
+  meant, so `tools/read-trace.sh aggregate` now always prints a coverage disclosure naming this
+  explicitly, alongside the injected-surface/shell-read blind spot dir #430 also found (an
+  always-on context file or a slash-command body never produces a Read tool call; neither does a
+  file opened via `cat`/`sed`/`grep`). dir #431: the wrap fuse flagged 18 of 18 managed-release
+  workers in the v0.9.0 cycle as having forgotten to `/wrap`, a 100% false-positive rate — R13
+  forbids those workers from wrapping at all, but their briefs carried no marker the fuse's
+  `session-end` exclusion could recognize. `tools/read-trace.sh` gains a second, weaker exclusion
+  marker, `WRAP CENTRALIZED`, distinct from `docs/delegation.md`'s `DELEGATION RUN` (which also
+  forbids any log/backlog/memory write — a prohibition R13 workers do not honor; R8 already
+  sanctions a worker's own pre-brief `BACKLOG.md` write). `docs/release-management.md` R13 now
+  names the marker and requires every worker brief (R3) and close-checklist starting brief (R9) to
+  carry it verbatim, in the same "Rules that bind you" slot the keep-alive contract already uses.
+  The aggregate's coverage disclosure also states this denominator explicitly — one shared
+  statement for both tickets, not two independently-worded ones. New regression coverage:
+  `tests/test_repo_top_lib.sh` (`keel_repo_own_top`), `tests/test_read_trace.sh` (a worktree
+  end-to-end `log-tool` case proving the store key still merges while the logged path is now
+  worktree-relative, the `WRAP CENTRALIZED` exclusion and its byte-scoped-match regression pin, and
+  the coverage-disclosure content).
+
 - **dir #424: re-landed `docs/keel-ab/seed.sh` and `docs/keel-ab/grade.sh`, deferred out of v0.9.0
   at the third Clause A NO-GO, with the review depth their post-anchor arrival skipped.** All seven
   audit findings are fixed. `grade.sh`'s secret-bait check now also walks reflog-reachable objects
@@ -90,6 +124,30 @@ sections real content going forward — see that page for exactly when each one 
   keeping their own copy; the public function names/signatures both libs' other callers already
   depend on are unchanged. Verified byte-for-byte behavioral equivalence before switching, and added
   `tests/test_repo_top_lib.sh` for direct coverage of the new file.
+
+- **dir #421 and dir #422: closed a CI-blindness gap and hardened `tools/token-report.sh`'s jq-failure
+  cleanup, both in the same aggregation code path.** dir #421 — F-03's own regression fixtures each
+  gave a session file a single turn, so the cold-resume gap computation the fix actually guards
+  (`range(1; ($arr|length))`, which needs at least two turns per file to run at all) never executed;
+  reverting F-03's fix with those fixtures kept still passed every exit-code check, only failing on
+  surfacing assertions for text/JSON fields that simply didn't exist pre-fix — CI would not have caught
+  a re-regression. New fixture adds two turns to one session file, one with a non-ISO timestamp,
+  alongside an unrelated well-formed session; mutation-proved against the true pre-fix revision
+  (`a3b94f9`, parent of the original fix): the new fixture's exit-code assertions now fail as expected
+  (`expected exit 0, got 1`) where the old ones stayed green throughout. dir #422 — the pre-existing
+  `out="$(jq -nc ...)"; status=$?` idiom around the same aggregation call is replaced with an
+  if-capture, cleaning up the four temp files explicitly in both the success and failure branches
+  (capture, then clean up, then return — the same discipline `tools/lib/transcript-usage.sh`'s
+  `tu_session_totals()` already established for the identical hazard, not a new one; a first attempt
+  here used a `trap ... RETURN` instead and was reverted mid-review — that pattern was already tried
+  and reverted in that sibling file too, since a RETURN trap set inside a function is not scoped to
+  it and can fire again on a later function's return once the setting function's own locals are out
+  of scope, reproduced live here as well). The dependency the fix removes was real either way:
+  `_tr_build_report`'s one call site wraps it as `report="$(_tr_build_report ...)" || exit 1`, and
+  testing a command as part of an `&&`/`||` list suspends `set -e` for its entire execution — so
+  contrary to how this ticket was filed, `status=$?` was reachable in the live script all along
+  (verified with minimal harnesses, including one reproducing the exact call shape); the fix removes
+  the dependency on that incidental caller behavior rather than closing an active leak.
 
 ## [0.9.0] — 2026-09-07
 

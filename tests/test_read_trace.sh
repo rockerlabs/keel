@@ -53,6 +53,78 @@ run bash -c ". '$lib'; _rt_normalize_path '$d' '/somewhere/else/BACKLOG.md'"
 check_contains "normalize: any BACKLOG.md path -> the literal canonical token" "$OUT" "BACKLOG.md"
 check_status "normalize: BACKLOG.md token is exactly that (no path prefix leaks in)" "BACKLOG.md" "$OUT"
 
+# --- lib: _rt_normalize_path in a WORKTREE (dir #430 regression) ---------------------------------------
+# Regression pin: this used to thread the MAIN-checkout top through here, so a worktree session's own
+# read of docs/foo.md normalized to ".claude/worktrees/<name>/docs/foo.md" — never matching the same
+# doc's read from any other worktree (fragmenting per-doc counts) and never matching the tracked
+# "docs/*" path a dead-doc report looks for. Fixed by resolving DIR's OWN top (keel_repo_own_top) for
+# this call, separate from the main-checkout top the STORE KEY still uses (see the log-tool hook test
+# below for the end-to-end version, including the key merge).
+git -C "$d" commit --allow-empty -qm init
+wt="$SANDBOX/rt-normalize-worktree"
+git -C "$d" worktree add -q "$wt" -b rt-normalize-wt-branch
+mkdir -p "$wt/docs"
+printf 'hello\n' > "$wt/docs/foo.md"
+run bash -c ". '$lib'; _rt_normalize_path '$wt' '$wt/docs/foo.md'"
+check_status "normalize: a WORKTREE's own read -> repo-relative to ITS OWN top, not the main checkout" \
+  "docs/foo.md" "$OUT"
+check_absent "normalize: a worktree read never carries .claude/worktrees/<name>/ in the result" \
+  "$OUT" ".claude/worktrees"
+
+# --- lib: _rt_normalize_path, a worktree session reading the MAIN checkout's OWN path (secondary
+# fallback, found by this ticket's own /code-review high pass) --------------------------------------
+# A worktree session that reads a tracked doc via the MAIN checkout's own absolute path (rather than
+# its own worktree's copy — e.g. deliberately checking the canonical committed state) used to
+# normalize correctly under the pre-dir-#430 (main-top-only) behavior. The OWNTOP fix alone would
+# silently regress that case to the raw absolute path, never matching (it's outside the worktree's own
+# checkout) — the secondary maintop fallback below exists to keep this case working.
+run bash -c ". '$lib'; _rt_normalize_path '$wt' '$d/docs/foo.md'"
+check_status "normalize: a worktree session reading the MAIN checkout's own path still normalizes" \
+  "docs/foo.md" "$OUT"
+
+# --- lib: _rt_normalize_path, a SIBLING worktree's own file is NOT folded into a bare docs/* path
+# (regression pin, found by a SECOND /code-review high pass on the secondary fallback above) ---------
+# Every worktree of a repo physically nests under the main checkout's own top, at the real topology
+# `.claude/worktrees/<name>/` — so a plain maintop prefix match also fires for a read of a DIFFERENT
+# worktree's file (e.g. an orchestrator session inspecting a worker's own worktree). Stripping only
+# the maintop prefix would leave `.claude/worktrees/<other-name>/docs/bar.md`, a path
+# _rt_in_doc_scope never recognizes — silently dropping the read instead of tracking it, and (worse)
+# risking collision with the reading worktree's own "docs/bar.md" if the sibling-worktree segment
+# were ever stripped too. Nest the sibling worktree at the REAL topology (under $d/.claude/worktrees)
+# so this reproduces the actual shape, not just an analogous one.
+sibling_wt="$d/.claude/worktrees/rt-normalize-sibling"
+mkdir -p "$(dirname "$sibling_wt")"
+git -C "$d" worktree add -q "$sibling_wt" -b rt-normalize-sibling-wt-branch
+mkdir -p "$sibling_wt/docs"
+printf 'hello\n' > "$sibling_wt/docs/bar.md"
+run bash -c ". '$lib'; _rt_normalize_path '$wt' '$sibling_wt/docs/bar.md'"
+check_status "normalize: a sibling worktree's own file does NOT collapse to a bare docs/bar.md" \
+  0 "$( [ "$OUT" = "docs/bar.md" ] && printf 1 || printf 0 )"
+# The vulnerable (pre-fix) shape was the MAINTOP-STRIPPED relative form — falling through to the RAW
+# absolute path instead (which legitimately contains ".claude/worktrees/" as real, on-disk structure)
+# is the correct, safe outcome; only the stripped relative form is the regression to guard against.
+check_status "normalize: a sibling worktree's own file does NOT normalize to the maintop-stripped relative form" \
+  0 "$( [ "$OUT" = ".claude/worktrees/rt-normalize-sibling/docs/bar.md" ] && printf 1 || printf 0 )"
+run bash -c ". '$lib'; _rt_in_doc_scope '$OUT'"
+check_status "normalize: whatever the sibling-worktree read normalizes to, it reads as OUT of doc-scope (never silently tracked wrong)" \
+  1 "$STATUS"
+
+# --- lib: _rt_normalize_path, the SAME sibling-worktree guard applied when the READING session's own
+# dir IS the main checkout (regression pin, found by a THIRD /code-review high pass) ------------------
+# Whenever DIR's own top already equals the main-checkout top (a session running directly in the main
+# checkout, not inside any worktree — the orchestrator topology dir #431's own R13 examples describe),
+# a sibling worktree's file matches the PRIMARY owntop branch before the guarded fallback ever runs —
+# the guard above only protected the fallback branch, missing this door entirely. Reproduces the exact
+# live repro the reviewing pass used: reading DIR is $d itself (the main checkout), not a worktree.
+run bash -c ". '$lib'; _rt_normalize_path '$d' '$sibling_wt/docs/bar.md'"
+check_status "normalize: a MAIN-CHECKOUT session reading a sibling worktree's file does NOT collapse to a bare docs/bar.md" \
+  0 "$( [ "$OUT" = "docs/bar.md" ] && printf 1 || printf 0 )"
+check_status "normalize: a MAIN-CHECKOUT session reading a sibling worktree's file does NOT normalize to the stripped relative form" \
+  0 "$( [ "$OUT" = ".claude/worktrees/rt-normalize-sibling/docs/bar.md" ] && printf 1 || printf 0 )"
+run bash -c ". '$lib'; _rt_in_doc_scope '$OUT'"
+check_status "normalize: a MAIN-CHECKOUT session's sibling-worktree read also reads as OUT of doc-scope" \
+  1 "$STATUS"
+
 # --- lib: _rt_in_doc_scope ----------------------------------------------------------------------------
 # A bare commands/<name>.md-shaped literal here would false-GAP tools/self/doctor.sh's own dead-
 # reference scan (it reads it as a real top-level doc link, not a fixture) — built from two joined
@@ -164,6 +236,35 @@ check_status "the second session's row is at or after the first (never earlier)"
 run_hook aggregate "$d"
 check_contains "aggregate now reports reads=2 for the doc, not frozen at 1" "$OUT" "| docs/foo.md | $last_ts | 2 |"
 
+# --- log-tool END-TO-END in a WORKTREE (dir #430 regression, the measured root cause) ------------------
+# The bug as filed: a worktree session's Read of docs/foo.md landed in the persistent store keyed
+# under ".claude/worktrees/<name>/docs/foo.md" instead of "docs/foo.md" — fragmenting per-doc counts
+# per worktree AND missing the tracked path a dead-doc report looks for. This drives the REAL hook
+# (log-tool) with a worktree cwd/file_path, the same shape a live session would produce, and checks
+# both halves the fix has to get right together: the STORE KEY still merges (one project id, same as
+# the main checkout — dir #430's own keying decision, unchanged), while the LOGGED PATH is now
+# worktree-relative.
+d="$(mkrepo)"; rt_env worktree
+git -C "$d" commit --allow-empty -qm init
+wt="$SANDBOX/rt-logtool-worktree"
+git -C "$d" worktree add -q "$wt" -b rt-logtool-wt-branch
+mkdir -p "$wt/docs"
+printf 'hello\n' > "$wt/docs/foo.md"
+feed_hook "$(read_json "$wt" Read "$wt/docs/foo.md")" log-tool
+check_contains "worktree read logs as repo-relative (docs/foo.md), not .claude/worktrees/.../docs/foo.md" \
+  "$(cat "$RT_STORE"/*/reads.log 2>/dev/null)" $'\tread\tdocs/foo.md'
+check_absent "worktree read never carries its own worktree subpath in the persistent log" \
+  "$(cat "$RT_STORE"/*/reads.log 2>/dev/null)" ".claude/worktrees"
+# The store key: a read from the WORKTREE and a read from the MAIN checkout must land in the SAME
+# store directory (one project id per repo, not one per worktree) — confirms the keying decision
+# (merge worktrees onto the main-repo path) held even though path normalization changed. Counting
+# distinct project-id directories under the store (rather than comparing two `find | head -n1` picks,
+# which would silently pass even if a second directory existed) is the real assertion here.
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+n_store_dirs="$(find "$RT_STORE" -mindepth 1 -maxdepth 1 -type d | grep -c .)"
+check_status "a worktree read and its main-checkout's own read share ONE store directory (merged key)" \
+  1 "$n_store_dirs"
+
 # --- docs-line: format + "none" -------------------------------------------------------------------
 d="$(mkrepo)"; rt_env docsline
 run_hook docs-line "$d"
@@ -227,33 +328,52 @@ check_contains "same path re-edited AFTER wrap-done -> a no-wrap row, not wrappe
 check_absent "same path re-edited AFTER wrap-done -> NOT classified wrapped" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" $'\twrapped\t'
 check_file "same path re-edited AFTER wrap-done -> a pending flag file exists" "$(find "$RT_STORE" -name '*.flag' 2>/dev/null | head -n1)"
 
-# --- session-end: DELEGATION RUN worker is excluded even though it mutated ------------------------------
-d="$(mkrepo)"; rt_env delegation
-feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
-tp="$SANDBOX/transcript.delegation.jsonl"
-printf 'YOUR TICKET: dir #999\nDELEGATION RUN: wrap duties are centralized\n' > "$tp"
-feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
-check_nofile "a DELEGATION RUN worker's mutation writes no wrap-fuse-events.log" "$RT_STORE"/*/wrap-fuse-events.log
+# --- session-end: the two centralized-wrap exclusion markers, parameterized (dir #431 added the
+# second) --------------------------------------------------------------------------------------------
+# assert_marker_excludes MARKER TAG LABEL — a mutating session whose transcript opens with MARKER
+# (within the hook's own byte window) writes no wrap-fuse-events.log at all.
+assert_marker_excludes() {
+  local marker="$1" tag="$2" label="$3" ame_d ame_tp
+  ame_d="$(mkrepo)"; rt_env "$tag"
+  feed_hook "$(read_json "$ame_d" Edit "$ame_d/src.sh")" log-tool
+  ame_tp="$SANDBOX/transcript.$tag.jsonl"
+  printf 'YOUR TICKET: dir #999\n%s\n' "$marker" > "$ame_tp"
+  feed_hook "$(jq -n --arg cwd "$ame_d" --arg tp "$ame_tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+  check_nofile "$label" "$RT_STORE"/*/wrap-fuse-events.log
+}
+# assert_marker_not_matched_late MARKER TAG LABEL — regression pin: an earlier draft grepped the
+# WHOLE transcript, so any session whose LATER turns happen to mention the literal marker string
+# (this file's own source, or a chat about this ticket) would be silently excluded from the fuse
+# whose entire job is catching a forgotten /wrap. Fixed by scoping the match to the transcript's
+# opening turn — this pads well past the hook's own head-c byte window (8000) before the marker
+# appears, so it actually exercises the byte-bound scoping rather than trivially fitting inside it.
+assert_marker_not_matched_late() {
+  local marker="$1" tag="$2" label="$3" amnl_d amnl_tp
+  amnl_d="$(mkrepo)"; rt_env "$tag"
+  feed_hook "$(read_json "$amnl_d" Edit "$amnl_d/src.sh")" log-tool
+  amnl_tp="$SANDBOX/transcript.$tag.jsonl"
+  {
+    printf 'ordinary session, no brief\n'
+    yes 'padding line to push the marker past the scoped byte window' | head -n 200
+    printf 'later turn: discussing read-trace.sh, which greps for the string %s\n' "$marker"
+  } > "$amnl_tp"
+  feed_hook "$(jq -n --arg cwd "$amnl_d" --arg tp "$amnl_tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+  check_contains "$label" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
+}
 
-# --- session-end: an ORDINARY session that later mentions "DELEGATION RUN" (e.g. editing/discussing
-# this very file) is NOT misclassified as a delegation worker ------------------------------------------
-# Regression pin: an earlier draft grepped the WHOLE transcript, so any session whose later turns
-# happen to contain the literal marker string (this file's own source, or a chat about this ticket)
-# would be silently excluded from the fuse whose entire job is catching a forgotten /wrap. Fixed by
-# scoping the match to the transcript's opening turn (where a genuine worker brief actually lives).
-d="$(mkrepo)"; rt_env notdelegation
-feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
-tp="$SANDBOX/transcript.notdelegation.jsonl"
-{
-  printf 'ordinary session, no delegation brief\n'
-  # Pad well past the hook's own head-c byte window (8000) before the marker appears, so this
-  # actually exercises the byte-bound scoping rather than trivially fitting inside it.
-  yes 'padding line to push the marker past the scoped byte window' | head -n 200
-  printf 'later turn: discussing read-trace.sh, which greps for the string DELEGATION RUN\n'
-} > "$tp"
-feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
-check_contains "an ordinary session mentioning the marker LATE is still tracked as no-wrap" \
-  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
+assert_marker_excludes "DELEGATION RUN: wrap duties are centralized" delegation \
+  "a DELEGATION RUN worker's mutation writes no wrap-fuse-events.log"
+assert_marker_not_matched_late "DELEGATION RUN" notdelegation \
+  "an ordinary session mentioning the marker LATE is still tracked as no-wrap"
+
+# dir #431: a managed-release worker (docs/release-management.md R13) is forbidden to wrap by its own
+# brief, exactly like a DELEGATION RUN subagent, but must NOT be matched by that marker — its write
+# prohibition does not hold for an R13 worker (R8 sanctions a worker's own pre-brief BACKLOG.md
+# write). This is the SECOND, weaker exclusion.
+assert_marker_excludes "WRAP CENTRALIZED (R13): wrap is owned by the release manager — do not run /wrap." wrapcentralized \
+  "a WRAP CENTRALIZED worker's mutation writes no wrap-fuse-events.log"
+assert_marker_not_matched_late "WRAP CENTRALIZED" notwrapcentralized \
+  "an ordinary session mentioning the new marker LATE is still tracked as no-wrap"
 
 # --- startup: resets the session log and banners+clears a pending flag ---------------------------------
 d="$(mkrepo)"; rt_env startup
@@ -284,6 +404,28 @@ check_contains "aggregate: pinned table header" "$OUT" "| doc | last read | read
 check_contains "aggregate: a row for each logged doc" "$OUT" "docs/foo.md"
 check_contains "aggregate: a row for the other logged doc too" "$OUT" "docs/never-changes.md"
 check_contains "aggregate: the wrap-fuse summary line, counts derived from the synthetic log (2 of 3)" "$OUT" "wrap-fuse: 2 of 3 mutating sessions this cycle ended with no /wrap"
+
+# --- aggregate: the coverage/denominator disclosure (dir #430 + dir #431's one output contract) --------
+# Printed always (not gated on a non-empty table or wrap-fuse log), and pins the specific claims a
+# reader needs: that a zero-read row is not evidence of "never opened" (dir #430's structural blind
+# spot), that `reads` counts SESSIONS rather than raw Read tool calls (the resolution of the 25-vs-75
+# discrepancy — the two figures measure different things, neither is wrong), and that the wrap-fuse
+# denominator excludes DELEGATION RUN/WRAP CENTRALIZED sessions by design (dir #431).
+check_contains "aggregate: states doc-read coverage (injected/shell surfaces never appear)" "$OUT" "coverage:"
+check_contains "aggregate: names the injected-surface blind spot explicitly" "$OUT" "harness-injected surface"
+check_contains "aggregate: states the reads column is SESSIONS, not raw tool calls (the 25-vs-75 resolution)" \
+  "$OUT" "counts SESSIONS that read a doc at least once, not raw Read tool calls"
+check_contains "aggregate: states the wrap-fuse denominator excludes centralized-wrap sessions" \
+  "$OUT" "wrap-fuse denominator:"
+check_contains "aggregate: names both exclusion markers in the denominator statement" "$OUT" "DELEGATION RUN"
+check_contains "aggregate: names the second exclusion marker too" "$OUT" "WRAP CENTRALIZED"
+
+# --- aggregate: the disclosure prints even with NOTHING logged (empty table, no wrap-fuse log) ---------
+# A fresh/unpopulated aggregate is exactly where the "zero row = never opened" misreading bites
+# hardest — the disclosure must not be conditioned on there being any data to disclose about.
+d="$(mkrepo)"; rt_env aggregate_empty
+run_hook aggregate "$d"
+check_contains "aggregate: coverage note prints even on a totally empty aggregate" "$OUT" "coverage:"
 
 # --- tier-3 map: DATA ONLY, every row resolves in the live tree ----------------------------------------
 map="$REPO_ROOT/tools/read-trace-map.tsv"

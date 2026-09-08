@@ -210,6 +210,38 @@ check_status "MUTATION-PROOF: a missing timestamp field does not abort the repor
 check_contains "both sessions still report when one turn has no timestamp at all" "$OUT" "2 session(s)"
 check_contains "the missing timestamp is surfaced too" "$OUT" "missing or non-ISO-8601 timestamp"
 
+# dir #421: the two shapes above each put their one malformed timestamp ALONE in its own session
+# file — every fixture above has exactly one turn per file. safe_epoch's own try/catch guard is
+# reached while COUNTING malformed timestamps regardless (that scan runs over $TURNS unconditionally),
+# but the cold-resume gap computation this guard was actually written to protect
+# (`$arr[.-1].timestamp | safe_epoch` / `$arr[.].timestamp | safe_epoch` feeding `($cur-$prev)/60`)
+# only runs at all when `group_by(.sessionFile) | map(sort_by(.timestamp) as $arr | range(1;
+# ($arr|length)) | ...)` has an `$arr` of length >= 2 — a single-turn file makes `range(1;1)` empty,
+# so that subtraction never executes and a de-guarded safe_epoch would never be exercised by any
+# fixture above (mutation-proved by the ticket's own finder: reverting the fix with the above tests
+# kept still gives 5 failures, none of them on the abort behaviour). This fixture puts TWO turns of
+# the SAME sessionId in ONE session file, one with a non-ISO timestamp, so the gap computation
+# actually runs the subtraction over the malformed value — plus an unrelated well-formed session
+# alongside it, so a re-regressed abort would be caught both by this file's own exit code and by the
+# well-formed session going missing from the count. -------------------------------------------------
+multi_turn_root="$SANDBOX/bad-timestamp-multiturn"
+multi_turn_slug="$(printf '%s' "$repo_physical" | tr '/.' '--')"
+mkdir -p "$multi_turn_root/$multi_turn_slug"
+cat > "$multi_turn_root/$multi_turn_slug/iiiiiiii-iiii-iiii-iiii-iiiiiiiiiiii.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r12","sessionId":"I","timestamp":"2026-09-04T09:00:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+{"type":"assistant","requestId":"r13","sessionId":"I","timestamp":"t3","message":{"model":"m","content":[],"usage":{"input_tokens":5000,"cache_creation_input_tokens":5000,"cache_read_input_tokens":0,"output_tokens":1}}}
+EOF
+cat > "$multi_turn_root/$multi_turn_slug/jjjjjjjj-jjjj-jjjj-jjjj-jjjjjjjjjjjj.jsonl" <<'EOF'
+{"type":"assistant","requestId":"r14","sessionId":"J","timestamp":"2026-09-04T09:10:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}
+EOF
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$multi_turn_root" bash "$tool"
+check_status "MUTATION-PROOF: a malformed timestamp alongside a well-formed one IN THE SAME session file does not abort -> exit 0" "0" "$STATUS"
+check_contains "the well-formed session (J) still reports alongside the malformed one (I) — 2 session(s), not zero output" "$OUT" "2 session(s)"
+
+run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$multi_turn_root" bash "$tool" --json
+check_status "same-file multi-turn fixture --json exits 0" "0" "$STATUS"
+check_contains "--json surfaces the one malformed timestamp (not more, not fewer)" "$OUT" '"malformedTimestamps":1'
+
 # --- F-05 (dir #267 fixer brief): an assistant record with no usage object is correctly excluded
 # from every total, but tu_self_check's own comment says this "should be zero; a warning sign,
 # never silently dropped" — it must be visible, not invisible in both outputs. -----------------------
