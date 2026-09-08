@@ -105,16 +105,17 @@ _tr_build_report() {
   # today regardless: this function's only call site wraps it as `report="$(_tr_build_report
   # ...)" || exit 1`, and testing a command via `&&`/`||` suspends errexit for the WHOLE function's
   # execution — verified live, contra how this ticket was filed — but that made the old code correct
-  # only by an accident of how its one caller happens to invoke it.) Fixed the same way this file's
-  # sibling tools/lib/transcript-usage.sh already fixed the identical hazard in tu_session_totals():
-  # capture-then-cleanup-then-return, in that literal order, at every exit — NOT a `trap ... RETURN`
-  # (tried there, reverted: a RETURN trap set inside a function is not scoped to it — it is a single
-  # global handler that also fires on the NEXT function return up the call chain once the setting
-  # function's own locals are out of scope. Reproduced live here too, with the same "unbound
-  # variable" crash, in a case with an intervening subshell removed — this function's own call site
-  # is command-substitution-wrapped, which happens to contain the trap inside that subshell today,
-  # but that containment is exactly the kind of invisible caller-shape dependency this fix exists to
-  # remove, not lean on).
+  # only by an accident of how its one caller happens to invoke it, the same accident this file's
+  # sibling tools/lib/transcript-usage.sh's tu_session_totals() still relies on today for the
+  # identical bare-assignment shape — not yet ported to this fix, out of scope for dir #422, worth
+  # its own follow-up.) Fixed below by testing the assignment via `||` instead: the left/only operand
+  # of `||` is the other context `set -e` exempts on its own terms, so this function's own
+  # correctness no longer depends on how any caller happens to invoke it. A `trap ... RETURN` was
+  # tried here first and reverted: a RETURN trap set inside a function is not scoped to it — it is a
+  # single global handler that also fires on the NEXT function return up the call chain once the
+  # setting function's own locals are out of scope, the same hazard tu_session_totals's own comment
+  # already documents. Reproduced live here too, in a case with the intervening
+  # command-substitution subshell (this function's real call site) removed.
 
   # Every read below is guarded rather than a bare command — the corpus is LIVE
   # (docs/token-economy.md: a self-referential run reads a session transcript it is still writing), so
@@ -162,14 +163,13 @@ _tr_build_report() {
     done < <(tu_subagent_files "$f")
   done
 
-  local read_at out status
+  local read_at out status=0
   read_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # dir #422: the if-capture form makes this function correct standing alone, not only when called
-  # the one way it happens to be called today (see the comment above for why the bare form was not
-  # actually dead in the live script). Testing the assignment as an `if` condition is the one context
-  # `set -e` exempts on its own terms, so a jq failure lands in the `else` below as a genuine function
-  # return that reaches the cleanup — capture, then clean up, then return, in that order.
-  if out="$(jq -nc \
+  # dir #422: `|| status=$?` makes this assignment correct standing alone, not only when called the
+  # one way it happens to be called today (see the comment above) — the left/only operand of `||` is
+  # the other context `set -e` exempts on its own terms, so a jq failure is captured here rather than
+  # aborting the function, and cleanup below always runs before the return.
+  out="$(jq -nc \
     --slurpfile T "$tmp_totals" --slurpfile TURNS "$tmp_turns" \
     --slurpfile CALLS "$tmp_calls" --slurpfile SC "$tmp_sc" \
     --argjson w_input "$_TR_W_INPUT" --argjson w_write "$_TR_W_WRITE" --argjson w_read "$_TR_W_READ" \
@@ -350,14 +350,10 @@ _tr_build_report() {
           assistantNoUsage: $assistantNoUsage
         }
       }
-  ')"; then
-    rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
-    printf '%s\n' "$out"
-  else
-    status=$?
-    rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
-    return "$status"
-  fi
+  ')" || status=$?
+  rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
+  [ "$status" -eq 0 ] || return "$status"
+  printf '%s\n' "$out"
 }
 
 # _tr_print_human REPORT_JSON [LABEL] — the report shape from SPEC §3's illustrative sample: an
