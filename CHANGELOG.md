@@ -30,7 +30,8 @@ foreign-citation stripper halts as soon as it meets a ticket's own citation of i
 genuinely foreign closure tag on the same line survives unstripped and wrongly reads an open ticket
 as closed. Also self-maintenance
 tooling, same family: **dir #445** — `tools/self/pool-report.sh`'s parked-ticket heuristic matches
-`gate` unanchored, so headings containing "delegate" or "investigate" are wrongly counted as parked.
+`gate` unanchored, so a heading like "delegate = x" or "investigate = 3" — anything ending in "gate"
+immediately followed by an `=` — is wrongly counted as parked, contra the function's own header.
 A documentation clause shipped this release and not executable as written: **dir #454** —
 `docs/delta-audit.md` §2's new anchor-freeze clause tells an orchestrator to state a landing-now price
 "as a number" but supplies no number, unit, or derivation of one; this release's own audit was that
@@ -60,16 +61,19 @@ v0.9.1 entry.
   denominators — 12%/13% of attributed cache-read, 10.5%/11.6% of the deduped grand total — and 10.5%
   falls outside the stated range; both surfaces now name both denominators with their own correct ranges
   instead of blending them into one figure a reader can't check against its own parenthetical. And
-  `tools/keel-impact.sh`'s own dir #409 fix (PR #376) doesn't hold on bash >= 4.4: `local header_tmp
-  rows_tmp` alone leaves `rows_tmp` merely DECLARED, not SET — a bash 4.4 semantics change, since
-  bash < 4.4's `local x` already meant "set to empty" — so under this file's `set -u` the EXIT trap's
-  own `"$rows_tmp"` expansion aborts before its `rm -f` ever runs, leaking `header_tmp` (the exact leak
-  the trap exists to prevent) and replacing the real exit status with the unbound-variable error's.
-  Reproduced live on bash 5.2.37 (a SIGTERM sent between the two `mktemp` calls): before the fix, exit
-  143 became exit 1 and `header_tmp` leaked; after, exit 143 is preserved and the file is cleaned up.
-  Invisible on macOS's bash 3.2, where `local x` already means "set to empty" — the same
-  verify-on-bash->=4.4 asymmetry this project's own record already carries, now hit in production code
-  rather than a test. Fixed by initializing both locals (`local header_tmp="" rows_tmp=""`);
+  `tools/keel-impact.sh`'s own dir #409 fix (PR #376) doesn't hold on bash >= 4.0: `local header_tmp
+  rows_tmp` alone leaves `rows_tmp` merely DECLARED, not SET — a semantics change from bash 3.2, the
+  only version where `local x` still means "set to empty"; a nine-image sweep in this release's own
+  delta audit (Part 3) found the fix's own first RC comment stated the wrong boundary — it read
+  `>= 4.4`, but 4.0 through 5.2 all show the unset behavior identically — so under this file's `set -u`
+  the EXIT trap's own `"$rows_tmp"` expansion aborts before its `rm -f` ever runs, leaking `header_tmp`
+  (the exact leak the trap exists to prevent) and replacing the real exit status with the
+  unbound-variable error's. Reproduced live on bash 4.2 and 5.2.37 alike (a SIGTERM sent between the
+  two `mktemp` calls): before the fix, exit 143 became exit 1 and `header_tmp` leaked; after, exit 143
+  is preserved and the file is cleaned up. Invisible on macOS's bash 3.2, the one version where
+  `local x` still means "set to empty" — verify any change here on bash >= 4.0, not merely >= 4.4: the
+  wrong boundary would have told a maintainer testing on 4.0–4.3 that they were outside the hazard
+  zone, when they are not. Fixed by initializing both locals (`local header_tmp="" rows_tmp=""`);
   `tests/test_keel_impact.sh`'s own dir #409 regression test still passes unchanged, because it signals
   during a later stage where both variables are already assigned and so never exercises the window this
   fix targets — a test-coverage gap left as a follow-up, not addressed in this batch. And
