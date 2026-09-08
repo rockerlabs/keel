@@ -15,6 +15,35 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-09-08
+
+**Known issues, disclosed at the cut:** five things ship known-imperfect. Behavioural and live, in
+an adopter-facing script under `docs/`: **dir #447** — `docs/keel-ab/seed.sh`'s sibling-`.origin.git`
+pre-write guard is bypassed by a trailing slash on `<target-dir>`; confirmed live, a slash-suffixed
+target seeds and commits fully with no `origin` remote, where the same path with no trailing slash is
+correctly refused with no target created. Behavioural and latent, in this project's own
+self-maintenance tooling, with no live instance on this repository's own backlog today — disclosed at
+the same bar v0.9.0 disclosed dir #420/#425, so the bar does not silently rise between releases:
+**dir #448** — `tools/lib/backlog-blocks.sh`'s closure-tag pattern spans a line break, so a `✅` ending
+one line and `DONE` opening the next reads as a closure it should not recognize, and its
+foreign-citation stripper halts as soon as it meets a ticket's own citation of itself, so a later,
+genuinely foreign closure tag on the same line survives unstripped and wrongly reads an open ticket
+as closed. Also self-maintenance
+tooling, same family: **dir #445** — `tools/self/pool-report.sh`'s parked-ticket heuristic matches
+`gate` unanchored, so headings containing "delegate" or "investigate" are wrongly counted as parked.
+A documentation clause shipped this release and not executable as written: **dir #454** —
+`docs/delta-audit.md` §2's new anchor-freeze clause tells an orchestrator to state a landing-now price
+"as a number" but supplies no number, unit, or derivation of one; this release's own audit was that
+clause's first consumer and could not execute it. And a wrong causal claim already shipped, disclosed
+rather than corrected because a text-only fix was judged out of scope for this release's fix round:
+**dir #446** — the dir #422 entry below and `tools/token-report.sh`'s own code comment both credit the
+`&&`/`||` list around `_tr_build_report`'s call site for keeping `status=$?` reachable under `set -e`;
+live testing (this repo runs with `inherit_errexit` at bash's default of off) shows the command
+substitution itself is what protects the caller regardless of `&&`/`||` — the `||` is redundant, not
+load-bearing, so both surfaces name the wrong mechanism. The release-candidate audit's full
+verification statement, including what it did and did not check, is in `docs/release-history.md`'s
+v0.9.1 entry.
+
 - **Five findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
   batch.** `tests/test_self_pool_report.sh` and `tests/test_self_archive_sweep_check.sh` — the only two
   test files in the tree with no `summary` call, both edited by the census-family commit `aa5573c` —
