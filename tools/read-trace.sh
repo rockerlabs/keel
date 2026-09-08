@@ -37,7 +37,8 @@
 #                                     state only: an outcome row to the persistent wrap-fuse-events log,
 #                                     and (only on a genuine miss) a pending flag for `startup` to pick
 #                                     up next session. See the wrap-fuse section below for the full
-#                                     exclusion logic (read-only sessions, DELEGATION RUN workers).
+#                                     exclusion logic (read-only sessions, DELEGATION RUN and WRAP
+#                                     CENTRALIZED workers).
 #   read-trace.sh docs-line [dir]    Shell helper for /wrap and /polish — the ONLY thing that may enter
 #                                     a context: the short `docs read: ...` line, derived from the
 #                                     ephemeral log (never the agent reading the raw log itself).
@@ -58,6 +59,8 @@
 #   | --- | --- | --- | --- |
 #   | <repo-relative path, or literal BACKLOG.md> | <ISO date, or "never"> | <count> | <count> |
 #   wrap-fuse: <N> of <M> mutating sessions this cycle ended with no /wrap (cycle since <date|n/a>)
+#   <the two-line coverage/denominator disclosure — dir #430 + dir #431's one shared output contract,
+#   see tools/lib/read-trace.sh's `_rt_coverage_note`>
 #
 # --- Portability (dir #367's R12) -------------------------------------------------------------------
 # Claude-Code-only, named rather than silent: every subcommand above but docs-line/wrap-done/
@@ -119,8 +122,18 @@ case "${1:-}" in
     # Resolved ONCE here, threaded through every call below — NOT a cache (see
     # tools/lib/read-trace.sh's own _rt_project_id comment for why a global cache is dead on arrival
     # given this file's command-substitution call shape; a plain parameter survives it fine).
+    #
+    # TWO different tops, deliberately (dir #430): lt_top is the MAIN-checkout top, threaded into
+    # _rt_record_read/_rt_record_mutate below for the STORE KEY, so every worktree of this repo
+    # accumulates onto one project id. lt_owntop is THIS checkout's own top (a worktree's own root),
+    # threaded into _rt_normalize_path instead, so a worktree session's path normalizes relative to
+    # where it actually read the file, not relative to a repo it may never have checked out at all.
+    # Conflating the two (the original bug — both used to be lt_top) left a worktree read logged as
+    # `.claude/worktrees/<name>/docs/foo.md`: correct for nothing. See _rt_normalize_path's own header
+    # comment in tools/lib/read-trace.sh for the full reasoning.
     lt_top="$(_impact_resolve_top "$lt_cwd")"
-    lt_norm="$(_rt_normalize_path "$lt_cwd" "$lt_raw" "$lt_top")"
+    lt_owntop="$(keel_repo_own_top "$lt_cwd")"
+    lt_norm="$(_rt_normalize_path "$lt_cwd" "$lt_raw" "$lt_owntop")"
     case "$lt_tool" in
       Read)
         _rt_in_doc_scope "$lt_norm" && _rt_record_read "$lt_cwd" "$lt_norm" "$lt_top"
@@ -178,19 +191,25 @@ case "${1:-}" in
     # Exclusion 1 — read-only session: no mutating row at all means nothing for the fuse to flag.
     se_last_mutate="$( [ -f "$se_slog" ] && awk -F'\t' '$2=="mutate"{t=$1} END{print t}' "$se_slog" 2>/dev/null )"
     [ -n "$se_last_mutate" ] || exit 0
-    # Exclusion 2 — a DELEGATION RUN worker is FORBIDDEN to wrap by its own brief ("wrap duties are
-    # centralized"); no dedicated hook field names this (confirmed against the docs — a hook gets no
-    # prompt/system-prompt field), so this greps the session's own transcript for the literal marker
-    # every such worker's brief carries verbatim (dir #387's own resolved TO VERIFY). This is a
-    # repo-wide, already test-pinned convention — not a bespoke string invented for this file — so it
-    # leans on the same exact-wording discipline docs/delegation.md and commands/manage-release.md's
-    # own worker-brief templates already mandate for the literal "DELEGATION RUN" line (found by this
-    # ticket's own /simplify altitude pass: worth naming the dependency here, since a future rewording
-    # of those templates would silently break this exclusion with no shared constant to catch it).
+    # Exclusion 2 — a session FORBIDDEN to wrap by its own brief ("wrap duties are centralized"); no
+    # dedicated hook field names this (confirmed against the docs — a hook gets no prompt/system-prompt
+    # field), so this greps the session's own transcript for one of TWO literal markers, either of
+    # which excludes it: `DELEGATION RUN` (a stateless subagent, docs/delegation.md's own line — which
+    # also forbids ANY log/backlog/memory write) or `WRAP CENTRALIZED` (a real, gated managed-release
+    # worker, docs/release-management.md R13 — centralized wrap ONLY, no write prohibition: R8 already
+    # sanctions a worker's own pre-brief BACKLOG.md write). dir #431 found the fuse had ONLY the first
+    # marker, so 18 of 18 managed-release workers in the v0.9.0 cycle — forbidden to wrap by R13, but
+    # carrying no marker their brief ever emitted — were flagged `no-wrap`, a 100% false-positive rate
+    # on the one cycle this ran. Reusing `DELEGATION RUN` verbatim for R13 was considered and rejected:
+    # its write prohibition does not hold for R13 workers, so stretching one marker to cover both
+    # conventions would misrepresent the weaker one. Both are repo-wide, test-pinned conventions, not
+    # bespoke strings invented for this file — a future rewording of either worker-brief template would
+    # silently break its own exclusion with no shared constant to catch it (same risk named for
+    # `DELEGATION RUN` at this ticket's own original implementation, now doubled).
     # Scoped to the transcript's OPENING BYTES, NOT the whole file (found by this ticket's own
     # /code-review high pass): a bare whole-transcript grep would misclassify any ordinary session
     # that later reads/edits/discusses this very file (its own source and this comment literally
-    # contain the marker string), silently excluding it from the fuse whose entire job is catching
+    # contain both marker strings), silently excluding it from the fuse whose entire job is catching
     # exactly a mutating session that forgot to wrap. The worker's brief lives in the transcript's
     # opening turn, so restricting the match there keeps the same text-convention reliance while
     # closing the false-positive surface a later, unrelated mention would otherwise open.
@@ -201,7 +220,7 @@ case "${1:-}" in
     # (found by this ticket's own delta review round). 8000 bytes comfortably covers this ticket's
     # own multi-paragraph worker briefs (this file's own header is under 3000) while still bounding
     # the scan well short of a long session's full transcript.
-    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && head -c 8000 "$se_transcript" 2>/dev/null | grep -qF "DELEGATION RUN"; then
+    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && head -c 8000 "$se_transcript" 2>/dev/null | grep -qE "DELEGATION RUN|WRAP CENTRALIZED"; then
       exit 0
     fi
     se_wd="$(_rt_wrapdone_path "$se_cwd")"
@@ -301,6 +320,12 @@ case "${1:-}" in
     else
       printf 'wrap-fuse: 0 of 0 mutating sessions this cycle ended with no /wrap (cycle since n/a)\n'
     fi
+    # The one canonical coverage/denominator disclosure (dir #430 + dir #431) — printed always, not
+    # only when a table row or wrap-fuse event exists, so a fresh/empty aggregate reads as "coverage
+    # is limited" rather than as an unqualified "nothing happened" (dir #430's own finding: 36 of 42
+    # tracked docs showed a zero read count this cycle, which is exactly the reading this line exists
+    # to correct).
+    _rt_coverage_note
     exit 0
     ;;
 

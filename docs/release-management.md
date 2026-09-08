@@ -141,7 +141,10 @@ conventions that happen to look similar, it's one convention applied at two poin
    as anything status-shaped triggers real turns and re-prices the whole context. Felt here as well —
    a ping sent to an auditor mid-run set off a full status sweep of its own legs. What this rule adds
    is only *where* the contract has to appear: inline in the brief, verbatim, because the receiving
-   session never reads this doc.
+   session never reads this doc. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
+   the same reason and the same mechanism — a session-end fuse that greps a transcript for a text
+   convention cannot see a rule that never made it into the brief (see R13's own text for the exact
+   line and the incident that named this requirement).
 5. **Handed to you.** The line below which every judgment is the worker's own — wave sizing, whether a
    lead is real, anything genuinely open. Everything *above* that line is decided; everything *below*
    it is not, and the line itself is what keeps R4's two-way critique from reading as ambiguity about
@@ -375,6 +378,22 @@ material the manager already needs anyway. Instead, every worker's checkpoint re
 must carry its wrap-relevant material inline: findings, lessons, incident signals (a force-push, a
 redone command), and draft tickets, self-contained per R6 — nothing wrap-worthy is allowed to live
 only in a worker's dying context, because context that dies with the session is gone, not deferred.
+
+**Every worker brief must carry a literal marker naming this rule, verbatim, in its "Rules that bind
+you" section (dir #431).** `tools/read-trace.sh`'s wrap fuse — the mechanism that catches a mutating
+session ending with no `/wrap` — cannot see this rule from the code alone; it greps a session's own
+transcript for a text convention, and R13's own workers used to carry none. The result was measured
+live: 18 of 18 managed-release workers in the v0.9.0 cycle were flagged `no-wrap`, a 100% false-positive
+rate on the one cycle this fuse has ever reported — the exact shape that trains an operator to ignore
+the signal entirely. **This is deliberately NOT the `DELEGATION RUN` marker** — that line also forbids
+*any* log/backlog/memory write, which R13 workers do not honor (R8 already sanctions a worker's own
+pre-brief `BACKLOG.md` write); reusing it here would misrepresent what an R13 worker is actually
+allowed to do. Include this line verbatim instead, in every worker brief (R3) and close-checklist
+starting brief (R9) this pattern produces, the same way item 4 below already mandates the keep-alive
+contract:
+
+> WRAP CENTRALIZED (R13): this session's wrap is owned by the release manager — do not run /wrap;
+> wrap-relevant material rides in your checkpoint report.
 The manager, holding every insight from its own session and every worker's, runs one `/wrap` at
 release close that folds all of it: the red-flag sweep runs across the whole release's sessions in one
 pass, drafts fold once, memory writes land once, and the cost-line record (R7) lands once. The

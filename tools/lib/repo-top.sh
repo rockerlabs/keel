@@ -39,6 +39,25 @@ keel_repo_main_top() {
     awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true
 }
 
+# keel_repo_own_top [DIR] — DIR's OWN toplevel, never folded back to a main checkout: DIR's own git
+# toplevel (a worktree's own root, not the repo it was branched from); else (DIR is not a git repo
+# yet) DIR's own physical path. Split out of keel_repo_top (dir #430) — that function's "prefer the
+# main checkout" answer is correct for a STORE KEY (grouping every worktree's activity under one
+# project id), but wrong for resolving what a raw file path is RELATIVE TO: a worktree session's own
+# files live under its own root, not under the main checkout's, and a caller that strips the main-
+# checkout prefix off a worktree-relative path is left with the worktree's own subpath inside
+# `.claude/worktrees/<name>/...` still attached (found live, dir #430 — see
+# tools/lib/read-trace.sh's `_rt_normalize_path`, the caller this was extracted for).
+#
+# NOT memoized — same reasoning as keel_repo_top below (command substitution forks a subshell; a
+# process-global cache written inside one never reaches the caller).
+keel_repo_own_top() {
+  local dir="${1:-.}" top
+  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$top" ] || top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"
+  printf '%s' "$top"
+}
+
 # keel_repo_top [DIR] — DIR's resolved top: the main checkout's top; else (a bare-main topology)
 # DIR's own toplevel; else (DIR is not a git repo yet) DIR's own physical path.
 #
@@ -52,7 +71,6 @@ keel_repo_main_top() {
 keel_repo_top() {
   local dir="${1:-.}" top
   top="$(keel_repo_main_top "$dir")"
-  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ -n "$top" ] || top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"
+  [ -n "$top" ] || top="$(keel_repo_own_top "$dir")"
   printf '%s' "$top"
 }

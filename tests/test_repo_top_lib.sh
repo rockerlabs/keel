@@ -43,4 +43,17 @@ non_repo_p="$(cd "$non_repo" && pwd -P)"
 check_status "keel_repo_top falls back to DIR's own physical path outside any git repo" \
   "$non_repo_p" "$(keel_repo_top "$non_repo")"
 
+# --- keel_repo_own_top (dir #430): DIR's own toplevel, NEVER folded back to the main checkout ------
+# Split out of keel_repo_top for tools/lib/read-trace.sh's path normalization: the store KEY wants
+# every worktree merged onto one project id (keel_repo_top's own behaviour, unchanged above), but a
+# raw file path must normalize relative to the checkout it was actually read IN, or a worktree read
+# is left with `.claude/worktrees/<name>/...` still glued to the front.
+wt_dir_p="$(cd "$wt_dir" && pwd -P)"
+check_status "keel_repo_own_top resolves a plain (non-worktree) repo to its own toplevel" \
+  "$plain_repo_p" "$(keel_repo_own_top "$plain_repo")"
+check_status "keel_repo_own_top resolves a WORKTREE to ITS OWN top, not the main checkout's" \
+  "$wt_dir_p" "$(keel_repo_own_top "$wt_dir")"
+check_status "keel_repo_own_top falls back to DIR's own physical path outside any git repo" \
+  "$non_repo_p" "$(keel_repo_own_top "$non_repo")"
+
 summary
