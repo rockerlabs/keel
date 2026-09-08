@@ -15,7 +15,7 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
-- **Four findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
+- **Five findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
   batch.** `tests/test_self_pool_report.sh` and `tests/test_self_archive_sweep_check.sh` — the only two
   test files in the tree with no `summary` call, both edited by the census-family commit `aa5573c` —
   printed `FAIL` lines on a failing check but always exited 0: `tests/run.sh` aggregates purely on exit
@@ -43,7 +43,15 @@ sections real content going forward — see that page for exactly when each one 
   rather than a test. Fixed by initializing both locals (`local header_tmp="" rows_tmp=""`);
   `tests/test_keel_impact.sh`'s own dir #409 regression test still passes unchanged, because it signals
   during a later stage where both variables are already assigned and so never exercises the window this
-  fix targets — a test-coverage gap left as a follow-up, not addressed in this batch.
+  fix targets — a test-coverage gap left as a follow-up, not addressed in this batch. And
+  `docs/grooming.md`'s G0 section told the reader "the reader is owed the ticket that will make it" — a
+  future dead-doc/wrap-loss coverage disclosure — naming dir #430 and dir #431 as still-open, and
+  instructed reading the sensor's coverage manually "until the instrument says it itself." Both tickets
+  shipped in this same release (see above): `tools/read-trace.sh aggregate` now prints its own coverage
+  disclosure unconditionally, every run, and the worktree-path fragmentation that motivated the
+  paragraph is fixed structurally. The doc now says so, keeping the two gaps that stay genuinely
+  permanent (an always-on context file or a shell-opened file never produces a Read tool call) rather
+  than instructing a reader to keep checking by hand for a mechanism that already ships that check.
 
 - **dir #409 follow-up: fixed a macOS-CI-only flake in the dir #409 regression test, found post-merge
   when `main` went red on `tests (macos-14)` while `tests (ubuntu-24.04)`, `tests (alpine-busybox)`,

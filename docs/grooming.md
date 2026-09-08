@@ -57,9 +57,15 @@ wrapping at all. Not one of those numbers was wrong; every one was being read ag
 denominator. So state the sensor's coverage before quoting
 either figure, and treat a surprising number as a question about the instrument first — that check is
 cheap, and it is also how the aggregate's own defects get found, which is what a first consuming cycle
-is for. **This is interim guidance, not the design.** Where the tool can state its own coverage it
-should, and the reader is owed the ticket that will make it: keel's are `dir #430` and `dir #431`, both
-filed by the cycle described above. Read manually until the instrument says it itself.
+is for. **The instrument now says it itself:** `dir #430` and `dir #431`, both filed by the cycle
+described above, shipped this release. `tools/read-trace.sh aggregate` prints its own coverage
+disclosure unconditionally, every run — the reads-column's per-session (not per-call) denominator and
+the harness-injected/shell-read blind spot named explicitly — and the worktree-path fragmentation that
+also produced this paragraph's three-gap finding is fixed structurally (a worktree session's reads now
+key against its own top, not the main checkout's). Two of the three gaps stay permanent, not a bug a
+future ticket closes: an always-on context file or a slash-command body never produces a Read tool
+call, and neither does a file opened via `cat`/`sed`/`grep` — the disclosure exists to name that limit,
+not to remove it. Read what the tool prints; it is no longer guidance to remember by hand.
 
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
