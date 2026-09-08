@@ -254,6 +254,22 @@ check_status "MUTATION-PROOF: own wrapped tag survives a citation-shaped line ri
 check_status "control: the separately-named ticket in that citation-shaped line is also closed" \
   1 "$(printf '%s\n' "$out420c" | awk -F'\t' '$4 ~ /### dir #995 / {print $3; exit}')"
 
+# --- code-review high, delta round: bb_strip_foreign_citations' internal gaps must recognise a
+# real TAB character as whitespace, not just a literal space — an earlier form of the fix used
+# `[\ \t]`, which bash's `[[ =~ ]]` parses as the bracket set {space, literal 't'} (backslash is
+# not an escape inside a bracket expression, and bash's own tokenizing of the unquoted pattern
+# drops the backslash before `\t` too) rather than "space or tab"; verified live that it silently
+# failed to match a real tab and instead matched a stray literal "t". `[[:blank:]]` is the
+# portable POSIX class that means exactly "space or tab, never newline". MUTATION-PROOF: a
+# citation whose verb and `dir #N` are separated by a literal tab must still be recognised and
+# stripped. -----------------------------------------------------------------------------------
+d420d="$(new_repo)"
+f420d="$d420d/BACKLOG.md"
+printf '### dir #996 — an open ticket, still needs work — R2 — → 0.9.0\nDuplicate of\tdir #997 — ✅ CLOSED, a tab separates the verb from dir #.\n\n### dir #997 — a real, separately closed ticket\n— ✅ CLOSED\n' > "$f420d"
+out420d="$(backlog_ticket_blocks "$f420d")"
+check_status "MUTATION-PROOF: a tab-separated citation is recognised, citing ticket stays open" \
+  0 "$(printf '%s\n' "$out420d" | awk -F'\t' '$4 ~ /### dir #996 / {print $3; exit}')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"

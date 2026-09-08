@@ -70,25 +70,30 @@ bb_strip_foreign_citations() {
   # optionality had drifted out of sync on.
   #
   # code-review high, a second delta finding (also reproduced live): every gap INSIDE a
-  # citation match below is `[ \t]`, not `[[:space:]]` — deliberately excluding a literal
-  # newline. The pre-dir-#420 code scanned one physical LINE at a time, so a citation's verb,
-  # `dir #N`, and tag could only ever be on the SAME line by construction; switching to a
-  # whole-block scan (dir #420, so an own tag isn't shadowed by a LATER citation elsewhere in the
-  # block) accidentally let `[[:space:]]` match the newline BETWEEN two lines too, so a genuinely
-  # own, wrapped closure tag on the line right after a line that happens to end in a recognised
-  # citation verb + a DIFFERENT `dir #N` ("Supersedes dir #5\n— ✅ CLOSED") was misread as a
-  # citation to that different ticket and wrongly stripped — the exact "own tag" this whole
-  # function exists to protect, undone by the same block-wide scan that fixes dir #420. No
-  # citation in this project's own real BACKLOG.md, nor in the F-04/dir #420 test suites, has ever
-  # needed to span a line break internally, so restricting these gaps to same-line whitespace
-  # only closes this hole — it does not narrow anything real. The bare-tag test the caller runs
-  # afterward is UNCHANGED and still scans the whole block, since THAT scan is what dir #255's
-  # wrapped-heading feature and dir #420's own fix both depend on.
-  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([\ \t]+by)?[\ \t]+dir\ \#([0-9]+)[\ \t]*(—[\ \t]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
+  # citation match below is `[[:blank:]]` (space/tab only), not `[[:space:]]` — deliberately
+  # excluding a literal newline. The pre-dir-#420 code scanned one physical LINE at a time, so a
+  # citation's verb, `dir #N`, and tag could only ever be on the SAME line by construction;
+  # switching to a whole-block scan (dir #420, so an own tag isn't shadowed by a LATER citation
+  # elsewhere in the block) accidentally let `[[:space:]]` match the newline BETWEEN two lines
+  # too, so a genuinely own, wrapped closure tag on the line right after a line that happens to
+  # end in a recognised citation verb + a DIFFERENT `dir #N` ("Supersedes dir #5\n— ✅ CLOSED")
+  # was misread as a citation to that different ticket and wrongly stripped — the exact "own tag"
+  # this whole function exists to protect, undone by the same block-wide scan that fixes dir
+  # #420. No citation in this project's own real BACKLOG.md, nor in the F-04/dir #420 test
+  # suites, has ever needed to span a line break internally, so restricting these gaps to
+  # same-line whitespace only closes this hole — it does not narrow anything real. The bare-tag
+  # test the caller runs afterward is UNCHANGED and still scans the whole block, since THAT scan
+  # is what dir #255's wrapped-heading feature and dir #420's own fix both depend on.
+  #
+  # A delta review round found an earlier form of this fix used `[\ \t]` — inside a POSIX bracket
+  # expression backslash is not an escape, so that class is actually the literal set `{\, (space),
+  # t}`: it does not match a real tab byte, and it wrongly matches a stray literal `t` character.
+  # `[[:blank:]]` is the portable POSIX class that means exactly "space or tab, never newline".
+  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:blank:]]+by)?[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
     && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
     stripped="${stripped/"${BASH_REMATCH[0]}"/}"
   done
-  while [[ "$stripped" =~ [Dd]uplicate\ of[\ \t]+dir\ \#([0-9]+)[\ \t]*(—[\ \t]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
+  while [[ "$stripped" =~ [Dd]uplicate\ of[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
     && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
     stripped="${stripped/"${BASH_REMATCH[0]}"/}"
   done
