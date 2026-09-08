@@ -62,15 +62,19 @@ waived. CI green on the RC SHA `e0b11a9` across all six platform/check legs (she
 ubuntu-24.04, alpine-busybox, macos-14, secret-scan) — for two of the thirty rows, "CI green" is
 materially weaker evidence than it reads (see Behavioural defects). **Findings:** 5 fix-before-tag,
 fixed as one batch before this cut (PR #378) — one behavioural defect in shipped code
-(`tools/keel-impact.sh`) and four seam/prose/test-coverage defects; 3 further items filed as tickets
-directly by the release manager rather than reported through this block — two file-scoping defects in
-this project's own gitignored audit-harness tooling (no shipped surface affected), a pre-existing
-`docs/delegation.md` citation drift that predates this release's own audit window, and the
-`tools/self/pool-report.sh` gate-matching defect named below; roughly 9 more ticketed next; roughly 4
-recorded on the standing no-action list; of 4 cross-vendor findings filed, 3 refuted (2 with positive
-controls) and 1 already covered by a standing disclosure, none accepted as new; 3 leg verdicts
-overruled by the verifier (a `clean` on `tools/keel-impact.sh`, a dismissal of a summary-omission
-finding, a `clean` on `docs/grooming.md`). **Behavioural defects:** the run's one
+(`tools/keel-impact.sh`) and four seam/prose/test-coverage defects. This audit's Part 1 filed
+**twelve tickets total**; **four are named individually in this entry** — two gaps in this project's
+own gitignored audit-harness tooling, outside the ledger's 30-row universe entirely (no shipped
+surface affected), a test-exemption blind spot in `commands/polish.md`, and the two disclosed defects
+named below (the `pool-report.sh` gate-matching defect and the wrong-mechanism claim) — **the
+remaining eight are ticket-next dispositions from the ledger, counted without individual
+description**; roughly 4 recorded on the standing no-action list; of 4
+cross-vendor findings filed, 3 refuted (2 with positive controls) and 1 already covered by a standing
+disclosure, none accepted as new; **4** leg
+verdicts overruled by the verifier — three marked OVERRULED in the ledger's own table (`clean` on
+`tools/keel-impact.sh`; one entry of a `clean` cross-PR seam sweep on `CHANGELOG.md`; `clean` on
+`docs/grooming.md`) plus a fourth the table does not carry at all (an earlier leg's dismissal of a
+missing-`summary`-call finding as a mere formatting quirk). **Behavioural defects:** the run's one
 CONFIRMED release-blocking behavioural defect — `tools/keel-impact.sh:577` (bash ≥ 4.4 leaves an
 uninitialized `local` merely declared, not set-to-empty, so the prior cycle's EXIT-trap fix leaked its
 own temp file and clobbered the exit status on both Linux CI legs; reproduced independently three
@@ -84,7 +88,7 @@ the blind diversity leg, not any same-family whole-read leg — the ninth consec
 pattern. The cross-vendor leg filed 4 findings, all refuted or already covered by a standing
 disclosure; its one real contribution (the `pool-report.sh` defect above) surfaced only in a round
 that returned no answer at all — recovered from that round's own discarded reasoning trace, not from
-anything the leg stated. The verifier overruled 3 leg verdicts and
+anything the leg stated. The verifier overruled 4 leg verdicts and
 independently re-derived the two highest-stakes findings (`tools/keel-impact.sh`'s bash-version defect,
 and a full-suite `ALL TEST FILES PASSED` reproduction) from scratch rather than relaying them.
 **What was NOT checked:** the procedure `docs/delta-audit.md` this run itself executes had single-leg
@@ -93,10 +97,15 @@ have had no independent second reader. Live probes ran on darwin only except whe
 specifically required a Linux container (the bash-version premise above); a macOS-only-verified
 refutation of a flake comment's causal claim is not established as platform-general. A pre-existing,
 untested retry branch in the read-trace code (symlinked `$TMPDIR`) was found uncovered by any test and
-confirmed correct by construction, not by a new test — recorded as a standing gap, not a defect. **On
-the release's own headline numbers:** PR #373's four census figures (44 tickets flipped, 220 total
-closed, a 35→36% archive-share shift, a pool size of 60) are quoted in that PR's own description and
-in the release manager's records, but `BACKLOG.md` is gitignored with no git history, so the exact
+confirmed correct by construction, not by a new test — recorded as a standing gap, not a defect.
+Clause A's structural limb — two independent diverse legs reading the same state in parallel — was not
+satisfied for the fix/release-cut range: the orchestrator and this range's verifier read it
+sequentially, and this file itself is a surface no Part 1 leg examined at all. Rather than closing this
+by record, the operator's decision is that an independent diverse leg reads this reconciled text after
+this commit lands. **On the release's own headline numbers:** PR #373's four census figures (44
+tickets flipped, 220 total closed, a 35→36% archive-share shift, a pool size of 60) are quoted in that
+PR's own description and in the release manager's records, but `BACKLOG.md` is gitignored with no
+git history, so the exact
 snapshot they were measured against no longer exists and cannot be re-checked — as of this writing a
 live read of `BACKLOG.md` shows 233 closed tickets, a 36→37% shift and a pool of 66, none matching the
 PR's own figures, and a fourth source (`POOL-HISTORY.jsonl`) records a pool of 55 for the same release;
@@ -109,12 +118,18 @@ is this entry's only claim about those tools' effect; no absolute count above is
 fact. **Induced-defect rate:** 0 of 27 marked findings — a first-wave figure only, not yet informative
 about the release's own fix round (v0.8.0's record: half that release's defects were created by its
 own audit's fix round, with the coverage bar satisfied throughout — the same round is this release's
-largest known risk, and is what Part 2 below exists to check). **This verdict is Part 1 of two, and is
-NOT a release verdict.** The release-candidate audit ran in two parts: Part 1 covered the pre-fix range
-(v0.9.0 → `e0b11a9`) and returned **NO-GO**, blocking on the 5 findings above. Those fixes landed as
-this cut's parent commit (`486f226`). **Part 2 — covering the fix commit and this release-cut commit —
-has not run as of this entry's writing** and is what actually gates the tag; this entry describes the
-audit truthfully as of its own composition and asserts no GO.
+largest known risk, and is what Part 2 checked next). **This entry is being reconciled per this
+project's own established pre-tag practice** (v0.9.0's `60e890a`, v0.8.2's `daf0f3c`, v0.8.0's
+`9cf07c3`/`30ab95c`) **and does not itself claim a release verdict.** The release-candidate audit ran
+in two parts. Part 1 covered the pre-fix range (v0.9.0 → `e0b11a9`) and returned **NO-GO**, blocking on
+the 5 findings above; those fixes landed as this cut's parent commit (`486f226`). Part 2 covered the
+fix commit and the release-cut commit (`fc60ed1`, merged as `6b9ef99`) and **also returned NO-GO** —
+not on the code, which it re-measured from scratch across all five Part 1 blockers and found sound,
+with zero induced defects and CI green on six legs — but on this verification block's own accuracy
+against the run's records, which had not yet had this project's pre-tag reconciliation pass: the
+ticket-provenance and leg-overrule counts corrected above are the two errors Part 2 found.
+**This paragraph is that reconciliation.** A further pass confirms only this reconciliation, re-resolves
+the GO SHA live at that new commit, and re-confirms CI on it; this entry asserts no GO.
 
 ## v0.9.0 — 2026-09-07
 
