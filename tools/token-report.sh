@@ -98,6 +98,13 @@ _tr_build_report() {
   tmp_turns="$(mktemp)" || { rm -f "$tmp_totals"; return 1; }
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
+  # dir #409's own idiom (tools/changelog-section.sh): an EXIT trap, not a RETURN trap — this
+  # function's only call site invokes it inside a `$(...)` command substitution, which bash runs in
+  # its own subshell, so the trap set here fires once at that subshell's exit and never becomes a
+  # global handler that could fire on an unrelated function's return (the hazard the comment below
+  # already documents for RETURN traps). Covers a SIGTERM/SIGINT between mktemp and the explicit
+  # cleanup below, which the mktemp-failure guards above and the normal cleanup path did not.
+  trap 'rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"' EXIT
 
   # dir #422: the jq call below used to do `out="$(jq ...)"; status=$?; rm -f <4 files>; [ "$status"
   # -eq 0 ] || return "$status"` — a bare assignment failing under `set -e` aborts the function via
@@ -351,6 +358,7 @@ _tr_build_report() {
         }
       }
   ')" || status=$?
+  trap - EXIT
   rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
   [ "$status" -eq 0 ] || return "$status"
   printf '%s\n' "$out"

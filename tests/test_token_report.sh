@@ -261,4 +261,88 @@ run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$no_usage_root" bash "$tool" --json
 check_status "no-usage-object fixture --json exits 0" "0" "$STATUS"
 check_contains "--json surfaces the assistantNoUsage count" "$OUT" '"assistantNoUsage":1'
 
+# --- SIGTERM mid-_tr_build_report must not leak the four mktemp scratch files -----------------------
+# dir #409's own idiom (tools/changelog-section.sh's `trap ... EXIT`) fixed the identical bug class in
+# tools/keel-impact.sh; this pins the same fix here. `date -u ...` is the ONE plain `date` call inside
+# _tr_build_report (right after the mktemp chain, before the final `jq -nc` that produces the report),
+# so stubbing it on PATH gives a deterministic pause point mid-function without touching any other
+# call in the loop above it. The stub `mktemp` wrapper logs every path it hands back, so the test
+# knows exactly which four files to check for afterward instead of diffing the real tmp directory's
+# listing (that would be noisy under real concurrency and isn't scoped by $TMPDIR the way a sandboxed
+# fixture is).
+#
+# Signal delivery has to reach every process in the tree: the top `bash "$tool"` process, the
+# `$(_tr_build_report ...)` command-substitution subshell that owns the trap, and the nested
+# `$(date -u ...)` subshell actually blocked in the stub's sleep. A plain `kill $pid` only reaches the
+# top process. `set -m` inside a throwaway harness subshell puts the backgrounded `bash "$tool" &` job
+# in its OWN new process group (pgid == its own pid) — every subshell it forks afterward inherits that
+# same pgid — so `kill -TERM -- -$job_pid` (negative pid = the whole group) reaches all three levels
+# at once without touching the test runner's own process group.
+real_mktemp="$(command -v mktemp)"
+real_date="$(command -v date)"
+sigterm_stub="$SANDBOX/sigterm-stub"
+mkdir -p "$sigterm_stub"
+mktemp_log="$SANDBOX/sigterm-mktemp.log"
+: > "$mktemp_log"
+marker="$SANDBOX/sigterm-marker"
+pidfile="$SANDBOX/sigterm-pid"
+rm -f "$marker" "$pidfile"
+
+cat > "$sigterm_stub/mktemp" <<STUB
+#!/usr/bin/env bash
+p="\$("$real_mktemp" "\$@")"
+printf '%s\n' "\$p" >> "$mktemp_log"
+printf '%s\n' "\$p"
+STUB
+chmod +x "$sigterm_stub/mktemp"
+
+cat > "$sigterm_stub/date" <<STUB
+#!/usr/bin/env bash
+if [ "\$1" = "-u" ]; then
+  : > "$marker"
+  sleep 5
+fi
+exec "$real_date" "\$@"
+STUB
+chmod +x "$sigterm_stub/date"
+
+(
+  set -m
+  cd "$repo" && PATH="$sigterm_stub:$PATH" KEEL_TOKENS_PROJECTS_DIR="$root" bash "$tool" \
+    >/dev/null 2>&1 &
+  echo $! > "$pidfile"
+  wait
+) &
+harness_pid=$!
+
+waited=0
+while [ ! -s "$pidfile" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
+job_pid="$(cat "$pidfile" 2>/dev/null || true)"
+
+waited=0
+while [ ! -f "$marker" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
+
+if [ -n "$job_pid" ] && [ -f "$marker" ]; then
+  kill -TERM -- "-$job_pid" 2>/dev/null || kill -TERM "$job_pid" 2>/dev/null
+  wait "$harness_pid" 2>/dev/null
+  # `wait` above only proves the harness's own subshell has exited, not that the killed job's EXIT
+  # trap has finished its rm -f calls on every platform's scheduler — a brief settle avoids a check
+  # racing the trap's own tail end.
+  sleep 0.3
+
+  if [ -s "$mktemp_log" ]; then
+    n=0
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      n=$((n + 1))
+      check_nofile "SIGTERM mid-build: scratch file #$n cleaned up, not leaked" "$f"
+    done < "$mktemp_log"
+  else
+    fail "SIGTERM mktemp-leak test" "stub mktemp never logged a path"
+  fi
+else
+  wait "$harness_pid" 2>/dev/null
+  fail "SIGTERM mktemp-leak test" "stub date was never reached — could not arm the mid-function pause"
+fi
+
 summary
