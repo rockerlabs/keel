@@ -83,13 +83,18 @@ sections real content going forward — see that page for exactly when each one 
   (`a3b94f9`, parent of the original fix): the new fixture's exit-code assertions now fail as expected
   (`expected exit 0, got 1`) where the old ones stayed green throughout. dir #422 — the pre-existing
   `out="$(jq -nc ...)"; status=$?` idiom around the same aggregation call is replaced with an
-  if-capture plus a `trap ... RETURN` covering all four temp files, so cleanup no longer depends on how
-  the function happens to be called. That dependency was real: `_tr_build_report`'s one call site
-  wraps it as `report="$(_tr_build_report ...)" || exit 1`, and testing a command as part of an
-  `&&`/`||` list suspends `set -e` for its entire execution — so contrary to how this ticket was filed,
-  `status=$?` was reachable in the live script all along (verified with three minimal harnesses,
-  including one reproducing the exact call shape); the fix removes the dependency on that incidental
-  caller behavior rather than closing an active leak.
+  if-capture, cleaning up the four temp files explicitly in both the success and failure branches
+  (capture, then clean up, then return — the same discipline `tools/lib/transcript-usage.sh`'s
+  `tu_session_totals()` already established for the identical hazard, not a new one; a first attempt
+  here used a `trap ... RETURN` instead and was reverted mid-review — that pattern was already tried
+  and reverted in that sibling file too, since a RETURN trap set inside a function is not scoped to
+  it and can fire again on a later function's return once the setting function's own locals are out
+  of scope, reproduced live here as well). The dependency the fix removes was real either way:
+  `_tr_build_report`'s one call site wraps it as `report="$(_tr_build_report ...)" || exit 1`, and
+  testing a command as part of an `&&`/`||` list suspends `set -e` for its entire execution — so
+  contrary to how this ticket was filed, `status=$?` was reachable in the live script all along
+  (verified with minimal harnesses, including one reproducing the exact call shape); the fix removes
+  the dependency on that incidental caller behavior rather than closing an active leak.
 
 ## [0.9.0] — 2026-09-07
 

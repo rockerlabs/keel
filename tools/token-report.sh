@@ -99,20 +99,22 @@ _tr_build_report() {
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
 
-  # dir #422: once all four temp files exist, every remaining exit from this function (any `return`,
-  # or falling off the end) goes through this ONE cleanup instead of a rm -f repeated at each return
-  # site. This alone is not sufficient (proved with a minimal harness): under `set -euo pipefail`, a
-  # BARE `out="$(cmd)"` failing would abort the function via errexit WITHOUT a normal return — a
-  # RETURN trap never fires on that path. In THIS script the failure is, in fact, caught today: this
-  # function's only call site wraps it as `report="$(_tr_build_report ...)" || exit 1` (bottom of
-  # file), and that `||` suspends errexit for this whole function's execution (POSIX/bash: a command
-  # tested by && / || is exempt) — so `status=$?` below was reachable all along in the live script,
-  # not dead code, contra how this ticket was filed (its own harness likely called this function
-  # bare, not through that wrapped call site — the same trap this project's own memory names:
-  # "a shared helper's exemption depends on whether ITS caller is &&/||-exempt"). The if-capture
-  # below is kept anyway: it makes this function's own cleanup correct on its own terms, independent
-  # of how any future caller happens to invoke it, rather than silently relying on that one `||`.
-  trap 'rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"' RETURN
+  # dir #422: the jq call below used to do `out="$(jq ...)"; status=$?; rm -f <4 files>; [ "$status"
+  # -eq 0 ] || return "$status"` — a bare assignment failing under `set -e` aborts the function via
+  # errexit before `status=$?` is ever reached. (In THIS script the failure was, in fact, caught
+  # today regardless: this function's only call site wraps it as `report="$(_tr_build_report
+  # ...)" || exit 1`, and testing a command via `&&`/`||` suspends errexit for the WHOLE function's
+  # execution — verified live, contra how this ticket was filed — but that made the old code correct
+  # only by an accident of how its one caller happens to invoke it.) Fixed the same way this file's
+  # sibling tools/lib/transcript-usage.sh already fixed the identical hazard in tu_session_totals():
+  # capture-then-cleanup-then-return, in that literal order, at every exit — NOT a `trap ... RETURN`
+  # (tried there, reverted: a RETURN trap set inside a function is not scoped to it — it is a single
+  # global handler that also fires on the NEXT function return up the call chain once the setting
+  # function's own locals are out of scope. Reproduced live here too, with the same "unbound
+  # variable" crash, in a case with an intervening subshell removed — this function's own call site
+  # is command-substitution-wrapped, which happens to contain the trap inside that subshell today,
+  # but that containment is exactly the kind of invisible caller-shape dependency this fix exists to
+  # remove, not lean on).
 
   # Every read below is guarded rather than a bare command — the corpus is LIVE
   # (docs/token-economy.md: a self-referential run reads a session transcript it is still writing), so
@@ -162,12 +164,11 @@ _tr_build_report() {
 
   local read_at out status
   read_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  # dir #422: the if-capture form (not a bare `out="$(...)"` followed by `status=$?`) makes this
-  # function correct standing alone, not only when called the one way it happens to be called today
-  # (see the trap comment above for why the bare form was NOT actually dead in the live script — its
-  # one caller's `|| exit 1` already suspended errexit here). Testing the assignment as an `if`
-  # condition is the one context `set -e` exempts on its own terms, so a jq failure lands in the
-  # `else` below as a genuine function return — which is what lets the RETURN trap above actually run.
+  # dir #422: the if-capture form makes this function correct standing alone, not only when called
+  # the one way it happens to be called today (see the comment above for why the bare form was not
+  # actually dead in the live script). Testing the assignment as an `if` condition is the one context
+  # `set -e` exempts on its own terms, so a jq failure lands in the `else` below as a genuine function
+  # return that reaches the cleanup — capture, then clean up, then return, in that order.
   if out="$(jq -nc \
     --slurpfile T "$tmp_totals" --slurpfile TURNS "$tmp_turns" \
     --slurpfile CALLS "$tmp_calls" --slurpfile SC "$tmp_sc" \
@@ -350,9 +351,11 @@ _tr_build_report() {
         }
       }
   ')"; then
+    rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
     printf '%s\n' "$out"
   else
     status=$?
+    rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
     return "$status"
   fi
 }
