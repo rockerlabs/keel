@@ -15,6 +15,25 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #420, dir #425, dir #426, dir #432: fixed the BACKLOG.md census family's own-tag-vs-citation
+  bugs and consolidated the duplicated strip logic into one shared helper.** dir #420: a genuinely
+  closed ticket whose own closure tag sat earlier on the same line than a citation to a different
+  ticket's closure was wrongly read as open (the per-line scan `continue`d past the whole line the
+  instant the foreign citation matched, never reaching the earlier own tag) — fixed in both
+  `tools/lib/backlog-blocks.sh`'s closed-tag detection and the same-shaped naive pattern in
+  `tools/self/archive-sweep-check.sh`'s undated-closure count. dir #432: the recognised closure
+  vocabulary widened from `DONE`/`CLOSED` alone to the other real shapes measured live on this
+  project's own BACKLOG.md (`ABSORBED`, `EXECUTED`, `SUPERSEDED`, `DUPLICATE`, `BUILT`, and the
+  em-dash separator made optional for legacy headings that predate it) — chosen over a purely
+  structural "any closure glyph" test, which measured live and false-positived on real sub-status
+  markers ("PHASE 1 DONE", "RUN 1 EXECUTED") that are not the ticket's own closure. dir #426:
+  the near-duplicate "strip a foreign citation before testing the bare tag" loop that existed
+  separately in `backlog-blocks.sh` and `tools/self/pool-report.sh` is now one shared function,
+  `bb_strip_foreign_citations`, called from both plus the newly-fixed `archive-sweep-check.sh`
+  site. dir #425: `pool-report.sh`'s structurally-parked `⛔` heuristic is now clause-scoped
+  instead of whole-block-scoped, so a heading stating both a current block and its own
+  future-unblock clause in one line is no longer wrongly excluded from the parked count.
+
 - **dir #430 + dir #431: two read-trace fuse defects the v0.9.0 groom's own consumption of the
   tier-2 aggregate found, fixed as one unit.** dir #430's measured root cause: path normalization
   resolved a worktree session's raw file path against the MAIN checkout's top instead of the

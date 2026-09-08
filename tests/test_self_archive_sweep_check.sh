@@ -61,6 +61,23 @@ run "$sc" "$f"
 check_status "undated closure -> exit 0" 0 "$STATUS"
 check_contains "counts it as an undated closure" "$OUT" "undated closures:  1"
 
+# --- dir #420: a ticket whose OWN tag is undated but whose body cites a different, dated closed
+# ticket must still be counted as undated — the sibling's date must not mask this ticket's own
+# missing one. MUTATION-PROOF pair: dir #10 (own tag undated, cites a dated sibling) counts
+# undated; dir #11 (own tag genuinely dated) does not. -------------------------------------------
+backlog_masked_undated="### dir #10 — closed, own tag undated — R2 — ✅ CLOSED, superseded by dir #11 — ✅ CLOSED (2026-08-01, done)
+
+body
+
+### dir #11 — closed with its own real date — R2 — ✅ CLOSED (2026-08-01, done)
+
+body
+"
+f="$(mk_backlog "$backlog_masked_undated")"
+run "$sc" --threshold 1 "$f"
+check_contains "MUTATION-PROOF (dir #420): a sibling's date does not mask this ticket's own missing one (undated=1)" \
+  "$OUT" "undated closures:  1"
+
 # --- mutation pair: wrapped-heading trap (dir #255) ---------------------------------------------
 # A heading whose title text wraps across physical lines and carries its closure tag on a
 # CONTINUATION line, not the `### dir #N` line itself — must still be counted as closed.

@@ -83,6 +83,22 @@ run "$pr" --history "$SANDBOX/hist-wording.jsonl" "$fp"
 check_contains "MUTATION-PROOF: '⛔ PARKED' wording still counts as structurally-parked" "$OUT" \
   "excluding structurally-parked:  1 (of 2; 1 parked by rule"
 
+# --- dir #425: the ⛔-blocked exclusion is CLAUSE-scoped, not whole-block-scoped — a heading
+# stating both a current ⛔ block and its own future-unblock clause in one line must still count
+# as parked (the single-state phrasing already counts parked=1; this must match it). --------------
+clause_scope_backlog="### dir #601 — blocked, with its own future unblock clause on the same line — R2 — ⛔ BLOCKED by X, no longer ⛔ once X lands — → pool
+
+body
+
+### dir #602 — single-state control, same blocking reason, no unblock clause — R2 — ⛔ BLOCKED by X — → pool
+
+body
+"
+fclause="$(mk_backlog "$clause_scope_backlog")"
+run "$pr" --history "$SANDBOX/hist-clause-scope.jsonl" "$fclause"
+check_contains "MUTATION-PROOF (dir #425): a heading with both a block and its own unblock clause still counts parked (2 of 2, not 1)" \
+  "$OUT" "excluding structurally-parked:  0 (of 2; 2 parked by rule"
+
 # --- --record idempotency ------------------------------------------------------------------------
 hist="$SANDBOX/hist-record.jsonl"
 run "$pr" --record 0.9.0 --history "$hist" "$f"
@@ -194,6 +210,20 @@ body
 ftwo="$(mk_backlog "$two_citations_backlog")"
 run "$pr" --history "$SANDBOX/hist-two-citations.jsonl" "$ftwo"
 check_contains "MUTATION-PROOF: a ticket citing two different retracted siblings (one per verb form) still counts toward the pool (1, not 0)" \
+  "$OUT" "pool size:                     1"
+
+# --- code-review high, delta round: making the RETRACTED bare-tag test's em-dash optional (to
+# mirror dir #432's closure-tag fix) was tried and REVERTED — it reopened a title-prose
+# false-positive: a heading whose TITLE merely mentions the bare word "retracted" (no tag intended
+# at all) matched and was wrongly excluded from the pool census. MUTATION-PROOF: a genuinely open,
+# un-tagged pool ticket whose title happens to contain the bare word "RETRACTED" must still count. -
+prose_backlog="### dir #6 — investigate whether the RETRACTED ticket process needs revisiting — R1 — → pool
+
+still open, needs work
+"
+fprose="$(mk_backlog "$prose_backlog")"
+run "$pr" --history "$SANDBOX/hist-prose.jsonl" "$fprose"
+check_contains "MUTATION-PROOF: a bare 'RETRACTED' in ordinary title prose does not exclude an open ticket from the pool" \
   "$OUT" "pool size:                     1"
 
 # --- code-review medium delta round 2 (found live, coverage gap not a code defect): the case

@@ -163,6 +163,113 @@ check_status "MUTATION-PROOF: 'Superseded by dir #N' (past tense) is recognised 
 check_status "MUTATION-PROOF: capitalized 'Duplicate of' is recognised as foreign, not just lowercase" \
   0 "$(printf '%s\n' "$out4g" | awk -F'\t' '$4 ~ /dir #501/ {print $3; exit}')"
 
+# --- dir #420: a genuinely closed ticket whose OWN tag sits EARLIER on the same line than a
+# citation to a different ticket's closure must not be over-discarded. The old shape tested one
+# line at a time and `continue`d past the WHOLE line the instant the foreign citation matched,
+# so the own tag that already matched earlier on that line was never reached. MUTATION-PROOF pair:
+# dir #960 (own tag first, then a foreign citation on the SAME line) must read closed; dir #961
+# (foreign citation only, no own tag anywhere) must stay open, the original F-04 case unchanged. --
+d420="$(new_repo)"
+f420="$d420/BACKLOG.md"
+printf '### dir #960 — ✅ CLOSED — superseded by dir #965 — ✅ CLOSED\n\n### dir #970 An open ticket, single-line heading, body starts immediately\nSupersedes dir #975 — ✅ CLOSED, so this work is now unblocked.\n' > "$f420"
+out420="$(backlog_ticket_blocks "$f420")"
+row_closed420() { printf '%s\n' "$out420" | awk -F'\t' -v n="### dir #$1 " '$4 ~ n {print $3; exit}'; }
+check_status "MUTATION-PROOF (dir #420): own tag before a same-line foreign citation still reads closed" \
+  1 "$(row_closed420 960)"
+check_status "control: the foreign-citation-only ticket (no own tag) stays open" \
+  0 "$(row_closed420 970)"
+
+# --- dir #432: the closure vocabulary widened beyond DONE/CLOSED to the other real shapes found
+# live (ABSORBED, EXECUTED, SUPERSEDED, DUPLICATE, BUILT), and the `— ` separator made optional
+# for the legacy headings that predate it — each verified against a real shape this project's own
+# BACKLOG.md carries today, not invented. -------------------------------------------------------
+d432="$(new_repo)"
+f432="$d432/BACKLOG.md"
+printf '### dir #1001 — a ticket closed via ABSORBED — R2 — ✅ ABSORBED (2026-08-01)\n\n### dir #1002 — a ticket closed via EXECUTED — R4 — ✅ EXECUTED (2026-08-01)\n\n### dir #1003 — a ticket closed via SUPERSEDED — R1 — ❌ SUPERSEDED (2026-08-01) by dir #1 re-scope\n\n### dir #1004 — a ticket closed via DUPLICATE — R1 — ❌ DUPLICATE of dir #2\n\n### 30. A legacy numbered ticket closed via BUILT (captured 2026-07-01) ✅ BUILT (2026-07-11)\n\n### 31. A legacy numbered ticket, DONE with no em-dash separator at all ✅ DONE, PR #1 merged\n' > "$f432"
+out432="$(backlog_ticket_blocks "$f432")"
+row_closed432() { printf '%s\n' "$out432" | awk -F'\t' -v n="$1" '$4 ~ n {print $3; exit}'; }
+check_status "MUTATION-PROOF (dir #432): '✅ ABSORBED' reads closed" 1 "$(row_closed432 "dir #1001")"
+check_status "MUTATION-PROOF (dir #432): '✅ EXECUTED' reads closed" 1 "$(row_closed432 "dir #1002")"
+check_status "MUTATION-PROOF (dir #432): '❌ SUPERSEDED' reads closed" 1 "$(row_closed432 "dir #1003")"
+check_status "MUTATION-PROOF (dir #432): '❌ DUPLICATE' reads closed" 1 "$(row_closed432 "dir #1004")"
+check_status "MUTATION-PROOF (dir #432): legacy '✅ BUILT' with no em-dash reads closed" \
+  1 "$(row_closed432 "30\\. A legacy")"
+check_status "MUTATION-PROOF (dir #432): legacy '✅ DONE' with no em-dash reads closed" \
+  1 "$(row_closed432 "31\\. A legacy")"
+
+# --- dir #432: deliberately-excluded shapes stay open, checked live and found to be sub-status
+# markers rather than whole-ticket closures — a real ticket's "PHASE 1 DONE" or "RUN 1 EXECUTED"
+# must not be misread as the whole ticket closing. MUTATION-PROOF against future over-widening. --
+d432b="$(new_repo)"
+f432b="$d432b/BACKLOG.md"
+printf '### dir #1010 — phase 1 of a multi-phase ticket — R2 — ✅ PHASE 1 DONE (PR #1)\n\n### dir #1011 — one run of a still-open ticket — R2 — ✅ RUN 1 EXECUTED (2026-08-01)\n\n### dir #1012 — a decision recorded, not necessarily executed — R2 — ✅ DECIDED (2026-08-01)\n\n### dir #1013 — in-progress marker, the opposite of closed — R3 — ⏳ IN FLIGHT\n' > "$f432b"
+out432b="$(backlog_ticket_blocks "$f432b")"
+row_closed432b() { printf '%s\n' "$out432b" | awk -F'\t' -v n="$1" '$4 ~ n {print $3; exit}'; }
+check_status "control (dir #432): 'PHASE 1 DONE' is a sub-status, ticket stays open" \
+  0 "$(row_closed432b "dir #1010")"
+check_status "control (dir #432): 'RUN 1 EXECUTED' is a sub-status, ticket stays open" \
+  0 "$(row_closed432b "dir #1011")"
+check_status "control (dir #432): 'DECIDED' is not a closure verb, ticket stays open" \
+  0 "$(row_closed432b "dir #1012")"
+check_status "control (dir #432): '⏳ IN FLIGHT' is in-progress, not closed" \
+  0 "$(row_closed432b "dir #1013")"
+
+# --- bb_strip_foreign_citations(): the dir #426 shared helper, tested directly (dir #142's
+# coverage ratchet requires a new exported function to be pinned on its own, not only exercised
+# indirectly through backlog_ticket_blocks) --------------------------------------------------------
+stripped="$(bb_strip_foreign_citations 'Supersedes dir #5 — ✅ CLOSED as a duplicate' '9' '(✅|❌)[[:space:]]*(DONE|CLOSED)')"
+check_absent "bb_strip_foreign_citations strips a foreign citation clause" "$stripped" 'CLOSED'
+kept="$(bb_strip_foreign_citations 'dir #9 — ✅ CLOSED — no citation here' '9' '(✅|❌)[[:space:]]*(DONE|CLOSED)')"
+check_contains "bb_strip_foreign_citations leaves a non-citation tag untouched" "$kept" 'CLOSED'
+own_cited="$(bb_strip_foreign_citations 'Supersedes dir #9 — ✅ CLOSED, this IS our own ticket' '9' '(✅|❌)[[:space:]]*(DONE|CLOSED)')"
+check_contains "bb_strip_foreign_citations does not strip a citation to own_num itself" "$own_cited" 'CLOSED'
+
+# --- code-review high (delta finding, dir #432's dash-optionality follow-on): dir #432 made the
+# em-dash OPTIONAL in the bare own-tag test, but the citation regexes still required a mandatory
+# dash — so a foreign citation that itself omits the dash was never recognised as a citation,
+# never stripped, and the dash-optional bare-tag test then matched its tag as this heading's own.
+# MUTATION-PROOF: an open ticket citing a closed sibling with NO em-dash before the sibling's tag
+# must stay open. ------------------------------------------------------------------------------
+d420b="$(new_repo)"
+f420b="$d420b/BACKLOG.md"
+printf '### dir #980 — an open ticket, still needs work — R2 — → 0.9.0\nDuplicate of dir #985 ✅ CLOSED, no em-dash before the tag here.\n' > "$f420b"
+out420b="$(backlog_ticket_blocks "$f420b")"
+check_status "MUTATION-PROOF: a no-em-dash foreign citation is still recognised, own ticket stays open" \
+  0 "$(printf '%s\n' "$out420b" | awk -F'\t' '$4 ~ /### dir #980 / {print $3; exit}')"
+
+# --- code-review high (delta finding): the citation regexes' internal whitespace gaps must NOT
+# cross a newline — switching backlog-blocks.sh's own `closed` detection to a whole-block scan
+# (dir #420) let a citation verb ending one line and a DIFFERENT ticket's tag on the very next
+# line satisfy the "no gap wider than whitespace" rule, wrongly treating a heading's own, genuinely
+# wrapped closure tag as a citation to that different ticket and stripping it. MUTATION-PROOF: a
+# heading whose own wrapped tag sits on the line right after a line ending in a recognised
+# citation verb + a DIFFERENT dir #N must still read closed, and the ticket actually named in that
+# citation-shaped line must independently still read closed too (both real, unrelated tickets). ---
+d420c="$(new_repo)"
+f420c="$d420c/BACKLOG.md"
+printf '### dir #990 — an active ticket whose own status wraps oddly\nSupersedes dir #995\n— ✅ CLOSED\n\n### dir #995 — a real, separately closed ticket\n— ✅ CLOSED\n' > "$f420c"
+out420c="$(backlog_ticket_blocks "$f420c")"
+check_status "MUTATION-PROOF: own wrapped tag survives a citation-shaped line right before it" \
+  1 "$(printf '%s\n' "$out420c" | awk -F'\t' '$4 ~ /### dir #990 / {print $3; exit}')"
+check_status "control: the separately-named ticket in that citation-shaped line is also closed" \
+  1 "$(printf '%s\n' "$out420c" | awk -F'\t' '$4 ~ /### dir #995 / {print $3; exit}')"
+
+# --- code-review high, delta round: bb_strip_foreign_citations' internal gaps must recognise a
+# real TAB character as whitespace, not just a literal space — an earlier form of the fix used
+# `[\ \t]`, which bash's `[[ =~ ]]` parses as the bracket set {space, literal 't'} (backslash is
+# not an escape inside a bracket expression, and bash's own tokenizing of the unquoted pattern
+# drops the backslash before `\t` too) rather than "space or tab"; verified live that it silently
+# failed to match a real tab and instead matched a stray literal "t". `[[:blank:]]` is the
+# portable POSIX class that means exactly "space or tab, never newline". MUTATION-PROOF: a
+# citation whose verb and `dir #N` are separated by a literal tab must still be recognised and
+# stripped. -----------------------------------------------------------------------------------
+d420d="$(new_repo)"
+f420d="$d420d/BACKLOG.md"
+printf '### dir #996 — an open ticket, still needs work — R2 — → 0.9.0\nDuplicate of\tdir #997 — ✅ CLOSED, a tab separates the verb from dir #.\n\n### dir #997 — a real, separately closed ticket\n— ✅ CLOSED\n' > "$f420d"
+out420d="$(backlog_ticket_blocks "$f420d")"
+check_status "MUTATION-PROOF: a tab-separated citation is recognised, citing ticket stays open" \
+  0 "$(printf '%s\n' "$out420d" | awk -F'\t' '$4 ~ /### dir #996 / {print $3; exit}')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"

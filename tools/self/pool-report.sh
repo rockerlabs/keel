@@ -107,48 +107,32 @@ while IFS=$'\t' read -r start end closed heading_block; do
   : "$start" "$end"  # body span unused here; block detection alone gives us the heading
   [ "$closed" = "1" ] && continue
 
-  # FINDING-CA3-1 (v0.9.0 RC audit, CA3 round): `— RETRACTED\b` matched anywhere in the
-  # flattened heading_block, whole-block scoped — a live `→ pool` ticket whose OWN body cites a
-  # sibling's retraction ("Superseded by dir #3 — RETRACTED for background") got dropped from the
-  # pool census entirely, same shape as the F-04 bug tools/lib/backlog-blocks.sh's closed-tag
-  # detection already fixed (a DIFFERENT ticket's own tag absorbed by this block). Mirroring that
-  # fix's own-tag discipline rather than inventing a third variant: a `— RETRACTED` reached only
-  # via one of backlog-blocks.sh's recognised citation verbs (Supersedes/Superseded/Superseding
-  # [by], Duplicate of) naming a DIFFERENT dir #N does not count as this ticket's own retraction.
-  # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's stock
-  # bash 3.2 (BSD regex) — the same gotcha tools/lib/backlog-blocks.sh's own F-04 comment
-  # documents; `([^a-zA-Z]|$)` is the portable word-boundary substitute used here for the same
-  # reason.
-  # code-review medium (this fix's own review round): an if/elif/elif chain here would shadow a
-  # genuine own tag whenever a foreign citation ALSO matches elsewhere in the same flattened
-  # block ("### dir #5 — RETRACTED ... superseded by dir #9 — RETRACTED for background") — the
-  # citation branch matches first, its cited num (9) differs from own_num (5) so it doesn't
-  # `continue`, but being an `elif` chain the bare-tag branch that would have caught dir #5's OWN
-  # tag never runs either, wrongly keeping a genuinely-retracted ticket in the pool. Fix: strip
-  # recognised foreign-citation clauses out of a COPY of the block first, then test the bare tag
-  # against what's left — a citation elsewhere can no longer shadow a separate own-tag match.
-  #
-  # A second review pass (delta round) on that first fix found two further gaps, both closed
-  # here: (1) `${heading_block/${BASH_REMATCH[0]}/}` used the match as a GLOB pattern, not a
-  # literal string — a matched clause containing `*`/`?` (e.g. markdown emphasis right after
-  # "RETRACTED") would strip past the intended clause, or not at all; quoting the pattern
-  # (`${.../"${BASH_REMATCH[0]}"/}`) forces literal matching instead. (2) a single if/elif strip
-  # only ever removes ONE foreign citation — a block citing two different retracted siblings
-  # (one via each verb form) left the second one's bare tag behind, wrongly counting as this
-  # ticket's own; looping the strip until neither pattern matches closes that gap for any number
-  # of foreign citations, in either form.
-  own_num=""
-  [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
-  stripped="$heading_block"
-  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] \
-    && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
-    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
-  done
-  while [[ "$stripped" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] \
-    && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
-    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
-  done
-  [[ "$stripped" =~ —[[:space:]]*RETRACTED([^a-zA-Z]|$) ]] && continue
+  # FINDING-CA3-1 (v0.9.0 RC audit, CA3 round), now via the dir #426 shared helper: `—
+  # RETRACTED\b` matched anywhere in the flattened heading_block, whole-block scoped, wrongly
+  # dropped a live `→ pool` ticket whose OWN body cites a sibling's retraction ("Superseded by
+  # dir #3 — RETRACTED for background") from the pool census — the same "whose tag is it" shape
+  # tools/lib/backlog-blocks.sh's F-04 fix already solved for the closure tag. This used to be a
+  # near-duplicate copy of that fix's strip-then-test loop, generalized for the `RETRACTED` tag
+  # instead of a closure tag; dir #426 promoted the loop itself into
+  # tools/lib/backlog-blocks.sh's `bb_strip_foreign_citations`, so this file now calls the same
+  # code backlog-blocks.sh's own `closed` detection calls, parameterized on the tag it cares
+  # about. See that function's own header for the full history (two independent review rounds:
+  # the if/elif-shadowing gap, the glob-vs-literal quoting gap, and the single-strip-per-form
+  # gap) — nothing here diverges from it any more.
+  own_num="$(bb_own_ticket_num "$heading_block")"
+  # code-review high, delta round: a first attempt made this bare-tag test's em-dash optional,
+  # to mirror dir #432's closure-tag fix and close the "two callers drifted out of sync" class of
+  # gap before it manifests. REVERTED — a second delta round found and reproduced live that the
+  # mandatory `—` was doing real work no comment here had named: it was the only thing preventing
+  # a heading whose TITLE merely mentions the bare word "retracted" in ordinary prose ("investigate
+  # whether the RETRACTED ticket process needs revisiting") from matching and being wrongly
+  # excluded from the pool census, even though it carries no tag at all. `bb_strip_foreign_citations`
+  # itself stays em-dash-optional (that half genuinely fixed dir #432's own reported bug, on the
+  # CLOSURE-tag caller); only this one bare-tag test keeps its mandatory dash, since — unlike the
+  # closure vocabulary — no real ticket in this project's own live BACKLOG.md has ever needed a
+  # no-dash RETRACTED tag, so there is nothing this mandatory dash is trading away.
+  stripped="$(bb_strip_foreign_citations "$heading_block" "$own_num" 'RETRACTED')"
+  [[ "$stripped" =~ —[[:blank:]]*RETRACTED([^a-zA-Z]|$) ]] && continue
 
   # Last `→` token naming a release or the pool (BACKLOG.md's own G3 extraction rule) — a
   # heading carries prose arrows too ("→ ask", "→ a release of its own"); only these two
@@ -174,19 +158,48 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # here also read "⛔ PARKED ..." or "⛔ tail BLOCKED ...", not just the legend's literal
   # `⛔ BLOCKED by <ref>`, so excluding the two known false-positive shapes (rather than
   # requiring one true-positive wording) is what actually matches the live convention.
-  # KNOWN LIMITATION (dir #425, 0.9.1 — this disclosure retires with that fix): the exclusion
-  # is line-scoped, not clause-scoped, so a heading stating BOTH a current `⛔` block and its
-  # own future-unblock clause in one line ("⛔ BLOCKED by X, no longer ⛔ once X lands") matches
-  # the exclusion and is wrongly dropped from the parked census — parked=0 where the
-  # single-state "⛔ BLOCKED by X" phrasing counts parked=1 (under-count direction).
+  #
+  # dir #425 (fixed here): the exclusion used to be whole-block scoped, so a heading stating BOTH
+  # a current `⛔` block AND its own future-unblock clause in one line ("⛔ BLOCKED by X, no
+  # longer ⛔ once X lands") matched the exclusion and was wrongly dropped from the parked census
+  # (parked=0 where the single-state "⛔ BLOCKED by X" phrasing correctly counts parked=1). Fix:
+  # split the block into CLAUSES (on `,`, `;`, or the convention's own ` — ` separator — pure
+  # bash string substitution, no sed/awk regex-portability risk) and apply the exclusion per
+  # clause, not to the whole block — a `⛔` in one clause is parked unless THAT SAME clause also
+  # carries the unblock phrasing; an unblock phrase living in a different clause of the same
+  # heading no longer cancels it out.
   #
   # v0.9.0 RC audit, final fix round: the exclusion pattern must name exactly the two documented
   # shapes above ("⛔ UNBLOCKED", "no longer ⛔") — a bare `⛔[[:space:]]*UN` prefix match is
   # broader than either shape and also swallows any OTHER ⛔-adjacent word starting "un" (unless,
-  # unclear, under review, ...), wrongly excluding those as if they meant "unblocked".
-  if grep -qE '⛔' <<< "$heading_block" \
-    && ! grep -qiE '⛔[[:space:]]*UNBLOCKED|no longer[[:space:]]+⛔' <<< "$heading_block"; then
-    parked=1
+  # unclear, under review, ...), wrongly excluding those as if they meant "unblocked". Still true
+  # per-clause: this fix only narrows WHICH TEXT the exclusion pattern is tested against, not the
+  # pattern itself.
+  #
+  # KNOWN LIMITATION (code-review high, altitude finding): splitting on a bare `,` is broader than
+  # this project's own `— `-separated convention used everywhere else in this file's regexes — an
+  # ordinary prose comma inside one logical clause (e.g. "no longer ⛔, since dir #5 merged, all
+  # clear") could in principle separate an unblock phrase from the very `⛔` it qualifies, if the
+  # comma falls between them. Not narrowed to `— ` only, because the ticket's own worked example
+  # ("⛔ BLOCKED by X, no longer ⛔ once X lands") is itself comma-separated, not em-dash-separated
+  # — dropping comma support would leave the shape dir #425 exists to fix uncaught. Checked live
+  # against this project's own real BACKLOG.md: the parked count is unchanged before and after
+  # this fix (no heading here currently has this shape either way), so this is a documented,
+  # currently-inert residual risk, not a live defect.
+  # code-review efficiency pass: gate the clause split behind a cheap whole-block presence check
+  # first, same as the old whole-block `grep -qE '⛔'` did — most heading blocks carry no `⛔` at
+  # all, and splitting+looping unconditionally would spend three string rewrites plus a per-clause
+  # grep on every one of them for nothing.
+  if [[ "$heading_block" == *⛔* ]]; then
+    clause_split="${heading_block//;/,}"
+    clause_split="${clause_split// — /,}"
+    clause_split="${clause_split//,/$'\n'}"
+    while IFS= read -r clause; do
+      [[ "$clause" == *⛔* ]] || continue
+      if ! grep -qiE '⛔[[:space:]]*UNBLOCKED|no longer[[:space:]]+⛔' <<< "$clause"; then
+        parked=1
+      fi
+    done <<< "$clause_split"
   fi
   grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1
   [ "$parked" = "1" ] && parked_count=$((parked_count + 1))
