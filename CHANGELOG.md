@@ -15,6 +15,45 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Five findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
+  batch.** `tests/test_self_pool_report.sh` and `tests/test_self_archive_sweep_check.sh` — the only two
+  test files in the tree with no `summary` call, both edited by the census-family commit `aa5573c` —
+  printed `FAIL` lines on a failing check but always exited 0: `tests/run.sh` aggregates purely on exit
+  status, and only `summary`'s own `[ "$_fail" -eq 0 ]` converts a failed check into a nonzero exit. That
+  silently defeated CI enforcement of both files' own `MUTATION-PROOF` assertions (dir #420). Fixed by
+  adding the missing `summary` call to each, verified with a control built the right way round — a
+  deliberately failing assertion placed BEFORE the new `summary` call, confirmed to flip the exit code to
+  1, then removed — rather than appended after `summary`, which proves nothing. `docs/release-management.md`'s
+  close-checklist section pointed at "item 4 below" for the keep-alive contract; item 4 sits 268 lines
+  above, not below, a seam defect from a since-superseded insert. `docs/keel-impact.md`'s (and this
+  file's own) re-derived `/keel-score` cost figure (dir #417) stated a single "11-13%" range against
+  "each session's deduped cache-read total," but its own supporting numbers split across two different
+  denominators — 12%/13% of attributed cache-read, 10.5%/11.6% of the deduped grand total — and 10.5%
+  falls outside the stated range; both surfaces now name both denominators with their own correct ranges
+  instead of blending them into one figure a reader can't check against its own parenthetical. And
+  `tools/keel-impact.sh`'s own dir #409 fix (PR #376) doesn't hold on bash >= 4.4: `local header_tmp
+  rows_tmp` alone leaves `rows_tmp` merely DECLARED, not SET — a bash 4.4 semantics change, since
+  bash < 4.4's `local x` already meant "set to empty" — so under this file's `set -u` the EXIT trap's
+  own `"$rows_tmp"` expansion aborts before its `rm -f` ever runs, leaking `header_tmp` (the exact leak
+  the trap exists to prevent) and replacing the real exit status with the unbound-variable error's.
+  Reproduced live on bash 5.2.37 (a SIGTERM sent between the two `mktemp` calls): before the fix, exit
+  143 became exit 1 and `header_tmp` leaked; after, exit 143 is preserved and the file is cleaned up.
+  Invisible on macOS's bash 3.2, where `local x` already means "set to empty" — the same
+  verify-on-bash->=4.4 asymmetry this project's own record already carries, now hit in production code
+  rather than a test. Fixed by initializing both locals (`local header_tmp="" rows_tmp=""`);
+  `tests/test_keel_impact.sh`'s own dir #409 regression test still passes unchanged, because it signals
+  during a later stage where both variables are already assigned and so never exercises the window this
+  fix targets — a test-coverage gap left as a follow-up, not addressed in this batch. And
+  `docs/grooming.md`'s G0 section told the reader "the reader is owed the ticket that will make it" — a
+  future dead-doc/wrap-loss coverage disclosure — naming dir #430 and dir #431 as still-open, and
+  instructed reading the sensor's coverage manually "until the instrument says it itself." Both tickets
+  shipped in this same release (see above): `tools/read-trace.sh aggregate` now prints its own coverage
+  disclosure unconditionally, every run, and the worktree-path fragmentation that motivated the
+  paragraph is fixed structurally. The doc now says so, keeping the two gaps that stay genuinely
+  permanent (an always-on context file, a slash-command body, or a shell-opened file never produces a
+  Read tool call) rather than instructing a reader to keep checking by hand for a mechanism that
+  already ships that check.
+
 - **dir #409 follow-up: fixed a macOS-CI-only flake in the dir #409 regression test, found post-merge
   when `main` went red on `tests (macos-14)` while `tests (ubuntu-24.04)`, `tests (alpine-busybox)`,
   shellcheck, self-check and secret-scan all stayed green.** The test killed the process under test via
@@ -74,8 +113,9 @@ sections real content going forward — see that page for exactly when each one 
 - **dir #417: re-derived `docs/keel-impact.md`'s `/keel-score` cost figure through the deduped
   transcript reader and confirmed it stands.** The published ~12% figure was measured before
   `tools/lib/transcript-usage.sh`'s requestId dedupe fix (dir #313/PR #353) existed; re-run on the same
-  two transcripts (dir #298, dir #301) the share holds at 11-13% of each session's deduped cache-read
-  total, because the requestId-duplication multiplier — though not uniform across pipeline stages
+  two transcripts (dir #298, dir #301) the share holds at 12-13% of each session's deduped attributed
+  cache-read total, or 10.5-11.6% of the deduped grand total, because the requestId-duplication
+  multiplier — though not uniform across pipeline stages
   (~1.7x-2.4x per stage) — varies too little to move any one stage's share by more than a point or two.
   One sentence naming the measurement basis and the re-derived numbers now ships alongside the figure.
 
