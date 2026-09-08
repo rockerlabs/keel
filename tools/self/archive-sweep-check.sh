@@ -95,12 +95,22 @@ while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] || continue
   closed_count=$((closed_count + 1))
   closed_lines=$((closed_lines + end - start + 1))
-  # dir #420: this grep shares backlog-blocks.sh's pre-F-04 naive shape — it matches ANY
-  # `✅ (DONE|CLOSED) (date)` anywhere in the flattened heading_block, with no check for whose
-  # tag it is. Verified live: a ticket whose own tag is undated but whose body cites a different,
-  # dated closed ticket ("See also dir #M — ✅ CLOSED (2026-02-02)") is wrongly counted as dated
-  # here — the sibling's date masks this ticket's own missing one, undercounting undated_closed.
-  if ! grep -qE '✅ (DONE|CLOSED) \([0-9]{4}-[0-9]{2}-[0-9]{2}' <<< "$heading_block"; then
+  # dir #420 (fixed here via the dir #426 shared helper): this grep used to share
+  # backlog-blocks.sh's pre-F-04 naive shape — it matched ANY `✅ (DONE|CLOSED) (date)` anywhere
+  # in the flattened heading_block, with no check for whose tag it is. Verified live: a ticket
+  # whose own tag is undated but whose body cites a different, dated closed ticket ("See also
+  # dir #M — ✅ CLOSED (2026-02-02)") was wrongly counted as dated here — the sibling's date
+  # masked this ticket's own missing one, undercounting undated_closed. Fix: strip recognised
+  # foreign-citation clauses (bb_strip_foreign_citations, dir #426) before testing for a dated
+  # tag, same as backlog-blocks.sh's own `closed` detection does for the bare tag. The verb
+  # vocabulary matches dir #432's widened set (backlog-blocks.sh's own `closed` field already
+  # reflects it — this only needs to recognise the SAME shapes to test whether the surviving tag
+  # carries a date, not to redecide closure).
+  own_num=""
+  [[ "$heading_block" =~ ^###\ dir\ \#([0-9]+) ]] && own_num="${BASH_REMATCH[1]}"
+  stripped="$(bb_strip_foreign_citations "$heading_block" "$own_num" \
+    '(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)')"
+  if ! grep -qE '(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)[[:space:]]*\([0-9]{4}-[0-9]{2}-[0-9]{2}' <<< "$stripped"; then
     undated_closed=$((undated_closed + 1))
   fi
 done < <(backlog_ticket_blocks "$backlog_file")

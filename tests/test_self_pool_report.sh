@@ -83,6 +83,22 @@ run "$pr" --history "$SANDBOX/hist-wording.jsonl" "$fp"
 check_contains "MUTATION-PROOF: '⛔ PARKED' wording still counts as structurally-parked" "$OUT" \
   "excluding structurally-parked:  1 (of 2; 1 parked by rule"
 
+# --- dir #425: the ⛔-blocked exclusion is CLAUSE-scoped, not whole-block-scoped — a heading
+# stating both a current ⛔ block and its own future-unblock clause in one line must still count
+# as parked (the single-state phrasing already counts parked=1; this must match it). --------------
+clause_scope_backlog="### dir #601 — blocked, with its own future unblock clause on the same line — R2 — ⛔ BLOCKED by X, no longer ⛔ once X lands — → pool
+
+body
+
+### dir #602 — single-state control, same blocking reason, no unblock clause — R2 — ⛔ BLOCKED by X — → pool
+
+body
+"
+fclause="$(mk_backlog "$clause_scope_backlog")"
+run "$pr" --history "$SANDBOX/hist-clause-scope.jsonl" "$fclause"
+check_contains "MUTATION-PROOF (dir #425): a heading with both a block and its own unblock clause still counts parked (2 of 2, not 1)" \
+  "$OUT" "excluding structurally-parked:  0 (of 2; 2 parked by rule"
+
 # --- --record idempotency ------------------------------------------------------------------------
 hist="$SANDBOX/hist-record.jsonl"
 run "$pr" --record 0.9.0 --history "$hist" "$f"

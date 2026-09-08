@@ -22,7 +22,53 @@
 #   the whole record stays one line — safe to read with `IFS=$'\t' read -r`. end_line is the
 #   ticket's full body-span end (next ticket heading or a `## ` section break, whichever comes
 #   first), the same boundary rule doctor.sh check 5 uses. closed=1 iff the heading block
-#   carries a `— ✅ (DONE|CLOSED)` tag.
+#   carries its OWN closure tag — `(✅|❌) (DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|
+#   BUILT)`, an em-dash before it optional (dir #432's widened, honestly-enumerated vocabulary —
+#   see the function body's own header comment for the shapes measured live and the ones
+#   deliberately excluded). A tag reached only via a recognised citation to a DIFFERENT ticket
+#   does not count as this heading's own (dir #420/dir #426, via bb_strip_foreign_citations
+#   below).
+# bb_strip_foreign_citations <block> <own_num> <tag_pattern>
+#   dir #426: the one shared "whose tag is it" helper — this exact strip-then-test loop shipped
+#   TWICE independently before this ticket consolidated it here: once in this file's own `closed`
+#   detection (the F-04 fix, dir #267) and once, near-identically, in
+#   tools/self/pool-report.sh's RETRACTED exclusion (FINDING-CA3-1). Both existed to answer the
+#   same question — does a `— <tag>` reached inside this heading block belong to THIS ticket
+#   (own_num) or to a DIFFERENT one a recognised citation verb names? — for two different tags
+#   (a closure tag here, `— RETRACTED` there).
+#
+#   Repeatedly strips citation clauses naming a DIFFERENT `dir #<N>` (own_num) via one of the two
+#   recognised verb forms (Supersedes/Superseded/Superseding [by] dir #N, or Duplicate of dir #N)
+#   followed by `— ` and tag_pattern (an ERE fragment with no surrounding anchors, e.g.
+#   '(✅|❌)[[:space:]]*(DONE|CLOSED)' or 'RETRACTED') out of a COPY of block, so the caller can
+#   test what remains for a bare tag without a foreign citation elsewhere in the block shadowing
+#   an own tag (dir #420's own over-discard) or being wrongly counted as this ticket's own.
+#
+#   Loops each verb form to a fixed point rather than stopping after one match — a block citing
+#   TWO different foreign tickets, whether via the same verb form twice or one of each, must have
+#   both citation clauses stripped; a single `if` per form only ever strips the first (each gap a
+#   real review round already found and fixed once in pool-report.sh's own prior copy of this
+#   logic). `${stripped/"${BASH_REMATCH[0]}"/}` quotes the matched clause so it is treated as a
+#   literal string to remove, not a glob pattern — an unquoted `${var/$pattern/}` would let a `*`
+#   or `?` inside the matched clause (e.g. markdown emphasis right after a verb) strip past the
+#   intended span, or not at all.
+#
+#   `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine (BSD regex on macOS's stock bash
+#   3.2) does not support; `([^a-zA-Z]|$)` is this project's established portable substitute.
+#   Echoes the stripped block; the input block is untouched (a local copy is mutated).
+bb_strip_foreign_citations() {
+  local own_num="$2" tag_pattern="$3" stripped="$1"
+  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*${tag_pattern}([^a-zA-Z]|$) ]] \
+    && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
+    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  done
+  while [[ "$stripped" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*${tag_pattern}([^a-zA-Z]|$) ]] \
+    && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
+    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  done
+  printf '%s' "$stripped"
+}
+
 backlog_ticket_blocks() {
   local file="$1"
   [ -f "$file" ] && [ -r "$file" ] || return 0
@@ -64,7 +110,7 @@ backlog_ticket_blocks() {
   local bidx=0
   local nb="${#boundary_lines[@]}"
   local start end heading_line block_end probe block_scan_end heading_block closed flat
-  local own_num hb_line cited_num
+  local own_num stripped_block
 
   for start in "${heading_lines[@]}"; do
     while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
@@ -110,35 +156,63 @@ backlog_ticket_blocks() {
     #
     # The shipped rule: a tag counts as a DIFFERENT ticket's own only when a recognised citation
     # verb sits directly against both that ticket's `dir #N` AND the tag itself — no gap wider
-    # than whitespace/an optional "by" on either side. Verified against the real BACKLOG.md: the
-    # function's `closed` output is BYTE-IDENTICAL to the pre-F-04 baseline over all 423 real
-    # headings, outside the two shapes F-04 was written to fix.
+    # than whitespace/an optional "by" on either side.
+    #
+    # dir #420's inverse regression, now fixed by construction rather than by ordering: the
+    # original shape tested one LINE at a time and `continue`d past the WHOLE line the instant a
+    # foreign citation matched anywhere on it — so "dir #N — ✅ CLOSED — superseded by dir #M —
+    # ✅ CLOSED" over-discarded dir #N's own, earlier tag on that same line (cited_num=M !=
+    # own_num=N fired the `continue` before the own tag was ever tested). dir #426 replaces the
+    # per-line scan with `bb_strip_foreign_citations`: it STRIPS only the matched foreign-citation
+    # clause (any number of them) out of the WHOLE flattened block first, then tests what remains
+    # for the own tag — an own tag anywhere else in the block, same line or not, survives. This is
+    # the same strip-then-test shape `tools/self/pool-report.sh`'s RETRACTED exclusion already
+    # shipped once (FINDING-CA3-1) before this ticket promoted it into the one shared helper both
+    # now call.
+    #
+    # dir #432: the recognised closure vocabulary was `(DONE|CLOSED)` only, always after `— `.
+    # Measured live against this project's own real BACKLOG.md: 49 closed heading blocks used a
+    # different real shape and read as OPEN — `✅ ABSORBED`, `✅ EXECUTED`, `❌ SUPERSEDED`,
+    # `❌ DUPLICATE`, `❌ ABSORBED`, plus `✅ DONE`/`✅ CLOSED`/`✅ BUILT` reached with NO `— `
+    # separator at all (legacy `### <n>.` headings predating the convention, and a couple of
+    # `### dir #N` ones). Contract decision (dir #419's own standing objection weighed against
+    # dir #432's evidence): NOT the structural "any ✅/❌ in the block" test — measured live and
+    # rejected, because it also fires on sub-status markers that are not the ticket's own
+    # closure ("✅ RUN 1 EXECUTED" describing one run of a still-open ticket; "✅ PARTIAL, gap 2
+    # only" with the ticket's own body saying gap 1 is still open) — those are real, adjacent
+    # shapes on this project's own live file and a bare-glyph test cannot tell them apart from a
+    # genuine close. So: the vocabulary stays enumerated, honestly widened to the seven verbs
+    # actually observed live (DONE, CLOSED, ABSORBED, EXECUTED, SUPERSEDED, DUPLICATE, BUILT), and
+    # the `— ` separator is made optional rather than dropped — a citation clause is still only
+    # ever stripped via the two recognised verb forms below, so widening the vocabulary here only
+    # grows what STRIPPING can recognise as a foreign citation's tag too, not what counts as a
+    # bare own-tag hit on its own.
     #
     # Known, accepted limitations (not chased further — a delta review round kept finding more
     # missing verbs, "⛔ BLOCKED by", "merged into" among them: the same shape recurring rather
     # than shrinking, which is this project's own signal to stop enumerating and document the gap
     # instead of layering on more special cases):
-    #   - the verb list below is not exhaustive — "Supersedes"/"superseding"/"superseded (by)"/
+    #   - the citation-verb list is not exhaustive — "Supersedes"/"superseding"/"superseded (by)"/
     #     "duplicate of" (first letter only case-insensitive — a full-caps "SUPERSEDED" is not
-    #     recognised; the real file DOES use that form, always as a ticket's own status marker
-    #     like "❌ SUPERSEDED", never as a citation verb next to a `dir #N`, so this narrower gap
-    #     does not currently misfire) — covers the audit's own two documented examples plus the
-    #     dominant real usage (29 lines containing "superseded" vs. 8 containing "supersedes" in
-    #     this project's own BACKLOG.md today, a per-line not per-occurrence count) — any other
-    #     citation verb falls through to the generic tag check below, unrecognised, same as
-    #     before this fix existed for that verb;
+    #     recognised as a CITATION verb; the real file DOES use that form, but always as a
+    #     ticket's own status marker like "❌ SUPERSEDED", never as a citation verb next to a
+    #     `dir #N`, so this narrower gap does not currently misfire) — any other citation verb
+    #     falls through to the generic tag check below, unrecognised, same as before this fix
+    #     existed for that verb;
+    #   - the CLOSURE-verb list (DONE/CLOSED/ABSORBED/EXECUTED/SUPERSEDED/DUPLICATE/BUILT) is also
+    #     not exhaustive — a real terminal shape using a verb outside this list still reads OPEN,
+    #     same false-negative direction as before this fix, just a smaller vocabulary gap;
     #   - a citation separated from its own tag by a further em-dash-bounded clause ("Supersedes
     #     dir #N — because X — ✅ CLOSED") is not caught — the looser form that WOULD catch it is
     #     what caused a real regression during review (dir #299's own tag, unrelated to a later
     #     citation on the same giant line, was wrongly discarded);
-    #   - the inverse regression (dir #420): a genuinely closed ticket whose OWN `— ✅ CLOSED`
-    #     tag sits earlier on the same line than a citation to a different ticket's closure
-    #     ("dir #N — ✅ CLOSED — superseded by dir #M — ✅ CLOSED") is over-discarded — the
-    #     citation match still fires (cited_num=M != own_num=N) and `continue`s past the whole
-    #     line, so the own tag that already matched earlier in that same line is never reached.
-    #     Verified live: such a line reports closed=0 for a ticket that is in fact closed. The
-    #     real cure is dir #354's metadata line, tracked separately; not chased here for the same
-    #     reason as the two limitations above.
+    #   - deliberately excluded from the closure vocabulary, having been checked live and found to
+    #     be sub-status markers rather than whole-ticket closures: "✅ PHASE N DONE" (phase 1 of a
+    #     multi-phase ticket), "✅ DECIDED" (a decision recorded, not necessarily executed), and
+    #     "⏳ IN FLIGHT" (this project's own in-progress marker, the opposite of closed);
+    #   - the real cure for the whole citation/own-tag ambiguity is dir #354's metadata line,
+    #     tracked separately as the same subsumption family (dir #354/#403/#419/#420/#425/#426) —
+    #     not chased here.
     #
     # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's
     # stock bash 3.2 (BSD regex) — confirmed live: even a bare ASCII `CLOSED\b` fails to match
@@ -146,21 +220,11 @@ backlog_ticket_blocks() {
     # `([^a-zA-Z]|$)` is the portable word-boundary substitute this project already uses for the
     # identical reason in harvest.sh's F-01 fix.
     closed=0
-    while IFS= read -r hb_line; do
-      cited_num=""
-      if [[ "$hb_line" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
-        cited_num="${BASH_REMATCH[3]}"
-      elif [[ "$hb_line" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—\ ✅\ (DONE|CLOSED) ]]; then
-        cited_num="${BASH_REMATCH[1]}"
-      fi
-      if [ -n "$cited_num" ] && [ "$cited_num" != "$own_num" ]; then
-        continue
-      fi
-      if [[ "$hb_line" =~ —\ ✅\ (DONE|CLOSED)([^a-zA-Z]|$) ]]; then
-        closed=1
-        break
-      fi
-    done <<< "$heading_block"
+    stripped_block="$(bb_strip_foreign_citations "$heading_block" "$own_num" \
+      '(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)')"
+    if [[ "$stripped_block" =~ (—[[:space:]]*)?(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)([^a-zA-Z]|$) ]]; then
+      closed=1
+    fi
 
     flat="$(tr '\n\t' '  ' <<< "$heading_block")"
     printf '%s\t%s\t%s\t%s\n' "$start" "$end" "$closed" "$flat"
