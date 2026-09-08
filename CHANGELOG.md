@@ -15,6 +15,23 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #409 follow-up: fixed a macOS-CI-only flake in the dir #409 regression test, found post-merge
+  when `main` went red on `tests (macos-14)` while `tests (ubuntu-24.04)`, `tests (alpine-busybox)`,
+  shellcheck, self-check and secret-scan all stayed green.** The test killed the process under test via
+  `pkill -f "keel-impact.sh migrate ..."` pattern-matching against the whole process table — the real
+  target (the process holding the EXIT trap) sits an unpredictable number of internal bash forks below
+  the backgrounded job's own `$!`, and which fork a command-line pattern happens to match first is
+  platform/bash-build/scheduler-load-dependent, not deterministic; a loaded/virtualized macOS CI runner
+  could match a different fork than a quiet local machine, sending the signal to a process that was
+  never actually blocked in the awk call at all. The stub now records its own `$PPID` — the exact
+  process the OS itself reports as the caller — and the test signals that pid directly, then rendezvous
+  on that specific pid's own death (`kill -0` polling) rather than a fixed-iteration poll of file
+  existence: a process only reports dead once it has actually exited, which for a process with an EXIT
+  trap installed happens strictly after that trap completes, so observing the death is a deterministic
+  proof the cleanup already ran, regardless of how slow or loaded the runner is. Verified locally: 5
+  consecutive clean runs of the affected test, confirmed red against the pre-fix code, confirmed no
+  orphaned `sleep` processes leak; two consecutive full-suite green runs before pushing.
+
 - **dir #427: timed the 63-minute RC Fixer E fix round (PR #367) from its own transcript and found a
   narrower gate scoping question than the ticket posed — then found the narrower answer's own worked
   example was wrong, live, in review.** 31% of that round (19.7 of 63 minutes) was spent on six full

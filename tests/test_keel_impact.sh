@@ -927,14 +927,30 @@ fi
 # right after BOTH mktemps have already produced their files, which is the exact window this ticket
 # is about.
 #
-# `mktemp`'s own directory can't be isolated via $TMPDIR for this check: on macOS, a bare `mktemp`
-# with no args resolves via `_CS_DARWIN_USER_TEMP_DIR` and ignores `$TMPDIR` entirely (confirmed live
-# via `man mktemp` and a direct probe) — the assertion instead diffs the REAL resolved mktemp
-# directory's listing (learned via a throwaway `mktemp` call, so it works identically on Linux CI)
-# before vs. during the run, isolating exactly the two files this invocation created regardless of
-# platform, then checks their survival after the kill. Verified live against the pre-fix code (this
-# exact stub+diff harness against a checkout with both trap lines removed): both files are left
-# behind; with the trap restored, both are gone. ----------------------------------------------------
+# `mktemp` is ALSO stubbed on $PATH (alongside `awk`, below) — a real-mktemp wrapper that just logs
+# every path it hands back before returning it unchanged. The assertion checks survival of exactly
+# those logged paths, not a before/during directory-listing diff: diffing was the original approach
+# here (needed because a bare `mktemp` with no args on macOS resolves via `_CS_DARWIN_USER_TEMP_DIR`
+# and ignores `$TMPDIR` entirely, confirmed live via `man mktemp` and a direct probe, so isolating
+# $TMPDIR wasn't an option) — but a directory-listing diff is itself dependent on nothing ELSE in the
+# real shared temp directory creating or removing a file in the same narrow window, a low-probability
+# but real risk on a busy machine or parallel CI. Logging the exact paths as they're minted removes
+# that dependency entirely and needs no knowledge of which directory mktemp resolved to on either
+# platform. (Lead from a peer session's dir #442 spike on the same bug class in token-report.sh,
+# applied here as this ticket's own delta round.)
+#
+# The kill target is the stub's own recorded $PPID (the exact process running
+# _impact_merge_ledger_produce), not a `pkill -f` pattern match against the process table — an
+# earlier version used the pattern-match approach and flaked on macOS CI (passed locally, passed on
+# Linux CI, failed intermittently on macos-14): the real target sits an unpredictable number of
+# internal bash forks below the backgrounded job's own $!, and which fork a command-line pattern
+# happens to match first is platform/bash-build/scheduler-load-dependent, not deterministic. Getting
+# the exact pid straight from the OS ($PPID as the stub itself sees it) removes that guesswork
+# entirely. The cleanup check then rendezvous on that EXACT process's own death (`kill -0` failing),
+# not a fixed-iteration poll of file existence — a process only reports dead once it has actually
+# exited, which for a process with an EXIT trap installed happens strictly after that trap
+# completes, so by the time the death is observed the cleanup is guaranteed done, however slow or
+# loaded the runner is. ------------------------------------------------------------------------------
 sigrepo="$(new_repo)"
 mkdir -p "$sigrepo/.keel"
 printf '%s\n%s\n' "# Keel impact ledger" "|date|score|conf|guard|hold|fire|hit|miss|fric|silent|evidence|gap|" > "$sigrepo/.keel/ledger.md"
@@ -943,23 +959,37 @@ sigrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$sigrepo")"
 awk_stub_bin="$SANDBOX/dir409-awk-stub"; mkdir -p "$awk_stub_bin"
 awk_marker="$SANDBOX/dir409-awk-started"
 awk_pidfile="$SANDBOX/dir409-awk-pid"
-rm -f "$awk_marker" "$awk_pidfile"
+awk_ppidfile="$SANDBOX/dir409-awk-ppid"
+mktemp_log="$SANDBOX/dir409-mktemp.log"
+rm -f "$awk_marker" "$awk_pidfile" "$awk_ppidfile" "$mktemp_log"
+: > "$mktemp_log"
 real_awk="$(command -v awk)"
+real_mktemp="$(command -v mktemp)"
 {
   printf '#!/usr/bin/env bash\n'
   printf 'case "$*" in\n'
   # `exec sleep 30` keeps this stub's own pid (it replaces the process image, not forks), so
-  # recording $$ BEFORE the exec gives the test a pid it can kill directly later — the `pkill -f
-  # "keel-impact.sh migrate ..."` calls below only ever match bash processes still running THAT
-  # script; once this stub execs into `sleep`, its cmdline no longer contains that pattern at all,
-  # so without this pidfile it would be left running as an untracked orphan for the full 30s.
-  printf '  *date_col*) echo $$ > %q; touch %q; exec sleep 30 ;;\n' "$awk_pidfile" "$awk_marker"
+  # recording $$ BEFORE the exec gives the test a pid it can kill directly later to reap the sleep
+  # once its cmdline no longer says "awk". $PPID is the DIRECT parent that invoked this stub as
+  # "awk" — i.e. the exact _impact_merge_ledger_produce-running process holding the EXIT trap.
+  # Recording it here (rather than pattern-matching "keel-impact.sh migrate ..." against the whole
+  # process table later) is what makes the kill target exact instead of a guess: the earlier
+  # pkill-by-pattern approach flaked on macOS CI (dir #409 follow-up) because the target sits an
+  # unpredictable number of internal bash forks below the backgrounded job's own $!, and which of
+  # those forks the pattern actually matches first can vary by platform/bash build/scheduler load.
+  printf '  *date_col*) echo $$ > %q; echo $PPID > %q; touch %q; exec sleep 30 ;;\n' \
+    "$awk_pidfile" "$awk_ppidfile" "$awk_marker"
   printf '  *) exec %q "$@" ;;\n' "$real_awk"
   printf 'esac\n'
 } > "$awk_stub_bin/awk"
 chmod +x "$awk_stub_bin/awk"
-dir409_probe="$(mktemp)"; dir409_realtmp="$(dirname "$dir409_probe")"; rm -f "$dir409_probe"
-dir409_before="$(ls -a "$dir409_realtmp" 2>/dev/null | sort)"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'p="$(%q "$@")"\n' "$real_mktemp"
+  printf 'printf "%%s\\n" "$p" >> %q\n' "$mktemp_log"
+  printf 'printf "%%s\\n" "$p"\n'
+} > "$awk_stub_bin/mktemp"
+chmod +x "$awk_stub_bin/mktemp"
 env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
   PATH="$awk_stub_bin:$PATH" \
   bash "$TOOL" migrate "$sigrepo" >"$SANDBOX/dir409.out" 2>&1 </dev/null &
@@ -974,37 +1004,49 @@ if [ ! -f "$awk_marker" ]; then
   wait "$sig_pid" 2>/dev/null || true
   fail "dir #409: the awk stub actually started (fixture reaches the mktemp'd window)" "no marker after ${sig_waited} tries"
 else
-  dir409_during="$(ls -a "$dir409_realtmp" 2>/dev/null | sort)"
-  dir409_new="$(comm -13 <(printf '%s\n' "$dir409_before") <(printf '%s\n' "$dir409_during"))"
-  # kill by command-line pattern, not $sig_pid alone: the tested command sits several process layers
-  # below the backgrounded `env ... bash "$TOOL" migrate ...` job (verified live), so signaling only
-  # $sig_pid leaves the real merge process running as an orphan, holding its temp files open — the
-  # exact false negative this test exists to avoid.
-  pkill -TERM -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
-  # Poll for the files to disappear instead of a blind sleep — the trap fires within milliseconds on
-  # the fixed code, so this exits almost immediately there; the 1s bound (20 x 0.05s) only gets paid
-  # in full on the pre-fix code, where the files never disappear at all.
-  dir409_clean_wait=0
-  while [ "$dir409_clean_wait" -lt 20 ]; do
-    dir409_leftover=""
-    for f in $dir409_new; do
-      [ -e "$dir409_realtmp/$f" ] && dir409_leftover="$dir409_leftover $f"
+  dir409_target="$(cat "$awk_ppidfile" 2>/dev/null)"
+  if [ -n "$dir409_target" ]; then
+    kill -TERM "$dir409_target" 2>/dev/null || true
+    # Rendezvous on the TARGET PROCESS'S OWN DEATH, not a fixed sleep or a file-existence poll — a
+    # process only ever reports dead (kill -0 fails) once it has actually exited, which for a bash
+    # process with an EXIT trap installed happens strictly AFTER that trap has finished running. So
+    # by the time this loop exits because the process is gone, the cleanup (if the code does it at
+    # all) is GUARANTEED complete — no race window remains, regardless of how loaded or how much
+    # slower the scheduler is (the loop just takes longer to observe the same guaranteed-ordered
+    # fact). Bounded generously (100 x 0.1s = 10s) so a genuinely slow CI runner still gets there;
+    # this bound is a ceiling on how long we wait to OBSERVE the death, not a guess about how fast
+    # the trap itself runs.
+    dir409_death_wait=0
+    while kill -0 "$dir409_target" 2>/dev/null && [ "$dir409_death_wait" -lt 100 ]; do
+      sleep 0.1; dir409_death_wait=$((dir409_death_wait + 1))
     done
-    [ -z "$dir409_leftover" ] && break
-    sleep 0.05; dir409_clean_wait=$((dir409_clean_wait + 1))
-  done
+  fi
+  dir409_leftover=""
+  if [ -s "$mktemp_log" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] && [ -e "$f" ] && dir409_leftover="$dir409_leftover $f"
+    done < "$mktemp_log"
+  else
+    dir409_leftover="(mktemp stub never logged a path)"
+  fi
+  check_contains "dir #409: the interrupted merge process actually exited (not still running)" \
+    "$([ -n "$dir409_target" ] && ! kill -0 "$dir409_target" 2>/dev/null && echo exited)" "exited"
   check_contains "dir #409: header_tmp/rows_tmp don't survive an interrupted merge" \
     "$([ -z "$dir409_leftover" ] && echo clean)" "clean"
   check_file "dir #409: the legacy source survives an interrupted merge untouched" "$sigrepo/.keel/ledger.md"
   check_nofile "dir #409: an interrupted merge never writes the completion marker" "$sigrepo_store/origin"
   # Reap anything TERM didn't catch — unconditional cleanup, not part of the assertion above. The
-  # awk stub's own pid (recorded via $awk_pidfile before it exec'd into `sleep 30`) needs its own
-  # kill: once exec'd, its cmdline is just "sleep 30" and no `pkill -f "keel-impact.sh migrate ..."`
-  # pattern can ever match it, so without this it survives as an orphan for the full 30s.
+  # first kill is a no-op in the common case (the rendezvous loop above already confirmed
+  # $dir409_target is dead); it only does real work if that loop hit its 10s timeout instead of
+  # observing death. The pattern-based pkill below is deliberately still the fuzzy, non-exact kill
+  # this fix's whole point was to stop relying on for the ASSERTION — kept here only as a mop-up for
+  # any OTHER bash-fork layer of the same invocation that isn't $dir409_target, not as a second
+  # correctness check.
+  [ -n "$dir409_target" ] && kill -9 "$dir409_target" 2>/dev/null
   pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
   [ -f "$awk_pidfile" ] && kill -9 "$(cat "$awk_pidfile")" 2>/dev/null
   wait "$sig_pid" 2>/dev/null
-  for f in $dir409_new; do rm -f "$dir409_realtmp/$f"; done
+  while IFS= read -r f; do [ -n "$f" ] && rm -f "$f"; done < "$mktemp_log"
 fi
 
 # --- v0.8.0 delta audit F-06: a failure in EITHER `sort` stage of _impact_merge_ledger's rows
