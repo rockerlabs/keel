@@ -78,7 +78,7 @@ dismissal of a missing-`summary`-call finding as a mere formatting quirk). **Beh
 run's one CONFIRMED release-blocking behavioural defect — `tools/keel-impact.sh:577` (bash ≥ 4.0
 leaves an uninitialized `local` merely declared, not set-to-empty, so the prior cycle's EXIT-trap fix
 leaked its own temp file and clobbered the exit status on both Linux CI legs; reproduced
-independently four times, positive-controlled) — is fixed before this cut. **Three further behavioural
+independently, positive-controlled) — is fixed before this cut. **Three further behavioural
 shapes are the floor beyond it, disclosed rather than fixed** (full wording in `CHANGELOG.md`'s
 `[0.9.1]` known-issues paragraph): one live, in `docs/keel-ab/seed.sh`, an adopter-facing script; two
 latent, in this project's own self-maintenance tooling (`tools/lib/backlog-blocks.sh`'s closure-tag
