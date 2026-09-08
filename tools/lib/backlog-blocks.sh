@@ -58,11 +58,37 @@
 #   Echoes the stripped block; the input block is untouched (a local copy is mutated).
 bb_strip_foreign_citations() {
   local own_num="$2" tag_pattern="$3" stripped="$1"
-  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:space:]]+by)?[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*${tag_pattern}([^a-zA-Z]|$) ]] \
+  # code-review high (dir #432 delta finding, reproduced live): dir #432 made the em-dash
+  # OPTIONAL in the bare-tag test a caller runs on what this function returns (a legacy heading
+  # can carry its own tag with no separator at all). But these two citation regexes still
+  # REQUIRED a mandatory `—` between `dir #N` and the tag — so a foreign citation that itself
+  # omits the em-dash ("Duplicate of dir #9 ✅ CLOSED, no dash here") was never recognised as a
+  # citation, never stripped, and the now-dash-optional bare-tag test then matched its tag as if
+  # it were THIS heading's own. Reproduced: an open ticket citing a closed sibling with no dash
+  # read closed=1. Fix: the separator is optional here too, so any foreign citation — dashed or
+  # not — is stripped before the bare-tag test ever sees it, closing the gap the two functions'
+  # optionality had drifted out of sync on.
+  #
+  # code-review high, a second delta finding (also reproduced live): every gap INSIDE a
+  # citation match below is `[ \t]`, not `[[:space:]]` — deliberately excluding a literal
+  # newline. The pre-dir-#420 code scanned one physical LINE at a time, so a citation's verb,
+  # `dir #N`, and tag could only ever be on the SAME line by construction; switching to a
+  # whole-block scan (dir #420, so an own tag isn't shadowed by a LATER citation elsewhere in the
+  # block) accidentally let `[[:space:]]` match the newline BETWEEN two lines too, so a genuinely
+  # own, wrapped closure tag on the line right after a line that happens to end in a recognised
+  # citation verb + a DIFFERENT `dir #N` ("Supersedes dir #5\n— ✅ CLOSED") was misread as a
+  # citation to that different ticket and wrongly stripped — the exact "own tag" this whole
+  # function exists to protect, undone by the same block-wide scan that fixes dir #420. No
+  # citation in this project's own real BACKLOG.md, nor in the F-04/dir #420 test suites, has ever
+  # needed to span a line break internally, so restricting these gaps to same-line whitespace
+  # only closes this hole — it does not narrow anything real. The bare-tag test the caller runs
+  # afterward is UNCHANGED and still scans the whole block, since THAT scan is what dir #255's
+  # wrapped-heading feature and dir #420's own fix both depend on.
+  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([\ \t]+by)?[\ \t]+dir\ \#([0-9]+)[\ \t]*(—[\ \t]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
     && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
     stripped="${stripped/"${BASH_REMATCH[0]}"/}"
   done
-  while [[ "$stripped" =~ [Dd]uplicate\ of[[:space:]]+dir\ \#([0-9]+)[[:space:]]*—[[:space:]]*${tag_pattern}([^a-zA-Z]|$) ]] \
+  while [[ "$stripped" =~ [Dd]uplicate\ of[\ \t]+dir\ \#([0-9]+)[\ \t]*(—[\ \t]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
     && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
     stripped="${stripped/"${BASH_REMATCH[0]}"/}"
   done
@@ -234,7 +260,18 @@ backlog_ticket_blocks() {
     #     "⏳ IN FLIGHT" (this project's own in-progress marker, the opposite of closed);
     #   - the real cure for the whole citation/own-tag ambiguity is dir #354's metadata line,
     #     tracked separately as the same subsumption family (dir #354/#403/#419/#420/#425/#426) —
-    #     not chased here.
+    #     not chased here;
+    #   - making the `— ` separator optional (dir #432, for the legacy no-separator shapes) is a
+    #     block-wide relaxation, not scoped to only the blocks that actually lack a separator — a
+    #     still-open ticket whose body happens to contain a glyph immediately adjacent to a
+    #     recognised verb with NO separator and NO recognised citation verb in front of it (not
+    #     the `RUN N EXECUTED`/`PHASE N DONE` shapes above, which the vocabulary already excludes,
+    #     but a bare `✅ DONE` sitting in ordinary prose) would still misread as this ticket's own
+    #     closure. Checked live against this project's own real BACKLOG.md (code-review high,
+    #     altitude finding) and no such shape exists there today; not chased further for the same
+    #     reason the structural "any closure glyph" alternative was rejected — a scoped-down
+    #     version of that same test would only re-narrow the vocabulary problem this ticket
+    #     already solved a different way.
     #
     # `\b` is a GNU regex extension bash's own `[[ =~ ]]` engine does not support on macOS's
     # stock bash 3.2 (BSD regex) — confirmed live: even a bare ASCII `CLOSED\b` fails to match

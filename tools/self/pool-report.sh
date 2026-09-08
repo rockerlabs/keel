@@ -164,6 +164,17 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # unclear, under review, ...), wrongly excluding those as if they meant "unblocked". Still true
   # per-clause: this fix only narrows WHICH TEXT the exclusion pattern is tested against, not the
   # pattern itself.
+  #
+  # KNOWN LIMITATION (code-review high, altitude finding): splitting on a bare `,` is broader than
+  # this project's own `— `-separated convention used everywhere else in this file's regexes — an
+  # ordinary prose comma inside one logical clause (e.g. "no longer ⛔, since dir #5 merged, all
+  # clear") could in principle separate an unblock phrase from the very `⛔` it qualifies, if the
+  # comma falls between them. Not narrowed to `— ` only, because the ticket's own worked example
+  # ("⛔ BLOCKED by X, no longer ⛔ once X lands") is itself comma-separated, not em-dash-separated
+  # — dropping comma support would leave the shape dir #425 exists to fix uncaught. Checked live
+  # against this project's own real BACKLOG.md: the parked count is unchanged before and after
+  # this fix (no heading here currently has this shape either way), so this is a documented,
+  # currently-inert residual risk, not a live defect.
   # code-review efficiency pass: gate the clause split behind a cheap whole-block presence check
   # first, same as the old whole-block `grep -qE '⛔'` did — most heading blocks carry no `⛔` at
   # all, and splitting+looping unconditionally would spend three string rewrites plus a per-clause

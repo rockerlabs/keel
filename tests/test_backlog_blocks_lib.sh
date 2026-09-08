@@ -224,6 +224,36 @@ check_contains "bb_strip_foreign_citations leaves a non-citation tag untouched" 
 own_cited="$(bb_strip_foreign_citations 'Supersedes dir #9 — ✅ CLOSED, this IS our own ticket' '9' '(✅|❌)[[:space:]]*(DONE|CLOSED)')"
 check_contains "bb_strip_foreign_citations does not strip a citation to own_num itself" "$own_cited" 'CLOSED'
 
+# --- code-review high (delta finding, dir #432's dash-optionality follow-on): dir #432 made the
+# em-dash OPTIONAL in the bare own-tag test, but the citation regexes still required a mandatory
+# dash — so a foreign citation that itself omits the dash was never recognised as a citation,
+# never stripped, and the dash-optional bare-tag test then matched its tag as this heading's own.
+# MUTATION-PROOF: an open ticket citing a closed sibling with NO em-dash before the sibling's tag
+# must stay open. ------------------------------------------------------------------------------
+d420b="$(new_repo)"
+f420b="$d420b/BACKLOG.md"
+printf '### dir #980 — an open ticket, still needs work — R2 — → 0.9.0\nDuplicate of dir #985 ✅ CLOSED, no em-dash before the tag here.\n' > "$f420b"
+out420b="$(backlog_ticket_blocks "$f420b")"
+check_status "MUTATION-PROOF: a no-em-dash foreign citation is still recognised, own ticket stays open" \
+  0 "$(printf '%s\n' "$out420b" | awk -F'\t' '$4 ~ /### dir #980 / {print $3; exit}')"
+
+# --- code-review high (delta finding): the citation regexes' internal whitespace gaps must NOT
+# cross a newline — switching backlog-blocks.sh's own `closed` detection to a whole-block scan
+# (dir #420) let a citation verb ending one line and a DIFFERENT ticket's tag on the very next
+# line satisfy the "no gap wider than whitespace" rule, wrongly treating a heading's own, genuinely
+# wrapped closure tag as a citation to that different ticket and stripping it. MUTATION-PROOF: a
+# heading whose own wrapped tag sits on the line right after a line ending in a recognised
+# citation verb + a DIFFERENT dir #N must still read closed, and the ticket actually named in that
+# citation-shaped line must independently still read closed too (both real, unrelated tickets). ---
+d420c="$(new_repo)"
+f420c="$d420c/BACKLOG.md"
+printf '### dir #990 — an active ticket whose own status wraps oddly\nSupersedes dir #995\n— ✅ CLOSED\n\n### dir #995 — a real, separately closed ticket\n— ✅ CLOSED\n' > "$f420c"
+out420c="$(backlog_ticket_blocks "$f420c")"
+check_status "MUTATION-PROOF: own wrapped tag survives a citation-shaped line right before it" \
+  1 "$(printf '%s\n' "$out420c" | awk -F'\t' '$4 ~ /### dir #990 / {print $3; exit}')"
+check_status "control: the separately-named ticket in that citation-shaped line is also closed" \
+  1 "$(printf '%s\n' "$out420c" | awk -F'\t' '$4 ~ /### dir #995 / {print $3; exit}')"
+
 # --- legacy numbered heading (### <n>.) is scanned too, unlike doctor.sh check 5's own scope ----
 d3="$(new_repo)"
 f3="$d3/BACKLOG.md"
