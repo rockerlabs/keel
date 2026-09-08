@@ -210,8 +210,7 @@ sessions against how often a spec is accepted as first submitted — is a **repo
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists.
 
-**Two sizing rules an adopter project forced into the open (2026-09-08, the first `/groom` on a
-knowledge-base backlog).** This section says size is "measured against the project's own per-release
+**Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is "measured against the project's own per-release
 band" — which quietly assumes a band exists and that the operator wants one. Neither held there, and
 the honest answers are worth stating rather than leaving the next groom to improvise them.
 
@@ -222,12 +221,16 @@ the honest answers are worth stating rather than leaving the next groom to impro
   number the project does not use. What must NOT happen is a band invented by the procedure to satisfy
   this field — that is exactly the "invent a theme without a pain" failure G1 forbids, applied to size.
 - **Theme size is not schedulable capacity, and a single number hides the difference.** That run's
-  largest row carried 13 tickets, **two of which no session can work at all** — one an operator-only
-  toggle, one needing hardware the machine does not have. A reader sizing effort off "13" is wrong by
-  the count of items that are parked, blocked, or operator-only. **State both numbers when they differ**
-  — the theme's total and how many of them a session could actually pick up — and name which items are
-  in the second group and why. The same row's real risk turned out to be an *ordering* constraint
-  between two of its tickets, not its size at all.
+  largest row carried 13 tickets, **four of which no session can work at all** — an operator-only
+  toggle, one needing hardware the machine does not have, and two more whose own bodies reserve the
+  decision to the operator. A reader sizing effort off "13" is wrong by the count of items that are
+  parked, blocked, or operator-only. **State both numbers when they differ** — the theme's total and how
+  many of them a session could actually pick up — and name which items are in the second group and why.
+  **That count is itself easy to get wrong from a readiness grade alone:** the first draft of this
+  plan said two, counting only the tickets marked R0, and its own G6 round found two more that carry
+  an operator decision in the body while grading as ordinary work. Read the bodies for it, the way G2
+  already requires for everything else. The same row's real risk turned out to be an *ordering*
+  constraint between two of its tickets, not its size at all.
 
 ## G6 — a fresh-reviewer adjudication round is mandatory
 
@@ -251,8 +254,8 @@ session count, a cost line, and the count of findings filed. Record the cost as 
 data was never captured — never a fabricated zero. A different project names its own per-project
 location here — G9 states the portability rule this follows.
 
-**A project with no releases at all still owes a cross-run record — of GROOMS (2026-09-08, the first
-`/groom` on an adopter knowledge-base backlog).** This section is written in the unit "one row per
+**A project with no releases at all still owes a cross-run record — of GROOMS (same run, 2026-09-08).**
+This section is written in the unit "one row per
 release", and G9 makes the record's *location* portable while leaving its *unit* keel-shaped. That
 adopter commits directly to master, has no tags, no CI and no release event, so a literal reading
 produces no record at all — the procedure's one durable output silently skipped on exactly the kind of
