@@ -99,6 +99,24 @@ _tr_build_report() {
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
 
+  # dir #422: the jq call below used to do `out="$(jq ...)"; status=$?; rm -f <4 files>; [ "$status"
+  # -eq 0 ] || return "$status"` — a bare assignment failing under `set -e` aborts the function via
+  # errexit before `status=$?` is ever reached. (In THIS script the failure was, in fact, caught
+  # today regardless: this function's only call site wraps it as `report="$(_tr_build_report
+  # ...)" || exit 1`, and testing a command via `&&`/`||` suspends errexit for the WHOLE function's
+  # execution — verified live, contra how this ticket was filed — but that made the old code correct
+  # only by an accident of how its one caller happens to invoke it, the same accident this file's
+  # sibling tools/lib/transcript-usage.sh's tu_session_totals() still relies on today for the
+  # identical bare-assignment shape — not yet ported to this fix, out of scope for dir #422, worth
+  # its own follow-up.) Fixed below by testing the assignment via `||` instead: the left/only operand
+  # of `||` is the other context `set -e` exempts on its own terms, so this function's own
+  # correctness no longer depends on how any caller happens to invoke it. A `trap ... RETURN` was
+  # tried here first and reverted: a RETURN trap set inside a function is not scoped to it — it is a
+  # single global handler that also fires on the NEXT function return up the call chain once the
+  # setting function's own locals are out of scope, the same hazard tu_session_totals's own comment
+  # already documents. Reproduced live here too, in a case with the intervening
+  # command-substitution subshell (this function's real call site) removed.
+
   # Every read below is guarded rather than a bare command — the corpus is LIVE
   # (docs/token-economy.md: a self-referential run reads a session transcript it is still writing), so
   # a file changing mid-read is the ORDINARY case, not a rare one. Under this script's own
@@ -145,8 +163,12 @@ _tr_build_report() {
     done < <(tu_subagent_files "$f")
   done
 
-  local read_at out status
+  local read_at out status=0
   read_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  # dir #422: `|| status=$?` makes this assignment correct standing alone, not only when called the
+  # one way it happens to be called today (see the comment above) — the left/only operand of `||` is
+  # the other context `set -e` exempts on its own terms, so a jq failure is captured here rather than
+  # aborting the function, and cleanup below always runs before the return.
   out="$(jq -nc \
     --slurpfile T "$tmp_totals" --slurpfile TURNS "$tmp_turns" \
     --slurpfile CALLS "$tmp_calls" --slurpfile SC "$tmp_sc" \
@@ -328,8 +350,7 @@ _tr_build_report() {
           assistantNoUsage: $assistantNoUsage
         }
       }
-  ')"
-  status=$?
+  ')" || status=$?
   rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
   [ "$status" -eq 0 ] || return "$status"
   printf '%s\n' "$out"
