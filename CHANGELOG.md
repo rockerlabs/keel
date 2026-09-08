@@ -31,9 +31,10 @@ sections real content going forward — see that page for exactly when each one 
     The section assumed a band exists. Asked to pick one, that operator declined on the grounds that
     the project has no releases and no CI, so nothing closes a fixed-size slate; a row now sizes as the
     theme entire and says so, rather than a band being invented to fill the field. Paired with it:
-    **theme size is not schedulable capacity** — that run's largest row held 13 tickets, two of which
-    no session can work (an operator-only toggle, and one needing absent hardware) — so a row states
-    both numbers when they differ.
+    **theme size is not schedulable capacity** — that run's largest row held 13 tickets, four of which
+    no session can work (an operator-only toggle, one needing absent hardware, and two reserving the
+    decision to the operator in their bodies while grading as ordinary work) — so a row states both
+    numbers when they differ, and reads the bodies rather than the readiness grades to get the second.
   - **G7 — a project with no releases still owes a cross-run record, of grooms.** The section was
     written in the unit "one row per release"; G9 made the record's location portable but left its unit
     keel-shaped, so a literal reading on a project that commits straight to master produces no record
