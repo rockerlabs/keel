@@ -575,7 +575,18 @@ _impact_merge_ledger() {
 _impact_merge_ledger_produce() {
   local target="$1" date_col="$2"; shift 2
   local header_tmp rows_tmp
-  header_tmp="$(mktemp)"; rows_tmp="$(mktemp)"
+  # dir #409: this is the only mktemp pair in the file with no cleanup on an interruption between
+  # creation and the explicit `rm -f` below — mirrors changelog-section.sh's own trap-then-cancel
+  # idiom (set right after mktemp, cleared right before the normal exit path) rather than a RETURN
+  # trap, which this project's own record (tools/self/session-cost.sh, tools/lib/transcript-usage.sh)
+  # found to be a single global handler that can fire on a later, unrelated function's return. Armed
+  # right after the FIRST mktemp (rows_tmp is still unset, but `rm -f ""` is a safe no-op) rather than
+  # after both, so an interrupt between the two mktemp calls can't leak header_tmp with no trap yet
+  # in place (found live by this ticket's own /code-review — the first version armed the trap only
+  # after both mktemps completed).
+  header_tmp="$(mktemp)"
+  trap 'rm -f "$header_tmp" "$rows_tmp"' EXIT
+  rows_tmp="$(mktemp)"
   local header_status rows_status
   awk -F'|' -v date_col="$date_col" '
     $date_col ~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/ { exit }
@@ -598,6 +609,7 @@ _impact_merge_ledger_produce() {
   else
     status=1
   fi
+  trap - EXIT
   rm -f "$header_tmp" "$rows_tmp"
   return "$status"
 }
