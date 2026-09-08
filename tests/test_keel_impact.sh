@@ -927,14 +927,17 @@ fi
 # right after BOTH mktemps have already produced their files, which is the exact window this ticket
 # is about.
 #
-# `mktemp`'s own directory can't be isolated via $TMPDIR for this check: on macOS, a bare `mktemp`
-# with no args resolves via `_CS_DARWIN_USER_TEMP_DIR` and ignores `$TMPDIR` entirely (confirmed live
-# via `man mktemp` and a direct probe) — the assertion instead diffs the REAL resolved mktemp
-# directory's listing (learned via a throwaway `mktemp` call, so it works identically on Linux CI)
-# before vs. during the run, isolating exactly the two files this invocation created regardless of
-# platform, then checks their survival after the kill. Verified live against the pre-fix code (this
-# exact stub+diff harness against a checkout with both trap lines removed): both files are left
-# behind; with the trap restored, both are gone.
+# `mktemp` is ALSO stubbed on $PATH (alongside `awk`, below) — a real-mktemp wrapper that just logs
+# every path it hands back before returning it unchanged. The assertion checks survival of exactly
+# those logged paths, not a before/during directory-listing diff: diffing was the original approach
+# here (needed because a bare `mktemp` with no args on macOS resolves via `_CS_DARWIN_USER_TEMP_DIR`
+# and ignores `$TMPDIR` entirely, confirmed live via `man mktemp` and a direct probe, so isolating
+# $TMPDIR wasn't an option) — but a directory-listing diff is itself dependent on nothing ELSE in the
+# real shared temp directory creating or removing a file in the same narrow window, a low-probability
+# but real risk on a busy machine or parallel CI. Logging the exact paths as they're minted removes
+# that dependency entirely and needs no knowledge of which directory mktemp resolved to on either
+# platform. (Lead from a peer session's dir #442 spike on the same bug class in token-report.sh,
+# applied here as this ticket's own delta round.)
 #
 # The kill target is the stub's own recorded $PPID (the exact process running
 # _impact_merge_ledger_produce), not a `pkill -f` pattern match against the process table — an
@@ -957,8 +960,11 @@ awk_stub_bin="$SANDBOX/dir409-awk-stub"; mkdir -p "$awk_stub_bin"
 awk_marker="$SANDBOX/dir409-awk-started"
 awk_pidfile="$SANDBOX/dir409-awk-pid"
 awk_ppidfile="$SANDBOX/dir409-awk-ppid"
-rm -f "$awk_marker" "$awk_pidfile" "$awk_ppidfile"
+mktemp_log="$SANDBOX/dir409-mktemp.log"
+rm -f "$awk_marker" "$awk_pidfile" "$awk_ppidfile" "$mktemp_log"
+: > "$mktemp_log"
 real_awk="$(command -v awk)"
+real_mktemp="$(command -v mktemp)"
 {
   printf '#!/usr/bin/env bash\n'
   printf 'case "$*" in\n'
@@ -977,8 +983,13 @@ real_awk="$(command -v awk)"
   printf 'esac\n'
 } > "$awk_stub_bin/awk"
 chmod +x "$awk_stub_bin/awk"
-dir409_probe="$(mktemp)"; dir409_realtmp="$(dirname "$dir409_probe")"; rm -f "$dir409_probe"
-dir409_before="$(ls -a "$dir409_realtmp" 2>/dev/null | sort)"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'p="$(%q "$@")"\n' "$real_mktemp"
+  printf 'printf "%%s\\n" "$p" >> %q\n' "$mktemp_log"
+  printf 'printf "%%s\\n" "$p"\n'
+} > "$awk_stub_bin/mktemp"
+chmod +x "$awk_stub_bin/mktemp"
 env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
   PATH="$awk_stub_bin:$PATH" \
   bash "$TOOL" migrate "$sigrepo" >"$SANDBOX/dir409.out" 2>&1 </dev/null &
@@ -993,8 +1004,6 @@ if [ ! -f "$awk_marker" ]; then
   wait "$sig_pid" 2>/dev/null || true
   fail "dir #409: the awk stub actually started (fixture reaches the mktemp'd window)" "no marker after ${sig_waited} tries"
 else
-  dir409_during="$(ls -a "$dir409_realtmp" 2>/dev/null | sort)"
-  dir409_new="$(comm -13 <(printf '%s\n' "$dir409_before") <(printf '%s\n' "$dir409_during"))"
   dir409_target="$(cat "$awk_ppidfile" 2>/dev/null)"
   if [ -n "$dir409_target" ]; then
     kill -TERM "$dir409_target" 2>/dev/null || true
@@ -1013,9 +1022,13 @@ else
     done
   fi
   dir409_leftover=""
-  for f in $dir409_new; do
-    [ -e "$dir409_realtmp/$f" ] && dir409_leftover="$dir409_leftover $f"
-  done
+  if [ -s "$mktemp_log" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] && [ -e "$f" ] && dir409_leftover="$dir409_leftover $f"
+    done < "$mktemp_log"
+  else
+    dir409_leftover="(mktemp stub never logged a path)"
+  fi
   check_contains "dir #409: the interrupted merge process actually exited (not still running)" \
     "$([ -n "$dir409_target" ] && ! kill -0 "$dir409_target" 2>/dev/null && echo exited)" "exited"
   check_contains "dir #409: header_tmp/rows_tmp don't survive an interrupted merge" \
@@ -1033,7 +1046,7 @@ else
   pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
   [ -f "$awk_pidfile" ] && kill -9 "$(cat "$awk_pidfile")" 2>/dev/null
   wait "$sig_pid" 2>/dev/null
-  for f in $dir409_new; do rm -f "$dir409_realtmp/$f"; done
+  while IFS= read -r f; do [ -n "$f" ] && rm -f "$f"; done < "$mktemp_log"
 fi
 
 # --- v0.8.0 delta audit F-06: a failure in EITHER `sort` stage of _impact_merge_ledger's rows
