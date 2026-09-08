@@ -50,8 +50,9 @@ sections real content going forward — see that page for exactly when each one 
   shipped in this same release (see above): `tools/read-trace.sh aggregate` now prints its own coverage
   disclosure unconditionally, every run, and the worktree-path fragmentation that motivated the
   paragraph is fixed structurally. The doc now says so, keeping the two gaps that stay genuinely
-  permanent (an always-on context file or a shell-opened file never produces a Read tool call) rather
-  than instructing a reader to keep checking by hand for a mechanism that already ships that check.
+  permanent (an always-on context file, a slash-command body, or a shell-opened file never produces a
+  Read tool call) rather than instructing a reader to keep checking by hand for a mechanism that
+  already ships that check.
 
 - **dir #409 follow-up: fixed a macOS-CI-only flake in the dir #409 regression test, found post-merge
   when `main` went red on `tests (macos-14)` while `tests (ubuntu-24.04)`, `tests (alpine-busybox)`,
