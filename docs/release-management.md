@@ -150,6 +150,16 @@ conventions that happen to look similar, it's one convention applied at two poin
    it is not, and the line itself is what keeps R4's two-way critique from reading as ambiguity about
    who owns what.
 
+**A fix-round brief carries one more item: a pre-flight convention checklist, not left implicit in
+"the repo's own convention."** dir #427's timed profile of RC Fixer E (PR #367) found that a missing
+`CHANGELOG.md` entry — caught only after the PR was already open, by the manager's own review — cost
+the fix round its entire second half: two more full test-suite reruns, two more amend/push cycles, a
+PR-body correction, and a self-caught accuracy error along the way, roughly 11 of the round's 63
+minutes. The fix itself was the same size wherever it was caught; catching it before the first push
+costs one line read, catching it after costs the tail just described. Name the checklist explicitly
+in the fix-round brief itself — a `CHANGELOG.md` entry present and citing the ticket's `dir #<N>` in
+full, uncommented, plus whatever else the project's own pre-push gate independently checks.
+
 Keel's own instance of this shape for a release brief lives at a per-project gitignored path (its own
 audit equivalent is named in R9 below); cite your own project's convention there, never a keel-only
 absolute path.

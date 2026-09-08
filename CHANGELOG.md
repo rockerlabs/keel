@@ -15,6 +15,29 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **dir #427: timed the 63-minute RC Fixer E fix round (PR #367) from its own transcript and found a
+  narrower gate scoping question than the ticket posed — then found the narrower answer's own worked
+  example was wrong, live, in review.** 31% of that round (19.7 of 63 minutes) was spent on six full
+  `tests/run.sh` reruns, one per HEAD move; 13.2 minutes of that (four reruns) followed genuine code
+  changes and were correctly required, but 6.45 minutes (two reruns) followed a CHANGELOG.md-only
+  edit. `commands/polish.md` had already, correctly, ruled that a CHANGELOG paragraph is not
+  test-exempt in this repo — the apparent gap was conflating "not exempt from testing" with "must run
+  the full multi-minute suite" whenever exactly one test file covers the touched basename.
+  `commands/polish.md`'s step 3 now permits scoping to that one file when every non-exempt file a
+  commit touches maps to it, mechanically (`tools/pre-pr-gate.sh` needed no change: `_stamp_tests_outcome`
+  already binds a receipt's sha+treehash generically, agnostic to what test command produced the run).
+  **But CHANGELOG.md itself — the case that motivated looking for this rule — does not qualify**: this
+  round's own `/code-review medium` pass ran the rule's own mechanical check against it and found eight
+  matching test files, not one (`test_doc_figures.sh`, `test_changelog_section.sh`, and
+  `test_release_history.sh` among them genuinely reading its content), so a CHANGELOG-only commit still
+  needs the full suite under this rule. The rule is real and verified elsewhere in this repo
+  (`docs/grooming.md` maps to exactly `tests/test_grooming_doc.sh`), but the two reruns that prompted
+  this ticket remain open — scoping a multi-file mapping down safely is a separate, harder problem this
+  ticket did not attempt to solve. Separately, `docs/release-management.md`'s worker-brief shape now
+  names a pre-flight CHANGELOG-entry checklist item for fix-round briefs: the same session's missing
+  CHANGELOG entry, caught only after its PR was already open, cost the round's entire second half
+  (roughly 11 of the 63 minutes) in extra reruns, amend/push cycles, and a PR-body correction.
+
 - **dir #409 + dir #418: fixed an untrapped mktemp pair in tools/keel-impact.sh and pinned the
   `keel tokens` dispatch with its own forwarding test.** dir #409: `_impact_merge_ledger_produce`'s
   `header_tmp`/`rows_tmp` scratch files are now cleaned up on an interruption (an external SIGTERM,

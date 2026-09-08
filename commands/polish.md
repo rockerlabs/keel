@@ -78,8 +78,28 @@ Steps, in order:
    are added). Concretely for this repo: a moved bullet in `BACKLOG.md` (gitignored, untracked, never in
    the tree at all) or a change to one of the handful of genuinely test-free docs is exempt; a CHANGELOG
    paragraph is, in THIS repo, actually NOT exempt (`tests/test_doc_figures.sh` checks its size), so
-   don't expect that specific case to skip a test run here even though it motivated the ticket. If your
-   fix commit touched nothing exempt, step 8's comparison matches and unlocks with no test run this
+   don't expect that specific case to skip a test run here even though it motivated the ticket.
+
+   **Not-exempt does not mean full-suite (dir #427).** A file can fail the exemption test above
+   (something under `tests/` mentions its basename) while still being read by only ONE test file. Run
+   the SAME grep the exemption check runs (`grep -rl -F -- "<basename>" tests/`): its exempt/non-exempt
+   verdict is whether that returns anything, and this rule's one additional fact is how many files it
+   returns. Scope step 3 to a single test file only when every one of the commit's non-exempt touches
+   returns exactly one file from that grep, and it's the SAME file for all of them — run that one file
+   directly instead of the project's full test command. A commit whose non-exempt touches don't
+   collapse to one shared file gets the full run — a mechanical check, not a judgment call: never scope
+   a multi-file commit down to whichever file looks safest. **Concretely verified in this repo**:
+   `docs/grooming.md` maps to exactly `tests/test_grooming_doc.sh` and qualifies. `CHANGELOG.md` does
+   NOT — despite motivating this rule (its own back-to-back full reruns for a CHANGELOG-only edit are
+   what surfaced the question), it genuinely maps to eight files under `tests/`, several of which read
+   its real content (`test_doc_figures.sh`, `test_changelog_section.sh`, `test_release_history.sh`) —
+   so a CHANGELOG-only fix commit still needs the full suite under this rule as written. Scoping a
+   multi-file mapping down safely is a separate, harder problem this ticket leaves open, not something
+   this rule attempts. The sha bound at step 3 is still the commit's sha either way
+   (`_stamp_tests_outcome` doesn't care what produced the run), so step 8's comparison is unaffected;
+   this changes WHAT runs, never WHETHER a run happens.
+
+   If your fix commit touched nothing exempt, step 8's comparison matches and unlocks with no test run this
    round. If it touched anything else, step 8 denies with "no test suite run is bound to current HEAD" —
    that denial is the signal, not something to predict up front: at that point go back to step 3,
    actually run the tests, and write a fresh receipt carrying the new HEAD's sha
