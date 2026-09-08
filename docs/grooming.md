@@ -210,9 +210,10 @@ sessions against how often a spec is accepted as first submitted — is a **repo
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists.
 
-**Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is "measured against the project's own per-release
-band" — which quietly assumes a band exists and that the operator wants one. Neither held there, and
-the honest answers are worth stating rather than leaving the next groom to improvise them.
+**Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
+"measured against the project's own per-release band" — which quietly assumes a band exists and that
+the operator wants one. Neither held there, and the honest answers are worth stating rather than
+leaving the next groom to improvise them.
 
 - **A project may have no band, and the operator may decline to create one.** Asked to pick one, that
   operator answered "no band — cut by theme", on the reasoning that the project has no releases and no
