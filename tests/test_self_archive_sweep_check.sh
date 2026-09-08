@@ -109,3 +109,5 @@ body
 f="$(mk_backlog "$backlog_legacy")"
 run "$sc" --threshold 1 "$f"
 check_contains "legacy numbered heading counted closed too" "$OUT" "closed tickets:    1"
+
+summary

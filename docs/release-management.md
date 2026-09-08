@@ -399,7 +399,7 @@ the signal entirely. **This is deliberately NOT the `DELEGATION RUN` marker** â€
 *any* log/backlog/memory write, which R13 workers do not honor (R8 already sanctions a worker's own
 pre-brief `BACKLOG.md` write); reusing it here would misrepresent what an R13 worker is actually
 allowed to do. Include this line verbatim instead, in every worker brief (R3) and close-checklist
-starting brief (R9) this pattern produces, the same way item 4 below already mandates the keep-alive
+starting brief (R9) this pattern produces, the same way item 4 above already mandates the keep-alive
 contract:
 
 > WRAP CENTRALIZED (R13): this session's wrap is owned by the release manager â€” do not run /wrap;

@@ -272,3 +272,5 @@ run "$pr" "/no/such/dir/BACKLOG.md"
 check_status "nonexistent BACKLOG_PATH directory -> exit 0 (advisory skip, not a crash)" 0 "$STATUS"
 check_contains "prints the same skip line, not raw cd stderr" "$OUT" "no readable BACKLOG.md"
 check_absent "no raw 'No such file or directory' stderr leaks through" "$OUT" "No such file or directory"
+
+summary

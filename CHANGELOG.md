@@ -15,6 +15,23 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Three findings from the v0.9.1 release-candidate delta audit, all fix-before-tag, fixed as one
+  batch.** `tests/test_self_pool_report.sh` and `tests/test_self_archive_sweep_check.sh` — the only two
+  test files in the tree with no `summary` call, both edited by the census-family commit `aa5573c` —
+  printed `FAIL` lines on a failing check but always exited 0: `tests/run.sh` aggregates purely on exit
+  status, and only `summary`'s own `[ "$_fail" -eq 0 ]` converts a failed check into a nonzero exit. That
+  silently defeated CI enforcement of both files' own `MUTATION-PROOF` assertions (dir #420). Fixed by
+  adding the missing `summary` call to each, verified with a control built the right way round — a
+  deliberately failing assertion placed BEFORE the new `summary` call, confirmed to flip the exit code to
+  1, then removed — rather than appended after `summary`, which proves nothing. `docs/release-management.md`'s
+  close-checklist section pointed at "item 4 below" for the keep-alive contract; item 4 sits 268 lines
+  above, not below, a seam defect from a since-superseded insert. And `docs/keel-impact.md`'s (and this
+  file's own) re-derived `/keel-score` cost figure (dir #417) stated a single "11-13%" range against
+  "each session's deduped cache-read total," but its own supporting numbers split across two different
+  denominators — 12%/13% of attributed cache-read, 10.5%/11.6% of the deduped grand total — and 10.5%
+  falls outside the stated range; both surfaces now name both denominators with their own correct ranges
+  instead of blending them into one figure a reader can't check against its own parenthetical.
+
 - **dir #409 follow-up: fixed a macOS-CI-only flake in the dir #409 regression test, found post-merge
   when `main` went red on `tests (macos-14)` while `tests (ubuntu-24.04)`, `tests (alpine-busybox)`,
   shellcheck, self-check and secret-scan all stayed green.** The test killed the process under test via
@@ -74,8 +91,9 @@ sections real content going forward — see that page for exactly when each one 
 - **dir #417: re-derived `docs/keel-impact.md`'s `/keel-score` cost figure through the deduped
   transcript reader and confirmed it stands.** The published ~12% figure was measured before
   `tools/lib/transcript-usage.sh`'s requestId dedupe fix (dir #313/PR #353) existed; re-run on the same
-  two transcripts (dir #298, dir #301) the share holds at 11-13% of each session's deduped cache-read
-  total, because the requestId-duplication multiplier — though not uniform across pipeline stages
+  two transcripts (dir #298, dir #301) the share holds at 12-13% of each session's deduped attributed
+  cache-read total, or 10.5-11.6% of the deduped grand total, because the requestId-duplication
+  multiplier — though not uniform across pipeline stages
   (~1.7x-2.4x per stage) — varies too little to move any one stage's share by more than a point or two.
   One sentence naming the measurement basis and the re-derived numbers now ships alongside the figure.
 
