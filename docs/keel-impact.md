@@ -82,4 +82,11 @@ nothing here needed redaction):
 
 **Cost, for context.** Ritual overhead is not free: a per-pipeline-stage measurement (dir #313's
 investigation, two sessions' cache-read shares) found `/keel-score` itself costs **~12%** of a session's
-cache-read volume — comparable to the implementation work it's measuring (`/go` at 10-12%).
+cache-read volume — comparable to the implementation work it's measuring (`/go` at 10-12%). **Measurement
+basis (re-derived 2026-09-08, dir #417):** the figure was first published from pre-dedupe accounting.
+Re-run on the SAME two transcripts through `tools/lib/transcript-usage.sh`'s deduped reader, `/keel-score`
+holds at 11-13% of each session's deduped cache-read total (dir #298: 12%→12% of attributed cache-read,
+11.6% of the deduped grand total; dir #301: 14%→13% of attributed cache-read, 10.5% of the deduped grand
+total) — the requestId-duplication multiplier itself is not uniform across stages (~1.7x-2.4x per stage
+in these two sessions), but that spread is narrow enough that it moves no stage's share by more than a
+point or two, so the figure survives as a same-transcript ratio.
