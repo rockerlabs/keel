@@ -85,10 +85,11 @@ bb_strip_foreign_citations() {
   # test the caller runs afterward is UNCHANGED and still scans the whole block, since THAT scan
   # is what dir #255's wrapped-heading feature and dir #420's own fix both depend on.
   #
-  # A delta review round found an earlier form of this fix used `[\ \t]` — inside a POSIX bracket
-  # expression backslash is not an escape, so that class is actually the literal set `{\, (space),
-  # t}`: it does not match a real tab byte, and it wrongly matches a stray literal `t` character.
-  # `[[:blank:]]` is the portable POSIX class that means exactly "space or tab, never newline".
+  # A delta review round found an earlier form of this fix used `[\ \t]` — bash's own
+  # quote-removal strips the backslashes from an unquoted `[[ =~ ]]` operand before the regex
+  # engine ever sees them, so that class was actually just `{space, t}`: it does not match a real
+  # tab byte, and it wrongly matches a stray literal `t` character. `[[:blank:]]` is the portable
+  # POSIX class that means exactly "space or tab, never newline".
   while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:blank:]]+by)?[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
     && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
     stripped="${stripped/"${BASH_REMATCH[0]}"/}"

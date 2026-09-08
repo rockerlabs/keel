@@ -212,6 +212,20 @@ run "$pr" --history "$SANDBOX/hist-two-citations.jsonl" "$ftwo"
 check_contains "MUTATION-PROOF: a ticket citing two different retracted siblings (one per verb form) still counts toward the pool (1, not 0)" \
   "$OUT" "pool size:                     1"
 
+# --- code-review high, delta round: making the RETRACTED bare-tag test's em-dash optional (to
+# mirror dir #432's closure-tag fix) was tried and REVERTED — it reopened a title-prose
+# false-positive: a heading whose TITLE merely mentions the bare word "retracted" (no tag intended
+# at all) matched and was wrongly excluded from the pool census. MUTATION-PROOF: a genuinely open,
+# un-tagged pool ticket whose title happens to contain the bare word "RETRACTED" must still count. -
+prose_backlog="### dir #6 — investigate whether the RETRACTED ticket process needs revisiting — R1 — → pool
+
+still open, needs work
+"
+fprose="$(mk_backlog "$prose_backlog")"
+run "$pr" --history "$SANDBOX/hist-prose.jsonl" "$fprose"
+check_contains "MUTATION-PROOF: a bare 'RETRACTED' in ordinary title prose does not exclude an open ticket from the pool" \
+  "$OUT" "pool size:                     1"
+
 # --- code-review medium delta round 2 (found live, coverage gap not a code defect): the case
 # above only exercises ONE citation per verb form, so it would not catch a regression from
 # `while` back to a single `if` on either loop (a single strip per form already suffices for that

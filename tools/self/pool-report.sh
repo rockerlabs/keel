@@ -120,15 +120,19 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # the if/elif-shadowing gap, the glob-vs-literal quoting gap, and the single-strip-per-form
   # gap) — nothing here diverges from it any more.
   own_num="$(bb_own_ticket_num "$heading_block")"
-  # code-review high, delta round: bb_strip_foreign_citations' citation-stripping was made
-  # em-dash-optional for BOTH callers (dir #432's delta fix), but this bare-tag test still
-  # required a mandatory dash — an own RETRACTED tag with no separator would be stripped
-  # correctly as non-foreign but then fail THIS test, wrongly keeping a retracted ticket in the
-  # pool. No such shape exists live in this project's own real BACKLOG.md today (checked), but
-  # the two functions' optionality drifting out of sync is exactly the class of bug dir #432's own
-  # fix already had to close once for the closure-tag caller — same fix here, before it happens.
+  # code-review high, delta round: a first attempt made this bare-tag test's em-dash optional,
+  # to mirror dir #432's closure-tag fix and close the "two callers drifted out of sync" class of
+  # gap before it manifests. REVERTED — a second delta round found and reproduced live that the
+  # mandatory `—` was doing real work no comment here had named: it was the only thing preventing
+  # a heading whose TITLE merely mentions the bare word "retracted" in ordinary prose ("investigate
+  # whether the RETRACTED ticket process needs revisiting") from matching and being wrongly
+  # excluded from the pool census, even though it carries no tag at all. `bb_strip_foreign_citations`
+  # itself stays em-dash-optional (that half genuinely fixed dir #432's own reported bug, on the
+  # CLOSURE-tag caller); only this one bare-tag test keeps its mandatory dash, since — unlike the
+  # closure vocabulary — no real ticket in this project's own live BACKLOG.md has ever needed a
+  # no-dash RETRACTED tag, so there is nothing this mandatory dash is trading away.
   stripped="$(bb_strip_foreign_citations "$heading_block" "$own_num" 'RETRACTED')"
-  [[ "$stripped" =~ (—[[:blank:]]*)?RETRACTED([^a-zA-Z]|$) ]] && continue
+  [[ "$stripped" =~ —[[:blank:]]*RETRACTED([^a-zA-Z]|$) ]] && continue
 
   # Last `→` token naming a release or the pool (BACKLOG.md's own G3 extraction rule) — a
   # heading carries prose arrows too ("→ ask", "→ a release of its own"); only these two
