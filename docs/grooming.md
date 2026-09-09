@@ -161,6 +161,21 @@ that must happen during the next release before the ticket can close) is an **ac
 the new slate**, listed on the plan as such — never re-tagged, never counted as a build item, never
 read as a stale heading.
 
+**A third extraction rule, paid for by the first `/groom` run on an ADOPTER project (a knowledge-base
+backlog, 2026-09-08): the closed-heading predicate is itself a derived fact, and a loose one silently
+under-counts the slate.** That run's census classified an *open* ticket as closed because the groom had
+just re-scoped it and written `RE-SCOPED` into its heading — the predicate matched a family of
+status-sounding words, and a status word that is not a closure matched anyway. The count came back 57;
+the correct answer was 58. It was caught only because a later pass used a narrower predicate and the two
+disagreed. The generalisation is sharper than the one word: **a groom edits headings and then reads
+headings, so it is the one consumer whose input its own earlier steps have just changed** — G3's
+"regenerate from the live file" is necessary but not sufficient when the groom is itself what made the
+file live. Two rules follow. **Match closure on the project's actual closure MARKER** (keel: `✅`), never
+on a vocabulary of status words, because a groom mints new status words as it goes. And **run the census
+twice — once before the hygiene sweep and once after the last heading edit — and reconcile any
+disagreement before writing a count.** The second run is nearly free and is the only step that catches a
+predicate that is wrong, as opposed to a file that has moved.
+
 ## G4 — the hygiene sweep
 
 Everything below executes a mechanism another ticket owns; this procedure is the cadence that calls
@@ -245,6 +260,29 @@ sessions against how often a spec is accepted as first submitted — is a **repo
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists.
 
+**Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
+"measured against the project's own per-release band" — which quietly assumes a band exists and that
+the operator wants one. Neither held there, and the honest answers are worth stating rather than
+leaving the next groom to improvise them.
+
+- **A project may have no band, and the operator may decline to create one.** Asked to pick one, that
+  operator answered "no band — cut by theme", on the reasoning that the project has no releases and no
+  CI, so there is no closing event for a fixed-size slate to close *at*. A groom must take that answer:
+  the row then states its size as the theme entire and says so, instead of trimming a theme to hit a
+  number the project does not use. What must NOT happen is a band invented by the procedure to satisfy
+  this field — that is exactly the "invent a theme without a pain" failure G1 forbids, applied to size.
+- **Theme size is not schedulable capacity, and a single number hides the difference.** That run's
+  largest row carried 13 tickets, **four of which no session can work at all** — an operator-only
+  toggle, one needing hardware the machine does not have, and two more whose own bodies reserve the
+  decision to the operator. A reader sizing effort off "13" is wrong by the count of items that are
+  parked, blocked, or operator-only. **State both numbers when they differ** — the theme's total and how
+  many of them a session could actually pick up — and name which items are in the second group and why.
+  **That count is itself easy to get wrong from a readiness grade alone:** the first draft of this
+  plan said two, counting only the tickets marked R0, and its own G6 round found two more that carry
+  an operator decision in the body while grading as ordinary work. Read the bodies for it, the way G2
+  already requires for everything else. The same row's real risk turned out to be an *ordering*
+  constraint between two of its tickets, not its size at all.
+
 ## G6 — a fresh-reviewer adjudication round is mandatory
 
 The cheapest, and on the available evidence the strongest, diversity axis
@@ -267,13 +305,30 @@ session count, a cost line, and the count of findings filed. Record the cost as 
 data was never captured — never a fabricated zero. A different project names its own per-project
 location here — G9 states the portability rule this follows.
 
+**A project with no releases at all still owes a cross-run record — of GROOMS (same run, 2026-09-08).**
+This section is written in the unit "one row per
+release", and G9 makes the record's *location* portable while leaving its *unit* keel-shaped. That
+adopter commits directly to master, has no tags, no CI and no release event, so a literal reading
+produces no record at all — the procedure's one durable output silently skipped on exactly the kind of
+project G9 exists to serve. **The unit is therefore the cycle, not the release: where a project has
+releases, one row per release; where it does not, one row per groom.** The fields survive the
+substitution unchanged (slate size, sessions, cost line, findings filed, the G6 round's result), and
+the one that does not — PR count — is recorded as whatever the project's own delivery unit is, or
+omitted with a reason. This matters more than bookkeeping: G0 opens by reading "the previous cycle's
+records", so a project that never writes one can never run G0, and every groom there is permanently a
+first groom.
+
 **The groom OPENS the row; the release manager completes it at close.** Open it at this step, with this
 groom's own measured figures and the plan's estimate, and leave the run's own cells explicitly empty —
 the release has not happened yet, and a row that waits for it records the groom's numbers only as
 retold inside the NEXT release's row, if at all. [`docs/release-management.md`](release-management.md)'s
 R7 is the completing half and says so from its side. The two figures worth reading against each other
 later are the estimate opened here and the measured cost line filled in there, so an estimate that was
-wrong stays visible instead of being quietly overwritten.
+wrong stays visible instead of being quietly overwritten. **Where there is no release event — the
+release-less case the paragraph above describes — there is no second party and no "close": the groom
+that opens the row fills it in the same sitting.** The two-stage split exists to stop a groom's own
+figures being retold rather than measured; with one writer that risk does not arise, and waiting for a
+completing half that will never come is how the record ends up empty again.
 
 ## G8 — cadence-bound, never a daemon
 

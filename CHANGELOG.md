@@ -47,6 +47,34 @@ sections real content going forward — see that page for exactly when each one 
 - **`docs/release-management.md` R9 — rotate a per-cycle instrument's logs after the next groom has
   read them, never at the tag.** Nothing in the procedure prescribed the rotation in either direction,
   so nothing forced the wrong order and nothing forced the right one. The free half of dir #459.
+- **`docs/grooming.md` gains three amendments from the first `/groom` run on an adopter project**
+  (a personal knowledge-base backlog, 2026-09-08), applied under the doc's own self-revision clause.
+  All three are cases the procedure did not cover because keel is the only project it had run on.
+  - **G3 — the closed-heading predicate is itself derived, and a loose one under-counts the slate.**
+    That run's census matched a family of status-sounding words and swallowed an open ticket whose
+    heading the groom had just marked `RE-SCOPED`: 57 reported against a true 58. The rule added is to
+    match the project's actual closure MARKER rather than a status vocabulary, and to run the census
+    twice — before the hygiene sweep and after the last heading edit — reconciling any disagreement
+    before a count is written. **Same defect class as `dir #448`**, disclosed in 0.9.1 for
+    `tools/lib/backlog-blocks.sh`, reached independently from the prose side.
+  - **G5 — a project may have no per-release band, and the operator may decline to create one.**
+    The section assumed a band exists. Asked to pick one, that operator declined on the grounds that
+    the project has no releases and no CI, so nothing closes a fixed-size slate; a row now sizes as the
+    theme entire and says so, rather than a band being invented to fill the field. Paired with it:
+    **theme size is not schedulable capacity** — that run's largest row held 13 tickets, four of which
+    no session can work (an operator-only toggle, one needing absent hardware, and two reserving the
+    decision to the operator in their bodies while grading as ordinary work) — so a row states both
+    numbers when they differ, and reads the bodies rather than the readiness grades to get the second.
+  - **G7 — a project with no releases still owes a cross-run record, of grooms.** The section was
+    written in the unit "one row per release"; G9 made the record's location portable but left its unit
+    keel-shaped, so a literal reading on a project that commits straight to master produces no record
+    at all. Since G0 opens by reading the previous cycle's records, that project could never run G0 and
+    every groom there would be permanently a first groom. The unit is now the cycle: one row per release
+    where releases exist, one row per groom where they do not. **Reconciled at merge with the two-stage
+    row lifecycle above:** where there is no release event there is no second party and no "close", so
+    the groom that opens the row fills it in the same sitting — the split exists to stop a groom's own
+    figures being retold rather than measured, and with one writer that risk does not arise.
+
 
 ## [0.9.1] — 2026-09-08
 
