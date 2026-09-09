@@ -67,6 +67,26 @@ future ticket closes: an always-on context file or a slash-command body never pr
 call, and neither does a file opened via `cat`/`sed`/`grep` — the disclosure exists to name that limit,
 not to remove it. Read what the tool prints; it is no longer guidance to remember by hand.
 
+**An empty aggregate is the "surprising number" the paragraph above already tells you to treat as a
+question about the instrument — and the commonest answer is a rotation, not a dead tree.** Where the
+read trace archives its logs at a release boundary, the cycle G0 exists to look at is in the archive by
+the time the next groom runs, and what the tool reports is the handful of hours since. **This is not a
+degraded sensor and must not be read as one: the data is intact.** The first groom to hit it recovered
+the whole previous release's reads from beside the live log and got its real signal — a release-long
+cycle in which **eleven** distinct docs were opened through a read tool, on a tree carrying several
+times that. Doing that by hand means reaching under the tool's own interface, which this section
+otherwise forbids, so it is a **compensation with a named end**: `dir #459` owns the fix and has two
+candidate shapes, deliberately not chosen here. Until it lands, check whether a rotation has happened
+since the previous release and say which cycle your figures are from.
+
+**Confirm the previous run's cross-run row EXISTS before reading it.** It is owed at that run's own GO
+verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one cycle later, which makes
+G0 the first moment its absence is visible to anyone — and the first groom to check for it found it
+simply missing, on a run whose own records asserted the duty in their own words. Check rather than
+assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
+is recorded as lost rather than invented. The same applies to that run's harvest, which the paragraph
+below already owns — check it there, not twice.
+
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
@@ -75,6 +95,14 @@ missing sensor. The first `/groom` run met exactly that: the fuses had
 shipped the day before and no hook was wired on the maintainer's own machine. Check the install state
 before reading the aggregate, say which of the two states you are in, and hand the operator the install
 step as a G0 output so the NEXT groom has data.
+
+**Every amendment that compensates for a defect names the ticket that will remove it.** A retro's
+natural output is a rule telling every future cycle to work around something — and a rule is the most
+expensive fix there is, because it is paid forever, by everyone, silently. That is sometimes right; it
+is never right *unnamed*. The precedent is above, in this section: an instrument's own coverage gaps
+were carried as guidance until two tickets shipped, and the paragraph now says which ones closed and
+which two are permanent limits. So state the compensation, name the ticket, and say which of the two
+it is — a gap with an owner, or a limit that is not going away.
 
 **Output: 2-3 process amendments, applied, not reported.** Each amendment lands directly in the
 procedure doc it corrects — `docs/release-audit.md`, `docs/delta-audit.md`, and `docs/drydock.md` each
@@ -88,7 +116,11 @@ this phase because a doc author compressing G0 from a shorter read of this secti
 it: confirm that the just-closed delta-audit run's `no-action` leads and findings were harvested onto
 the standing list (G4(a)) and that its own staged-tickets file is empty or filed. Older, already-closed
 audit-run directories get one catch-up harvest the first time this procedure runs on a project, then
-are archive, not backlog — no groom re-opens them a second time.
+are archive, not backlog — no groom re-opens them a second time. **Check it; do not assume a closed run
+did it.** A groom found two of the previous run's `no-action` findings unharvested a full cycle after
+that run's verdict — both still reproducible, both explicitly written up in the run's own verdict as
+belonging to the standing list. Nothing inside that run could have noticed: its coverage bar was
+satisfied throughout, and an unharvested finding leaves no trace anywhere a later session looks.
 
 ## G1 — pains are the input, and only the operator supplies them
 
@@ -164,6 +196,24 @@ settled fact.
   the tool and neither recorded, so the second one's own report still answered that it had nothing to
   compare — a trend mechanism that shipped, ran twice, and was never given the one thing it needed.
   Reading without recording is the one way to run this step and still get nothing from it.
+  **Run it LAST, after everything else this cycle writes — not as the sweep's opening move.** The
+  recording is keyed to the release and is idempotent by design, so the first reading is the one that
+  sticks and a later re-run will not correct it. The drift is not re-tagging specifically: it is **any
+  write that changes what is or is not in the pool** — a filing, a closure, a tag given to a ticket that
+  had none — which is most of what a groom does after this step. The first groom to record early
+  recorded 81 and finished the sweep at 84, three out, all three its own. One reading's drift is
+  harmless; the shape is not, because the recorded figure also becomes the trend's own most recent data
+  point — so a growth trigger that "cannot fire yet" during the recording invocation may fire for every
+  reader afterwards, off a number the session already knew was stale. **Re-run the report at the end of
+  the groom and quote THAT output**, not the one the recording produced.
+  **Ordering is the compensation; the defect is that the record cannot be corrected — and it has a
+  second half nobody had noticed.** Where a release-audit procedure ALSO records under the release
+  being cut (keel's does), the two calls collide on the same idempotent key and the later one is a
+  silent no-op. Measured on this project: every row in its pool history was written by a groom and none
+  by a cut, so the series a drain trigger reads is "pool size at groom time", and the cut-side call has
+  never produced a row in its life. **Decide which side owns the key, and say so in BOTH docs** — a
+  question this ordering rule cannot answer, because the two writers are different sessions on
+  different days. `dir #461` owns both halves: a correctable record, and the key's owner.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
@@ -267,6 +317,18 @@ the one that does not — PR count — is recorded as whatever the project's own
 omitted with a reason. This matters more than bookkeeping: G0 opens by reading "the previous cycle's
 records", so a project that never writes one can never run G0, and every groom there is permanently a
 first groom.
+
+**The groom OPENS the row; the release manager completes it at close.** Open it at this step, with this
+groom's own measured figures and the plan's estimate, and leave the run's own cells explicitly empty —
+the release has not happened yet, and a row that waits for it records the groom's numbers only as
+retold inside the NEXT release's row, if at all. [`docs/release-management.md`](release-management.md)'s
+R7 is the completing half and says so from its side. The two figures worth reading against each other
+later are the estimate opened here and the measured cost line filled in there, so an estimate that was
+wrong stays visible instead of being quietly overwritten. **Where there is no release event — the
+release-less case the paragraph above describes — there is no second party and no "close": the groom
+that opens the row fills it in the same sitting.** The two-stage split exists to stop a groom's own
+figures being retold rather than measured; with one writer that risk does not arise, and waiting for a
+completing half that will never come is how the record ends up empty again.
 
 ## G8 — cadence-bound, never a daemon
 

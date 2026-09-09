@@ -584,15 +584,18 @@ _impact_merge_ledger_produce() {
   # between the two mktemp calls can't leak header_tmp with no trap yet in place (found live by this
   # ticket's own /code-review — the first version armed the trap only after both mktemps completed).
   # v0.9.1 RC audit: `local header_tmp rows_tmp` alone (no `=""`) leaves rows_tmp merely DECLARED, not
-  # SET, on bash >= 4.4 — a semantics change from bash < 4.4, where `local x` already meant "set to
-  # empty". Under this file's `set -u`, expanding an unset `$rows_tmp` inside the trap aborts the trap
-  # itself before `rm -f` ever runs, so the "safe no-op" the comment above used to claim never
-  # happened: header_tmp leaked (exactly what this trap exists to prevent) and the trap's own failure
-  # replaced the real exit status with the unbound-variable error's. Reproduced live on bash 5.2.37: a
-  # SIGTERM between the two mktemps leaked $header_tmp and turned exit 143 into exit 1 before this fix;
-  # `=""` on both locals makes them SET (not just declared), so `rm -f "$header_tmp" "$rows_tmp"` is a
-  # genuine no-op on the not-yet-created one, on every bash version. Invisible on macOS's bash 3.2,
-  # where `local x` already meant "set to empty" — verify any change here on bash >= 4.4.
+  # SET, on bash >= 4.0 — the v0.9.1 delta audit's Part 3 measured nine images and found the RC's own
+  # ">= 4.4" boundary claim false: 4.0 through 5.2 all show the unset behavior identically, and only
+  # 3.2 still leaves `local x` set to empty. Under this file's `set -u`, expanding an unset `$rows_tmp`
+  # inside the trap aborts the trap itself before `rm -f` ever runs, so the "safe no-op" the comment
+  # above used to claim never happened: header_tmp leaked (exactly what this trap exists to prevent)
+  # and the trap's own failure replaced the real exit status with the unbound-variable error's.
+  # Reproduced live on bash 4.2 and 5.2.37 alike: a SIGTERM between the two mktemps leaked $header_tmp
+  # and turned exit 143 into exit 1 before this fix; `=""` on both locals makes them SET (not just
+  # declared), so `rm -f "$header_tmp" "$rows_tmp"` is a genuine no-op on the not-yet-created one, on
+  # every bash version. Invisible on macOS's bash 3.2, the one version where `local x` still meant "set
+  # to empty" — verify any change here on bash >= 4.0, not merely >= 4.4: a maintainer who reads the
+  # wrong boundary and tests only on 4.0–4.3 would wrongly conclude they are outside the hazard zone.
   header_tmp="$(mktemp)"
   trap 'rm -f "$header_tmp" "$rows_tmp"' EXIT
   rows_tmp="$(mktemp)"

@@ -266,9 +266,16 @@ incidental and has already broken mid-release once.
 
 At release close, the manager derives the run's token/cost figure from whatever on-disk usage data
 your project already has, reads it against [`docs/loading-and-cost.md`](loading-and-cost.md), and
-appends it to the releases cross-run record — the run-record genre audits already have
-(`private/audit/RUNS.md` in keel's own instance, gitignored, per-project location for adopters), now
-named for releases too. **The manager is expensive by construction: it holds the whole release's
+**completes** the run's row in the releases cross-run record — **which now exists and has a path**, the
+one [`docs/grooming.md`](grooming.md)'s G7 names (keel's own instance: `private/releases/RUNS.md`,
+gitignored; per-project for adopters, per G9). **Completes, not creates:** the groom OPENS the row at
+G7 with its own measured figures and the plan's estimate, and this role fills the run's own cells at
+close, before the tag — a two-stage lifecycle the record has practised for two releases while neither
+this rule nor G7 said so, which is how a manager ends up either duplicating a row or leaving the
+groom's figures to be retold inside the next one. It is deliberately a DIFFERENT file from the record
+audits keep: this rule's scope is the release-management run, the audit record's is the RC pass that
+follows it. Until this clause pointed at G7 it named only the audit record, leaving a manager with a
+genre and no path. **The manager is expensive by construction: it holds the whole release's
 context, which is the same property that makes it useful.** The sharp edge is duration — a release
 spanning more than one day, with breaks, means paying full input price on that context repeatedly
 instead of reading it from cache, so a single-sitting release and a week-long one have completely
@@ -321,6 +328,16 @@ precisely to replace the staleness hazard that warning is guarding against, one 
 than where the tool's own warning was written to fire. The operator reviews the composed notes before
 running the actual release-publish command — publishing is an irreversible outward action, so the
 **read** stays human even though the write no longer does.
+
+**Rotate a per-cycle instrument's logs AFTER the next groom has read them, never at the tag.** Where
+a project keeps a session-scoped log the grooming retro consumes (keel's own is the read trace, whose
+rotation the tool's header assigns to this role as a wrap-time chore), rotating it at release close
+leaves the next groom's retro reading a cycle that is hours old while the one it needs sits in an
+archive. Nothing else in this procedure prescribes the rotation at all, so nothing forces the wrong
+order — which also means nothing forces the right one; it is a step to add here, not to move. The
+cheapest correct order is: tag, then let the next groom run, then rotate. See
+[`docs/grooming.md`](grooming.md)'s G0 for the reading this protects, and its `dir #459` for the
+alternative fix (teaching the tool to read a rotated cycle) — one or the other, not both.
 
 ## R10 — the seams duty, active not passive
 
