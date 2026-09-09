@@ -15,6 +15,39 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/delta-audit.md` §8 — a GO verdict no longer closes a run; two records do** (from the 0.10.0
+  groom's own G0 retro; dir #462 is filed for the mechanization half). The orchestrator — by §5's roles
+  table, which gives it *all* bookkeeping, not the verifier, who issues the verdict and stops — opens
+  the run's cross-run row and moves the run's `no-action` findings to the standing list before it
+  records the verdict. The row is **opened** there and completed at close, because several of its
+  fields are facts about the tag that do not exist yet. Paid for by a run that deferred both duties to
+  "before the tag", a step the procedure does not itself perform: the release tagged with no row
+  appended and two findings never harvested, and neither loss was visible from inside the run — every
+  ledger row carried a verdict and the coverage bar was satisfied throughout.
+- **`docs/delta-audit.md` §10 and §11 — dir #384's own two revisions.** §10 now requires re-deriving
+  every claim a correction *touches*, not only the one it fixes, and says the induced defect lands in
+  the sentence being edited. §11 lesson 2 now names a **floor — 64k for a reasoning model on a delta
+  bundle** — instead of an instruction to raise: "raise it" was read, followed with 8192 → 16384, and
+  still returned empty content on both first-attempt rounds. It also asks for the raw reply to be
+  captured, `reasoning_content` included, after a round whose reasoning was better than its answer.
+- **`docs/grooming.md` — three G0 additions and one in G4.** An empty read-trace aggregate is usually a
+  release-boundary rotation rather than a dead tree, and reading the archived cycle by hand is a
+  compensation with a named end (dir #459). A groom verifies the previous run's cross-run row exists
+  before consuming it. **And, generally: every amendment that compensates for a defect names the ticket
+  that will remove it** — a rule is the most expensive fix there is, because it is paid forever, by
+  everyone, silently. G4 now says to run the pool report last, after everything the cycle writes, and
+  names the deeper defect that ordering rule was standing in front of (dir #461).
+- **`docs/grooming.md` G7 and `docs/release-management.md` R7 — the releases cross-run row's two-stage
+  lifecycle, stated from both sides.** The groom opens the row with its own measured figures and the
+  plan's estimate; the release manager completes it at close. R7 also finally names the record's path,
+  having previously named only the audit record as its genre exemplar — a manager with a genre and no
+  path.
+- **`docs/release-management.md` R9 — rotate a per-cycle instrument's logs after the next groom has
+  read them, never at the tag.** Nothing in the procedure prescribed the rotation in either direction,
+  so nothing forced the wrong order and nothing forced the right one. The free half of dir #459.
+
 ## [0.9.1] — 2026-09-08
 
 **Known issues, disclosed at the cut:** five things ship known-imperfect. Behavioural and live, in
