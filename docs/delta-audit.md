@@ -255,6 +255,40 @@ independent diverse legs, run in parallel on the same state, yielding no behavio
 new class. A run can satisfy every bullet above while still owing Clause A's second silent round; the
 verifier checks both before declaring tag-ready, never the coverage bar alone.
 
+**A GO verdict does not close the run — two records do, and a run that skips them leaves nothing a
+later cycle can read.** Both are the **orchestrator's**, by the roles table above (§5: "**all**
+bookkeeping"), not the verifier's: the verifier issues the verdict and stops, so a duty timed to the
+verdict but owed by nobody named is the same ownerless duty one step earlier. So, before the
+orchestrator records the GO verdict: **(a)** it OPENS the run's row in the project's cross-run record
+from the `run-record.md` stub — opened, not completed, because some of the row's own fields are facts
+about the tag (a prior run's row records the annotated tag peeling to the verified commit), which do
+not exist yet; the row is completed at close, the same two-stage lifecycle the releases-side record
+already practises. **(b)** Every `no-action` finding that names a real defect (§4 rule 6) is moved onto
+the project's standing list, and the run's staged-tickets file is empty or filed. *(Call (b) what it
+is when you brief it — "**move the `no-action` findings to the standing list**". "Harvest" is already
+the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanically-derivable fields and
+does nothing of the kind; a session told to "harvest" can run that script and believe the duty
+discharged.)*
+
+**Why the timing moved here at all.** One run paid for it twice over (2026-09-08; find its records by
+the audit directory named for the range it covered, not by counting rows in a gitignored record no
+adopter can read). Its `run-record.md` deferred the cross-run append to "the FINAL verdict, before the
+tag"; the release then tagged, and **no row was ever appended** — the release's own cross-run row cites
+an audit directory whose run is absent from the audit record. Two of that run's `no-action` findings
+(an uncovered retry branch; an off-by-one count in a lib header, both re-verified live one cycle later
+and both still true) were written up in its own verdict as belonging to the standing list, and never
+reached it. **Neither loss was detectable from inside the run:** every ledger row carried a verdict and
+the coverage bar above was satisfied throughout — which is the honest reading of that bar, not a
+failure of it. [`docs/grooming.md`](grooming.md)'s G0 re-checks both a cycle later, and that is a
+backstop, not a substitute: by then the run's session is gone and only what it wrote down survives.
+
+**Both duties are still human discipline, and both are mechanizable — that is a gap, not a design.**
+Nothing asserts that the row exists or that the standing list moved; `tools/delta-audit/harvest.sh`
+already writes into `run-record.md` at the end of a run and is the obvious home for the assertion.
+**So this clause is a compensation, and per [`docs/grooming.md`](grooming.md)'s G0 a compensation names
+the ticket that removes it: `dir #462`.** Until that lands, the clause is the only thing standing
+between a closed run and a lost record.
+
 **The operator tags. No session in this procedure runs `git tag`.**
 
 ## 9. Session prompts
@@ -449,6 +483,15 @@ at the filesystem root on the other. A correction that describes platform-depend
 the platform it was measured on, or measures both — "reproduced live" on one platform is one data
 point, not the mechanism.
 
+**Re-derive every claim the correction TOUCHES, not only the claim it FIXES — and expect the induced
+defect to land in the sentence being edited, because that is where it has landed.** A round did exactly
+what this section asks for four claims under correction, and introduced **two new false claims into the
+same sentence**, in the neighbouring material it had to rewrite to make the correction read: it renamed
+the ticket that owned a review pass, and republished a correctly-scoped count of seven as "seven …
+tree-wide" when tree-wide was nine. **Neither was a claim under correction; both were collateral.** A
+disclosure-only round's blast radius is the sentence, not the clause — so the re-derivation duty has to
+cover the sentence too, or the round trades one wrong claim for two.
+
 ## 11. The cross-vendor leg — two harness lessons, as classes
 
 If your diversity leg uses a different model vendor via a raw API rather than an in-session subagent,
@@ -460,8 +503,17 @@ path:
    round produced nothing," which is a worse failure than a slow one because it's silent.
 2. **A transient transport error on a large payload is not evidence of a size limit.** Diagnose it
    against a second in-flight round before retrying blind, and raise the vendor's max-token setting
-   explicitly — a reasoning model can spend its entire default budget on reasoning tokens and return
-   empty content, which looks identical to a hung request from the caller's side.
+   to a NUMBER, not merely upward — a reasoning model can spend its entire default budget on reasoning
+   tokens and return empty content, which looks identical to a hung request from the caller's side.
+   **The floor: 64k for a reasoning model on a delta bundle.** This is stated as a figure because the
+   earlier wording ("raise it explicitly") was read and followed and still failed: a run raised the
+   harness default 8192 to **16384**, and BOTH first-attempt rounds came back with empty `content` and
+   a full `reasoning_content` — two wasted rounds, the exact silent failure this lesson exists to
+   prevent. 64000 then worked for all four subsequent rounds. "Raise it" is satisfied by any increase,
+   and that run's increase was satisfied and insufficient. **A later run added the other half of this
+   lesson:** capture the raw reply, `reasoning_content` included — one round's reasoning carried the
+   correct analysis of a finding its own answer then stated backwards, and it was recoverable only
+   because a raw-capture option happened to have shipped days earlier.
 
 A delta bundle being a **diff**, not the whole file, is what makes this leg affordable to run at all
 against a payload-limited or per-token-billed vendor.
