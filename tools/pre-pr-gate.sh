@@ -820,13 +820,25 @@ _gate_ledger_candidates() {
 _repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
 
 # dir #260 (hit 3): true when $1 resolves to neither a worktree's recorded main entry nor a real git
-# toplevel — mirrors main_top_for's OWN fallback condition above, without calling it a second time
-# (main_top_for prints $1 back verbatim in that branch, which a plain equality check against its own
-# return value can't distinguish from the ordinary case of $1 already BEING the main checkout top).
-# Read-only and diagnostic only: used below to pick which of two honest "no-run" deny messages to
-# print, never to change what repo/sentinel this script itself resolves.
+# toplevel — mirrors main_top_for's OWN fallback condition above (deliberately re-derived rather than
+# changing that shared function's return contract: main_top_for is the keying dir #58/#61 hardened,
+# and every other caller today ignores its exit status, so adding one is a behavior change worth its
+# own review, not a drive-by in a message-only fix). Read-only and diagnostic only: used below to pick
+# which of two honest "no-run" deny messages to print, never to change what repo/sentinel this script
+# itself resolves.
+# Its own call site short-circuits on `[ "$main_top" = "$cwd" ]` first — a NECESSARY (not sufficient:
+# an ordinary repo that legitimately IS its own main checkout top also satisfies it) precondition for
+# this function ever returning true, cheap to check, and true only on the rarer of the two "no-run"
+# causes — so the common "valid, different repo" case never pays this function's two extra forks at
+# all (found live by this ticket's own /simplify pass, three independent review angles).
 _cwd_not_a_repo() {
   [ -z "$(_worktree_main_entry "${1:-.}")" ] && ! git -C "${1:-.}" rev-parse --show-toplevel >/dev/null 2>&1
+}
+
+# dir #260: the one fact both "no active receipt" deny messages below need to convey, in ONE place so
+# the two branches can't drift out of sync on the next edit (found by this ticket's own /simplify pass).
+_cwd_key_note() {
+  printf "this hook keys off the session's own tracked working directory, never a command's \`cd\` target (dir #260)"
 }
 
 # dir #80: sanitize a branch name into a flat-filename-safe slug — every char outside
@@ -2004,10 +2016,10 @@ if [ ! -f "$sentinel" ]; then
   # Two honest messages instead of one misleading one, split on whether the event cwd is a git repo
   # at all (hit 3's own new facet) — neither branch can RULE OUT "you actually skipped /polish", so
   # both still say it; they just stop pretending it's the only explanation.
-  if _cwd_not_a_repo "$cwd"; then
-    deny "Pre-PR gate: the event cwd ($cwd) isn't a git checkout at all, so no repo could be identified for a receipt lookup. This hook keys off the session's own tracked working directory, never a command's \`cd\` target inside gh pr create (dir #260) — if /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo. Otherwise, run /polish first (simplify + independent review + tests) there."
+  if [ "$main_top" = "$cwd" ] && _cwd_not_a_repo "$cwd"; then
+    deny "Pre-PR gate: the event cwd ($cwd) isn't a git checkout at all, so no repo could be identified for a receipt lookup — $(_cwd_key_note), so if /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo. Otherwise, run /polish first (simplify + independent review + tests) there."
   else
-    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' specifically — if /polish already completed in a DIFFERENT repo or checkout than this session's own tracked working directory, that is the likely cause instead: this hook keys off the session's cwd, never a command's \`cd\` target, dir #260.)"
+    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' specifically — if /polish already completed in a DIFFERENT repo or checkout than this session's own tracked working directory, that is the likely cause instead: $(_cwd_key_note).)"
   fi
 fi
 

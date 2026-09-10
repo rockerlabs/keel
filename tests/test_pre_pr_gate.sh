@@ -2922,17 +2922,10 @@ check_absent "dir #376: a non-review miss gets no polish.5-review-specific hint"
 # already covers the felt shape (skip-sized diff, step 5 alone missing); assert its deny carries this
 # hint too, on top of the always-present dir #376 note, so both denials this file shares a message
 # with stay covered by name (dir #346's own text: "make the two [message-]states they are reporting").
+# write_full_receipt (lib.sh) with polish.5-review omitted, instead of the hand-rolled 8-step chain
+# test 106 above needs (lib.sh's own header names this exact shape as its intended replacement).
 d="$(mkrepo)"
-head_sha="$(git -C "$d" rev-parse HEAD)"
-run_in "$d" bash "$gate" init
-run_in "$d" bash "$gate" receipt polish.1-diff
-run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" receipt polish.3-tests "$head_sha"
-run_in "$d" bash "$gate" receipt polish.4-depth "skip:+0-0,0f"
-run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
-run_in "$d" bash "$gate" receipt polish.7-selfcheck
-run_in "$d" bash "$gate" receipt polish.8-unlock "$head_sha"
-# polish.5-review deliberately never written, as a bare Agent spawn would leave it.
+write_full_receipt "$d" "polish.5-review"
 gate "gh pr create --fill" "$d"
 check_contains "dir #346: polish.5-review missing → names the bare-Agent-spawn cause" "$OUT" "Skill(code-review) itself"
 check_contains "dir #346: polish.5-review missing → also carries the always-present dir #376 note" "$OUT" "dir #376"
