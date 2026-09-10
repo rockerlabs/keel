@@ -110,7 +110,23 @@ sections real content going forward — see that page for exactly when each one 
   between them — the mechanism is a plain file retirement independent of real OS concurrency, so
   serializing the exact interleaving reproduces the identical end state a true race would, without a
   flaky background-process test).
-
+- **`tests/test_install.sh` T21 now binds `install.sh`'s crashed-install lock placement directly,
+  instead of asserting about a fixture it built itself (dir #381, found by v0.8.2's delta audit, proved
+  live by mutation).** The regression T21 names — a crashed install's lock landing *inside* `.keel`
+  instead of beside it, which would silently wedge `uninstall.sh`'s closing `rmdir` forever — was
+  already caught four times over by T18/T19/T20/T23; this was an overstated coverage claim, not a
+  coverage hole, and nothing shipped unguarded. T21 stayed green under the exact regression its own
+  comment described because it hand-planted a lock at the "correct" path and asserted the wrong path
+  was empty — nothing in the fixture exercised `install.sh`'s own placement code. It was also,
+  disclosed honestly at the time, a deliberately non-live-crash fixture: a real crash could also leave
+  unrelated merge-scratch (`.artifacts.$$`) behind inside `.keel`, failing the same `rmdir` for a
+  reason that had nothing to do with the lock, and conflating the two would have made the test fail for
+  the wrong cause. That confound is gone — dir #377 (shipped v0.8.3) taught `uninstall.sh` to sweep
+  stale scratch out of `.keel` before its closing `rmdir` whenever `install.sh`'s run-duration lock
+  isn't held by a live process. T21 now drives a real `install.sh` run to a new test-only checkpoint
+  (`KEEL_TEST_CRASH_AFTER=manifest-written`, added at the exact point `install.sh`'s own lock-release
+  comment already named as the risk window) and a real `uninstall.sh` run against the result, binding
+  the claim end-to-end instead of gluing two hand-built fixtures together.
 
 ## [0.9.1] — 2026-09-08
 
