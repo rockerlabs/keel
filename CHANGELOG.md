@@ -75,6 +75,33 @@ sections real content going forward — see that page for exactly when each one 
     the groom that opens the row fills it in the same sitting — the split exists to stop a groom's own
     figures being retold rather than measured, and with one writer that risk does not arise.
 
+### Fixed
+
+- **`tools/pre-pr-gate.sh` — three of its deny messages named the wrong cause or the wrong remedy**
+  (dir #260, dir #376, dir #346's remedies (1) and (4); message-floor only — the sentinel-resolution
+  half of dir #260 and the sentinel-lifecycle half of dir #376 are unbuilt and stay filed). The
+  "no active receipt" deny fired with one identical string whether /polish genuinely never ran, the
+  hook's event cwd resolved to a DIFFERENT repo than the one /polish actually completed in (the
+  harness resets cwd after every call, so an in-command `cd` is invisible to the hook event — dir #260,
+  4 recorded hits), or that event cwd isn't a git checkout at all (dir #260's 3rd hit). It now names
+  the actual condition in two split messages instead of asserting "you skipped /polish" as the only
+  explanation. The "missing receipt for step(s)" deny gained two additive hints: a sibling session's
+  own `/polish init` on the SAME (repo, branch) key can retire this chain's receipts mid-flight — the
+  ordinary concurrency state of this project on any active day, 13 recorded hits and no ticket until
+  now (dir #376) — so the deny now names the possibility and the one mitigation that measurably
+  narrowed the race when tried live (write the whole receipt chain, init through unlock, as ONE
+  uninterrupted command); and, specifically when `polish.5-review` is among the missing steps, that
+  only a genuine `Skill(code-review)` invocation stamps the review's trace/receipt — a bare `Agent`
+  spawn satisfies nothing here, however thorough (dir #346). The step-5 trace-mismatch deny ("no trace
+  matching both this commit AND that level was found") no longer ends with "Run /polish again." — the
+  minimal remedy is to invoke the review once more at the current HEAD and re-write the receipt, which
+  the ticket's own confirming incident showed costs strictly less than a full re-run, on the ticket's
+  own release-cut PR (dir #346 remedy 1). `tests/test_pre_pr_gate.sh` gained regression coverage for
+  all of the above, including a deterministic reproduction of dir #376's race (two `init` calls with
+  receipt writes interleaved between them — the mechanism is a plain file retirement independent of
+  real OS concurrency, so serializing the exact interleaving reproduces the identical end state a true
+  race would, without a flaky background-process test).
+
 
 ## [0.9.1] — 2026-09-08
 
