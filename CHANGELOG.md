@@ -17,6 +17,10 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`commands/polish.md` gains two free ordering rules against dir #346's review-trace cost ratchet**
+  (commit before step 3, and fold in every known fix before a cross-run re-establishment) — see that
+  file for what each covers and why. This PR carries only that prose half of dir #346; the deny-message
+  fix and the ratchet's own A/B/C design decision are separate, later pieces.
 - **`docs/delta-audit.md` §8 — a GO verdict no longer closes a run; two records do** (from the 0.10.0
   groom's own G0 retro; dir #462 is filed for the mechanization half). The orchestrator — by §5's roles
   table, which gives it *all* bookkeeping, not the verifier, who issues the verdict and stops — opens

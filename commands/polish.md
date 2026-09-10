@@ -30,6 +30,20 @@ in the steps below triggers an unexpected permission prompt** (the harness's aut
 flagging a plain `Bash` call it shouldn't), note it once per run with `tools/pre-pr-gate.sh log
 receipt-friction classifier` — this is friction data for the pilot's own keep/drop review, not a step to repeat per-occurrence.
 
+**Two ordering rules that cost nothing against dir #346's review-trace cost ratchet — both were paid for
+the hard way, and neither waits on that ticket's own eventual fix:**
+1. **Have the implementation committed by the time you reach step 3.** Step 1's own "working-tree diff
+   if nothing is committed yet" is fine as a scope preview, but step 3's receipt binds to
+   `git rev-parse HEAD`, and step 5's review trace binds to whatever HEAD is current when the review
+   fires — committing the implementation *after* one of those is written invalidates it and costs a
+   full re-init/recover/re-receipt cycle once it lands, content byte-identical throughout, only the
+   bookkeeping repeated (felt: dir #248/#279, three rounds for one late commit).
+2. **On a cross-run convergence round (step 1's `--recover` branch), fold in every fix you already know
+   about before you re-establish** — re-establishing, then finding one more thing and moving HEAD
+   again, pays for the re-establishment twice. Scoped to that cross-run case specifically: the cheaper
+   IN-RUN amend path (step 5, dir #177) already handles moving HEAD repeatedly before step 8 and keeps
+   working exactly as documented there.
+
 Steps, in order:
 
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (or the working-tree `git diff` if

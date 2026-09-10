@@ -35,7 +35,7 @@ the table above.
 | `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~3,750 |
 | `CHANGELOG.md` | on demand — release history | Reference. | ~115,000+ |
 | `commands/*.md` (excl. `polish.md`) | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–2,100+ each |
-| `commands/polish.md` | **only when you invoke** `/polish` | The outlier: simplify + tests + a depth-matched review + the gate + the PR, in one command — several times the next-largest command. | ~14,000+ |
+| `commands/polish.md` | **only when you invoke** `/polish` | The outlier: simplify + tests + a depth-matched review + the gate + the PR, in one command — several times the next-largest command. | ~16,000+ |
 | `install.sh`, `tools/*.sh`, `secret-guard/*` | **never loaded** — executed in the shell | The mechanized layer: blocks secrets, runs audits. Only their few lines of **output** reach the context. | **0** |
 
 ## The actual per-session cost
