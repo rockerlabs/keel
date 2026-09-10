@@ -863,7 +863,18 @@ _semver_max() {
 # logic (shorthand/range/backtick handling) and its comments; this file no longer keeps its own copy.
 # shellcheck source=tools/lib/dir-tickets.sh
 . "$self_dir/../lib/dir-tickets.sh"
-_extract_dir_tickets() { extract_dir_tickets; }
+# `_strip_ref_citations` always runs first (dir #364/#273): folded in here, not repeated at each of
+# this wrapper's two call sites in check 7 below, so "a `dir #N (ref)` marker is stripped before
+# extraction" is true by construction for every future call site too, not by per-call-site discipline
+# — see check 7's header comment for the full rationale and the real cases this closes.
+_extract_dir_tickets() { _strip_ref_citations | extract_dir_tickets; }
+
+# _strip_ref_citations — reads text on stdin, removes every standalone `dir #N (ref)` /
+# `dir #N-M (ref)` marker citation, leaving everything else untouched. Local to THIS file, not
+# folded into the shared `extract_dir_tickets` above — see check 7's header comment for why.
+_strip_ref_citations() {
+  sed -E 's/dir #[0-9]+(-[0-9]+)?[ \t]*\(ref\)//g'
+}
 
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
 # release-in-preparation section's own introducing commit the pending-release allowance below stays
@@ -1229,9 +1240,10 @@ fi
 # on WHERE such a citation appears (comment vs. commit message) fails case 2 above (a commit message
 # is not a comment) and can be defeated by moving the text. Instead, the author states the
 # discrimination explicitly: appending ` (ref)` right after a citation — `dir #351 (ref)`, or
-# `dir #100-103 (ref)` for a range — marks it as reference-only, and `_strip_ref_citations` below
-# removes it before ticket extraction ever sees it, on BOTH sides of the comparison (a commit message
-# AND a CHANGELOG line use the identical syntax, so the rule can't be dodged by choosing one over the
+# `dir #100-103 (ref)` for a range — marks it as reference-only, and `_strip_ref_citations` (defined
+# beside `_extract_dir_tickets` above, and folded into it — every call below already runs it) removes
+# it before ticket extraction ever sees it, on BOTH sides of the comparison (a commit message AND a
+# CHANGELOG line use the identical syntax, so the rule can't be dodged by choosing one over the
 # other). The cost is named honestly, not hidden: it is one more convention every session must know,
 # and an UNMARKED reference still reads as a citation on whichever side it lands — the discrimination
 # is opt-in, not inferred. Scope limit, so the marker itself can't become a new silent-drop hazard:
@@ -1241,18 +1253,13 @@ fi
 # exempting only the one ticket meant. Cite each reference-only ticket in a list as its own separate
 # `dir #N (ref)` instead.
 #
-# NOT this check's job: `_strip_ref_citations` lives HERE, not folded into the shared
-# `extract_dir_tickets` (tools/lib/dir-tickets.sh) that `tools/self/citation-resolvability.sh` also
-# calls — that tool asks a different question (does a citation ANYWHERE in tracked prose resolve to
-# a real ticket?), and a `(ref)` marker there should still be checked for resolvability, not silently
-# exempted. Folding the strip into the shared helper would answer citation-resolvability.sh's
-# question wrong for every future `(ref)`-marked citation it scans.
-#
-# _strip_ref_citations — reads text on stdin, removes every `dir #N (ref)` / `dir #N-M (ref)` marker
-# citation, leaving everything else untouched.
-_strip_ref_citations() {
-  sed -E 's/dir #[0-9]+(-[0-9]+)?[ \t]*\(ref\)//g'
-}
+# NOT this check's job: `_strip_ref_citations` is local to THIS file's `_extract_dir_tickets`
+# wrapper, not folded into the shared `extract_dir_tickets` (tools/lib/dir-tickets.sh) that
+# `tools/self/citation-resolvability.sh` also calls — that tool asks a different question (does a
+# citation ANYWHERE in tracked prose resolve to a real ticket?), and a `(ref)` marker there should
+# still be checked for resolvability, not silently exempted. Folding the strip into the shared helper
+# would answer citation-resolvability.sh's question wrong for every future `(ref)`-marked citation it
+# scans.
 say ""
 say "● commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237)"
 if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
@@ -1276,11 +1283,10 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   else
     ct_range="HEAD"
   fi
-  # `_strip_ref_citations` runs BEFORE `_extract_dir_tickets` (dir #364): a `dir #N (ref)`-marked
-  # cross-reference never enters the candidate set at all, rather than being extracted and then
-  # somehow suppressed — see the check's header comment for the full rationale.
+  # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
+  # (dir #364) — see the check's header comment for the full rationale.
   ct_commit_tickets="$(git -C "$repo_root" log "$ct_range" --no-merges --format=%B 2>/dev/null \
-    | _strip_ref_citations | _extract_dir_tickets || true)"
+    | _extract_dir_tickets || true)"
   # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
   # not the whole file, or an already-released section's historical ticket citations would silently
   # vouch for a DIFFERENT, still-open ticket never actually re-entered under [Unreleased]. Reuses
@@ -1328,13 +1334,9 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     /^## / { grabbing=0 }
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
-  # Same `_strip_ref_citations` pre-pass as $ct_commit_tickets above, on this side of the comparison
-  # too (dir #273 gap 1): a stale `dir #N (ref)`-marked mention left over in [Unreleased] from a
-  # DIFFERENT ticket's own entry (background/context, not a credit) must not silently satisfy
-  # membership for dir #N's real fix — reproduced live against PR #267's own history (commit
-  # aab0c69), where two un-marked background mentions of "dir #208" inside dir #207's and dir #204's
-  # entries let dir #208's real closing PR ship with no entry of its own and this check stay green.
-  ct_unreleased_tickets="$(_strip_ref_citations <<< "$ct_unreleased_body" | _extract_dir_tickets || true)"
+  # `_extract_dir_tickets`'s same `(ref)`-stripping applies on this side of the comparison too
+  # (dir #273 gap 1) — see the check's header comment for the full rationale.
+  ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body" || true)"
   # Set difference via the same here-string-into-`grep -qxF` per-item membership idiom check 6's
   # pending-tag loop already uses above, not `comm` — `comm` needs no extra dependency here (it's
   # coreutils, not guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this
