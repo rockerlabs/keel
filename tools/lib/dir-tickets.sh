@@ -73,6 +73,27 @@
 # A hyphen that ISN'T a range (prose like "dir #208 - fixed the extraction", a spaced dash) never
 # reaches either branch: the range suffix requires a digit immediately after the `-`, with no space,
 # so the anchor below stops at "dir #208" and the loose dash is left alone.
+#
+# Scope limit, measured rather than assumed (dir #479): the anchor regex above only extends a match
+# through comma/semicolon/slash/whitespace/"and"-joined `#N` tokens. The instant any OTHER prose sits
+# between two citations — "dir #955 fixes X, #956, #957" — the match stops dead after "dir #955" and
+# every ticket after the break vanishes with no signal, the same silent-truncation shape dir #273/#274
+# already fixed for the pure list-shorthand case, just not for a prose-interrupted one. Considered and
+# DECLINED extending the existing "range too large to expand" loud-marker precedent to this shape too:
+# a full sweep of this repo's entire commit history (`git log --all --format=%B`, ~19k lines) found
+# ZERO real occurrences of the hazard — the only match for the shape is the synthetic fixture text
+# itself, quoted in commit messages about *discovering* the bug, not a real one. Meanwhile tracked
+# prose already contains real, legitimately-excluded shapes a "list-shaped remainder" heuristic would
+# have to avoid misfiring on: "dir #269 ... *before* #258" (an unrelated ticket in a sequencing
+# sentence), "dir #59 ... the #58 wrap's false-fire" (#58 used as an adjective, not a joint citation),
+# and "backlog dir #13, via #2" (a background reference, the same relationship `(ref)` marks
+# explicitly elsewhere in this file's consumers). Building a heuristic to chase a bug with no confirmed
+# real instance, at the cost of new false-positive surface in prose this library already parses
+# correctly, was judged not worth it — a case-by-case call, not a blanket rule against ever tightening
+# this grammar again; re-measure before reopening. (Separately, real commit `PR #389 (dir #364+#273)`
+# shows `+` isn't in the separator class above, so `+`-joined citations silently drop everything after
+# the first — a distinct, narrower gap from the prose-interruption question this paragraph is about,
+# filed as its own ticket, dir #482, rather than addressed here.)
 extract_dir_tickets() {
   sed -E 's/`[^`]*`//g' \
     | awk '
