@@ -1710,6 +1710,12 @@ rm -f "$merge_tmp"
 } | atomic_write "$manifest_file"
 echo "  +    install manifest ($manifest_file)"
 
+# dir #381: crash-simulation checkpoint right in the window the comment below already names — "if this
+# run aborts for any reason before this line, the lock is simply left behind." Lets a test drive a REAL
+# crash here (manifest genuinely written, lock genuinely still held, at its REAL placement) instead of
+# hand-building a fixture that only guesses at what a crash leaves behind.
+_keel_test_checkpoint manifest-written
+
 # Release the run-duration lock (dir #350, Fork 2) — the SUCCESS path only, one explicit `rmdir`-shaped
 # `rm -rf`, right after the final atomic_write above completes. No `trap ... EXIT`, of any kind: the
 # prior_manifest snapshot's own comment further up this file already measured, live, on this repo's own

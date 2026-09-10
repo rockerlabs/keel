@@ -1275,34 +1275,41 @@ else
   pass "T20 root leg — chmod is a no-op for root, nothing to exercise here"
 fi
 
-# T21 (dir #350) — the lock's placement is load-bearing for uninstall.sh's own cleanup, not just tidiness.
-# uninstall.sh finishes with `rmdir "$HOME_DIR/.keel" 2>/dev/null || true`, which only succeeds on an
-# EMPTY directory, and its own manifest-driven removal loop (verified by reading it directly) clears out
-# install-manifest.*/foreign-core.* but nothing else — so ANYTHING else left inside .keel makes that
-# rmdir silently fail forever (the `|| true` swallows it) with nothing said. A crashed install leaves its
-# lock behind (no EXIT trap — see install.sh's own comment); had that lock lived INSIDE .keel, this would
-# be exactly that failure mode. Proven directly here as a targeted structural fixture — not a live-crash
-# simulation, deliberately: a real crashed run can ALSO leave the pre-existing, unrelated merge-scratch
-# temp (.artifacts.$$) behind inside .keel depending on exactly when it dies, which already fails this
-# exact rmdir today, before dir #350, for a reason that has nothing to do with the lock — conflating the
-# two would make this test fail for the wrong cause. This fixture isolates the ONE claim dir #350 is
-# actually responsible for: a stale lock, wherever it ends up, never sits inside .keel and so can never
-# be what a subsequent uninstall's rmdir trips over.
-t21home="$SANDBOX/crash-lock-vs-uninstall-cleanup"; mkdir -p "$t21home/.keel"
-printf 'keel_manifest_version=1\n' > "$t21home/.keel/install-manifest.claude"
-mkdir -p "$t21home/.install.lock"
-echo 999999 > "$t21home/.install.lock/pid"   # liveness is irrelevant to this test — only placement is
-check_nodir "T21 …the lock is not inside .keel, wherever a crash leaves it" "$t21home/.keel/.install.lock"
-# Simulate uninstall.sh's own manifest-driven removal directly (verified above to remove exactly this):
-# once install-manifest.* is gone and nothing else lives in .keel, its final rmdir must succeed even
-# while the stale lock — a sibling, never a child — is still sitting right next to it.
-rm -f "$t21home/.keel/install-manifest.claude"
-if rmdir "$t21home/.keel" 2>/dev/null; then
-  pass "T21 …uninstall's own 'rmdir .keel' succeeds — a stale lock next to .keel never blocks it"
-else
-  fail "T21 …uninstall's own 'rmdir .keel' succeeds — a stale lock next to .keel never blocks it" \
-    "rmdir failed: $(ls -la "$t21home/.keel" 2>&1)"
-fi
+# T21 (dir #350, rewritten dir #381) — the lock's placement is load-bearing for uninstall.sh's own
+# cleanup, not just tidiness. uninstall.sh finishes with `rmdir "$HOME_DIR/.keel" 2>/dev/null || true`,
+# which only succeeds on an EMPTY directory; had a crashed install's lock (no EXIT trap — see
+# install.sh's own comment at its release site) landed INSIDE .keel instead of beside it, that rmdir
+# would silently fail forever (the `|| true` swallows it) with nothing said.
+#
+# dir #381: the ORIGINAL fixture here hand-built a lock at the "correct" sibling path and asserted the
+# WRONG path was empty — nothing in it exercised install.sh's own placement code, so it stayed GREEN
+# under the exact regression it named (proved live by mutation: moving install.sh's single
+# `install_lock_dir=` assignment back inside `.keel` left this test passing — T18/T19/T20/T23 all caught
+# it instead). It was also a deliberately non-live-crash fixture, honestly disclosed in its own comment,
+# because a real crash could ALSO leave the pre-existing, unrelated merge-scratch temp (`.artifacts.$$`)
+# behind inside .keel, which failed this exact rmdir for a reason that had nothing to do with the lock —
+# confounding the two claims. That confound is gone: dir #377 (shipped v0.8.3) taught uninstall.sh's own
+# manifest-driven removal to sweep stale `.prior-manifest.*`/`.artifacts.*` scratch out of .keel before
+# its closing rmdir, whenever install.sh's run-duration lock is not held by a live process — exactly the
+# state a crashed run leaves. So a REAL crash, via a REAL install.sh run and a REAL uninstall.sh run, now
+# binds this claim directly instead of two fixtures glued together by hand.
+#
+# KEEL_TEST_CRASH_AFTER=manifest-written (install.sh, dir #381) fires right where install.sh's own lock-
+# release comment already names the risk: "if this run aborts for any reason before this line, the lock
+# is simply left behind" — after the manifest is genuinely written, before the lock is genuinely
+# released, so everything else about the install has genuinely completed.
+t21home="$SANDBOX/crash-lock-vs-uninstall-cleanup"; mkdir -p "$t21home"
+fresh_home_env "$t21home"
+run env "${FRESH_HOME_ENV[@]}" KEEL_TEST_CRASH_AFTER=manifest-written "$install" --home "$t21home" --no-hooks
+check_status "T21 …the simulated crash fires where intended → exit 99" 99 "$STATUS"
+check_file "T21 …the manifest is genuinely written before the simulated crash" "$t21home/.keel/install-manifest.claude"
+check_dir "T21 …the crashed run's own lock is genuinely still held, as a sibling of .keel" "$t21home/.install.lock"
+check_nodir "T21 …and — THE claim — never lands inside .keel, wherever a crash leaves it" "$t21home/.keel/.install.lock"
+# Now the REAL uninstall.sh, against this REAL crashed state — the actual integration this test exists
+# to prove, not a hand-simulated stand-in for it.
+run env "${FRESH_HOME_ENV[@]}" "$REPO_ROOT/uninstall.sh" --home "$t21home" --yes
+check_status "T21 …a subsequent, real uninstall exits 0 despite the crashed run's stale lock" 0 "$STATUS"
+check_nodir "T21 …and .keel is fully removed — the stale sibling lock never blocked its own rmdir" "$t21home/.keel"
 
 # T22 (dir #350, /code-review high finding) — a stray non-directory sitting at the lock path self-heals
 # instead of permanently misdiagnosing as "not writable". `mkdir` fails EEXIST identically whether a
