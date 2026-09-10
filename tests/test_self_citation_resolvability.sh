@@ -130,7 +130,7 @@ check_status "a backtick-quoted dir #N is not treated as a citation -> exit 0" 0
 # --- a slash-separated shorthand citation list is fully extracted, not just its first number --------
 # A bare `grep -oE 'dir #[0-9]+'` only matches a fully-spelled reference and silently drops every bare
 # `#N` in a shorthand list like "dir #201/#214" — a real shape already shipped in this repo's own
-# docs/delegation.md:221, found live by this ticket's own review reproducing the exact bug class
+# docs/delegation.md, found live by this ticket's own review reproducing the exact bug class
 # tools/lib/dir-tickets.sh's `extract_dir_tickets` (promoted from tools/self/doctor.sh, dir #274) was
 # hardened against. #214 here is dead; if only #201 were extracted, this would wrongly read as clean.
 doc_shorthand="# doc

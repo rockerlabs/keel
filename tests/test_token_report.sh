@@ -7,7 +7,8 @@
 #
 # The tool parses transcripts with jq, so most of this file needs jq. The busybox/Alpine CI leg
 # installs it (dir #220), so this runs for real there too — the canonical green-skip guard
-# (tests/test_pre_pr_gate.sh:17-23) is defence-in-depth, not the normal path.
+# (tests/test_pre_pr_gate.sh's own `command -v jq` skip block) is defence-in-depth, not the normal
+# path.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

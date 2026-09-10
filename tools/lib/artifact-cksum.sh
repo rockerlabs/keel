@@ -15,7 +15,8 @@
 # stub here would make every artifact_cksum call answer the sentinel — indistinguishable, in the
 # manifest, from a genuinely-unreadable file's record, for every artifact, not just the rare
 # truly-unreadable one. dir #347 has since closed uninstall.sh's own comparison's sentinel guard at its
-# call site (uninstall.sh:882), but that guards uninstall.sh's REMOVAL decision, not the manifest
+# call site (its `CKSUM_UNREADABLE` comparison in the file arm), but that guards uninstall.sh's
+# REMOVAL decision, not the manifest
 # record itself, which a stubbed fallback here would still corrupt. Both install.sh and uninstall.sh
 # source this file behind a `[ -s ] && bash -n` pre-check and refuse outright (one actionable message,
 # exit 1) rather than sourcing unguarded or degrading — see each call site's own comment for why.
@@ -25,7 +26,8 @@
 # sentinel on a never-clobber rail fails OPEN (an unreadable dest would compare equal to a manifest
 # that ever recorded the same sentinel, and the predicate would answer "Keel's own unedited copy,
 # refresh it without asking" for a file it could not read a single byte of). uninstall.sh's own
-# comparison at its call site gained that same guard this release (dir #347, uninstall.sh:882).
+# comparison at its call site gained that same guard this release (dir #347, its own
+# `CKSUM_UNREADABLE` comparison in the file arm).
 CKSUM_UNREADABLE='cksum:0:0'
 
 # artifact_cksum FILE — "cksum:<sum>:<size>", POSIX cksum's first two fields (portable across

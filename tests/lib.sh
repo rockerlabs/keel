@@ -256,8 +256,9 @@ new_repo() {
 
 # A fresh bare origin, wired to work tree $1's "origin" remote (mktemp -d + git init --bare + remote
 # add origin — the two of new_repo_with_origin()'s five lines that don't presume a commit already
-# exists). Split out so a caller that must commit real content BEFORE its first push (mk_repo() at
-# tests/test_drydock_inventory.sh:36) can wire the remote without paying for the throwaway commit+push
+# exists). Split out so a caller that must commit real content BEFORE its first push
+# (tests/test_drydock_inventory.sh's mk_repo()) can wire the remote without paying for the throwaway
+# commit+push
 # new_repo_with_origin() bakes in for its own no-content callers. Prints the bare's path.
 new_bare_origin() {
   local bare
@@ -273,8 +274,8 @@ new_bare_origin() {
 # before this promotion, two of them matching it closely enough to migrate here (`pin()`'s own comment
 # states the promotion rule — "once a SECOND test file needed the exact same idiom" — this was one past
 # it); the other three push specific refspecs or deliberately diverge local from origin/<branch> and were
-# left as their own fixtures — and both migrated files (`test_drydock_inventory.sh:281`,
-# `test_pre_pr_gate.sh:2461`, inside its own `push_named_remote()`) still keep a hand-rolled site of
+# left as their own fixtures — and both migrated files (test_drydock_inventory.sh's own "a repository with
+# no commits at all" case, test_pre_pr_gate.sh's `push_named_remote()`) still keep a hand-rolled site of
 # their own alongside using this helper.
 # Makes one empty "init" commit first, since a bare new_repo() has no
 # commits to push (unborn HEAD). No explicit fetch: a successful push already updates the local

@@ -136,7 +136,8 @@ case "$cmd" in
   # with no other Keel doc/skill as its canonical entry point. tools/keel-impact.sh, pre-pr-gate.sh,
   # branch-cleanup.sh, changelog-section.sh, delta-audit/derive.sh, pipeline-canary.sh,
   # drydock/inventory.sh and the two install-*.sh installers are each reached through a documented
-  # procedure that already names its own invocation (commands/keel-score.md:67 is explicit about
+  # procedure that already names its own invocation (commands/keel-score.md's "Append the row" step is
+  # explicit about
   # spelling out the full tools/ path rather than a shortcut) — so they stay off this list. `tokens`
   # has no such mediating doc; it is the same shape as `doctor`/`audit`, hence a verb.
   tokens)    exec "$CHECKOUT/tools/token-report.sh" "$@" ;;

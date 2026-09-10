@@ -691,7 +691,8 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 
 # T14 — the retargeting suffix on the linked --force advice. `keel sync` forwards its args verbatim
-# and adds nothing (keel:128), so a bare `keel sync --force` becomes `install.sh --force`, whose home
+# and adds nothing (its `sync)` arm), so a bare `keel sync --force` becomes `install.sh --force`, whose
+# home
 # re-resolves to ${KEEL_HOME:-$HOME/.claude}: following the advised remedy from a `--link --home DIR`
 # install built a SECOND Keel at the default home and left the file the message was about untouched.
 # Both siblings (advise_install/advise_uninstall) already carried the suffix.
@@ -706,7 +707,8 @@ check_contains "T14 the linked --force advice carries the --home suffix" "$OUT" 
 # just an explicit --link on THIS invocation. Before the fix, advise_refresh_force was computed ~16
 # lines above the sticky linked-home auto-detect (install.sh's own comment there names the exact gap),
 # so a PLAIN `./install.sh` re-run — or `keel sync`, which execs install.sh with no --link of its own
-# (keel:128) — over an already-linked home fell to the copy-mode remedy (a bare `install.sh --force`)
+# (its `sync)` arm) — over an already-linked home fell to the copy-mode remedy (a bare `install.sh
+# --force`)
 # instead of the cwd-independent `keel sync --force`, in exactly the case `keel sync` exists to cover.
 # Own /go collides on the first (explicit --link) run, forking a keel-go.md alias — same shape as the
 # copy-mode T2/T2b pair above, just under linked placement (commands are symlinks there too).

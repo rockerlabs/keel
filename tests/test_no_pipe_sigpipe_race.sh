@@ -73,7 +73,7 @@ while IFS= read -r -d '' f; do
     esac
     # A `head`-consumer line ending in `|| true` is this codebase's own established idiom for
     # "capture only, exit code discarded, content unaffected by an early consumer close" (e.g.
-    # tools/doctor.sh:169, tools/lib/manifest.sh:26: `sed ... | head -n1 || true`) — `head` must
+    # tools/lib/manifest.sh's `manifest_field()`: `sed ... | head -n1 || true`) — `head` must
     # actually read a line before it can close, so a real match's captured value survives an early
     # close even though the pipeline's own exit status doesn't, and `|| true` is exactly this
     # codebase's own documented reason for that suffix (see tools/self/doctor.sh's own comment on

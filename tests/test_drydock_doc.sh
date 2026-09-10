@@ -78,7 +78,7 @@ pin "drydock.md links the fixer prompt" "$doc" '](drydock/fixer.md)' \
 # Promoted to tests/lib.sh (dir #375) once a third file needed it — sourced from there now.
 
 # --- the audit-file contract is stated in two places on purpose; the phrasing must agree ---------
-# drydock.md documents it for the operator, auditor.md hands it to the agent — drydock.md:97-98 says
+# drydock.md documents it for the operator, auditor.md hands it to the agent — drydock.md says
 # "the phrasing is deliberately identical so a diff between them is visible."
 contract_block() { awk '/^# drydock audit —/,/^- <every fact/' "$1"; }
 doc_contract="$(contract_block "$doc")"
@@ -246,7 +246,8 @@ code_auditor_rails="$(extract_rails_block "$code_auditor")"
 check_block_equal "code-auditor.md's rails block is byte-identical to docs/delegation.md's canonical text" \
   "$code_auditor_rails" "$canonical_rails"
 
-# --- dir #208: delegation.md:189 promises this block is reproduced verbatim "in every worker and
+# --- dir #208: delegation.md's "Worker rails — verbatim, do not paraphrase" section promises this block
+# is reproduced verbatim "in every worker and
 # verifier prompt this pattern generates" — auditor.md and verifier.md are exactly that (code-auditor.md
 # above is the fourth worker template), so they get the same block-diff treatment, not a substring pin --
 auditor_rails="$(extract_rails_block "$auditor")"

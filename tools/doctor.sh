@@ -1035,7 +1035,10 @@ for d in "${DIRS[@]}"; do
         # name (`file.sh~`), not a placeholder, so a mid-token ~ must not be swept up with it.
         *'://'*|*'<'*|*'>'*|*'$'*|*'*'*|*'?'*|'~'*|/*) continue ;;
       esac
-      # strip a trailing `:LINE` decoration (`tools/doctor.sh:42`, this file's own doc-link convention)
+      # strip a trailing `:LINE` decoration (`<file>:42`, the doc-link convention an adopter's own
+      # context file may use — `<`/`>` are placeholder markup here, not literal characters, and the
+      # exclusion two lines up already treats a token carrying either as never path-shaped, so this
+      # illustration can't collide with a real path the way a plausible-but-fake one could)
       # before judging path-shape or checking existence — the decoration isn't part of the path.
       case "$tok" in
         *:[0-9]*)
