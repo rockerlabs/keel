@@ -2,8 +2,9 @@
 # test_nonneg_int_lib.sh — dir #242: tools/lib/nonneg-int.sh (dir #196) claims to be "the ONE
 # non-negative-integer sanitizer, shared by every tool that clamps a numeric env-var/arg override",
 # but had zero dedicated test coverage — the coverage ratchet (dir #142, tools/self/doctor.sh) reported
-# it "test-covered" on nothing more than a bare filename mention inside a comment at
-# tests/test_install_pre_pr_gate.sh:309. This file gives the lib the direct unit coverage the repo's
+# it "test-covered" on nothing more than a bare filename mention inside a comment — the "sources
+# tools/lib/nonneg-int.sh (dir #196) at startup" line in tests/test_install_pre_pr_gate.sh. This file
+# gives the lib the direct unit coverage the repo's
 # three other shared libs already have (test_range_lib.sh, test_manifest_lib.sh,
 # test_fence_blank_lib.sh), and pins its two real consumers (tools/self/doctor.sh's
 # pending_max_commits, tools/keel-impact.sh's require_count) at the source level, the same way

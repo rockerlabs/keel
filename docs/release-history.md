@@ -75,7 +75,8 @@ new; **4** leg verdicts overruled by the verifier — three marked OVERRULED in 
 (`clean` on `tools/keel-impact.sh`; one entry of a `clean` cross-PR seam sweep on `CHANGELOG.md`;
 `clean` on `docs/grooming.md`) plus a fourth the table does not carry at all (an earlier leg's
 dismissal of a missing-`summary`-call finding as a mere formatting quirk). **Behavioural defects:** the
-run's one CONFIRMED release-blocking behavioural defect — `tools/keel-impact.sh:577` (bash ≥ 4.0
+run's one CONFIRMED release-blocking behavioural defect — `tools/keel-impact.sh`'s
+`_impact_merge_ledger_produce()` (bash ≥ 4.0
 leaves an uninitialized `local` merely declared, not set-to-empty, so the prior cycle's EXIT-trap fix
 leaked its own temp file and clobbered the exit status on both Linux CI legs; reproduced
 independently, positive-controlled) — is fixed before this cut. **Three further behavioural

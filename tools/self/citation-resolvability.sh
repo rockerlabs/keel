@@ -166,7 +166,7 @@ as_ticket_number() {   # as_ticket_number LINE — prints the bare number, or no
 # it through `extract_dir_tickets` (tools/lib/dir-tickets.sh, dir #274, promoted from
 # tools/self/doctor.sh for this second consumer) rather than a bare `grep -oE 'dir #[0-9]+'` — that
 # naive form silently drops every bare `#N` in a shorthand/slash/range list like "dir #201/#214"
-# (docs/delegation.md:221, a real shipped instance, not hypothetical — found live by dir #266's own
+# (a real shipped instance in docs/delegation.md, not hypothetical — found live by dir #266's own
 # review reproducing the exact bug class `extract_dir_tickets` was hardened against). Backtick-quoted
 # inline spans are stripped by `extract_dir_tickets` itself, so an illustrative `` `dir #999` `` in
 # prose is not double-guarded here.
