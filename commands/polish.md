@@ -705,21 +705,33 @@ Steps, in order:
    before opening the PR`. Every other check the gate runs is against the LOCAL repo, so a commit made
    after the branch's last push satisfies all of them and would open a PR that silently omits it. The
    remote it names is the branch's own configured `@{upstream}` (falling back to `origin/<branch>` when
-   the branch has no upstream), not a hardcoded `origin`. Fix it by pushing, then re-run `/polish` and
-   take step 1's convergence branch — this deny retires the sentinel like any other, so the receipts have
-   to be rewritten either way.
+   the branch has no upstream), not a hardcoded `origin`. Fix it by pushing, then just retry
+   `gh pr create` — dir #376 removed this deny's own chain-discard, so the receipts are untouched and
+   nothing needs rewriting.
 
-   **On any receipt-deny from the gate** (a blocked `gh pr create` naming missing step ids): before
-   re-running `/polish`, honestly check whether the named step's work actually happened and was simply not
+   **Read what the deny itself says before doing anything else — do NOT reach for `init` out of habit**
+   (dir #376, the required co-edit for the fix that removed 7 of 15 discard sites: running `init` after a
+   deny whose chain survived would retire it for nothing, turning a one-line fix back into a full
+   re-`init`+`--recover` cycle). Every deny from the gate now says explicitly which case it is:
+   - **"The chain is intact"** — the deny names one thing to do (write one receipt, push, answer a
+     dialog, re-run tests). Do exactly that and retry `gh pr create` directly. No `init`, no
+     `--recover`, nothing else.
+   - **"This has discarded the receipt chain"** — the receipt itself couldn't be trusted (malformed,
+     replayed, an invented value, two receipts disagreeing with each other). Run
+     `tools/pre-pr-gate.sh init` then `tools/pre-pr-gate.sh receipt --recover` to restore whatever was
+     genuinely valid before, or start over from step 1 if `--recover` finds nothing to restore.
+
+   Before either path, honestly check whether the named step's work actually happened and was simply not
    receipted, or was genuinely skipped — then log one verdict line: `tools/pre-pr-gate.sh log receipt-verdict
    "true-catch <step-id>"` (a real skip — the gate did its job) or `"false-fire <step-id>"` (the step ran,
    only the receipt write was missed). This is instrumentation for the pilot's own keep/drop review (dir
    #49), not a step of the happy path — skip it when the gate never denies. **If the gate still denies
-   after one clean re-`init`+re-receipt pass on a busy repo** (dir #80: the gate's sentinel is keyed by
-   (repo, branch) — two worktrees of this repo on the SAME branch, or heavy concurrent `/polish` activity
-   right at `init` time, can still race one slot): hand the exact `gh pr create --head <branch>` command to
-   the operator to run from their own terminal — a manually-run command bypasses the PreToolUse hook
-   pipeline entirely, so it isn't subject to the race at all. Last resort, after one honest retry.
+   after one clean pass through the deny's own named action on a busy repo** (dir #80: the gate's sentinel
+   is keyed by (repo, branch) — two worktrees of this repo on the SAME branch, or two sessions racing the
+   same `init` at literally the same time, can still collide): hand the exact `gh pr create --head
+   <branch>` command to the operator to run from their own terminal — a manually-run command bypasses the
+   PreToolUse hook pipeline entirely, so it isn't subject to the race at all. Last resort, after one
+   honest retry.
 
    **A denial naming a missing step-4 skip dialog or step-5(a) review dialog trace, on a commit made in an
    AD-HOC `git worktree add` created mid-session (not this session's own registered worktree), will not

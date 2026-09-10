@@ -964,12 +964,17 @@ _trace_levels_for() {
 }
 # dir #72: a single-slot backup of whatever receipt was just invalidated — by `init` minting a fresh
 # nonce, or by the gate denying and discarding the sentinel. `retire_sentinel` (below) is the ONE place
-# that both writes this and clears the live sentinel, so every invalidation path (there are several —
-# MALFORMED/MISSING/REPLAY/sha-mismatch/review-depth-mismatch/review-trace-missing denies, the PASS
-# branch's own post-unlock cleanup, and `init`'s overwrite) leaves the same recoverable trail. Only the
-# MOST RECENT retirement is kept (a plain overwrite, not a history) — matches the felt shape (dir #69/PR
-# #145): one review-fix commit invalidates the run that was just denied or just completed, and that is
-# exactly what `receipt --recover` needs to restore.
+# that both writes this and clears the live sentinel. dir #376 narrowed WHICH denies call it: only a
+# deny that means the chain cannot be trusted to say what it says — MALFORMED/REPLAY, an invented
+# depth level, a suffixed 'skip', a depth/review mismatch, or an unrecognized status (the fail-safe) —
+# plus `init`'s own overwrite and the PASS branch's post-unlock cleanup. A deny over an otherwise
+# well-formed chain that merely hasn't met a
+# precondition yet (MISSING, sha-mismatch, head-not-pushed, a stale retest/tests binding, a missing
+# review trace or dialog) leaves the live sentinel alone — the session satisfies the one named step and
+# moves on, instead of losing steps that were never in question. Only the MOST RECENT retirement is
+# kept (a plain overwrite, not a history) — matches the felt shape (dir #69/PR #145): one review-fix
+# commit invalidates the run that was just denied or just completed, and that is exactly what
+# `receipt --recover` needs to restore.
 # $2 (cwd) matters in hook mode: the live sentinel there is keyed off the JSON event's `.cwd`, not this
 # script's own $PWD (dir #61 discipline) — defaulting to $PWD only serves the CLI subcommands, where
 # $PWD IS the repo by construction. A same-filesystem rename (both paths are /tmp) does the backup-then-
@@ -2089,50 +2094,69 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
 # reachable shape here too (e.g. a malformed polish.8-unlock outcome), so use the same safe delimiter.
 IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome tests_outcome <<<"$result"
 
-# dir #376: the ordinary concurrency state of this project — several sessions on one repo, any active
-# day — lets a sibling session's own /polish init on this SAME (repo, branch) key retire this chain's
-# receipts mid-flight (retire_sentinel above backs the live sentinel up and starts a fresh nonce every
-# time init runs). The resulting deny reads identically to a genuinely skipped step from inside this
-# script — 13 recorded hits, and no reliable signal exists here to tell the two apart after the fact
-# (each CLI invocation is its own process, so there is no same-process state to compare a nonce
-# against; that attribution is this ticket's own unresolved, expensive half — see its BACKLOG.md body).
-# Name the possibility and the one mitigation that measurably narrowed the race when tried live, so a
-# retry is informed rather than blind, rather than pretending this script can tell the two apart.
-_concurrent_sentinel_note() {
-  printf ' If several sessions are working this repo right now, note that a sibling'\''s own /polish init on the SAME branch can clear this chain mid-flight (dir #376) — before assuming a genuinely skipped step, retry by writing the WHOLE chain (init through unlock) as ONE uninterrupted command, which measurably narrowed the race when tried live; after three clean retries, hand off to the operator rather than continuing blind.'
-}
-
-# dir #346 remedy (4): "missing receipt for step(s): ..." (below) and "no trace matching ..." (the
-# PASS-branch review check, further down) are two DIFFERENT states with two different remedies —
-# conflating them cost a wasted round in the recorded incident this ticket names. Add a
-# polish.5-review-specific hint only when that step is among the ones actually missing, on top of the
-# always-applicable dir #376 note above — neither hint is exclusive of the other, and a step-3/4/6-only
-# miss gets just the concurrency note.
+# dir #376: 13 recorded hits of this exact deny were misdiagnosed as a cross-session race for fourteen
+# months, because the deny that reported "missing receipt for step(s): X" had, one line above, already
+# retired the whole chain — so writing just the named step (the deny's own advice) came back "no active
+# receipt", which read exactly like a sibling wiping the sentinel mid-flight. Reproduced deterministically,
+# with zero concurrency: the mechanism was this script discarding a well-formed chain over a precondition
+# the session could still satisfy. The fix is below (this case no longer retires) — the message now says
+# so plainly instead of naming a race that was never the cause. `_missing_step_hint` below adds the one
+# remaining real per-step hint (polish.5-review's bare-Agent-spawn cause, dir #346 remedy 4); genuine
+# concurrent `init` collisions (two worktrees sharing a branch, or two sessions racing the same `init`)
+# are a separate, narrower case commands/polish.md's own hand-off prose still covers.
 _missing_step_hint() {
-  local detail="$1" hint=""
+  local detail="$1"
   case ",$detail," in
     *,polish.5-review,*)
-      hint="$hint If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation stamps the review's trace, so an agent review — however thorough, however clean it came back — satisfies nothing here; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, then write the receipt." ;;
+      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation stamps the review'\''s trace, so an agent review — however thorough, however clean it came back — satisfies nothing here; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, then write the receipt.' ;;
   esac
-  hint="$hint$(_concurrent_sentinel_note)"
-  printf '%s' "$hint"
+}
+
+# dir #376 (found by /simplify's altitude, reuse and simplification passes, run together): before
+# these two wrappers, whether a site called `retire_sentinel` and what its deny message CLAIMED about
+# the chain were two independently hand-copied facts, re-decided at every one of the 13 deny sites
+# below — the exact shape that let the addon-retired site's own message already drift once (it dropped
+# its `(dir #376: ...)` cause clause while the others kept it). These make it one fact: a site that
+# calls `_deny_discarded` cannot say "intact", and a site that calls `_deny_intact` cannot retire —
+# the call itself IS the classification, not a comment asserting it alongside a separate `retire_sentinel`
+# line. $1 sentinel path  $2 cwd  $3 receipt key  $4 log-event detail  $5 core message (ends in a
+# period)  $6 the untrustworthy cause, one clause, no trailing period  $7 optional log-event TYPE
+# (default `receipt-deny`; empty string suppresses the log_event call entirely — the fail-safe site
+# below has never logged, and this preserves that rather than silently adding an event to it). $8
+# optional extra sentence(s), appended verbatim after the standard recovery sentence — the
+# review-addon-set-retired site's own bespoke re-write instructions use this rather than being left
+# out of the shared wrapper (dir #183's honesty guarantee still has to survive dir #376's dedup).
+_deny_discarded() {
+  local sentinel="$1" cwd="$2" key="$3" reason="$4" core="$5" cause="$6" event="${7-receipt-deny}" extra="${8:-}"
+  retire_sentinel "$sentinel" "$cwd" "$key"
+  [ -n "$event" ] && log_event "$event" "$reason" "$cwd"
+  deny "$core This has discarded the receipt chain (dir #376: $cause) — run \"pre-pr-gate.sh init\" then \"receipt --recover\" to restore whatever was valid before, or run /polish again from step 1.$extra"
+}
+# $1 cwd  $2 log-event detail  $3 core message (ends in a period)  $4 the one next action, one
+# sentence, ending in a period. No sentinel/key params and no `retire_sentinel` call — that absence
+# IS the fix this ticket ships.
+_deny_intact() {
+  local cwd="$1" reason="$2" core="$3" action="$4"
+  log_event receipt-deny "$reason" "$cwd"
+  deny "$core The chain is intact (dir #376) — $action"
 }
 
 case "$status" in
   MALFORMED)
-    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-    log_event receipt-deny "malformed" "$cwd"
-    deny "Pre-PR gate: receipt is malformed or empty (no nonce). Run /polish again."
+    _deny_discarded "$sentinel" "$cwd" "$receipt_key" "malformed" \
+      "Pre-PR gate: receipt is malformed or empty (no nonce)." \
+      "a malformed chain cannot be trusted to say what it ran"
     ;;
   MISSING)
-    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-    log_event receipt-deny "$detail" "$cwd"
-    deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail.$(_missing_step_hint "$detail") Run /polish again."
+    _deny_intact "$cwd" "$detail" \
+      "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail." \
+      "write \"pre-pr-gate.sh receipt <step-id> ...\" for each step named above and retry; there is no need to \"init\" or re-run /polish from scratch.$(_missing_step_hint "$detail")"
     ;;
   REPLAY)
-    retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-    log_event receipt-replay-deny "$detail" "$cwd"
-    deny "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run). Run /polish again."
+    _deny_discarded "$sentinel" "$cwd" "$receipt_key" "$detail" \
+      "Pre-PR gate: receipt for step(s) $detail carries a stale nonce (replayed from an earlier run)." \
+      "a replayed nonce means the chain cannot be trusted to say what it ran" \
+      "receipt-replay-deny"
     ;;
   PASS)
     # dir #61: an explicit --head/-H names the branch being PR'd — compare against ITS tip (a shared
@@ -2146,9 +2170,9 @@ case "$status" in
     [ -n "$head_branch" ] && target_ref="$resolved_branch"
     current_sha=$(git -C "$cwd" rev-parse "$target_ref" 2>/dev/null)
     if [ -z "$current_sha" ] || [ "$detail" != "$current_sha" ]; then
-      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-      log_event receipt-deny "sha-mismatch" "$cwd"
-      deny "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted). Run /polish again."
+      _deny_intact "$cwd" "sha-mismatch" \
+        "Pre-PR gate: sentinel is stale (HEAD changed since /polish ran, or a manual bypass was attempted)." \
+        "if nothing about the diff changed besides landing it, write \"pre-pr-gate.sh receipt polish.8-unlock $current_sha\" fresh and retry; if the diff itself changed, redo whichever review-independent steps touched it and this gate's own checks below will say exactly what's still missing before you retry. No need to \"init\"."
     fi
     # dir #133: every check above is against the LOCAL repo only — nothing confirms $current_sha was
     # ever pushed. A convergence-round commit made after the branch's last `git push` passes every one of
@@ -2192,9 +2216,9 @@ case "$status" in
     [ -z "$push_remote_ref" ] && push_remote_ref="origin/$resolved_branch"
     if git -C "$cwd" remote get-url "$push_remote_name" >/dev/null 2>&1 &&
        ! git -C "$cwd" merge-base --is-ancestor "$current_sha" "$push_remote_ref" 2>/dev/null; then
-      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-      log_event receipt-deny "head-not-pushed" "$cwd"
-      deny "Pre-PR gate: current HEAD ($current_sha) is not reachable on $push_remote_ref — push the branch (git push) before opening the PR."
+      _deny_intact "$cwd" "head-not-pushed" \
+        "Pre-PR gate: current HEAD ($current_sha) is not reachable on $push_remote_ref — push the branch (git push) before opening the PR." \
+        "no need to \"init\" or write anything again, just push and retry."
     fi
     # dir #72 finding #1: `polish.6-retest` used to be a bare completion marker with NO value-level
     # check — unlike step 5 (trace-matched) and step 8 (sha-matched); dir #96 later sha-bound step 3
@@ -2208,9 +2232,9 @@ case "$status" in
       skipped:*) : ;;
       "$current_sha") : ;;
       *)
-        retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-        log_event receipt-deny "retest-sha-mismatch" "$cwd"
-        deny "Pre-PR gate: step 6's retest receipt ('$retest_outcome') doesn't match current HEAD ($current_sha) and isn't a skip — the diff may have changed since tests last ran. Run /polish again."
+        _deny_intact "$cwd" "retest-sha-mismatch" \
+          "Pre-PR gate: step 6's retest receipt ('$retest_outcome') doesn't match current HEAD ($current_sha) and isn't a skip — the diff may have changed since tests last ran." \
+          "re-run the tests and write \"pre-pr-gate.sh receipt polish.6-retest $current_sha\" fresh, then retry. No need to \"init\"."
         ;;
     esac
     # dir #96: THE test-binding check — the one invariant this gate exists to hold. Some run of the
@@ -2298,12 +2322,12 @@ case "$status" in
     esac
     [ "$retest_outcome" = "$current_sha" ] && tests_bound=1
     if [ "$tests_bound" -eq 0 ]; then
-      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-      log_event receipt-deny "tests-sha-unbound" "$cwd"
-      # Prescribe the one action that WORKS from here: retire_sentinel just ran, so there is no active
-      # receipt to append to — telling the operator to `receipt polish.3-tests <sha>` would hand them a
-      # command that answers "no active receipt". Every sibling deny in this branch says the same thing.
-      deny "Pre-PR gate: no test suite run is bound to current HEAD ($current_sha) — step 3 recorded '$tests_outcome' (its tree-relevant hash, if any, no longer matches current HEAD's) and step 6 did not re-run here. Usual cause: a commit landed after the tests ran and touched a test-relevant file — not necessarily code: a .md file some test reads (e.g. CORE.md's sync check) counts too, only a .md file NO test references is exempt. If you just pulled Keel, an older copied commands/polish.md that writes a bare 'done' for step 3 causes this too — copy the shipped file over your own: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md (re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own). Run /polish again."
+      # dir #376: the chain is intact — a `receipt polish.3-tests <sha>` or `polish.6-retest <sha>`
+      # right after this deny lands on the same still-live nonce and works, unlike before this fix when
+      # retire_sentinel ran first and left "no active receipt" for exactly that command.
+      _deny_intact "$cwd" "tests-sha-unbound" \
+        "Pre-PR gate: no test suite run is bound to current HEAD ($current_sha) — step 3 recorded '$tests_outcome' (its tree-relevant hash, if any, no longer matches current HEAD's) and step 6 did not re-run here. Usual cause: a commit landed after the tests ran and touched a test-relevant file — not necessarily code: a .md file some test reads (e.g. CORE.md's sync check) counts too, only a .md file NO test references is exempt. If you just pulled Keel, an older copied commands/polish.md that writes a bare 'done' for step 3 causes this too — copy the shipped file over your own: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md (re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own)." \
+        "run the tests and write \"pre-pr-gate.sh receipt polish.3-tests $current_sha\" (or step 6's retest receipt) fresh, then retry. No need to \"init\"."
     fi
     # dir #63/Hole A: cross-check step 5's review outcome against step 4's OWN recorded depth — without
     # this, "skip"/"-operator-run"/"-waived" (the outcomes exempt from the trace check below) were
@@ -2336,9 +2360,9 @@ case "$status" in
       [ "$depth_level" = "$lvl" ] && depth_level_ok=1 && break
     done
     if [ "$depth_level_ok" -eq 0 ]; then
-      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-      log_event receipt-deny "depth-level-invalid" "$cwd"
-      deny "Pre-PR gate: step 4 recorded depth level '$depth_level', which is not one of the real depths (low/medium/high/max/ultra/skip) — an invented level cannot size a review. Run /polish again."
+      _deny_discarded "$sentinel" "$cwd" "$receipt_key" "depth-level-invalid" \
+        "Pre-PR gate: step 4 recorded depth level '$depth_level', which is not one of the real depths (low/medium/high/max/ultra/skip) — an invented level cannot size a review." \
+        "an invented value cannot be trusted to say what actually ran"
     fi
     trusted=0
     needs_dialog=0
@@ -2465,12 +2489,11 @@ case "$status" in
     # skip:*` unlocked an ARMED gate with no dialog ever answered, because `*-waived` sets trusted=1
     # and leaves needs_dialog=0 — the same unconditional-trust shape dir #96 closed for step 6.
     if [ "$outcome_level" = "skip" ] && [ "$review_outcome" != "skip" ]; then
-      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-      log_event receipt-deny "skip-suffixed-outcome" "$cwd"
-      deny "Pre-PR gate: step 5 recorded '$review_outcome' — a suffixed 'skip' is not a valid outcome (skip has no review to waive or hand off; its only honest receipt is the bare 'skip', chosen via step 4's dialog). Run /polish again."
+      _deny_discarded "$sentinel" "$cwd" "$receipt_key" "skip-suffixed-outcome" \
+        "Pre-PR gate: step 5 recorded '$review_outcome' — a suffixed 'skip' is not a valid outcome (skip has no review to waive or hand off; its only honest receipt is the bare 'skip', chosen via step 4's dialog)." \
+        "an invented outcome shape cannot be trusted to say what actually ran"
     fi
     if [ "$outcome_level" != "$depth_level" ]; then
-      retire_sentinel "$sentinel" "$cwd" "$receipt_key"
       # dir #183: every invalid add-on routes through this equality check rather than carrying a deny
       # of its own — deliberate (no second message to keep in sync), but it means a COMMA-JOINED suffix
       # lands here with a message that names the depth, which is visibly correct in the outcome string.
@@ -2493,7 +2516,9 @@ case "$status" in
       # decision. The differentiated log reason is the same rail's other half — a recurring stale-copy
       # loop is exactly what a `sweep`/impact consumer wants to count separately from a real mismatch.
       depth_deny_reason="review-depth-mismatch"
-      depth_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level'). Run /polish again."
+      depth_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') doesn't match the depth step 4 recorded ('$depth_level')."
+      depth_deny_cause="two receipts disagreeing about the same review means neither can be trusted to say what actually ran"
+      depth_deny_extra=""
       case "$review_outcome" in
         agent:*+*,*)
           # Match on the ADD-ON region, not merely on the shape: the pre-`+` part must be a bare
@@ -2504,12 +2529,13 @@ case "$status" in
           case "$addon_pre" in
             *:*) : ;;
             *)   depth_deny_reason="review-addon-set-retired"
-                 depth_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') carries a COMMA-JOINED add-on suffix, which is no longer a valid shape — the receipt now names AT MOST ONE add-on (dir #183), so the suffix does not validate and the outcome fails the depth cross-check against step 4's '$depth_level'. If you just pulled Keel, an older COPIED commands/polish.md still teaches the comma-separated set: copy the shipped file over your own directly: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md — re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own. Then re-run this receipt naming exactly ONE add-on (operator-run takes the slot when both applied) and name every mechanism that reviewed this commit in the PR body and the step-10 summary instead. Run /polish again." ;;
+                 depth_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') carries a COMMA-JOINED add-on suffix, which is no longer a valid shape — the receipt now names AT MOST ONE add-on (dir #183), so the suffix does not validate and the outcome fails the depth cross-check against step 4's '$depth_level'. If you just pulled Keel, an older COPIED commands/polish.md still teaches the comma-separated set: copy the shipped file over your own directly: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md — re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own."
+                 depth_deny_cause="a comma-joined add-on suffix is an invented shape, retired since dir #183"
+                 depth_deny_extra=" Then re-write this receipt naming exactly ONE add-on (operator-run takes the slot when both applied) and name every mechanism that reviewed this commit in the PR body and the step-10 summary instead." ;;
           esac
           ;;
       esac
-      log_event receipt-deny "$depth_deny_reason" "$cwd"
-      deny "$depth_deny_msg"
+      _deny_discarded "$sentinel" "$cwd" "$receipt_key" "$depth_deny_reason" "$depth_deny_core" "$depth_deny_cause" "receipt-deny" "$depth_deny_extra"
     fi
     # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real
     # in-session /code-review run — cross-check the mechanically-written trace (skill-trace, above) so
@@ -2522,11 +2548,8 @@ case "$status" in
     # depth-checked and what's being trace-matched legitimately differ.
     if [ "$trusted" -eq 0 ]; then
       # dir #80: $wt here is deliberately still repo-only (not $receipt_key) — the trace stays
-      # per-repo, see the dir #80 header section above. retire_sentinel below still gets
-      # $receipt_key, though — that's the SENTINEL's own key (branch-aware), not the trace's.
+      # per-repo, unrelated to the sentinel's own (branch-aware) key.
       if ! _trace_has_line "$wt" "$current_sha" "$trace_match_outcome"; then
-        retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-        log_event receipt-deny "review-trace-missing" "$cwd"
         # dir #296: name what WAS traced for this commit, if anything, as an ADDITION to the existing
         # "no trace matching" wording (kept verbatim — several tests already pin that exact substring).
         # An empty $traced_levels means no review mechanism fired at all, unchanged from before this fix.
@@ -2540,17 +2563,15 @@ case "$status" in
         # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
         # A trace is bound to the exact commit it was written against and is never retroactive, so the
         # common cause here is: a review DID run, its findings were fixed, and the fix commit moved
-        # HEAD past what the trace covers. The minimal remedy is cheaper specifically because it skips
-        # re-running the REVIEW-INDEPENDENT steps (2/3/4/6/7), not because it skips receipt bookkeeping
-        # — `retire_sentinel` two lines above has ALREADY retired the live sentinel by the time this
-        # message prints, so a bare `receipt polish.5-review ...` here would itself fail closed with
-        # "no active receipt" (found live: a /code-review pass on this ticket reproduced exactly that
-        # failure against an earlier draft of this message, which wrongly told the reader to skip
-        # `init`/`--recover` entirely). The ticket's own confirming incident names both halves: the
-        # review re-invocation is the cheap half that worked standalone; "a full init + --recover cycle
-        # was still required before gh pr create would take" is the other half this message must not
-        # omit.
-        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346). The minimal remedy: invoke the review once more at your CURRENT HEAD, run \`pre-pr-gate.sh init\` then \`receipt --recover\` to re-establish the other steps (this denial already retired them), and write the polish.5-review receipt fresh — cheaper than a full /polish re-run only because the review-independent steps (simplify, tests, depth-sizing) don't need redoing, not because the receipt bookkeeping can be skipped. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
+        # HEAD past what the trace covers. dir #376 removed this site's own retire_sentinel call —
+        # THIS is dir #346's own ratchet, and the CHEAPER half was always the review re-invocation; the
+        # EXPENSIVE half was the init+--recover cycle this denial used to force by discarding the other
+        # 7 receipts along with the one that actually went stale. With the chain now left intact, that
+        # cycle is gone entirely: a bare `receipt polish.5-review ...` right after this deny lands on
+        # the still-live nonce and works, where before it would fail closed with "no active receipt".
+        _deny_intact "$cwd" "review-trace-missing" \
+          "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346)." \
+          "invoke the review once more at your CURRENT HEAD and write the polish.5-review receipt fresh; no \"init\" or \"receipt --recover\" needed, the other steps' receipts are untouched. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
       fi
     fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
@@ -2564,9 +2585,9 @@ case "$status" in
     # between `git pull` and the operator re-running the installer.
     if [ "$needs_dialog" -eq 1 ] && _dialog_leg_armed "$main_top"; then
       if ! _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
-        # dir #80: $receipt_key (branch-aware), not $wt (repo-only) — this retires the SENTINEL,
-        # keyed the same way every other retire_sentinel call in this branch already is.
-        retire_sentinel "$sentinel" "$cwd" "$receipt_key"
+        # dir #376: no retire_sentinel here — the chain is otherwise well-formed and only this one
+        # dialog trace is missing, a precondition the session can still satisfy without losing the
+        # other 7 receipts.
         # dir #116: skip's missing dialog is a DIFFERENT one than the agent arms' — step 4's own skip
         # dialog, not step 5(a)'s reminder. Named separately in both the log reason and the message so
         # a convergence round doesn't mis-read this as the dir #88 deny and go re-answer the wrong
@@ -2581,13 +2602,14 @@ case "$status" in
           # option would still hand the hook both halves it needs. Same discipline as dir #88's deny,
           # which describes its marker without spelling it. A meta-test feeds this very message
           # through the dialog leg and asserts no trace is written.
-          dlg_deny_msg="Pre-PR gate: step 5 recorded 'skip', but no step-4 skip dialog was traced as answered 'skip' for this commit (spelled in polish.md step 4; if your step 4 doesn't carry that dialog's marker at all, your polish.md is a stale copy — refresh it by copying the shipped file over your own: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md — re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own). An inherited or auto-selected skip doesn't count; a fix commit needs that dialog re-answered for ITS diff. Re-run step 4's ask-dialog for current HEAD, or size a real review. Run /polish again."
+          dlg_deny_core="Pre-PR gate: step 5 recorded 'skip', but no step-4 skip dialog was traced as answered 'skip' for this commit (spelled in polish.md step 4; if your step 4 doesn't carry that dialog's marker at all, your polish.md is a stale copy — refresh it by copying the shipped file over your own: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md — re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own). An inherited or auto-selected skip doesn't count; a fix commit needs that dialog re-answered for ITS diff."
+          dlg_deny_action="re-run step 4's ask-dialog for current HEAD, or size a real review, then retry; no need to \"init\"."
         else
           dlg_deny_reason="review-dialog-missing"
-          dlg_deny_msg="Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about). Run /polish again."
+          dlg_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about)."
+          dlg_deny_action="answer the dialog and retry; no need to \"init\"."
         fi
-        log_event receipt-deny "$dlg_deny_reason" "$cwd"
-        deny "$dlg_deny_msg"
+        _deny_intact "$cwd" "$dlg_deny_reason" "$dlg_deny_core" "$dlg_deny_action"
       fi
     fi
     # dir #64 tier 2a: $prov_label/$prov_tag were already built above (the same case statement dir #63's
@@ -2602,6 +2624,9 @@ case "$status" in
     ;;
 esac
 
-# Fail-safe: any unrecognized status denies rather than silently allowing.
-retire_sentinel "$sentinel" "$cwd" "$receipt_key"
-deny "Pre-PR gate: could not verify the receipt. Run /polish again."
+# Fail-safe: any unrecognized status denies rather than silently allowing. No log_event here, same as
+# before this refactor — unchanged behavior, just routed through the shared wrapper (empty event = skip).
+_deny_discarded "$sentinel" "$cwd" "$receipt_key" "" \
+  "Pre-PR gate: could not verify the receipt." \
+  "an unrecognized status cannot be trusted to say what actually ran" \
+  ""
