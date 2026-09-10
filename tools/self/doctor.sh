@@ -104,8 +104,9 @@ warn() { echo "  WARN $1"; }
 say "● keel self-check ($repo_root)"
 
 # --- 1. install.sh <-> doctor.sh --install ship-skip list sync ---------------------------------
-# Both files hand-maintain a "<name>.md) continue" exclusion (currently just polish.md) and each
-# carries a comment promising to keep the other in sync. Verify the promise instead of trusting it.
+# Both files hand-maintain a "<name>.md) continue" exclusion (both lists are currently empty — see
+# the "OK ... (none)" case below) and each carries a comment promising to keep the other in sync.
+# Verify the promise instead of trusting it.
 # The first stage requires the WHOLE case-arm pattern (everything before ") continue") to itself be
 # a list of .md names — not just "any line containing ') continue' that also happens to have a .md
 # substring somewhere" — both files have OTHER, unrelated ") continue" arms (e.g. a markdown-table
@@ -1271,9 +1272,10 @@ fi
 # #965 go with it. Cite each reference-only ticket in a list as its own separate, standalone
 # `dir #N (ref)` instead — teaching `extract_dir_tickets` itself to loudly flag a marker interrupting
 # a list (the way its own "range too large to expand" marker already does for a different malformed
-# shape) is a real, larger fix, but belongs to that shared file's own scope, not this ticket's — it
-# would need to reach `citation-resolvability.sh` too, whose own use of the SAME grammar this
-# paragraph is describing is untouched by dir #364/#273's classification rule.
+# shape) was filed as dir #479, scoped to that shared file rather than this ticket's own — it would
+# have needed to reach `citation-resolvability.sh` too, whose own use of the SAME grammar this
+# paragraph is describing is untouched by dir #364/#273's classification rule. **DECLINED** — see
+# tools/lib/dir-tickets.sh's own header comment for the measurement behind that call.
 #
 # NOT this check's job: `_strip_ref_citations` is local to THIS file's `_extract_dir_tickets`
 # wrapper, not folded into the shared `extract_dir_tickets` (tools/lib/dir-tickets.sh) that
@@ -1438,6 +1440,34 @@ while IFS= read -r rel; do
 done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel' ':!tools/self/doctor.sh')
 [ "$ps_hit" -eq 0 ] && say "  OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
+# fn_open_re FN OUT — writes into variable OUT (via `printf -v`, so a plain assignment in the caller's
+# own scope, no subshell fork) the regex (for `grep -E`/`git grep -E`) matching FN's opening line,
+# tolerating whitespace between the name and `(` and a brace either on the SAME line (`fn() {`, with
+# nothing anchoring what follows — `fn() { :; }` on one line still matches) or alone on the line right
+# after (bare `fn()`, anchored at end-of-line since nothing else can legally follow it there). A bare
+# `fn()` cannot be valid bash outside a function definition, so the widened alternative is unambiguous
+# (dir #380 — a hand-copy with the brace on its own line was invisible to this check before the
+# widening). Used by both check 9's cksum_def_re and check 10's single_def_check below, so the two
+# checks' definition of "a real function opener" can't drift apart the way check 10's OWN def_re once
+# drifted from extract_fn_body's opening-line pattern (found by this ticket's own /code-review max
+# pass, reproduced live: a purely cosmetic reformat, `fn () {` instead of `fn() {`, matched one but not
+# the other) — one function, one place to widen the DETECTION shape both `grep -E` call sites share.
+# **`extract_fn_body` below deliberately does NOT call this** (an earlier draft of this comment claimed
+# it did, which this ticket's own /code-review high pass found false by reading the code): a regex
+# string built for `grep -E` uses single-backslash ERE escaping (`\(`, `\{`), while a dynamic regex
+# handed to `awk` via `-v` goes through awk's OWN escape processing first, which collapses an
+# unrecognized `\(` into a bare `(` — verified live, this silently breaks the match rather than
+# erroring. `extract_fn_body`'s own literals use the double-backslash form awk's `-v` needs, which is a
+# genuinely different string than this function returns, not a copy of it. So the two must still be
+# widened BY HAND, together, whenever either changes (dir #380's own pre-decision, restated: both
+# halves move together or neither does) — this function unifies only the two grep-E call sites, and
+# `single_def_check` additionally treats an unrecognized opener in the body-comparison half as
+# unverifiable rather than a silent match (see its own comment), so a shape this function detects but
+# `extract_fn_body` can't parse fails LOUD, never quietly OK.
+fn_open_re() {
+  printf -v "$2" '^[[:space:]]*%s[[:space:]]*\\(\\)[[:space:]]*(\\{|$)' "$1"
+}
+
 # --- 9. artifact_cksum has exactly one definition tree-wide (dir #362) ----------------------------
 # dir #362 extracted install.sh's own artifact_cksum/CKSUM_UNREADABLE (previously ALSO hand-copied,
 # output-identical, inside uninstall.sh) into tools/lib/artifact-cksum.sh, sourced (required, not
@@ -1454,7 +1484,9 @@ say "● artifact_cksum single-definition (dir #362)"
 # rule under test) simply doesn't have this function at all — valid, not a drift. The drift this check
 # exists to catch is a definition surviving somewhere OTHER than the shared lib, or in more than one
 # place — the hand-copy shape dir #362 removed.
-cksum_def_re='^[[:space:]]*artifact_cksum[[:space:]]*\(\)[[:space:]]*\{'
+cksum_def_re=""   # set indirectly below via fn_open_re's `printf -v` — declared here so shellcheck
+                  # (SC2154) sees the assignment; fn_open_re itself never assigns it literally
+fn_open_re artifact_cksum cksum_def_re
 cksum_defs="$(git -C "$repo_root" grep -lE "$cksum_def_re" -- '*.sh' 'keel' 2>/dev/null || true)"
 if [ -z "$cksum_defs" ]; then
   :   # no definition anywhere — no rule to keep in sync here
@@ -1479,17 +1511,29 @@ say "● manifest_field/manifest_usable/core-ownership-predicate single-definiti
 # extract_fn_body FILE FN — FN's body, one normalized line per statement (each line's own
 # leading/trailing whitespace stripped, so a difference in INDENTATION alone — install.sh's fallback
 # copies live inside an `else` block, the lib files' own copies don't — never counts as a difference).
-# Assumes the shape every copy this check compares actually uses: `fn() {` alone on its opening line,
-# a bare `}` alone on its closing line, no nested braces (both functions here are one test expression).
-# The opening-line pattern must tolerate the SAME whitespace `single_def_check`'s own `def_re` does
-# (`[[:space:]]*` between the name and `(`) — found by this ticket's own /code-review max pass,
-# reproduced live: the two were written with different tolerances, so a purely cosmetic reformat
-# (`fn () {` instead of `fn() {`) would still count as exactly one real definition per `def_re`, but
-# `extract_fn_body` would silently return empty for it, comparing unequal to the real body and firing
-# a false "drifted" GAP for a behavior-preserving edit.
+# Assumes the shape every copy this check compares actually uses: a bare `}` alone on its closing
+# line, no nested braces (both functions here are one test expression). The opening line may be either
+# `fn() {` (brace same line) OR a bare `fn()` with the brace on a LATER line, any number of blank
+# lines after it (both are valid bash — the parser just keeps reading until the compound command
+# appears) — the same shapes `fn_open_re` above makes `def_re`/`cksum_def_re` detect. **Both halves
+# must recognize the same shapes, or a detected definition can compare as an empty body and fire a
+# false "drifted" GAP** (dir #380's own pre-decision) — confirmed live for the blank-line case: before
+# this tolerance, `fn_open_re`'s bare-`fn()` branch detects `fn()\n\n{` as a definition (it doesn't
+# look past the opening line at all), but this awk reset `pending` on the blank line and returned an
+# empty body for it, an argument-for-argument repeat of the whitespace-tolerance mismatch dir #363's
+# own `/code-review max` pass already found once (a purely cosmetic `fn () {` vs `fn() {` reformat).
+# **Residual, deliberately not chased further**: a COMMENT line between `fn()` and `{` is also valid
+# bash and is NOT tolerated here — closing that gap needs either enumerating more shapes indefinitely
+# (the exact failure mode this comment's own history warns about) or replacing this regex/awk pair with
+# real bash introspection (e.g. `declare -f` after sourcing), which is a redesign beyond this ticket's
+# proven mutation shape, not a widening of it.
 extract_fn_body() {
   awk -v fn="$2" '
+    pending && $0 ~ /^[[:space:]]*\{[[:space:]]*$/ { infn = 1; pending = 0; next }
+    pending && $0 ~ /^[[:space:]]*$/ { next }
+    pending { pending = 0 }
     $0 ~ "^[[:space:]]*" fn "[[:space:]]*\\(\\)[[:space:]]*\\{[[:space:]]*$" { infn = 1; next }
+    $0 ~ "^[[:space:]]*" fn "[[:space:]]*\\(\\)[[:space:]]*$" { pending = 1; next }
     infn && $0 ~ /^[[:space:]]*\}[[:space:]]*$/ { infn = 0; next }
     infn { line = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); print line }
   ' "$1"
@@ -1519,7 +1563,8 @@ extract_fn_body() {
 # simply doesn't have the rule to keep in sync.
 single_def_check() {
   local fn="$1" home="$2" exempt="${3-}" is_fallback="${4-0}" def_re defs rest note=""
-  def_re="^[[:space:]]*${fn}[[:space:]]*\\(\\)[[:space:]]*\\{"
+  local home_body exempt_body unread
+  fn_open_re "$fn" def_re
   defs="$(git -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/' 2>/dev/null || true)"
   [ -z "$defs" ] && return   # no definition anywhere — no rule to keep in sync here
   rest="$defs"
@@ -1529,9 +1574,28 @@ single_def_check() {
   fi
   if [ "$rest" != "$home" ]; then
     gap "${fn}() is defined in {$defs} — expected exactly one real definition, in $home$( [ -n "$exempt" ] && printf ' (plus its documented %s fallback/stub)' "$exempt" ) (dir #363: source it, never hand-copy it)"
-  elif [ "$is_fallback" = 1 ] \
-       && [ "$(extract_fn_body "$repo_root/$home" "$fn")" != "$(extract_fn_body "$repo_root/$exempt" "$fn")" ]; then
-    gap "${fn}()'s fallback copy in $exempt has drifted from the canonical definition in $home — the documented contract is a byte-identical fallback, not a stub; keep them in sync or degrade the contract explicitly"
+  elif [ "$is_fallback" = 1 ]; then
+    home_body="$(extract_fn_body "$repo_root/$home" "$fn")"
+    exempt_body="$(extract_fn_body "$repo_root/$exempt" "$fn")"
+    # `def_re` (fn_open_re) detects a real definition from its OPENING line alone — it has no way to
+    # look past it, so it also matches an opener `def_re` is confident is real but whose FOLLOWING
+    # lines (e.g. a comment between `fn()` and `{`, also valid bash) `extract_fn_body` doesn't
+    # recognize; extract_fn_body then returns "". Comparing two empty strings as equal would silently
+    # report OK on a genuinely drifted pair — the exact failure this check exists to catch, and WORSE
+    # than the false "drifted" GAP dir #380's own pre-decision names: a false OK on real drift is
+    # silent, where a false GAP is at least loud (found live by this ticket's own /code-review high
+    # pass, reproducing it with mismatched bodies behind a comment-line opener on both sides). Never
+    # let "both came back empty" read as "matched" — treat it as un-verified instead.
+    unread=""
+    [ -z "$home_body" ] && unread="$home"
+    [ -z "$exempt_body" ] && unread="${unread:+$unread, }$exempt"
+    if [ -n "$unread" ]; then
+      gap "${fn}()'s byte-identical-fallback contract could not be verified: this check's body-extraction pattern didn't recognize the opening-line shape used in {$unread} — reformat to \`${fn}() {\` or a bare \`${fn}()\` with \`{\` alone on a later line, or verify the byte-identical contract by hand"
+    elif [ "$home_body" != "$exempt_body" ]; then
+      gap "${fn}()'s fallback copy in $exempt has drifted from the canonical definition in $home — the documented contract is a byte-identical fallback, not a stub; keep them in sync or degrade the contract explicitly"
+    else
+      say "  OK   ${fn}() has exactly one real definition, in $home$note"
+    fi
   else
     say "  OK   ${fn}() has exactly one real definition, in $home$note"
   fi

@@ -1797,6 +1797,17 @@ check_status "a hand-copy alongside the shared lib -> exit 1" 1 "$STATUS"
 check_contains "names both files it was found in" "$OUT" "tools/lib/artifact-cksum.sh"
 check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
 
+# MUTATION PROOF (dir #380): the hand-copy's opening brace sits alone on the line AFTER `fn()`,
+# not on the same line — the shape that was invisible to this check's def_re before it was widened
+# to tolerate a bare `fn()` opener. Reproduces the ticket's own live proof (scratch clone 0ca078c).
+d="$(mk_clean_repo)"; plant_cksum_lib "$d"
+printf '#!/usr/bin/env bash\nartifact_cksum ()\n{\n  :\n}\n' >> "$d/uninstall.sh"
+( cd "$d" && git add -A && git commit -qm "hand-copy reappears in uninstall.sh, brace on next line" )
+run "$sd" "$d" --quiet
+check_status "a next-line-brace hand-copy is caught, not waved through -> exit 1" 1 "$STATUS"
+check_contains "names both files it was found in" "$OUT" "tools/lib/artifact-cksum.sh"
+check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
+
 # defined only in the wrong place (the shared lib itself never got it)
 d="$(mk_clean_repo)"
 printf '#!/usr/bin/env bash\nartifact_cksum() {\n  :\n}\n' >> "$d/install.sh"
@@ -1825,22 +1836,48 @@ check_absent "and reports no GAP over it" "$OUT" "GAP"
 # went unverified) — the fixture below therefore uses the SAME real predicate text in both copies for
 # keel_core_is_link/keel_core_is_nogit_trim, not a `:` placeholder, so the clean case genuinely proves
 # the comparison passes rather than never running it.
+# plant_manifest_and_ownership_libs DIR [BRACE] — BRACE selects the opening-brace shape used for the
+# ownership-predicate pair (keel_core_is_link/keel_core_is_nogit_trim) in BOTH tools/lib/core-
+# ownership.sh and install.sh's fallback copy: "same" (default) for `fn() {`, "nextline" for `fn ()`
+# with `{` alone on the line right after (dir #380's proven shape), "blankline" for `fn ()` with a
+# BLANK line then `{` (also valid bash — the parser just keeps reading — and the shape extract_fn_body
+# was found to disagree with def_re/cksum_def_re on before it was widened to tolerate it too),
+# "comment" for `fn ()` with a COMMENT line then `{` (also valid bash, and the one shape this check's
+# own comments document as a deliberately-not-chased residual — def_re still detects it as a real
+# definition, so single_def_check must never let extract_fn_body's empty-on-both-sides result read as
+# "matched") — the two copies always share whichever shape is chosen, since the fixture's whole point
+# is a body-identical canonical + fallback pair. manifest_field/manifest_usable stay same-line either
+# way; they aren't body-compared by this check.
 plant_manifest_and_ownership_libs() {
-  mkdir -p "$1/tools/lib"
+  local dir="$1" brace="${2:-same}" open_link open_trim
+  # ANSI-C quoting ($'...') gives open_link/open_trim REAL newlines up front, so they can be passed to
+  # printf as plain %s ARGUMENTS below rather than spliced into the format string itself — a value
+  # passed as an argument is never re-parsed for `%` directives, whatever characters it contains,
+  # unlike interpolating it into the format string (found by this ticket's own /code-review high pass,
+  # verified live: a stray `%s` inside an interpolated fragment is silently swallowed as an empty
+  # conversion instead of erroring).
+  case "$brace" in
+    nextline)  open_link=$'keel_core_is_link ()\n{';    open_trim=$'keel_core_is_nogit_trim ()\n{' ;;
+    blankline) open_link=$'keel_core_is_link ()\n\n{';  open_trim=$'keel_core_is_nogit_trim ()\n\n{' ;;
+    comment)   open_link=$'keel_core_is_link ()\n# real predicate\n{'
+               open_trim=$'keel_core_is_nogit_trim ()\n# real predicate\n{' ;;
+    *)         open_link='keel_core_is_link() {';      open_trim='keel_core_is_nogit_trim() {' ;;
+  esac
+  mkdir -p "$dir/tools/lib"
   printf '#!/usr/bin/env bash\nmanifest_field() {\n  :\n}\nmanifest_usable() {\n  :\n}\n' \
-    > "$1/tools/lib/manifest.sh"
-  printf '#!/usr/bin/env bash\nkeel_core_is_link() {\n  [ -L "$1" ]\n}\nkeel_core_is_nogit_trim() {\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q '"'"'KEEL-NOGIT'"'"' "$1" 2>/dev/null\n}\n' \
-    > "$1/tools/lib/core-ownership.sh"
+    > "$dir/tools/lib/manifest.sh"
+  printf '%s\n%s\n  [ -L "$1" ]\n}\n%s\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q "KEEL-NOGIT" "$1" 2>/dev/null\n}\n' \
+    '#!/usr/bin/env bash' "$open_link" "$open_trim" > "$dir/tools/lib/core-ownership.sh"
   # install.sh's own documented, exempt fallback/stub copies — proving these don't themselves trip
   # the check, same shape as its real optional-source else branch (manifest_field is NOT among them:
   # install.sh's real code never calls it, so it carries no stub of that one). The ownership-predicate
   # pair is body-identical to tools/lib/core-ownership.sh's own copy above (modulo indentation, which
   # extract_fn_body normalizes away) — manifest_usable's stub is deliberately NOT (a `return 1;` stub
   # is never claimed to match anything, so it carries no body check).
-  printf '#!/usr/bin/env bash\nmanifest_usable() { return 1; }\nkeel_core_is_link() {\n  [ -L "$1" ]\n}\nkeel_core_is_nogit_trim() {\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q '"'"'KEEL-NOGIT'"'"' "$1" 2>/dev/null\n}\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
-    > "$1/install.sh"
+  printf '%s\nmanifest_usable() { return 1; }\n%s\n  [ -L "$1" ]\n}\n%s\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q "KEEL-NOGIT" "$1" 2>/dev/null\n}\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
+    '#!/usr/bin/env bash' "$open_link" "$open_trim" > "$dir/install.sh"
   printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, and tools/lib/core-ownership.sh"\n' \
-    "$fake_widget" > "$1/tests/test_tools.sh"
+    "$fake_widget" > "$dir/tests/test_tools.sh"
 }
 
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
@@ -1857,6 +1894,58 @@ run "$sd" "$d" --quiet
 check_status "manifest_field hand-copy alongside the shared lib -> exit 1" 1 "$STATUS"
 check_contains "names the shared lib" "$OUT" "tools/lib/manifest.sh"
 check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
+
+# MUTATION PROOF (dir #380): same hand-copy, but its opening brace sits alone on the line AFTER
+# `manifest_field ()` — the exact shape dir #380's own live proof used against this check.
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+printf '\nmanifest_field ()\n{\n  :\n}\n' >> "$d/uninstall.sh"
+( cd "$d" && git add -A && git commit -qm "manifest_field hand-copy reappears in uninstall.sh, brace on next line" )
+run "$sd" "$d" --quiet
+check_status "a next-line-brace hand-copy is caught, not waved through -> exit 1" 1 "$STATUS"
+check_contains "names the shared lib" "$OUT" "tools/lib/manifest.sh"
+check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
+
+# NEGATIVE PROOF (dir #380's pre-decision: both halves move together or neither does) — a
+# next-line-brace definition, when it's the CANONICAL (only) copy, must not itself misfire. Applied
+# to the ownership-predicate pair specifically because that's the one is_fallback=1 body-compares:
+# widening detection alone (without extract_fn_body) would make it return an empty body for this
+# shape and fire a false "drifted" GAP against the real, unchanged fallback below.
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" nextline
+( cd "$d" && git add -A && git commit -qm "canonical + exempt fallback, both next-line-brace, identical bodies" )
+run "$sd" "$d" --quiet
+check_status "next-line-brace canonical + matching fallback -> exit 0, no false GAP" 0 "$STATUS"
+check_absent "widening detection and body-comparison together doesn't misfire" "$OUT" "GAP"
+
+# Same negative proof, one line further: a BLANK line between `fn()` and `{` — also valid bash, and
+# confirmed live (this ticket's own review) to disagree with extract_fn_body before it was widened to
+# tolerate it: cksum_def_re/def_re's bare-`fn()` branch detects this shape as a definition regardless
+# of what follows it, so a body-comparison that returns empty for it (instead of the real body) would
+# fire the exact false "drifted" GAP this whole check exists to avoid.
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" blankline
+( cd "$d" && git add -A && git commit -qm "canonical + exempt fallback, both blank-line-before-brace, identical bodies" )
+run "$sd" "$d" --quiet
+check_status "blank-line-before-brace canonical + matching fallback -> exit 0, no false GAP" 0 "$STATUS"
+check_absent "extract_fn_body tolerates a blank line before the brace" "$OUT" "GAP"
+
+# REGRESSION PROOF (found by this ticket's own /code-review high pass): a COMMENT line between `fn()`
+# and `{` — a shape def_re detects as a real definition (it only reads the opening line) but
+# extract_fn_body does NOT recognize (a deliberately-not-chased residual, see the shape comment above)
+# — must never let two extraction failures (both "") compare as "matched". Before this ticket's own
+# fix, an unrecognized shape like this one was silently reported OK regardless of whether the two
+# bodies actually matched; now it's always named unverifiable instead. The sed mutation below makes
+# the bodies genuinely different — deliberately NOT the thing this assertion discriminates (this
+# check's own point is that it reports the SAME "unverifiable" GAP whether or not the bodies happen to
+# match, since it can't tell), but proving the check still doesn't misfire even in the worst case, a
+# real, silent drift, is the strongest version of "never a false OK" this fixture can make (found by
+# this ticket's own delta review: an earlier version of this comment implied the sed step was what the
+# assertions discriminate, which isn't true — removing it changes nothing about the outcome).
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" comment
+sed -i.bak 's/\[ -L "\$1" \]$/[ -f "$1" ]/' "$d/install.sh" && rm -f "$d/install.sh.bak"
+( cd "$d" && git add -A && git commit -qm "comment-line opener, install.sh fallback genuinely drifts" )
+run "$sd" "$d" --quiet
+check_status "comment-line opener -> exit 1, unverifiable, never a false OK" 1 "$STATUS"
+check_contains "names it unverifiable rather than falsely matched" "$OUT" "could not be verified"
+check_contains "names both locations it couldn't extract from" "$OUT" "tools/lib/core-ownership.sh"
 
 # a hand-copy of keel_core_is_link reappears in tools/doctor.sh — same drift, the ownership predicate
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
