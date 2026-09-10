@@ -819,6 +819,29 @@ _gate_ledger_candidates() {
 # hook-mode one — same rationale as _worktree_main_entry's own extraction, above.
 _repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
 
+# dir #260 (hit 3): true when $1 resolves to neither a worktree's recorded main entry nor a real git
+# toplevel — mirrors main_top_for's OWN fallback condition above (deliberately re-derived rather than
+# changing that shared function's return contract: main_top_for is the keying dir #58/#61 hardened,
+# and every other caller today ignores its exit status, so adding one is a behavior change worth its
+# own review, not a drive-by in a message-only fix). Read-only and diagnostic only: used below to pick
+# which of two honest deny messages to print at each of its two call sites, never to change what
+# repo/sentinel/branch this script itself resolves. Two extra forks on an already-exceptional deny
+# path (this only runs once `gh pr create` is already being blocked) — an earlier revision added a
+# cheap short-circuit precondition at its call sites to avoid them in the common case, and a later
+# /code-review pass on this same ticket judged that complexity (a second, hand-synchronized copy of
+# "does this look like the fallback condition" at each call site) not worth a couple of subprocess
+# forks on a path this rare; removed rather than kept, so read this function's callers as calling it
+# plainly.
+_cwd_not_a_repo() {
+  [ -z "$(_worktree_main_entry "${1:-.}")" ] && ! git -C "${1:-.}" rev-parse --show-toplevel >/dev/null 2>&1
+}
+
+# dir #260: the one fact both "no active receipt" deny messages below need to convey, in ONE place so
+# the two branches can't drift out of sync on the next edit (found by this ticket's own /simplify pass).
+_cwd_key_note() {
+  printf "this hook keys off the session's own tracked working directory, never a command's \`cd\` target (dir #260)"
+}
+
 # dir #80: sanitize a branch name into a flat-filename-safe slug — every char outside
 # [A-Za-z0-9._-] (branch names routinely contain '/') becomes '-'. LC_ALL=C keeps this a plain ASCII
 # whitelist regardless of the invoking locale's character classes. Takes the branch NAME as a string
@@ -1979,7 +2002,24 @@ else
   resolved_branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
   if [ -z "$resolved_branch" ]; then
     log_event receipt-deny "no-branch-resolved" "$cwd"
-    deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+    # dir #260: this fires for two different causes a bare "pass --head" doesn't distinguish — a
+    # real repo in detached HEAD (the original, still-correct case), or the event cwd not being a
+    # git checkout at all, where --head alone can't fix it (found live: hit 3's felt incident used
+    # an explicit --head and still denied here first, since `git branch --show-current` fails on a
+    # non-repo cwd exactly like `git rev-parse --show-toplevel` does — this is actually the MORE
+    # commonly hit of the two "not a repo" denies, since it fires even when --head IS passed, unlike
+    # the "no active receipt" deny below which a bare `gh pr create --fill` with no --head never
+    # reaches on a non-repo cwd at all).
+    if _cwd_not_a_repo "$cwd"; then
+      # dir #260 (found by this ticket's own /code-review pass, angle A): an earlier draft of this
+      # message only covered "/polish already completed elsewhere" — silent on the equally real "you
+      # haven't run /polish yet" case, unlike its sibling message below (whose own dangling "there" the
+      # same review pass caught too). Both cases now get real guidance, and neither pretends to know
+      # which one applies — this script can't tell them apart from a not-a-repo cwd alone.
+      deny "Pre-PR gate: could not resolve the PR branch from the event cwd ($cwd) — it isn't a git checkout at all, so no repo could be identified either. $(_cwd_key_note). If /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo (--head alone will not fix this). Otherwise, run /polish first (simplify + independent review + tests) in the repo this PR is actually for, then retry from a shell rooted there."
+    else
+      deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+    fi
   fi
 fi
 receipt_key="$(_receipt_key_for "$wt" "$resolved_branch")"
@@ -1987,7 +2027,27 @@ sentinel="/tmp/pre-pr-gate-$receipt_key"
 
 if [ ! -f "$sentinel" ]; then
   log_event receipt-deny "no-run" "$cwd"
-  deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly."
+  # dir #260: this generic deny used to fire identically whether /polish genuinely never ran OR the
+  # hook's event cwd resolves to a DIFFERENT repo/checkout than the one /polish actually completed in
+  # (the harness resets cwd after every call, so an in-command `cd` is invisible to the hook event —
+  # "run /polish first" was demonstrably wrong advice in three recorded hits where it already had).
+  # Two honest messages instead of one misleading one, split on whether the event cwd is a git repo
+  # at all (hit 3's own new facet) — neither branch can RULE OUT "you actually skipped /polish", so
+  # both still say it; they just stop pretending it's the only explanation.
+  if _cwd_not_a_repo "$cwd"; then
+    # dir #260 (found by this ticket's own /code-review pass, angle A): "run /polish first ... there"
+    # used to dangle — the only location the sentence had named belonged to the OTHER clause (a
+    # different checkout /polish already ran in), so "there" had no antecedent in the genuinely-never-
+    # ran case this half of the sentence is actually for. Named a real place instead of a pronoun with
+    # nothing to point at.
+    deny "Pre-PR gate: the event cwd ($cwd) isn't a git checkout at all, so no repo could be identified for a receipt lookup — $(_cwd_key_note). If /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo. Otherwise, run /polish first (simplify + independent review + tests) in the repo this PR is actually for."
+  else
+    # dir #260 (found by this ticket's own /code-review pass, angle A): the sentinel is keyed by repo
+    # AND branch (_receipt_key_for, dir #80), so "a different repo/checkout" isn't the only alternate
+    # explanation for "no receipt on file" — the SAME checkout on a different branch than the one
+    # /polish actually ran on misses the same way. An earlier draft named only the cross-repo case.
+    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' on branch '$resolved_branch' specifically — the sentinel is keyed by repo AND branch, so besides a DIFFERENT repo or checkout than this session's own tracked working directory, this can also mean /polish completed on a different BRANCH in this same checkout: $(_cwd_key_note).)"
+  fi
 fi
 
 # Parse the receipt: line 1 must be the nonce header; every later line is <nonce>\t<step-id>\t<outcome>.
@@ -2029,6 +2089,35 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
 # reachable shape here too (e.g. a malformed polish.8-unlock outcome), so use the same safe delimiter.
 IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome tests_outcome <<<"$result"
 
+# dir #376: the ordinary concurrency state of this project — several sessions on one repo, any active
+# day — lets a sibling session's own /polish init on this SAME (repo, branch) key retire this chain's
+# receipts mid-flight (retire_sentinel above backs the live sentinel up and starts a fresh nonce every
+# time init runs). The resulting deny reads identically to a genuinely skipped step from inside this
+# script — 13 recorded hits, and no reliable signal exists here to tell the two apart after the fact
+# (each CLI invocation is its own process, so there is no same-process state to compare a nonce
+# against; that attribution is this ticket's own unresolved, expensive half — see its BACKLOG.md body).
+# Name the possibility and the one mitigation that measurably narrowed the race when tried live, so a
+# retry is informed rather than blind, rather than pretending this script can tell the two apart.
+_concurrent_sentinel_note() {
+  printf ' If several sessions are working this repo right now, note that a sibling'\''s own /polish init on the SAME branch can clear this chain mid-flight (dir #376) — before assuming a genuinely skipped step, retry by writing the WHOLE chain (init through unlock) as ONE uninterrupted command, which measurably narrowed the race when tried live; after three clean retries, hand off to the operator rather than continuing blind.'
+}
+
+# dir #346 remedy (4): "missing receipt for step(s): ..." (below) and "no trace matching ..." (the
+# PASS-branch review check, further down) are two DIFFERENT states with two different remedies —
+# conflating them cost a wasted round in the recorded incident this ticket names. Add a
+# polish.5-review-specific hint only when that step is among the ones actually missing, on top of the
+# always-applicable dir #376 note above — neither hint is exclusive of the other, and a step-3/4/6-only
+# miss gets just the concurrency note.
+_missing_step_hint() {
+  local detail="$1" hint=""
+  case ",$detail," in
+    *,polish.5-review,*)
+      hint="$hint If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation stamps the review's trace, so an agent review — however thorough, however clean it came back — satisfies nothing here; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, then write the receipt." ;;
+  esac
+  hint="$hint$(_concurrent_sentinel_note)"
+  printf '%s' "$hint"
+}
+
 case "$status" in
   MALFORMED)
     retire_sentinel "$sentinel" "$cwd" "$receipt_key"
@@ -2038,7 +2127,7 @@ case "$status" in
   MISSING)
     retire_sentinel "$sentinel" "$cwd" "$receipt_key"
     log_event receipt-deny "$detail" "$cwd"
-    deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail. Run /polish again."
+    deny "Pre-PR gate: /polish did not complete — missing receipt for step(s): $detail.$(_missing_step_hint "$detail") Run /polish again."
     ;;
   REPLAY)
     retire_sentinel "$sentinel" "$cwd" "$receipt_key"
@@ -2447,7 +2536,21 @@ case "$status" in
         traced_levels="$(_trace_levels_for "$wt" "$current_sha")"
         trace_deny_detail=""
         [ -n "$traced_levels" ] && trace_deny_detail=" The trace recorded '$traced_levels' for this commit instead — re-run the review with a bare level (no extra flags) if that's unexpected."
-        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail If the review mechanism was genuinely unavailable, /polish's hand-off should have produced an -operator-run/-waived outcome instead. Run /polish again."
+        # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
+        # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
+        # A trace is bound to the exact commit it was written against and is never retroactive, so the
+        # common cause here is: a review DID run, its findings were fixed, and the fix commit moved
+        # HEAD past what the trace covers. The minimal remedy is cheaper specifically because it skips
+        # re-running the REVIEW-INDEPENDENT steps (2/3/4/6/7), not because it skips receipt bookkeeping
+        # — `retire_sentinel` two lines above has ALREADY retired the live sentinel by the time this
+        # message prints, so a bare `receipt polish.5-review ...` here would itself fail closed with
+        # "no active receipt" (found live: a /code-review pass on this ticket reproduced exactly that
+        # failure against an earlier draft of this message, which wrongly told the reader to skip
+        # `init`/`--recover` entirely). The ticket's own confirming incident names both halves: the
+        # review re-invocation is the cheap half that worked standalone; "a full init + --recover cycle
+        # was still required before gh pr create would take" is the other half this message must not
+        # omit.
+        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346). The minimal remedy: invoke the review once more at your CURRENT HEAD, run \`pre-pr-gate.sh init\` then \`receipt --recover\` to re-establish the other steps (this denial already retired them), and write the polish.5-review receipt fresh — cheaper than a full /polish re-run only because the review-independent steps (simplify, tests, depth-sizing) don't need redoing, not because the receipt bookkeeping can be skipped. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
       fi
     fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
