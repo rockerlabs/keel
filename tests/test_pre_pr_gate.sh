@@ -2880,6 +2880,10 @@ gate "gh pr create --fill --head dir260-branch" "$notrepo"
 check_contains "dir #260: not-a-repo event cwd → deny decision" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #260: not-a-repo event cwd → names the actual condition" "$OUT" "isn't a git checkout at all"
 check_absent "dir #260: not-a-repo event cwd → doesn't lead with the misleading generic advice" "$OUT" "gate unlocks automatically"
+# dir #260 (found by this ticket's own /code-review pass, angle A): an earlier draft ended "run
+# /polish first ... there" with no antecedent for "there" in this exact (never-ran) branch — assert
+# it names a real place instead.
+check_contains "dir #260: not-a-repo event cwd → the never-ran branch names a real place, not a dangling 'there'" "$OUT" "in the repo this PR is actually for"
 
 # 104b. dir #260 (altitude finding, /code-review pass): the SAME not-a-repo condition, reached via
 # dir #80's own branch-resolution deny instead of the "no active receipt" one above — the MORE
@@ -2893,6 +2897,10 @@ gate "gh pr create --fill" "$notrepo2"
 check_contains "dir #260: not-a-repo event cwd, no --head → deny decision" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #260: not-a-repo event cwd, no --head → names the actual condition" "$OUT" "isn't a git checkout at all"
 check_contains "dir #260: not-a-repo event cwd, no --head → the branch-resolution deny fires, not the receipt one" "$OUT" "could not resolve the PR branch"
+# dir #260 (found by this ticket's own /code-review pass, angle A): an earlier draft of THIS deny only
+# covered "/polish already completed elsewhere" — silent on "you haven't run /polish yet", unlike its
+# sibling message (104 above). Assert both cases now get real guidance.
+check_contains "dir #260: not-a-repo event cwd, no --head → also covers the never-ran case, not only the already-completed-elsewhere one" "$OUT" "run /polish first"
 
 # 105. dir #260 (hits 2/4): the event cwd IS a real, different repo with no receipt of its own — the
 # generic advice is still correct (it may genuinely never have run), but the deny now ALSO names the
@@ -2902,6 +2910,10 @@ rm -f "$(sentinel_for "$d")"
 gate "gh pr create --fill" "$d"
 check_contains "dir #260: valid different repo, no receipt → still tells the user to run /polish" "$OUT" "run /polish first"
 check_contains "dir #260: valid different repo, no receipt → also names the cross-repo possibility" "$OUT" "DIFFERENT repo or checkout"
+# dir #260 (found by this ticket's own /code-review pass, angle A): the sentinel is keyed by repo AND
+# branch (dir #80), so an earlier draft naming only "different repo/checkout" missed the equally real
+# "same checkout, different branch" cause. Assert the branch alternative is named too.
+check_contains "dir #260: valid different repo, no receipt → also names the same-checkout-different-branch possibility" "$OUT" "different BRANCH in this same checkout"
 
 # 106. dir #376: a sibling session's own `init` on the SAME (repo, branch) key retires this chain's
 # receipts mid-flight — reproduced deterministically (not via a flaky background race: the mechanism

@@ -2011,7 +2011,12 @@ else
     # the "no active receipt" deny below which a bare `gh pr create --fill` with no --head never
     # reaches on a non-repo cwd at all).
     if _cwd_not_a_repo "$cwd"; then
-      deny "Pre-PR gate: could not resolve the PR branch from the event cwd ($cwd) — it isn't a git checkout at all, so no repo could be identified either. $(_cwd_key_note) — if /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo (--head alone will not fix this)."
+      # dir #260 (found by this ticket's own /code-review pass, angle A): an earlier draft of this
+      # message only covered "/polish already completed elsewhere" — silent on the equally real "you
+      # haven't run /polish yet" case, unlike its sibling message below (whose own dangling "there" the
+      # same review pass caught too). Both cases now get real guidance, and neither pretends to know
+      # which one applies — this script can't tell them apart from a not-a-repo cwd alone.
+      deny "Pre-PR gate: could not resolve the PR branch from the event cwd ($cwd) — it isn't a git checkout at all, so no repo could be identified either. $(_cwd_key_note). If /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo (--head alone will not fix this). Otherwise, run /polish first (simplify + independent review + tests) in the repo this PR is actually for, then retry from a shell rooted there."
     else
       deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
     fi
@@ -2030,9 +2035,18 @@ if [ ! -f "$sentinel" ]; then
   # at all (hit 3's own new facet) — neither branch can RULE OUT "you actually skipped /polish", so
   # both still say it; they just stop pretending it's the only explanation.
   if _cwd_not_a_repo "$cwd"; then
-    deny "Pre-PR gate: the event cwd ($cwd) isn't a git checkout at all, so no repo could be identified for a receipt lookup — $(_cwd_key_note), so if /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo. Otherwise, run /polish first (simplify + independent review + tests) there."
+    # dir #260 (found by this ticket's own /code-review pass, angle A): "run /polish first ... there"
+    # used to dangle — the only location the sentence had named belonged to the OTHER clause (a
+    # different checkout /polish already ran in), so "there" had no antecedent in the genuinely-never-
+    # ran case this half of the sentence is actually for. Named a real place instead of a pronoun with
+    # nothing to point at.
+    deny "Pre-PR gate: the event cwd ($cwd) isn't a git checkout at all, so no repo could be identified for a receipt lookup — $(_cwd_key_note). If /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo. Otherwise, run /polish first (simplify + independent review + tests) in the repo this PR is actually for."
   else
-    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' specifically — if /polish already completed in a DIFFERENT repo or checkout than this session's own tracked working directory, that is the likely cause instead: $(_cwd_key_note).)"
+    # dir #260 (found by this ticket's own /code-review pass, angle A): the sentinel is keyed by repo
+    # AND branch (_receipt_key_for, dir #80), so "a different repo/checkout" isn't the only alternate
+    # explanation for "no receipt on file" — the SAME checkout on a different branch than the one
+    # /polish actually ran on misses the same way. An earlier draft named only the cross-repo case.
+    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' on branch '$resolved_branch' specifically — the sentinel is keyed by repo AND branch, so besides a DIFFERENT repo or checkout than this session's own tracked working directory, this can also mean /polish completed on a different BRANCH in this same checkout: $(_cwd_key_note).)"
   fi
 fi
 
