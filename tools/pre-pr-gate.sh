@@ -824,13 +824,14 @@ _repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
 # changing that shared function's return contract: main_top_for is the keying dir #58/#61 hardened,
 # and every other caller today ignores its exit status, so adding one is a behavior change worth its
 # own review, not a drive-by in a message-only fix). Read-only and diagnostic only: used below to pick
-# which of two honest "no-run" deny messages to print, never to change what repo/sentinel this script
-# itself resolves.
-# Its own call site short-circuits on `[ "$main_top" = "$cwd" ]` first — a NECESSARY (not sufficient:
-# an ordinary repo that legitimately IS its own main checkout top also satisfies it) precondition for
-# this function ever returning true, cheap to check, and true only on the rarer of the two "no-run"
-# causes — so the common "valid, different repo" case never pays this function's two extra forks at
-# all (found live by this ticket's own /simplify pass, three independent review angles).
+# which of two honest deny messages to print at each of its two call sites, never to change what
+# repo/sentinel/branch this script itself resolves. Two extra forks on an already-exceptional deny
+# path (this only runs once `gh pr create` is already being blocked) — an earlier revision added a
+# cheap short-circuit precondition at its call sites to avoid them in the common case, and a later
+# /code-review pass on this same ticket judged that complexity (a second, hand-synchronized copy of
+# "does this look like the fallback condition" at each call site) not worth a couple of subprocess
+# forks on a path this rare; removed rather than kept, so read this function's callers as calling it
+# plainly.
 _cwd_not_a_repo() {
   [ -z "$(_worktree_main_entry "${1:-.}")" ] && ! git -C "${1:-.}" rev-parse --show-toplevel >/dev/null 2>&1
 }
@@ -2001,7 +2002,19 @@ else
   resolved_branch="$(git -C "$cwd" branch --show-current 2>/dev/null)"
   if [ -z "$resolved_branch" ]; then
     log_event receipt-deny "no-branch-resolved" "$cwd"
-    deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+    # dir #260: this fires for two different causes a bare "pass --head" doesn't distinguish — a
+    # real repo in detached HEAD (the original, still-correct case), or the event cwd not being a
+    # git checkout at all, where --head alone can't fix it (found live: hit 3's felt incident used
+    # an explicit --head and still denied here first, since `git branch --show-current` fails on a
+    # non-repo cwd exactly like `git rev-parse --show-toplevel` does — this is actually the MORE
+    # commonly hit of the two "not a repo" denies, since it fires even when --head IS passed, unlike
+    # the "no active receipt" deny below which a bare `gh pr create --fill` with no --head never
+    # reaches on a non-repo cwd at all).
+    if _cwd_not_a_repo "$cwd"; then
+      deny "Pre-PR gate: could not resolve the PR branch from the event cwd ($cwd) — it isn't a git checkout at all, so no repo could be identified either. $(_cwd_key_note) — if /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo (--head alone will not fix this)."
+    else
+      deny "Pre-PR gate: could not resolve the PR branch from the event cwd — pass --head <branch> to gh pr create."
+    fi
   fi
 fi
 receipt_key="$(_receipt_key_for "$wt" "$resolved_branch")"
@@ -2016,7 +2029,7 @@ if [ ! -f "$sentinel" ]; then
   # Two honest messages instead of one misleading one, split on whether the event cwd is a git repo
   # at all (hit 3's own new facet) — neither branch can RULE OUT "you actually skipped /polish", so
   # both still say it; they just stop pretending it's the only explanation.
-  if [ "$main_top" = "$cwd" ] && _cwd_not_a_repo "$cwd"; then
+  if _cwd_not_a_repo "$cwd"; then
     deny "Pre-PR gate: the event cwd ($cwd) isn't a git checkout at all, so no repo could be identified for a receipt lookup — $(_cwd_key_note), so if /polish already completed in a different checkout, run gh pr create from a shell whose actual working directory is inside that repo. Otherwise, run /polish first (simplify + independent review + tests) there."
   else
     deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' specifically — if /polish already completed in a DIFFERENT repo or checkout than this session's own tracked working directory, that is the likely cause instead: $(_cwd_key_note).)"
@@ -2509,13 +2522,21 @@ case "$status" in
         traced_levels="$(_trace_levels_for "$wt" "$current_sha")"
         trace_deny_detail=""
         [ -n "$traced_levels" ] && trace_deny_detail=" The trace recorded '$traced_levels' for this commit instead — re-run the review with a bare level (no extra flags) if that's unexpected."
-        # dir #346 remedy (1): this used to end with "Run /polish again." — the WRONG remedy. A trace
-        # is bound to the exact commit it was written against and is never retroactive, so the common
-        # cause here is: a review DID run, its findings were fixed, and the fix commit moved HEAD past
-        # what the trace covers — re-running the whole /polish flow costs strictly more than the fix
-        # (re-establishing the receipts a second time) and was tried, live, on the confirming incident
-        # this remedy is named after. The minimal remedy costs one review invocation, not a full re-run.
-        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346). The minimal remedy: invoke the review once more at your CURRENT HEAD, then write the polish.5-review receipt again — do not re-run the whole /polish flow, which costs strictly more and fixes nothing this doesn't. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
+        # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
+        # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
+        # A trace is bound to the exact commit it was written against and is never retroactive, so the
+        # common cause here is: a review DID run, its findings were fixed, and the fix commit moved
+        # HEAD past what the trace covers. The minimal remedy is cheaper specifically because it skips
+        # re-running the REVIEW-INDEPENDENT steps (2/3/4/6/7), not because it skips receipt bookkeeping
+        # — `retire_sentinel` two lines above has ALREADY retired the live sentinel by the time this
+        # message prints, so a bare `receipt polish.5-review ...` here would itself fail closed with
+        # "no active receipt" (found live: a /code-review pass on this ticket reproduced exactly that
+        # failure against an earlier draft of this message, which wrongly told the reader to skip
+        # `init`/`--recover` entirely). The ticket's own confirming incident names both halves: the
+        # review re-invocation is the cheap half that worked standalone; "a full init + --recover cycle
+        # was still required before gh pr create would take" is the other half this message must not
+        # omit.
+        deny "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346). The minimal remedy: invoke the review once more at your CURRENT HEAD, run \`pre-pr-gate.sh init\` then \`receipt --recover\` to re-establish the other steps (this denial already retired them), and write the polish.5-review receipt fresh — cheaper than a full /polish re-run only because the review-independent steps (simplify, tests, depth-sizing) don't need redoing, not because the receipt bookkeeping can be skipped. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
       fi
     fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,

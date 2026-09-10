@@ -2870,18 +2870,29 @@ check_absent "...and no durable review-addon-dropped event is logged either" "$(
 # the generic "run /polish first" wording used to be identical to every other no-receipt case even
 # though nothing here could possibly have run /polish (there's no repo to have run it in). Named
 # separately now, with the actual redirect this project's own alias-launch-dir convention needs
-# (INSTANCE.md's alias table). An explicit --head is required here to actually REACH that check:
-# `git -C "$cwd" branch --show-current` also fails on a non-repo cwd, so a bare `gh pr create --fill`
-# denies earlier still, on dir #80's OWN "could not resolve the PR branch" message — which is exactly
-# the felt hit 3's own shape, since the felt claude-kb session's `cd`-wrapped commands necessarily
-# carried an explicit --head to get this far in the first place. Found writing this test; without
-# --head the assertion below was vacuous (denied for a different, earlier reason entirely).
-notrepo="$SANDBOX/dir260-not-a-repo"
-rm -rf "$notrepo"; mkdir -p "$notrepo"
+# (INSTANCE.md's alias table). An explicit --head is required here to reach THIS specific deny (the
+# "no active receipt" site) rather than dir #80's own branch-resolution deny, which fires first on a
+# bare `gh pr create --fill` with no --head — that path is covered separately by test 104b below
+# (found live by this ticket's own /code-review pass: the two sites needed the SAME enrichment, and
+# 104b is the more commonly hit of the two in practice).
+notrepo="$(mktemp -d "$SANDBOX/dir260-not-a-repo.XXXXXX")"
 gate "gh pr create --fill --head dir260-branch" "$notrepo"
 check_contains "dir #260: not-a-repo event cwd → deny decision" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #260: not-a-repo event cwd → names the actual condition" "$OUT" "isn't a git checkout at all"
 check_absent "dir #260: not-a-repo event cwd → doesn't lead with the misleading generic advice" "$OUT" "gate unlocks automatically"
+
+# 104b. dir #260 (altitude finding, /code-review pass): the SAME not-a-repo condition, reached via
+# dir #80's own branch-resolution deny instead of the "no active receipt" one above — the MORE
+# commonly hit of the two in practice, since `git branch --show-current` fails on a non-repo cwd the
+# same way `git rev-parse --show-toplevel` does, so a bare `gh pr create --fill` with no --head denies
+# here FIRST and never reaches test 104's own site at all (--head is what lets 104 skip past this
+# check specifically). Asserts the enriched message reaches this deny too, and that it's still THIS
+# deny (not 104's) that fires.
+notrepo2="$(mktemp -d "$SANDBOX/dir260-not-a-repo-nohead.XXXXXX")"
+gate "gh pr create --fill" "$notrepo2"
+check_contains "dir #260: not-a-repo event cwd, no --head → deny decision" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #260: not-a-repo event cwd, no --head → names the actual condition" "$OUT" "isn't a git checkout at all"
+check_contains "dir #260: not-a-repo event cwd, no --head → the branch-resolution deny fires, not the receipt one" "$OUT" "could not resolve the PR branch"
 
 # 105. dir #260 (hits 2/4): the event cwd IS a real, different repo with no receipt of its own — the
 # generic advice is still correct (it may genuinely never have run), but the deny now ALSO names the
