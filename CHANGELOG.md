@@ -68,6 +68,21 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`tools/self/doctor.sh`'s check 7 (dir #237) can now tell a citation that CREDITS a ticket's own
+  work from one that only REFERENCES another ticket for context** (dir #364, the false-POSITIVE
+  direction, and dir #273's still-open gap 1, the false-GREEN direction — one discrimination gap seen
+  from two sides, closed together). An author-supplied `dir #N (ref)` marker excludes a standalone
+  citation from ticket extraction on BOTH sides of the check's comparison — a commit message and a
+  CHANGELOG `[Unreleased]` line use the identical syntax, so the rule can't be dodged by moving the
+  text between them, unlike a rule keyed on WHERE the citation appears. Reproduces and closes PR
+  #327's two real false positives (dir #351 cited as "matching dir #351's identical semantics", dir
+  #237 cited as the check's own mechanism name) and PR #267's real false green (dir #208's own fix
+  shipped with no entry, silently vouched for by two stale background mentions of "dir #208" already
+  sitting in `[Unreleased]` inside dir #207's and dir #204's own entries). The marker is opt-in — an
+  unmarked reference still reads as a citation on whichever side it lands, named honestly as the
+  mechanism's remaining cost — and is defined only for a standalone citation, never as one item inside
+  a comma/semicolon/slash/range list. Mutation-proven: 9 new fixtures, every one red against the
+  un-fixed check.
 - **`docs/delta-audit.md` §8 — a GO verdict no longer closes a run; two records do** (from the 0.10.0
   groom's own G0 retro; dir #462 is filed for the mechanization half). The orchestrator — by §5's roles
   table, which gives it *all* bookkeeping, not the verifier, who issues the verdict and stops — opens

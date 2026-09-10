@@ -863,7 +863,25 @@ _semver_max() {
 # logic (shorthand/range/backtick handling) and its comments; this file no longer keeps its own copy.
 # shellcheck source=tools/lib/dir-tickets.sh
 . "$self_dir/../lib/dir-tickets.sh"
-_extract_dir_tickets() { extract_dir_tickets; }
+# `_strip_ref_citations` always runs first (dir #364/#273): folded in here, not repeated at each of
+# this wrapper's two call sites in check 7 below, so "a `dir #N (ref)` marker is stripped before
+# extraction" is true by construction for every future call site too, not by per-call-site discipline
+# — see check 7's header comment for the full rationale and the real cases this closes.
+_extract_dir_tickets() { _strip_ref_citations | extract_dir_tickets; }
+
+# _strip_ref_citations — reads text on stdin, removes every standalone `dir #N (ref)` /
+# `dir #N-M (ref)` marker citation, leaving everything else untouched. Local to THIS file, not
+# folded into the shared `extract_dir_tickets` above — see check 7's header comment for why.
+# `[[:space:]]`, not `[ \t]` (found live by a high-effort /code-review pass, reproduced on this
+# machine's BSD sed): GNU sed treats `\t` inside a bracket expression as an escape for a real tab,
+# but BSD/macOS sed does not — there `[ \t]` matches the two literal characters `\` and `t`, never an
+# actual tab byte, so a real tab between a citation and `(ref)` (plausible from a wrapped or
+# tab-aligned commit message) silently fails to strip on macOS while working on Linux/CI. The POSIX
+# bracket class matches an actual tab identically on both, the same class `tools/lib/dir-tickets.sh`'s
+# own extraction regex already uses for exactly this reason.
+_strip_ref_citations() {
+  sed -E 's/dir #[0-9]+(-[0-9]+)?[[:space:]]*\(ref\)//g'
+}
 
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
 # release-in-preparation section's own introducing commit the pending-release allowance below stays
@@ -1208,6 +1226,62 @@ fi
 # stayed silent on it. Advisory only (WARN, never GAP/deny): a genuinely user-invisible ticket
 # (comment-only/test-only) has no entry to give, and that judgment stays human — this check only
 # flags the candidates, per the ticket's own acceptance bar.
+#
+# **`dir #N (ref)` marker (dir #364/#273): the classification rule, one mechanism, two directions.**
+# Bare enumeration cannot tell "this text CREDITS dir #N's own work" from "this text CITES dir #N
+# for context" — real, reproduced cases on BOTH sides of the comparison:
+#   - dir #364 (false POSITIVE, this check flags a citation that owes no entry): PR #327's commit
+#     2981f11 fixed dir #343, citing "matching dir #351's identical semantics for install.sh" as a
+#     cross-reference the release manager required; commit f09150d named the check mechanism itself
+#     ("flagged by tools/self/doctor.sh's dir #237 check"). Neither commit did dir #351's or dir
+#     #237's own work — writing them a CHANGELOG entry would have been false.
+#   - dir #273 gap 1 (false GREEN, the more dangerous direction — nobody investigates a pass): PR
+#     #267 (commit aab0c69) genuinely closed dir #208/#211/#212 with NO new CHANGELOG line for any
+#     of them, and this check reported OK — because dir #208 was already sitting in [Unreleased],
+#     cited twice as background inside OTHER tickets' entries ("dir #208's own defect is a second
+#     template set that doesn't [carry the rails block]"; "dir #208 is open precisely because the
+#     three existing templates don't"). A stale, uncredited mention satisfied membership in place of
+#     the real entry the fix owed.
+# One shape underlies both: a citation used to describe something OTHER than "this text's own work
+# on dir #N" — a cross-reference, a mechanism name, background for a DIFFERENT entry. Keying a rule
+# on WHERE such a citation appears (comment vs. commit message) fails case 2 above (a commit message
+# is not a comment) and can be defeated by moving the text. Instead, the author states the
+# discrimination explicitly: appending ` (ref)` right after a citation — `dir #351 (ref)`, or
+# `dir #100-103 (ref)` for a range — marks it as reference-only, and `_strip_ref_citations` (defined
+# beside `_extract_dir_tickets` above, and folded into it — every call below already runs it) removes
+# it before ticket extraction ever sees it, on BOTH sides of the comparison (a commit message AND a
+# CHANGELOG line use the identical syntax, so the rule can't be dodged by choosing one over the
+# other). The cost is named honestly, not hidden: it is one more convention every session must know,
+# and an UNMARKED reference still reads as a citation on whichever side it lands — the discrimination
+# is opt-in, not inferred. Scope limit, so the marker doesn't introduce a NEW class of silent-drop
+# hazard: it is only defined for a STANDALONE citation (`dir #N (ref)` on its own), never as one item
+# inside a comma/semicolon/slash/range-shorthand list — misusing it that way can still TRIGGER the
+# pre-existing one (found live by a high-effort /code-review pass, reproduced, twice — this paragraph
+# originally read "can't become a hazard" outright, which the same pass correctly called
+# self-contradictory against the rest of this sentence). `_strip_ref_citations` only matches a full
+# `dir #N (ref)`, so a BARE `#M` continuation with `(ref)` attached never carries the "dir " prefix it
+# needs to match — the marker silently does nothing for that ticket. And the inserted `(ref)` text
+# breaks `extract_dir_tickets`'s OWN list-continuation grammar the same way any other unrelated prose
+# already does (see its "within-one-commit false positive" comment) — reproduced BOTH ways
+# ("dir #955, #956 (ref), #957" extracts only #955/#956, #957 gone; "dir #955 fixes X, #956, #957",
+# no marker at all, extracts only #955 too — proving the loss is the pre-existing grammar, not this
+# feature). Marking the LIST'S OWN FIRST citation is the worse shape: "dir #963 (ref), #964, #965"
+# extracts NOTHING — stripping #963's "dir " prefix removes the only anchor the whole run had, so even
+# the correctly-excluded #963 vanishes as a byproduct rather than as an intended exclusion, and #964/
+# #965 go with it. Cite each reference-only ticket in a list as its own separate, standalone
+# `dir #N (ref)` instead — teaching `extract_dir_tickets` itself to loudly flag a marker interrupting
+# a list (the way its own "range too large to expand" marker already does for a different malformed
+# shape) is a real, larger fix, but belongs to that shared file's own scope, not this ticket's — it
+# would need to reach `citation-resolvability.sh` too, whose own use of the SAME grammar this
+# paragraph is describing is untouched by dir #364/#273's classification rule.
+#
+# NOT this check's job: `_strip_ref_citations` is local to THIS file's `_extract_dir_tickets`
+# wrapper, not folded into the shared `extract_dir_tickets` (tools/lib/dir-tickets.sh) that
+# `tools/self/citation-resolvability.sh` also calls — that tool asks a different question (does a
+# citation ANYWHERE in tracked prose resolve to a real ticket?), and a `(ref)` marker there should
+# still be checked for resolvability, not silently exempted. Folding the strip into the shared helper
+# would answer citation-resolvability.sh's question wrong for every future `(ref)`-marked citation it
+# scans.
 say ""
 say "● commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237)"
 if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
@@ -1231,6 +1305,8 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   else
     ct_range="HEAD"
   fi
+  # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
+  # (dir #364) — see the check's header comment for the full rationale.
   ct_commit_tickets="$(git -C "$repo_root" log "$ct_range" --no-merges --format=%B 2>/dev/null \
     | _extract_dir_tickets || true)"
   # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
@@ -1280,6 +1356,8 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     /^## / { grabbing=0 }
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
+  # `_extract_dir_tickets`'s same `(ref)`-stripping applies on this side of the comparison too
+  # (dir #273 gap 1) — see the check's header comment for the full rationale.
   ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body" || true)"
   # Set difference via the same here-string-into-`grep -qxF` per-item membership idiom check 6's
   # pending-tag loop already uses above, not `comm` — `comm` needs no extra dependency here (it's
@@ -1297,7 +1375,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   ct_since="the repo's start"
   [ -n "$ct_highest" ] && ct_since="v$ct_highest"
   if [ -n "$ct_missing" ]; then
-    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237)"
+    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
   else
     say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section"
   fi
