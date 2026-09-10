@@ -1681,6 +1681,54 @@ run "$sd" "$d" --quiet
 check_contains "the real, implemented ticket is still flagged" "$OUT" "dir #959"
 check_absent "a ref-marked filing-only mention isn't flagged" "$OUT" "dir #960"
 
+# cross-platform: a real TAB (not a space) between the citation and the marker must still strip
+# (found live by a high-effort /code-review pass on this fix, reproduced on this machine's BSD sed —
+# `[ \t]` inside a bracket expression means a literal tab escape only on GNU sed; BSD/macOS sed reads
+# it as the two literal characters `\` and `t`, so the marker would silently fail to strip on macOS
+# while working on Linux/CI. Fixed via the POSIX `[[:space:]]` class instead).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'matches dir #961\t(ref) cross reference, tab-separated')" )
+run "$sd" "$d" --quiet
+check_absent "a TAB-separated ref marker still strips on this platform's sed" "$OUT" "dir #961"
+
+# documented scope-limit, pinned (found live by the same /code-review pass): a `(ref)` marker
+# attached to one item INSIDE a shorthand list is undefined usage, and the actual behavior is worse
+# than "the marker just doesn't apply" — a bare `#M` continuation never carries a "dir " prefix for
+# `_strip_ref_citations` to match in the first place, so the marker silently does nothing for that
+# ticket, AND every ticket after it in the same run is lost too (the inserted `(ref)` text breaks the
+# list-continuation grammar the same way any other unrelated prose already does, pre-existing
+# behavior). Pinned so a future reader hits this comment, not a rediscovery: #960 stays UNMARKED
+# (the "(ref)" attached to it never took effect) and #961 vanishes entirely — the correct fix is
+# citing each reference-only ticket as its own standalone `dir #N (ref)`, per the header comment.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #960, #961 (ref), #962 misuse: marker mid-list')" )
+run "$sd" "$d" --quiet
+check_contains "documented misuse: the first ticket is flagged as usual" "$OUT" "dir #960"
+check_contains "documented misuse: the marker attempt on #961 never took effect, it's flagged too" "$OUT" "dir #961"
+check_absent "documented misuse: the ticket AFTER the misuse is silently lost, not flagged" "$OUT" "dir #962"
+
+# the worse variant of the same misuse (found by the same /code-review pass): marking the LIST'S OWN
+# FIRST citation strips the only "dir " anchor the whole run had, so NOTHING in the run is extracted
+# — not even the correctly-excluded first ticket as an intended exclusion, all three vanish as one
+# byproduct. Exit stays 0 (advisory-only) and the OK line prints, since the check sees zero candidate
+# tickets at all, indistinguishable from a commit that cited none.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #963 (ref), #964, #965 misuse: marker on the list anchor')" )
+run "$sd" "$d" --quiet
+check_absent "documented worse misuse: the marked anchor ticket is gone (not merely excluded)" "$OUT" "dir #963"
+check_absent "documented worse misuse: the second ticket is gone too" "$OUT" "dir #964"
+check_absent "documented worse misuse: the third ticket is gone too" "$OUT" "dir #965"
+check_status "documented worse misuse: still advisory-only, exit 0" 0 "$STATUS"
+
 # --- 10. PIPESTATUS read in a file that sets pipefail -> WARN (dir #321) ---------------------------
 # The F-06 shape (tools/keel-impact.sh's _impact_merge_ledger, v0.8.0 delta audit): once pipefail is
 # active, a bare `$?` right after a pipeline already gives the real (rightmost non-zero) status, so

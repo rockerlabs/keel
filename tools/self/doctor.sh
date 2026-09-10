@@ -872,8 +872,15 @@ _extract_dir_tickets() { _strip_ref_citations | extract_dir_tickets; }
 # _strip_ref_citations — reads text on stdin, removes every standalone `dir #N (ref)` /
 # `dir #N-M (ref)` marker citation, leaving everything else untouched. Local to THIS file, not
 # folded into the shared `extract_dir_tickets` above — see check 7's header comment for why.
+# `[[:space:]]`, not `[ \t]` (found live by a high-effort /code-review pass, reproduced on this
+# machine's BSD sed): GNU sed treats `\t` inside a bracket expression as an escape for a real tab,
+# but BSD/macOS sed does not — there `[ \t]` matches the two literal characters `\` and `t`, never an
+# actual tab byte, so a real tab between a citation and `(ref)` (plausible from a wrapped or
+# tab-aligned commit message) silently fails to strip on macOS while working on Linux/CI. The POSIX
+# bracket class matches an actual tab identically on both, the same class `tools/lib/dir-tickets.sh`'s
+# own extraction regex already uses for exactly this reason.
 _strip_ref_citations() {
-  sed -E 's/dir #[0-9]+(-[0-9]+)?[ \t]*\(ref\)//g'
+  sed -E 's/dir #[0-9]+(-[0-9]+)?[[:space:]]*\(ref\)//g'
 }
 
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
@@ -1246,12 +1253,27 @@ fi
 # CHANGELOG line use the identical syntax, so the rule can't be dodged by choosing one over the
 # other). The cost is named honestly, not hidden: it is one more convention every session must know,
 # and an UNMARKED reference still reads as a citation on whichever side it lands — the discrimination
-# is opt-in, not inferred. Scope limit, so the marker itself can't become a new silent-drop hazard:
-# it is only defined for a STANDALONE citation (`dir #N (ref)` on its own), never as one item inside
-# a comma/semicolon/slash/range-shorthand list — marking the list's own anchor exempt would strip the
-# "dir " prefix the bare `#M` continuations after it depend on, silently losing them rather than
-# exempting only the one ticket meant. Cite each reference-only ticket in a list as its own separate
-# `dir #N (ref)` instead.
+# is opt-in, not inferred. Scope limit, so the marker doesn't introduce a NEW class of silent-drop
+# hazard: it is only defined for a STANDALONE citation (`dir #N (ref)` on its own), never as one item
+# inside a comma/semicolon/slash/range-shorthand list — misusing it that way can still TRIGGER the
+# pre-existing one (found live by a high-effort /code-review pass, reproduced, twice — this paragraph
+# originally read "can't become a hazard" outright, which the same pass correctly called
+# self-contradictory against the rest of this sentence). `_strip_ref_citations` only matches a full
+# `dir #N (ref)`, so a BARE `#M` continuation with `(ref)` attached never carries the "dir " prefix it
+# needs to match — the marker silently does nothing for that ticket. And the inserted `(ref)` text
+# breaks `extract_dir_tickets`'s OWN list-continuation grammar the same way any other unrelated prose
+# already does (see its "within-one-commit false positive" comment) — reproduced BOTH ways
+# ("dir #955, #956 (ref), #957" extracts only #955/#956, #957 gone; "dir #955 fixes X, #956, #957",
+# no marker at all, extracts only #955 too — proving the loss is the pre-existing grammar, not this
+# feature). Marking the LIST'S OWN FIRST citation is the worse shape: "dir #963 (ref), #964, #965"
+# extracts NOTHING — stripping #963's "dir " prefix removes the only anchor the whole run had, so even
+# the correctly-excluded #963 vanishes as a byproduct rather than as an intended exclusion, and #964/
+# #965 go with it. Cite each reference-only ticket in a list as its own separate, standalone
+# `dir #N (ref)` instead — teaching `extract_dir_tickets` itself to loudly flag a marker interrupting
+# a list (the way its own "range too large to expand" marker already does for a different malformed
+# shape) is a real, larger fix, but belongs to that shared file's own scope, not this ticket's — it
+# would need to reach `citation-resolvability.sh` too, whose own use of the SAME grammar this
+# paragraph is describing is untouched by dir #364/#273's classification rule.
 #
 # NOT this check's job: `_strip_ref_citations` is local to THIS file's `_extract_dir_tickets`
 # wrapper, not folded into the shared `extract_dir_tickets` (tools/lib/dir-tickets.sh) that
