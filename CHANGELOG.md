@@ -21,6 +21,21 @@ sections real content going forward — see that page for exactly when each one 
   (commit before step 3, and fold in every known fix before a cross-run re-establishment) — see that
   file for what each covers and why. This PR carries only that prose half of dir #346; the deny-message
   fix and the ratchet's own A/B/C design decision are separate, later pieces.
+- **`tools/self/doctor.sh`'s check 7 (dir #237) can now tell a citation that CREDITS a ticket's own
+  work from one that only REFERENCES another ticket for context** (dir #364, the false-POSITIVE
+  direction, and dir #273's still-open gap 1, the false-GREEN direction — one discrimination gap seen
+  from two sides, closed together). An author-supplied `dir #N (ref)` marker excludes a standalone
+  citation from ticket extraction on BOTH sides of the check's comparison — a commit message and a
+  CHANGELOG `[Unreleased]` line use the identical syntax, so the rule can't be dodged by moving the
+  text between them, unlike a rule keyed on WHERE the citation appears. Reproduces and closes PR
+  #327's two real false positives (dir #351 cited as "matching dir #351's identical semantics", dir
+  #237 cited as the check's own mechanism name) and PR #267's real false green (dir #208's own fix
+  shipped with no entry, silently vouched for by two stale background mentions of "dir #208" already
+  sitting in `[Unreleased]` inside dir #207's and dir #204's own entries). The marker is opt-in — an
+  unmarked reference still reads as a citation on whichever side it lands, named honestly as the
+  mechanism's remaining cost — and is defined only for a standalone citation, never as one item inside
+  a comma/semicolon/slash/range list. Mutation-proven: 9 new fixtures, every one red against the
+  un-fixed check.
 - **`docs/delta-audit.md` §8 — a GO verdict no longer closes a run; two records do** (from the 0.10.0
   groom's own G0 retro; dir #462 is filed for the mechanization half). The orchestrator — by §5's roles
   table, which gives it *all* bookkeeping, not the verifier, who issues the verdict and stops — opens
@@ -79,6 +94,58 @@ sections real content going forward — see that page for exactly when each one 
     the groom that opens the row fills it in the same sitting — the split exists to stop a groom's own
     figures being retold rather than measured, and with one writer that risk does not arise.
 
+### Fixed
+
+- **`tools/pre-pr-gate.sh` — four of its deny messages named the wrong cause or the wrong remedy**
+  (dir #260, dir #376, dir #346's remedies (1) and (4); message-floor only — the sentinel-resolution
+  half of dir #260 and the sentinel-lifecycle half of dir #376 are unbuilt and stay filed). Two
+  denies fire with one identical string whether /polish genuinely never ran, the hook's event cwd
+  resolved to a DIFFERENT repo than the one /polish actually completed in (the harness resets cwd
+  after every call, so an in-command `cd` is invisible to the hook event — dir #260, 4 recorded hits),
+  or that event cwd isn't a git checkout at all (dir #260's 3rd hit): the "no active receipt" deny, and
+  dir #80's own branch-resolution deny ("could not resolve the PR branch from the event cwd") — the
+  MORE commonly hit of the two for a non-repo cwd, since `git branch --show-current` fails there the
+  same way `git rev-parse --show-toplevel` does, so it fires even when the caller passes no `--head`
+  at all (found by this ticket's own `/code-review` pass; the initial fix covered only the rarer,
+  `--head`-carrying site). Both now name the actual condition instead of asserting one explanation as
+  the only one. The "missing receipt for step(s)" deny gained two additive hints: a sibling session's
+  own `/polish init` on the SAME (repo, branch) key can retire this chain's receipts mid-flight — the
+  ordinary concurrency state of this project on any active day, 13 recorded hits and no ticket until
+  now (dir #376) — so the deny now names the possibility and the one mitigation that measurably
+  narrowed the race when tried live (write the whole receipt chain, init through unlock, as ONE
+  uninterrupted command); and, specifically when `polish.5-review` is among the missing steps, that
+  only a genuine `Skill(code-review)` invocation stamps the review's trace/receipt — a bare `Agent`
+  spawn satisfies nothing here, however thorough (dir #346). The step-5 trace-mismatch deny ("no trace
+  matching both this commit AND that level was found") no longer ends with "Run /polish again." — the
+  minimal remedy re-invokes the review at the current HEAD (skipping the review-independent steps a
+  full re-run would redo) but still needs `init` + `receipt --recover` first, since this denial has
+  already retired the live sentinel by the time it prints (an earlier draft of this message wrongly
+  told the reader to skip that step entirely — caught live by this ticket's own `/code-review` pass
+  reproducing the resulting "no active receipt" failure against the draft wording). The ticket's own
+  confirming incident names both halves: the review re-invocation is the cheap part that worked
+  standalone; the `init`/`--recover` cycle is the part it does not avoid (dir #346 remedy 1).
+  `tests/test_pre_pr_gate.sh` gained regression coverage for all of the above, including a
+  deterministic reproduction of dir #376's race (two `init` calls with receipt writes interleaved
+  between them — the mechanism is a plain file retirement independent of real OS concurrency, so
+  serializing the exact interleaving reproduces the identical end state a true race would, without a
+  flaky background-process test).
+- **`tests/test_install.sh` T21 now binds `install.sh`'s crashed-install lock placement directly,
+  instead of asserting about a fixture it built itself (dir #381, found by v0.8.2's delta audit, proved
+  live by mutation).** The regression T21 names — a crashed install's lock landing *inside* `.keel`
+  instead of beside it, which would silently wedge `uninstall.sh`'s closing `rmdir` forever — was
+  already caught four times over by T18/T19/T20/T23; this was an overstated coverage claim, not a
+  coverage hole, and nothing shipped unguarded. T21 stayed green under the exact regression its own
+  comment described because it hand-planted a lock at the "correct" path and asserted the wrong path
+  was empty — nothing in the fixture exercised `install.sh`'s own placement code. It was also,
+  disclosed honestly at the time, a deliberately non-live-crash fixture: a real crash could also leave
+  unrelated merge-scratch (`.artifacts.$$`) behind inside `.keel`, failing the same `rmdir` for a
+  reason that had nothing to do with the lock, and conflating the two would have made the test fail for
+  the wrong cause. That confound is gone — dir #377 (shipped v0.8.3) taught `uninstall.sh` to sweep
+  stale scratch out of `.keel` before its closing `rmdir` whenever `install.sh`'s run-duration lock
+  isn't held by a live process. T21 now drives a real `install.sh` run to a new test-only checkpoint
+  (`KEEL_TEST_CRASH_AFTER=manifest-written`, added at the exact point `install.sh`'s own lock-release
+  comment already named as the risk window) and a real `uninstall.sh` run against the result, binding
+  the claim end-to-end instead of gluing two hand-built fixtures together.
 
 ## [0.9.1] — 2026-09-08
 

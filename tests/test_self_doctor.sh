@@ -1592,6 +1592,143 @@ run "$sd" "$d" --quiet
 check_contains "backtick guard: the real citation outside backticks is still flagged" "$OUT" "dir #945"
 check_absent "backtick guard: an illustrative example inside backticks isn't fabricated into a ticket" "$OUT" "dir #946"
 
+# dir #364 (false POSITIVE direction): a commit that cites ANOTHER ticket only as a cross-reference,
+# marked `dir #N (ref)`, must not be flagged as owing a CHANGELOG entry — the exact shape of PR
+# #327's real commit 2981f11 ("matching dir #351's identical semantics for install.sh's own
+# non-regular-$dest reads"), reproduced here as a standalone citation.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'fix: guard the widget tool, matching dir #950 (ref) identical semantics elsewhere')" )
+run "$sd" "$d" --quiet
+check_absent "a ref-marked cross-reference isn't flagged as owing an entry" "$OUT" "dir #950"
+check_status "still exit 0" 0 "$STATUS"
+
+# same direction, the OTHER real felt shape: a commit message that names the CHECK MECHANISM itself
+# by ticket number (PR #327's real commit f09150d: "Flagged by tools/self/doctor.sh's dir #237
+# check") — marked `dir #N (ref)`, it must not demand its own entry either.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'docs: add entry flagged by dir #951 (ref) check')" )
+run "$sd" "$d" --quiet
+check_absent "a ref-marked check-mechanism citation isn't flagged" "$OUT" "dir #951"
+
+# the marker also strips a RANGE citation (`dir #N-M (ref)`), not just a single ticket.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'matches the same pattern as dir #952-954 (ref) elsewhere')" )
+run "$sd" "$d" --quiet
+check_absent "a ref-marked range's first ticket isn't flagged" "$OUT" "dir #952"
+check_absent "a ref-marked range's middle ticket isn't flagged" "$OUT" "dir #953"
+check_absent "a ref-marked range's last ticket isn't flagged" "$OUT" "dir #954"
+
+# an UNMARKED citation right beside a ref-marked one in the SAME commit is unaffected — the marker
+# excludes only the ticket it is attached to, nothing else in the message.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #955 tweak the tool, matching dir #956 (ref) elsewhere')" )
+run "$sd" "$d" --quiet
+check_contains "the real, unmarked ticket beside a ref-marked one is still flagged" "$OUT" "dir #955"
+check_absent "the ref-marked neighbor stays excluded" "$OUT" "dir #956"
+
+# dir #273 gap 1 (false GREEN direction, the more dangerous one): a ticket genuinely implemented by a
+# commit (an ordinary, unmarked citation) must still be flagged missing even when [Unreleased]
+# already contains that SAME ticket number — but only as a `(ref)`-marked, stale background mention
+# left over inside a DIFFERENT ticket's own entry. This is PR #267's real shape (commit aab0c69):
+# dir #208 sat in [Unreleased] twice, cited only as context inside dir #207's and dir #204's entries
+# ("dir #208 is open precisely because the three existing templates don't"), while the commit that
+# actually closed dir #208 added no entry of its own — and the un-fixed check reported OK.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- dir #957: unrelated entry, background note dir #208 (ref) is open precisely because of this gap\n\n%s\n' \
+  "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #208 actually closes this ticket, no fresh entry" )
+run "$sd" "$d" --quiet
+check_contains "a stale ref-marked mention doesn't vouch for the ticket's own real fix" "$OUT" "dir #208"
+
+# the mirror check: if the SAME ticket's mention in [Unreleased] is a genuine, UNMARKED entry (not a
+# reference), it still silently satisfies the check as before — the marker is opt-in, and an ordinary
+# entry crediting the fix is unaffected by this whole mechanism. Regression guard for the pre-existing
+# "same ticket IS referenced in [Unreleased] -> silent" case, now beside the new (ref) machinery.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- dir #958: closes this ticket for real\n\n%s\n' "$ct_v1_section" \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "dir #958 closes this ticket for real" )
+run "$sd" "$d" --quiet
+check_absent "a genuine, unmarked [Unreleased] entry still silently satisfies the check" "$OUT" "dir #958"
+check_status "still exit 0" 0 "$STATUS"
+
+# a ticket FILED but not implemented (the v0.9.1 RC audit's own recorded false-positive shape: dir
+# #459/#460/#461 fired alongside dir #384's one true positive, "the usual false shape — tickets
+# filed, not implemented") — mentioning a newly-filed ticket's number in a commit about OTHER work,
+# marked `(ref)`, must not demand an entry for the filing itself.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #959 tweak the tool; also files dir #960 (ref) as a pooled follow-up')" )
+run "$sd" "$d" --quiet
+check_contains "the real, implemented ticket is still flagged" "$OUT" "dir #959"
+check_absent "a ref-marked filing-only mention isn't flagged" "$OUT" "dir #960"
+
+# cross-platform: a real TAB (not a space) between the citation and the marker must still strip
+# (found live by a high-effort /code-review pass on this fix, reproduced on this machine's BSD sed —
+# `[ \t]` inside a bracket expression means a literal tab escape only on GNU sed; BSD/macOS sed reads
+# it as the two literal characters `\` and `t`, so the marker would silently fail to strip on macOS
+# while working on Linux/CI. Fixed via the POSIX `[[:space:]]` class instead).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'matches dir #961\t(ref) cross reference, tab-separated')" )
+run "$sd" "$d" --quiet
+check_absent "a TAB-separated ref marker still strips on this platform's sed" "$OUT" "dir #961"
+
+# documented scope-limit, pinned (found live by the same /code-review pass): a `(ref)` marker
+# attached to one item INSIDE a shorthand list is undefined usage, and the actual behavior is worse
+# than "the marker just doesn't apply" — a bare `#M` continuation never carries a "dir " prefix for
+# `_strip_ref_citations` to match in the first place, so the marker silently does nothing for that
+# ticket, AND every ticket after it in the same run is lost too (the inserted `(ref)` text breaks the
+# list-continuation grammar the same way any other unrelated prose already does, pre-existing
+# behavior). Pinned so a future reader hits this comment, not a rediscovery: #960 stays UNMARKED
+# (the "(ref)" attached to it never took effect) and #961 vanishes entirely — the correct fix is
+# citing each reference-only ticket as its own standalone `dir #N (ref)`, per the header comment.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #960, #961 (ref), #962 misuse: marker mid-list')" )
+run "$sd" "$d" --quiet
+check_contains "documented misuse: the first ticket is flagged as usual" "$OUT" "dir #960"
+check_contains "documented misuse: the marker attempt on #961 never took effect, it's flagged too" "$OUT" "dir #961"
+check_absent "documented misuse: the ticket AFTER the misuse is silently lost, not flagged" "$OUT" "dir #962"
+
+# the worse variant of the same misuse (found by the same /code-review pass): marking the LIST'S OWN
+# FIRST citation strips the only "dir " anchor the whole run had, so NOTHING in the run is extracted
+# — not even the correctly-excluded first ticket as an intended exclusion, all three vanish as one
+# byproduct. Exit stays 0 (advisory-only) and the OK line prints, since the check sees zero candidate
+# tickets at all, indistinguishable from a commit that cited none.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'dir #963 (ref), #964, #965 misuse: marker on the list anchor')" )
+run "$sd" "$d" --quiet
+check_absent "documented worse misuse: the marked anchor ticket is gone (not merely excluded)" "$OUT" "dir #963"
+check_absent "documented worse misuse: the second ticket is gone too" "$OUT" "dir #964"
+check_absent "documented worse misuse: the third ticket is gone too" "$OUT" "dir #965"
+check_status "documented worse misuse: still advisory-only, exit 0" 0 "$STATUS"
+
 # --- 10. PIPESTATUS read in a file that sets pipefail -> WARN (dir #321) ---------------------------
 # The F-06 shape (tools/keel-impact.sh's _impact_merge_ledger, v0.8.0 delta audit): once pipefail is
 # active, a bare `$?` right after a pipeline already gives the real (rightmost non-zero) status, so

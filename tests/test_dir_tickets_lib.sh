@@ -19,10 +19,15 @@ check_contains "doctor.sh sources tools/lib/dir-tickets.sh" \
   "$(cat "$REPO_ROOT/tools/self/doctor.sh")" 'lib/dir-tickets.sh'
 check_contains "citation-resolvability.sh sources tools/lib/dir-tickets.sh" \
   "$(cat "$REPO_ROOT/tools/self/citation-resolvability.sh")" 'lib/dir-tickets.sh'
-# doctor.sh keeps its old private name as a one-line wrapper (no call-site/test churn) — pin that it
-# stays a WRAPPER (calls the shared function) rather than silently reverting to its own full copy.
+# doctor.sh keeps its old private name as a thin wrapper (no call-site/test churn) — pin that it
+# still DELEGATES to the shared function rather than silently reverting to its own full copy. dir
+# #364/#273 composed a local, doctor.sh-only pre-filter (`_strip_ref_citations`, a `dir #N (ref)`
+# marker strip with nothing to do with citation extraction itself) in front of the delegation — still
+# a wrapper around the shared `extract_dir_tickets`, not a re-implementation of it, so the pin moves
+# to the new composed shape rather than being loosened.
 check_contains "doctor.sh's _extract_dir_tickets is a thin wrapper, not a re-duplicated copy" \
-  "$(cat "$REPO_ROOT/tools/self/doctor.sh")" '_extract_dir_tickets() { extract_dir_tickets; }'
+  "$(cat "$REPO_ROOT/tools/self/doctor.sh")" \
+  '_extract_dir_tickets() { _strip_ref_citations | extract_dir_tickets; }'
 
 # --- the lib itself: fully-spelled, shorthand, slash, range, and backtick-stripped shapes ----------
 # shellcheck source=/dev/null
