@@ -701,7 +701,8 @@ mkdir -p "$d/scripts"; : > "$d/scripts/ghost.sh~"
 run "$doctor" "$d"
 check_absent "literal trailing ~ filename that exists → no map-drift WARN" "$OUT" "map may be stale"
 
-# a `path:LINE` doc-link decoration (this file's own convention, e.g. `tools/doctor.sh:42`) is stripped
+# a `path:LINE` doc-link decoration (this file's own convention, e.g. the `scripts/ghost.sh:42` the fixture
+# below uses) is stripped
 # before the existence check — the decoration isn't part of the path
 d="$(newbase)"; printf '# ctx\nSee `scripts/ghost.sh:42` for details.\n' >> "$d/CLAUDE.md"
 mkdir -p "$d/scripts"; : > "$d/scripts/ghost.sh"

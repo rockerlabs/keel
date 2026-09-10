@@ -15,6 +15,57 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/self/line-citations.sh` — a `<tracked-file>:<line>` citation in keel's own tracked files is
+  now a hard failure, with a soft-debt allowlist** (dir #382). A citation naming a line number is stale
+  the moment anything is inserted above it, including by the edit pass that writes it, and until now
+  nothing checked them: dir #266's sibling checker resolves `dir #N` citations in `docs/*.md` and looks
+  at nothing else. The ticket left the shape of the check as an in-session fork — verify the target
+  still looks plausible, or forbid the construct — and **the fork was settled by measurement, not by
+  taste**. The tree carried 32 in-scope citations, verified by hand against their targets: **16 were
+  already wrong**, and **zero of those 16 pointed at a blank line or past EOF** — the only drift a
+  bounded plausibility check could catch without guessing. Every one pointed at a real, entirely
+  plausible line — a comment where code was expected, a template placeholder where a promise was
+  expected, a UI-dialog test case where a git-remote helper was expected — and would have passed a
+  verify check green. 0% recall is not a ratchet; forbidding the construct is 100%, because a citation
+  that does not exist cannot drift. The replacement convention is in the script's header: cite a
+  function name, a section heading, or a named identifier, each of which survives every edit that does
+  not rename the thing being pointed at.
+  - **Scope is drawn structurally, so the check needs no hand-maintained pattern list.** A token counts
+    only when the path it names resolves to a tracked file, exactly or as a unique basename. Measured
+    over this repo that read 166 citation-shaped tokens and kept 32 — **zero false positives** — with
+    every URL port, clock time, sed range and test-fixture assertion string (`doc.md:5`,
+    `scripts/ghost.sh:42`) dropped, because those name files that do not exist here and so cannot
+    drift. Compare dir #344's own design pass, which measured its proposed sweep at 7 fires and 0 true
+    positives and was not built at all.
+  - **`tools/self/line-citations-allow.txt`**, on dir #142's `legacy-untested.txt` precedent: entries
+    stay a visible, deliberately burned-down debt, and an addition needs a reason plus a backlog line.
+    It is keyed on the citing file and the cited token, never on the citing LINE number — a line number
+    inside an exemption would drift under exactly the edits this check exists to survive. Seeded with
+    two entries only, both concurrency debt rather than judgement: `tools/self/doctor.sh` and
+    `tests/test_self_doctor.sh` were being edited by another worker in the same release, so touching
+    either would have manufactured a merge conflict for a one-line comment fix. Only one of the two
+    citations is actually drifted (`tests/test_self_doctor.sh`'s, dir #382's own instance 3); the
+    other is accurate and is deferred purely because the construct itself, correct or not, is now
+    forbidden.
+  - **Enforced by `tests/test_self_line_citations.sh`'s own live leg against the real tree**, the same
+    shape dir #266's sibling checker already uses — no separate CI step and no `tools/self/doctor.sh`
+    leg, since either would duplicate exactly the coverage the test suite's live leg already provides.
+    `tests/run.sh` — half of this project's pre-push gate — rejects a new citation locally, at the one
+    moment it is still cheap to replace. A release PR in this very cycle came within one insertion
+    point of manufacturing a fresh instance.
+  - Three defects in the checker were caught by the repo's own rails and its own review before it
+    shipped, all worth recording. `tests/test_no_pipe_sigpipe_race.sh` (dir #280) found a real
+    `grep … | head -n1` SIGPIPE race in it; replacing that pipeline with an `awk` string comparison
+    also removed a silent regex-escaping bug that had been mis-resolving one path. A bare `rc=$?; …;
+    exit "$rc"` EXIT trap masked a genuine `set -u` crash as exit 0 on bash 3.2, reproduced live —
+    `tools/drydock/inventory.sh`'s own dir #264 completion-marker pattern replaced it, since that
+    ticket had already mutation-tested the naive fix and found it wanting. And the check's own first
+    run flagged three prose examples in its own header and test — an illustration of the forbidden
+    shape is indistinguishable from a citation whenever the path it names is real, which is why every
+    example in both files now names a path this repo does not track.
+
 ### Changed
 
 - **`tools/self/doctor.sh`'s check 7 (dir #237) can now tell a citation that CREDITS a ticket's own
@@ -125,6 +176,19 @@ sections real content going forward — see that page for exactly when each one 
   between them — the mechanism is a plain file retirement independent of real OS concurrency, so
   serializing the exact interleaving reproduces the identical end state a true race would, without a
   flaky background-process test).
+- **Sixteen drifted `file:line` citations, replaced with stable anchors** (dir #382). Every one of the
+  32 in-scope citations in the tree was resolved by hand against its target: `install.sh`'s pointer at
+  the copy-mode `foreign_core` initialisation was off by roughly 780 lines and
+  `tests/test_self_doctor.sh`'s by roughly a thousand; `docs/delegation.md`'s verbatim-rails promise
+  was cited at a template placeholder in two separate files; `tests/lib.sh` named a KEEL-DEPTH-DIALOG
+  comment where it meant `push_named_remote()`, 310 lines away; and `tests/test_no_pipe_sigpipe_race.sh`
+  cited a `sed … | head -n1 || true` idiom in `tools/doctor.sh` that is not in that file at all.
+  **Thirteen of the sixteen were new, found by this pass rather than by the ticket** — the ticket had
+  listed five, one of which was already fixed. The one the release cared about is confirmed closed:
+  `install.sh`'s pointer into `tools/lib/manifest.sh` was true at v0.8.1 and was broken inside the
+  v0.8.2 range by a pure insertion widening that lib's header, with nothing retired — and the same
+  insertion had silently broken a second citation of the same lib in `tests/test_no_pipe_sigpipe_race.sh`,
+  which no leg had noticed.
 - **`tests/test_install.sh` T21 now binds `install.sh`'s crashed-install lock placement directly,
   instead of asserting about a fixture it built itself (dir #381, found by v0.8.2's delta audit, proved
   live by mutation).** The regression T21 names — a crashed install's lock landing *inside* `.keel`

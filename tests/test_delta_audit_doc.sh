@@ -119,7 +119,8 @@ pin "reference.md's derive.sh row links delta-audit.md" \
   "expected the derive.sh row to link the doc now that it has shipped, matching the drydock.md row's own inline-link shape"
 
 # --- the rails block: BLOCK-EXTRACT every copy and diff against the canonical source, never a
-# substring-presence check. dir #209's own finding against test_drydock_doc.sh:70-75 is the class
+# substring-presence check. dir #209's own finding against test_drydock_doc.sh's block-extract helper
+# is the class
 # this guards against: a substring pin can survive a drift that deletes or reorders a contract line,
 # because "the text is somewhere in the file" says nothing about whether it is INTACT. -------------
 # extract_rails_block/check_block_equal live in tests/lib.sh (dir #375): promoted once a third file

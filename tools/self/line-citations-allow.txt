@@ -1,0 +1,22 @@
+# dir #382's soft-debt allowlist for tools/self/line-citations.sh: `<tracked-file>:<line>` citations
+# that are exempt from the forbid ratchet. Listed here they stay visible and burn down deliberately;
+# a citation NOT listed here is a hard failure (see tools/self/line-citations.sh's own header for the
+# replacement convention — a function name, a section heading, a named identifier).
+#
+# One `<citing-path> <cited-token>` pair per line; `#`-comments and blank lines are ignored.
+# Deliberately NOT keyed by the citing LINE number: a line number inside an exemption would drift
+# under exactly the edits this check exists to survive, which is the defect wearing the checker's own
+# uniform. Adding a NEW entry needs a reason here and a line in BACKLOG.md's dir #382 ticket, per dir
+# #142's `legacy-untested.txt` convention — never a bare add to silence the ratchet.
+#
+# Both entries below are CONCURRENCY debt, not judgement calls: each of these two files was being
+# edited by another live worker in the same 0.10.0 wave this check shipped in, so touching them here
+# would have manufactured a merge conflict for a one-line comment fix. Verified by hand against their
+# targets, the two are NOT the same kind of debt: `tests/test_self_doctor.sh`'s citation is genuinely
+# drifted (dir #382's own instance 3, off by roughly a thousand lines) — the sentinel guard it's
+# describing moved; `tools/self/doctor.sh`'s citation is still ACCURATE (the line it names still
+# contains exactly what the comment says), so this entry costs nothing but the construct itself —
+# a citation naming a line number, correct or not, is still forbidden. Burn both down in the release
+# that follows this one, once those files are free.
+tests/test_self_doctor.sh tests/test_keel_impact.sh:606-618
+tools/self/doctor.sh tests/test_install_pre_pr_gate.sh:309

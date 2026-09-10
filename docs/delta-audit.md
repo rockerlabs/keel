@@ -296,7 +296,8 @@ between a closed run and a lost record.
 Copy-paste-ready skeletons, one per role. Every prompt below adopts the Protocol (§4) **by
 reference** — restating all 8 rules in every prompt is exactly the bloat a reference avoids — but
 **carries the rails block below verbatim, not by reference.** This is
-[`docs/delegation.md`](delegation.md)'s own promise (`docs/delegation.md:189`) applied honestly:
+[`docs/delegation.md`](delegation.md)'s own promise (its "Worker rails — verbatim, do not
+paraphrase" section) applied honestly:
 [`docs/drydock.md`](drydock.md)'s worker and verifier role templates (auditor, code-auditor, verifier)
 now carry this block verbatim — dir #208 closed the gap a real run's own audit found in auditor and
 verifier (code-auditor already carried it, from dir #204). The fixer, a mutator rather than a worker

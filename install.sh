@@ -218,9 +218,11 @@ fi
 # THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
 # install prefers `keel sync`; an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so
 # neither a bare re-run nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form
-# can (verified against README.md:84 / docs/getting-started.md:116).
+# can (verified against README.md's "#2 — One line, no manual clone" block and docs/getting-started.md's "One
+# line, no manual clone" paragraph).
 # BOTH of those forward their args straight through to install.sh and add no ARGUMENTS of their own
-# (keel:128, bootstrap.sh:141 — each does add something else: `keel sync` pulls the checkout first,
+# (keel's `sync)` arm, bootstrap.sh's `KEEL_EPHEMERAL=1 ./install.sh "$@"` line — each does add something
+# else: `keel sync` pulls the checkout first,
 # bootstrap sets KEEL_EPHEMERAL=1) — which is precisely why each has to carry the retargeting suffix
 # here rather than inherit it: without it, `keel sync --force` becomes a bare `install.sh --force` whose
 # home re-resolves to ${KEEL_HOME:-$HOME/.claude}, so a `--link --home DIR` adopter following the
@@ -508,7 +510,8 @@ fi
 # continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
 # checkout instead of only the rare truly-unreadable file, indistinguishable in that manifest record
 # from a genuinely-unreadable one. dir #347 has since closed uninstall.sh's own comparison's sentinel
-# guard at its call site (uninstall.sh:882) — but that guards uninstall.sh's REMOVAL decision, not the
+# guard at its call site (its `CKSUM_UNREADABLE` comparison in the file arm) — but that guards uninstall.sh's
+# REMOVAL decision, not the
 # manifest record itself, which a stubbed fallback here would still corrupt. Same `[ -s ] && bash -n`
 # pre-check as the two libs above (`-s`, not `-f` — see tools/lib/manifest.sh's own guard for why; a
 # bare `.` can't be guarded against a parse-time syntax-error abort under `set -e`), but the else
@@ -574,7 +577,8 @@ prior_manifest="$manifest_dir/.prior-manifest.$$"
 # The `cp` is the CONDITION, never the body: a manifest that exists but cannot be READ (bad perms, a
 # disk error) would otherwise kill the whole run right here, under `set -euo pipefail`, before a single
 # file is placed — upstream of the degradation logic in manifest_field/manifest_usable that the
-# versioning contract points at (tools/lib/manifest.sh:23-26 and keel_own_untouched's own docstring
+# versioning contract points at (tools/lib/manifest.sh's `manifest_field()`/`manifest_usable()` docstrings,
+# and keel_own_untouched's own docstring
 # below both promise this case "degrades to treated-as-absent, never a crash"). An unreadable manifest
 # takes the same path an absent one does: an empty snapshot, prior_manifest_usable=0, provenance
 # unavailable. Deliberately NOT swallowed: `: > "$prior_manifest"` stays in the body, so a genuinely
@@ -1548,7 +1552,8 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     # What was wrong here was the silence about --force, not the command: a BARE re-run reproduces
     # this identical WARN, so the two lines one run prints about the SAME file contradicted each other.
     # This matches tools/doctor.sh's own W-CLI-UNWIRED wording (dir #349 brought all four sites — this
-    # line, the refusal above, tools/doctor.sh's W-CLI-UNWIRED, and keel:88 — into agreement) — the
+    # line, the refusal above, tools/doctor.sh's W-CLI-UNWIRED, and keel's own "must stay a symlink into its
+    # checkout" advice — into agreement) — the
     # conditional form, not a flat `--force`, because the wiring branch above used to fire for a
     # DIRECTORY at that path too and hand it to force_backup's plain `cp`, which cannot copy one. Fixed
     # structurally (dir #349): force_backup itself now declines a non-regular $keel_link — see that
@@ -1621,7 +1626,8 @@ _keel_test_checkpoint foreign-core-sentinel
 # NAMING NOTE for PR2's uninstall consumer (raised by an independent /code-review high pass): in
 # linked mode, context_created=1 covers BOTH "Keel generated a brand-new CLAUDE.md" AND "Keel appended
 # one @import line to your pre-existing global CLAUDE.md" — foreign_core is a copy-mode-only concept
-# (install.sh:~385), so linked mode has no separate signal for the second case. This is intentional
+# (see this file's own `foreign_core=0` initialisation), so linked mode has no separate signal for the second
+# case. This is intentional
 # per the field's own definition ("0 = pre-existing/foreign — install never wrote rails into it"; here
 # it DID), but it means context_created=1 must NEVER be read as "safe to delete the whole file" — only
 # the `edit` artifact (a single import line or core block) is ever a removal candidate, never the file

@@ -28,7 +28,8 @@ heading='## Shipped docs — situation, not summary'
 # removed-behavior finding: the ORIGINAL exact-string `awk '$0==h'` this replaced couldn't misfire on
 # a metacharacter, but nothing in this codebase's own literal-heading-text patterns ever has one).
 # section_body() (tests/lib.sh) slices the section body separately — promoted alongside check_count()
-# once this became its 2nd call site (tests/test_doc_figures.sh:320 is the 1st), same "second use =
+# once this became its 2nd call site (the 1st is tests/test_doc_figures.sh's own "What just got set up"
+# table extraction), same "second use =
 # promote" convention, left un-retrofitted there for the same reason check_count()'s 3 pre-existing
 # sites were: it already pipes into its own tuned filter. A single awk pass that smuggled the count
 # out via a sentinel line was tried and reverted (dir #371 /code-review high, efficiency +
