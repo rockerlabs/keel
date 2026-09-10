@@ -409,6 +409,11 @@ write_full_receipt_review "$d" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "bare review outcome, no trace → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "bare review outcome, no trace → names the trace as missing" "$OUT" "no trace matching"
+# dir #346 remedy (1): the deny used to end "Run /polish again." — the wrong, more expensive remedy.
+# It now names the minimal one (re-invoke the review at current HEAD, then re-receipt) and drops the
+# old advice entirely.
+check_contains "dir #346: trace deny names the minimal remedy" "$OUT" "invoke the review once more at your CURRENT HEAD"
+check_absent "dir #346: trace deny no longer tells you to re-run the whole flow" "$OUT" "Run /polish again."
 check_nofile "denied-for-trace sentinel is removed" "$(sentinel_for "$d")"
 
 # 17. Same, but a trace file exists for a DIFFERENT (older) commit — still denied; a trace from a
@@ -2854,5 +2859,98 @@ check_absent "dir #201/#214/#226: no add-on-drop warning is emitted at all" "$OU
 run_in "$d" env KEEL_IMPACT_LOG="$addon_imp" bash "$gate" log dir183-probe "positive-control"
 check_contains "the per-test impact log is really the one the gate writes to" "$(cat "$addon_imp" 2>/dev/null || true)" "dir183-probe"
 check_absent "...and no durable review-addon-dropped event is logged either" "$(cat "$addon_imp" 2>/dev/null || true)" "review-addon-dropped"
+
+# --- dir #260 / dir #376 / dir #346 (2): the "no active receipt"/"missing receipt" deny messages ------
+# are two different states with two different likely causes; distinguish them instead of one string
+# that fires identically for "you skipped /polish", "you're in the wrong repo", and "a sibling's own
+# /polish wiped your progress mid-flight".
+
+# 104. dir #260 (hit 3's own new facet): the event cwd isn't a git repo AT ALL (main_top_for's own
+# fallback branch, `_worktree_main_entry` empty AND `rev-parse --show-toplevel` failing outright) —
+# the generic "run /polish first" wording used to be identical to every other no-receipt case even
+# though nothing here could possibly have run /polish (there's no repo to have run it in). Named
+# separately now, with the actual redirect this project's own alias-launch-dir convention needs
+# (INSTANCE.md's alias table). An explicit --head is required here to reach THIS specific deny (the
+# "no active receipt" site) rather than dir #80's own branch-resolution deny, which fires first on a
+# bare `gh pr create --fill` with no --head — that path is covered separately by test 104b below
+# (found live by this ticket's own /code-review pass: the two sites needed the SAME enrichment, and
+# 104b is the more commonly hit of the two in practice).
+notrepo="$(mktemp -d "$SANDBOX/dir260-not-a-repo.XXXXXX")"
+gate "gh pr create --fill --head dir260-branch" "$notrepo"
+check_contains "dir #260: not-a-repo event cwd → deny decision" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #260: not-a-repo event cwd → names the actual condition" "$OUT" "isn't a git checkout at all"
+check_absent "dir #260: not-a-repo event cwd → doesn't lead with the misleading generic advice" "$OUT" "gate unlocks automatically"
+# dir #260 (found by this ticket's own /code-review pass, angle A): an earlier draft ended "run
+# /polish first ... there" with no antecedent for "there" in this exact (never-ran) branch — assert
+# it names a real place instead.
+check_contains "dir #260: not-a-repo event cwd → the never-ran branch names a real place, not a dangling 'there'" "$OUT" "in the repo this PR is actually for"
+
+# 104b. dir #260 (altitude finding, /code-review pass): the SAME not-a-repo condition, reached via
+# dir #80's own branch-resolution deny instead of the "no active receipt" one above — the MORE
+# commonly hit of the two in practice, since `git branch --show-current` fails on a non-repo cwd the
+# same way `git rev-parse --show-toplevel` does, so a bare `gh pr create --fill` with no --head denies
+# here FIRST and never reaches test 104's own site at all (--head is what lets 104 skip past this
+# check specifically). Asserts the enriched message reaches this deny too, and that it's still THIS
+# deny (not 104's) that fires.
+notrepo2="$(mktemp -d "$SANDBOX/dir260-not-a-repo-nohead.XXXXXX")"
+gate "gh pr create --fill" "$notrepo2"
+check_contains "dir #260: not-a-repo event cwd, no --head → deny decision" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #260: not-a-repo event cwd, no --head → names the actual condition" "$OUT" "isn't a git checkout at all"
+check_contains "dir #260: not-a-repo event cwd, no --head → the branch-resolution deny fires, not the receipt one" "$OUT" "could not resolve the PR branch"
+# dir #260 (found by this ticket's own /code-review pass, angle A): an earlier draft of THIS deny only
+# covered "/polish already completed elsewhere" — silent on "you haven't run /polish yet", unlike its
+# sibling message (104 above). Assert both cases now get real guidance.
+check_contains "dir #260: not-a-repo event cwd, no --head → also covers the never-ran case, not only the already-completed-elsewhere one" "$OUT" "run /polish first"
+
+# 105. dir #260 (hits 2/4): the event cwd IS a real, different repo with no receipt of its own — the
+# generic advice is still correct (it may genuinely never have run), but the deny now ALSO names the
+# cross-repo possibility rather than asserting the skipped-step explanation as the only one.
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+gate "gh pr create --fill" "$d"
+check_contains "dir #260: valid different repo, no receipt → still tells the user to run /polish" "$OUT" "run /polish first"
+check_contains "dir #260: valid different repo, no receipt → also names the cross-repo possibility" "$OUT" "DIFFERENT repo or checkout"
+# dir #260 (found by this ticket's own /code-review pass, angle A): the sentinel is keyed by repo AND
+# branch (dir #80), so an earlier draft naming only "different repo/checkout" missed the equally real
+# "same checkout, different branch" cause. Assert the branch alternative is named too.
+check_contains "dir #260: valid different repo, no receipt → also names the same-checkout-different-branch possibility" "$OUT" "different BRANCH in this same checkout"
+
+# 106. dir #376: a sibling session's own `init` on the SAME (repo, branch) key retires this chain's
+# receipts mid-flight — reproduced deterministically (not via a flaky background race: the mechanism
+# is a plain file retirement independent of real OS concurrency, so serializing the exact interleaving
+# reproduces the identical end state a true race would). Steps 1/2 land under the FIRST nonce, get
+# retired into the prev-sentinel by the second `init` (indistinguishable here from a sibling's), and
+# the rest of this session's own writes land under the SECOND nonce — so steps 1/2 read as missing at
+# unlock time even though this session genuinely wrote them once.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" init                                    # the sibling-shaped clobber
+head_sha="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_sha"
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+0-0,0f"
+run_in "$d" bash "$gate" receipt polish.5-review skip
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck
+run_in "$d" bash "$gate" receipt polish.8-unlock "$head_sha"
+gate "gh pr create --fill" "$d"
+check_contains "dir #376: sibling-shaped init mid-chain → denied for the (now genuinely) missing steps" "$OUT" "missing receipt for step(s)"
+check_contains "dir #376: deny names the sibling-clobber possibility and the mitigation" "$OUT" "dir #376"
+check_contains "dir #376: deny names the proven mitigation (one uninterrupted chain)" "$OUT" "ONE uninterrupted command"
+check_absent "dir #376: a non-review miss gets no polish.5-review-specific hint" "$OUT" "Skill(code-review) itself"
+
+# 107. dir #346 remedy (4): the polish.5-review-specific hint (bare Agent spawn vs. Skill(code-review))
+# fires only when polish.5-review is actually among the missing steps — test 93b (dir #236) above
+# already covers the felt shape (skip-sized diff, step 5 alone missing); assert its deny carries this
+# hint too, on top of the always-present dir #376 note, so both denials this file shares a message
+# with stay covered by name (dir #346's own text: "make the two [message-]states they are reporting").
+# write_full_receipt (lib.sh) with polish.5-review omitted, instead of the hand-rolled 8-step chain
+# test 106 above needs (lib.sh's own header names this exact shape as its intended replacement).
+d="$(mkrepo)"
+write_full_receipt "$d" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_contains "dir #346: polish.5-review missing → names the bare-Agent-spawn cause" "$OUT" "Skill(code-review) itself"
+check_contains "dir #346: polish.5-review missing → also carries the always-present dir #376 note" "$OUT" "dir #376"
 
 summary
