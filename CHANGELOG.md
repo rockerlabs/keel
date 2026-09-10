@@ -217,6 +217,31 @@ sections real content going forward — see that page for exactly when each one 
   (`KEEL_TEST_CRASH_AFTER=manifest-written`, added at the exact point `install.sh`'s own lock-release
   comment already named as the risk window) and a real `uninstall.sh` run against the result, binding
   the claim end-to-end instead of gluing two hand-built fixtures together.
+- **`tools/self/doctor.sh` checks 9 and 10 (single-definition drift for `artifact_cksum` and
+  `manifest_field`/`manifest_usable`/the CORE.md ownership predicate) failed OPEN on brace placement:
+  a hand-copied function whose `{` sat alone on the line after `fn()` was invisible to both, so the
+  mechanism dir #278/#362/#363 built to catch a hand-copy waved one straight through** (dir #380,
+  found by v0.8.2's delta audit, proved live by mutation). The documented limit and the actual hole
+  were in different halves: the file's own caveat about the opening-line shape was attached to
+  `extract_fn_body`, the body-comparison half, while the proven hole was in `def_re`, the detection
+  half, whose own contract claimed coverage without qualification. Both halves are widened together in
+  the same commit, per this ticket's own pre-decision — widening detection alone would have made
+  `extract_fn_body` return an empty body for the newly-detected shape and fire a false "drifted" GAP,
+  the exact false positive dir #363's own `/code-review max` pass already fixed once on the whitespace
+  axis. `def_re`/`cksum_def_re` now accept `fn()` with the brace on the same line (unchanged) or a bare
+  `fn()` alone on its line with `{` on the very next line — a shape bash cannot use for anything other
+  than a function definition, so the widening is unambiguous. `extract_fn_body` recognizes the same
+  two-line opening and normalizes the body identically either way. `tests/test_self_doctor.sh` gained
+  the ticket's own mutation proof as a standing assertion for both checks (a next-line-brace hand-copy
+  is now caught, not waved through) plus a negative proof that a next-line-brace CANONICAL definition,
+  body-compared against a matching fallback, does not itself misfire.
+- **`tools/self/doctor.sh`'s ship-skip-list-sync comment named `polish.md` as a current member of an
+  exclusion list that has been empty for several releases** (dir #383, absorbing dir #293's comment
+  half — filed a week earlier against the same line, independently, and never cross-referenced; dir
+  #293 keeps its other half, a missing guard against duplicated/mis-ordered `### Added`/`### Changed`/
+  `### Fixed` headings inside `[Unreleased]`, which stays open). The check itself was never wrong — it
+  correctly reports "OK ... lists agree (none)" — only the comment above it lied, describing a shape
+  the list stopped having back at v0.6.0 (dir #68). One comment line; no behaviour depended on it.
 
 ## [0.9.1] — 2026-09-08
 
