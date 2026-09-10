@@ -1208,6 +1208,51 @@ fi
 # stayed silent on it. Advisory only (WARN, never GAP/deny): a genuinely user-invisible ticket
 # (comment-only/test-only) has no entry to give, and that judgment stays human — this check only
 # flags the candidates, per the ticket's own acceptance bar.
+#
+# **`dir #N (ref)` marker (dir #364/#273): the classification rule, one mechanism, two directions.**
+# Bare enumeration cannot tell "this text CREDITS dir #N's own work" from "this text CITES dir #N
+# for context" — real, reproduced cases on BOTH sides of the comparison:
+#   - dir #364 (false POSITIVE, this check flags a citation that owes no entry): PR #327's commit
+#     2981f11 fixed dir #343, citing "matching dir #351's identical semantics for install.sh" as a
+#     cross-reference the release manager required; commit f09150d named the check mechanism itself
+#     ("flagged by tools/self/doctor.sh's dir #237 check"). Neither commit did dir #351's or dir
+#     #237's own work — writing them a CHANGELOG entry would have been false.
+#   - dir #273 gap 1 (false GREEN, the more dangerous direction — nobody investigates a pass): PR
+#     #267 (commit aab0c69) genuinely closed dir #208/#211/#212 with NO new CHANGELOG line for any
+#     of them, and this check reported OK — because dir #208 was already sitting in [Unreleased],
+#     cited twice as background inside OTHER tickets' entries ("dir #208's own defect is a second
+#     template set that doesn't [carry the rails block]"; "dir #208 is open precisely because the
+#     three existing templates don't"). A stale, uncredited mention satisfied membership in place of
+#     the real entry the fix owed.
+# One shape underlies both: a citation used to describe something OTHER than "this text's own work
+# on dir #N" — a cross-reference, a mechanism name, background for a DIFFERENT entry. Keying a rule
+# on WHERE such a citation appears (comment vs. commit message) fails case 2 above (a commit message
+# is not a comment) and can be defeated by moving the text. Instead, the author states the
+# discrimination explicitly: appending ` (ref)` right after a citation — `dir #351 (ref)`, or
+# `dir #100-103 (ref)` for a range — marks it as reference-only, and `_strip_ref_citations` below
+# removes it before ticket extraction ever sees it, on BOTH sides of the comparison (a commit message
+# AND a CHANGELOG line use the identical syntax, so the rule can't be dodged by choosing one over the
+# other). The cost is named honestly, not hidden: it is one more convention every session must know,
+# and an UNMARKED reference still reads as a citation on whichever side it lands — the discrimination
+# is opt-in, not inferred. Scope limit, so the marker itself can't become a new silent-drop hazard:
+# it is only defined for a STANDALONE citation (`dir #N (ref)` on its own), never as one item inside
+# a comma/semicolon/slash/range-shorthand list — marking the list's own anchor exempt would strip the
+# "dir " prefix the bare `#M` continuations after it depend on, silently losing them rather than
+# exempting only the one ticket meant. Cite each reference-only ticket in a list as its own separate
+# `dir #N (ref)` instead.
+#
+# NOT this check's job: `_strip_ref_citations` lives HERE, not folded into the shared
+# `extract_dir_tickets` (tools/lib/dir-tickets.sh) that `tools/self/citation-resolvability.sh` also
+# calls — that tool asks a different question (does a citation ANYWHERE in tracked prose resolve to
+# a real ticket?), and a `(ref)` marker there should still be checked for resolvability, not silently
+# exempted. Folding the strip into the shared helper would answer citation-resolvability.sh's
+# question wrong for every future `(ref)`-marked citation it scans.
+#
+# _strip_ref_citations — reads text on stdin, removes every `dir #N (ref)` / `dir #N-M (ref)` marker
+# citation, leaving everything else untouched.
+_strip_ref_citations() {
+  sed -E 's/dir #[0-9]+(-[0-9]+)?[ \t]*\(ref\)//g'
+}
 say ""
 say "● commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237)"
 if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
@@ -1231,8 +1276,11 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   else
     ct_range="HEAD"
   fi
+  # `_strip_ref_citations` runs BEFORE `_extract_dir_tickets` (dir #364): a `dir #N (ref)`-marked
+  # cross-reference never enters the candidate set at all, rather than being extracted and then
+  # somehow suppressed — see the check's header comment for the full rationale.
   ct_commit_tickets="$(git -C "$repo_root" log "$ct_range" --no-merges --format=%B 2>/dev/null \
-    | _extract_dir_tickets || true)"
+    | _strip_ref_citations | _extract_dir_tickets || true)"
   # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
   # not the whole file, or an already-released section's historical ticket citations would silently
   # vouch for a DIFFERENT, still-open ticket never actually re-entered under [Unreleased]. Reuses
@@ -1280,7 +1328,13 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     /^## / { grabbing=0 }
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
-  ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body" || true)"
+  # Same `_strip_ref_citations` pre-pass as $ct_commit_tickets above, on this side of the comparison
+  # too (dir #273 gap 1): a stale `dir #N (ref)`-marked mention left over in [Unreleased] from a
+  # DIFFERENT ticket's own entry (background/context, not a credit) must not silently satisfy
+  # membership for dir #N's real fix — reproduced live against PR #267's own history (commit
+  # aab0c69), where two un-marked background mentions of "dir #208" inside dir #207's and dir #204's
+  # entries let dir #208's real closing PR ship with no entry of its own and this check stay green.
+  ct_unreleased_tickets="$(_strip_ref_citations <<< "$ct_unreleased_body" | _extract_dir_tickets || true)"
   # Set difference via the same here-string-into-`grep -qxF` per-item membership idiom check 6's
   # pending-tag loop already uses above, not `comm` — `comm` needs no extra dependency here (it's
   # coreutils, not guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this
@@ -1297,7 +1351,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   ct_since="the repo's start"
   [ -n "$ct_highest" ] && ct_since="v$ct_highest"
   if [ -n "$ct_missing" ]; then
-    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237)"
+    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
   else
     say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section"
   fi
