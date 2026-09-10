@@ -68,6 +68,10 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`commands/polish.md` gains two free ordering rules against dir #346's review-trace cost ratchet**
+  (commit before step 3, and fold in every known fix before a cross-run re-establishment) — see that
+  file for what each covers and why. This PR carries only that prose half of dir #346; the deny-message
+  fix and the ratchet's own A/B/C design decision are separate, later pieces.
 - **`tools/self/doctor.sh`'s check 7 (dir #237) can now tell a citation that CREDITS a ticket's own
   work from one that only REFERENCES another ticket for context** (dir #364, the false-POSITIVE
   direction, and dir #273's still-open gap 1, the false-GREEN direction — one discrimination gap seen
