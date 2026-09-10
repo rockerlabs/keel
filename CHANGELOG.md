@@ -68,6 +68,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`tools/lib/dir-tickets.sh` — dir #479 (teach `extract_dir_tickets()` to loudly flag a
+  prose-interrupted citation list, generalizing the existing "range too large" marker) is DECLINED,
+  measured rather than assumed** — see that file's own header comment for the full commit-history
+  sweep and the real, legitimately-excluded shapes a naive heuristic would have misfired on. The scope
+  limit stands as documented, in both that comment and `tools/self/doctor.sh` check 7's `(ref)`-marker
+  paragraph, rather than being mechanized. A distinct, narrower separator-class gap found along the way
+  (`+`-joined citations silently drop everything after the first) is filed separately as dir #482.
 - **`commands/polish.md` gains two free ordering rules against dir #346's review-trace cost ratchet**
   (commit before step 3, and fold in every known fix before a cross-run re-establishment) — see that
   file for what each covers and why. This PR carries only that prose half of dir #346; the deny-message

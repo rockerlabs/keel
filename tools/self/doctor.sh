@@ -1272,9 +1272,10 @@ fi
 # #965 go with it. Cite each reference-only ticket in a list as its own separate, standalone
 # `dir #N (ref)` instead — teaching `extract_dir_tickets` itself to loudly flag a marker interrupting
 # a list (the way its own "range too large to expand" marker already does for a different malformed
-# shape) is a real, larger fix, but belongs to that shared file's own scope, not this ticket's — it
-# would need to reach `citation-resolvability.sh` too, whose own use of the SAME grammar this
-# paragraph is describing is untouched by dir #364/#273's classification rule.
+# shape) was filed as dir #479, scoped to that shared file rather than this ticket's own — it would
+# have needed to reach `citation-resolvability.sh` too, whose own use of the SAME grammar this
+# paragraph is describing is untouched by dir #364/#273's classification rule. **DECLINED** — see
+# tools/lib/dir-tickets.sh's own header comment for the measurement behind that call.
 #
 # NOT this check's job: `_strip_ref_citations` is local to THIS file's `_extract_dir_tickets`
 # wrapper, not folded into the shared `extract_dir_tickets` (tools/lib/dir-tickets.sh) that
