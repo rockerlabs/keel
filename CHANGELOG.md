@@ -37,6 +37,15 @@ sections real content going forward — see that page for exactly when each one 
   `tools/drydock/inventory.sh` gains `--paths`: the same scope-A/B/C union as its report, as a bare
   path list, skipping the per-file line-counting pass entirely. PR2 (docs) follows separately.
   (dir #495)
+- **`import.sh` — four fixes from PR1's own post-merge review round** — dir #495 PR1c: an unchunked-
+  mode reply append now records its own `| baseline: <sha>` instead of inheriting the path's
+  first-creation baseline (two replies at different commits touching the same path no longer
+  mislabel the second reply's findings); a `## <title>` heading's leading/trailing whitespace is now
+  fully trimmed before the `summary` match, so `## Summary ` or `##  Summary` (routine LLM markdown
+  output) no longer makes the whole section silently vanish with no warning; the header comment's
+  exit-code table now correctly names the missing-`--vendor` refusal as exit 2 (`die_args`), not exit
+  3; and `MANIFEST.txt` present-but-unreadable now refuses with a clear permissions message instead
+  of silently switching to unchunked mode. (dir #495)
 
 ### Changed
 

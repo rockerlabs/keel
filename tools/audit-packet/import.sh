@@ -20,8 +20,9 @@
 #
 # Exit codes: 0 imported cleanly · 1 at least one CHUNKED reply FAILED (truncated/off-format — other
 # chunks still imported; see stderr for which — unchunked mode has no CHUNK-END check, so this exit
-# code never applies there) · 2 bad arguments · 3 refused (audit-dir unusable, or unchunked mode with
-# no --vendor / no reply*.md files found).
+# code never applies there) · 2 bad arguments, including unchunked mode with no --vendor · 3 refused
+# (audit-dir unusable, MANIFEST.txt present but unreadable, or unchunked mode with no reply*.md
+# files found).
 #
 # CHUNKED mode: tolerates one wrapping code-fence line and chatter before the first `## <path>`
 # heading. Refuses (FAILED, not a crash) a reply whose first ~15 non-blank lines don't quote its own
@@ -99,9 +100,18 @@ TAB="$(printf '\t')"
 today="$(date -u +%Y-%m-%d)"
 
 # --- mode detection: MANIFEST.txt absent -> unchunked (mode B), present -> chunked (mode A) --------
+# ABSENT and UNREADABLE (exists, permission denied) are deliberately NOT the same case (found live,
+# code review high, Angle B, this batch's own review round): an unreadable-but-present MANIFEST.txt
+# is almost always a real caller mistake (a permissions problem on export.sh's own packet), not a
+# genuine mode-B directory — collapsing it into "switch to unchunked" would demand --vendor and hide
+# the actual cause behind a confusing, unrelated error instead of naming it.
 unchunked=0
-if [ ! -r "$manifest" ]; then
+if [ ! -e "$manifest" ]; then
   unchunked=1
+elif [ ! -r "$manifest" ]; then
+  refuse "'$manifest' exists but is not readable — check its permissions. (If '$reply_dir' is
+  genuinely an unchunked/repo-mode reply directory with no manifest at all, this path should not
+  exist there in the first place.)"
 fi
 
 known_paths="$NL"
@@ -235,9 +245,15 @@ import_findings_into_contract() {
   fi
   [ -n "$rendered" ] || return 0
   if [ -r "$audit_file" ]; then
+    # `| baseline: <sha>` on EVERY append, not just the file's own first-creation header — found
+    # live (code review high, Angle C, this batch's own review round): unchunked mode sets $baseline
+    # fresh PER REPLY (each reply's own leading BASELINE line), so two replies at different commits
+    # touching the same path would otherwise have the second reply's findings silently inherit the
+    # FIRST reply's baseline (the only place it was ever recorded — the header, written once). Cheap
+    # and harmless for chunked mode too (one run, one baseline, so this is a no-op repetition there).
     {
       printf '\n## external findings\n'
-      printf 'auditor: external/%s | %s\n\n' "$vendor" "$today"
+      printf 'auditor: external/%s | %s | baseline: %s\n\n' "$vendor" "$today" "$baseline"
       printf '%s\n' "$rendered"
     } >> "$audit_file"
   else
@@ -336,7 +352,15 @@ if [ "$unchunked" = 1 ]; then
       case "$line" in
         '## '*)
           title="${line#??}"
-          title="${title# }"
+          # Full leading+trailing whitespace trim (tools/self/doctor.sh's own established idiom),
+          # not just "strip one leading space" — found live (code review high, Angle A, this batch's
+          # own review round): a heading like "## Summary " (one trailing space) or "##  Summary"
+          # (a doubled leading space) failed the exact-match "summary" comparison below, so the
+          # WHOLE section silently vanished — no audit file, no SUMMARY.md entry, no
+          # EXTERNAL-UNMAPPED.md entry, no warning anywhere. A no-tool model's own markdown output
+          # trailing/doubling a space is routine, not a contrived input.
+          title="${title#"${title%%[![:space:]]*}"}"
+          title="${title%"${title##*[![:space:]]}"}"
           [ -n "$title" ] || continue
           in_summary=0
           cur_file=""

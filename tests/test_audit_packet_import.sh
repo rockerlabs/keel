@@ -373,4 +373,67 @@ run "$TOOL" --vendor codex "$d10" "$out10"
 check_status "unchunked: reply-value.md alongside a real reply still exits 0" 0 "$STATUS"
 check_nofile "unchunked: reply-value.md never becomes an audit file here either" "$out10/reply-value.md-audit.md"
 
+# --- two replies at DIFFERENT baselines touching the same path: the second's own baseline must
+# survive on its own "## external findings" block, not silently inherit the first reply's header
+# baseline (code review high, Angle C, batch review round — reproduced live before this fix). -------
+d11="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d11/reply-a.md" <<'EOF'
+BASELINE aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+## shared.md
+
+### F1 — issue-a — "from reply A"
+claim: x
+evidence: y
+EOF
+cat > "$d11/reply-b.md" <<'EOF'
+BASELINE bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+## shared.md
+
+### F1 — issue-b — "from reply B"
+claim: x
+evidence: y
+EOF
+out11="$SANDBOX/audit11"
+mkdir -p "$out11"
+run "$TOOL" --vendor test "$d11" "$out11"
+check_status "unchunked: two different-baseline replies on one path exits 0" 0 "$STATUS"
+shared_audit="$(cat "$out11/shared.md-audit.md" 2>/dev/null)"
+check_contains "unchunked: the file's own header keeps the FIRST reply's baseline" "$shared_audit" \
+  "@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+check_contains "unchunked: the appended external findings carry the SECOND reply's OWN baseline" \
+  "$shared_audit" "baseline: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+check_absent "unchunked: the second reply's findings never silently inherit the first's baseline" \
+  "$(section_body '## external findings' "$out11/shared.md-audit.md")" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# --- MANIFEST.txt present but unreadable is a REFUSAL, never a silent switch to unchunked mode ----
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d12="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+  mkdir -p "$d12/chunks"
+  printf 'vendor: t\nbaseline: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef (HEAD)\n\n## chunks\n' > "$d12/MANIFEST.txt"
+  chmod 000 "$d12/MANIFEST.txt"
+  out12="$SANDBOX/audit12"
+  mkdir -p "$out12"
+  run "$TOOL" "$d12" "$out12"
+  check_status "unreadable (not absent) MANIFEST.txt -> exit 3, never silently unchunked" 3 "$STATUS"
+  check_contains "names it as unreadable, not a missing-manifest/unchunked message" "$OUT" "not readable"
+  chmod 644 "$d12/MANIFEST.txt"
+fi
+
+# --- a "## summary" heading with stray whitespace (trailing space, doubled leading space) is still
+# recognized — not silently dropped with zero trace anywhere (code review high, Angle A, batch
+# review round — reproduced live before this fix: the WHOLE section vanished, no file, no warning).
+d13="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+printf 'BASELINE cccccccccccccccccccccccccccccccccccccccc\n\n## a.md\n\n### F1 — x — "y"\nclaim: x\nevidence: y\n\n## Summary \n\nTrailing-space summary survives.\n' \
+  > "$d13/reply.md"
+out13="$SANDBOX/audit13"
+mkdir -p "$out13"
+run "$TOOL" --vendor test "$d13" "$out13"
+check_status "unchunked: a trailing-space '## Summary ' heading still exits 0" 0 "$STATUS"
+check_file "unchunked: SUMMARY.md is written despite the stray trailing space" "$out13/SUMMARY.md"
+check_contains "unchunked: the summary's own prose survives" \
+  "$(cat "$out13/SUMMARY.md" 2>/dev/null)" "Trailing-space summary survives"
+check_nofile "unchunked: never fabricated as its own audit file instead" "$out13/Summary-audit.md"
+
 summary
