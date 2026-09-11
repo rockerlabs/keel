@@ -390,7 +390,14 @@ trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
 write_full_receipt() { write_full_receipt_review "$1" "medium-operator-run" "${2:-}" "${3:-}"; }
 write_full_receipt_review() {
   local d="$1" review_outcome="$2" omit="${3:-}" replay_step="${4:-}" depth_override="${5:-}" s depth_level
-  depth_level="${review_outcome%-operator-run}"; depth_level="${depth_level%-waived}"
+  # dir #366: strip the longer `-waived:trace-broken` suffix before the plain `-waived` one — the two
+  # don't overlap (a string ending in `-waived:trace-broken` does not end in bare `-waived`, so the
+  # plain strip below is a no-op for it regardless of order), but a caller passing
+  # `medium-waived:trace-broken` with no explicit depth_override needs this to derive `medium`, not
+  # the un-stripped literal (which would fail the gate's own depth-level allowlist as an invented
+  # value — a latent trap the dir #366 tests below dodge by always passing an explicit override).
+  depth_level="${review_outcome%-waived:trace-broken}"
+  depth_level="${depth_level%-operator-run}"; depth_level="${depth_level%-waived}"
   # dir #81/#141/#183: a combined `agent:<level>+<addon>` outcome records step 4's depth as the bare
   # level too, so strip the add-on the same way `-operator-run`/`-waived` are stripped above (order
   # relative to the `agent:` prefix strip below doesn't matter — prefix and suffix never overlap — but
