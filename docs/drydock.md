@@ -60,7 +60,7 @@ another audit *wave* over the same state is worth running — and its two-divers
 for a run that fields several diverse legs, where drydock's own diversity requirement is one leg, on
 scope C only. Neither rule overrides the other; they terminate different things.
 
-## Roles — four of them, in separate contexts
+## Roles — five of them, in separate contexts
 
 | Role | Runs as | Model + effort | May touch |
 |---|---|---|---|
@@ -68,6 +68,7 @@ scope C only. Neither rule overrides the other; they terminate different things.
 | **Auditor** | spawned subagent, many in parallel | mid tier, high | read-only, plus its own audit files |
 | **Verifier** | spawned subagent, a few in parallel | mid tier, **xhigh** | the `verdict:` lines of the audit files it was given, plus its own `verifier:` footer line |
 | **Fixer** | a real, operator-launched session — **never** a subagent | mid tier, medium | one PR's worth of the tree |
+| **External auditor** | a human-driven vendor UI, or a tooled reader at that vendor | whatever the vendor runs — record it, unverified | nothing — read-only by construction, no tools reach this machine either way |
 
 Two of those assignments are load-bearing. **Verifiers get more effort than auditors**, not less:
 finding a suspicious sentence is cheaper than proving it wrong, and a wrong `rejected` is the one
@@ -510,6 +511,57 @@ Running out mid-wave is survivable *by contract*, and this is what the completen
 interrupted run loses only its unfinished units, which are re-spawnable individually because every
 audit file either has its `## claims` section or is visibly incomplete. Never restart a whole wave.
 
+## The external leg — an auditor you cannot script
+
+Every behavioural defect drydock has ever caught in shipped code was found by a **cross-vendor**
+reader, after same-family sessions read the same files clean (`private/audit/RUNS.md`'s cross-run
+record). The scriptable cross-vendor legs this repo has (a raw-API harness,
+[`docs/delta-audit.md`](delta-audit.md) §11) share one ceiling: a small context window per round. A
+vendor with a materially larger window may only be reachable through **another person's account and
+UI** — no API, no CLI, nothing this machine can drive. `tools/audit-packet/{export,import}.sh`
+(dir #495) turn that into a **packet** (what to hand over) and a **result contract** (what comes back)
+that fits drydock's existing machinery: the reply is imported as ordinary `<slug>-audit.md` files with
+`auditor: external/<vendor>` and empty `verdict:` lines, and phase 2 rules on them exactly as it rules
+on a subagent's findings. `RUNS.md` gains one more layer value, `external/<vendor>`, written by the
+run's human at record time — nothing here writes that row for you.
+
+**Two modes, one contract.** Mode A is a reader with no tools: `export.sh` chunks the caller's file
+list into a packet directory (`README-operator.md`, `PROBE.md`, `PROMPT.md`, optional `KNOWN.md`,
+`chunks/NN.txt`, `MANIFEST.txt`) that a human uploads or pastes piece by piece, saving each reply
+unedited as `reply-NN.md`. Mode B is a tooled reader with access to the repository itself (e.g. cloned
+at a pinned SHA) — no probe, no chunks; the hand-off is a short brief naming the baseline commit, and
+the reply is a single unedited `reply-NN.md`. `import.sh` detects the mode automatically — a packet
+directory with no `MANIFEST.txt` is mode B (`--vendor` is then required on the command line, since
+there's no manifest to read it from) — and imports either shape into the same file contract. The role
+prompt for both modes is one file, [`docs/drydock/external-auditor.md`](drydock/external-auditor.md):
+one paragraph differs per mode (no-tools chunk vs. tooled repo-read), everything else — scope, finding
+classes, the ≤25-ranked cap, `confidence:`, verbatim-quote anchoring, `known` self-classification
+against `KNOWN.md`, empty `verdict:`, the `## summary` close — is the same prompt read by both.
+
+**Probe-first applies to mode A only.** Because a no-tools reader's real window is never the vendor's
+claimed one (`agy`'s cap was silent until a probe measured it — dir #489), mode A's packet 0 is
+`PROBE.md` alone: filler text with markers every 25 KB, cheap enough that the first thing an outside
+reader does is a two-minute upload, not a 700 KB audit. The reply sets `--chunk-bytes` for the real
+packet. Mode B skips the probe — a tooled reader with repo access has no chunk size to discover.
+
+**The leak gate always runs, has no bypass, and scans what actually leaves.** Every file `export.sh`
+is about to embed is scanned by `secret-guard/secret-scan.sh` before a single byte is written — a hit
+refuses the whole export (exit 3) and prints only the offending path, never the matched content. In
+mode B there's nothing to embed but the prompt files themselves (our own text, not the tree), so the
+gate runs there too, trivially green. A non-keel project additionally names `--disclosure-ack
+"<project>: <reason it may leave>"`, recorded verbatim into `MANIFEST.txt` — a per-project human
+decision made visible, never a flag that flips.
+
+**The value assessment (`--value-prompt`) is a separate ask, and phase 2 does not apply to it.** The
+same packet can carry `PROMPT-value.md` — an independent, non-defect read of the project's value as a
+whole, applied to the prose surface only. `import.sh` never touches its reply (`reply-value.md`): it's
+opinion, not a finding, and drydock has no `verdict:` to issue on "this idea is weak." Read it
+yourself; it gets one line in `RUNS.md`, nothing more.
+
+**Whether this becomes a standing round is decided by the first run's `RUNS.md` entry, not built in
+here** — keep it as a standing leg only if that run found a behavioural defect or a class no other
+layer reported; otherwise it stays on-demand.
+
 ## Incremental runs
 
 *Not the same shape as [`docs/delta-audit.md`](delta-audit.md): this section's incremental runs
@@ -574,6 +626,7 @@ and hand them to the session:
 - [`docs/drydock/code-auditor.md`](drydock/code-auditor.md) — phase 1, scope C
 - [`docs/drydock/verifier.md`](drydock/verifier.md) — phase 2 (and the cross-file pass, phase 3)
 - [`docs/drydock/fixer.md`](drydock/fixer.md) — phase 5
+- [`docs/drydock/external-auditor.md`](drydock/external-auditor.md) — the external leg (see above), both modes
 
 ## See also
 

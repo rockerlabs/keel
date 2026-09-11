@@ -408,7 +408,7 @@ mutation phase of its own; findings feed the normal backlog rather than an in-ru
 ## See also
 
 Beyond the worked example itself, [`docs/drydock.md`](drydock.md) ships a full set of role-prompt
-templates (auditor, code-auditor, verifier, fixer) — a second, audit-specific reference alongside the
+templates (auditor, code-auditor, verifier, fixer, external-auditor) — a second, audit-specific reference alongside the
 generic ones above, worth a look if your application is close enough to auditing to start from theirs
 instead.
 
