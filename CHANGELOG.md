@@ -277,10 +277,10 @@ sections real content going forward — see that page for exactly when each one 
   `### Fixed` headings inside `[Unreleased]`, which stays open). The check itself was never wrong — it
   correctly reports "OK ... lists agree (none)" — only the comment above it lied, describing a shape
   the list stopped having back at v0.6.0 (dir #68). One comment line; no behaviour depended on it.
-- **`tools/pre-pr-gate.sh` — three small fixes to the unlock case's honesty and messaging, one message
-  gap in commands/polish.md, and one new falsifier on the `-waived` outcome.** All three share the
-  gate's deny-message surface `tools/pre-pr-gate.sh`'s dir #376 rewrite just rebuilt, and use its
-  `_deny_intact`/`_deny_discarded` wrappers rather than a hand-rolled fourth message shape.
+- **`tools/pre-pr-gate.sh` — three fixes to the unlock case's honesty, messaging and dispatch order,
+  one message gap in commands/polish.md, and one new falsifier on the `-waived` outcome.** All three
+  share the gate's deny-message surface `tools/pre-pr-gate.sh`'s dir #376 rewrite just rebuilt, and use
+  its `_deny_intact`/`_deny_discarded` wrappers rather than a hand-rolled fourth message shape.
   - **The `agent:<level>+<addon>` arm's provenance never disclosed the dir #254 refusal, unlike the
     bare `agent:<level>` arm right below it** (dir #303, found by dir #183's own `/code-review max`).
     Both arms are reachable only on the refusal fallback — the built-in `Skill(code-review)` invocation
@@ -292,13 +292,21 @@ sections real content going forward — see that page for exactly when each one 
     unlock-case arm and denies on a fake depth mismatch. `commands/polish.md` now states the rule dir
     #183 already settled for the combined shapes: keep the receipt the bare `<level>`, name both
     mechanisms in prose.
-  - **An add-on token ending in `-operator-run`/`-waived` is captured by the unlock case's own trusted
-    hand-off arms before it can ever reach `_addon_label`'s allowlist** (dir #336, found by the v0.8.0
-    RC pass). `agent:high+pair-operator-run` denies today — this was never a bypass — but with a
-    review-depth-mismatch diagnosis that has nothing to do with depth. The unlock case's own header
-    comment already named this as a constraint on future add-ons; the fix is message-only, per the
-    ticket's own judgement that widening the allowlist's reach was not worth it: a new deny reason
-    (`addon-suffix-collision`) names the real cause and points at the constraint.
+  - **An add-on token ending in `-operator-run`/`-waived` was captured by the unlock case's own trusted
+    hand-off arms before it could ever reach `_addon_label`'s allowlist** (dir #336, found by the v0.8.0
+    RC pass). `agent:high+pair-operator-run` denied — this was never a bypass — but with a
+    review-depth-mismatch diagnosis that had nothing to do with depth, since the trusted arms
+    (`*-operator-run)`/`*-waived)`) sat ABOVE `agent:*+*)` in the first-match-wins unlock case. The
+    ticket's own draft judged a message-only patch cheaper than reordering the case; three independent
+    review passes during this session's own `/polish` disagreed, for a concrete reason — the very next
+    ticket in this same PR (dir #366) needed a THIRD reserved suffix (`-waived:trace-broken`), and the
+    message-only shape would have needed a new special-cased arm for every future collision, forever,
+    including the one this PR itself was about to introduce. **The shipped fix is structural instead:
+    `agent:*+*)` now sits FIRST among every arm that could match an `agent:...+...` string** — ahead of
+    both the broader `agent:*` glob (unchanged since dir #70/#254) and every trusted suffix arm — so an
+    add-on-shaped outcome always reaches the allowlist regardless of what its add-on token ends in. No
+    reserved-suffix constraint for future add-on authors, no per-suffix deny message to keep in sync,
+    and the class closes once rather than growing by one special case per new suffix.
   - **The gate's `-waived` outcome is self-reported and trace-exempt by design, so a session that
     wrongly concludes the review trace mechanism is broken can waive its own review depth with nothing
     mechanical to catch it** (dir #366, a live near-miss on PR #328: the repo-keyed trace file held the

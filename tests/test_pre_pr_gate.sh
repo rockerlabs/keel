@@ -1193,11 +1193,21 @@ done
 
 # Family 2 — a suffix with NO comma is one unknown token and takes the depth cross-check route, which
 # is the designed route (unchanged from dir #158): the unvalidated add-on leaves $outcome_level as the
-# raw remainder (`high+bogus-addon`), which cannot equal step 4's `high`.
+# raw remainder (`high+bogus-addon`), which cannot equal step 4's `high`. **`agent:high+pair-operator-run`
+# and `agent:high+pair-waived` (dir #336) belong in this SAME family, not a separate one** — before
+# dir #336, the unlock case's `*-operator-run)`/`*-waived)` trusted arms sat ABOVE `agent:*+*)`, so an
+# add-on token ending in either suffix was captured by the wrong arm first and denied with a
+# misleading "depth mismatch" that had nothing to do with the add-on being unrecognized. dir #336's
+# fix is structural, not a message patch: `agent:*+*)` now sits FIRST among every arm that could match
+# an `agent:...+...` string, so these two cases reach `_addon_label`'s allowlist exactly like
+# `agent:high+bogus-addon` does, are rejected as unrecognized, and take the same designed route below —
+# no dedicated deny reason needed, which is why they're folded into this loop rather than kept separate.
 for bad_addon in \
   "agent:high+bogus-addon" \
   "agent:high+" \
-  "agent:high+operator-run+second-opinion"
+  "agent:high+operator-run+second-opinion" \
+  "agent:high+pair-operator-run" \
+  "agent:high+pair-waived"
 do
   d="$(mkrepo)"
   agent_trace "$d"
@@ -1235,24 +1245,6 @@ gate_env "gh pr create --fill" "$d" "KEEL_IMPACT_LOG=$addon_deny_log"
 check_contains "the retired comma set still denies" "$OUT" '"permissionDecision":"deny"'
 check_contains "...and logs its OWN deny reason, not the generic depth mismatch" "$(cat "$addon_deny_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-addon-set-retired"
 check_absent "...so a log consumer can tell the stale-copy skew from a real depth mismatch" "$(cat "$addon_deny_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-depth-mismatch"
-
-# 50l-bis. dir #336: an add-on token ending in '-operator-run' or '-waived' is captured by the unlock
-# case's OWN trusted `*-operator-run)`/`*-waived)` arms — which sit ABOVE `agent:*+*)` — before it can
-# ever reach `_addon_label`'s allowlist. It still denies (outcome_level keeps the un-stripped `agent:`
-# prefix and fails the depth cross-check), but pre-fix the deny read as a generic review-depth-mismatch
-# with no hint that the real cause is the add-on token's own suffix colliding with a reserved one.
-for bad_suffix_addon in "agent:high+pair-operator-run" "agent:high+pair-waived"; do
-  d="$(mkrepo)"
-  agent_trace "$d"
-  write_full_receipt_review "$d" "$bad_suffix_addon"
-  addon_suffix_log="$SANDBOX/dir336-addon-suffix-deny.log"; rm -f "$addon_suffix_log"
-  gate_env "gh pr create --fill" "$d" "KEEL_IMPACT_LOG=$addon_suffix_log"
-  check_contains "an add-on ending in a reserved suffix ('$bad_suffix_addon') → denied" "$OUT" '"permissionDecision":"deny"'
-  check_contains "...names the real cause: the add-on suffix collision, not a fake depth mismatch" "$OUT" "add-on ending in '-operator-run' or '-waived'"
-  check_absent "...and does not present it as a genuine depth disagreement" "$OUT" "doesn't match the depth"
-  check_contains "...and logs its OWN reason, distinct from the generic depth mismatch" "$(cat "$addon_suffix_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	addon-suffix-collision"
-  check_absent "...so a log consumer can tell this apart from a real depth mismatch" "$(cat "$addon_suffix_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-depth-mismatch"
-done
 
 # 50l-quater. dir #366: the ONE recognized machine-readable waiver reason, `-waived:trace-broken`, and
 # its falsifier — cross-checked against the gate's own repo-keyed trace file, the exact evidence a

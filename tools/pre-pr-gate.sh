@@ -503,16 +503,19 @@ _match_review_level() {
 # as ONE opaque token, so a set-shaped string like `operator-run,second-opinion` is simply an unknown
 # token and denies.
 #
-# **This is the only validator for suffixes that REACH it — which is not all of them, and the gap is a
-# constraint on future add-ons** (found by this ticket's own /code-review max pass, reproduced live).
-# The unlock `case` is first-match-wins and `*-operator-run)` / `*-waived)` sit ABOVE `agent:*+*)`, so
-# an add-on token ENDING in `-operator-run` or `-waived` is captured by those trusted arms and never
-# arrives here at all: `agent:high+pair-operator-run` matches `*-operator-run`, which sets `trusted=1`
-# and thereby SKIPS the trace requirement. It still denies today — `outcome_level` keeps its `agent:`
-# prefix and fails the depth cross-check, whose allowlist holds no such value — so this is a false-deny
-# with a misleading message, not a bypass. But it means a third add-on literal must not end in either
-# suffix; name it so it reaches this allowlist. (The separator half of this hazard — why the add-on
-# separator is `+` and must never be renamed to a hyphen — is on the `agent:*+*` arm itself.)
+# **This IS the validator for every add-on-shaped outcome (dir #336).** An earlier version of the
+# unlock `case` put `*-operator-run)` / `*-waived)` ABOVE `agent:*+*)` — first-match-wins, so an
+# add-on token ENDING in `-operator-run` or `-waived` was captured by those trusted hand-off arms and
+# never reached this allowlist at all: `agent:high+pair-operator-run` matched `*-operator-run)` first,
+# which set `trusted=1` and skipped the trace requirement. It still denied (`outcome_level` kept its
+# `agent:` prefix and failed the depth cross-check) but with a misleading "depth mismatch" diagnosis
+# for what was really an unknown add-on — found by dir #183's own `/code-review max` pass, reproduced
+# live, and fixed by dir #336 the direct way: `agent:*+*)` now sits FIRST in the unlock `case`, above
+# every trusted suffix arm (`*-operator-run)`, `*-waived)`, `*-waived:trace-broken)`), so an
+# add-on-shaped outcome always reaches this allowlist regardless of what its add-on token ends in — no
+# reserved-suffix constraint for future add-on names, and no separate deny message to keep in sync with
+# this case's own arm order. (The separator half of the neighbouring hazard — why the add-on separator
+# is `+` and must never be renamed to a hyphen — is on the `agent:*+*` arm itself, unchanged by this.)
 #
 # **This function IS the allowlist — deliberately not a separate `ACCEPTED_REVIEW_ADDONS` list.** A
 # first draft had both, and shellcheck caught the list as unused: validation ran through this `case`
@@ -2367,13 +2370,6 @@ case "$status" in
     trusted=0
     needs_dialog=0
     trace_match_outcome="$review_outcome"
-    # dir #366: `waived_trace_broken` is the ONE machine-readable waiver reason this gate recognizes —
-    # not free text (an arbitrary reason "stays unverifiable" by design, see the falsifier's header
-    # below) but a single reserved literal for the ONE claim the gate CAN cheaply check: "the trace
-    # mechanism itself doesn't fire". A bare `<level>-waived` (no reason at all) is untouched by this,
-    # same as any other stated reason would be — this is deliberately the narrowest hook that still
-    # catches the dir #362 near-miss (a `-waived` outcome reasoned on a trace the gate can read for free).
-    waived_trace_broken=0
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
                          # dir #116: needs_dialog here reads step 4's mandatory skip dialog (its
@@ -2388,28 +2384,29 @@ case "$status" in
                          # not the best case.
                          needs_dialog=1
                          prov_label="review: skip";  prov_tag="self-reported" ;;
-      *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1
-                         prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
-      *-waived:trace-broken)
-                         # dir #366: the ONE recognized machine-readable waiver reason — see the
-                         # falsifier below the main case, right after the depth-mismatch check, for
-                         # what this actually triggers. Still a TRUSTED, self-reported outcome (this
-                         # arm does not itself deny) — the cross-check runs once outcome_level is settled.
-                         outcome_level="${review_outcome%-waived:trace-broken}"; trusted=1
-                         waived_trace_broken=1
-                         prov_label="review: $outcome_level, waived (self-reported — reason: trace mechanism reported broken)"; prov_tag="self-reported" ;;
-      *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
-                         prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
       agent:*+*)        # dir #81, generalized to a set by dir #158, narrowed back to one token by
                          # dir #183: the operator additionally ran `/code-review` ON TOP of an
                          # already-standing agent review — an honest combined record, not the old
-                         # overwrite that erased the agent half. Placed BEFORE the broader `agent:*`
-                         # glob below (case is first-match-wins and this literal also matches that
-                         # pattern). The `+` separator (not `-`) is itself load-bearing, not cosmetic:
-                         # a hyphenated `agent:<level>-operator-run` would instead match the EARLIER
-                         # `*-operator-run)` arm above, which sets trusted=1 and skips the trace check
-                         # below entirely — silently downgrading a real agent review + operator pass
-                         # into a fully self-reported, untraced claim. Do not rename this to a hyphen
+                         # overwrite that erased the agent half. **dir #336: placed FIRST among every
+                         # arm that could match an `agent:...+...` string** — ahead of the broader
+                         # `agent:*` glob further below (case is first-match-wins and this literal also
+                         # matches that pattern; unchanged from before dir #336) AND ahead of the
+                         # trusted hand-off arms below (`*-operator-run)`, `*-waived)`,
+                         # `*-waived:trace-broken)` — NEW as of dir #336: an add-on-shaped outcome used
+                         # to reach this arm only when its add-on token happened not to end in one of
+                         # those reserved suffixes; `agent:high+pair-operator-run` matched
+                         # `*-operator-run)` FIRST, stripped the wrong suffix, and denied later with a
+                         # misleading "depth mismatch" instead of "unknown add-on". Moving this arm
+                         # first closes that structurally: every `agent:...+...` string reaches
+                         # `_addon_label`'s allowlist now, regardless of what its add-on token ends in —
+                         # see that function's own header for the full account, and dir #336 in
+                         # BACKLOG.md for the false-deny this replaces. The `+` separator (not `-`) is
+                         # itself load-bearing, not cosmetic: a hyphenated `agent:<level>-operator-run`
+                         # does not match this arm's `+`-requiring pattern at all, so it still falls
+                         # through to the `*-operator-run)` arm below (case is first-match-wins), which
+                         # sets trusted=1 and skips the trace check below entirely — silently
+                         # downgrading a real agent review + operator pass into a fully self-reported,
+                         # untraced claim. Do not rename this to a hyphen
                          # for naming "consistency" with `<level>-operator-run` — that would reopen
                          # exactly this hole. trusted stays 0 here: the agent half is just as
                          # self-report-fabricable as the plain agent:* case, so it still needs the
@@ -2432,10 +2429,12 @@ case "$status" in
                          # a deny of its own: the unrecognized token leaves $outcome_level as the raw
                          # remainder (`high+bogus`), which cannot equal step 4's level, so the
                          # `outcome_level != depth_level` check below rejects it — the same route that
-                         # caught an invented suffix when these were two literal arms. No new bypass
-                         # surface, and no deny message to keep in sync. **With no comma walk, every
-                         # set-shaped string takes that same route**: `+operator-run,` (dir #225, which
-                         # the walk UNLOCKED by dropping the trailing empty element) and
+                         # caught an invented suffix when these were two literal arms, and the SAME
+                         # route dir #336's `agent:high+pair-operator-run` example takes now: an
+                         # unrecognized add-on is an unrecognized add-on, whatever it ends in. No new
+                         # bypass surface, and no deny message to keep in sync. **With no comma walk,
+                         # every set-shaped string takes that same route**: `+operator-run,` (dir #225,
+                         # which the walk UNLOCKED by dropping the trailing empty element) and
                          # `+operator-run,operator-run` (dir #227, which the walk unlocked and then
                          # double-labelled) are now each one unknown token containing a comma.
                          outcome_level="${review_outcome#agent:}"
@@ -2493,6 +2492,24 @@ case "$status" in
                          # dir #254 added the note to surface. Same parenthetical as the bare arm,
                          # verbatim, so the two arms tell one story about identical evidence.
                          prov_label="review: $outcome_level, independent agent review (Skill(code-review) invocation refused this run)$addon_prose"; prov_tag="agent-confirmed" ;;
+      *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1
+                         prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
+      *-waived:trace-broken)
+                         # dir #366: the ONE recognized machine-readable waiver reason — see the
+                         # falsifier below the main case, right after the depth-mismatch check, for
+                         # what this actually triggers (it re-tests $review_outcome directly against
+                         # this same suffix rather than caching a flag here: unlike `trusted`/
+                         # `needs_dialog`, which this case sets and several branches downstream read,
+                         # this fact has exactly one reader, right after, and `$review_outcome` never
+                         # changes in between — so a cached flag would just be a second place the
+                         # suffix literal has to stay in sync with this arm's own `%`-strip, found by
+                         # this ticket's own /simplify pass). Still a TRUSTED, self-reported outcome
+                         # (this arm does not itself deny) — the cross-check runs once outcome_level is
+                         # settled.
+                         outcome_level="${review_outcome%-waived:trace-broken}"; trusted=1
+                         prov_label="review: $outcome_level, waived (self-reported — reason: trace mechanism reported broken)"; prov_tag="self-reported" ;;
+      *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
+                         prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
       agent:*)          # dir #70, now the refusal-fallback per dir #254 — see this file's header above
                          # for why. Trusted stays 0, same as the bare-level case below: this outcome is
                          # just as self-report-fabricable, so it earns no more trust and still needs the
@@ -2542,22 +2559,6 @@ case "$status" in
       depth_deny_cause="two receipts disagreeing about the same review means neither can be trusted to say what actually ran"
       depth_deny_extra=""
       case "$review_outcome" in
-        agent:*+*-operator-run|agent:*+*-waived)
-          # dir #336: this outcome never reached `_addon_label`'s allowlist at all. The unlock case
-          # above is first-match-wins and its `*-operator-run)`/`*-waived)` arms sit ABOVE
-          # `agent:*+*)` — so an add-on token ending in either suffix (e.g. `agent:high+pair-operator-run`)
-          # is captured by those trusted hand-off arms first, strips the WRONG suffix, sets
-          # trusted=1, and never reaches the add-on allowlist. It still lands here and denies, but
-          # the depth mismatch below is a symptom of that capture, not step 4 and step 5 genuinely
-          # disagreeing about how deep the review was — name the real cause instead of a fake one.
-          # (The constraint itself — "a third add-on literal must not end in either suffix" — is
-          # documented above `_addon_label`, above; the fix here is the message, not widening the
-          # allowlist's reach, which this ticket's own body judged not worth the cost.)
-          depth_deny_reason="addon-suffix-collision"
-          depth_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') names an add-on ending in '-operator-run' or '-waived' — this gate's OWN unlock case claims any outcome ending that way as a trusted hand-off before the add-on allowlist ever sees it, so the add-on was never validated (this is not a real disagreement with step 4's '$depth_level' depth)."
-          depth_deny_cause="an add-on suffix reserved by the unlock case's own trusted hand-off arms can never reach the add-on allowlist"
-          depth_deny_extra=" Rename the add-on so it does not end in '-operator-run' or '-waived' (see the constraint documented above _addon_label in tools/pre-pr-gate.sh), then re-write this receipt."
-          ;;
         agent:*+*,*)
           # Match on the ADD-ON region, not merely on the shape: the pre-`+` part must be a bare
           # `agent:<level>` with no second colon, or a step-4 depth measurement pasted into step 5
@@ -2586,14 +2587,23 @@ case "$status" in
     # `handoff_path()` (an easy mix-up: that neighbouring helper DOES key on `$RECEIPT_KEY`) found
     # nothing there and concluded a machine-wide infra gap. This check would have denied right here,
     # naming the file that contradicts it, instead of shipping on a self-attested review depth.
-    if [ "$waived_trace_broken" -eq 1 ]; then
+    case "$review_outcome" in
+    *-waived:trace-broken)
       trace_broken_tp="$(_trace_path_for_key "$wt")"
       if [ -s "$trace_broken_tp" ]; then
+        # dir #366: reuse `_trace_levels_for` (already the file's own helper for "name what a trace
+        # file actually recorded", used by the review-trace-missing deny below) rather than stopping at
+        # "the file is non-empty" — when current HEAD itself has a line, say so plainly; that is the
+        # strongest possible contradiction of a "trace-broken" claim, not just an anecdote elsewhere.
+        trace_broken_levels="$(_trace_levels_for "$wt" "$current_sha")"
+        trace_broken_detail=" The file already holds trace lines."
+        [ -n "$trace_broken_levels" ] && trace_broken_detail=" The file already recorded '$trace_broken_levels' for THIS exact commit."
         _deny_intact "$cwd" "waived-trace-broken-contradicted" \
-          "Pre-PR gate: step 5 waived review depth '$outcome_level', reasoned as 'trace-broken' — but $trace_broken_tp already holds trace lines, which contradicts that." \
+          "Pre-PR gate: step 5 waived review depth '$outcome_level', reasoned as 'trace-broken' — but $trace_broken_tp contradicts that.$trace_broken_detail" \
           "either the mechanism does fire (check $trace_broken_tp for a line matching current HEAD and this level, then receipt whichever review outcome actually ran) or, if this waiver is for a genuinely different reason, re-write the receipt as a plain '$outcome_level-waived' with no reason token — untouched by this check."
       fi
-    fi
+      ;;
+    esac
     # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real
     # in-session /code-review run — cross-check the mechanically-written trace (skill-trace, above) so
     # that claim can't be satisfied by self-report alone. The trace's OWN recorded level must match too
