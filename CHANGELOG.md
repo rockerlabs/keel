@@ -277,6 +277,38 @@ sections real content going forward — see that page for exactly when each one 
   `### Fixed` headings inside `[Unreleased]`, which stays open). The check itself was never wrong — it
   correctly reports "OK ... lists agree (none)" — only the comment above it lied, describing a shape
   the list stopped having back at v0.6.0 (dir #68). One comment line; no behaviour depended on it.
+- **`tools/pre-pr-gate.sh` — three small fixes to the unlock case's honesty and messaging, one message
+  gap in commands/polish.md, and one new falsifier on the `-waived` outcome.** All three share the
+  gate's deny-message surface `tools/pre-pr-gate.sh`'s dir #376 rewrite just rebuilt, and use its
+  `_deny_intact`/`_deny_discarded` wrappers rather than a hand-rolled fourth message shape.
+  - **The `agent:<level>+<addon>` arm's provenance never disclosed the dir #254 refusal, unlike the
+    bare `agent:<level>` arm right below it** (dir #303, found by dir #183's own `/code-review max`).
+    Both arms are reachable only on the refusal fallback — the built-in `Skill(code-review)` invocation
+    was refused this run — yet only the bare arm's label said so; the combined-outcome label read
+    "(trace-confirmed)" with no hint the skill was ever tried. Same parenthetical now, verbatim, on
+    both arms. A second, adjacent gap from the same angle: `commands/polish.md` defined `+<addon>`
+    only on `agent:<level>`, with no word on a bare `<level>` review that gets an operator-run
+    `/code-review` layered on top of it afterward — the natural guess (`high+operator-run`) matches no
+    unlock-case arm and denies on a fake depth mismatch. `commands/polish.md` now states the rule dir
+    #183 already settled for the combined shapes: keep the receipt the bare `<level>`, name both
+    mechanisms in prose.
+  - **An add-on token ending in `-operator-run`/`-waived` is captured by the unlock case's own trusted
+    hand-off arms before it can ever reach `_addon_label`'s allowlist** (dir #336, found by the v0.8.0
+    RC pass). `agent:high+pair-operator-run` denies today — this was never a bypass — but with a
+    review-depth-mismatch diagnosis that has nothing to do with depth. The unlock case's own header
+    comment already named this as a constraint on future add-ons; the fix is message-only, per the
+    ticket's own judgement that widening the allowlist's reach was not worth it: a new deny reason
+    (`addon-suffix-collision`) names the real cause and points at the constraint.
+  - **The gate's `-waived` outcome is self-reported and trace-exempt by design, so a session that
+    wrongly concludes the review trace mechanism is broken can waive its own review depth with nothing
+    mechanical to catch it** (dir #366, a live near-miss on PR #328: the repo-keyed trace file held the
+    answer the whole time, at `trace_path_for`'s own `$wt`-keyed path — not the neighbouring,
+    receipt-keyed `handoff_path()` a reader familiar with that helper's shape might guess instead).
+    The gate cannot and does not judge whether a review that ran was any good, so this stays narrow by
+    design: a new, optional, machine-readable reason token, `<level>-waived:trace-broken`, is the ONE
+    waiver claim the gate now cross-checks against its own trace file — if that file already holds
+    lines, the waiver is denied and the contradicting file is named. A bare `<level>-waived` (no reason
+    stated) and every other stated reason are untouched, exactly as before.
 
 ## [0.9.1] — 2026-09-08
 

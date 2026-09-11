@@ -2367,6 +2367,13 @@ case "$status" in
     trusted=0
     needs_dialog=0
     trace_match_outcome="$review_outcome"
+    # dir #366: `waived_trace_broken` is the ONE machine-readable waiver reason this gate recognizes —
+    # not free text (an arbitrary reason "stays unverifiable" by design, see the falsifier's header
+    # below) but a single reserved literal for the ONE claim the gate CAN cheaply check: "the trace
+    # mechanism itself doesn't fire". A bare `<level>-waived` (no reason at all) is untouched by this,
+    # same as any other stated reason would be — this is deliberately the narrowest hook that still
+    # catches the dir #362 near-miss (a `-waived` outcome reasoned on a trace the gate can read for free).
+    waived_trace_broken=0
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
                          # dir #116: needs_dialog here reads step 4's mandatory skip dialog (its
@@ -2383,6 +2390,14 @@ case "$status" in
                          prov_label="review: skip";  prov_tag="self-reported" ;;
       *-operator-run)   outcome_level="${review_outcome%-operator-run}"; trusted=1
                          prov_label="review: $outcome_level, operator-run (self-reported)"; prov_tag="self-reported" ;;
+      *-waived:trace-broken)
+                         # dir #366: the ONE recognized machine-readable waiver reason — see the
+                         # falsifier below the main case, right after the depth-mismatch check, for
+                         # what this actually triggers. Still a TRUSTED, self-reported outcome (this
+                         # arm does not itself deny) — the cross-check runs once outcome_level is settled.
+                         outcome_level="${review_outcome%-waived:trace-broken}"; trusted=1
+                         waived_trace_broken=1
+                         prov_label="review: $outcome_level, waived (self-reported — reason: trace mechanism reported broken)"; prov_tag="self-reported" ;;
       *-waived)         outcome_level="${review_outcome%-waived}";       trusted=1
                          prov_label="review: $outcome_level, waived (self-reported)"; prov_tag="self-reported" ;;
       agent:*+*)        # dir #81, generalized to a set by dir #158, narrowed back to one token by
@@ -2470,7 +2485,14 @@ case "$status" in
                          fi
                          trace_match_outcome="agent:$outcome_level"
                          needs_dialog=1
-                         prov_label="review: $outcome_level, independent agent review (trace-confirmed)$addon_prose"; prov_tag="agent-confirmed" ;;
+                         # dir #303: this arm and the bare `agent:*)` arm below are BOTH reachable
+                         # only on the dir #254 refusal fallback — the same evidence, an unanswerable
+                         # Skill(code-review) invocation this run — yet before this fix only the bare
+                         # arm's label said so. An operator reading "(trace-confirmed)" here had no
+                         # hint the built-in skill was ever tried and refused, which is the exact fact
+                         # dir #254 added the note to surface. Same parenthetical as the bare arm,
+                         # verbatim, so the two arms tell one story about identical evidence.
+                         prov_label="review: $outcome_level, independent agent review (Skill(code-review) invocation refused this run)$addon_prose"; prov_tag="agent-confirmed" ;;
       agent:*)          # dir #70, now the refusal-fallback per dir #254 — see this file's header above
                          # for why. Trusted stays 0, same as the bare-level case below: this outcome is
                          # just as self-report-fabricable, so it earns no more trust and still needs the
@@ -2520,6 +2542,22 @@ case "$status" in
       depth_deny_cause="two receipts disagreeing about the same review means neither can be trusted to say what actually ran"
       depth_deny_extra=""
       case "$review_outcome" in
+        agent:*+*-operator-run|agent:*+*-waived)
+          # dir #336: this outcome never reached `_addon_label`'s allowlist at all. The unlock case
+          # above is first-match-wins and its `*-operator-run)`/`*-waived)` arms sit ABOVE
+          # `agent:*+*)` — so an add-on token ending in either suffix (e.g. `agent:high+pair-operator-run`)
+          # is captured by those trusted hand-off arms first, strips the WRONG suffix, sets
+          # trusted=1, and never reaches the add-on allowlist. It still lands here and denies, but
+          # the depth mismatch below is a symptom of that capture, not step 4 and step 5 genuinely
+          # disagreeing about how deep the review was — name the real cause instead of a fake one.
+          # (The constraint itself — "a third add-on literal must not end in either suffix" — is
+          # documented above `_addon_label`, above; the fix here is the message, not widening the
+          # allowlist's reach, which this ticket's own body judged not worth the cost.)
+          depth_deny_reason="addon-suffix-collision"
+          depth_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') names an add-on ending in '-operator-run' or '-waived' — this gate's OWN unlock case claims any outcome ending that way as a trusted hand-off before the add-on allowlist ever sees it, so the add-on was never validated (this is not a real disagreement with step 4's '$depth_level' depth)."
+          depth_deny_cause="an add-on suffix reserved by the unlock case's own trusted hand-off arms can never reach the add-on allowlist"
+          depth_deny_extra=" Rename the add-on so it does not end in '-operator-run' or '-waived' (see the constraint documented above _addon_label in tools/pre-pr-gate.sh), then re-write this receipt."
+          ;;
         agent:*+*,*)
           # Match on the ADD-ON region, not merely on the shape: the pre-`+` part must be a bare
           # `agent:<level>` with no second colon, or a step-4 depth measurement pasted into step 5
@@ -2536,6 +2574,25 @@ case "$status" in
           ;;
       esac
       _deny_discarded "$sentinel" "$cwd" "$receipt_key" "$depth_deny_reason" "$depth_deny_core" "$depth_deny_cause" "receipt-deny" "$depth_deny_extra"
+    fi
+    # dir #366: the falsifier for the ONE recognized machine-readable waiver reason above — cross-check
+    # a "the trace mechanism never fires" claim against evidence the gate can read for free, rather than
+    # trusting it the way every other -waived reason is trusted. Narrow by design, matching this
+    # ticket's own scope: the gate cannot and does not judge whether a review that DID run was any
+    # good, and this does not touch a bare `<level>-waived` (no reason stated) or any OTHER stated
+    # reason — only this one, cheaply checkable claim. The near-miss this closes (dir #362, PR #328):
+    # the repo-keyed trace file held lines the whole time — `trace_path_for`/`_trace_path_for_key` keys
+    # on `$wt` (repo) ALONE, not `$receipt_key` — a session that instead checked the RECEIPT-keyed
+    # `handoff_path()` (an easy mix-up: that neighbouring helper DOES key on `$RECEIPT_KEY`) found
+    # nothing there and concluded a machine-wide infra gap. This check would have denied right here,
+    # naming the file that contradicts it, instead of shipping on a self-attested review depth.
+    if [ "$waived_trace_broken" -eq 1 ]; then
+      trace_broken_tp="$(_trace_path_for_key "$wt")"
+      if [ -s "$trace_broken_tp" ]; then
+        _deny_intact "$cwd" "waived-trace-broken-contradicted" \
+          "Pre-PR gate: step 5 waived review depth '$outcome_level', reasoned as 'trace-broken' — but $trace_broken_tp already holds trace lines, which contradicts that." \
+          "either the mechanism does fire (check $trace_broken_tp for a line matching current HEAD and this level, then receipt whichever review outcome actually ran) or, if this waiver is for a genuinely different reason, re-write the receipt as a plain '$outcome_level-waived' with no reason token — untouched by this check."
+      fi
     fi
     # A BARE review outcome (trusted=0 above: no -operator-run/-waived suffix, not skip) claims a real
     # in-session /code-review run — cross-check the mechanically-written trace (skill-trace, above) so

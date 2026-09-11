@@ -1035,7 +1035,7 @@ write_full_receipt_review "$d" "agent:high+operator-run"
 gate "gh pr create --fill" "$d"
 check_status "combined agent:<level>+operator-run receipt + matching agent trace → exit 0" 0 "$STATUS"
 check_absent "combined receipt + matching trace → allowed" "$OUT" "deny"
-check_contains "provenance names BOTH the agent review and the operator-run /code-review" "$OUT" "review: high, independent agent review (trace-confirmed) + operator-run /code-review (self-reported)"
+check_contains "provenance names BOTH the agent review and the operator-run /code-review, and names the Skill(code-review) refusal (dir #303)" "$OUT" "review: high, independent agent review (Skill(code-review) invocation refused this run) + operator-run /code-review (self-reported)"
 rm -f "$tf"
 
 # 50b. dir #81: Gate DENY for the combined outcome when NO trace exists at all — the agent half is
@@ -1079,7 +1079,7 @@ write_full_receipt_review "$d" "agent:high+second-opinion"
 gate "gh pr create --fill" "$d"
 check_status "combined agent:<level>+second-opinion receipt + matching agent trace → exit 0" 0 "$STATUS"
 check_absent "combined receipt + matching trace → allowed" "$OUT" "deny"
-check_contains "provenance names BOTH the agent review and the cross-model second opinion" "$OUT" "review: high, independent agent review (trace-confirmed) + in-session cross-model second opinion (self-reported — the trace can't distinguish one subagent run from two)"
+check_contains "provenance names BOTH the agent review and the cross-model second opinion, and names the Skill(code-review) refusal (dir #303)" "$OUT" "review: high, independent agent review (Skill(code-review) invocation refused this run) + in-session cross-model second opinion (self-reported — the trace can't distinguish one subagent run from two)"
 rm -f "$tf"
 
 # 50f. dir #141: Gate DENY for the combined outcome when NO trace exists at all — the same
@@ -1235,6 +1235,58 @@ gate_env "gh pr create --fill" "$d" "KEEL_IMPACT_LOG=$addon_deny_log"
 check_contains "the retired comma set still denies" "$OUT" '"permissionDecision":"deny"'
 check_contains "...and logs its OWN deny reason, not the generic depth mismatch" "$(cat "$addon_deny_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-addon-set-retired"
 check_absent "...so a log consumer can tell the stale-copy skew from a real depth mismatch" "$(cat "$addon_deny_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-depth-mismatch"
+
+# 50l-bis. dir #336: an add-on token ending in '-operator-run' or '-waived' is captured by the unlock
+# case's OWN trusted `*-operator-run)`/`*-waived)` arms — which sit ABOVE `agent:*+*)` — before it can
+# ever reach `_addon_label`'s allowlist. It still denies (outcome_level keeps the un-stripped `agent:`
+# prefix and fails the depth cross-check), but pre-fix the deny read as a generic review-depth-mismatch
+# with no hint that the real cause is the add-on token's own suffix colliding with a reserved one.
+for bad_suffix_addon in "agent:high+pair-operator-run" "agent:high+pair-waived"; do
+  d="$(mkrepo)"
+  agent_trace "$d"
+  write_full_receipt_review "$d" "$bad_suffix_addon"
+  addon_suffix_log="$SANDBOX/dir336-addon-suffix-deny.log"; rm -f "$addon_suffix_log"
+  gate_env "gh pr create --fill" "$d" "KEEL_IMPACT_LOG=$addon_suffix_log"
+  check_contains "an add-on ending in a reserved suffix ('$bad_suffix_addon') → denied" "$OUT" '"permissionDecision":"deny"'
+  check_contains "...names the real cause: the add-on suffix collision, not a fake depth mismatch" "$OUT" "add-on ending in '-operator-run' or '-waived'"
+  check_absent "...and does not present it as a genuine depth disagreement" "$OUT" "doesn't match the depth"
+  check_contains "...and logs its OWN reason, distinct from the generic depth mismatch" "$(cat "$addon_suffix_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	addon-suffix-collision"
+  check_absent "...so a log consumer can tell this apart from a real depth mismatch" "$(cat "$addon_suffix_log" 2>/dev/null)" "	receipt-deny	pre-pr-gate	review-depth-mismatch"
+done
+
+# 50l-quater. dir #366: the ONE recognized machine-readable waiver reason, `-waived:trace-broken`, and
+# its falsifier — cross-checked against the gate's own repo-keyed trace file, the exact evidence a
+# session in the dir #362 near-miss (PR #328) had within reach but looked for at the wrong path.
+
+# (i) No trace file at all → nothing to contradict the claim, so the waiver is trusted like any other.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+write_full_receipt_review "$d" "medium-waived:trace-broken" "" "" "medium"
+gate "gh pr create --fill" "$d"
+check_status "waived:trace-broken with no trace file at all → exit 0 (nothing to contradict it)" 0 "$STATUS"
+check_absent "...allowed" "$OUT" "deny"
+
+# (ii) A trace file that already holds lines → the claim is contradicted; deny, naming the file.
+d="$(mkrepo)"
+agent_trace "$d"
+write_full_receipt_review "$d" "medium-waived:trace-broken" "" "" "medium"
+gate "gh pr create --fill" "$d"
+check_contains "waived:trace-broken contradicted by an existing trace file → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "...names the file that contradicts the claim" "$OUT" "pre-pr-gate-trace-"
+check_contains "...names the reasoned claim it contradicts" "$OUT" "reasoned as 'trace-broken'"
+check_contains "...the chain stays intact (dir #376) — no need to init/recover" "$OUT" "The chain is intact"
+rm -f "$tf"
+
+# (iii) A plain '-waived', no reason stated, is untouched by this falsifier even with a trace file
+# present — the narrowness this ticket's own body insists on: only the ONE stated, checkable claim is
+# cross-checked, never a bare waiver or any other reason.
+d="$(mkrepo)"
+agent_trace "$d"
+write_full_receipt_review "$d" "medium-waived"
+gate "gh pr create --fill" "$d"
+check_status "a plain -waived (no reason) is untouched by the falsifier, even with a trace file present → exit 0" 0 "$STATUS"
+check_absent "...allowed" "$OUT" "deny"
+rm -f "$tf"
 
 # 50m. dir #183: `agent:skip+<addon>` — the ONE route by which the rewritten derivation can produce
 # `outcome_level=skip`, and therefore the only test that covers the interaction between this ticket's

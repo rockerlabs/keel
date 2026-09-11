@@ -541,7 +541,15 @@ Steps, in order:
        combined outcome exists to prevent).
      - If they explicitly waived the review instead of running it, receipt `polish.5-review <level>-waived`
        (this also clears the hand-off note) — (a)'s dialog never offers a waive option, so this only ever
-       resolves a (b) hand-off.
+       resolves a (b) hand-off. **If the reason is specifically that the trace/review mechanism itself
+       looks broken — no `Skill(...)` invocation, no SubagentStop trace, the Agent tool unreachable —
+       receipt `polish.5-review <level>-waived:trace-broken` instead of the bare `-waived` (dir #366).**
+       This is the ONE waiver reason the gate cross-checks: it reads its own repo-keyed trace file for
+       free, and if that file already holds lines, denies the waiver and names the file — the near-miss
+       this closes shipped exactly this claim while the trace held the answer the whole time (dir #362,
+       PR #328). Every OTHER waiver reason (including a true "the mechanism is broken" one where the
+       trace genuinely is empty) stays the plain, unverifiable `<level>-waived` — the gate cannot judge
+       prose, only this one checkable claim.
      - Otherwise, and **only when `level` is NOT `ultra`** (an `ultra` hand-off only ever came from (b) —
        `ultra` never reaches (a), so there is no agent review to fall back to; keep waiting on the
        operator's own decision instead), they want to proceed on an agent review, or the Agent tool is
@@ -650,12 +658,24 @@ Steps, in order:
    - `agent:medium` — the ordinary automated outcome (an independent agent review).
    - `low`/`high` — a genuine operator-typed or revisit-triggered in-session `/code-review` pass.
    - `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip` — the hand-off outcomes.
+   - `medium-waived:trace-broken` — the ONE recognized reason on a waiver, reserved for "the trace
+     mechanism itself looks broken" (dir #366). The gate cross-checks it against its own repo-keyed
+     trace file and denies if that file already holds lines — see (b)'s waiver bullet above for the
+     near-miss this exists to catch. Every other reason stays the plain, unverified `<level>-waived`.
    - `agent:<level>+<addon>` — a standing agent review PLUS exactly one add-on (dir #183). The add-ons
      are `operator-run` (the operator additionally ran `/code-review`, dir #81) and `second-opinion` (an
      in-session cross-model subagent additionally reviewed, dir #141). **One per receipt: a
      comma-joined pair denies.** When both applied, `operator-run` takes the slot — and **step 10's
      summary and the PR body must name every mechanism that reviewed this commit, not just the one in
      the receipt.**
+   - **`+<addon>` exists only on `agent:<level>` (dir #303).** A bare `<level>` in-session review can
+     just as easily get an operator-run `/code-review` layered on top of it afterward — the same event
+     dir #81 built `+operator-run` for — but the gate's unlock case has no `<level>+<addon>` arm, only
+     `agent:<level>+<addon>`. Do not guess `high+operator-run`: it matches no arm, falls through to the
+     unlock case's default, and denies on a depth mismatch that has nothing to do with depth. **Keep the
+     receipt the bare `<level>`** and name the operator-run pass in step 10's summary and the PR body
+     instead — the same prose-only disclosure the combined `agent:<level>+<addon>` shapes already do for
+     a second mechanism the receipt has no slot for.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (and tests weren't
    `--no-test`-skipped), re-run the test command a single time — review fixes can break something. **Files
