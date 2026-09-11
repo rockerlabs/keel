@@ -7,8 +7,9 @@ for mode A (a no-tools reader working from pasted/uploaded text), instantiating 
 `<repo-name>`, `<chunk-id>` — it does not strip the MODE B paragraph below, so the body itself tells the
 reader which paragraph is theirs. For a mode-B brief (a tooled reader with repo access, e.g. cloned at
 a pinned SHA), hand-assemble it from this same file instead: keep the MODE B paragraph, drop the MODE A
-paragraph, and drop the `CHUNK-END` line from the Rails section below (nothing was chunked, so nothing
-can be truncated). Full procedure: [`docs/drydock.md`](../drydock.md), "The external leg."*
+paragraph, and drop the Rails section's mode-A `CHUNK-END` bullet below (nothing was chunked, so
+nothing can be truncated) — keep its mode-B `BASELINE` bullet. Full procedure:
+[`docs/drydock.md`](../drydock.md), "The external leg."*
 
 ---
 
@@ -29,9 +30,7 @@ copy if you want — to verify every number, count, path, or cross-reference the
 measuring it against the tree, never by re-reading the sentence.
 
 **Only one of the two paragraphs above describes your actual situation — follow that one and ignore
-the other entirely.** If you were given text to read with no way to browse or run anything, you are in
-MODE A; if you have tools and access to this repository, you are in MODE B. Both paragraphs may appear
-together in what you were handed — that alone does not mean both apply.
+the other entirely, even if both appear together in what you were handed.**
 
 ## Scope
 
@@ -63,10 +62,12 @@ No style, size, or TODO findings.
 - **Cap: at most 25 findings, ranked by severity (most severe first).** Each finding carries
   `confidence: high | medium | low`. Fewer strong findings beat many weak ones — every finding you
   report costs a human-plus-model verification on the other end. Zero findings is a valid result.
-- **First-line self-check, so a bad reply is caught rather than silently trusted:** mode A quotes the
-  chunk's own closing `CHUNK-END <id>` line as your reply's first line (proves you reached the end,
-  not a truncated read); mode B states `BASELINE <sha>` instead (proves which commit you actually
-  read). A reply missing its mode's line is refused as a failed round, not imported.
+- **First-line self-check, so a bad reply is caught rather than silently trusted, mode-dependent:**
+  - Mode A: quote the chunk's own closing `CHUNK-END <id>` line as your reply's first line — proves
+    you reached the end, not a truncated read.
+  - Mode B: state `BASELINE <sha>` as your reply's first line instead — proves which commit you
+    actually read.
+  - A reply missing its mode's line is refused as a failed round, not imported.
 - Report mechanism, not opinion: "X says N, the tree has M" — with the command or the sibling line
   that proves it.
 
