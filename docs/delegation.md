@@ -64,8 +64,10 @@ fragment. The worker, correctly treating an unverifiable identity as a stop cond
 over audit data, held until the operator vouched by hand. Three rules follow, and they bind ANY
 session that launches a real worker, not only a release manager: (a) the launcher's first message to
 each worker carries **every address the harness gives it, each copied verbatim from the tool's own
-live output, never retyped**; (b) where the namespaces cannot cross-resolve, the identity confirmation
-is a **named operator touchpoint** — one paste into the worker's session — budgeted like any other,
+live output, never retyped** — and leads with the session id, the only one of them that is stable: a
+title can change between two of the launcher's own reads, and a listing tool's display name is a
+different namespace that the messaging tool does not accept as a key; (b) where the namespaces
+cannot cross-resolve, the identity confirmation is a **named operator touchpoint** — one paste into the worker's session — budgeted like any other,
 not a surprise; (c) a worker's refusal to proceed on an unverifiable identity is **correct behaviour,
 not friction** — a brief that punishes it trains workers to trust whoever speaks first. A shared
 secret carried in the launch brief is an optional, cheap mechanization: the brief is launcher-authored,
@@ -101,8 +103,11 @@ how mechanical the surrounding work looks:
 - the operator's own review and merge bandwidth — the true bottleneck, and the one thing no number of
   parallel workers can widen
 
-These exist specifically to **not** be automated away. Delegation applies only to the read-only analysis
-that sits in front of them. If you find yourself routing any item on this list through a subagent
+These exist specifically to **not** be automated away, whichever delegation pattern is doing the work —
+a stateless subagent or a managed release's real, gated worker alike (a release worker once wrote two
+memory entries itself; the entries were good, and the rule was unqualified all along —
+[`docs/release-management.md`](release-management.md) R8 says how a worker's finding reaches memory
+instead). Delegation applies only to the read-only analysis that sits in front of them. If you find yourself routing any item on this list through a subagent
 because "it's just this once" or "the finding is obviously right," that's the pattern eroding — not a
 shortcut.
 

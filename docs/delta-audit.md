@@ -208,6 +208,17 @@ Two reasons, and the second is the one worth restating because it isn't obvious:
 rule adds is that the ordering belongs in the script, not left to each session prompt's author to
 remember.
 
+**The report path in every leg prompt is ABSOLUTE, and the leg's final message carries an `ls -la`
+of it.** Reason 2 above has a second half, felt live: a whole-read leg finished — hundreds of
+thousands of tokens, zero findings, "written to `reports/S2.md`" in its last line — and the file did
+not exist anywhere the run reads; the relative path had resolved against some other cwd, or the write
+was refused unnoticed. The verifier launched against a confidently-unsupported claim, and the report
+was recovered only because the leg's context was still alive to be resumed. A relative path in a
+subagent's final line is not evidence the file exists where the run reads it; the listing is. All
+four §9 prompts carry both. This is a permanent limit, not a gap a ticket closes: the run cannot
+assert a subagent's write from outside the subagent, so the listing in the leg's own final message
+is the check.
+
 ## 7. Sizing — a range, not a target
 
 *Re-derive every figure below from your own project's cross-run record (keel's own is
@@ -247,6 +258,13 @@ A release is tag-ready only when:
   Alpine/BusyBox leg found real defects a GNU-only pass missed, in this project's own history).
 - **Suite evidence comes from a clean worktree or CI, never the operator's own main checkout** — a
   real run's own main checkout produced a false FAIL once, costing a diagnosis round mid-run.
+- **A green CI leg cannot REFUTE an environment-sensitive claim** — a pristine runner with a fresh
+  home, no sibling worktrees and no concurrent sessions is the one place an environment leak cannot
+  manifest, so green there is what the leak hypothesis predicts, not evidence against it. A worker
+  retracted an isolation-leak observation on that ground in one run and the manager declined the
+  retraction; an earlier ticket's "investigated, not reproduced" record was created by the same move.
+  Close such a claim by varying the environment it names, or record it as unresolved — never on a
+  green run in the environment where it cannot appear.
 
 **This bar is coverage, not stopping.** It answers "is the run's bookkeeping complete" — every row
 verdicted, on a re-resolved SHA, with CI green on clean evidence — not "was this run allowed to stop
@@ -349,8 +367,8 @@ Rails:
   overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 
-Write your output to <path to this run's S1 report>, following the report contract in Protocol rule
-6.
+Write your output to <ABSOLUTE path to this run's S1 report>, following the report contract in
+Protocol rule 6. End your final message with the output of `ls -la <that path>` (§6).
 ```
 
 **S2…Sn — whole-read + seam auditor:**
@@ -382,8 +400,8 @@ Rails:
   overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 
-Write your output to <path to this session's report>, following the report contract in Protocol
-rule 6.
+Write your output to <ABSOLUTE path to this session's report>, following the report contract in
+Protocol rule 6. End your final message with the output of `ls -la <that path>` (§6).
 ```
 
 **The diversity leg (vendor OR method):**
@@ -417,8 +435,9 @@ Rails:
   overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 
-Write your output to <path to this session's report>, following the report contract in Protocol
-rule 6, plus your reconciliation section if applicable.
+Write your output to <ABSOLUTE path to this session's report>, following the report contract in
+Protocol rule 6, plus your reconciliation section if applicable. End your final message with the
+output of `ls -la <that path>` (§6).
 ```
 
 **S-final — verifier, GO/NO-GO:**
@@ -454,7 +473,8 @@ Rails:
   overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 
-Issue GO or NO-GO, naming the exact verified SHA, in <path to this run's verdict record>. The
+Issue GO or NO-GO, naming the exact verified SHA, in <ABSOLUTE path to this run's verdict record>
+(end your final message with the output of `ls -la <that path>`, §6). The
 operator tags; you do not run `git tag`.
 ```
 
@@ -493,10 +513,10 @@ tree-wide" when tree-wide was nine. **Neither was a claim under correction; both
 disclosure-only round's blast radius is the sentence, not the clause — so the re-derivation duty has to
 cover the sentence too, or the round trades one wrong claim for two.
 
-## 11. The cross-vendor leg — two harness lessons, as classes
+## 11. The cross-vendor leg — three harness lessons, as classes
 
 If your diversity leg uses a different model vendor via a raw API rather than an in-session subagent,
-two transferable lessons from real runs, stated as classes rather than naming any private harness
+three transferable lessons from real runs, stated as classes rather than naming any private harness
 path:
 
 1. **A reasoner's reply may embed its JSON object mid-prose.** Extract it with a balanced-brace scan
@@ -515,6 +535,17 @@ path:
    lesson:** capture the raw reply, `reasoning_content` included — one round's reasoning carried the
    correct analysis of a finding its own answer then stated backwards, and it was recoverable only
    because a raw-capture option happened to have shipped days earlier.
+
+3. **Bundle a diff by COUPLING, or tell each reader what the sibling bundle holds.** A vendor's
+   input cap forces a large diff into several bundles, and splitting it by file manufactures
+   findings: one run's second bundle held a changelog, a command doc and tests that described code
+   sitting in the first bundle, and the reader — following the prose-vs-code rule its own prompt
+   gave it — flagged three `high` mismatches against code it could not see. Three false positives in
+   one leg, discarded on that ground and not on merit. Keep a file with the prose and tests that
+   describe it; where the cap makes that impossible, prefix each bundle with a manifest of what the
+   sibling bundles contain, so an absence reads as "elsewhere," not "missing." Keel's own harness owns
+   the mechanized form of this rule under `dir #489` (phase 1's bundling rule for its second auditor);
+   until it ships, the orchestrator applies it by hand when splitting a bundle.
 
 A delta bundle being a **diff**, not the whole file, is what makes this leg affordable to run at all
 against a payload-limited or per-token-billed vendor.
