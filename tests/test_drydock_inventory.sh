@@ -396,6 +396,35 @@ run_in "$r" "$TOOL" --help
 check_status "--help -> exit 0" 0 "$STATUS"
 check_contains "--help prints usage" "$OUT" "usage"
 
+# --- --paths (dir #495): a bare file list for a caller, not the report --------------------------
+run_in "$r" "$TOOL" --paths
+check_status "--paths -> exit 0" 0 "$STATUS"
+check_contains "--paths lists a scope-A file" "$OUT" "README.md"
+check_contains "--paths lists a nested scope-A file" "$OUT" "docs/guide.md"
+check_contains "--paths lists the historical file too (no exclusion in --paths mode)" "$OUT" "CHANGELOG.md"
+check_contains "--paths lists a scope-B/C shell file" "$OUT" "scripts/thing.sh"
+check_contains "--paths lists a shebang-only (no .sh) shell file" "$OUT" "bin/cli"
+check_absent "--paths skips the report entirely — no scope-A heading" "$OUT" "## scope A"
+check_absent "--paths skips the report entirely — no derived-batches heading" "$OUT" "derived batches"
+n_paths="$(printf '%s\n' "$OUT" | grep -c .)"
+check_status "--paths dedupes: scope B and C's default-identical file set counts each path once" \
+  "$n_paths" "$(printf '%s\n' "$OUT" | LC_ALL=C sort -u | grep -c .)"
+
+# --prev applies the same CHANGED filter --paths mode reports use — only the delta shows up. A
+# fresh fixture, not $r: by this point in the file $r's HEAD has already moved past $base for the
+# earlier incremental-run tests above, so a diff from $base here would pick up THEIR changes too,
+# not just this test's own (caught live: "docs/guide.md" leaked in from an earlier section's own
+# --prev fixture commit).
+r7="$(mk_repo)"
+base7="$(git -C "$r7" rev-parse HEAD)"
+echo more >> "$r7/README.md"
+git -C "$r7" add -A
+git -C "$r7" commit -qm "touch README only"
+run_in "$r7" "$TOOL" --baseline HEAD --prev "$base7" --paths
+check_status "--paths --prev -> exit 0" 0 "$STATUS"
+check_contains "--paths --prev lists the one changed file" "$OUT" "README.md"
+check_absent "--paths --prev omits an unchanged file" "$OUT" "docs/guide.md"
+
 # --- outside a repository --------------------------------------------------------------------------
 notrepo="$(mktemp -d "$SANDBOX/notrepo.XXXXXX")"
 run_in "$notrepo" "$TOOL"
