@@ -217,4 +217,23 @@ check_contains "export: names it as the disclosure-ack text, not a raw scratch p
 check_absent "export: never repeats the leaked secret itself" "$OUT" "$fake_secret"
 check_nodir "export: nothing written when --disclosure-ack leaks" "$r9/out"
 
+# --- CHUNK-MANIFEST: every chunk opens by naming its SIBLINGS' files, never its own -----------------
+# manager amendment W2-A4 (docs/delta-audit.md §11 class 3's same split-bundle trap, one level up).
+# Reuses the basic fixture from the top of this file ($r, $pkt): chunk 01 = PRINCIPLES.md + docs/sub.md,
+# chunk 02 = tool.sh, chunk 03 = CHANGELOG.md.
+chunk1="$(cat "$pkt/chunks/01.txt" 2>/dev/null)"
+check_contains "export: chunk01's CHUNK-MANIFEST header names the chunk count" "$chunk1" "CHUNK-MANIFEST 01 of 03"
+check_contains "export: chunk01's manifest names sibling chunk02's file" "$chunk1" "chunk 02: tool.sh"
+check_contains "export: chunk01's manifest names sibling chunk03's file" "$chunk1" "chunk 03: CHANGELOG.md"
+# MUTATION-PROOF: the manifest block must never list chunk01's OWN files — assert their absence from
+# the manifest lines specifically (lines before the first "===== FILE:"), not from the whole chunk
+# (which legitimately contains "PRINCIPLES.md" in its own FILE: header further down).
+chunk1_manifest_only="$(sed -n '1,/^===== FILE:/p' "$pkt/chunks/01.txt" 2>/dev/null | sed '$d')"
+check_absent "export: chunk01's manifest never names its OWN file (PRINCIPLES.md)" "$chunk1_manifest_only" "PRINCIPLES.md"
+check_absent "export: chunk01's manifest never names its OWN file (docs/sub.md)" "$chunk1_manifest_only" "docs/sub.md"
+check_contains "export: CHUNK-END is still the last line after the manifest addition" \
+  "$(tail -1 "$pkt/chunks/01.txt" 2>/dev/null)" "CHUNK-END 01"
+check_contains "export: PROMPT.md carries the CHUNK-MANIFEST sentence" \
+  "$(cat "$pkt/PROMPT.md" 2>/dev/null)" "sibling chunk"
+
 summary

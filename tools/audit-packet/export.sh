@@ -398,6 +398,24 @@ for i in $(seq 0 $((total_chunks - 1))); do
   chunk_num=$((i + 1))
   chunk_file="$packet_dir/chunks/$(printf '%02d' "$chunk_num").txt"
   : > "$chunk_file"
+  # CHUNK-MANIFEST — dir #495 manager amendment W2-A4: lists every SIBLING chunk's files (never this
+  # chunk's own — that's what the FILE: headers below are for), so a no-tool external reader
+  # recognizes "a file this chunk's prose refers to but does not contain is in a sibling chunk" and
+  # never manufactures a false prose-vs-code mismatch against content it was never shown — the same
+  # split-bundle trap docs/delta-audit.md §11 class 3 already names, one level up (chunking, not
+  # bundling). Paths only, comma-joined, no sizes (PROMPT.md's own point at CHUNK-MANIFEST is enough
+  # context; sizes would just be noise for a reader that has no tool to act on them anyway).
+  printf 'CHUNK-MANIFEST %02d of %02d\n' "$chunk_num" "$total_chunks" >> "$chunk_file"
+  for j in $(seq 0 $((total_chunks - 1))); do
+    [ "$j" = "$i" ] && continue
+    sib_list=""
+    while IFS= read -r sp; do
+      [ -n "$sp" ] || continue
+      sib_list="${sib_list:+$sib_list, }$sp"
+    done <<< "${CHUNK_PATHS[j]}"
+    printf 'chunk %02d: %s\n' "$((j + 1))" "$sib_list" >> "$chunk_file"
+  done
+  printf '\n' >> "$chunk_file"
   n_files=0
   while IFS= read -r path; do
     [ -n "$path" ] || continue
@@ -473,6 +491,9 @@ findings, listed so you don't have to re-report closed ground."
   printf 'repo: %s\n' "${remote_url:-$repo_root}"
   printf 'vendor: %s\n' "$vendor"
   printf 'chunk: <fill in the chunk number you are pasting this alongside, e.g. 01>\n'
+  printf 'A file this chunk'"'"'s text refers to but does not contain is in a sibling chunk (see the\n'
+  printf 'CHUNK-MANIFEST at the top of this chunk'"'"'s own text) — do not report its absence or a\n'
+  printf 'prose-vs-code mismatch against it.\n'
   printf '%s\n\n---\n\n' "$known_note"
   sed -e "s#<baseline-sha>#$baseline#g" -e "s#<repo-name>#${remote_url:-$repo_root}#g" \
       -e "s#<chunk-id>#<the chunk number you are pasting this alongside>#g" \

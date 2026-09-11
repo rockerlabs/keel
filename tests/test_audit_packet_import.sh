@@ -191,7 +191,7 @@ check_contains "import: fenced finding lands in the audit file" \
 
 # --- argument / refusal edges --------------------------------------------------------------------
 run "$TOOL" "$SANDBOX/does-not-exist" "$out1"
-check_status "import: refuses a reply-dir with no MANIFEST.txt" 3 "$STATUS"
+check_status "import: refuses a reply-dir that does not exist at all" 3 "$STATUS"
 
 run "$TOOL" "$d1"
 check_status "import: refuses with only one positional argument" 2 "$STATUS"
@@ -239,5 +239,138 @@ check_contains "import: docs_sub.md's own finding is present too" \
   "$(cat "$out5/docs_sub.md-audit.md" 2>/dev/null)" "second path finding"
 check_absent "import: the two findings are not merged into one file" \
   "$(cat "$out5/docs-sub.md-audit.md" 2>/dev/null)" "second path finding"
+
+# ==================================================================================================
+# UNCHUNKED mode (mode B, manager amendments W2-A2/A3): a bare directory of reply*.md files, no
+# MANIFEST.txt — a reader who cloned the whole repo directly, with tools, no chunks, no probe.
+# ==================================================================================================
+
+# --- --vendor is required (no MANIFEST.txt to read one from) -------------------------------------
+d6="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d6/reply.md" <<'EOF'
+BASELINE deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+
+## a.md
+
+### F1 — stale-claim — "x"
+claim: x
+evidence: y
+EOF
+out6="$SANDBOX/audit6"
+mkdir -p "$out6"
+run "$TOOL" "$d6" "$out6"
+check_status "unchunked: refuses with no --vendor" 2 "$STATUS"
+check_contains "unchunked: names --vendor as the fix" "$OUT" "--vendor"
+
+# --- basic round-trip: BASELINE line captured, summary routed away, numbers preserved verbatim ---
+# (NOT sequential from 1 — F1/F2 in the first file, then F7 in the second — proving genuine
+# preservation rather than a renumber that happens to start at 1 by coincidence.)
+d7="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d7/reply-01.md" <<'EOF'
+BASELINE cafebabecafebabecafebabecafebabecafebabe
+
+## a/b.md
+
+### F1 — stale-claim — "first finding"
+claim: x1
+evidence: y1
+confidence: high
+verdict: accepted
+
+### F2 — overclaim — "second finding"
+claim: x2
+evidence: y2
+
+## c.sh
+
+### F7 — optimization — "seventh finding, preserved as-is"
+claim: x7
+evidence: y7
+
+## Summary
+
+This project does X. Strongest idea: Y.
+Weakest idea: Z.
+EOF
+out7="$SANDBOX/audit7"
+mkdir -p "$out7"
+run "$TOOL" --vendor codex "$d7" "$out7"
+check_status "unchunked: basic round-trip exits 0" 0 "$STATUS"
+
+ab_audit="$(cat "$out7/a-b.md-audit.md" 2>/dev/null)"
+check_contains "unchunked: BASELINE line becomes the audit header's baseline" "$ab_audit" \
+  "@ cafebabecafebabecafebabecafebabecafebabe"
+check_contains "unchunked: auditor line names external/<vendor>, identical shape to chunked mode" \
+  "$ab_audit" "auditor: external/codex"
+check_contains "unchunked: F1 preserved exactly (not renumbered)" "$ab_audit" '### F1 — stale-claim — "first finding"'
+check_contains "unchunked: F2 preserved exactly" "$ab_audit" '### F2 — overclaim — "second finding"'
+check_contains "unchunked: verdict forced empty even though the model wrote 'accepted'" "$ab_audit" $'verdict:\n'
+check_absent "unchunked: the model's own 'verdict: accepted' does not survive" "$ab_audit" "verdict: accepted"
+check_contains "unchunked: ## claims marker present (drydock's completeness marker)" "$ab_audit" "## claims"
+
+c_audit="$(cat "$out7/c.sh-audit.md" 2>/dev/null)"
+check_contains "unchunked: F7 in the SECOND file preserved verbatim, not reset to F1" "$c_audit" \
+  '### F7 — optimization — "seventh finding, preserved as-is"'
+check_absent "unchunked: the second file does NOT get a renumbered F1" "$c_audit" '### F1'
+
+check_file "unchunked: ## Summary routed to SUMMARY.md" "$out7/SUMMARY.md"
+check_contains "unchunked: SUMMARY.md carries the summary's own prose" \
+  "$(cat "$out7/SUMMARY.md" 2>/dev/null)" "Strongest idea: Y"
+check_nofile "unchunked: 'summary' never becomes a fabricated audit file" "$out7/Summary-audit.md"
+check_nofile "unchunked: 'summary' never lands in EXTERNAL-UNMAPPED.md-shaped output" "$out7/summary-audit.md"
+
+# --- no CHUNK-END check applies in unchunked mode: content that would FAIL chunked mode's own
+# truncation detector imports fine here (nothing was chunked, so nothing can be truncated) --------
+d8="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d8/reply.md" <<'EOF'
+BASELINE 1111111111111111111111111111111111111111
+
+## z.md
+
+### F1 — stale-claim — "no CHUNK-END anywhere in this reply"
+claim: x
+evidence: y
+EOF
+out8="$SANDBOX/audit8"
+mkdir -p "$out8"
+run "$TOOL" --vendor codex "$d8" "$out8"
+check_status "unchunked: no CHUNK-END needed, still exits 0" 0 "$STATUS"
+check_file "unchunked: the finding still imports" "$out8/z.md-audit.md"
+
+# --- a missing BASELINE line warns, falls back to 'unknown', never crashes -------------------------
+d9="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d9/reply.md" <<'EOF'
+## y.md
+
+### F1 — stale-claim — "no baseline line at all"
+claim: x
+evidence: y
+EOF
+out9="$SANDBOX/audit9"
+mkdir -p "$out9"
+run "$TOOL" --vendor codex "$d9" "$out9"
+check_status "unchunked: a missing BASELINE line warns, does not refuse" 0 "$STATUS"
+check_contains "unchunked: '@ unknown' when BASELINE is missing, not an empty/broken header" \
+  "$(cat "$out9/y.md-audit.md" 2>/dev/null)" "@ unknown"
+
+# --- reply-value.md is still ignored in unchunked mode too -----------------------------------------
+d10="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d10/reply.md" <<'EOF'
+BASELINE 2222222222222222222222222222222222222222
+
+## w.md
+
+### F1 — stale-claim — "real finding"
+claim: x
+evidence: y
+EOF
+cat > "$d10/reply-value.md" <<'EOF'
+Opinion text, not a finding.
+EOF
+out10="$SANDBOX/audit10"
+mkdir -p "$out10"
+run "$TOOL" --vendor codex "$d10" "$out10"
+check_status "unchunked: reply-value.md alongside a real reply still exits 0" 0 "$STATUS"
+check_nofile "unchunked: reply-value.md never becomes an audit file here either" "$out10/reply-value.md-audit.md"
 
 summary
