@@ -210,17 +210,16 @@ cover. (a) A partial ticket routinely cites the closure marker of its own shippe
 ("🟡 Seed ✅ #44 — full UX awaits B.56"), so an anywhere-in-the-cell match reports it closed; five rows
 flipped state between an anywhere-match and a position-anchored match on this project. (b) The same
 marker can carry two meanings in one column — one glyph meant "Fixed" on six rows and "Low priority"
-on another. Match the closure marker at a fixed position (the status cell's leading token), and before
-trusting any census, check whether the project's status vocabulary is overloaded — the same glyph
-meaning both a state and a priority is common in hand-maintained tables and is invisible from the count
-alone.
+on another — the same glyph meaning both a state and a priority is common in hand-maintained tables and
+is invisible from the count alone.
 
 **All four extraction rules are compensations for one missing mechanism, and they name it.** Nothing
 shipped reports the slate lanes (the pool report counts the pool only), so every groom re-derives its
-census by hand — which is exactly where the phantom-release, closure-note-arrow and loose-predicate
-defects above were minted. `dir #496` owns the shipped census (open tickets by
-last-arrow tag, closure by the project's marker via the shared scanner, counted once before and once
-after the sweep); when it lands, the three rules become that tool's own header, and this section
+census by hand — which is exactly where the phantom-release, closure-note-arrow, loose-predicate and
+mid-cell-marker/overloaded-glyph defects above were minted. `dir #496` owns the shipped census (open
+tickets by last-arrow tag, closure by the project's marker at a fixed position via the shared scanner,
+counted once before and once after the sweep); when it lands, the four rules become that tool's own
+header, and this section
 points at the tool. Until then they are guidance to follow by hand, not a permanent limit.
 
 ## G4 — the hygiene sweep

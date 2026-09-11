@@ -77,8 +77,8 @@ sections real content going forward — see that page for exactly when each one 
   under the doc's own self-revision clause). G3: match the closure marker at a fixed position, not
   anywhere in the cell, and check whether the project's status vocabulary overloads one glyph with two
   meanings. G0: when the previous cycle produced no release and no records, the dormancy itself is the
-  retro's subject, and the backlog's stated urgency must be reconciled against the calendar before
-  anything else. G1: where the operator's only stated pain is about the plan's own legibility, the
+  retro's subject, and the first hygiene pass is to reconcile the backlog's stated urgency against
+  the calendar. G1: where the operator's only stated pain is about the plan's own legibility, the
   plan must name an explicit ordering principle from the project's own doctrine rather than dressing up
   the groom's own taste as pain-driven.
 - `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
