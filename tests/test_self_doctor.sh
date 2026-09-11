@@ -1700,8 +1700,9 @@ check_absent "a TAB-separated ref marker still strips on this platform's sed" "$
 # `_strip_ref_citations` to match in the first place, so the marker silently does nothing for that
 # ticket, AND every ticket after it in the same run is lost too (the inserted `(ref)` text breaks the
 # list-continuation grammar the same way any other unrelated prose already does, pre-existing
-# behavior). Pinned so a future reader hits this comment, not a rediscovery: #960 stays UNMARKED
-# (the "(ref)" attached to it never took effect) and #961 vanishes entirely — the correct fix is
+# behavior). Pinned so a future reader hits this comment, not a rediscovery: #960 is flagged as
+# usual, #961 is ALSO flagged (the "(ref)" attached to it never took effect), and #962 — the ticket
+# AFTER the misuse — vanishes entirely; the correct fix is
 # citing each reference-only ticket as its own standalone `dir #N (ref)`, per the header comment.
 d="$(mk_clean_repo)"
 printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"

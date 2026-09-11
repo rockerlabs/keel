@@ -28,6 +28,72 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.10.0 — 2026-09-11
+
+The "cost proportional to the task" release, run against two operator-named pains: a `/polish` gate
+that ate review rounds, and shipped checks that were green in the presence of the exact defect they
+named. On the first: the pre-PR gate's thirteen-hit "concurrent-session sentinel race" (dir #376)
+turned out, under its design pass, never to have been a race at all — every deny path called
+`retire_sentinel` *before* printing, so a single session's own deny destroyed its own receipt chain and
+the message never said so; dir #80 had fixed the keying half while the cost sat in the lifecycle half.
+Seven of fifteen retirement sites were removed, the change touching only destruction and never
+acceptance, and all thirteen deny messages now say which of two states they report (dir #260, #346
+remedies, #303, #336, #366) — with `agent:*+*` moved to the front of the unlock `case` so an add-on
+token can never be captured by a trusted-suffix arm first. The review-trace ratchet dir #346 named was
+measured six times inside its own release — every gate denial was the price of a review finding, and
+the one worker whose review found nothing took none — and its design pass put a three-way fork to the
+operator; C shipped as two free ordering rules in `commands/polish.md`, B-narrow is dir #488. On the
+second pain: `doctor.sh`'s citation check now discriminates citation from credit via an author-supplied
+`dir #N (ref)` marker applied symmetrically to both sides of its comparison, closing the false-positive
+direction (dir #364) and the false-GREEN direction (dir #273) together, with the false GREEN
+reproduced against real history first; its two single-definition drift checks no longer fail open on
+brace placement (dir #380), and the fix's own review caught a silent false-OK it had just introduced;
+`tests/test_install.sh`'s T21 now drives a real `install.sh` crash to a test-only checkpoint instead of
+asserting about a fixture it built itself (dir #381); and `file:line` citations in comments are now
+forbidden by a ratchet (`tools/self/line-citations.sh`, dir #382), the fork decided on a measurement —
+16 of 32 in-tree citations were already wrong and zero of them were catchable by any plausibility
+check. Two design passes declined to build: dir #344's twin-class sweep was measured against a real
+release range before writing (7 fires, 0 true) and the class was found to be already mechanized three
+times over by the one property that works; dir #479 was declined the same way. This release also
+produced the project's first measured design-session cost lines.
+
+**Verification.** **Scope:** 31 files across 12 merged PRs (#381, #384–#394), range v0.9.1 to the
+cut. **Method:** 5 legs — S1 mechanical baseline; S2 whole-file-read + all 12 seams, run blind; S3
+cross-vendor in two rounds on two ≤185 KB diff bundles, **with two vendors for the first time**
+(DeepSeek reasoner, and Gemini via the Antigravity CLI); S-final verifier at the highest effort tier.
+Leg count fixed at plan time. **Coverage:** 31 ledger rows, every row exactly one verdict — 26 `clean`,
+5 carrying a finding, 0 `mechanical-only`, 0 waived. CI green on the RC SHA `81eb344` across all six
+legs (shellcheck, self-check, secret-scan, ubuntu, macOS, alpine-busybox); suite evidence from scratch
+clones only. Clause A satisfied: the whole-read and the two-vendor legs ran in parallel on the anchor
+and jointly found no behavioural defect and no new class. **Findings:** the two vendors between them
+raised 14 claims; the verifier accepted 8 (DS1-CV-3/4/5, DS2-CV-3/4, AG1-CV-1, AG2-CV-4/5) and rejected
+6 with evidence. Of the 8: 1 fix-before-tag (a test comment with its ticket numbers swapped, folded
+into this cut); 5 ticket-next, filed as four backlog tickets (the two grooming-doc invariant violations
+as one); 2 no-action naming real defects, moved to the standing list together with one pre-existing
+out-of-range item the mechanical leg surfaced. Three "one of them is wrong" disputes were settled by
+execution rather than reading: the implementing worker was right and DeepSeek wrong on a bash-3.2
+completion-marker (live-tested both ways); neither was wrong on a `${7-…}` contract; Gemini was right
+about the test comment. **Behavioural defects:** none in shipped code. The one lead that outranked
+everything — a worker's report of `gh pr create` succeeding right after `no active receipt` — was
+live-reproduced benign in a scratch clone: the second create after a consumed sentinel is denied, and
+the gate's accept path reads only the live sentinel, never its backup. **Which layer found what:** the
+same-family whole-read leg reported zero findings across all 31 files; every accepted finding came
+from the two cross-vendor diff readers, and the verifier's own adversarial sample of the whole-read
+leg's `clean` rows found four low-severity misses among them — the tenth consecutive run in which the
+diversity leg found what the same-family leg did not. The two vendors were themselves decorrelated:
+DeepSeek dug into the new citation ratchet (five claims, two accepted); Gemini never touched it but
+caught the two grooming-doc invariant violations DeepSeek missed. **What was NOT checked:** the
+procedure this run itself executes had no independent leg, by design, same as the prior run; the
+whole-read leg marked the release's most-rewritten file "read whole: yes, seam-focused" — a hedge the
+verifier's sample, not an unqualified whole read, is what covers; and the cross-vendor readers saw a
+diff, so the eight unchanged sentinel-retirement sites were visible only to the whole-read leg and the
+verifier. Two procedure incidents inside the audit are recorded in its run directory rather than
+smoothed: the whole-read leg's report never reached disk until the leg was resumed (a relative path in
+its final line), and splitting the diff by file across the two bundles manufactured three cross-bundle
+false positives in one vendor leg, discarded on that ground. **Induced-defect rate:** 0 of 8 accepted
+findings — a first-wave figure, every finding `original` by construction; the one fix this run made
+(a comment) is in this cut and had its neighbouring claims re-derived rather than paraphrased.
+
 ## v0.9.1 — 2026-09-08
 
 The retro-and-audit-tail release: the v0.9.0 groom's five accepted retro proposals landed as
