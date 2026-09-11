@@ -295,10 +295,11 @@ for reply in "$reply_dir"/reply-*.md; do
     [ -n "$cur_file" ] && printf '%s\n' "$line" >> "$cur_file"
   done < "$body"
 
-  while IFS= read -r rec; do
-    [ -n "$rec" ] || continue
-    idx="${rec%%"$TAB"*}"
-    path="${rec#*"$TAB"}"
+  # IFS="$TAB" read -r idx path — this codebase's own established TAB-record convention
+  # (tools/drydock/inventory.sh, tools/delta-audit/derive.sh both already read TAB-delimited
+  # records this way), reused here instead of hand-rolling the split via parameter expansion.
+  while IFS="$TAB" read -r idx path; do
+    [ -n "$idx" ] || continue
     secfile="$(secfile_for "$padded" "$idx")"
     [ -r "$secfile" ] || continue
     case "$known_paths" in

@@ -374,6 +374,17 @@ selftest() {
   return $rc
 }
 
+# scan_file_args FILE... — FILE mode's own body, shared by the `--` and bare-FILE... dispatch arms
+# below (one definition, dir #495 code review's own reuse finding on the first cut, which typed this
+# loop out twice).
+scan_file_args() {
+  local f
+  for f in "$@"; do
+    [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
+    emit_stream "$f" < "$f"
+  done
+}
+
 mode="${1:-staged}"
 case "$mode" in
   --)
@@ -386,10 +397,7 @@ case "$mode" in
     # named `staged`, dir #495 code review, Angle C. `--` shifts once and takes every remaining
     # argument as a literal filename, the same convention `--` carries in virtually every other CLI.
     shift
-    for f in "$@"; do
-      [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-      emit_stream "$f" < "$f"
-    done
+    scan_file_args "$@"
     ;;
   --range)
     shift
@@ -543,10 +551,7 @@ case "$mode" in
     echo "secret-scan: unknown option '$mode'" >&2; exit 2
     ;;
   *)
-    for f in "$@"; do
-      [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-      emit_stream "$f" < "$f"
-    done
+    scan_file_args "$@"
     ;;
 esac
 
