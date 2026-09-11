@@ -353,8 +353,11 @@ pin "drydock.md has the external leg section" "$doc" \
 pin "the external leg section states both modes as one contract" "$doc" 'Two modes, one contract.' \
   "mode A (no tools, chunked) and mode B (tooled, repo access) must read as one prompt, not two docs"
 pin "the external leg section states the leak gate has no bypass" "$doc" \
-  'The leak gate always runs, has no bypass' \
+  "before a single byte is written — no bypass," \
   "the safety rail of the whole ticket must be stated in the doc, not just in export.sh's own header"
+pin "the external leg section is honest that mode B's scan is manual, not export.sh's automatic gate" \
+  "$doc" "this scan is not automatic there" \
+  "altitude review: export.sh has no mode-B code path at all, so claiming the gate 'runs' there overclaimed a mechanized rail that doesn't exist"
 pin "the external leg section states --value-prompt's reply is never imported" "$doc" \
   'opinion, not a finding, and drydock has no `verdict:` to issue' \
   "phase 2 must not be implied to rule on the value assessment — import.sh deliberately never touches it"
@@ -362,7 +365,6 @@ pin "the external leg section defers periodicity to the first run's RUNS.md entr
   "decided by the first run's" \
   "the ticket's own decision: periodicity is not decided here and must not be built in"
 
-check_file "docs/drydock/external-auditor.md exists (role prompt body)" "$external_auditor"
 pin "external-auditor.md states the mode-A/mode-B difference once, in one file" "$external_auditor" \
   'MODE A (no tools — a chunked upload)' \
   "one prompt for both modes, per PR2's brief — not two separate templates"

@@ -1,14 +1,14 @@
 # Drydock external-auditor prompt — the leg you cannot script
 
 *Handed to a THIRD-PARTY vendor session, not a Claude subagent — the recipient shares no context with
-this project's authors and gets no drydock rails beyond what this file states. Two modes, one prompt:
-the MODE A paragraph below is for a no-tools reader working from pasted/uploaded text
-(`tools/audit-packet/export.sh` drops this file's body in verbatim as `PROMPT.md`, instantiating
-`<baseline-sha>`, `<repo-name>`, `<chunk-id>`); the MODE B paragraph is for a tooled reader with repo
-access (e.g. cloned at a pinned SHA) — swap in that paragraph in place of MODE A's and drop the
-`CHUNK-END` line from the Rails section below (nothing was chunked, so nothing can be truncated).
-Everything else — scope, classes, rails, output shape — is the same prompt in both modes. Full
-procedure: [`docs/drydock.md`](../drydock.md), "The external leg."*
+this project's authors and gets no drydock rails beyond what this file states. Two modes, one prompt,
+read whole by both: `tools/audit-packet/export.sh` embeds this ENTIRE file verbatim into `PROMPT.md`
+for mode A (a no-tools reader working from pasted/uploaded text), instantiating `<baseline-sha>`,
+`<repo-name>`, `<chunk-id>` — it does not strip the MODE B paragraph below, so the body itself tells the
+reader which paragraph is theirs. For a mode-B brief (a tooled reader with repo access, e.g. cloned at
+a pinned SHA), hand-assemble it from this same file instead: keep the MODE B paragraph, drop the MODE A
+paragraph, and drop the `CHUNK-END` line from the Rails section below (nothing was chunked, so nothing
+can be truncated). Full procedure: [`docs/drydock.md`](../drydock.md), "The external leg."*
 
 ---
 
@@ -27,6 +27,11 @@ absence you can't see past.
 `BASELINE <sha>`. Use your tools — `grep`, `git`, reading files, running the test suite in a scratch
 copy if you want — to verify every number, count, path, or cross-reference the material asserts by
 measuring it against the tree, never by re-reading the sentence.
+
+**Only one of the two paragraphs above describes your actual situation — follow that one and ignore
+the other entirely.** If you were given text to read with no way to browse or run anything, you are in
+MODE A; if you have tools and access to this repository, you are in MODE B. Both paragraphs may appear
+together in what you were handed — that alone does not mean both apply.
 
 ## Scope
 
