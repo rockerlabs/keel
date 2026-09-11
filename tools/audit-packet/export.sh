@@ -240,21 +240,16 @@ gate_status=0
 
 if [ "$gate_status" = 1 ]; then
   # BLOCKED — extract ONLY the leading path off each "  path:line:content" / "  path:(binary) match"
-  # detail line (secret-scan.sh's own format, see its emit_stream/emit_blob). `${rec%%:*}` — strip
-  # from the FIRST colon onward — is secret-scan.sh's OWN idiom for this exact split (its allowlist's
-  # `recpath="${rec%%:*}"`), reused here deliberately rather than a from-the-end sed: the matched
-  # CONTENT after the line number can itself contain colons, and a from-the-end strip (tried first,
-  # caught live: a fixture line "leaked token: ghp_..." left "path:3:leaked token" in the message —
-  # the word before its own colon survived) leaks a fragment of the very text this gate exists to
-  # keep off this script's stderr. Never the rest of the line, in any case: that portion carries the
-  # matched secret text, which must not reach a session transcript or a CI log — a wider exposure
-  # than a human's own local terminal, which is what secret-scan.sh's own output is written for.
-  hit_paths="$(
-    while IFS= read -r rec; do
-      [ -n "$rec" ] || continue
-      printf '%s\n' "${rec%%:*}"
-    done < <(grep -E '^  ' "$gate_err" | sed 's/^  //') | LC_ALL=C sort -u
-  )"
+  # detail line (secret-scan.sh's own format, see its emit_stream/emit_blob). Splitting on the FIRST
+  # colon (`cut -d: -f1`, equivalent to secret-scan.sh's own allowlist idiom `recpath="${rec%%:*}"`)
+  # is deliberate, not a from-the-end sed: the matched CONTENT after the line number can itself
+  # contain colons, and a from-the-end strip (tried first, caught live: a fixture line "leaked
+  # token: ghp_..." left "path:3:leaked token" in the message — the word before its own colon
+  # survived) leaks a fragment of the very text this gate exists to keep off this script's stderr.
+  # Never the rest of the line, in any case: that portion carries the matched secret text, which
+  # must not reach a session transcript or a CI log — a wider exposure than a human's own local
+  # terminal, which is what secret-scan.sh's own output is written for.
+  hit_paths="$(sed -n 's/^  //p' "$gate_err" | cut -d: -f1 | LC_ALL=C sort -u)"
   [ -n "$hit_paths" ] || hit_paths="(the gate reported a hit but its path could not be parsed — see
   tools/secret-guard/secret-scan.sh's own output by re-running it directly on the file list)"
   refuse "leak gate BLOCKED — secret-shaped string(s) or personal data found in:
@@ -270,12 +265,16 @@ fi
 gate_files_count="${#files[@]}"
 
 # --- classify: markdown (minus historical) / code / historical -------------------------------------
-is_historical() {
-  local p="$1" h
-  [ "${#historical[@]}" -gt 0 ] || return 1
-  for h in "${historical[@]}"; do [ "$h" = "$p" ] && return 0; done
+# Exact-match array membership — same shape as tools/drydock/inventory.sh's own array_contains(),
+# not shared with it (the two files don't currently source a common lib; see the guard block above
+# for the same "not worth a cross-file extraction in this PR" call).
+array_contains() {
+  local needle="$1"; shift
+  local x
+  for x in "$@"; do [ "$x" = "$needle" ] && return 0; done
   return 1
 }
+is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${historical[@]}"; }
 
 md_files=()
 code_files=()

@@ -114,16 +114,17 @@ today="$(date -u +%Y-%m-%d)"
 
 # next_finding_number FILE — 1 if FILE doesn't exist yet, else one past the highest existing "### F<n>"
 # in it (findings already there from a same-family auditor's own phase-1 pass, or an earlier external
-# import into this same file) — "numbering continued", per the ticket.
+# import into this same file) — "numbering continued", per the ticket. `sort -n | tail -1` is safe
+# under this file's own pipefail despite `tail`'s early exit: `sort` cannot write anything until it
+# has read ALL of stdin, so there is no still-writing producer for `tail` to SIGPIPE (unlike a
+# streaming producer — printf/grep -n — piped into `head`/`grep -q`, this file's own leak-gate-path
+# extraction avoids exactly that class, see the manifest-field reads above). `|| true`: an empty
+# match (no "### F" in FILE, or FILE absent) makes `grep` exit 1, which `set -e` would otherwise
+# trip on this captured pipeline.
 next_finding_number() {
-  local f="$1" max=0 n
-  if [ -r "$f" ]; then
-    while IFS= read -r n; do
-      [ -n "$n" ] || continue
-      [ "$n" -gt "$max" ] 2>/dev/null && max="$n"
-    done < <(grep -oE '^### F[0-9]+' "$f" 2>/dev/null | sed -E 's/^### F//')
-  fi
-  printf '%d' "$((max + 1))"
+  local f="$1" max
+  max="$(grep -oE '^### F[0-9]+' "$f" 2>/dev/null | sed -E 's/^### F//' | sort -n | tail -1)" || true
+  printf '%d' "$(( ${max:-0} + 1 ))"
 }
 
 # render_findings START_N SECFILE — SECFILE is one "## <path>" section's body (everything between
@@ -200,6 +201,11 @@ append_unmapped() {  # SECFILE PATH REPLY_BASENAME
   } >> "$out"
 }
 
+# secfile_for PADDED PATH — the scratch file a "## <path>" section's body is spooled to for chunk
+# PADDED. One definition so the sanitization rule (non-path-safe bytes -> "_") can't drift between
+# the write side (splitting a reply into sections) and the read side (re-opening a section by path).
+secfile_for() { printf '%s/sec-%s-%s' "$scratch" "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
+
 failed_chunks=""
 imported_files=0
 unmapped_count=0
@@ -256,7 +262,7 @@ for reply in "$reply_dir"/reply-*.md; do
         path="${line#??}"
         path="${path# }"
         [ -n "$path" ] || continue
-        cur_file="$scratch/sec-$padded-$(printf '%s' "$path" | tr -c 'A-Za-z0-9._-' '_')"
+        cur_file="$(secfile_for "$padded" "$path")"
         section_paths="$section_paths$path$NL"
         : > "$cur_file"
         continue
@@ -267,7 +273,7 @@ for reply in "$reply_dir"/reply-*.md; do
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    secfile="$scratch/sec-$padded-$(printf '%s' "$path" | tr -c 'A-Za-z0-9._-' '_')"
+    secfile="$(secfile_for "$padded" "$path")"
     [ -r "$secfile" ] || continue
     case "$known_paths" in
       *"$NL$path$NL"*)
