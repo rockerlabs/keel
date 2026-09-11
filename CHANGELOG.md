@@ -154,9 +154,42 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/pre-pr-gate.sh` — the sentinel-lifecycle half of dir #376 is now built** (a `/design` pass
+  landed 2026-09-10; this implements it). Thirteen recorded hits of a "sibling wiped my chain
+  mid-flight" false denial, misdiagnosed for fourteen months, turned out to have nothing to do with
+  concurrency: every deny path called `retire_sentinel` (discarding the whole 8-step receipt chain)
+  **before** printing, so the deny's own advice — write the one named step — came back "no active
+  receipt", indistinguishable from a real race. Reproduced deterministically with zero concurrency.
+  Of the 15 `retire_sentinel` call sites, **7 no longer retire**: MISSING, sentinel-stale/HEAD-moved,
+  head-not-pushed, the step-6 retest mismatch, the step-3 tests-not-bound check, dir #346's own
+  review-trace-missing ratchet, and the step-4/5(a) dialog-missing checks — each of these is a
+  well-formed chain that merely hasn't met a precondition the session can still satisfy (push, rerun
+  tests, answer a dialog, write one receipt), so the other 7 receipts must not be lost over it. **8
+  still retire**, unchanged: `init`'s own nonce reset, MALFORMED, REPLAY, an invented step-4 depth
+  level, a suffixed `'skip'` outcome, step 5/4 disagreeing about the depth level, the one-shot
+  post-unlock PASS cleanup, and the unrecognized-status fail-safe — every one of these means the
+  chain itself can no longer be trusted to say what actually ran, which the removed 7 never did.
+  **Acceptance-neutral by construction:** the edit touches only destruction, never any of the gate's
+  existing nonce/completeness/sha/trace/dialog acceptance checks, so nothing becomes acceptable that
+  was not acceptable before — verified by reproducing each of the 7 with the retirement patched out
+  (still denies, sentinel survives, writing the one named step reaches the next genuine check with no
+  `init`) and by exercising `dir #346`'s own consequence: a stale review trace now costs one
+  `Skill(code-review)` re-invocation plus one receipt write, not a full `init` + `receipt --recover`
+  cycle. All 15 deny messages now say explicitly which case they are — "the chain is intact" and the
+  one next action, or "this has discarded the receipt chain" and the `init` + `receipt --recover`
+  recovery — and `commands/polish.md`'s post-deny recovery prose was rewritten to read the deny's own
+  wording instead of reaching for `init` from habit, which would retire a still-live chain for
+  nothing. The retired "write the whole chain as one uninterrupted command" mitigation (dir #376's own
+  prior message-floor pass) is removed — it never addressed this mechanism and is noise now that the
+  actual cause is understood. **The keying half needs no change** (a separate residual, dir #481, is
+  deliberately not folded in here to keep this fix's destruction-only safety argument simple to check).
+  `tests/test_pre_pr_gate.sh` gained coverage for all 15 sites: the sentinel surviving each of the 7
+  and a same-nonce single-write recovery reaching PASS with no `init`, and the sentinel still being
+  discarded (with the new message wording) for each of the 8.
 - **`tools/pre-pr-gate.sh` — four of its deny messages named the wrong cause or the wrong remedy**
-  (dir #260, dir #376, dir #346's remedies (1) and (4); message-floor only — the sentinel-resolution
-  half of dir #260 and the sentinel-lifecycle half of dir #376 are unbuilt and stay filed). Two
+  (dir #260, dir #376, dir #346's remedies (1) and (4); message-floor only at the time — the
+  sentinel-resolution half of dir #260 is unbuilt and stays filed; **dir #376's own
+  sentinel-lifecycle half is now built, above**). Two
   denies fire with one identical string whether /polish genuinely never ran, the hook's event cwd
   resolved to a DIFFERENT repo than the one /polish actually completed in (the harness resets cwd
   after every call, so an in-command `cd` is invisible to the hook event — dir #260, 4 recorded hits),
@@ -166,22 +199,24 @@ sections real content going forward — see that page for exactly when each one 
   same way `git rev-parse --show-toplevel` does, so it fires even when the caller passes no `--head`
   at all (found by this ticket's own `/code-review` pass; the initial fix covered only the rarer,
   `--head`-carrying site). Both now name the actual condition instead of asserting one explanation as
-  the only one. The "missing receipt for step(s)" deny gained two additive hints: a sibling session's
-  own `/polish init` on the SAME (repo, branch) key can retire this chain's receipts mid-flight — the
-  ordinary concurrency state of this project on any active day, 13 recorded hits and no ticket until
-  now (dir #376) — so the deny now names the possibility and the one mitigation that measurably
-  narrowed the race when tried live (write the whole receipt chain, init through unlock, as ONE
-  uninterrupted command); and, specifically when `polish.5-review` is among the missing steps, that
-  only a genuine `Skill(code-review)` invocation stamps the review's trace/receipt — a bare `Agent`
-  spawn satisfies nothing here, however thorough (dir #346). The step-5 trace-mismatch deny ("no trace
-  matching both this commit AND that level was found") no longer ends with "Run /polish again." — the
-  minimal remedy re-invokes the review at the current HEAD (skipping the review-independent steps a
-  full re-run would redo) but still needs `init` + `receipt --recover` first, since this denial has
-  already retired the live sentinel by the time it prints (an earlier draft of this message wrongly
-  told the reader to skip that step entirely — caught live by this ticket's own `/code-review` pass
-  reproducing the resulting "no active receipt" failure against the draft wording). The ticket's own
-  confirming incident names both halves: the review re-invocation is the cheap part that worked
-  standalone; the `init`/`--recover` cycle is the part it does not avoid (dir #346 remedy 1).
+  the only one. The "missing receipt for step(s)" deny gained two additive hints (at the time — **the
+  concurrency framing below is SUPERSEDED by the entry above: the 13 hits were never a race, and the
+  "one uninterrupted command" mitigation is removed as noise**): a sibling session's own `/polish
+  init` on the SAME (repo, branch) key can retire this chain's receipts mid-flight — the ordinary
+  concurrency state of this project on any active day, 13 recorded hits and no ticket until now (dir
+  #376) — so the deny now names the possibility and the one mitigation that measurably narrowed the
+  race when tried live (write the whole receipt chain, init through unlock, as ONE uninterrupted
+  command); and, specifically when `polish.5-review` is among the missing steps, that only a genuine
+  `Skill(code-review)` invocation stamps the review's trace/receipt — a bare `Agent` spawn satisfies
+  nothing here, however thorough (dir #346, this half still stands). The step-5 trace-mismatch deny
+  ("no trace matching both this commit AND that level was found") no longer ends with "Run /polish
+  again." — the minimal remedy re-invokes the review at the current HEAD (skipping the
+  review-independent steps a full re-run would redo) but, **at the time**, still needed `init` +
+  `receipt --recover` first, since this denial had already retired the live sentinel by the time it
+  printed (an earlier draft of this message wrongly told the reader to skip that step entirely —
+  caught live by this ticket's own `/code-review` pass reproducing the resulting "no active receipt"
+  failure against the draft wording). **The entry above removed that retirement**: re-invoking the
+  review and writing the receipt fresh is now the whole remedy, no `init`/`--recover` needed.
   `tests/test_pre_pr_gate.sh` gained regression coverage for all of the above, including a
   deterministic reproduction of dir #376's race (two `init` calls with receipt writes interleaved
   between them — the mechanism is a plain file retirement independent of real OS concurrency, so

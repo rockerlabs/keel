@@ -30,6 +30,22 @@ mkrepo() {
   printf '%s' "$d"
 }
 
+# dir #376 (found by /simplify's simplification+reuse passes): every site below asserts the SAME
+# two-check pair — sentinel file state, and the deny's own wording — so a mismatch between them (a
+# message claiming "intact" while retire_sentinel actually ran, or vice versa) would show up as ONE
+# failed assertion instead of two independent, easy-to-miss ones. $1 a short label naming the site,
+# $2 the repo dir; $OUT must already hold that site's deny output.
+assert_chain_intact() {
+  local label="$1" d="$2"
+  check_file "dir #376: $label deny leaves the chain intact" "$(sentinel_for "$d")"
+  check_contains "dir #376: $label deny says the chain is intact" "$OUT" "chain is intact"
+}
+assert_chain_discarded() {
+  local label="$1" d="$2"
+  check_nofile "dir #376: $label deny still discards the chain" "$(sentinel_for "$d")"
+  check_contains "dir #376: $label deny says the chain was discarded" "$OUT" "discarded the receipt chain"
+}
+
 # Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS.
 # (ALL_STEPS/repo_key_for/sentinel_for/write_full_receipt[_review] live in lib.sh, dir #64 — shared
 # with test_pipeline_canary.sh, which drives the same gate CLI subcommands against a sandbox repo.)
@@ -136,6 +152,7 @@ gate "gh pr create --fill" "$d"
 check_contains "empty sentinel (bare touch) → still denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "empty/malformed sentinel → reported as malformed" "$OUT" "malformed"
 check_nofile "a rejected sentinel is removed" "$(sentinel_for "$d")"
+check_contains "dir #376: MALFORMED deny says the chain was discarded" "$OUT" "discarded the receipt chain"
 
 # 4. A complete receipt (all step ids, nonce-matching) but polish.8-unlock's SHA is STALE (HEAD moved on).
 d="$(mkrepo)"
@@ -144,7 +161,19 @@ git -C "$d" commit --allow-empty -qm second      # HEAD advances past the record
 gate "gh pr create --fill" "$d"
 check_contains "stale-SHA receipt → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "stale-SHA receipt → reported as stale" "$OUT" "stale"
-check_nofile "stale sentinel is removed" "$(sentinel_for "$d")"
+# dir #376: this deny is one of the 7 no-longer-destructive sites — a well-formed chain that merely
+# needs the sha-bound steps rewritten at the new HEAD must not lose polish.1/2/4/5/7's receipts too.
+# Steps 3 and 6 also went stale when HEAD moved (an ordinary convergence round), so all three
+# sha-bound steps are rewritten here, not step 8 alone — the point under test is "no init needed",
+# not "only one line changes".
+assert_chain_intact "stale-sentinel" "$d"
+new_head="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.3-tests "$new_head"
+run_in "$d" bash "$gate" receipt polish.6-retest "$new_head"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$new_head"
+gate "gh pr create --fill" "$d"
+check_status "dir #376: rewriting the sha-bound steps, with no init, reaches PASS" 0 "$STATUS"
+check_nofile "the sentinel is consumed once the retried gh pr create passes" "$(sentinel_for "$d")"
 
 # 5. A complete receipt with the CURRENT HEAD SHA (what /polish's step 8 writes) → allow, one-shot consume.
 d="$(mkrepo)"
@@ -168,7 +197,14 @@ write_full_receipt "$d" "polish.3-tests"
 gate "gh pr create --fill" "$d"
 check_contains "missing-step receipt → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "missing-step receipt → names the missing id" "$OUT" "polish.3-tests"
-check_nofile "incomplete sentinel is removed" "$(sentinel_for "$d")"
+# dir #376: MISSING is one of the 7 no-longer-destructive sites — writing just the named step, with
+# no `init`, must reach the next genuine gate check (acceptance criterion c).
+assert_chain_intact "MISSING" "$d"
+head_sha="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_sha"
+gate "gh pr create --fill" "$d"
+check_status "dir #376: writing only the named step, with no init, reaches PASS" 0 "$STATUS"
+check_nofile "the sentinel is consumed once the retried gh pr create passes" "$(sentinel_for "$d")"
 
 # 8. Stale-nonce replay: the missing id's only line carries a DIFFERENT (earlier-run) nonce, not the
 # current header's — a leftover line from a previous run must not count toward completeness.
@@ -179,6 +215,7 @@ check_contains "stale-nonce replay → denied" "$OUT" '"permissionDecision":"den
 check_contains "stale-nonce replay → names the affected id" "$OUT" "polish.5-review"
 check_contains "stale-nonce replay → reported as a replay, not a plain miss" "$OUT" "stale nonce"
 check_nofile "replayed sentinel is removed" "$(sentinel_for "$d")"
+check_contains "dir #376: REPLAY deny says the chain was discarded" "$OUT" "discarded the receipt chain"
 
 # 9. Conditional steps skipped-with-outcome still count as present (set-completeness, no order check).
 # polish.5-review uses a trusted (-operator-run) outcome here — this test is about the OTHER
@@ -414,7 +451,15 @@ check_contains "bare review outcome, no trace → names the trace as missing" "$
 # old advice entirely.
 check_contains "dir #346: trace deny names the minimal remedy" "$OUT" "invoke the review once more at your CURRENT HEAD"
 check_absent "dir #346: trace deny no longer tells you to re-run the whole flow" "$OUT" "Run /polish again."
-check_nofile "denied-for-trace sentinel is removed" "$(sentinel_for "$d")"
+# dir #376: review-trace-missing is one of the 7 no-longer-destructive sites — this is dir #346's own
+# ratchet, and the whole point of the fix is that re-invoking the review costs one receipt write, not a
+# full init+--recover cycle.
+assert_chain_intact "trace-missing" "$d"
+printf '%s\tmedium\n' "$(git -C "$d" rev-parse HEAD)" > "$(trace_for "$d")"
+run_in "$d" bash "$gate" receipt polish.5-review medium
+gate "gh pr create --fill" "$d"
+check_status "dir #376: re-invoking the review and re-receipting, with no init, reaches PASS" 0 "$STATUS"
+check_nofile "the sentinel is consumed once the retried gh pr create passes" "$(sentinel_for "$d")"
 
 # 17. Same, but a trace file exists for a DIFFERENT (older) commit — still denied; a trace from a
 # past run must not vouch for a later, unreviewed commit. Asserts the SPECIFIC trace-missing reason,
@@ -462,6 +507,9 @@ write_full_receipt_review "$d" "skip" "" "" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "review 'skip' against a sized-medium depth → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the depth mismatch, not some other reason" "$OUT" "doesn't match the depth"
+# dir #376: review-depth-mismatch is one of the 8 sites that still discards the chain — two receipts
+# disagreeing about the same review means neither can be trusted, so the whole chain goes.
+assert_chain_discarded "review-depth-mismatch" "$d"
 
 # 18c. Same shape for a trusted -operator-run outcome: claiming "low-operator-run" against a depth
 # actually sized "high" must not unlock the gate either — write_full_receipt_review DERIVES
@@ -1315,6 +1363,11 @@ run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
 gate "gh pr create --fill" "$d"
 check_contains "polish.6-retest bare 'done' → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "denied for the retest receipt, not some other reason" "$OUT" "retest receipt"
+# dir #376: retest-sha-mismatch is one of the 7 no-longer-destructive sites.
+assert_chain_intact "retest-mismatch" "$d"
+run_in "$d" bash "$gate" receipt polish.6-retest "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_status "dir #376: rewriting only the retest step, with no init, reaches PASS" 0 "$STATUS"
 
 # 57. Gate DENY: after `receipt --recover`, if step 8 gets a fresh sha but step 6 is left recovered
 # (stale, pre-fix-commit) rather than re-written, the gate now catches THAT too — dir #72 finding #1.
@@ -1647,6 +1700,13 @@ write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_contains "ARMED: agent:<level> receipt, no dialog line → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "ARMED: denied for the missing dialog, not some other reason" "$OUT" "reminder dialog was never opened"
+# dir #376: review-dialog-missing is one of the 7 no-longer-destructive sites — every OTHER receipt
+# here (including the review claim and its SubagentStop trace) is already valid; only the dialog
+# itself is missing, and answering it must be enough with no init.
+assert_chain_intact "review-dialog-missing" "$d"
+askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=high Run /code-review too?"
+gate "gh pr create --fill" "$d"
+check_status "dir #376: answering the dialog alone, with no init, reaches PASS" 0 "$STATUS"
 rm -f "$tf"
 
 # 74. ARMED: the same receipt, this time with a matching dialog:<level> trace line at the current sha →
@@ -2216,6 +2276,29 @@ gate "gh pr create --fill" "$d"
 check_status "dir #96: a project with no test command can still unlock" 0 "$STATUS"
 check_absent "dir #96: no-test-command is a real waiver, not a deny" "$OUT" "deny"
 
+# 88b. dir #376: tests-sha-unbound is one of the 7 no-longer-destructive sites — a fix commit landing
+# after the tests ran must not cost the other 7 receipts, only step 3 rewritten fresh. Step 6 is set to
+# "skipped:no-file-changes" (the ordinary convergence-round shape) so this fixture isolates step 3's
+# own tests-bound check rather than tripping the earlier retest-sha-mismatch one. The follow-up commit
+# must actually touch the tree (dir #123's own treehash shortcut would otherwise still consider an
+# EMPTY commit's stale step-3 receipt bound, since nothing test-relevant changed). No initial passing
+# `gh pr create` here (unlike the dir #96/#123 fixtures above) — a PASS is one-shot and would consume
+# the very sentinel this fixture needs to still be live when the follow-up commit lands.
+d="$(mkrepo)"
+write_full_receipt "$d"
+printf 'touched\n' > "$d/touched.txt"
+git -C "$d" add touched.txt
+git -C "$d" commit -q -m "a real, test-relevant follow-up commit"
+new_head="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$new_head"       # isolate step 3's tests-unbound check
+gate "gh pr create --fill" "$d"
+check_contains "dir #376: tests-sha-unbound → denied" "$OUT" "no test suite run is bound"
+assert_chain_intact "tests-sha-unbound" "$d"
+run_in "$d" bash "$gate" receipt polish.3-tests "$new_head"
+gate "gh pr create --fill" "$d"
+check_status "dir #376: rewriting only step 3, with no init, reaches PASS" 0 "$STATUS"
+
 # 89. dir #96: `--recover` must not restore `polish.5-review` either. A bare level or `agent:*` is caught
 # by the trace check (keyed to current HEAD), but the TRUSTED arms — `skip`, `*-operator-run`, `*-waived`
 # — skip that check entirely, so a recovered one would claim the fix commit had been reviewed when no
@@ -2603,6 +2686,9 @@ write_full_receipt_review "$d" "skip-waived"
 gate "gh pr create --fill" "$d"
 check_contains "dir #116: ARMED, skip-waived with no dialog → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #116: ...as an invalid suffixed skip, not a generic miss" "$OUT" "suffixed 'skip' is not a valid outcome"
+# dir #376: skip-suffixed-outcome is one of the 8 sites that still discards the chain — an invented
+# outcome shape means the whole receipt can no longer be trusted, not just this one line.
+assert_chain_discarded "skip-suffixed-outcome" "$d"
 d="$(mkrepo)"
 write_full_receipt_review "$d" "skip-operator-run"
 gate "gh pr create --fill" "$d"
@@ -2619,6 +2705,9 @@ write_full_receipt_review "$d" "none-waived"
 gate "gh pr create --fill" "$d"
 check_contains "dir #116: invented level none-waived → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #116: ...named as an invalid depth level" "$OUT" "not one of the real depths"
+# dir #376: depth-level-invalid is one of the 8 sites that still discards the chain — an invented
+# depth level means the whole receipt can no longer be trusted, not just this one line.
+assert_chain_discarded "depth-level-invalid" "$d"
 d="$(mkrepo)"
 write_full_receipt_review "$d" "skip-waived-waived"
 gate "gh pr create --fill" "$d"
@@ -2757,6 +2846,12 @@ write_full_receipt "$d"                                 # receipts all bind to t
 gate "gh pr create --fill" "$d"
 check_contains "dir #133: HEAD not reachable on origin → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #133: denied naming the actual cause (push first)" "$OUT" "not reachable on origin"
+# dir #376: head-not-pushed is one of the 7 no-longer-destructive sites — every receipt here already
+# binds to the right commit; pushing is the only thing missing, and pushing alone must be enough.
+assert_chain_intact "head-not-pushed" "$d"
+git -C "$d" push -q origin "$(branch_raw_for "$d")"
+gate "gh pr create --fill" "$d"
+check_status "dir #376: pushing alone, with no init and no receipt rewrite, reaches PASS" 0 "$STATUS"
 
 # 99. A repo with NO origin remote at all is not false-denied: `gh pr create` itself cannot run
 # against such a repo (it infers owner/repo from the remote), so this check is N/A there by design —
@@ -2915,18 +3010,21 @@ check_contains "dir #260: valid different repo, no receipt → also names the cr
 # "same checkout, different branch" cause. Assert the branch alternative is named too.
 check_contains "dir #260: valid different repo, no receipt → also names the same-checkout-different-branch possibility" "$OUT" "different BRANCH in this same checkout"
 
-# 106. dir #376: a sibling session's own `init` on the SAME (repo, branch) key retires this chain's
-# receipts mid-flight — reproduced deterministically (not via a flaky background race: the mechanism
-# is a plain file retirement independent of real OS concurrency, so serializing the exact interleaving
-# reproduces the identical end state a true race would). Steps 1/2 land under the FIRST nonce, get
-# retired into the prev-sentinel by the second `init` (indistinguishable here from a sibling's), and
-# the rest of this session's own writes land under the SECOND nonce — so steps 1/2 read as missing at
-# unlock time even though this session genuinely wrote them once.
+# 106. dir #376's DESIGN PASS REFUTED this test's original premise: a second `init` on the SAME
+# (repo, branch) key is a real, if rare, collision (two worktrees sharing a branch, or two sessions
+# racing `init` at literally the same instant) — but the 13 recorded hits this ticket was filed for
+# were NOT that. They were this exact fixture's own MISSING deny discarding the chain before printing,
+# so the deny's own advice ("write the named step") came back "no active receipt" and read exactly
+# like a sibling's wipe. This fixture still exercises the genuine-collision shape (steps 1/2 land under
+# a FIRST nonce, a second real `init` retires them, the rest of the chain lands under the SECOND
+# nonce) — what changed is what happens AFTER the resulting MISSING deny: the chain it discards is only
+# the FIRST nonce's now-orphaned backup, never the second (live) one, so steps 1/2 can simply be
+# rewritten and the run completed with no third `init`.
 d="$(mkrepo)"
 run_in "$d" bash "$gate" init
 run_in "$d" bash "$gate" receipt polish.1-diff
 run_in "$d" bash "$gate" receipt polish.2-simplify
-run_in "$d" bash "$gate" init                                    # the sibling-shaped clobber
+run_in "$d" bash "$gate" init                                    # the genuine-collision shape
 head_sha="$(git -C "$d" rev-parse HEAD)"
 run_in "$d" bash "$gate" receipt polish.3-tests "$head_sha"
 run_in "$d" bash "$gate" receipt polish.4-depth "skip:+0-0,0f"
@@ -2935,22 +3033,29 @@ run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
 run_in "$d" bash "$gate" receipt polish.7-selfcheck
 run_in "$d" bash "$gate" receipt polish.8-unlock "$head_sha"
 gate "gh pr create --fill" "$d"
-check_contains "dir #376: sibling-shaped init mid-chain → denied for the (now genuinely) missing steps" "$OUT" "missing receipt for step(s)"
-check_contains "dir #376: deny names the sibling-clobber possibility and the mitigation" "$OUT" "dir #376"
-check_contains "dir #376: deny names the proven mitigation (one uninterrupted chain)" "$OUT" "ONE uninterrupted command"
+check_contains "dir #376: second-init collision → denied for the (now genuinely) missing steps" "$OUT" "missing receipt for step(s)"
+check_contains "dir #376: deny says the (second, live) chain is intact, not a race to retry blind" "$OUT" "chain is intact"
+check_absent "dir #376: the retired 'one uninterrupted command' mitigation is gone" "$OUT" "ONE uninterrupted command"
 check_absent "dir #376: a non-review miss gets no polish.5-review-specific hint" "$OUT" "Skill(code-review) itself"
+check_file "dir #376: the live (second-nonce) sentinel survives the MISSING deny" "$(sentinel_for "$d")"
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+gate "gh pr create --fill" "$d"
+check_status "dir #376: rewriting the two named steps, with no third init, reaches PASS" 0 "$STATUS"
 
 # 107. dir #346 remedy (4): the polish.5-review-specific hint (bare Agent spawn vs. Skill(code-review))
 # fires only when polish.5-review is actually among the missing steps — test 93b (dir #236) above
 # already covers the felt shape (skip-sized diff, step 5 alone missing); assert its deny carries this
-# hint too, on top of the always-present dir #376 note, so both denials this file shares a message
-# with stay covered by name (dir #346's own text: "make the two [message-]states they are reporting").
-# write_full_receipt (lib.sh) with polish.5-review omitted, instead of the hand-rolled 8-step chain
-# test 106 above needs (lib.sh's own header names this exact shape as its intended replacement).
+# hint too, on top of the always-present "chain is intact (dir #376)" wording, so both denials this
+# file shares a message with stay covered by name (dir #346's own text: "make the two [message-]states
+# they are reporting"). write_full_receipt (lib.sh) with polish.5-review omitted, instead of the
+# hand-rolled 8-step chain test 106 above needs (lib.sh's own header names this exact shape as its
+# intended replacement).
 d="$(mkrepo)"
 write_full_receipt "$d" "polish.5-review"
 gate "gh pr create --fill" "$d"
 check_contains "dir #346: polish.5-review missing → names the bare-Agent-spawn cause" "$OUT" "Skill(code-review) itself"
 check_contains "dir #346: polish.5-review missing → also carries the always-present dir #376 note" "$OUT" "dir #376"
+check_file "dir #376: polish.5-review missing → chain survives" "$(sentinel_for "$d")"
 
 summary
