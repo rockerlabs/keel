@@ -25,7 +25,8 @@ and that's fine.)
   (`ADAPTING.md` already tells tools without cwd-keyed auto-memory to drop it). Not actionable until a
   second real module shows demand. **Reviewed 2026-09-06 (first `/groom` G4(b) pass): trigger not
   fired — no second always-on module has been asked for; kept, with this stamp so the next pass can
-  see it was judged rather than skipped.**
+  see it was judged rather than skipped.** **Re-reviewed 2026-09-11 (0.10.1 groom, G4(b)): still not
+  fired; kept.**
 - [2026-07-23] **openwiki (langchain-ai/openwiki) — auto-generated CLAUDE.md/AGENTS.md, opposite bet from
   Keel's manual curation** — surfaced while triaging six repos from an Instagram post; the only one that
   overlapped with Keel's domain (the other five dropped without action). OpenWiki synthesizes

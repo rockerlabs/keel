@@ -15,6 +15,33 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/release-management.md` — seven amendments from the 0.10.0 release's own retro, each
+  carrying its incident** (dir #494, applied by the 0.10.1 groom's G0 per `docs/grooming.md`). R2:
+  a tree-wide sweep is the maximal-overlap case and sorts last in its wave. R6: a session title
+  changed between two of the manager's reads — the session-id-first rule now lives in
+  `docs/delegation.md`'s identity clause, R6 keeps only the release-side addition. R8: memory writes
+  are the same non-delegable boundary as backlog writes; a worker's finding rides its checkpoint
+  report. R10: a cumulative release-wide effect is a seam, and a refactor changes the shape a count
+  measures. R11: the observed-state liveness check is a scheduled sweep, not an operator question.
+  R13: the brief names the scoring tool's own event vocabulary. Brief item 1: four more propagated
+  figures the next release caught, by three different parties.
+- **`docs/delta-audit.md` — three amendments from the same retro** (dir #494). §6 and all four §9
+  prompts: the report path is absolute and the leg's final message ends with an `ls -la` of it (a
+  whole-read leg's report once never reached disk — a permanent limit, the listing is the check).
+  §8: a green CI leg cannot refute an environment-sensitive claim. §11: a third cross-vendor class —
+  bundle a diff by coupling, or tell each reader what the sibling bundle holds (heading count
+  updated; the mechanized form is dir #489's).
+- **`docs/delegation.md` — the identity-at-first-contact clause now states which address is stable**
+  (the session id; a title is volatile, a listing name is a different namespace) and the
+  non-delegable set says in its own prose that it binds every delegation pattern, gated release
+  workers included (dir #494).
+- **`docs/grooming.md` — the two compensations dir #493 found naming no remover now name them:**
+  G0's harvest check points at dir #462 (via `docs/delta-audit.md` §8's clause), G3's three
+  extraction rules at dir #496 — a shipped backlog census, filed by the same groom (dir #493).
+- `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
+
 ## [0.10.0] — 2026-09-11
 
 **Known issues, disclosed at the cut:** six things ship known-imperfect, none behavioural in an adopter-facing path. **dir #478** — `tests/lib.sh`'s `run_in()` guards `cd "$dir" || …`, and `cd ""` is a silent bash no-op that returns 0, so a test whose directory variable is transiently empty runs in the suite's own invocation directory — the real checkout; the primitive is reproduced, the tree-wide sweep of the same idiom is owed. **dir #480** — `tests/test_keel_impact.sh` returned different results for the same commit in different environments four times this release (three files, three workers); every cheap hypothesis was killed, including "it is the CI platform", and the remaining space is one session's local environment at one moment — recorded as an observation, deliberately not closed on a green CI leg. **dir #481** — the pre-PR gate keys every per-run file on the repository's directory *basename*, never its full path, so two repositories with the same basename share one sentinel; latent on this machine, one line to fix, kept out of dir #376's slice so that slice's destruction-only safety argument stays simple. And three items the release-candidate audit moved to the standing list rather than ticketing: `tools/self/line-citations.sh`'s allowlist self-exclusion keys on both the default and the override path (fixture-only today); its prefilter's comment names a safety reason that is not the real one (the downstream `|| true` is); and `tests/test_tour_transcript.sh` fails under a `mktemp`-shaped checkout path, outside this range.

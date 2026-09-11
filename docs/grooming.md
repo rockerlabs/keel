@@ -121,6 +121,10 @@ did it.** A groom found two of the previous run's `no-action` findings unharvest
 that run's verdict — both still reproducible, both explicitly written up in the run's own verdict as
 belonging to the standing list. Nothing inside that run could have noticed: its coverage bar was
 satisfied throughout, and an unharvested finding leaves no trace anywhere a later session looks.
+This check is a compensation, and its remover is `dir #462` — [`docs/delta-audit.md`](delta-audit.md)
+§8's own compensation clause carries the mechanism; when it ships, this paragraph's duty shrinks to
+reading that tool's output. (`dir #493` found the ticket unnamed here, in the same diff that wrote
+the rule; the G3 rules below had the same gap.)
 
 ## G1 — pains are the input, and only the operator supplies them
 
@@ -175,6 +179,14 @@ on a vocabulary of status words, because a groom mints new status words as it go
 twice — once before the hygiene sweep and once after the last heading edit — and reconcile any
 disagreement before writing a count.** The second run is nearly free and is the only step that catches a
 predicate that is wrong, as opposed to a file that has moved.
+
+**All three extraction rules are compensations for one missing mechanism, and they name it.** Nothing
+shipped reports the slate lanes (the pool report counts the pool only), so every groom re-derives its
+census by hand — which is exactly where the phantom-release, closure-note-arrow and loose-predicate
+defects above were minted. `dir #496` owns the shipped census (open tickets by
+last-arrow tag, closure by the project's marker via the shared scanner, counted once before and once
+after the sweep); when it lands, the three rules become that tool's own header, and this section
+points at the tool. Until then they are guidance to follow by hand, not a permanent limit.
 
 ## G4 — the hygiene sweep
 

@@ -62,8 +62,12 @@ rather than as a surprise mid-run.
 
 ## R2 — wave plan by file overlap, merges serialized
 
-Cut waves by file overlap, and **assume every PR collides in `CHANGELOG.md` at the `[Unreleased]`
-anchor** — every PR across a real ten-PR release did, without exception, which the manager's own
+Cut waves by file overlap — a ticket whose surface is "every file matching X" (a citation sweep, a
+rename, a header ratchet) has maximal overlap by construction and sorts **last in its wave** by the
+same rule, rebased once at the end rather than once per sibling (one release placed such a sweep
+mid-wave and only luck made its collision `CHANGELOG.md` alone; a manual ordering rule, since no
+wave-planning tool exists to own it) — and **assume every PR collides in `CHANGELOG.md` at the
+`[Unreleased]` anchor** — every PR across a real ten-PR release did, without exception, which the manager's own
 test-file-range check structurally could not see (an insertion point isn't a line range). Merges
 serialize as a consequence: one release-manager session, keeping to itself the fact that this is
 where mutation actually threads a needle. Show the operator the wave plan before wave 1 starts — the
@@ -122,7 +126,11 @@ conventions that happen to look similar, it's one convention applied at two poin
    the tool that derives it before it enters a brief, a file-class label comes from `git diff --stat`
    and the diff's own modes rather than from the author's impression, and any figure carries the
    moment it was measured. Note what the record also shows — every one of those six was caught, and
-   each by a *different* party than the last. Cheap machinery beats a more careful author.
+   each by a *different* party than the last. Cheap machinery beats a more careful author — confirmed
+   again the next release, four more propagated figures caught by three different parties (the
+   release's own record carries the list). The cut's verification block is the last artifact every
+   figure passes through, so a re-derivation there would catch the most — an observation no ticket
+   owns yet.
 2. **The slate/coupling table.** For a whole-wave brief: ticket, surface, coupling with siblings. For
    a single-worker brief: the ticket plus the neighboring tickets it touches a file or a question with.
    Either way, the point is naming coupling explicitly rather than trusting a worker to notice it from
@@ -260,7 +268,11 @@ incidental and has already broken mid-release once.
   message to each worker carries its addresses, and the confirmation paste is counted among the
   release's operator touchpoints (R7's cost line) rather than arriving as a surprise. The felt case was
   a release's own fixer launch — the manager quoted a fabricated address fragment from the wrong
-  namespace, and the worker rightly stopped.
+  namespace, and the worker rightly stopped. A later release's first contact quoted a session title
+  that changed between two of the manager's own reads, and its briefs quoted a listing-tool name the
+  messaging tool does not accept as a key — the session-id-first rule that came out of it is
+  delegation.md's now, in that same clause; a release adds only that the brief marks the title
+  volatile.
 
 ## R7 — the cost line
 
@@ -288,7 +300,11 @@ never asserted from one run's feel.
 The manager writes every marker and ticket update; workers request writes through it rather than
 touching the file themselves. This closes a real race: two writers on one shared, gitignored backlog
 file during one release corrupted nothing only because a worker noticed and asked for the rule before
-it did.
+it did. **The project's memory directory is the same boundary** — [`docs/delegation.md`](delegation.md)'s
+non-delegable set already reserves memory writes to the orchestrator for every delegation pattern —
+and this doc adds only the route: a worker's memory-worthy finding rides in its checkpoint report
+(R13) and the manager writes it at the single wrap. One release's worker wrote two entries itself;
+both were good, and no brief had said where they go.
 
 **This overrides a conforming `/go`'s own claim step.** `/go`'s own instructions have the worker write
 its own `⏳ IN FLIGHT` marker directly onto the ticket heading — correct in a standalone run, and a
@@ -353,6 +369,20 @@ re-creating duplication a sibling ticket had just removed. None of these were vi
 ticket, and none would have been caught by an ordinary per-PR review — a per-PR reviewer sees one
 diff, never the pair. If this doc says nothing else well, it has to say this well.
 
+**A seam can be cumulative, not pairwise: a release-wide effect no single PR produces.** One release's
+`CHANGELOG.md` grew across ten PRs until the merge commit of one of them crossed a doc-figure floor
+the suite pins — foreseeable from a worker's own report of how much its entry added, and not put in
+the next brief. When a worker reports a figure that accumulates across the wave, carry the running
+total into the next brief with the threshold it approaches.
+
+**A refactor changes the SHAPE of what you count, so a count taken across it is not a check.** The
+same release's manager nearly filed two false discrepancies: a bare grep for a function name after
+that function had been wrapped (the wrappers absorbed the calls the grep no longer saw), and a
+doctor run on a stale base read as a regression. Before comparing two counts, confirm both were taken
+against the same shape of the tree; after a refactor, re-derive the counting command, not just the
+number. A judgment call by nature — no tool can know which refactor changed what a grep means — so
+this stays a manual rule, not a gap a ticket closes.
+
 ## R11 — bounded loops everywhere
 
 Every automated cycle in this pattern carries an explicit numeric bound **and** a budget precondition:
@@ -376,7 +406,12 @@ wedged on an unguarded poll keeps a live session and sends nothing, so a ledger 
 progress" and a ledger that reads "done" look identical from the manager's side. One release lost two
 hours to precisely this, and the wedge was found by the operator's own eye rather than by anything
 in the pattern. A row that cannot be closed against an observed state is a row to escalate on, under
-this rule's own one-line-stop clause.
+this rule's own one-line-stop clause. **The observation is a scheduled sweep in the manager's loop, not
+a question the operator asks.** The rule above was written and then not practised: a later release's
+design worker sat idle-looking for about five hours holding a completed report that a transport
+failure never delivered, and the manager noticed only while answering "what's left?". Sweep every
+open row's live state at a fixed point in each loop iteration — before each wave, before each
+merge — and treat "idle with no report received" as a row to probe, not a row still working.
 
 ## R12 — portability
 
@@ -437,7 +472,15 @@ events into a number and writing it to a ledger — centralizes in the manager, 
 typically a pure function over counts and costs nothing in context to run N+1 times. The manager's one
 wrap thus produces one score per worker plus its own, each attributed to its own session in the
 ledger — a release record that reports one averaged number instead of the per-session list hides
-exactly the outlier worker a per-session score exists to surface.
+exactly the outlier worker a per-session score exists to surface. **The brief names the scoring tool's
+own event vocabulary, or the counts come back in the wrong one.** A release whose briefs asked for
+"an event-count block" received operational counts — denials, commits, subagents — from nine of ten
+workers, and the scoring tool's fire/hit/miss cites from one; the manager could score two sessions of
+eleven. State the exact event kinds the project's scoring tool consumes (keel's: `tools/keel-impact.sh`'s
+`--fire`/`--hit`/`--miss` cites) in the brief's own text, the way the keep-alive contract and the
+`WRAP CENTRALIZED` marker already ride there verbatim. The remover is the project's own brief
+instance (the gitignored per-project file named under the brief section above) carrying that
+vocabulary as a fixed line — a manager's edit at the next launch, not a ticket.
 
 ## What this pattern deliberately is not
 
