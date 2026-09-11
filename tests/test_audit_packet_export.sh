@@ -153,4 +153,54 @@ run_in "$r5" "$TOOL" --vendor x --baseline HEAD --files "$fl5"
 check_status "export: refuses a non-keel repo with no --disclosure-ack" 2 "$STATUS"
 check_contains "export: names --disclosure-ack as the fix" "$OUT" "disclosure-ack"
 
+# --- --value-prompt default: on for keel's own remote, off otherwise (--help's own documented
+# contract) — the exact gap code-review high's cleanup-pass agent caught live: the default-assignment
+# line existed in an earlier edit but was lost in a later one, so "value-prompt: skipped" shipped for
+# a keel-remote export with no flag passed at all. Pinned here so a regression fails loudly.
+r6="$(mk_repo)"
+git -C "$r6" remote add origin https://github.com/rockerlabs/keel.git
+fl6="$SANDBOX/files-keel-remote.txt"
+files_list > "$fl6"
+run_in "$r6" "$TOOL" --vendor x --baseline HEAD --out out --files "$fl6"
+check_status "export: keel-remote fixture exits 0 with no --disclosure-ack (auto-ack)" 0 "$STATUS"
+pkt6="$(find "$r6/out" -maxdepth 1 -name 'packet-x-*' -type d | head -1)"
+check_contains "export: --value-prompt defaults ON for keel's own remote" \
+  "$(cat "$pkt6/MANIFEST.txt" 2>/dev/null)" "value-prompt: emitted"
+check_file "export: PROMPT-value.md written on the keel-remote default" "${pkt6:-/nonexistent}/PROMPT-value.md"
+
+r7="$(mk_repo)"
+git -C "$r7" remote add origin https://github.com/rockerlabs/keel.git
+fl7="$SANDBOX/files-keel-remote-override.txt"
+files_list > "$fl7"
+run_in "$r7" "$TOOL" --vendor x --baseline HEAD --out out --no-value-prompt --files "$fl7"
+pkt7="$(find "$r7/out" -maxdepth 1 -name 'packet-x-*' -type d | head -1)"
+check_contains "export: --no-value-prompt overrides the keel-remote default off" \
+  "$(cat "$pkt7/MANIFEST.txt" 2>/dev/null)" "value-prompt: skipped"
+check_nofile "export: no PROMPT-value.md when explicitly disabled on keel's own remote" \
+  "${pkt7:-/nonexistent}/PROMPT-value.md"
+
+check_contains "export: --value-prompt defaults OFF for a non-keel remote (the earlier basic-fixture run)" \
+  "$(cat "$pkt/MANIFEST.txt" 2>/dev/null)" "value-prompt: skipped"
+
+# --- a nonempty --historical ADDS to the CHANGELOG.md default, never clobbers it -----------------
+# code review high, Angle A: the earlier shape cleared `historical` on the first --historical call
+# regardless of its value, so `--historical BACKLOG.md` silently dropped CHANGELOG.md instead of
+# keeping it alongside the new entry, contradicting --help's own "repeatable" contract.
+r8="$(mk_repo)"
+printf 'notes\n' > "$r8/BACKLOG.md"
+git -C "$r8" add -A
+git -C "$r8" commit -q -m "add BACKLOG.md"
+fl8="$SANDBOX/files-historical.txt"
+{ files_list; printf 'BACKLOG.md\n'; } > "$fl8"
+run_in "$r8" "$TOOL" --vendor x --baseline HEAD --out out --historical BACKLOG.md --disclosure-ack "t" --files "$fl8"
+check_status "export: a second --historical file exits 0" 0 "$STATUS"
+pkt8="$(find "$r8/out" -maxdepth 1 -name 'packet-x-*' -type d | head -1)"
+manifest8="$(cat "${pkt8:-/nonexistent}/MANIFEST.txt" 2>/dev/null)"
+check_contains "export: CHANGELOG.md survives a second --historical entry (not clobbered)" "$manifest8" "CHANGELOG.md"
+check_contains "export: the new --historical file is ALSO its own historical entry" "$manifest8" "BACKLOG.md"
+# files=1 chunks here: tool.sh (its own chunk, only code file), CHANGELOG.md, BACKLOG.md — three
+# solo chunks, never two historical files sharing one (each --historical file is its own chunk).
+check_count "export: CHANGELOG.md and BACKLOG.md land in separate chunk blocks (never packed together)" \
+  "${pkt8:-/nonexistent}/MANIFEST.txt" '^chunk.*files=1' 3
+
 summary

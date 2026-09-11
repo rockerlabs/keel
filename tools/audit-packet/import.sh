@@ -87,6 +87,7 @@ baseline="$(sed -n 's/^baseline: \([^ ]*\).*/\1/p' "$manifest" | head -1)" || tr
 # after "## chunks" is a path this packet actually shipped. NL-bracketed for the same substring-safe
 # membership test used throughout this repo's other tools (tools/drydock/inventory.sh's is_changed).
 NL=$'\n'
+TAB="$(printf '\t')"
 known_paths="$NL"
 in_chunks=0
 while IFS= read -r line || [ -n "$line" ]; do
@@ -201,10 +202,16 @@ append_unmapped() {  # SECFILE PATH REPLY_BASENAME
   } >> "$out"
 }
 
-# secfile_for PADDED PATH — the scratch file a "## <path>" section's body is spooled to for chunk
-# PADDED. One definition so the sanitization rule (non-path-safe bytes -> "_") can't drift between
-# the write side (splitting a reply into sections) and the read side (re-opening a section by path).
-secfile_for() { printf '%s/sec-%s-%s' "$scratch" "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9._-' '_')"; }
+# secfile_for PADDED IDX — the scratch file a "## <path>" section's body is spooled to: the Nth
+# section encountered in chunk PADDED, by pure sequential index. NOT derived from the path itself —
+# an earlier version sanitized the path via `tr -c ... '_'`, which maps every unsafe byte (including
+# `/`) to the same `_`, so two genuinely different paths (e.g. `docs/sub.md` and `docs_sub.md`) could
+# sanitize to the identical filename; the second section's `: > "$cur_file"` truncation would then
+# silently overwrite the first's already-collected content before either was ever read back — no
+# error, no warning, exit 0, one finding just gone (reproduced live: code review high, Angle A/C). An
+# index can never collide by construction, so this fix removes the class rather than papering over
+# one instance of it.
+secfile_for() { printf '%s/sec-%s-%s' "$scratch" "$1" "$2"; }
 
 failed_chunks=""
 imported_files=0
@@ -245,7 +252,17 @@ for reply in "$reply_dir"/reply-*.md; do
   fi
 
   needle="CHUNK-END $padded"
-  if ! grep -v '^[[:space:]]*$' "$body" | head -15 | grep -qF "$needle"; then
+  # Materialize the bounded head into a variable FIRST, then grep the variable via a here-string —
+  # not `grep -v ... | head -15 | grep -qF ...` piped straight through. A body long enough to
+  # overflow the pipe buffer before `head -15` reads its quota gets `head` closing the pipe on
+  # `grep -v` mid-write; under this file's own pipefail, the pipeline's reported status scans
+  # right-to-left for the first NONZERO stage, so `grep -v`'s SIGPIPE (141) can win even though
+  # `head` read cleanly and the trailing `grep -qF` genuinely found the needle (0) — a real,
+  # reproduced FAILED-chunk false positive on an otherwise valid chunk (code review high, Angle A).
+  # A here-string has bash buffer the content up front, so there is no live writer left for the
+  # final match check to interrupt (the same reasoning tests/lib.sh's own match() comment gives).
+  head15="$(grep -v '^[[:space:]]*$' "$body" | head -15)" || true
+  if ! grep -qF "$needle" <<< "$head15"; then
     printf 'import.sh: FAILED chunk %s — truncated or off-format (no "%s" quoted near the start of %s)\n' \
       "$padded" "$needle" "$base" >&2
     failed_chunks="$failed_chunks $padded"
@@ -253,8 +270,14 @@ for reply in "$reply_dir"/reply-*.md; do
   fi
 
   # --- split into per-"## <path>" sections, chatter before the first heading discarded ---
+  # section_paths carries "IDX<TAB>path" records, not bare paths — IDX is the section's own
+  # sequential position (1, 2, 3, ...), read back below to re-derive the EXACT SAME scratch file
+  # secfile_for() wrote it to. Two sections sharing a path (unusual, but the model could repeat a
+  # heading) are handled correctly too: each gets its own index, so neither collides with or
+  # overwrites the other's content.
   cur_file=""
   section_paths=""
+  section_idx=0
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     case "$line" in
@@ -262,8 +285,9 @@ for reply in "$reply_dir"/reply-*.md; do
         path="${line#??}"
         path="${path# }"
         [ -n "$path" ] || continue
-        cur_file="$(secfile_for "$padded" "$path")"
-        section_paths="$section_paths$path$NL"
+        section_idx=$((section_idx + 1))
+        cur_file="$(secfile_for "$padded" "$section_idx")"
+        section_paths="$section_paths$section_idx$TAB$path$NL"
         : > "$cur_file"
         continue
         ;;
@@ -271,9 +295,11 @@ for reply in "$reply_dir"/reply-*.md; do
     [ -n "$cur_file" ] && printf '%s\n' "$line" >> "$cur_file"
   done < "$body"
 
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    secfile="$(secfile_for "$padded" "$path")"
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    idx="${rec%%"$TAB"*}"
+    path="${rec#*"$TAB"}"
+    secfile="$(secfile_for "$padded" "$idx")"
     [ -r "$secfile" ] || continue
     case "$known_paths" in
       *"$NL$path$NL"*)

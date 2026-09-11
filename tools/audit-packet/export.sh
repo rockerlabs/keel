@@ -108,8 +108,14 @@ while [ $# -gt 0 ]; do
     --disclosure-ack) [ $# -ge 2 ] || die_args "--disclosure-ack needs text"; disclosure_ack="$2"; disclosure_ack_set=1; shift 2 ;;
     --historical)
       [ $# -ge 2 ] || die_args "--historical needs a path"
-      if [ "$historical_set" = 0 ]; then historical=(); historical_set=1; fi
+      # Clear the CHANGELOG.md default only on the FIRST call, and only when its value is the
+      # empty-string disable idiom (`--historical ''`) — never merely because it's the first call.
+      # The earlier shape cleared on any first call regardless of value, so `--historical
+      # BACKLOG.md` (meant to ADD a second historical file, per --help's own "repeatable" contract)
+      # silently dropped CHANGELOG.md instead of keeping it — found live, code review high, Angle A.
+      if [ "$historical_set" = 0 ] && [ -z "$2" ]; then historical=(); fi
       [ -z "$2" ] || historical+=("$2")
+      historical_set=1
       shift 2 ;;
     --value-prompt)    value_prompt=1; shift ;;
     --no-value-prompt) value_prompt=0; shift ;;
@@ -176,6 +182,15 @@ if [ "$disclosure_ack_set" = 0 ]; then
   fi
 fi
 
+# Default --value-prompt from the same remote detection as --disclosure-ack, per --help's own
+# documented contract ("Default: on for keel ... off otherwise") — dropped during an earlier edit
+# pass and caught live by code-review high's cleanup-pass agent (reproduced: a fresh keel-remote
+# export with no --value-prompt flag wrote "value-prompt: skipped" instead of emitting
+# PROMPT-value.md). Only fires when the flag wasn't passed explicitly (value_prompt is still "").
+if [ -z "$value_prompt" ]; then
+  if [ "$is_keel" = 1 ]; then value_prompt=1; else value_prompt=0; fi
+fi
+
 # One scratch dir for every intermediate file below, cleaned unconditionally on exit — including a
 # refusal partway through (tools/drydock/inventory.sh's own established pattern). Created here,
 # before the file-list read below, since that read now spools through it too.
@@ -236,7 +251,13 @@ scan_script="$script_dir/../secret-guard/secret-scan.sh"
 
 gate_err="$scratch/gate.err"
 gate_status=0
-"$scan_script" "${files[@]}" >/dev/null 2>"$gate_err" || gate_status=$?
+# `--` is load-bearing, not decoration: secret-scan.sh dispatches its MODE off a bare $1, so without
+# it a caller-supplied file list (this repo-agnostic exporter's whole point — the list is never fully
+# ours to control) whose first entry happens to literally read "staged" (or start with "-") silently
+# re-dispatches to a different mode instead of being scanned, reporting clean with the real content
+# never inspected — reproduced live with a real key-shaped secret in a file named `staged`, code
+# review high, Angle C. `--` forces every remaining argument to be treated as a literal filename.
+"$scan_script" -- "${files[@]}" >/dev/null 2>"$gate_err" || gate_status=$?
 
 if [ "$gate_status" = 1 ]; then
   # BLOCKED — extract ONLY the leading path off each "  path:line:content" / "  path:(binary) match"

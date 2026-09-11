@@ -200,4 +200,44 @@ run "$TOOL" --help
 check_status "import: --help exits 0" 0 "$STATUS"
 check_contains "import: --help prints usage" "$OUT" "<reply-dir> <audit-dir>"
 
+# --- two distinct paths whose secfile_for() slug WOULD have collided (pre-fix) don't lose findings
+# (code review high, Angle A/C): "docs/sub.md" and "docs_sub.md" both sanitize to the same string
+# under a tr '/'->'_' scheme; secfile_for() is now index-based, never path-derived, so this can no
+# longer collide by construction.
+d5="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mkdir -p "$d5/chunks"
+{
+  printf 'vendor: testvendor\n'
+  printf 'baseline: abc1234000000000000000000000000000000 (HEAD)\n\n'
+  printf '## chunks\n'
+  printf 'chunk 01: files=2 bytes=10 sha256=deadbeef\n'
+  printf '  docs/sub.md\n'
+  printf '  docs_sub.md\n'
+} > "$d5/MANIFEST.txt"
+cat > "$d5/reply-01.md" <<'EOF'
+CHUNK-END 01 files=2 bytes=10
+
+## docs/sub.md
+
+### F1 — stale-claim — "first path finding"
+claim: x
+evidence: y
+
+## docs_sub.md
+
+### F1 — stale-claim — "second path finding"
+claim: x
+evidence: y
+EOF
+out5="$SANDBOX/audit5"
+mkdir -p "$out5"
+run "$TOOL" "$d5" "$out5"
+check_status "import: colliding-slug fixture exits 0" 0 "$STATUS"
+check_contains "import: docs/sub.md's own finding survives (not clobbered by docs_sub.md's)" \
+  "$(cat "$out5/docs-sub.md-audit.md" 2>/dev/null)" "first path finding"
+check_contains "import: docs_sub.md's own finding is present too" \
+  "$(cat "$out5/docs_sub.md-audit.md" 2>/dev/null)" "second path finding"
+check_absent "import: the two findings are not merged into one file" \
+  "$(cat "$out5/docs-sub.md-audit.md" 2>/dev/null)" "second path finding"
+
 summary

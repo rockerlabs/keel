@@ -428,7 +428,12 @@ fi
 # under `set -u` on this repo's target bash (3.2), the same hazard default_shell_files()'s own header
 # above documents for scope C.
 if [ "$paths_mode" = 1 ]; then
-  paths_seen=""
+  # NL-PREFIXED, same reason changed_set is above (`changed_set="$NL$changed_set"`): without the
+  # leading $NL, the first-ever path recorded has no delimiter before it, so `*"$NL$p$NL"*` can
+  # never match it again on a repeat — the very case scope B and C's identical default file set
+  # exists to exercise. Reproduced live (code-review high, Angle B) before this fix: with an empty
+  # scope A, the first scope-B/C file printed twice instead of being deduplicated.
+  paths_seen="$NL"
   emit_path_once() {
     local p="$1"
     case "$paths_seen" in *"$NL$p$NL"*) return 0 ;; esac

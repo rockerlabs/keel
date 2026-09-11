@@ -30,8 +30,16 @@
 #                                  bodies, for a pre-push hook
 #   secret-scan.sh --tracked       detective audit: scan ALL tracked content (doctor / periodic review)
 #   secret-scan.sh --selftest      verify the scanner catches what it claims (end-to-end child runs)
-#   secret-scan.sh FILE...         scan specific files
+#   secret-scan.sh FILE...         scan specific files — a caller passing a file list it does not
+#                                  fully control (e.g. tools/audit-packet/export.sh's caller-supplied
+#                                  scope) should use `secret-scan.sh -- FILE...` instead: without the
+#                                  `--`, a FIRST filename that happens to literally read "staged",
+#                                  "--tracked", "--selftest", or start with "-" silently dispatches to
+#                                  a DIFFERENT mode instead of being scanned (dir #495 code review).
+#   secret-scan.sh -- FILE...      same as FILE... mode, but every argument after `--` is a literal
+#                                  filename regardless of what it looks like — never re-dispatched
 #
+
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
 #   a repo-root .secret-scan-allow file:
 #     <ERE>          drop any matched line from results
@@ -368,6 +376,21 @@ selftest() {
 
 mode="${1:-staged}"
 case "$mode" in
+  --)
+    # Force FILE mode regardless of what the first filename looks like — dir #495's audit-packet
+    # exporter passes a CALLER-SUPPLIED file list positionally, and without this, a real tracked file
+    # literally named "staged" (or starting with "-", or empty) as the FIRST entry silently redirects
+    # to a completely different mode instead of being scanned: `secret-scan.sh staged` (no `--`)
+    # dispatches to `staged|--staged|""`'s branch (the git-diff-cached scan) and reports "clean"
+    # without ever reading the file — reproduced live with a real ghp_-shaped secret inside a file
+    # named `staged`, dir #495 code review, Angle C. `--` shifts once and takes every remaining
+    # argument as a literal filename, the same convention `--` carries in virtually every other CLI.
+    shift
+    for f in "$@"; do
+      [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
+      emit_stream "$f" < "$f"
+    done
+    ;;
   --range)
     shift
     rng="${1:?--range needs A..B}"
