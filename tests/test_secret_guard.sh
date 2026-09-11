@@ -605,4 +605,19 @@ norepo="$(mktemp -d "$SANDBOX/norepo.XXXXXX")"
 run_in "$norepo" "$scan" --staged
 check_status "--staged outside a git repo → exit 2, not clean" 2 "$STATUS"
 
+# --- FILE mode dispatches on a bare $1 — a real filename that collides with a mode keyword must
+# not silently re-dispatch (dir #495 code review high, Angle C: reproduced live against a file
+# literally named "staged", which without `--` reported "clean" without ever reading its content).
+# `--` is the fix: force every remaining argument to be a literal filename.
+mdrepo="$(new_repo)"
+printf 'ghp_%s\n' "$(rep a 36)" > "$mdrepo/staged"
+git -C "$mdrepo" add -A
+git -C "$mdrepo" -c user.email=t@example.com -c user.name=t commit -qm plant --no-verify
+run_in "$mdrepo" "$scan" staged
+check_status "FILE mode: a file named 'staged' with no -- silently mode-collides -> exit 0 (the bug)" 0 "$STATUS"
+check_contains "...and reports clean without ever reading it" "$OUT" "clean"
+run_in "$mdrepo" "$scan" -- staged
+check_status "FILE mode: the SAME file, with --, is correctly scanned -> BLOCKED" 1 "$STATUS"
+check_contains "-- correctly names the file as the hit" "$OUT" "staged"
+
 summary

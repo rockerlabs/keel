@@ -74,7 +74,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: inventory.sh [--baseline <rev>] [--prev <rev>]
+usage: inventory.sh [--baseline <rev>] [--prev <rev>] [--paths]
 
 Freeze a drydock run's scope. Measures the tracked prose and code surface at the baseline commit and
 derives the per-auditor batches. Writes markdown to stdout; redirect it into your run's working
@@ -83,6 +83,11 @@ directory.
   --baseline <rev>  the commit this run audits (default: origin/main). HEAD must equal it.
   --prev <rev>      a prior run's baseline; files changed since it are flagged CHANGED and the
                     derived batches cover only those files (incremental run).
+  --paths           skip the report — print one repo-relative path per line instead, the union of
+                    scope A/B/C, deduplicated, honoring --prev the same way (changed files only).
+                    For a caller that wants a bare file list rather than this report (dir #495's
+                    audit-packet exporter: `inventory.sh --paths | export.sh --vendor ...`).
+                    Cheaper than the default report: skips the per-file line-counting pass entirely.
   -h, --help        this message.
 
 Refuses (exit 3) outside a git repository, on a dirty working tree, or when HEAD is not the
@@ -98,10 +103,12 @@ refuse()   { printf 'drydock inventory: %s\n' "$1" >&2; exit 3; }
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 baseline_rev="origin/main"
 prev_rev=""
+paths_mode=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --baseline) [ $# -ge 2 ] || die_args "--baseline needs a rev"; baseline_rev="$2"; shift 2 ;;
     --prev)     [ $# -ge 2 ] || die_args "--prev needs a rev";     prev_rev="$2";     shift 2 ;;
+    --paths)    paths_mode=1; shift ;;
     -h|--help)  usage; exit 0 ;;
     -*)         die_args "unknown option '$1' (see --help)" ;;
     *)          die_args "unexpected argument '$1' — a prior run's baseline goes to --prev <rev>" ;;
@@ -409,6 +416,36 @@ measured; an empty changed set would read as 'nothing drifted', which is not wha
     changed_set="$changed_set$f$NL"
   done < "$scratch/changed"
   changed_set="$NL$changed_set"
+fi
+
+# --- --paths: a bare path list for a caller (dir #495's audit-packet exporter), skip the report ---
+# Deliberately placed BEFORE the measure() calls below: --paths needs none of scope A/B/C's per-file
+# line counts, so it also skips their cost, not just their output. Union of scope A, B, C — usually
+# A union C in practice (scope B's default file set is identical to scope C's, see this file's own
+# header), deduplicated via the same NL-bracketed substring-membership idiom used for changed_set
+# above (bash 3.2 has no associative arrays). `"${files_a[@]}"` etc. are only ever expanded behind a
+# `[ "${#files_a[@]}" -gt 0 ]` guard — an empty array's bare expansion throws "unbound variable"
+# under `set -u` on this repo's target bash (3.2), the same hazard default_shell_files()'s own header
+# above documents for scope C.
+if [ "$paths_mode" = 1 ]; then
+  # NL-PREFIXED, same reason changed_set is above (`changed_set="$NL$changed_set"`): without the
+  # leading $NL, the first-ever path recorded has no delimiter before it, so `*"$NL$p$NL"*` can
+  # never match it again on a repeat — the very case scope B and C's identical default file set
+  # exists to exercise. Reproduced live (code-review high, Angle B) before this fix: with an empty
+  # scope A, the first scope-B/C file printed twice instead of being deduplicated.
+  paths_seen="$NL"
+  emit_path_once() {
+    local p="$1"
+    case "$paths_seen" in *"$NL$p$NL"*) return 0 ;; esac
+    paths_seen="$paths_seen$p$NL"
+    [ -z "$prev" ] || is_changed "$p" || return 0
+    printf '%s\n' "$p"
+  }
+  if [ "${#files_a[@]}" -gt 0 ]; then for p in "${files_a[@]}"; do emit_path_once "$p"; done; fi
+  if [ "${#files_b[@]}" -gt 0 ]; then for p in "${files_b[@]}"; do emit_path_once "$p"; done; fi
+  if [ "${#files_c[@]}" -gt 0 ]; then for p in "${files_c[@]}"; do emit_path_once "$p"; done; fi
+  ok=1
+  exit 0
 fi
 
 # `|| exit $?` is load-bearing for the same reason: measure()'s readability refusal fires inside this

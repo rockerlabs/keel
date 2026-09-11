@@ -15,6 +15,29 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/audit-packet/export.sh` and `tools/audit-packet/import.sh`** — dir #495 PR1: a leak-gated
+  packet/import pair for a human-driven, unscriptable third-party auditor UI (drydock's "external
+  leg" — the first target is a colleague's OpenAI-family corporate UI, no API, no CLI). Procedure-
+  neutral: the exporter takes its file list from the caller (`tools/drydock/inventory.sh`'s new
+  `--paths` mode, or `tools/delta-audit/derive.sh`'s existing `delta-files.txt`), never decides scope
+  itself. Before a single chunk is written it runs `tools/secret-guard/secret-scan.sh`'s existing
+  file-list mode over every listed file — class 1 (key-shaped secrets) and class 2 (personal
+  literals); any hit refuses (exit 3) and prints only the offending path, never the matched content.
+  No `--force`, no `--skip-scan`. Chunking packs markdown first, then code, whole-files-first-fit up
+  to `--chunk-bytes`, with each `--historical` file (default `CHANGELOG.md`) in its own trailing
+  chunk and an oversized single file becoming its own `OVERSIZE` chunk. `import.sh` reads the
+  operator's returned `reply-NN.md` files back into drydock's ordinary file contract — tolerating a
+  code fence and leading chatter, refusing (not crashing) a chunk whose own `CHUNK-END` line isn't
+  quoted near the reply's start, forcing `verdict:` empty regardless of what the external model
+  wrote, and routing an unmapped path to `EXTERNAL-UNMAPPED.md` rather than a fabricated slug.
+  `--value-prompt` (default on for keel) adds a second, fixed prompt for an independent assessment of
+  the project as a whole — saved as `reply-value.md`, deliberately never imported as a finding.
+  `tools/drydock/inventory.sh` gains `--paths`: the same scope-A/B/C union as its report, as a bare
+  path list, skipping the per-file line-counting pass entirely. PR2 (docs) follows separately.
+  (dir #495)
+
 ### Changed
 
 - **`docs/release-management.md` — seven amendments from the 0.10.0 release's own retro, each
