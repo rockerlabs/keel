@@ -251,13 +251,25 @@ scan_script="$script_dir/../secret-guard/secret-scan.sh"
 
 gate_err="$scratch/gate.err"
 gate_status=0
+# The listed FILES are not the only operator/caller-supplied text that ends up in the packet —
+# --disclosure-ack and --vendor both land verbatim in MANIFEST.txt (and vendor also names the
+# packet directory and the imported audit files' `auditor:` line). "The would-be packet content"
+# means these too, not just the file list (dir #495 manager amendment W2-A1, after re-verifying TO
+# VERIFY 2's premise was wrong — secret-scan.sh's FILE... mode already existed, no new scanner mode
+# needed, but these two free-text fields were still unscanned). Spooled into scratch files and added
+# to the SAME gate call rather than a second invocation, so one BLOCKED/clean verdict covers
+# everything that ships.
+ack_file="$scratch/gate-disclosure-ack.txt"
+printf '%s\n' "$disclosure_ack" > "$ack_file"
+vendor_file="$scratch/gate-vendor.txt"
+printf '%s\n' "$vendor" > "$vendor_file"
 # `--` is load-bearing, not decoration: secret-scan.sh dispatches its MODE off a bare $1, so without
 # it a caller-supplied file list (this repo-agnostic exporter's whole point — the list is never fully
 # ours to control) whose first entry happens to literally read "staged" (or start with "-") silently
 # re-dispatches to a different mode instead of being scanned, reporting clean with the real content
 # never inspected — reproduced live with a real key-shaped secret in a file named `staged`, code
 # review high, Angle C. `--` forces every remaining argument to be treated as a literal filename.
-"$scan_script" -- "${files[@]}" >/dev/null 2>"$gate_err" || gate_status=$?
+"$scan_script" -- "${files[@]}" "$ack_file" "$vendor_file" >/dev/null 2>"$gate_err" || gate_status=$?
 
 if [ "$gate_status" = 1 ]; then
   # BLOCKED — extract ONLY the leading path off each "  path:line:content" / "  path:(binary) match"
@@ -270,7 +282,11 @@ if [ "$gate_status" = 1 ]; then
   # Never the rest of the line, in any case: that portion carries the matched secret text, which
   # must not reach a session transcript or a CI log — a wider exposure than a human's own local
   # terminal, which is what secret-scan.sh's own output is written for.
-  hit_paths="$(sed -n 's/^  //p' "$gate_err" | cut -d: -f1 | LC_ALL=C sort -u)"
+  # A hit against $ack_file/$vendor_file would otherwise print a raw scratch-dir absolute path,
+  # meaningless once $scratch is cleaned up on exit — relabel those two specifically.
+  hit_paths="$(sed -n 's/^  //p' "$gate_err" | cut -d: -f1 \
+    | sed -e "s#^$ack_file\$#--disclosure-ack text#" -e "s#^$vendor_file\$#--vendor text#" \
+    | LC_ALL=C sort -u)"
   [ -n "$hit_paths" ] || hit_paths="(the gate reported a hit but its path could not be parsed — see
   tools/secret-guard/secret-scan.sh's own output by re-running it directly on the file list)"
   refuse "leak gate BLOCKED — secret-shaped string(s) or personal data found in:

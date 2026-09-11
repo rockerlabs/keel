@@ -203,4 +203,18 @@ check_contains "export: the new --historical file is ALSO its own historical ent
 check_count "export: CHANGELOG.md and BACKLOG.md land in separate chunk blocks (never packed together)" \
   "${pkt8:-/nonexistent}/MANIFEST.txt" '^chunk.*files=1' 3
 
+# --- the leak gate also scans --disclosure-ack and --vendor text, not just the file list ----------
+# manager amendment W2-A1: MANIFEST.txt's own disclosure-ack line is operator/caller-supplied free
+# text and was unscanned. A hit here must relabel the scratch-file path into something readable
+# (never the raw absolute scratch path, which is meaningless once cleaned up on exit).
+r9="$(mk_repo)"
+fl9="$SANDBOX/files-ack-leak.txt"
+files_list > "$fl9"
+fake_secret="ghp_$(rep a 36)"
+run_in "$r9" "$TOOL" --vendor x --baseline HEAD --out out --disclosure-ack "test: leaked $fake_secret" --files "$fl9"
+check_status "export: BLOCKS on a secret planted in --disclosure-ack text" 3 "$STATUS"
+check_contains "export: names it as the disclosure-ack text, not a raw scratch path" "$OUT" "--disclosure-ack text"
+check_absent "export: never repeats the leaked secret itself" "$OUT" "$fake_secret"
+check_nodir "export: nothing written when --disclosure-ack leaks" "$r9/out"
+
 summary
