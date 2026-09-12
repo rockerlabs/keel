@@ -513,7 +513,7 @@ tree-wide" when tree-wide was nine. **Neither was a claim under correction; both
 disclosure-only round's blast radius is the sentence, not the clause — so the re-derivation duty has to
 cover the sentence too, or the round trades one wrong claim for two.
 
-## 11. The cross-vendor leg — three harness lessons, as classes
+## 11. The cross-vendor leg — four harness lessons, as classes
 
 If your diversity leg uses a different model vendor via a raw API rather than an in-session subagent,
 three transferable lessons from real runs, stated as classes rather than naming any private harness
@@ -543,9 +543,18 @@ path:
    gave it — flagged three `high` mismatches against code it could not see. Three false positives in
    one leg, discarded on that ground and not on merit. Keep a file with the prose and tests that
    describe it; where the cap makes that impossible, prefix each bundle with a manifest of what the
-   sibling bundles contain, so an absence reads as "elsewhere," not "missing." Keel's own harness owns
-   the mechanized form of this rule under `dir #489` (phase 1's bundling rule for its second auditor);
-   until it ships, the orchestrator applies it by hand when splitting a bundle.
+   sibling bundles contain, so an absence reads as "elsewhere," not "missing." This rule is mechanized
+   in two forms now: keel's own harness (`dir #489`, phase 1's bundling rule for its second auditor)
+   for a scriptable API vendor, and `tools/audit-packet/export.sh`'s `CHUNK-MANIFEST` line (dir #495)
+   for the unscriptable leg below — one clause, applied by hand wherever neither has shipped yet.
+
+4. **An unscriptable or non-integrated vendor is still a diversity leg — it just arrives through a
+   packet, not an API call.** Feed `derive.sh`'s file list to `tools/audit-packet/export.sh`, hand
+   the packet (or, for a tooled reader with repo access, a short pinned-SHA brief) to whoever runs
+   that vendor, and import the reply with `import.sh` into drydock's ordinary file contract — the
+   orchestrator then carries accepted findings into the run's ledger the same way it carries a
+   same-family cross-vendor round's. Full procedure, both modes: [`docs/drydock.md`](drydock.md),
+   "The external leg."
 
 A delta bundle being a **diff**, not the whole file, is what makes this leg affordable to run at all
 against a payload-limited or per-token-billed vendor.
