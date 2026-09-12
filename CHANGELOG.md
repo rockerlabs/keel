@@ -86,6 +86,15 @@ sections real content going forward — see that page for exactly when each one 
 - **`docs/grooming.md` — the two compensations dir #493 found naming no remover now name them:**
   G0's harvest check points at dir #462 (via `docs/delta-audit.md` §8's clause), G3's three
   extraction rules at dir #496 — a shipped backlog census, filed by the same groom (dir #493).
+- **`docs/grooming.md` gains a fourth G3 extraction rule and one amendment each to G0 and G1**, from
+  the first `/groom` run on a second adopter project (traverse, 2026-09-10; filed as dir #476, applied
+  under the doc's own self-revision clause). G3: match the closure marker at a fixed position, not
+  anywhere in the cell, and check whether the project's status vocabulary overloads one glyph with two
+  meanings. G0: when the previous cycle produced no release and no records, the dormancy itself is the
+  retro's subject, and the first hygiene pass is to reconcile the backlog's stated urgency against
+  the calendar. G1: where the operator's only stated pain is about the plan's own legibility, the
+  plan must name an explicit ordering principle from the project's own doctrine rather than dressing up
+  the groom's own taste as pain-driven.
 - `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
 
 ## [0.10.0] — 2026-09-11
