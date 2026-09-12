@@ -46,6 +46,26 @@ sections real content going forward — see that page for exactly when each one 
   exit-code table now correctly names the missing-`--vendor` refusal as exit 2 (`die_args`), not exit
   3; and `MANIFEST.txt` present-but-unreadable now refuses with a clear permissions message instead
   of silently switching to unchunked mode. (dir #495)
+- **`import.sh` — two more fixes from PR1's own post-merge review, pooled and closed together** —
+  dir #495 PR1d. dir #503: the CHUNKED- and UNCHUNKED-mode splitters shared a duplicated
+  fence-stripping block, now one `strip_fence()` helper; `imported_files` used to count every CALL to
+  `import_findings_into_contract()`, even one that wrote nothing because its section rendered no real
+  findings — the summary line now separates "imported N" from "skipped-empty M". dir #504: the
+  CHUNKED-mode section splitter had no `## summary` case at all (unlike the UNCHUNKED path, PR1c) —
+  a reply's mandated summary section was silently treated as an audit target and vanished with no
+  file, no warning; it now routes to `SUMMARY.md` under a `### chunk NN` sub-heading, sharing the
+  same title-trim/summary-detection helpers the unchunked path already used. This PR's own review
+  round (code-review medium, delta) found two more instances of the same two bug classes and fixed
+  both: `append_unmapped()` had the identical call-counted-not-write-counted issue `imported_files`
+  had, now returning the same 0/1 status so an unmapped section that rendered nothing no longer bumps
+  the "unmapped" count; and a `## summary` section holding only blank line(s) — in EITHER mode —
+  previously still wrote a spurious sub-heading with nothing under it (`[ -n "$summary_body" ]`
+  treated a bare newline as non-empty), now guarded by a real non-whitespace-content check. The
+  `/simplify` pass caught one more instance of the same duplication class this PR was closing: fixing
+  dir #504 had copied the whole ~25-line section-splitting loop from the unchunked path into the
+  chunked one nearly verbatim instead of sharing it — now one `split_sections()` helper both call.
+  `export.sh`'s CHUNK-MANIFEST-recomputed-per-chunk reuse note (also filed under dir #503) is left
+  for a later round. (dir #503, dir #504)
 - **`docs/drydock/external-auditor.md` — the fifth drydock role template, covering BOTH the chunked
   (mode A, no tools) and unchunked (mode B, a tooled reader with repo access) shapes `export.sh` /
   `import.sh` produce and consume** — one prompt read whole by both, one paragraph differing per mode

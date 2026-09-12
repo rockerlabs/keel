@@ -28,15 +28,19 @@
 # heading. Refuses (FAILED, not a crash) a reply whose first ~15 non-blank lines don't quote its own
 # `CHUNK-END NN` line — the per-chunk truncation detector PROMPT.md's own rail asks the model to
 # honor; a genuinely truncated or off-format reply never got far enough to include it, wherever the
-# model puts it. Every `## <repo-relative path>` section splits into per-`### F<n>` finding blocks
-# (claim:/evidence:/confidence:/verdict:), RENUMBERED sequentially, continuing from whatever number
-# is already in that path's audit file (a same-family auditor's own pass, or an earlier import).
-# `verdict:` is FORCED empty regardless of what the model wrote — verdicts are a phase-2 verifier's
-# call, never the external model's own, same rule the in-house auditor prompts already carry. A path
-# IN MANIFEST.txt's chunk map writes (or appends under `## external findings`) into
-# `<audit-dir>/<slug>-audit.md` in drydock's ordinary shape, `## claims` present with drydock's own
-# dead-agent-marker line (honest: this leg has no tool access, so no claims were measured). A path
-# NOT in MANIFEST.txt never gets a fabricated slug — it lands in `<audit-dir>/EXTERNAL-UNMAPPED.md`.
+# model puts it. A `## summary` heading (title case-insensitive, dir #504) is handled exactly like
+# unchunked mode's: not an audit target, its raw body appended to `<audit-dir>/SUMMARY.md` under a
+# `### chunk NN` sub-heading instead. Every OTHER `## <repo-relative path>` section splits into
+# per-`### F<n>` finding blocks (claim:/evidence:/confidence:/verdict:), RENUMBERED sequentially,
+# continuing from whatever number is already in that path's audit file (a same-family auditor's own
+# pass, or an earlier import). `verdict:` is FORCED empty regardless of what the model wrote —
+# verdicts are a phase-2 verifier's call, never the external model's own, same rule the in-house
+# auditor prompts already carry. A path IN MANIFEST.txt's chunk map writes (or appends under
+# `## external findings`) into `<audit-dir>/<slug>-audit.md` in drydock's ordinary shape, `## claims`
+# present with drydock's own dead-agent-marker line (honest: this leg has no tool access, so no
+# claims were measured) — unless the section rendered no real `### F<n>` blocks at all, in which case
+# nothing is written and it counts as "skipped-empty", not "imported" (dir #503). A path NOT in
+# MANIFEST.txt never gets a fabricated slug — it lands in `<audit-dir>/EXTERNAL-UNMAPPED.md`.
 #
 # UNCHUNKED mode (manager amendments W2-A2/A3): no CHUNK-END check (nothing was chunked — the reader
 # saw the whole repo). No MANIFEST.txt to check a path against, so every `## <title>` heading that
@@ -235,6 +239,12 @@ render_findings() {
 # placement that can never disturb an existing file's own completeness marker. PRESERVE, see
 # render_findings above — when set, next_finding_number() is never even consulted, since the model's
 # own number is used verbatim regardless of what (if anything) is already in AUDIT_FILE.
+#
+# Return status (dir #503): 0 if it actually wrote something, 1 if SECFILE rendered no `### F<n>`
+# blocks at all (a section with a heading but no real findings — e.g. a stray non-summary heading
+# the model emitted with only prose under it). Both call sites branch on this to count
+# "imported" vs "skipped-empty" separately instead of a single counter that used to increment on
+# every CALL regardless of whether anything was actually written.
 import_findings_into_contract() {
   local secfile="$1" path="$2" audit_file="$3" preserve="${4:-0}" start rendered
   if [ "$preserve" = 1 ]; then
@@ -243,7 +253,7 @@ import_findings_into_contract() {
     start="$(next_finding_number "$audit_file")"
     rendered="$(render_findings "$start" "$secfile" 0)"
   fi
-  [ -n "$rendered" ] || return 0
+  [ -n "$rendered" ] || return 1
   if [ -r "$audit_file" ]; then
     # `| baseline: <sha>` on EVERY append, not just the file's own first-creation header — found
     # live (code review high, Angle C, this batch's own review round): unchunked mode sets $baseline
@@ -268,10 +278,15 @@ import_findings_into_contract() {
   fi
 }
 
+# append_unmapped SECFILE PATH REPLY_BASENAME — same 0/1 return convention as
+# import_findings_into_contract (dir #503, found live by this round's own review — the same
+# call-counted-not-write-counted bug it fixed there, one function over): 1 when SECFILE rendered no
+# real findings, so the caller's "unmapped" count only tallies a path that actually landed in
+# EXTERNAL-UNMAPPED.md, never one that reported "N unmapped" for a file that was never written.
 append_unmapped() {  # SECFILE PATH REPLY_BASENAME
   local secfile="$1" path="$2" replyname="$3" rendered out="$audit_dir/EXTERNAL-UNMAPPED.md"
   rendered="$(render_findings 1 "$secfile")"
-  [ -n "$rendered" ] || return 0
+  [ -n "$rendered" ] || return 1
   {
     printf '\n## %s (from %s, not in MANIFEST.txt — never given a fabricated slug)\n\n' "$path" "$replyname"
     printf '%s\n' "$rendered"
@@ -289,11 +304,109 @@ append_unmapped() {  # SECFILE PATH REPLY_BASENAME
 # one instance of it.
 secfile_for() { printf '%s/sec-%s-%s' "$scratch" "$1" "$2"; }
 
+# strip_fence SRC DST — copy SRC's body to DST, tolerating one wrapping code-fence line (```,
+# ```markdown, ...) at the very first and/or very last line. Deliberately NOT `sed -e '1{/^```/d}'`:
+# that GNU-style address-block needs a trailing `;` before the `}` on BSD sed (macOS's own
+# /bin/sed) — "extra characters at the end of d command", caught live on this machine. A plain
+# `sed -n 'N,Mp'` range is portable across GNU/BSD/busybox. `awk 'END{print NR}'`, not `wc -l`: this
+# repo's own established caveat (tools/drydock/inventory.sh's header) — wc -l counts newlines and
+# undercounts a reply whose last line has none. Shared by both CHUNKED and UNCHUNKED reply-body
+# extraction (dir #503: this exact block was duplicated verbatim between the two loops).
+strip_fence() {
+  local src="$1" dst="$2" total first last start end
+  total="$(awk 'END{print NR}' "$src" 2>/dev/null || echo 0)"
+  first="$(head -n 1 "$src" 2>/dev/null || true)"
+  last="$(tail -n 1 "$src" 2>/dev/null || true)"
+  start=1
+  end="$total"
+  case "$first" in '```'*) start=2 ;; esac
+  case "$last" in '```') end=$((end - 1)) ;; esac
+  if [ "$start" -le "$end" ] 2>/dev/null; then
+    sed -n "${start},${end}p" "$src" > "$dst"
+  else
+    : > "$dst"
+  fi
+}
+
+# trim_ws STR — full leading+trailing whitespace trim (tools/self/doctor.sh's own established
+# idiom). Shared by both splitters' "## <title>" heading extraction (dir #504) — a single
+# `${x# }`-style strip of one leading space is not enough: "## Summary " (a trailing space) or
+# "##  Summary" (a doubled leading space) — routine no-tool-model markdown output — fails an
+# exact-match "summary" comparison downstream, silently misrouting the section.
+trim_ws() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+# is_summary_title TITLE — true (exit 0) iff TITLE, case-insensitively, reads exactly "summary".
+# Caller is expected to have already run TITLE through trim_ws. Shared by both splitters (dir #504):
+# unchunked mode already had this exact check (W2-A3); chunked mode's per-"## <path>" splitter had
+# no summary case at all, so a reply's mandated `## summary` section was silently treated as an
+# audit target with no `### F<n>` blocks in it — render_findings() found nothing, and the section
+# vanished with no file, no SUMMARY.md entry, no warning.
+is_summary_title() {
+  [ "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" = "summary" ]
+}
+
+# has_content STR — true (exit 0) iff STR contains at least one non-whitespace character. Guards
+# both splitters' SUMMARY.md writes (dir #503, found live by this round's own review): a `##
+# summary` section holding only blank line(s) before the next heading previously still passed
+# `[ -n "$summary_body" ]` (a plain "\n" IS a non-empty string) and wrote a spurious sub-heading with
+# nothing real under it — a reply-value-style opinion section reduced to a bare marker, not the
+# "raw body appended" the header comment promises.
+has_content() {
+  [ -n "$(trim_ws "$1")" ]
+}
+
+# split_sections BODY PREFIX — reads BODY, splitting it into per-"## <title>" sections: a title
+# is_summary_title() accumulates into the (global) $summary_body; every other title gets its own
+# secfile_for() scratch file (indexed under PREFIX) and is recorded into the (global)
+# $section_paths as an "IDX<TAB>title" record. Caller resets both globals to "" first. The rest of
+# this script mutates its own script-global state inline throughout (imported_files, skipped_empty,
+# and so on); this is the first FUNCTION to do the same, since bash 3.2 has no nameref support to
+# hand back two values any other way — a one-off exception to the file's other two return idioms
+# (stdout capture, or an explicit output-path argument like strip_fence's), not itself a precedent.
+# Shared by both CHUNKED and
+# UNCHUNKED splitters (found live, this round's own /simplify pass: dir #504's fix had copied this
+# ~25-line loop from the unchunked splitter into the chunked one nearly verbatim — the exact
+# duplication class strip_fence() already closed one function up, left unclosed here).
+split_sections() {
+  local body="$1" prefix="$2" cur_file="" section_idx=0 in_summary=0 title line
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      '## '*)
+        title="$(trim_ws "${line#??}")"
+        [ -n "$title" ] || continue
+        in_summary=0
+        cur_file=""
+        if is_summary_title "$title"; then
+          in_summary=1
+        else
+          section_idx=$((section_idx + 1))
+          cur_file="$(secfile_for "$prefix" "$section_idx")"
+          section_paths="$section_paths$section_idx$TAB$title$NL"
+          : > "$cur_file"
+        fi
+        continue
+        ;;
+    esac
+    if [ "$in_summary" = 1 ]; then
+      summary_body="$summary_body$line$NL"
+    elif [ -n "$cur_file" ]; then
+      printf '%s\n' "$line" >> "$cur_file"
+    fi
+  done < "$body"
+}
+
 # --- UNCHUNKED mode (mode B, manager amendments W2-A2/A3) — a full early-exit branch --------------
 # Reuses secfile_for()/render_findings()/import_findings_into_contract() exactly as chunked mode
 # does ("one importer, two inputs"); everything below this block belongs to CHUNKED mode only.
 if [ "$unchunked" = 1 ]; then
   imported_files=0
+  skipped_empty=0
   unchunked_files_seen=0
   for reply in "$reply_dir"/reply*.md; do
     [ -e "$reply" ] || continue
@@ -301,21 +414,8 @@ if [ "$unchunked" = 1 ]; then
     [ "$base" = "reply-value.md" ] && continue   # opinion, not a finding — never imported, either mode
     unchunked_files_seen=$((unchunked_files_seen + 1))
 
-    # Same fence-stripping as chunked mode (see below for the full portability reasoning: BSD-sed-safe
-    # `sed -n 'N,Mp'`, `awk 'END{print NR}'` not `wc -l`).
-    total_lines="$(awk 'END{print NR}' "$reply" 2>/dev/null || echo 0)"
-    first_line="$(head -n 1 "$reply" 2>/dev/null || true)"
-    last_line="$(tail -n 1 "$reply" 2>/dev/null || true)"
-    body_start=1
-    body_end="$total_lines"
-    case "$first_line" in '```'*) body_start=2 ;; esac
-    case "$last_line" in '```') body_end=$((body_end - 1)) ;; esac
     body="$scratch/ubody-$unchunked_files_seen.md"
-    if [ "$body_start" -le "$body_end" ] 2>/dev/null; then
-      sed -n "${body_start},${body_end}p" "$reply" > "$body"
-    else
-      : > "$body"
-    fi
+    strip_fence "$reply" "$body"
 
     # BASELINE <sha> — the reply's own first (post-fence-strip) line names the commit the reader
     # actually read. Never chatter to drop silently: it becomes THIS reply's $baseline, which is
@@ -342,48 +442,11 @@ if [ "$unchunked" = 1 ]; then
     # <audit-dir>/SUMMARY.md, never rendered as findings, never routed to EXTERNAL-UNMAPPED.md. Every
     # other title is accepted as a real audit path (no MANIFEST to check it against — see this file's
     # header comment for why "accept and let phase 2 rule" was chosen over a git ls-tree check).
-    cur_file=""
     section_paths=""
-    section_idx=0
     summary_body=""
-    in_summary=0
-    while IFS= read -r line || [ -n "$line" ]; do
-      line="${line%$'\r'}"
-      case "$line" in
-        '## '*)
-          title="${line#??}"
-          # Full leading+trailing whitespace trim (tools/self/doctor.sh's own established idiom),
-          # not just "strip one leading space" — found live (code review high, Angle A, this batch's
-          # own review round): a heading like "## Summary " (one trailing space) or "##  Summary"
-          # (a doubled leading space) failed the exact-match "summary" comparison below, so the
-          # WHOLE section silently vanished — no audit file, no SUMMARY.md entry, no
-          # EXTERNAL-UNMAPPED.md entry, no warning anywhere. A no-tool model's own markdown output
-          # trailing/doubling a space is routine, not a contrived input.
-          title="${title#"${title%%[![:space:]]*}"}"
-          title="${title%"${title##*[![:space:]]}"}"
-          [ -n "$title" ] || continue
-          in_summary=0
-          cur_file=""
-          case "$(printf '%s' "$title" | tr 'A-Z' 'a-z')" in
-            summary) in_summary=1 ;;
-            *)
-              section_idx=$((section_idx + 1))
-              cur_file="$(secfile_for "u$unchunked_files_seen" "$section_idx")"
-              section_paths="$section_paths$section_idx$TAB$title$NL"
-              : > "$cur_file"
-              ;;
-          esac
-          continue
-          ;;
-      esac
-      if [ "$in_summary" = 1 ]; then
-        summary_body="$summary_body$line$NL"
-      elif [ -n "$cur_file" ]; then
-        printf '%s\n' "$line" >> "$cur_file"
-      fi
-    done < "$body"
+    split_sections "$body" "u$unchunked_files_seen"
 
-    if [ -n "$summary_body" ]; then
+    if has_content "$summary_body"; then
       {
         printf '## %s (from %s, unchunked/repo-mode reply)\n\n' "$base" "$base"
         printf '%s' "$summary_body"
@@ -395,22 +458,26 @@ if [ "$unchunked" = 1 ]; then
       secfile="$(secfile_for "u$unchunked_files_seen" "$idx")"
       [ -r "$secfile" ] || continue
       slug="$(printf '%s' "$path" | tr '/' '-')"
-      import_findings_into_contract "$secfile" "$path" "$audit_dir/$slug-audit.md" 1
-      imported_files=$((imported_files + 1))
+      if import_findings_into_contract "$secfile" "$path" "$audit_dir/$slug-audit.md" 1; then
+        imported_files=$((imported_files + 1))
+      else
+        skipped_empty=$((skipped_empty + 1))
+      fi
     done <<< "$section_paths"
   done
 
   [ "$unchunked_files_seen" -gt 0 ] || refuse "no reply*.md files found in '$reply_dir' — nothing to
   import (unchunked/repo-mode: no MANIFEST.txt was found, so every reply*.md is treated as an
   unchunked whole-repo reply)."
-  printf 'import.sh: %d section(s) imported into %s (unchunked/repo-mode — no MANIFEST.txt, every path accepted, phase 2 verifies)\n' \
-    "$imported_files" "$audit_dir"
+  printf 'import.sh: imported %d, skipped-empty %d into %s (unchunked/repo-mode — no MANIFEST.txt, every path accepted, phase 2 verifies)\n' \
+    "$imported_files" "$skipped_empty" "$audit_dir"
   ok=1
   exit 0
 fi
 
 failed_chunks=""
 imported_files=0
+skipped_empty=0
 unmapped_count=0
 replies_seen=0
 
@@ -427,25 +494,7 @@ for reply in "$reply_dir"/reply-*.md; do
   padded="$(printf '%02d' "$((10#$num))")"
 
   body="$scratch/body-$padded.md"
-  # Tolerate one wrapping code-fence line (```, ```markdown, ...) at the very first or very last
-  # line. Deliberately NOT `sed -e '1{/^```/d}'`: that GNU-style address-block needs a trailing `;`
-  # before the `}` on BSD sed (macOS's own /bin/sed) — "extra characters at the end of d command",
-  # caught live on this machine. A plain `sed -n 'N,Mp'` range is portable across GNU/BSD/busybox.
-  # `awk 'END{print NR}'`, not `wc -l`: this repo's own established caveat (see
-  # tools/drydock/inventory.sh's header) — wc -l counts newlines and undercounts a reply whose last
-  # line has none.
-  total_lines="$(awk 'END{print NR}' "$reply" 2>/dev/null || echo 0)"
-  first_line="$(head -n 1 "$reply" 2>/dev/null || true)"
-  last_line="$(tail -n 1 "$reply" 2>/dev/null || true)"
-  body_start=1
-  body_end="$total_lines"
-  case "$first_line" in '```'*) body_start=2 ;; esac
-  case "$last_line" in '```') body_end=$((body_end - 1)) ;; esac
-  if [ "$body_start" -le "$body_end" ] 2>/dev/null; then
-    sed -n "${body_start},${body_end}p" "$reply" > "$body"
-  else
-    : > "$body"
-  fi
+  strip_fence "$reply" "$body"
 
   needle="CHUNK-END $padded"
   # Materialize the bounded head into a variable FIRST, then grep the variable via a here-string —
@@ -471,25 +520,22 @@ for reply in "$reply_dir"/reply-*.md; do
   # secfile_for() wrote it to. Two sections sharing a path (unusual, but the model could repeat a
   # heading) are handled correctly too: each gets its own index, so neither collides with or
   # overwrites the other's content.
-  cur_file=""
+  #
+  # A title that is_summary_title() (dir #504 — chunked mode had no such case at all, unlike
+  # unchunked's W2-A3 handling) is not an audit target either: its raw body is appended to
+  # <audit-dir>/SUMMARY.md under a "### chunk NN" sub-heading, one sub-heading per chunk that
+  # carries a summary section (a chunked reply is scoped to its own chunk, unlike unchunked's
+  # whole-repo single pass, hence per-chunk rather than per-reply-file).
   section_paths=""
-  section_idx=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%$'\r'}"
-    case "$line" in
-      '## '*)
-        path="${line#??}"
-        path="${path# }"
-        [ -n "$path" ] || continue
-        section_idx=$((section_idx + 1))
-        cur_file="$(secfile_for "$padded" "$section_idx")"
-        section_paths="$section_paths$section_idx$TAB$path$NL"
-        : > "$cur_file"
-        continue
-        ;;
-    esac
-    [ -n "$cur_file" ] && printf '%s\n' "$line" >> "$cur_file"
-  done < "$body"
+  summary_body=""
+  split_sections "$body" "$padded"
+
+  if has_content "$summary_body"; then
+    {
+      printf '### chunk %s (from %s)\n\n' "$padded" "$base"
+      printf '%s' "$summary_body"
+    } >> "$audit_dir/SUMMARY.md"
+  fi
 
   # IFS="$TAB" read -r idx path — this codebase's own established TAB-record convention
   # (tools/drydock/inventory.sh, tools/delta-audit/derive.sh both already read TAB-delimited
@@ -501,12 +547,18 @@ for reply in "$reply_dir"/reply-*.md; do
     case "$known_paths" in
       *"$NL$path$NL"*)
         slug="$(printf '%s' "$path" | tr '/' '-')"
-        import_findings_into_contract "$secfile" "$path" "$audit_dir/$slug-audit.md"
-        imported_files=$((imported_files + 1))
+        if import_findings_into_contract "$secfile" "$path" "$audit_dir/$slug-audit.md"; then
+          imported_files=$((imported_files + 1))
+        else
+          skipped_empty=$((skipped_empty + 1))
+        fi
         ;;
       *)
-        append_unmapped "$secfile" "$path" "$base"
-        unmapped_count=$((unmapped_count + 1))
+        if append_unmapped "$secfile" "$path" "$base"; then
+          unmapped_count=$((unmapped_count + 1))
+        else
+          skipped_empty=$((skipped_empty + 1))
+        fi
         ;;
     esac
   done <<< "$section_paths"
@@ -516,9 +568,10 @@ done
   (reply-value.md, if present, is deliberately never imported here.)"
 
 if [ -n "$failed_chunks" ]; then
-  printf 'import.sh: %d section(s) imported, %d unmapped — FAILED chunk(s):%s\n' \
-    "$imported_files" "$unmapped_count" "$failed_chunks" >&2
+  printf 'import.sh: imported %d, skipped-empty %d, %d unmapped — FAILED chunk(s):%s\n' \
+    "$imported_files" "$skipped_empty" "$unmapped_count" "$failed_chunks" >&2
   exit 1
 fi
-printf 'import.sh: %d section(s) imported into %s, %d unmapped\n' "$imported_files" "$audit_dir" "$unmapped_count"
+printf 'import.sh: imported %d, skipped-empty %d into %s, %d unmapped\n' \
+  "$imported_files" "$skipped_empty" "$audit_dir" "$unmapped_count"
 ok=1
