@@ -122,6 +122,11 @@ sections real content going forward — see that page for exactly when each one 
   silent-truncation genre dir #273/#274 already closed for comma/semicolon/slash/whitespace/"and"-
   joined lists. One character added to the separator class; a new test fixture pins the exact
   reproduced shape.
+- **`docs/parallel-sessions.md` — two more catalog entries, F5 and F6** (dir #507): all worktrees
+  of one repo share remote-tracking refs, so a sibling's `git fetch` moves `origin/main` under a
+  diff in progress (diff against the recorded parent SHA instead); and a reused scratch clone
+  can carry a local worktree path as its `origin` (verify `git remote -v` before trusting it).
+  Both hit live during the v0.10.1 release's cross-vendor ladder.
 
 ## [0.10.0] — 2026-09-11
 
