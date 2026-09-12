@@ -96,6 +96,18 @@ shipped the day before and no hook was wired on the maintainer's own machine. Ch
 before reading the aggregate, say which of the two states you are in, and hand the operator the install
 step as a G0 output so the NEXT groom has data.
 
+**Name the case where the previous cycle produced NOTHING.** G0's inputs are written assuming the
+previous cycle shipped something and left records. The degrade-cleanly clause above covers a missing
+*mechanism*, not a missing *cycle*. On one adopter project the previous cycle was ten weeks of
+dormancy: no release, no records, and — the part that bites — a backlog still frozen in the posture of
+the deadline it was written under. When G0 finds no delivery since the previous groom or release, the
+dormancy IS the retro's subject, and the first hygiene pass is to reconcile the backlog's own stated
+urgency against the calendar. A backlog written under a deadline does not merely go stale when the
+deadline passes unmet — it goes actively misleading, and it misleads hardest at the top of the file,
+where the next session reads first. On that project both instances were exactly there: a maximum-
+priority flag on a ticket that was verifiably complete, and a "target of opportunity" date ten weeks
+gone still framing the priority order.
+
 **Every amendment that compensates for a defect names the ticket that will remove it.** A retro's
 natural output is a rule telling every future cycle to work around something — and a rule is the most
 expensive fix there is, because it is paid forever, by everyone, silently. That is sometimes right; it
@@ -135,6 +147,16 @@ against a stated pain; it never invents a theme without one, and any genuine pro
 operator's to resolve, never this procedure's to infer. A release row with no operator pain behind it
 says so plainly on the row — "carried-over theme, not a sprint" is the wording a plan already uses for
 exactly this case, and it stays visible rather than being dressed up as a sprint it is not.
+
+**The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
+pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
+wording. It has nothing for a *whole plan* with no per-row pains — which is what you get when the
+operator's single stated pain is about the plan's own legibility, a pain the groom itself is the answer
+to. Left unaddressed, every row then gets ordered by the groom's own taste while *looking*
+pain-driven, which is the exact dishonesty this section exists to prevent. Where the only stated pain
+is the meta-pain, the plan must name an explicit, falsifiable ordering principle drawn from the
+project's own recorded doctrine, state that it is ordering by that and not by pains, and mark each row
+that has no pain behind it.
 
 ## G2 — read ticket bodies, not headings
 
@@ -180,12 +202,24 @@ twice — once before the hygiene sweep and once after the last heading edit —
 disagreement before writing a count.** The second run is nearly free and is the only step that catches a
 predicate that is wrong, as opposed to a file that has moved.
 
-**All three extraction rules are compensations for one missing mechanism, and they name it.** Nothing
+**A fourth extraction rule, earned on an adopter project whose previous cycle was dormancy, not a
+release (traverse, 2026-09-10): match the closure marker at a fixed position, and check whether the
+project's status vocabulary is overloaded before trusting any census.** G3's existing closure-marker
+rule (above) is necessary and, on this adopter, still insufficient, for two reasons the doc did not yet
+cover. (a) A partial ticket routinely cites the closure marker of its own shipped slice *mid-cell*
+("🟡 Seed ✅ #44 — full UX awaits B.56"), so an anywhere-in-the-cell match reports it closed; five rows
+flipped state between an anywhere-match and a position-anchored match on this project. (b) The same
+marker can carry two meanings in one column — one glyph meant "Fixed" on six rows and "Low priority"
+on another — the same glyph meaning both a state and a priority is common in hand-maintained tables and
+is invisible from the count alone.
+
+**All four extraction rules are compensations for one missing mechanism, and they name it.** Nothing
 shipped reports the slate lanes (the pool report counts the pool only), so every groom re-derives its
-census by hand — which is exactly where the phantom-release, closure-note-arrow and loose-predicate
-defects above were minted. `dir #496` owns the shipped census (open tickets by
-last-arrow tag, closure by the project's marker via the shared scanner, counted once before and once
-after the sweep); when it lands, the three rules become that tool's own header, and this section
+census by hand — which is exactly where the phantom-release, closure-note-arrow, loose-predicate and
+mid-cell-marker/overloaded-glyph defects above were minted. `dir #496` owns the shipped census (open
+tickets by last-arrow tag, closure by the project's marker at a fixed position via the shared scanner,
+counted once before and once after the sweep); when it lands, the four rules become that tool's own
+header, and this section
 points at the tool. Until then they are guidance to follow by hand, not a permanent limit.
 
 ## G4 — the hygiene sweep
