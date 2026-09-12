@@ -164,6 +164,32 @@ sections real content going forward — see that page for exactly when each one 
   isn't well-defined for an arbitrary rev-list expression like `<tip> --not --remotes`); left as a
   follow-up rather than bolted on here. (F2, a UTF-32/locale personal-data miss, is `known` —
   dir #250, unrelated to these four.)
+- **`tools/public-audit.sh` closes two declared-token blind spots the external audit leg found**
+  (dir #509, found by dir #495 run 1 — the OpenAI-Codex external leg — verified live by drydock
+  verifier V1): F6, `tree_grep`'s `git grep -I` skips binary files outright, so a staged-or-
+  uncommitted binary carrying a declared `--token` read CLEAN in both default and `--no-history`
+  mode — only a *committed* blob reached the history-only `scan_binary_blobs` decoder (dir #145).
+  Fixed with a working-tree binary-decode pass sharing one `decode_binary()` helper with
+  `scan_binary_blobs`'s existing recipe (instead of a second copy) and the same
+  `KEEL_AUDIT_BLOB_MAX` cap — scoped in default mode to files the history pass doesn't already
+  reach (staged/modified/untracked, via `git diff HEAD` + `git ls-files --others`) to avoid
+  redecoding content `scan_binary_blobs --all` already covers, and widened to every tracked file
+  under `--no-history`, where there is no history pass to fall back on. F7, an annotated-tag
+  message body is neither a commit message nor a diff, so the declared-token loop's `-G`/`--grep`
+  pair never saw it even though `$tag_msgs` was already being fetched for the session-metadata and
+  history-heuristic sections — `tag_msgs` is now populated once, earlier, and the token loop
+  checks it too. A `/polish` review round caught three further gaps in the F6 fix itself before it
+  shipped: `git diff`'s paths are relative to the repo root even under `-C <subdir>`, while
+  `git ls-files`'s are relative to that subdirectory — auditing a subdirectory could mis-join a
+  diff-sourced path onto the audited dir and silently miss it, fixed by stripping the dir's own
+  `git rev-parse --show-prefix` off each diff-sourced path; a symlink's target bytes were being
+  decoded instead of leaving it alone (git tracks a symlink's link-text, not its target); and a
+  failed `mktemp` silently dropped the whole working-tree pass with no `WARN`, unlike every other
+  capacity-related skip in this file. Eight red-then-green fixtures in `tests/test_public_audit.sh`
+  (the ticket's original two — a staged UTF-16LE binary in both audit modes, and an annotated
+  `git tag -a` body — plus six more from the review round: a subdirectory audit, `--no-history`
+  full-tree coverage on an already-committed binary, and a symlink) each reproduce a miss against
+  the unfixed code before passing against the fix.
 
 ## [0.10.0] — 2026-09-11
 
