@@ -43,7 +43,7 @@ outside the tree by absolute path?* A yes to any of them is outside worktree pro
 
 ## The failure catalog
 
-Four modes, drawn from independent field reports. Each is a symptom, why worktree isolation didn't cover
+Six modes, drawn from independent field reports. Each is a symptom, why worktree isolation didn't cover
 it, which rail below would have caught it, and which recovery tier gets you back — the commands
 themselves live in the recovery-tiers section, not here.
 
@@ -74,6 +74,24 @@ themselves live in the recovery-tiers section, not here.
   answer `Everything up-to-date` while your actual work never reached the remote. Rail: your editing
   tool's stale-file refusal, and push-verify. Recovery: your editing tool's own conflict detector for the
   file case; the retroactive tier for the branch case.
+- **F5 — the shared remote-tracking refs.** All worktrees of one repository share one `.git` object store
+  AND one set of remote-tracking refs, so a `git fetch` run in ANY worktree moves `origin/main` for every
+  other worktree at once. Symptom seen live: a session diffed a freshly generated commit against bare
+  `origin/main`, and because a sibling session had just fetched a newer main, the diff read as the commit
+  REVERTING another ticket's work — a phantom; the commit was fine against its own parent. Why isolation
+  didn't help: a worktree isolates the working tree and the branch pointer, never the remote-tracking
+  refs. Rail: diff a commit against its own recorded parent SHA (`git diff <parent>..<commit>`), never
+  against bare `origin/main`, whenever other sessions may be fetching. Recovery: none needed — re-run the
+  diff against the right base; if a rebase is wanted, rebase onto the now-current `origin/main` explicitly.
+- **F6 — the reused scratch clone with a stale origin.** A scratch clone made from a LOCAL checkout (a
+  worktree path or the main checkout) carries that path as its `origin`, so a later `git fetch origin` in
+  the reused clone "succeeds" against a sibling's working tree rather than the published repository —
+  every check then passes against whatever that sibling happened to have. Seen live on the very clone path
+  a project convention had set aside for reuse: `origin` pointed at another session's worktree directory.
+  Why isolation didn't help: the clone is outside every worktree and outlives the session that made it.
+  Rail: before trusting a reused clone, run `git remote -v` and require the real remote URL; re-point with
+  `git remote set-url origin <url>` and `git fetch --prune` before any `reset --hard` to a commit.
+  Recovery: preemptive (the check above) — a stale clone loses nothing, it just verifies nothing.
 
 ## The rails
 
@@ -133,8 +151,9 @@ you notice, the cheaper the tier.
   foreign commit onto its own throwaway branch rather than dropping it; re-verify anything you numbered
   against a shared file's *remote* version (`git show origin/<default>:<path>`), since the remote may
   have claimed that number while you weren't looking; finish with push-verify.
-- **The floor: `git reflog`.** Name it plainly — it recovered two of the four incidents in the catalog
-  above (F1 and F3), it's local-only, and it expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
+- **The floor: `git reflog`.** Name it plainly — it recovered two of the first four
+  incidents in the catalog (F5 and F6 lose nothing; they mislead) above (F1 and F3), it's
+  local-only, and it expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
   only** — to find commits a *peer* session dropped, check that branch's own reflog instead:
   `git reflog show <branch>`, which every worktree shares. Pair it with `git stash list` and
   `git fsck --lost-found` as the last stop before calling something actually gone.

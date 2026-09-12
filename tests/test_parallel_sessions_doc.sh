@@ -88,8 +88,8 @@ else
     "found $recovery_count '## Recovery tiers' headings, expected exactly 1"
 fi
 
-# --- the failure catalog names all four field-report modes, anonymized (no per-incident section) --
-for mode in 'F1' 'F2' 'F3' 'F4'; do
+# --- the failure catalog names all six field-report modes, anonymized (no per-incident section) --
+for mode in 'F1' 'F2' 'F3' 'F4' 'F5' 'F6'; do
   pin "parallel-sessions.md failure catalog names $mode" "$doc" "**$mode —" \
     "expected the failure catalog to enumerate $mode"
 done
