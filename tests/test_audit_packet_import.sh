@@ -436,4 +436,196 @@ check_contains "unchunked: the summary's own prose survives" \
   "$(cat "$out13/SUMMARY.md" 2>/dev/null)" "Trailing-space summary survives"
 check_nofile "unchunked: never fabricated as its own audit file instead" "$out13/Summary-audit.md"
 
+# --- dir #504: CHUNKED mode's splitter has a "## summary" case too, matching unchunked mode (found
+# live, code-review medium, PR2's own round: the chunked splitter had NO summary case at all — a
+# reply's mandated "## summary" section was treated as an audit target with no "### F<n>" blocks in
+# it, and render_findings() found nothing, so the section vanished with no file, no SUMMARY.md
+# entry, no warning). Routes to SUMMARY.md under a "### chunk NN" sub-heading (per chunk, since a
+# chunked reply is scoped to its own chunk, unlike unchunked's whole-repo single pass).
+d14="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mk_packet "$d14"
+cat > "$d14/reply-01.md" <<'EOF'
+CHUNK-END 01 files=2 bytes=10
+
+## summary
+
+This chunk's own summary prose.
+
+## PRINCIPLES.md
+
+### F1 — stale-claim — "the quoted line"
+claim: asserts X
+evidence: measured Y
+confidence: high
+EOF
+out14="$SANDBOX/audit14"
+mkdir -p "$out14"
+run "$TOOL" "$d14" "$out14"
+check_status "chunked: a '## summary' section exits 0" 0 "$STATUS"
+check_file "chunked: SUMMARY.md is written for a chunked reply's summary section" "$out14/SUMMARY.md"
+check_contains "chunked: SUMMARY.md sub-heading names the chunk it came from" \
+  "$(cat "$out14/SUMMARY.md" 2>/dev/null)" "### chunk 01"
+check_contains "chunked: the summary's own prose survives" \
+  "$(cat "$out14/SUMMARY.md" 2>/dev/null)" "This chunk's own summary prose."
+check_nofile "chunked: '## summary' never becomes its own fabricated audit file" "$out14/summary-audit.md"
+check_nofile "chunked: no EXTERNAL-UNMAPPED.md created (no unmapped path in this reply)" \
+  "$out14/EXTERNAL-UNMAPPED.md"
+check_file "chunked: the real PRINCIPLES.md section still imports alongside the summary" \
+  "$out14/PRINCIPLES.md-audit.md"
+
+# --- dir #504: chunked mode's summary case tolerates the same stray whitespace unchunked mode does
+# — both splitters now call the same shared trim_ws/is_summary_title helpers, not two copies. -----
+d15="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mk_packet "$d15"
+cat > "$d15/reply-01.md" <<'EOF'
+CHUNK-END 01 files=2 bytes=10
+
+##  Summary
+
+Doubled-leading-space chunked summary survives.
+
+## PRINCIPLES.md
+
+### F1 — stale-claim — "the quoted line"
+claim: asserts X
+evidence: measured Y
+confidence: high
+EOF
+out15="$SANDBOX/audit15"
+mkdir -p "$out15"
+run "$TOOL" "$d15" "$out15"
+check_status "chunked: a '##  Summary' (doubled leading space) heading still exits 0" 0 "$STATUS"
+check_contains "chunked: SUMMARY.md is written despite the doubled leading space" \
+  "$(cat "$out15/SUMMARY.md" 2>/dev/null)" "Doubled-leading-space chunked summary survives."
+check_nofile "chunked: never fabricated as its own audit file instead" "$out15/Summary-audit.md"
+
+# --- dir #503: a "## <path>" section with a heading but no real "### F<n>" blocks under it is
+# counted as skipped-empty, not imported (found live, dir #495 PR1's post-merge review, Angle A: the
+# old single "imported N" counter incremented on every CALL to import_findings_into_contract(),
+# regardless of whether it actually wrote anything). Mutation-proof: the combined-count substring
+# ("imported 1, skipped-empty 1") cannot pass if either number is wrong, unlike checking each count
+# in isolation (which "imported 10, skipped-empty 1" would also satisfy for the first check alone).
+d16="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mk_packet "$d16"
+cat > "$d16/reply-01.md" <<'EOF'
+CHUNK-END 01 files=2 bytes=10
+
+## PRINCIPLES.md
+
+Just prose, no finding blocks here at all.
+
+## README.md
+
+### F1 — overclaim — "a real finding"
+claim: x
+evidence: y
+confidence: high
+EOF
+out16="$SANDBOX/audit16"
+mkdir -p "$out16"
+run "$TOOL" "$d16" "$out16"
+check_status "chunked: mixed empty+real sections still exits 0" 0 "$STATUS"
+check_contains "chunked: stdout reports exactly 1 imported, 1 skipped-empty" "$OUT" \
+  "imported 1, skipped-empty 1"
+check_nofile "chunked: the empty section never fabricates an audit file" "$out16/PRINCIPLES.md-audit.md"
+check_file "chunked: the real section still imports" "$out16/README.md-audit.md"
+
+# --- dir #503 (unchunked mode): the same imported vs skipped-empty distinction applies there too --
+d17="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d17/reply.md" <<'EOF'
+BASELINE dddddddddddddddddddddddddddddddddddddddd
+
+## empty/path.md
+
+Just prose, no finding blocks here at all.
+
+## real/path.md
+
+### F7 — overclaim — "a real finding"
+claim: x
+evidence: y
+confidence: high
+EOF
+out17="$SANDBOX/audit17"
+mkdir -p "$out17"
+run "$TOOL" --vendor test "$d17" "$out17"
+check_status "unchunked: mixed empty+real sections still exits 0" 0 "$STATUS"
+check_contains "unchunked: stdout reports exactly 1 imported, 1 skipped-empty" "$OUT" \
+  "imported 1, skipped-empty 1"
+check_nofile "unchunked: the empty section never fabricates an audit file" "$out17/empty-path.md-audit.md"
+check_file "unchunked: the real section still imports" "$out17/real-path.md-audit.md"
+
+# --- dir #503: append_unmapped's own call site had the identical call-counted-not-write-counted
+# bug (found live, this round's own code-review medium delta round) — an unmapped path whose section
+# rendered no real findings must not bump "unmapped", since EXTERNAL-UNMAPPED.md gets nothing for it.
+d18="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mk_packet "$d18"
+cat > "$d18/reply-01.md" <<'EOF'
+CHUNK-END 01 files=2 bytes=10
+
+## not/in/manifest.md
+
+Just prose, no finding blocks here at all.
+
+## PRINCIPLES.md
+
+### F1 — overclaim — "a real finding"
+claim: x
+evidence: y
+confidence: high
+EOF
+out18="$SANDBOX/audit18"
+mkdir -p "$out18"
+run "$TOOL" "$d18" "$out18"
+check_status "chunked: an empty unmapped section still exits 0" 0 "$STATUS"
+check_contains "chunked: stdout reports exactly 1 imported, 1 skipped-empty, 0 unmapped" "$OUT" \
+  "imported 1, skipped-empty 1 into $out18, 0 unmapped"
+check_nofile "chunked: EXTERNAL-UNMAPPED.md is never created for an empty unmapped section" \
+  "$out18/EXTERNAL-UNMAPPED.md"
+
+# --- dir #503: a "## summary" section holding only blank line(s) is NOT content — no spurious
+# sub-heading with nothing under it (found live, this round's own code-review medium delta round;
+# `[ -n "$summary_body" ]` treated a bare "\n" as non-empty). Covers both modes since both splitters
+# share the same has_content() guard.
+d19="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mk_packet "$d19"
+cat > "$d19/reply-01.md" <<'EOF'
+CHUNK-END 01 files=2 bytes=10
+
+## summary
+
+
+## PRINCIPLES.md
+
+### F1 — overclaim — "a real finding"
+claim: x
+evidence: y
+confidence: high
+EOF
+out19="$SANDBOX/audit19"
+mkdir -p "$out19"
+run "$TOOL" "$d19" "$out19"
+check_status "chunked: a blank '## summary' section still exits 0" 0 "$STATUS"
+check_nofile "chunked: a blank summary never writes SUMMARY.md at all" "$out19/SUMMARY.md"
+
+d20="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+cat > "$d20/reply.md" <<'EOF'
+BASELINE eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+
+## summary
+
+
+## real/path.md
+
+### F1 — overclaim — "a real finding"
+claim: x
+evidence: y
+confidence: high
+EOF
+out20="$SANDBOX/audit20"
+mkdir -p "$out20"
+run "$TOOL" --vendor test "$d20" "$out20"
+check_status "unchunked: a blank '## summary' section still exits 0" 0 "$STATUS"
+check_nofile "unchunked: a blank summary never writes SUMMARY.md at all" "$out20/SUMMARY.md"
+
 summary
