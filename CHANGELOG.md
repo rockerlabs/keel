@@ -17,6 +17,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Added
 
+- **`ADAPTING.md` — a paragraph on the generator / mutator-of-record split** — dir #489 phase 2's close:
+  a non-Claude tool can generate a ticket's diff while a Claude Code session stays the mutator of
+  record (reviews it, runs the suite, passes it through `/polish`'s gate, opens the PR) — because the
+  gate is built on Claude Code hooks and doesn't port. Measured live as a four-rung qualification
+  ladder: rung 0 PASS on `agy` (Gemini, headless) — a read-only audit round — then three mutator rungs
+  (`agy` on a docs-only ticket, then one shell file; Freebuff's GUI on a third, docs-only, ticket) with
+  the generator's raw-diff defect count going 4 → 0 → 0 across them and review cost at or below a plain
+  Claude implementation (−18% / −8%; the third mutator rung's ticket was too small to compare); rung 3b
+  (Freebuff via tmux) not run, per its own deferral. Phase 1 (Gemini as a second audit vendor) shipped
+  separately (`private/audit-harness/`, no PR by the ticket's own rule); its `read_file` bundle-mode
+  follow-up proved mechanically sound but 0/3 reliable on real audit prompts, so `auto` still resolves
+  to the free inline path. (dir #489)
 - **`tools/audit-packet/export.sh` and `tools/audit-packet/import.sh`** — dir #495 PR1: a leak-gated
   packet/import pair for a human-driven, unscriptable third-party auditor UI (drydock's "external
   leg" — the first target is a colleague's OpenAI-family corporate UI, no API, no CLI). Procedure-
