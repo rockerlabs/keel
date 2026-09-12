@@ -186,6 +186,20 @@ enough for disjoint tickets, and the failure modes we hit were environmental (sa
 ignore rules), not collisions between the agents themselves. Overlapping tickets would need more than
 this; start disjoint.
 
+There's a third mode besides "several tools on several tickets": one non-Claude tool **generating** a
+ticket's diff, with a Claude Code session acting as **mutator of record** — reviewing the diff, running
+the suite, and passing it through `/polish`'s pre-PR gate before opening the PR. The split exists
+because [the honest boundary](#the-honest-boundary) above holds here too: the gate is built on Claude
+Code hooks and doesn't port, so only the reviewing Claude session ever opens the PR. We ran this live
+across several tickets on two non-Claude generators (a headless CLI and a GUI tool): the generator's
+diffs needed progressively fewer reviewer corrections, and reviewing cost came in at or below what a
+plain Claude implementation of the same ticket would cost — see `CHANGELOG.md` (dir #489) for the
+per-run numbers. Two rails made it safe to try: the generator works in its own fresh clone or worktree
+against the tracked public tree only, with no private context (strip any linked `CLAUDE.md` a worktree
+hook adds — the same per-folder-sandbox gotcha as above, in reverse), and its writes are scoped by the
+tool's own allow-list, never a skip-permissions flag. See `docs/delegation.md`'s Worker → Mutator table
+for the role split this leans on. (An installer adapter for these tools is separate work.)
+
 ## Help map your tool
 
 Claude Code, Codex (ChatGPT app), and Cursor have been run live and hold the rails reliably; a small local
