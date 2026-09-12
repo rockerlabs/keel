@@ -51,6 +51,10 @@ check_contains "a range expands its low endpoint" "$out" "dir #104"
 check_contains "a range expands every ticket in the middle" "$out" "dir #105"
 check_contains "a range expands its high endpoint" "$out" "dir #107"
 
+out="$(printf 'dir #364+#273\n' | extract_dir_tickets)"
+check_contains "a plus-separated shorthand list extracts its first number (dir #482)" "$out" "dir #364"
+check_contains "a plus-separated shorthand list extracts its SECOND number too (dir #482)" "$out" "dir #273"
+
 out="$(printf 'an illustrative example: `dir #999` is not real\n' | extract_dir_tickets)"
 check_absent "a backtick-quoted citation is stripped, not extracted" "$out" "999"
 

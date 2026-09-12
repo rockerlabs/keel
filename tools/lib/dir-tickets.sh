@@ -91,9 +91,10 @@
 # real instance, at the cost of new false-positive surface in prose this library already parses
 # correctly, was judged not worth it — a case-by-case call, not a blanket rule against ever tightening
 # this grammar again; re-measure before reopening. (Separately, real commit `PR #389 (dir #364+#273)`
-# shows `+` isn't in the separator class above, so `+`-joined citations silently drop everything after
-# the first — a distinct, narrower gap from the prose-interruption question this paragraph is about,
-# filed as its own ticket, dir #482, rather than addressed here.)
+# showed `+` isn't in the separator class above, so a `+`-joined citation silently dropped everything
+# after the first — a distinct, narrower gap from the prose-interruption question this paragraph is
+# about. Fixed in dir #482: `+` is now part of the separator class below, so this exact shape extracts
+# both tickets.)
 extract_dir_tickets() {
   sed -E 's/`[^`]*`//g' \
     | awk '
@@ -109,7 +110,7 @@ extract_dir_tickets() {
     }
     END { if (buf != "") print buf }
   ' \
-    | grep -oE 'dir #[0-9]+(-[0-9]+)?([,;/[:space:]]+(and[[:space:]]+)?#[0-9]+(-[0-9]+)?)*' \
+    | grep -oE 'dir #[0-9]+(-[0-9]+)?([,;/+[:space:]]+(and[[:space:]]+)?#[0-9]+(-[0-9]+)?)*' \
     | grep -oE '#[0-9]+(-[0-9]+)?' \
     | awk -F'[#-]' '
         /-/ { lo = $2 + 0; hi = $3 + 0
