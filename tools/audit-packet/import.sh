@@ -363,9 +363,12 @@ has_content() {
 # split_sections BODY PREFIX — reads BODY, splitting it into per-"## <title>" sections: a title
 # is_summary_title() accumulates into the (global) $summary_body; every other title gets its own
 # secfile_for() scratch file (indexed under PREFIX) and is recorded into the (global)
-# $section_paths as an "IDX<TAB>title" record. Caller resets both globals to "" first (this file's
-# own established convention — script-global state mutated directly, not threaded through a return;
-# there is no bash-3.2-compatible way to hand back two values otherwise). Shared by both CHUNKED and
+# $section_paths as an "IDX<TAB>title" record. Caller resets both globals to "" first. The rest of
+# this script mutates its own script-global state inline throughout (imported_files, skipped_empty,
+# and so on); this is the first FUNCTION to do the same, since bash 3.2 has no nameref support to
+# hand back two values any other way — a one-off exception to the file's other two return idioms
+# (stdout capture, or an explicit output-path argument like strip_fence's), not itself a precedent.
+# Shared by both CHUNKED and
 # UNCHUNKED splitters (found live, this round's own /simplify pass: dir #504's fix had copied this
 # ~25-line loop from the unchunked splitter into the chunked one nearly verbatim — the exact
 # duplication class strip_fence() already closed one function up, left unclosed here).
