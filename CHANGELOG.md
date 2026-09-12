@@ -142,6 +142,28 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/secret-guard/secret-scan.sh`'s `--staged` (pre-commit) scan had four independent
+  bypasses, each reproduced with a real key-shaped secret that the direct FILE scan caught but the
+  staged scan waved through clean** — found by dir #495's external-audit run 1 (the OpenAI-Codex
+  leg, 2026-09-11) and verified live by the drydock verifier (dir #508): (a) an allowlist entry
+  added in the *same* staged change as the secret it exempts was trusted with no provenance check
+  — FRAMEWORK.md's own same-change restriction was never implemented; a staged `.secret-scan-allow`
+  entry is now honored only when it already existed in `HEAD`'s committed copy, an entry new in
+  this change is ignored (named on stderr) rather than trusted, and the ordinary pre-existing-entry
+  case is unaffected; (b) `git diff --cached --name-only` fed a C-quoted non-ASCII filename (e.g. a
+  Cyrillic name) into the scanner as a literal pathspec matching nothing — `core.quotePath=false`
+  now applies to that enumeration too, matching the numstat call beside it; (c)
+  `--diff-filter=ACM` excluded Renames, so a `git mv`'d file with a newly appended secret was
+  invisible to both staged enumerations — the filter is now `ACMR`; (d) `grep -vE '^\+\+\+'`
+  dropped any added line whose content starts with `++` as if it were a diff header — the
+  exclusion is now anchored to the actual header shape (`+++ b/<path>` or `+++ /dev/null`, with
+  `--src-prefix`/`--dst-prefix` pinned so a host's `diff.noprefix` can't reopen it). One fixture per
+  bypass in `tests/test_secret_guard.sh`, each proved red on the pre-fix scanner and green after.
+  `--range` (the pre-push path) shares (a)'s same-change allowlist hole — reproduced live — but a
+  correct fix there needs a different baseline (the range's own start point, not `HEAD`, which
+  isn't well-defined for an arbitrary rev-list expression like `<tip> --not --remotes`); left as a
+  follow-up rather than bolted on here. (F2, a UTF-32/locale personal-data miss, is `known` —
+  dir #250, unrelated to these four.)
 - **`tools/public-audit.sh` closes two declared-token blind spots the external audit leg found**
   (dir #509, found by dir #495 run 1 — the OpenAI-Codex external leg — verified live by drydock
   verifier V1): F6, `tree_grep`'s `git grep -I` skips binary files outright, so a staged-or-

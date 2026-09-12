@@ -76,6 +76,11 @@ PATTERNS=(
 SESSION_META='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 
 ALLOW_FILE=".secret-scan-allow"
+# set by the --staged dispatch arm to "HEAD" (dir #508 (a)); the same-change allowlist-provenance
+# check below reads it as "which committed ref counts as pre-existing", empty = no check. A ref,
+# not a bool, so a future --range fix can set its own baseline (the range's start commit, not
+# HEAD) without a second flag or a second branch in the shared allowlist-parsing block below.
+ALLOW_BASELINE_REF=""
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 
 # All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
@@ -208,6 +213,16 @@ require_git_repo() {
     || { echo "secret-scan: $1 needs a git repo" >&2; exit 2; }
 }
 
+# exact-match array membership — same shape as tools/audit-packet/export.sh's and
+# tools/drydock/inventory.sh's own array_contains() (each kept local rather than shared, since a
+# vendored file may only source what ships beside it); named here for the same reason.
+array_contains() {  # $1 = needle, remaining = haystack
+  local needle="$1"; shift
+  local x
+  for x in "$@"; do [ "$x" = "$needle" ] && return 0; done
+  return 1
+}
+
 # --- dir #251: impact-log resolution, a small INLINE copy of tools/lib/impact-store.sh ------------
 # This file is VENDORED (install-secret-guard.sh `cp`s it into each repo's hooks dir) and may only
 # source files vendored beside it (range-lib.sh is the precedent) — it cannot `source` the shared lib,
@@ -260,9 +275,24 @@ emit_diff() {
   # extension), and BusyBox sed (Alpine CI leg) treats it as literal backslash-then-plus — matching
   # nothing, so the leading '+' from the diff's added-line marker survives unstripped and leaks into
   # every emitted record. '+' needs no escaping in BRE to match itself.
-  git diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null \
-    | grep -E '^\+' | grep -vE '^\+\+\+' \
-    | sed 's/^+//' > "$dtmp" || true
+  # The "--- a/<path>" / "+++ b/<path>" file-header pair is excluded by tracking the first HUNK
+  # header ("@@ -.. +.. @@") instead of matching the file header's own shape (dir #508 (d)): an
+  # earlier version of this fix matched "--- "/"+++ " text directly, which a same-line edit could
+  # still spoof — delete a line shaped "-- x" and add one shaped "++ <secret>" and diff renders
+  # exactly "--- x" / "+++ <secret>" back-to-back, indistinguishable from a real header by shape
+  # alone (caught live by this ticket's own review). A hunk header has no +/- prefix at all — real
+  # content lines always carry one (added: "+", removed: "-"), so the literal text "@@ " can never
+  # appear as the FIRST character of a real content line no matter what the file contains: an added
+  # line whose own text starts with "@@ " still renders as "+@@ ...", not "@@ ...". And the file's
+  # "--- "/"+++ " header pair always precedes the FIRST hunk, never recurring after it — so any
+  # "+"-prefixed line seen once a hunk header has appeared is unconditionally real content.
+  # --literal-pathspecs: "$path" is a real filename, not a glob the caller intended — a file
+  # literally named e.g. "*" would otherwise match every staged path, folding every OTHER staged
+  # file's added lines into this one path's records (max-review sweep finding).
+  git --literal-pathspecs diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null | awk '
+    /^@@ / { in_hunk=1; next }
+    in_hunk && /^\+/ { print }
+  ' | sed 's/^+//' > "$dtmp" || true
   while IFS= read -r hit; do
     records+="$path:$hit"$'\n'
   done < <(match_text '' "$dtmp")
@@ -511,14 +541,31 @@ case "$mode" in
     ;;
   staged|--staged|"")
     require_git_repo --staged
+    ALLOW_BASELINE_REF=HEAD
+    # Both staged enumerations below share one flag set, kept in ONE place on purpose: before this
+    # fix, core.quotePath=false sat on the numstat call only, and that exact asymmetry (dir #508
+    # (b)) is how a C-quoted non-ASCII path escaped the name-only scan — a second hand-kept copy
+    # is how that class of drift recurs. --diff-filter=d (dir #508 (c), an EXCLUDE-list: only
+    # Deleted is dropped, everything else — Added/Copied/Modified/Renamed/Type-changed — passes):
+    # a positive allow-list like the prior "ACM" (or even "ACMR") reproduces this exact bug one
+    # status letter at a time as git adds more; a deleted file can never introduce an added line
+    # worth scanning, so excluding only D is complete by construction. --no-renames: a renamed
+    # BINARY file lands in the numstat loop below as "-\t-\t<old> => <new>" (one combined field,
+    # no -z), which a plain `awk -F'\t' '{print $3}'` can't parse into a real path — git-showing
+    # that bogus string then silently fails (2>/dev/null) and the file's secret content is never
+    # decoded. --no-renames instead reports a rename as a plain Delete (excluded by -d above) plus
+    # an Add of the new path (a clean single-field path either loop can use); the name-only
+    # enumeration's own emit_diff call is untouched (still default rename detection), so a TEXT
+    # rename's content-diff still resolves exactly as fixture (c) already proves.
+    staged_diff_flags=(-c core.quotePath=false diff --cached --no-renames --diff-filter=d)
     while IFS= read -r f; do
       [ -n "$f" ] && emit_diff "$f" --cached
-    done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+    done < <(git "${staged_diff_flags[@]}" --name-only 2>/dev/null || true)
     # binary staged files have no text diff (numstat shows "- -") — decode and scan their staged blobs
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       emit_stream "$f" < <(git show ":$f" 2>/dev/null)
-    done < <(git -c core.quotePath=false diff --cached --numstat --diff-filter=ACM 2>/dev/null \
+    done < <(git "${staged_diff_flags[@]}" --numstat 2>/dev/null \
              | awk -F'\t' '$1=="-" && $2=="-"{print $3}')
     ;;
   --tracked)
@@ -561,11 +608,37 @@ esac
 drop_res=()
 path_globs=()
 if [ -f "$ALLOW_FILE" ]; then
-  while IFS= read -r entry; do
+  # dir #508 (a): a legitimate human escape hatch must not be agent-usable in-band (FRAMEWORK.md
+  # L701-702) — reject an allowlist entry added in the SAME staged change as the secret it would
+  # exempt. Compare against a trusted baseline ref's committed copy, not the staged/working one:
+  # an entry only new relative to that baseline exempts nothing THIS change adds. No baseline ref
+  # (e.g. --range, --tracked, FILE mode) → no check, every entry trusted as before. A baseline ref
+  # with no HEAD yet (first ever commit) → head_allow_lines stays empty, so every current entry
+  # reads as new-this-change. Read once into a plain array (not re-grepped per entry): bash 3.2
+  # has indexed arrays but no associative ones, and this file must run on macOS's stock bash.
+  head_allow_lines=()
+  if [ -n "$ALLOW_BASELINE_REF" ]; then
+    # `|| [ -n "$hl" ]`: without it, a baseline file with no trailing newline loses its LAST line —
+    # `read` fails on the final unterminated line, so that entry never joins the array and reads as
+    # "new this change", false-blocking a legitimate commit over a pre-existing entry.
+    while IFS= read -r hl || [ -n "$hl" ]; do
+      head_allow_lines+=("${hl%$'\r'}")
+    done < <(git show "$ALLOW_BASELINE_REF:$ALLOW_FILE" 2>/dev/null || true)
+  fi
+  # `|| [ -n "$entry" ]`: same reason as head_allow_lines above — an allowlist with no trailing
+  # newline on its last line would otherwise silently lose that entry entirely (dropped from
+  # drop_res/path_globs, not merely "new this change"), disabling it with no diagnostic at all.
+  while IFS= read -r entry || [ -n "$entry" ]; do
     entry="${entry%$'\r'}"                 # tolerate a CRLF-saved allowlist (strip trailing CR)
     [ -z "$entry" ] && continue
     case "$entry" in
-      \#*) ;;                              # comment
+      \#*) continue ;;                     # comment
+    esac
+    if [ -n "$ALLOW_BASELINE_REF" ] && ! array_contains "$entry" "${head_allow_lines[@]:-}"; then
+      echo "secret-scan: ignoring an allowlist entry new in this staged change (commit it separately first, unstaged from the secret it would exempt): $entry" >&2
+      continue
+    fi
+    case "$entry" in
       path:*) path_globs+=("${entry#path:}") ;;
       *) drop_res+=("$entry") ;;
     esac
