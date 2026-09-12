@@ -64,6 +64,91 @@ run bash "$pa" --token '-leaked-id-1234' "$d"
 check_status "dash-leading token in a binary blob → GAP" 1 "$STATUS"
 check_contains "names the dash-leading token (binary blob)" "$OUT" "private token /-leaked-id-1234/ in a binary blob"
 
+# dir #509 F6: a STAGED-but-UNCOMMITTED UTF-16LE binary carrying a declared token must still GAP, in
+# BOTH default and --no-history mode — tree_grep's `git grep -I` skips binary content outright, and
+# the history-only binary decoder (scan_binary_blobs) only sees objects reachable from a commit, so
+# before this fix both modes read clean on a staged-only binary (verified reproduction, drydock V1).
+d="$(repo_by dev@example.com)"
+{ utf16le "token SeekritStagedName only staged"; } > "$d/staged.bin"
+git -C "$d" add staged.bin   # staged, deliberately never committed
+run bash "$pa" --token 'SeekritStagedName' "$d"
+check_status "staged-only binary token, default mode → GAP exit 1" 1 "$STATUS"
+check_contains "names the staged binary file (default mode)" "$OUT" \
+  "private token /SeekritStagedName/ in a binary file in the working tree — staged.bin"
+run bash "$pa" --no-history --token 'SeekritStagedName' "$d"
+check_status "staged-only binary token, --no-history mode → GAP exit 1" 1 "$STATUS"
+check_contains "names the staged binary file (--no-history mode)" "$OUT" \
+  "private token /SeekritStagedName/ in a binary file in the working tree — staged.bin"
+
+# dir #509 F6 review round: `git diff`/`git diff --cached` print paths relative to the REPO ROOT even
+# under `-C <subdir>`, while `git ls-files` prints paths relative to that subdir — auditing a
+# subdirectory (a plausible monorepo use) must still resolve the diff-sourced path correctly rather
+# than doubling/mis-joining it against the audited DIR (verified live reproduction; caught by /polish's
+# own review round, not the original ticket's fixtures).
+d="$(repo_by dev@example.com)"
+mkdir -p "$d/sub"
+{ utf16le "token SeekritSubdirName in a subdir"; } > "$d/sub/staged-sub.bin"
+git -C "$d" add sub/staged-sub.bin
+run bash "$pa" --token 'SeekritSubdirName' "$d/sub"
+check_status "staged binary token, DIR is a subdirectory → GAP exit 1" 1 "$STATUS"
+check_contains "names the file relative to the audited subdirectory, not doubled" "$OUT" \
+  "private token /SeekritSubdirName/ in a binary file in the working tree — staged-sub.bin"
+
+# dir #509 F6 review round: an ALREADY-COMMITTED, untouched binary's token must still GAP under
+# --no-history — the working-tree pass restricts to dirty (staged/modified/untracked) files in DEFAULT
+# mode only, leaning on the history pass for everything else; --no-history has no history pass to lean
+# on, so it must fall back to scanning every tracked file, the same unscoped coverage tree_grep's own
+# text check already has in that mode (verified live reproduction).
+d="$(repo_by dev@example.com)"
+{ utf16le "token SeekritCommittedName untouched"; } > "$d/committed.bin"
+commit_in "$d" "add committed binary"
+run bash "$pa" --no-history --token 'SeekritCommittedName' "$d"
+check_status "already-committed, untouched binary token under --no-history → GAP exit 1" 1 "$STATUS"
+check_contains "names the committed binary file under --no-history" "$OUT" \
+  "private token /SeekritCommittedName/ in a binary file in the working tree — committed.bin"
+# ...and the same file is NOT re-decoded by the working-tree pass in DEFAULT mode (it's clean/unmodified,
+# so the history pass alone covers it) — only one binary-blob mention, from history, not "working tree".
+run bash "$pa" --token 'SeekritCommittedName' "$d"
+check_status "same committed binary, default mode → GAP exit 1 (via history pass)" 1 "$STATUS"
+check_contains "found via the history pass" "$OUT" "in a binary blob in git history — committed.bin"
+check_absent "NOT re-decoded by the working-tree pass (already unmodified/clean)" "$OUT" \
+  "in a binary file in the working tree"
+
+# dir #509 F6 review round (a second delta round): an UNTRACKED binary's token must still GAP under
+# --no-history too — widening the --no-history file list to `git ls-files` (every TRACKED file, to
+# close the gap above) must not silently drop the untracked case default mode already covers via
+# `git ls-files --others` (regression caught live by a delta re-review of the first fix).
+d="$(repo_by dev@example.com)"
+{ utf16le "token SeekritUntrackedName here"; } > "$d/untracked.bin"   # never git add-ed
+run bash "$pa" --no-history --token 'SeekritUntrackedName' "$d"
+check_status "untracked binary token under --no-history → GAP exit 1" 1 "$STATUS"
+check_contains "names the untracked binary file under --no-history" "$OUT" \
+  "private token /SeekritUntrackedName/ in a binary file in the working tree — untracked.bin"
+
+# dir #509 F6 review round: a SYMLINK must not have its TARGET's bytes decoded — git tracks a symlink's
+# content as its link-text (a short string), never the file it points to; scanning the target would
+# read content this audit was never asked to touch and diverges from how git/tree_grep treat the link.
+if command -v ln >/dev/null 2>&1; then
+  d="$(repo_by dev@example.com)"
+  outside="$SANDBOX/pa-symlink-target.bin"        # OUTSIDE $d — never itself audited by this run
+  { utf16le "token SeekritSymlinkTargetName elsewhere"; } > "$outside"
+  ln -s "$outside" "$d/link.bin"
+  git -C "$d" add link.bin
+  run bash "$pa" --token 'SeekritSymlinkTargetName' "$d"
+  check_status "a staged symlink's TARGET content is not scanned → exit 0" 0 "$STATUS"
+  check_absent "no GAP from following the symlink" "$OUT" "SeekritSymlinkTargetName"
+fi
+
+# dir #509 F7: a declared token inside an ANNOTATED-TAG message body must GAP — the token loop's
+# `-G`/`--grep` pair searches commit diffs and messages only, never a tag body (which `git log` never
+# shows in any format), so before this fix it read clean (verified reproduction, drydock V1).
+d="$(repo_by dev@example.com)"
+git -C "$d" -c user.email=dev@example.com -c user.name=dev tag -a probe \
+  -m "$(printf 'release\n\nPrivateTagTokenXYZ')"
+run bash "$pa" --token 'PrivateTagTokenXYZ' "$d"
+check_status "declared token in an annotated-tag body → GAP exit 1" 1 "$STATUS"
+check_contains "names the tag-body token hit" "$OUT" "private token /PrivateTagTokenXYZ/ in an annotated-tag message"
+
 # a token scrubbed from the tree but alive in history → still GAP
 d="$(repo_by dev@example.com)"
 printf 'ACME-X\n' > "$d/secret.txt"; commit_in "$d" add

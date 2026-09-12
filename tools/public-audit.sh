@@ -191,6 +191,26 @@ trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Decode ONE file's bytes (a committed blob written to a scratch path, or a working-tree file read
+# directly) into concatenated ASCII/UTF-16/UTF-32/raw-printable views, for the regex scans that can't
+# see into binary content directly. Shared by scan_binary_blobs (history + dir #509's working-tree
+# pass) so there is exactly one place implementing this recipe inside this file — keep it IN SYNC with
+# secret-guard/secret-scan.sh's own emit_blob() (each tool stands alone, so an encoding gap fixed there
+# must be fixed here too).
+decode_binary() {  # $1 = source file, $2 = destination file for the decoded views
+  local src="$1" dst="$2"
+  {
+    LC_ALL=C tr -d '\000' < "$src"; echo                        # ASCII-range UTF-16/UTF-32, no deps
+    if command -v iconv >/dev/null 2>&1; then                   # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
+      iconv -f UTF-16LE -t UTF-8 "$src" 2>/dev/null || true; echo
+      iconv -f UTF-16BE -t UTF-8 "$src" 2>/dev/null || true; echo
+      iconv -f UTF-32LE -t UTF-8 "$src" 2>/dev/null || true; echo
+      iconv -f UTF-32BE -t UTF-8 "$src" 2>/dev/null || true; echo
+    fi
+    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$src"; echo          # raw printable runs
+  } > "$dst"
+}
+
 # --- binary-blob decode scan (shared by sections 5b and 6) ----------------------------------------
 # The text passes cannot see INSIDE a binary: tree_grep's -I skips binary files, and `git log -p`
 # renders a binary change as "Binary files … differ" — so personal data encoded in a binary blob (the
@@ -219,18 +239,7 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
     git -C "$DIR" cat-file blob "$osha" > "$tmp" 2>/dev/null || continue
     # binary = contains a NUL byte; text blobs are already covered by the text passes
     LC_ALL=C tr -d '\000' < "$tmp" | cmp -s - "$tmp" && continue
-    # Decode recipe: keep IN SYNC with secret-guard/secret-scan.sh emit_blob() — deliberately
-    # duplicated (each tool stands alone), so an encoding gap fixed there must be fixed here too.
-    {
-      LC_ALL=C tr -d '\000' < "$tmp"; echo                        # ASCII-range UTF-16/UTF-32, no deps
-      if command -v iconv >/dev/null 2>&1; then                   # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
-        iconv -f UTF-16LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
-        iconv -f UTF-16BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
-        iconv -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
-        iconv -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
-      fi
-      LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo          # raw printable runs
-    } > "$dec"
+    decode_binary "$tmp" "$dec"
     if [ "${#tokens[@]}" -gt 0 ]; then
       for t in "${tokens[@]}"; do
         [ -z "$t" ] && continue
@@ -275,6 +284,14 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
 say "● public-audit ($DIR)"
 [ "$is_git" = 1 ] || say "       (not a git repo — git-history checks skipped)"
 
+# annotated-tag message bodies, captured once for sections 2, 4 and 5 — a tag's message is neither a
+# commit message nor a diff, so `git log` (any format) never shows it. Populated up here (moved off
+# section 4, dir #509 F7) so the declared-token loop in section 2 can check it too.
+tag_msgs=""
+if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+  tag_msgs="$(git -C "$DIR" for-each-ref --format='%(contents)' refs/tags 2>/dev/null || true)"
+fi
+
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
@@ -308,6 +325,64 @@ fi
 
 # --- 2. declared-private tokens, in tree AND history (GAP) ---------------------------------------
 if [ "${#tokens[@]}" -gt 0 ]; then
+  # F6 (dir #509): tree_grep's `git grep -I` skips binary files entirely, so a token only present in a
+  # binary file's DECODED bytes is invisible to the loop below. Not gated on NO_HISTORY: this is a TREE
+  # check, same altitude as tree_grep, not a history one. In default mode, scoped to files the history
+  # pass (scan_binary_blobs --all, section 5b) does NOT already reach — staged, unstaged-modified, or
+  # untracked — since an unmodified tracked file's current bytes are exactly its HEAD blob, which --all
+  # already walks; re-decoding it here would just repeat that work. In --no-history mode there is no
+  # history pass to lean on, so the scope widens to every tracked file (matching tree_grep's own,
+  # unscoped, text-check coverage) — narrowing it to "dirty" files there would leave a long-committed,
+  # untouched binary's token invisible under --no-history the way a text token never is.
+  wt_bin_reported=""
+  wt_bin_skipped=0
+  if [ "$is_git" = 1 ]; then
+    if [ ! -d "$audit_tmp" ]; then
+      warn "working-tree binary-token scan SKIPPED — no usable temp dir (mktemp failed); result is INCOMPLETE"
+    else
+      # Same cap as scan_binary_blobs (dir #196: sanitized against a non-numeric/overflowing override) —
+      # an oversized file must be skipped-and-surfaced here too, not scanned unconditionally, or the
+      # working-tree pass silently defeats the cap the history pass already enforces.
+      wt_max="$(sanitize_nonneg_int "${KEEL_AUDIT_BLOB_MAX:-10485760}" 10485760)"
+      # `git diff`/`git diff --cached` print paths relative to the repo ROOT even under `-C "$DIR"`,
+      # while `git ls-files` prints paths relative to `$DIR` itself — a real divergence (verified live),
+      # so every diff-sourced path needs `$DIR`'s own root-prefix stripped before it can be joined onto
+      # "$DIR/..." like the ls-files-sourced ones already can be. Empty at the repo root (no-op).
+      wt_prefix="$(git -C "$DIR" rev-parse --show-prefix 2>/dev/null || true)"
+      if [ "$NO_HISTORY" = 1 ]; then
+        # Every TRACKED file (matching tree_grep's own unscoped text coverage), plus untracked ones —
+        # `ls-files` alone would silently drop the untracked case default mode still catches.
+        wt_src() {
+          git -C "$DIR" ls-files -z -- . "${excludes[@]}" 2>/dev/null
+          git -C "$DIR" ls-files --others --exclude-standard -z -- . "${excludes[@]}" 2>/dev/null
+        }
+      else
+        wt_src() {
+          git -C "$DIR" diff --name-only -z --diff-filter=ACMR HEAD -- . "${excludes[@]}" 2>/dev/null \
+            | while IFS= read -r -d '' _wp; do printf '%s\0' "${_wp#"$wt_prefix"}"; done
+          git -C "$DIR" ls-files --others --exclude-standard -z -- . "${excludes[@]}" 2>/dev/null
+        }
+      fi
+      while IFS= read -r -d '' f; do
+        [ -L "$DIR/$f" ] && continue          # a symlink's tracked content is its link-text, not its target
+        [ -f "$DIR/$f" ] || continue
+        fsize="$(wc -c < "$DIR/$f" 2>/dev/null | tr -d ' ')"
+        if [ "${fsize:-0}" -gt "$wt_max" ]; then wt_bin_skipped=$((wt_bin_skipped + 1)); continue; fi
+        LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && continue
+        decode_binary "$DIR/$f" "$audit_tmp/wt.dec"
+        for t in "${tokens[@]}"; do
+          [ -z "$t" ] && continue
+          case "$wt_bin_reported" in *"|$t|"*) continue ;; esac
+          if [ -n "$(grep -aE -- "$t" "$audit_tmp/wt.dec" 2>/dev/null | head -n1 || true)" ]; then
+            gap "private token /$t/ in a binary file in the working tree — $f"
+            wt_bin_reported="$wt_bin_reported|$t|"
+          fi
+        done
+      done < <(wt_src)
+      [ "$wt_bin_skipped" -gt 0 ] && warn "$wt_bin_skipped binary file(s) over KEEL_AUDIT_BLOB_MAX (${wt_max}B) skipped in the working tree — UN-audited; raise the cap to cover them"
+    fi
+  fi
+
   for t in "${tokens[@]}"; do
     [ -z "$t" ] && continue
     hit="$(tree_grep "$t" | head -1 || true)"
@@ -316,6 +391,10 @@ if [ "${#tokens[@]}" -gt 0 ]; then
       c="$(git -C "$DIR" log --all --oneline -G"$t" 2>/dev/null | head -1 || true)"
       m="$(git -C "$DIR" log --all --oneline --grep="$t" -E 2>/dev/null | head -1 || true)"
       [ -n "$c$m" ] && gap "private token /$t/ in git history — e.g. ${c:-$m}"
+      # F7 (dir #509): an annotated-tag message body is neither a commit message nor a diff, so the
+      # -G/--grep pair above never sees it; $tag_msgs was captured for this purpose.
+      tg="$(printf '%s\n' "$tag_msgs" | grep -aE -- "$t" | head -1 || true)"
+      [ -n "$tg" ] && gap "private token /$t/ in an annotated-tag message — e.g. $tg"
     fi
   done
 fi
@@ -348,11 +427,7 @@ cyr="$( cd "$DIR" && git ls-files -z -- . "${excludes[@]}" 2>/dev/null \
 session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 sess_tree="$(tree_grep "$session_re" | head -1 || true)"
 [ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"
-tag_msgs=""
 if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-  # annotated-tag message bodies, captured once for sections 4 and 5 — a tag's message is neither
-  # a commit message nor a diff, so `git log` (any format) never shows it
-  tag_msgs="$(git -C "$DIR" for-each-ref --format='%(contents)' refs/tags 2>/dev/null || true)"
   sess_msg="$( { git -C "$DIR" log --all --format='%B' 2>/dev/null;
                  printf '%s\n' "$tag_msgs"; } | grep -aE "$session_re" | head -1 || true)"
   [ -n "$sess_msg" ] && warn "agent/session metadata in a commit or tag message — e.g. $sess_msg"
