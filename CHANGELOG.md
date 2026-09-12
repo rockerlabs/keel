@@ -116,6 +116,12 @@ sections real content going forward — see that page for exactly when each one 
   plan must name an explicit ordering principle from the project's own doctrine rather than dressing up
   the groom's own taste as pain-driven.
 - `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
+- **`tools/lib/dir-tickets.sh`'s `extract_dir_tickets()` now recognizes `+` as a shorthand-list
+  separator** — dir #482: a real citation shaped "dir #364+#273" (PR #389's own commit message)
+  previously extracted only the first ticket, silently dropping everything after the `+`, the same
+  silent-truncation genre dir #273/#274 already closed for comma/semicolon/slash/whitespace/"and"-
+  joined lists. One character added to the separator class; a new test fixture pins the exact
+  reproduced shape.
 
 ## [0.10.0] — 2026-09-11
 
