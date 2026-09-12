@@ -408,9 +408,9 @@ mutation phase of its own; findings feed the normal backlog rather than an in-ru
 ## See also
 
 Beyond the worked example itself, [`docs/drydock.md`](drydock.md) ships a full set of role-prompt
-templates (auditor, code-auditor, verifier, fixer) — a second, audit-specific reference alongside the
-generic ones above, worth a look if your application is close enough to auditing to start from theirs
-instead.
+templates (auditor, code-auditor, verifier, fixer, external-auditor) — a second, audit-specific
+reference alongside the generic ones above, worth a look if your application is close enough to
+auditing to start from theirs instead.
 
 For coordinating **mutating peer sessions** across a whole release — not this doc's own read-only
 subagent fan-out — see [`docs/release-management.md`](release-management.md), which sits in the gap
