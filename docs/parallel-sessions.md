@@ -81,8 +81,9 @@ themselves live in the recovery-tiers section, not here.
   REVERTING another ticket's work — a phantom; the commit was fine against its own parent. Why isolation
   didn't help: a worktree isolates the working tree and the branch pointer, never the remote-tracking
   refs. Rail: diff a commit against its own recorded parent SHA (`git diff <parent>..<commit>`), never
-  against bare `origin/main`, whenever other sessions may be fetching. Recovery: none needed — re-run the
-  diff against the right base; if a rebase is wanted, rebase onto the now-current `origin/main` explicitly.
+  against bare `origin/main`, whenever other sessions may be fetching. Recovery: preemptive (the rail
+  above) — re-run the diff against the right base; if a rebase is wanted, rebase onto the now-current
+  `origin/main` explicitly.
 - **F6 — the reused scratch clone with a stale origin.** A scratch clone made from a LOCAL checkout (a
   worktree path or the main checkout) carries that path as its `origin`, so a later `git fetch origin` in
   the reused clone "succeeds" against a sibling's working tree rather than the published repository —
@@ -151,9 +152,9 @@ you notice, the cheaper the tier.
   foreign commit onto its own throwaway branch rather than dropping it; re-verify anything you numbered
   against a shared file's *remote* version (`git show origin/<default>:<path>`), since the remote may
   have claimed that number while you weren't looking; finish with push-verify.
-- **The floor: `git reflog`.** Name it plainly — it recovered two of the first four
-  incidents in the catalog (F5 and F6 lose nothing; they mislead) above (F1 and F3), it's
-  local-only, and it expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
+- **The floor: `git reflog`.** Name it plainly — it recovered two of the first four incidents in the
+  catalog above (F1 and F3); F5 and F6 lose nothing, they mislead instead. It's local-only, and it
+  expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
   only** — to find commits a *peer* session dropped, check that branch's own reflog instead:
   `git reflog show <branch>`, which every worktree shares. Pair it with `git stash list` and
   `git fsck --lost-found` as the last stop before calling something actually gone.
