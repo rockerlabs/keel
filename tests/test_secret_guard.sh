@@ -453,6 +453,124 @@ printf 'nothing here\n' > "$repo/ok.txt"; git -C "$repo" add ok.txt
 run_in "$repo" "$scan" --staged
 check_status "--staged on a clean staging area → exit 0" 0 "$STATUS"
 
+# =================================================================================================
+# --- dir #508: four independent --staged bypasses (external audit run 1, F1/F3/F4/F5) — each
+# reproduced with a real key-shaped secret that the direct FILE scan catches but the pre-fix
+# --staged scan waved through. -------------------------------------------------------------------
+
+# (a) F1 — an allowlist entry added in the SAME staged change as the secret it exempts must not be
+# trusted (FRAMEWORK.md L701-702's own same-change restriction).
+repo="$(new_repo)"
+printf 'seed\n' > "$repo/seed.txt"; git -C "$repo" add seed.txt; git -C "$repo" commit -qm base
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"   # NEW file, same staged change
+git -C "$repo" add key.txt .secret-scan-allow
+run_in "$repo" "$scan" --staged
+check_status "dir #508(a): same-change allowlist entry is untrusted → BLOCKED" 1 "$STATUS"
+check_contains "dir #508(a): names the ignored entry" "$OUT" "ignoring an allowlist entry new in this staged change"
+
+# a PRE-EXISTING allowlist entry (committed in an earlier change) still legitimately suppresses —
+# the fix must not regress the ordinary, non-same-change case.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(a): a pre-existing allowlist entry still suppresses → exit 0" 0 "$STATUS"
+
+# a pre-existing path:<glob> allowlist entry still suppresses too (channel 3, same provenance path)
+repo="$(new_repo)"
+mkdir -p "$repo/fixtures"
+printf 'path:fixtures/*\n' > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add path allowlist"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/fixtures/keys.txt"
+git -C "$repo" add fixtures/keys.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(a): a pre-existing path allowlist entry still suppresses → exit 0" 0 "$STATUS"
+
+# (b) F3 — a non-ASCII (Cyrillic) staged filename must not evade the text scan: git C-quotes it
+# by default, and the pre-fix enumeration fed that quoted/escaped text to emit_diff as a literal
+# pathspec matching nothing.
+repo="$(new_repo)"
+cyrname="$(printf '\320\264\320\260\320\275\320\275\321\213\320\265')"   # "данные" (data) in UTF-8
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/$cyrname.txt"
+git -C "$repo" add "$cyrname.txt"
+run_in "$repo" "$scan" --staged
+check_status "dir #508(b): non-ASCII staged filename is scanned, not C-quoted away → BLOCKED" 1 "$STATUS"
+
+# (c) F4 — a git-mv'd (renamed) file with a newly appended secret must not be excluded by
+# --diff-filter=ACM (which drops R — Renamed).
+repo="$(new_repo)"
+seq 1 100 > "$repo/before.txt"
+git -C "$repo" add before.txt; git -C "$repo" commit -qm base
+git -C "$repo" mv before.txt after.txt
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" >> "$repo/after.txt"
+git -C "$repo" add after.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(c): renamed file with a newly appended secret → BLOCKED" 1 "$STATUS"
+check_contains "dir #508(c): names the renamed file" "$OUT" "after.txt"
+
+# (c2) max-review finding: a RENAMED BINARY file with a modified/appended secret must not evade the
+# numstat/binary loop — without --no-renames, that loop's numstat enumeration renders a rename as
+# one combined "old => new" field (no -z), which fails to resolve as a path and is silently dropped.
+repo="$(new_repo)"
+printf '\000A%.0s' $(seq 1 200) > "$repo/before.bin"
+git -C "$repo" add before.bin; git -C "$repo" commit -qm base
+git -C "$repo" mv before.bin after.bin
+printf '\000%s\000' "$(key 'ghp_' "$(rep A 36)")" >> "$repo/after.bin"
+git -C "$repo" add after.bin
+run_in "$repo" "$scan" --staged
+check_status "dir #508(c2): renamed BINARY file with an appended secret → BLOCKED" 1 "$STATUS"
+check_contains "dir #508(c2): names the renamed binary file" "$OUT" "after.bin"
+
+# (d) F5 — an added line whose content starts with "++" must not be dropped as if it were a
+# "+++ b/<path>" diff header.
+repo="$(new_repo)"
+printf 'placeholder\n' > "$repo/data.txt"
+git -C "$repo" add data.txt; git -C "$repo" commit -qm base
+printf 'placeholder\n++%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/data.txt"
+git -C "$repo" add data.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(d): a ++-prefixed added line is scanned, not dropped as a diff header → BLOCKED" 1 "$STATUS"
+
+# (d2) max-review finding: a crafted added line shaped EXACTLY like the header ("++ b/..." — so once
+# the diff's own leading "+" marker is prepended it reads "+++ b/...") must still be caught: the
+# header is recognized by POSITION (immediately after a "--- " line), never by matching this shape,
+# so an attacker who knows the exact anchor can't spoof it by crafting their secret line to match.
+repo="$(new_repo)"
+printf 'placeholder\n' > "$repo/data3.txt"
+git -C "$repo" add data3.txt; git -C "$repo" commit -qm base
+printf 'placeholder\n++ b/%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/data3.txt"
+git -C "$repo" add data3.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(d2): a crafted ++ b/-shaped added line is scanned, not spoofed as a header → BLOCKED" 1 "$STATUS"
+
+# (d3) max-review sweep finding: an ORDINARY same-line edit — replacing a line whose OLD content
+# starts with "-- " with new content starting with "++ " — renders in the diff as "--- x" / "+++
+# <secret>" back-to-back, indistinguishable BY SHAPE from the real file header. A shape-based
+# positional check (matching "--- "/"+++ " text) is spoofed by this; only a check anchored on the
+# first HUNK header ("@@ ... @@", which has no +/- prefix and so can never come from file content)
+# is safe. No rename, no binary, no unusual config — just an ordinary one-line replace.
+repo="$(new_repo)"
+printf -- '-- x\nkeep\n' > "$repo/mirror.txt"
+git -C "$repo" add mirror.txt; git -C "$repo" commit -qm base
+printf '++ %s\nkeep\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/mirror.txt"
+git -C "$repo" add mirror.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(d3): a same-line '-- x' -> '++ secret' edit can't spoof the header pair → BLOCKED" 1 "$STATUS"
+
+# (a2) max-review finding: HEAD's committed .secret-scan-allow with NO trailing newline on its last
+# line must not lose that line when read — a bare `read -r` (no `|| [ -n "$hl" ]`) silently drops an
+# unterminated final line, which would false-block a legitimate pre-existing entry.
+repo="$(new_repo)"
+printf '%s' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"   # no trailing newline
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist, no trailing newline"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key2.txt"
+git -C "$repo" add key2.txt
+run_in "$repo" "$scan" --staged
+check_status "dir #508(a2): a pre-existing entry with no trailing newline in HEAD's copy still suppresses → exit 0" 0 "$STATUS"
+
 # --- --tracked detective audit: ALL tracked content, not just a diff (doctor / periodic review) --
 repo="$(new_repo)"
 printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/old.txt"

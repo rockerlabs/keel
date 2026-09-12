@@ -140,6 +140,31 @@ sections real content going forward — see that page for exactly when each one 
   can carry a local worktree path as its `origin` (verify `git remote -v` before trusting it).
   Both hit live during the v0.10.1 release's cross-vendor ladder.
 
+### Fixed
+
+- **`tools/secret-guard/secret-scan.sh`'s `--staged` (pre-commit) scan had four independent
+  bypasses, each reproduced with a real key-shaped secret that the direct FILE scan caught but the
+  staged scan waved through clean** — found by dir #495's external-audit run 1 (the OpenAI-Codex
+  leg, 2026-09-11) and verified live by the drydock verifier (dir #508): (a) an allowlist entry
+  added in the *same* staged change as the secret it exempts was trusted with no provenance check
+  — FRAMEWORK.md's own same-change restriction was never implemented; a staged `.secret-scan-allow`
+  entry is now honored only when it already existed in `HEAD`'s committed copy, an entry new in
+  this change is ignored (named on stderr) rather than trusted, and the ordinary pre-existing-entry
+  case is unaffected; (b) `git diff --cached --name-only` fed a C-quoted non-ASCII filename (e.g. a
+  Cyrillic name) into the scanner as a literal pathspec matching nothing — `core.quotePath=false`
+  now applies to that enumeration too, matching the numstat call beside it; (c)
+  `--diff-filter=ACM` excluded Renames, so a `git mv`'d file with a newly appended secret was
+  invisible to both staged enumerations — the filter is now `ACMR`; (d) `grep -vE '^\+\+\+'`
+  dropped any added line whose content starts with `++` as if it were a diff header — the
+  exclusion is now anchored to the actual header shape (`+++ b/<path>` or `+++ /dev/null`, with
+  `--src-prefix`/`--dst-prefix` pinned so a host's `diff.noprefix` can't reopen it). One fixture per
+  bypass in `tests/test_secret_guard.sh`, each proved red on the pre-fix scanner and green after.
+  `--range` (the pre-push path) shares (a)'s same-change allowlist hole — reproduced live — but a
+  correct fix there needs a different baseline (the range's own start point, not `HEAD`, which
+  isn't well-defined for an arbitrary rev-list expression like `<tip> --not --remotes`); left as a
+  follow-up rather than bolted on here. (F2, a UTF-32/locale personal-data miss, is `known` —
+  dir #250, unrelated to these four.)
+
 ## [0.10.0] — 2026-09-11
 
 **Known issues, disclosed at the cut:** six things ship known-imperfect, none behavioural in an adopter-facing path. **dir #478** — `tests/lib.sh`'s `run_in()` guards `cd "$dir" || …`, and `cd ""` is a silent bash no-op that returns 0, so a test whose directory variable is transiently empty runs in the suite's own invocation directory — the real checkout; the primitive is reproduced, the tree-wide sweep of the same idiom is owed. **dir #480** — `tests/test_keel_impact.sh` returned different results for the same commit in different environments four times this release (three files, three workers); every cheap hypothesis was killed, including "it is the CI platform", and the remaining space is one session's local environment at one moment — recorded as an observation, deliberately not closed on a green CI leg. **dir #481** — the pre-PR gate keys every per-run file on the repository's directory *basename*, never its full path, so two repositories with the same basename share one sentinel; latent on this machine, one line to fix, kept out of dir #376's slice so that slice's destruction-only safety argument stays simple. And three items the release-candidate audit moved to the standing list rather than ticketing: `tools/self/line-citations.sh`'s allowlist self-exclusion keys on both the default and the override path (fixture-only today); its prefilter's comment names a safety reason that is not the real one (the downstream `|| true` is); and `tests/test_tour_transcript.sh` fails under a `mktemp`-shaped checkout path, outside this range.
