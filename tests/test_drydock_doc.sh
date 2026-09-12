@@ -20,13 +20,18 @@ auditor="$REPO_ROOT/docs/drydock/auditor.md"
 verifier="$REPO_ROOT/docs/drydock/verifier.md"
 fixer="$REPO_ROOT/docs/drydock/fixer.md"
 code_auditor="$REPO_ROOT/docs/drydock/code-auditor.md"
+external_auditor="$REPO_ROOT/docs/drydock/external-auditor.md"
+changelog="$REPO_ROOT/CHANGELOG.md"
 
 check_file "docs/drydock.md exists" "$doc"
 check_file "docs/drydock/auditor.md exists" "$auditor"
 check_file "docs/drydock/verifier.md exists" "$verifier"
 check_file "docs/drydock/fixer.md exists" "$fixer"
 check_file "docs/drydock/code-auditor.md exists" "$code_auditor"
+check_file "docs/drydock/external-auditor.md exists" "$external_auditor"
 check_file "tools/drydock/inventory.sh exists" "$REPO_ROOT/tools/drydock/inventory.sh"
+check_file "tools/audit-packet/export.sh exists" "$REPO_ROOT/tools/audit-packet/export.sh"
+check_file "tools/audit-packet/import.sh exists" "$REPO_ROOT/tools/audit-packet/import.sh"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
 pin "README Docs section links docs/drydock.md" \
@@ -162,11 +167,11 @@ check_absent "the stale two-scopes wording is gone" "$(cat "$doc")" 'It measures
 
 pin "drydock.md links the code-auditor prompt" "$doc" '](drydock/code-auditor.md)' \
   "expected the role-prompt section to link the fourth template"
-pin "reference.md now counts four drydock role-prompt templates" \
-  "$reference" 'four [`docs/drydock/`](drydock/) role-prompt templates' \
-  "PR2 ships a fourth template; the Extras section's count must follow"
-check_absent "reference.md no longer undercounts at three" \
-  "$(cat "$reference")" 'three [`docs/drydock/`](drydock/) role-prompt templates'
+pin "reference.md now counts five drydock role-prompt templates" \
+  "$reference" 'five [`docs/drydock/`](drydock/) role-prompt templates' \
+  "dir #495 PR2 ships a fifth template; the Extras section's count must follow"
+check_absent "reference.md no longer undercounts at four" \
+  "$(cat "$reference")" 'four [`docs/drydock/`](drydock/) role-prompt templates'
 
 # --- the Scope C section itself: boundary, cadence, cost, diversity, ratchet ------------------------
 pin "drydock.md has a Scope C section" "$doc" '## Scope C — code' \
@@ -290,11 +295,11 @@ pin "drydock.md's own Incremental runs section now says every measured scope" "$
 pin "the file contract section points at code-auditor.md's extension" "$doc" \
   'code-auditor.md`](drydock/code-auditor.md) extends this same shape for scope C' \
   "The file contract section names auditor.md verbatim but never mentioned code-auditor.md extends it"
-check_absent "delegation.md's role-prompt enumeration no longer undercounts at three" \
-  "$(cat "$delegation")" 'templates (auditor, verifier, fixer)'
-pin "delegation.md's role-prompt enumeration now names all four" "$delegation" \
-  'templates (auditor, code-auditor, verifier, fixer)' \
-  "delegation.md's own See-also enumeration went stale the moment code-auditor.md shipped, same class doctor.sh's dir #256 check exists to catch on other surfaces"
+check_absent "delegation.md's role-prompt enumeration no longer undercounts at four" \
+  "$(cat "$delegation")" 'templates (auditor, code-auditor, verifier, fixer) —'
+pin "delegation.md's role-prompt enumeration now names all five" "$delegation" \
+  'templates (auditor, code-auditor, verifier, fixer, external-auditor)' \
+  "delegation.md's own See-also enumeration went stale the moment external-auditor.md shipped (dir #495 PR2), same class doctor.sh's dir #256 check exists to catch on other surfaces"
 pin "verifier.md's cross-file variant states the scope-C classes an agent actually running it needs" \
   "$verifier" 'three more classes apply' \
   "the executable phase-3 template, not just drydock.md's narrative doc, must name the code claim classes or an agent running it on a scope-C batch never looks for them"
@@ -330,5 +335,84 @@ pin "drydock.md's roles section ties per-phase cost tallying to gate returns, no
 pin "phase 2's narrative points at verifier.md for the induced/original operative rule" "$doc" \
   'gets marked `induced` or `original` at this triage step' \
   "expected phase 2's own description of what verifiers do to name the mark, not just verifier.md and phase 7"
+
+# --- dir #495 PR2: the external leg joins as a fifth role, docs/drydock/external-auditor.md, both
+# packet modes documented as one contract -------------------------------------------------------
+check_absent "drydock.md's roles heading no longer undercounts at four" \
+  "$(cat "$doc")" '## Roles — four of them, in separate contexts'
+pin "drydock.md's roles heading now says five" "$doc" \
+  '## Roles — five of them, in separate contexts' \
+  "PR2 adds the external auditor as a fifth role; the heading's own count must follow"
+pin "drydock.md's roles table gains the external auditor row" "$doc" '**External auditor**' \
+  "PR2's ticket item (c): the roles table gains a row for the external leg"
+pin "drydock.md links the external-auditor prompt" "$doc" '](drydock/external-auditor.md)' \
+  "expected the role-prompt section to link the fifth template"
+pin "drydock.md has the external leg section" "$doc" \
+  '## The external leg — an auditor you cannot script' \
+  "PR2 item (b): a new section after Session limits documenting the packet/import contract"
+pin "the external leg section states both modes as one contract" "$doc" 'Two modes, one contract.' \
+  "mode A (no tools, chunked) and mode B (tooled, repo access) must read as one prompt, not two docs"
+pin "the external leg section states the leak gate has no bypass" "$doc" \
+  "before a single byte is written — no bypass," \
+  "the safety rail of the whole ticket must be stated in the doc, not just in export.sh's own header"
+pin "the external leg section is honest that mode B's scan is manual, not export.sh's automatic gate" \
+  "$doc" "this scan is not automatic there" \
+  "altitude review: export.sh has no mode-B code path at all, so claiming the gate 'runs' there overclaimed a mechanized rail that doesn't exist"
+pin "the external leg section states --value-prompt's reply is never imported" "$doc" \
+  'opinion, not a finding, and drydock has no `verdict:` to issue' \
+  "phase 2 must not be implied to rule on the value assessment — import.sh deliberately never touches it"
+pin "the external leg section defers periodicity to the first run's RUNS.md entry" "$doc" \
+  "decided by the first run's" \
+  "the ticket's own decision: periodicity is not decided here and must not be built in"
+
+pin "external-auditor.md states the mode-A/mode-B difference once, in one file" "$external_auditor" \
+  'MODE A (no tools — a chunked upload)' \
+  "one prompt for both modes, per PR2's brief — not two separate templates"
+pin "external-auditor.md's mode B states its BASELINE first-line self-check" "$external_auditor" \
+  'BASELINE <sha>' \
+  "import.sh's unchunked-mode parser keys on this exact first line to resolve a reply's baseline"
+pin "external-auditor.md's mode A states its CHUNK-END first-line self-check" "$external_auditor" \
+  'CHUNK-END <id>' \
+  "import.sh's chunked-mode parser refuses a reply that doesn't quote its own CHUNK-END near the top"
+pin "external-auditor.md anchors findings on a verbatim quote, not a line number" "$external_auditor" \
+  'Anchor every finding with a verbatim quote of at least one full line' \
+  "a re-chunked or re-pasted excerpt has line numbers that don't match the original file"
+pin "external-auditor.md carries the 25-finding cap" "$external_auditor" \
+  'Cap: at most 25 findings, ranked by severity' \
+  "an uncapped external reply is a verification cost, not a gift — memory: verify_relayed_review_findings_empirically"
+pin "external-auditor.md carries the known self-classification against KNOWN.md" "$external_auditor" \
+  '`known` — this finding matches an entry' \
+  "so the model stops re-reporting ground already accepted, and the new-findings count stays honest"
+pin "external-auditor.md's output shape leaves verdict: empty" "$external_auditor" \
+  'every `verdict:` line **empty** — filling it is a verifier'"'"'s job' \
+  "verdicts are a phase-2 verifier's call, never the external model's own"
+
+# --- dir #495 PR2: docs/delta-audit.md §11 gains a fourth cross-vendor class -------------------------
+check_absent "delta-audit.md §11 heading no longer undercounts at three" \
+  "$(cat "$delta_audit")" '## 11. The cross-vendor leg — three harness lessons, as classes'
+pin "delta-audit.md §11 heading now says four" "$delta_audit" \
+  '## 11. The cross-vendor leg — four harness lessons, as classes' \
+  "dir #495 PR2 adds a fourth class; the section's own heading count must follow"
+pin "delta-audit.md §11's class 3 names both mechanized forms" "$delta_audit" \
+  'not "missing." This rule is mechanized' \
+  "dir #489's harness and export.sh's CHUNK-MANIFEST both mechanize the same bundle-by-coupling rule"
+pin "delta-audit.md §11 gains a class for an unscriptable or non-integrated vendor" "$delta_audit" \
+  'An unscriptable or non-integrated vendor is still a diversity leg' \
+  "PR2 item (e): a fourth class routing through tools/audit-packet/{export,import}.sh"
+pin "delta-audit.md §11's new class points at drydock.md's external leg, not a restatement" "$delta_audit" \
+  '"The external leg."' \
+  "keep drydock the one place the packet/import contract is described in full"
+
+# --- dir #495 PR2: CHANGELOG entry, un-backticked so doctor.sh's dir-citation check sees it ----------
+pin "CHANGELOG.md cites dir #495 PR2 un-backticked" "$changelog" '(dir #495 PR2)' \
+  "memory: a backtick-wrapped dir citation is invisible to doctor.sh's dir #237 check"
+
+# --- dir #495 PR2: docs/reference.md lists both audit-packet tools -----------------------------------
+pin "reference.md lists tools/audit-packet/export.sh" "$reference" \
+  '[`tools/audit-packet/export.sh`](../tools/audit-packet/export.sh)' \
+  "PR2 item (f): the two new tools get reference.md rows"
+pin "reference.md lists tools/audit-packet/import.sh" "$reference" \
+  '[`tools/audit-packet/import.sh`](../tools/audit-packet/import.sh)' \
+  "PR2 item (f): the two new tools get reference.md rows"
 
 summary

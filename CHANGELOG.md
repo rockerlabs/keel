@@ -46,6 +46,20 @@ sections real content going forward — see that page for exactly when each one 
   exit-code table now correctly names the missing-`--vendor` refusal as exit 2 (`die_args`), not exit
   3; and `MANIFEST.txt` present-but-unreadable now refuses with a clear permissions message instead
   of silently switching to unchunked mode. (dir #495)
+- **`docs/drydock/external-auditor.md` — the fifth drydock role template, covering BOTH the chunked
+  (mode A, no tools) and unchunked (mode B, a tooled reader with repo access) shapes `export.sh` /
+  `import.sh` produce and consume** — one prompt read whole by both, one paragraph differing per mode
+  (see the doc for the shared rails). `docs/drydock.md` gains a new section, "The external leg — an
+  auditor you cannot script", after "Session limits": why it exists, the packet/import contract,
+  probe-first for mode A only, the leak gate (`export.sh`'s own rail, mode A only — mode B's brief is
+  hand-assembled and scanned by hand), `--value-prompt`'s reply as opinion `import.sh` never touches,
+  and standing-round-or-on-demand deferred to the first run's `RUNS.md` entry. Its roles table and
+  role-prompts list both gain the external auditor (five roles, five templates).
+  `docs/delegation.md`'s own drydock-template enumeration follows. `docs/delta-audit.md` §11 gains a
+  fourth cross-vendor class — an unscriptable or non-integrated vendor reached through this same
+  packet/brief + import path — and names `export.sh`'s `CHUNK-MANIFEST` as the second mechanized form
+  of class 3's bundle-by-coupling rule, alongside dir #489's harness. `docs/reference.md` lists both
+  tools and its role-template count follows. (dir #495 PR2)
 
 ### Changed
 
