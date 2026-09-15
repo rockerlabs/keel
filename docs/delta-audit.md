@@ -515,9 +515,9 @@ cover the sentence too, or the round trades one wrong claim for two.
 
 ## 11. The cross-vendor leg — four harness lessons, as classes
 
-If your diversity leg uses a different model vendor via a raw API rather than an in-session subagent,
-three transferable lessons from real runs, stated as classes rather than naming any private harness
-path:
+If your diversity leg uses a different model vendor — via a raw API, or through an unscriptable
+packet hand-off (class 4 below) — rather than an in-session subagent, four transferable lessons from
+real runs, stated as classes rather than naming any private harness path:
 
 1. **A reasoner's reply may embed its JSON object mid-prose.** Extract it with a balanced-brace scan
    — never assume a clean JSON body or anchor on a leading `{`. A parse failure here reads as "the

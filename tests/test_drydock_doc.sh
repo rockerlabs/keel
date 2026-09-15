@@ -352,9 +352,12 @@ pin "drydock.md has the external leg section" "$doc" \
   "PR2 item (b): a new section after Session limits documenting the packet/import contract"
 pin "the external leg section states both modes as one contract" "$doc" 'Two modes, one contract.' \
   "mode A (no tools, chunked) and mode B (tooled, repo access) must read as one prompt, not two docs"
-pin "the external leg section states the leak gate has no bypass" "$doc" \
-  "before a single byte is written — no bypass," \
-  "the safety rail of the whole ticket must be stated in the doc, not just in export.sh's own header"
+pin "the external leg section states the leak gate scans twice, with no bypass" "$doc" \
+  "scans every file \`export.sh\` embeds TWICE" \
+  "the safety rail of the whole ticket must be stated in the doc, not just in export.sh's own header — CV-A1, the 2026-09-15 delta audit's cross-vendor leg, found the pre-write-only gate missed --known's content and the remote URL, fixed by adding a second, assembled-packet pass"
+pin "the external leg section still promises no bypass, no --force, no --skip-scan" "$doc" \
+  "no bypass, no \`--force\`, no" \
+  "the two-pass rewrite must not weaken the absolute rail wording"
 pin "the external leg section is honest that mode B's scan is manual, not export.sh's automatic gate" \
   "$doc" "this scan is not automatic there" \
   "altitude review: export.sh has no mode-B code path at all, so claiming the gate 'runs' there overclaimed a mechanized rail that doesn't exist"
