@@ -15,6 +15,35 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-09-15
+
+**Known issues, disclosed at the cut.** Three groups, all pre-existing against v0.10.0 and none introduced
+by this patch. **From the external audit leg this release built (dir #495 run 1 — an OpenAI-family reader
+over the whole tree at `0396b4c`, 17 findings, 16 verifier-accepted):** the six High-severity bypasses of
+the two secret backstops are FIXED here (dir #508 for `secret-scan.sh --staged`, dir #509 for
+`public-audit.sh`), but seven Medium/Low findings ship open and named — **dir #510** (`pre-pr-gate.sh`'s
+test-relevant tree hash anchors on the invocation cwd, so a `.md`-only change can hash identically from a
+subdirectory; `commands/polish.md` step 3 states the unlock condition backwards), **dir #511**
+(`keel-check-gate.sh`'s opt-in veto matches only the literal `git commit`/`gh pr create` prefixes),
+**dir #512** (`install.sh` re-records an adopter's edited `README.md` as Keel-owned on reinstall, so a later
+uninstall removes the edit — recoverable from the backup; and the manifest test that should catch it
+passes on a fresh file), **dir #513** (`doctor.sh`'s own recovery advice names a `--home` flag its parser
+lacks), **dir #514** (the gate installers do not quote an apostrophe in the checkout path), **dir #515**
+(`docs/keel-ab/seed.sh` accepts a relative `--with-keel` path it then cannot copy), **dir #516** (README
+still calls the built-in reviewer "disabled by design"; FRAMEWORK.md gives two policies for `*-latest`
+runner labels). Also from that leg: `secret-scan.sh --range` shares the same-change allowlist hole
+dir #508 closed for `--staged` (**dir #518**), and the UTF-32 personal-literal miss under a UTF-8 locale
+(**dir #250**, already known). **From this release's own RC audit, ticket-next:** `--literal-pathspecs`
+and the new dir #508 fixtures have no regression coverage and `--selftest` carries none of them
+(**dir #524**); `dir-tickets.sh`'s 500-ticket cap and three documented shapes are untested (**dir #525**);
+`export.sh` leaves an empty packet dir on a partial `mkdir` failure (**dir #526**). **Carried from the
+0.10.0 cut, re-cut to 0.10.2 by the operator's decision that this patch is the vendor-delegation work
+only:** the previous cut's six disclosed items — three as **dir #478**, **#480**, **#481**, three folded
+into **dir #497** — and its ticket-next siblings **dir #487**, **#490**, **#491**, **#492**, all unchanged.
+And one honest limit of the new mechanism itself, stated once in the dir #489 entry below: the second
+auditor's `read_file` mode is not yet usable on real audits (**dir #499**), so it still runs at the same
+~185 KB window as the first.
+
 ### Added
 
 - **`ADAPTING.md` — a paragraph on the generator / mutator-of-record split** — dir #489 phase 2's close:

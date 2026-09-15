@@ -28,6 +28,71 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.10.1 — 2026-09-15
+
+The "two more vendors" patch, cut before the planned v0.11.0 drain on one operator-named pain: the Claude
+usage window is the release bottleneck, and every behavioural defect the audits had ever found came from
+the cross-vendor layer while an idle Google AI Pro quota and a colleague's OpenAI-family UI sat unused.
+Two tickets, ten PRs of their own (eleven in the audited range, with the groom's). dir #495 shipped the **external audit leg**: `tools/audit-packet/export.sh` builds
+a leak-gated packet from whatever file list the caller supplies (drydock's inventory or delta-audit's
+derived universe), `import.sh` reads the vendor's replies back into drydock's ordinary file contract with
+every `verdict:` empty for phase 2, and the drydock docs gained the fifth role template. The first run
+turned the ticket's own premise on its head — the vendor was a coding agent with repo access, so run 1
+went as a pinned-SHA brief, no chunks — and returned 17 findings, 16 verifier-accepted: six independent
+bypasses of the two secret backstops (an allowlist trusted in the same commit as the secret it exempts,
+non-ASCII filenames, renames, `++`-prefixed lines, binary blobs in the working tree, annotated-tag
+bodies), all six fixed in this release (dir #508, #509) after the operator chose to fix rather than
+disclose. dir #489 ran the **qualification ladder** for non-Claude generators: Gemini (via the
+Antigravity CLI, headless, read-only by default) as the audit harness's second auditor, then three
+mutator rungs — Gemini on a docs-only ticket and on one shell file, Freebuff's GUI on a docs-only ticket
+— each diff reviewed and gated by a Claude session as the mutator of record, raw-diff corrections going
+4 → 0 → 0 and reviewer cost at or below a plain Claude implementation (−18 %, −8 %; the third rung's
+ticket was too small to compare). Two honest negatives ride with it: the ~185 KB inline cap is the CLI's
+message path, not the model — a `read_file` mode reads a 556 KB bundle whole when asked a factual
+question — but the model did not use the tool under a real audit prompt in three tries (dir #499), so
+`auto` stays on the free inline path; and the Freebuff rung measured faithful application of a verbatim
+spec, not authoring. This release's own RC audit then found the one behavioural defect of the range in
+the new tool itself — `export.sh` embedded the `--known` file and the remote URL unscanned while the docs
+promised no bypass — and it, too, came from the diverse pair.
+
+**Verification.** **Scope:** 26 files across 11 merged PRs (#396–#406), range v0.10.0 to the anchor
+`e7bbfdf`, plus the fix round's PR #407 (9 files) live-checked at the GO SHA `5333bf6`; the cut commit
+after it is prose only. **Method:** 6 legs, count fixed at plan time — S1 mechanical baseline; S2
+whole-read + seams over the code/test cluster (12 files, the 3-PR `import.sh` seam among them); S3
+whole-read over the prose cluster (14 files, the 11-PR `CHANGELOG.md` seam); a cross-vendor leg of two
+vendors on two diff bundles split **by coupling with a sibling manifest** (DeepSeek reasoner and Gemini
+on bundle A; Gemini alone on bundle B after the reasoner exhausted its 64k completion budget twice — the
+run's own counter-example to §11's "raise the floor"); S-final verifier at the highest effort tier;
+one real Fixer session. The external OpenAI-family leg's 17 verdicts at `0396b4c` were carried into the
+ledger as imported input, verified once by a separate Claude verifier, not re-run. **Coverage:** 26
+ledger rows, every row exactly one verdict — 19 `clean`, 4 `fix-before-tag` closed by PR #407, 2
+`ticket-next`, 1 `no-action(cosmetic)` on the standing list, 0 `mechanical-only`, 0 waived; 9 post-anchor
+rows live-checked. CI green on the GO SHA across all six legs; suite evidence from scratch clones only.
+Clause A satisfied on the anchor universe — S2/S3 and the two-vendor leg ran blind in parallel on one SHA
+and the diverse pair found the one behavioural defect the same-family leg marked clean; on the fix
+round's new surface two fresh-context reads ran sequentially (letter not met, spirit served — the
+verifier advised against a third round, no open question remaining). **Findings:** 7 — 1 behavioural
+(`export.sh`'s leak gate did not cover the `--known` file or the MANIFEST `remote:` URL; both vendors,
+same line; fixed structurally by a second gate pass over the assembled packet), 2 stale claims
+(`docs/delta-audit.md` §11's "three"/"four" and "via a raw API"; this changelog's own entry for the `--staged` scan fixes, item (d),
+which named a mechanism the shipped code does not use — both re-derived from the tree under §10's
+whole-sentence rule), 1 low (`import.sh`'s closing fence on a CRLF reply, batched), 2 coverage gaps
+ticketed, 1 cosmetic. 3 refutations settled by execution (a bash-3.2 `${a[@]:-}`
+claim, a `known`-class field, a fixture count). **Behavioural defects:** one, in this release's own new
+tool, fixed before the tag; none in code an adopter had installed before this release. **Which layer found what:**
+the same-family whole-read legs marked `export.sh` clean; both cross-vendor readers
+flagged the same line — the eleventh consecutive run in which the diversity leg found what the
+same-family leg did not. Bundling by coupling produced zero cross-bundle false positives, against three
+in the previous run. The fix round then produced two induced defects of its own (a `#`-delimited sed
+built from caller text; a cleanup trap that would remove a pre-existing packet dir), both caught by
+the Fixer's own review before the PR opened. **What was NOT checked:** the private audit harness
+(`agy.sh`, `run-audit.sh` — gitignored, outside the universe; a bash-3.2 regression there was found and
+patched by the orchestrator mid-run); the procedure this run executes had no independent leg, by
+design; DeepSeek never read bundle B. **Induced-defect rate:** 3 / 10 accepted findings (the two
+Fixer-round defects and one low residual the Fixer's review parked and ticketed), all caught before
+main. Records: the run's own audit directory and the release ledger, both gitignored and named in the
+release manager's record.
+
 ## v0.10.0 — 2026-09-11
 
 The "cost proportional to the task" release, run against two operator-named pains: a `/polish` gate
