@@ -39,16 +39,22 @@
 # Exit codes: 0 written · 2 bad arguments / a listed file does not resolve at the baseline ·
 # 3 refused (not a repo / dirty tree / wrong HEAD / packet dir exists / the leak gate found a hit).
 #
-# The leak gate is not optional and has no bypass — there is no --force and no --skip-scan. Before a
-# single chunk byte is written, every listed file is scanned by tools/secret-guard/secret-scan.sh's
-# FILE-list mode (its usage line 33: `secret-scan.sh FILE...` — already shipped, exercised by its own
-# selftest; TO VERIFY 2 resolved: no new scanner mode or public-audit.sh fallback needed). HEAD equals
-# baseline and the tree is clean (enforced by the guard below), so the working-tree bytes ARE the
-# baseline's tracked bytes — scanning the files on disk is scanning exactly what will be embedded. On
-# any hit, this refuses (exit 3) and prints ONLY the offending paths, never the matched content —
-# stricter than secret-scan.sh's own terminal output (which prints the matched line, meant for a
-# human at their own keyboard): a packet-export's stderr can end up in a session transcript or a CI
-# log, a wider exposure than a local pre-commit hook's.
+# The leak gate is not optional and has no bypass — there is no --force and no --skip-scan. It runs
+# TWICE. PASS 1, before a single chunk byte is written: every listed file plus --disclosure-ack's and
+# --vendor's free text, scanned by tools/secret-guard/secret-scan.sh's FILE-list mode (its usage line
+# 33: `secret-scan.sh FILE...` — already shipped, exercised by its own selftest; TO VERIFY 2 resolved:
+# no new scanner mode or public-audit.sh fallback needed). HEAD equals baseline and the tree is clean
+# (enforced by the guard below), so the working-tree bytes ARE the baseline's tracked bytes — scanning
+# the files on disk is scanning exactly what will be embedded. PASS 2, once the packet dir is fully
+# assembled and right before the success line: every file the packet dir actually contains, covering
+# content PASS 1's caller-supplied list can't name — --known's content (copied in verbatim) and the
+# `git remote get-url origin` text this script itself embeds into MANIFEST.txt/PROMPT.md — rather than
+# growing PASS 1's own field list by hand every time a new one is found unscanned (dir #495, the
+# 2026-09-15 delta audit's cross-vendor leg, found independently by two vendors). On a hit at EITHER
+# pass, this refuses (exit 3), deletes anything already written, and prints ONLY the offending paths,
+# never the matched content — stricter than secret-scan.sh's own terminal output (which prints the
+# matched line, meant for a human at their own keyboard): a packet-export's stderr can end up in a
+# session transcript or a CI log, a wider exposure than a local pre-commit hook's.
 #
 # PROMPT.md's role-prompt BODY is read from docs/drydock/external-auditor.md (PR2, a later worker's
 # ticket — absent until PR2 merges, refused with a clear message meanwhile) and is NOT expected to
@@ -196,9 +202,21 @@ fi
 # before the file-list read below, since that read now spools through it too.
 scratch="$(mktemp -d)"
 ok=""
+packet_dir_created=""
 on_exit() {
   st=$?
   [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
+  # A failure once THIS invocation has actually created the packet dir (any refuse/die_args after
+  # its own `mkdir -p` succeeds, not just a leak-gate hit) must not leave a partial or
+  # secret-carrying packet on disk — the same "clean unconditionally on exit" contract $scratch gets
+  # below, extended to cover $packet_dir too, one trap rather than a bespoke `rm -rf` duplicated at
+  # each call site that needs it (code review, dir #495). Gated on `packet_dir_created`, set ONLY
+  # after `mkdir -p` succeeds — NOT on `packet_dir` merely being assigned, which happens before the
+  # "already exists" refusal too: a same-day re-run that collides on the packet name refuses exactly
+  # because a PRIOR packet is already there, and this invocation never created (and must never
+  # delete) it — a bare `-n "$packet_dir"` guard silently destroyed that prior packet anyway
+  # (reproduced live, code review high, this same PR).
+  [ -n "$ok" ] || [ -z "$packet_dir_created" ] || rm -rf "$packet_dir"
   rm -rf "$scratch"
   exit "$st"
 }
@@ -239,7 +257,79 @@ for f in "${files[@]}"; do
   baseline."
 done
 
-# --- the leak gate — before a single chunk byte is written -----------------------------------------
+# run_leak_gate ERR_FILE MODE CONTEXT FILE... — shared by PASS 1 (MODE=pass1) and PASS 2
+# (MODE=pass2) below: invoke the scanner over FILE..., and on any hit relabel the raw
+# "path:line:content" records for the scratch/packet-internal paths a reader can't otherwise act
+# on, then refuse — same BLOCKED/failed-to-run message shape either pass uses, CONTEXT appended to
+# say which one (empty for PASS 1). Cleanup of a partially-written packet dir is NOT this
+# function's job — the on_exit trap above already does that unconditionally for every failure once
+# $packet_dir exists, so `refuse` below just has to exit. Relabeling is plain bash (`case` /
+# parameter-expansion), never a sed script built out of caller-controlled text: PASS 2's own path
+# runs through $packet_dir, which embeds --vendor/--out verbatim, and those are validated only
+# against `/`/`.`/`..` — a `#` in either used to break a `#`-delimited sed script and crash this
+# script ungracefully under its own `set -e`, instead of refusing cleanly (code review, dir #495).
+# Not shared with secret-scan.sh's own scan_file_args() (a different file, a different job —
+# invoking the scanner, not being it) but IS the fix for this same file typing this
+# scan-then-parse-then-refuse shape out twice on PASS 2's addition, the same "typed out twice"
+# class scan_file_args()'s own comment already names one level down (dir #495 code review, on the
+# first cut of PASS 2).
+run_leak_gate() {
+  local err_file="$1" mode="$2" context="$3"
+  shift 3
+  local status=0 hit_paths labeled p
+  "$scan_script" -- "$@" >/dev/null 2>"$err_file" || status=$?
+  [ "$status" = 0 ] && return 0
+  if [ "$status" = 1 ]; then
+    # BLOCKED — extract ONLY the leading path off each "  path:line:content" / "  path:(binary)
+    # match" detail line (secret-scan.sh's own format, see its emit_stream/emit_blob). Splitting on
+    # the FIRST colon (`cut -d: -f1`, equivalent to secret-scan.sh's own allowlist idiom
+    # `recpath="${rec%%:*}"`) is deliberate, not a from-the-end sed: the matched CONTENT after the
+    # line number can itself contain colons, and a from-the-end strip (tried first, caught live: a
+    # fixture line "leaked token: ghp_..." left "path:3:leaked token" in the message — the word
+    # before its own colon survived) leaks a fragment of the very text this gate exists to keep off
+    # this script's stderr. Never the rest of the line, in any case: that portion carries the
+    # matched secret text, which must not reach a session transcript or a CI log — a wider exposure
+    # than a human's own local terminal, which is what secret-scan.sh's own output is written for.
+    labeled=""
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      case "$mode" in
+        pass1)
+          # A hit against $ack_file/$vendor_file would otherwise print a raw scratch-dir absolute
+          # path, meaningless once $scratch is cleaned up on exit.
+          case "$p" in
+            "$ack_file")    p="--disclosure-ack text" ;;
+            "$vendor_file") p="--vendor text" ;;
+          esac
+          ;;
+        pass2)
+          # Relabel the absolute on-disk path to the packet-relative form a reader can act on
+          # ("chunks/02.txt", "KNOWN.md") — meaningless once $packet_dir is removed on a hit. A
+          # literal (double-quoted) prefix in `${p#"$packet_dir"/}` never re-enters pattern
+          # matching, so a glob-special byte in $packet_dir (from --vendor/--out) can't misfire.
+          case "$p" in
+            "$packet_dir"/*) p="${p#"$packet_dir"/}" ;;
+          esac
+          ;;
+      esac
+      labeled="${labeled}${p}"$'\n'
+    done < <(sed -n 's/^  //p' "$err_file" | cut -d: -f1)
+    hit_paths="$(printf '%s' "$labeled" | LC_ALL=C sort -u)"
+    [ -n "$hit_paths" ] || hit_paths="(the gate reported a hit but its path could not be parsed — see
+  tools/secret-guard/secret-scan.sh's own output by re-running it directly)"
+    refuse "leak gate BLOCKED$context — secret-shaped string(s) or personal data found in:
+$(printf '%s\n' "$hit_paths" | sed 's/^/  /')
+Nothing was written. Remove the finding (or, for a genuine test fixture, an operator-approved
+.secret-scan-allow entry — a human, out-of-band decision, never an agent's own workaround) and
+re-export. There is no --force and no --skip-scan."
+  else
+    refuse "leak gate failed to run$context (tools/secret-guard/secret-scan.sh exited $status) —
+  refusing to export without a clean gate. Its stderr:
+$(sed 's/^/  /' "$err_file")"
+  fi
+}
+
+# --- the leak gate — PASS 1: before a single chunk byte is written ---------------------------------
 # Resolved relative to THIS script's own install location, not the audited repo's root: the scanner
 # ships alongside export.sh in the same tools/ tree (matching tools/drydock/inventory.sh's own
 # convention for tools/self/shellcheck-targets.sh) — a non-keel adopter's repo being audited has no
@@ -250,15 +340,16 @@ scan_script="$script_dir/../secret-guard/secret-scan.sh"
   --skip-scan."
 
 gate_err="$scratch/gate.err"
-gate_status=0
 # The listed FILES are not the only operator/caller-supplied text that ends up in the packet —
 # --disclosure-ack and --vendor both land verbatim in MANIFEST.txt (and vendor also names the
 # packet directory and the imported audit files' `auditor:` line). "The would-be packet content"
 # means these too, not just the file list (dir #495 manager amendment W2-A1, after re-verifying TO
 # VERIFY 2's premise was wrong — secret-scan.sh's FILE... mode already existed, no new scanner mode
-# needed, but these two free-text fields were still unscanned). Spooled into scratch files and added
-# to the SAME gate call rather than a second invocation, so one BLOCKED/clean verdict covers
-# everything that ships.
+# needed, but these two free-text fields were still unscanned). Spooled into scratch files and
+# scanned in the SAME call as the file list — cheap to cover, but this list is a best-effort fast
+# path, not a completeness guarantee: it missed --known and the embedded remote URL below the same
+# way (dir #495, 2026-09-15 delta audit). PASS 2, which scans the whole assembled packet dir, is
+# what actually has to be exhaustive; this pass only has to catch the common case cheaply.
 ack_file="$scratch/gate-disclosure-ack.txt"
 printf '%s\n' "$disclosure_ack" > "$ack_file"
 vendor_file="$scratch/gate-vendor.txt"
@@ -268,37 +359,9 @@ printf '%s\n' "$vendor" > "$vendor_file"
 # ours to control) whose first entry happens to literally read "staged" (or start with "-") silently
 # re-dispatches to a different mode instead of being scanned, reporting clean with the real content
 # never inspected — reproduced live with a real key-shaped secret in a file named `staged`, code
-# review high, Angle C. `--` forces every remaining argument to be treated as a literal filename.
-"$scan_script" -- "${files[@]}" "$ack_file" "$vendor_file" >/dev/null 2>"$gate_err" || gate_status=$?
-
-if [ "$gate_status" = 1 ]; then
-  # BLOCKED — extract ONLY the leading path off each "  path:line:content" / "  path:(binary) match"
-  # detail line (secret-scan.sh's own format, see its emit_stream/emit_blob). Splitting on the FIRST
-  # colon (`cut -d: -f1`, equivalent to secret-scan.sh's own allowlist idiom `recpath="${rec%%:*}"`)
-  # is deliberate, not a from-the-end sed: the matched CONTENT after the line number can itself
-  # contain colons, and a from-the-end strip (tried first, caught live: a fixture line "leaked
-  # token: ghp_..." left "path:3:leaked token" in the message — the word before its own colon
-  # survived) leaks a fragment of the very text this gate exists to keep off this script's stderr.
-  # Never the rest of the line, in any case: that portion carries the matched secret text, which
-  # must not reach a session transcript or a CI log — a wider exposure than a human's own local
-  # terminal, which is what secret-scan.sh's own output is written for.
-  # A hit against $ack_file/$vendor_file would otherwise print a raw scratch-dir absolute path,
-  # meaningless once $scratch is cleaned up on exit — relabel those two specifically.
-  hit_paths="$(sed -n 's/^  //p' "$gate_err" | cut -d: -f1 \
-    | sed -e "s#^$ack_file\$#--disclosure-ack text#" -e "s#^$vendor_file\$#--vendor text#" \
-    | LC_ALL=C sort -u)"
-  [ -n "$hit_paths" ] || hit_paths="(the gate reported a hit but its path could not be parsed — see
-  tools/secret-guard/secret-scan.sh's own output by re-running it directly on the file list)"
-  refuse "leak gate BLOCKED — secret-shaped string(s) or personal data found in:
-$(printf '%s\n' "$hit_paths" | sed 's/^/  /')
-Nothing was written. Remove the finding (or, for a genuine test fixture, an operator-approved
-.secret-scan-allow entry — a human, out-of-band decision, never an agent's own workaround) and
-re-export. There is no --force and no --skip-scan."
-elif [ "$gate_status" != 0 ]; then
-  refuse "leak gate failed to run (tools/secret-guard/secret-scan.sh exited $gate_status) — refusing
-  to export without a clean gate. Its stderr:
-$(sed 's/^/  /' "$gate_err")"
-fi
+# review high, Angle C. `--` forces every remaining argument to be treated as a literal filename
+# (run_leak_gate's own `$scan_script -- "$@"` call carries this through).
+run_leak_gate "$gate_err" pass1 "" "${files[@]}" "$ack_file" "$vendor_file"
 gate_files_count="${#files[@]}"
 
 # --- classify: markdown (minus historical) / code / historical -------------------------------------
@@ -381,6 +444,14 @@ packet_dir="$out_dir/$packet_name"
   packet. Remove it yourself if it is stale, or wait a day (the packet name includes the date)."
 mkdir -p "$packet_dir/chunks" \
   || refuse "cannot create '$packet_dir' — check that '$out_dir' is writable."
+# Set ONLY once mkdir has actually created it — this is what on_exit's own cleanup gates on, so a
+# LATER failure removes exactly the packet THIS invocation built, never a pre-existing directory
+# the "already exists" refusal above just correctly declined to touch (a directory the on_exit trap
+# would otherwise `rm -rf` right out from under its own refusal message, which explicitly tells the
+# operator to remove it themselves — reproduced live, code review high, this same PR: a same-day
+# re-run collides on the packet name, refuses as documented, and used to silently destroy the prior
+# real packet anyway).
+packet_dir_created=1
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
@@ -523,20 +594,53 @@ if [ "$value_prompt" = 1 ]; then
   } > "$packet_dir/PROMPT-value.md"
 fi
 
+# total_packet_files: a cheap pre-MANIFEST count of what the packet dir holds so far (+1 below for
+# MANIFEST.txt, not yet on disk) — used ONLY to name a count in MANIFEST.txt's own leak-gate line (a
+# chicken-and-egg problem: the manifest can't count itself before it exists). NOT the file list PASS
+# 2 actually scans, deliberately — see below, which re-lists the directory fresh rather than reusing
+# this snapshot, so "every file the packet dir contains" stays true by construction and never
+# depends on a future packet-writing step remembering to append itself to a hand-kept list (the
+# exact "hand-grown list" risk PASS 2 exists to close — code review, dir #495). A pre-declared count
+# is safe to embed here regardless: PASS 2 scans for secret-SHAPED content, never for whether a byte
+# count matches, and any PASS 2 hit — MANIFEST.txt included — deletes the whole packet dir before
+# this claim could ship inaccurate.
+total_packet_files=$(( $(find "$packet_dir" -type f | wc -l) + 1 ))
+
 # MANIFEST.txt
 {
   printf '# audit-packet MANIFEST — %s\n' "$packet_name"
   printf 'remote: %s\n' "${remote_url:-(no remote)}"
   printf 'baseline: %s (%s)\n' "$baseline" "$baseline_rev"
-  printf 'exporter: tools/audit-packet/export.sh | files scanned: %d\n' "$gate_files_count"
+  printf 'exporter: tools/audit-packet/export.sh | files scanned (pass 1, pre-write): %d\n' "$gate_files_count"
   printf 'vendor: %s\n' "$vendor"
   printf 'disclosure-ack: %s\n' "$disclosure_ack"
   printf 'value-prompt: %s\n' "$([ "$value_prompt" = 1 ] && echo emitted || echo skipped)"
   printf 'generated: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf 'leak gate: clean (tools/secret-guard/secret-scan.sh, %d file(s) scanned)\n\n' "$gate_files_count"
+  printf 'leak gate: clean — pass 1 (pre-write) scanned %d listed file(s) + --disclosure-ack/--vendor; pass 2 (assembled packet) scanned all %d packet file(s) (tools/secret-guard/secret-scan.sh)\n\n' \
+    "$gate_files_count" "$total_packet_files"
   printf '## chunks\n'
   printf '%s' "$manifest_chunks"
 } > "$packet_dir/MANIFEST.txt"
 
-printf 'audit-packet export: wrote %s (%d chunks, leak gate clean)\n' "$packet_dir" "$total_chunks"
+# --- the leak gate — PASS 2: the assembled packet dir, as a whole ----------------------------------
+# PASS 1 above scans the caller's file list plus --disclosure-ack/--vendor — but this script also
+# embeds content PASS 1 never sees: --known's file is copied into the packet verbatim (KNOWN.md,
+# below) and `git remote get-url origin` (captured above as $remote_url) lands verbatim in
+# MANIFEST.txt's `remote:` line and PROMPT.md's `repo:` line — an adopter's credential-bearing remote
+# (`https://user:TOKEN@host/...`) would ship unscanned. Rather than keep hand-growing PASS 1's list of
+# "the fields that also need scanning" (dir #495's own manager amendment W2-A1 added
+# --disclosure-ack/--vendor that way, and still missed --known and the remote URL), PASS 2 scans
+# every file the packet dir actually contains — re-listed HERE, fresh, not reused from
+# total_packet_files' pre-MANIFEST count above, so it covers MANIFEST.txt and whatever this script
+# later comes to embed with no list to remember to update. PASS 1 stays: failing before any packing
+# work happens is cheaper, and a caller-list secret is the common case.
+packet_files=()
+while IFS= read -r pf; do
+  packet_files+=("$pf")
+done < <(find "$packet_dir" -type f | LC_ALL=C sort)
+
+gate2_err="$scratch/gate2.err"
+run_leak_gate "$gate2_err" pass2 " (assembled-packet pass)" ${packet_files[@]+"${packet_files[@]}"}
+
+printf 'audit-packet export: wrote %s (%d chunks, leak gate clean, 2 passes)\n' "$packet_dir" "$total_chunks"
 ok=1

@@ -155,10 +155,14 @@ sections real content going forward — see that page for exactly when each one 
   now applies to that enumeration too, matching the numstat call beside it; (c)
   `--diff-filter=ACM` excluded Renames, so a `git mv`'d file with a newly appended secret was
   invisible to both staged enumerations — the filter is now `ACMR`; (d) `grep -vE '^\+\+\+'`
-  dropped any added line whose content starts with `++` as if it were a diff header — the
-  exclusion is now anchored to the actual header shape (`+++ b/<path>` or `+++ /dev/null`, with
-  `--src-prefix`/`--dst-prefix` pinned so a host's `diff.noprefix` can't reopen it). One fixture per
-  bypass in `tests/test_secret_guard.sh`, each proved red on the pre-fix scanner and green after.
+  dropped any added line whose content starts with `++` as if it were a diff header — `emit_diff()`
+  now tracks the first HUNK header (`@@ -.. +.. @@`) and only reads `+`-prefixed lines seen after
+  it, so the file's `--- `/`+++ ` header pair (which always precedes the first hunk) is skipped
+  structurally rather than by matching its own text shape; an earlier draft that matched
+  `--- `/`+++ ` directly was rejected in this same ticket's own review round as spoofable (a
+  same-line edit deleting a line shaped `-- x` and adding one shaped `++ <secret>` renders exactly
+  as a fake header, indistinguishable by shape alone). One fixture per bypass in
+  `tests/test_secret_guard.sh`, each proved red on the pre-fix scanner and green after.
   `--range` (the pre-push path) shares (a)'s same-change allowlist hole — reproduced live — but a
   correct fix there needs a different baseline (the range's own start point, not `HEAD`, which
   isn't well-defined for an arbitrary rev-list expression like `<tip> --not --remotes`); left as a
@@ -190,6 +194,32 @@ sections real content going forward — see that page for exactly when each one 
   `git tag -a` body — plus six more from the review round: a subdirectory audit, `--no-history`
   full-tree coverage on an already-committed binary, and a symlink) each reproduce a miss against
   the unfixed code before passing against the fix.
+- **`tools/audit-packet/export.sh`'s leak gate now also scans the fully assembled packet dir, not
+  just the caller's file list** (dir #495) — found independently by two vendors (DeepSeek and
+  Gemini) on the 0.10.1 delta audit's cross-vendor leg: the pre-write pass never scanned `--known`'s
+  file (copied into the packet as `KNOWN.md` verbatim) or the `git remote get-url origin` text this
+  script embeds itself (`remote:` in `MANIFEST.txt`, `repo:` in `PROMPT.md`) — an adopter's
+  credential-bearing remote would have shipped unscanned, contradicting docs/drydock.md's "no
+  bypass" promise. Fixed structurally rather than by hand-growing the pre-write pass's own list of
+  fields to also scan: a second gate pass now scans every file the packet dir actually holds, once,
+  right before the success line, deleting the packet and refusing (the same `exit 3`, path-only,
+  no-`--force`/no-`--skip-scan` contract) on a hit at either pass. Two red-then-green fixtures in
+  `tests/test_audit_packet_export.sh`: a `--known` file carrying a key-shaped secret, and an origin
+  remote of the form `https://user:TOKEN@host/...`. `tools/audit-packet/import.sh`'s
+  `strip_fence()` also gains the CRLF tolerance its closing-fence match was missing (the opening
+  match already tolerated one) — a Windows vendor-UI paste's trailing code fence could otherwise
+  leak into a `## summary` section's raw body; one red-then-green fixture in
+  `tests/test_audit_packet_import.sh`. (dir #495)
+- **docs/delta-audit.md §11 and CHANGELOG.md's own dir #508 (d) entry, both stale-claim corrections**
+  — found by the 0.10.1 delta audit's whole-read leg. §11's intro sentence undercounted its own list
+  at "three" (its heading already said four) and scoped it to a vendor reached "via a raw API,"
+  which excludes class 4 (an unscriptable packet hand-off) by that class's own definition — both
+  re-derived together, per docs/delta-audit.md §10's own whole-sentence rule. The dir #508 (d)
+  entry above (and its own commit message, `762fc52`, left as history) described that bypass fix as
+  header-shape matching (`--src-prefix`/`--dst-prefix`) — a mechanism that was never shipped (zero
+  hits for either flag in `tools/secret-guard/secret-scan.sh`) and that the same ticket's own review
+  round explicitly rejected as spoofable; the entry now names what actually shipped, hunk-header
+  tracking in `emit_diff()`.
 
 ## [0.10.0] — 2026-09-11
 

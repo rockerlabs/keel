@@ -317,6 +317,13 @@ strip_fence() {
   total="$(awk 'END{print NR}' "$src" 2>/dev/null || echo 0)"
   first="$(head -n 1 "$src" 2>/dev/null || true)"
   last="$(tail -n 1 "$src" 2>/dev/null || true)"
+  # Strip a trailing CR before the closing-fence match (AGY-A-CV-3, the 2026-09-15 delta audit's
+  # cross-vendor leg): the opening-fence match above is a wildcard ('```'*) and tolerates one, but a
+  # CRLF reply — a Windows vendor-UI paste, this tool's stated target — leaves the last line "```\r",
+  # which the closing match's exact '```' never equals, so the fence line survives unstripped into
+  # the imported body. Same CR-tolerance this file already applies elsewhere (lines ~150, ~211,
+  # ~378, ~426) — just missing here.
+  last="${last%$'\r'}"
   start=1
   end="$total"
   case "$first" in '```'*) start=2 ;; esac

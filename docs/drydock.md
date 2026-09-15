@@ -544,11 +544,15 @@ claimed one (`agy`'s cap was silent until a probe measured it — dir #489), mod
 reader does is a two-minute upload, not a 700 KB audit. The reply sets `--chunk-bytes` for the real
 packet. Mode B skips the probe — a tooled reader with repo access has no chunk size to discover.
 
-**The leak gate is `export.sh`'s own rail, and it applies to mode A only.** Every file `export.sh` is
-about to embed is scanned by `secret-guard/secret-scan.sh` before a single byte is written — no bypass,
-no `--force`, no `--skip-scan`; a hit refuses the whole export (exit 3) and prints only the offending
-path, never the matched content. Mode B's brief is hand-assembled, never run through `export.sh`, so
-this scan is not automatic there — whoever composes the brief runs `secret-guard/secret-scan.sh` by
+**The leak gate is `export.sh`'s own rail, and it applies to mode A only.** `secret-guard/secret-scan.sh`
+scans every file `export.sh` embeds TWICE — once before a single chunk byte is written (the caller's
+file list plus `--disclosure-ack`/`--vendor` text) and once more over the fully assembled packet dir,
+right before the success line (catching content the first pass can't name by field, like `--known`'s
+copied-in file or the `remote:`/`repo:` URL this script embeds itself) — no bypass, no `--force`, no
+`--skip-scan`; a hit at either pass refuses the whole export (exit 3), deletes anything already
+written, and prints only the offending path, never the matched content. Mode B's brief is hand-
+assembled, never run through `export.sh`, so this scan is not automatic there — whoever composes the
+brief runs `secret-guard/secret-scan.sh` by
 hand over its few text files before sending (run 1's own `MANIFEST.txt` records exactly that: a manual
 scan line, not a script-enforced one). A non-keel project additionally names `--disclosure-ack
 "<project>: <reason it may leave>"`, recorded verbatim into `MANIFEST.txt` — a per-project human

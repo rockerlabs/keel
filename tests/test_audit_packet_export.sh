@@ -236,4 +236,87 @@ check_contains "export: CHUNK-END is still the last line after the manifest addi
 check_contains "export: PROMPT.md carries the CHUNK-MANIFEST sentence" \
   "$(cat "$pkt/PROMPT.md" 2>/dev/null)" "sibling chunk"
 
+# --- the leak gate's PASS 2: the assembled packet dir, not just the caller's file list -----------
+# CV-A1 / DS-A-CV-1 / AGY-A-CV-1 (2026-09-15 delta audit's cross-vendor leg, found independently by
+# two vendors, dir #495): PASS 1 above scans the file list plus --disclosure-ack/--vendor, but this
+# script ALSO embeds --known's content (copied verbatim into KNOWN.md, never scanned) and
+# `git remote get-url origin` (verbatim into MANIFEST.txt's `remote:` and PROMPT.md's `repo:` lines,
+# never scanned) — both fixtures below FAIL against the unfixed script (proved live, quoted in the
+# PR body) and pass once PASS 2 scans the fully assembled packet dir before the success line.
+
+# --- --known carrying a key-shaped secret: BLOCKED, nothing written ------------------------------
+r10="$(mk_repo)"
+fl10="$SANDBOX/files-known-leak.txt"
+files_list > "$fl10"
+known_leak="$SANDBOX/known-with-secret.md"
+fake_secret10="ghp_$(rep a 36)"
+printf 'accepted finding: pre-existing X, see ticket. leaked %s\n' "$fake_secret10" > "$known_leak"
+run_in "$r10" "$TOOL" --vendor x --baseline HEAD --out out --disclosure-ack "t" --files "$fl10" --known "$known_leak"
+check_status "export: BLOCKS on a secret planted in --known (assembled-packet pass)" 3 "$STATUS"
+check_contains "export: --known block names KNOWN.md, packet-relative, not a raw scratch path" "$OUT" "KNOWN.md"
+check_absent "export: --known block never repeats the leaked secret itself" "$OUT" "$fake_secret10"
+# The PASS-2 refusal removes the PACKET dir it just assembled, not the (already-`mkdir -p`'d, and
+# possibly pre-existing / shared with other packets) --out parent — unlike a PASS-1 refusal, which
+# never creates --out at all. Look for the packet dir specifically, not the parent.
+pkt10="$(find "$r10/out" -maxdepth 1 -name 'packet-x-*' -type d 2>/dev/null | head -1)"
+check_nodir "export: nothing written when --known leaks (packet dir removed)" "${pkt10:-/nonexistent}"
+
+# --- a credential-bearing origin remote: BLOCKED, nothing written --------------------------------
+# `remote_url` (from `git remote get-url origin`) lands verbatim in MANIFEST.txt's `remote:` line and
+# PROMPT.md's `repo:` line — an adopter's `https://user:TOKEN@host/...` remote would otherwise ship.
+r11="$(mk_repo)"
+fake_secret11="ghp_$(rep a 36)"
+git -C "$r11" remote add origin "https://user:${fake_secret11}@example.com/x.git"
+fl11="$SANDBOX/files-remote-leak.txt"
+files_list > "$fl11"
+run_in "$r11" "$TOOL" --vendor x --baseline HEAD --out out --disclosure-ack "t" --files "$fl11"
+check_status "export: BLOCKS on a credential-bearing origin remote (assembled-packet pass)" 3 "$STATUS"
+check_contains "export: remote-URL block names MANIFEST.txt (where remote: lands)" "$OUT" "MANIFEST.txt"
+check_absent "export: remote-URL block never repeats the leaked credential itself" "$OUT" "$fake_secret11"
+pkt11="$(find "$r11/out" -maxdepth 1 -name 'packet-x-*' -type d 2>/dev/null | head -1)"
+check_nodir "export: nothing written when the origin remote leaks a credential" "${pkt11:-/nonexistent}"
+
+# --- a '#' in --vendor must not break the PASS-2 refusal itself (code review high, this same PR) --
+# $packet_dir embeds --vendor verbatim (validated only against `/`/`.`/`..`), and PASS 2's own hit
+# handling used to build a `#`-delimited sed script out of it to relabel the assembled-packet paths
+# — a `#` in --vendor broke that sed script and crashed the WHOLE export ungracefully under this
+# script's own `set -e`, instead of refusing cleanly with exit 3. Reuses the --known fixture above
+# (a real hit is needed to reach the relabeling code at all) with a '#'-bearing vendor name.
+r12="$(mk_repo)"
+fl12="$SANDBOX/files-hash-vendor.txt"
+files_list > "$fl12"
+known_leak12="$SANDBOX/known-with-secret-hashvendor.md"
+fake_secret12="ghp_$(rep a 36)"
+printf 'leaked %s\n' "$fake_secret12" > "$known_leak12"
+run_in "$r12" "$TOOL" --vendor 'astra#5' --baseline HEAD --out out --disclosure-ack "t" --files "$fl12" \
+  --known "$known_leak12"
+check_status "export: a '#' in --vendor still refuses cleanly (exit 3), not a sed-script crash" 3 "$STATUS"
+check_contains "export: '#'-vendor block still names KNOWN.md, relabeled correctly" "$OUT" "KNOWN.md"
+check_absent "export: '#'-vendor block never repeats the leaked secret itself" "$OUT" "$fake_secret12"
+pkt12="$(find "$r12/out" -maxdepth 1 -name 'packet-astra#5-*' -type d 2>/dev/null | head -1)"
+check_nodir "export: nothing written when a '#'-vendor packet leaks via --known" "${pkt12:-/nonexistent}"
+
+# --- a same-day packet-name collision refuses WITHOUT deleting the prior, legitimate packet -------
+# code review high, this same PR: on_exit's own packet-dir cleanup used to trigger on $packet_dir
+# merely being ASSIGNED (which happens before the "already exists" check too), not on this
+# invocation actually having created it — a same-day re-run that collides on the packet name refused
+# as documented, then silently `rm -rf`'d the PRIOR packet anyway, directly contradicting the
+# refusal's own "remove it yourself" message. --out points OUTSIDE the repo (not `$r13/out`, unlike
+# every fixture above) so the second run's own untracked `out/` never trips the DIRTY-TREE guard —
+# a different refusal that would mask the one this fixture exists to prove.
+r13="$(mk_repo)"
+fl13="$SANDBOX/files-collision.txt"
+files_list > "$fl13"
+out13="$SANDBOX/out13"
+run_in "$r13" "$TOOL" --vendor astra --baseline HEAD --out "$out13" --disclosure-ack "t" --files "$fl13"
+check_status "export: first astra export exits 0" 0 "$STATUS"
+pkt13="$(find "$out13" -maxdepth 1 -name 'packet-astra-*' -type d 2>/dev/null | head -1)"
+check_dir "export: first astra packet written" "${pkt13:-/nonexistent}"
+printf 'marker\n' > "${pkt13:-/nonexistent}/MARKER.txt"
+run_in "$r13" "$TOOL" --vendor astra --baseline HEAD --out "$out13" --disclosure-ack "t" --files "$fl13"
+check_status "export: same-day re-run collides and refuses (exit 3)" 3 "$STATUS"
+check_contains "export: collision message names 'already exists'" "$OUT" "already exists"
+check_file "export: the PRIOR packet's own marker survives the collision refusal" "${pkt13:-/nonexistent}/MARKER.txt"
+check_file "export: the prior packet's MANIFEST.txt survives too (not silently rm -rf'd)" "${pkt13:-/nonexistent}/MANIFEST.txt"
+
 summary

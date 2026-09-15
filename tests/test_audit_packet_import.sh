@@ -189,6 +189,28 @@ check_status "import: a code-fenced reply still imports" 0 "$STATUS"
 check_contains "import: fenced finding lands in the audit file" \
   "$(cat "$out4/PRINCIPLES.md-audit.md" 2>/dev/null)" '"fenced ok"'
 
+# --- a CRLF-fenced reply (a Windows vendor-UI paste, this tool's stated target): the CLOSING fence
+# line must be stripped too, not just the opening one --------------------------------------------
+# AGY-A-CV-3 (2026-09-15 delta audit's cross-vendor leg): the opening-fence match is a wildcard
+# ('```'*, tolerates a trailing \r) but the closing match was an exact '```', so a CRLF reply left
+# "```\r" unstripped. render_findings() filters unrecognized lines on its own (prefix-keyed:
+# claim:/evidence:/confidence:/verdict: only), so a stray fence line inside a "### F<n>" finding
+# block is invisible either way — the observable case is a "## summary" section, whose raw body
+# split_sections() accumulates VERBATIM (no field filter) into SUMMARY.md; ending the chunk in a
+# summary section (not a finding) is what makes the leak visible in the imported output.
+d5="$(mktemp -d "$SANDBOX/pkt.XXXXXX")"
+mk_packet "$d5"
+printf '```markdown\r\nCHUNK-END 01 files=2 bytes=10\r\n\r\n## summary\r\n\r\nOverall notes here.\r\n```\r\n' \
+  > "$d5/reply-01.md"
+out5="$SANDBOX/audit5"
+mkdir -p "$out5"
+run "$TOOL" "$d5" "$out5"
+check_status "import: a CRLF-fenced reply ending in a summary section still imports" 0 "$STATUS"
+check_contains "import: CRLF-fenced summary body lands in SUMMARY.md" \
+  "$(cat "$out5/SUMMARY.md" 2>/dev/null)" "Overall notes here."
+check_absent "import: CRLF-fenced reply's closing fence line does not leak into SUMMARY.md" \
+  "$(cat "$out5/SUMMARY.md" 2>/dev/null)" '```'
+
 # --- argument / refusal edges --------------------------------------------------------------------
 run "$TOOL" "$SANDBOX/does-not-exist" "$out1"
 check_status "import: refuses a reply-dir that does not exist at all" 3 "$STATUS"
