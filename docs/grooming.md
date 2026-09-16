@@ -84,12 +84,11 @@ evidence before reading it as a habit (measured 2026-09-15 on an adopter project
 week).** The fuse's `wrapped` outcome hangs on a model-remembered stamp at the very end of the wrap
 procedure, after the push-verify — the position a step gets dropped from. On one adopter every flagged
 session had demonstrably persisted (dated archive rows, merged PRs) and the fuse read 5 of 5 no-wrap;
-keel's own aggregate read 6 of 7 across a cycle of routine wraps that all landed their records. A groom
-reading that number as a habit finding writes a false amendment. So, until the stamp is part of the
-tool rather than the doc, quote the fuse figure together with what the archive and the PR list say for
-the same sessions, and let the disagreement — not the fuse alone — be the finding. This is a
-compensation, and its remover is `dir #523`; the reused-worktree double-count that inflates the
-denominator is named on the same ticket.
+keel's own aggregate read 6 of 7 across a cycle of routine wraps that all landed their records. So,
+until the stamp is part of the tool rather than the doc, quote the fuse figure together with what the
+archive and the PR list say for the same sessions, and let the disagreement — not the fuse alone — be
+the finding. This is a compensation, and its remover is `dir #523`; the reused-worktree double-count
+that inflates the denominator is named on the same ticket.
 
 **Confirm the previous run's cross-run row EXISTS before reading it.** It is owed at that run's own GO
 verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one cycle later, which makes

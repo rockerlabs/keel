@@ -542,7 +542,7 @@ real runs, stated as classes rather than naming any private harness path:
    reasoner's spend is not a function of prompt size, so a round the cap cannot rescue is not fixed by
    narrowing the bundle either. When the ceiling is met and `content` is still empty, report the leg
    per R11 and let the sibling vendor cover that bundle, or route it to the vendor's non-reasoning
-   model; do not relaunch. This is a limit of the vendor, not a gap a ticket closes. **A later run
+   model — a vendor limit, not a gap a ticket closes; do not relaunch. **A later run
    added the other half of this lesson:** capture the raw reply, `reasoning_content` included — one
    round's reasoning carried the correct analysis of a finding its own answer then stated backwards,
    and it was recoverable only because a raw-capture option happened to have shipped days earlier.

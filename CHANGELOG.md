@@ -17,25 +17,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
-- **`docs/grooming.md` — two amendments from the 0.10.2 groom's own G0 retro, applied under the doc's
-  self-revision clause.** G5: a value claim's SUBJECT SET is derived from the source that defines it
-  (a CHANGELOG known-issues paragraph, extracted by ticket token — `dir #N` and a list's bare `#N`),
-  diffed against the slate's live ticket list, and the residue stated by number with a reason each —
-  after the v0.11.0 and v0.10.1 adjudication rounds each returned, as its top finding, a value claim
-  not bound to its slate (once a mechanism that did not exist, once a subject set half reached; a rule
-  of the procedure, no remover). G0: the
-  wrap-fuse's no-wrap figure measures STEP COMPLIANCE, not persistence — it hangs on a model-remembered
-  stamp at the end of the wrap procedure — so a groom quotes it together with what the archive and PR
-  list say for the same sessions; a compensation whose remover is dir #523.
-- **`docs/delta-audit.md` — two counter-examples to sentences the previous cycle wrote, from the 0.10.1
-  RC audit's own record.** §9's `Mark:` clause now says ONE line per FINDING, in the leg's own report,
-  never per file — two consecutive runs' tallies needed hand-correction (marks in a shape the tally
-  does not read, then marks per file: `0 / 21` harvested for a true `3 / 10`); the compensation's
-  remover is dir #527. §11 lesson 2's "64k floor" gains its ceiling half: the
-  reasoner vendor's hard cap is 64000, the 0.10.1 audit's SMALLER bundle came back empty twice at
-  exactly that figure while the larger one succeeded, so neither raising nor narrowing rescues such a
-  round — report it per R11 and let the sibling vendor cover (a vendor limit, not a gap a ticket
-  closes).
+- **`docs/grooming.md` — two amendments from the 0.10.2 groom's G0 retro (self-revision clause).** G5:
+  a value claim's SUBJECT SET is derived from its defining source by ticket token and diffed against
+  the slate, residue stated by number — the v0.11.0 and v0.10.1 G6 rounds each returned a value claim
+  not bound to its slate as their top finding (a rule; no remover). G0: the wrap-fuse's no-wrap figure
+  measures STEP COMPLIANCE, not persistence — quote it beside archive/PR evidence (compensation, dir #523).
+- **`docs/delta-audit.md` — two counter-examples from the 0.10.1 RC audit's record.** §4 rule 6's
+  `Mark:` clause: ONE line per FINDING in the leg's own report, never per file — two runs' tallies
+  needed hand-correction (compensation, dir #527). §11 lesson 2: 64k is the reasoner vendor's CEILING as
+  well as the floor — a bundle still empty at the cap goes to the sibling vendor or a non-reasoning
+  model, never a relaunch (a vendor limit, no ticket).
 - `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
 
 ## [0.10.1] — 2026-09-15
