@@ -79,6 +79,18 @@ otherwise forbids, so it is a **compensation with a named end**: `dir #459` owns
 candidate shapes, deliberately not chosen here. Until it lands, check whether a rotation has happened
 since the previous release and say which cycle your figures are from.
 
+**The wrap-loss figure measures STEP COMPLIANCE, not persistence — check it against persistence
+evidence before reading it as a habit (measured 2026-09-15 on an adopter project, and on keel the same
+week).** The fuse's `wrapped` outcome hangs on a model-remembered stamp at the very end of the wrap
+procedure, after the push-verify — the position a step gets dropped from. On one adopter every flagged
+session had demonstrably persisted (dated archive rows, merged PRs) and the fuse read 5 of 5 no-wrap;
+keel's own aggregate read 6 of 7 across a cycle of routine wraps that all landed their records. A groom
+reading that number as a habit finding writes a false amendment. So, until the stamp is part of the
+tool rather than the doc, quote the fuse figure together with what the archive and the PR list say for
+the same sessions, and let the disagreement — not the fuse alone — be the finding. This is a
+compensation, and its remover is `dir #523`; the reused-worktree double-count that inflates the
+denominator is named on the same ticket.
+
 **Confirm the previous run's cross-run row EXISTS before reading it.** It is owed at that run's own GO
 verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one cycle later, which makes
 G0 the first moment its absence is visible to anyone — and the first groom to check for it found it
@@ -305,6 +317,21 @@ claim** stated plainly enough to be wrong in public. Design economics — the co
 sessions against how often a spec is accepted as first submitted — is a **report field**, not a new
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists.
+
+**A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
+consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not
+bound to its slate).** The first time the claim named a mechanism that did not exist — "the drain
+lowers the pool" when re-tagging had already done the lowering; the second time it named a set the
+plan had not enumerated — "close the known issues", six items, of which the slate reached three, while
+the plan's own G4(a) cell said "nothing promoted" in the same section. Reading the previous round as a
+checklist did not prevent the repeat — the reviewer's independent enumeration did. So a claim of the
+shape "after this release, X carries none of Y" must be written in three parts: the source that
+defines Y (a CHANGELOG known-issues paragraph, a disclosure list — cite it, and extract its items
+mechanically, by ticket token — `dir #N`, and the bare `#N` a list continues with — not by memory),
+the diff of that set against the slate's live ticket list (G3), and the residue stated on the row by
+number with a one-line reason per item. A row with an empty residue says so; a row with a
+non-empty one has just stated where it will be wrong in public, which is the field's whole purpose.
+This is a rule of the procedure, not a compensation for a defect — no ticket removes it.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that

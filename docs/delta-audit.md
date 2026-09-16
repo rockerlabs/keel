@@ -130,7 +130,12 @@ This is the durable public referent a future run points at instead of re-derivin
      or `original`** — e.g. `**Mark:** \`induced\` — one sentence causal path to the prior fix` —
      this exact shape, not a paraphrase, is what `tools/delta-audit/harvest.sh` tallies into the run
      record's `induced / total` rate; a differently-worded mark is invisible to it and silently
-     undercounts;
+     undercounts. **ONE `Mark:` line per FINDING, in the leg's own report, never per file** — two
+     consecutive runs' tallies had to be hand-corrected: once the marks sat in the verifier's file in
+     a shape the tally does not read (1 counted for 7 findings), then the legs wrote one per FILE (21
+     for 7, read `0 / 21` for a run whose true rate was `3 / 10`). Until the tally counts per finding
+     and reads the verifier's reconciled marks wherever they sit (`dir #527` owns both), this
+     sentence is the compensation;
    - `## NOT checked` — anything in scope you skipped or couldn't verify, stated plainly.
 7. **Don't trust a plan's snapshot.** Re-derive counts and lists live at pickup — the repo may have
    moved since the plan was written. The anchor stays FIXED even as `origin/main` moves past it
@@ -531,10 +536,16 @@ real runs, stated as classes rather than naming any private harness path:
    harness default 8192 to **16384**, and BOTH first-attempt rounds came back with empty `content` and
    a full `reasoning_content` — two wasted rounds, the exact silent failure this lesson exists to
    prevent. 64000 then worked for all four subsequent rounds. "Raise it" is satisfied by any increase,
-   and that run's increase was satisfied and insufficient. **A later run added the other half of this
-   lesson:** capture the raw reply, `reasoning_content` included — one round's reasoning carried the
-   correct analysis of a finding its own answer then stated backwards, and it was recoverable only
-   because a raw-capture option happened to have shipped days earlier.
+   and that run's increase was satisfied and insufficient. **And 64k is the vendor's CEILING, not a
+   floor you can stand on (2026-09-15):** the next run set it and one bundle came back empty TWICE,
+   identically, with `reasoning_tokens` = 64000 = the hard cap, on a 23.8K-token prompt — the
+   reasoner's spend is not a function of prompt size, so a round the cap cannot rescue is not fixed by
+   narrowing the bundle either. When the ceiling is met and `content` is still empty, report the leg
+   per R11 and let the sibling vendor cover that bundle, or route it to the vendor's non-reasoning
+   model; do not relaunch. This is a limit of the vendor, not a gap a ticket closes. **A later run
+   added the other half of this lesson:** capture the raw reply, `reasoning_content` included — one
+   round's reasoning carried the correct analysis of a finding its own answer then stated backwards,
+   and it was recoverable only because a raw-capture option happened to have shipped days earlier.
 
 3. **Bundle a diff by COUPLING, or tell each reader what the sibling bundle holds.** A vendor's
    input cap forces a large diff into several bundles, and splitting it by file manufactures
