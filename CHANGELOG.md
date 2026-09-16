@@ -15,6 +15,20 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/grooming.md` — two amendments from the 0.10.2 groom's G0 retro (self-revision clause).** G5:
+  a value claim's SUBJECT SET is derived from its defining source by ticket token and diffed against
+  the slate, residue stated by number — the v0.11.0 and v0.10.1 G6 rounds each returned a value claim
+  not bound to its slate as their top finding (a rule; no remover). G0: the wrap-fuse's no-wrap figure
+  measures STEP COMPLIANCE, not persistence — quote it beside archive/PR evidence (compensation, dir #523).
+- **`docs/delta-audit.md` — two counter-examples from the 0.10.1 RC audit's record.** §4 rule 6's
+  `Mark:` clause: ONE line per FINDING in the leg's own report, never per file — two runs' tallies
+  needed hand-correction (compensation, dir #527). §11 lesson 2: 64k is the reasoner vendor's CEILING as
+  well as the floor — a bundle still empty at the cap goes to the sibling vendor or a non-reasoning
+  model, never a relaunch (a vendor limit, no ticket).
+- `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
+
 ## [0.10.1] — 2026-09-15
 
 **Known issues, disclosed at the cut.** Three groups, all pre-existing against v0.10.0 and none introduced
