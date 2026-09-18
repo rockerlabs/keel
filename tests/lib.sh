@@ -317,8 +317,10 @@ ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.
 # branch_key_for/receipt_hash_for below (these fixtures build the EXPECTED path independently of the
 # code under test, not by invoking it).
 repo_key_for() {
-  local top; top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)"
-  printf '%s-%s' "$(basename "${top:-$1}")" "$(printf '%s' "${top:-$1}" | cksum | tr -cd '0-9')"
+  local top resolved
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)"
+  resolved="${top:-$1}"
+  printf '%s-%s' "$(basename "$resolved")" "$(receipt_hash_for "$resolved" '')"
 }
 # dir #80: sanitized current-branch slug, mirroring the production file's own `_sanitize_branch`
 # byte-for-byte (kept in sync manually, not via a subcommand round-trip, so these

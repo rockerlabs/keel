@@ -590,10 +590,11 @@ _test_relevant_tree_hash() {
   # references. `--show-toplevel` (the WORKTREE's own top, deliberately not `main_top_for`'s main-
   # checkout redirection — dir #72's own "don't re-fork" precedent aside, `tests/` lives in the
   # worktree being tested, not necessarily the main checkout) resolves the same `tests/` dir regardless
-  # of which subdirectory `$cwd` names; falls back to `$cwd` itself if `$cwd` isn't a repo at all
-  # (unreachable in practice — the `ls-tree` call right below already fails first in that case).
+  # of which subdirectory `$cwd` names. No `$cwd`-itself fallback if `$cwd` isn't a repo at all: the
+  # `ls-tree` call right below shares the exact same not-a-repo condition and already fails first in
+  # that case, so `$testsdir` is never read unresolved.
   top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
-  testsdir="${top:-$cwd}/tests"
+  testsdir="$top/tests"
   listing="$(git -C "$cwd" ls-tree -r --full-tree --format='%(objectmode) %(objectname) %(path)' "$sha" 2>/dev/null)" || return 1
   {
     while IFS= read -r line; do
@@ -837,7 +838,11 @@ _gate_ledger_candidates() {
 # glancing at /tmp can still tell which project a file belongs to); only the hash half is load-bearing.
 # Split into two functions so a caller that ALREADY resolved the main-top path (hook mode's $main_top,
 # dir #88's own reuse discipline) can get the identical key without forking main_top_for a second time.
-_repo_key_from_path() { printf '%s-%s' "$(basename "$1")" "$(printf '%s' "$1" | cksum | tr -cd '0-9')"; }
+# Reuses _receipt_key_hash's own cksum pipeline (defined below — a plain function reference, resolved
+# at CALL time like every other cross-reference in this file, not at define time) rather than a second
+# hand-copy of the same one-liner in this same file; the empty second arg is a no-op join, not a real
+# (repo, branch) pair.
+_repo_key_from_path() { printf '%s-%s' "$(basename "$1")" "$(_receipt_key_hash "$1" '')"; }
 _repo_key() { _repo_key_from_path "$(main_top_for "${1:-$PWD}")"; }
 
 # dir #260 (hit 3): true when $1 resolves to neither a worktree's recorded main entry nor a real git
