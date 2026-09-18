@@ -34,6 +34,12 @@ set -- ${rest:+"$rest"}
 
 install_into() {
   local hooks_dir="$1" h t
+  # Verify the SOURCE before touching $hooks_dir at all (dir #250, "second defect" — see CHANGELOG.md
+  # for the felt incident this closed): the selftest used to run LAST here, after the cp's, so a
+  # failure left the destination half-wired (files present, but the caller's core.hooksPath write /
+  # .secret-scan-allow seed / confirmation never ran). Testing $src (byte-identical to what gets
+  # copied below) means a failure now exits BEFORE any cp — $hooks_dir is left exactly as it was.
+  "$src/secret-scan.sh" --selftest | sed 's/^/  /'
   mkdir -p "$hooks_dir"
   # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
   # pre-push without it is the user's data (higher precedence than our default), so refuse and explain.
@@ -57,8 +63,6 @@ install_into() {
   cp "$src/pre-push"       "$hooks_dir/pre-push"
   cp "$src/range-lib.sh"   "$hooks_dir/range-lib.sh"     # pre-push sources this next to itself
   chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
-  # Verify the installed copy via selftest — a wired-but-broken gate must fail the install (set -e).
-  "$hooks_dir/secret-scan.sh" --selftest | sed 's/^/  /'
 }
 
 case "${1:-}" in

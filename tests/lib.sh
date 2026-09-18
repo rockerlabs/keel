@@ -166,6 +166,24 @@ run() {
 # Usage:  h="$SANDBOX/x"; mkdir -p "$h"; fresh_home_env "$h"; run env "${FRESH_HOME_ENV[@]}" some-tool
 fresh_home_env() { FRESH_HOME_ENV=("HOME=$1" "GIT_CONFIG_GLOBAL=$1/.gitconfig"); }
 
+# The one real UTF-8 locale this HOST actually has, preferring C.UTF-8 (musl/Alpine ships only that,
+# not en_US.UTF-8/ru_RU.UTF-8) — for a test that must exercise a genuine non-C locale axis, since
+# every test in this suite otherwise runs under this file's ambient C locale (dir #250: a locale-
+# dependent miss went uncaught for exactly that reason). Prints the locale name and returns 0, or
+# prints nothing and returns 1 when the host has none. `locale -a`'s output is captured into a
+# variable first, not piped straight into `grep -q`: under a `set -o pipefail` file, `-q`'s
+# first-match exit would SIGPIPE the still-writing `locale -a` and read as failure (the same hazard
+# `count_matches()` in secret-scan.sh documents for `git cat-file --batch`).
+# Usage:  utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
+pick_utf8_locale() {
+  local avail cand
+  avail="$(locale -a 2>/dev/null)"
+  for cand in C.UTF-8 C.utf8 en_US.UTF-8 ru_RU.UTF-8; do
+    case "$avail" in *"$cand"*) printf '%s' "$cand"; return 0 ;; esac
+  done
+  return 1
+}
+
 # Like run, but execute in DIR (restoring cwd) — for tools that read a cwd-relative file.
 run_in() {
   local dir="$1"; shift

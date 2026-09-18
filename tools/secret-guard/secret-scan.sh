@@ -159,6 +159,16 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
 # classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
 # public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync.
+#
+# The whole joined stream is NUL-stripped once, after every pass below (dir #250): decoding UTF-32
+# data through the UTF-16LE/BE converters (needed so a non-ASCII UTF-32 literal decodes at all — see
+# the comment below) interleaves a NUL after every code unit's high byte, e.g. "l\0e\0a\0d\0". A NUL
+# ANYWHERE in the file makes BSD grep (`/usr/bin/grep` on macOS) silently miss a non-ASCII `-i`
+# pattern on EVERY line of that file under a real UTF-8 locale (`LC_ALL=C` is unaffected) —
+# reproduced live, dir #250. Stripping once, on the join, is locale-neutral, keeps `-i` folding
+# non-ASCII literals under UTF-8 (pinning `LC_ALL=C` around the grep instead would fix the miss but
+# lose that folding — C-locale `-i` only folds ASCII), and — unlike stripping after each individual
+# pass — covers any pass added here later for free, with no line to remember to re-append.
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec hits
   tmp="$(mktemp "$SCRATCH/blob.XXXXXX")"; dec="$(mktemp "$SCRATCH/blob.XXXXXX")"
@@ -174,7 +184,7 @@ emit_blob() {  # $1 = record label (path)
       iconv -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
     fi
     LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo            # raw printable runs
-  } > "$dec"
+  } | LC_ALL=C tr -d '\000' > "$dec"
   hits="$( { grep -aoE "$joined" "$dec" 2>/dev/null || true
              if [ -n "$personal" ]; then grep -aoiE "$personal" "$dec" 2>/dev/null || true; fi
            } | LC_ALL=C sort -u )"
