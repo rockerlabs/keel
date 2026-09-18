@@ -193,22 +193,28 @@ stale_allow_pairs() {   # stale_allow_pairs LABEL — reads already-parsed "<cit
                          # from stdin (parse_allow_pairs's own output shape, which is also what
                          # $allow already holds for the active file — fed straight in below rather
                          # than re-parsed) and WARNs on each entry whose citing or cited path no
-                         # longer resolves to a tracked file.
+                         # longer resolves to a tracked file. Through `say`, not a bare `echo`:
+                         # `--quiet`'s own contract (usage(), above) is "print only FORBIDDEN
+                         # lines", and a WARN is not one.
   local label="$1" citing cited cited_file
   while read -r citing cited; do
     [ -n "$citing" ] && [ -n "$cited" ] || continue
     cited_file="${cited%%:*}"
     if [ -z "$(resolve_tracked "$citing")" ]; then
-      echo "  WARN $label entry '$citing $cited': $citing is no longer tracked — stale exemption"
+      say "  WARN $label entry '$citing $cited': $citing is no longer tracked — stale exemption"
     elif [ -z "$(resolve_tracked "$cited_file")" ]; then
-      echo "  WARN $label entry '$citing $cited': $cited_file is no longer tracked — stale exemption"
+      say "  WARN $label entry '$citing $cited': $cited_file is no longer tracked — stale exemption"
     fi
   done
 }
-if [ -r "$repo_dir/$ALLOW_REL" ]; then
-  parse_allow_pairs "$repo_dir/$ALLOW_REL" | stale_allow_pairs "default allowlist"
+if [ "$allow_file" = "$repo_dir/$ALLOW_REL" ]; then
+  # No override: $allow already holds this exact file's parsed pairs (loaded above) — feed it
+  # straight in rather than re-parsing the same file from disk a second time.
+  stale_allow_pairs "default allowlist" < "$allow"
+else
+  [ -r "$repo_dir/$ALLOW_REL" ] && parse_allow_pairs "$repo_dir/$ALLOW_REL" | stale_allow_pairs "default allowlist"
+  stale_allow_pairs "active allowlist" < "$allow"
 fi
-[ "$allow_file" = "$repo_dir/$ALLOW_REL" ] || stale_allow_pairs "active allowlist" < "$allow"
 
 scanned=0; forbidden=0
 

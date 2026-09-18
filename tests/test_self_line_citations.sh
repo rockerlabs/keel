@@ -186,6 +186,16 @@ run "$lc" "$d"
 check_status "a healthy default file with no override -> exit 0, no stray WARN" 0 "$STATUS"
 check_absent "no stale-entry WARN fires against a healthy, non-overridden default file" "$OUT" "stale exemption"
 
+# --quiet's own contract (usage(): "print only FORBIDDEN lines") must hold for the stale-entry WARN
+# too — it is not a FORBIDDEN line, so a rotten entry must not leak into --quiet output either.
+d="$(mk_repo 'Clean prose.')"
+mkdir -p "$d/tools/self"
+printf 'notes/ghost.md src/widget.sh:2\n' > "$d/tools/self/line-citations-allow.txt"
+( cd "$d" && git add -A && git commit -q -m rotten-entry-quiet )
+run "$lc" --quiet "$d"
+check_status "--quiet with a rotten default entry -> still exit 0" 0 "$STATUS"
+check_absent "the stale-entry WARN is suppressed under --quiet, same as any other WARN" "$OUT" "WARN"
+
 # --- the live ratchet ---------------------------------------------------------------------------
 # Against keel's OWN tree, not a fixture. This is what makes `tests/run.sh` — half of this project's
 # pre-push gate — reject a newly introduced line citation locally, at the one moment it is still
