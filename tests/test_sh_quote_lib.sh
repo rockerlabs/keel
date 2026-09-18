@@ -44,4 +44,29 @@ eval "set -- $quoted_space"
 check_status "sh_quote: a space stays inside one argv token" 1 "$#"
 check_status "sh_quote: …and the token is the real, unescaped path" "$space_path" "$1"
 
+# --- sh_quote_json: sh_quote's own output, JSON-escaped for embedding in a JSON string literal
+# (dir #514 gap 2, found live by an independent /code-review medium pass) — a plain path needs no
+# extra escaping over sh_quote's own output ------------------------------------------------------
+check_status "sh_quote_json: plain path == sh_quote's own output (no backslash to double)" \
+  "$(sh_quote "/Users/x/keel/tools/pre-pr-gate.sh")" \
+  "$(sh_quote_json "/Users/x/keel/tools/pre-pr-gate.sh")"
+
+# --- an apostrophe path's sh_quote output contains a literal backslash (from the '\'' doubling) —
+# sh_quote_json must double THAT backslash too, or the result is not valid JSON when spliced into a
+# "..." string literal.
+apjson="$(sh_quote_json "$apostrophe_path")"
+check_status "sh_quote_json: doubles the backslash sh_quote's own escaping introduces" \
+  "'/Users/x/Alex'\\\\''s checkout/keel/tools/pre-pr-gate.sh'" "$apjson"
+
+# --- the real proof: splice sh_quote_json's output into an actual JSON string literal and confirm
+# jq accepts it AND reads back the exact command a real shell would still parse correctly — the two
+# escaping layers (shell, then JSON) must compose, not just each look right in isolation.
+printf '{ "command": "bash %s" }\n' "$apjson" > "$SANDBOX/sh-quote-json-snippet.json"
+run bash -c "jq . '$SANDBOX/sh-quote-json-snippet.json'"
+check_status "sh_quote_json: spliced into JSON, the result is valid JSON (jq accepts it)" 0 "$STATUS"
+decoded_cmd="$(jq -r '.command' "$SANDBOX/sh-quote-json-snippet.json")"
+eval "set -- $decoded_cmd"
+check_status "sh_quote_json: the JSON-decoded command still resolves to the real path" \
+  "$apostrophe_path" "$2"
+
 summary

@@ -513,6 +513,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   else                            idefault_leaf=".claude"; iother_leaf=".codex"; icontext="CLAUDE.md"; imode_flag="";        iother_context="AGENTS.md"
   fi
   ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/$idefault_leaf}}"
+  # home_reach ACTUAL DEFAULT — echoes ACTUAL when it differs from DEFAULT, empty otherwise: the one
+  # "is this home where a bare re-run would land" fact every home-reaching suffix below ($ihome_flag,
+  # $idoctor_arg, $iother_doctor_arg) is built from. A function, not a hand-copied `[ "$1" = "$2" ]`
+  # branch at each call site — see $ihome_reach's own comment below for why (dir #513's own class,
+  # found reproduced one level down by three independent /code-review angles on this ticket).
+  home_reach() { if [ "$1" = "$2" ]; then printf ''; else printf '%s' "$1"; fi; }
   # ihome_flag — the ` --home "DIR"` every command this mode ADVISES must carry when $ihome is not
   # where a bare re-run would land. Same rule, and the same reason, as install.sh's home_flag: an
   # instruction that re-resolves the home from scratch cannot fix the install this audit is about, so
@@ -523,12 +529,15 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # encodes which mode this is, so one formula covers both — no branch needed here.
   idefault="${KEEL_HOME:-${HOME:-}/$idefault_leaf}"
   # ihome_reach — the single underlying fact both $ihome_flag and $idoctor_arg are just two spellings
-  # of: $ihome itself when it's not where a bare re-run would land, empty otherwise. Computed ONCE
-  # (found by this ticket's own /simplify pass to have been two copies of the identical `[ "$ihome" =
-  # "$idefault" ]` branch, one per rendering — exactly the twinned-state shape that let dir #513 happen
-  # in the first place: a future change to $idefault's own logic now needs updating in one place, not
-  # two that can silently drift apart again).
-  ihome_reach=""; [ "$ihome" = "$idefault" ] || ihome_reach="$ihome"
+  # of: $ihome itself when it's not where a bare re-run would land, empty otherwise. Via home_reach()
+  # (defined just above this block), not a second hand-written `[ "$ihome" = "$idefault" ]` branch —
+  # found by three independent /code-review angles on this same ticket: the FIRST fix collapsed
+  # $ihome_flag/$idoctor_arg's shared branch into one $ihome_reach value, then reproduced the identical
+  # branch one level down for $iother_reach against $iother_default — exactly the twinned-state shape
+  # that let dir #513 happen in the first place, just moved rather than closed. One function, called
+  # twice (here and at $iother_reach below), means a future change to how a default resolves needs
+  # updating in one place, not N call sites that can silently drift apart again.
+  ihome_reach="$(home_reach "$ihome" "$idefault")"
   ihome_flag="${ihome_reach:+ --home \"$ihome_reach\"}"
   # idoctor_arg — the SAME $ihome_reach, in POSITIONAL form: doctor.sh's own parser (unlike
   # install.sh's) has no `--home` flag — home is a bare positional (`DIRS+=("$1")` in the arg loop
@@ -588,7 +597,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # positional, not `--home` (dir #513: the redirect advises re-running doctor.sh itself — to re-audit
   # in the correct mode, never install.sh — and doctor's own parser has no `--home` flag).
   iother_default="${KEEL_HOME:-${HOME:-}/$iother_leaf}"
-  iother_reach=""; [ "$ihome" = "$iother_default" ] || iother_reach="$ihome"
+  iother_reach="$(home_reach "$ihome" "$iother_default")"
   iother_doctor_arg="${iother_reach:+ \"$iother_reach\"}"
   # irelink_mode — the re-wiring MODE for a dangling/foreign symlink (bin/keel is wired in BOTH modes,
   # so this is reachable under --codex too, code-review found live): under Claude mode that's `--link`

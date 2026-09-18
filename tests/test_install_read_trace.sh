@@ -89,6 +89,25 @@ check_contains "explains jq is required" "$OUT" "jq is required"
 check_contains "prints a ready-to-paste snippet" "$OUT" "\"hooks\""
 check_nofile "no jq -> settings.json was never written" "$njrepo/.claude/settings.json"
 
+# --- (d2) regression (dir #514): the no-jq snippet path has its OWN escaping (a heredoc can't call a
+# jq filter), untested by the jq-present apostrophe check further down. Found by an independent
+# /code-review medium pass: sh_quote's `'\''`-doubling introduces a literal backslash, and a bare `\'`
+# is not one of JSON's own recognized escapes, so an earlier version of this fix printed a snippet
+# that was invalid JSON whenever the checkout path held an apostrophe — jq itself rejected it — even
+# though the shell-level escaping was already correct. Extract just the JSON body and prove `jq .`
+# accepts it before trusting anything jq reads from it (a regex-based extraction would never notice).
+apostrophe_fixture_checkout "no-jq checkout"; apnjck="$APOSTROPHE_CKDIR"
+apnjrepo="$(new_repo)"
+run env PATH="$farm" "$apnjck/tools/install-read-trace.sh" "$apnjrepo"
+check_status "no jq, apostrophe checkout -> non-zero (nothing installed)" 1 "$STATUS"
+apnjjson="$(printf '%s\n' "$OUT" | sed -n '/^{$/,/^}$/p')"
+run bash -c "printf '%s' \"\$1\" | jq ." -- "$apnjjson"
+check_status "the printed snippet is itself valid JSON (not just command-shaped text)" 0 "$STATUS"
+apnjcmd="$(printf '%s' "$apnjjson" | jq -r '.hooks.SessionEnd[0].hooks[0].command')"
+apostrophe_cmd_argv "$apnjcmd"
+check_status "no-jq snippet's argv resolves back to the real (unescaped) path" \
+  "$apnjck/tools/read-trace.sh" "${APOSTROPHE_ARGV[1]}"
+
 # --- --global wires the machine-global settings.json instead of a repo's -----------------------------
 ghome="$SANDBOX/global-rt-home"
 run env KEEL_HOME="$ghome" "$installer" --global

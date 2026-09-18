@@ -20,3 +20,21 @@ sh_quote() {
   s=${1//\'/\'\\\'\'}
   printf "'%s'" "$s"
 }
+
+# sh_quote_json STR — sh_quote's output, additionally escaped for embedding inside a JSON
+# double-quoted string literal (dir #514 gap 2, found live by an independent /code-review medium
+# line-by-line pass): sh_quote's own `'\''`-doubling introduces a literal backslash, and a bare `\'`
+# is not one of JSON's recognized escape sequences — splicing sh_quote's raw output into a
+# hand-written JSON heredoc (both installers' own no-jq print_snippet fallback, which can't call a
+# jq filter to get this for free) produced INVALID JSON whenever the checkout path held an
+# apostrophe (verified live: `jq .` on the printed snippet failed with "Invalid escape at line N"),
+# even though the SHELL-level escaping was already correct — the bug just moved up one layer instead
+# of being fixed. Doubling the backslash is the only JSON-escaping sh_quote's own output ever needs:
+# it never contains a literal `"` or a control character, only printable path characters, `'`, and
+# `\`, so a full general-purpose JSON-string escaper would be solving a problem this call site
+# doesn't have.
+sh_quote_json() {
+  local q
+  q="$(sh_quote "$1")"
+  printf '%s' "${q//\\/\\\\}"
+}

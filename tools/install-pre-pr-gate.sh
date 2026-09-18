@@ -89,11 +89,14 @@ esac
 
 # shellcheck source=tools/lib/sh-quote.sh
 . "$here/lib/sh-quote.sh"
-# gate_sh — $gate quoted (dir #514), already wrapped in single quotes, for the ONE place $gate is
-# spliced into a shell command string by hand rather than through jq's `@sh` (print_snippet below,
-# the no-jq fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, shared
-# with install-read-trace.sh's identical need via tools/lib/sh-quote.sh rather than a second hand-copy.
-gate_sh="$(sh_quote "$gate")"
+# gate_sh — $gate quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE
+# place $gate is spliced into a shell command string INSIDE a hand-written JSON heredoc, by hand,
+# rather than through jq's `@sh` (print_snippet below, the no-jq fallback — a heredoc can't call a jq
+# filter, so it needs sh_quote_json's second JSON-escaping pass too, not just sh_quote's shell one).
+# Same escaping jq's `@sh` performs (JSON-aware, so it needs no separate JSON-escaping step of its
+# own), shared with install-read-trace.sh's identical need via tools/lib/sh-quote.sh rather than a
+# second hand-copy.
+gate_sh="$(sh_quote_json "$gate")"
 
 usage() {
   cat <<'EOF'
