@@ -535,6 +535,25 @@ run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
 check_status "personal literal in a UTF-16LE binary blob → GAP" 1 "$STATUS"
 check_contains "personal binary hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
 
+# dir #250: the SAME decode recipe (deliberately duplicated from secret-scan.sh's emit_blob(), see
+# decode_binary()'s header) has the SAME UTF-8-locale hole. Every test above runs under this suite's
+# ambient C locale, so none exercised this axis. pick_utf8_locale() (tests/lib.sh) picks one the host
+# actually has; skip with `pass`, not a hard failure, when it has none.
+utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
+# reuse $cyr32 (defined above, still in scope — no function/subshell boundary between here and there)
+# rather than re-deriving the same Cyrillic bytes under a second name.
+if [ -n "$utf8_locale" ] && command -v iconv >/dev/null 2>&1 && printf '%s' "$cyr32" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+  p32pa="$SANDBOX/pa-personal.utf32locale"; printf '%s\n' "$cyr32" > "$p32pa"
+  d="$(repo_by dev@example.com)"
+  printf 'author %s here' "$cyr32" | iconv -f UTF-8 -t UTF-32LE > "$d/name32.bin"
+  commit_in "$d" bin32
+  run env LC_ALL="$utf8_locale" SECRET_SCAN_PERSONAL_FILE="$p32pa" bash "$pa" "$d"
+  check_status "non-ASCII personal literal in a UTF-32 blob is caught under a real UTF-8 locale ($utf8_locale)" 1 "$STATUS"
+  check_contains "personal binary hit is labeled (UTF-8 locale)" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
+else
+  pass "UTF-8-locale UTF-32 personal-literal test skipped (no UTF-8 locale on this host / no iconv UTF-32 converter)"
+fi
+
 # the personal-consumption note appears when the file exists — and the run is clean without hits
 d="$(repo_by dev@example.com)"
 run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"

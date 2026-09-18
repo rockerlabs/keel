@@ -197,6 +197,14 @@ trap 'exit 143' TERM
 # pass) so there is exactly one place implementing this recipe inside this file — keep it IN SYNC with
 # secret-guard/secret-scan.sh's own emit_blob() (each tool stands alone, so an encoding gap fixed there
 # must be fixed here too).
+#
+# The whole joined stream is NUL-stripped once, after every pass (dir #250, mirrored from
+# secret-scan.sh's emit_blob() — see its comment for the full mechanism): decoding UTF-32 data
+# through the UTF-16LE/BE converters interleaves a NUL after every code unit's high byte, and a NUL
+# ANYWHERE in the file makes BSD grep silently miss a non-ASCII `-i` pattern on EVERY line under a
+# real UTF-8 locale (`LC_ALL=C` is unaffected) — reproduced live. Stripping once, on the join, is
+# locale-neutral, keeps `-i` folding non-ASCII literals under UTF-8, and covers any pass added here
+# later for free.
 decode_binary() {  # $1 = source file, $2 = destination file for the decoded views
   local src="$1" dst="$2"
   {
@@ -208,7 +216,7 @@ decode_binary() {  # $1 = source file, $2 = destination file for the decoded vie
       iconv -f UTF-32BE -t UTF-8 "$src" 2>/dev/null || true; echo
     fi
     LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$src"; echo          # raw printable runs
-  } > "$dst"
+  } | LC_ALL=C tr -d '\000' > "$dst"
 }
 
 # --- binary-blob decode scan (shared by sections 5b and 6) ----------------------------------------

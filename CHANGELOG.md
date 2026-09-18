@@ -68,6 +68,28 @@ sections real content going forward — see that page for exactly when each one 
   condition backwards ("touched nothing exempt" where the hash actually means "touched only exempt
   files", F17) — reworded, with a pin in `tests/test_rails_honesty.sh` guarding both the corrected
   wording and the retired phrasing's absence.
+- **The shipped secret-guard missed a non-ASCII personal literal inside a UTF-32 blob under any real
+  UTF-8 locale (`LC_ALL=C` found it, an ordinary interactive shell's locale did not) — a live hole in
+  a shipped security tool, and a second, coupled defect where a failing selftest left the install
+  half-wired** (dir #250; found live 2026-08-21 by the guard's own `--selftest` during a re-vendor run;
+  reproduced cold on an external colleague's machine 2026-09-11, costing 16 test assertions there
+  through the second defect). Root cause: decoding UTF-32 data through the UTF-16LE/BE converters
+  (needed so a non-ASCII UTF-32 literal decodes at all) interleaves a NUL after every code unit's high
+  byte, and a NUL ANYWHERE in the decoded file made BSD grep silently miss a non-ASCII case-insensitive
+  pattern on EVERY line under a UTF-8 locale. `secret-scan.sh`'s `emit_blob()` and `public-audit.sh`'s
+  `decode_binary()` (the deliberately-duplicated recipe) now NUL-strip the whole joined decode stream
+  once — locale-neutral, and it keeps `-i` folding non-ASCII literals under UTF-8, which pinning
+  `LC_ALL=C` around the grep instead would have lost. Second defect:
+  `install-secret-guard.sh`'s `install_into` ran the selftest as its LAST statement under `set -e`,
+  AFTER the hook files were already copied — a failing selftest aborted before the caller's
+  `core.hooksPath` write / `.secret-scan-allow` seed / confirmation, leaving hooks present-but-
+  unconfirmed. The selftest now verifies the vendored SOURCE before any copy, so a failure leaves the
+  destination untouched rather than half-wired. `tests/test_secret_guard.sh` gained a UTF-8-locale
+  axis (pinned to a locale the host actually has, since musl only ships `C.UTF-8`) and a synthetic
+  broken-selftest fixture for both install paths (`--global` and per-repo); `tests/test_public_audit.sh`
+  gained the matching UTF-8-locale case for `decode_binary()`. **Residual, disclosed:** the selftest
+  verifies the vendored source, not the installed copy — a destination-specific failure (a noexec
+  mount, a permission quirk unique to the hooks dir) is not caught; tracked separately.
 - **Three known issues the 0.10.0 cut disclosed as ships-known-imperfect, closed** (dir #497).
   `tools/self/line-citations.sh`'s allowlist self-exclusion kept BOTH the default allow file and an
   active `KEEL_LINE_CITATIONS_ALLOW` override out of its own scan, so with an override active the

@@ -298,6 +298,27 @@ else
   pass "--range UTF-32 binary test skipped (no iconv / no UTF-32 converter)"
 fi
 
+# --- dir #250: the UTF-8-locale axis the test above never exercised — every test in this suite runs
+# under tests/lib.sh's ambient C locale, and the miss only fires under a REAL UTF-8 locale (see
+# emit_blob()'s own comment in secret-scan.sh for the full mechanism). pick_utf8_locale() (tests/lib.sh)
+# picks one the HOST actually has, C.UTF-8 preferred (musl only ships that); skip with `pass`, not a
+# hard failure, when the host has none.
+utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
+if [ -n "$utf8_locale" ] && command -v iconv >/dev/null 2>&1 && printf '%s' "$cyr" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+  p32u="$SANDBOX/personal.utf32locale"; printf '%s\n' "$cyr" > "$p32u"
+  d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
+  printf 'lead %s trail' "$cyr" | iconv -f UTF-8 -t UTF-32LE > "$d/f32.bin"
+  run env LC_ALL="$utf8_locale" SECRET_SCAN_PERSONAL_FILE="$p32u" "$scan" -- "$d/f32.bin"
+  check_status "a non-ASCII personal literal in a UTF-32 blob is caught under a real UTF-8 locale ($utf8_locale)" 1 "$STATUS"
+  # the free red test (lead #4 in dir #250's body): --selftest's own UTF-32 probe must also pass
+  # 9/9 under this locale — it is the check install/bootstrap scripts run after wiring the hook.
+  run env LC_ALL="$utf8_locale" "$scan" --selftest
+  check_status "--selftest exits 0 under a real UTF-8 locale ($utf8_locale)" 0 "$STATUS"
+  check_absent "no selftest probe FAILs under a UTF-8 locale" "$OUT" "selftest: FAIL"
+else
+  pass "UTF-8-locale axis test skipped (no UTF-8 locale on this host / no iconv UTF-32 converter)"
+fi
+
 # --- determinism regression: a key EARLY in a large pushed range must always block ---------------
 # The old fast path used `grep -q`, whose first-match exit SIGPIPE'd the still-writing
 # `git cat-file --batch`; under pipefail the whole pipeline then read as failed and the hit was
@@ -613,11 +634,45 @@ if [ "$greprc" -ge 2 ]; then
   check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
 fi
 
-# --- install verifies the INSTALLED copy via selftest (a wired-but-broken gate must fail install) -
+# --- install verifies the vendored SOURCE via selftest before touching the destination (a
+# wired-but-broken gate must fail the install, but never leave it half-wired — see below) ----------
 repo="$(new_repo)"
 run "$isg" "$repo"
 check_status "vendor install with selftest verify → exit 0" 0 "$STATUS"
-check_contains "install runs the installed copy's selftest" "$OUT" "selftest: OK"
+check_contains "install runs the vendored scanner's selftest" "$OUT" "selftest: OK"
+
+# --- dir #250 (the "second, smaller defect", one of two this ticket fixes — see CHANGELOG.md for
+# the felt incident): a failing selftest must leave the destination EITHER fully wired or completely
+# untouched, never half-wired (install_into() used to run the selftest LAST, after the cp's — see
+# tools/install-secret-guard.sh's own comment). Simulate ANY broken vendored scanner — the trigger
+# doesn't matter, only that --selftest exits non-zero — with a trivial stub in place of the real
+# secret-scan.sh, so this fixture stays decoupled from that script's internals: install_into() calls
+# nothing else in secret-guard/ before it fails, so the stub needs no siblings.
+isg_scratch="$(mktemp -d "$SANDBOX/isg-broken.XXXXXX")"
+cp "$isg" "$isg_scratch/install-secret-guard.sh"
+mkdir -p "$isg_scratch/secret-guard"
+broken_scan="$isg_scratch/secret-guard/secret-scan.sh"
+printf '#!/usr/bin/env bash\necho "selftest: FAIL — synthetic failure for a test fixture" >&2\nexit 1\n' > "$broken_scan"
+chmod +x "$broken_scan"
+
+# per-repo vendor into a fresh repo with the broken source → refuses, destination untouched
+brepo="$(new_repo)"
+run bash "$isg_scratch/install-secret-guard.sh" "$brepo"
+check_ne "per-repo install with a broken selftest → refuses (non-zero exit)" 0 "$STATUS"
+check_nofile "broken selftest → no secret-scan.sh copied into the repo" "$brepo/.git/hooks/secret-scan.sh"
+check_nofile "broken selftest → no pre-commit copied into the repo" "$brepo/.git/hooks/pre-commit"
+check_nofile "broken selftest → no pre-push copied into the repo" "$brepo/.git/hooks/pre-push"
+check_nofile "broken selftest → no .secret-scan-allow seed written" "$brepo/.secret-scan-allow"
+check_absent "broken selftest → no 'vendored into' confirmation printed" "$OUT" "vendored into"
+
+# --global with the broken source → refuses, core.hooksPath left untouched
+gbroken_home="$SANDBOX/gbroken-home"; mkdir -p "$gbroken_home"
+fresh_home_env "$gbroken_home"; gbroken_env=("${FRESH_HOME_ENV[@]}")
+run env "${gbroken_env[@]}" bash "$isg_scratch/install-secret-guard.sh" --global
+check_ne "broken-selftest --global install → refuses (non-zero exit)" 0 "$STATUS"
+still_unset="$(env "${gbroken_env[@]}" git config --global core.hooksPath 2>/dev/null || true)"
+check_status "broken selftest → --global leaves core.hooksPath unset" "" "$still_unset"
+check_nofile "broken selftest → --global's staging dir has no secret-scan.sh" "$gbroken_home/.config/git/keel-hooks/secret-scan.sh"
 
 # --- the INSTALLED pre-push hook actually runs end-to-end, not just secret-scan.sh's own --selftest:
 # install used to vendor pre-push without its range-lib.sh dependency, so every real push through a
