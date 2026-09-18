@@ -149,9 +149,14 @@ awk -F/ '{ print $NF "\037" $0 }' "$tracked" > "$basemap"
 # Allowlist: one `<citing-path> <cited-token>` pair per line. Deliberately NOT keyed by the citing
 # line number — a line number in an exemption would drift under exactly the edits this check exists
 # to survive, which is the defect wearing the checker's own uniform.
+# Strips a trailing comment and keeps only well-formed two-field rows — the one parse both loading
+# the active allowlist below and the dir #497 staleness check further down share, rather than each
+# re-implementing it.
+parse_allow_pairs() { awk '{ sub(/#.*/, "") } NF == 2 { print $1, $2 }' "$1"; }
+
 : > "$allow"
 if [ -r "$allow_file" ]; then
-  awk '{ sub(/#.*/, "") } NF == 2 { print $1, $2 }' "$allow_file" > "$allow"
+  parse_allow_pairs "$allow_file" > "$allow"
   say "  allowlist: ${allow_file#"$repo_dir"/} ($(wc -l < "$allow" | tr -d '[:space:]') entry/entries)"
 else
   say "  allowlist: absent ($allow_file) — every citation is a hard failure"
@@ -173,6 +178,44 @@ resolve_tracked() {   # resolve_tracked PATH — prints the tracked path it name
   awk -F'\037' -v b="$1" '$1 == b { n++; p = $2 } END { if (n == 1) print p }' "$basemap"
 }
 
+# dir #497 item 1: the scan-loop's own case exclusion below keeps BOTH the default allow file and
+# an active override out of the scan — each names forbidden tokens by construction (see the
+# header), so scanning either would make every entry re-fire from inside its own exemption. But
+# that exclusion has a cost: with an override active, the default file is used by nothing and
+# scanned by nothing, so an entry inside it whose citing or cited path has since been renamed or
+# deleted just sits there, rotting unnoticed. Of the two fixes the ticket weighed, this is (b):
+# validate that every entry's OWN paths still resolve, rather than (a) merely flagging the default
+# file as dead config — (b) catches the staleness the finding actually means, and the live tree's
+# two entries both resolve today (checked before shipping this), so it does not turn a clean run
+# red. Advisory only (WARN, never added to `forbidden`): an exemption that outlived its file is
+# debt to burn down, not evidence of a fresh violation in today's tree.
+stale_allow_pairs() {   # stale_allow_pairs LABEL — reads already-parsed "<citing> <cited>" pairs
+                         # from stdin (parse_allow_pairs's own output shape, which is also what
+                         # $allow already holds for the active file — fed straight in below rather
+                         # than re-parsed) and WARNs on each entry whose citing or cited path no
+                         # longer resolves to a tracked file. Through `say`, not a bare `echo`:
+                         # `--quiet`'s own contract (usage(), above) is "print only FORBIDDEN
+                         # lines", and a WARN is not one.
+  local label="$1" citing cited cited_file
+  while read -r citing cited; do
+    [ -n "$citing" ] && [ -n "$cited" ] || continue
+    cited_file="${cited%%:*}"
+    if [ -z "$(resolve_tracked "$citing")" ]; then
+      say "  WARN $label entry '$citing $cited': $citing is no longer tracked — stale exemption"
+    elif [ -z "$(resolve_tracked "$cited_file")" ]; then
+      say "  WARN $label entry '$citing $cited': $cited_file is no longer tracked — stale exemption"
+    fi
+  done
+}
+if [ "$allow_file" = "$repo_dir/$ALLOW_REL" ]; then
+  # No override: $allow already holds this exact file's parsed pairs (loaded above) — feed it
+  # straight in rather than re-parsing the same file from disk a second time.
+  stale_allow_pairs "default allowlist" < "$allow"
+else
+  [ -r "$repo_dir/$ALLOW_REL" ] && parse_allow_pairs "$repo_dir/$ALLOW_REL" | stale_allow_pairs "default allowlist"
+  stale_allow_pairs "active allowlist" < "$allow"
+fi
+
 scanned=0; forbidden=0
 
 while IFS= read -r f; do
@@ -181,8 +224,10 @@ while IFS= read -r f; do
   # A cheap prefilter before the fence-blanking pass below: most tracked files (including any binary
   # asset) contain no candidate token at all, and skipping them here avoids running
   # `blank_fenced_blocks`'s awk pass — the pricier of the two — over content that can only ever come
-  # back empty. Safe by construction: fence-blanking only ever REMOVES matches (it blanks fenced
-  # regions), so a file this misses could never have matched after blanking either.
+  # back empty. A busybox-vs-GNU divergence in THIS grep's exit status on binary content is inert —
+  # not because fence-blanking is monotonic, but because the downstream `blank_fenced_blocks "$f" |
+  # grep -noE "$TOKEN_RE" || true` pipeline already tolerates finding nothing: whichever way this
+  # prefilter answers on such a file, running the full pipeline on it would report the same nothing.
   grep -qE "$TOKEN_RE" -- "$repo_dir/$f" 2>/dev/null || continue
   # Fence-blanked (tools/lib/fence-blank.sh, dir #169), same as both sibling self-checks: a
   # `path:LINE` inside a fenced example — a pasted `grep -n` transcript, an illustration of this

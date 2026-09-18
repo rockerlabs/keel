@@ -68,6 +68,23 @@ sections real content going forward — see that page for exactly when each one 
   condition backwards ("touched nothing exempt" where the hash actually means "touched only exempt
   files", F17) — reworded, with a pin in `tests/test_rails_honesty.sh` guarding both the corrected
   wording and the retired phrasing's absence.
+- **Three known issues the 0.10.0 cut disclosed as ships-known-imperfect, closed** (dir #497).
+  `tools/self/line-citations.sh`'s allowlist self-exclusion kept BOTH the default allow file and an
+  active `KEEL_LINE_CITATIONS_ALLOW` override out of its own scan, so with an override active the
+  default file's entries were neither used nor validated and could rot unnoticed; every entry in the
+  default file (always) and the active override (when different) is now checked against the tracked
+  tree, and a citing or cited path that no longer resolves is surfaced as an advisory WARN — a stale
+  exemption is debt to burn down, not a fresh violation, so it never turns an otherwise-clean run red.
+  The same file's prefilter comment claimed its `grep -qE` step was "safe by construction" because
+  fence-blanking only removes matches; corrected to name the actual reason a busybox-vs-GNU exit-status
+  divergence on binary content is inert — the downstream `blank_fenced_blocks | grep -noE … || true`
+  pipeline already tolerates finding nothing, regardless of what the prefilter decided. And
+  `tests/test_tour_transcript.sh` failed under a checkout that itself lives under a `mktemp`-shaped
+  path (an Alpine-leg clone, or any dev checkout under `/tmp`): its sandbox-path-normalization rewrite
+  ran BEFORE the `$REPO_ROOT → ./` rewrite, so a `$REPO_ROOT` that itself matched the sandbox pattern
+  got mangled first and the repo-root rule then never matched what was left of it. Swapped the two
+  `sed` stages so the repo-root rewrite runs first; reproduced RED on the unswapped order from a real
+  clone under `$(mktemp -d)` and GREEN after the swap, non-`mktemp` runs unchanged.
 - **`tools/doctor.sh`'s mode-mismatch advice spliced a literal `--home "DIR"` into a `doctor.sh
   --install [--codex]` recommendation, but doctor's own parser has no `--home` flag (home is
   positional) — following the advice verbatim exited 2** (dir #513; found 2026-09-12 by dir #495's
