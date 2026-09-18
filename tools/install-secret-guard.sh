@@ -39,7 +39,15 @@ install_into() {
   # failure left the destination half-wired (files present, but the caller's core.hooksPath write /
   # .secret-scan-allow seed / confirmation never ran). Testing $src (byte-identical to what gets
   # copied below) means a failure now exits BEFORE any cp — $hooks_dir is left exactly as it was.
-  "$src/secret-scan.sh" --selftest | sed 's/^/  /'
+  # Via `bash`, not a direct exec: $src is tracked executable (100755) in a normal git checkout, but
+  # a `bash` invocation doesn't depend on that bit surviving whatever got this file onto disk (a
+  # non-mode-preserving archive extraction, e.g.) — the OLD code never had this dependency either,
+  # since it ran the selftest against the DESTINATION only after `chmod +x`ing it (code review, dir #250).
+  # Residual, deliberately out of scope: this checks $src, not the eventual $hooks_dir copy, so it
+  # can't catch a destination-specific failure (a noexec mount, a permission quirk unique to
+  # $hooks_dir) that a post-copy check would — closing that needs a copy+verify+rollback-on-failure
+  # redesign, a larger change than this ticket's ordering fix; tracked as a follow-up.
+  bash "$src/secret-scan.sh" --selftest | sed 's/^/  /'
   mkdir -p "$hooks_dir"
   # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
   # pre-push without it is the user's data (higher precedence than our default), so refuse and explain.

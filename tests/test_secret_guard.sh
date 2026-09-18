@@ -658,7 +658,7 @@ chmod +x "$broken_scan"
 # per-repo vendor into a fresh repo with the broken source → refuses, destination untouched
 brepo="$(new_repo)"
 run bash "$isg_scratch/install-secret-guard.sh" "$brepo"
-if [ "$STATUS" = 0 ]; then fail "per-repo install with a broken selftest must not report success" "got exit 0"; else pass "per-repo install with a broken selftest → refuses (non-zero exit)"; fi
+check_ne "per-repo install with a broken selftest → refuses (non-zero exit)" 0 "$STATUS"
 check_nofile "broken selftest → no secret-scan.sh copied into the repo" "$brepo/.git/hooks/secret-scan.sh"
 check_nofile "broken selftest → no pre-commit copied into the repo" "$brepo/.git/hooks/pre-commit"
 check_nofile "broken selftest → no pre-push copied into the repo" "$brepo/.git/hooks/pre-push"
@@ -669,7 +669,7 @@ check_absent "broken selftest → no 'vendored into' confirmation printed" "$OUT
 gbroken_home="$SANDBOX/gbroken-home"; mkdir -p "$gbroken_home"
 fresh_home_env "$gbroken_home"; gbroken_env=("${FRESH_HOME_ENV[@]}")
 run env "${gbroken_env[@]}" bash "$isg_scratch/install-secret-guard.sh" --global
-if [ "$STATUS" = 0 ]; then fail "broken-selftest --global install must not report success" "got exit 0"; else pass "broken-selftest --global install → refuses (non-zero exit)"; fi
+check_ne "broken-selftest --global install → refuses (non-zero exit)" 0 "$STATUS"
 still_unset="$(env "${gbroken_env[@]}" git config --global core.hooksPath 2>/dev/null || true)"
 check_status "broken selftest → --global leaves core.hooksPath unset" "" "$still_unset"
 check_nofile "broken selftest → --global's staging dir has no secret-scan.sh" "$gbroken_home/.config/git/keel-hooks/secret-scan.sh"

@@ -178,7 +178,9 @@ fresh_home_env() { FRESH_HOME_ENV=("HOME=$1" "GIT_CONFIG_GLOBAL=$1/.gitconfig");
 pick_utf8_locale() {
   local avail cand
   avail="$(locale -a 2>/dev/null)"
-  for cand in C.UTF-8 C.utf8 en_US.UTF-8 ru_RU.UTF-8; do
+  # Both namings per non-C locale too (dir #250 code review): glibc's `locale -a` spells these
+  # lowercase/no-hyphen (`en_US.utf8`) on Debian/Ubuntu, not just the hyphenated form macOS/BSD use.
+  for cand in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 ru_RU.UTF-8 ru_RU.utf8; do
     case "$avail" in *"$cand"*) printf '%s' "$cand"; return 0 ;; esac
   done
   return 1
