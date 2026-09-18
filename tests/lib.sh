@@ -178,6 +178,12 @@ run_in() {
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }
 check_contains() { case "$2" in *"$3"*) pass "$1" ;; *) fail "$1" "output missing: $3" ;; esac; }
 check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3" ;; *) pass "$1" ;; esac; }
+# dir #481 (found by this ticket's own /code-review high pass, two independent delta-round agents):
+# `check_absent "$a" "$b"` is a SUBSTRING check, not an equality check — it fails when $b is anywhere
+# inside $a, which is a strictly weaker test than "$a" != "$b" and can spuriously fail two genuinely
+# DISTINCT values where one happens to be a substring of the other (e.g. two digit-only hash suffixes
+# sharing a common prefix). A caller asserting plain inequality wants this, not check_absent.
+check_ne()       { if [ "$2" != "$3" ]; then pass "$1"; else fail "$1" "expected different values, both were '$2'"; fi; }
 check_file()     { if [ -f "$2" ]; then pass "$1"; else fail "$1" "missing file: $2"; fi; }
 check_dir()      { if [ -d "$2" ]; then pass "$1"; else fail "$1" "missing dir: $2"; fi; }
 check_nofile()   { if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; else pass "$1"; fi; }

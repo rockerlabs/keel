@@ -920,12 +920,40 @@ run "$gate" repo-key "$py/proj"
 keyy="$OUT"
 check_contains "dir #481: both same-basename repos still carry 'proj' cosmetically" "$keyx" "proj"
 check_contains "dir #481: both same-basename repos still carry 'proj' cosmetically" "$keyy" "proj"
-# check_absent(haystack, needle) fails exactly when needle is a substring of haystack — for two
-# single-line hash-suffixed keys this is equivalent to "must differ" (an exact match is trivially a
-# full-string "substring"), same idiom test_pipeline_canary.sh's "two setup runs get different
-# toy-repo basenames" check already uses for the same shape of assertion, one line instead of a
-# hand-rolled if/pass/fail.
-check_absent "dir #481: two repos with the same basename resolve to DISTINCT repo-keys" "$keyx" "$keyy"
+# check_ne (plain inequality), not check_absent (substring absence) — an earlier draft used
+# check_absent here on the theory that a substring-absence check is "equivalent to must differ" for
+# two single-line keys, which two independent /code-review delta-round passes both caught as false:
+# check_absent(keyx, keyy) fails whenever keyy is a substring ANYWHERE in keyx, not only on an exact
+# match, so two genuinely DISTINCT keys sharing a digit-run prefix (both repos here share the same
+# basename, so both keys share the "proj-" prefix too) could spuriously fail this check even though
+# the underlying keying is correct.
+check_ne "dir #481: two repos with the same basename resolve to DISTINCT repo-keys" "$keyx" "$keyy"
+
+# --- dir #481 review round: `_test_relevant_tree_hash`'s `$cwd` may resolve into a BARE repository
+# (found by two independent /code-review delta-round agents reviewing this ticket's own review-fix
+# commit) — `impact_claim_key`'s `git rev-parse --show-toplevel` requires a work tree and fails for a
+# bare repo, but `git ls-tree` needs no work tree and succeeds fine against the object database, so
+# without the `[ -n "$top" ] || return 1` guard, `top` stays empty and `testsdir` becomes the literal
+# absolute path "/tests" — probing the real host filesystem instead of failing closed. A bare repo
+# with a real commit (a tests/ dir + a test-referenced .md file, same shape as 80e), receipted from
+# INSIDE the bare repo itself. -----------------------------------------------------------------------
+bare="$(mktemp -d "$SANDBOX/dir481-bare.XXXXXX")"; rm -rf "$bare"
+git init -q --bare "$bare"
+baresrc="$(mktemp -d "$SANDBOX/dir481-baresrc.XXXXXX")"
+git clone -q "$bare" "$baresrc" 2>/dev/null
+mkdir -p "$baresrc/tests"
+printf 'doc="$REPO_ROOT/tested.md"\n' > "$baresrc/tests/test_something.sh"
+printf 'stub\n' > "$baresrc/tested.md"
+git -C "$baresrc" add -A
+git -C "$baresrc" commit -q -m init
+git -C "$baresrc" push -q origin HEAD:refs/heads/main
+baresha="$(git -C "$baresrc" rev-parse HEAD)"
+run_in "$bare" bash "$gate" init
+run_in "$bare" bash "$gate" receipt polish.3-tests "$baresha"
+check_contains "dir #481: polish.3-tests from a bare-repo cwd stamps the bare sha, not a bogus hash" \
+  "$(cat "$(sentinel_for "$bare")" 2>/dev/null)" "polish.3-tests	$baresha"
+check_absent "dir #481: ...never a colon-suffixed hash it can't honestly have computed there" \
+  "$(cat "$(sentinel_for "$bare")" 2>/dev/null)" "polish.3-tests	$baresha:"
 
 # --- dir #70: the independent-agent-review leg (SubagentStop trace + agent:<level> outcome) -------
 # Feeds a synthetic SubagentStop event to skill-trace. $1 = repo dir, $2 = agent_type, $3 = the
