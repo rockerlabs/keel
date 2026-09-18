@@ -166,4 +166,11 @@ if [ "$failed" -eq 0 ]; then
   exit 0
 fi
 printf '%d TEST FILE(S) FAILED\n' "$failed"
+# dir #480: a failing run's per-file logs (each test file's full, non-truncated stdout+stderr,
+# already `cat`'d above but about to be deleted by the EXIT trap regardless) are the one thing that
+# turns a one-off local failure into checkable evidence instead of an anecdote — the shape dir #480
+# itself was filed from. Disarm the cleanup trap and name the surviving dir; a passing run is
+# unaffected and still cleans up via the trap as before.
+trap - EXIT
+printf 'per-file logs preserved for inspection: %s\n' "$logdir"
 exit 1
