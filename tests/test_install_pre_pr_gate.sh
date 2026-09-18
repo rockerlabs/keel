@@ -110,6 +110,24 @@ check_contains "prints a ready-to-paste snippet" "$OUT" "\"hooks\""
 check_contains "snippet names the gate path" "$OUT" "$gate"
 check_nofile "no jq -> settings.json was never written" "$njrepo/.claude/settings.json"
 
+# --- (d2) regression (dir #514): the no-jq snippet path has its OWN escaping (the jq `@sh` fix above
+# never runs here — a heredoc can't call a jq filter), and it is untested by every other apostrophe
+# check in this file, all of which exercise the jq-present write path. Found live by this ticket's own
+# unit test for tools/lib/sh-quote.sh: a first version of the fix double-quoted the `${var//pat/repl}`
+# expansion in the assignment (`gate_sh="${gate//\'/\'\\\'\'}"`), which bash parses differently than
+# the identical expansion left unquoted — it silently OVER-escaped every apostrophe
+# (`Alex's` -> `Alex\'\\'\'s`, not the intended `Alex'\''s`) and would have shipped a snippet just as
+# broken as the bug this ticket exists to fix, just one layer further from any existing test. An
+# apostrophe-bearing checkout, no jq on PATH: the printed snippet's own command must still round-trip.
+apostrophe_fixture_checkout "no-jq checkout"; apnjck="$APOSTROPHE_CKDIR"
+apnjrepo="$(new_repo)"
+run env PATH="$farm" "$apnjck/tools/install-pre-pr-gate.sh" "$apnjrepo"
+check_status "no jq, apostrophe checkout -> non-zero (nothing installed)" 1 "$STATUS"
+apnjcmd="$(printf '%s\n' "$OUT" | grep '"command"' | head -1 | sed -E 's/.*"command": "(.*)" \}\].*/\1/')"
+apostrophe_cmd_argv "$apnjcmd"
+check_status "no-jq snippet's argv resolves back to the real (unescaped) path" \
+  "$apnjck/tools/pre-pr-gate.sh" "${APOSTROPHE_ARGV[1]}"
+
 # --- --global wires the machine-global settings.json instead of a repo's ----------------------------
 ghome="$SANDBOX/global-gate-home"
 run env KEEL_HOME="$ghome" "$installer" --global
@@ -452,11 +470,8 @@ check_status "--uninstall + --force -> exit 2 (rejected)" 2 "$STATUS"
 # by hand — a checkout at `~/Alex's checkout/keel` produced `bash 'Alex's checkout/…'`, an unterminated
 # quote ("unexpected EOF while looking for matching quote"), and every wired hook silently broke. A
 # disposable copy of the checkout (never $REPO_ROOT itself) under an apostrophe-bearing dir name,
-# .git stripped (no git functionality needed from the fixture, same convention test_install.sh uses).
-apck="$SANDBOX/Alex's checkout/keel"
-mkdir -p "$(dirname "$apck")"
-cp -r "$REPO_ROOT" "$apck"
-rm -rf "$apck/.git"
+# scoped to `tools/` only (shared helper, tests/lib.sh — see its own comment for why).
+apostrophe_fixture_checkout "checkout"; apck="$APOSTROPHE_CKDIR"
 aprepo="$(new_repo)"
 run "$apck/tools/install-pre-pr-gate.sh" "$aprepo"
 check_status "install from an apostrophe-bearing checkout path -> exit 0" 0 "$STATUS"
@@ -465,10 +480,9 @@ apcmd="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$aprepo/.claude/settings
 # $apcmd — let the shell that will actually run this command do the unescaping (the real proof: not
 # a hand-rolled unescaper, the same word-splitting the hook runner itself performs), and compare its
 # argv[1] against the real, unescaped path.
-apargv=()
-eval "apargv=($apcmd)"
+apostrophe_cmd_argv "$apcmd"
 check_status "the escaped command's argv resolves back to the real (unescaped) path" \
-  "$apck/tools/pre-pr-gate.sh" "${apargv[1]}"
+  "$apck/tools/pre-pr-gate.sh" "${APOSTROPHE_ARGV[1]}"
 printf '%s\n' "$apcmd" > "$SANDBOX/apostrophe-command.sh"
 run bash -n "$SANDBOX/apostrophe-command.sh"
 check_status "the generated command parses (bash -n)" 0 "$STATUS"

@@ -35,12 +35,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 rt="$repo_root/tools/read-trace.sh"
-# rt_sh — $rt with every embedded `'` doubled into `'\''` (dir #514), for the ONE place $rt is spliced
-# into a shell command string by hand rather than through jq's `@sh` (print_snippet below, the no-jq
-# fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, done in bash since
-# this path must work without jq at all.
-rt_sh="${rt//\'/\'\\\'\'}"
 
+# Checked BEFORE sourcing tools/lib/ below: a bootstrap clone's own copy of this script is a bare,
+# minimal fixture (found live by install-pre-pr-gate.sh's own regression test, same shape here) — it
+# never carries tools/lib/ at all, so a source attempted first would fail on a missing file and mask
+# this check's own, more useful "temp clone" rejection behind a raw "no such file" exit.
 tmpdir_base="${TMPDIR:-/tmp}"; tmpdir_base="${tmpdir_base%/}"
 case "$repo_root" in
   "$tmpdir_base"/keel.*/keel)
@@ -50,6 +49,14 @@ case "$repo_root" in
     exit 2
     ;;
 esac
+
+# shellcheck source=tools/lib/sh-quote.sh
+. "$here/lib/sh-quote.sh"
+# rt_sh — $rt quoted (dir #514), already wrapped in single quotes, for the ONE place $rt is spliced
+# into a shell command string by hand rather than through jq's `@sh` (print_snippet below, the no-jq
+# fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, shared with
+# install-pre-pr-gate.sh's identical need via tools/lib/sh-quote.sh rather than a second hand-copy.
+rt_sh="$(sh_quote "$rt")"
 
 usage() {
   cat <<'EOF'
@@ -140,13 +147,13 @@ print_snippet() {
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Edit|Write|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "bash '$rt_sh' log-tool" }] }
+      { "matcher": "Edit|Write|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "bash $rt_sh log-tool" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$rt_sh' startup" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $rt_sh startup" }] }
     ],
     "SessionEnd": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash '$rt_sh' session-end" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "bash $rt_sh session-end" }] }
     ]
   }
 }

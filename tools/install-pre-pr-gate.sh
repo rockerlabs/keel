@@ -66,18 +66,17 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 gate="$repo_root/tools/pre-pr-gate.sh"
-# gate_sh — $gate with every embedded `'` doubled into `'\''` (dir #514), for the ONE place $gate is
-# spliced into a shell command string by hand rather than through jq's `@sh` (print_snippet below,
-# the no-jq fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, done in
-# bash since this path must work without jq at all.
-gate_sh="${gate//\'/\'\\\'\'}"
 
 # A temp bootstrap clone (bootstrap.sh's `${TMPDIR:-/tmp}/keel.XXXXXX/keel`, reaped on exit) is not a
 # checkout to point hooks at — they'd dangle within moments. This script is never invoked BY bootstrap
 # (it's a separate, deliberate, opt-in step), so there's no env signal to read the way install.sh reads
 # KEEL_EPHEMERAL — the path shape is what's left to go on. Strip a trailing slash from TMPDIR first
 # (macOS sets it WITH one, e.g. "/var/folders/.../T/") — pwd never emits a double slash, so an
-# unstripped pattern would silently never match on that platform.
+# unstripped pattern would silently never match on that platform. Checked BEFORE sourcing tools/lib/
+# below: a bootstrap clone's own copy of this script is a bare, minimal fixture (found live by this
+# ticket's own regression test) — it never carries tools/lib/ at all, so a source attempted first would
+# fail on a missing file and mask this check's own, more useful "temp clone" rejection behind a raw
+# "no such file" exit.
 tmpdir_base="${TMPDIR:-/tmp}"; tmpdir_base="${tmpdir_base%/}"
 case "$repo_root" in
   "$tmpdir_base"/keel.*/keel)
@@ -87,6 +86,14 @@ case "$repo_root" in
     exit 2
     ;;
 esac
+
+# shellcheck source=tools/lib/sh-quote.sh
+. "$here/lib/sh-quote.sh"
+# gate_sh — $gate quoted (dir #514), already wrapped in single quotes, for the ONE place $gate is
+# spliced into a shell command string by hand rather than through jq's `@sh` (print_snippet below,
+# the no-jq fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, shared
+# with install-read-trace.sh's identical need via tools/lib/sh-quote.sh rather than a second hand-copy.
+gate_sh="$(sh_quote "$gate")"
 
 usage() {
   cat <<'EOF'
@@ -203,20 +210,20 @@ print_snippet() {
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash '$gate_sh'" }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash $gate_sh" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$gate_sh' rollout-check" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $gate_sh rollout-check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] },
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] }
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] },
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "UserPromptExpansion": [
-      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] }
+      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "SubagentStop": [
-      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] }
+      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ]
   }
 }

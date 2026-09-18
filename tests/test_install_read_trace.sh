@@ -131,12 +131,9 @@ check_contains "the unrelated empty Notification array survives uninstall" "$(ca
 # the shell can parse and run. Before the fix, $rt was spliced into `"bash '" + $rt + "'"` by hand — a
 # checkout at `~/Alex's checkout/keel` produced `bash 'Alex's checkout/…'`, an unterminated quote
 # ("unexpected EOF while looking for matching quote"), and every wired hook silently broke. A disposable
-# copy of the checkout (never $REPO_ROOT itself) under an apostrophe-bearing dir name, .git stripped (no
-# git functionality needed from the fixture, same convention test_install.sh uses).
-apck="$SANDBOX/Alex's checkout/keel"
-mkdir -p "$(dirname "$apck")"
-cp -r "$REPO_ROOT" "$apck"
-rm -rf "$apck/.git"
+# copy of the checkout (never $REPO_ROOT itself) under an apostrophe-bearing dir name, scoped to
+# `tools/` only (shared helper, tests/lib.sh — see its own comment for why).
+apostrophe_fixture_checkout "checkout"; apck="$APOSTROPHE_CKDIR"
 aprepo="$(new_repo)"
 run "$apck/tools/install-read-trace.sh" "$aprepo"
 check_status "install from an apostrophe-bearing checkout path -> exit 0" 0 "$STATUS"
@@ -145,10 +142,9 @@ apcmd="$(jq -r '.hooks.SessionEnd[0].hooks[0].command' "$aprepo/.claude/settings
 # $apcmd — let the shell that will actually run this command do the unescaping (the real proof: not a
 # hand-rolled unescaper, the same word-splitting the hook runner itself performs), and compare its
 # argv[1] against the real, unescaped path.
-apargv=()
-eval "apargv=($apcmd)"
+apostrophe_cmd_argv "$apcmd"
 check_status "the escaped command's argv resolves back to the real (unescaped) path" \
-  "$apck/tools/read-trace.sh" "${apargv[1]}"
+  "$apck/tools/read-trace.sh" "${APOSTROPHE_ARGV[1]}"
 printf '%s\n' "$apcmd" > "$SANDBOX/apostrophe-command.sh"
 run bash -n "$SANDBOX/apostrophe-command.sh"
 check_status "the generated command parses (bash -n)" 0 "$STATUS"

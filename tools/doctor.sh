@@ -522,15 +522,22 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # advice too, the same way a bare `doctor.sh --install` does at ~/.claude. $idefault_leaf already
   # encodes which mode this is, so one formula covers both — no branch needed here.
   idefault="${KEEL_HOME:-${HOME:-}/$idefault_leaf}"
-  if [ "$ihome" = "$idefault" ]; then ihome_flag=""; idoctor_arg=""
-  else                                 ihome_flag=" --home \"$ihome\""; idoctor_arg=" \"$ihome\""; fi
-  # idoctor_arg — the SAME home-reaching suffix as $ihome_flag, but in POSITIONAL form: doctor.sh's own
-  # parser (unlike install.sh's) has no `--home` flag — home is a bare positional (`DIRS+=("$1")` in the
-  # arg loop above) — so a line that advises re-running `doctor.sh --install` must carry this, never
+  # ihome_reach — the single underlying fact both $ihome_flag and $idoctor_arg are just two spellings
+  # of: $ihome itself when it's not where a bare re-run would land, empty otherwise. Computed ONCE
+  # (found by this ticket's own /simplify pass to have been two copies of the identical `[ "$ihome" =
+  # "$idefault" ]` branch, one per rendering — exactly the twinned-state shape that let dir #513 happen
+  # in the first place: a future change to $idefault's own logic now needs updating in one place, not
+  # two that can silently drift apart again).
+  ihome_reach=""; [ "$ihome" = "$idefault" ] || ihome_reach="$ihome"
+  ihome_flag="${ihome_reach:+ --home \"$ihome_reach\"}"
+  # idoctor_arg — the SAME $ihome_reach, in POSITIONAL form: doctor.sh's own parser (unlike
+  # install.sh's) has no `--home` flag — home is a bare positional (`DIRS+=("$1")` in the arg loop
+  # above) — so a line that advises re-running `doctor.sh --install` must carry this, never
   # $ihome_flag's `--home "DIR"` form (dir #513: splicing `--home` into a doctor.sh recommendation
   # produces a command doctor.sh's own parser rejects with "unknown option", exit 2 — the exact
   # unfollowable advice dir #98's ihome_flag comment above says this class closes, just for doctor.sh
   # itself rather than install.sh).
+  idoctor_arg="${ihome_reach:+ \"$ihome_reach\"}"
   # manifest_field/manifest_usable (dir #125) and keel_core_is_link/keel_core_is_nogit_trim (dir
   # #363) — REQUIRED, but ONLY inside --install mode: every real call site of all four lives inside
   # this block, and an ordinary (non-install) `doctor.sh [DIR...]` project audit never touches any of
@@ -581,8 +588,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # positional, not `--home` (dir #513: the redirect advises re-running doctor.sh itself — to re-audit
   # in the correct mode, never install.sh — and doctor's own parser has no `--home` flag).
   iother_default="${KEEL_HOME:-${HOME:-}/$iother_leaf}"
-  if [ "$ihome" = "$iother_default" ]; then iother_doctor_arg=""
-  else                                        iother_doctor_arg=" \"$ihome\""; fi
+  iother_reach=""; [ "$ihome" = "$iother_default" ] || iother_reach="$ihome"
+  iother_doctor_arg="${iother_reach:+ \"$iother_reach\"}"
   # irelink_mode — the re-wiring MODE for a dangling/foreign symlink (bin/keel is wired in BOTH modes,
   # so this is reachable under --codex too, code-review found live): under Claude mode that's `--link`
   # (recreates the linked layout); under --codex it's just $imode_flag itself, a bare re-run of --codex
