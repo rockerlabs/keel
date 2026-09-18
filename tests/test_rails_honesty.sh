@@ -177,4 +177,17 @@ pin "polish.md: step 10's summary names the receipt's one-slot limit as the reas
   "$polish" 'even though its receipt names only' \
   "expected step 10 to say why the summary can exceed the receipt, so the two-mechanism case can't be read as a contradiction"
 
+# --- dir #510 (F17): step 3's no-rerun condition was stated BACKWARDS -----------------------------
+# The tree-relevant hash (dir #123) drops a file from the hash ONLY when it is exempt (no test
+# references its basename), so a commit unlocks with NO fresh test run precisely when EVERY touched
+# file is exempt — "touched only exempt files". An earlier draft said "touched nothing exempt", which
+# reads as the opposite condition (zero exempt touches) and would mislead a reader who takes it
+# literally. `check_absent` guards the retired phrasing directly — a rewording that quietly restores it
+# would otherwise slip past a bare presence pin on the new wording alone.
+check_absent "polish.md: step 3 no longer states the no-rerun condition backwards" \
+  "$(cat "$polish")" "touched nothing exempt"
+pin "polish.md: step 3 states the no-rerun condition as 'touched only exempt files'" \
+  "$polish" 'touched only exempt files' \
+  "expected step 3 to say the hash unlocks with no rerun when the commit touched ONLY exempt files (dir #510 F17)"
+
 summary

@@ -262,8 +262,9 @@
 #       change.
 #
 # --- dir #80: the sentinel is a single /tmp file shared by ALL worktrees of a repo -------------------
-# dir #61 deliberately keyed the sentinel off the repo's MAIN checkout (main_top_for -> basename), not
-# the raw event cwd, so a receipt written from worktree A and a `gh pr create` hook event reporting
+# dir #61 deliberately keyed the sentinel off the repo's MAIN checkout (main_top_for -> _repo_key, a
+# basename-plus-hash-of-the-full-path since dir #481 — see _repo_key's own comment), not the raw event
+# cwd, so a receipt written from worktree A and a `gh pr create` hook event reporting
 # worktree B still agree on one file. Correct for THAT problem, but with heavy concurrent activity on
 # the SAME repo (many worktrees active at once), the one shared sentinel becomes a single race point: a
 # different session's own `init` (or a denied `gh pr create`'s retire_sentinel()) can wipe the file
@@ -581,8 +582,18 @@ _head_sha() { git -C "${1:-.}" rev-parse HEAD 2>/dev/null; }
 # STATUS instead: non-zero (and no output) means `ls-tree` itself failed — callers must check that, not
 # `-n` on the string, which is silently never false.
 _test_relevant_tree_hash() {
-  local cwd="$1" sha="$2" listing line rest path base
-  local testsdir="$cwd/tests"
+  local cwd="$1" sha="$2" listing line rest path base top testsdir
+  # dir #510 (F8): anchor on the repo's toplevel, not the INVOCATION cwd — a caller invoking this from
+  # a subdirectory (a `/polish` session working from, or a `gh pr create` hook firing with, a nested
+  # cwd) used to build "$cwd/tests", which doesn't exist there, so the `[ -d "$testsdir" ]` guard below
+  # failed and EVERY `.md` file silently dropped out of the hash as if exempt — even one a real test
+  # references. `--show-toplevel` (the WORKTREE's own top, deliberately not `main_top_for`'s main-
+  # checkout redirection — dir #72's own "don't re-fork" precedent aside, `tests/` lives in the
+  # worktree being tested, not necessarily the main checkout) resolves the same `tests/` dir regardless
+  # of which subdirectory `$cwd` names; falls back to `$cwd` itself if `$cwd` isn't a repo at all
+  # (unreachable in practice — the `ls-tree` call right below already fails first in that case).
+  top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
+  testsdir="${top:-$cwd}/tests"
   listing="$(git -C "$cwd" ls-tree -r --full-tree --format='%(objectmode) %(objectname) %(path)' "$sha" 2>/dev/null)" || return 1
   {
     while IFS= read -r line; do
@@ -817,10 +828,17 @@ _gate_ledger_candidates() {
   done < "$ledger"
 }
 
-# The basename-of-main-checkout key every per-repo /tmp file below shares, factored out once dir #63
-# added a second and third call site (skill-trace's own cwd, the hand-off note) beside the pre-existing
-# hook-mode one — same rationale as _worktree_main_entry's own extraction, above.
-_repo_key() { basename "$(main_top_for "${1:-$PWD}")"; }
+# dir #481 (found live by dir #376's own /design pass): the basename ALONE used to be the whole key —
+# `~/x/proj` and `~/y/proj` both reduced to "proj" and shared one sentinel/prev-sentinel/trace/hand-off.
+# The basename never disambiguates two checkouts of the same project name under different parents, so
+# the FULL main-top path now feeds a hash appended to it — strictly FINER than basename alone (it can
+# only ever separate two runs that used to share a key, never merge two that were already distinct),
+# so it can't weaken what dir #58/#61 hardened. The basename prefix stays purely cosmetic (a human
+# glancing at /tmp can still tell which project a file belongs to); only the hash half is load-bearing.
+# Split into two functions so a caller that ALREADY resolved the main-top path (hook mode's $main_top,
+# dir #88's own reuse discipline) can get the identical key without forking main_top_for a second time.
+_repo_key_from_path() { printf '%s-%s' "$(basename "$1")" "$(printf '%s' "$1" | cksum | tr -cd '0-9')"; }
+_repo_key() { _repo_key_from_path "$(main_top_for "${1:-$PWD}")"; }
 
 # dir #260 (hit 3): true when $1 resolves to neither a worktree's recorded main entry nor a real git
 # toplevel — mirrors main_top_for's OWN fallback condition above (deliberately re-derived rather than
@@ -1139,11 +1157,12 @@ log_event() {
 
 case "${1:-}" in
   repo-key)
-    # Exposes _repo_key() (the worktree-aware basename(main_top_for(...)) dir #61 resolution the
-    # trace/rollout-state paths are keyed by) to other tools — dir #64's own pipeline-canary.sh uses
-    # this instead of hand-copying the algorithm, which would silently drop the worktree resolution
-    # if it ever changes here. dir #80: the sentinel/prev-sentinel/hand-off paths moved to the
-    # (repo, branch) key below — use `receipt-key`, not this, for those.
+    # Exposes _repo_key() (the worktree-aware main_top_for(...) resolution, dir #61, reduced to a
+    # basename-plus-hash-of-the-full-path key, dir #481) to other tools — dir #64's own
+    # pipeline-canary.sh uses this instead of hand-copying the algorithm, which would silently drop the
+    # worktree resolution (or the finer keying) if either ever changes here. dir #80: the
+    # sentinel/prev-sentinel/hand-off paths moved to the (repo, branch) key below — use `receipt-key`,
+    # not this, for those.
     printf '%s\n' "$(_repo_key "${2:-$PWD}")"
     exit 0
     ;;
@@ -1965,8 +1984,12 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 # data this line already computed (dir #72 finding #7's own reuse-the-resolved-key discipline).
 # dir #80: $sentinel is NOT set here (unlike dir #88's original single-line version) — it depends on
 # the branch-aware receipt_key resolved further down, once resolved_branch is known.
+# dir #481: $wt must be the SAME finer (basename-plus-hash) key `_require_receipt_key` (the writer
+# side) resolves via `_repo_key`, or the two sides would silently key onto different files for the
+# same repo — `_repo_key_from_path` takes the already-resolved $main_top so this stays the promised
+# single fork of main_top_for.
 main_top=$(main_top_for "$cwd")
-wt=$(basename "$main_top")
+wt=$(_repo_key_from_path "$main_top")
 
 deny() {
   # Impact instrumentation (metadata only, opt-in per repo): record that this guardrail fired so keel-impact

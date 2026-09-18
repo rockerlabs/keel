@@ -50,8 +50,10 @@ check_contains "settings.json wires the PreToolUse gate" "$(cat "$sandbox/settin
 check_contains "settings.json wires the SessionStart rollout-check" "$(cat "$sandbox/settings.json" 2>/dev/null)" "rollout-check"
 check_contains "the toy repo is a real git repo" "$(git -C "$repo" rev-parse --is-inside-work-tree 2>&1)" "true"
 
-# Two separate `setup` runs must not collide on the same /tmp sentinel — pre-pr-gate.sh keys purely off
-# basename(toplevel), so a fixed toy-repo dir name would make every canary session share one sentinel.
+# Two separate `setup` runs must not collide on the same /tmp sentinel — pre-pr-gate.sh keys off a
+# basename-plus-hash-of-the-full-path (dir #481), so a fixed toy-repo dir name (even one whose full
+# path would still differ per run, as mktemp's own random suffix already guarantees) would be one less
+# thing standing between a bug in that hashing and two canary sessions silently sharing one sentinel.
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-2" bash "$canary" setup
 repo2="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-2")"
 check_absent "two setup runs get different toy-repo basenames (no shared /tmp sentinel)" "$(basename "$repo2")" "$(basename "$repo")"
