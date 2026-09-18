@@ -182,4 +182,28 @@ else
   fail "KEEL_TEST_JOBS=1 under CI=true ran sequentially" "took ${elapsed}s, expected >=5s for 6 fully-serial 1s fixtures — the override may have lost to the CI default"
 fi
 
+# --- dir #480's cheap discrimination: a failing run's per-file logs must survive the process, not
+# vanish with the EXIT-trap cleanup, so a one-off local failure (the shape dir #480 itself was filed
+# from — a single unreproduced report with nothing preserved to inspect afterward) leaves real
+# evidence behind instead of an anecdote. A passing run still cleans up as before (no clutter). -----
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n'                                       > "$d/test_a.sh"
+printf '#!/usr/bin/env bash\necho dir480-marker-line\nexit 1\n'              > "$d/test_b.sh"
+run env KEEL_TEST_JOBS=2 bash "$d/run.sh"
+check_status "failing fixture -> exit 1 (logdir case)" 1 "$STATUS"
+check_contains "a failing run names where its per-file logs were preserved" "$OUT" "per-file logs preserved"
+preserved_dir="$(printf '%s\n' "$OUT" | sed -n 's/.*per-file logs preserved[^:]*: //p' | tail -1)"
+check_dir "the preserved logdir actually exists after run.sh exited" "$preserved_dir"
+check_contains "the preserved logdir holds the failing file's own log, not just a stub" \
+  "$(cat "$preserved_dir/test_b.sh.log" 2>/dev/null)" "dir480-marker-line"
+[ -n "$preserved_dir" ] && rm -rf "$preserved_dir"
+
+# --- a clean, all-pass run reports no preserved logdir and cleans up (no regression to the old
+# unconditional-cleanup behavior in the success case) ------------------------------------------------
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_a.sh"
+run env KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "all-pass fixture -> exit 0 (logdir case)" 0 "$STATUS"
+check_absent "an all-pass run reports no preserved logdir" "$OUT" "per-file logs preserved"
+
 summary
