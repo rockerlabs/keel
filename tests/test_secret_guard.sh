@@ -488,7 +488,7 @@ printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"   # NEW file, sam
 git -C "$repo" add key.txt .secret-scan-allow
 run_in "$repo" "$scan" --staged
 check_status "dir #508(a): same-change allowlist entry is untrusted → BLOCKED" 1 "$STATUS"
-check_contains "dir #508(a): names the ignored entry" "$OUT" "ignoring an allowlist entry new in this staged change"
+check_contains "dir #508(a): names the ignored entry" "$OUT" "ignoring an allowlist entry new in this change"
 
 # a PRE-EXISTING allowlist entry (committed in an earlier change) still legitimately suppresses —
 # the fix must not regress the ordinary, non-same-change case.
@@ -591,6 +591,26 @@ printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key2.txt"
 git -C "$repo" add key2.txt
 run_in "$repo" "$scan" --staged
 check_status "dir #508(a2): a pre-existing entry with no trailing newline in HEAD's copy still suppresses → exit 0" 0 "$STATUS"
+
+# =================================================================================================
+# --- dir #524: `--literal-pathspecs` (dir #508's own fix — emit_diff's `git --literal-pathspecs
+# diff ... -- "$path"` call) had ZERO regression coverage of its own. A file literally named "*"
+# staged alongside a genuine secret in a SIBLING file: pre-fix, emit_diff("*", ...) ran a bare
+# `git diff --cached -- "*"`, and git's own pathspec engine treats an unescaped "*" as a GLOB, not
+# the literal one-character filename — folding the sibling file's added lines (the real secret)
+# into the "*"-named file's own record. Exit status alone can't distinguish fixed from broken here
+# (the sibling's own correct emit_diff call already blocks either way) — only the RECORD'S PATH can:
+# fixed, the secret is attributed to its true home; broken, it is ALSO mis-attributed to "*", a path
+# that never actually contained it (a human chasing "*:<secret>" down would never find it).
+repo="$(new_repo)"
+starsecret="$(key 'ghp_' "$(rep A 36)")"
+printf 'harmless\n' > "$repo/*"
+printf '%s\n' "$starsecret" > "$repo/real.txt"
+git -C "$repo" add -A
+run_in "$repo" "$scan" --staged
+check_status "dir #524: literal '*' pathspec, secret in a sibling file → BLOCKED" 1 "$STATUS"
+check_contains "dir #524: secret attributed to its own path (real.txt)" "$OUT" "real.txt:$starsecret"
+check_absent  "dir #524: NOT mis-attributed to the literal '*' path via glob expansion" "$OUT" "*:$starsecret"
 
 # --- --tracked detective audit: ALL tracked content, not just a diff (doctor / periodic review) --
 repo="$(new_repo)"
@@ -792,5 +812,153 @@ check_contains "...and reports clean without ever reading it" "$OUT" "clean"
 run_in "$mdrepo" "$scan" -- staged
 check_status "FILE mode: the SAME file, with --, is correctly scanned -> BLOCKED" 1 "$STATUS"
 check_contains "-- correctly names the file as the hit" "$OUT" "staged"
+
+# =================================================================================================
+# --- dir #518: `--range` shares dir #508(a)'s hole — an allowlist entry added in the SAME pushed
+# range as the secret it exempts was trusted with no baseline check at all (ALLOW_BASELINE_REF stayed
+# "" for --range, the shared compare block's own "no baseline ref → no check" case). Fixed via
+# `git rev-list --boundary $rng`, which resolves a baseline for EITHER pushed-ref shape the pre-push
+# hook's range-lib.sh emits.
+
+# (1) the "A..B" shape — the common case (an existing branch's ordinary push, resolve_range_local's
+# non-zero-before arm). Boundary = A. An allowlist entry added in the SAME range as the secret →
+# untrusted → BLOCKED, exactly dir #508(a)'s own same-change rule, now reaching --range too.
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+rbase="$(git -C "$repo" rev-parse HEAD)"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"   # NEW file, same pushed range
+git -C "$repo" add key.txt .secret-scan-allow; git -C "$repo" commit -qm "add key + same-range allowlist entry"
+run_in "$repo" "$scan" --range "$rbase..HEAD"
+check_status "dir #518: 'A..B' baseline — same-range allowlist entry untrusted → BLOCKED" 1 "$STATUS"
+check_contains "dir #518: names the ignored entry (A..B shape)" "$OUT" "ignoring an allowlist entry new in this change"
+
+# a range whose allowlist entry PREDATES the range (committed before A) still legitimately suppresses.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+rbase="$(git -C "$repo" rev-parse HEAD)"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "add key"
+run_in "$repo" "$scan" --range "$rbase..HEAD"
+check_status "dir #518: 'A..B' baseline — a pre-existing allowlist entry still suppresses → exit 0" 0 "$STATUS"
+
+# (2) the "<tip> --not --remotes" shape (resolve_range_local's zero-before arm — a brand-new local
+# ref that forked from an already-known remote branch). Boundary = merge-base(tip, the remote branch)
+# — resolved without this scanner ever learning the remote's name or a specific tracking-ref path.
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+new_bare_origin "$repo" >/dev/null
+git -C "$repo" push -q origin "$(branch_raw_for "$repo")"   # a real, fetched origin/<branch> tracking ref
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "add key"
+rtip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$rtip --not --remotes"
+check_status "dir #518: '--not --remotes' merge-base baseline — pre-existing entry suppresses → exit 0" 0 "$STATUS"
+
+# same shape, entry added in the SAME pushed range → untrusted → BLOCKED
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+new_bare_origin "$repo" >/dev/null
+git -C "$repo" push -q origin "$(branch_raw_for "$repo")"   # a real, fetched origin/<branch> tracking ref
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add key.txt .secret-scan-allow; git -C "$repo" commit -qm "add key + same-range allowlist entry"
+rtip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$rtip --not --remotes"
+check_status "dir #518: '--not --remotes' merge-base baseline — same-range entry untrusted → BLOCKED" 1 "$STATUS"
+check_contains "dir #518: names the ignored entry (--not --remotes shape)" "$OUT" "ignoring an allowlist entry new in this change"
+
+# (3) fail-closed: NO remote-tracking ref at all (dir #518 lead 1 — the very first push of a
+# brand-new branch, no upstream anywhere yet). No baseline resolves, so EVERY current entry —
+# even one committed several commits back, well before the secret — is treated as new-this-push;
+# over-blocking, not a silent pass, and the message names the escape hatch.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "add key"
+rtip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$rtip --not --remotes"
+check_status "dir #518: no remote-tracking ref at all → fail CLOSED, BLOCKED even for a pre-existing entry" 1 "$STATUS"
+check_contains "dir #518: fail-closed message names the escape hatch" "$OUT" "commit a legitimate allowlist entry by itself"
+
+# the same fail-closed shape with NO secret at all must still resolve (the range itself scans clean;
+# fail-closed only affects the allowlist-trust decision, never fabricates a finding out of nothing)
+repo="$(new_repo)"
+printf 'nothing secret here\n' > "$repo/ok.txt"
+git -C "$repo" add ok.txt; git -C "$repo" commit -qm "clean commit, no remote at all"
+rtip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$rtip --not --remotes"
+check_status "dir #518: no remote-tracking ref, genuinely clean range → exit 0" 0 "$STATUS"
+
+# (4) max-review completeness finding: a genuinely clean push must not pay for the boundary walk at
+# all (nor print its "no baseline" WARN) just because the repo happens to carry a .secret-scan-allow
+# — the baseline resolution now runs only after `records` is known non-empty, moved out of the
+# --range arm itself and into the shared allowlist-apply block, which a clean push exits before ever
+# reaching.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+cbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'clean content\n' > "$repo/ok.txt"
+git -C "$repo" add ok.txt; git -C "$repo" commit -qm "clean commit"
+run_in "$repo" "$scan" --range "$cbase..HEAD"
+check_status "dir #518: clean push, allowlist file present → exit 0" 0 "$STATUS"
+check_contains "dir #518: clean push reports clean, not a baseline WARN" "$OUT" "clean"
+check_absent  "dir #518: clean push never runs/reports the boundary resolution" "$OUT" "found no pre-push history"
+
+# =================================================================================================
+# --- dir #518 (max-review correctness finding, confirmed live — 3 independent reviewer angles):
+# an ORDINARY `git merge origin/main` before push — the standard way a feature branch picks up
+# upstream, and literally what THIS release's own workflow does before every PR — makes
+# `git rev-list --boundary` return TWO already-known ancestors (the old pushed tip, and the shared
+# root the merge brings back into view), not one. An earlier cut of this fix required EXACTLY one
+# boundary commit and fail-closed otherwise, which would have false-blocked every pre-existing
+# allowlist entry on this everyday workflow. Fixed by UNIONING every boundary commit's committed
+# allow file rather than requiring a single one (see the --range arm's own comment).
+two_boundary_repo() {  # $1 = optional content for .secret-scan-allow, planted at the ROOT commit.
+                        # Sets $repo and $oldtip (the feature tip a prior push already put on the
+                        # remote) DIRECTLY — never via `$(...)`, which runs the function in a
+                        # subshell and silently discards any plain variable it sets (same footgun
+                        # tests/lib.sh's own new_repo_with_origin() comment names). Leaves the
+                        # caller on "feature", merged with "mainline".
+  repo="$(new_repo)"
+  [ -n "${1:-}" ] && printf '%s\n' "$1" > "$repo/.secret-scan-allow"
+  printf 'root\n' > "$repo/root.txt"; git -C "$repo" add -A; git -C "$repo" commit -qm root
+  git -C "$repo" checkout -qb mainline
+  printf 'unrelated mainline work\n' > "$repo/m.txt"; git -C "$repo" add m.txt; git -C "$repo" commit -qm mainline
+  git -C "$repo" checkout -q -
+  git -C "$repo" checkout -qb feature
+  printf 'feature work\n' > "$repo/f.txt"; git -C "$repo" add f.txt; git -C "$repo" commit -qm feature
+  oldtip="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" merge -q --no-edit mainline
+}
+
+# (1) the pre-existing entry (planted at the shared root, before either boundary commit) still
+# suppresses across a 2-boundary range.
+two_boundary_repo "$(key 'ghp_' 'A')"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "add key, exempted by the pre-existing entry"
+tip="$(git -C "$repo" rev-parse HEAD)"
+boundary_n="$(git -C "$repo" rev-list --boundary "$oldtip..$tip" | grep -c '^-' || true)"
+if [ "$boundary_n" -ge 2 ]; then
+  pass "dir #518 fixture setup: merge-before-push really does yield 2+ boundary commits ($boundary_n)"
+else
+  fail "dir #518 fixture setup: merge-before-push really does yield 2+ boundary commits" "got $boundary_n, want >=2"
+fi
+run_in "$repo" "$scan" --range "$oldtip..$tip"
+check_status "dir #518: merge-before-push (2+ boundary commits) — pre-existing entry still suppresses → exit 0" 0 "$STATUS"
+
+# (2) security preserved: an entry added WITHIN the same 2-boundary range is still untrusted → BLOCKED
+two_boundary_repo
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add key.txt .secret-scan-allow; git -C "$repo" commit -qm "add key + same-range allowlist entry"
+tip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$oldtip..$tip"
+check_status "dir #518: merge-before-push (2+ boundary commits) — same-range entry still untrusted → BLOCKED" 1 "$STATUS"
 
 summary

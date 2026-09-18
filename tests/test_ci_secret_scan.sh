@@ -123,6 +123,28 @@ after="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" "$ci"
 check_status "push: orphaned before over a clean history -> exit 0" 0 "$STATUS"
 
+# --- the SAME orphaned-before fallback, combined with a genuinely PRE-EXISTING allowlist entry
+# (dir #518 residual, disclosed — found by three independent max-review reviewer angles, confirmed
+# live): resolve_range_ci's fallback shape scans the FULL history from "after" with NO exclusion at
+# all, so secret-scan.sh's own --range allowlist-baseline resolution (git rev-list --boundary) finds
+# ZERO boundary commits (nothing is excluded from the walk) and correctly, but conservatively, fails
+# CLOSED — even a legitimately old, several-commits-back allowlist entry reads as new-this-push, and
+# the otherwise-exempted key still BLOCKS. This is the SAME fail-closed fallback the ticket names for
+# "no shared history at all" (dir #518's own lead 1), reached here via a different trigger (an
+# orphaned before-sha, not a brand-new branch's first push) — there is no principled single baseline
+# to fall back to here either (the true pre-force-push remote state is exactly what's unreachable),
+# so this is accepted, not a bug: safe (over-blocking, never a silent pass), pinned by this test
+# rather than left an untested gap.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'AKIA' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+printf 'unrelated\n' > "$repo/mid.txt"; git -C "$repo" add mid.txt; git -C "$repo" commit -qm "unrelated commit"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/root.txt"
+git -C "$repo" add root.txt; git -C "$repo" commit -qm "add the exempted key"
+after="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" "$ci"
+check_status "push: orphaned before + a genuinely pre-existing allowlist entry -> still BLOCKS (disclosed fail-closed residual, dir #518)" 1 "$STATUS"
+
 # --- the scanner missing next to ci-scan.sh is a config error, not a raw exec failure --------------
 missing="$(mktemp -d "$SANDBOX/missing.XXXXXX")"
 cp "$ci" "$missing/ci-scan.sh"

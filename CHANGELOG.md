@@ -146,6 +146,56 @@ sections real content going forward — see that page for exactly when each one 
   unconditionally, since there is no prior record yet to protect). The fixture path is corrected, and
   a new install→edit→reinstall→uninstall cycle test proves the never-clobber rail, mutation-proven:
   reverting `record_placed` to unconditional reddens six new assertions.
+- **`tools/secret-guard/secret-scan.sh`'s `--literal-pathspecs` fix (dir #508) had ZERO regression
+  coverage of its own, and `--selftest` — what an ADOPTER's own install re-verifies — covered none of
+  dir #508's four fixture classes** (dir #524; found 2026-09-15 by the 0.10.1 RC delta audit). A file
+  literally named `*` staged alongside a genuine secret in a sibling file reproduces the exact bug
+  `--literal-pathspecs` fixed: without it, `emit_diff`'s bare `git diff -- "$path"` call lets git's own
+  pathspec engine treat the one-character filename as a GLOB, folding the sibling file's secret into
+  the WRONG path's record — mutation-proved live (reverting the flag reddens only the new attribution
+  assertion; the exit code alone can't tell fixed from broken here, since the sibling's own correct
+  emit_diff call already blocks — only the record's path can). `--selftest` gained no new diff-parsing
+  probes for dir #508's four shapes: that class is a property of this script's own code against git's
+  diff format, not of the install host, already fully covered (mutation-proved) by
+  `tests/test_secret_guard.sh`; its header now states that scope decision explicitly instead of
+  leaving it implicit.
+- **`tools/secret-guard/secret-scan.sh --range` (the pre-push scan) shared dir #508's same-change
+  allowlist hole — an entry added in the SAME pushed range as the secret it exempts was trusted,
+  since `ALLOW_BASELINE_REF` stayed empty for `--range`** (dir #518; reproduced live and deliberately
+  deferred by dir #508's own implementer, 2026-09-12). Fixed via `git rev-list --boundary $rng`, which
+  resolves the excluded frontier of WHATEVER pushed-ref shape `range-lib.sh`'s `resolve_range_local`
+  emits — `A..B` boundaries to `A` itself (an existing branch's ordinary push); `<tip> --not
+  --remotes` (a brand-new local ref) boundaries to the merge-base with whichever remote-tracking
+  ref(s) the tip forked from — without this scanner ever needing to know the remote's name or
+  reconstruct a tracking-ref path. **Every boundary commit is UNIONED, not just one** (a design
+  correction from a max-effort review round on this same PR, caught before merge: an initial cut
+  required exactly one boundary commit and fail-closed on 2+, but an ORDINARY `git merge origin/main`
+  before push — the standard way a feature branch picks up upstream, and this very release's own
+  workflow — makes `--boundary` return two already-known ancestors, not one, so that cut would have
+  false-blocked every pre-existing allowlist entry on the single most common non-trivial `--range`
+  shape there is; mutation-proved live both ways). An entry counts as pre-existing if it existed in
+  ANY boundary commit's committed allow file. Zero boundary commits (no shared history at all — the
+  very first push of a brand-new branch with no upstream, or ci-scan.sh's own force-push fallback,
+  disclosed and pinned separately below) fails CLOSED: every current entry reads as new-this-push,
+  with a message naming the escape hatch (commit the allowlist entry by itself, ahead of the secret
+  it exempts). The baseline resolution runs only once `records` is known non-empty (moved out of the
+  `--range` arm itself, into the shared allowlist-apply block a clean push exits before reaching) —
+  a genuinely clean push pays nothing for the boundary walk and prints no WARN, even on a repo that
+  carries a `.secret-scan-allow`. New regression fixtures cover all four shapes (same-range BLOCKED /
+  pre-existing clean, for both the `A..B` and `--not --remotes` ranges), the no-remote fail-closed
+  case, the merge-before-push union case (both the fix and that security still holds when a same-range
+  entry rides along), and the clean-push-pays-nothing case; `--selftest` gained a
+  same-pushed-range-entry probe for the `A..B` shape (mutation-proved: disabling the union resolution
+  reddens exactly the "pre-existing entry suppresses" assertions, nothing else). **Also disclosed and
+  pinned, not fixed further:** `ci-scan.sh`'s own force-push fallback (`range-lib.sh`'s
+  `resolve_range_ci`, reached on an orphaned before-sha) hands over a bare ref with no exclusion side
+  at all, so it always unions to zero boundary commits and fails closed even over a genuinely old
+  allowlist entry — there is no principled single baseline to fall back to there either (the true
+  pre-force-push remote state is exactly what's unreachable), so this is accepted as safe
+  over-blocking rather than an oversight, pinned by a new `tests/test_ci_secret_scan.sh` case instead
+  of left an untested gap. The shared same-change message ("ignoring an allowlist entry new in this
+  change") is reworded from "this staged change" since it now fires for `--range` too, where nothing
+  is staged.
 
 ## [0.10.1] — 2026-09-15
 
