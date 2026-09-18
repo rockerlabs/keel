@@ -146,6 +146,46 @@ printf 'README-not-used src/widget.sh:2\n' > "$d/config/custom-allow.txt"
 run env KEEL_LINE_CITATIONS_ALLOW="$d/config/custom-allow.txt" "$lc" "$d"
 check_status "a custom in-tree allowlist path does not fire against itself -> exit 0" 0 "$STATUS"
 
+# --- dir #497 item 1: a rotten entry in the now-INACTIVE default file becomes visible -----------
+# With an override active, the case-exclusion above still keeps the default file out of the SCAN
+# (it names forbidden tokens by construction, active or not), but before this fix its entries were
+# also never validated — an entry whose citing or cited path had since been renamed or deleted just
+# sat there. Plant one and confirm it now surfaces as a WARN, not silent dead config; the run stays
+# exit 0 either way (advisory only — a stale exemption is debt, not a fresh violation).
+d="$(mk_repo 'Clean prose.')"
+mkdir -p "$d/tools/self" "$d/config"
+printf 'notes/ghost.md src/widget.sh:2\n' > "$d/tools/self/line-citations-allow.txt"
+printf 'notes/guide.md src/widget.sh:2\n' > "$d/config/custom-allow.txt"
+( cd "$d" && git add -A && git commit -q -m rotten-default-entry )
+run env KEEL_LINE_CITATIONS_ALLOW="$d/config/custom-allow.txt" "$lc" "$d"
+check_status "override active + a rotten default entry -> still exit 0 (advisory only)" 0 "$STATUS"
+check_contains "the rotten default entry is surfaced, not silently unused" "$OUT" \
+  "WARN default allowlist entry 'notes/ghost.md src/widget.sh:2': notes/ghost.md is no longer tracked"
+
+# A cited (not citing) path that no longer resolves is caught too, and a healthy default entry next
+# to the rotten one produces no WARN of its own — the check flags the specific rotten line, not the
+# whole file.
+printf 'notes/guide.md src/ghost.sh:1\nnotes/guide.md src/widget.sh:2\n' \
+  > "$d/tools/self/line-citations-allow.txt"
+( cd "$d" && git add -A && git commit -q -m rotten-cited-entry )
+run env KEEL_LINE_CITATIONS_ALLOW="$d/config/custom-allow.txt" "$lc" "$d"
+check_contains "a rotten CITED path is caught the same way" "$OUT" \
+  "WARN default allowlist entry 'notes/guide.md src/ghost.sh:1': src/ghost.sh is no longer tracked"
+check_absent "the healthy entry beside it is not flagged" "$OUT" \
+  "'notes/guide.md src/widget.sh:2': "
+
+# No override at all: the active file IS the default file, and this check must not run against it
+# twice (once as "default", once as "active") — the healthy entry from mk_repo's own earlier fixture
+# use produces no duplicate WARN.
+d="$(mk_repo 'See src/widget.sh:2 for the echo.')"
+mkdir -p "$d/tools/self"
+printf '# reason: covered by ticket dir #999\nnotes/guide.md src/widget.sh:2\n' \
+  > "$d/tools/self/line-citations-allow.txt"
+( cd "$d" && git add -A && git commit -q -m allow-entry-no-override )
+run "$lc" "$d"
+check_status "a healthy default file with no override -> exit 0, no stray WARN" 0 "$STATUS"
+check_absent "no stale-entry WARN fires against a healthy, non-overridden default file" "$OUT" "stale exemption"
+
 # --- the live ratchet ---------------------------------------------------------------------------
 # Against keel's OWN tree, not a fixture. This is what makes `tests/run.sh` — half of this project's
 # pre-push gate — reject a newly introduced line citation locally, at the one moment it is still
