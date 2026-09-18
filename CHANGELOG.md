@@ -17,6 +17,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`docs/grooming.md` — three amendments from the second `/groom` run on an adopter project (a
+  knowledge-base backlog, 2026-09-18), under the self-revision clause.** G0: the dormancy case has a
+  second flavour — a fresh plan that produced zero starts (six band-less, unordered themes; the
+  backlog's diff since the previous groom pure insertion) — the check is the slate-row diff plus
+  where the sessions went; both candidate causes (allocation, plan shape) are named with allocation
+  as the likelier primary; the remedy is a numbered, bounded, ordered first batch PLUS one list of
+  every operator decision the batches need, asked in the groom itself; the next groom's first
+  question is "did it start, and how many decisions were made"; the no-band answer (G5) is per cycle
+  and pains (G1) are re-verified live every groom (a rule; no remover). G2: when the previous groom
+  read every body and the diff since is enumerable, the body-read duty concentrates (touched /
+  closed / moved / re-examined tickets in full) but the PREMISE check on unchanged bodies does not
+  carry — two closable-or-drifted tickets were found on unchanged bodies — and the plan states the
+  diff and the rule applied (a rule; no remover). G9: a backlog whose heading forms are mixed uses
+  the plan table as the assignment source with a both-ways reconciliation as the census substitute,
+  and names the ticket that owns where a ticket lives (a compensation; the adopter's own KB.118).
+
 - **`docs/grooming.md` — two amendments from the 0.10.2 groom's G0 retro (self-revision clause).** G5:
   a value claim's SUBJECT SET is derived from its defining source by ticket token and diffed against
   the slate, residue stated by number — the v0.11.0 and v0.10.1 G6 rounds each returned a value claim

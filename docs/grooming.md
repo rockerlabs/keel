@@ -119,6 +119,38 @@ where the next session reads first. On that project both instances were exactly 
 priority flag on a ticket that was verifiably complete, and a "target of opportunity" date ten weeks
 gone still framing the priority order.
 
+**The second flavour of that case: the previous cycle produced nothing AND it had a fresh plan (the
+same adopter's second groom, 2026-09-18).** The first-flavour paragraph reads "no delivery" as a
+backlog left to rot under a dead deadline. A plan ten days old can do the same thing: that run's
+previous groom had cut six whole themes, with no size band (the operator declined one) and no order
+inside a theme, and in the ten days that followed **not one of the 59 plan rows changed** — the
+backlog's diff since the previous groom's commit was pure insertion (three new tickets), while the
+operator's sessions in the same window went to five other projects. The check is cheap and should be
+the first thing G0 runs on a project whose delivery unit is the session rather than the release:
+`git diff <previous-groom-commit>..HEAD -- <backlog>` restricted to the slate rows — insertions only
+means nothing started — plus where the sessions actually went (a knowledge-base repo's own commit
+log records every project's wraps; a project without that reads its changelog). When that is what G0
+finds, **name both candidate causes and say which the material supports, rather than picking the one
+the groom can fix**: (1) allocation — the sessions went elsewhere and nothing puts one on the
+calendar — is the simpler explanation and, on that run's evidence, the likelier primary cause (both
+of its fresh-reviewer rounds said so unprompted); (2) plan shape — a theme entire gives a session
+nothing to *start*, and, the sharper half, most rows carried an operator decision somewhere in the
+body, so even an allocated session would have found nothing it could finish alone. A groom can act
+on (2) only, and re-cutting the same themes is the one response that changes nothing. The remedy
+that run took, and the one this doc now recommends for the case, has two parts: a numbered, bounded,
+ordered first batch whose first ticket is the next `/go`; and **one list of every operator decision
+the batches need, in batch order, asked in the groom itself where it can be** — that run put six on
+the list and got two decided in-session, which turned two "blocked on a human" rows into whole
+tickets before the plan was even committed. The next groom's first G0 question is "did that batch
+start, and how many of the listed decisions were made"; a batch untouched with its decisions still
+open was blocked on a human, not on the plan, and the retro's subject moves to session allocation,
+which a groom can name but cannot fix. Two consequences for other sections: G5's "take the no-band
+answer" rule is per cycle, not permanent — the operator who declined a band at run 1 chose one at
+run 2 on exactly this evidence, so the groom re-asks when the evidence says the last answer produced
+nothing; and G1's pains are re-verified live at every groom rather than carried, because a pain ten
+days old is still a pain only if the check that felt it still fails (that run re-ran the doctor and
+the blockers' tags before ranking anything).
+
 **Every amendment that compensates for a defect names the ticket that will remove it.** A retro's
 natural output is a rule telling every future cycle to work around something — and a rule is the most
 expensive fix there is, because it is paid forever, by everyone, silently. That is sometimes right; it
@@ -175,6 +207,22 @@ The 2026-09-03 groom's headline failure was assignment from headings and R-level
 caught only by a 17-finding adjudication round (G6). A heading understates or overstates a ticket's
 real size and scope often enough that a heading-only read mis-sizes the plan it produces — read the
 body of every ticket entering the slate before it is assigned anywhere.
+
+**When the previous groom read every body and the file's diff since then is enumerable, the duty
+concentrates rather than lapses — and it says which rule it applied (adopter run 2, 2026-09-18).** A
+3 000-line backlog re-read whole ten days after a body-read groom, on a diff that is insertions
+only, spends the budget G8 bounds on nothing. The compression this doc accepts is exact: read IN
+FULL every ticket the diff touched, every ticket this groom closes, moves, re-scopes or re-sizes,
+and every ticket in the re-examine-on-merit set (G4); for the rest, the body read of the previous
+groom stands — **but the PREMISE check does not carry**, because the world moves while bodies stay
+still. That run found two of those on unchanged bodies: a ticket whose blocking event had happened
+and was recorded only in ANOTHER ticket's body (an operator login noted in a launcher ticket's log
+closed a "CLI not authenticated" ticket untouched since August), and a chore whose project list had
+drifted a third time against a live doctor run. So the compressed pass still owes each unchanged
+ticket its live check — the doctor line, the blocker's tag, the measured figure — and the plan
+states the diff's numbers and the rule applied, so a reader can tell a compression from a skip.
+Where the diff is NOT enumerable (a rewrite, a bulk re-tag, a file the groom cannot diff against a
+known body-read commit), G2 applies whole, as written above.
 
 ## G3 — derive, don't assert
 
@@ -417,6 +465,15 @@ shipped conventions:
 - **Backlog** resolved the way a project's own `/go` resolves it.
 - **The slate and the pool** are the `→ <version>` and `→ pool` heading-tag convention a project's own
   `/backlog` already reads — the shipped mechanism, not any one project's enrichment on top of it.
+  **Where a backlog mixes heading forms so the tag cannot be applied uniformly** — the adopter
+  knowledge-base backlog carries half its tickets as `### KB.N` headings and half as bold bullets
+  whose "heading" is a paragraph, and a bulk reformat once mangled that file (its own history says
+  so) — the plan table is the assignment source and the census is the substitute for the tag read:
+  the open set from the headings by the closure marker at a fixed position, the assignment from the
+  table, and the reconciliation both ways (every open ticket in exactly one row; every row entry an
+  open ticket) with the three zero-checks G3 already names. The plan says it is doing this and why,
+  and names the ticket that owns where a ticket lives (there, KB.118) — a table is a compensation
+  for a tag the file cannot carry yet, not a second convention.
 - **A release-plan table or section** (keel keeps one inside `BACKLOG.md`) is that kind of enrichment:
   useful where it exists, never required infrastructure a groom depends on.
 - **Every record's location** (the standing list in G4(a), the releases cross-run record in G7) is
