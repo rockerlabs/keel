@@ -18,10 +18,14 @@ going="$REPO_ROOT/docs/going-public.md"
 go="$REPO_ROOT/commands/go.md"
 wrap="$REPO_ROOT/commands/wrap.md"
 polish="$REPO_ROOT/commands/polish.md"
+readme="$REPO_ROOT/README.md"
+framework="$REPO_ROOT/FRAMEWORK.md"
 
 check_file "docs/publishing-checklist.md exists" "$checklist"
 check_file "docs/going-public.md exists" "$going"
 check_file "commands/go.md exists" "$go"
+check_file "README.md exists" "$readme"
+check_file "FRAMEWORK.md exists" "$framework"
 check_file "commands/wrap.md exists" "$wrap"
 check_file "commands/polish.md exists" "$polish"
 
@@ -189,5 +193,33 @@ check_absent "polish.md: step 3 no longer states the no-rerun condition backward
 pin "polish.md: step 3 states the no-rerun condition as 'touched only exempt files'" \
   "$polish" 'touched only exempt files' \
   "expected step 3 to say the hash unlocks with no rerun when the commit touched ONLY exempt files (dir #510 F17)"
+
+# --- dir #516 (F15): README's pre-PR-gate section had drifted from polish.md/getting-started.md ---
+# README used to say the built-in reviewer is "model-invocation-disabled by design" and that /polish
+# only ever falls back to the subagent. dir #254 lifted that restriction and polish.md/getting-started.md
+# already say /polish attempts the real /code-review pass first, falling back only on refusal — README
+# was the one stale copy. `check_absent` guards the retired claim directly so a later edit can't quietly
+# restore it; the presence pin confirms the attempt-first/fallback framing landed.
+check_absent "README: no longer claims the built-in reviewer is model-invocation-disabled by design" \
+  "$(cat "$readme")" "model-invocation-disabled"
+pin "README: pre-PR gate section states /polish attempts the real review first, falling back on refusal" \
+  "$readme" 'attempts the real, built-in `/code-review` pass directly first' \
+  "expected README's pre-PR gate section to match polish.md/getting-started.md's attempt-first/fallback framing (dir #516 F15)"
+
+# --- dir #516 (F16, operator-decided 2026-09-18): FRAMEWORK.md's two runner-label policies ---------
+# L602 forbids `ubuntu-latest` as a pinning example; L608 used to call a managed `*-latest` CI runner
+# label "a recommended alias" that doctor doesn't flag — two policies for one choice. The operator
+# decided: keep the pinning rule (L602 stays), drop "recommended alias" (an endorsement the doc had no
+# business making) and replace it with the honest limit of the check itself. `check_absent` guards the
+# retired endorsement phrase; the presence pins confirm both the pinning rule and the honest limit
+# survive together.
+check_absent "FRAMEWORK.md: no longer calls a *-latest CI runner label 'a recommended alias'" \
+  "$(cat "$framework")" "recommended alias"
+pin "FRAMEWORK.md: still forbids ubuntu-latest as a pinning example" \
+  "$framework" 'CI runner OS: `ubuntu-24.04`, not `ubuntu-latest`' \
+  "expected FRAMEWORK.md L602's pinning rule to survive the F16 edit unchanged (dir #516)"
+pin "FRAMEWORK.md: states doctor's non-flagging of runner labels as a known limit, not an endorsement" \
+  "$framework" 'a known limit of the check, not' \
+  "expected FRAMEWORK.md L608 to state plainly that doctor's silence on runner labels is a limit of the check, not an endorsement of the label (dir #516 F16, operator decision 2026-09-18: pin)"
 
 summary
