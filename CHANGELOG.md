@@ -17,6 +17,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`docs/grooming.md` — three amendments from the second `/groom` run on an adopter project (a
+  knowledge-base backlog, 2026-09-18), under the self-revision clause.** G0: the dormancy case has a
+  second flavour — a fresh plan that produced zero starts (six band-less, unordered themes; the
+  backlog's diff since the previous groom pure insertion) — the check is the slate-row diff plus
+  where the sessions went; both candidate causes (allocation, plan shape) are named with allocation
+  as the likelier primary; the remedy is a numbered, bounded, ordered first batch PLUS one list of
+  every operator decision the batches need, asked in the groom itself; the next groom's first
+  question is "did it start, and how many decisions were made"; the no-band answer (G5) is per cycle
+  and pains (G1) are re-verified live every groom (a rule; no remover). G2: when the previous groom
+  read every body and the diff since is enumerable, the body-read duty concentrates (touched /
+  closed / moved / re-examined tickets in full) but the PREMISE check on unchanged bodies does not
+  carry — two closable-or-drifted tickets were found on unchanged bodies — and the plan states the
+  diff and the rule applied (a rule; no remover). G9: a backlog whose heading forms are mixed uses
+  the plan table as the assignment source with a both-ways reconciliation as the census substitute,
+  and names the ticket that owns where a ticket lives (a compensation; the adopter's own KB.118).
+
 - **`docs/grooming.md` — two amendments from the 0.10.2 groom's G0 retro (self-revision clause).** G5:
   a value claim's SUBJECT SET is derived from its defining source by ticket token and diffed against
   the slate, residue stated by number — the v0.11.0 and v0.10.1 G6 rounds each returned a value claim
@@ -52,6 +68,14 @@ sections real content going forward — see that page for exactly when each one 
   condition backwards ("touched nothing exempt" where the hash actually means "touched only exempt
   files", F17) — reworded, with a pin in `tests/test_rails_honesty.sh` guarding both the corrected
   wording and the retired phrasing's absence.
+- **`tests/run.sh` deleted its per-file failure logs unconditionally on exit, so a one-off local
+  failure left nothing behind to inspect afterward** (dir #480, differential-diagnosis work; the
+  underlying env-sensitivity discrepancy itself did not reproduce across five runs today — one solo,
+  three concurrent self-invocations, and a subagent-sandbox run, all under live wave-2 concurrency —
+  and is closed as a recorded not-reproduced, per the ticket's own acceptance clause). A failing run
+  now disarms the logdir's EXIT-trap cleanup and prints the surviving directory's path; an all-pass
+  run is unchanged and still cleans up. `tests/test_run_sh.sh` pins both the preserved-on-failure and
+  cleaned-up-on-pass cases.
 - **`install.sh`'s unconditional `record_placed "$link_dir/README.md"` re-legitimized an ADOPTER's
   post-install edit to `keel/README.md` as Keel-owned on the next install rerun, so a later
   `uninstall` swept their customization** (F10), **and `tests/test_install_manifest.sh`'s
