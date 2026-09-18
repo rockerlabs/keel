@@ -111,8 +111,10 @@ cmd_setup() {
   bin="$sandbox/bin"; mkdir -p "$bin"
   ghcalls="$sandbox/gh-calls.log"
   # A unique basename (not the fixed literal "repo") — pre-pr-gate.sh keys its /tmp sentinel/trace/
-  # hand-off files off basename(toplevel), so a fixed name would collide across canary runs (and with
-  # any real repo that happens to be named "repo").
+  # hand-off files off a basename-plus-hash-of-the-full-path (dir #481: the hash is what actually
+  # separates two canary runs' /tmp files now, since two mktemp -d calls already differ in full path
+  # regardless of basename), but a fixed literal would still read as though this toy repo IS a real
+  # repo named "repo" in every log line and deny message the canary's own runs produce.
   repo="$(mktemp -d "$sandbox/repo.XXXXXX")"
 
   # Stub `gh`: records every invocation instead of touching the network. `pr create` "succeeds" with a

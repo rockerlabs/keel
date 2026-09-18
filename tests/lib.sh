@@ -178,6 +178,12 @@ run_in() {
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }
 check_contains() { case "$2" in *"$3"*) pass "$1" ;; *) fail "$1" "output missing: $3" ;; esac; }
 check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3" ;; *) pass "$1" ;; esac; }
+# dir #481 (found by this ticket's own /code-review high pass, two independent delta-round agents):
+# `check_absent "$a" "$b"` is a SUBSTRING check, not an equality check — it fails when $b is anywhere
+# inside $a, which is a strictly weaker test than "$a" != "$b" and can spuriously fail two genuinely
+# DISTINCT values where one happens to be a substring of the other (e.g. two digit-only hash suffixes
+# sharing a common prefix). A caller asserting plain inequality wants this, not check_absent.
+check_ne()       { if [ "$2" != "$3" ]; then pass "$1"; else fail "$1" "expected different values, both were '$2'"; fi; }
 check_file()     { if [ -f "$2" ]; then pass "$1"; else fail "$1" "missing file: $2"; fi; }
 check_dir()      { if [ -d "$2" ]; then pass "$1"; else fail "$1" "missing dir: $2"; fi; }
 check_nofile()   { if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; else pass "$1"; fi; }
@@ -300,12 +306,28 @@ new_repo_with_origin() {
 ALL_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 
 # Shared repo-key derivation (mirrors the production file's own _repo_key) — the trace/rollout-state
-# files (still repo-only keyed, dir #80) key off this one function instead of each caller inlining
-# `basename "$1"` separately. NAIVE on purpose (plain basename, no worktree redirection) — for any $1
-# that is not itself a worktree, main_top_for($1) == $1, so this already matches production's
-# `_repo_key`; the dir #61 worktree tests below rely on this naive/redirected DIVERGENCE (a worktree's
-# own basename vs its main checkout's) to prove the redirection actually happens.
-repo_key_for() { basename "$1"; }
+# files (still repo-only keyed, dir #80) key off this one function instead of each caller inlining the
+# algorithm separately. NAIVE on purpose (no worktree redirection) — for any $1 that is not itself a
+# worktree, main_top_for($1) == $1, so this already matches production's `_repo_key`; the dir #61
+# worktree tests below rely on this naive/redirected DIVERGENCE (a worktree's own key vs its main
+# checkout's) to prove the redirection actually happens. dir #481: production now hashes the FULL path
+# (basename kept only as a cosmetic prefix — see `_repo_key_from_path`'s own comment) instead of
+# basename alone, so this mirror must hash the SAME full path production would — `git rev-parse
+# --show-toplevel` first, not $1 verbatim: macOS's mktemp -d returns a path under the symlink `/var`,
+# and git's own toplevel resolution canonicalizes it to `/private/var/...` before `main_top_for` (via
+# `git worktree list --porcelain`) ever sees it, so hashing $1 raw silently diverged from production's
+# hash of the resolved path — caught live via test_pipeline_canary.sh's trace-file check, which reads
+# the trace this fixture writes back through production's own `_repo_key_of`, and found no file there
+# once the two hashes stopped agreeing. Falls back to $1 verbatim when it isn't a repo at all (mirrors
+# production's own main_top_for fallback). Kept in sync manually with production, same rationale as
+# branch_key_for/receipt_hash_for below (these fixtures build the EXPECTED path independently of the
+# code under test, not by invoking it).
+repo_key_for() {
+  local top resolved
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)"
+  resolved="${top:-$1}"
+  printf '%s-%s' "$(basename "$resolved")" "$(receipt_hash_for "$resolved" '')"
+}
 # dir #80: sanitized current-branch slug, mirroring the production file's own `_sanitize_branch`
 # byte-for-byte (kept in sync manually, not via a subcommand round-trip, so these
 # fixtures work standalone the same way repo_key_for's naive basename does — see the same comment).

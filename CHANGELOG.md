@@ -29,6 +29,30 @@ sections real content going forward — see that page for exactly when each one 
   model, never a relaunch (a vendor limit, no ticket).
 - `IDEAS.md` carries the cycle's G4(b) re-review stamp (one live entry, trigger still not fired).
 
+### Fixed
+
+- **`tools/pre-pr-gate.sh`'s per-run key was the repo's directory BASENAME alone, so two different
+  checkouts sharing a leaf name (`~/x/proj` and `~/y/proj`) silently shared one sentinel, prev-sentinel,
+  trace, and hand-off note** (dir #481; found live by dir #376's own `/design` pass). `_repo_key` now
+  feeds the FULL main-top path into a hash appended to the basename — strictly FINER than basename
+  alone, so it can only ever separate two runs that used to collide, never merge two that were already
+  distinct; the basename stays as a cosmetic prefix, only the hash is load-bearing. Every consumer that
+  reads the key back (the `repo-key` subcommand, `trace_path_for`, `rollout_state_path`, the
+  `retire_sentinel` fallback, and hook mode's own `$wt`) picks up the finer key automatically through
+  the one function. An in-flight chain keyed the old way is simply abandoned across the upgrade, not
+  migrated — the manager held every other 0.10.2 worker until this landed, so nothing was orphaned.
+- **`tools/pre-pr-gate.sh`'s `_test_relevant_tree_hash` anchored `testsdir` on the INVOCATION cwd, not
+  the repo root, so from a subdirectory the exemption check found no `tests/` dir at all and every
+  `.md` file silently dropped out of the hash as if exempt — even one a real test references**
+  (dir #510 F8; found by dir #495's external-audit run 1, verified live). Two commits differing only in
+  a test-relevant `.md` file used to hash IDENTICALLY when computed from a nested cwd, so a stale
+  `polish.3-tests` receipt read as still bound. `testsdir` now anchors on `git rev-parse
+  --show-toplevel` (the invoking worktree's own top, not `main_top_for`'s main-checkout redirection —
+  `tests/` lives in the worktree being tested). `commands/polish.md` step 3 also stated the unlock
+  condition backwards ("touched nothing exempt" where the hash actually means "touched only exempt
+  files", F17) — reworded, with a pin in `tests/test_rails_honesty.sh` guarding both the corrected
+  wording and the retired phrasing's absence.
+
 ## [0.10.1] — 2026-09-15
 
 **Known issues, disclosed at the cut.** Three groups, all pre-existing against v0.10.0 and none introduced
