@@ -319,13 +319,12 @@ check_contains "export: collision message names 'already exists'" "$OUT" "alread
 check_file "export: the PRIOR packet's own marker survives the collision refusal" "${pkt13:-/nonexistent}/MARKER.txt"
 check_file "export: the prior packet's MANIFEST.txt survives too (not silently rm -rf'd)" "${pkt13:-/nonexistent}/MANIFEST.txt"
 
-# --- dir #526: a mid-mkdir failure (packet dir created, "chunks/" not) must not leave an empty ------
-# packet dir behind. A `mkdir` stub on PATH succeeds for the first two real mkdir calls this run makes
-# (`mkdir -p "$out_dir"`, then `mkdir "$packet_dir"`) and fails the third (`mkdir "$packet_dir/chunks"`)
-# — the narrower mechanism the ticket body's own "flag set after the top-level mkdir" citation missed:
-# the live code is a single `mkdir -p "$packet_dir/chunks"`, so the actual hole is a failure INSIDE
-# that -p's own second step, which this stub reproduces without needing real disk-quota tricks. Scoped
-# to the child process only (PATH restored, counter file unset, right after the one run_in call).
+# --- dir #526: a mid-`mkdir -p` failure (packet dir created, "chunks/" not) must not leave an empty
+# packet dir behind. A `mkdir` stub on PATH intercepts the tool's one `mkdir -p "$packet_dir/chunks"`
+# call, creates the packet dir for real (so it genuinely lands on disk, matching what `mkdir -p`'s own
+# first internal step would have done), then fails before creating "chunks/" — reproducing a real
+# `mkdir -p` dying partway through its own two levels, without needing real disk-quota tricks. Scoped
+# to the child process only (PATH restored right after the one run_in call).
 r14="$(mk_repo)"
 fl14="$SANDBOX/files-mkdir-fail.txt"
 files_list > "$fl14"
@@ -334,26 +333,21 @@ stubdir="$SANDBOX/mkdir-stub-bin"
 mkdir -p "$stubdir"
 cat > "$stubdir/mkdir" <<'STUB'
 #!/usr/bin/env bash
-# dir #526 fixture: real mkdir for the first two calls this run makes, forced failure from the third
-# on — reproduces a mid-`mkdir -p` failure (parent created, "chunks/" not) deterministically.
-n=0
-[ -f "$MKDIR_STUB_COUNTER" ] && n="$(cat "$MKDIR_STUB_COUNTER")"
-n=$((n + 1))
-printf '%s' "$n" > "$MKDIR_STUB_COUNTER"
-if [ "$n" -le 2 ]; then
-  exec /bin/mkdir "$@"
+# dir #526 fixture: intercepts the tool's one `mkdir -p "$packet_dir/chunks"` call — creates the
+# parent (the packet dir itself) for real, then fails before creating "chunks/".
+if [ "$1" = "-p" ]; then
+  target="$2"
+  /bin/mkdir -p "${target%/*}" 2>/dev/null
+  printf 'mkdir-stub: forced failure creating %s (dir #526 fixture)\n' "$target" >&2
+  exit 1
 fi
-printf 'mkdir-stub: forced failure (dir #526 fixture)\n' >&2
-exit 1
+exec /bin/mkdir "$@"
 STUB
 chmod +x "$stubdir/mkdir"
-export MKDIR_STUB_COUNTER="$SANDBOX/mkdir-stub-counter"
-: > "$MKDIR_STUB_COUNTER"
 orig_path="$PATH"
 PATH="$stubdir:$PATH"
 run_in "$r14" "$TOOL" --vendor stubv --baseline HEAD --out "$out14" --disclosure-ack "t" --files "$fl14"
 PATH="$orig_path"
-unset MKDIR_STUB_COUNTER
 check_status "export: a mid-mkdir failure (chunks/ after the parent) refuses, exit 3" 3 "$STATUS"
 pkt14="$(find "$out14" -maxdepth 1 -name 'packet-stubv-*' -type d 2>/dev/null | head -1)"
 check_nodir "export: a mid-mkdir failure leaves no empty packet dir behind (dir #526)" "${pkt14:-/nonexistent}"

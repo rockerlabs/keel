@@ -72,13 +72,8 @@ check_contains "a reversed range surfaces its high endpoint (not silently droppe
 out="$(printf 'dir #1-99999\n' | extract_dir_tickets)"
 check_contains "an absurdly wide range emits the loud marker, not real tickets (dir #274)" "$out" \
   "dir #1-99999 (range too large to expand, dir #274)"
-out_lines="$(printf '%s\n' "$out" | wc -l | tr -d ' [:space:]')"
-if [ "$out_lines" = "1" ]; then
-  pass "an absurdly wide range emits exactly one line, not a 99,999-line flood"
-else
-  fail "an absurdly wide range emits exactly one line, not a 99,999-line flood" \
-    "got $out_lines line(s), expected 1"
-fi
+out_lines="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+check_status "an absurdly wide range emits exactly one line, not a 99,999-line flood" "1" "$out_lines"
 
 # Cross-line trailing-comma join: a ticket list wrapped across a line break (line 1 ends in a trailing
 # comma, line 2 is made of nothing but ticket tokens) must join before extraction — without the join,

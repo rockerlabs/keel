@@ -207,15 +207,17 @@ on_exit() {
   st=$?
   [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
   # A failure once THIS invocation has actually created the packet dir (any refuse/die_args after
-  # its own `mkdir -p` succeeds, not just a leak-gate hit) must not leave a partial or
+  # its own existence check passes, not just a leak-gate hit) must not leave a partial or
   # secret-carrying packet on disk — the same "clean unconditionally on exit" contract $scratch gets
   # below, extended to cover $packet_dir too, one trap rather than a bespoke `rm -rf` duplicated at
-  # each call site that needs it (code review, dir #495). Gated on `packet_dir_created`, set ONLY
-  # after `mkdir -p` succeeds — NOT on `packet_dir` merely being assigned, which happens before the
-  # "already exists" refusal too: a same-day re-run that collides on the packet name refuses exactly
-  # because a PRIOR packet is already there, and this invocation never created (and must never
-  # delete) it — a bare `-n "$packet_dir"` guard silently destroyed that prior packet anyway
-  # (reproduced live, code review high, this same PR).
+  # each call site that needs it (code review, dir #495). Gated on `packet_dir_created`, set right
+  # after the "already exists" refusal passes (dir #526) — NOT on `packet_dir` merely being
+  # assigned, which happens before that refusal too: a same-day re-run that collides on the packet
+  # name refuses exactly because a PRIOR packet is already there, and this invocation never created
+  # (and must never delete) it — a bare `-n "$packet_dir"` guard silently destroyed that prior
+  # packet anyway (reproduced live, code review high, PR #407). See the flag's own assignment site,
+  # below, for why setting it before `mkdir -p` runs (rather than after it succeeds, PR #407's
+  # original placement) is still safe.
   [ -n "$ok" ] || [ -z "$packet_dir_created" ] || rm -rf "$packet_dir"
   rm -rf "$scratch"
   exit "$st"
@@ -442,31 +444,23 @@ packet_dir="$out_dir/$packet_name"
 
 [ ! -e "$packet_dir" ] || refuse "'$packet_dir' already exists — refusing to overwrite a prior
   packet. Remove it yourself if it is stale, or wait a day (the packet name includes the date)."
-# --out itself may not exist yet (every fixture above passes a fresh relative dir) — `mkdir -p` it
-# first, ahead of the packet dir proper, so the plain `mkdir "$packet_dir"` below has a parent to
-# land in. This one is never the target of on_exit's packet-dir cleanup: it's the shared --out
-# parent, not this invocation's own packet, and may already hold prior packets.
-mkdir -p "$out_dir" \
-  || refuse "cannot create '$out_dir' — check that it is writable."
-# Three mkdir calls where PR #407 had one `mkdir -p "$packet_dir/chunks"` — the flag below is set
-# right after the SECOND one (the packet dir itself) succeeds, not after all three, so a failure
-# creating "chunks/" (parent already on disk) still leaves the flag set and on_exit's cleanup still
-# fires. The single `mkdir -p` this replaces set the flag only once the whole path existed, so a
-# failure between "$packet_dir" and "$packet_dir/chunks" (e.g. a quota hit mid-mkdir) left an EMPTY,
-# uncleaned "$packet_dir" behind: the flag was never reached (dir #526, found by Fixer A's own review
-# of PR #407 and parked as induced-but-narrow).
-mkdir "$packet_dir" \
-  || refuse "cannot create '$packet_dir' — check that '$out_dir' is writable."
-# Set ONLY once mkdir has actually created it — this is what on_exit's own cleanup gates on, so a
-# LATER failure removes exactly the packet THIS invocation built, never a pre-existing directory
-# the "already exists" refusal above just correctly declined to touch (a directory the on_exit trap
-# would otherwise `rm -rf` right out from under its own refusal message, which explicitly tells the
-# operator to remove it themselves — reproduced live, code review high, this same PR: a same-day
-# re-run collides on the packet name, refuses as documented, and used to silently destroy the prior
-# real packet anyway).
+# Set the FLAG right after the existence check above passes, not after `mkdir -p` below succeeds —
+# that check already guarantees nothing sits at "$packet_dir" yet, so anything that later shows up
+# there, whether fully built or left half-built by a failed `mkdir -p`, is unambiguously THIS
+# invocation's own creation and safe for on_exit's cleanup to `rm -rf` unconditionally (a `rm -rf`
+# on a path `mkdir -p` never got around to creating at all is simply a no-op). PR #407 set this flag
+# only once the whole two-level path existed, so a failure between "$packet_dir" and
+# "$packet_dir/chunks" (e.g. a quota hit mid-mkdir) left an EMPTY, uncleaned "$packet_dir" behind:
+# the flag was never reached (dir #526, found by Fixer A's own review of PR #407 and parked as
+# induced-but-narrow). Moving the flag earlier — onto the precondition already proven above, instead
+# of onto a new multi-step mkdir sequence — fixes this without adding any new mkdir call. The
+# existence check above still protects a prior, same-day packet: this line is only ever reached
+# AFTER that refusal has already passed, so the flag never applies to a directory this invocation
+# didn't create (reproduced live, code review high, PR #407: a same-day re-run used to collide,
+# refuse as documented, and silently destroy the prior real packet anyway).
 packet_dir_created=1
-mkdir "$packet_dir/chunks" \
-  || refuse "cannot create '$packet_dir/chunks' — check that '$out_dir' is writable."
+mkdir -p "$packet_dir/chunks" \
+  || refuse "cannot create '$packet_dir' — check that '$out_dir' is writable."
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
