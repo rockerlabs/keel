@@ -726,12 +726,42 @@ record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
 # symlink record's third field held before this — a manifest written by an OLDER install.sh (extra=`-`)
 # stays fully readable, just uninformative for this one refinement (uninstall.sh's own comment at its
 # call site names how it degrades).
+# record_placed DEST [CKSUM] — DEST is confirmed Keel content as of right now. CKSUM is an OPTIONAL
+# already-computed cksum for the CURRENT bytes at DEST (dir #512's record_readme_if_unclobbered passes
+# one when it already forked `artifact_cksum` a moment earlier on this same unchanged file, so this
+# doesn't fork it again); every other call site omits it and gets the original behavior, computed fresh.
 record_placed() {
-  local dest="$1" rel
+  local dest="$1" cksum="${2:-}" rel
   rel="${dest#"$HOME_DIR"/}"
   if [ -L "$dest" ]; then record_artifact "$rel" symlink "$(readlink "$dest")"
-  elif [ -f "$dest" ]; then record_artifact "$rel" file "$(artifact_cksum "$dest")"
+  elif [ -f "$dest" ]; then record_artifact "$rel" file "${cksum:-$(artifact_cksum "$dest")}"
   fi
+}
+
+# prior_file_cksum REL — the cksum a PRIOR install run's manifest recorded for a `file`-kind artifact at
+# REL (relative to $HOME_DIR), or empty when there is no trustworthy prior record: prior_manifest_usable
+# is 0, or no `file` record exists yet for REL. Shared by keel_own_untouched's own drift check below (an
+# unconditional call there is fine — its one call site already established prior_manifest_usable=1
+# before reaching this point, so the check here is one already-answered `[ = 1 ]` test, not a new fork)
+# and by record_readme_if_unclobbered further down (dir #512), which has no shipped SRC to `cmp` against
+# — only a manifest history to protect. Always succeeds (the trailing `|| true` absorbs a failing awk,
+# same convention as this lookup's own pre-extraction call site used), so a caller never needs its own
+# `|| true` on the assignment.
+#
+# WHAT AN EMPTY RETURN CANNOT DISTINGUISH, stated because keel_own_untouched's own "losing this read
+# only narrows an optimistic refresh, never threatens a write" reasoning does NOT transfer to the other
+# caller: empty means either "no prior record ever existed for REL" (safe — nothing to protect) OR "a
+# record existed, but $prior_manifest (a live snapshot, not the on-disk manifest itself) vanished mid-run
+# under dir #350/#356's own documented sibling-sweep race" (NOT safe for a never-clobber decision — that
+# is the one case record_readme_if_unclobbered cannot afford to read as "nothing to protect"). Call sites
+# that only ever OPTIMISTICALLY refresh (keel_own_untouched) are correct to treat both alikes; a call
+# site that uses an empty return to justify an UNCONDITIONAL WRITE is not, and this narrow race is
+# accepted as pre-existing (dir #512 does not close it — it is no worse than every prior release's own
+# unconditional-record_placed behavior in this same rare window, never a regression this fix introduces).
+prior_file_cksum() {
+  local rel="$1"
+  [ "$prior_manifest_usable" = 1 ] || return 0
+  awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null || true
 }
 
 # keel_own_untouched SRC DEST (dir #323) — true only when DEST's CONTENT currently differs from SRC's
@@ -850,23 +880,73 @@ keel_own_untouched() {
   rel="${dest#"$HOME_DIR"/}"
   # dir #356 (absorbed here): $prior_manifest can vanish mid-run under dir #350's own sibling-sweep
   # race — a REGULAR file's continued existence is in question, not its type (contrast the `[ -f ]`
-  # guards above/below, which reject by type). Degrade silently on a missing/unreadable snapshot,
-  # exactly like every other manifest-less-home path this predicate already falls through for
+  # guards above/below, which reject by type). prior_file_cksum degrades silently on a missing/unreadable
+  # snapshot, exactly like every other manifest-less-home path this predicate already falls through for
   # (`prior_manifest_usable=0` above) — losing this read only narrows what the predicate can
   # OPTIMISTICALLY refresh with no prompt, it never threatens anything this run is about to WRITE
   # (contrast dir #350's own merge-scratch guard, which is loud because losing ITS file would risk
-  # this run overwriting the manifest with un-trustworthy state). `2>/dev/null` suppresses the actual
-  # leak (a raw `awk: can't open file` on stderr); `|| true` matches manifest_field's own convention
-  # (tools/lib/manifest.sh) and is defensive rather than load-bearing — this statement is already
-  # set -e-safe at its one call site today (the `elif keel_own_untouched ...; then` exemption
-  # propagates into the function body), but `|| true` keeps it correct independent of that exemption
-  # ever holding at some future, non-exempt call site.
-  prior_extra="$(awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null)" || true
+  # this run overwriting the manifest with un-trustworthy state). See prior_file_cksum's own docstring
+  # (above record_placed) for the `2>/dev/null`/`|| true` mechanics — factored out from here dir #512,
+  # once a second call site (record_readme_if_unclobbered) needed the identical lookup.
+  prior_extra="$(prior_file_cksum "$rel")"
   # Rejecting $CKSUM_UNREADABLE on the PRIOR side is what closes the self-equal case, and it closes it
   # on both: an unreadable DEST yields the sentinel too, and the sentinel can only ever compare equal
   # to itself — so a guard here alone is enough, and it keeps artifact_cksum's fork behind the `&&`
   # where a dest with no prior record never pays for it.
   [ -n "$prior_extra" ] && [ "$prior_extra" != "$CKSUM_UNREADABLE" ] && [ "$prior_extra" = "$(artifact_cksum "$dest")" ]
+}
+
+# record_readme_if_unclobbered DEST (dir #512) — record_placed's own variant for a WRITE-ONCE artifact
+# ("written once; yours to edit after" — DEST is never refreshed the way sync_product's own artifacts
+# are, today only keel/README.md). Every other record_placed call site in this file is reached only
+# after the CALLER (keel_own_untouched, in_sync, or a `$FORCE` branch) has already decided placing/
+# trusting current disk bytes is safe — record_placed itself stays a dumb "confirm-and-record-now"
+# primitive. A write-once artifact has no such caller: nothing ever re-places it, so a bare
+# record_placed on every rerun would blindly trust whatever bytes are on disk right now, which is the
+# ADOPTER's edited bytes on any rerun after they touch the file — and the manifest merge (further down
+# this script) keeps whatever record_placed writes THIS run over the prior record, so that blind trust
+# re-legitimizes the edit as Keel's own, and uninstall.sh's cksum comparison (which trusts the manifest,
+# not the file's history) then sweeps it as "unedited Keel content" (F10). This function is the caller
+# DEST never had: a prior record for DEST wins unless --force says otherwise (the never-clobber
+# principle's other half — the default refuses, --force explicitly retakes ownership, same as every
+# other --force branch in this file). Two cases stay unconditional:
+#   - no trustworthy prior record for DEST (prior_manifest_usable=0, or usable but silent on DEST yet)
+#     — dir #323's own upgrade case (a pre-existing unmanifested DEST entering its first manifest),
+#     nothing to protect yet.
+#   - --force: the adopter explicitly said "take this back".
+# Otherwise: record_placed is simply never called, so the merge keeps the OLD record verbatim and
+# uninstall.sh keeps comparing against the ORIGINAL Keel-authored bytes, correctly refusing to remove
+# an edited file. Not folded into record_placed itself — every one of ITS other call sites relies on
+# it unconditionally re-deriving from current disk bytes once THEY have already made that call; baking
+# this predicate in there would silently change behavior at every unrelated site instead of only this
+# one write-once shape.
+#
+# Known, narrow, pre-existing limitation (found by an independent /code-review high pass on this
+# ticket) — see prior_file_cksum's own docstring: an empty $prior_extra here is read as "nothing to
+# protect", but it can also mean a genuine prior record's own read failed mid-run (dir #350/#356's
+# sibling-sweep race). That race is not new here and not closed by this fix; flagged, not fixed, in
+# this ticket's own scope.
+record_readme_if_unclobbered() {
+  local dest="$1" rel prior_extra cur_cksum differs=0
+  # $rel (not `basename "$dest"`) in the messages below, on purpose: this function only ever handles
+  # keel/README.md, whose OWN write-once echo just above ("+  keel/README.md") already names it by its
+  # home-relative path, not its bare basename (unlike sync_product's generic $name, which also serves
+  # copy-mode dests with no "keel/" nesting to name in the first place) — matching that neighbor keeps
+  # this artifact's messages consistent with each other.
+  rel="${dest#"$HOME_DIR"/}"
+  prior_extra="$(prior_file_cksum "$rel")"
+  if [ -z "$prior_extra" ] || [ "$prior_extra" = "$CKSUM_UNREADABLE" ]; then
+    record_placed "$dest"
+    return
+  fi
+  cur_cksum="$(artifact_cksum "$dest")"
+  [ "$cur_cksum" != "$prior_extra" ] && differs=1
+  if [ "$FORCE" = 1 ]; then
+    [ "$differs" = 1 ] && echo "  +    $rel ownership re-taken (--force) — your edit is now Keel's again"
+    record_placed "$dest" "$cur_cksum"
+  elif [ "$differs" = 1 ]; then
+    echo "  =    $rel differs from what Keel recorded — left untouched (yours). Update: $advise_refresh_force"
+  fi
 }
 
 # place / in_sync / FIX — the one seam between copy mode and linked mode: how Keel-owned content
@@ -1242,12 +1322,15 @@ To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUD
 EOF
     echo "  +    keel/README.md"
   fi
-  # record_placed OUTSIDE the guard above — the file is written once, but a manifest re-derives
-  # state EVERY run: a home that already had keel/README.md before its first manifest (a pre-dir-125
-  # install upgrading straight into this version) must still get it listed, not permanently miss it
-  # because the write-once guard skipped the record too (found by an independent /code-review high
-  # pass). By this point the file exists either way.
-  record_placed "$link_dir/README.md"
+  # record_placed OUTSIDE the write-once guard above — a home that already had keel/README.md before
+  # its first manifest (a pre-dir-125 install upgrading straight into this version) must still get it
+  # listed, not permanently miss it because the write-once guard skipped the record too (found by an
+  # independent /code-review high pass). By this point the file exists either way. dir #512: an
+  # unconditional record_placed here would re-legitimize an ADOPTER's edit as Keel's own on every
+  # rerun (README.md is never refreshed like sync_product's other artifacts — it's "written once;
+  # yours to edit after" — so record_placed's own current-disk-bytes cksum IS the adopter's edited
+  # bytes) — see record_readme_if_unclobbered's own docstring for the fix.
+  record_readme_if_unclobbered "$link_dir/README.md"
 
   # The global CLAUDE.md — exactly ONE @import line delivers the rails, whatever was there before:
   #   absent            → generate a thin wrapper: the template minus the embedded core, import line instead
