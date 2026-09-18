@@ -87,7 +87,9 @@ sections real content going forward — see that page for exactly when each one 
   destination untouched rather than half-wired. `tests/test_secret_guard.sh` gained a UTF-8-locale
   axis (pinned to a locale the host actually has, since musl only ships `C.UTF-8`) and a synthetic
   broken-selftest fixture for both install paths (`--global` and per-repo); `tests/test_public_audit.sh`
-  gained the matching UTF-8-locale case for `decode_binary()`.
+  gained the matching UTF-8-locale case for `decode_binary()`. **Residual, disclosed:** the selftest
+  verifies the vendored source, not the installed copy — a destination-specific failure (a noexec
+  mount, a permission quirk unique to the hooks dir) is not caught; tracked separately.
 - **Three known issues the 0.10.0 cut disclosed as ships-known-imperfect, closed** (dir #497).
   `tools/self/line-citations.sh`'s allowlist self-exclusion kept BOTH the default allow file and an
   active `KEEL_LINE_CITATIONS_ALLOW` override out of its own scan, so with an override active the
