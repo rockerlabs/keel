@@ -72,7 +72,11 @@ gate="$repo_root/tools/pre-pr-gate.sh"
 # (it's a separate, deliberate, opt-in step), so there's no env signal to read the way install.sh reads
 # KEEL_EPHEMERAL — the path shape is what's left to go on. Strip a trailing slash from TMPDIR first
 # (macOS sets it WITH one, e.g. "/var/folders/.../T/") — pwd never emits a double slash, so an
-# unstripped pattern would silently never match on that platform.
+# unstripped pattern would silently never match on that platform. Checked BEFORE sourcing tools/lib/
+# below: a bootstrap clone's own copy of this script is a bare, minimal fixture (found live by this
+# ticket's own regression test) — it never carries tools/lib/ at all, so a source attempted first would
+# fail on a missing file and mask this check's own, more useful "temp clone" rejection behind a raw
+# "no such file" exit.
 tmpdir_base="${TMPDIR:-/tmp}"; tmpdir_base="${tmpdir_base%/}"
 case "$repo_root" in
   "$tmpdir_base"/keel.*/keel)
@@ -82,6 +86,17 @@ case "$repo_root" in
     exit 2
     ;;
 esac
+
+# shellcheck source=tools/lib/sh-quote.sh
+. "$here/lib/sh-quote.sh"
+# gate_sh — $gate quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE
+# place $gate is spliced into a shell command string INSIDE a hand-written JSON heredoc, by hand,
+# rather than through jq's `@sh` (print_snippet below, the no-jq fallback — a heredoc can't call a jq
+# filter, so it needs sh_quote_json's second JSON-escaping pass too, not just sh_quote's shell one).
+# Same escaping jq's `@sh` performs (JSON-aware, so it needs no separate JSON-escaping step of its
+# own), shared with install-read-trace.sh's identical need via tools/lib/sh-quote.sh rather than a
+# second hand-copy.
+gate_sh="$(sh_quote_json "$gate")"
 
 usage() {
   cat <<'EOF'
@@ -198,20 +213,20 @@ print_snippet() {
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash '$gate'" }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash $gate_sh" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$gate' rollout-check" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $gate_sh rollout-check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] },
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] },
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "UserPromptExpansion": [
-      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "SubagentStop": [
-      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ]
   }
 }
@@ -244,13 +259,18 @@ fi
 # $gate is single-quoted WITHIN the command string itself (not just JSON-escaped, which jq already does
 # for the string as a whole) — a checkout path containing a space would otherwise split into two argv
 # tokens when Claude Code's hook runner passes this string to a shell, silently no-op'ing every hook.
+# Quoted via jq's own `@sh` (dir #514) — NOT a hand-rolled `"'\''" + $gate + "'\''"` splice: that form
+# wraps $gate in single quotes but never escapes one IF $gate itself contains one, so a checkout path
+# with an apostrophe (an adopter's real home directory, not just a hypothetical) produced a command
+# with an unterminated quote ("unexpected EOF while looking for matching quote") and every wired hook
+# silently broke. `@sh` produces a shell-safe single-quoted token, escaping any embedded `'` as `'\''`.
 hook_specs="$(jq -n --arg gate "$gate" '[
-  {event: "PreToolUse",         matcher: "Bash",           command: ("bash '\''" + $gate + "'\''")},
-  {event: "SessionStart",       matcher: "startup",        command: ("bash '\''" + $gate + "'\'' rollout-check")},
-  {event: "PostToolUse",        matcher: "Skill",          command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash '\''" + $gate + "'\'' skill-trace")}
+  {event: "PreToolUse",         matcher: "Bash",           command: ("bash " + ($gate|@sh))},
+  {event: "SessionStart",       matcher: "startup",        command: ("bash " + ($gate|@sh) + " rollout-check")},
+  {event: "PostToolUse",        matcher: "Skill",          command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")}
 ]')"
 
 # _backup_settings SETTINGS — a timestamped copy before any destructive edit; sets $backup. Shared by

@@ -513,6 +513,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   else                            idefault_leaf=".claude"; iother_leaf=".codex"; icontext="CLAUDE.md"; imode_flag="";        iother_context="AGENTS.md"
   fi
   ihome="${DIRS[0]:-${KEEL_HOME:-${HOME:?doctor --install: pass a HOME dir, or set HOME/KEEL_HOME}/$idefault_leaf}}"
+  # home_reach ACTUAL DEFAULT — echoes ACTUAL when it differs from DEFAULT, empty otherwise: the one
+  # "is this home where a bare re-run would land" fact every home-reaching suffix below ($ihome_flag,
+  # $idoctor_arg, $iother_doctor_arg) is built from. A function, not a hand-copied `[ "$1" = "$2" ]`
+  # branch at each call site — see $ihome_reach's own comment below for why (dir #513's own class,
+  # found reproduced one level down by three independent /code-review angles on this ticket).
+  home_reach() { if [ "$1" = "$2" ]; then printf ''; else printf '%s' "$1"; fi; }
   # ihome_flag — the ` --home "DIR"` every command this mode ADVISES must carry when $ihome is not
   # where a bare re-run would land. Same rule, and the same reason, as install.sh's home_flag: an
   # instruction that re-resolves the home from scratch cannot fix the install this audit is about, so
@@ -522,8 +528,25 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # advice too, the same way a bare `doctor.sh --install` does at ~/.claude. $idefault_leaf already
   # encodes which mode this is, so one formula covers both — no branch needed here.
   idefault="${KEEL_HOME:-${HOME:-}/$idefault_leaf}"
-  if [ "$ihome" = "$idefault" ]; then ihome_flag=""
-  else                                 ihome_flag=" --home \"$ihome\""; fi
+  # ihome_reach — the single underlying fact both $ihome_flag and $idoctor_arg are just two spellings
+  # of: $ihome itself when it's not where a bare re-run would land, empty otherwise. Via home_reach()
+  # (defined just above this block), not a second hand-written `[ "$ihome" = "$idefault" ]` branch —
+  # found by three independent /code-review angles on this same ticket: the FIRST fix collapsed
+  # $ihome_flag/$idoctor_arg's shared branch into one $ihome_reach value, then reproduced the identical
+  # branch one level down for $iother_reach against $iother_default — exactly the twinned-state shape
+  # that let dir #513 happen in the first place, just moved rather than closed. One function, called
+  # twice (here and at $iother_reach below), means a future change to how a default resolves needs
+  # updating in one place, not N call sites that can silently drift apart again.
+  ihome_reach="$(home_reach "$ihome" "$idefault")"
+  ihome_flag="${ihome_reach:+ --home \"$ihome_reach\"}"
+  # idoctor_arg — the SAME $ihome_reach, in POSITIONAL form: doctor.sh's own parser (unlike
+  # install.sh's) has no `--home` flag — home is a bare positional (`DIRS+=("$1")` in the arg loop
+  # above) — so a line that advises re-running `doctor.sh --install` must carry this, never
+  # $ihome_flag's `--home "DIR"` form (dir #513: splicing `--home` into a doctor.sh recommendation
+  # produces a command doctor.sh's own parser rejects with "unknown option", exit 2 — the exact
+  # unfollowable advice dir #98's ihome_flag comment above says this class closes, just for doctor.sh
+  # itself rather than install.sh).
+  idoctor_arg="${ihome_reach:+ \"$ihome_reach\"}"
   # manifest_field/manifest_usable (dir #125) and keel_core_is_link/keel_core_is_nogit_trim (dir
   # #363) — REQUIRED, but ONLY inside --install mode: every real call site of all four lives inside
   # this block, and an ordinary (non-install) `doctor.sh [DIR...]` project audit never touches any of
@@ -551,28 +574,31 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # shellcheck source=tools/lib/manifest.sh
     . "$tools_dir/lib/manifest.sh"
   else
-    echo "doctor: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$ihome_flag" >&2
+    echo "doctor: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$idoctor_arg" >&2
     exit 1
   fi
   if [ -s "$tools_dir/lib/core-ownership.sh" ] && bash -n "$tools_dir/lib/core-ownership.sh" 2>/dev/null; then
     # shellcheck source=tools/lib/core-ownership.sh
     . "$tools_dir/lib/core-ownership.sh"
   else
-    echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$ihome_flag" >&2
+    echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$idoctor_arg" >&2
     exit 1
   fi
-  # iother_home_flag — the SAME home-reaching suffix, but computed against the OTHER mode's default
-  # (via $iother_leaf, the mirror of $idefault_leaf), for the one advice site (the mode-mismatch
-  # redirect below) that recommends switching modes. Using plain $ihome_flag there was a real bug
-  # (operator-run /code-review, step 5 of /polish): $ihome_flag is relative to THIS mode's default, so
-  # on a home placed at the OTHER mode's default leaf via an explicit `--home` (e.g. a Claude-mode
-  # install put at ~/.codex with `install.sh --home ~/.codex`), $ihome_flag comes out empty even though
-  # the redirect's advised command switches modes and therefore needs an explicit --home to still reach
-  # $ihome — reproducing exactly the dir #98 class this file's own ihome_flag comment says it closes,
-  # just for the redirect branch specifically.
+  # iother_doctor_arg — the SAME home-reaching suffix as $idoctor_arg, but computed against the OTHER
+  # mode's default (via $iother_leaf, the mirror of $idefault_leaf), for the one advice site (the
+  # mode-mismatch redirect below) that recommends switching modes. Using plain $idoctor_arg there was a
+  # real bug (operator-run /code-review, step 5 of /polish, back when this was still $ihome_flag-shaped
+  # rather than positional — dir #513 later changed the FORM but not this reasoning): $idoctor_arg is
+  # relative to THIS mode's default, so on a home placed at the OTHER mode's default leaf via an
+  # explicit `--home` (e.g. a Claude-mode install put at ~/.codex with `install.sh --home ~/.codex`),
+  # $idoctor_arg comes out empty even though the redirect's advised command switches modes and
+  # therefore needs the home spelled out to still reach $ihome — reproducing exactly the dir #98 class
+  # this file's own $ihome_flag comment says it closes, just for the redirect branch specifically. And
+  # positional, not `--home` (dir #513: the redirect advises re-running doctor.sh itself — to re-audit
+  # in the correct mode, never install.sh — and doctor's own parser has no `--home` flag).
   iother_default="${KEEL_HOME:-${HOME:-}/$iother_leaf}"
-  if [ "$ihome" = "$iother_default" ]; then iother_home_flag=""
-  else                                        iother_home_flag=" --home \"$ihome\""; fi
+  iother_reach="$(home_reach "$ihome" "$iother_default")"
+  iother_doctor_arg="${iother_reach:+ \"$iother_reach\"}"
   # irelink_mode — the re-wiring MODE for a dangling/foreign symlink (bin/keel is wired in BOTH modes,
   # so this is reachable under --codex too, code-review found live): under Claude mode that's `--link`
   # (recreates the linked layout); under --codex it's just $imode_flag itself, a bare re-run of --codex
@@ -650,9 +676,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
       # real finding (dir #134 code-review: W-CMDS-MISSING's own "re-run install.sh$ihome_flag" advice
       # is exactly as dangerous as this GAP's used to be, and it fires unless the audit stops here).
       if [ "$CODEX_MODE" = 1 ]; then
-        gap G-RAILS-MISSING "no $icontext at $ihome — but $iother_context is there: this looks like a Claude Code install, not --codex. Re-run without --codex: doctor.sh --install$iother_home_flag (running install.sh$imode_flag$ihome_flag here would create a second mode in the same home)"
+        gap G-RAILS-MISSING "no $icontext at $ihome — but $iother_context is there: this looks like a Claude Code install, not --codex. Re-run without --codex: doctor.sh --install$iother_doctor_arg (running install.sh$imode_flag$ihome_flag here would create a second mode in the same home)"
       else
-        gap G-RAILS-MISSING "no $icontext at $ihome — but $iother_context is there: this looks like a --codex install. Re-run: doctor.sh --install --codex$iother_home_flag (running install.sh$imode_flag$ihome_flag here would create a second mode in the same home)"
+        gap G-RAILS-MISSING "no $icontext at $ihome — but $iother_context is there: this looks like a --codex install. Re-run: doctor.sh --install --codex$iother_doctor_arg (running install.sh$imode_flag$ihome_flag here would create a second mode in the same home)"
       fi
       flush_notes "$ihome/.keel/doctor-accept"
       finish

@@ -89,6 +89,25 @@ check_contains "explains jq is required" "$OUT" "jq is required"
 check_contains "prints a ready-to-paste snippet" "$OUT" "\"hooks\""
 check_nofile "no jq -> settings.json was never written" "$njrepo/.claude/settings.json"
 
+# --- (d2) regression (dir #514): the no-jq snippet path has its OWN escaping (a heredoc can't call a
+# jq filter), untested by the jq-present apostrophe check further down. Found by an independent
+# /code-review medium pass: sh_quote's `'\''`-doubling introduces a literal backslash, and a bare `\'`
+# is not one of JSON's own recognized escapes, so an earlier version of this fix printed a snippet
+# that was invalid JSON whenever the checkout path held an apostrophe — jq itself rejected it — even
+# though the shell-level escaping was already correct. Extract just the JSON body and prove `jq .`
+# accepts it before trusting anything jq reads from it (a regex-based extraction would never notice).
+apostrophe_fixture_checkout "no-jq checkout"; apnjck="$APOSTROPHE_CKDIR"
+apnjrepo="$(new_repo)"
+run env PATH="$farm" "$apnjck/tools/install-read-trace.sh" "$apnjrepo"
+check_status "no jq, apostrophe checkout -> non-zero (nothing installed)" 1 "$STATUS"
+apnjjson="$(printf '%s\n' "$OUT" | sed -n '/^{$/,/^}$/p')"
+run bash -c "printf '%s' \"\$1\" | jq ." -- "$apnjjson"
+check_status "the printed snippet is itself valid JSON (not just command-shaped text)" 0 "$STATUS"
+apnjcmd="$(printf '%s' "$apnjjson" | jq -r '.hooks.SessionEnd[0].hooks[0].command')"
+apostrophe_cmd_argv "$apnjcmd"
+check_status "no-jq snippet's argv resolves back to the real (unescaped) path" \
+  "$apnjck/tools/read-trace.sh" "${APOSTROPHE_ARGV[1]}"
+
 # --- --global wires the machine-global settings.json instead of a repo's -----------------------------
 ghome="$SANDBOX/global-rt-home"
 run env KEEL_HOME="$ghome" "$installer" --global
@@ -126,5 +145,31 @@ check_status "install over a settings.json with an unrelated empty hook array ->
 run "$installer" --uninstall "$erepo"
 check_status "--uninstall -> exit 0" 0 "$STATUS"
 check_contains "the unrelated empty Notification array survives uninstall" "$(cat "$erepo/.claude/settings.json")" '"Notification"'
+
+# --- regression (dir #514): a checkout path containing an apostrophe must still produce a hook command
+# the shell can parse and run. Before the fix, $rt was spliced into `"bash '" + $rt + "'"` by hand — a
+# checkout at `~/Alex's checkout/keel` produced `bash 'Alex's checkout/…'`, an unterminated quote
+# ("unexpected EOF while looking for matching quote"), and every wired hook silently broke. A disposable
+# copy of the checkout (never $REPO_ROOT itself) under an apostrophe-bearing dir name, scoped to
+# `tools/` only (shared helper, tests/lib.sh — see its own comment for why).
+apostrophe_fixture_checkout "checkout"; apck="$APOSTROPHE_CKDIR"
+aprepo="$(new_repo)"
+run "$apck/tools/install-read-trace.sh" "$aprepo"
+check_status "install from an apostrophe-bearing checkout path -> exit 0" 0 "$STATUS"
+apcmd="$(jq -r '.hooks.SessionEnd[0].hooks[0].command' "$aprepo/.claude/settings.json")"
+# The apostrophe is escaped (`'\''`), so the raw path never appears as one contiguous substring in
+# $apcmd — let the shell that will actually run this command do the unescaping (the real proof: not a
+# hand-rolled unescaper, the same word-splitting the hook runner itself performs), and compare its
+# argv[1] against the real, unescaped path.
+apostrophe_cmd_argv "$apcmd"
+check_status "the escaped command's argv resolves back to the real (unescaped) path" \
+  "$apck/tools/read-trace.sh" "${APOSTROPHE_ARGV[1]}"
+printf '%s\n' "$apcmd" > "$SANDBOX/apostrophe-command.sh"
+run bash -n "$SANDBOX/apostrophe-command.sh"
+check_status "the generated command parses (bash -n)" 0 "$STATUS"
+# The "hook fires" half, not just "parses": actually run it, the way Claude Code's hook runner would —
+# session-end reads a JSON blob on stdin and exits 0 on a fresh sandbox with no session log (jq present).
+run bash -c "printf '{}' | $apcmd"
+check_status "the generated command actually runs (the hook fires)" 0 "$STATUS"
 
 summary
