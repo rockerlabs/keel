@@ -68,8 +68,22 @@ sections real content going forward — see that page for exactly when each one 
   condition backwards ("touched nothing exempt" where the hash actually means "touched only exempt
   files", F17) — reworded, with a pin in `tests/test_rails_honesty.sh` guarding both the corrected
   wording and the retired phrasing's absence.
-- **`tools/doctor.sh`'s mode-mismatch advice spliced a literal `--home "DIR"` into a `doctor.sh --install [--codex]` recommendation, but doctor's own parser has no `--home` flag (home is positional) — following the advice verbatim exited 2** (dir #513; found 2026-09-12 by dir #495's external OpenAI-Codex audit run 1, verified live). Two sites carried the same defect (the mode-mismatch redirect, and the two corrupted-lib error messages advising a re-run after re-cloning); all four now carry the home positionally instead. A regression test extracts the advised command from the gap text itself and runs it for real, red-then-green against the unfixed code.
-- **`tools/install-pre-pr-gate.sh` and `tools/install-read-trace.sh` spliced the checkout path into the generated hook command as `"bash '" + $path + "'"` with no escaping, so a checkout under a path with an apostrophe produced an unterminated quote and every wired hook silently broke** (dir #514; found 2026-09-12 by dir #495's external OpenAI-Codex audit run 1, verified live). Both writers of the JSON (jq's own program, and the no-jq heredoc fallback) now quote the path safely — jq's `@sh` filter for the former, hand-rolled `'\''`-doubling for the latter (a heredoc can't call a jq filter). A fixture checkout under an apostrophe-bearing directory name proves the generated command's argv round-trips to the real path and actually runs.
+- **`tools/doctor.sh`'s mode-mismatch advice spliced a literal `--home "DIR"` into a `doctor.sh
+  --install [--codex]` recommendation, but doctor's own parser has no `--home` flag (home is
+  positional) — following the advice verbatim exited 2** (dir #513; found 2026-09-12 by dir #495's
+  external OpenAI-Codex audit run 1, verified live). Two sites carried the same defect (the
+  mode-mismatch redirect, and the two corrupted-lib error messages advising a re-run after
+  re-cloning); all four now carry the home positionally instead. A regression test extracts the
+  advised command from the gap text itself and runs it for real, red-then-green against the
+  unfixed code.
+- **`tools/install-pre-pr-gate.sh` and `tools/install-read-trace.sh` spliced the checkout path into
+  the generated hook command as `"bash '" + $path + "'"` with no escaping, so a checkout under a
+  path with an apostrophe produced an unterminated quote and every wired hook silently broke**
+  (dir #514; found 2026-09-12 by dir #495's external OpenAI-Codex audit run 1, verified live). Both
+  writers of the JSON (jq's own program, and the no-jq heredoc fallback) now quote the path safely
+  — jq's `@sh` filter for the former, hand-rolled `'\''`-doubling for the latter (a heredoc can't
+  call a jq filter). A fixture checkout under an apostrophe-bearing directory name proves the
+  generated command's argv round-trips to the real path and actually runs.
 - **`tests/run.sh` deleted its per-file failure logs unconditionally on exit, so a one-off local
   failure left nothing behind to inspect afterward** (dir #480, differential-diagnosis work; the
   underlying env-sensitivity discrepancy itself did not reproduce across five runs today — one solo,
