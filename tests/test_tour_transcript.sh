@@ -88,11 +88,20 @@ planted_key="$(key 'AKIA' 'IOSFODNN7EXAMPLE')"
 drop_ok() { grep -v -F -e 'selftest: OK   — malformed personal regex fails CLOSED' \
                         -e 'selftest: WARN — this grep does not flag a malformed ERE'; }
 
+# dir #497: the repo-root rewrite (rule 2) must run BEFORE the sandbox rewrite (rule 1), not
+# after. A checkout that itself lives under a mktemp-shaped path (an Alpine-leg clone under
+# $(mktemp -d), or any dev checkout under /tmp) has $REPO_ROOT matching sandbox_re as a PREFIX of
+# itself; running sandbox_re first rewrites that prefix to /tmp/demo, and the repo-root sed that
+# follows can then never match the now-mangled $REPO_ROOT, so every `$REPO_ROOT/...` command line
+# in the transcript is left with its real absolute path instead of `./`. Swapping the order fixes
+# it structurally: $REPO_ROOT is matched and replaced whole, as the literal it is, before sandbox_re
+# gets a chance to see it — tour.sh's OWN throwaway mktemp sandbox (unrelated to $REPO_ROOT) is
+# untouched by the repo-root rule and still gets rewritten by sandbox_re on the next stage.
 live="$(printf '%s\n' "$OUT" \
-  | sed -E "s#${sandbox_re}#/tmp/demo#g" \
   | sed -e "s#${repo_root_esc}/#./#g" -e "s/${planted_key}/AKIA…REDACTED…/" \
+  | sed -E "s#${sandbox_re}#/tmp/demo#g" \
   | awk 'NR==1 && $0==""{next}{print}' \
-  | drop_ok)"  # rule 2, rule 3, rule 4, rule 5
+  | drop_ok)"  # rule 2, rule 3, rule 1, rule 4, rule 5
 
 # The README's own fenced transcript (the ```console block under "What it looks like").
 expected="$(awk '/^```console$/{f=1;next} /^```$/{if(f){f=0}} f' "$readme" | drop_ok)"
