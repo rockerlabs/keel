@@ -442,7 +442,20 @@ packet_dir="$out_dir/$packet_name"
 
 [ ! -e "$packet_dir" ] || refuse "'$packet_dir' already exists — refusing to overwrite a prior
   packet. Remove it yourself if it is stale, or wait a day (the packet name includes the date)."
-mkdir -p "$packet_dir/chunks" \
+# --out itself may not exist yet (every fixture above passes a fresh relative dir) — `mkdir -p` it
+# first, ahead of the packet dir proper, so the plain `mkdir "$packet_dir"` below has a parent to
+# land in. This one is never the target of on_exit's packet-dir cleanup: it's the shared --out
+# parent, not this invocation's own packet, and may already hold prior packets.
+mkdir -p "$out_dir" \
+  || refuse "cannot create '$out_dir' — check that it is writable."
+# Three mkdir calls where PR #407 had one `mkdir -p "$packet_dir/chunks"` — the flag below is set
+# right after the SECOND one (the packet dir itself) succeeds, not after all three, so a failure
+# creating "chunks/" (parent already on disk) still leaves the flag set and on_exit's cleanup still
+# fires. The single `mkdir -p` this replaces set the flag only once the whole path existed, so a
+# failure between "$packet_dir" and "$packet_dir/chunks" (e.g. a quota hit mid-mkdir) left an EMPTY,
+# uncleaned "$packet_dir" behind: the flag was never reached (dir #526, found by Fixer A's own review
+# of PR #407 and parked as induced-but-narrow).
+mkdir "$packet_dir" \
   || refuse "cannot create '$packet_dir' — check that '$out_dir' is writable."
 # Set ONLY once mkdir has actually created it — this is what on_exit's own cleanup gates on, so a
 # LATER failure removes exactly the packet THIS invocation built, never a pre-existing directory
@@ -452,6 +465,8 @@ mkdir -p "$packet_dir/chunks" \
 # re-run collides on the packet name, refuses as documented, and used to silently destroy the prior
 # real packet anyway).
 packet_dir_created=1
+mkdir "$packet_dir/chunks" \
+  || refuse "cannot create '$packet_dir/chunks' — check that '$out_dir' is writable."
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'

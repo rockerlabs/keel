@@ -146,6 +146,8 @@ sections real content going forward — see that page for exactly when each one 
   unconditionally, since there is no prior record yet to protect). The fixture path is corrected, and
   a new install→edit→reinstall→uninstall cycle test proves the never-clobber rail, mutation-proven:
   reverting `record_placed` to unconditional reddens six new assertions.
+- **`tools/lib/dir-tickets.sh`'s 500-ticket range cap and its three documented multi-line/multi-token shapes (cross-line trailing-comma join, blank-line hard flush, bare `and #N` continuation) had zero test coverage** (dir #525; found 2026-09-15 by the 0.10.1 RC delta audit, mutation-proved: removing the cap left the suite 19/19 green while `dir #1-99999` flooded 99,999 lines). Four new fixtures in `tests/test_dir_tickets_lib.sh`, each verified red when its own code is removed — coverage only, no behaviour change to the load-bearing extractor doctor check 7, the CHANGELOG derivation, and the release notes all read.
+- **`tools/audit-packet/export.sh`'s single `mkdir -p "$packet_dir/chunks"` set the `packet_dir_created` cleanup flag only after the WHOLE two-level path existed, so a failure inside that call's own second step (parent created, `chunks/` not) left an empty packet dir uncleaned on exit** (dir #526; found by Fixer A's own review of PR #407, parked as induced and narrowed on review: the ticket body's "failure after the top-level mkdir" reading did not match the live single-`mkdir -p` code). Split into two `mkdir` calls with the flag set right after the first succeeds, so a failure creating `chunks/` still fires `on_exit`'s cleanup; proved with a `mkdir` stub on `PATH` that fails only the second real call, red against the pre-fix single-`mkdir -p` shape.
 
 ## [0.10.1] — 2026-09-15
 
