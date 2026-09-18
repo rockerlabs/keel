@@ -505,6 +505,31 @@ path_farm() {
   unset IFS
 }
 
+# apostrophe_fixture_checkout LABEL — a disposable copy of just tools/ (never $REPO_ROOT itself) under
+# an apostrophe-bearing dir name ("$SANDBOX/Alex's LABEL/keel"), for a dir #514-shaped regression: an
+# installer that resolves its own repo_root as `tools/..` needs only that subtree, so this is scoped
+# down from a whole-checkout copy (found by /simplify — a whole-checkout `cp -r` was pure I/O waste for
+# a test that only ever exercises tools/). Sets $APOSTROPHE_CKDIR to the checkout root (the parent of
+# tools/, matching what the installer's own $repo_root computation expects). Shared by
+# tests/test_install_pre_pr_gate.sh and tests/test_install_read_trace.sh, which otherwise hand-copied
+# this identically (the SAME "keep two copies in sync by hand" shape dir #514's own fix closed for the
+# installers' escaping logic).
+apostrophe_fixture_checkout() {
+  APOSTROPHE_CKDIR="$SANDBOX/Alex's $1/keel"
+  mkdir -p "$APOSTROPHE_CKDIR"
+  cp -r "$REPO_ROOT/tools" "$APOSTROPHE_CKDIR/tools"
+}
+
+# apostrophe_cmd_argv COMMAND — evals COMMAND (a hook command string extracted from a generated
+# settings.json or snippet, e.g. `bash '/path/with'\''s an apostrophe' rollout-check`) into the array
+# $APOSTROPHE_ARGV the same way Claude Code's own hook runner would parse it — the real proof that an
+# escaped path round-trips, not a hand-rolled unescaper (which would just re-encode the same
+# assumption the fix is supposed to verify).
+apostrophe_cmd_argv() {
+  APOSTROPHE_ARGV=()
+  eval "APOSTROPHE_ARGV=($1)"
+}
+
 summary() {
   printf '\n%s: %d passed, %d failed\n' "$(basename "$0")" "$_pass" "$_fail"
   [ "$_fail" -eq 0 ]

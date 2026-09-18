@@ -88,6 +88,39 @@ sections real content going forward — see that page for exactly when each one 
   axis (pinned to a locale the host actually has, since musl only ships `C.UTF-8`) and a synthetic
   broken-selftest fixture for both install paths (`--global` and per-repo); `tests/test_public_audit.sh`
   gained the matching UTF-8-locale case for `decode_binary()`.
+- **Three known issues the 0.10.0 cut disclosed as ships-known-imperfect, closed** (dir #497).
+  `tools/self/line-citations.sh`'s allowlist self-exclusion kept BOTH the default allow file and an
+  active `KEEL_LINE_CITATIONS_ALLOW` override out of its own scan, so with an override active the
+  default file's entries were neither used nor validated and could rot unnoticed; every entry in the
+  default file (always) and the active override (when different) is now checked against the tracked
+  tree, and a citing or cited path that no longer resolves is surfaced as an advisory WARN — a stale
+  exemption is debt to burn down, not a fresh violation, so it never turns an otherwise-clean run red.
+  The same file's prefilter comment claimed its `grep -qE` step was "safe by construction" because
+  fence-blanking only removes matches; corrected to name the actual reason a busybox-vs-GNU exit-status
+  divergence on binary content is inert — the downstream `blank_fenced_blocks | grep -noE … || true`
+  pipeline already tolerates finding nothing, regardless of what the prefilter decided. And
+  `tests/test_tour_transcript.sh` failed under a checkout that itself lives under a `mktemp`-shaped
+  path (an Alpine-leg clone, or any dev checkout under `/tmp`): its sandbox-path-normalization rewrite
+  ran BEFORE the `$REPO_ROOT → ./` rewrite, so a `$REPO_ROOT` that itself matched the sandbox pattern
+  got mangled first and the repo-root rule then never matched what was left of it. Swapped the two
+  `sed` stages so the repo-root rewrite runs first; reproduced RED on the unswapped order from a real
+  clone under `$(mktemp -d)` and GREEN after the swap, non-`mktemp` runs unchanged.
+- **`tools/doctor.sh`'s mode-mismatch advice spliced a literal `--home "DIR"` into a `doctor.sh
+  --install [--codex]` recommendation, but doctor's own parser has no `--home` flag (home is
+  positional) — following the advice verbatim exited 2** (dir #513; found 2026-09-12 by dir #495's
+  external OpenAI-Codex audit run 1, verified live). Two sites carried the same defect (the
+  mode-mismatch redirect, and the two corrupted-lib error messages advising a re-run after
+  re-cloning); all four now carry the home positionally instead. A regression test extracts the
+  advised command from the gap text itself and runs it for real, red-then-green against the
+  unfixed code.
+- **`tools/install-pre-pr-gate.sh` and `tools/install-read-trace.sh` spliced the checkout path into
+  the generated hook command as `"bash '" + $path + "'"` with no escaping, so a checkout under a
+  path with an apostrophe produced an unterminated quote and every wired hook silently broke**
+  (dir #514; found 2026-09-12 by dir #495's external OpenAI-Codex audit run 1, verified live). Both
+  writers of the JSON (jq's own program, and the no-jq heredoc fallback) now quote the path safely
+  — jq's `@sh` filter for the former, hand-rolled `'\''`-doubling for the latter (a heredoc can't
+  call a jq filter). A fixture checkout under an apostrophe-bearing directory name proves the
+  generated command's argv round-trips to the real path and actually runs.
 - **`tests/run.sh` deleted its per-file failure logs unconditionally on exit, so a one-off local
   failure left nothing behind to inspect afterward** (dir #480, differential-diagnosis work; the
   underlying env-sensitivity discrepancy itself did not reproduce across five runs today — one solo,
@@ -96,6 +129,21 @@ sections real content going forward — see that page for exactly when each one 
   now disarms the logdir's EXIT-trap cleanup and prints the surviving directory's path; an all-pass
   run is unchanged and still cleans up. `tests/test_run_sh.sh` pins both the preserved-on-failure and
   cleaned-up-on-pass cases.
+- **`install.sh`'s unconditional `record_placed "$link_dir/README.md"` re-legitimized an ADOPTER's
+  post-install edit to `keel/README.md` as Keel-owned on the next install rerun, so a later
+  `uninstall` swept their customization** (F10), **and `tests/test_install_manifest.sh`'s
+  "pre-existing README survives into the first manifest" test built its fixture at the wrong path
+  (missing the `.claude` hop install.sh actually resolves to), so the assertion passed on a FRESH
+  file and would still have passed with the regression fully reverted** (F13; both found 2026-09-12
+  by dir #495's run 1 — the external OpenAI-Codex leg at 0396b4c) — dir #512. Fixed by routing
+  README.md's `record_placed` through the same prior-manifest checksum discipline
+  `keel_own_untouched` already gave `sync_product`'s own artifacts: a prior record now wins unless
+  `--force` says otherwise, so an edited README.md keeps its ORIGINAL Keel-authored cksum in the
+  manifest and correctly reads as drifted/"yours" on both a plain reinstall and `uninstall` (dir #323's
+  own upgrade case — a pre-existing unmanifested README entering its first manifest — still records
+  unconditionally, since there is no prior record yet to protect). The fixture path is corrected, and
+  a new install→edit→reinstall→uninstall cycle test proves the never-clobber rail, mutation-proven:
+  reverting `record_placed` to unconditional reddens six new assertions.
 
 ## [0.10.1] — 2026-09-15
 

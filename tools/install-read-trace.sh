@@ -36,6 +36,10 @@ here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 rt="$repo_root/tools/read-trace.sh"
 
+# Checked BEFORE sourcing tools/lib/ below: a bootstrap clone's own copy of this script is a bare,
+# minimal fixture (found live by install-pre-pr-gate.sh's own regression test, same shape here) — it
+# never carries tools/lib/ at all, so a source attempted first would fail on a missing file and mask
+# this check's own, more useful "temp clone" rejection behind a raw "no such file" exit.
 tmpdir_base="${TMPDIR:-/tmp}"; tmpdir_base="${tmpdir_base%/}"
 case "$repo_root" in
   "$tmpdir_base"/keel.*/keel)
@@ -45,6 +49,17 @@ case "$repo_root" in
     exit 2
     ;;
 esac
+
+# shellcheck source=tools/lib/sh-quote.sh
+. "$here/lib/sh-quote.sh"
+# rt_sh — $rt quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE place
+# $rt is spliced into a shell command string INSIDE a hand-written JSON heredoc, by hand, rather than
+# through jq's `@sh` (print_snippet below, the no-jq fallback — a heredoc can't call a jq filter, so
+# it needs sh_quote_json's second JSON-escaping pass too, not just sh_quote's shell one). Same
+# escaping jq's `@sh` performs (JSON-aware, so it needs no separate JSON-escaping step of its own),
+# shared with install-pre-pr-gate.sh's identical need via tools/lib/sh-quote.sh rather than a second
+# hand-copy.
+rt_sh="$(sh_quote_json "$rt")"
 
 usage() {
   cat <<'EOF'
@@ -135,13 +150,13 @@ print_snippet() {
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Edit|Write|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "bash '$rt' log-tool" }] }
+      { "matcher": "Edit|Write|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "bash $rt_sh log-tool" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$rt' startup" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $rt_sh startup" }] }
     ],
     "SessionEnd": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash '$rt' session-end" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "bash $rt_sh session-end" }] }
     ]
   }
 }
@@ -170,10 +185,15 @@ if [ -f "$settings" ]; then
   fi
 fi
 
+# Quoted via jq's own `@sh` (dir #514) — NOT a hand-rolled `"'\''" + $rt + "'\''"` splice: that form
+# wraps $rt in single quotes but never escapes one IF $rt itself contains one, so a checkout path with
+# an apostrophe produced a command with an unterminated quote ("unexpected EOF while looking for
+# matching quote") and every wired hook silently broke. `@sh` produces a shell-safe single-quoted
+# token, escaping any embedded `'` as `'\''`.
 hook_specs="$(jq -n --arg rt "$rt" '[
-  {event: "PostToolUse",  matcher: "Edit|Write|NotebookEdit|Read", command: ("bash '\''" + $rt + "'\'' log-tool")},
-  {event: "SessionStart", matcher: "startup",                      command: ("bash '\''" + $rt + "'\'' startup")},
-  {event: "SessionEnd",   matcher: "",                             command: ("bash '\''" + $rt + "'\'' session-end")}
+  {event: "PostToolUse",  matcher: "Edit|Write|NotebookEdit|Read", command: ("bash " + ($rt|@sh) + " log-tool")},
+  {event: "SessionStart", matcher: "startup",                      command: ("bash " + ($rt|@sh) + " startup")},
+  {event: "SessionEnd",   matcher: "",                             command: ("bash " + ($rt|@sh) + " session-end")}
 ]')"
 
 _backup_settings() { backup="$1.$(date -u +%Y%m%dT%H%M%SZ).bak"; cp "$1" "$backup"; }
