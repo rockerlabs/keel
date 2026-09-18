@@ -113,7 +113,7 @@ Steps, in order:
    (`_stamp_tests_outcome` doesn't care what produced the run), so step 8's comparison is unaffected;
    this changes WHAT runs, never WHETHER a run happens.
 
-   If your fix commit touched nothing exempt, step 8's comparison matches and unlocks with no test run this
+   If your fix commit touched only exempt files, step 8's comparison matches and unlocks with no test run this
    round. If it touched anything else, step 8 denies with "no test suite run is bound to current HEAD" —
    that denial is the signal, not something to predict up front: at that point go back to step 3,
    actually run the tests, and write a fresh receipt carrying the new HEAD's sha

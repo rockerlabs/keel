@@ -894,16 +894,68 @@ run_in "$d3" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "no receipt-pass rows at all → exit 0 (nothing to judge yet)" 0 "$STATUS"
 
 # --- dir #64: repo-key subcommand (so other tools reuse the worktree-aware resolution instead of
-# hand-copying it — pipeline-canary.sh calls this rather than re-deriving basename(toplevel) itself) ---
+# hand-copying it — pipeline-canary.sh calls this rather than re-deriving the basename-plus-hash-of-
+# the-full-path algorithm itself, dir #481) ---------------------------------------------------------
 d="$(mkrepo)"
 run "$gate" repo-key "$d"
 check_status "repo-key → exit 0" 0 "$STATUS"
-check_contains "repo-key of a plain repo is its own basename" "$OUT" "$(basename "$d")"
+check_contains "repo-key of a plain repo carries its own basename cosmetically" "$OUT" "$(basename "$d")"
 
 mkworktree dir64-repokey-wt dir64-repokey-feature
 run "$gate" repo-key "$WT"
 check_contains "repo-key of a worktree resolves to the MAIN checkout's basename (dir #61 discipline), not its own" "$OUT" "$(basename "$MREPO")"
 check_absent "repo-key does not just basename the worktree itself" "$OUT" "$(basename "$WT")"
+
+# --- dir #481: two DIFFERENT repos sharing a directory BASENAME must resolve to DISTINCT repo-keys —
+# the basename alone used to be the whole key, so `~/x/proj` and `~/y/proj` collided on one shared
+# sentinel/prev-sentinel/trace/hand-off (found live by dir #376's own /design pass). Two real repos,
+# same leaf name "proj", different parent directories.
+px="$(mktemp -d "$SANDBOX/dir481-x.XXXXXX")"; mkdir -p "$px/proj"; git -C "$px/proj" init -q
+py="$(mktemp -d "$SANDBOX/dir481-y.XXXXXX")"; mkdir -p "$py/proj"; git -C "$py/proj" init -q
+git -C "$px/proj" commit --allow-empty -qm init
+git -C "$py/proj" commit --allow-empty -qm init
+run "$gate" repo-key "$px/proj"
+keyx="$OUT"
+run "$gate" repo-key "$py/proj"
+keyy="$OUT"
+check_contains "dir #481: both same-basename repos still carry 'proj' cosmetically" "$keyx" "proj"
+check_contains "dir #481: both same-basename repos still carry 'proj' cosmetically" "$keyy" "proj"
+# check_ne (plain inequality), not check_absent (substring absence) — an earlier draft used
+# check_absent here on the theory that a substring-absence check is "equivalent to must differ" for
+# two single-line keys, which two independent /code-review delta-round passes both caught as false:
+# check_absent(keyx, keyy) fails whenever keyy is a substring ANYWHERE in keyx, not only on an exact
+# match, so two genuinely DISTINCT keys sharing a digit-run prefix (both repos here share the same
+# basename, so both keys share the "proj-" prefix too) could spuriously fail this check even though
+# the underlying keying is correct.
+check_ne "dir #481: two repos with the same basename resolve to DISTINCT repo-keys" "$keyx" "$keyy"
+
+# --- dir #481 review round: `_test_relevant_tree_hash`'s `$cwd` may resolve into a BARE repository
+# (found by two independent /code-review delta-round agents reviewing this ticket's own review-fix
+# commit) — `impact_claim_key`'s `git rev-parse --show-toplevel` requires a work tree and fails for a
+# bare repo, but `git ls-tree` needs no work tree and succeeds fine against the object database, so
+# without the `[ -n "$top" ] || return 1` guard, `top` stays empty and `testsdir` becomes the literal
+# absolute path "/tests" — probing the real host filesystem instead of failing closed. A bare repo
+# with a real commit (a tests/ dir + a test-referenced .md file, same shape as 80e), receipted from
+# INSIDE the bare repo itself. `new_bare_origin` (dir #64's own shared helper), not a hand-rolled
+# `git init --bare` + `git clone` — a third /code-review pass on this same test caught the manual
+# version hand-copying a bare-repo idiom this file already has twice (`push_named_remote`, below, and
+# `new_bare_origin` itself), including a dead `rm -rf` right after `mktemp -d` already gave it an
+# empty directory. ---------------------------------------------------------------------------------
+baresrc="$(mkrepo)"
+mkdir -p "$baresrc/tests"
+printf 'doc="$REPO_ROOT/tested.md"\n' > "$baresrc/tests/test_something.sh"
+printf 'stub\n' > "$baresrc/tested.md"
+git -C "$baresrc" add -A
+git -C "$baresrc" commit -q -m "add tests/ dir and a test-referenced doc"
+bare="$(new_bare_origin "$baresrc")"
+git -C "$baresrc" push -q origin "$(branch_raw_for "$baresrc")"
+baresha="$(git -C "$baresrc" rev-parse HEAD)"
+run_in "$bare" bash "$gate" init
+run_in "$bare" bash "$gate" receipt polish.3-tests "$baresha"
+check_contains "dir #481: polish.3-tests from a bare-repo cwd stamps the bare sha, not a bogus hash" \
+  "$(cat "$(sentinel_for "$bare")" 2>/dev/null)" "polish.3-tests	$baresha"
+check_absent "dir #481: ...never a colon-suffixed hash it can't honestly have computed there" \
+  "$(cat "$(sentinel_for "$bare")" 2>/dev/null)" "polish.3-tests	$baresha:"
 
 # --- dir #70: the independent-agent-review leg (SubagentStop trace + agent:<level> outcome) -------
 # Feeds a synthetic SubagentStop event to skill-trace. $1 = repo dir, $2 = agent_type, $3 = the
@@ -2176,6 +2228,44 @@ run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
 gate "gh pr create --fill" "$d"
 check_contains "dir #123: chmod-only change (same content) → still denied, not silently matched" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #123: denied for the unbound test run" "$OUT" "test suite"
+
+# 80h. dir #510 (F8): `_test_relevant_tree_hash`'s `testsdir` used to anchor on `$cwd/tests` — the
+# INVOCATION cwd, not the repo root — so from a subdirectory the exemption grep found no `tests/` at
+# all and EVERY `.md` file silently dropped out of the hash as exempt, even one a real test actually
+# references. Same fixture shape as 80e (`tested.md`'s basename IS referenced under `tests/`), but
+# BOTH the initial stamp AND the final comparison run with cwd = `$d/sub`, not `$d` — deliberately
+# symmetric (unlike 80f/80g, which only move the SECOND call to a nested cwd): if only the compare
+# step moved, the initial (correctly-computed-at-root) listing would ALWAYS structurally differ from a
+# buggy subdir recompute regardless of tested.md's content, denying for the wrong reason and passing
+# even on the unfixed code (caught live writing this fixture — the asymmetric version stayed green
+# against the reverted fix). Symmetric nested-cwd calls make the two BUGGY computations agree with
+# each other (both wrongly drop tested.md, so its edit is invisible) — the actual reported shape: two
+# commits differing in a test-relevant `.md` file hash IDENTICALLY.
+d="$(mkrepo)"
+mkdir -p "$d/tests" "$d/sub"
+printf 'doc="$REPO_ROOT/tested.md"\n' > "$d/tests/test_something.sh"
+printf 'stub\n' > "$d/tested.md"
+git -C "$d" add -A
+git -C "$d" commit -q -m "add tests/ dir and a test-referenced doc"
+write_full_receipt "$d/sub"
+gate "gh pr create --fill" "$d/sub"
+check_status "dir #510 setup: initial run, receipted from a nested cwd → exit 0" 0 "$STATUS"
+printf 'stub, edited\n' > "$d/tested.md"
+git -C "$d" add tested.md
+git -C "$d" commit -q -m "docs: edit the test-referenced doc"
+run_in "$d/sub" bash "$gate" init
+run_in "$d/sub" bash "$gate" receipt --recover
+run_in "$d/sub" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d/sub" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d/sub" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+# deliberately NOT re-writing polish.3-tests — the recovered receipt's tree-relevant hash must NOT
+# match, even though every call above (initial stamp AND this comparison) ran with cwd = the SAME
+# nested subdirectory of the repo, not its root. Unfixed: testsdir = "$d/sub/tests" doesn't exist in
+# EITHER computation, tested.md wrongly drops out of the hash both times, the two hashes wrongly
+# MATCH, and the gate unlocks with no fresh test run — this must deny instead.
+gate "gh pr create --fill" "$d/sub"
+check_contains "dir #510: test-relevant .md changed, gate invoked from a nested cwd → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #510: denied for the unbound test run" "$OUT" "test suite"
 
 # 81. dir #96: `--recover` itself keeps working. When HEAD has NOT moved, the recovered step-3 receipt
 # names the current sha, so the tests genuinely did run on this content — recovering is correct and
