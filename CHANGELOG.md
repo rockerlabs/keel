@@ -43,9 +43,9 @@ sections real content going forward — see that page for exactly when each one 
   migrated — the manager held every other 0.10.2 worker until this landed, so nothing was orphaned.
 - **`tools/pre-pr-gate.sh`'s `_test_relevant_tree_hash` anchored `testsdir` on the INVOCATION cwd, not
   the repo root, so from a subdirectory the exemption check found no `tests/` dir at all and every
-  `.md` file silently dropped out of the hash as if exempt — even one a real test references** (dir
-  #510 F8; found by dir #495's external-audit run 1, verified live). Two commits differing only in a
-  test-relevant `.md` file used to hash IDENTICALLY when computed from a nested cwd, so a stale
+  `.md` file silently dropped out of the hash as if exempt — even one a real test references**
+  (dir #510 F8; found by dir #495's external-audit run 1, verified live). Two commits differing only in
+  a test-relevant `.md` file used to hash IDENTICALLY when computed from a nested cwd, so a stale
   `polish.3-tests` receipt read as still bound. `testsdir` now anchors on `git rev-parse
   --show-toplevel` (the invoking worktree's own top, not `main_top_for`'s main-checkout redirection —
   `tests/` lives in the worktree being tested). `commands/polish.md` step 3 also stated the unlock
