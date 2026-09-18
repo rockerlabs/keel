@@ -149,9 +149,14 @@ awk -F/ '{ print $NF "\037" $0 }' "$tracked" > "$basemap"
 # Allowlist: one `<citing-path> <cited-token>` pair per line. Deliberately NOT keyed by the citing
 # line number — a line number in an exemption would drift under exactly the edits this check exists
 # to survive, which is the defect wearing the checker's own uniform.
+# Strips a trailing comment and keeps only well-formed two-field rows — the one parse both loading
+# the active allowlist below and the dir #497 staleness check further down share, rather than each
+# re-implementing it.
+parse_allow_pairs() { awk '{ sub(/#.*/, "") } NF == 2 { print $1, $2 }' "$1"; }
+
 : > "$allow"
 if [ -r "$allow_file" ]; then
-  awk '{ sub(/#.*/, "") } NF == 2 { print $1, $2 }' "$allow_file" > "$allow"
+  parse_allow_pairs "$allow_file" > "$allow"
   say "  allowlist: ${allow_file#"$repo_dir"/} ($(wc -l < "$allow" | tr -d '[:space:]') entry/entries)"
 else
   say "  allowlist: absent ($allow_file) — every citation is a hard failure"
@@ -184,10 +189,12 @@ resolve_tracked() {   # resolve_tracked PATH — prints the tracked path it name
 # two entries both resolve today (checked before shipping this), so it does not turn a clean run
 # red. Advisory only (WARN, never added to `forbidden`): an exemption that outlived its file is
 # debt to burn down, not evidence of a fresh violation in today's tree.
-stale_allow_entry() {   # stale_allow_entry PATH LABEL — WARNs on each entry whose citing or
-                         # cited path no longer resolves to a tracked file
-  local path="$1" label="$2" citing cited cited_file
-  [ -r "$path" ] || return 0
+stale_allow_pairs() {   # stale_allow_pairs LABEL — reads already-parsed "<citing> <cited>" pairs
+                         # from stdin (parse_allow_pairs's own output shape, which is also what
+                         # $allow already holds for the active file — fed straight in below rather
+                         # than re-parsed) and WARNs on each entry whose citing or cited path no
+                         # longer resolves to a tracked file.
+  local label="$1" citing cited cited_file
   while read -r citing cited; do
     [ -n "$citing" ] && [ -n "$cited" ] || continue
     cited_file="${cited%%:*}"
@@ -196,10 +203,12 @@ stale_allow_entry() {   # stale_allow_entry PATH LABEL — WARNs on each entry w
     elif [ -z "$(resolve_tracked "$cited_file")" ]; then
       echo "  WARN $label entry '$citing $cited': $cited_file is no longer tracked — stale exemption"
     fi
-  done < <(awk '{ sub(/#.*/, "") } NF == 2 { print $1, $2 }' "$path")
+  done
 }
-stale_allow_entry "$repo_dir/$ALLOW_REL" "default allowlist"
-[ "$allow_file" = "$repo_dir/$ALLOW_REL" ] || stale_allow_entry "$allow_file" "active allowlist"
+if [ -r "$repo_dir/$ALLOW_REL" ]; then
+  parse_allow_pairs "$repo_dir/$ALLOW_REL" | stale_allow_pairs "default allowlist"
+fi
+[ "$allow_file" = "$repo_dir/$ALLOW_REL" ] || stale_allow_pairs "active allowlist" < "$allow"
 
 scanned=0; forbidden=0
 
