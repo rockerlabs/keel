@@ -10,6 +10,7 @@
 . "$(dirname "$0")/lib.sh"
 
 install="$REPO_ROOT/install.sh"
+uninstall="$REPO_ROOT/uninstall.sh"
 doctor="$REPO_ROOT/tools/doctor.sh"
 gate_installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
 # Direct (non-comment) mention of the exact lib path, not just this file's header prose above: the
@@ -61,13 +62,76 @@ check_status "no .keeltmp litter after a fresh link install" "" "$OUT"
 # README.md into its first-ever manifest. record_placed() was previously only called inside the
 # write-once "doesn't exist yet" guard, so it silently and permanently missed this artifact on any
 # home where the file already existed at manifest-recording time.
-readme_upgrade_home="$SANDBOX/readme-upgrade-home"; mkdir -p "$readme_upgrade_home/keel"
-printf '# pre-existing README, not Keel-generated this run\n' > "$readme_upgrade_home/keel/README.md"
+# dir #512 (F13): install.sh resolves $link_dir to "$HOME_DIR/keel", and HOME_DIR defaults to
+# "$HOME/.claude" — the fixture used to write "$readme_upgrade_home/keel/README.md" (missing the
+# ".claude" hop), a path install.sh never looks at, so the write-once guard above always fired fresh
+# and this assertion passed for a reason unrelated to what it claims to test (it would have kept
+# passing with the dir-125 regression it names fully reverted). Fixed to the real resolved path.
+readme_upgrade_home="$SANDBOX/readme-upgrade-home"; mkdir -p "$readme_upgrade_home/.claude/keel"
+printf '# pre-existing README, not Keel-generated this run\n' > "$readme_upgrade_home/.claude/keel/README.md"
 fresh_home_env "$readme_upgrade_home"
 run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-hooks
 check_status "link install over a pre-existing keel/README.md -> exit 0" 0 "$STATUS"
 rman="$readme_upgrade_home/.claude/.keel/install-manifest.claude"
 check_contains "pre-existing keel/README.md still lands in the first manifest" "$(cat "$rman")" "artifact=file	keel/README.md	cksum:"
+
+# setup_readme_edit_home NAME — mkdir $SANDBOX/NAME, fresh --link install, then an adopter edit to
+# keel/README.md. Sets $readme_home/$readme_man/$readme_path/$original_readme_line (the manifest's own
+# `artifact=file keel/README.md ...` line, captured BEFORE the edit) for the caller to read right
+# after — shared by both dir #512 scenarios below, which differ only in what runs AFTER this setup.
+# Deliberately NOT named $man (a live global elsewhere in this file — set at A1, read again at A2 well
+# below; reusing it here silently clobbered A2's own checks the first time this was written, found
+# live before this landed) or $home (no such bare global exists today, but the short, generic name
+# invites a future collision the same way $man's did).
+setup_readme_edit_home() {
+  readme_home="$SANDBOX/$1"; mkdir -p "$readme_home"
+  fresh_home_env "$readme_home"
+  run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-hooks
+  check_status "$1: fresh link install -> exit 0" 0 "$STATUS"
+  readme_man="$readme_home/.claude/.keel/install-manifest.claude"
+  readme_path="$readme_home/.claude/keel/README.md"
+  original_readme_line="$(grep '^artifact=file	keel/README\.md	' "$readme_man")"
+  printf '\nADOPTER-EDIT: this line is mine, not Keel'"'"'s\n' >> "$readme_path"
+}
+
+# --- dir #512 (F10): the never-clobber rail for keel/README.md — an adopter's post-install edit must
+# survive a plain reinstall (the manifest keeps the ORIGINAL Keel-authored cksum, not a re-derive from
+# the now-edited disk bytes) AND survive uninstall (uninstall.sh's own cksum comparison then correctly
+# reads the file as drifted/"yours", never sweeps it) -----------------------------------------------
+setup_readme_edit_home readme-edit-home
+check_file "readme-edit-home: keel/README.md written" "$readme_path"
+
+run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-hooks
+check_status "readme-edit-home: reinstall after editing README.md -> exit 0" 0 "$STATUS"
+check_contains "reinstall over an edited README.md warns it differs and is kept" "$OUT" "keel/README.md differs from what Keel recorded — left untouched (yours)"
+reinstall_readme_line="$(grep '^artifact=file	keel/README\.md	' "$readme_man")"
+check_status "reinstall: README.md's RECORDED cksum is unchanged (not the adopter's edited bytes)" "$original_readme_line" "$reinstall_readme_line"
+check_contains "reinstall: the adopter's edit is still on disk after reinstall" "$(cat "$readme_path")" "ADOPTER-EDIT"
+
+run env "${FRESH_HOME_ENV[@]}" "$uninstall" --home "$readme_home/.claude" --yes
+check_status "readme-edit-home: uninstall -> exit 0" 0 "$STATUS"
+check_contains "uninstall reports README.md differs and is kept, not removed" "$OUT" "keel/README.md differs from what Keel installed — kept (yours)"
+check_file "uninstall: the adopter's edited README.md survives on disk" "$readme_path"
+check_contains "uninstall: the adopter's edit content survives" "$(cat "$readme_path")" "ADOPTER-EDIT"
+
+# --force explicitly re-takes ownership of a drifted README.md (the never-clobber principle's other
+# half: the default refuses, --force is the named remedy) — a SEPARATE home: uninstall.sh above takes
+# (backs up + removes) $this_manifest unconditionally whenever this_usable=1, whether or not every
+# artifact it names was actually removed (see its own "install-manifest housekeeping" comment) — so
+# the manifest above is already gone by this point, and a --force assertion chained onto that same
+# home would see prior_manifest_usable=0 (no prior record to re-take), not the drifted-ownership case
+# this is actually testing.
+setup_readme_edit_home readme-force-home
+
+run env "${FRESH_HOME_ENV[@]}" "$install" --link --force --no-hooks
+check_status "readme-force-home: install --force re-takes README.md ownership -> exit 0" 0 "$STATUS"
+check_contains "install --force reports README.md ownership re-taken" "$OUT" "keel/README.md ownership re-taken (--force)"
+forced_readme_line="$(grep '^artifact=file	keel/README\.md	' "$readme_man")"
+check_ne "install --force: README.md's recorded cksum now differs from the pre-edit original" "$original_readme_line" "$forced_readme_line"
+
+run env "${FRESH_HOME_ENV[@]}" "$uninstall" --home "$readme_home/.claude" --yes
+check_status "readme-force-home: uninstall after --force -> exit 0" 0 "$STATUS"
+check_nofile "uninstall after --force: the re-owned README.md is removed" "$readme_path"
 
 nogit_home="$SANDBOX/nogit-home"; mkdir -p "$nogit_home"
 fresh_home_env "$nogit_home"

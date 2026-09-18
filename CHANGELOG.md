@@ -109,6 +109,21 @@ sections real content going forward — see that page for exactly when each one 
   now disarms the logdir's EXIT-trap cleanup and prints the surviving directory's path; an all-pass
   run is unchanged and still cleans up. `tests/test_run_sh.sh` pins both the preserved-on-failure and
   cleaned-up-on-pass cases.
+- **`install.sh`'s unconditional `record_placed "$link_dir/README.md"` re-legitimized an ADOPTER's
+  post-install edit to `keel/README.md` as Keel-owned on the next install rerun, so a later
+  `uninstall` swept their customization** (F10), **and `tests/test_install_manifest.sh`'s
+  "pre-existing README survives into the first manifest" test built its fixture at the wrong path
+  (missing the `.claude` hop install.sh actually resolves to), so the assertion passed on a FRESH
+  file and would still have passed with the regression fully reverted** (F13; both found 2026-09-12
+  by dir #495's run 1 — the external OpenAI-Codex leg at 0396b4c) — dir #512. Fixed by routing
+  README.md's `record_placed` through the same prior-manifest checksum discipline
+  `keel_own_untouched` already gave `sync_product`'s own artifacts: a prior record now wins unless
+  `--force` says otherwise, so an edited README.md keeps its ORIGINAL Keel-authored cksum in the
+  manifest and correctly reads as drifted/"yours" on both a plain reinstall and `uninstall` (dir #323's
+  own upgrade case — a pre-existing unmanifested README entering its first manifest — still records
+  unconditionally, since there is no prior record yet to protect). The fixture path is corrected, and
+  a new install→edit→reinstall→uninstall cycle test proves the never-clobber rail, mutation-proven:
+  reverting `record_placed` to unconditional reddens six new assertions.
 
 ## [0.10.1] — 2026-09-15
 
