@@ -68,6 +68,14 @@ sections real content going forward — see that page for exactly when each one 
   condition backwards ("touched nothing exempt" where the hash actually means "touched only exempt
   files", F17) — reworded, with a pin in `tests/test_rails_honesty.sh` guarding both the corrected
   wording and the retired phrasing's absence.
+- **`tests/run.sh` deleted its per-file failure logs unconditionally on exit, so a one-off local
+  failure left nothing behind to inspect afterward** (dir #480, differential-diagnosis work; the
+  underlying env-sensitivity discrepancy itself did not reproduce across five runs today — one solo,
+  three concurrent self-invocations, and a subagent-sandbox run, all under live wave-2 concurrency —
+  and is closed as a recorded not-reproduced, per the ticket's own acceptance clause). A failing run
+  now disarms the logdir's EXIT-trap cleanup and prints the surviving directory's path; an all-pass
+  run is unchanged and still cleans up. `tests/test_run_sh.sh` pins both the preserved-on-failure and
+  cleaned-up-on-pass cases.
 
 ## [0.10.1] — 2026-09-15
 
