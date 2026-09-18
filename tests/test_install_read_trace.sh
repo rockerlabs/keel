@@ -127,4 +127,34 @@ run "$installer" --uninstall "$erepo"
 check_status "--uninstall -> exit 0" 0 "$STATUS"
 check_contains "the unrelated empty Notification array survives uninstall" "$(cat "$erepo/.claude/settings.json")" '"Notification"'
 
+# --- regression (dir #514): a checkout path containing an apostrophe must still produce a hook command
+# the shell can parse and run. Before the fix, $rt was spliced into `"bash '" + $rt + "'"` by hand — a
+# checkout at `~/Alex's checkout/keel` produced `bash 'Alex's checkout/…'`, an unterminated quote
+# ("unexpected EOF while looking for matching quote"), and every wired hook silently broke. A disposable
+# copy of the checkout (never $REPO_ROOT itself) under an apostrophe-bearing dir name, .git stripped (no
+# git functionality needed from the fixture, same convention test_install.sh uses).
+apck="$SANDBOX/Alex's checkout/keel"
+mkdir -p "$(dirname "$apck")"
+cp -r "$REPO_ROOT" "$apck"
+rm -rf "$apck/.git"
+aprepo="$(new_repo)"
+run "$apck/tools/install-read-trace.sh" "$aprepo"
+check_status "install from an apostrophe-bearing checkout path -> exit 0" 0 "$STATUS"
+apcmd="$(jq -r '.hooks.SessionEnd[0].hooks[0].command' "$aprepo/.claude/settings.json")"
+# The apostrophe is escaped (`'\''`), so the raw path never appears as one contiguous substring in
+# $apcmd — let the shell that will actually run this command do the unescaping (the real proof: not a
+# hand-rolled unescaper, the same word-splitting the hook runner itself performs), and compare its
+# argv[1] against the real, unescaped path.
+apargv=()
+eval "apargv=($apcmd)"
+check_status "the escaped command's argv resolves back to the real (unescaped) path" \
+  "$apck/tools/read-trace.sh" "${apargv[1]}"
+printf '%s\n' "$apcmd" > "$SANDBOX/apostrophe-command.sh"
+run bash -n "$SANDBOX/apostrophe-command.sh"
+check_status "the generated command parses (bash -n)" 0 "$STATUS"
+# The "hook fires" half, not just "parses": actually run it, the way Claude Code's hook runner would —
+# session-end reads a JSON blob on stdin and exits 0 on a fresh sandbox with no session log (jq present).
+run bash -c "printf '{}' | $apcmd"
+check_status "the generated command actually runs (the hook fires)" 0 "$STATUS"
+
 summary

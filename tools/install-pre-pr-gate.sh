@@ -66,6 +66,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 gate="$repo_root/tools/pre-pr-gate.sh"
+# gate_sh — $gate with every embedded `'` doubled into `'\''` (dir #514), for the ONE place $gate is
+# spliced into a shell command string by hand rather than through jq's `@sh` (print_snippet below,
+# the no-jq fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, done in
+# bash since this path must work without jq at all.
+gate_sh="${gate//\'/\'\\\'\'}"
 
 # A temp bootstrap clone (bootstrap.sh's `${TMPDIR:-/tmp}/keel.XXXXXX/keel`, reaped on exit) is not a
 # checkout to point hooks at — they'd dangle within moments. This script is never invoked BY bootstrap
@@ -198,20 +203,20 @@ print_snippet() {
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash '$gate'" }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash '$gate_sh'" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$gate' rollout-check" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$gate_sh' rollout-check" }] }
     ],
     "PostToolUse": [
-      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] },
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] },
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] }
     ],
     "UserPromptExpansion": [
-      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] }
     ],
     "SubagentStop": [
-      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash '$gate' skill-trace" }] }
+      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash '$gate_sh' skill-trace" }] }
     ]
   }
 }
@@ -244,13 +249,18 @@ fi
 # $gate is single-quoted WITHIN the command string itself (not just JSON-escaped, which jq already does
 # for the string as a whole) — a checkout path containing a space would otherwise split into two argv
 # tokens when Claude Code's hook runner passes this string to a shell, silently no-op'ing every hook.
+# Quoted via jq's own `@sh` (dir #514) — NOT a hand-rolled `"'\''" + $gate + "'\''"` splice: that form
+# wraps $gate in single quotes but never escapes one IF $gate itself contains one, so a checkout path
+# with an apostrophe (an adopter's real home directory, not just a hypothetical) produced a command
+# with an unterminated quote ("unexpected EOF while looking for matching quote") and every wired hook
+# silently broke. `@sh` produces a shell-safe single-quoted token, escaping any embedded `'` as `'\''`.
 hook_specs="$(jq -n --arg gate "$gate" '[
-  {event: "PreToolUse",         matcher: "Bash",           command: ("bash '\''" + $gate + "'\''")},
-  {event: "SessionStart",       matcher: "startup",        command: ("bash '\''" + $gate + "'\'' rollout-check")},
-  {event: "PostToolUse",        matcher: "Skill",          command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash '\''" + $gate + "'\'' skill-trace")},
-  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash '\''" + $gate + "'\'' skill-trace")}
+  {event: "PreToolUse",         matcher: "Bash",           command: ("bash " + ($gate|@sh))},
+  {event: "SessionStart",       matcher: "startup",        command: ("bash " + ($gate|@sh) + " rollout-check")},
+  {event: "PostToolUse",        matcher: "Skill",          command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")}
 ]')"
 
 # _backup_settings SETTINGS — a timestamped copy before any destructive edit; sets $backup. Shared by

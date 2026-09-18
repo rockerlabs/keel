@@ -35,6 +35,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 rt="$repo_root/tools/read-trace.sh"
+# rt_sh — $rt with every embedded `'` doubled into `'\''` (dir #514), for the ONE place $rt is spliced
+# into a shell command string by hand rather than through jq's `@sh` (print_snippet below, the no-jq
+# fallback — a heredoc can't call a jq filter). Same escaping jq's `@sh` performs, done in bash since
+# this path must work without jq at all.
+rt_sh="${rt//\'/\'\\\'\'}"
 
 tmpdir_base="${TMPDIR:-/tmp}"; tmpdir_base="${tmpdir_base%/}"
 case "$repo_root" in
@@ -135,13 +140,13 @@ print_snippet() {
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Edit|Write|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "bash '$rt' log-tool" }] }
+      { "matcher": "Edit|Write|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "bash '$rt_sh' log-tool" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$rt' startup" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash '$rt_sh' startup" }] }
     ],
     "SessionEnd": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash '$rt' session-end" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "bash '$rt_sh' session-end" }] }
     ]
   }
 }
@@ -170,10 +175,15 @@ if [ -f "$settings" ]; then
   fi
 fi
 
+# Quoted via jq's own `@sh` (dir #514) — NOT a hand-rolled `"'\''" + $rt + "'\''"` splice: that form
+# wraps $rt in single quotes but never escapes one IF $rt itself contains one, so a checkout path with
+# an apostrophe produced a command with an unterminated quote ("unexpected EOF while looking for
+# matching quote") and every wired hook silently broke. `@sh` produces a shell-safe single-quoted
+# token, escaping any embedded `'` as `'\''`.
 hook_specs="$(jq -n --arg rt "$rt" '[
-  {event: "PostToolUse",  matcher: "Edit|Write|NotebookEdit|Read", command: ("bash '\''" + $rt + "'\'' log-tool")},
-  {event: "SessionStart", matcher: "startup",                      command: ("bash '\''" + $rt + "'\'' startup")},
-  {event: "SessionEnd",   matcher: "",                             command: ("bash '\''" + $rt + "'\'' session-end")}
+  {event: "PostToolUse",  matcher: "Edit|Write|NotebookEdit|Read", command: ("bash " + ($rt|@sh) + " log-tool")},
+  {event: "SessionStart", matcher: "startup",                      command: ("bash " + ($rt|@sh) + " startup")},
+  {event: "SessionEnd",   matcher: "",                             command: ("bash " + ($rt|@sh) + " session-end")}
 ]')"
 
 _backup_settings() { backup="$1.$(date -u +%Y%m%dT%H%M%SZ).bak"; cp "$1" "$backup"; }

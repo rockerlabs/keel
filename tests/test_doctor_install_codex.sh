@@ -41,8 +41,10 @@ check_contains "still names the finding" "$OUT" "G-RAILS-MISSING"
 
 # --- (d) mode/home mismatch: doctor --install (no --codex) at a codex-only home must NOT advise the
 # plain `install.sh` re-run — following that advice would create dir #124's both-modes-in-one-home.
-# It must instead redirect to the correctly-moded re-run.
-check_contains "the mismatch redirects to --codex" "$OUT" "doctor.sh --install --codex --home \"$cxhome\""
+# It must instead redirect to the correctly-moded re-run. Positional, not `--home` (dir #513: doctor's
+# own parser has no `--home` flag — home is a bare positional arg — so the redirect must carry the
+# home the same way a bare `doctor.sh --install --codex DIR` would, or following it exits 2).
+check_contains "the mismatch redirects to --codex" "$OUT" "doctor.sh --install --codex \"$cxhome\""
 # (a check_absent for the plain "run install.sh --home ..." form was dropped here — with the
 # cautionary clause NAMING that exact command as the thing NOT to run, the substring appears in the
 # CORRECT message too, making a naive check_absent either vacuous or a false failure; the positive
@@ -54,13 +56,25 @@ check_contains "the mismatch redirects to --codex" "$OUT" "doctor.sh --install -
 # a hard stop right after the redirect keeps it from firing) — so the audit stops at the one finding.
 check_absent "the audit stops there — no cascading wrong-mode findings" "$OUT" "W-CMDS-MISSING"
 
+# --- (d2) regression (dir #513): the advised command must actually WORK, not just read plausibly.
+# Before the fix, this line spliced `--home "DIR"` — install.sh's flag, not doctor.sh's — into a
+# `doctor.sh --install` recommendation; doctor's own parser has no `--home`, so following the advice
+# verbatim exited 2 ("unknown option"). Extract the advised command from the gap text itself (rather
+# than re-typing it by hand, which would only re-check the test author's assumption) and run it for
+# real.
+advised="$(printf '%s\n' "$OUT" | grep -o 'doctor\.sh --install --codex "[^"]*"')"
+[ -n "$advised" ] || { echo "  FAIL  could not extract the advised command from the gap text" >&2; exit 1; }
+# shellcheck disable=SC2086  # word-splitting is the point: turning the extracted text back into argv
+eval "run \"\$doctor\" ${advised#doctor.sh }"
+check_status "the advised command from the gap text actually runs (dir #513)" 0 "$STATUS"
+
 # --- (e) the reverse mismatch: --codex pointed at a Claude-only home ---------------------------------
 clhome="$SANDBOX/claude-healthy/.claude"
 run "$install" --home "$clhome" --no-hooks
 check_status "claude install for the reverse-mismatch fixture -> exit 0" 0 "$STATUS"
 run "$doctor" --install --codex "$clhome"
 check_status "doctor --install --codex at a Claude-only home -> exit 1 (GAP)" 1 "$STATUS"
-check_contains "the reverse mismatch redirects to dropping --codex" "$OUT" "doctor.sh --install --home \"$clhome\""
+check_contains "the reverse mismatch redirects to dropping --codex" "$OUT" "doctor.sh --install \"$clhome\""
 # (same reasoning as case (d) above for why no check_absent is added here.)
 
 # --- (f) default home leaf: bare --codex with no positional arg resolves ~/.codex, not ~/.claude -----
@@ -97,11 +111,12 @@ check_contains "the fix advises a bare --codex re-run" "$OUT" "install.sh --code
 check_absent "and never advises --link, which --codex can't combine with" "$OUT" "install.sh --link"
 
 # --- (h) regression (operator-run /code-review, step 5 of /polish): the mismatch redirect's advised
-# --home flag must be computed against the OTHER mode's default, not this mode's — a Claude-mode install
-# placed (via an explicit --home, forgetting --codex) at exactly the .codex DEFAULT leaf makes THIS
-# mode's own ihome_flag come out empty (ihome == idefault for --codex), but the redirect recommends
-# DROPPING --codex, and a bare `doctor.sh --install` (no --codex, no --home) resolves to ~/.claude, not
-# ~/.codex — so the un-suffixed advice would point at the wrong, unrelated (likely empty) directory.
+# home argument must be computed against the OTHER mode's default, not this mode's — a Claude-mode
+# install placed (via an explicit --home, forgetting --codex) at exactly the .codex DEFAULT leaf makes
+# THIS mode's own ihome_flag come out empty (ihome == idefault for --codex), but the redirect recommends
+# DROPPING --codex, and a bare `doctor.sh --install` (no --codex, no positional home) resolves to
+# ~/.claude, not ~/.codex — so the un-suffixed advice would point at the wrong, unrelated (likely empty)
+# directory. Positional, not `--home` (dir #513: doctor's own parser has no `--home` flag).
 mismatch_home="$SANDBOX/mode-coincidence-home"
 mkdir -p "$mismatch_home"
 fresh_home_env "$mismatch_home"; mc_env=("${FRESH_HOME_ENV[@]}")
@@ -109,7 +124,7 @@ run env "${mc_env[@]}" "$install" --home "$mismatch_home/.codex" --no-hooks
 check_status "Claude-mode install placed at the .codex default leaf -> exit 0" 0 "$STATUS"
 run env "${mc_env[@]}" "$doctor" --install --codex
 check_status "doctor --install --codex (bare) finds the Claude install sitting at ~/.codex -> exit 1" 1 "$STATUS"
-check_contains "the redirect carries --home naming the actual home" "$OUT" "doctor.sh --install --home \"$mismatch_home/.codex\""
+check_contains "the redirect carries the home positionally, naming the actual home" "$OUT" "doctor.sh --install \"$mismatch_home/.codex\""
 check_absent "not the bare, home-less form that would land at the wrong (unrelated) ~/.claude" \
   "$OUT" "doctor.sh --install (running"
 
