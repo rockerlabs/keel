@@ -17,6 +17,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`docs/grooming.md` — three amendments from the second `/groom` run on an adopter project (a
+  knowledge-base backlog, 2026-09-18), under the self-revision clause.** G0: the dormancy case has a
+  second flavour — a fresh plan that produced zero starts (six band-less, unordered themes; the
+  backlog's diff since the previous groom pure insertion) — the check is the slate-row diff plus
+  where the sessions went; both candidate causes (allocation, plan shape) are named with allocation
+  as the likelier primary; the remedy is a numbered, bounded, ordered first batch PLUS one list of
+  every operator decision the batches need, asked in the groom itself; the next groom's first
+  question is "did it start, and how many decisions were made"; the no-band answer (G5) is per cycle
+  and pains (G1) are re-verified live every groom (a rule; no remover). G2: when the previous groom
+  read every body and the diff since is enumerable, the body-read duty concentrates (touched /
+  closed / moved / re-examined tickets in full) but the PREMISE check on unchanged bodies does not
+  carry — two closable-or-drifted tickets were found on unchanged bodies — and the plan states the
+  diff and the rule applied (a rule; no remover). G9: a backlog whose heading forms are mixed uses
+  the plan table as the assignment source with a both-ways reconciliation as the census substitute,
+  and names the ticket that owns where a ticket lives (a compensation; the adopter's own KB.118).
+
 - **`docs/grooming.md` — two amendments from the 0.10.2 groom's G0 retro (self-revision clause).** G5:
   a value claim's SUBJECT SET is derived from its defining source by ticket token and diffed against
   the slate, residue stated by number — the v0.11.0 and v0.10.1 G6 rounds each returned a value claim
@@ -54,6 +70,14 @@ sections real content going forward — see that page for exactly when each one 
   wording and the retired phrasing's absence.
 - **`tools/doctor.sh`'s mode-mismatch advice spliced a literal `--home "DIR"` into a `doctor.sh --install [--codex]` recommendation, but doctor's own parser has no `--home` flag (home is positional) — following the advice verbatim exited 2** (dir #513; found 2026-09-12 by dir #495's external OpenAI-Codex audit run 1, verified live). Two sites carried the same defect (the mode-mismatch redirect, and the two corrupted-lib error messages advising a re-run after re-cloning); all four now carry the home positionally instead. A regression test extracts the advised command from the gap text itself and runs it for real, red-then-green against the unfixed code.
 - **`tools/install-pre-pr-gate.sh` and `tools/install-read-trace.sh` spliced the checkout path into the generated hook command as `"bash '" + $path + "'"` with no escaping, so a checkout under a path with an apostrophe produced an unterminated quote and every wired hook silently broke** (dir #514; found 2026-09-12 by dir #495's external OpenAI-Codex audit run 1, verified live). Both writers of the JSON (jq's own program, and the no-jq heredoc fallback) now quote the path safely — jq's `@sh` filter for the former, hand-rolled `'\''`-doubling for the latter (a heredoc can't call a jq filter). A fixture checkout under an apostrophe-bearing directory name proves the generated command's argv round-trips to the real path and actually runs.
+- **`tests/run.sh` deleted its per-file failure logs unconditionally on exit, so a one-off local
+  failure left nothing behind to inspect afterward** (dir #480, differential-diagnosis work; the
+  underlying env-sensitivity discrepancy itself did not reproduce across five runs today — one solo,
+  three concurrent self-invocations, and a subagent-sandbox run, all under live wave-2 concurrency —
+  and is closed as a recorded not-reproduced, per the ticket's own acceptance clause). A failing run
+  now disarms the logdir's EXIT-trap cleanup and prints the surviving directory's path; an all-pass
+  run is unchanged and still cleans up. `tests/test_run_sh.sh` pins both the preserved-on-failure and
+  cleaned-up-on-pass cases.
 
 ## [0.10.1] — 2026-09-15
 
