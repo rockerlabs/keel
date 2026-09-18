@@ -56,7 +56,11 @@ check_contains "the toy repo is a real git repo" "$(git -C "$repo" rev-parse --i
 # thing standing between a bug in that hashing and two canary sessions silently sharing one sentinel.
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-2" bash "$canary" setup
 repo2="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-2")"
-check_absent "two setup runs get different toy-repo basenames (no shared /tmp sentinel)" "$(basename "$repo2")" "$(basename "$repo")"
+# check_ne (exact inequality), not check_absent (substring absence, dir #481's own review round
+# found and fixed this exact weakness for a sibling assertion in tests/test_pre_pr_gate.sh): two
+# distinct basenames sharing a common prefix could otherwise make one a substring of the other and
+# spuriously fail this check even though the underlying basenames are genuinely different.
+check_ne "two setup runs get different toy-repo basenames (no shared /tmp sentinel)" "$(basename "$repo2")" "$(basename "$repo")"
 
 # --- check before any run: reports the miss, non-zero exit -----------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" check

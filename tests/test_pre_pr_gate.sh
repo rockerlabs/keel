@@ -936,17 +936,19 @@ check_ne "dir #481: two repos with the same basename resolve to DISTINCT repo-ke
 # without the `[ -n "$top" ] || return 1` guard, `top` stays empty and `testsdir` becomes the literal
 # absolute path "/tests" — probing the real host filesystem instead of failing closed. A bare repo
 # with a real commit (a tests/ dir + a test-referenced .md file, same shape as 80e), receipted from
-# INSIDE the bare repo itself. -----------------------------------------------------------------------
-bare="$(mktemp -d "$SANDBOX/dir481-bare.XXXXXX")"; rm -rf "$bare"
-git init -q --bare "$bare"
-baresrc="$(mktemp -d "$SANDBOX/dir481-baresrc.XXXXXX")"
-git clone -q "$bare" "$baresrc" 2>/dev/null
+# INSIDE the bare repo itself. `new_bare_origin` (dir #64's own shared helper), not a hand-rolled
+# `git init --bare` + `git clone` — a third /code-review pass on this same test caught the manual
+# version hand-copying a bare-repo idiom this file already has twice (`push_named_remote`, below, and
+# `new_bare_origin` itself), including a dead `rm -rf` right after `mktemp -d` already gave it an
+# empty directory. ---------------------------------------------------------------------------------
+baresrc="$(mkrepo)"
 mkdir -p "$baresrc/tests"
 printf 'doc="$REPO_ROOT/tested.md"\n' > "$baresrc/tests/test_something.sh"
 printf 'stub\n' > "$baresrc/tested.md"
 git -C "$baresrc" add -A
-git -C "$baresrc" commit -q -m init
-git -C "$baresrc" push -q origin HEAD:refs/heads/main
+git -C "$baresrc" commit -q -m "add tests/ dir and a test-referenced doc"
+bare="$(new_bare_origin "$baresrc")"
+git -C "$baresrc" push -q origin "$(branch_raw_for "$baresrc")"
 baresha="$(git -C "$baresrc" rev-parse HEAD)"
 run_in "$bare" bash "$gate" init
 run_in "$bare" bash "$gate" receipt polish.3-tests "$baresha"
