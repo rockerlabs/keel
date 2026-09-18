@@ -587,13 +587,26 @@ _test_relevant_tree_hash() {
   # a subdirectory (a `/polish` session working from, or a `gh pr create` hook firing with, a nested
   # cwd) used to build "$cwd/tests", which doesn't exist there, so the `[ -d "$testsdir" ]` guard below
   # failed and EVERY `.md` file silently dropped out of the hash as if exempt — even one a real test
-  # references. `--show-toplevel` (the WORKTREE's own top, deliberately not `main_top_for`'s main-
-  # checkout redirection — dir #72's own "don't re-fork" precedent aside, `tests/` lives in the
-  # worktree being tested, not necessarily the main checkout) resolves the same `tests/` dir regardless
-  # of which subdirectory `$cwd` names. No `$cwd`-itself fallback if `$cwd` isn't a repo at all: the
-  # `ls-tree` call right below shares the exact same not-a-repo condition and already fails first in
-  # that case, so `$testsdir` is never read unresolved.
-  top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
+  # references. THIS worktree's own top, deliberately not `main_top_for`'s main-checkout redirection —
+  # dir #72's own "don't re-fork" precedent aside, `tests/` lives in the worktree being tested, not
+  # necessarily the main checkout — resolves the same `tests/` dir regardless of which subdirectory
+  # `$cwd` names. `impact_claim_key` (tools/lib/impact-store.sh, already sourced above) is exactly this
+  # resolution, already used the same way at this file's own dir #251 `log_event` call site instead of
+  # a second hand-copy of the git invocation — reused here rather than re-forking it inline (a hand-copy
+  # is what dir #251 replaced there for the identical reason).
+  # **Explicit empty-`$top` guard, not "the `ls-tree` call below already fails first" (an earlier
+  # revision assumed exactly that and was wrong — found live by this ticket's own high-effort review):**
+  # `impact_claim_key`'s `git rev-parse --show-toplevel` requires a WORK TREE and fails for `$cwd`
+  # inside a bare repository, but `git ls-tree` needs no work tree at all and can still succeed against
+  # a bare repo's object database — so the two calls do NOT share one not-a-repo condition. Without this
+  # guard, a bare-repo `$cwd` would leave `top` empty, `testsdir` would become the literal absolute path
+  # `/tests`, and `[ -d "$testsdir" ]` would probe the real host filesystem instead of failing closed —
+  # reintroducing this exact ticket's own bug for that one input shape. No caller today invokes this
+  # function with a bare-repo `$cwd` (every real caller's cwd comes from a live session's own working
+  # directory or `$PWD`, both of which imply a work tree), so this guard closes a latent gap rather than
+  # an observed one — cheap enough to close outright rather than leave as a documented residual.
+  top="$(impact_claim_key "$cwd")"
+  [ -n "$top" ] || return 1
   testsdir="$top/tests"
   listing="$(git -C "$cwd" ls-tree -r --full-tree --format='%(objectmode) %(objectname) %(path)' "$sha" 2>/dev/null)" || return 1
   {
@@ -832,9 +845,12 @@ _gate_ledger_candidates() {
 # dir #481 (found live by dir #376's own /design pass): the basename ALONE used to be the whole key —
 # `~/x/proj` and `~/y/proj` both reduced to "proj" and shared one sentinel/prev-sentinel/trace/hand-off.
 # The basename never disambiguates two checkouts of the same project name under different parents, so
-# the FULL main-top path now feeds a hash appended to it — strictly FINER than basename alone (it can
-# only ever separate two runs that used to share a key, never merge two that were already distinct),
-# so it can't weaken what dir #58/#61 hardened. The basename prefix stays purely cosmetic (a human
+# the FULL main-top path now feeds a hash appended to it — strictly FINER than basename alone: two
+# DIFFERENT basenames always still key differently (the prefix alone guarantees that, no hash
+# involved), so this can never MERGE two runs that were already distinct — it can only ever separate
+# two that used to share a key, and does so unless their full paths happen to collide under the same
+# 32-bit-CRC tolerance `_receipt_key_hash` below already accepts for (repo, branch) keys. Either way
+# it can't weaken what dir #58/#61 hardened. The basename prefix stays purely cosmetic (a human
 # glancing at /tmp can still tell which project a file belongs to); only the hash half is load-bearing.
 # Split into two functions so a caller that ALREADY resolved the main-top path (hook mode's $main_top,
 # dir #88's own reuse discipline) can get the identical key without forking main_top_for a second time.
@@ -2082,7 +2098,11 @@ if [ ! -f "$sentinel" ]; then
     # AND branch (_receipt_key_for, dir #80), so "a different repo/checkout" isn't the only alternate
     # explanation for "no receipt on file" — the SAME checkout on a different branch than the one
     # /polish actually ran on misses the same way. An earlier draft named only the cross-repo case.
-    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$wt' on branch '$resolved_branch' specifically — the sentinel is keyed by repo AND branch, so besides a DIFFERENT repo or checkout than this session's own tracked working directory, this can also mean /polish completed on a different BRANCH in this same checkout: $(_cwd_key_note).)"
+    # dir #481 (found by this ticket's own /code-review high pass): `$wt` is the load-bearing key —
+    # `basename-hash` — not a display string; quoting it verbatim here would show the operator a
+    # confusing hash suffix where a plain repo name used to read. `basename "$main_top"` recovers the
+    # same clean name the OLD message showed, purely for this one human-facing sentence.
+    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$(basename "$main_top")' on branch '$resolved_branch' specifically — the sentinel is keyed by repo AND branch, so besides a DIFFERENT repo or checkout than this session's own tracked working directory, this can also mean /polish completed on a different BRANCH in this same checkout: $(_cwd_key_note).)"
   fi
 fi
 

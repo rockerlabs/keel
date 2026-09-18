@@ -920,11 +920,12 @@ run "$gate" repo-key "$py/proj"
 keyy="$OUT"
 check_contains "dir #481: both same-basename repos still carry 'proj' cosmetically" "$keyx" "proj"
 check_contains "dir #481: both same-basename repos still carry 'proj' cosmetically" "$keyy" "proj"
-if [ "$keyx" != "$keyy" ]; then
-  pass "dir #481: two repos with the same basename resolve to DISTINCT repo-keys"
-else
-  fail "dir #481: two repos with the same basename resolve to DISTINCT repo-keys" "both resolved to '$keyx' — the basename-only collision this ticket exists to fix"
-fi
+# check_absent(haystack, needle) fails exactly when needle is a substring of haystack — for two
+# single-line hash-suffixed keys this is equivalent to "must differ" (an exact match is trivially a
+# full-string "substring"), same idiom test_pipeline_canary.sh's "two setup runs get different
+# toy-repo basenames" check already uses for the same shape of assertion, one line instead of a
+# hand-rolled if/pass/fail.
+check_absent "dir #481: two repos with the same basename resolve to DISTINCT repo-keys" "$keyx" "$keyy"
 
 # --- dir #70: the independent-agent-review leg (SubagentStop trace + agent:<level> outcome) -------
 # Feeds a synthetic SubagentStop event to skill-trace. $1 = repo dir, $2 = agent_type, $3 = the
