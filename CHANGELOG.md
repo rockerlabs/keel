@@ -46,6 +46,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/lib/backlog-blocks.sh`'s closure vocabulary did not recognise `✅ FIXED`** (dir #581): the
+  0.10.2 release manager wrote it on all 17 fixed slate headings, and every consumer of the shared
+  scanner read them as still open. `BB_CLOSURE_TAG_PATTERN` now includes `FIXED`;
+  `docs/release-management.md` R8 points closing writers at the constant instead of a second,
+  hand-copied word list; and a new `bb_closure_word_ok` checks a candidate marker against the
+  constant at write time, so the next unlisted word is refused there rather than found by the next
+  census.
 - **`tools/self/pool-report.sh` sees three of the readiness scale's five grades** (dir #463): `R4`
   and `R0` had no `case` arm at all and fell into `unmarked` alongside genuinely ungraded tickets —
   the two grades a drain planner most needs to tell apart. The extractor is also loosened from the
