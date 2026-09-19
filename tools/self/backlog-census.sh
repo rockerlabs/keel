@@ -122,27 +122,31 @@ while IFS=$'\t' read -r start end closed heading_block; do
 
   id="$(bb_own_ticket_num "$heading_block")"
   if [ -z "$id" ]; then
-    id="$(grep -oE '^### [0-9]+\.' <<< "$heading_block" | head -1 | grep -oE '[0-9]+' || true)"
+    # A legacy `### <n>.` heading has no `dir #N` of its own (bb_own_ticket_num's own documented
+    # contract) — one native bash regex test for its bare leading numeral, same style as
+    # bb_own_ticket_num itself, instead of a two-stage grep pipeline.
+    [[ "$heading_block" =~ ^###\ ([0-9]+)\. ]] && id="${BASH_REMATCH[1]}"
   fi
   [ -n "$id" ] || id="?"
 
   tag_id_pairs+=("$tag"$'\t'"$id")
 done < <(backlog_ticket_blocks "$backlog_file")
 
-if [ -n "$list_tag" ]; then
-  # bash 3.2 empty-array guard (dir #204's own trap): expanding "${arr[@]}" on a still-empty
-  # array throws "unbound variable" under `set -u` instead of iterating zero times.
-  if [ "${#tag_id_pairs[@]}" -gt 0 ]; then
-    for pair in "${tag_id_pairs[@]}"; do
-      [ "${pair%%$'\t'*}" = "$list_tag" ] && printf '%s\n' "${pair#*$'\t'}"
-    done
-  fi
+# bash 3.2 empty-array guard (dir #204's own trap): expanding "${arr[@]}" on a still-empty array
+# throws "unbound variable" under `set -u` instead of iterating zero times. One guard covers both
+# branches below rather than each repeating it.
+if [ "${#tag_id_pairs[@]}" -eq 0 ]; then
   exit 0
 fi
 
-if [ "${#tag_id_pairs[@]}" -gt 0 ]; then
-  printf '%s\n' "${tag_id_pairs[@]}" | cut -f1 | sort | uniq -c \
-    | sort -k1,1rn -k2,2 | awk '{print $1"\t"$2}'
+if [ -n "$list_tag" ]; then
+  for pair in "${tag_id_pairs[@]}"; do
+    [ "${pair%%$'\t'*}" = "$list_tag" ] && printf '%s\n' "${pair#*$'\t'}"
+  done
+  exit 0
 fi
+
+printf '%s\n' "${tag_id_pairs[@]}" | cut -f1 | sort | uniq -c \
+  | sort -k1,1rn -k2,2 | awk '{print $1"\t"$2}'
 
 exit 0
