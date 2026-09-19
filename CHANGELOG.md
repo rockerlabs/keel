@@ -193,7 +193,19 @@ sections real content going forward — see that page for exactly when each one 
   allowlist entry — there is no principled single baseline to fall back to there either (the true
   pre-force-push remote state is exactly what's unreachable), so this is accepted as safe
   over-blocking rather than an oversight, pinned by a new `tests/test_ci_secret_scan.sh` case instead
-  of left an untested gap. The shared same-change message ("ignoring an allowlist entry new in this
+  of left an untested gap. **A second limitation, found by an in-session cross-model (Gemini) second
+  opinion and confirmed live:** the boundary union only credits an entry that existed OUTSIDE the whole
+  pushed range — an entry that arrives INSIDE the range via a merge, even one that genuinely predates
+  the secret it exempts on the branch it came from, is invisible to it. Concretely: `main` legitimately
+  adds an allowlist entry in one commit and, in a LATER commit, the secret it exempts (each individually
+  clean against its own push-time baseline); a feature branch then `git merge origin/main`s both commits
+  in together and pushes — the merge brings the pair INSIDE the range rather than leaving the entry at a
+  boundary, so the otherwise-legitimate push still BLOCKS. Not a security hole (fail CLOSED, never a
+  bypass — the same review confirmed forging a boundary commit isn't possible), but a real false-block
+  this baseline-snapshot design doesn't close; a correct fix needs per-commit provenance (walking each
+  flagged blob's own introducing commit's ancestry, not one whole-range snapshot) — a materially larger
+  change than this ticket's scope, tracked as a follow-up and pinned by a new regression fixture rather
+  than left untested. The shared same-change message ("ignoring an allowlist entry new in this
   change") is reworded from "this staged change" since it now fires for `--range` too, where nothing
   is staged.
 - **`tools/lib/dir-tickets.sh`'s 500-ticket range cap and its three documented

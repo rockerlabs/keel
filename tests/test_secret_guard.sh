@@ -961,4 +961,30 @@ tip="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" "$scan" --range "$oldtip..$tip"
 check_status "dir #518: merge-before-push (2+ boundary commits) — same-range entry still untrusted → BLOCKED" 1 "$STATUS"
 
+# (3) disclosed limitation, found by an in-session cross-model (Gemini) second opinion, pinned here:
+# an entry that arrives INSIDE the pushed range via a merge — even one that genuinely predates the
+# secret it exempts on the branch it came from — is invisible to the boundary union and still reads
+# as new-this-push. `main` legitimately adds an allowlist entry (clean push) and, in a LATER commit,
+# the secret it exempts (also clean against main's own baseline, since the entry already predates it
+# there); `feature` then `git merge origin/main`s both commits in together and pushes. Not a security
+# hole (fail CLOSED, never a bypass), but a real false-block this ticket's baseline-snapshot design
+# doesn't close — a correct fix needs per-commit provenance, tracked as a follow-up, not attempted
+# here. Pinned so this stays a known, tested limitation rather than a silent surprise.
+repo="$(new_repo)"
+git -C "$repo" checkout -qb main
+git -C "$repo" commit -q --allow-empty -m root
+git -C "$repo" checkout -qb feature
+git -C "$repo" commit -q --allow-empty -m F1
+oldtip="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" checkout -q main
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "main: add allowlist entry (clean push)"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "main: add the key the entry already exempts (clean push)"
+git -C "$repo" checkout -q feature
+git -C "$repo" merge -q --no-edit main
+tip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$oldtip..$tip"
+check_status "dir #518 (disclosed limitation): an entry+secret pair merged in together from main still BLOCKS, even though each was individually clean on main's own push — pinned, not a security bug (fail-closed)" 1 "$STATUS"
+
 summary

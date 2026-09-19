@@ -703,6 +703,22 @@ esac
 # is accepted, not an oversight — safe (over-blocking on an already-rare force-push, never a silent
 # pass), never silently unaccounted for.
 #
+# **A FOURTH, disclosed limitation, found by an in-session cross-model (Gemini) second opinion and
+# confirmed live (pinned by tests/test_secret_guard.sh):** the boundary snapshot only credits an entry
+# that existed OUTSIDE the whole pushed range — an entry that arrives INSIDE the range via a merge, even
+# one that genuinely predates (in an earlier commit, on the branch it came from) the secret it exempts,
+# is invisible to this union the same way a same-change entry is, and reads as new-this-push. Concretely:
+# `main` legitimately adds an allowlist entry in one commit and the secret it exempts in a LATER commit
+# (each individually clean against ITS OWN push-time baseline); a feature branch then `git merge
+# origin/main`s both commits in together and pushes — the merge brings the entry-then-secret pair INSIDE
+# the range rather than leaving the entry at a boundary, so it's still read as new-this-push and the
+# otherwise-legitimate push BLOCKS. Not a security hole (fail CLOSED, never a bypass — confirmed by the
+# same cross-model review: forging a boundary commit is not possible, `git rev-list --boundary`'s output
+# is exactly git's own excluded frontier), but a real, deeper limitation this baseline-snapshot design
+# doesn't close: a correct fix needs PER-COMMIT provenance (walking each flagged blob's own introducing
+# commit's ancestry for the matching entry, not one whole-range snapshot), which is a materially larger
+# change than this ticket's own scope — tracked as a follow-up, not attempted here.
+#
 # Still gated on the allowlist file existing too (a records hit with no .secret-scan-allow at all has
 # nothing for a baseline to gate — the shared compare block below never reads these either way).
 if [ -n "${rng:-}" ] && [ -f "$ALLOW_FILE" ]; then
