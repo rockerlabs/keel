@@ -293,6 +293,18 @@ the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanical
 does nothing of the kind; a session told to "harvest" can run that script and believe the duty
 discharged.)*
 
+**A `ticket-next` finding is filed `→ pool` by default, never straight into the next release's tag
+(operator decision 2026-09-20, at the 0.11.0 groom).** The exceptions are the two dispositions that
+already carry their own urgency — `fix-before-tag` (fixed in this run) and a behavioural finding the
+verdict names as such (the manager may slate it, saying so on the heading). Everything else waits for
+the next groom's body read: [`docs/grooming.md`](grooming.md) G4's "re-examine on merit" is the gate a
+ticket passes to enter a slate, and a manager filing nine audit tickets into the next tag on the day of
+the cut bypasses it — the 0.10.2 close did exactly that and the following groom found the drain it was
+supposed to size at 29 tickets against a plan of 14, six of them carrying an `R2` written at filing
+(the audit itself grades nothing) that the backlog's legend reads as design-owed. The 0.10.2 run's
+staged-tickets file already carried a `Suggested tag: → pool` line of its own; this paragraph is where
+the rule lives, and a run's staging file states that line every time.
+
 **Why the timing moved here at all.** One run paid for it twice over (2026-09-08; find its records by
 the audit directory named for the range it covered, not by counting rows in a gitignored record no
 adopter can read). Its `run-record.md` deferred the cross-run append to "the FINAL verdict, before the

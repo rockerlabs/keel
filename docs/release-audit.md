@@ -180,9 +180,11 @@ chance. Placed here, not in `publishing-checklist.md` §4, because §4 only star
 cut — by then this same PR has already merged and restating the figure would need a second PR.)*
 
 **Also before that PR lands, run the closed-ticket archive-sweep check and the pool report** —
-`tools/self/archive-sweep-check.sh` and `tools/self/pool-report.sh --record <the version being cut>`
-— and read their output, not just their exit code: both always exit 0 (advisory only) and warn on
-stderr instead. This is the mechanical trigger dir #359 filed after `BACKLOG.md` was found holding
+`tools/self/archive-sweep-check.sh` and `tools/self/pool-report.sh` (**read-only here — no `--record`:
+the pool history's release key belongs to the groom alone, by operator decision 2026-09-20 — see
+[`docs/grooming.md`](grooming.md) G4 for the measurement behind it; `dir #461` carries the rest**) — and
+read their output, not just their exit code: both always exit 0 (advisory only) and warn on stderr
+instead. This is the mechanical trigger dir #359 filed after `BACKLOG.md` was found holding
 227 closed tickets across 63% of its lines with nothing scheduling the sweep dir #353 eventually had
 to run by hand; and the pool census dir #360 filed once the `→ pool` lane became nameable at all.
 Neither check touches `BACKLOG.md` — a WARN above the archive-sweep threshold (default 40% closed

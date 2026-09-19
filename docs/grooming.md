@@ -79,6 +79,15 @@ otherwise forbids, so it is a **compensation with a named end**: `dir #459` owns
 candidate shapes, deliberately not chosen here. Until it lands, check whether a rotation has happened
 since the previous release and say which cycle your figures are from.
 
+**Rotation is this phase's own closing step: once the aggregate is read and both figures recorded,
+run the tool's `rotate` subcommand and record the archive suffix and the new cycle boundary in this
+groom's run record (dir #543, applied 2026-09-20).** The order it obeys is
+[`docs/release-management.md`](release-management.md) R9's; what that paragraph lacked was an owner on the
+right side of the order — the tool's own header assigned the step to the release manager, the one role
+the order forbids — so on one adopter the live cycle spanned four releases and on keel three before any
+groom ran it. `dir #459` (a tool that reads a rotated cycle) stays the alternative — one or the other,
+never both.
+
 **The wrap-loss figure measures STEP COMPLIANCE, not persistence — check it against persistence
 evidence before reading it as a habit (measured 2026-09-15 on an adopter project, and on keel the same
 week).** The fuse's `wrapped` outcome hangs on a model-remembered stamp at the very end of the wrap
@@ -150,6 +159,24 @@ run 2 on exactly this evidence, so the groom re-asks when the evidence says the 
 nothing; and G1's pains are re-verified live at every groom rather than carried, because a pain ten
 days old is still a pain only if the check that felt it still fails (that run re-ran the doctor and
 the blockers' tags before ranking anything).
+
+**The third flavour — applies only when the previous cycle's delivery was a SPEC, not a release; a
+groom after a shipped release skips this paragraph (adopter run 3, 2026-09-19; dir #560, applied
+2026-09-20).** A design session that closes the slate's one
+design-gated item changes the slate's *shape* without moving a single tag: it absorbs another ticket's
+remainder (that ticket still reads as a build item), it ends with a list of follow-ups "to file at close"
+(none of which is a ticket yet), and it reserves one or two decisions to the operator that nobody has
+asked. The groom that follows is **narrow by construction and says so** — it absorbs the spec's outcome
+into the release row (PR cut, model line, the spec's own acceptance numbers as the value claim),
+re-examines the absorbed ticket's tag with evidence (closes-with-X or re-tag, never a silent carry), files
+or drops-with-reason every item on the spec's follow-up list (G4(d) below), and asks the spec's operator
+decisions in the groom itself. It re-orders nothing by taste: G1's answer on such a groom is almost always
+"no new pain", and the doc's rule for that case applies unchanged. The G0 question for the groom after
+*that* one is "did the batch's first item start" — a spec that sits a second cycle unstarted is the second
+flavour again, with the plan-shape cause ruled out. **The same duty applies when a release cycle ALSO
+produced specs** (keel's 0.10.2 cycle ran a six-session design fleet beside the release): every spec
+folded since the previous groom gets its follow-up list triaged under G4(d), whether or not the cycle
+shipped code.
 
 **Every amendment that compensates for a defect names the ticket that will remove it.** A retro's
 natural output is a rule telling every future cycle to work around something — and a rule is the most
@@ -313,12 +340,12 @@ settled fact.
   the groom and quote THAT output**, not the one the recording produced.
   **Ordering is the compensation; the defect is that the record cannot be corrected — and it has a
   second half nobody had noticed.** Where a release-audit procedure ALSO records under the release
-  being cut (keel's does), the two calls collide on the same idempotent key and the later one is a
-  silent no-op. Measured on this project: every row in its pool history was written by a groom and none
-  by a cut, so the series a drain trigger reads is "pool size at groom time", and the cut-side call has
-  never produced a row in its life. **Decide which side owns the key, and say so in BOTH docs** — a
-  question this ordering rule cannot answer, because the two writers are different sessions on
-  different days. `dir #461` owns both halves: a correctable record, and the key's owner.
+  being cut (keel's did, until 2026-09-20), the two calls collide on the same idempotent key and the
+  later one is a silent no-op. Measured on this project: every row in its pool history was written by a
+  groom and none by a cut, so the series a drain trigger reads is "pool size at groom time", and the
+  cut-side call never produced a row in its life. **Decided (operator, 2026-09-20 at the 0.11.0 groom):
+  the GROOM owns the key** — matching what every row already recorded; `docs/release-audit.md`'s cut
+  step now runs the report read-only. `dir #461`'s remaining half is the correctable record.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
@@ -353,6 +380,15 @@ owner, never become anything:
   currently owns; this procedure is the "periodically" that gets an owner.
 - **(c) Closed audit-run directories.** Confirmed at G0 above, not repeated here as a separate step —
   see G0's own paragraph, which states it in full so a compressed read of this section cannot drop it.
+- **(d) A spec's own follow-up list** (dir #560, applied 2026-09-20). A design session's spec routinely
+  ends with "out of scope / follow-ups to file at close" — a deferred filing that assumes the
+  *implementing* session will do bookkeeping at the moment (`/polish` → PR → close) it is least likely
+  to, and that R8 centralizes away from workers in a managed release anyway. Any groom that runs between
+  a spec and its implementation triages that list the same way as (a)–(c): each item becomes a ticket
+  (with its re-open trigger on the row), a cross-write into the ticket that already owns it, or a drop
+  with a one-line reason — and the spec's list is then annotated "all filed" so the implementer files
+  nothing. The first groom to do this found six items on one spec: three tickets, three cross-writes,
+  zero drops.
 
 ## G5 — every release row, five fields
 
@@ -363,7 +399,10 @@ what a project's own cost-measurement work has already put on disk (where that w
 claim** stated plainly enough to be wrong in public. Design economics — the cost of the cycle's design
 sessions against how often a spec is accepted as first submitted — is a **report field**, not a new
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
-make once more than one data point exists.
+make once more than one data point exists. **The design-session flow produces no cost figure yet**,
+so this field records the absence, per cycle (first adopter data point: *cost unmeasured, spec
+accepted first-submitted, ~30 min prototype wall time*; keel's 2026-09-18 fleet left six specs with
+none) — a compensation whose remover is `dir #561` (dir #560 A3, applied 2026-09-20).
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
 consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not
