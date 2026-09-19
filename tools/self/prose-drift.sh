@@ -313,10 +313,12 @@ _url_decode() {
 # positive risk this approximation would otherwise carry (an em dash is also >= 0x80) is moot in
 # practice: an em-dash-only heading already slugs identically here and on GitHub (both strip it), so an
 # anchor built from one never reaches this check in the first place — only a genuine non-ASCII LETTER
-# (or an as-yet-unseen punctuation mark the two sluggers disagree on) does. `$'[\x80-\xff]'` is the same
-# raw-byte bracket-range idiom already proven cross-platform (GNU/BSD/busybox) in tools/public-audit.sh
-# and tools/secret-guard/secret-scan.sh's own Cyrillic-detection passes — LC_ALL=C keeps grep comparing
-# raw bytes instead of decoding multi-byte UTF-8 under the shell's own locale.
+# (or an as-yet-unseen punctuation mark the two sluggers disagree on) does. `$'[\x80-\xff]'` under
+# LC_ALL=C is the same shape of idiom (a bash ANSI-C-quoted `$'[\xNN-\xNN]'` byte range fed to grep,
+# with LC_ALL=C keeping grep comparing raw bytes instead of decoding multi-byte UTF-8 under the shell's
+# own locale) already proven cross-platform (GNU/BSD/busybox) by tools/public-audit.sh and
+# tools/secret-guard/secret-scan.sh's own Cyrillic-detection passes — narrower ranges there
+# (`[\xd0-\xd3][\x80-\xbf]`, a specific two-byte UTF-8 lead/continuation pair), not this exact range.
 _has_nonascii_byte() {   # _has_nonascii_byte STRING
   LC_ALL=C grep -q $'[\x80-\xff]' <<< "$1"
 }
