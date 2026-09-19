@@ -10,6 +10,11 @@
 # tickets at its 2026-09-03 baseline are an instance of this rule, not the rule itself):
 #   - a heading block carrying a `⛔` (blocked) marker, or
 #   - a heading block naming an explicit unblocking condition ("explicit gate", "gate = ...").
+# This count is BY RULE only — it does not also exclude R0 ("not an agent session", dir #463):
+# widening it would silently redefine a figure the growth trigger's own history is built from.
+# An R0 ticket not being drainable by a session is a different fact from being parked by rule;
+# dir #463 (which added the R0 grade below) chose to leave this figure's contract alone rather
+# than fold R0 into it, per that ticket's own explicit pre-decision.
 #
 # The two-consecutive-minors growth trigger (dir #360's own point of the ticket): fires when
 # the pool size has strictly grown across the last two RECORDED releases and again into this
@@ -18,13 +23,27 @@
 # BACKLOG.md, untracked (KB-snapshot-backed the same way BACKLOG.md itself is) — never in the
 # tracked tree, so no backlog state leaks into the public repo.
 #
+# R-level split (dir #463): the readiness scale has five grades (R4 spec-ready · R3 scope clear
+# · R2 needs a design pass · R1 parked by a gate · R0 not an agent session) — a heading's own
+# grade is read from the LAST `— R<digit>` on the heading block, matched loosely (stopping at
+# the digit, so a qualifier suffix like "— R2, needs a design pass —" or a qualifier glued to
+# the digit like "— R1-parked —" both still read). Heading first; when no heading match exists,
+# a body-stated `Readiness: RN` counts too (operator decision, 2026-09-20 — the cost of the
+# second scan over the ticket's body span is accepted). `unmarked` means only "no grade found
+# either place this tool looks" — a ticket carrying no grade at all, not a ticket whose grade
+# this tool failed to parse.
+#
 # Usage:
-#   tools/self/pool-report.sh [--record RELEASE] [--history PATH] [BACKLOG_PATH]
+#   tools/self/pool-report.sh [--record RELEASE [--amend]] [--history PATH] [BACKLOG_PATH]
 #   tools/self/pool-report.sh -h | --help
 #
 # --record RELEASE appends this run's pool size to the history file tagged with RELEASE,
 # unless a row for that release already exists (idempotent re-runs). Without --record, the
 # report is computed and printed but nothing is written — safe to run any number of times.
+# --amend (dir #461, requires --record) makes the release key a CORRECTABLE record: last-write-
+# wins on that one release's row instead of the idempotent-once skip — the plain --record call
+# stays idempotent by default, so its header contract above is unchanged; --amend is the
+# explicit opt-in for the session that discovers its own earlier reading went stale.
 #
 # BACKLOG_PATH defaults to the MAIN checkout's BACKLOG.md, resolved the same way
 # tools/self/doctor.sh's check 5 does (dir #135). The history file defaults to
@@ -46,25 +65,30 @@ repo_root="$(cd "$self_dir/../.." && pwd)"
 record_release=""
 history_arg=""
 backlog_arg=""
+amend=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --record)
       [ $# -ge 2 ] || { echo "pool-report: --record needs a release value" >&2; exit 2; }
       record_release="$2"; shift 2 ;;
     --record=*) record_release="${1#*=}"; shift ;;
+    --amend) amend=1; shift ;;
     --history)
       [ $# -ge 2 ] || { echo "pool-report: --history needs a path" >&2; exit 2; }
       history_arg="$2"; shift 2 ;;
     --history=*) history_arg="${1#*=}"; shift ;;
     -h|--help)
       cat <<'EOF'
-Usage: pool-report.sh [--record RELEASE] [--history PATH] [BACKLOG_PATH]
+Usage: pool-report.sh [--record RELEASE [--amend]] [--history PATH] [BACKLOG_PATH]
 
-Reports the `→ pool` lane's size, oldest entry's age, R-level split, and the count
-excluding structurally-parked tickets (dir #360). With --record RELEASE, appends this
-run's pool size to the untracked history file (default: POOL-HISTORY.jsonl beside
+Reports the `→ pool` lane's size, oldest entry's age, R-level split (R4/R3/R2/R1/R0,
+read from a ticket's heading first and a body-stated `Readiness: RN` second), and the
+count excluding structurally-parked tickets (dir #360). With --record RELEASE, appends
+this run's pool size to the untracked history file (default: POOL-HISTORY.jsonl beside
 BACKLOG.md) tagged with that release, unless a row for it already exists, and reports
 whether the two-consecutive-minors growth trigger fires against recorded history.
+--amend (requires --record) makes that one release's row correctable: last-write-wins
+instead of the idempotent-once skip (dir #461).
 EOF
       exit 0 ;;
     -*)
@@ -74,6 +98,9 @@ EOF
       backlog_arg="$1"; shift ;;
   esac
 done
+
+[ "$amend" = "1" ] && [ -z "$record_release" ] \
+  && { echo "pool-report: --amend requires --record" >&2; exit 2; }
 
 if [ -n "$backlog_arg" ]; then
   backlog_file="$backlog_arg"
@@ -99,12 +126,11 @@ today_epoch="$(date -u +%s)"
 
 pool_size=0
 parked_count=0
-r1=0; r2=0; r3=0; runmarked=0
+r4=0; r3=0; r2=0; r1=0; r0=0; runmarked=0
 oldest_age=-1
 oldest_id="unlabeled"
 
 while IFS=$'\t' read -r start end closed heading_block; do
-  : "$start" "$end"  # body span unused here; block detection alone gives us the heading
   [ "$closed" = "1" ] && continue
 
   # FINDING-CA3-1 (v0.9.0 RC audit, CA3 round), now via the dir #426 shared helper: `—
@@ -143,11 +169,30 @@ while IFS=$'\t' read -r start end closed heading_block; do
 
   pool_size=$((pool_size + 1))
 
-  rlvl="$(grep -oE '— R[0-9] —' <<< "$heading_block" | tail -1 | grep -oE 'R[0-9]' || true)"
+  # dir #463, second half: loosened from the strict `— R[0-9] —` shape (which missed a grade
+  # already on the heading whenever a qualifier sits next to the digit) to `— R[0-9]`, stopping
+  # at the digit and leaving whatever follows — a qualifier SUFFIX ("— R2, needs a design
+  # pass —") and a qualifier glued straight onto the digit ("— R1-parked —") both now read,
+  # without re-typing either live heading into the stricter form (which would silently delete
+  # the qualifier prose that carries why the grade is what it is).
+  rlvl="$(grep -oE '— R[0-9]' <<< "$heading_block" | tail -1 | grep -oE 'R[0-9]' || true)"
+  if [ -z "$rlvl" ]; then
+    # Heading first, body second (operator decision, 2026-09-20): a ticket that carries no
+    # grade on its heading at all may still state one in prose, `**Readiness: RN**` — two named
+    # legacy tickets do exactly this. Scanned only when the heading match above is empty, so the
+    # common case (grade on the heading) never pays for the extra pass over the body span.
+    rlvl="$(sed -n "${start},${end}p" "$backlog_file" \
+      | grep -oE 'Readiness:[[:space:]]*R[0-9]' | tail -1 | grep -oE 'R[0-9]' || true)"
+  fi
+  # dir #463, first half: R4 ("spec-ready") and R0 ("not an agent session") used to have no arm
+  # at all and fell into `unmarked` alongside genuinely ungraded tickets — the two grades a
+  # drain planner most needs to tell apart from each other, and from "no grade yet".
   case "$rlvl" in
-    R1) r1=$((r1 + 1)) ;;
-    R2) r2=$((r2 + 1)) ;;
+    R4) r4=$((r4 + 1)) ;;
     R3) r3=$((r3 + 1)) ;;
+    R2) r2=$((r2 + 1)) ;;
+    R1) r1=$((r1 + 1)) ;;
+    R0) r0=$((r0 + 1)) ;;
     *) runmarked=$((runmarked + 1)) ;;
   esac
 
@@ -236,7 +281,7 @@ if [ "$oldest_age" -ge 0 ]; then
 else
   echo "  oldest entry:                   no dated entry found"
 fi
-echo "  R-level split:                  R1=$r1 R2=$r2 R3=$r3 unmarked=$runmarked"
+echo "  R-level split:                  R4=$r4 R3=$r3 R2=$r2 R1=$r1 R0=$r0 unmarked=$runmarked"
 echo "  excluding structurally-parked:  $((pool_size - parked_count)) (of $pool_size; $parked_count parked by rule: blocked or explicit-gate)"
 
 n="${#prev_sizes[@]}"
@@ -259,7 +304,19 @@ fi
 
 if [ -n "$record_release" ]; then
   if [ -f "$history_file" ] && grep -qF "\"release\":\"$record_release\"" "$history_file" 2>/dev/null; then
-    echo "  history:                        $record_release already recorded in $history_file — not re-appended"
+    if [ "$amend" = "1" ]; then
+      # dir #461, half 2: the plain call stays idempotent-once (the header's own contract,
+      # unchanged) — --amend is the explicit opt-in that makes THIS release's row correctable,
+      # last-write-wins, without touching any other release's row in the file.
+      amend_tmp="$(mktemp "${history_file}.XXXXXX")"
+      grep -vF "\"release\":\"$record_release\"" "$history_file" > "$amend_tmp" 2>/dev/null || true
+      mv "$amend_tmp" "$history_file"
+      printf '{"release":"%s","date":"%s","pool_size":%s}\n' \
+        "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size" >> "$history_file"
+      echo "  history:                        amended ($history_file)"
+    else
+      echo "  history:                        $record_release already recorded in $history_file — not re-appended (--amend corrects it)"
+    fi
   else
     mkdir -p "$(dirname "$history_file")" 2>/dev/null || true
     printf '{"release":"%s","date":"%s","pool_size":%s}\n' \
