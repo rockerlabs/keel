@@ -605,7 +605,8 @@ references.** Applies to:
 
 **Why:** floating versions break builds silently when upstream releases a new version; pinned versions make
 builds reproducible and failures explicit. (`doctor` flags floating image `:latest` tags and major-only
-Action `@vN` tags — a managed `*-latest` CI runner label is *not* flagged, it's a recommended alias.)
+Action `@vN` tags — a managed `*-latest` CI runner label is *not* flagged, a known limit of the check, not
+an endorsement of the label: the rule above still asks you to pin it.)
 
 ---
 

@@ -770,6 +770,14 @@ Steps, in order:
 9. **Open the PR.** After the gate passes, run `gh pr create --head <branch>` — **the `--head` flag is
    mandatory, not optional**: the gate keys its receipt by branch (dir #80), and the hook's event cwd may
    not be your worktree, so a bare `gh pr create` can resolve the wrong branch (or none) and false-deny.
+   **Write every receipt in its own Bash call, and invoke `gh pr create` alone in the next one — never in
+   the same command line** (dir #487): the PreToolUse hook inspects the command TEXT for `gh pr create`
+   *before* any of it runs, so a receipt write chained ahead of `gh pr create` on one line has not
+   happened yet when the gate evaluates it — the gate denies against the sentinel as it stood before the
+   line, the receipt write never runs, and the deny reads as a gate defect rather than what it is. **A
+   `gh pr create` that then fails for a NON-gate reason — a bad `--body-file` path, a worktree's `.git`
+   being a file — still spends the receipt chain**, even right after a genuine pass; re-`init` and
+   re-receipt rather than assume the failure was free.
    Compose the title and body from the implementation context (what changed, why, a test plan). **If
    `<keel-checkout>/tools/read-trace.sh` exists (dir #387, opt-in — silent no-op otherwise), include the
    line `bash <keel-checkout>/tools/read-trace.sh docs-line` prints, verbatim, in the PR body** — a

@@ -196,6 +196,52 @@ sections real content going forward — see that page for exactly when each one 
   of left an untested gap. The shared same-change message ("ignoring an allowlist entry new in this
   change") is reworded from "this staged change" since it now fires for `--range` too, where nothing
   is staged.
+- **Two prose contradictions the external Codex leg caught and the drydock verifier confirmed**
+  (dir #516; found by dir #495's run 1 — the external OpenAI-Codex leg at 0396b4c, verified live in
+  a sandbox). (F15) `README.md`'s pre-PR-gate section still said the built-in reviewer is
+  "model-invocation-disabled by design" and that `/polish` only ever falls back to a subagent —
+  stale since dir #254 lifted that restriction; `commands/polish.md` and `docs/getting-started.md`
+  already said `/polish` attempts the real `/code-review` pass directly first, falling back only on
+  refusal. README's sentence now matches. (F16) `FRAMEWORK.md` stated two policies for one choice:
+  L602 forbids `ubuntu-latest` as a pinning example, L608 called a managed `*-latest` CI runner
+  label "a recommended alias" that `doctor` doesn't flag. Operator decision (2026-09-18): keep the
+  pinning rule; the "recommended alias" endorsement is gone, replaced with the honest statement that
+  `doctor`'s silence on runner labels is a known limit of the check, not an endorsement — the rule
+  still asks you to pin. `tools/doctor.sh`'s own H-DEP-FLOATING comment carried the same rejected
+  "not a pinnable artifact" framing (found by this ticket's own `/simplify` pass — two independent
+  cleanup agents converged on it); reworded to match. `tests/test_rails_honesty.sh` gained five pins
+  covering both doc fixes, mutation-proven (reverting either file reddens its pins).
+- **`commands/polish.md` step 9 never warned that chaining a receipt write ahead of `gh pr create` on
+  ONE Bash command line lets the PreToolUse hook's `gh pr create` text match fire before the receipt
+  write has run, so the gate denies against the pre-write sentinel and the receipt is silently
+  skipped — read by the session as a gate defect** (dir #487; felt 4x on this machine before being
+  promoted from personal memory to the shipped doc). Step 9 now carries a one-paragraph caution:
+  write every receipt in its own Bash call, invoke `gh pr create` alone in the next one, and note that
+  a `gh pr create` failing for a NON-gate reason (a bad `--body-file`, a worktree's `.git` being a
+  file) still spends the receipt chain. `tests/test_rails_honesty.sh` pins both sentences.
+- **`tests/test_pre_pr_gate.sh` test 107 asserted the deny output contained the literal `dir #376`
+  tag — the message's own ticket citation, not the chain-survival behaviour under test — so the
+  assertion would pass on any deny carrying that tag regardless of whether the chain actually
+  survived** (dir #491; found by the 0.10.0 RC delta audit, ACCEPTED ticket-next). Replaced with an
+  assertion bound to the "chain is intact" wording `_deny_intact` emits; the adjacent `check_file`
+  sentinel-survival assertion already carries the real behavioural claim. Mutation-proven: making the
+  review-trace-missing deny retire the chain again (routing it through `_deny_discarded`) reddens both
+  the reworded assertion and the sentinel check.
+- **`tools/self/doctor.sh`'s `fn_open_re()` header now records its own known residual** (dir #490;
+  found 2026-09-11 by the 0.10.0 RC delta audit, adjudicated ACCEPTED ticket-next): the widened regex
+  can match a bare `fn()` line reproduced verbatim inside a heredoc body or a multi-line string
+  literal, producing a false "drifted"/duplicate GAP — loud, never a silent OK, and no file in the
+  tree triggers it today. No regex change; the honest remedy (tracking heredoc/quote state in a
+  bash-3.2 `grep -E`/`awk` pipeline) costs more than the residual, so it's left alone until a real
+  instance appears.
+- **`tests/test_self_doctor.sh`'s comment-line-opener fixture dropped a decorative sed mutation its
+  own comment admitted "changes nothing about the outcome"** (dir #492; found by the same audit): the
+  check reports "could not be verified" for that opener shape unconditionally, since `extract_fn_body`
+  returns an empty body on both sides regardless of whether the two real bodies match or drift, so a
+  mutated body proved nothing the identical-body case didn't already prove. The fixture now commits a
+  plain body-identical canonical + fallback pair, same as the other opening-shape fixtures beside it,
+  and the comment states plainly what the assertions guard instead of implying a discrimination they
+  never made.
 
 ## [0.10.1] — 2026-09-15
 
