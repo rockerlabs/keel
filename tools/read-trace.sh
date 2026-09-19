@@ -39,13 +39,18 @@
 #                                     up next session. See the wrap-fuse section below for the full
 #                                     exclusion logic (read-only sessions, DELEGATION RUN and WRAP
 #                                     CENTRALIZED workers).
-#   read-trace.sh docs-line [dir]    Shell helper for /wrap and /polish — the ONLY thing that may enter
-#                                     a context: the short `docs read: ...` line, derived from the
-#                                     ephemeral log (never the agent reading the raw log itself).
-#   read-trace.sh wrap-done [dir]    Called once, at the end of /wrap's own persist step
-#                                     (commands/wrap.md) — stamps this (repo,branch)'s completion so
-#                                     `session-end` can tell "wrapped after the last mutation" from
-#                                     "mutated, never wrapped".
+#   read-trace.sh docs-line [--wrap] [dir]  Shell helper for /wrap and /polish — the ONLY thing that
+#                                     may enter a context: the short `docs read: ...` line, derived
+#                                     from the ephemeral log (never the agent reading the raw log
+#                                     itself). `--wrap` (dir #523), either position: also stamps this
+#                                     (repo,branch)'s wrap completion as a side effect of this SAME
+#                                     call — commands/wrap.md passes it from /wrap's own persist step;
+#                                     /polish never does.
+#   read-trace.sh wrap-done [dir]    Standalone fallback for the same stamp `docs-line --wrap` folds
+#                                     in (dir #523's shape (c)) — a manual stamp, or a composing
+#                                     wrapper that calls this directly instead. Marks this
+#                                     (repo,branch)'s completion so `session-end` can tell "wrapped
+#                                     after the last mutation" from "mutated, never wrapped".
 #   read-trace.sh aggregate [dir]    Tier-2 aggregator TOOL — prints the small table (FORMAT below);
 #                                     the raw log never crosses into any context, only this does.
 #   read-trace.sh rotate [dir]       Release-boundary log rotation (manual, not auto-wired — run by the
@@ -87,8 +92,9 @@ Usage:
   read-trace.sh log-tool           PostToolUse(Read|Edit|Write|NotebookEdit) hook (silent)
   read-trace.sh startup            SessionStart(startup) hook (silent unless a wrap-fuse flag is pending)
   read-trace.sh session-end        SessionEnd hook (silent)
-  read-trace.sh docs-line [dir]    the "docs read: ..." line for /wrap and /polish
-  read-trace.sh wrap-done [dir]    stamp this (repo,branch)'s /wrap completion
+  read-trace.sh docs-line [--wrap] [dir]  the "docs read: ..." line for /wrap and /polish; --wrap also
+                                    stamps this (repo,branch)'s /wrap completion as a side effect
+  read-trace.sh wrap-done [dir]    stamp this (repo,branch)'s /wrap completion (standalone fallback)
   read-trace.sh aggregate [dir]    the tier-2 small table (dir #386 /groom G0's input)
   read-trace.sh rotate [dir]       archive the persistent logs at a release boundary
   read-trace.sh -h | --help
@@ -183,11 +189,15 @@ case "${1:-}" in
     # SessionEnd (any end reason) — silent by construction (see `startup`'s own comment on why: this
     # event's stdout reaches nobody). Writes state only.
     command -v jq >/dev/null 2>&1 || exit 0
-    # One jq call for both fields, reading stdin directly (same one-call-per-field-set discipline as
+    # One jq call for all fields, reading stdin directly (same one-call-per-field-set discipline as
     # log-tool and pre-pr-gate.sh's own skill-trace — this used to be two separate jq invocations,
-    # found by this ticket's own /simplify efficiency pass).
-    IFS=$'\x1f' read -r se_cwd se_transcript <<<"$(jq -r '[(.cwd // ""), (.transcript_path // "")] | join("")' 2>/dev/null)"
+    # found by this ticket's own /simplify efficiency pass). session_id (dir #523): the hook's stdin
+    # JSON carries it snake_case, same convention as every other field this file reads off that JSON
+    # (cwd, tool_name, transcript_path) — confirmed against this session's own live hook traffic, not
+    # just the docs, per this ticket's own lead #3.
+    IFS=$'\x1f' read -r se_cwd se_transcript se_session_id <<<"$(jq -r '[(.cwd // ""), (.transcript_path // ""), (.session_id // "")] | join("")' 2>/dev/null)"
     [ -n "$se_cwd" ] || se_cwd="$PWD"
+    se_key="$se_session_id"; [ -n "$se_key" ] || se_key="$(_rt_key "$se_cwd")"
     se_slog="$(_rt_session_log "$se_cwd")"
     # Exclusion 1 — read-only session: no mutating row at all means nothing for the fuse to flag.
     se_last_mutate="$( [ -f "$se_slog" ] && awk -F'\t' '$2=="mutate"{t=$1} END{print t}' "$se_slog" 2>/dev/null )"
@@ -207,21 +217,42 @@ case "${1:-}" in
     # bespoke strings invented for this file — a future rewording of either worker-brief template would
     # silently break its own exclusion with no shared constant to catch it (same risk named for
     # `DELEGATION RUN` at this ticket's own original implementation, now doubled).
-    # Scoped to the transcript's OPENING BYTES, NOT the whole file (found by this ticket's own
+    # Scoped to the transcript's OPENING TURNS, NOT the whole file (found by this ticket's own
     # /code-review high pass): a bare whole-transcript grep would misclassify any ordinary session
     # that later reads/edits/discusses this very file (its own source and this comment literally
     # contain both marker strings), silently excluding it from the fuse whose entire job is catching
-    # exactly a mutating session that forgot to wrap. The worker's brief lives in the transcript's
-    # opening turn, so restricting the match there keeps the same text-convention reliance while
-    # closing the false-positive surface a later, unrelated mention would otherwise open.
-    # A BYTE bound (`head -c`), not a LINE bound: a first draft used `head -n 5`, but this repo has
-    # no confirmed JSONL transcript sample to verify the worker's opening brief always lands within a
-    # handful of LINES — a single JSONL record can be one very long line (a large system/task prompt
-    # serialized as one JSON string), which a line-count bound would not protect against at all
-    # (found by this ticket's own delta review round). 8000 bytes comfortably covers this ticket's
-    # own multi-paragraph worker briefs (this file's own header is under 3000) while still bounding
-    # the scan well short of a long session's full transcript.
-    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] && head -c 8000 "$se_transcript" 2>/dev/null | grep -qE "DELEGATION RUN|WRAP CENTRALIZED"; then
+    # exactly a mutating session that forgot to wrap. Restricting the match to the opening turns keeps
+    # the same text-convention reliance while closing the false-positive surface a later, unrelated
+    # mention would otherwise open.
+    #
+    # dir #523 — a chip-launched worker's DENOMINATOR DEFECT: the byte-bound this used to be
+    # (`head -c 8000`) assumed the marker sits in the opening bytes, but a chip-launched worker's own brief
+    # (this session's own shape: a short chip prompt, then a Read/`cat` of a brief FILE whose content
+    # only enters the transcript once the tool result returns) can push the marker well past any small
+    # byte budget — reproduced live against THIS session's own transcript at implementation time: its
+    # SECOND user-role turn (the brief's full content, returned as a tool_result) does not start until
+    # ~258,000 bytes in, over 32x the old 8000-byte window, because Claude-Code-internal bookkeeping
+    # records (queue-operations, hook-status attachments) sit between turns and are individually large.
+    # A bigger byte budget doesn't fix this in principle — nothing bounds how much bookkeeping noise
+    # can sit between two turns — so this switches the unit entirely: count TURNS (JSONL records with
+    # `.type=="user"`, which covers both literal chat turns and tool-result turns — a brief-file read
+    # returns as one), not bytes. se_marker_turns caps how many such turns are scanned (N=5, this
+    # ticket's own lead: the chip prompt, the brief read, and the worker's first report, with margin);
+    # se_marker_rawcap bounds the raw JSONL lines read before giving up on finding that many turns, so
+    # a session with unusually heavy inter-turn bookkeeping still can't make this hook scan an
+    # unbounded prefix (300 lines comfortably covers the ~33 this session's own first two turns took,
+    # per the same live measurement, with margin for a few more before the 5th).
+    # `.message.content | tojson`, not `.text`/`.content` field-picking: a turn's content can be a
+    # plain string (an ordinary chat turn) or an array of blocks (a tool-result turn, `{type,
+    # tool_use_id, content}` in this session's own transcript) — serializing whichever shape back to
+    # text preserves the marker substring either way without hand-modeling both block shapes.
+    se_marker_turns=5
+    se_marker_rawcap=300
+    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] \
+      && head -n "$se_marker_rawcap" "$se_transcript" 2>/dev/null \
+        | jq -r 'select(.type=="user") | .message.content | tojson' 2>/dev/null \
+        | head -n "$se_marker_turns" \
+        | grep -qE "DELEGATION RUN|WRAP CENTRALIZED"; then
       exit 0
     fi
     se_wd="$(_rt_wrapdone_path "$se_cwd")"
@@ -250,7 +281,16 @@ case "${1:-}" in
     # /code-review high pass).
     se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
     se_status=wrapped; [ "$se_wrapped" -eq 1 ] || se_status=no-wrap
-    printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_status" "$(_rt_key "$se_cwd")" >> "$se_wlog" 2>/dev/null
+    # dir #523: the row's identifying column is the SESSION id, not `_rt_key` (repo,branch) — a
+    # worktree/branch reused across two DIFFERENT sessions used to write the SAME label for both,
+    # reading (to a human, or to any future by-key grouping) as one session flagged twice rather than
+    # two sessions each flagged once. Fallback to `_rt_key` only when the hook payload carries no
+    # session_id at all (an older Claude Code build, or a synthetic/manual invocation) — the best
+    # available degrade, matching the pre-#523 behavior for exactly that case. A PLAIN append, same as
+    # before: `aggregate` (below) is where the dedup-by-key actually happens, at READ time against a
+    # static snapshot — not here, which would need a read-modify-write race this concurrently-written
+    # store cannot safely take (see aggregate's own comment).
+    printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_status" "$se_key" >> "$se_wlog" 2>/dev/null
     if [ "$se_wrapped" -eq 1 ]; then
       [ -n "$se_flag" ] && rm -f "$se_flag" 2>/dev/null
     elif [ -n "$se_flag" ]; then
@@ -264,7 +304,24 @@ case "${1:-}" in
     # Shell helper (dir #387 ECONOMICS requirement (2)): /wrap and /polish call this instead of
     # reading tools/read-trace.sh's own log — its short output is the only part of the log that may
     # ever enter a context.
-    dl_dir="${2:-.}"
+    #
+    # --wrap (dir #523, either position — `docs-line --wrap [dir]` or `docs-line [dir] --wrap`):
+    # stamps the wrap-completion marker as a SIDE EFFECT of this same call, before printing the report
+    # line. commands/wrap.md's own persist step already calls docs-line for its report line — folding
+    # the stamp into that SAME call removes the separate `wrap-done` step this ticket's own evidence
+    # found gets dropped (the wrap-fuse read 0-2 `wrapped` rows across cycles that demonstrably
+    # persisted): there is no longer a second, model-remembered instruction to skip. Gated on this flag
+    # rather than firing unconditionally — /polish calls plain `docs-line` (no --wrap) for its PR body,
+    # and must never stamp a wrap that didn't happen.
+    dl_dir="."; dl_wrap=0
+    for dl_a in "${2:-}" "${3:-}"; do
+      case "$dl_a" in
+        --wrap) dl_wrap=1 ;;
+        "") : ;;
+        *) dl_dir="$dl_a" ;;
+      esac
+    done
+    [ "$dl_wrap" -eq 1 ] && _rt_stamp_wrap_done "$dl_dir"
     dl_slog="$(_rt_session_log "$dl_dir")"
     dl_rows=""
     [ -f "$dl_slog" ] && dl_rows="$(awk -F'\t' '$2=="read"{print $3}' "$dl_slog" 2>/dev/null | LC_ALL=C sort -u)"
@@ -279,11 +336,11 @@ case "${1:-}" in
     ;;
 
   wrap-done)
+    # Standalone fallback (dir #523's shape (c)): commands/wrap.md no longer calls this directly (it
+    # folds the same stamp into `docs-line --wrap`, above), but this subcommand stays for a manual
+    # stamp or a composing wrapper that hasn't picked up the fold yet.
     wd_dir="${2:-.}"
-    wd_path="$(_rt_wrapdone_path "$wd_dir")"
-    wd_sha="$(git -C "$wd_dir" rev-parse HEAD 2>/dev/null)"
-    mkdir -p "$(dirname "$wd_path")"
-    printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${wd_sha:-unknown}" > "$wd_path"
+    _rt_stamp_wrap_done "$wd_dir"
     printf 'read-trace: wrap completion recorded for %s\n' "$(_rt_key "$wd_dir")"
     exit 0
     ;;
@@ -313,11 +370,20 @@ case "${1:-}" in
     fi
     ag_wlog="$(_rt_wrapfuse_log "$ag_dir")"
     if [ -f "$ag_wlog" ]; then
-      ag_total="$(grep -c . "$ag_wlog" 2>/dev/null || printf '0')"
-      ag_nowrap="$(awk -F'\t' '$2=="no-wrap"' "$ag_wlog" 2>/dev/null | grep -c .)"
+      # dir #523: M and N count DISTINCT rows-by-key (session id, since session-end above now keys
+      # each row that way), not raw lines — keeping only the LAST status seen for a given key, since
+      # the log is append-only and chronological. This is where the actual dedup happens, not the
+      # write side: a static read-time pass over an already-written snapshot carries no
+      # concurrent-writer race, unlike a read-modify-write at session-end would (see that hook's own
+      # comment). Without this, a session whose SessionEnd fires more than once (a known hook-firing
+      # quirk), or a row written before this ticket under the old (repo,branch) key on a reused
+      # worktree, inflates M past the number of sessions that actually ran.
+      ag_wf_counts="$(awk -F'\t' '{s[$3]=$2} END{n=0; nw=0; for (k in s) {n++; if (s[k]=="no-wrap") nw++}; print nw"\t"n}' "$ag_wlog" 2>/dev/null)"
+      ag_nowrap="$(printf '%s' "$ag_wf_counts" | awk -F'\t' '{print $1+0}')"
+      ag_total="$(printf '%s' "$ag_wf_counts" | awk -F'\t' '{print $2+0}')"
       ag_since="$(awk -F'\t' 'NR==1{print $1}' "$ag_wlog" 2>/dev/null)"
       printf 'wrap-fuse: %s of %s mutating sessions this cycle ended with no /wrap (cycle since %s)\n' \
-        "$ag_nowrap" "$ag_total" "${ag_since:-n/a}"
+        "${ag_nowrap:-0}" "${ag_total:-0}" "${ag_since:-n/a}"
     else
       printf 'wrap-fuse: 0 of 0 mutating sessions this cycle ended with no /wrap (cycle since n/a)\n'
     fi

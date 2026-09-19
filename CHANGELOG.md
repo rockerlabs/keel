@@ -44,6 +44,21 @@ sections real content going forward — see that page for exactly when each one 
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
 
+### Fixed
+
+- **`tools/read-trace.sh` — the wrap-fuse's `wrapped` outcome no longer hangs on a model-remembered
+  step** (dir #523): `commands/wrap.md`'s persist step folds the completion stamp into the SAME call
+  it already makes for its report line (`docs-line --wrap`), instead of a separate, easily-dropped
+  `wrap-done` call — the fuse had read 0-2 `wrapped` rows across cycles that demonstrably persisted.
+  Wrap-fuse events are now keyed by session id, not (repo,branch): a worktree reused across two
+  different sessions no longer writes the same ambiguous label twice, and `aggregate` counts distinct
+  sessions by their last recorded outcome, not raw rows, so a duplicate `SessionEnd` fire for one
+  session no longer inflates the denominator either. The `DELEGATION RUN`/`WRAP CENTRALIZED` exclusion
+  now scans the transcript's first few user-role turns instead of its first 8000 bytes — a
+  chip-launched worker's own brief, read from a file the chip names, can arrive well past that byte
+  window (reproduced live: over 258,000 bytes for this ticket's own transcript), which had misread
+  every such worker as a forgotten wrap.
+
 ## [0.10.2] — 2026-09-19
 
 **Known issues, disclosed at the cut.** This is the patch the operator named for one pain — "close
