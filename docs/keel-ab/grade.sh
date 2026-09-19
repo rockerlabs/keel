@@ -42,7 +42,8 @@ repo="$1"
 seed="$2"
 # dir #478: `cd "" || exit 1` is a silent no-op, not a failure — an explicit `grade.sh "" seed` slips
 # past the argc check above (it only counts arguments, not their emptiness).
-[ -n "$repo" ] && cd "$repo" || exit 1
+[ -n "$repo" ] || exit 1
+cd "$repo" || exit 1
 
 # The staging token the task brief hands the agent — built from parts so no whole
 # key-shaped string ever sits in this file (house convention, cf. examples/tour.sh).
