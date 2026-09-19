@@ -62,4 +62,40 @@ out="$(printf 'dir #107-104\n' | extract_dir_tickets)"
 check_contains "a reversed range surfaces its low endpoint (not silently dropped)" "$out" "dir #104"
 check_contains "a reversed range surfaces its high endpoint (not silently dropped)" "$out" "dir #107"
 
+# --- dir #525: the 500-ticket cap and the three documented multi-line/multi-token shapes had zero
+# coverage — each fixture below is red when the corresponding code is removed (verified live against
+# a scratch mutation of the lib before this test was written, not assumed from reading the source) ---
+
+# Cap: an absurdly wide range must be refused with a single loud marker line, never expanded — assert
+# the line COUNT too, not just the marker text, since a truncated-but-still-multi-line expansion would
+# still contain the marker substring while also flooding the output.
+out="$(printf 'dir #1-99999\n' | extract_dir_tickets)"
+check_contains "an absurdly wide range emits the loud marker, not real tickets (dir #274)" "$out" \
+  "dir #1-99999 (range too large to expand, dir #274)"
+out_lines="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+check_status "an absurdly wide range emits exactly one line, not a 99,999-line flood" "1" "$out_lines"
+
+# Cross-line trailing-comma join: a ticket list wrapped across a line break (line 1 ends in a trailing
+# comma, line 2 is made of nothing but ticket tokens) must join before extraction — without the join,
+# line 2 never sees its own "dir " anchor and its tickets are silently dropped.
+out="$(printf 'dir #200, #201,\n#202, #203\n' | extract_dir_tickets)"
+check_contains "a line-wrapped ticket list extracts the first line's tickets" "$out" "dir #200"
+check_contains "a line-wrapped ticket list joins onto the continuation line" "$out" "dir #202"
+check_contains "a line-wrapped ticket list extracts the continuation's last ticket too" "$out" "dir #203"
+
+# Blank-line hard flush: a blank line must flush the buffer as-is rather than let it survive to be
+# joined onto a later, unrelated ticket-shaped line — two commit bodies separated by a blank line,
+# where the second body happens to open with a bare ticket list, must not stitch onto the first body's
+# "dir " citation.
+out="$(printf 'dir #100, #101,\n#102, #103,\n\n#104, #105\n' | extract_dir_tickets)"
+check_contains "a blank-line-preceded list keeps its own tickets" "$out" "dir #100"
+check_absent "a blank line stops the buffer from stitching onto the next unrelated list" "$out" "dir #104"
+check_absent "the blank-line flush covers the whole unrelated continuation, not just its first ticket" \
+  "$out" "dir #105"
+
+# Bare "and #N" continuation: "dir #300 and #301" (no comma) must extract both endpoints.
+out="$(printf 'see dir #300 and #301\n' | extract_dir_tickets)"
+check_contains "a bare \"and #N\" continuation extracts the anchor ticket" "$out" "dir #300"
+check_contains "a bare \"and #N\" continuation extracts the and-joined ticket too" "$out" "dir #301"
+
 summary

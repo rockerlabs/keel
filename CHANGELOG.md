@@ -196,6 +196,24 @@ sections real content going forward — see that page for exactly when each one 
   of left an untested gap. The shared same-change message ("ignoring an allowlist entry new in this
   change") is reworded from "this staged change" since it now fires for `--range` too, where nothing
   is staged.
+- **`tools/lib/dir-tickets.sh`'s 500-ticket range cap and its three documented
+  multi-line/multi-token shapes (cross-line trailing-comma join, blank-line hard flush, bare `and
+  #N` continuation) had zero test coverage** (dir #525; found 2026-09-15 by the 0.10.1 RC delta
+  audit, mutation-proved: removing the cap left the suite 19/19 green while `dir #1-99999` flooded
+  99,999 lines). Four new fixtures in `tests/test_dir_tickets_lib.sh`, each verified red when its
+  own code is removed — coverage only, no behaviour change to the load-bearing extractor doctor
+  check 7, the CHANGELOG derivation, and the release notes all read.
+- **`tools/audit-packet/export.sh`'s single `mkdir -p "$packet_dir/chunks"` set the
+  `packet_dir_created` cleanup flag only after the WHOLE two-level path existed, so a failure inside
+  that call's own second step (parent created, `chunks/` not) left an empty packet dir uncleaned on
+  exit** (dir #526; found by Fixer A's own review of PR #407, parked as induced and narrowed on
+  review: the ticket body's "failure after the top-level mkdir" reading did not match the live
+  single-`mkdir -p` code). The flag now moves to right after the existing "already exists" check
+  instead — that check already proves nothing sits at `$packet_dir` yet, so anything a later `mkdir
+  -p` leaves behind, whole or half-built, is unambiguously this invocation's own creation and safe
+  for `on_exit` to `rm -rf` unconditionally; the single `mkdir -p` call is unchanged, no new mkdir
+  added. Proved with a `mkdir` stub on `PATH` that creates the packet dir for real, then fails
+  before `chunks/`, red against the pre-fix flag-after-mkdir shape.
 - **Two prose contradictions the external Codex leg caught and the drydock verifier confirmed**
   (dir #516; found by dir #495's run 1 — the external OpenAI-Codex leg at 0396b4c, verified live in
   a sandbox). (F15) `README.md`'s pre-PR-gate section still said the built-in reviewer is
