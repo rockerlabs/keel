@@ -289,15 +289,17 @@ check_contains "a wrap that called docs-line --wrap (not wrap-done) still reads 
   "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "wrapped"
 check_absent "a wrap that called docs-line --wrap is NOT classified no-wrap" \
   "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
-# --wrap in the OTHER argument position (`docs-line [dir] --wrap`) works the same way.
+# --wrap must be FIRST — the parser has no real caller for the flag-last shape (/simplify found the
+# original either-position parser existed only to satisfy this exact test, not any shipped call site),
+# so `docs-line [dir] --wrap` is now just "dir=$d, an ignored trailing arg" — it must NOT stamp.
 d="$(mkrepo)"; rt_env docslinewrap2
 feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
 run_hook docs-line "$d" --wrap
-check_status "docs-line [dir] --wrap (flag last) also exits 0" 0 "$STATUS"
+check_status "docs-line [dir] --wrap (flag last, unsupported) still exits 0" 0 "$STATUS"
 tp="$SANDBOX/transcript.docslinewrap2.jsonl"; printf 'ordinary session\n' > "$tp"
 feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
-check_contains "docs-line [dir] --wrap (flag last) also stamps wrapped" \
-  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "wrapped"
+check_contains "docs-line [dir] --wrap (flag last) does NOT stamp -- --wrap must lead" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
 # Plain docs-line (no --wrap, /polish's own call shape) must NEVER stamp — a false "wrapped" would
 # hide a genuinely forgotten /wrap from the fuse this ticket exists to make trustworthy.
 d="$(mkrepo)"; rt_env docslinenowrap

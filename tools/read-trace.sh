@@ -42,7 +42,7 @@
 #   read-trace.sh docs-line [--wrap] [dir]  Shell helper for /wrap and /polish — the ONLY thing that
 #                                     may enter a context: the short `docs read: ...` line, derived
 #                                     from the ephemeral log (never the agent reading the raw log
-#                                     itself). `--wrap` (dir #523), either position: also stamps this
+#                                     itself). `--wrap` (dir #523), FIRST if given: also stamps this
 #                                     (repo,branch)'s wrap completion as a side effect of this SAME
 #                                     call — commands/wrap.md passes it from /wrap's own persist step;
 #                                     /polish never does.
@@ -238,18 +238,25 @@ case "${1:-}" in
     # `.type=="user"`, which covers both literal chat turns and tool-result turns — a brief-file read
     # returns as one), not bytes. se_marker_turns caps how many such turns are scanned (N=5, this
     # ticket's own lead: the chip prompt, the brief read, and the worker's first report, with margin);
-    # se_marker_rawcap bounds the raw JSONL lines read before giving up on finding that many turns, so
+    # se_marker_rawcap bounds the raw JSONL LINES read before giving up on finding that many turns, so
     # a session with unusually heavy inter-turn bookkeeping still can't make this hook scan an
-    # unbounded prefix (300 lines comfortably covers the ~33 this session's own first two turns took,
-    # per the same live measurement, with margin for a few more before the 5th).
+    # unbounded-by-LINE-COUNT prefix (300 lines comfortably covers the ~33 this session's own first two
+    # turns took, per the same live measurement, with margin for a few more before the 5th). That alone
+    # still leaves BYTES unbounded, though (found by this ticket's own /simplify efficiency pass): the
+    # same live evidence above shows those 300 lines can individually be huge (the ~258,000-byte second
+    # turn is ONE line), so se_marker_bytecap adds a hard outer ceiling on top — read at most 2,000,000
+    # bytes before even starting the line/turn scan, comfortably past the observed 258,000-byte case
+    # with margin for turns 3-5, but a fixed, small multi-MB read rather than a truly unbounded one.
     # `.message.content | tojson`, not `.text`/`.content` field-picking: a turn's content can be a
     # plain string (an ordinary chat turn) or an array of blocks (a tool-result turn, `{type,
     # tool_use_id, content}` in this session's own transcript) — serializing whichever shape back to
     # text preserves the marker substring either way without hand-modeling both block shapes.
     se_marker_turns=5
     se_marker_rawcap=300
+    se_marker_bytecap=2000000
     if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] \
-      && head -n "$se_marker_rawcap" "$se_transcript" 2>/dev/null \
+      && head -c "$se_marker_bytecap" "$se_transcript" 2>/dev/null \
+        | head -n "$se_marker_rawcap" \
         | jq -r 'select(.type=="user") | .message.content | tojson' 2>/dev/null \
         | head -n "$se_marker_turns" \
         | grep -qE "DELEGATION RUN|WRAP CENTRALIZED"; then
@@ -305,7 +312,9 @@ case "${1:-}" in
     # reading tools/read-trace.sh's own log — its short output is the only part of the log that may
     # ever enter a context.
     #
-    # --wrap (dir #523, either position — `docs-line --wrap [dir]` or `docs-line [dir] --wrap`):
+    # --wrap (dir #523), FIRST if given (`docs-line --wrap [dir]` — commands/wrap.md's only call shape
+    # is `docs-line --wrap`, no dir; an earlier draft parsed either position, but nothing calls it that
+    # way — /simplify found the flag-last support and its dedicated test existed for no real caller):
     # stamps the wrap-completion marker as a SIDE EFFECT of this same call, before printing the report
     # line. commands/wrap.md's own persist step already calls docs-line for its report line — folding
     # the stamp into that SAME call removes the separate `wrap-done` step this ticket's own evidence
@@ -313,14 +322,11 @@ case "${1:-}" in
     # persisted): there is no longer a second, model-remembered instruction to skip. Gated on this flag
     # rather than firing unconditionally — /polish calls plain `docs-line` (no --wrap) for its PR body,
     # and must never stamp a wrap that didn't happen.
+    # --wrap must come FIRST (`docs-line --wrap [dir]`), matching commands/wrap.md's own only call
+    # shape (`docs-line --wrap`, no dir) — /simplify found the original either-position parser had no
+    # real caller for the flag-last shape, just a test exercising flexibility nothing shipped needs.
     dl_dir="."; dl_wrap=0
-    for dl_a in "${2:-}" "${3:-}"; do
-      case "$dl_a" in
-        --wrap) dl_wrap=1 ;;
-        "") : ;;
-        *) dl_dir="$dl_a" ;;
-      esac
-    done
+    if [ "${2:-}" = "--wrap" ]; then dl_wrap=1; dl_dir="${3:-.}"; else dl_dir="${2:-.}"; fi
     [ "$dl_wrap" -eq 1 ] && _rt_stamp_wrap_done "$dl_dir"
     dl_slog="$(_rt_session_log "$dl_dir")"
     dl_rows=""
