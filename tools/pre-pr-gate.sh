@@ -406,6 +406,8 @@ _ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_ppg_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_ppg_dir/lib/impact-store.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$_ppg_dir/lib/gate-paths.sh"
 unset _ppg_dir
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
@@ -767,7 +769,12 @@ _dialog_leg_armed() {
   # `_dialog_leg_armed` permanently UNARMED for every ordinary project-scope gate — not just pre-0.7
   # installs — silently disabling the dir #88 mandatory-review-dialog check for the common case forever.
   # That is exactly the "silent behavior change" this whole removal ticket forbids, so this block stays.
-  for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" \
+  # dir #182: the first candidate below is no longer its own independent literal — it's now the same
+  # shared `gate_project_settings_path` (tools/lib/gate-paths.sh) that install-pre-pr-gate.sh's write
+  # target and doctor.sh's `proj_settings` also derive from, so the three can't drift apart by a typo
+  # the way PR #165/#179 did. `settings.local.json` stays its own, independent candidate — not part of
+  # that shared definition, and not checked by doctor.sh at all (a scope difference, not a bug).
+  for f in "$(gate_project_settings_path "$top")" "$top/.claude/settings.local.json" \
            "${HOME:-}/.claude/settings.json" \
            "${KEEL_HOME:-${HOME:-}/.claude}/settings.json"; do
     [ -f "$f" ] || continue

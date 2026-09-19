@@ -17,6 +17,11 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`tools/lib/gate-paths.sh` (new) is the ONE shared project-scope `settings.json` path** (dir #182):
+  `tools/install-pre-pr-gate.sh`'s write target, `tools/doctor.sh`'s `proj_settings`, and
+  `tools/pre-pr-gate.sh`'s `_dialog_leg_armed` first candidate now all derive `gate_project_settings_path`
+  from one place instead of three independently-typed `<repo>/.claude/settings.json` literals — the
+  exact duplication class PR #165 and PR #179 each broke once already.
 - **`docs/grooming.md` G0 — the read-trace rotation is the groom's own closing step** (dir #543):
   read `aggregate`, record both figures, run `rotate`, record the archive suffix. The order was
   already fixed in `docs/release-management.md` R9; the owner was not — `tools/read-trace.sh`'s
