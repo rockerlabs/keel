@@ -1225,7 +1225,8 @@ for d in "${DIRS[@]}"; do
 
   # Dependency pinning (FRAMEWORK "Dependency versioning") — WARN on a floating version of a pinnable dep:
   # a Docker/compose image :latest tag, or a major-only GitHub Action @vN tag. A *-latest CI runner label
-  # is NOT flagged — a managed alias, not a pinnable artifact.
+  # is NOT flagged — a known limit of this check, not an endorsement of the label (dir #516 F16: the
+  # rule still asks you to pin it; see FRAMEWORK.md "Dependency versioning").
   # find+grep, not `grep -r --include=…`: busybox grep (Alpine) has no --include, so the option errored
   # and this check silently never fired there. find's -name globs are portable across GNU/BSD/busybox.
   # dir #85 (code audit, finding 12): fp_find, not a bare find — every per-stack check around this one

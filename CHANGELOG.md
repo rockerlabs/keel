@@ -164,6 +164,21 @@ sections real content going forward — see that page for exactly when each one 
   for `on_exit` to `rm -rf` unconditionally; the single `mkdir -p` call is unchanged, no new mkdir
   added. Proved with a `mkdir` stub on `PATH` that creates the packet dir for real, then fails
   before `chunks/`, red against the pre-fix flag-after-mkdir shape.
+- **Two prose contradictions the external Codex leg caught and the drydock verifier confirmed**
+  (dir #516; found by dir #495's run 1 — the external OpenAI-Codex leg at 0396b4c, verified live in
+  a sandbox). (F15) `README.md`'s pre-PR-gate section still said the built-in reviewer is
+  "model-invocation-disabled by design" and that `/polish` only ever falls back to a subagent —
+  stale since dir #254 lifted that restriction; `commands/polish.md` and `docs/getting-started.md`
+  already said `/polish` attempts the real `/code-review` pass directly first, falling back only on
+  refusal. README's sentence now matches. (F16) `FRAMEWORK.md` stated two policies for one choice:
+  L602 forbids `ubuntu-latest` as a pinning example, L608 called a managed `*-latest` CI runner
+  label "a recommended alias" that `doctor` doesn't flag. Operator decision (2026-09-18): keep the
+  pinning rule; the "recommended alias" endorsement is gone, replaced with the honest statement that
+  `doctor`'s silence on runner labels is a known limit of the check, not an endorsement — the rule
+  still asks you to pin. `tools/doctor.sh`'s own H-DEP-FLOATING comment carried the same rejected
+  "not a pinnable artifact" framing (found by this ticket's own `/simplify` pass — two independent
+  cleanup agents converged on it); reworded to match. `tests/test_rails_honesty.sh` gained five pins
+  covering both doc fixes, mutation-proven (reverting either file reddens its pins).
 - **`commands/polish.md` step 9 never warned that chaining a receipt write ahead of `gh pr create` on
   ONE Bash command line lets the PreToolUse hook's `gh pr create` text match fire before the receipt
   write has run, so the gate denies against the pre-write sentinel and the receipt is silently
