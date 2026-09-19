@@ -703,34 +703,40 @@ esac
 # is accepted, not an oversight — safe (over-blocking on an already-rare force-push, never a silent
 # pass), never silently unaccounted for.
 #
-# **A FOURTH, disclosed limitation, found by an in-session cross-model (Gemini) second opinion and
-# confirmed live (pinned by tests/test_secret_guard.sh):** the boundary snapshot only credits an entry
-# that existed OUTSIDE the whole pushed range — an entry that arrives INSIDE the range via a merge, even
-# one that genuinely predates (in an earlier commit, on the branch it came from) the secret it exempts,
-# is invisible to this union the same way a same-change entry is, and reads as new-this-push. Concretely:
-# `main` legitimately adds an allowlist entry in one commit and the secret it exempts in a LATER commit
-# (each individually clean against ITS OWN push-time baseline); a feature branch then `git merge
-# origin/main`s both commits in together and pushes — the merge brings the entry-then-secret pair INSIDE
-# the range rather than leaving the entry at a boundary, so it's still read as new-this-push and the
-# otherwise-legitimate push BLOCKS. Not a security hole (fail CLOSED, never a bypass — confirmed by the
-# same cross-model review: forging a boundary commit is not possible, `git rev-list --boundary`'s output
-# is exactly git's own excluded frontier), but a real, deeper limitation this baseline-snapshot design
-# doesn't close: a correct fix needs PER-COMMIT provenance (walking each flagged blob's own introducing
-# commit's ancestry for the matching entry, not one whole-range snapshot), which is a materially larger
-# change than this ticket's own scope — tracked as a follow-up, not attempted here.
+# **A FOURTH gap, found by an in-session cross-model (Gemini) second opinion and confirmed live
+# (mutation-proved, pinned by tests/test_secret_guard.sh): a boundary snapshot of THIS branch's own
+# delta alone missed content already pushed elsewhere.** An entry that arrives INSIDE the pushed range
+# via a merge, even one that genuinely predates the secret it exempts (each committed and pushed
+# separately, and safely, on the branch it came from), used to be invisible to the union the same way
+# a same-change entry is — `main` legitimately adds an entry in one commit and the secret it exempts in
+# a LATER commit (each individually clean against ITS OWN push-time baseline, already reviewed and
+# pushed to `origin/main`); a feature branch then `git merge origin/main`s both in and pushes — the
+# merge brought the pair INSIDE the range rather than leaving the entry at a boundary, so it read as
+# new-this-push and an otherwise-legitimate push falsely BLOCKED. Fixed the same way `resolve_range_local`
+# already excludes known-remote content for a brand-new ref's OWN first-push shape ("<tip> --not
+# --remotes"): append `--not --remotes` to WHATEVER $rng already is when resolving the BASELINE
+# specifically (never touching the separate $rng used above to decide what to scan for secrets) — a
+# commit already reachable from ANY remote-tracking ref is by definition already known/reviewed, on
+# ANY branch, not just this one, so M1 above (the secret's own introducing commit, already pushed to
+# origin/main) now resolves as a boundary commit in its own right, and its own committed allow file
+# already carries M0's earlier entry. Security holds: a commit an attacker introduces in THIS push is,
+# by construction, not yet reachable from any remote-tracking ref (that's what "pushing" means), so it
+# can never become a trusted boundary point this way — mutation-proved live (a same-range secret+entry
+# pair, even riding alongside legitimately-merged content, still fails closed and BLOCKS).
 #
 # Still gated on the allowlist file existing too (a records hit with no .secret-scan-allow at all has
 # nothing for a baseline to gate — the shared compare block below never reads these either way).
 if [ -n "${rng:-}" ] && [ -f "$ALLOW_FILE" ]; then
   ALLOW_BASELINE_MODE="range"
   boundary_err="$(mktemp "$SCRATCH/blob.XXXXXX")"
-  # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args, same as elsewhere
-  if ! boundary_out="$(git rev-list --boundary $rng 2>"$boundary_err")"; then
+  boundary_rng="$rng --not --remotes"
+  # shellcheck disable=SC2086  # boundary_rng intentionally word-split into rev-list args, same as elsewhere
+  if ! boundary_out="$(git rev-list --boundary $boundary_rng 2>"$boundary_err")"; then
     # A real git-level failure walking $rng (e.g. a truncated/grafted clone) must not read
     # identically to "no shared history yet" (max-review language-pitfall finding: an earlier cut
     # discarded rev-list's own exit status here, unlike the --objects call above, which already
     # treats this same class of failure as the config error it is).
-    echo "secret-scan: --range could not walk '$rng' to resolve its allowlist baseline — treating every .secret-scan-allow entry as new-this-push" >&2
+    echo "secret-scan: --range could not walk '$boundary_rng' to resolve its allowlist baseline — treating every .secret-scan-allow entry as new-this-push" >&2
     sed 's/^/  /' "$boundary_err" >&2
     rm -f "$boundary_err"
   else

@@ -961,15 +961,17 @@ tip="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" "$scan" --range "$oldtip..$tip"
 check_status "dir #518: merge-before-push (2+ boundary commits) — same-range entry still untrusted → BLOCKED" 1 "$STATUS"
 
-# (3) disclosed limitation, found by an in-session cross-model (Gemini) second opinion, pinned here:
-# an entry that arrives INSIDE the pushed range via a merge — even one that genuinely predates the
-# secret it exempts on the branch it came from — is invisible to the boundary union and still reads
-# as new-this-push. `main` legitimately adds an allowlist entry (clean push) and, in a LATER commit,
-# the secret it exempts (also clean against main's own baseline, since the entry already predates it
-# there); `feature` then `git merge origin/main`s both commits in together and pushes. Not a security
-# hole (fail CLOSED, never a bypass), but a real false-block this ticket's baseline-snapshot design
-# doesn't close — a correct fix needs per-commit provenance, tracked as a follow-up, not attempted
-# here. Pinned so this stays a known, tested limitation rather than a silent surprise.
+# (3) max-review correctness finding (in-session cross-model Gemini second opinion), fixed and
+# mutation-proved here: an entry that arrives INSIDE the pushed range via a merge, even one that
+# genuinely predates the secret it exempts on the branch it came from, must still be trusted — not
+# invisible to the boundary union the way a same-change entry correctly is. `main` (already pushed,
+# known via a real origin/main remote-tracking ref — new_bare_origin + push, not a hand-forged ref)
+# legitimately adds an allowlist entry in one commit and, in a LATER commit, the secret it exempts
+# (each individually clean against main's own push-time baseline); `feature` then `git merge
+# origin/main`s both commits in together and pushes. The merge commit that introduced the secret is
+# itself already reachable from origin/main, so `--not --remotes` (appended to the baseline
+# resolution) correctly resolves it as a boundary commit carrying the earlier entry — trusted, not
+# BLOCKED.
 repo="$(new_repo)"
 git -C "$repo" checkout -qb main
 git -C "$repo" commit -q --allow-empty -m root
@@ -981,10 +983,32 @@ printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
 git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "main: add allowlist entry (clean push)"
 printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
 git -C "$repo" add key.txt; git -C "$repo" commit -qm "main: add the key the entry already exempts (clean push)"
+new_bare_origin "$repo" >/dev/null
+git -C "$repo" push -q origin main   # main's own commits are now known via a real origin/main tracking ref
 git -C "$repo" checkout -q feature
 git -C "$repo" merge -q --no-edit main
 tip="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" "$scan" --range "$oldtip..$tip"
-check_status "dir #518 (disclosed limitation): an entry+secret pair merged in together from main still BLOCKS, even though each was individually clean on main's own push — pinned, not a security bug (fail-closed)" 1 "$STATUS"
+check_status "dir #518: an entry+secret pair merged in from an already-pushed main → trusted, exit 0 (not BLOCKED)" 0 "$STATUS"
+
+# security sanity check for the SAME fix: if main was NEVER pushed anywhere (no remote-tracking ref
+# knows about it at all), the identical merge must still correctly fail closed — the fix only trusts
+# content reachable via a REAL remote-tracking ref, never merely "on some other local branch".
+repo="$(new_repo)"
+git -C "$repo" checkout -qb main
+git -C "$repo" commit -q --allow-empty -m root
+git -C "$repo" checkout -qb feature
+git -C "$repo" commit -q --allow-empty -m F1
+oldtip="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" checkout -q main
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "main: add allowlist entry (never pushed)"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "main: add the key the entry already exempts (never pushed)"
+git -C "$repo" checkout -q feature
+git -C "$repo" merge -q --no-edit main
+tip="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" "$scan" --range "$oldtip..$tip"
+check_status "dir #518: same merge, but main was NEVER pushed anywhere → still fails CLOSED, BLOCKED" 1 "$STATUS"
 
 summary

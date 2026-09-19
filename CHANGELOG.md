@@ -193,21 +193,25 @@ sections real content going forward — see that page for exactly when each one 
   allowlist entry — there is no principled single baseline to fall back to there either (the true
   pre-force-push remote state is exactly what's unreachable), so this is accepted as safe
   over-blocking rather than an oversight, pinned by a new `tests/test_ci_secret_scan.sh` case instead
-  of left an untested gap. **A second limitation, found by an in-session cross-model (Gemini) second
-  opinion and confirmed live:** the boundary union only credits an entry that existed OUTSIDE the whole
-  pushed range — an entry that arrives INSIDE the range via a merge, even one that genuinely predates
-  the secret it exempts on the branch it came from, is invisible to it. Concretely: `main` legitimately
-  adds an allowlist entry in one commit and, in a LATER commit, the secret it exempts (each individually
-  clean against its own push-time baseline); a feature branch then `git merge origin/main`s both commits
-  in together and pushes — the merge brings the pair INSIDE the range rather than leaving the entry at a
-  boundary, so the otherwise-legitimate push still BLOCKS. Not a security hole (fail CLOSED, never a
-  bypass — the same review confirmed forging a boundary commit isn't possible), but a real false-block
-  this baseline-snapshot design doesn't close; a correct fix needs per-commit provenance (walking each
-  flagged blob's own introducing commit's ancestry, not one whole-range snapshot) — a materially larger
-  change than this ticket's scope, tracked as a follow-up and pinned by a new regression fixture rather
-  than left untested. The shared same-change message ("ignoring an allowlist entry new in this
-  change") is reworded from "this staged change" since it now fires for `--range` too, where nothing
-  is staged.
+  of left an untested gap. **A second gap, found by an in-session cross-model (Gemini) second opinion
+  and confirmed live, fixed:** the boundary union initially only credited an entry that existed OUTSIDE
+  the whole pushed range — an entry that arrived INSIDE the range via a merge, even one that genuinely
+  predated the secret it exempts on the branch it came from, was invisible to it. Concretely: `main`
+  legitimately adds an allowlist entry in one commit and, in a LATER commit, the secret it exempts (each
+  individually clean against its own push-time baseline, already pushed to `origin/main`); a feature
+  branch then `git merge origin/main`s both commits in together and pushes — the merge brought the pair
+  INSIDE the range rather than leaving the entry at a boundary, so the otherwise-legitimate push falsely
+  BLOCKED. Fixed the same way `resolve_range_local` already excludes known-remote content for a
+  brand-new ref's own first-push shape: the baseline resolution (never the separate scan-for-secrets
+  range) now appends `--not --remotes` to whatever range it's given, so a commit already reachable from
+  ANY remote-tracking ref — like the secret's own introducing commit above, already pushed to
+  `origin/main` — resolves as a boundary commit in its own right, carrying whatever the earlier entry
+  commit already added. Security holds by construction: a commit introduced by THIS push is never yet
+  reachable from any remote-tracking ref, so it can never become a trusted boundary this way —
+  mutation-proved live (a same-range secret+entry pair, even riding alongside legitimately-merged
+  content, still fails closed and BLOCKS). The shared same-change message ("ignoring an allowlist
+  entry new in this change") is reworded from "this staged change" since it now fires for `--range`
+  too, where nothing is staged.
 - **`tools/lib/dir-tickets.sh`'s 500-ticket range cap and its three documented
   multi-line/multi-token shapes (cross-line trailing-comma join, blank-line hard flush, bare `and
   #N` continuation) had zero test coverage** (dir #525; found 2026-09-15 by the 0.10.1 RC delta
