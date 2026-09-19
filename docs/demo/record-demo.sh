@@ -58,14 +58,15 @@ type_cmd() {
   sleep "${2:-1.6}"
 }
 
-# dir #478: `cd "" || exit 1` would silently no-op instead of exiting — $sandbox/$proj come from
-# `set -uo pipefail` (no `-e`), so an mktemp hiccup can leave them empty without aborting the script.
+# dir #478: `cd "" || exit 1` would silently no-op instead of exiting — $sandbox comes from
+# `set -uo pipefail` (no `-e`), so an mktemp hiccup can leave it empty without aborting the script.
+# $proj needs no guard of its own: it's "$sandbox/my-project", a concatenation with a non-empty
+# literal suffix, so it can never be empty even when $sandbox is.
 [ -n "$sandbox" ] || exit 1
 cd "$sandbox" || exit 1
 say "# keel secret-guard — a real run (sandboxed: HOME + git config redirected)"
 type_cmd "keel-tools/install-secret-guard.sh --global" 2.2
 
-[ -n "$proj" ] || exit 1
 cd "$proj" || exit 1
 say "# an API key sneaks into a config file..."
 # built from parts so this script's own source never holds a whole key

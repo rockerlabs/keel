@@ -294,12 +294,14 @@ sections real content going forward — see that page for exactly when each one 
   empty `$dir` explicitly before the `cd`, red-then-green proven in a new `tests/test_run_in_empty_dir.sh`.
   Every `run_in` caller in the suite is guarded upstream (`require_sandbox_path`/`new_repo`), so this
   closes a defence-in-depth gap, not a reproduced live leak. Swept tree-wide for the same `cd "$var"`
-  idiom (34 guarded `cd "$var" ||`/`&&` sites in 23 files, plus 5 bare `cd "$var"` sites): 5 changed
-  (the fix above; `docs/demo/record-demo.sh` and `docs/keel-ab/grade.sh`, whose `cd "$var" || exit 1`
-  had the identical hole under `set -uo pipefail` with no upstream emptiness check; and
-  `tools/pipeline-canary.sh`, whose `$d` comes from `mktemp -d` under `set -u` alone), 34 checked and
-  left unchanged (each var is either concatenation-safe, `dirname`-derived, already `[ -n ]`-guarded
-  upstream, or a `mkdir -p ""` failure under `set -e` aborts before the `cd` is reached).
+  idiom (34 guarded `cd "$var" ||`/`&&` sites in 23 files, plus 5 bare `cd "$var"` sites): 4 changed
+  (the fix above; `docs/demo/record-demo.sh`'s `$sandbox` site and `docs/keel-ab/grade.sh`'s `$repo`
+  site, whose `cd "$var" || exit 1` had the identical hole under `set -uo pipefail` with no upstream
+  emptiness check; and `tools/pipeline-canary.sh`, whose `$d` comes from `mktemp -d` under `set -u`
+  alone), 35 checked and left unchanged (each var is either concatenation-safe, `dirname`-derived,
+  already `[ -n ]`-guarded upstream, or a `mkdir -p ""` failure under `set -e` aborts before the `cd`
+  is reached — `record-demo.sh`'s own `$proj` site is this last file's own added-then-reverted example,
+  caught by this PR's own review round: `$proj="$sandbox/my-project"` is concatenation-safe).
 
 ## [0.10.1] — 2026-09-15
 
