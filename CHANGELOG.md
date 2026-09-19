@@ -162,6 +162,21 @@ sections real content going forward — see that page for exactly when each one 
   sentinel-survival assertion already carries the real behavioural claim. Mutation-proven: making the
   review-trace-missing deny retire the chain again (routing it through `_deny_discarded`) reddens both
   the reworded assertion and the sentinel check.
+- **`tools/self/doctor.sh`'s `fn_open_re()` header now records its own known residual** (dir #490;
+  found 2026-09-11 by the 0.10.0 RC delta audit, adjudicated ACCEPTED ticket-next): the widened regex
+  can match a bare `fn()` line reproduced verbatim inside a heredoc body or a multi-line string
+  literal, producing a false "drifted"/duplicate GAP — loud, never a silent OK, and no file in the
+  tree triggers it today. No regex change; the honest remedy (tracking heredoc/quote state in a
+  bash-3.2 `grep -E`/`awk` pipeline) costs more than the residual, so it's left alone until a real
+  instance appears.
+- **`tests/test_self_doctor.sh`'s comment-line-opener fixture dropped a decorative sed mutation its
+  own comment admitted "changes nothing about the outcome"** (dir #492; found by the same audit): the
+  check reports "could not be verified" for that opener shape unconditionally, since `extract_fn_body`
+  returns an empty body on both sides regardless of whether the two real bodies match or drift, so a
+  mutated body proved nothing the identical-body case didn't already prove. The fixture now commits a
+  plain body-identical canonical + fallback pair, same as the other opening-shape fixtures beside it,
+  and the comment states plainly what the assertions guard instead of implying a discrimination they
+  never made.
 
 ## [0.10.1] — 2026-09-15
 
