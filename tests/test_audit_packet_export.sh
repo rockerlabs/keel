@@ -319,4 +319,37 @@ check_contains "export: collision message names 'already exists'" "$OUT" "alread
 check_file "export: the PRIOR packet's own marker survives the collision refusal" "${pkt13:-/nonexistent}/MARKER.txt"
 check_file "export: the prior packet's MANIFEST.txt survives too (not silently rm -rf'd)" "${pkt13:-/nonexistent}/MANIFEST.txt"
 
+# --- dir #526: a mid-`mkdir -p` failure (packet dir created, "chunks/" not) must not leave an empty
+# packet dir behind. A `mkdir` stub on PATH intercepts the tool's one `mkdir -p "$packet_dir/chunks"`
+# call, creates the packet dir for real (so it genuinely lands on disk, matching what `mkdir -p`'s own
+# first internal step would have done), then fails before creating "chunks/" — reproducing a real
+# `mkdir -p` dying partway through its own two levels, without needing real disk-quota tricks. Scoped
+# to the child process only (PATH restored right after the one run_in call).
+r14="$(mk_repo)"
+fl14="$SANDBOX/files-mkdir-fail.txt"
+files_list > "$fl14"
+out14="$SANDBOX/out14"
+stubdir="$SANDBOX/mkdir-stub-bin"
+mkdir -p "$stubdir"
+cat > "$stubdir/mkdir" <<'STUB'
+#!/usr/bin/env bash
+# dir #526 fixture: intercepts the tool's one `mkdir -p "$packet_dir/chunks"` call — creates the
+# parent (the packet dir itself) for real, then fails before creating "chunks/".
+if [ "$1" = "-p" ]; then
+  target="$2"
+  /bin/mkdir -p "${target%/*}" 2>/dev/null
+  printf 'mkdir-stub: forced failure creating %s (dir #526 fixture)\n' "$target" >&2
+  exit 1
+fi
+exec /bin/mkdir "$@"
+STUB
+chmod +x "$stubdir/mkdir"
+orig_path="$PATH"
+PATH="$stubdir:$PATH"
+run_in "$r14" "$TOOL" --vendor stubv --baseline HEAD --out "$out14" --disclosure-ack "t" --files "$fl14"
+PATH="$orig_path"
+check_status "export: a mid-mkdir failure (chunks/ after the parent) refuses, exit 3" 3 "$STATUS"
+pkt14="$(find "$out14" -maxdepth 1 -name 'packet-stubv-*' -type d 2>/dev/null | head -1)"
+check_nodir "export: a mid-mkdir failure leaves no empty packet dir behind (dir #526)" "${pkt14:-/nonexistent}"
+
 summary
