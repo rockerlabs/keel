@@ -1464,6 +1464,14 @@ done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel' ':!tools/self/doctor.sh')
 # `single_def_check` additionally treats an unrecognized opener in the body-comparison half as
 # unverifiable rather than a silent match (see its own comment), so a shape this function detects but
 # `extract_fn_body` can't parse fails LOUD, never quietly OK.
+# **Known residual (dir #490, never observed in this tree):** the `^[[:space:]]*` anchor rules out a
+# `#`-comment, but nothing here distinguishes a real function opener from a bare `fn()` line that
+# merely APPEARS at line start inside a heredoc body or a multi-line string literal — that would still
+# match. The failure direction is a false "drifted"/duplicate GAP (loud, safe side), never a silent
+# false OK, and no file in the tree today has such a literal. The honest fix (tracking heredoc/quote
+# state in a bash-3.2 `grep -E`/`awk` pipeline) costs more than the residual, and dir #380's own
+# pre-decision means any change here must move `extract_fn_body` in step — left alone until a real
+# instance appears.
 fn_open_re() {
   printf -v "$2" '^[[:space:]]*%s[[:space:]]*\\(\\)[[:space:]]*(\\{|$)' "$1"
 }

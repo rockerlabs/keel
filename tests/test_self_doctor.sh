@@ -1933,16 +1933,17 @@ check_absent "extract_fn_body tolerates a blank line before the brace" "$OUT" "G
 # extract_fn_body does NOT recognize (a deliberately-not-chased residual, see the shape comment above)
 # — must never let two extraction failures (both "") compare as "matched". Before this ticket's own
 # fix, an unrecognized shape like this one was silently reported OK regardless of whether the two
-# bodies actually matched; now it's always named unverifiable instead. The sed mutation below makes
-# the bodies genuinely different — deliberately NOT the thing this assertion discriminates (this
-# check's own point is that it reports the SAME "unverifiable" GAP whether or not the bodies happen to
-# match, since it can't tell), but proving the check still doesn't misfire even in the worst case, a
-# real, silent drift, is the strongest version of "never a false OK" this fixture can make (found by
-# this ticket's own delta review: an earlier version of this comment implied the sed step was what the
-# assertions discriminate, which isn't true — removing it changes nothing about the outcome).
+# bodies actually matched; now it's always named unverifiable instead. What this fixture guards: the
+# check reports "could not be verified" for a comment-line opener UNCONDITIONALLY, because
+# extract_fn_body returns an empty body on both sides regardless of whether the two real bodies match
+# or drift — so there is nothing for a mutated/drifted body to prove here that the identical-body case
+# below doesn't already prove (dir #492: an earlier version of this fixture sed-mutated install.sh's
+# fallback to "genuinely drift" it, but that mutation never moved the outcome, since the comparison
+# never reaches the point of comparing bodies at all — decorative, not a second case). The
+# canonical + fallback pair stays body-identical, same as the "same"/"nextline"/"blankline" fixtures
+# above; only the opening shape differs.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" comment
-sed -i.bak 's/\[ -L "\$1" \]$/[ -f "$1" ]/' "$d/install.sh" && rm -f "$d/install.sh.bak"
-( cd "$d" && git add -A && git commit -qm "comment-line opener, install.sh fallback genuinely drifts" )
+( cd "$d" && git add -A && git commit -qm "comment-line opener, canonical + fallback pair" )
 run "$sd" "$d" --quiet
 check_status "comment-line opener -> exit 1, unverifiable, never a false OK" 1 "$STATUS"
 check_contains "names it unverifiable rather than falsely matched" "$OUT" "could not be verified"
