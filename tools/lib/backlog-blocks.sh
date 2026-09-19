@@ -106,7 +106,32 @@ bb_strip_foreign_citations() {
 # detection, and tools/self/archive-sweep-check.sh's dated-closure check. One constant here, not a
 # copy-pasted ERE literal per site, so the next vocabulary widening dir #432's own comment predicts
 # is a one-line change instead of a multi-file hunt that can silently miss a site.
-BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT)'
+# dir #581 added FIXED (the 0.10.2 release manager's word for a fixed slate ticket, 17 headings).
+# dir #581 also decided the six `✅ RUN` / `✅ PHASE` / `✅ RC` / `✅ DECIDED` headings are NOT
+# closures: each names an in-flight sub-state of an open ticket (a run underway, a phase reached,
+# a release candidate cut, a decision recorded pending the decided action) rather than the ticket
+# itself being done — so they stay outside this constant on purpose, not by oversight.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT|FIXED)'
+
+# bb_closure_word_ok <candidate_marker>
+#   dir #581 (c): the write-time half — a closing writer (the release manager's marker sweep,
+#   docs/release-management.md R8) runs this on the exact marker text before writing it, so an
+#   unlisted word (the next `✅ SHIPPED`) is refused at the moment it would be minted rather than
+#   found by the next census. Checks the WHOLE candidate against the same constant every reader
+#   already shares — no second copy of the vocabulary to drift (dir #166's class). Takes the
+#   marker alone (e.g. `✅ FIXED (2026-09-19)`), not a full heading line; returns 0 (word
+#   recognised) or 1 (not recognised — printed to stderr so a caller under `set -e` still reports
+#   why before it aborts).
+bb_closure_word_ok() {
+  local candidate="$1"
+  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN} ]]; then
+    return 0
+  fi
+  printf 'bb_closure_word_ok: %s\n' "$candidate" >&2
+  printf '  is not in the recognised closure vocabulary (BB_CLOSURE_TAG_PATTERN in tools/lib/backlog-blocks.sh).\n' >&2
+  printf '  widen the constant in the same change, or write a word it already recognises.\n' >&2
+  return 1
+}
 
 # bb_own_ticket_num <heading_line_or_block>
 #   dir #426 (simplify pass): the "extract this heading's own `dir #N`" one-liner was copy-pasted
