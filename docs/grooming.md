@@ -261,52 +261,26 @@ ticket's release tag: cite the ticket by number and let the reader (or the next 
 current tag live. Never assert a specific release tag in prose — a later re-tag leaves an asserted one
 stale and silently wrong.
 
-**Two extraction rules the first `/groom` run paid for.** A heading's release tag is the **last** `→`
-token on the heading that names a release or the pool — headings carry prose arrows too ("→ ask",
-"→ contest with dir #N", "→ a release of its own"), and an any-match extractor reports phantom
-releases: the first run's first census showed six release names that do not exist, caught only by
-recounting under the last-arrow rule. Exclude closed headings BEFORE extracting — a closure note can
-end in an arrow of its own ("→ 10,884 lines"), which is the one shape where the last arrow is not the
-tag. And a ticket
-that still carries the **just-shipped** release's tag while staying open on an acceptance leg (a run
-that must happen during the next release before the ticket can close) is an **acceptance obligation of
-the new slate**, listed on the plan as such — never re-tagged, never counted as a build item, never
-read as a stale heading.
+A heading's release tag is the **last** `→` token on the heading that names a release or the pool —
+headings carry prose arrows too ("→ ask", "→ contest with dir #N", "→ a release of its own"), and an
+any-match extractor reports phantom releases: the first run's first census showed six release names
+that do not exist, caught only by recounting under the last-arrow rule. Exclude closed headings BEFORE
+extracting — a closure note can end in an arrow of its own ("→ 10,884 lines"), which is the one shape
+where the last arrow is not the tag. And a ticket that still carries the **just-shipped** release's tag
+while staying open on an acceptance leg (a run that must happen during the next release before the
+ticket can close) is an **acceptance obligation of the new slate**, listed on the plan as such — never
+re-tagged, never counted as a build item, never read as a stale heading.
 
-**A third extraction rule, paid for by the first `/groom` run on an ADOPTER project (a knowledge-base
-backlog, 2026-09-08): the closed-heading predicate is itself a derived fact, and a loose one silently
-under-counts the slate.** That run's census classified an *open* ticket as closed because the groom had
-just re-scoped it and written `RE-SCOPED` into its heading — the predicate matched a family of
-status-sounding words, and a status word that is not a closure matched anyway. The count came back 57;
-the correct answer was 58. It was caught only because a later pass used a narrower predicate and the two
-disagreed. The generalisation is sharper than the one word: **a groom edits headings and then reads
-headings, so it is the one consumer whose input its own earlier steps have just changed** — G3's
-"regenerate from the live file" is necessary but not sufficient when the groom is itself what made the
-file live. Two rules follow. **Match closure on the project's actual closure MARKER** (keel: `✅`), never
-on a vocabulary of status words, because a groom mints new status words as it goes. And **run the census
-twice — once before the hygiene sweep and once after the last heading edit — and reconcile any
-disagreement before writing a count.** The second run is nearly free and is the only step that catches a
-predicate that is wrong, as opposed to a file that has moved.
-
-**A fourth extraction rule, earned on an adopter project whose previous cycle was dormancy, not a
-release (traverse, 2026-09-10): match the closure marker at a fixed position, and check whether the
-project's status vocabulary is overloaded before trusting any census.** G3's existing closure-marker
-rule (above) is necessary and, on this adopter, still insufficient, for two reasons the doc did not yet
-cover. (a) A partial ticket routinely cites the closure marker of its own shipped slice *mid-cell*
-("🟡 Seed ✅ #44 — full UX awaits B.56"), so an anywhere-in-the-cell match reports it closed; five rows
-flipped state between an anywhere-match and a position-anchored match on this project. (b) The same
-marker can carry two meanings in one column — one glyph meant "Fixed" on six rows and "Low priority"
-on another — the same glyph meaning both a state and a priority is common in hand-maintained tables and
-is invisible from the count alone.
-
-**All four extraction rules are compensations for one missing mechanism, and they name it.** Nothing
-shipped reports the slate lanes (the pool report counts the pool only), so every groom re-derives its
-census by hand — which is exactly where the phantom-release, closure-note-arrow, loose-predicate and
-mid-cell-marker/overloaded-glyph defects above were minted. `dir #496` owns the shipped census (open
-tickets by last-arrow tag, closure by the project's marker at a fixed position via the shared scanner,
-counted once before and once after the sweep); when it lands, the four rules become that tool's own
-header, and this section
-points at the tool. Until then they are guidance to follow by hand, not a permanent limit.
+**Two further extraction rules, earned the same way — a re-scope status word read as a closure, and a
+mid-cell/overloaded closure marker — plus the two rules above, are shipped, not hand-guidance to
+re-derive.** Where the project's census mechanism exists, run it instead of hand-deriving the list and
+count: keel's instance is `tools/self/backlog-census.sh` (dir #496), whose own header carries the full
+rationale for all four rules, one paragraph apiece, so it is not restated here. **Run it twice — once
+before the hygiene sweep and once after the last heading edit (G4) — and reconcile any disagreement
+before writing a count**; the second run is nearly free and is the only step that catches a predicate
+that is wrong, as opposed to a file that has moved. Where the mechanism or its equivalent has not
+shipped on a project, this rule names the gap rather than asserting an unshipped tool's own rules as
+settled fact — derive all four by hand, and re-derive on every cycle, not once and carry forward.
 
 ## G4 — the hygiene sweep
 

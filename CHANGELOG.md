@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/self/backlog-census.sh`** (dir #496): the shipped remover `docs/grooming.md` G3's four
+  hand-derivation rules name — last-arrow release tag (`pool`/`next`/`on-demand`/`N.N[.N]` only, a
+  grade re-tag arrow excluded by the restricted vocabulary), closure via the shared, citation-aware
+  predicate at a fixed marker position, `untagged` for anything else. `--list TAG` prints ticket
+  numbers in file order. G3 and `commands/groom.md`'s G3 line now point at it.
+
 ### Changed
 
 - **`docs/grooming.md` G0 — the read-trace rotation is the groom's own closing step** (dir #543):
