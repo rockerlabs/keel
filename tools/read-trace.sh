@@ -48,9 +48,10 @@
 #                                     "mutated, never wrapped".
 #   read-trace.sh aggregate [dir]    Tier-2 aggregator TOOL — prints the small table (FORMAT below);
 #                                     the raw log never crosses into any context, only this does.
-#   read-trace.sh rotate [dir]       Release-boundary log rotation (manual — the release manager's own
-#                                     wrap-time chore, not auto-wired): archives the persistent logs so
-#                                     they don't grow unbounded across releases.
+#   read-trace.sh rotate [dir]       Release-boundary log rotation (manual, not auto-wired — run by the
+#                                     NEXT groom at the close of its G0 retro, after it has read
+#                                     `aggregate`; never at the tag — docs/grooming.md G0, dir #543):
+#                                     archives the persistent logs so they don't grow unbounded.
 #
 # --- AGGREGATE FORMAT (pinned by tests/test_read_trace.sh) -----------------------------------------
 # dir #386's /groom G0 cites this generically, by mechanism ("`read-trace.sh aggregate`'s dead-doc

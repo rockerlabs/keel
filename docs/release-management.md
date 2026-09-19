@@ -306,6 +306,15 @@ and this doc adds only the route: a worker's memory-worthy finding rides in its 
 (R13) and the manager writes it at the single wrap. One release's worker wrote two entries itself;
 both were good, and no brief had said where they go.
 
+**The marker's WORD is part of the contract, not the writer's choice (applied 2026-09-20).** The
+backlog's mechanisms read a fixed closure vocabulary (keel: `tools/lib/backlog-blocks.sh`'s closure
+constant), not the glyph alone — the 0.10.2 close wrote `✅ FIXED` on all seventeen fixed headings and
+every consumer read them as still open. Write a word the scanner already recognises (keel today:
+`✅ DONE` or `✅ CLOSED`) or widen the scanner in the same PR; never mint one at the close. A
+remembered spelling rule is the compensation; its remover is `dir #581` — the scanner learns `FIXED`
+AND the closing write is checked against the constant, so the next unlisted word is refused at write
+time rather than discovered by the next census.
+
 **This overrides a conforming `/go`'s own claim step.** `/go`'s own instructions have the worker write
 its own `⏳ IN FLIGHT` marker directly onto the ticket heading — correct in a standalone run, and a
 second writer during a managed release if followed literally. Every worker brief in a managed release
@@ -347,13 +356,13 @@ running the actual release-publish command — publishing is an irreversible out
 
 **Rotate a per-cycle instrument's logs AFTER the next groom has read them, never at the tag.** Where
 a project keeps a session-scoped log the grooming retro consumes (keel's own is the read trace, whose
-rotation the tool's header assigns to this role as a wrap-time chore), rotating it at release close
-leaves the next groom's retro reading a cycle that is hours old while the one it needs sits in an
-archive. Nothing else in this procedure prescribes the rotation at all, so nothing forces the wrong
-order — which also means nothing forces the right one; it is a step to add here, not to move. The
-cheapest correct order is: tag, then let the next groom run, then rotate. See
-[`docs/grooming.md`](grooming.md)'s G0 for the reading this protects, and its `dir #459` for the
-alternative fix (teaching the tool to read a rotated cycle) — one or the other, not both.
+rotation the tool's header USED to assign to this role as a wrap-time chore), rotating it at release
+close leaves the next groom's retro reading a cycle that is hours old while the one it needs sits in an
+archive. The cheapest correct order is: tag, then let the next groom run, then rotate — and since
+2026-09-20 the step has an owner on the right side of that order: **the groom runs it at the close of
+its G0 retro** ([`docs/grooming.md`](grooming.md) G0, dir #543), and this role runs it never. See that
+section for the reading this protects, and its `dir #459` for the alternative fix (teaching the tool to
+read a rotated cycle) — one or the other, not both.
 
 ## R10 — the seams duty, active not passive
 

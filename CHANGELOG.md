@@ -15,6 +15,35 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/grooming.md` G0 — the read-trace rotation is the groom's own closing step** (dir #543):
+  read `aggregate`, record both figures, run `rotate`, record the archive suffix. The order was
+  already fixed in `docs/release-management.md` R9; the owner was not — `tools/read-trace.sh`'s
+  header assigned it to the release manager, the role the order forbids, so keel's live cycle had
+  spanned three releases. The header and R9 now both name the groom.
+- **`docs/grooming.md` G0 + G4 + G5 — the "previous cycle produced a SPEC" flavour** (dir #560): a
+  design session that closes a slate's design-gated item changes the slate's shape without moving a
+  tag; the groom that follows absorbs the spec's outcome, re-examines the absorbed ticket with
+  evidence, triages the spec's own "follow-ups to file at close" list as a fourth accumulator (G4(d)),
+  and asks the spec's operator decisions itself. G5's design-economics field now records that the
+  design-session flow leaves no cost line and names dir #561 as the remover.
+- **`docs/release-management.md` R8 — the closure marker's WORD is part of the contract.** The 0.10.2
+  manager closed seventeen fixed headings as `✅ FIXED`, a word outside `tools/lib/backlog-blocks.sh`'s
+  closure vocabulary, so every scanner-backed mechanism read all seventeen shipped tickets as open;
+  the single writer now writes a word the project's scanner recognises or widens the scanner in the
+  same PR (remover dir #581: the scanner learns the word AND the closing write is checked against the
+  constant).
+- **`docs/delta-audit.md` §8 — a `ticket-next` finding is filed `→ pool` by default**, never straight
+  into the next release's tag (operator decision, 2026-09-20): nine audit tickets filed into 0.11.0
+  on the day of the 0.10.2 cut doubled a drain that had been sized at 14, bypassing the groom's
+  body-read gate. Exceptions: `fix-before-tag` and a behavioural finding the verdict names.
+- **`docs/release-audit.md` phase 7 + `docs/grooming.md` G4 — the pool history's release key has ONE
+  owner, the groom** (dir #461 half 1, operator decision 2026-09-20): the cut runs
+  `tools/self/pool-report.sh` read-only; the measurement behind the decision is in G4.
+- `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
+  0.10.1 RC audit filed, carried three cycles.
+
 ## [0.10.2] — 2026-09-19
 
 **Known issues, disclosed at the cut.** This is the patch the operator named for one pain — "close
