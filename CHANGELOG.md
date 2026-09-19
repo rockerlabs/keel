@@ -287,6 +287,21 @@ sections real content going forward — see that page for exactly when each one 
   plain body-identical canonical + fallback pair, same as the other opening-shape fixtures beside it,
   and the comment states plainly what the assertions guard instead of implying a discrimination they
   never made.
+- **`tests/lib.sh`'s `run_in()` guarded a bad path with `cd "$dir" || {...}`, but `cd ""` is a silent
+  bash no-op that returns 0 and leaves `$PWD` unchanged, so an empty `$dir` never tripped the guard
+  and the command ran in the suite's own invocation directory instead** (dir #478; found live by the
+  release manager, `bash -c 'cd ""; echo $?; pwd'` reproducing 0/unchanged). `run_in()` now rejects an
+  empty `$dir` explicitly before the `cd`, red-then-green proven in a new `tests/test_run_in_empty_dir.sh`.
+  Every `run_in` caller in the suite is guarded upstream (`require_sandbox_path`/`new_repo`), so this
+  closes a defence-in-depth gap, not a reproduced live leak. Swept tree-wide for the same `cd "$var"`
+  idiom (34 guarded `cd "$var" ||`/`&&` sites in 23 files, plus 5 bare `cd "$var"` sites): 4 changed
+  (the fix above; `docs/demo/record-demo.sh`'s `$sandbox` site and `docs/keel-ab/grade.sh`'s `$repo`
+  site, whose `cd "$var" || exit 1` had the identical hole under `set -uo pipefail` with no upstream
+  emptiness check; and `tools/pipeline-canary.sh`, whose `$d` comes from `mktemp -d` under `set -u`
+  alone), 35 checked and left unchanged (each var is either concatenation-safe, `dirname`-derived,
+  already `[ -n ]`-guarded upstream, or a `mkdir -p ""` failure under `set -e` aborts before the `cd`
+  is reached — `record-demo.sh`'s own `$proj` site is this last file's own added-then-reverted example,
+  caught by this PR's own review round: `$proj="$sandbox/my-project"` is concatenation-safe).
 
 ## [0.10.1] — 2026-09-15
 

@@ -260,6 +260,9 @@ cmd_demo_bypass() {
   # (no -operator-run/-waived suffix) with NO matching trace file, then asserts the gate still denies it.
   # This is the canary's own proof that it can fail — a canary that has never failed proves nothing.
   d="$(mktemp -d)"
+  # dir #478: this script runs `set -u` only (no `-e`) — a failed mktemp would leave $d empty and
+  # every `git -C "$d"`/`cd "$d"` below would silently act on the invocation directory instead.
+  [ -n "$d" ] || { echo "pipeline-canary: mktemp -d failed" >&2; exit 1; }
   git -C "$d" init -q
   git -C "$d" config user.email canary@keel.invalid
   git -C "$d" config user.name "Keel Canary"
