@@ -39,6 +39,12 @@
 #   secret-scan.sh -- FILE...      same as FILE... mode, but every argument after `--` is a literal
 #                                  filename regardless of what it looks like — never re-dispatched
 #
+# SECRET_SCAN_LOCAL_PUSH=1 (env, --range only): set ONLY by the LOCAL pre-push hook (tools/secret-
+#   guard/pre-push), NEVER by ci-scan.sh — tells the --range allowlist-baseline resolution it is safe
+#   to also trust content already reachable via a remote-tracking ref (dir #518). Safe only pre-push,
+#   where the pushed commits are not yet reachable from any local remote-tracking ref by construction;
+#   unsafe post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
+#
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
 #   a repo-root .secret-scan-allow file:
@@ -81,6 +87,18 @@ ALLOW_FILE=".secret-scan-allow"
 # not a bool, so a future --range fix can set its own baseline (the range's start commit, not
 # HEAD) without a second flag or a second branch in the shared allowlist-parsing block below.
 ALLOW_BASELINE_REF=""
+# dir #518: --range's own baseline is not always ONE commit (unlike --staged's HEAD) — an ordinary
+# `git merge origin/main` before push (ubiquitous workflow) makes `git rev-list --boundary` return
+# TWO already-known ancestors (the old tip, and whatever the merge pulled in), not one, and both are
+# equally legitimate "this existed before the push" evidence (max-review finding: an earlier design
+# here required exactly one boundary commit and fell back to fail-closed on a plain merge, which
+# would have false-blocked routine pushes on every pre-existing allowlist entry). ALLOW_BASELINE_REFS
+# holds the full set to union; ALLOW_BASELINE_MODE="range" tells the shared compare block below to
+# read that set instead of the scalar ALLOW_BASELINE_REF (which stays reserved for --staged) — a
+# separate flag because an EMPTY set (no baseline resolves at all) must still mean "range mode, fail
+# closed", not "no mode set, skip the check entirely" (--tracked/FILE mode's actual meaning).
+ALLOW_BASELINE_REFS=()
+ALLOW_BASELINE_MODE=""
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 
 # All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
@@ -312,8 +330,22 @@ emit_diff() {
 # selftest — end-to-end verification via child runs of this same script in FILE mode, from a neutral
 # cwd (so a repo's .secret-scan-allow can't mask a probe) with a fixture personal file. A guard you
 # can't verify degrades silently — this is the check install/bootstrap scripts run after wiring.
+#
+# Scope (dir #524): this covers what an ADOPTER'S install needs re-verified on THEIR host — the two
+# detector classes actually catch a shape (key/personal, text/binary/UTF-16/UTF-32, inline-allow,
+# fail-closed-on-bad-regex) plus, below, the --range message/tag/allowlist-baseline passes. It does
+# NOT re-run dir #508's four --staged diff-PARSING fixtures (a renamed binary, a hunk-header anchor,
+# a literal-pathspec glob, a same-change allowlist entry): those are properties of THIS SCRIPT'S OWN
+# CODE against git's diff format, not of the host it runs on — nothing about a given install could
+# make emit_diff parse a hunk header differently. They already have full, mutation-proved regression
+# coverage in tests/test_secret_guard.sh (dev-time, every change), and duplicating them here would
+# tax EVERY adopter install (install-secret-guard.sh runs --selftest before copying, dir #250) for a
+# host-independent property that install can never actually change.
 selftest() {
-  local script dir rc=0 fake greprc trailer mrepo trepo
+  local script dir rc=0 fake greprc trailer mrepo trepo arepo arbase
+  # shared git identity for every probe repo's commits/tags below — a probe repo must not depend on
+  # host config (max-review reuse finding: this pair used to be re-typed at each of 4 call sites).
+  local id_flags=(-c user.name=keel -c user.email=keel@keel.invalid)
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -379,17 +411,17 @@ selftest() {
   probe_repo() {  # $1 = dir, $2 = optional second -m paragraph for the probe commit
     git init -q --template= "$1" 2>/dev/null || return 1
     if [ -n "${2:-}" ]; then
-      git -C "$1" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+      git -C "$1" "${id_flags[@]}" -c commit.gpgsign=false \
         commit -q --no-verify --allow-empty -m probe -m "$2" 2>/dev/null
     else
-      git -C "$1" -c user.name=keel -c user.email=keel@keel.invalid -c commit.gpgsign=false \
+      git -C "$1" "${id_flags[@]}" -c commit.gpgsign=false \
         commit -q --no-verify --allow-empty -m probe 2>/dev/null
     fi
   }
-  range_probe() {  # $1 = repo, $2 = rev to push-scan, $3 = label — expects the scan to BLOCK
+  range_probe() {  # $1 = repo, $2 = full --range argument, $3 = label — expects the scan to BLOCK
     local got=0
     (cd "$1" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
-       "$script" --range "$2 --not --remotes" >/dev/null 2>&1) || got=$?
+       "$script" --range "$2" >/dev/null 2>&1) || got=$?
     if [ "$got" -eq 1 ]; then
       echo "selftest: OK   — $3"
     else
@@ -398,18 +430,45 @@ selftest() {
   }
   mrepo="$dir/msgrepo"
   if probe_repo "$mrepo" "$trailer"; then
-    range_probe "$mrepo" HEAD "caught a session trailer in a pushed commit message"
+    range_probe "$mrepo" "HEAD --not --remotes" "caught a session trailer in a pushed commit message"
   else
     echo "selftest: WARN — could not create the message-probe repo; the commit-message pass is unverified on this host" >&2
   fi
   # the tag probe's commit is CLEAN, so a hit can only come from the tag body
   trepo="$dir/tagrepo"
   if probe_repo "$trepo" \
-     && git -C "$trepo" -c user.name=keel -c user.email=keel@keel.invalid -c tag.gpgsign=false \
+     && git -C "$trepo" "${id_flags[@]}" -c tag.gpgsign=false \
           tag -a probe-tag -m "$(printf 'release\n\n%s' "$trailer")" 2>/dev/null; then
-    range_probe "$trepo" probe-tag "caught a session trailer in a pushed annotated-tag message"
+    range_probe "$trepo" "probe-tag --not --remotes" "caught a session trailer in a pushed annotated-tag message"
   else
     echo "selftest: WARN — could not create the tag-probe repo; the tag-message pass is unverified on this host" >&2
+  fi
+  # dir #518: --range's allowlist BASELINE resolution (the part this ticket added) — a same-pushed-
+  # range allowlist entry must not exempt the secret it was added to hide, dir #508(a)'s own
+  # same-change rule now reaching --range's "A..B" shape too (an existing branch's ordinary push —
+  # the common case a pre-push hook actually sees; range-lib.sh's OTHER shape, "<tip> --not
+  # --remotes" for a brand-new ref, is covered by the ticket's own regression fixtures instead —
+  # it needs a second git remote-tracking ref to set up, more than a per-install smoke probe earns).
+  # $1 = repo, already probe_repo()'d — plants a key + a SAME-range allowlist entry and commits
+  # them together; sets $arbase on success. A real function (not inline in the if-body, language-
+  # pitfall finding): the sibling mrepo/trepo probes chain their own risky git call INTO the if's own
+  # condition via `&&` specifically so a failure there is exempt from `errexit` and falls through to
+  # the graceful WARN below — inline then-body statements are NOT exempt the same way, so a failure
+  # here would previously have crashed the whole selftest (and thus install-secret-guard.sh) instead
+  # of degrading like every other probe does.
+  plant_range_allow() {
+    arbase="$(git -C "$1" rev-parse HEAD)" || return 1
+    printf '%s\n' "$fake" > "$1/key.txt" || return 1
+    printf '%s\n' "$fake" > "$1/.secret-scan-allow" || return 1    # NEW entry, SAME pushed range as the key
+    git -C "$1" add key.txt .secret-scan-allow || return 1
+    git -C "$1" "${id_flags[@]}" -c commit.gpgsign=false \
+      commit -q --no-verify -m "key + same-range allowlist entry" || return 1
+  }
+  arepo="$dir/rangeallow"
+  if probe_repo "$arepo" && plant_range_allow "$arepo"; then
+    range_probe "$arepo" "$arbase..HEAD" "caught a same-pushed-range allowlist entry ('A..B' baseline resolution)"
+  else
+    echo "selftest: WARN — could not create the range-allowlist probe repo; the --range baseline pass is unverified on this host" >&2
   fi
   return $rc
 }
@@ -614,18 +673,121 @@ esac
 
 [ -n "$records" ] || { echo "secret-scan: clean"; exit 0; }
 
+# dir #518: resolve the --range allowlist same-change-provenance baseline (dir #508 (a) extended to
+# --range too), but only now — AFTER we already know this push has something to check the allowlist
+# against at all (max-review completeness finding: an earlier cut ran this unconditionally inside the
+# --range arm whenever an allowlist file existed, paying a full boundary graph-walk, and printing its
+# "no baseline" WARN, on every push to any repo carrying a .secret-scan-allow — including a fully
+# clean push that never reaches this line). `[ -n "${rng:-}" ]` is `--range` mode's own marker: `rng`
+# is set nowhere else.
+#
+# `git rev-list --boundary` gives the exact excluded frontier of WHATEVER rng already is, so one
+# mechanism covers every pushed-ref shape without this scanner ever needing to know the remote's name
+# or reconstruct a remote-tracking ref path: for "A..B" the boundary is A itself (dir #518's first
+# fixture: an allowlist line predating the range is clean); for "<tip> --not --remotes" (a first push
+# of a new local ref — resolve_range_local in range-lib.sh only emits this shape when the pre-push
+# hook's own remote sha is zero) the boundary is the merge-base with whichever remote-tracking ref(s)
+# the tip forked from.
+#
+# UNION every boundary commit found, never require exactly one (max-review correctness finding,
+# confirmed live: an earlier version of this fix required a single boundary commit and treated 2+ as
+# ambiguous — but an ORDINARY `git merge origin/main` before push, the standard way a feature branch
+# picks up upstream, makes `--boundary` return TWO already-known ancestors, one per parent line the
+# merge commit brings in, not one; both are equally legitimate "existed before this push" evidence,
+# and treating that routine case as unresolvable fail-closed every pre-existing allowlist entry on the
+# single most common non-trivial `--range` shape there is). An entry is trusted if it existed in ANY
+# boundary commit's committed allow file — reachable ONLY via already-known history, so the union can
+# never include anything THIS push introduces: the security property (dir #508(a)'s own same-change
+# rule) holds regardless of how many boundary commits there are. Zero boundary commits (no shared
+# history at all — e.g. a brand-new branch with no upstream yet, dir #518's lead 1) unions to nothing:
+# every current entry reads as new-this-push, the ticket's own named fail-closed fallback, reached via
+# an empty set rather than a sentinel ref. **A third, disclosed shape reaches here too (max-review
+# finding, confirmed live, pinned by tests/test_ci_secret_scan.sh):** ci-scan.sh's own force-push
+# fallback (range-lib.sh's resolve_range_ci, zero-before branch) hands over a BARE ref with no
+# exclusion side at all — the true pre-push remote state is exactly what's unreachable there, so there
+# is no principled single baseline to fall back to either; it unions to nothing the same way, and that
+# is accepted, not an oversight — safe (over-blocking on an already-rare force-push, never a silent
+# pass), never silently unaccounted for.
+#
+# **A FOURTH gap, found by an in-session cross-model (Gemini) second opinion, fixed for the LOCAL
+# pre-push hook only (mutation-proved, pinned by tests/test_secret_guard.sh): a boundary snapshot of
+# THIS branch's own delta alone missed content already pushed elsewhere.** An entry that arrives
+# INSIDE the pushed range via a merge, even one that genuinely predates the secret it exempts (each
+# committed and pushed separately, and safely, on the branch it came from), was invisible to the union
+# the same way a same-change entry correctly is — `main` legitimately adds an entry in one commit and
+# the secret it exempts in a LATER commit (each individually clean against ITS OWN push-time baseline,
+# already reviewed and pushed to `origin/main`); a feature branch then `git merge origin/main`s both in
+# and pushes — the merge brought the pair INSIDE the range rather than leaving the entry at a boundary,
+# so it read as new-this-push and an otherwise-legitimate LOCAL push falsely BLOCKED.
+#
+# Fixed the same way `resolve_range_local`'s OWN first-push shape ("<tip> --not --remotes") already
+# excludes known-remote content: append `--not --remotes` to WHATEVER $rng already is, so a commit
+# already reachable from ANY remote-tracking ref (by definition already known/reviewed, on any branch)
+# resolves as a boundary commit in its own right. **But ONLY when `SECRET_SCAN_LOCAL_PUSH` says this
+# call is the LOCAL pre-push hook — a second, independent max-review pass (same cross-model reviewer,
+# a follow-up round) caught that applying this unconditionally is UNSAFE for `ci-scan.sh`'s caller:**
+# its own `resolve_range_ci` docstring already explains why (a CI checkout runs AFTER the push landed,
+# so the range's OWN TIP is typically already reachable from a remote-tracking ref too — reproduced
+# live: appending `--not --remotes` there doesn't just tighten the boundary, it excludes the tip itself
+# from the walk entirely, collapsing EVERY ordinary CI scan's baseline to nothing and fail-closing every
+# pre-existing allowlist entry on every push, not just the merge case this was meant to fix). The local
+# hook is the one caller where this is actually safe: it runs BEFORE the push transfers, so nothing in
+# $rng can yet be reachable from a remote-tracking ref by construction — an attacker's own newly-pushed
+# commit can never retroactively become "already known" this way, preserving the same-change security
+# property regardless of which branch of this `if` runs. Without the flag (ci-scan.sh, `--selftest`, a
+# human running `--range` by hand), the union falls back to the THIRD gap's own plain-boundary behavior
+# above — narrower, but exactly as safe as it was before this fourth gap was found.
+#
+# Still gated on the allowlist file existing too (a records hit with no .secret-scan-allow at all has
+# nothing for a baseline to gate — the shared compare block below never reads these either way).
+if [ -n "${rng:-}" ] && [ -f "$ALLOW_FILE" ]; then
+  ALLOW_BASELINE_MODE="range"
+  boundary_err="$(mktemp "$SCRATCH/blob.XXXXXX")"
+  if [ -n "${SECRET_SCAN_LOCAL_PUSH:-}" ]; then
+    boundary_rng="$rng --not --remotes"
+  else
+    boundary_rng="$rng"
+  fi
+  # shellcheck disable=SC2086  # boundary_rng intentionally word-split into rev-list args, same as elsewhere
+  if ! boundary_out="$(git rev-list --boundary $boundary_rng 2>"$boundary_err")"; then
+    # A real git-level failure walking $rng (e.g. a truncated/grafted clone) must not read
+    # identically to "no shared history yet" (max-review language-pitfall finding: an earlier cut
+    # discarded rev-list's own exit status here, unlike the --objects call above, which already
+    # treats this same class of failure as the config error it is).
+    echo "secret-scan: --range could not walk '$boundary_rng' to resolve its allowlist baseline — treating every .secret-scan-allow entry as new-this-push" >&2
+    sed 's/^/  /' "$boundary_err" >&2
+    rm -f "$boundary_err"
+  else
+    rm -f "$boundary_err"
+    while IFS= read -r _bl; do
+      case "$_bl" in
+        -*) ALLOW_BASELINE_REFS+=("${_bl#-}") ;;
+      esac
+    done <<< "$boundary_out"
+    if [ "${#ALLOW_BASELINE_REFS[@]}" -eq 0 ]; then
+      echo "secret-scan: --range found no pre-push history to compare the allowlist against (e.g. the first push of a brand-new branch with no upstream) — every .secret-scan-allow entry is treated as new-this-push and will not exempt a match here; commit a legitimate allowlist entry by itself, pushed ahead of the commit(s) that need it" >&2
+    fi
+  fi
+fi
+
 # --- apply the allowlist ------------------------------------------------------------------------------
 drop_res=()
 path_globs=()
 if [ -f "$ALLOW_FILE" ]; then
   # dir #508 (a): a legitimate human escape hatch must not be agent-usable in-band (FRAMEWORK.md
   # L701-702) — reject an allowlist entry added in the SAME staged change as the secret it would
-  # exempt. Compare against a trusted baseline ref's committed copy, not the staged/working one:
-  # an entry only new relative to that baseline exempts nothing THIS change adds. No baseline ref
-  # (e.g. --range, --tracked, FILE mode) → no check, every entry trusted as before. A baseline ref
-  # with no HEAD yet (first ever commit) → head_allow_lines stays empty, so every current entry
-  # reads as new-this-change. Read once into a plain array (not re-grepped per entry): bash 3.2
-  # has indexed arrays but no associative ones, and this file must run on macOS's stock bash.
+  # exempt. Compare against a trusted baseline's committed copy, not the staged/working one: an
+  # entry only new relative to that baseline exempts nothing THIS change adds. No baseline at all
+  # (--tracked, FILE mode) → no check, every entry trusted as before. A baseline ref with no HEAD
+  # yet (first ever commit) → head_allow_lines stays empty, so every current entry reads as
+  # new-this-change. Read once into a plain array (not re-grepped per entry): bash 3.2 has indexed
+  # arrays but no associative ones, and this file must run on macOS's stock bash.
+  #
+  # Two callers, two shapes (dir #518): --staged has exactly one trusted point (HEAD) → the scalar
+  # ALLOW_BASELINE_REF. --range can have SEVERAL equally-legitimate ones (an ordinary merge before
+  # push boundaries to more than one already-known ancestor — see the --range arm's own comment) →
+  # the ALLOW_BASELINE_REFS array, unioned below when ALLOW_BASELINE_MODE="range"; an entry counts
+  # as pre-existing if ANY one of them already had it committed.
   head_allow_lines=()
   if [ -n "$ALLOW_BASELINE_REF" ]; then
     # `|| [ -n "$hl" ]`: without it, a baseline file with no trailing newline loses its LAST line —
@@ -634,6 +796,13 @@ if [ -f "$ALLOW_FILE" ]; then
     while IFS= read -r hl || [ -n "$hl" ]; do
       head_allow_lines+=("${hl%$'\r'}")
     done < <(git show "$ALLOW_BASELINE_REF:$ALLOW_FILE" 2>/dev/null || true)
+  elif [ "$ALLOW_BASELINE_MODE" = "range" ]; then
+    for _bref in "${ALLOW_BASELINE_REFS[@]:-}"; do
+      [ -n "$_bref" ] || continue
+      while IFS= read -r hl || [ -n "$hl" ]; do
+        head_allow_lines+=("${hl%$'\r'}")
+      done < <(git show "$_bref:$ALLOW_FILE" 2>/dev/null || true)
+    done
   fi
   # `|| [ -n "$entry" ]`: same reason as head_allow_lines above — an allowlist with no trailing
   # newline on its last line would otherwise silently lose that entry entirely (dropped from
@@ -644,8 +813,11 @@ if [ -f "$ALLOW_FILE" ]; then
     case "$entry" in
       \#*) continue ;;                     # comment
     esac
-    if [ -n "$ALLOW_BASELINE_REF" ] && ! array_contains "$entry" "${head_allow_lines[@]:-}"; then
-      echo "secret-scan: ignoring an allowlist entry new in this staged change (commit it separately first, unstaged from the secret it would exempt): $entry" >&2
+    if { [ -n "$ALLOW_BASELINE_REF" ] || [ "$ALLOW_BASELINE_MODE" = "range" ]; } \
+       && ! array_contains "$entry" "${head_allow_lines[@]:-}"; then
+      # "this change" (not "this staged change"): dir #518 reuses this same check for --range, where
+      # nothing is staged — the wording must hold for both callers.
+      echo "secret-scan: ignoring an allowlist entry new in this change (put it in its own earlier commit, ahead of the secret it would exempt, and already pushed/committed before this change): $entry" >&2
       continue
     fi
     case "$entry" in
