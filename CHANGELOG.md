@@ -44,6 +44,16 @@ sections real content going forward — see that page for exactly when each one 
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
 
+### Fixed
+
+- **`tools/lib/dir-tickets.sh`'s `extract_dir_tickets` now sees through a bold-wrapped bare-`#N`
+  continuation** (dir #578) — `**dir #478**, **#480**, **#481**`, the exact shape CHANGELOG.md's own
+  `[0.10.1]` known-issues paragraph uses, previously broke the anchor match dead after the first
+  fully-spelled ticket, since the `**` sitting between tokens isn't in the separator class. Emphasis
+  markers are now stripped bare (content kept, not blanked the way a backtick span is) before
+  extraction — both Markdown bold forms, `**text**` and `__text__`, in one pass, since they are the same
+  defect shape; five previously machine-invisible tickets in the `[0.10.1]` paragraph are now extracted.
+
 ## [0.10.2] — 2026-09-19
 
 **Known issues, disclosed at the cut.** This is the patch the operator named for one pain — "close
