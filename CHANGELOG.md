@@ -146,6 +146,22 @@ sections real content going forward — see that page for exactly when each one 
   unconditionally, since there is no prior record yet to protect). The fixture path is corrected, and
   a new install→edit→reinstall→uninstall cycle test proves the never-clobber rail, mutation-proven:
   reverting `record_placed` to unconditional reddens six new assertions.
+- **`commands/polish.md` step 9 never warned that chaining a receipt write ahead of `gh pr create` on
+  ONE Bash command line lets the PreToolUse hook's `gh pr create` text match fire before the receipt
+  write has run, so the gate denies against the pre-write sentinel and the receipt is silently
+  skipped — read by the session as a gate defect** (dir #487; felt 4x on this machine before being
+  promoted from personal memory to the shipped doc). Step 9 now carries a one-paragraph caution:
+  write every receipt in its own Bash call, invoke `gh pr create` alone in the next one, and note that
+  a `gh pr create` failing for a NON-gate reason (a bad `--body-file`, a worktree's `.git` being a
+  file) still spends the receipt chain. `tests/test_rails_honesty.sh` pins both sentences.
+- **`tests/test_pre_pr_gate.sh` test 107 asserted the deny output contained the literal `dir #376`
+  tag — the message's own ticket citation, not the chain-survival behaviour under test — so the
+  assertion would pass on any deny carrying that tag regardless of whether the chain actually
+  survived** (dir #491; found by the 0.10.0 RC delta audit, ACCEPTED ticket-next). Replaced with an
+  assertion bound to the "chain is intact" wording `_deny_intact` emits; the adjacent `check_file`
+  sentinel-survival assertion already carries the real behavioural claim. Mutation-proven: making the
+  review-trace-missing deny retire the chain again (routing it through `_deny_discarded`) reddens both
+  the reworded assertion and the sentinel check.
 - **`tools/self/doctor.sh`'s `fn_open_re()` header now records its own known residual** (dir #490;
   found 2026-09-11 by the 0.10.0 RC delta audit, adjudicated ACCEPTED ticket-next): the widened regex
   can match a bare `fn()` line reproduced verbatim inside a heredoc body or a multi-line string
