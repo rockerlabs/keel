@@ -222,4 +222,16 @@ pin "FRAMEWORK.md: states doctor's non-flagging of runner labels as a known limi
   "$framework" 'a known limit of the check, not' \
   "expected FRAMEWORK.md L608 to state plainly that doctor's silence on runner labels is a limit of the check, not an endorsement of the label (dir #516 F16, operator decision 2026-09-18: pin)"
 
+# --- dir #487: step 9 warns against a compound receipt+`gh pr create` Bash call -------------------
+# The PreToolUse hook matches `gh pr create` in the command TEXT before any of that line has run, so a
+# receipt write chained ahead of it on the same line evaluates the gate against the pre-write sentinel
+# and denies — the receipt never ran, and the deny reads as a gate defect. Felt 4x on this machine
+# before being promoted to the shipped doc; guard the caution against silent removal.
+pin "polish.md: step 9 warns receipts and gh pr create must be separate Bash calls" \
+  "$polish" 'invoke `gh pr create` alone in the next one — never in' \
+  "expected step 9 to warn against chaining a receipt write and gh pr create in one Bash command (dir #487)"
+pin "polish.md: step 9 names a non-gate gh pr create failure as still spending the receipt chain" \
+  "$polish" 'still spends the receipt chain' \
+  "expected step 9 to note that a gh pr create failing for a non-gate reason (bad --body-file, worktree .git-as-file) still spends the chain (dir #487)"
+
 summary

@@ -3189,7 +3189,7 @@ d="$(mkrepo)"
 write_full_receipt "$d" "polish.5-review"
 gate "gh pr create --fill" "$d"
 check_contains "dir #346: polish.5-review missing → names the bare-Agent-spawn cause" "$OUT" "Skill(code-review) itself"
-check_contains "dir #346: polish.5-review missing → also carries the always-present dir #376 note" "$OUT" "dir #376"
+check_contains "dir #491: polish.5-review missing → also carries the always-present chain-is-intact wording" "$OUT" "chain is intact"
 check_file "dir #376: polish.5-review missing → chain survives" "$(sentinel_for "$d")"
 
 summary
