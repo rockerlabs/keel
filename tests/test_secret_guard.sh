@@ -961,54 +961,55 @@ tip="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" "$scan" --range "$oldtip..$tip"
 check_status "dir #518: merge-before-push (2+ boundary commits) — same-range entry still untrusted → BLOCKED" 1 "$STATUS"
 
-# (3) max-review correctness finding (in-session cross-model Gemini second opinion), fixed and
-# mutation-proved here: an entry that arrives INSIDE the pushed range via a merge, even one that
-# genuinely predates the secret it exempts on the branch it came from, must still be trusted — not
-# invisible to the boundary union the way a same-change entry correctly is. `main` (already pushed,
-# known via a real origin/main remote-tracking ref — new_bare_origin + push, not a hand-forged ref)
-# legitimately adds an allowlist entry in one commit and, in a LATER commit, the secret it exempts
-# (each individually clean against main's own push-time baseline); `feature` then `git merge
-# origin/main`s both commits in together and pushes. The merge commit that introduced the secret is
-# itself already reachable from origin/main, so `--not --remotes` (appended to the baseline
-# resolution) correctly resolves it as a boundary commit carrying the earlier entry — trusted, not
-# BLOCKED.
-repo="$(new_repo)"
-git -C "$repo" checkout -qb main
-git -C "$repo" commit -q --allow-empty -m root
-git -C "$repo" checkout -qb feature
-git -C "$repo" commit -q --allow-empty -m F1
-oldtip="$(git -C "$repo" rev-parse HEAD)"
-git -C "$repo" checkout -q main
-printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
-git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "main: add allowlist entry (clean push)"
-printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
-git -C "$repo" add key.txt; git -C "$repo" commit -qm "main: add the key the entry already exempts (clean push)"
-new_bare_origin "$repo" >/dev/null
-git -C "$repo" push -q origin main   # main's own commits are now known via a real origin/main tracking ref
-git -C "$repo" checkout -q feature
-git -C "$repo" merge -q --no-edit main
-tip="$(git -C "$repo" rev-parse HEAD)"
-run_in "$repo" "$scan" --range "$oldtip..$tip"
-check_status "dir #518: an entry+secret pair merged in from an already-pushed main → trusted, exit 0 (not BLOCKED)" 0 "$STATUS"
+# (3) max-review correctness finding (in-session cross-model Gemini second opinion), fixed for the
+# LOCAL pre-push hook and mutation-proved here: an entry that arrives INSIDE the pushed range via a
+# merge, even one that genuinely predates the secret it exempts on the branch it came from, must still
+# be trusted — not invisible to the boundary union the way a same-change entry correctly is. `main`
+# (already pushed, known via a real origin/main remote-tracking ref — new_bare_origin + push, not a
+# hand-forged ref) legitimately adds an allowlist entry in one commit and, in a LATER commit, the
+# secret it exempts (each individually clean against main's own push-time baseline); `feature` then
+# `git merge origin/main`s both commits in together and pushes. `SECRET_SCAN_LOCAL_PUSH=1` (what the
+# real pre-push hook sets) is what makes the merge commit that introduced the secret — itself already
+# reachable from origin/main — correctly resolve as a boundary commit carrying the earlier entry.
+range_repo() {  # $1 = allow entry content (empty = none), $2 = 1 to push main to a real origin
+  repo="$(new_repo)"
+  git -C "$repo" checkout -qb main
+  git -C "$repo" commit -q --allow-empty -m root
+  git -C "$repo" checkout -qb feature
+  git -C "$repo" commit -q --allow-empty -m F1
+  oldtip="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" checkout -q main
+  printf '%s\n' "$1" > "$repo/.secret-scan-allow"
+  git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "main: add allowlist entry"
+  printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+  git -C "$repo" add key.txt; git -C "$repo" commit -qm "main: add the key the entry already exempts"
+  if [ "${2:-}" = 1 ]; then
+    new_bare_origin "$repo" >/dev/null
+    git -C "$repo" push -q origin main   # main's own commits are now known via a real origin/main ref
+  fi
+  git -C "$repo" checkout -q feature
+  git -C "$repo" merge -q --no-edit main
+  tip="$(git -C "$repo" rev-parse HEAD)"
+}
 
-# security sanity check for the SAME fix: if main was NEVER pushed anywhere (no remote-tracking ref
-# knows about it at all), the identical merge must still correctly fail closed — the fix only trusts
-# content reachable via a REAL remote-tracking ref, never merely "on some other local branch".
-repo="$(new_repo)"
-git -C "$repo" checkout -qb main
-git -C "$repo" commit -q --allow-empty -m root
-git -C "$repo" checkout -qb feature
-git -C "$repo" commit -q --allow-empty -m F1
-oldtip="$(git -C "$repo" rev-parse HEAD)"
-git -C "$repo" checkout -q main
-printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
-git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "main: add allowlist entry (never pushed)"
-printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
-git -C "$repo" add key.txt; git -C "$repo" commit -qm "main: add the key the entry already exempts (never pushed)"
-git -C "$repo" checkout -q feature
-git -C "$repo" merge -q --no-edit main
-tip="$(git -C "$repo" rev-parse HEAD)"
+range_repo "$(key 'ghp_' 'A')" 1
+run_in "$repo" env SECRET_SCAN_LOCAL_PUSH=1 "$scan" --range "$oldtip..$tip"
+check_status "dir #518: LOCAL_PUSH=1, main already pushed → merged-in entry trusted, exit 0 (not BLOCKED)" 0 "$STATUS"
+
+# security sanity check: LOCAL_PUSH=1 set, but main was NEVER pushed anywhere (no remote-tracking ref
+# knows about it at all) — the flag only trusts content reachable via a REAL remote-tracking ref, never
+# merely "on some other local branch".
+range_repo "$(key 'ghp_' 'A')"
+run_in "$repo" env SECRET_SCAN_LOCAL_PUSH=1 "$scan" --range "$oldtip..$tip"
+check_status "dir #518: LOCAL_PUSH=1, main NEVER pushed anywhere → still fails CLOSED, BLOCKED" 1 "$STATUS"
+
+# CI-safety regression (the SECOND max-review round's own finding, fixed by gating on the flag): the
+# IDENTICAL already-pushed-main scenario, but WITHOUT SECRET_SCAN_LOCAL_PUSH (exactly how ci-scan.sh
+# invokes --range) must NOT get the fix applied — falls back to the pre-fourth-gap plain-boundary
+# behavior instead (over-blocking, same as before this ticket's fourth gap was found, never the
+# whole-baseline collapse a real CI checkout's own already-remote-known tip would otherwise cause).
+range_repo "$(key 'ghp_' 'A')" 1
 run_in "$repo" "$scan" --range "$oldtip..$tip"
-check_status "dir #518: same merge, but main was NEVER pushed anywhere → still fails CLOSED, BLOCKED" 1 "$STATUS"
+check_status "dir #518: NO LOCAL_PUSH flag (ci-scan.sh's own shape) → fix not applied, BLOCKED (safe)" 1 "$STATUS"
 
 summary

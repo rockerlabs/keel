@@ -39,6 +39,12 @@
 #   secret-scan.sh -- FILE...      same as FILE... mode, but every argument after `--` is a literal
 #                                  filename regardless of what it looks like — never re-dispatched
 #
+# SECRET_SCAN_LOCAL_PUSH=1 (env, --range only): set ONLY by the LOCAL pre-push hook (tools/secret-
+#   guard/pre-push), NEVER by ci-scan.sh — tells the --range allowlist-baseline resolution it is safe
+#   to also trust content already reachable via a remote-tracking ref (dir #518). Safe only pre-push,
+#   where the pushed commits are not yet reachable from any local remote-tracking ref by construction;
+#   unsafe post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
+#
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
 #   a repo-root .secret-scan-allow file:
@@ -703,33 +709,45 @@ esac
 # is accepted, not an oversight — safe (over-blocking on an already-rare force-push, never a silent
 # pass), never silently unaccounted for.
 #
-# **A FOURTH gap, found by an in-session cross-model (Gemini) second opinion and confirmed live
-# (mutation-proved, pinned by tests/test_secret_guard.sh): a boundary snapshot of THIS branch's own
-# delta alone missed content already pushed elsewhere.** An entry that arrives INSIDE the pushed range
-# via a merge, even one that genuinely predates the secret it exempts (each committed and pushed
-# separately, and safely, on the branch it came from), used to be invisible to the union the same way
-# a same-change entry is — `main` legitimately adds an entry in one commit and the secret it exempts in
-# a LATER commit (each individually clean against ITS OWN push-time baseline, already reviewed and
-# pushed to `origin/main`); a feature branch then `git merge origin/main`s both in and pushes — the
-# merge brought the pair INSIDE the range rather than leaving the entry at a boundary, so it read as
-# new-this-push and an otherwise-legitimate push falsely BLOCKED. Fixed the same way `resolve_range_local`
-# already excludes known-remote content for a brand-new ref's OWN first-push shape ("<tip> --not
-# --remotes"): append `--not --remotes` to WHATEVER $rng already is when resolving the BASELINE
-# specifically (never touching the separate $rng used above to decide what to scan for secrets) — a
-# commit already reachable from ANY remote-tracking ref is by definition already known/reviewed, on
-# ANY branch, not just this one, so M1 above (the secret's own introducing commit, already pushed to
-# origin/main) now resolves as a boundary commit in its own right, and its own committed allow file
-# already carries M0's earlier entry. Security holds: a commit an attacker introduces in THIS push is,
-# by construction, not yet reachable from any remote-tracking ref (that's what "pushing" means), so it
-# can never become a trusted boundary point this way — mutation-proved live (a same-range secret+entry
-# pair, even riding alongside legitimately-merged content, still fails closed and BLOCKS).
+# **A FOURTH gap, found by an in-session cross-model (Gemini) second opinion, fixed for the LOCAL
+# pre-push hook only (mutation-proved, pinned by tests/test_secret_guard.sh): a boundary snapshot of
+# THIS branch's own delta alone missed content already pushed elsewhere.** An entry that arrives
+# INSIDE the pushed range via a merge, even one that genuinely predates the secret it exempts (each
+# committed and pushed separately, and safely, on the branch it came from), was invisible to the union
+# the same way a same-change entry correctly is — `main` legitimately adds an entry in one commit and
+# the secret it exempts in a LATER commit (each individually clean against ITS OWN push-time baseline,
+# already reviewed and pushed to `origin/main`); a feature branch then `git merge origin/main`s both in
+# and pushes — the merge brought the pair INSIDE the range rather than leaving the entry at a boundary,
+# so it read as new-this-push and an otherwise-legitimate LOCAL push falsely BLOCKED.
+#
+# Fixed the same way `resolve_range_local`'s OWN first-push shape ("<tip> --not --remotes") already
+# excludes known-remote content: append `--not --remotes` to WHATEVER $rng already is, so a commit
+# already reachable from ANY remote-tracking ref (by definition already known/reviewed, on any branch)
+# resolves as a boundary commit in its own right. **But ONLY when `SECRET_SCAN_LOCAL_PUSH` says this
+# call is the LOCAL pre-push hook — a second, independent max-review pass (same cross-model reviewer,
+# a follow-up round) caught that applying this unconditionally is UNSAFE for `ci-scan.sh`'s caller:**
+# its own `resolve_range_ci` docstring already explains why (a CI checkout runs AFTER the push landed,
+# so the range's OWN TIP is typically already reachable from a remote-tracking ref too — reproduced
+# live: appending `--not --remotes` there doesn't just tighten the boundary, it excludes the tip itself
+# from the walk entirely, collapsing EVERY ordinary CI scan's baseline to nothing and fail-closing every
+# pre-existing allowlist entry on every push, not just the merge case this was meant to fix). The local
+# hook is the one caller where this is actually safe: it runs BEFORE the push transfers, so nothing in
+# $rng can yet be reachable from a remote-tracking ref by construction — an attacker's own newly-pushed
+# commit can never retroactively become "already known" this way, preserving the same-change security
+# property regardless of which branch of this `if` runs. Without the flag (ci-scan.sh, `--selftest`, a
+# human running `--range` by hand), the union falls back to the THIRD gap's own plain-boundary behavior
+# above — narrower, but exactly as safe as it was before this fourth gap was found.
 #
 # Still gated on the allowlist file existing too (a records hit with no .secret-scan-allow at all has
 # nothing for a baseline to gate — the shared compare block below never reads these either way).
 if [ -n "${rng:-}" ] && [ -f "$ALLOW_FILE" ]; then
   ALLOW_BASELINE_MODE="range"
   boundary_err="$(mktemp "$SCRATCH/blob.XXXXXX")"
-  boundary_rng="$rng --not --remotes"
+  if [ -n "${SECRET_SCAN_LOCAL_PUSH:-}" ]; then
+    boundary_rng="$rng --not --remotes"
+  else
+    boundary_rng="$rng"
+  fi
   # shellcheck disable=SC2086  # boundary_rng intentionally word-split into rev-list args, same as elsewhere
   if ! boundary_out="$(git rev-list --boundary $boundary_rng 2>"$boundary_err")"; then
     # A real git-level failure walking $rng (e.g. a truncated/grafted clone) must not read

@@ -145,6 +145,28 @@ after="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" "$ci"
 check_status "push: orphaned before + a genuinely pre-existing allowlist entry -> still BLOCKS (disclosed fail-closed residual, dir #518)" 1 "$STATUS"
 
+# --- push: an ORDINARY (non-force-push) before..after range, in a REAL CI clone topology, with a
+# genuinely pre-existing allowlist entry -> the entry must still suppress (max-review CI-safety
+# finding, second round): SECRET_SCAN_LOCAL_PUSH is what makes dir #518's --not---remotes baseline
+# fix safe to apply at all, and ci-scan.sh must NEVER set it (secret-scan.sh's own header names why).
+# A real bare+clone topology (like the zero-before case above) has BOTH before AND after already
+# reachable from the clone's own origin/* by the time ci-scan.sh runs -- proving the ordinary,
+# non-force-push CI path is unaffected by dir #518's fix, not just the already-covered force-push one.
+bare2="$(mktemp -d "$SANDBOX/bare2.XXXXXX")"; git init -q --bare "$bare2"
+work2="$(mktemp -d "$SANDBOX/work2.XXXXXX")"; git -C "$work2" init -q
+printf '%s\n' "$(key 'AKIA' 'A')" > "$work2/.secret-scan-allow"
+git -C "$work2" add .secret-scan-allow; git -C "$work2" commit -qm "add allowlist"
+before2="$(git -C "$work2" rev-parse HEAD)"
+git -C "$work2" push -q "$bare2" HEAD:refs/heads/main
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$work2/key.txt"
+git -C "$work2" add key.txt; git -C "$work2" commit -qm "add the exempted key"
+after2="$(git -C "$work2" rev-parse HEAD)"
+git -C "$work2" push -q "$bare2" HEAD:refs/heads/main
+clone2="$(mktemp -d "$SANDBOX/clone2.XXXXXX")"; rmdir "$clone2"
+git clone -q "$bare2" "$clone2"
+run_in "$clone2" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$before2" GITHUB_EVENT_AFTER="$after2" "$ci"
+check_status "push: ordinary range in a real CI clone, pre-existing entry -> still suppresses, exit 0 (dir #518 fix does not regress CI)" 0 "$STATUS"
+
 # --- the scanner missing next to ci-scan.sh is a config error, not a raw exec failure --------------
 missing="$(mktemp -d "$SANDBOX/missing.XXXXXX")"
 cp "$ci" "$missing/ci-scan.sh"
