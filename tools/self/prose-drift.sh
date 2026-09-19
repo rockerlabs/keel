@@ -86,8 +86,25 @@ repo_dir="${REPO_ARG:-.}"
 # not the raw `fatal: not a git repository` git itself would print once md_files's own `git ls-files`
 # below runs uncaught. -C here is deliberate over a plain `cd`: it fails the same "not a git repository"
 # way for a REPO_DIR that exists but was never checked out, without moving this script's own cwd.
-git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-  || { echo "prose-drift.sh: not a git repository: $repo_dir" >&2; exit 2; }
+# The OUTPUT is checked, not just the exit status (found live by /code-review medium on this ticket's
+# own diff): `--is-inside-work-tree` exits 0 and prints "false" for a bare repo (verified live), which
+# an exit-status-only check would have let straight through to a silent, empty `git ls-files` scan —
+# this REPO_DIR check exists to reject exactly that kind of REPO_DIR that "isn't what this tool needs,"
+# not only the git-refuses-outright case.
+repo_check_out="$(git -C "$repo_dir" rev-parse --is-inside-work-tree 2>&1)" || true
+if [ "$repo_check_out" != true ]; then
+  case "$repo_check_out" in
+    # A dubious-ownership fatal (this project's own documented Alpine/Docker CI trap, CLAUDE.md's
+    # third trap, dir #191/#230/#249) is a DIFFERENT, already-catalogued failure from "not a git
+    # repository at all" — collapsing it into this script's own generic message would send a session
+    # investigating a real dubious-ownership case down the wrong path (found live by /code-review
+    # medium: this exact regression was in the diff's first version). Let git's own diagnostic through
+    # unmodified instead of overwriting it.
+    *"dubious ownership"*) echo "prose-drift.sh: $repo_check_out" >&2 ;;
+    *) echo "prose-drift.sh: not a git repository: $repo_dir" >&2 ;;
+  esac
+  exit 2
+fi
 
 exit_code=0
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
@@ -253,43 +270,47 @@ report_hits sh "$sh_files"
 # inside backticks, is the same false-positive shape one level down, found live while writing the
 # `[0.7.1]` release note's own Known-issues paragraph.
 
-# Slugs for FILE's own ATX headings (`#` through `######`), in document order, GitHub-flavored:
-# lowercase, drop everything but [a-z0-9 _-], then each remaining space becomes its own hyphen —
-# GitHub does NOT collapse a run of spaces into one hyphen, it hyphenates each one (verified live
-# against this tree's own docs/getting-started.md: "Linked install — recommended on Claude Code" slugs
-# to `linked-install--recommended-on-claude-code`, the double hyphen is where the em dash's
-# surrounding spaces both survived). `LC_ALL=C` makes the character class byte-wise rather than
-# locale-dependent, so a multi-byte character is stripped as raw bytes instead of behaving differently
-# under whatever locale the shell happens to be in — correct for a stripped-punctuation mark like that
-# em dash, but it means a non-ASCII LETTER (an accented Latin character, a non-Latin script) is also
-# stripped byte-by-byte here, where GitHub's own slugger keeps Unicode word characters and strips only
-# punctuation. Every in-document anchor target in this tracked tree points at an ASCII plain-text
-# heading, so this signal doesn't need real Unicode handling to do its job today — but a heading with a
-# non-ASCII letter would slug differently here than on GitHub. A literal tab in heading text is folded
-# to a space FIRST (`tr '\t' ' '`), before the case fold and character strip, so it hyphenates the same
-# way a space does instead of being silently dropped by the character-class strip below. No DELIBERATE
-# inline-markup stripping: backtick/asterisk `code`/**bold** markers happen to slug correctly anyway,
-# as a side effect of the same punctuation strip that drops the em dash above, but a real markdown
-# LINK inside a heading (`[text](url)`) would leak the URL into the slug instead of using only the
-# visible text the way GitHub's own slugger does — out of scope here since no in-document anchor target
-# in this tracked tree points at a heading like that. blank_fenced_blocks keeps a heading-looking line
-# inside a fenced illustrative example from counting as a real heading, same as signal 1 and the link
-# scan below. Slugged and de-duplicated as one stream (not per-heading) — a second heading slugging to the
-# same value anchors at `#slug-1`, a third at `#slug-2`, and so on, same as GitHub's own collision
-# suffix.
+# Slugs for FILE's own ATX headings (`#` through `######`), in document order, GitHub-flavored,
+# de-duplicated as one stream (not per-heading) — a second heading slugging to the same value anchors
+# at `#slug-1`, a third at `#slug-2`, and so on, same as GitHub's own collision suffix.
+#
+# _ascii_fold is factored out (dir #240 item 2) so the anchor-side causation check further below
+# applies the IDENTICAL fold to an anchor, not a second hand-written copy that could drift from this
+# one — the same "one shared toggle, not two copies" discipline blank_fenced_blocks/
+# blank_inline_code_spans already follow in tools/lib/fence-blank.sh. It lowercases, drops everything
+# but [a-z0-9 _-], then hyphenates each remaining space — GitHub does NOT collapse a run of spaces into
+# one hyphen, it hyphenates each one (verified live against this tree's own docs/getting-started.md:
+# "Linked install — recommended on Claude Code" slugs to `linked-install--recommended-on-claude-code`,
+# the double hyphen is where the em dash's surrounding spaces both survived). `tr '\t' ' '` runs first
+# so a literal tab hyphenates the same way a space does instead of being silently dropped by the
+# character-class strip. `LC_ALL=C` makes that strip byte-wise rather than locale-dependent, so a
+# multi-byte character is stripped as raw bytes — correct for a punctuation mark GitHub also strips (an
+# em dash), but it means a non-ASCII LETTER is stripped too, where GitHub's own slugger keeps Unicode
+# word characters. Every in-document anchor target in this tracked tree points at an ASCII plain-text
+# heading, so this signal doesn't need real Unicode handling to do its job today.
+_ascii_fold() {
+  tr '\t' ' ' \
+    | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+    | LC_ALL=C sed -E 's/[^a-z0-9 _-]//g; s/ /-/g'
+}
 _heading_slugs() {
   local file="$1"
   [ -f "$file" ] || return 0
   # The 3rd substitution trims bare trailing whitespace left behind once the trailing-`#` strip runs
   # (a heading with no closing `#`s but a stray trailing space — an editor artifact, or markdown's own
-  # two-space line-break convention) — without it, that space survives to `s/ /-/g` below and produces
-  # a slug with a spurious trailing hyphen that never matches a real link's anchor.
+  # two-space line-break convention) — without it, that space survives to _ascii_fold's `s/ /-/g` and
+  # produces a slug with a spurious trailing hyphen that never matches a real link's anchor. No
+  # DELIBERATE inline-markup stripping: backtick/asterisk `code`/**bold** markers happen to slug
+  # correctly anyway, as a side effect of _ascii_fold's own punctuation strip, but a real markdown LINK
+  # inside a heading (`[text](url)`) would leak the URL into the slug instead of using only the visible
+  # text the way GitHub's own slugger does — out of scope here since no in-document anchor target in
+  # this tracked tree points at a heading like that. blank_fenced_blocks keeps a heading-looking line
+  # inside a fenced illustrative example from counting as a real heading, same as signal 1 and the link
+  # scan below.
   blank_fenced_blocks "$file" \
     | grep -E '^#+[[:space:]]' \
     | sed -E 's/^#+[[:space:]]+//; s/[[:space:]]+#+[[:space:]]*$//; s/[[:space:]]+$//' \
-    | tr '\t' ' ' \
-    | LC_ALL=C tr '[:upper:]' '[:lower:]' \
-    | LC_ALL=C sed -E 's/[^a-z0-9 _-]//g; s/ /-/g' \
+    | _ascii_fold \
     | awk '{ if (seen[$0]++) print $0 "-" seen[$0]-1; else print $0 }'
 }
 
@@ -307,13 +328,8 @@ _url_decode() {
   printf '%b' "$(printf '%s' "$1" | sed -E 's/\\/\\\\/g; s/%([0-9A-Fa-f]{2})/\\x\1/g')"
 }
 
-# dir #240 item 2: true if STRING contains a raw byte >= 0x80 — a cheap, deliberately approximate
-# stand-in for "is a non-ASCII LETTER" (a real Unicode letter class is out of scope here). Applied only
-# to an ANCHOR that has already failed to match `_heading_slugs`' ASCII-only output, so the false-
-# positive risk this approximation would otherwise carry (an em dash is also >= 0x80) is moot in
-# practice: an em-dash-only heading already slugs identically here and on GitHub (both strip it), so an
-# anchor built from one never reaches this check in the first place — only a genuine non-ASCII LETTER
-# (or an as-yet-unseen punctuation mark the two sluggers disagree on) does. `$'[\x80-\xff]'` under
+# True if STRING contains a raw byte >= 0x80 — a cheap first filter, not itself the WARN-vs-GAP
+# decision (see _anchor_fails_only_on_nonascii_letters below, which is). `$'[\x80-\xff]'` under
 # LC_ALL=C is the same shape of idiom (a bash ANSI-C-quoted `$'[\xNN-\xNN]'` byte range fed to grep,
 # with LC_ALL=C keeping grep comparing raw bytes instead of decoding multi-byte UTF-8 under the shell's
 # own locale) already proven cross-platform (GNU/BSD/busybox) by tools/public-audit.sh and
@@ -323,9 +339,31 @@ _has_nonascii_byte() {   # _has_nonascii_byte STRING
   LC_ALL=C grep -q $'[\x80-\xff]' <<< "$1"
 }
 
+# dir #240 item 2 (tightened by /code-review medium — three independent angles converged on the same
+# gap): true only when applying `_ascii_fold`'s IDENTICAL transform to ANCHOR would make it match a
+# REAL heading slug in FILE — i.e. the ONLY reason the raw anchor failed `_heading_slugs`' own match is
+# a non-ASCII byte the fold strips from a heading but GitHub's own slugger keeps (a genuine non-ASCII
+# LETTER). A raw byte-PRESENCE check alone (this function's first version) downgraded ANY anchor
+# containing a non-ASCII byte for ANY reason, including one that is ALSO wrong for an unrelated,
+# ordinary reason — found live, independently, by three review angles: `#käytä-typo` against a real
+# `## Käytä` heading (an ordinary ASCII typo riding along on a genuine non-ASCII anchor) and
+# `#background—details` (a literal em dash typed into the anchor in place of a hyphen, not derived from
+# a real heading) both downgraded to an advisory WARN under the presence-only check, though neither is
+# a slugger-Unicode-gap case — both are ordinary dead links a hard GAP should still catch. Folding the
+# anchor the identical way and checking it against a REAL heading's slug closes both: neither folded
+# anchor above matches any real heading (`kyt-typo` and `backgrounddetails` respectively — the second
+# has no hyphen at all, since folding a literal em dash strips it as a raw byte with no adjacent space
+# to hyphenate, unlike a real heading's ASCII hyphen), so both correctly stay a hard GAP.
+_anchor_fails_only_on_nonascii_letters() {   # _anchor_fails_only_on_nonascii_letters FILE ANCHOR
+  local file="$1" anchor="$2"
+  _has_nonascii_byte "$anchor" || return 1
+  _heading_slugs "$file" | grep -xF -- "$(printf '%s' "$anchor" | _ascii_fold)" >/dev/null
+}
+
 say ""
 say "● signal 2 — dead relative markdown links and anchors"
 dead=0
+anchor_warns=0
 # Same empty-list guard as report_hits()'s `[ -n "$files" ] || return 0` above — an `<<<` herestring
 # on an empty variable feeds one spurious empty-string iteration rather than zero. Shaped as an `if`
 # here instead of an early return because this is top-level script body, not a function: `return`
@@ -383,9 +421,13 @@ if [ -n "$md_files" ]; then
       if [ -n "$anchor" ] && [ "$is_md" = 1 ] && ! _heading_slugs "$resolved" | grep -xF -- "$anchor" >/dev/null; then
         # dir #240 item 2, narrowed contract: a non-ASCII LETTER in the anchor is outside this signal's
         # stated ASCII-only slug contract (header, signal 2) — downgrade to an advisory WARN rather than
-        # a hard GAP; every other dead anchor (a genuinely missing heading, a typo) stays a GAP.
-        if _has_nonascii_byte "$anchor"; then
+        # a hard GAP; every other dead anchor (a genuinely missing heading, a typo, or a non-ASCII anchor
+        # that is ALSO wrong for an unrelated ordinary reason) stays a GAP —
+        # _anchor_fails_only_on_nonascii_letters, not a bare byte-presence check, is what scopes this
+        # correctly (see its own comment).
+        if _anchor_fails_only_on_nonascii_letters "$resolved" "$anchor"; then
           warn "$f:$ln → \`$target\` anchor does not resolve (non-ASCII letters are outside signal 2's ASCII-only slug contract — advisory only)"
+          anchor_warns=$((anchor_warns + 1))
         else
           gap "$f:$ln → \`$target\` anchor does not resolve"
           dead=$((dead + 1))
@@ -397,8 +439,17 @@ if [ -n "$md_files" ]; then
       | sed -E 's/:\]\(/:/; s/\)$//')
   done <<< "$md_files"
 fi
-[ "$dead" -eq 0 ] && say "  OK   no dead relative markdown links or anchors"
+# dir #240 item 2 fix (found by /code-review medium): gate the "OK" line on BOTH counters, not just
+# $dead — signal 1's own ll_hits already does this (below); before this fix, a WARN-only run (an
+# anchor downgraded under the narrowed contract, zero real GAPs) still printed "OK no dead relative
+# markdown links or anchors" directly under the WARN line it contradicts, which read as the WARN being
+# decorative noise rather than an actual, if advisory, finding.
+if [ "$dead" -eq 0 ] && [ "$anchor_warns" -eq 0 ]; then
+  say "  OK   no dead relative markdown links or anchors"
+elif [ "$dead" -eq 0 ]; then
+  say "  OK   no dead relative markdown links or anchors ($anchor_warns non-ASCII-anchor WARN(s) above, advisory only)"
+fi
 
 say ""
-[ "$exit_code" = 0 ] && say "prose-drift: OK ($ll_hits line-length lead(s), advisory only)"
+[ "$exit_code" = 0 ] && say "prose-drift: OK ($ll_hits line-length lead(s), $anchor_warns anchor WARN(s), advisory only)"
 exit "$exit_code"
