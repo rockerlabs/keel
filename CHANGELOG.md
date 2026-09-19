@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **A review-null fix commit no longer needs a fresh `polish.5-review` trace** (dir #488): when a fix
+  commit's diff to the last commit a real review trace vouches for carries no reviewable claim —
+  comment/blank-line-only changes to already-reviewed `.sh` files, mechanically detected from the
+  diff's own content class (dir #123's tree-relevant-hash precedent, generalized to a different
+  predicate), never from the session's own say-so — `tools/pre-pr-gate.sh` still matches the earlier
+  trace at that level instead of denying. A partly-null fix, or one touching any non-`.sh` file, gets
+  no exception and needs a fresh trace exactly as before.
+
 ### Changed
 
 - **`tools/lib/gate-paths.sh` (new) is the ONE shared project-scope `settings.json` path** (dir #182):

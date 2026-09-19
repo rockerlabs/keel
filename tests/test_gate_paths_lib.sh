@@ -16,9 +16,7 @@ check_file "tools/lib/gate-paths.sh exists" "$lib"
 
 # --- gate_project_settings_path: basic shape, verbatim concatenation, no cd/pwd resolution ----------
 out="$(gate_project_settings_path "/tmp/some-repo")"
-check_contains "gate_project_settings_path: absolute repo -> <repo>/.claude/settings.json" \
-  "$out" "/tmp/some-repo/.claude/settings.json"
-check_status "gate_project_settings_path: absolute repo -> exact match" \
+check_status "gate_project_settings_path: absolute repo -> <repo>/.claude/settings.json" \
   "/tmp/some-repo/.claude/settings.json" "$out"
 
 out="$(gate_project_settings_path "relative/repo")"
