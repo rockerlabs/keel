@@ -190,6 +190,9 @@ pick_utf8_locale() {
 run_in() {
   local dir="$1"; shift
   local prev="$PWD"
+  # dir #478: `cd ""` is a silent bash no-op (returns 0, $PWD unchanged) — an empty $dir never trips
+  # the `cd ... || {...}` guard below, so it must be rejected explicitly before the cd is attempted.
+  [ -n "$dir" ] || { OUT="run_in: empty dir argument"; STATUS=99; return; }
   cd "$dir" || { OUT="cannot cd $dir"; STATUS=99; return; }
   run "$@"
   cd "$prev" || true
