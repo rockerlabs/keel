@@ -148,6 +148,22 @@ sections real content going forward — see that page for exactly when each one 
   reverting `record_placed` to unconditional reddens six new assertions.
 - **`tools/lib/dir-tickets.sh`'s 500-ticket range cap and its three documented multi-line/multi-token shapes (cross-line trailing-comma join, blank-line hard flush, bare `and #N` continuation) had zero test coverage** (dir #525; found 2026-09-15 by the 0.10.1 RC delta audit, mutation-proved: removing the cap left the suite 19/19 green while `dir #1-99999` flooded 99,999 lines). Four new fixtures in `tests/test_dir_tickets_lib.sh`, each verified red when its own code is removed — coverage only, no behaviour change to the load-bearing extractor doctor check 7, the CHANGELOG derivation, and the release notes all read.
 - **`tools/audit-packet/export.sh`'s single `mkdir -p "$packet_dir/chunks"` set the `packet_dir_created` cleanup flag only after the WHOLE two-level path existed, so a failure inside that call's own second step (parent created, `chunks/` not) left an empty packet dir uncleaned on exit** (dir #526; found by Fixer A's own review of PR #407, parked as induced and narrowed on review: the ticket body's "failure after the top-level mkdir" reading did not match the live single-`mkdir -p` code). The flag now moves to right after the existing "already exists" check instead — that check already proves nothing sits at `$packet_dir` yet, so anything a later `mkdir -p` leaves behind, whole or half-built, is unambiguously this invocation's own creation and safe for `on_exit` to `rm -rf` unconditionally; the single `mkdir -p` call is unchanged, no new mkdir added. Proved with a `mkdir` stub on `PATH` that creates the packet dir for real, then fails before `chunks/`, red against the pre-fix flag-after-mkdir shape.
+- **`commands/polish.md` step 9 never warned that chaining a receipt write ahead of `gh pr create` on
+  ONE Bash command line lets the PreToolUse hook's `gh pr create` text match fire before the receipt
+  write has run, so the gate denies against the pre-write sentinel and the receipt is silently
+  skipped — read by the session as a gate defect** (dir #487; felt 4x on this machine before being
+  promoted from personal memory to the shipped doc). Step 9 now carries a one-paragraph caution:
+  write every receipt in its own Bash call, invoke `gh pr create` alone in the next one, and note that
+  a `gh pr create` failing for a NON-gate reason (a bad `--body-file`, a worktree's `.git` being a
+  file) still spends the receipt chain. `tests/test_rails_honesty.sh` pins both sentences.
+- **`tests/test_pre_pr_gate.sh` test 107 asserted the deny output contained the literal `dir #376`
+  tag — the message's own ticket citation, not the chain-survival behaviour under test — so the
+  assertion would pass on any deny carrying that tag regardless of whether the chain actually
+  survived** (dir #491; found by the 0.10.0 RC delta audit, ACCEPTED ticket-next). Replaced with an
+  assertion bound to the "chain is intact" wording `_deny_intact` emits; the adjacent `check_file`
+  sentinel-survival assertion already carries the real behavioural claim. Mutation-proven: making the
+  review-trace-missing deny retire the chain again (routing it through `_deny_discarded`) reddens both
+  the reworded assertion and the sentinel check.
 
 ## [0.10.1] — 2026-09-15
 
