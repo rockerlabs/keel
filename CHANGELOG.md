@@ -15,6 +15,34 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-09-19
+
+**Known issues, disclosed at the cut.** This is the patch the operator named for one pain — "close
+every known issue the previous cut disclosed" — so the ledger is read against the v0.10.1 paragraph
+below, item by item. That paragraph named twenty-one open items; **eighteen are fixed here**, each
+with its own entry in this section: **dir #250**, **dir #478**, **dir #480** (closed as a recorded
+not-reproduced, per its own acceptance clause), **dir #481**, **dir #487**, **dir #490**, **dir #491**,
+**dir #492**, **dir #497** (the three folded 0.10.0 items), **dir #510**, **dir #512**, **dir #513**,
+**dir #514**, **dir #516**, **dir #518**, **dir #524**, **dir #525**, **dir #526**. **The residue is
+three items, each with its reason:** **dir #499** (the second auditor's `read_file` mode is unused
+under a real audit prompt — the private harness, research rather than a fix, and no PR by that
+harness's own rule), **dir #511** (`keel-check-gate.sh`'s opt-in veto matches only two literal
+prefixes — maintainer-only tooling, deliberately not pulled into this patch), **dir #515**
+(`docs/keel-ab/seed.sh` accepts a relative `--with-keel` path it cannot copy — maintainer-only A/B
+tooling, same decision). **Three residuals the fixes themselves leave, each stated in its own entry
+below and ticketed:** the source-not-installed-copy proxy in the secret-guard install (**dir #570**,
+in the dir #250 entry), the empty-return ambiguity in `install.sh`'s prior-record check under two
+concurrent installs (**dir #571**, in the dir #512 entry), and `ci-scan.sh`'s always-fail-closed
+force-push fallback (**dir #572**, in the dir #518 entry). **From this release's own RC audit,
+ticket-next, none behavioural:** `install-pre-pr-gate.sh --uninstall` deletes an unrelated empty
+hooks key — its twin installer already carries the scoped fix (**dir #564**, present since v0.10.1);
+the pipeline canary has no test for its new empty-dir guard (**dir #565**); `sh_quote_json`'s no-jq
+fallback does not escape a literal `"` (**dir #566**); `tests/test_run_sh.sh`'s all-pass fixture does
+not observe the cleanup (**dir #567**, in the dir #480 entry); `line-citations.sh`'s binary-prefilter
+comment is false on two of three platforms and busybox yields a phantom citation (**dir #568**);
+three comments state a remote-reachability invariant that interior merged commits violate
+(**dir #569**, comment-only).
+
 ### Changed
 
 - **`docs/grooming.md` — three amendments from the second `/groom` run on an adopter project (a
@@ -129,8 +157,8 @@ sections real content going forward — see that page for exactly when each one 
   three concurrent self-invocations, and a subagent-sandbox run, all under live wave-2 concurrency —
   and is closed as a recorded not-reproduced, per the ticket's own acceptance clause). A failing run
   now disarms the logdir's EXIT-trap cleanup and prints the surviving directory's path; an all-pass
-  run is unchanged and still cleans up. `tests/test_run_sh.sh` pins both the preserved-on-failure and
-  cleaned-up-on-pass cases.
+  run is unchanged and still cleans up. `tests/test_run_sh.sh` pins the preserved-on-failure case;
+  its all-pass fixture does not yet observe the cleanup itself (dir #567).
 - **`install.sh`'s unconditional `record_placed "$link_dir/README.md"` re-legitimized an ADOPTER's
   post-install edit to `keel/README.md` as Keel-owned on the next install rerun, so a later
   `uninstall` swept their customization** (F10), **and `tests/test_install_manifest.sh`'s
@@ -145,7 +173,10 @@ sections real content going forward — see that page for exactly when each one 
   own upgrade case — a pre-existing unmanifested README entering its first manifest — still records
   unconditionally, since there is no prior record yet to protect). The fixture path is corrected, and
   a new install→edit→reinstall→uninstall cycle test proves the never-clobber rail, mutation-proven:
-  reverting `record_placed` to unconditional reddens six new assertions.
+  reverting `record_placed` to unconditional reddens six new assertions. One residual, stated in both
+  functions' own comments and ticketed (dir #571): `prior_file_cksum` returns the same empty answer for
+  "no prior record" and "a prior record whose read failed mid-run", so under the documented
+  concurrent-install race two `install.sh` runs into one home can re-open this hazard for one run.
 - **`tools/secret-guard/secret-scan.sh`'s `--literal-pathspecs` fix (dir #508) had ZERO regression
   coverage of its own, and `--selftest` — what an ADOPTER's own install re-verifies — covered none of
   dir #508's four fixture classes** (dir #524; found 2026-09-15 by the 0.10.1 RC delta audit). A file

@@ -28,6 +28,34 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.10.2 — 2026-09-19
+
+The "close every known issue" patch, the second before the planned v0.11.0 drain, cut on one
+operator-named pain: the previous cut had disclosed twenty-one open items by number, and a patch that
+re-disclosed any of them unchanged would be the quietly-abandoned state the backlog's pool report
+exists to make visible. Eighteen tickets, twelve PRs of their own (fourteen in the audited range, with
+the groom's and one unslated docs PR), every one a located one- or two-file fix with its test — plus two that were not
+small. The oldest was the shipped secret-guard missing a non-ASCII personal literal inside a UTF-32
+blob under any ordinary UTF-8 locale, a live hole in a security tool that four earlier reconstructions
+had failed to reproduce; the release manager isolated the mechanism live before briefing the worker,
+the fix strips the offending bytes once in both tools that share the decode recipe, and the coupled
+defect — a failing self-test that left the install half-wired — now verifies the vendored source
+before any file is copied. The other was an environment-sensitive test discrepancy nobody could
+reproduce; it closed the honest way its own acceptance clause allowed, "could not reproduce, here is
+exactly what was varied", after five runs under live wave concurrency, and left behind the one
+cheap instrument the ticket asked for: a failing suite run now keeps its per-file logs. In between:
+the pre-PR gate keys its per-run files on the repository's full path instead of its basename and
+anchors its test-relevant hash on the repository root instead of the invocation directory; the
+installer no longer re-records an adopter's edited README as Keel-owned on a rerun; `doctor`'s own
+recovery advice runs as written; both hook installers survive an apostrophe in the checkout path; the
+pre-push secret scan resolves its allowlist baseline per pushed ref and fails closed when it cannot;
+the test library's `run_in()` refuses an empty directory instead of silently running a test in the
+real checkout, with a thirty-nine-site sweep of the same idiom recorded site by site. Run as a
+managed release — one manager session, twelve gated worker sessions across four waves cut by file
+overlap — with the pattern's own costs and defects recorded in the release ledger, not here.
+
+**Verification.** **Scope:** 44 files across 14 merged PRs (#409–#422), range v0.10.1 to the anchor `ed62446`; the cut commit after it is prose only. **Method:** 6 legs, count fixed at plan time — S1 mechanical baseline; three whole-read legs over clusters cut by coupling (the security/installer cluster of 13 files, the gate/doctor/quoting cluster of 16, the self-tools/prose cluster of 15, so every changed file had exactly one whole read and each code file travelled with its test); a cross-vendor leg of two vendors on three diff bundles split by the same clusters (a Gemini reader on all three; a DeepSeek reasoner on two — it exhausted its 64k reasoning ceiling on the security bundle and was not relaunched, its captured reasoning mined for one lead instead); S-final verifier at the highest effort tier. No fix round was needed and no Fixer session ran. **Coverage:** 44 ledger rows, every row exactly one verdict — 34 `clean`, 8 `ticket-next` over six findings, 2 `no-action` on the standing list, 0 `fix-before-tag`, 0 `mechanical-only`, 0 waived. CI green on the GO SHA across all six legs, resolved live; suite evidence from scratch clones only. Clause A met with one named gap: the security cluster had a single live vendor read after the reasoner capped, compensated by the verifier's own highest-tier re-derivation of that cluster (the reachability scenario the new baseline logic guards was built and run live). **Findings:** 14 adjudicated — 10 accepted, 4 vendor claims refuted by execution (a claimed missing `pipefail` — present outside the hunk, the shipped broken-self-test stub run to prove it; a claimed bash 4.3+ over-escaping — identical output on seven bash versions in containers; a claimed missing grooming step — present; a claimed basename-only path match — the exact-match branch exists). Of the ten accepted: two coverage gaps (a guard with no test; a canary assertion that does not discriminate), one sync-twin drift between the two hook installers present since the previous release, one quoting edge on a no-jq fallback path, four comments or changelog sentences stating something false or over-stated (one re-derived in the cut commit itself under the whole-sentence rule), two no-action. **Behavioural defects:** none, in this release's code or in code an adopter had installed before it. **Which layer found what:** the same-family legs found the sync-twin drift and the untested guard; the vendor legs found four of the six ticketed items, all comment- or test-quality, and every one of their four behavioural-looking claims was refuted by running the code — the first run in this record where the diversity leg found no behavioural defect the same-family leg missed, on a range that had none to find. Bundling by coupling again produced zero cross-bundle false positives. **What was NOT checked:** the private audit harness (gitignored, outside the universe); the procedure this run executes had no independent leg, by design; the DeepSeek reasoner never read the security bundle; the local Alpine leg's network-dependent bootstrap assertions, which fail in this sandbox at a pristine baseline — CI's Alpine job was the load-bearing leg for every PR. **Induced-defect rate:** 0 / 14 — no fix round, so no fix-round defects; the release's own record counts three manager-brief text defects in the build phase, all caught by workers re-deriving before main. Records: the run's own audit directory and the release ledger, both gitignored and named in the release manager's record.
+
 ## v0.10.1 — 2026-09-15
 
 The "two more vendors" patch, cut before the planned v0.11.0 drain on one operator-named pain: the Claude
