@@ -451,4 +451,49 @@ See [x](/other.md) for detail.
 run "$pd" "$d" --quiet
 check_status "the SAME leading-slash target, missing, DOES fail -> exit 1" 1 "$STATUS"
 
+# --- dir #240 item 1: a non-git REPO_DIR is rejected with a labeled exit-2 error, not left to reach
+# git's own raw, unlabeled "fatal: not a git repository" once md_files's `git ls-files` runs uncaught --
+nongit="$(mktemp -d "$SANDBOX/nongit.XXXXXX")"
+require_sandbox_path "$nongit" nongit
+run "$pd" "$nongit"
+check_status "a non-git REPO_DIR is rejected -> exit 2" 2 "$STATUS"
+check_contains "reports it as not a git repository (not a raw git fatal)" "$OUT" "not a git repository"
+
+# --- dir #240 item 2: a heading with a non-ASCII LETTER — narrowed contract downgrades the dead-anchor
+# verdict to an advisory WARN, exit 0, instead of a hard GAP; the SAME shape with an ASCII heading (a
+# genuinely missing one) still fails (dir #110 mutation pairing) --------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [y](#käytä) for detail.
+
+## Käytä
+")"
+run "$pd" "$d" --quiet
+check_status "a non-ASCII-letter heading anchor downgrades to WARN -> exit 0" 0 "$STATUS"
+check_contains "still reports it, as an advisory WARN" "$OUT" "WARN"
+check_contains "names the narrowed-contract reason" "$OUT" "non-ASCII letters"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [y](#does-not-exist) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME shape with a genuinely missing ASCII heading still fails -> exit 1" 1 "$STATUS"
+
+# --- dir #240 item 3: a link-shaped token quoted inside an INLINE code span (not a fenced block) is
+# not extracted as a real link; the SAME target, as a real unfenced link, still fails (dir #110 pairing)
+d="$(mk_repo_with doc.md '# doc
+
+Example of a broken link: `[x](#nope)` shown inline, in backticks.
+')"
+run "$pd" "$d" --quiet
+check_status "a link-shaped token inside inline backticks does not fail the script -> exit 0" 0 "$STATUS"
+
+d="$(mk_repo_with doc.md '# doc
+
+[x](#nope)
+')"
+run "$pd" "$d" --quiet
+check_status "the SAME target, as a real unfenced link, DOES fail -> exit 1" 1 "$STATUS"
+
 summary

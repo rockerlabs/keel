@@ -28,16 +28,29 @@
 #         `#anchor` half names no heading in the resolved file. Resolution is sibling-relative to the
 #         linking file ONLY, matching how GitHub itself resolves a relative link (dir #217 — an
 #         earlier repo-root fallback made a link dead for a real reader while this signal still called
-#         it green; dropped outright, so there is no second root to document). Zero legitimate
+#         it green; dropped outright, so there is no second root to document). Almost zero legitimate
 #         exceptions (a link either resolves, anchor included, or it doesn't), so this one is a hard
-#         fail, unlike signal 1.
+#         fail, unlike signal 1 — with ONE stated, narrow exception (dir #240 item 2): this signal's own
+#         heading slugger is ASCII-only (see `_heading_slugs` below) and does not match GitHub's on a
+#         heading containing a non-ASCII LETTER (an accented Latin character, a non-Latin script) —
+#         non-ASCII punctuation such as an em dash is unaffected, since both sluggers strip it the same
+#         way. An anchor that fails to resolve for that specific, narrow reason (the anchor text itself
+#         carries a non-ASCII letter) downgrades to an advisory WARN instead of a GAP; every other dead
+#         anchor or dead file target stays a hard GAP. No GitHub-compatible Unicode slugger is in scope
+#         here — that would be a materially bigger change for a defect this tool cannot reach anyway
+#         (keel-self-maintenance, never installed for an adopter).
 #
 # Usage:
 #   tools/self/prose-drift.sh [REPO_DIR] [--quiet]
 #   tools/self/prose-drift.sh -h | --help
 #
-# REPO_DIR defaults to the current directory (test-sandbox friendly, like shellcheck-targets.sh);
-# day-to-day this is invoked by tools/self/doctor.sh, which passes its own resolved repo root.
+# REPO_DIR defaults to the current directory, but must be a git checkout (dir #240 item 1): both
+# signals enumerate tracked files via `git ls-files`, with no `|| true` on that call (dir #191's own
+# comment below explains why), so a non-git REPO_DIR is rejected up front with a labeled exit-2 error
+# instead of reaching git and aborting on its own raw, unlabeled "fatal: not a git repository" — the
+# file's own test fixtures are all real git checkouts (mk_repo_with commits every one), so there is no
+# non-git-fixture caller for a degrade path to serve; day-to-day this is invoked by
+# tools/self/doctor.sh, which always passes its own resolved (git) repo root.
 set -euo pipefail
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -69,6 +82,12 @@ while [ "$#" -gt 0 ]; do
 done
 repo_dir="${REPO_ARG:-.}"
 [ -d "$repo_dir" ] || { echo "prose-drift.sh: not a directory: $repo_dir" >&2; exit 2; }
+# dir #240 item 1: same shape as the -d check just above (a labeled, expected exit-2 for a bad input),
+# not the raw `fatal: not a git repository` git itself would print once md_files's own `git ls-files`
+# below runs uncaught. -C here is deliberate over a plain `cd`: it fails the same "not a git repository"
+# way for a REPO_DIR that exists but was never checked out, without moving this script's own cwd.
+git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  || { echo "prose-drift.sh: not a git repository: $repo_dir" >&2; exit 2; }
 
 exit_code=0
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
@@ -228,7 +247,11 @@ report_hits sh "$sh_files"
 # reason signal 1 needs it: a fenced example illustrating link syntax (`[text](target)`) must not be
 # parsed as a real link — a doc about drydock/prose-drift itself is exactly the place such an example
 # would show up, and an illustrative target that doesn't resolve would otherwise read as a real dead
-# link (a hard GAP), not a WARN.
+# link (a hard GAP), not a WARN. The link-extraction pipeline below additionally blanks INLINE code
+# spans (dir #240 item 3, tools/lib/fence-blank.sh's blank_inline_code_spans) — a fenced block is not
+# the only place a link-shaped token can be quoted rather than meant: a doc illustrating one inline,
+# inside backticks, is the same false-positive shape one level down, found live while writing the
+# `[0.7.1]` release note's own Known-issues paragraph.
 
 # Slugs for FILE's own ATX headings (`#` through `######`), in document order, GitHub-flavored:
 # lowercase, drop everything but [a-z0-9 _-], then each remaining space becomes its own hyphen —
@@ -282,6 +305,20 @@ _heading_slugs() {
 # target would otherwise be silently turned into a control character before the existence check runs.
 _url_decode() {
   printf '%b' "$(printf '%s' "$1" | sed -E 's/\\/\\\\/g; s/%([0-9A-Fa-f]{2})/\\x\1/g')"
+}
+
+# dir #240 item 2: true if STRING contains a raw byte >= 0x80 — a cheap, deliberately approximate
+# stand-in for "is a non-ASCII LETTER" (a real Unicode letter class is out of scope here). Applied only
+# to an ANCHOR that has already failed to match `_heading_slugs`' ASCII-only output, so the false-
+# positive risk this approximation would otherwise carry (an em dash is also >= 0x80) is moot in
+# practice: an em-dash-only heading already slugs identically here and on GitHub (both strip it), so an
+# anchor built from one never reaches this check in the first place — only a genuine non-ASCII LETTER
+# (or an as-yet-unseen punctuation mark the two sluggers disagree on) does. `$'[\x80-\xff]'` is the same
+# raw-byte bracket-range idiom already proven cross-platform (GNU/BSD/busybox) in tools/public-audit.sh
+# and tools/secret-guard/secret-scan.sh's own Cyrillic-detection passes — LC_ALL=C keeps grep comparing
+# raw bytes instead of decoding multi-byte UTF-8 under the shell's own locale.
+_has_nonascii_byte() {   # _has_nonascii_byte STRING
+  LC_ALL=C grep -q $'[\x80-\xff]' <<< "$1"
 }
 
 say ""
@@ -342,10 +379,18 @@ if [ -n "$md_files" ]; then
       # `--` before $anchor: a heading whose own text starts with `-` (rare, but legal markdown) slugs
       # to a leading-hyphen anchor, and grep would otherwise parse it as an option string and error.
       if [ -n "$anchor" ] && [ "$is_md" = 1 ] && ! _heading_slugs "$resolved" | grep -xF -- "$anchor" >/dev/null; then
-        gap "$f:$ln → \`$target\` anchor does not resolve"
-        dead=$((dead + 1))
+        # dir #240 item 2, narrowed contract: a non-ASCII LETTER in the anchor is outside this signal's
+        # stated ASCII-only slug contract (header, signal 2) — downgrade to an advisory WARN rather than
+        # a hard GAP; every other dead anchor (a genuinely missing heading, a typo) stays a GAP.
+        if _has_nonascii_byte "$anchor"; then
+          warn "$f:$ln → \`$target\` anchor does not resolve (non-ASCII letters are outside signal 2's ASCII-only slug contract — advisory only)"
+        else
+          gap "$f:$ln → \`$target\` anchor does not resolve"
+          dead=$((dead + 1))
+        fi
       fi
     done < <(blank_fenced_blocks "$repo_dir/$f" \
+      | blank_inline_code_spans \
       | grep -onE '\]\(([^()]|\([^()]*\))*\)' \
       | sed -E 's/:\]\(/:/; s/\)$//')
   done <<< "$md_files"

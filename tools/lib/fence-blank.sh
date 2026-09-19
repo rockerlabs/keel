@@ -17,3 +17,17 @@
 blank_fenced_blocks() {
   awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$1"
 }
+
+# blank_inline_code_spans — drop every INLINE `code span` (backticks included) from each line on
+# stdin, so a link-shaped token quoted inside backticks (a doc illustrating link syntax, e.g.
+# `` `[text](url)` ``) is not later mistaken for a real link by a caller that greps for `](...)`
+# afterward (dir #240 item 3, tools/self/prose-drift.sh's signal 2). Per-LINE only, unlike
+# blank_fenced_blocks' fence toggle above: an inline span's content is never itself the thing a caller
+# here cares about (only whether a `](...)`-shaped token sits inside one), and a markdown link never
+# spans lines, so there is nothing for a multi-line toggle to buy — an unclosed span (an odd number of
+# backticks on one line) is simply left untouched, the same accepted-limitation shape as the fence
+# toggle's own unclosed-fence case above. Reads stdin (an already fence-blanked stream, typically),
+# not a filename — same shape as blank_fenced_blocks' own callers pipe INTO it, one stage later.
+blank_inline_code_spans() {
+  awk '{ gsub(/`[^`]*`/, ""); print }'
+}
