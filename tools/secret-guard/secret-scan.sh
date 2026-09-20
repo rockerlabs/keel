@@ -42,8 +42,9 @@
 # SECRET_SCAN_LOCAL_PUSH=1 (env, --range only): set ONLY by the LOCAL pre-push hook (tools/secret-
 #   guard/pre-push), NEVER by ci-scan.sh — tells the --range allowlist-baseline resolution it is safe
 #   to also trust content already reachable via a remote-tracking ref (dir #518). Safe only pre-push,
-#   where the pushed commits are not yet reachable from any local remote-tracking ref by construction;
-#   unsafe post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
+#   where the range's own newly-introduced tip is not yet reachable from any local remote-tracking ref
+#   by construction (interior commits brought in by a merge commonly already are — dir #569); unsafe
+#   post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
 #
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
@@ -703,11 +704,14 @@ esac
 # every current entry reads as new-this-push, the ticket's own named fail-closed fallback, reached via
 # an empty set rather than a sentinel ref. **A third, disclosed shape reaches here too (max-review
 # finding, confirmed live, pinned by tests/test_ci_secret_scan.sh):** ci-scan.sh's own force-push
-# fallback (range-lib.sh's resolve_range_ci, zero-before branch) hands over a BARE ref with no
-# exclusion side at all — the true pre-push remote state is exactly what's unreachable there, so there
-# is no principled single baseline to fall back to either; it unions to nothing the same way, and that
-# is accepted, not an oversight — safe (over-blocking on an already-rare force-push, never a silent
-# pass), never silently unaccounted for.
+# fallback (range-lib.sh's resolve_range_ci, zero-before branch) — as of dir #572, this is the LAST
+# resort of a three-step degrade: ci-scan.sh first tries to fetch the orphaned before-sha by its own
+# sha from origin, then the operator's SECRET_SCAN_CI_FORCE_PUSH_BASELINE hatch (also fetched by
+# sha), and only when NEITHER resolves does it hand over a BARE ref with no exclusion side at all —
+# the true pre-push remote state is exactly what's unreachable at THAT point, so there is no
+# principled single baseline left to fall back to; it unions to nothing the same way, and that is
+# accepted, not an oversight — safe (over-blocking on an already-rare, doubly-unrecovered force-push,
+# never a silent pass), never silently unaccounted for.
 #
 # **A FOURTH gap, found by an in-session cross-model (Gemini) second opinion, fixed for the LOCAL
 # pre-push hook only (mutation-proved, pinned by tests/test_secret_guard.sh): a boundary snapshot of
@@ -731,10 +735,12 @@ esac
 # live: appending `--not --remotes` there doesn't just tighten the boundary, it excludes the tip itself
 # from the walk entirely, collapsing EVERY ordinary CI scan's baseline to nothing and fail-closing every
 # pre-existing allowlist entry on every push, not just the merge case this was meant to fix). The local
-# hook is the one caller where this is actually safe: it runs BEFORE the push transfers, so nothing in
-# $rng can yet be reachable from a remote-tracking ref by construction — an attacker's own newly-pushed
-# commit can never retroactively become "already known" this way, preserving the same-change security
-# property regardless of which branch of this `if` runs. Without the flag (ci-scan.sh, `--selftest`, a
+# hook is the one caller where this is actually safe: it runs BEFORE the push transfers, so the
+# range's own newly-introduced tip cannot yet be reachable from a remote-tracking ref by construction
+# — interior commits merged in via `git merge origin/main` commonly already are, and it is that
+# asymmetry `--not --remotes` above relies on. An attacker's own newly-pushed commit can never
+# retroactively become "already known" this way, preserving the same-change security property
+# regardless of which branch of this `if` runs (dir #569). Without the flag (ci-scan.sh, `--selftest`, a
 # human running `--range` by hand), the union falls back to the THIRD gap's own plain-boundary behavior
 # above — narrower, but exactly as safe as it was before this fourth gap was found.
 #

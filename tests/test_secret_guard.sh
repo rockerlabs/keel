@@ -694,6 +694,118 @@ still_unset="$(env "${gbroken_env[@]}" git config --global core.hooksPath 2>/dev
 check_status "broken selftest → --global leaves core.hooksPath unset" "" "$still_unset"
 check_nofile "broken selftest → --global's staging dir has no secret-scan.sh" "$gbroken_home/.config/git/keel-hooks/secret-scan.sh"
 
+# --- dir #570: the SOURCE selftest above is a PROXY — it can't catch a failure specific to the
+# INSTALLED copy (a noexec mount, a permission/SELinux quirk unique to $hooks_dir). Simulate exactly
+# that shape: a stub secret-scan.sh whose shebang names a nonexistent interpreter. Invoked via `bash
+# file` (how the pre-copy check runs it, and how install_into's post-copy check deliberately does NOT
+# run it — see its own comment) the shebang line is just a comment and the stub passes; invoked by
+# DIRECT exec (how git itself runs an installed hook, and how the post-copy check runs it on purpose)
+# the kernel tries to exec the missing interpreter and fails — a genuine post-copy-only failure, no
+# root or real noexec mount needed to reproduce it.
+isg_rb="$(mktemp -d "$SANDBOX/isg-rollback.XXXXXX")"
+cp "$isg" "$isg_rb/install-secret-guard.sh"
+mkdir -p "$isg_rb/secret-guard"
+for f in pre-commit pre-push range-lib.sh; do
+  cp "$REPO_ROOT/tools/secret-guard/$f" "$isg_rb/secret-guard/$f"
+  chmod +x "$isg_rb/secret-guard/$f"
+done
+rb_scan="$isg_rb/secret-guard/secret-scan.sh"
+printf '#!/nonexistent/not-a-real-interpreter\necho "selftest: OK (stub, bash-interpreted only)"\nexit 0\n' > "$rb_scan"
+chmod +x "$rb_scan"
+
+# confidence check on the stub's own two-faced behavior first, so a fixture bug can't masquerade as
+# the rollback code working
+run bash "$rb_scan" --selftest
+check_status "rollback fixture: bash-interpreted stub passes" 0 "$STATUS"
+run "$rb_scan" --selftest
+check_ne "rollback fixture: directly-exec'd stub fails" 0 "$STATUS"
+
+# per-repo vendor, no pre-existing hooks → post-copy verify fails → full rollback, nothing left behind
+rbrepo="$(new_repo)"
+run bash "$isg_rb/install-secret-guard.sh" "$rbrepo"
+check_status "post-copy-only failure → exit 4" 4 "$STATUS"
+check_contains "rollback names the installed copy" "$OUT" "INSTALLED copy"
+check_contains "rollback confirms the destination is back to how it was" "$OUT" "rolled back"
+for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
+  check_nofile "post-copy rollback → no $f left in the repo" "$rbrepo/.git/hooks/$f"
+done
+check_nofile "post-copy rollback → no .secret-scan-allow seed written" "$rbrepo/.secret-scan-allow"
+check_absent "post-copy rollback → no 'vendored into' confirmation printed" "$OUT" "vendored into"
+
+# per-repo vendor with --force over a FOREIGN pre-commit → post-copy verify fails → the foreign hook
+# is restored from its own backup, never left stranded as a dangling .pre-keel.bak (dir #570, lead #1)
+rbforeign="$(new_repo)"
+mkdir -p "$rbforeign/.git/hooks"
+printf '#!/bin/sh\n# my own pre-commit, pre-dating this install\nexit 0\n' > "$rbforeign/.git/hooks/pre-commit"
+chmod +x "$rbforeign/.git/hooks/pre-commit"
+run bash "$isg_rb/install-secret-guard.sh" --force "$rbforeign"
+check_status "post-copy-only failure with --force → exit 4" 4 "$STATUS"
+check_contains "foreign pre-commit restored verbatim after rollback" \
+  "$(cat "$rbforeign/.git/hooks/pre-commit")" "my own pre-commit, pre-dating this install"
+check_nofile "rollback removes the backup after restoring it" "$rbforeign/.git/hooks/pre-commit.pre-keel.bak"
+for f in secret-scan.sh pre-push; do
+  check_nofile "post-copy rollback (--force case) → no $f left" "$rbforeign/.git/hooks/$f"
+done
+
+# --- dir #570 (simplify pass, altitude finding): rollback covers a cp failure MID-COPY too, not just
+# the post-copy verify — otherwise a destination-specific failure that trips on the copy itself (disk
+# full, a permission quirk on $hooks_dir) would still exit under set -e with no rollback, leaving the
+# exact half-wired state this ticket exists to close. A genuinely valid source with range-lib.sh
+# missing makes the LAST of the four cp's fail, after three files are already in place — the source
+# selftest above it stays real (byte-identical to the shipped files) so this exercises only the cp
+# failure, nothing selftest-related.
+isg_cpfail="$(mktemp -d "$SANDBOX/isg-cpfail.XXXXXX")"
+cp "$isg" "$isg_cpfail/install-secret-guard.sh"
+mkdir -p "$isg_cpfail/secret-guard"
+for f in secret-scan.sh pre-commit pre-push; do
+  cp "$REPO_ROOT/tools/secret-guard/$f" "$isg_cpfail/secret-guard/$f"
+  chmod +x "$isg_cpfail/secret-guard/$f"
+done
+# range-lib.sh deliberately absent — the 4th cp targets a source file that doesn't exist
+
+cpfrepo="$(new_repo)"
+run bash "$isg_cpfail/install-secret-guard.sh" "$cpfrepo"
+check_ne "a mid-copy cp failure → refuses (non-zero exit)" 0 "$STATUS"
+check_contains "names the file it failed to copy" "$OUT" "range-lib.sh"
+check_contains "rolls back the files copied before the failure" "$OUT" "rolled back"
+for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
+  check_nofile "mid-copy rollback → no $f left in the repo" "$cpfrepo/.git/hooks/$f"
+done
+check_nofile "mid-copy rollback → no .secret-scan-allow seed written" "$cpfrepo/.secret-scan-allow"
+
+# --- dir #570 (code review finding): re-vendoring over an ALREADY-INSTALLED Keel hook, then failing
+# later in the same run, must restore the still-working hook — not delete it and leave the repo with
+# NO hook at all. A real, successful install first (genuine files, real selftest) so the repo carries
+# a real Keel-marked pre-commit/pre-push; then a re-install using the post-copy-failing rollback stub
+# (isg_rb, built above) overwrites them and fails, and the ORIGINAL install must come back.
+uprepo="$(new_repo)"
+run bash "$isg" "$uprepo"
+check_status "genuine first install → exit 0" 0 "$STATUS"
+orig_pre_commit="$(cat "$uprepo/.git/hooks/pre-commit")"
+orig_pre_push="$(cat "$uprepo/.git/hooks/pre-push")"
+
+run bash "$isg_rb/install-secret-guard.sh" "$uprepo"
+check_status "re-vendor over an existing Keel hook, then a post-copy failure → exit 4" 4 "$STATUS"
+check_file "pre-commit still exists — the pre-fix bug deleted it outright" "$uprepo/.git/hooks/pre-commit"
+check_file "pre-push still exists — the pre-fix bug deleted it outright" "$uprepo/.git/hooks/pre-push"
+check_status "the original pre-commit is restored, byte-for-byte" \
+  "$orig_pre_commit" "$(cat "$uprepo/.git/hooks/pre-commit")"
+check_status "the original pre-push is restored, byte-for-byte" \
+  "$orig_pre_push" "$(cat "$uprepo/.git/hooks/pre-push")"
+check_contains "the restored pre-commit still carries the Keel marker" \
+  "$(cat "$uprepo/.git/hooks/pre-commit")" "Keel secret-guard"
+check_nofile "no stray backup left behind after the restore" "$uprepo/.git/hooks/pre-commit.pre-keel.bak"
+check_nofile "no stray backup left behind after the restore (pre-push)" "$uprepo/.git/hooks/pre-push.pre-keel.bak"
+# The still-working ORIGINAL hook actually still runs end-to-end after the restore, not just present
+# as bytes — a real push through it must still block a real secret.
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$uprepo/root.txt"
+git -C "$uprepo" add root.txt
+git -C "$uprepo" commit -qm root --no-verify
+usha="$(git -C "$uprepo" rev-parse HEAD)"
+OUT="$(cd "$uprepo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$usha" "$(rep 0 40)" | bash .git/hooks/pre-push 2>&1)"; STATUS=$?
+check_status "the RESTORED pre-push hook still blocks a real secret" 1 "$STATUS"
+check_contains "restored hook reports BLOCKED, not a missing-dependency crash" "$OUT" "BLOCKED"
+
 # --- the INSTALLED pre-push hook actually runs end-to-end, not just secret-scan.sh's own --selftest:
 # install used to vendor pre-push without its range-lib.sh dependency, so every real push through a
 # freshly installed hook crashed on a missing sourced file, not just ones containing a secret --------
