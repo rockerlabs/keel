@@ -133,8 +133,18 @@ oldest_id="unlabeled"
 # dir #463, second half (simplify pass): read once, up front, rather than re-opening
 # $backlog_file with a fresh `sed` per ticket whose heading carries no grade at all — the body
 # scan below then slices this in-memory array instead of spawning a process per ticket.
+#
+# code-review medium (found live, reproduced): reading the RAW file here — no fence-blanking, no
+# backtick-stripping — let a ticket's body quote `**Readiness: R1**` as an ILLUSTRATIVE EXAMPLE
+# (inside a fenced code block or inline backticks, describing the convention or a DIFFERENT
+# ticket's grade) and have the body scan below misread it as this ticket's own. Mirror the exact
+# preprocessing `tools/lib/backlog-blocks.sh`'s own `backlog_ticket_blocks` already applies before
+# computing anything from this file — `blank_fenced_blocks` (line count unchanged, fenced content
+# blanked in place, so $start/$end line numbers still line up) then the same inline-backtick
+# strip — so a heading- or tag-shaped string living inside a code example is invisible here too.
 backlog_lines=()
-while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done < "$backlog_file"
+while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done \
+  < <(sed -E 's/`[^`]*`//g' <<< "$(blank_fenced_blocks "$backlog_file")")
 
 while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] && continue
@@ -181,7 +191,15 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # pass —") and a qualifier glued straight onto the digit ("— R1-parked —") both now read,
   # without re-typing either live heading into the stricter form (which would silently delete
   # the qualifier prose that carries why the grade is what it is).
-  rlvl_match="$(grep -oE '— R[0-9]' <<< "$heading_block" | tail -1 || true)"
+  #
+  # code-review medium (found live, reproduced): dropping the CLOSING `—` entirely, with no
+  # boundary at all after the digit, let an unrelated heading TITLE mentioning "— R<digit>" for
+  # its own reasons ("— R2D2 firmware notes —") misread as a real grade. `([^a-zA-Z0-9]|$)` — the
+  # same portable boundary substitute this file already uses elsewhere (bash's `[[ =~ ]]` has no
+  # `\b` on macOS's stock BSD-regex bash 3.2) — requires the digit be followed by end-of-string or
+  # a non-alnum character, which still accepts both worked qualifier shapes above (a comma, a
+  # hyphen) while rejecting a digit immediately followed by another letter or digit.
+  rlvl_match="$(grep -oE '— R[0-9]([^a-zA-Z0-9]|$)' <<< "$heading_block" | tail -1 || true)"
   if [ -z "$rlvl_match" ]; then
     # Heading first, body second (operator decision, 2026-09-20): a ticket that carries no
     # grade on its heading at all may still state one in prose, `**Readiness: RN**` — two named
@@ -189,7 +207,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
     # common case (grade on the heading) never pays for the extra pass over the body span; the
     # slice below reads the in-memory array populated once above, not a fresh file open.
     rlvl_match="$(printf '%s\n' "${backlog_lines[@]:$((start - 1)):$((end - start + 1))}" \
-      | grep -oE 'Readiness:[[:space:]]*R[0-9]' | tail -1 || true)"
+      | grep -oE 'Readiness:[[:space:]]*R[0-9]([^a-zA-Z0-9]|$)' | tail -1 || true)"
   fi
   rlvl="$(grep -oE 'R[0-9]' <<< "$rlvl_match" || true)"
   # dir #463, first half: R4 ("spec-ready") and R0 ("not an agent session") used to have no arm
@@ -311,18 +329,26 @@ else
 fi
 
 if [ -n "$record_release" ]; then
-  if [ -f "$history_file" ] && grep -qF "\"release\":\"$record_release\"" "$history_file" 2>/dev/null; then
+  release_key="\"release\":\"$record_release\""
+  new_row="$(printf '{"release":"%s","date":"%s","pool_size":%s}' \
+    "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size")"
+  if [ -f "$history_file" ] && grep -qF "$release_key" "$history_file" 2>/dev/null; then
     if [ "$amend" = "1" ]; then
       # dir #461, half 2: the plain call stays idempotent-once (the header's own contract,
       # unchanged) — --amend is the explicit opt-in that makes THIS release's row correctable,
-      # last-write-wins, without touching any other release's row in the file. One rewrite pass
-      # (the corrected row is written into the tempfile before the single `mv`), not a rewrite
-      # followed by a separate reopen-and-append on the final file.
+      # last-write-wins, without touching any other release's row in the file.
+      #
+      # code-review medium (found live, reproduced): an earlier version of this fix removed the
+      # matching row via `grep -v` and appended the corrected one at the END of the file — moving
+      # a non-last release's row out of its chronological position. The growth trigger above reads
+      # `prev_sizes` by FILE POSITION ("the last two recorded releases" = the last two array
+      # entries), so amending anything but the most-recent release silently corrupted which two
+      # rows the trigger compares against next run. Substitute the row IN PLACE instead (one `awk`
+      # pass, matched on the same $release_key the exists-check above already computed) — every
+      # other row's position, and this row's own, stay exactly where they were.
       amend_tmp="$(mktemp "${history_file}.XXXXXX")"
-      { grep -vF "\"release\":\"$record_release\"" "$history_file" 2>/dev/null || true
-        printf '{"release":"%s","date":"%s","pool_size":%s}\n' \
-          "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size"
-      } > "$amend_tmp"
+      awk -v key="$release_key" -v newrow="$new_row" \
+        'index($0, key) { print newrow; next } { print }' "$history_file" > "$amend_tmp"
       mv "$amend_tmp" "$history_file"
       echo "  history:                        amended ($history_file)"
     else
@@ -330,8 +356,7 @@ if [ -n "$record_release" ]; then
     fi
   else
     mkdir -p "$(dirname "$history_file")" 2>/dev/null || true
-    printf '{"release":"%s","date":"%s","pool_size":%s}\n' \
-      "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size" >> "$history_file"
+    printf '%s\n' "$new_row" >> "$history_file"
     echo "  history:                        appended ($history_file)"
   fi
 fi

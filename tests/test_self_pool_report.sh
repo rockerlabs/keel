@@ -160,6 +160,19 @@ run "$pr" --history "$SANDBOX/hist-qualifier.jsonl" "$fqual"
 check_contains "MUTATION-PROOF (dir #463): a qualifier-suffix heading still reads its grade (R2, not unmarked)" \
   "$OUT" "R4=0 R3=0 R2=1 R1=1 R0=0 unmarked=0"
 
+# --- code-review medium (found live, reproduced): the loosened extractor above must still have a
+# RIGHT boundary after the digit — a heading TITLE that happens to contain "— R<digit>" for
+# unrelated reasons ("— R2D2 firmware notes —") must NOT be misread as a real grade. MUTATION-PROOF:
+# dropping the `([^a-zA-Z0-9]|$)` boundary back to a bare `— R[0-9]` wrongly reads this as R2. -----
+title_digit_backlog="### dir #99 — R2D2 firmware notes (found 2026-01-01) — → pool
+
+This ticket carries no real readiness grade anywhere, heading or body.
+"
+ftitledigit="$(mk_backlog "$title_digit_backlog")"
+run "$pr" --history "$SANDBOX/hist-title-digit.jsonl" "$ftitledigit"
+check_contains "MUTATION-PROOF: a title mentioning '— R2D2' is not misread as grade R2 (stays unmarked)" \
+  "$OUT" "R4=0 R3=0 R2=0 R1=0 R0=0 unmarked=1"
+
 # --- dir #463 (second half, the decided fork): a body-stated `**Readiness: RN**` counts too, when
 # the heading itself carries no grade at all — heading first, body second. -----------------------
 body_readiness_backlog="### dir #16 — heading carries no grade, body states one (found 2026-01-01) — → pool
@@ -174,6 +187,24 @@ fbody="$(mk_backlog "$body_readiness_backlog")"
 run "$pr" --history "$SANDBOX/hist-body-readiness.jsonl" "$fbody"
 check_contains "a body-stated Readiness: RN counts when the heading has none (R1)" "$OUT" \
   "R4=0 R3=1 R2=0 R1=1 R0=0 unmarked=0"
+
+# --- code-review medium (found live, reproduced): the body scan above must read the SAME
+# fence-blanked, backtick-stripped content the heading/closure scan already does — a ticket whose
+# body quotes `**Readiness: R1**` inside a fenced code block, as an ILLUSTRATIVE EXAMPLE of the
+# convention rather than its own actual grade, must NOT be misread as that grade. MUTATION-PROOF:
+# reading the raw, un-blanked file here wrongly reads this ticket as R1 instead of unmarked. ------
+fenced_example_backlog='### dir #900 — some ticket with no readiness grade on its heading (found 2026-01-01) — → pool
+
+```
+**Readiness: R1** (example convention, not this ticket'"'"'s own grade)
+```
+
+This ticket itself has never been graded.
+'
+ffenced="$(mk_backlog "$fenced_example_backlog")"
+run "$pr" --history "$SANDBOX/hist-fenced-example.jsonl" "$ffenced"
+check_contains "MUTATION-PROOF: a fenced-code-block example Readiness is not misread as this ticket's own grade" \
+  "$OUT" "R4=0 R3=0 R2=0 R1=0 R0=0 unmarked=1"
 
 # --- --record --amend: the release key becomes a correctable record (dir #461, half 2) ---------
 # The plain --record call stays idempotent-once (tested above); --amend is the explicit opt-in
@@ -205,6 +236,41 @@ check_contains "a plain --record after an amend is STILL idempotent-once (no --a
 run "$pr" --amend --history "$SANDBOX/hist-amend-bad.jsonl" "$f"
 check_status "--amend without --record -> exit 2" 2 "$STATUS"
 check_contains "reports why" "$OUT" "--amend requires --record"
+
+# --- code-review medium (found live, reproduced): amending a NON-LAST release must not reorder
+# it to the end of the file — the growth trigger below reads "the last two recorded releases" by
+# FILE POSITION, so an amend that appended instead of replacing in place silently corrupted which
+# two rows a later run compares. MUTATION-PROOF: reverting the amend to remove-then-append moves
+# relA to the end, so relD's run below would compare against relC and the STALE-shaped relA
+# instead of the true last two (relB, relC) — a spurious WARN on a pool that only shrank. --------
+hist_pos="$SANDBOX/hist-amend-position.jsonl"
+printf '{"release":"relA","date":"2026-01-01","pool_size":10}\n{"release":"relB","date":"2026-02-01","pool_size":20}\n{"release":"relC","date":"2026-03-01","pool_size":15}\n' > "$hist_pos"
+one_ticket_backlog="### dir #30 — one ticket only (found 2026-01-01) — R1 — → pool
+
+body
+"
+fone="$(mk_backlog "$one_ticket_backlog")"
+run "$pr" --record relA --amend --history "$hist_pos" "$fone"
+check_contains "amending the OLDEST release still reports the correction" "$OUT" "amended"
+first_line="$(head -1 "$hist_pos")"
+check_contains "amending relA (not the last row) leaves it FIRST in the file, not moved to the end" \
+  "$first_line" "\"release\":\"relA\""
+pos_lines="$(wc -l < "$hist_pos" | tr -d ' ')"
+check_status "the file still holds exactly three rows after the amend" "3" "$pos_lines"
+# 25 pool tickets so relD's own run reads 25 — with relA amended to 1 (in place), the true last
+# two recorded releases are still relB=20 and relC=15 (a DECREASE) — the trigger must not fire.
+grow_ticket_backlog=""
+for i in $(seq 1 25); do
+  grow_ticket_backlog="${grow_ticket_backlog}### dir #${i} — t${i} (found 2026-01-01) — R1 — → pool
+
+body
+
+"
+done
+fgrowpos="$(mk_backlog "$grow_ticket_backlog")"
+run "$pr" --record relD --history "$hist_pos" "$fgrowpos"
+check_absent "MUTATION-PROOF: an in-place amend of a non-last release does not corrupt the growth trigger's positional read (no spurious WARN)" \
+  "$OUT" "WARN"
 
 # --- growth trigger: MUST NOT fire on today's real BACKLOG.md baseline (dir #360's own
 # done-criterion) — insufficient recorded history is the correct reason it can't fire yet. -----
