@@ -75,6 +75,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
+  apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
+  repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
+  handed to a third party, since `.gitignore` names the tooling and ships inside `git archive` —
+  GAPped forever, a false alarm the reader learns to skim. The check now runs `git check-ignore`,
+  which honours `.gitignore`, `info/exclude` and the global excludes alike. And a TRACKED `CLAUDE.md`
+  was a `say` note hidden by `--quiet`, i.e. a delegating caller saw `OK` over context already in
+  the index — the one outcome an ignore rule cannot undo. It is now `W-CLAUDEMD-TRACKED`, a WARN a
+  deliberate public fork accepts once per repo through `.keel/doctor-accept`; an accidental commit
+  gets the `git rm --cached` + ignore instruction on the line itself. The AGENTS.md block's own
+  "tracked — deliberate public fork" `say` note is gone with it: `G-AGENTSMD-INHERIT` already pins
+  AGENTS.md's status to CLAUDE.md's, so the one WARN speaks for both files. The two git questions
+  (`_tracked`, `_ignored`) now live in one place, shared by every context check in the file.
 - **`tools/self/prose-drift.sh` — three defects, one editing pass** (dir #240): a non-git `REPO_DIR`
   now fails with a labeled exit-2 error instead of reaching `git ls-files` and aborting raw
   (`fatal: not a git repository`) — decided by correcting the header's stale "test-sandbox friendly"

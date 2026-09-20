@@ -6,6 +6,18 @@
 
 doctor="$REPO_ROOT/tools/doctor.sh"
 mkproj() { mktemp -d "$SANDBOX/proj.XXXXXX"; }
+# a git repo with a CLAUDE.md that nothing ignores (.gitignore covers only *.log); prints its path
+unignored() {
+  local d; d="$(mkproj)"; git -C "$d" init -q
+  printf '# ctx\n' > "$d/CLAUDE.md"; printf '*.log\n' > "$d/.gitignore"
+  printf '%s' "$d"
+}
+# a deliberate public fork: the unignored CLAUDE.md is committed; prints its path
+pubfork() {
+  local d; d="$(unignored)"
+  git -C "$d" add CLAUDE.md; git -C "$d" commit -qm add
+  printf '%s' "$d"
+}
 
 # --help prints usage and exits 0 (not a raw `basename: illegal option` crash); unknown flag → exit 2
 run "$doctor" --help
@@ -103,15 +115,46 @@ git -C "$d" config core.hooksPath hooks
 run "$doctor" "$d"
 check_absent "guarded local override → no bypass WARN" "$OUT" "silently bypassed"
 
-# public fork: a tracked CLAUDE.md is deliberate, so no gitignore GAP
-d="$(mkproj)"; git -C "$d" init -q
-printf '# public ctx\n' > "$d/CLAUDE.md"
-printf '*.log\n' > "$d/.gitignore"
-git -C "$d" add CLAUDE.md
-git -C "$d" commit -qm add
+# public fork: a tracked CLAUDE.md is deliberate, so no gitignore GAP — but it IS a finding (WARN,
+# accept-able per repo): "ignored" and "committed" are different questions, and only the second is
+# the actual harm. A repo that committed its context by accident reads as OK on the ignore question
+# alone — the check would grade the lock while the door stands open.
+d="$(pubfork)"
 run "$doctor" "$d"
 check_status "public fork (tracked CLAUDE.md) → exit 0" 0 "$STATUS"
 check_absent "no gitignore GAP for public fork" "$OUT" "does not ignore"
+check_contains "tracked CLAUDE.md is a WARN, not silence" "$OUT" "[W-CLAUDEMD-TRACKED]"
+run "$doctor" --quiet "$d"
+check_contains "--quiet keeps the tracked-context WARN (a delegating caller sees it)" "$OUT" "[W-CLAUDEMD-TRACKED]"
+
+# tracked AND named in .gitignore: an ignore rule added after the fact changes nothing — git keeps
+# tracking what is already in the index — so the tracked WARN must win over the ignore-rule OK
+d="$(pubfork)"
+printf 'CLAUDE.md\n.claude/\n' >> "$d/.gitignore"
+run "$doctor" "$d"
+check_status "tracked + later-ignored CLAUDE.md → exit 0" 0 "$STATUS"
+check_contains "tracked wins over a later ignore rule" "$OUT" "[W-CLAUDEMD-TRACKED]"
+
+# the deliberate public fork accepts the WARN once, per repo, through the ordinary accept file
+mkdir -p "$d/.keel"; printf 'W-CLAUDEMD-TRACKED  # deliberate public fork\n' > "$d/.keel/doctor-accept"
+run "$doctor" "$d"
+check_absent "accepted public fork → tracked WARN suppressed" "$OUT" "[W-CLAUDEMD-TRACKED]"
+
+# the ignore rule may live in .git/info/exclude instead of .gitignore — a repo handed to a third
+# party keeps it there on purpose (.gitignore names the tooling and ships inside `git archive`).
+# The check asks git whether the context is ignored AT ALL, not whether .gitignore says so.
+d="$(unignored)"
+printf 'CLAUDE.md\n.claude/\n' >> "$d/.git/info/exclude"
+run "$doctor" "$d"
+check_status "context ignored via info/exclude → exit 0" 0 "$STATUS"
+check_absent "no gitignore GAP when info/exclude carries the rule" "$OUT" "does not ignore the private AI context"
+check_absent "info/exclude-ignored context is not mistaken for tracked" "$OUT" "[W-CLAUDEMD-TRACKED]"
+
+# ...and only .claude/ in info/exclude (no CLAUDE.md rule anywhere) still counts, as it does for .gitignore
+d="$(unignored)"
+printf '.claude/\n' >> "$d/.git/info/exclude"
+run "$doctor" "$d"
+check_absent "a .claude/ rule in info/exclude satisfies the context check" "$OUT" "does not ignore the private AI context"
 
 # AGENTS.md (dir #75): the vendor sibling of CLAUDE.md for Codex/Cursor — absent, it stays silent
 d="$(mkproj)"; git -C "$d" init -q
@@ -156,7 +199,8 @@ git -C "$d" add CLAUDE.md AGENTS.md
 git -C "$d" commit -qm add
 run "$doctor" "$d"
 check_status "both CLAUDE.md and AGENTS.md tracked → exit 0" 0 "$STATUS"
-check_contains "reports the deliberate public fork" "$OUT" "AGENTS.md is tracked"
+check_contains "the tracked WARN speaks for both files (AGENTS.md inherits CLAUDE.md's status)" "$OUT" "[W-CLAUDEMD-TRACKED]"
+check_absent "no separate AGENTS.md public-fork note" "$OUT" "AGENTS.md is tracked"
 check_absent "no status-mismatch gap for matching tracked status" "$OUT" "does not match CLAUDE.md's"
 
 # WARN (not GAP): AGENTS.md is a regular-file copy that has drifted from CLAUDE.md
