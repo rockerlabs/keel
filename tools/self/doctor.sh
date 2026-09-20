@@ -713,20 +713,88 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       body_start=$((start + 1))
       [ "$body_start" -gt "$end" ] && continue
       body="$(printf '%s\n' "${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")"
-      # Accepted gap, tried and reverted once already: a body line that cross-references a
-      # DIFFERENT ticket's status ("blocked by dir #62 (✅ CLOSED)") can false-positive here, same
-      # as bare prose discussing retraction with no ticket reference at all ("we discussed whether
-      # this should be RETRACTED"). A same-line filter on "dir #N" was tried to catch the first
-      # case, but real closure notes routinely co-reference a sibling ticket they also closed
-      # ("✅ CLOSED ... also closes dir #79" — a genuine, already-used convention), so the filter
-      # dropped exactly the closure lines this check exists to find — and under `set -euo
-      # pipefail`, a body with EVERY line filtered out made `grep -v`'s exit 1 abort the entire
-      # doctor.sh run. Both are worse than the false positive it was meant to fix. Same accepted
-      # class: a negated status word ("NOT DONE yet", "explicitly NOT RETRACTED") still matches —
-      # this is a cheap heuristic on free-form prose, not a parser, and the check is a WARN, not a
-      # GAP.
-      if grep -qE '✅.*\b(CLOSED|DONE)\b|\bRETRACTED\b' <<< "$body"; then
-        id="$(heading_dir_id "$heading_line")"
+      # dir #582: the glyph-anywhere predicate this replaces fired on nine live tickets
+      # (dir #307, #368, #370, #372, #521, #522, #547, #558, #559) plus this ticket's own body,
+      # zero true — three consecutive grooms had to write a do-not-re-tag note instead of a fix.
+      # None of the ten was shaped like a wrap's own closing note: each was either prose
+      # discussing the tagging convention itself, or a mid-paragraph cross-reference to a
+      # DIFFERENT ticket's status, and every one sits somewhere in the MIDDLE of a long (200+
+      # line) ticket body — never in its final three lines, never at a line's own start. Two
+      # narrowings, both needed:
+      id="$(heading_dir_id "$heading_line")"
+      body_lines=()
+      while IFS= read -r bl || [ -n "$bl" ]; do body_lines+=("$bl"); done <<< "$body"
+      nbl="${#body_lines[@]}"
+      # (1) WHAT counts as a real closure note is narrowed to the shapes a wrap actually writes —
+      # a line that OPENS with the marker, a "**Status:** ✅ …" line, or the marker landing in the
+      # body's own final three non-blank lines (a wrap appends its closing note at the END of a
+      # ticket body — dir #307's own documented true-positive shape is exactly this: an in-flight
+      # heading whose body's LAST lines record the merge) — rather than the glyph anywhere in
+      # free-form prose. tail_start: the index of the earliest line among the body's own last (up
+      # to) three non-blank lines, scanned backward once and capped at 3, same accepted-cost shape
+      # as the heading-block wrap scan above (a ticket body realistically never needs more).
+      tail_start=0
+      tail_found=0
+      bi=$((nbl - 1))
+      while [ "$bi" -ge 0 ] && [ "$tail_found" -lt 3 ]; do
+        if [ -n "${body_lines[$bi]}" ]; then
+          tail_start="$bi"
+          tail_found=$((tail_found + 1))
+        fi
+        bi=$((bi - 1))
+      done
+      body_hit=""
+      bi=0
+      while [ "$bi" -lt "$nbl" ] && [ -z "$body_hit" ]; do
+        bl="${body_lines[$bi]}"
+        # `FIXED` alongside `CLOSED`/`DONE` (dir #581, KEEL-0.11.0-W3-ee9f amendment A1): the
+        # 0.10.2 manager closed all 17 fixed slate headings with this word, so a body cross-citing
+        # one of them ("dir #250 (✅ FIXED, …)") is the exact same false-positive shape this ticket
+        # already fixes for CLOSED/DONE — widen the word list, not the glyph test.
+        if grep -qE '✅.*\b(CLOSED|DONE|FIXED)\b|\bRETRACTED\b' <<< "$bl"; then
+          # (2) a citation clause naming a DIFFERENT dir ticket is stripped from JUST this
+          # candidate line before it counts — "dir #N (✅ …)" and "(…, dir #N, …)". Deliberately
+          # PER LINE, gated behind the marker grep above, not over the whole (joined) body: an
+          # earlier version ran the same loop over a whole multi-hundred-line body to also catch a
+          # citation split across a physical line break, and measured 5-20+ SECONDS per ticket on
+          # this file's real bodies — bash's own `[[ =~ ]]` engine backtracking across a
+          # several-KB string, prohibitive across BACKLOG.md's ~580 headings. A split citation is
+          # left uncaught here (a known, accepted narrowing) — narrowing (1) above already
+          # excludes it anyway, same as every other mid-body false positive. Looped to a fixed
+          # point (dir #368's own "Related" line cites two siblings this way). Same technique
+          # (strip-then-retest via BASH_REMATCH on a literal, quoted match) as
+          # tools/lib/backlog-blocks.sh's bb_strip_foreign_citations (dir #426), not reused
+          # directly — that helper's two forms (Supersedes/Duplicate of dir #N) are verb-anchored,
+          # a different citation shape than the parenthetical form free-form prose actually uses.
+          # Stripping the WHOLE clause (not just the number) is safe even when it also happens to
+          # mention this ticket's OWN number in passing (dir #14's own fixture below: "✅ CLOSED
+          # (…; also closes dir #15)" loses its parenthetical detail to the dir #15 match, but the
+          # ✅ CLOSED marker sits outside the stripped span and is never touched). A citation whose
+          # own `dir #N` is itself backtick-quoted ("`dir #154` (✅ CLOSED, …)") is NOT recognised
+          # here — stripped_lines above has already erased that quoting before this line is ever
+          # seen — but narrowing (1) already excludes every live case shaped that way, so this
+          # gap costs nothing today; extending to backtick-quoted numbers would mean reading from
+          # the (not backtick-stripped) fence-blanked copy instead, at the same whole-body-scan
+          # cost already rejected above.
+          cited="$bl"
+          while [[ "$cited" =~ dir\ \#([0-9]+)[[:space:]]*\(([^()]*)\) ]] \
+            && [ "${BASH_REMATCH[1]}" != "$id" ]; do
+            cited="${cited/"${BASH_REMATCH[0]}"/}"
+          done
+          while [[ "$cited" =~ \(([^()]*)dir\ \#([0-9]+)([^()]*)\) ]] \
+            && [ "${BASH_REMATCH[2]}" != "$id" ]; do
+            cited="${cited/"${BASH_REMATCH[0]}"/}"
+          done
+          if grep -qE '✅.*\b(CLOSED|DONE|FIXED)\b|\bRETRACTED\b' <<< "$cited" \
+            && { [ "$bi" -ge "$tail_start" ] \
+              || [[ "$bl" =~ ^[[:space:]]*(✅|⏳|RETRACTED) ]] \
+              || [[ "$bl" =~ ^[[:space:]]*\*\*Status:\*\*[[:space:]]*(✅|⏳|RETRACTED) ]]; }; then
+            body_hit="$bl"
+          fi
+        fi
+        bi=$((bi + 1))
+      done
+      if [ -n "$body_hit" ]; then
         # WARN, not GAP: the ticket this implements (dir #87) explicitly calls this bug class
         # "Low-severity (cosmetic ... nobody re-opened stale work)" — a hard exit-1 would fail
         # test_self_doctor.sh's real-checkout smoke test (and block /polish step 7) the moment
@@ -737,7 +805,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
         # BACKLOG.md now, whose content changes over time — safe today only because this check (and
         # 5b below) stays WARN-only. Promoting either to a hard GAP would make the smoke test flaky
         # against a file outside the test's own control.
-        warn "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
+        warn "BACKLOG.md:$start: $id's heading tag looks stale — body already records CLOSED/DONE/FIXED/RETRACTED but the heading isn't ✅/⏳/RETRACTED-tagged"
         stale=$((stale + 1))
       fi
     done
@@ -1191,6 +1259,69 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   if [ "$unreleased_count" -gt 1 ]; then
     gap "CHANGELOG.md has $unreleased_count '## [Unreleased]' headings, expected at most 1"
     changelog_bad=1
+  fi
+  # dir #293: the top-level [Unreleased] heading count above says nothing about what's INSIDE it.
+  # PR #276 duplicated an `### Added` block under [Unreleased] and dir #284 had to consolidate and
+  # reorder it by hand — the class fired inside the release it was found in, and nothing mechanical
+  # caught it. Keep a Changelog's own convention (and this project's practice) orders subsections
+  # Added -> Changed -> Fixed; a duplicate of any one, or one out of that order, is drift the same
+  # shape as a duplicated top-level heading. Gated on exactly one `[Unreleased]` heading — with 0 or
+  # >1, the checks above already report the anomaly and a subsection read here would be reading
+  # either nothing or an ambiguous span.
+  if [ "$unreleased_count" -eq 1 ]; then
+    # Bounded to the FIRST [Unreleased] section's own body: the next `## ` heading (a released
+    # version, or a second [Unreleased] the check above already GAPs on) ends it. One `awk` pass
+    # over the same fence-blanked copy `$unreleased_count` itself reads, not a line-number pair like
+    # this check's siblings — there is exactly one [Unreleased] heading to anchor on here (just
+    # guarded above), so a single pattern-range read is simpler than reproducing the
+    # boundary_lines machinery BACKLOG.md's own check needs for hundreds of headings.
+    unreleased_body="$(awk '
+      /^## \[Unreleased\]/ { found=1; next }
+      found && /^## / { exit }
+      found { print }
+    ' <<< "$changelog_blanked")"
+    # `|| true`: zero subsections (today's real file has only `### Changed`, and a brand-new
+    # [Unreleased] can have none at all) makes `grep -oE` exit 1 — under this file's own
+    # `set -euo pipefail`, an unguarded pipeline in an assignment would abort the ENTIRE doctor.sh
+    # run over a perfectly healthy CHANGELOG.md, the same trap `unreleased_count` above already
+    # guards against.
+    ur_subheadings="$(grep -oE '^### (Added|Changed|Fixed)\b' <<< "$unreleased_body" | sed -E 's/^### //' || true)"
+    ur_dup=""
+    for ur_kind in Added Changed Fixed; do
+      ur_cnt="$(grep -cxF "$ur_kind" <<< "$ur_subheadings" || true)"
+      [ "$ur_cnt" -gt 1 ] && ur_dup="$ur_dup${ur_dup:+, }$ur_kind ($ur_cnt)"
+    done
+    if [ -n "$ur_dup" ]; then
+      gap "CHANGELOG.md's [Unreleased] section has a duplicated subsection: $ur_dup — consolidate into one"
+      changelog_bad=1
+    fi
+    # Order check: each subsection kind actually present, in file order, must have a non-decreasing
+    # rank (Added=1, Changed=2, Fixed=3) — a MISSING kind is fine (today's real file has only
+    # `### Changed`), only an out-of-order PAIR is drift.
+    ur_order_bad=""
+    ur_prev_rank=0
+    ur_prev_kind=""
+    while IFS= read -r ur_kind; do
+      [ -n "$ur_kind" ] || continue
+      case "$ur_kind" in
+        Added) ur_rank=1 ;;
+        Changed) ur_rank=2 ;;
+        Fixed) ur_rank=3 ;;
+        *) continue ;;
+      esac
+      if [ "$ur_rank" -lt "$ur_prev_rank" ]; then
+        ur_order_bad="### $ur_prev_kind before ### $ur_kind"
+      fi
+      ur_prev_rank="$ur_rank"
+      ur_prev_kind="$ur_kind"
+    done <<< "$ur_subheadings"
+    if [ -n "$ur_order_bad" ]; then
+      gap "CHANGELOG.md's [Unreleased] section has subsections out of order ($ur_order_bad) — expected Added -> Changed -> Fixed"
+      changelog_bad=1
+    fi
+    if [ -z "$ur_dup" ] && [ -z "$ur_order_bad" ]; then
+      say "  OK   [Unreleased] subsections are unique and correctly ordered"
+    fi
   fi
   # $pending_count is part of "expected" for the same reason it's exempt from the directional check
   # above — a release-in-preparation section is a real, intended heading, so it must not read as a

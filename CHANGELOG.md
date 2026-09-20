@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/self/doctor.sh` — a guard against a duplicated or mis-ordered `### Added`/`### Changed`/
+  `### Fixed` subsection inside `[Unreleased]`** (dir #293): the class fired inside the release it
+  was found in — PR #276 duplicated an `### Added` block and dir #284 had to consolidate and
+  reorder it by hand, with nothing mechanical catching it. The new check reads the same
+  fence-blanked copy the section-count check already builds, GAPs on a duplicate or an
+  out-of-order pair, and tolerates a missing subsection.
+
 ### Changed
 
 - **`docs/grooming.md` G0 — the read-trace rotation is the groom's own closing step** (dir #543):
@@ -43,6 +52,18 @@ sections real content going forward — see that page for exactly when each one 
   `tools/self/pool-report.sh` read-only; the measurement behind the decision is in G4.
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
+
+### Fixed
+
+- **`tools/self/doctor.sh` check 5's BACKLOG.md body scan stops crying wolf on a ticket that cites
+  another ticket's closure or discusses the tagging convention** (dir #582): nine live false
+  positives (dir #307, #368, #370, #372, #521, #522, #547, #558, #559) plus this ticket's own body,
+  zero true, with three consecutive grooms compensating with a do-not-re-tag note instead of a fix.
+  The predicate now only fires on the shapes a wrap actually writes — a line opening with the
+  marker, a `**Status:**` line, or the marker in the body's own final three non-blank lines — plus
+  a same-line strip of a citation naming a different ticket. The recognised closure-word list also
+  gains `FIXED` alongside `CLOSED`/`DONE` (dir #581's own word, all 17 v0.10.2 fixed headings), so
+  a citation of one of those tickets is exempted the same way.
 
 ## [0.10.2] — 2026-09-19
 
