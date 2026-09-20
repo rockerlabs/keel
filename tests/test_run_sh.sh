@@ -206,4 +206,28 @@ run env KEEL_TEST_JOBS=1 bash "$d/run.sh"
 check_status "all-pass fixture -> exit 0 (logdir case)" 0 "$STATUS"
 check_absent "an all-pass run reports no preserved logdir" "$OUT" "per-file logs preserved"
 
+# dir #567: the assertions above only check what run.sh PRINTS, not whether its own
+# `logdir="$(mktemp -d)"` / `trap 'rm -rf "$logdir"' EXIT` actually removed the directory on the
+# all-pass path — a verifier mutation that disarms the EXIT-trap cleanup unconditionally (logdir
+# leaked on every run) left every prior assertion in this file green. Since a clean run prints no
+# path, the logdir can't be named after the fact the way the failure branch's $preserved_dir is —
+# instead a `mktemp` shim ahead of the real one on PATH records the path run.sh's own `mktemp -d`
+# creates (bare `mktemp -d`, unlike `mktemp -t`, does not honor $TMPDIR on macOS/BSD, so redirecting
+# via TMPDIR alone is not portable enough to trust here).
+mktemp_shim_dir="$(mktemp -d "$SANDBOX/mktemp-shim.XXXXXX")"
+mktemp_log="$(mktemp "$SANDBOX/mktemp-log.XXXXXX")"
+real_mktemp="$(command -v mktemp)"
+cat > "$mktemp_shim_dir/mktemp" <<EOF
+#!/usr/bin/env bash
+out="\$("$real_mktemp" "\$@")"
+printf '%s\n' "\$out" >> "$mktemp_log"
+printf '%s\n' "\$out"
+EOF
+chmod +x "$mktemp_shim_dir/mktemp"
+run env KEEL_TEST_JOBS=1 PATH="$mktemp_shim_dir:$PATH" bash "$d/run.sh"
+check_status "all-pass fixture -> exit 0 (logdir cleanup probe)" 0 "$STATUS"
+logdir_probe="$(tail -1 "$mktemp_log")"
+check_nodir "an all-pass run's logdir is actually removed, not just unreported" "$logdir_probe"
+rm -rf "$mktemp_shim_dir" "$mktemp_log"
+
 summary
