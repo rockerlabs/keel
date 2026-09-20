@@ -157,7 +157,11 @@ sections real content going forward — see that page for exactly when each one 
   become "already known") holds regardless. Comment-only: all three loci now name the real asymmetry
   instead — the range's own newly-introduced tip is never yet remote-reachable, while interior
   commits merged in commonly already are, and that asymmetry is what the `--not --remotes` widening
-  relies on.
+  relies on. A fourth, related locus was caught mid-release (dir #572 landing in parallel made it
+  stale): the comment on `ci-scan.sh`'s force-push fallback described the bare-ref, no-exclusion scan
+  as reached directly, when as of dir #572 it is the LAST of a three-step degrade (fetch the orphaned
+  before-sha, then the operator's `SECRET_SCAN_CI_FORCE_PUSH_BASELINE` hatch, only then the bare
+  fallback) — reworded to hold true whether or not dir #572 has merged yet.
 - **`tools/install-secret-guard.sh`'s `install_into` now verifies the INSTALLED copy, not just the
   vendored source, and rolls back on failure** (dir #570): the dir #250 pre-copy `--selftest` check
   is a proxy — it can pass while the copy at `$hooks_dir` still fails for a reason specific to that

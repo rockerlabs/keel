@@ -53,7 +53,8 @@ _isg_rollback() {
   for f in $copied; do
     rm -f "$hooks_dir/$f" || { ok=0; echo "secret-guard: could not remove $hooks_dir/$f — remove it by hand" >&2; }
   done
-  # Restore ONLY hooks this run itself backed up — never a hook a different run or the user placed.
+  # Restore ONLY files this run itself backed up (hooks or the vendored scanner/lib alike) — never
+  # something a different run or the user placed.
   for f in $restore; do
     mv -f "$hooks_dir/$f.pre-keel.bak" "$hooks_dir/$f" \
       || { ok=0; echo "secret-guard: could not restore $hooks_dir/$f from $hooks_dir/$f.pre-keel.bak — restore it by hand" >&2; }

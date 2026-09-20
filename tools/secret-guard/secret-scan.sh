@@ -704,11 +704,14 @@ esac
 # every current entry reads as new-this-push, the ticket's own named fail-closed fallback, reached via
 # an empty set rather than a sentinel ref. **A third, disclosed shape reaches here too (max-review
 # finding, confirmed live, pinned by tests/test_ci_secret_scan.sh):** ci-scan.sh's own force-push
-# fallback (range-lib.sh's resolve_range_ci, zero-before branch) hands over a BARE ref with no
-# exclusion side at all — the true pre-push remote state is exactly what's unreachable there, so there
-# is no principled single baseline to fall back to either; it unions to nothing the same way, and that
-# is accepted, not an oversight — safe (over-blocking on an already-rare force-push, never a silent
-# pass), never silently unaccounted for.
+# fallback (range-lib.sh's resolve_range_ci, zero-before branch) — as of dir #572, this is the LAST
+# resort of a three-step degrade: ci-scan.sh first tries to fetch the orphaned before-sha by its own
+# sha from origin, then the operator's SECRET_SCAN_CI_FORCE_PUSH_BASELINE hatch (also fetched by
+# sha), and only when NEITHER resolves does it hand over a BARE ref with no exclusion side at all —
+# the true pre-push remote state is exactly what's unreachable at THAT point, so there is no
+# principled single baseline left to fall back to; it unions to nothing the same way, and that is
+# accepted, not an oversight — safe (over-blocking on an already-rare, doubly-unrecovered force-push,
+# never a silent pass), never silently unaccounted for.
 #
 # **A FOURTH gap, found by an in-session cross-model (Gemini) second opinion, fixed for the LOCAL
 # pre-push hook only (mutation-proved, pinned by tests/test_secret_guard.sh): a boundary snapshot of
