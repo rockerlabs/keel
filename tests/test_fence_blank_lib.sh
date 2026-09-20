@@ -64,4 +64,13 @@ check_contains "the line after the fence survives" "$out" "after"
 check_absent "the fenced long line is blanked out" "$out" "fenced long line"
 check_absent "the fence markers themselves are blanked too" "$out" '```'
 
+# --- blank_inline_code_spans (dir #240 item 3): drops an INLINE `code span` on a line; text outside
+# any span, on the same or a different line, survives --------------------------------------------
+out="$(printf 'before `[x](#nope)` after\nplain line\n' | blank_inline_code_spans)"
+check_contains "text before the span survives" "$out" "before"
+check_contains "text after the span survives" "$out" "after"
+check_absent "the span's own content is dropped" "$out" "nope"
+check_absent "the backticks themselves are dropped too" "$out" '`'
+check_contains "an unrelated line is untouched" "$out" "plain line"
+
 summary

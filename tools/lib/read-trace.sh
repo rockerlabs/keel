@@ -70,6 +70,19 @@ _rt_key() { printf '%s__%s' "$(_rt_project_id "${1:-.}" "${2:-}")" "$(_rt_branch
 _rt_session_log() { printf '%s/keel-read-trace-%s.log' "$(_rt_tmpdir)" "$(_rt_key "${1:-.}" "${2:-}")"; }
 _rt_wrapdone_path() { printf '%s/keel-read-trace-wrapdone-%s' "$(_rt_tmpdir)" "$(_rt_key "${1:-.}" "${2:-}")"; }
 
+# _rt_stamp_wrap_done DIR — writes DIR's (repo,branch) wrap-completion marker (timestamp + HEAD sha).
+# Shared by `wrap-done` (the standalone, back-compat subcommand) and `docs-line --wrap` (dir #523:
+# folds the same stamp into the call commands/wrap.md already makes for its report line, so the stamp
+# no longer depends on a SEPARATE, model-remembered step — see tools/read-trace.sh's own docs-line and
+# wrap-done cases for the two callers).
+_rt_stamp_wrap_done() {
+  local dir="${1:-.}" path sha
+  path="$(_rt_wrapdone_path "$dir")"
+  sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)"
+  mkdir -p "$(dirname "$path")"
+  printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${sha:-unknown}" > "$path"
+}
+
 # --- persistent external store ----------------------------------------------------------------------
 # KEEL_READ_TRACE_STORE overrides the root outright (test isolation, same convention as
 # KEEL_IMPACT_STORE); else $KEEL_HOME/.keel/read-trace, else $HOME/.claude/.keel/read-trace (mirrors
@@ -312,13 +325,18 @@ _rt_record_mutate() { _rt_plain_append "$(_rt_session_log "$1" "$3")" mutate "$2
 #      different questions.
 #   3. wrap-fuse's denominator excludes two kinds of session from "mutating sessions this cycle": a
 #      read-only session (no mutate row at all — nothing to flag), and a session whose transcript
-#      opens with either the `DELEGATION RUN` marker (a stateless subagent, `docs/delegation.md`) or
-#      the `WRAP CENTRALIZED` marker (a managed-release worker, `docs/release-management.md` R13) —
-#      both forbidden from running their own `/wrap` by the brief that launched them, so a session
-#      that never wraps by design is not a session that "forgot".
+#      carries either the `DELEGATION RUN` marker (a stateless subagent, `docs/delegation.md`) or the
+#      `WRAP CENTRALIZED` marker (a managed-release worker, `docs/release-management.md` R13) in one
+#      of its first few user-role turns (dir #523: not only the transcript's literal opening — a
+#      chip-launched worker's own brief can arrive several turns in, once a Read/`cat` of a brief file
+#      returns) — both forbidden from running their own `/wrap` by the brief that launched them, so a
+#      session that never wraps by design is not a session that "forgot". Each row also counts once
+#      per SESSION ID (dir #523), not once per row — a session whose SessionEnd fires more than once,
+#      or a worktree/branch reused by two different sessions before session-id keying shipped, is
+#      counted once, by its last recorded outcome.
 _rt_coverage_note() {
   cat <<'EOF'
 coverage: doc-read counts include only docs/*, commands/*.md, and BACKLOG.md opened via the Read tool in a session with this hook installed — a harness-injected surface (always-on context, a slash-command body) or a file read via the shell (cat/sed/grep) never appears here, at any count; a zero row is silence, not evidence of "never opened". The `reads` column counts SESSIONS that read a doc at least once, not raw Read tool calls — a manual count of tool-call events over the same window measures something else and will not match this figure.
-wrap-fuse denominator: "mutating sessions this cycle" excludes read-only sessions (no mutation to flag) and sessions whose transcript opens with the `DELEGATION RUN` or `WRAP CENTRALIZED` marker — both are forbidden from running their own /wrap by the brief that launched them (docs/delegation.md; docs/release-management.md R13), so their absence from /wrap is by design, not a miss.
+wrap-fuse denominator: "mutating sessions this cycle" excludes read-only sessions (no mutation to flag) and sessions whose transcript carries the `DELEGATION RUN` or `WRAP CENTRALIZED` marker in one of its first few user-role turns — both are forbidden from running their own /wrap by the brief that launched them (docs/delegation.md; docs/release-management.md R13), so their absence from /wrap is by design, not a miss. Each session counts once, by session id, by its last recorded outcome — not once per row.
 EOF
 }
