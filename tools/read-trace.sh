@@ -198,6 +198,24 @@ case "${1:-}" in
     IFS=$'\x1f' read -r se_cwd se_transcript se_session_id <<<"$(jq -r '[(.cwd // ""), (.transcript_path // ""), (.session_id // "")] | join("")' 2>/dev/null)"
     [ -n "$se_cwd" ] || se_cwd="$PWD"
     se_key="$se_session_id"; [ -n "$se_key" ] || se_key="$(_rt_key "$se_cwd")"
+    # RESIDUAL LIMITATION (found by an operator-run `/code-review high` pass on this ticket, kept as an
+    # out-of-scope, honestly-named gap rather than silently claimed fixed): this session_id ONLY labels
+    # the row below — the SIGNAL that row reports (se_last_mutate from $se_slog, se_wrapped from
+    # $se_wd, both resolved a few lines down) is still read from state keyed by (repo,branch), not by
+    # this session's own id, because an ORDINARY Bash call (docs-line/wrap-done, which write that
+    # state) never sees its own session_id at all — only a hook's JSON stdin carries it (see this
+    # file's own header comment). Two genuinely concurrent sessions sharing one worktree/branch can
+    # still read/write each other's mutate log and wrap-done stamp, so one session's `/wrap` can, in a
+    # narrow timing window, make a DIFFERENT session's row on this SAME worktree read `wrapped` under
+    # its own now-distinct session id. This ticket narrows a real, measured defect (the ambiguous
+    # LABEL/miscount dir #523 was filed for) — it does not close this deeper, pre-existing
+    # (repo,branch)-sharing limitation, which would need session_id threaded into the ephemeral state
+    # itself, not just this row.
+    # Strip any tab/newline a future/alternate harness's session_id might carry (a real Claude Code
+    # session_id is a plain UUID, never observed with either — this is defensive insurance, not a
+    # reproduced bug): a stray tab would otherwise shift this row's tab-delimited fields when
+    # `aggregate` reads it back positionally (found by an operator-run `/code-review high` pass).
+    se_key="$(printf '%s' "$se_key" | tr -d '\t\n')"
     se_slog="$(_rt_session_log "$se_cwd")"
     # Exclusion 1 — read-only session: no mutating row at all means nothing for the fuse to flag.
     se_last_mutate="$( [ -f "$se_slog" ] && awk -F'\t' '$2=="mutate"{t=$1} END{print t}' "$se_slog" 2>/dev/null )"
@@ -238,28 +256,42 @@ case "${1:-}" in
     # `.type=="user"`, which covers both literal chat turns and tool-result turns — a brief-file read
     # returns as one), not bytes. se_marker_turns caps how many such turns are scanned (N=5, this
     # ticket's own lead: the chip prompt, the brief read, and the worker's first report, with margin);
-    # se_marker_rawcap bounds the raw JSONL LINES read before giving up on finding that many turns, so
-    # a session with unusually heavy inter-turn bookkeeping still can't make this hook scan an
-    # unbounded-by-LINE-COUNT prefix (300 lines comfortably covers the ~33 this session's own first two
-    # turns took, per the same live measurement, with margin for a few more before the 5th). That alone
-    # still leaves BYTES unbounded, though (found by this ticket's own /simplify efficiency pass): the
-    # same live evidence above shows those 300 lines can individually be huge (the ~258,000-byte second
-    # turn is ONE line), so se_marker_bytecap adds a hard outer ceiling on top — read at most 2,000,000
-    # bytes before even starting the line/turn scan, comfortably past the observed 258,000-byte case
-    # with margin for turns 3-5, but a fixed, small multi-MB read rather than a truly unbounded one.
+    # se_marker_bytecap is the one remaining outer ceiling, read before the turn scan even starts (an
+    # earlier draft ALSO capped raw LINES read — found redundant with this byte cap by an operator-run
+    # `/code-review high` pass and dropped: bytes alone already bound total work regardless of line
+    # count, and a separate line cap only added a second place the scan could give up too early).
+    #
+    # ONE JQ CALL PER LINE, not one jq call over the whole capped prefix (found live by that same
+    # `/code-review high` pass, reproduced with `jq`'s own stream semantics): jq aborts its ENTIRE
+    # stream — discarding output it already produced for earlier, valid lines — on the FIRST malformed
+    # or truncated JSON line it meets (confirmed live: `jq -r 'select(...)' ` fed
+    # `{valid}\nnot json\n{valid, marker here}` prints only the first line's result, exits 5, and NEVER
+    # reaches the third line, marker included). A single-call pipeline over many lines is one bad line
+    # away from silently defeating this whole exclusion — exactly the class of bug this ticket exists to
+    # close, just moved to a new trigger: any race reading a still-flushing transcript, or the byte cap
+    # above itself truncating mid-object on its own last line. Feeding one line at a time means a bad
+    # line's parse failure is contained to that one line (empty output, skipped) and never poisons any
+    # other line's result — the byte cap's own truncated tail line degrades the same safe way.
     # `.message.content | tojson`, not `.text`/`.content` field-picking: a turn's content can be a
     # plain string (an ordinary chat turn) or an array of blocks (a tool-result turn, `{type,
     # tool_use_id, content}` in this session's own transcript) — serializing whichever shape back to
     # text preserves the marker substring either way without hand-modeling both block shapes.
     se_marker_turns=5
-    se_marker_rawcap=300
     se_marker_bytecap=2000000
-    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ] \
-      && head -c "$se_marker_bytecap" "$se_transcript" 2>/dev/null \
-        | head -n "$se_marker_rawcap" \
-        | jq -r 'select(.type=="user") | .message.content | tojson' 2>/dev/null \
-        | head -n "$se_marker_turns" \
-        | grep -qE "DELEGATION RUN|WRAP CENTRALIZED"; then
+    se_marker_hit=0
+    if [ -n "$se_transcript" ] && [ -f "$se_transcript" ]; then
+      se_marker_seen=0
+      while [ "$se_marker_seen" -lt "$se_marker_turns" ] && IFS= read -r se_marker_line; do
+        se_marker_content="$(printf '%s' "$se_marker_line" | jq -r 'select(.type=="user") | .message.content | tojson' 2>/dev/null)"
+        [ -n "$se_marker_content" ] || continue
+        se_marker_seen=$((se_marker_seen + 1))
+        if printf '%s' "$se_marker_content" | grep -qE "DELEGATION RUN|WRAP CENTRALIZED"; then
+          se_marker_hit=1
+          break
+        fi
+      done < <(head -c "$se_marker_bytecap" "$se_transcript" 2>/dev/null)
+    fi
+    if [ "$se_marker_hit" -eq 1 ]; then
       exit 0
     fi
     se_wd="$(_rt_wrapdone_path "$se_cwd")"
@@ -325,9 +357,7 @@ case "${1:-}" in
     # --wrap must come FIRST (`docs-line --wrap [dir]`), matching commands/wrap.md's own only call
     # shape (`docs-line --wrap`, no dir) — /simplify found the original either-position parser had no
     # real caller for the flag-last shape, just a test exercising flexibility nothing shipped needs.
-    dl_dir="."; dl_wrap=0
-    if [ "${2:-}" = "--wrap" ]; then dl_wrap=1; dl_dir="${3:-.}"; else dl_dir="${2:-.}"; fi
-    [ "$dl_wrap" -eq 1 ] && _rt_stamp_wrap_done "$dl_dir"
+    if [ "${2:-}" = "--wrap" ]; then dl_dir="${3:-.}"; _rt_stamp_wrap_done "$dl_dir"; else dl_dir="${2:-.}"; fi
     dl_slog="$(_rt_session_log "$dl_dir")"
     dl_rows=""
     [ -f "$dl_slog" ] && dl_rows="$(awk -F'\t' '$2=="read"{print $3}' "$dl_slog" 2>/dev/null | LC_ALL=C sort -u)"
@@ -382,11 +412,34 @@ case "${1:-}" in
       # write side: a static read-time pass over an already-written snapshot carries no
       # concurrent-writer race, unlike a read-modify-write at session-end would (see that hook's own
       # comment). Without this, a session whose SessionEnd fires more than once (a known hook-firing
-      # quirk), or a row written before this ticket under the old (repo,branch) key on a reused
-      # worktree, inflates M past the number of sessions that actually ran.
-      ag_wf_counts="$(awk -F'\t' '{s[$3]=$2} END{n=0; nw=0; for (k in s) {n++; if (s[k]=="no-wrap") nw++}; print nw"\t"n}' "$ag_wlog" 2>/dev/null)"
-      ag_nowrap="$(printf '%s' "$ag_wf_counts" | awk -F'\t' '{print $1+0}')"
-      ag_total="$(printf '%s' "$ag_wf_counts" | awk -F'\t' '{print $2+0}')"
+      # quirk) inflates M past the number of sessions that actually ran.
+      #
+      # LEGACY-KEY ESCAPE HATCH (found live by an operator-run `/code-review high` pass — a real,
+      # present concern, not hypothetical: this machine's OWN store already holds rows written before
+      # this ticket): a row written by the pre-#523 code is keyed by `_rt_key` (repo,branch) — a
+      # format hard-coded as `<project-id>__<branch-slug>`, ALWAYS containing a literal `__`. Every
+      # real session on that (repo,branch) wrote that exact SAME key before this ticket, so
+      # deduping those rows by key the same way a real per-session id is deduped would silently
+      # collapse an entire pre-#523 history of distinct sessions down to just its LAST recorded status
+      # — not a migration nicety, a live undercounting bug on the very first `aggregate` run after this
+      # ships (and `rotate` is manual, never auto-run — this file's own header — so old rows are not
+      # cleared away first). A `__`-shaped key is therefore counted as a RAW ROW (old behavior,
+      # preserved exactly), never deduped. session-end's own fallback (no `session_id` in the hook
+      # payload — an older Claude Code build, or a synthetic call) resolves `se_key` to that SAME
+      # `_rt_key` shape, so it ALSO lands on the `__`-shaped, raw-row path — never wrongly collapsed
+      # with a genuinely different session that also lacked a `session_id`, the ambiguity a real
+      # (non-`__`) session id key exists to remove. Only a real, non-`__` session id key dedupes.
+      # `NF>=3 && $3!=""` also drops a blank/malformed row (a race with a concurrent `rotate`, or any
+      # non-atomic partial append) rather than counting it as a phantom session with an empty key.
+      IFS=$'\t' read -r ag_nowrap ag_total <<<"$(awk -F'\t' '
+        NF>=3 && $3!="" {
+          if ($3 ~ /__/) { total++; if ($2=="no-wrap") nowrap++ }
+          else { last[$3]=$2 }
+        }
+        END {
+          for (k in last) { total++; if (last[k]=="no-wrap") nowrap++ }
+          print (nowrap+0)"\t"(total+0)
+        }' "$ag_wlog" 2>/dev/null)"
       ag_since="$(awk -F'\t' 'NR==1{print $1}' "$ag_wlog" 2>/dev/null)"
       printf 'wrap-fuse: %s of %s mutating sessions this cycle ended with no /wrap (cycle since %s)\n' \
         "${ag_nowrap:-0}" "${ag_total:-0}" "${ag_since:-n/a}"

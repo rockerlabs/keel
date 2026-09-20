@@ -51,13 +51,18 @@ sections real content going forward — see that page for exactly when each one 
   it already makes for its report line (`docs-line --wrap`), instead of a separate, easily-dropped
   `wrap-done` call — the fuse had read 0-2 `wrapped` rows across cycles that demonstrably persisted.
   Wrap-fuse events are now keyed by session id, not (repo,branch): a worktree reused across two
-  different sessions no longer writes the same ambiguous label twice, and `aggregate` counts distinct
-  sessions by their last recorded outcome, not raw rows, so a duplicate `SessionEnd` fire for one
-  session no longer inflates the denominator either. The `DELEGATION RUN`/`WRAP CENTRALIZED` exclusion
-  now scans the transcript's first few user-role turns instead of its first 8000 bytes — a
-  chip-launched worker's own brief, read from a file the chip names, can arrive well past that byte
-  window (reproduced live: over 258,000 bytes for this ticket's own transcript), which had misread
-  every such worker as a forgotten wrap.
+  different sessions writes two distinctly-labeled rows, and `aggregate` dedupes a real session id by
+  its last recorded outcome (never a legacy (repo,branch)-shaped key, so an installation's pre-#523
+  history stays counted exactly as before), so a duplicate `SessionEnd` fire for one session no longer
+  inflates the denominator either. (The underlying wrapped/not-wrapped *signal* two sessions on the
+  same worktree read — the mutation log and the wrap-done stamp `docs-line --wrap` writes — stays
+  (repo,branch)-scoped, a pre-existing, documented limitation this ticket narrows the symptom of but
+  does not remove; only the row's own label and the aggregate count are now session-accurate.) The
+  `DELEGATION RUN`/`WRAP CENTRALIZED` exclusion now scans the transcript's first few user-role turns,
+  one JSONL record at a time so one malformed/truncated line can't silently defeat the rest of the
+  scan, instead of a single-pass `head -c 8000` byte scan — a chip-launched worker's own brief, read
+  from a file the chip names, can arrive well past that byte window (reproduced live: over 258,000
+  bytes for this ticket's own transcript), which had misread every such worker as a forgotten wrap.
 
 ## [0.10.2] — 2026-09-19
 
