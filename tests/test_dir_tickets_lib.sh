@@ -98,4 +98,34 @@ out="$(printf 'see dir #300 and #301\n' | extract_dir_tickets)"
 check_contains "a bare \"and #N\" continuation extracts the anchor ticket" "$out" "dir #300"
 check_contains "a bare \"and #N\" continuation extracts the and-joined ticket too" "$out" "dir #301"
 
+# dir #578: a bold-wrapped bare-#N continuation ("**dir #478**, **#480**, **#481**") — the `**` closing
+# and reopening the emphasis around each bare number sits between the tokens and, before the fix, broke
+# the anchor match dead after the first fully-spelled ticket. Reproduced against CHANGELOG.md's own
+# `[0.10.1]` known-issues paragraph shape, including the "(closed)" prose interruption that legitimately
+# stops the list before the third ticket.
+out="$(printf 'x **dir #478**, **#480** (closed), **#481**.\n' | extract_dir_tickets)"
+check_contains "a bold-wrapped anchor ticket is extracted" "$out" "dir #478"
+check_contains "a bold-wrapped bare continuation joins onto the anchor" "$out" "dir #480"
+check_absent "prose between bold-wrapped tickets still stops the list (not a blanket bold-strip join)" \
+  "$out" "dir #481"
+
+# The bold markers must be stripped bare (content kept), not blanked out the way a backtick span is —
+# text that happens to sit between the `**` pair must survive into the buffer.
+out="$(printf 'into **dir #497** — and its ticket-next siblings **dir #487**, **#490**, **#491**, **#492**, all unchanged.\n' | extract_dir_tickets)"
+check_contains "a solo bold-wrapped citation is still extracted" "$out" "dir #497"
+check_contains "a bold-wrapped shorthand list extracts its anchor" "$out" "dir #487"
+check_contains "a bold-wrapped shorthand list extracts a middle bare ticket" "$out" "dir #490"
+check_contains "a bold-wrapped shorthand list extracts its last bare ticket" "$out" "dir #492"
+
+# A bold-wrapped bare number with no "dir #" anchor nearby (README.md's own numbered-flow headers,
+# e.g. "**#1 — Let your assistant install it**") must never be swept up as a citation — there is no
+# "dir " prefix for it to anchor on, bold-stripped or not.
+out="$(printf '**#1 — Let your assistant install it** *(simplest)*.\n' | extract_dir_tickets)"
+check_absent "a bold-wrapped bare number with no nearby \"dir #\" anchor is not a citation" "$out" "dir #1"
+
+# The other Markdown bold form, __text__, is the same defect shape as ** and is stripped the same way.
+out="$(printf 'x __dir #700__, __#701__.\n' | extract_dir_tickets)"
+check_contains "an underscore-bold anchor ticket is extracted" "$out" "dir #700"
+check_contains "an underscore-bold bare continuation joins onto the anchor" "$out" "dir #701"
+
 summary
