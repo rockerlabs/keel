@@ -46,6 +46,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/self/prose-drift.sh` — three defects, one editing pass** (dir #240): a non-git `REPO_DIR`
+  now fails with a labeled exit-2 error instead of reaching `git ls-files` and aborting raw
+  (`fatal: not a git repository`) — decided by correcting the header's stale "test-sandbox friendly"
+  claim rather than restoring a degrade path, since no test fixture and no caller (`tools/self/doctor.sh`
+  always passes its own resolved git repo root) ever relied on a non-git `REPO_DIR` working. A heading
+  anchor that fails to resolve only because the heading carries a non-ASCII LETTER (signal 2's own
+  slugger is ASCII-only; GitHub's is not) now downgrades to an advisory WARN instead of a hard GAP —
+  the contract is narrowed, not widened into a Unicode slugger; non-ASCII punctuation (an em dash) is
+  unaffected, since both sluggers already strip it the same way. A link-shaped token quoted inside an
+  INLINE code span (not just a fenced block) is no longer extracted as a real link, via a new shared
+  `blank_inline_code_spans` in `tools/lib/fence-blank.sh`.
 - **`tools/lib/backlog-blocks.sh`'s closure vocabulary did not recognise `✅ FIXED`** (dir #581): the
   0.10.2 release manager wrote it on all 17 fixed slate headings, and every consumer of the shared
   scanner read them as still open. `BB_CLOSURE_TAG_PATTERN` now includes `FIXED`;

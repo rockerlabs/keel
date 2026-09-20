@@ -451,4 +451,94 @@ See [x](/other.md) for detail.
 run "$pd" "$d" --quiet
 check_status "the SAME leading-slash target, missing, DOES fail -> exit 1" 1 "$STATUS"
 
+# --- dir #240 item 1: a non-git REPO_DIR is rejected with a labeled exit-2 error, not left to reach
+# git's own raw, unlabeled "fatal: not a git repository" once md_files's `git ls-files` runs uncaught --
+nongit="$(mktemp -d "$SANDBOX/nongit.XXXXXX")"
+require_sandbox_path "$nongit" nongit
+run "$pd" "$nongit"
+check_status "a non-git REPO_DIR is rejected -> exit 2" 2 "$STATUS"
+check_contains "reports it as not a git repository (not a raw git fatal)" "$OUT" "not a git repository"
+
+# --- dir #240 item 1, /code-review medium finding: a BARE repo (a real git checkout, but with no
+# work tree — `git rev-parse --is-inside-work-tree` exits 0 and prints "false" for one) is rejected the
+# same way, not let through by an exit-status-only check ------------------------------------------------
+bare="$(mktemp -d "$SANDBOX/bare.XXXXXX")"
+require_sandbox_path "$bare" bare
+git init -q --bare "$bare"
+run "$pd" "$bare"
+check_status "a bare repo (no work tree) is rejected -> exit 2, not silently scanned empty" 2 "$STATUS"
+check_contains "reports it as not a git repository too" "$OUT" "not a git repository"
+
+# --- dir #240 item 2: a heading with a non-ASCII LETTER — narrowed contract downgrades the dead-anchor
+# verdict to an advisory WARN, exit 0, instead of a hard GAP; the SAME shape with an ASCII heading (a
+# genuinely missing one) still fails (dir #110 mutation pairing) --------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [y](#käytä) for detail.
+
+## Käytä
+")"
+run "$pd" "$d" --quiet
+check_status "a non-ASCII-letter heading anchor downgrades to WARN -> exit 0" 0 "$STATUS"
+check_contains "still reports it, as an advisory WARN" "$OUT" "WARN"
+check_contains "names the narrowed-contract reason" "$OUT" "non-ASCII letters"
+
+# --quiet suppresses the OK line itself (asserted elsewhere below), so this needs a non-quiet run.
+run "$pd" "$d"
+check_contains "the OK line (non-quiet) names the WARN instead of reading as a plain, contradicting all-clear" \
+  "$OUT" "non-ASCII-anchor WARN"
+
+d="$(mk_repo_with doc.md "# doc
+
+See [y](#does-not-exist) for detail.
+")"
+run "$pd" "$d" --quiet
+check_status "the SAME shape with a genuinely missing ASCII heading still fails -> exit 1" 1 "$STATUS"
+
+# --- dir #240 item 2, /code-review medium finding (3 independent angles): a non-ASCII byte in the
+# anchor is not itself enough to downgrade to WARN — the anchor must ALSO match a real heading once
+# folded the same ASCII-only way, or an unrelated ordinary defect (a typo) rides along and is wrongly
+# muted. `#käytä-typo` carries the SAME non-ASCII byte as the genuine case above but resolves no real
+# heading even after folding, so it must stay a hard GAP -------------------------------------------------
+d="$(mk_repo_with doc.md "# doc
+
+See [y](#käytä-typo) for detail.
+
+## Käytä
+")"
+run "$pd" "$d" --quiet
+check_status "a non-ASCII anchor with an unrelated ASCII typo still fails -> exit 1 (not muted to WARN)" \
+  1 "$STATUS"
+check_contains "reports it as a real anchor GAP" "$OUT" "anchor does not resolve"
+
+# --- dir #240 item 2, same finding, a second shape: a literal em dash TYPED into the anchor itself
+# (not derived from a real heading's own slug) is non-ASCII but resolves nothing once folded — GitHub's
+# own slugger strips it as punctuation, same as this tool's fold, so a real heading's slug never
+# contains one; this anchor is an ordinary dead link, not a narrowed-contract case ------------------------
+d="$(mk_repo_with doc.md '# doc
+
+See [x](#background—details) for detail.
+
+## Background - Details
+')"
+run "$pd" "$d" --quiet
+check_status "a literal em dash typed into the anchor still fails -> exit 1 (not muted to WARN)" 1 "$STATUS"
+check_contains "reports it as a real anchor GAP too" "$OUT" "anchor does not resolve"
+
+# --- dir #240 item 3: a link-shaped token quoted inside an INLINE code span (not a fenced block) is
+# not extracted as a real link; the SAME target, as a real unfenced link, still fails (dir #110 pairing)
+d="$(mk_repo_with doc.md '# doc
+
+Example of a broken link: `[x](#nope)` shown inline, in backticks.
+')"
+run "$pd" "$d" --quiet
+check_status "a link-shaped token inside inline backticks does not fail the script -> exit 0" 0 "$STATUS"
+
+d="$(mk_repo_with doc.md '# doc
+
+[x](#nope)
+')"
+run "$pd" "$d" --quiet
+check_status "the SAME target, as a real unfenced link, DOES fail -> exit 1" 1 "$STATUS"
+
 summary
