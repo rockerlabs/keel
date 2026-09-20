@@ -95,8 +95,32 @@
 # after the first — a distinct, narrower gap from the prose-interruption question this paragraph is
 # about. Fixed in dir #482: `+` is now part of the separator class below, so this exact shape extracts
 # both tickets.)
+#
+# A bold-wrapped bare-`#N` continuation (`**dir #478**, **#480**, **#481**`) used to break the anchor
+# match dead after the first fully-spelled ticket: the `**` closing/reopening the emphasis around each
+# bare `#N` sits between the tokens and isn't in the separator class below, so "#480"/"#481" were never
+# even bare-anchored, let alone joined — the exact shape CHANGELOG.md's own `[0.10.1]` known-issues
+# paragraph uses, which made sixteen of its eighteen carried tickets machine-invisible (dir #578). Emphasis
+# markers carry no citation meaning of their own, so bold markup is stripped unconditionally, the same way
+# a backtick-quoted span is stripped below — but stripped bare (kept content, dropped markers) rather than
+# blanked out (dropped content too), since bold text is real prose to extract FROM, not an illustrative
+# example to exclude the way a backtick span is. Both bold forms Markdown allows (`**text**` and
+# `__text__`) are the SAME defect shape — a markup character sitting between ticket tokens — so both are
+# stripped in one pass rather than patching one literal spelling at a time the way this function's own
+# history otherwise reads (dir #482's `+`, this fix's own `**`): `__` has zero occurrences in this repo's
+# tracked prose today (checked live), but nothing about the anchor regex distinguishes it from `**`, and
+# leaving it uncovered would just be the next one-shape-at-a-time patch waiting to be discovered. Checked
+# live against every `**#N` / `dir #N**` shape already tracked in this repo (README.md's numbered-flow
+# headers, CHANGELOG.md's own bold ticket lists): none sits directly adjacent to an unrelated "dir #"
+# citation, so unconditional stripping never stitches a bold-wrapped non-citation number onto one.
+# Single-marker italics (`*text*`/`_text_`) and odd-width runs (`***text***`) are the identical defect
+# shape one width over and are intentionally NOT covered here, on the same measured basis as `__` above:
+# a live sweep of this repo's tracked prose (`grep` for `***` and for a bare `*`/`_` adjacent to `dir #`)
+# found zero real occurrences of either shape wrapping a ticket citation — same declined-until-real-
+# precedent this file already sets for the prose-interrupted-list hazard (dir #479, above). Re-measure
+# before extending if a real instance ever shows up.
 extract_dir_tickets() {
-  sed -E 's/`[^`]*`//g' \
+  sed -E 's/`[^`]*`//g; s/(\*\*|__)//g' \
     | awk '
     { line = $0
       if (line == "") { if (buf != "") { print buf; buf = "" }; next }
