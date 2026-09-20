@@ -130,6 +130,12 @@ r4=0; r3=0; r2=0; r1=0; r0=0; runmarked=0
 oldest_age=-1
 oldest_id="unlabeled"
 
+# dir #463, second half (simplify pass): read once, up front, rather than re-opening
+# $backlog_file with a fresh `sed` per ticket whose heading carries no grade at all — the body
+# scan below then slices this in-memory array instead of spawning a process per ticket.
+backlog_lines=()
+while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done < "$backlog_file"
+
 while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] && continue
 
@@ -175,15 +181,17 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # pass —") and a qualifier glued straight onto the digit ("— R1-parked —") both now read,
   # without re-typing either live heading into the stricter form (which would silently delete
   # the qualifier prose that carries why the grade is what it is).
-  rlvl="$(grep -oE '— R[0-9]' <<< "$heading_block" | tail -1 | grep -oE 'R[0-9]' || true)"
-  if [ -z "$rlvl" ]; then
+  rlvl_match="$(grep -oE '— R[0-9]' <<< "$heading_block" | tail -1 || true)"
+  if [ -z "$rlvl_match" ]; then
     # Heading first, body second (operator decision, 2026-09-20): a ticket that carries no
     # grade on its heading at all may still state one in prose, `**Readiness: RN**` — two named
     # legacy tickets do exactly this. Scanned only when the heading match above is empty, so the
-    # common case (grade on the heading) never pays for the extra pass over the body span.
-    rlvl="$(sed -n "${start},${end}p" "$backlog_file" \
-      | grep -oE 'Readiness:[[:space:]]*R[0-9]' | tail -1 | grep -oE 'R[0-9]' || true)"
+    # common case (grade on the heading) never pays for the extra pass over the body span; the
+    # slice below reads the in-memory array populated once above, not a fresh file open.
+    rlvl_match="$(printf '%s\n' "${backlog_lines[@]:$((start - 1)):$((end - start + 1))}" \
+      | grep -oE 'Readiness:[[:space:]]*R[0-9]' | tail -1 || true)"
   fi
+  rlvl="$(grep -oE 'R[0-9]' <<< "$rlvl_match" || true)"
   # dir #463, first half: R4 ("spec-ready") and R0 ("not an agent session") used to have no arm
   # at all and fell into `unmarked` alongside genuinely ungraded tickets — the two grades a
   # drain planner most needs to tell apart from each other, and from "no grade yet".
@@ -307,12 +315,15 @@ if [ -n "$record_release" ]; then
     if [ "$amend" = "1" ]; then
       # dir #461, half 2: the plain call stays idempotent-once (the header's own contract,
       # unchanged) — --amend is the explicit opt-in that makes THIS release's row correctable,
-      # last-write-wins, without touching any other release's row in the file.
+      # last-write-wins, without touching any other release's row in the file. One rewrite pass
+      # (the corrected row is written into the tempfile before the single `mv`), not a rewrite
+      # followed by a separate reopen-and-append on the final file.
       amend_tmp="$(mktemp "${history_file}.XXXXXX")"
-      grep -vF "\"release\":\"$record_release\"" "$history_file" > "$amend_tmp" 2>/dev/null || true
+      { grep -vF "\"release\":\"$record_release\"" "$history_file" 2>/dev/null || true
+        printf '{"release":"%s","date":"%s","pool_size":%s}\n' \
+          "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size"
+      } > "$amend_tmp"
       mv "$amend_tmp" "$history_file"
-      printf '{"release":"%s","date":"%s","pool_size":%s}\n' \
-        "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size" >> "$history_file"
       echo "  history:                        amended ($history_file)"
     else
       echo "  history:                        $record_release already recorded in $history_file — not re-appended (--amend corrects it)"
