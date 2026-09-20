@@ -46,6 +46,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/lib/backlog-blocks.sh`'s closure vocabulary did not recognise `✅ FIXED`** (dir #581): the
+  0.10.2 release manager wrote it on all 17 fixed slate headings, and every consumer of the shared
+  scanner read them as still open. `BB_CLOSURE_TAG_PATTERN` now includes `FIXED`;
+  `docs/release-management.md` R8 points closing writers at the constant instead of a second,
+  hand-copied word list; and a new `bb_closure_word_ok` checks a candidate marker against the
+  constant at write time, so the next unlisted word is refused there rather than found by the next
+  census.
 - **`tools/lib/dir-tickets.sh`'s `extract_dir_tickets` now sees through a bold-wrapped bare-`#N`
   continuation** (dir #578) — `**dir #478**, **#480**, **#481**`, the exact shape CHANGELOG.md's own
   `[0.10.1]` known-issues paragraph uses, previously broke the anchor match dead after the first
