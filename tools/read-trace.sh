@@ -197,7 +197,6 @@ case "${1:-}" in
     # just the docs, per this ticket's own lead #3.
     IFS=$'\x1f' read -r se_cwd se_transcript se_session_id <<<"$(jq -r '[(.cwd // ""), (.transcript_path // ""), (.session_id // "")] | join("")' 2>/dev/null)"
     [ -n "$se_cwd" ] || se_cwd="$PWD"
-    se_key="$se_session_id"; [ -n "$se_key" ] || se_key="$(_rt_key "$se_cwd")"
     # RESIDUAL LIMITATION (found by an operator-run `/code-review high` pass on this ticket, kept as an
     # out-of-scope, honestly-named gap rather than silently claimed fixed): this session_id ONLY labels
     # the row below — the SIGNAL that row reports (se_last_mutate from $se_slog, se_wrapped from
@@ -211,11 +210,16 @@ case "${1:-}" in
     # LABEL/miscount dir #523 was filed for) — it does not close this deeper, pre-existing
     # (repo,branch)-sharing limitation, which would need session_id threaded into the ephemeral state
     # itself, not just this row.
-    # Strip any tab/newline a future/alternate harness's session_id might carry (a real Claude Code
-    # session_id is a plain UUID, never observed with either — this is defensive insurance, not a
-    # reproduced bug): a stray tab would otherwise shift this row's tab-delimited fields when
-    # `aggregate` reads it back positionally (found by an operator-run `/code-review high` pass).
-    se_key="$(printf '%s' "$se_key" | tr -d '\t\n')"
+    # Sanitize BEFORE the emptiness check that decides the fallback (found by a delta-round
+    # `/code-review high` pass on the original ordering, which sanitized AFTER: a session_id made
+    # entirely of tabs/newlines passed the emptiness check as "present", skipped the `_rt_key`
+    # fallback, and then got stripped down to an EMPTY key — silently vanishing from the count instead
+    # of degrading to the intended (repo,branch) fallback). Strip any tab/newline a future/alternate
+    # harness's session_id might carry (a real Claude Code session_id is a plain UUID, never observed
+    # with either — this is defensive insurance, not a reproduced bug): a stray tab would otherwise
+    # shift this row's tab-delimited fields when `aggregate` reads it back positionally.
+    se_key="$(printf '%s' "$se_session_id" | tr -d '\t\n')"
+    [ -n "$se_key" ] || se_key="$(_rt_key "$se_cwd")"
     se_slog="$(_rt_session_log "$se_cwd")"
     # Exclusion 1 — read-only session: no mutating row at all means nothing for the fuse to flag.
     se_last_mutate="$( [ -f "$se_slog" ] && awk -F'\t' '$2=="mutate"{t=$1} END{print t}' "$se_slog" 2>/dev/null )"
@@ -276,6 +280,27 @@ case "${1:-}" in
     # plain string (an ordinary chat turn) or an array of blocks (a tool-result turn, `{type,
     # tool_use_id, content}` in this session's own transcript) — serializing whichever shape back to
     # text preserves the marker substring either way without hand-modeling both block shapes.
+    #
+    # A CHEAP `grep` PRE-FILTER, not a bare per-line jq loop over the whole byte-capped prefix (found
+    # live by a delta-round `/code-review high` pass, on the per-line loop this ticket's OWN prior
+    # round introduced to fix the jq-fail-fast bug above): forking one `jq` process per RAW line is
+    # only cheap when few raw lines precede the 5th user turn — this session's own transcript needed
+    # ~33. A transcript with many small non-`user` bookkeeping records between turns (queue-operations,
+    # hook-status attachments — the exact shape this file's own comments already name) pays one fork
+    # per such record. Reproduced live, twice, independently: a synthetic 20,000-line noise transcript
+    # (~1.1MB, comfortably under the byte cap) took 89-112 SECONDS through a bare per-line loop, vs.
+    # 0.039 seconds once pre-filtered first — a SessionEnd hook blocking that long is indistinguishable
+    # from the hang dir #523 exists to stop, just relocated to a new trigger. `grep -F '"type":"user"'`
+    # is one single pass over the whole byte-capped prefix (no per-line fork) that shrinks the candidate
+    # set down to lines that COULD be a user turn before any `jq` runs at all; genuine Claude Code JSONL
+    # is compact (no space after `:`, confirmed against this session's own live transcript), so this
+    # literal substring match is exact for a real `"type":"user"` field regardless of where it sits
+    # among a record's other fields. A false-positive match (the substring appearing inside a turn's own
+    # CONTENT rather than as the record's own type field — e.g. a turn quoting this very file) still
+    # gets filtered correctly by the `jq` call that follows; it only costs one wasted fork, not a wrong
+    # exclusion. A transcript in some future, non-compact serialization would silently lose this
+    # pre-filter's benefit (falling back to scanning every line again) rather than crash — a residual
+    # limit, not a new failure mode, and named here rather than left implicit.
     se_marker_turns=5
     se_marker_bytecap=2000000
     se_marker_hit=0
@@ -289,7 +314,7 @@ case "${1:-}" in
           se_marker_hit=1
           break
         fi
-      done < <(head -c "$se_marker_bytecap" "$se_transcript" 2>/dev/null)
+      done < <(head -c "$se_marker_bytecap" "$se_transcript" 2>/dev/null | grep -F '"type":"user"')
     fi
     if [ "$se_marker_hit" -eq 1 ]; then
       exit 0

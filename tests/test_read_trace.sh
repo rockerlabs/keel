@@ -422,14 +422,60 @@ write_noise_turn() { jq -cn '{type:"attachment", hookName:"noise"}' >> "$1"; }
 # only the first line's result and never reaches the third). A single-call pipeline over the whole
 # capped prefix is one bad line away from silently losing this exclusion — this transcript plants a
 # genuinely malformed line between two valid turns, the second of which carries the marker.
+# The malformed line is a TRUNCATED user-turn object (`{"type":"user","message":{"content":"trunc`,
+# cut off mid-string), not arbitrary prose (found by a delta-round /code-review high pass on the
+# grep pre-filter this ticket's own next round added — an arbitrary non-JSON-looking line like "not
+# valid json at all" never matches that pre-filter's `"type":"user"` substring check, so it would
+# never even reach jq, and this regression pin would pass for the wrong reason instead of exercising
+# jq's own per-line resilience). A truncated real user-record — plausible from a race reading a
+# still-flushing transcript, or the byte cap's own truncation of its last line — DOES match the
+# pre-filter and still needs jq to fail on just that one line, not the whole scan.
 d="$(mkrepo)"; rt_env malformedline
 feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
 tp="$SANDBOX/transcript.malformedline.jsonl"; : > "$tp"
 write_user_turn "$tp" "a short chip prompt, no marker here"
-printf 'not valid json at all, a truncated or racing write\n' >> "$tp"
+printf '{"type":"user","message":{"content":"truncated mid-strin\n' >> "$tp"
 write_user_turn "$tp" "YOUR TICKET: dir #999. WRAP CENTRALIZED"
 feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
 check_nofile "a malformed line before the marker turn does not defeat the exclusion" "$RT_STORE"/*/wrap-fuse-events.log
+
+# --- session-end: many small non-"user" noise lines before the marker does NOT blow up the scan's
+# runtime (dir #523, found live by TWO independent delta-round /code-review high passes) -----------
+# Regression pin for a real, reproduced defect in this ticket's OWN prior round: forking one `jq`
+# process per RAW line (the fix for the malformed-line bug above) is only cheap when few raw lines
+# precede the marker turn. A transcript with many small non-"user" bookkeeping records reproduced
+# 89-112 SECONDS of wall-clock time through a bare per-line loop, live, twice, independently — a
+# `SessionEnd` hook blocking that long reads exactly like the hang dir #523 exists to stop, just
+# relocated to a new trigger. The fix pre-filters candidate lines with one cheap `grep` pass before
+# any `jq` fork. 5,000 noise lines (a generous multiple of the 20,000 that reproduced the original
+# regression, kept smaller here so this test itself stays fast) precede the marker.
+# Run in the BACKGROUND with a bounded poll, not `timeout` — this suite ships no timeout helper and
+# `timeout` is absent on macOS (tests/test_install.sh's own T14f note, same reasoning here): a naive
+# foreground call would hang the whole suite on a regression instead of failing this one test. The
+# healthy path exits in well under a second; the wait is only ever paid in full when the fork-per-line
+# regression is back.
+d="$(mkrepo)"; rt_env manynoise
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tp="$SANDBOX/transcript.manynoise.jsonl"; : > "$tp"
+for _i in $(seq 1 5000); do write_noise_turn "$tp"; done
+write_user_turn "$tp" "YOUR TICKET: dir #999. WRAP CENTRALIZED"
+manynoise_json="$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')"
+printf '%s' "$manynoise_json" | TMPDIR="$RT_TMPDIR" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" session-end >/dev/null 2>&1 &
+manynoise_pid=$!
+manynoise_waited=0
+while kill -0 "$manynoise_pid" 2>/dev/null && [ "$manynoise_waited" -lt 10 ]; do
+  sleep 1; manynoise_waited=$((manynoise_waited + 1))
+done
+if kill -0 "$manynoise_pid" 2>/dev/null; then
+  kill -9 "$manynoise_pid" 2>/dev/null || true
+  wait "$manynoise_pid" 2>/dev/null || true
+  fail "5,000 noise lines before the marker still completes well within the bound" \
+    "still running after ${manynoise_waited}s (the fork-per-raw-line regression is back)"
+else
+  wait "$manynoise_pid" 2>/dev/null
+  pass "5,000 noise lines before the marker still completes well within the bound"
+fi
+check_nofile "and the marker among 5,000 noise lines still excludes correctly" "$RT_STORE"/*/wrap-fuse-events.log
 
 # assert_marker_excludes MARKER TAG LABEL — a mutating session whose SECOND user-role turn (not its
 # first) carries MARKER is still excluded. This is dir #523's own regression: a chip-launched worker's
@@ -545,7 +591,7 @@ mkdir -p "$agdir2"
   printf '2026-08-02T00:00:00Z\twrapped\tsess-x\n'
 } > "$agdir2/wrap-fuse-events.log"
 run_hook aggregate "$d"
-check_contains "aggregate: legacy (repo,branch)-shaped rows are counted RAW, never deduped (still 2 no-wrap of 3)" \
+check_contains "aggregate: legacy (repo,branch)-shaped rows are counted RAW, never deduped (2 no-wrap of 4)" \
   "$OUT" "wrap-fuse: 2 of 4 mutating sessions this cycle ended with no /wrap"
 
 # --- aggregate: the coverage/denominator disclosure (dir #430 + dir #431's one output contract) --------
