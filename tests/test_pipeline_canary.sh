@@ -35,6 +35,24 @@ run env KEEL_CANARY_STATE="$STATE" bash "$canary" demo-bypass
 check_status "demo-bypass → exit 0 (the fabricated claim WAS denied, as it should be)" 0 "$STATUS"
 check_contains "demo-bypass reports PASS" "$OUT" "PASS  demo-bypass"
 
+# --- demo-bypass: dir #478's `[ -n "$d" ] || exit 1` guard, exercised for real (dir #565) -----------
+# path_farm (tests/lib.sh, the same technique tests/test_install_pre_pr_gate.sh's no-jq fixture uses)
+# hides just `mktemp` from PATH so `d="$(mktemp -d)"` comes back empty — the guard's own exact failure
+# mode, without needing to edit the script under test. Run from a throwaway cwd so a regression (the
+# guard deleted, `d=""` falling through to `git -C "$d" init`) would be caught by checking that cwd
+# stayed empty, not just by the exit code — `git -C ""` silently resolves to cwd (verified live), which
+# is the dir #375/#478 class of bug this guard exists to stop.
+mktemp_farm="$SANDBOX/mktemp-farm"
+path_farm "$mktemp_farm" mktemp
+nomktemp_cwd="$SANDBOX/nomktemp-cwd"
+mkdir -p "$nomktemp_cwd"
+# run_in (tests/lib.sh), not a hand-rolled `bash -c '...' _ arg1 arg2 ...` — it already does exactly
+# "run a command from a throwaway cwd" (found by /simplify's own pass on this ticket).
+run_in "$nomktemp_cwd" env PATH="$mktemp_farm" KEEL_CANARY_STATE="$STATE" bash "$canary" demo-bypass
+check_status "demo-bypass with mktemp missing → non-zero (guard catches it, not a silent PASS)" 1 "$STATUS"
+check_contains "demo-bypass with mktemp missing → names the mktemp failure" "$OUT" "mktemp -d failed"
+check_nodir "demo-bypass with mktemp missing → no stray .git landed in the invocation directory" "$nomktemp_cwd/.git"
+
 # --- setup: builds the sandbox -----------------------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" setup
 check_status "setup → exit 0" 0 "$STATUS"
@@ -55,12 +73,23 @@ check_contains "the toy repo is a real git repo" "$(git -C "$repo" rev-parse --i
 # path would still differ per run, as mktemp's own random suffix already guarantees) would be one less
 # thing standing between a bug in that hashing and two canary sessions silently sharing one sentinel.
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-2" bash "$canary" setup
-repo2="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-2")"
-# check_ne (exact inequality), not check_absent (substring absence, dir #481's own review round
-# found and fixed this exact weakness for a sibling assertion in tests/test_pre_pr_gate.sh): two
-# distinct basenames sharing a common prefix could otherwise make one a substring of the other and
-# spuriously fail this check even though the underlying basenames are genuinely different.
-check_ne "two setup runs get different toy-repo basenames (no shared /tmp sentinel)" "$(basename "$repo2")" "$(basename "$repo")"
+check_status "a second, concurrent setup run does not collide with the first -> exit 0" 0 "$STATUS"
+
+# dir #565: the basename-only check this replaced compared two `mktemp -d "$sandbox/repo.XXXXXX"`
+# basenames, which differ by mktemp's own random suffix regardless of whether pre-pr-gate.sh's keying
+# still separates them — it could not fail even if `_repo_key_from_path` (dir #481) reverted to
+# basename-only hashing. Hold the basename FIXED instead and vary the containing dir, then compare the
+# gate's own repo-key output (not a hand-rolled basename+hash — that would just re-test this file's own
+# copy of the algorithm, not the gate's): two toy repos sharing one basename must still get distinct
+# keys, or the hash half of dir #481's separation has silently stopped doing anything.
+samebase_a="$SANDBOX/samebase-a/repo"
+samebase_b="$SANDBOX/samebase-b/repo"
+mkdir -p "$samebase_a" "$samebase_b"
+git -C "$samebase_a" init -q
+git -C "$samebase_b" init -q
+key_a="$(bash "$REPO_ROOT/tools/pre-pr-gate.sh" repo-key "$samebase_a")"
+key_b="$(bash "$REPO_ROOT/tools/pre-pr-gate.sh" repo-key "$samebase_b")"
+check_ne "two same-basename toy repos still get distinct gate keys (dir #481 hash separation)" "$key_a" "$key_b"
 
 # --- check before any run: reports the miss, non-zero exit -----------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" check
