@@ -538,17 +538,21 @@ printf '### dir #3 — some ticket — R1\n\nsee `✅ CLOSED (PR #…)` for the 
 run "$sd" "$d" --quiet
 check_status "backtick-quoted example text is not a false positive -> exit 0" 0 "$STATUS"
 
-# Documented, accepted limitation (a fifth /code-review medium round found the same-line "dir #N"
-# filter tried for this exact case introduced two worse bugs — a set -e abort when it filtered out
-# an entire body, and a false negative on a ticket's own closure note that legitimately co-cites a
-# sibling ticket it also closed — so the filter was reverted, not iterated on again). A body line
-# that merely cross-references a DIFFERENT ticket's status DOES produce a WARN; pinned here as
-# known/accepted rather than silently undocumented.
+# dir #582's acceptance fixture: a body line that cross-references a DIFFERENT ticket's status
+# ("blocked by dir #40 (✅ CLOSED)") must NOT warn — this used to be a documented, accepted false
+# positive (a fifth /code-review medium round found the same-line "dir #N" filter tried for this
+# exact case introduced two worse bugs — a set -e abort when it filtered out an entire body, and a
+# false negative on a ticket's own closure note that legitimately co-cites a sibling ticket it
+# also closed — so that filter was reverted rather than iterated on). dir #582's own fix takes a
+# different, narrower shape: strip the WHOLE "dir #N (…)" clause (not just the ticket number) once
+# it names a DIFFERENT ticket, which sidesteps both of the reverted filter's failure modes (see
+# dir #14's fixture below for the co-citation half, and the "entirely a cross-reference" fixture
+# right after this one for the set -e half).
 d="$(mk_clean_repo)"
 printf '### dir #12 — some ticket, not closed — R1\n\nblocked by dir #40 (✅ CLOSED) for context; not related.\n' \
   > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
-check_contains "cross-referencing another ticket's closed status is a known, accepted false positive" "$OUT" "dir #12's heading tag looks stale"
+check_absent "cross-referencing another ticket's closed status is no longer a false positive (dir #582)" "$OUT" "dir #12's heading tag looks stale"
 
 # Locks in what the revert fixed: a body whose ONLY line mentions another ticket must not abort
 # the whole doctor.sh run (the reverted filter's `grep -v` matched nothing and, under set -e,
@@ -682,6 +686,83 @@ printf '### dir #33 — some ticket about the tagging convention — R1\n\nWe sh
   > "$d/BACKLOG.md"
 run "$sd" "$d" --quiet
 check_contains "prose DISCUSSING the convention (not backtick-quoted) is a known, accepted false positive" "$OUT" "dir #33's heading tag looks stale"
+
+# --- 6c. dir #582: narrow the body predicate to the shapes a wrap actually writes ------------------
+# The nine live false positives measured 2026-09-19 (dir #307, #368, #370, #372, #521, #522, #547,
+# #558, #559) were never a single short line like dir #33 above — every one sat in the MIDDLE of a
+# long, multi-paragraph ticket body. dir #33's own single-line body still warns (checked above,
+# unchanged) because with only one line, that line trivially IS the body's own tail — this block
+# proves the real fix: the same bare-prose discussion, unrelated to closure, positioned in the
+# MIDDLE of a longer body with real content both before and after it, must NOT warn.
+d="$(mk_clean_repo)"
+printf '### dir #970 — some longer ticket about the tagging convention — R1\n\nFirst paragraph of real analysis, unrelated to any closure.\n\nWe should decide whether a heading that already says ✅ CLOSED in plain prose while discussing the convention itself should count as done.\n\nA second paragraph after it, still discussing the same open question.\n\nA third paragraph, wrapping up the discussion above.\n\nA fourth and final paragraph, so the convention-discussion line above is well outside the body'"'"'s own last three non-blank lines.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "mid-body prose discussing the convention, in a longer body, is no longer a false positive (dir #582)" "$OUT" "dir #970's heading tag looks stale"
+
+# Mirror image, same longer shape: a REAL closure note at the tail of a multi-paragraph body (dir
+# #307's own documented true-positive shape — an in-flight heading whose body's LAST lines record
+# the merge) must still be caught. This is what keeps the narrowing above from degrading into
+# "never warn on a multi-paragraph body".
+d="$(mk_clean_repo)"
+printf '### dir #971 — some longer ticket that actually got closed — R1\n\nFirst paragraph of real analysis, unrelated to any closure.\n\nA second paragraph discussing the fix in more depth, still no status note here.\n\n✅ CLOSED (2026-01-01, PR #971) — the fix landed and this is the wrap'"'"'s own closing note.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a real closure note at the TAIL of a longer body is still caught" "$OUT" "dir #971's heading tag looks stale"
+
+# A "**Status:** ✅ …" line — the second shape dir #582's fix explicitly names alongside a
+# line-opening marker — must be caught even when it isn't the body's literal last line.
+d="$(mk_clean_repo)"
+printf '### dir #972 — some ticket using the Status: line convention — R1\n\n**Status:** ✅ CLOSED (2026-01-01, PR #972) — done.\n\nA trailing note added after the status line, common when a wrap appends a residual.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a **Status:** line carrying the marker is caught even off the body's last line" "$OUT" "dir #972's heading tag looks stale"
+
+# dir #582's second citation shape: the foreign ticket number cited INSIDE the same parenthetical
+# as the verdict ("(dir #313, ✅ DONE)"), not immediately before it — must not warn either, same as
+# the "dir #N (✅ …)" shape covered by dir #12 above.
+d="$(mk_clean_repo)"
+printf '### dir #973 — some ticket citing a sibling the other way round — R1\n\nCross-reference against that other tool (dir #40, ✅ DONE) -- it already does this.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "a foreign ticket cited INSIDE the same parenthetical as the verdict is not a false positive either (dir #582)" "$OUT" "dir #973's heading tag looks stale"
+
+# dir #581 / KEEL-0.11.0-W3-ee9f amendment A1: `FIXED` is a closure word too — the 0.10.2 manager
+# closed all 17 fixed slate headings with it. A body citing a DIFFERENT ticket's `✅ FIXED` status
+# is the same false-positive shape as CLOSED/DONE and must not warn.
+d="$(mk_clean_repo)"
+printf '### dir #974 — some ticket citing a fixed sibling — R1\n\nSee dir #250 (✅ FIXED, 2026-09-19) for the precedent this follows.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "citing a DIFFERENT ticket's ✅ FIXED status is not a false positive (dir #581 word widening)" "$OUT" "dir #974's heading tag looks stale"
+
+# Mirror image: a ticket's OWN closure recorded as "✅ FIXED" (not CLOSED/DONE) with no heading tag
+# must still be caught — the widened word list must GROW what counts as a real closure, not just
+# exempt more citations.
+d="$(mk_clean_repo)"
+printf '### dir #975 — some ticket that actually got fixed — R1\n\n✅ FIXED (2026-01-01, PR #975) — done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a ticket's own ✅ FIXED closure is still caught" "$OUT" "dir #975's heading tag looks stale"
+
+# /code-review high (three independent angles, converging live): strip_dir_citation's own-vs-
+# foreign comparison passed the FULL "dir #N" string as own-id while the citation regexes capture
+# BARE DIGITS, so "N" != "dir #N" was always true and the own-ticket guard never fired — a
+# citation-shaped self-reference ("dir #976 (✅ CLOSED)", the ticket citing ITS OWN number in the
+# exact shape dir #12/#973/#974 exempt for a FOREIGN one) had its own closure marker silently
+# stripped as if it named a different ticket, producing a false negative (exit 0, no WARN) on a
+# genuinely stale heading. Covers both citation shapes: ticket-then-paren and the reverse.
+d="$(mk_clean_repo)"
+printf '### dir #976 — a ticket citing its own number this way — R1\n\ndir #976 (✅ CLOSED, 2026-01-01) -- done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a self-citation in ticket-then-paren form is still caught, not stripped as foreign" "$OUT" "dir #976's heading tag looks stale"
+
+d="$(mk_clean_repo)"
+printf '### dir #977 — a ticket citing its own number the other way — R1\n\n(dir #977, ✅ CLOSED) -- done here.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a self-citation in paren-with-ticket-inside form is still caught too" "$OUT" "dir #977's heading tag looks stale"
 
 # --- 7. BACKLOG.md heading check resolves the MAIN checkout from a worktree invocation (dir #135) ---
 # BACKLOG.md is gitignored and lives ONLY at the main checkout root (this project's own convention) —
@@ -1288,6 +1369,61 @@ git clone -q --depth 1 "file://$d" "$shallow"
 run "$sd" "$shallow" --quiet
 check_status "a shallow clone skips the reconciliation rather than false-GAPing -> exit 0" 0 "$STATUS"
 check_absent "no reconciliation GAP on a shallow clone" "$OUT" "CHANGELOG.md section"
+
+# --- 8b. dir #293: [Unreleased] subsection uniqueness/order --------------------------------------
+# PR #276 duplicated an `### Added` block under [Unreleased] and dir #284 had to consolidate and
+# reorder it by hand — nothing mechanical caught it at the time. These fixtures cover the class
+# directly (found live by /code-review high's cross-file tracer: the new check itself had zero
+# test coverage — the fixtures below close that gap).
+
+# a healthy [Unreleased] (one of each, in Added -> Changed -> Fixed order) -> no GAP, OK line shown.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- a thing.\n\n### Changed\n\n- another thing.\n\n### Fixed\n\n- a third thing.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "one of each subsection, correctly ordered -> exit 0" 0 "$STATUS"
+check_absent "no duplicate-subsection GAP on a healthy Unreleased" "$OUT" "duplicated subsection"
+check_absent "no order GAP on a healthy Unreleased" "$OUT" "subsections out of order"
+run "$sd" "$d"
+check_contains "the OK line names the healthy state" "$OUT" "[Unreleased] subsections are unique and correctly ordered"
+
+# a missing subsection is fine (today's real file has only ### Changed) -> no GAP either.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Changed\n\n- a thing.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "only ### Changed present, nothing else -> exit 0" 0 "$STATUS"
+check_absent "a missing subsection is not itself drift" "$OUT" "duplicated subsection"
+
+# a duplicated ### Added -> GAP, names the kind and the count, exit 1.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- a thing.\n\n### Changed\n\n- another thing.\n\n### Added\n\n- a duplicate block.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a duplicated ### Added -> exit 1 (GAP)" 1 "$STATUS"
+check_contains "names the duplicated kind and count" "$OUT" "duplicated subsection: Added (2)"
+
+# subsections out of order (### Fixed before ### Changed) -> GAP, names the pair, exit 1.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- a thing.\n\n### Changed\n\n- another thing.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "### Fixed before ### Changed -> exit 1 (GAP)" 1 "$STATUS"
+check_contains "names the out-of-order pair" "$OUT" "### Fixed before ### Changed"
+
+# a `### Added`-shaped line inside a fenced example must not be misread as a real subsection —
+# same fence-blanking guard check 6's own section-count logic already relies on.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- a real thing.\n\n### Changed\n\nExample convention:\n\n```\n### Added\n- example\n```\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a fenced ### Added example doesn't false-GAP -> exit 0" 0 "$STATUS"
+check_absent "no duplicate-subsection GAP from fenced example text" "$OUT" "duplicated subsection"
 
 # --- 9. commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237) -----------------------
 # A cut-and-tagged v1.0.0 section, kept in every fixture below, so check 6's own tag-reconciliation

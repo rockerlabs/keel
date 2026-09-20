@@ -310,24 +310,9 @@ settled fact.
   the tool and neither recorded, so the second one's own report still answered that it had nothing to
   compare — a trend mechanism that shipped, ran twice, and was never given the one thing it needed.
   Reading without recording is the one way to run this step and still get nothing from it.
-  **Run it LAST, after everything else this cycle writes — not as the sweep's opening move.** The
-  recording is keyed to the release and is idempotent by design, so the first reading is the one that
-  sticks and a later re-run will not correct it. The drift is not re-tagging specifically: it is **any
-  write that changes what is or is not in the pool** — a filing, a closure, a tag given to a ticket that
-  had none — which is most of what a groom does after this step. The first groom to record early
-  recorded 81 and finished the sweep at 84, three out, all three its own. One reading's drift is
-  harmless; the shape is not, because the recorded figure also becomes the trend's own most recent data
-  point — so a growth trigger that "cannot fire yet" during the recording invocation may fire for every
-  reader afterwards, off a number the session already knew was stale. **Re-run the report at the end of
-  the groom and quote THAT output**, not the one the recording produced.
-  **Ordering is the compensation; the defect is that the record cannot be corrected — and it has a
-  second half nobody had noticed.** Where a release-audit procedure ALSO records under the release
-  being cut (keel's did, until 2026-09-20), the two calls collide on the same idempotent key and the
-  later one is a silent no-op. Measured on this project: every row in its pool history was written by a
-  groom and none by a cut, so the series a drain trigger reads is "pool size at groom time", and the
-  cut-side call never produced a row in its life. **Decided (operator, 2026-09-20 at the 0.11.0 groom):
-  the GROOM owns the key** — matching what every row already recorded; `docs/release-audit.md`'s cut
-  step now runs the report read-only. `dir #461`'s remaining half is the correctable record.
+  **Record any time this cycle — the reading no longer has to be right the first time.** The release
+  key is a correctable record, not an idempotent-once one (`dir #461`): a stale reading is fixed with
+  `--record --amend` instead of being avoided by ordering the whole sweep around this one step.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
