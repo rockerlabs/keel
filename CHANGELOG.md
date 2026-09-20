@@ -224,6 +224,35 @@ sections real content going forward — see that page for exactly when each one 
   too-recent commit, or, more severely, via the auto-recovered `before` itself on a rollback-style
   force-push, a path the earlier draft left with no guard whatsoever). `.github/workflows/ci.yml`'s own
   secret-scan step documents the hatch where an operator editing the workflow will find it.
+- **`pre-push` and `secret-scan.sh` stated a false remote-reachability invariant as the safety
+  rationale for `SECRET_SCAN_LOCAL_PUSH`, at three loci** (dir #569): each said the whole pushed
+  range is, by construction, not yet reachable from any remote-tracking ref — false for interior
+  commits a `git merge origin/main` brings into the range (dir #518's own fix scenario), even though
+  the code's actual security property (an attacker's newly-pushed commit can never retroactively
+  become "already known") holds regardless. Comment-only: all three loci now name the real asymmetry
+  instead — the range's own newly-introduced tip is never yet remote-reachable, while interior
+  commits merged in commonly already are, and that asymmetry is what the `--not --remotes` widening
+  relies on. A fourth, related locus was caught mid-release, stale against dir #572 landing in
+  parallel (the entry directly above): the comment on `ci-scan.sh`'s force-push fallback described
+  the bare-ref, no-exclusion scan as reached directly, when as of dir #572 it is the LAST of that
+  three-step degrade — reworded to name the degrade instead.
+- **`tools/install-secret-guard.sh`'s `install_into` now verifies the INSTALLED copy, not just the
+  vendored source, and rolls back on failure** (dir #570): the dir #250 pre-copy `--selftest` check
+  is a proxy — it can pass while the copy at `$hooks_dir` still fails for a reason specific to that
+  destination (a noexec mount, a permission/SELinux quirk). `install_into` now also runs the
+  installed copy's own `--selftest`, by DIRECT execution — matching how git itself invokes an
+  installed hook, unlike the source check's deliberately `bash`-mediated run — so a lost execute bit
+  or a noexec mount is actually caught; on failure it rolls back exactly what that run placed
+  (removing its own just-copied files, restoring any foreign hook it had backed up to
+  `.pre-keel.bak`), so a destination-specific failure leaves `$hooks_dir` either fully wired or
+  untouched, same as a source-selftest failure already did. A code-review round on this same ticket
+  then found `_isg_rollback` itself was not `set -e`-safe (it runs as the right-hand side of `||`, so
+  a failed rm/mv inside its own restore loops could abort mid-cleanup — fixed with a best-effort loop
+  body per file, reporting a partial rollback explicitly instead of silently aborting) and that
+  re-installing over an ALREADY-installed Keel hook, then failing later, deleted the working hook
+  (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
+  instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
+  hook, restored on failure and cleaned up on success.
 
 ## [0.10.2] — 2026-09-19
 
