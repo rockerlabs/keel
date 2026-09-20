@@ -59,6 +59,34 @@ sections real content going forward — see that page for exactly when each one 
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
 
+### Fixed
+
+- **`tools/self/prose-drift.sh` — three defects, one editing pass** (dir #240): a non-git `REPO_DIR`
+  now fails with a labeled exit-2 error instead of reaching `git ls-files` and aborting raw
+  (`fatal: not a git repository`) — decided by correcting the header's stale "test-sandbox friendly"
+  claim rather than restoring a degrade path, since no test fixture and no caller (`tools/self/doctor.sh`
+  always passes its own resolved git repo root) ever relied on a non-git `REPO_DIR` working. A heading
+  anchor that fails to resolve only because the heading carries a non-ASCII LETTER (signal 2's own
+  slugger is ASCII-only; GitHub's is not) now downgrades to an advisory WARN instead of a hard GAP —
+  the contract is narrowed, not widened into a Unicode slugger; non-ASCII punctuation (an em dash) is
+  unaffected, since both sluggers already strip it the same way. A link-shaped token quoted inside an
+  INLINE code span (not just a fenced block) is no longer extracted as a real link, via a new shared
+  `blank_inline_code_spans` in `tools/lib/fence-blank.sh`.
+- **`tools/lib/backlog-blocks.sh`'s closure vocabulary did not recognise `✅ FIXED`** (dir #581): the
+  0.10.2 release manager wrote it on all 17 fixed slate headings, and every consumer of the shared
+  scanner read them as still open. `BB_CLOSURE_TAG_PATTERN` now includes `FIXED`;
+  `docs/release-management.md` R8 points closing writers at the constant instead of a second,
+  hand-copied word list; and a new `bb_closure_word_ok` checks a candidate marker against the
+  constant at write time, so the next unlisted word is refused there rather than found by the next
+  census.
+- **`tools/lib/dir-tickets.sh`'s `extract_dir_tickets` now sees through a bold-wrapped bare-`#N`
+  continuation** (dir #578) — `**dir #478**, **#480**, **#481**`, the exact shape CHANGELOG.md's own
+  `[0.10.1]` known-issues paragraph uses, previously broke the anchor match dead after the first
+  fully-spelled ticket, since the `**` sitting between tokens isn't in the separator class. Emphasis
+  markers are now stripped bare (content kept, not blanked the way a backtick span is) before
+  extraction — both Markdown bold forms, `**text**` and `__text__`, in one pass, since they are the same
+  defect shape; five previously machine-invisible tickets in the `[0.10.1]` paragraph are now extracted.
+
 ## [0.10.2] — 2026-09-19
 
 **Known issues, disclosed at the cut.** This is the patch the operator named for one pain — "close
