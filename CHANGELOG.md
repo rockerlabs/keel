@@ -143,6 +143,12 @@ sections real content going forward — see that page for exactly when each one 
   scan, instead of a single-pass `head -c 8000` byte scan — a chip-launched worker's own brief, read
   from a file the chip names, can arrive well past that byte window (reproduced live: over 258,000
   bytes for this ticket's own transcript), which had misread every such worker as a forgotten wrap.
+- **`tools/self/doctor.sh`'s single-definition checks false-GAPed under `color.ui=always`/
+  `color.grep=always`** (dir #587): both checks string-compared `git grep -l`'s output against a
+  plain path, so a colourised match (`\033[35mtools/lib/artifact-cksum.sh\033[m`) could never equal
+  the expected string — 5 false GAPs, reproduced live on unmodified origin/main. Fixed with
+  `-c color.grep=never` on the two `git grep -l` call sites; a sweep of the rest of
+  `tools/self/*.sh` found no other bare-`git grep -l`-then-compare call sites.
 
 ## [0.10.2] — 2026-09-19
 

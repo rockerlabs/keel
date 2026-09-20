@@ -1925,6 +1925,19 @@ run "$sd" "$d" --quiet
 check_status "one definition, in the shared lib -> exit 0" 0 "$STATUS"
 check_absent "no GAP for the correct shape" "$OUT" "GAP"
 
+# dir #587: `color.grep=always` (or `color.ui=always`) on the REPO UNDER AUDIT must not false-GAP a
+# correct, single definition — `git grep -l`'s own colourised output used to be string-compared
+# directly against a plain path, which can never match once ANSI codes are in it. Set on the
+# FIXTURE repo's own local config (`git -C "$d" config`), never globally or on tests/lib.sh's
+# sandbox-wide GIT_CONFIG_GLOBAL (dir #64's own isolation) — this reproduces exactly what the
+# ticket found: the AUDITED repo's config, not the tool invoking doctor.sh.
+d="$(mk_clean_repo)"; plant_cksum_lib "$d"
+( cd "$d" && git add -A && git commit -qm "single definition, in the shared lib" \
+    && git config color.grep always && git config color.ui always )
+run "$sd" "$d" --quiet
+check_status "correct shape under color.grep=always -> exit 0, not a false GAP" 0 "$STATUS"
+check_absent "no GAP from git grep's own colourised output" "$OUT" "GAP"
+
 # a hand-copy re-appears alongside the shared lib — the exact drift dir #362 removed
 d="$(mk_clean_repo)"; plant_cksum_lib "$d"
 printf '#!/usr/bin/env bash\nartifact_cksum() {\n  :\n}\n' >> "$d/uninstall.sh"
@@ -2022,6 +2035,16 @@ d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
 run "$sd" "$d" --quiet
 check_status "manifest/core-ownership: single defs + exempt install.sh fallbacks -> exit 0" 0 "$STATUS"
 check_absent "no GAP for the correct shape (install.sh's documented fallbacks are not a hand-copy)" "$OUT" "GAP"
+
+# dir #587: same false-GAP class as check 11's own color.grep fixture above, for this check's
+# separate `git grep -l` call site (single_def_check, shared by all four calls below it) — set on
+# the fixture repo's own local config, not globally.
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh fallbacks" \
+    && git config color.grep always && git config color.ui always )
+run "$sd" "$d" --quiet
+check_status "manifest/core-ownership under color.grep=always -> exit 0, not a false GAP" 0 "$STATUS"
+check_absent "no GAP from git grep's own colourised output" "$OUT" "GAP"
 
 # a hand-copy of manifest_field reappears in uninstall.sh — the exact drift dir #363 removed
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
