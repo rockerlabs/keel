@@ -149,6 +149,22 @@ sections real content going forward — see that page for exactly when each one 
   the expected string — 5 false GAPs, reproduced live on unmodified origin/main. Fixed with
   `-c color.grep=never` on the two `git grep -l` call sites; a sweep of the rest of
   `tools/self/*.sh` found no other bare-`git grep -l`-then-compare call sites.
+- **`tests/test_pipeline_canary.sh` had zero coverage for dir #478's `[ -n "$d" ] || exit 1` mktemp
+  guard** (dir #565): with the guard deleted, all assertions stayed green — verified live, `git -C
+  ""` silently resolves to the invocation cwd, exactly the `demo-bypass` failure mode the guard
+  exists to stop. A `path_farm`-hidden `mktemp` now reproduces the guard's own failure mode and
+  asserts a non-zero exit plus an untouched cwd. The sibling `check_ne` on two `mktemp`-suffixed
+  basenames was vacuous (they differ by construction regardless of the gate's own keying) and is
+  replaced with a same-basename, different-directory pair compared through the gate's own
+  `repo-key` output, exercising dir #481's hash separation directly.
+- **`tools/self/line-citations.sh`'s binary prefilter comment was false on 2 of 3 CI platforms;
+  busybox produced a phantom citation** (dir #568): a NUL-containing tracked file carrying a
+  planted `path:line`-shaped token passed the plain-`grep` prefilter into `blank_fenced_blocks`'s
+  awk pass, whose NUL handling then diverged by platform — Ubuntu's GNU grep lost the match to a
+  stray "binary file matches" stderr line, and Alpine's busybox awk turned the NUL into a newline,
+  producing a well-formed but bogus citation. The prefilter now runs `git grep -I`, which skips a
+  binary file outright via git's own platform-independent NUL-sniffing, before it ever reaches the
+  awk pass. Verified with fixtures built inside each of macOS/bash and the alpine CI leg.
 
 ## [0.10.2] — 2026-09-19
 

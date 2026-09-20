@@ -218,17 +218,51 @@ fi
 
 scanned=0; forbidden=0
 
+candidates="$work/candidates"
+# A cheap prefilter before the fence-blanking pass below, AND (dir #568) the thing that keeps a binary
+# tracked file out of that pass at all. A plain `grep -qE` per file here used to be claimed inert on
+# binary content — false on 2 of 3 CI platforms, verified with fixtures built inside each container: a
+# NUL-containing file carrying a planted `path:line`-shaped token matched that prefilter under GNU grep
+# (Ubuntu), which then hit `blank_fenced_blocks`'s awk pass — mawk keeps the NUL, and the downstream
+# `grep -noE` (no `-a`) reported "binary file matches" to stderr instead of the match, lost noise rather
+# than a false citation; but under busybox awk (Alpine) the same NUL is turned into a NEWLINE, splitting
+# the blob so the downstream grep matched the planted token as a clean line and emitted a well-formed,
+# entirely bogus `LINE:path:line` citation. `git grep -I` skips a binary file outright — git's own
+# NUL-sniffing binary detection, the same heuristic on every platform, closing the specific divergence
+# fixtured above — rather than just failing to match it on some platforms and matching-but-losing it on
+# others. **Known residual, not closed by this fix**: git's own heuristic only inspects a bounded prefix
+# of the file (empirically ~8000 bytes), so a tracked file whose NUL sits past that prefix still reaches
+# `blank_fenced_blocks` unfiltered and can still reproduce this class of bug — `blank_fenced_blocks`
+# itself has no NUL-safety of its own (see its own header in tools/lib/fence-blank.sh). (macOS's plain
+# BSD grep already refused to match past the NUL here too, which is why the fixtured case was never
+# caught locally — one-true-awk's own truncation would have hidden the same bug a second way besides.)
+#
+# ONE batched call over the whole tree, not one `git grep` fork per tracked file (`/simplify`'s own
+# efficiency pass on this ticket, dir #568): `git grep` pays repo-resolution, config, and gitattributes
+# loading on every invocation, and this loop otherwise runs that once per tracked file — hundreds of
+# forks for this repo's own tracked-file count, all to answer the same yes/no. `-l -z`: filenames only,
+# NUL-separated (the `$tracked`/`-z | tr` convention above, dir #170), not full match text — this pass
+# only decides which files are worth the fence-blanking/extraction pass below.
+#
+# Exit code, not a blanket `|| true`: `git grep` exits 1 for "no match anywhere" (expected on a clean
+# tree under `set -e -o pipefail`, and the only outcome this pass tolerates) and something else — 128,
+# most plausibly — for a real failure (a corrupt blob, a permission hiccup, a sibling session mutating a
+# tracked file mid-scan on this project's own documented shared/concurrent-worktree checkout). Collapsing
+# both into "0 candidates" would make a real git failure indistinguishable from a clean tree — the check
+# would print "0 citation(s) in scope" and exit 0, a silent skip of the entire scan rather than the loud
+# failure `git -C "$repo_dir" ls-files -z` above already gets for a whole-repo-level problem (found live
+# by this ticket's own `/code-review high` pass, cross-file angle).
+grep_err="$work/candidates.err"
+grep_rc=0
+git -C "$repo_dir" grep -Ilz -E "$TOKEN_RE" 2>"$grep_err" | tr '\0' '\n' > "$candidates" || grep_rc=$?
+if [ "$grep_rc" -gt 1 ]; then
+  echo "line-citations.sh: git grep failed while scanning for citations: $(cat "$grep_err")" >&2
+  exit 2
+fi
+
 while IFS= read -r f; do
   case "$repo_dir/$f" in "$repo_dir/CHANGELOG.md"|"$repo_dir/$ALLOW_REL"|"$allow_file") continue ;; esac
   [ -r "$repo_dir/$f" ] || continue
-  # A cheap prefilter before the fence-blanking pass below: most tracked files (including any binary
-  # asset) contain no candidate token at all, and skipping them here avoids running
-  # `blank_fenced_blocks`'s awk pass — the pricier of the two — over content that can only ever come
-  # back empty. A busybox-vs-GNU divergence in THIS grep's exit status on binary content is inert —
-  # not because fence-blanking is monotonic, but because the downstream `blank_fenced_blocks "$f" |
-  # grep -noE "$TOKEN_RE" || true` pipeline already tolerates finding nothing: whichever way this
-  # prefilter answers on such a file, running the full pipeline on it would report the same nothing.
-  grep -qE "$TOKEN_RE" -- "$repo_dir/$f" 2>/dev/null || continue
   # Fence-blanked (tools/lib/fence-blank.sh, dir #169), same as both sibling self-checks: a
   # `path:LINE` inside a fenced example — a pasted `grep -n` transcript, an illustration of this
   # very rule — is an example, not a live citation. `grep -noE` numbers each match directly, one
@@ -244,7 +278,7 @@ while IFS= read -r f; do
     echo "  FORBIDDEN $f:$lno cites $tok — cite a stable anchor in $target instead"
     forbidden=$((forbidden + 1))
   done < <(blank_fenced_blocks "$repo_dir/$f" | grep -noE "$TOKEN_RE" || true)
-done < "$tracked"
+done < "$candidates"
 
 say "  $scanned citation(s) in scope, $((scanned - forbidden)) allowlisted, $forbidden forbidden"
 ok=1
