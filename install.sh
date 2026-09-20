@@ -948,7 +948,14 @@ keel_own_untouched() {
 # unless --force says otherwise. The manifest lock the #350/#356 family separately contemplates
 # (closing the underlying race itself, not just this one symptom of it) stays out of scope here.
 record_readme_if_unclobbered() {
-  local dest="$1" rel prior_extra cur_cksum differs=0
+  # cur_cksum explicitly initialized (not left to a bare `local cur_cksum`): the PRIOR_READ_FAILED
+  # branch below never assigns it before it's read at the final `record_placed "$dest" "$cur_cksum"`
+  # call, and bash's own "declared but not yet assigned, mid-list local" is unset for `set -u` purposes
+  # on bash >= 4.0 (this file's shebang targets bash; macOS ships 3.2, where the same reference is
+  # merely empty and never trips nounset — reproduced live: "cur_cksum: unbound variable" on Linux
+  # CI's bash 5.x, silent on a macOS dev run). Empty is also the value `record_placed` already treats
+  # as "recompute from current disk bytes", so this is a no-op on the branch that DOES assign it.
+  local dest="$1" rel prior_extra cur_cksum="" differs=0
   # $rel (not `basename "$dest"`) in the messages below, on purpose: this function only ever handles
   # keel/README.md, whose OWN write-once echo just above ("+  keel/README.md") already names it by its
   # home-relative path, not its bare basename (unlike sync_product's generic $name, which also serves
