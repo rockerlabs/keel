@@ -449,6 +449,24 @@ run "$installer" --uninstall "$prepo"
 check_status "--uninstall over settings.json with foreign top-level keys -> exit 0" 0 "$STATUS"
 check_contains "the foreign key survives" "$(cat "$prepo/.claude/settings.json")" '"permissions"'
 
+# --- (e2) --uninstall must not silently delete an UNRELATED empty hook array (dir #564) --------------
+# Regression pin: the removal jq program used to prune EVERY empty array under .hooks after removing
+# ours, not just the events this installer's own hook_specs ever touches — so an unrelated event some
+# other tool had wired as an empty array (e.g. a temporarily-disabled hook) vanished too, contradicting
+# this file's own "everything else...left exactly as it was" claim (sync-twin drift with
+# install-read-trace.sh, which already carried the scoped fix). Fixed by scoping the post-removal prune
+# to only the event names this installer's own hook_specs ever name.
+erepo="$(new_repo)"
+mkdir -p "$erepo/.claude"
+cat > "$erepo/.claude/settings.json" <<'EOF'
+{"hooks":{"Notification":[]}}
+EOF
+run "$installer" "$erepo"
+check_status "install over a settings.json with an unrelated empty hook array -> exit 0" 0 "$STATUS"
+run "$installer" --uninstall "$erepo"
+check_status "--uninstall -> exit 0" 0 "$STATUS"
+check_contains "the unrelated empty Notification array survives uninstall" "$(cat "$erepo/.claude/settings.json")" '"Notification"'
+
 # --- (f) --global / --home target the same way --uninstall does the same way install does ----------
 ughome="$SANDBOX/uninstall-global-gate-home"
 run env KEEL_HOME="$ughome" "$installer" --global
