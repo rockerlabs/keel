@@ -173,6 +173,45 @@ fleg="$(mk_backlog "$legacy_backlog")"
 run "$bc" "$fleg"
 check_contains "legacy heading's tag counted" "$OUT" $'1\t0.10.2'
 
+# --- MUTATION-PROOF (code-review medium, found live): the tie-break sort must be VERSION-aware,
+# not plain lexicographic — "0.10.0" sorts before "0.9.0" as characters ('1' < '9'), the wrong
+# order for two tags tied at the same count once a release reaches double digits. -----------------
+version_tie_backlog="### dir #60 — a — R1 — → 0.9.0
+
+body
+
+### dir #61 — b — R1 — → 0.10.0
+
+body
+"
+fvt="$(mk_backlog "$version_tie_backlog")"
+run "$bc" "$fvt"
+check_status "MUTATION-PROOF: 0.9.0 sorts before 0.10.0 (version-aware, not lexicographic)" \
+  "$(printf '1\t0.9.0\n1\t0.10.0')" "$OUT"
+
+# --- MUTATION-PROOF (code-review medium, found live): a qualifying arrow reached only via a
+# citation to a DIFFERENT ticket ("Supersedes dir #N — <tag>") must NOT be read as the citing
+# heading's own tag — the same "whose tag is it" bug bb_strip_foreign_citations exists to close
+# (dir #426), reproduced live here on the new tool's own extraction before the strip was added. --
+citation_backlog="### dir #70 — cites a sibling's tag, no closure, no tag of its own
+Supersedes dir #71 — pool
+
+Still open, no closure tag anywhere in this block.
+
+### dir #71 — sibling ticket, unrelated, no tag of its own
+
+Some other body text, not closed, no arrow tag here at all.
+"
+fcit="$(mk_backlog "$citation_backlog")"
+run "$bc" "$fcit"
+check_contains "MUTATION-PROOF: a citing ticket is NOT counted under the cited sibling's tag (2 untagged, not 1 pool + 1 untagged)" \
+  "$OUT" $'2\tuntagged'
+run "$bc" --list untagged "$fcit"
+check_status "MUTATION-PROOF: both dir #70 (citing) and dir #71 (cited) fall to untagged" \
+  "$(printf '70\n71')" "$OUT"
+run "$bc" --list pool "$fcit"
+check_status "MUTATION-PROOF: neither ticket is wrongly counted under the cited 'pool' tag" "" "$OUT"
+
 # --- smoke against today's real BACKLOG.md: must not crash, must print well-formed rows ---------
 if [ -f "$REPO_ROOT/BACKLOG.md" ]; then
   run "$bc" "$REPO_ROOT/BACKLOG.md"

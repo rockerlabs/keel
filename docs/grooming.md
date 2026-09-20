@@ -271,16 +271,24 @@ while staying open on an acceptance leg (a run that must happen during the next 
 ticket can close) is an **acceptance obligation of the new slate**, listed on the plan as such — never
 re-tagged, never counted as a build item, never read as a stale heading.
 
-**Two further extraction rules, earned the same way — a re-scope status word read as a closure, and a
-mid-cell/overloaded closure marker — plus the two rules above, are shipped, not hand-guidance to
-re-derive.** Where the project's census mechanism exists, run it instead of hand-deriving the list and
-count: keel's instance is `tools/self/backlog-census.sh` (dir #496), whose own header carries the full
-rationale for all four rules, one paragraph apiece, so it is not restated here. **Run it twice — once
-before the hygiene sweep and once after the last heading edit (G4) — and reconcile any disagreement
-before writing a count**; the second run is nearly free and is the only step that catches a predicate
-that is wrong, as opposed to a file that has moved. Where the mechanism or its equivalent has not
-shipped on a project, this rule names the gap rather than asserting an unshipped tool's own rules as
-settled fact — derive all four by hand, and re-derive on every cycle, not once and carry forward.
+**A third extraction rule, earned the same way — a re-scope status word read as a closure — plus the
+two rules above, are shipped, not hand-guidance to re-derive.** Where the project's census mechanism
+exists, run it instead of hand-deriving the list and count: keel's instance is
+`tools/self/backlog-census.sh` (dir #496), whose own header carries the full rationale for these three
+rules, one paragraph apiece, so it is not restated here. **Run it twice — once before the hygiene
+sweep and once after the last heading edit (G4) — and reconcile any disagreement before writing a
+count**; the second run is nearly free and is the only step that catches a predicate that is wrong, as
+opposed to a file that has moved. Where the mechanism or its equivalent has not shipped on a project,
+this rule names the gap rather than asserting an unshipped tool's own rules as settled fact — derive
+these three by hand, and re-derive on every cycle, not once and carry forward.
+
+**A fourth extraction rule has TWO parts, and the tool ships only one of them.** Matching the closure
+marker at a fixed position (the heading's own tag, not any `✅`/`❌` absorbed from body text) is
+mechanized the same way as the third rule above. Checking whether the project's status vocabulary is
+**overloaded** — the same glyph meaning two different things in one column (one adopter's `✅` meant
+"Fixed" on six rows and "Low priority" on another) — is NOT: it is a data-authoring ambiguity invisible
+from any count, and no scanner can resolve it. A groom still checks this one by hand, on every cycle,
+regardless of whether the census tool has shipped.
 
 ## G4 — the hygiene sweep
 

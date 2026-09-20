@@ -11,7 +11,11 @@
 #      literally `pool`, `next`, `on-demand`, or a release version (`N.N` or `N.N.N`) — headings
 #      carry prose arrows too ("→ ask", "→ a release of its own") and a grade re-tag arrow
 #      ("R2 → R3") is not a release tag either; restricting the accepted vocabulary excludes both
-#      by construction, no separate strip needed.
+#      by construction, no separate strip needed. A qualifying arrow reached only via a citation
+#      to a DIFFERENT ticket ("Supersedes dir #5 → 0.9.0") is stripped first, via the shared
+#      `bb_strip_foreign_citations` — the same "whose tag is it" helper pool-report.sh already
+#      calls for its own `pool` tag (code-review medium, found live: reproduced a citing ticket
+#      wrongly counted under the cited sibling's tag before this strip was added).
 #   2. A closed heading's own trailing arrow ("→ 10,884 lines") is never read as a tag, because
 #      closed blocks are excluded before extraction ever runs (closure comes straight from
 #      `backlog_ticket_blocks`'s own citation-aware detection, the same predicate `pool-report.sh`
@@ -21,10 +25,14 @@
 #      heading is not itself a closure).
 #   4. The marker is matched at a fixed position (the heading block's own closure tag, not any
 #      `✅`/`❌` anywhere in absorbed body text) — again inherited from the shared predicate, not
-#      reimplemented here.
+#      reimplemented here. This mechanizes only HALF of G3's fourth rule: the other half — whether
+#      the project's status vocabulary is OVERLOADED, the same glyph meaning two different things
+#      in one column — is a data-authoring ambiguity invisible from any count, and no scanner can
+#      resolve it. `docs/grooming.md`'s G3 still names that half as a manual check on every cycle.
 #
-# A `/groom` that used to apply these four by hand now runs this tool instead — once before the
-# hygiene sweep and once after the last heading edit, per G4's own reconciliation step.
+# A `/groom` that used to apply these by hand now runs this tool instead for three-and-a-half of
+# G3's four rules — once before the hygiene sweep and once after the last heading edit, per G4's
+# own reconciliation step — and still checks the overloaded-glyph half of rule 4 itself.
 #
 # Sources tools/lib/backlog-blocks.sh (same shared scanner pool-report.sh and doctor.sh check 5
 # use) and resolves BACKLOG.md the way doctor.sh check 5 does — the MAIN checkout, worktree-aware,
@@ -44,12 +52,6 @@
 # BACKLOG_PATH defaults to the MAIN checkout's BACKLOG.md, resolved the same way
 # tools/self/pool-report.sh resolves it (dir #135) — override for a test fixture or a
 # non-standard layout by passing it positionally, same as that sibling.
-#
-# Known, accepted limitation (same shape pool-report.sh's own header documents for RETRACTED): a
-# qualifying arrow reached only via a citation to a DIFFERENT ticket ("Supersedes dir #5 → 0.9.0")
-# is read as this heading's own tag — not chased here; no such shape exists in this project's own
-# live BACKLOG.md today, and closure itself (the one place a foreign-citation strip genuinely
-# matters) already goes through the shared, citation-aware predicate.
 set -euo pipefail
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -112,15 +114,29 @@ while IFS=$'\t' read -r start end closed heading_block; do
   : "$start" "$end"  # body span unused; block detection alone gives the heading
   [ "$closed" = "1" ] && continue
 
+  id="$(bb_own_ticket_num "$heading_block")"
+
+  # code-review medium (found live): a qualifying arrow reached only via a citation to a
+  # DIFFERENT ticket ("Supersedes dir #5 → 0.9.0") was read as THIS heading's own tag — the
+  # exact "whose tag is it" bug bb_strip_foreign_citations already exists to close (dir #426),
+  # and pool-report.sh already calls it for its own `pool` tag. Strip foreign-citation clauses
+  # before extracting, same as pool-report.sh does. The vocabulary here carries NO `\b` — unlike
+  # the grep -oE extraction below (a real grep -E, where \b is confirmed portable, alpine
+  # included), this pattern feeds bash's OWN `[[ =~ ]]` engine inside bb_strip_foreign_citations,
+  # which doesn't support `\b` on macOS's stock bash 3.2 (BSD regex) — reproduced live: with
+  # \b left in, the strip silently never matched. bb_strip_foreign_citations appends the
+  # project's own portable substitute, `([^a-zA-Z]|$)`, after the pattern itself.
+  stripped_block="$(bb_strip_foreign_citations "$heading_block" "$id" \
+    '(pool|next|on-demand|[0-9]+\.[0-9]+(\.[0-9]+)?)')"
+
   # dir #360's own memory lesson, one more time: `set -e` inside a `while read` loop is killed
   # by ANY failing command in it, including a `grep` that legitimately finds nothing — every
   # extraction below either sits in a pipeline ending in a command that always exits 0, or is
   # explicitly guarded with `|| true`, so a non-matching heading can never abort the census.
   tag="$(grep -oE '→[[:space:]]*(pool\b|next\b|on-demand\b|[0-9]+\.[0-9]+(\.[0-9]+)?\b)' \
-    <<< "$heading_block" | tail -1 | sed -E 's/^→[[:space:]]*//' || true)"
+    <<< "$stripped_block" | tail -1 | sed -E 's/^→[[:space:]]*//' || true)"
   [ -n "$tag" ] || tag="untagged"
 
-  id="$(bb_own_ticket_num "$heading_block")"
   if [ -z "$id" ]; then
     # A legacy `### <n>.` heading has no `dir #N` of its own (bb_own_ticket_num's own documented
     # contract) — one native bash regex test for its bare leading numeral, same style as
@@ -146,7 +162,23 @@ if [ -n "$list_tag" ]; then
   exit 0
 fi
 
-printf '%s\n' "${tag_id_pairs[@]}" | cut -f1 | sort | uniq -c \
-  | sort -k1,1rn -k2,2 | awk '{print $1"\t"$2}'
+# code-review medium (found live): a plain lexicographic tie-break on the tag STRING sorts
+# "0.10.0" before "0.9.0" ('1' < '9' as characters) — the wrong order for a version tag once a
+# release reaches double digits. Zero-pad each dot-separated numeral of an all-numeric tag into a
+# sort key (pool/next/on-demand/untagged pass through unchanged, since they carry no digits to
+# pad), sort on that key, then print the ORIGINAL tag.
+printf '%s\n' "${tag_id_pairs[@]}" | cut -f1 | sort | uniq -c | awk '
+  {
+    count = $1; tag = $2
+    n = split(tag, parts, ".")
+    all_numeric = 1
+    for (i = 1; i <= n; i++) { if (parts[i] !~ /^[0-9]+$/) { all_numeric = 0; break } }
+    key = tag
+    if (all_numeric) {
+      key = ""
+      for (i = 1; i <= n; i++) { key = key sprintf("%05d.", parts[i]) }
+    }
+    printf "%s\t%s\t%s\n", count, key, tag
+  }' | sort -t $'\t' -k1,1rn -k2,2 | cut -f1,3
 
 exit 0
