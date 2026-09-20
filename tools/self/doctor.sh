@@ -757,9 +757,14 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # for splitting into an array, computing tail_start, and looping per line below (found by
       # /simplify's efficiency pass: the per-line grep this gate replaces forked once per BODY LINE
       # unconditionally, tens of thousands of forks across a real run).
+      # `<<<` on a command substitution, NOT `producer | grep -q` (dir #280, caught live by
+      # tests/test_no_pipe_sigpipe_race.sh's static guard): `grep -q` exits on its first match,
+      # which can SIGPIPE a still-writing producer under this file's own `set -o pipefail` and flip
+      # a real hit into a false "not found". `$(printf ...)` fully completes and is captured before
+      # grep ever starts reading, so there is no live pipe for grep's early exit to race.
       body_lines=("${stripped_lines[@]:$((body_start - 1)):$((end - body_start + 1))}")
       body_hit=""
-      if printf '%s\n' "${body_lines[@]}" | grep -qE "$BODY_CLOSURE_RE"; then
+      if grep -qE "$BODY_CLOSURE_RE" <<< "$(printf '%s\n' "${body_lines[@]}")"; then
         id="$(heading_dir_id "$heading_line")"
         nbl="${#body_lines[@]}"
         # (1) WHAT counts as a real closure note is narrowed to the shapes a wrap actually writes —
