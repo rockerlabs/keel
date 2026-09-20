@@ -134,7 +134,8 @@ check_status "push: orphaned before over a clean history -> exit 0" 0 "$STATUS"
 # orphaned before-sha, not a brand-new branch's first push) — there is no principled single baseline
 # to fall back to here either (the true pre-force-push remote state is exactly what's unreachable),
 # so this is accepted, not a bug: safe (over-blocking, never a silent pass), pinned by this test
-# rather than left an untested gap.
+# rather than left an untested gap. dir #572 keeps this exact outcome for the no-remote/no-hatch
+# case below, and adds the two principled ways OUT of it (fetch the orphan; the operator hatch).
 repo="$(new_repo)"
 printf '%s\n' "$(key 'AKIA' 'A')" > "$repo/.secret-scan-allow"
 git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
@@ -144,6 +145,145 @@ git -C "$repo" add root.txt; git -C "$repo" commit -qm "add the exempted key"
 after="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" "$ci"
 check_status "push: orphaned before + a genuinely pre-existing allowlist entry -> still BLOCKS (disclosed fail-closed residual, dir #518)" 1 "$STATUS"
+check_contains "the fail-closed message names the escape hatch (dir #572 lead 3: a hatch nobody can find is a silent pass one step removed)" \
+  "$OUT" "SECRET_SCAN_CI_FORCE_PUSH_BASELINE"
+
+# --- dir #572 (a): the orphaned "before" is still SERVABLE by sha from the remote, so ci-scan fetches
+# it and the scan proceeds as an ordinary before..after — the pre-existing allowlist entry resolves at
+# the boundary and exempts the key it was written for. This is the whole point of the ticket: the
+# fail-closed fallback above was the ONLY behaviour, and it fired even when a principled baseline was
+# one `git fetch` away. Needs a REAL force-push topology over file:// transport: a hardlinked local
+# clone would already hold the orphan and prove nothing (confirmed live — `git clone <path>` copies
+# unreachable objects too, `git clone file://<path>` does not) ---------------------------------------
+fbare="$(mktemp -d "$SANDBOX/fbare.XXXXXX")"; git init -q --bare "$fbare"
+fwork="$(mktemp -d "$SANDBOX/fwork.XXXXXX")"; git -C "$fwork" init -q
+printf '%s\n' "$(key 'AKIA' 'A')" > "$fwork/.secret-scan-allow"
+git -C "$fwork" add .secret-scan-allow; git -C "$fwork" commit -qm "add allowlist"
+fbase="$(git -C "$fwork" rev-parse HEAD)"
+printf 'unrelated\n' > "$fwork/mid.txt"; git -C "$fwork" add mid.txt; git -C "$fwork" commit -qm "the commit a force-push will orphan"
+fbefore="$(git -C "$fwork" rev-parse HEAD)"
+git -C "$fwork" push -q "$fbare" HEAD:refs/heads/main
+git -C "$fwork" reset -q --hard "$fbase"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$fwork/key.txt"
+git -C "$fwork" add key.txt; git -C "$fwork" commit -qm "add the exempted key"
+fafter="$(git -C "$fwork" rev-parse HEAD)"
+git -C "$fwork" push -qf "$fbare" HEAD:refs/heads/main
+fclone="$(mktemp -d "$SANDBOX/fclone.XXXXXX")"; rmdir "$fclone"
+git clone -q "file://$fbare" "$fclone"
+# The premise this whole case rests on: the clone genuinely does NOT have the orphaned before-sha.
+# Asserted as a string, not via check_status — `git cat-file -e` on a missing object only promises a
+# NON-ZERO exit, and the actual code varies (128 on git 2.52 here), so pinning one would be a
+# version-fragile assertion about git rather than about this fixture.
+run_in "$fclone" bash -c 'git cat-file -e "$1^{commit}" 2>/dev/null && echo PRESENT || echo ABSENT' _ "$fbefore"
+check_contains "dir #572 premise: the orphaned before-sha really is absent from the CI clone" "$OUT" "ABSENT"
+run_in "$fclone" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$fbefore" GITHUB_EVENT_AFTER="$fafter" "$ci"
+check_status "push: orphaned but FETCHABLE before -> baseline resolves, pre-existing entry exempts, exit 0" 0 "$STATUS"
+check_contains "says it recovered the real before-sha rather than degrading" "$OUT" "fetched it from origin"
+
+# --- dir #572 (c): the orphan is unrecoverable (no origin at all) but the operator sets the hatch to a
+# trusted pre-force-push rev -> the scan runs against THAT baseline and the entry exempts again -------
+repo="$(new_repo)"
+printf '%s\n' "$(key 'AKIA' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+hbase="$(git -C "$repo" rev-parse HEAD)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "add the exempted key"
+after="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE="$hbase" "$ci"
+check_status "push: unfetchable orphan + operator hatch -> scans hatch..after, entry exempts, exit 0" 0 "$STATUS"
+check_contains "logs the hatch loudly rather than using it silently" "$OUT" "operator-supplied SECRET_SCAN_CI_FORCE_PUSH_BASELINE"
+
+# a hatch that resolves to nothing is a CONFIG error (exit 2), never a silent degrade to the
+# full-history fallback: the operator believes the hatch is in force, and 1 would read as "a secret
+# was found". Same for the degenerate paste of the pushed head itself, whose range scans nothing.
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE="no-such-rev-here" "$ci"
+check_status "push: hatch that does not resolve to a commit -> exit 2 (config error), not 0 or 1" 2 "$STATUS"
+check_contains "names the unresolvable value" "$OUT" "does not resolve to a commit"
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$after" \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE="$after" "$ci"
+check_status "push: hatch set to the pushed head itself -> exit 2, not an empty range scanning nothing" 2 "$STATUS"
+check_contains "says why the degenerate baseline is refused" "$OUT" "would scan nothing"
+
+# The real before-sha WINS over a set hatch, and says so — an operator must never be left believing a
+# stale hatch shaped the scan. Needs a SECOND, pristine clone: the fetch above is a side effect on the
+# object db, so re-running in $fclone would find the orphan already present and skip this arm entirely
+# (caught by this assertion failing on the first run against the reused clone).
+fclone2="$(mktemp -d "$SANDBOX/fclone2.XXXXXX")"; rmdir "$fclone2"
+git clone -q "file://$fbare" "$fclone2"
+run_in "$fclone2" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$fbefore" GITHUB_EVENT_AFTER="$fafter" \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE="$fbase" "$ci"
+check_status "push: fetchable orphan wins over a set hatch -> exit 0" 0 "$STATUS"
+check_contains "announces the hatch as not needed" "$OUT" "was not needed"
+
+# --- max-review finding, reproduced live: the degenerate-range guard must catch a DESCENDANT of
+# "after", not only an exact-equality paste. `git rev-list X..Y` is empty whenever Y is reachable
+# from X — true for X == Y (already covered above) AND for any X that is a proper descendant of Y.
+# The equality-only guard this replaced would have let this through silently (exit 0, no scan). ------
+repo="$(new_repo)"
+git -C "$repo" commit -q --allow-empty -m base
+descbase="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" commit -q --allow-empty -m child
+descchild="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$descbase" \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE="$descchild" "$ci"
+check_status "push: hatch is a DESCENDANT of after (not equal) -> exit 2, not a silent empty-range pass (dir #572 max-review finding)" 2 "$STATUS"
+check_contains "names it as scanning nothing, the same message as the equality case" "$OUT" "would scan nothing"
+
+# --- max-review finding: the hatch must ALSO be tried via fetch, not only checked locally — the exact
+# same "servable by sha until gc'd" property the auto-recovery above relies on applies to whatever rev
+# the operator names too. Without this, a hatch naming a genuinely dangling-but-still-fetchable commit
+# spuriously failed as "does not resolve to a commit in this clone". -------------------------------
+# Content is deliberately clean on both sides here — this test's only job is proving the hatch value
+# itself gets fetched and resolved, not exercising the allowlist-boundary walk (already covered by
+# other cases above): htrusted and hafter are sibling commits off a common root, so the boundary walk
+# for "htrusted..hafter" would need its own separate reasoning about a non-ancestor exclusion seed,
+# which is orthogonal to what this test checks.
+hbare="$(mktemp -d "$SANDBOX/hbare.XXXXXX")"; git init -q --bare "$hbare"
+hwork="$(mktemp -d "$SANDBOX/hwork.XXXXXX")"; git -C "$hwork" init -q
+git -C "$hwork" commit -q --allow-empty -m root
+hroot="$(git -C "$hwork" rev-parse HEAD)"
+git -C "$hwork" commit -q --allow-empty -m "the commit a force-push will orphan"
+htrusted="$(git -C "$hwork" rev-parse HEAD)"
+git -C "$hwork" push -q "$hbare" HEAD:refs/heads/main
+git -C "$hwork" reset -q --hard "$hroot"
+printf 'clean\n' > "$hwork/clean.txt"
+git -C "$hwork" add clean.txt; git -C "$hwork" commit -qm "a clean sibling history"
+hafter="$(git -C "$hwork" rev-parse HEAD)"
+git -C "$hwork" push -qf "$hbare" HEAD:refs/heads/main
+hclone="$(mktemp -d "$SANDBOX/hclone.XXXXXX")"; rmdir "$hclone"
+git clone -q "file://$hbare" "$hclone"
+run_in "$hclone" bash -c 'git cat-file -e "$1^{commit}" 2>/dev/null && echo PRESENT || echo ABSENT' _ "$htrusted"
+check_contains "premise: the hatch target is genuinely absent from this clone too" "$OUT" "ABSENT"
+run_in "$hclone" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$orphan" GITHUB_EVENT_AFTER="$hafter" \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE="$htrusted" "$ci"
+check_status "push: hatch names a dangling-but-fetchable commit -> fetched and used, exit 0 (dir #572 max-review finding)" 0 "$STATUS"
+
+# --- max-review finding, the most severe of the three: the FETCH-SUCCESS path (the recovered
+# "before" itself) had NO degenerate-range guard at all before this fix, unlike the hatch path's
+# (then-incomplete) one. A rollback-style force-push — the ref is force-pushed BACKWARD to an older
+# commit — reports GITHUB_EVENT_BEFORE as the newer, now-orphaned tip and GITHUB_EVENT_AFTER as the
+# older commit it rolled back to; if that orphaned "before" is still fetchable by sha (as it usually
+# is, same mechanism as any other orphan), it would have been accepted with NO check that "after" is
+# already reachable from it (git rev-list "before..after" is then empty by construction) --------------
+rbare="$(mktemp -d "$SANDBOX/rbare.XXXXXX")"; git init -q --bare "$rbare"
+rwork="$(mktemp -d "$SANDBOX/rwork.XXXXXX")"; git -C "$rwork" init -q
+git -C "$rwork" commit -q --allow-empty -m root
+rroot="$(git -C "$rwork" rev-parse HEAD)"
+git -C "$rwork" push -q "$rbare" HEAD:refs/heads/main
+git -C "$rwork" commit -q --allow-empty -m "a commit a rollback force-push will orphan"
+rnewer="$(git -C "$rwork" rev-parse HEAD)"
+git -C "$rwork" push -q "$rbare" HEAD:refs/heads/main
+git -C "$rwork" reset -q --hard "$rroot"
+git -C "$rwork" push -qf "$rbare" HEAD:refs/heads/main
+rclone="$(mktemp -d "$SANDBOX/rclone.XXXXXX")"; rmdir "$rclone"
+git clone -q "file://$rbare" "$rclone"
+run_in "$rclone" bash -c 'git cat-file -e "$1^{commit}" 2>/dev/null && echo PRESENT || echo ABSENT' _ "$rnewer"
+check_contains "premise: the rolled-back-from tip is genuinely absent from this clone" "$OUT" "ABSENT"
+run_in "$rclone" env GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$rnewer" GITHUB_EVENT_AFTER="$rroot" "$ci"
+check_status "push: rollback force-push, recovered before is a DESCENDANT of after -> exit 2, not a silent empty-range pass (dir #572 max-review finding, most severe: no guard existed on this path at all)" 2 "$STATUS"
+check_contains "names it as scanning nothing, same as the hatch-side guard" "$OUT" "would scan nothing"
 
 # --- push: an ORDINARY (non-force-push) before..after range, in a REAL CI clone topology, with a
 # genuinely pre-existing allowlist entry -> the entry must still suppress (max-review CI-safety
