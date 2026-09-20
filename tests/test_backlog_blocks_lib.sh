@@ -214,6 +214,27 @@ check_status "control (dir #432): 'DECIDED' is not a closure verb, ticket stays 
 check_status "control (dir #432): '⏳ IN FLIGHT' is in-progress, not closed" \
   0 "$(row_closed432b "dir #1013")"
 
+# --- dir #581: the 0.10.2 release manager's closing word, minted at a scale (17 headings) no
+# earlier vocabulary widening had to absorb — MUTATION-PROOF against the same class recurring. ---
+d581="$(new_repo)"
+f581="$d581/BACKLOG.md"
+printf '### dir #1020 — a ticket closed via FIXED — R2 — ✅ FIXED (2026-09-19, verified)\n\n### dir #1021 — a release candidate cut, sub-status not closure — R2 — ✅ RC 1 (2026-09-19)\n' > "$f581"
+out581="$(backlog_ticket_blocks "$f581")"
+row_closed581() { printf '%s\n' "$out581" | awk -F'\t' -v n="$1" '$4 ~ n {print $3; exit}'; }
+check_status "MUTATION-PROOF (dir #581): '✅ FIXED' reads closed" 1 "$(row_closed581 "dir #1020")"
+check_status "control (dir #581): '✅ RC 1' is a sub-status, ticket stays open" \
+  0 "$(row_closed581 "dir #1021")"
+
+# --- bb_closure_word_ok(): dir #581 (c)'s write-time check — the manager runs this on the exact
+# marker text before writing it, so an unlisted word is refused when it would be minted, not
+# found by the next census. ------------------------------------------------------------------
+bb_closure_word_ok '✅ FIXED (2026-09-19, verified)' >/dev/null 2>&1
+check_status "bb_closure_word_ok: a recognised word ('✅ FIXED') exits 0" 0 "$?"
+bb_closure_word_ok '✅ SHIPPED (2026-09-19)' >/dev/null 2>&1
+check_status "bb_closure_word_ok: an unlisted word ('✅ SHIPPED') exits 1" 1 "$?"
+err="$(bb_closure_word_ok '✅ SHIPPED' 2>&1 >/dev/null)"
+check_contains "bb_closure_word_ok: the refusal names the rejected candidate" "$err" 'SHIPPED'
+
 # --- bb_strip_foreign_citations(): the dir #426 shared helper, tested directly (dir #142's
 # coverage ratchet requires a new exported function to be pinned on its own, not only exercised
 # indirectly through backlog_ticket_blocks) --------------------------------------------------------
