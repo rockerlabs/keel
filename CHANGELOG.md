@@ -75,6 +75,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
+  apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
+  repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
+  handed to a third party, since `.gitignore` names the tooling and ships inside `git archive` —
+  GAPped forever, a false alarm the reader learns to skim. The check now runs `git check-ignore`,
+  which honours `.gitignore`, `info/exclude` and the global excludes alike. And a TRACKED `CLAUDE.md`
+  was a `say` note hidden by `--quiet`, i.e. a delegating caller saw `OK` over context already in
+  the index — the one outcome an ignore rule cannot undo. It is now `W-CLAUDEMD-TRACKED`, a WARN a
+  deliberate public fork accepts once per repo through `.keel/doctor-accept`; an accidental commit
+  gets the `git rm --cached` + ignore instruction on the line itself. The AGENTS.md block's own
+  "tracked — deliberate public fork" `say` note is gone with it: `G-AGENTSMD-INHERIT` already pins
+  AGENTS.md's status to CLAUDE.md's, so the one WARN speaks for both files. The two git questions
+  (`_tracked`, `_ignored`) now live in one place, shared by every context check in the file.
 - **`tools/self/prose-drift.sh` — three defects, one editing pass** (dir #240): a non-git `REPO_DIR`
   now fails with a labeled exit-2 error instead of reaching `git ls-files` and aborting raw
   (`fatal: not a git repository`) — decided by correcting the header's stale "test-sandbox friendly"
@@ -163,6 +176,97 @@ sections real content going forward — see that page for exactly when each one 
   creates (bare `mktemp -d` does not honor `$TMPDIR` on macOS/BSD, so shimming rather than
   redirecting `TMPDIR` is the portable probe), and `check_nodir` asserts it is gone once run.sh has
   exited.
+- **`tools/install-pre-pr-gate.sh --uninstall` silently dropped an unrelated foreign empty-array
+  hooks key** (dir #564): its final removal jq pruned EVERY empty array under `.hooks` after
+  removing this gate's own 6 hooks, not only the events this installer manages — a pre-existing
+  unrelated empty-array key (another tool's temporarily-disabled hook) was destroyed, against the
+  file's own "everything else...left exactly as it was" contract. `tools/install-read-trace.sh`
+  already carried the scoped fix (only THIS installer's own event names are pruned); the twin was
+  missed when dir #514 unified the two installers' quoting. Ported the same guard plus a regression
+  test of the same shape.
+- **`install.sh`'s `prior_file_cksum` could not tell "no prior manifest record" from "a real prior
+  record whose read failed mid-run"** (dir #571): both returned the same empty string, so
+  `record_readme_if_unclobbered` treated a transient read failure under dir #350/#356's documented
+  sibling-sweep race the same as "nothing to protect" and silently re-recorded keel/README.md over
+  disk bytes it never actually compared against a verified prior — reopening the F10 hazard dir #512
+  closed, for one run. `prior_file_cksum` now prints a distinct `$PRIOR_READ_FAILED` sentinel for the
+  read-failed case instead of the same empty string a genuinely absent record prints (the same shape
+  as the existing `$CKSUM_UNREADABLE` sentinel one field over); `record_readme_if_unclobbered` fails
+  closed on that sentinel (left untouched, same as a genuine content difference) unless `--force` says
+  to take ownership anyway. The underlying race itself (the #350/#356 manifest-lock family) stays out
+  of this ticket's scope.
+- **`tests/test_pipeline_canary.sh` had zero coverage for dir #478's `[ -n "$d" ] || exit 1` mktemp
+  guard** (dir #565): with the guard deleted, all assertions stayed green — verified live, `git -C
+  ""` silently resolves to the invocation cwd, exactly the `demo-bypass` failure mode the guard
+  exists to stop. A `path_farm`-hidden `mktemp` now reproduces the guard's own failure mode and
+  asserts a non-zero exit plus an untouched cwd. The sibling `check_ne` on two `mktemp`-suffixed
+  basenames was vacuous (they differ by construction regardless of the gate's own keying) and is
+  replaced with a same-basename, different-directory pair compared through the gate's own
+  `repo-key` output, exercising dir #481's hash separation directly.
+- **`tools/self/line-citations.sh`'s binary prefilter comment was false on 2 of 3 CI platforms;
+  busybox produced a phantom citation** (dir #568): a NUL-containing tracked file carrying a
+  planted `path:line`-shaped token passed the plain-`grep` prefilter into `blank_fenced_blocks`'s
+  awk pass, whose NUL handling then diverged by platform — Ubuntu's GNU grep lost the match to a
+  stray "binary file matches" stderr line, and Alpine's busybox awk turned the NUL into a newline,
+  producing a well-formed but bogus citation. The prefilter now runs `git grep -I`, which skips a
+  binary file outright via git's own platform-independent NUL-sniffing, before it ever reaches the
+  awk pass. Verified with fixtures built inside each of macOS/bash and the alpine CI leg.
+- **`tools/secret-guard/ci-scan.sh`'s force-push fallback now resolves a principled allowlist baseline
+  instead of always failing closed** (dir #572): an orphaned `before` sha degraded straight to a bare
+  full-history scan, which leaves `git rev-list --boundary` no exclusion side at all, so
+  `secret-scan.sh`'s dir #518 baseline resolution found ZERO boundary commits and every genuinely
+  pre-existing `.secret-scan-allow` entry read as new-this-push — blocking a push the allowlist was
+  written to exempt, with nothing the operator could do about it. The degrade is now three steps, most
+  principled first: fetch the orphaned `before` by sha from origin (a forge keeps force-pushed-away
+  objects servable until it gc's them — this mechanism was verified over the real upload-pack path,
+  file:// transport rather than a hardlinked local clone, on git 2.43/2.47/2.52; that is necessary
+  evidence that modern git's own fetch/cat-file plumbing behaves this way, but not sufficient evidence
+  that every forge's server-side policy also serves an object unreferenced by any ref by explicit sha —
+  a documented, not silent, residual assumption: if it doesn't hold on a given forge, this step simply
+  fails and falls through to the next one, so the fail-closed guarantee is unaffected either way), which
+  recovers the TRUE pre-push tip and makes the scan an ordinary `before..after`; failing that, an
+  explicit `SECRET_SCAN_CI_FORCE_PUSH_BASELINE` the operator sets deliberately, logged loudly, also
+  fetched by sha from origin if not already local (the identical "servable until gc'd" property applies
+  to whatever rev the operator names, not only the auto-detected `before`); failing both, the original
+  full-history scan, which still BLOCKS and whose message now names the hatch. Whichever baseline is
+  chosen in the first two steps is refused as a config error (exit 2) unless the pushed head is NOT
+  already reachable from it — `git rev-list X..Y` is empty exactly when `Y` is reachable from `X`, so
+  this is one `git merge-base --is-ancestor` check rather than a narrower equality compare (an
+  in-session high-effort review, confirmed live: the equality-only guard an earlier draft of this fix
+  shipped with caught only a hatch pasting the pushed head itself, not the broader case of a baseline
+  that is any DESCENDANT of the pushed head at all — reachable via an operator hatch naming a
+  too-recent commit, or, more severely, via the auto-recovered `before` itself on a rollback-style
+  force-push, a path the earlier draft left with no guard whatsoever). `.github/workflows/ci.yml`'s own
+  secret-scan step documents the hatch where an operator editing the workflow will find it.
+- **`pre-push` and `secret-scan.sh` stated a false remote-reachability invariant as the safety
+  rationale for `SECRET_SCAN_LOCAL_PUSH`, at three loci** (dir #569): each said the whole pushed
+  range is, by construction, not yet reachable from any remote-tracking ref — false for interior
+  commits a `git merge origin/main` brings into the range (dir #518's own fix scenario), even though
+  the code's actual security property (an attacker's newly-pushed commit can never retroactively
+  become "already known") holds regardless. Comment-only: all three loci now name the real asymmetry
+  instead — the range's own newly-introduced tip is never yet remote-reachable, while interior
+  commits merged in commonly already are, and that asymmetry is what the `--not --remotes` widening
+  relies on. A fourth, related locus was caught mid-release, stale against dir #572 landing in
+  parallel (the entry directly above): the comment on `ci-scan.sh`'s force-push fallback described
+  the bare-ref, no-exclusion scan as reached directly, when as of dir #572 it is the LAST of that
+  three-step degrade — reworded to name the degrade instead.
+- **`tools/install-secret-guard.sh`'s `install_into` now verifies the INSTALLED copy, not just the
+  vendored source, and rolls back on failure** (dir #570): the dir #250 pre-copy `--selftest` check
+  is a proxy — it can pass while the copy at `$hooks_dir` still fails for a reason specific to that
+  destination (a noexec mount, a permission/SELinux quirk). `install_into` now also runs the
+  installed copy's own `--selftest`, by DIRECT execution — matching how git itself invokes an
+  installed hook, unlike the source check's deliberately `bash`-mediated run — so a lost execute bit
+  or a noexec mount is actually caught; on failure it rolls back exactly what that run placed
+  (removing its own just-copied files, restoring any foreign hook it had backed up to
+  `.pre-keel.bak`), so a destination-specific failure leaves `$hooks_dir` either fully wired or
+  untouched, same as a source-selftest failure already did. A code-review round on this same ticket
+  then found `_isg_rollback` itself was not `set -e`-safe (it runs as the right-hand side of `||`, so
+  a failed rm/mv inside its own restore loops could abort mid-cleanup — fixed with a best-effort loop
+  body per file, reporting a partial rollback explicitly instead of silently aborting) and that
+  re-installing over an ALREADY-installed Keel hook, then failing later, deleted the working hook
+  (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
+  instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
+  hook, restored on failure and cleaned up on success.
 
 ## [0.10.2] — 2026-09-19
 

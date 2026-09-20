@@ -78,6 +78,22 @@ d="$(mk_repo 'Serve on http://localhost:8080 at 09:30; print with sed -n 12,20p 
 run "$lc" "$d"
 check_status "ports, clock times and bare filenames are not citations -> exit 0" 0 "$STATUS"
 
+# --- dir #568: a NUL-containing tracked file never produces a phantom citation ------------------
+# A `printf`-built fixture with a real `path:line`-shaped token straddling a NUL byte, planted the same
+# way the ticket's own busybox-only phantom was found (fixtures built directly, one per CI platform).
+# `git grep -I` (the fix) skips a binary file outright before it ever reaches `blank_fenced_blocks`'s
+# awk pass — the pass whose NUL handling differs by platform (busybox awk turns the NUL into a newline
+# and would otherwise hand the downstream `grep -noE` a clean, bogus `LINE:path:line` match). This
+# fixture is the regression proof: red with `git grep -Iq` reverted to a plain `grep -qE` prefilter
+# AND run under busybox (this file's own macOS/bash run can't reproduce the busybox half — see the
+# REQUIRED alpine leg noted in the ticket), green with the fix, on every platform including this one.
+d="$(mk_repo 'Clean prose.')"
+printf 'x\0src/widget.sh:2\0y' > "$d/notes/blob.bin"
+( cd "$d" && git add -A && git commit -q -m binary-fixture )
+run "$lc" "$d"
+check_status "a NUL-containing tracked file with a planted token never fires -> exit 0" 0 "$STATUS"
+check_contains "and it is not even counted as in scope (skipped as binary, not silently allowlisted)" "$OUT" "0 citation(s) in scope"
+
 # --- exclusions ---------------------------------------------------------------------------------
 d="$(mk_repo 'Clean prose.')"
 printf 'History: src/widget.sh:2 was fixed in v1.\n' > "$d/CHANGELOG.md"

@@ -738,30 +738,41 @@ record_placed() {
   fi
 }
 
+# PRIOR_READ_FAILED — the sentinel prior_file_cksum prints (dir #571) when $prior_manifest (a live
+# snapshot, not the on-disk manifest itself) vanished or became unreadable mid-run, under dir
+# #350/#356's own documented sibling-sweep race — a DIFFERENT thing from a genuine empty return ("no
+# prior record ever existed for REL", safe to read as "nothing to protect"): a real prior record may
+# exist that this call simply couldn't reach this run. Same shape as $CKSUM_UNREADABLE (a string no
+# real cksum — always `cksum:<n>:<n>` — can ever equal), kept as its own constant rather than reused:
+# $CKSUM_UNREADABLE already means something else on this same field ("a PRIOR run's own artifact_cksum
+# call failed", a value legitimately safe to treat as "nothing to protect" — see record_placed's own
+# `${cksum:-$(artifact_cksum "$dest")}` and the two comparisons below) — collapsing "this run couldn't
+# read the manifest" into that would put a case that must fail closed behind a sentinel every existing
+# reader already treats as safe to fall through.
+PRIOR_READ_FAILED='prior:read-failed'
+
 # prior_file_cksum REL — the cksum a PRIOR install run's manifest recorded for a `file`-kind artifact at
-# REL (relative to $HOME_DIR), or empty when there is no trustworthy prior record: prior_manifest_usable
-# is 0, or no `file` record exists yet for REL. Shared by keel_own_untouched's own drift check below (an
-# unconditional call there is fine — its one call site already established prior_manifest_usable=1
-# before reaching this point, so the check here is one already-answered `[ = 1 ]` test, not a new fork)
-# and by record_readme_if_unclobbered further down (dir #512), which has no shipped SRC to `cmp` against
-# — only a manifest history to protect. Always succeeds (the trailing `|| true` absorbs a failing awk,
-# same convention as this lookup's own pre-extraction call site used), so a caller never needs its own
-# `|| true` on the assignment.
+# REL (relative to $HOME_DIR); empty when there is no trustworthy prior record: prior_manifest_usable is
+# 0, or the manifest read fine but has no `file` record yet for REL (an upgrade case, dir #323, or a
+# genuinely new artifact); $PRIOR_READ_FAILED when the manifest read itself failed (dir #571 — see that
+# constant's own docstring just above). Always succeeds (exit 0), so a caller never needs its own
+# `|| true` on the assignment — the three-way answer lives entirely in the printed VALUE, exactly the
+# same shape as $CKSUM_UNREADABLE one call away, so every caller stays a plain string comparison.
 #
-# WHAT AN EMPTY RETURN CANNOT DISTINGUISH, stated because keel_own_untouched's own "losing this read
-# only narrows an optimistic refresh, never threatens a write" reasoning does NOT transfer to the other
-# caller: empty means either "no prior record ever existed for REL" (safe — nothing to protect) OR "a
-# record existed, but $prior_manifest (a live snapshot, not the on-disk manifest itself) vanished mid-run
-# under dir #350/#356's own documented sibling-sweep race" (NOT safe for a never-clobber decision — that
-# is the one case record_readme_if_unclobbered cannot afford to read as "nothing to protect"). Call sites
-# that only ever OPTIMISTICALLY refresh (keel_own_untouched) are correct to treat both alikes; a call
-# site that uses an empty return to justify an UNCONDITIONAL WRITE is not, and this narrow race is
-# accepted as pre-existing (dir #512 does not close it — it is no worse than every prior release's own
-# unconditional-record_placed behavior in this same rare window, never a regression this fix introduces).
+# Shared by keel_own_untouched's own drift check below (an unconditional call there is fine — its one
+# call site already established prior_manifest_usable=1 before reaching this point, so the
+# `prior_manifest_usable` fork here is one already-answered `[ = 1 ]` test, not a new one) and by
+# record_readme_if_unclobbered further down (dir #512), which has no shipped SRC to `cmp` against —
+# only a manifest history to protect. keel_own_untouched needs no special handling for
+# $PRIOR_READ_FAILED: it only ever OPTIMISTICALLY refreshes, and the sentinel — like any string that
+# isn't a real cksum — simply fails its own `[ "$prior_extra" = "$(artifact_cksum "$dest")" ]` compare
+# below, the same way an empty `$prior_extra` already does. record_readme_if_unclobbered is the one
+# caller that DOES need to tell the sentinel apart from a genuine empty return — see its own docstring.
 prior_file_cksum() {
   local rel="$1"
   [ "$prior_manifest_usable" = 1 ] || return 0
-  awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null || true
+  awk -F'\t' -v rel="$rel" '$1 == "artifact=file" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null ||
+    printf '%s' "$PRIOR_READ_FAILED"
 }
 
 # keel_own_untouched SRC DEST (dir #323) — true only when DEST's CONTENT currently differs from SRC's
@@ -881,18 +892,23 @@ keel_own_untouched() {
   # dir #356 (absorbed here): $prior_manifest can vanish mid-run under dir #350's own sibling-sweep
   # race — a REGULAR file's continued existence is in question, not its type (contrast the `[ -f ]`
   # guards above/below, which reject by type). prior_file_cksum degrades silently on a missing/unreadable
-  # snapshot, exactly like every other manifest-less-home path this predicate already falls through for
+  # snapshot (dir #571: printing $PRIOR_READ_FAILED, a sentinel this predicate never needs to name — see
+  # below), exactly like every other manifest-less-home path this predicate already falls through for
   # (`prior_manifest_usable=0` above) — losing this read only narrows what the predicate can
   # OPTIMISTICALLY refresh with no prompt, it never threatens anything this run is about to WRITE
   # (contrast dir #350's own merge-scratch guard, which is loud because losing ITS file would risk
   # this run overwriting the manifest with un-trustworthy state). See prior_file_cksum's own docstring
-  # (above record_placed) for the `2>/dev/null`/`|| true` mechanics — factored out from here dir #512,
-  # once a second call site (record_readme_if_unclobbered) needed the identical lookup.
+  # (above record_placed) for the mechanics — factored out from here dir #512, once a second call site
+  # (record_readme_if_unclobbered) needed the identical lookup.
   prior_extra="$(prior_file_cksum "$rel")"
   # Rejecting $CKSUM_UNREADABLE on the PRIOR side is what closes the self-equal case, and it closes it
   # on both: an unreadable DEST yields the sentinel too, and the sentinel can only ever compare equal
   # to itself — so a guard here alone is enough, and it keeps artifact_cksum's fork behind the `&&`
-  # where a dest with no prior record never pays for it.
+  # where a dest with no prior record never pays for it. $PRIOR_READ_FAILED needs no matching guard
+  # here: it is a distinct string neither $CKSUM_UNREADABLE nor any real cksum can ever equal, so it
+  # already fails the final comparison below on its own — this predicate has no unconditional-write
+  # decision riding on telling it apart from "no prior record" (see record_readme_if_unclobbered's own
+  # docstring for the one caller that does).
   [ -n "$prior_extra" ] && [ "$prior_extra" != "$CKSUM_UNREADABLE" ] && [ "$prior_extra" = "$(artifact_cksum "$dest")" ]
 }
 
@@ -921,13 +937,25 @@ keel_own_untouched() {
 # this predicate in there would silently change behavior at every unrelated site instead of only this
 # one write-once shape.
 #
-# Known, narrow, pre-existing limitation (found by an independent /code-review high pass on this
-# ticket) — see prior_file_cksum's own docstring: an empty $prior_extra here is read as "nothing to
-# protect", but it can also mean a genuine prior record's own read failed mid-run (dir #350/#356's
-# sibling-sweep race). That race is not new here and not closed by this fix; flagged, not fixed, in
-# this ticket's own scope.
+# Formerly a known, narrow, pre-existing limitation (found by an independent /code-review high pass
+# on dir #512, closed here by dir #571): an empty $prior_extra here used to be read as "nothing to
+# protect" unconditionally, but it could also mean a genuine prior record's own read failed mid-run
+# (dir #350/#356's sibling-sweep race) — a case this function cannot afford to treat as "nothing to
+# protect" (see this function's own "never-clobber principle" paragraph above). Closed the CHEAP way
+# the ticket scoped it to: prior_file_cksum now prints the distinct $PRIOR_READ_FAILED sentinel for
+# that case instead of the same empty string a genuinely absent record prints (its own docstring), so
+# this function fails closed on it — leave DEST untouched, same as a genuine content difference,
+# unless --force says otherwise. The manifest lock the #350/#356 family separately contemplates
+# (closing the underlying race itself, not just this one symptom of it) stays out of scope here.
 record_readme_if_unclobbered() {
-  local dest="$1" rel prior_extra cur_cksum differs=0
+  # cur_cksum explicitly initialized (not left to a bare `local cur_cksum`): the PRIOR_READ_FAILED
+  # branch below never assigns it before it's read at the final `record_placed "$dest" "$cur_cksum"`
+  # call, and bash's own "declared but not yet assigned, mid-list local" is unset for `set -u` purposes
+  # on bash >= 4.0 (this file's shebang targets bash; macOS ships 3.2, where the same reference is
+  # merely empty and never trips nounset — reproduced live: "cur_cksum: unbound variable" on Linux
+  # CI's bash 5.x, silent on a macOS dev run). Empty is also the value `record_placed` already treats
+  # as "recompute from current disk bytes", so this is a no-op on the branch that DOES assign it.
+  local dest="$1" rel prior_extra cur_cksum="" differs=0
   # $rel (not `basename "$dest"`) in the messages below, on purpose: this function only ever handles
   # keel/README.md, whose OWN write-once echo just above ("+  keel/README.md") already names it by its
   # home-relative path, not its bare basename (unlike sync_product's generic $name, which also serves
@@ -939,13 +967,33 @@ record_readme_if_unclobbered() {
     record_placed "$dest"
     return
   fi
-  cur_cksum="$(artifact_cksum "$dest")"
-  [ "$cur_cksum" != "$prior_extra" ] && differs=1
+  if [ "$prior_extra" = "$PRIOR_READ_FAILED" ]; then
+    # Unlike the branch below, DEST's bytes were never actually compared against a verified prior — a
+    # real prior record may exist that this run simply couldn't reach, so silently trusting current
+    # disk bytes would risk the exact F10 re-legitimization this function exists to prevent. Fail
+    # closed the same way a genuine content difference does, just with no cksum to show for it — one
+    # shared `$FORCE`/`$differs` decision below handles both, so --force still means "take this back"
+    # regardless of what this run could verify, with the same confirmation message shape either way.
+    differs=1
+  else
+    cur_cksum="$(artifact_cksum "$dest")"
+    [ "$cur_cksum" != "$prior_extra" ] && differs=1
+  fi
   if [ "$FORCE" = 1 ]; then
-    [ "$differs" = 1 ] && echo "  +    $rel ownership re-taken (--force) — your edit is now Keel's again"
+    if [ "$differs" = 1 ]; then
+      if [ "$prior_extra" = "$PRIOR_READ_FAILED" ]; then
+        echo "  +    $rel ownership re-taken (--force) — Keel's prior record for it was unreadable this run"
+      else
+        echo "  +    $rel ownership re-taken (--force) — your edit is now Keel's again"
+      fi
+    fi
     record_placed "$dest" "$cur_cksum"
   elif [ "$differs" = 1 ]; then
-    echo "  =    $rel differs from what Keel recorded — left untouched (yours). Update: $advise_refresh_force"
+    if [ "$prior_extra" = "$PRIOR_READ_FAILED" ]; then
+      echo "  =    $rel: Keel's prior record for it was unreadable this run — left untouched, not re-recorded (retry, or use --force to take ownership now)"
+    else
+      echo "  =    $rel differs from what Keel recorded — left untouched (yours). Update: $advise_refresh_force"
+    fi
   fi
 }
 

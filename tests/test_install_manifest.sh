@@ -133,6 +133,36 @@ run env "${FRESH_HOME_ENV[@]}" "$uninstall" --home "$readme_home/.claude" --yes
 check_status "readme-force-home: uninstall after --force -> exit 0" 0 "$STATUS"
 check_nofile "uninstall after --force: the re-owned README.md is removed" "$readme_path"
 
+# --- dir #571: a prior manifest record that becomes UNREADABLE mid-run must be treated as "read
+# failed", not as "no prior record" — record_readme_if_unclobbered must NOT silently re-record over
+# disk bytes it never got the chance to compare against a verified prior (that would re-legitimize an
+# adopter's edit as Keel's own, reopening the F10 hazard dir #512 closed). KEEL_TEST_DROP_PRIOR_MANIFEST=1
+# reproduces dir #350's sibling-sweep race deterministically (install.sh's own comment on it; also used
+# by test_install.sh's T16) instead of racing a real concurrent install.
+setup_readme_edit_home readme-dropped-manifest-home
+
+run env "${FRESH_HOME_ENV[@]}" KEEL_TEST_DROP_PRIOR_MANIFEST=1 "$install" --link --no-hooks
+check_status "readme-dropped-manifest-home: reinstall with a dropped prior-manifest snapshot -> exit 0" 0 "$STATUS"
+check_contains "reinstall reports the prior record was unreadable, not treated as absent" "$OUT" \
+  "keel/README.md: Keel's prior record for it was unreadable this run — left untouched, not re-recorded"
+dropped_readme_line="$(grep '^artifact=file	keel/README\.md	' "$readme_man")"
+check_status "reinstall: README.md's RECORDED cksum is unchanged (a read failure never re-records)" "$original_readme_line" "$dropped_readme_line"
+check_contains "reinstall: the adopter's edit is still on disk" "$(cat "$readme_path")" "ADOPTER-EDIT"
+
+# --force still re-takes ownership even when the prior record was unreadable this run — fail-closed
+# only applies to the DEFAULT path; --force means "take this back" regardless of what this run could
+# verify, same as when the prior record read cleanly and simply differed.
+run env "${FRESH_HOME_ENV[@]}" KEEL_TEST_DROP_PRIOR_MANIFEST=1 "$install" --link --force --no-hooks
+check_status "readme-dropped-manifest-home: --force with a dropped prior-manifest snapshot -> exit 0" 0 "$STATUS"
+forced_dropped_readme_line="$(grep '^artifact=file	keel/README\.md	' "$readme_man")"
+check_ne "install --force: README.md's recorded cksum now differs from the pre-edit original" "$original_readme_line" "$forced_dropped_readme_line"
+# Regression pin: --force on a read-failed prior record used to call record_placed silently, with no
+# confirmation message at all — unlike every other --force override path in this file (the genuine
+# content-difference case just below prints "ownership re-taken"). Found by an independent
+# /code-review high pass on this ticket.
+check_contains "install --force on a dropped prior-manifest snapshot still confirms ownership re-taken" "$OUT" \
+  "keel/README.md ownership re-taken (--force) — Keel's prior record for it was unreadable this run"
+
 nogit_home="$SANDBOX/nogit-home"; mkdir -p "$nogit_home"
 fresh_home_env "$nogit_home"
 run env "${FRESH_HOME_ENV[@]}" "$install" --link --no-git --no-hooks

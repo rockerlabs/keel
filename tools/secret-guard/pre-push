@@ -19,7 +19,9 @@ while read -r _localref localsha _remoteref remotesha; do
   # dir #518: SECRET_SCAN_LOCAL_PUSH tells secret-scan.sh's --range allowlist-baseline resolution it
   # is safe to ALSO exclude anything reachable via a remote-tracking ref when deciding what already-
   # known content to trust — safe ONLY here, because this hook runs BEFORE the push transfers, so the
-  # commits in $range are, by construction, not yet reachable from any local remote-tracking ref.
+  # range's own newly-introduced TIP is, by construction, not yet reachable from any local remote-
+  # tracking ref — interior commits brought in by a `git merge origin/main` commonly already ARE, and
+  # it is that asymmetry the exclusion relies on (dir #569).
   # ci-scan.sh must NEVER set this (its own resolve_range_ci docstring already explains why: a CI
   # checkout runs AFTER the push landed, so the range's own tip is typically already remote-known,
   # and excluding remote-known content there would collapse the whole baseline to nothing).
