@@ -17,6 +17,12 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Added
 
+- **`tools/self/doctor.sh` — a guard against a duplicated or mis-ordered `### Added`/`### Changed`/
+  `### Fixed` subsection inside `[Unreleased]`** (dir #293): the class fired inside the release it
+  was found in — PR #276 duplicated an `### Added` block and dir #284 had to consolidate and
+  reorder it by hand, with nothing mechanical catching it. The new check reads the same
+  fence-blanked copy the section-count check already builds, GAPs on a duplicate or an
+  out-of-order pair, and tolerates a missing subsection.
 - **`tools/self/backlog-census.sh`** (dir #496): the shipped remover for three-and-a-half of
   `docs/grooming.md` G3's four hand-derivation rules — last-arrow release tag
   (`pool`/`next`/`on-demand`/`N.N[.N]` only, a grade re-tag arrow excluded by the restricted
@@ -75,6 +81,15 @@ sections real content going forward — see that page for exactly when each one 
   hand-copied word list; and a new `bb_closure_word_ok` checks a candidate marker against the
   constant at write time, so the next unlisted word is refused there rather than found by the next
   census.
+- **`tools/self/doctor.sh` check 5's BACKLOG.md body scan stops crying wolf on a ticket that cites
+  another ticket's closure or discusses the tagging convention** (dir #582): nine live false
+  positives (dir #307, #368, #370, #372, #521, #522, #547, #558, #559) plus this ticket's own body,
+  zero true, with three consecutive grooms compensating with a do-not-re-tag note instead of a fix.
+  The predicate now only fires on the shapes a wrap actually writes — a line opening with the
+  marker, a `**Status:**` line, or the marker in the body's own final three non-blank lines — plus
+  a same-line strip of a citation naming a different ticket. The recognised closure-word list also
+  gains `FIXED` alongside `CLOSED`/`DONE` (dir #581's own word, all 17 v0.10.2 fixed headings), so
+  a citation of one of those tickets is exempted the same way.
 - **`tools/self/pool-report.sh` sees three of the readiness scale's five grades** (dir #463): `R4`
   and `R0` had no `case` arm at all and fell into `unmarked` alongside genuinely ungraded tickets —
   the two grades a drain planner most needs to tell apart. The extractor is also loosened from the
