@@ -1679,7 +1679,16 @@ say "● artifact_cksum single-definition (dir #362)"
 cksum_def_re=""   # set indirectly below via fn_open_re's `printf -v` — declared here so shellcheck
                   # (SC2154) sees the assignment; fn_open_re itself never assigns it literally
 fn_open_re artifact_cksum cksum_def_re
-cksum_defs="$(git -C "$repo_root" grep -lE "$cksum_def_re" -- '*.sh' 'keel' 2>/dev/null || true)"
+# `-c color.grep=never` (dir #587): `git grep -l` colourises the filename whenever the user's git
+# config has `color.ui=always`/`color.grep=always` set, regardless of TTY — the captured string
+# then reads `\033[35mtools/lib/artifact-cksum.sh\033[m`, so the plain-path comparison two lines
+# down can never be true and this check FALSE-GAPs unconditionally. Reproduced live on unmodified
+# origin/main under that config. Per-call, not a doctor-wide `GIT_CONFIG_COUNT`/export: this
+# ticket's own scope is these two `git grep -l`-then-compare call sites, not every git call in the
+# file (the file's other git calls — `git tag -l`, `git rev-parse`, `git log` — are never
+# colourised by `color.ui`/`color.grep` in the first place, so widening the fix would change more
+# than the ticket asks for no benefit).
+cksum_defs="$(git -c color.grep=never -C "$repo_root" grep -lE "$cksum_def_re" -- '*.sh' 'keel' 2>/dev/null || true)"
 if [ -z "$cksum_defs" ]; then
   :   # no definition anywhere — no rule to keep in sync here
 elif [ "$cksum_defs" != "tools/lib/artifact-cksum.sh" ]; then
@@ -1757,7 +1766,9 @@ single_def_check() {
   local fn="$1" home="$2" exempt="${3-}" is_fallback="${4-0}" def_re defs rest note=""
   local home_body exempt_body unread
   fn_open_re "$fn" def_re
-  defs="$(git -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/' 2>/dev/null || true)"
+  # `-c color.grep=never` (dir #587): same false-GAP class as check 9's own `cksum_defs` above —
+  # see that call site's comment for the full mechanism and why this is per-call, not file-wide.
+  defs="$(git -c color.grep=never -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/' 2>/dev/null || true)"
   [ -z "$defs" ] && return   # no definition anywhere — no rule to keep in sync here
   rest="$defs"
   if [ -n "$exempt" ]; then
