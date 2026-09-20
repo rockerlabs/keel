@@ -298,9 +298,13 @@ case "${1:-}" in
     # among a record's other fields. A false-positive match (the substring appearing inside a turn's own
     # CONTENT rather than as the record's own type field — e.g. a turn quoting this very file) still
     # gets filtered correctly by the `jq` call that follows; it only costs one wasted fork, not a wrong
-    # exclusion. A transcript in some future, non-compact serialization would silently lose this
-    # pre-filter's benefit (falling back to scanning every line again) rather than crash — a residual
-    # limit, not a new failure mode, and named here rather than left implicit.
+    # exclusion. A transcript in some future, non-compact serialization (e.g. `"type": "user"` with a
+    # space) would NOT merely lose this pre-filter's benefit — the substring would never match at all,
+    # so every line is filtered out and the exclusion silently finds nothing, ever, on that transcript
+    # (a false negative, not a slow-but-correct fallback). Accepted here rather than hedged against: the
+    # whole file already assumes Claude-Code-specific JSONL shapes throughout (dir #367's own R12), and
+    # every other consumer of this same format (e.g. `tools/lib/transcript-usage.sh`) would need fixing
+    # for the same reason if the harness ever changed how it serializes transcripts.
     se_marker_turns=5
     se_marker_bytecap=2000000
     se_marker_hit=0
