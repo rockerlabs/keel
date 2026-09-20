@@ -162,6 +162,25 @@ sections real content going forward — see that page for exactly when each one 
   the expected string — 5 false GAPs, reproduced live on unmodified origin/main. Fixed with
   `-c color.grep=never` on the two `git grep -l` call sites; a sweep of the rest of
   `tools/self/*.sh` found no other bare-`git grep -l`-then-compare call sites.
+- **`tools/install-pre-pr-gate.sh --uninstall` silently dropped an unrelated foreign empty-array
+  hooks key** (dir #564): its final removal jq pruned EVERY empty array under `.hooks` after
+  removing this gate's own 6 hooks, not only the events this installer manages — a pre-existing
+  unrelated empty-array key (another tool's temporarily-disabled hook) was destroyed, against the
+  file's own "everything else...left exactly as it was" contract. `tools/install-read-trace.sh`
+  already carried the scoped fix (only THIS installer's own event names are pruned); the twin was
+  missed when dir #514 unified the two installers' quoting. Ported the same guard plus a regression
+  test of the same shape.
+- **`install.sh`'s `prior_file_cksum` could not tell "no prior manifest record" from "a real prior
+  record whose read failed mid-run"** (dir #571): both returned the same empty string, so
+  `record_readme_if_unclobbered` treated a transient read failure under dir #350/#356's documented
+  sibling-sweep race the same as "nothing to protect" and silently re-recorded keel/README.md over
+  disk bytes it never actually compared against a verified prior — reopening the F10 hazard dir #512
+  closed, for one run. `prior_file_cksum` now prints a distinct `$PRIOR_READ_FAILED` sentinel for the
+  read-failed case instead of the same empty string a genuinely absent record prints (the same shape
+  as the existing `$CKSUM_UNREADABLE` sentinel one field over); `record_readme_if_unclobbered` fails
+  closed on that sentinel (left untouched, same as a genuine content difference) unless `--force` says
+  to take ownership anyway. The underlying race itself (the #350/#356 manifest-lock family) stays out
+  of this ticket's scope.
 - **`tests/test_pipeline_canary.sh` had zero coverage for dir #478's `[ -n "$d" ] || exit 1` mktemp
   guard** (dir #565): with the guard deleted, all assertions stayed green — verified live, `git -C
   ""` silently resolves to the invocation cwd, exactly the `demo-bypass` failure mode the guard
