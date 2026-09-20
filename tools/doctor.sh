@@ -23,11 +23,15 @@
 #   GAP   G-DIR-MISSING        the project directory itself does not exist
 #   GAP   G-GIT-MISSING        not a git repo
 #   GAP   G-CLAUDEMD-MISSING   no project CLAUDE.md
-#   GAP   G-GITIGNORE-CONTEXT  .gitignore does not ignore the private AI context — unless public fork
-#   GAP   G-AGENTSMD-CONTEXT  AGENTS.md exists but .gitignore does not ignore it — unless public fork
+#   GAP   G-GITIGNORE-CONTEXT  the private AI context is untracked AND not ignored by any git ignore source
+#                             (.gitignore, .git/info/exclude, global excludes) — one `git add -A` from a leak
+#   GAP   G-AGENTSMD-CONTEXT  AGENTS.md exists but git does not ignore it (any source) — unless public fork
 #   GAP   G-AGENTSMD-INHERIT  AGENTS.md's tracked/ignored status does not match CLAUDE.md's (dir #75:
 #                             AGENTS.md always inherits CLAUDE.md's git status)
 #   WARN  W-CLAUDEMD-GITIGNORED  CLAUDE.md absent but gitignored (private/mechanism repo — create it locally)
+#   WARN  W-CLAUDEMD-TRACKED   CLAUDE.md is in the index — either a deliberate public fork (accept the ID
+#                             per repo) or context committed by accident (git rm --cached + ignore); an
+#                             ignore rule alone would grade the lock while the door stands open
 #   WARN  W-AGENTSMD-DRIFT     AGENTS.md is a regular-file copy that has drifted from CLAUDE.md, or a
 #                             symlink pointing somewhere other than CLAUDE.md
 #   WARN  W-KEEL-LEGACY        an in-tree .keel/{ledger.md,evidence.md,impact-events.log} left over from
@@ -212,6 +216,12 @@ fi
 global_est=$(( global_chars / 4 ))
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
+# Two git questions the context checks keep asking, in one place (dir #75's AGENTS.md block asks them
+# too). tracked: the path is in the index. ignored: ANY of the paths matches an ignore rule from any
+# source git honours (.gitignore, .git/info/exclude, the global excludesfile) — one process, since
+# check-ignore without -q exits 0 when at least one pathspec is ignored. A path need not exist.
+_tracked() { git -C "$1" ls-files --error-unmatch "$2" >/dev/null 2>&1; }
+_ignored() { git -C "$1" check-ignore "${@:2}" >/dev/null 2>&1; }
 
 # Findings are BUFFERED per audit unit (a project dir, or the install) and flushed ordered
 # GAP → WARN → HINT (dir #45): the checks run in code order, the reader sees severity order.
@@ -940,7 +950,7 @@ for d in "${DIRS[@]}"; do
   fi
 
   if [ ! -f "$d/CLAUDE.md" ]; then
-    if git -C "$d" check-ignore -q CLAUDE.md 2>/dev/null; then
+    if _ignored "$d" CLAUDE.md; then
       # CLAUDE.md is gitignored (a private-fork or a "mechanism" repo like Keel itself), so a fresh
       # clone legitimately has none — advise, don't fail.
       warn W-CLAUDEMD-GITIGNORED "no project CLAUDE.md in this checkout — it's gitignored (private/mechanism repo); create it locally"
@@ -958,15 +968,24 @@ for d in "${DIRS[@]}"; do
     fi
   fi
 
-  gi="$d/.gitignore"
+  # Private AI context (CLAUDE.md, .claude/) — three outcomes, told apart because each needs a different
+  # response. TRACKED: already committed, which is the harm the ignore rule exists to prevent; an ignore
+  # rule added today changes nothing, git keeps tracking what is in the index. A WARN, not a GAP — a
+  # deliberate public fork is a legitimate choice — accepted once per repo via .keel/doctor-accept.
+  # IGNORED: by any source git honours (.gitignore, .git/info/exclude, the global excludesfile) — ask
+  # git, don't grep .gitignore: a repo handed to a third party keeps the rule in info/exclude on purpose,
+  # because .gitignore names the tooling and ships inside `git archive`. NEITHER: untracked and
+  # unprotected, one `git add -A` from the first outcome — the GAP. A tracked file is never reported
+  # ignored by check-ignore, so the tracked question has to come first. AGENTS.md inherits this
+  # verdict (G-AGENTSMD-INHERIT below), so the WARN speaks for both files.
   claude_tracked=0
-  git -C "$d" ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && claude_tracked=1
-  if [ -f "$gi" ] && grep -qE '(^|/)(\.claude/?|CLAUDE\.md)' "$gi"; then
+  _tracked "$d" CLAUDE.md && claude_tracked=1
+  if [ "$claude_tracked" = 1 ]; then
+    warn W-CLAUDEMD-TRACKED "CLAUDE.md is tracked (private AI context in the index) — a deliberate public fork? accept this ID in .keel/doctor-accept and ensure no secrets/PII; otherwise git rm --cached CLAUDE.md and ignore it"
+  elif _ignored "$d" CLAUDE.md .claude/; then
     :  # private AI context ignored — good
-  elif [ -f "$d/CLAUDE.md" ] && [ "$claude_tracked" = 1 ]; then
-    say "       (CLAUDE.md is tracked — treating as a deliberate public fork; ensure no secrets/PII)"
   else
-    gap G-GITIGNORE-CONTEXT ".gitignore does not ignore the private AI context (.claude/ or CLAUDE.md)"
+    gap G-GITIGNORE-CONTEXT "git does not ignore the private AI context (.claude/ or CLAUDE.md) — no rule in .gitignore, .git/info/exclude or the global excludes"
   fi
 
   # AGENTS.md — the vendor sibling of CLAUDE.md for Codex/Cursor (dir #75). It takes its CLAUDE.md's git
@@ -974,18 +993,14 @@ for d in "${DIRS[@]}"; do
   # (its absence is advice ADAPTING.md gives, not a nag — same philosophy as the .keel/ checks).
   if [ -e "$d/AGENTS.md" ] || [ -L "$d/AGENTS.md" ]; then
     agents_tracked=0
-    git -C "$d" ls-files --error-unmatch AGENTS.md >/dev/null 2>&1 && agents_tracked=1
+    _tracked "$d" AGENTS.md && agents_tracked=1
     agents_ignored=0
-    git -C "$d" check-ignore -q AGENTS.md 2>/dev/null && agents_ignored=1
+    _ignored "$d" AGENTS.md && agents_ignored=1
 
     if [ "$agents_ignored" = 0 ] && [ "$agents_tracked" = 0 ]; then
-      gap G-AGENTSMD-CONTEXT ".gitignore does not ignore AGENTS.md (vendor sibling of CLAUDE.md — private AI context)"
-    elif [ -f "$d/CLAUDE.md" ]; then
-      if [ "$agents_tracked" != "$claude_tracked" ]; then
-        gap G-AGENTSMD-INHERIT "AGENTS.md's tracked/ignored status does not match CLAUDE.md's — it should always inherit CLAUDE.md's git status"
-      elif [ "$agents_tracked" = 1 ]; then
-        say "       (AGENTS.md is tracked — treating as a deliberate public fork; ensure no secrets/PII)"
-      fi
+      gap G-AGENTSMD-CONTEXT "git does not ignore AGENTS.md (vendor sibling of CLAUDE.md — private AI context)"
+    elif [ -f "$d/CLAUDE.md" ] && [ "$agents_tracked" != "$claude_tracked" ]; then
+      gap G-AGENTSMD-INHERIT "AGENTS.md's tracked/ignored status does not match CLAUDE.md's — it should always inherit CLAUDE.md's git status"
     fi
 
     # Drift check: for a SYMLINK, verify it actually points at CLAUDE.md — a symlink to something
@@ -1287,7 +1302,7 @@ for d in "${DIRS[@]}"; do
   # so `git worktree add` checks it out WITHOUT one and that worktree's session starts blind to the project
   # context. Each live linked worktree should carry a CLAUDE.md (a bridge symlink). Public-fork (committed
   # CLAUDE.md) is exempt — a worktree checks it out normally.
-  if [ -f "$d/CLAUDE.md" ] && git -C "$d" check-ignore -q CLAUDE.md 2>/dev/null; then
+  if [ -f "$d/CLAUDE.md" ] && _ignored "$d" CLAUDE.md; then
     wt_missing=0
     while IFS= read -r wline; do
       case "$wline" in "worktree "*) wt="${wline#worktree }" ;; *) continue ;; esac

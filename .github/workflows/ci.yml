@@ -100,6 +100,12 @@ jobs:
           fetch-depth: 0
           filter: blob:none
       - name: secret-scan --range (introduced blobs, commit messages, tag bodies)
+        # dir #572: on a force-push whose "before" sha is orphaned AND unfetchable, ci-scan.sh falls
+        # back to a full-history scan in which no .secret-scan-allow entry can exempt anything (it has
+        # no baseline to prove the entry predates the secret). That blocks, never passes. An operator
+        # who needs a legitimate entry to keep exempting adds
+        # `SECRET_SCAN_CI_FORCE_PUSH_BASELINE: <trusted pre-force-push rev>` to this env block
+        # deliberately — see ci-scan.sh's header. It is not set here: unset is the safe default.
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
