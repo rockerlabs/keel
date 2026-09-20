@@ -531,14 +531,20 @@ BODY_CLOSURE_RE='✅.*\b(CLOSED|DONE|FIXED)\b|\bRETRACTED\b'
 # strip_dir_citation <regex> <ticket-capture-index> <own-id>
 # Loops <regex> (must set BASH_REMATCH[<ticket-capture-index>] to the cited ticket's number) to a
 # fixed point against the global $cited, stripping each match that names a DIFFERENT ticket than
-# own-id. Mutates $cited directly rather than returning a value (no `local -n`/nameref: this file
-# targets bash 3.2, which shipped years before nameref support) — the same implicit-global
-# convention the two loops had before being factored out here. Two call shapes share this: "dir
-# #N (✅ …)" (ticket-idx 1) and "(…, dir #N, …)" (ticket-idx 2) — not tools/lib/backlog-blocks.sh's
-# `bb_strip_foreign_citations` (dir #426), whose two forms (Supersedes/Duplicate of dir #N) are
-# verb-anchored, a different citation shape than the parenthetical form free-form BACKLOG.md prose
-# actually uses, and extending a shared lib function is the same out-of-scope cross-file coupling
-# `BODY_CLOSURE_RE`'s own comment above declines.
+# own-id. **own-id must be BARE DIGITS ("582"), not "dir #582"** — it is compared directly against
+# BASH_REMATCH[<idx>], which the two regexes below capture as digits-only. Passing heading_dir_id's
+# own "dir #N" output here compares "582" against "dir #582", which can never be equal, silently
+# disabling the own-ticket guard entirely (found live by /code-review high, three independent
+# angles + reproduction against the real test harness — a ticket citing its own number in this
+# shape had its own closure note stripped as if it named a different ticket). Mutates $cited
+# directly rather than returning a value (no `local -n`/nameref: this file targets bash 3.2, which
+# shipped years before nameref support) — the same implicit-global convention the two loops had
+# before being factored out here. Two call shapes share this: "dir #N (✅ …)" (ticket-idx 1) and
+# "(…, dir #N, …)" (ticket-idx 2) — not tools/lib/backlog-blocks.sh's `bb_strip_foreign_citations`
+# (dir #426), whose two forms (Supersedes/Duplicate of dir #N) are verb-anchored, a different
+# citation shape than the parenthetical form free-form BACKLOG.md prose actually uses, and
+# extending a shared lib function is the same out-of-scope cross-file coupling `BODY_CLOSURE_RE`'s
+# own comment above declines.
 strip_dir_citation() {
   local re="$1" idx="$2" own="$3"
   while [[ "$cited" =~ $re ]] && [ "${BASH_REMATCH[$idx]}" != "$own" ]; do
@@ -766,6 +772,14 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       body_hit=""
       if grep -qE "$BODY_CLOSURE_RE" <<< "$(printf '%s\n' "${body_lines[@]}")"; then
         id="$(heading_dir_id "$heading_line")"
+        # Bare digits, not "dir #N": strip_dir_citation compares against BASH_REMATCH[<idx>], which
+        # its own regexes capture as digits-only (`([0-9]+)`, no "dir #" prefix) — passing $id
+        # itself here made the own-vs-foreign guard compare "582" against "dir #582", which can
+        # never be equal, so the guard silently never fired and a ticket's own citation-shaped
+        # closure note ("dir #582 (✅ CLOSED, …)") was stripped as if it named a different ticket
+        # (found live by /code-review high, three independent angles, reproduced against the real
+        # test harness: exit 0/no WARN on a ticket citing its own number this way).
+        id_num="${id#dir \#}"
         nbl="${#body_lines[@]}"
         # (1) WHAT counts as a real closure note is narrowed to the shapes a wrap actually writes —
         # a line that OPENS with the marker, a "**Status:** ✅ …" line, or the marker landing in the
@@ -810,8 +824,8 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
             # backtick-stripped) fence-blanked copy instead, at the same whole-body-scan cost
             # already rejected above.
             cited="$bl"
-            strip_dir_citation 'dir \#([0-9]+)[[:space:]]*\(([^()]*)\)' 1 "$id"
-            strip_dir_citation '\(([^()]*)dir \#([0-9]+)([^()]*)\)' 2 "$id"
+            strip_dir_citation 'dir \#([0-9]+)[[:space:]]*\(([^()]*)\)' 1 "$id_num"
+            strip_dir_citation '\(([^()]*)dir \#([0-9]+)([^()]*)\)' 2 "$id_num"
             if grep -qE "$BODY_CLOSURE_RE" <<< "$cited" \
               && { [ "$bi" -ge "$tail_start" ] \
                 || [[ "$bl" =~ ^[[:space:]]*(✅|⏳|RETRACTED) ]] \
@@ -1335,9 +1349,13 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
       esac
       # Order check: each kind actually present, in file order, must have a non-decreasing rank
       # against the PREVIOUS kind seen — a MISSING kind is fine (today's real file has only
-      # `### Changed`), only an out-of-order PAIR is drift.
+      # `### Changed`), only an out-of-order PAIR is drift. Appended, not overwritten (found by
+      # /code-review high's cross-file tracer: an overwrite on a THIRD subsection with two
+      # decreasing transitions — e.g. Fixed, Changed, Added — silently dropped the first,
+      # arguably more relevant violation from the GAP message; the verdict itself was still
+      # correct either way, only the message was incomplete).
       if [ "$ur_rank" -lt "$ur_prev_rank" ]; then
-        ur_order_bad="### $ur_prev_kind before ### $ur_kind"
+        ur_order_bad="$ur_order_bad${ur_order_bad:+; }### $ur_prev_kind before ### $ur_kind"
       fi
       ur_prev_rank="$ur_rank"
       ur_prev_kind="$ur_kind"

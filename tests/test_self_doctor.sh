@@ -745,6 +745,25 @@ printf '### dir #975 — some ticket that actually got fixed — R1\n\n✅ FIXED
 run "$sd" "$d" --quiet
 check_contains "a ticket's own ✅ FIXED closure is still caught" "$OUT" "dir #975's heading tag looks stale"
 
+# /code-review high (three independent angles, converging live): strip_dir_citation's own-vs-
+# foreign comparison passed the FULL "dir #N" string as own-id while the citation regexes capture
+# BARE DIGITS, so "N" != "dir #N" was always true and the own-ticket guard never fired — a
+# citation-shaped self-reference ("dir #976 (✅ CLOSED)", the ticket citing ITS OWN number in the
+# exact shape dir #12/#973/#974 exempt for a FOREIGN one) had its own closure marker silently
+# stripped as if it named a different ticket, producing a false negative (exit 0, no WARN) on a
+# genuinely stale heading. Covers both citation shapes: ticket-then-paren and the reverse.
+d="$(mk_clean_repo)"
+printf '### dir #976 — a ticket citing its own number this way — R1\n\ndir #976 (✅ CLOSED, 2026-01-01) -- done.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a self-citation in ticket-then-paren form is still caught, not stripped as foreign" "$OUT" "dir #976's heading tag looks stale"
+
+d="$(mk_clean_repo)"
+printf '### dir #977 — a ticket citing its own number the other way — R1\n\n(dir #977, ✅ CLOSED) -- done here.\n' \
+  > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "a self-citation in paren-with-ticket-inside form is still caught too" "$OUT" "dir #977's heading tag looks stale"
+
 # --- 7. BACKLOG.md heading check resolves the MAIN checkout from a worktree invocation (dir #135) ---
 # BACKLOG.md is gitignored and lives ONLY at the main checkout root (this project's own convention) —
 # a linked worktree never gets its own copy. Before this fix, self_dir/../.. (repo_root) was whatever
@@ -1350,6 +1369,61 @@ git clone -q --depth 1 "file://$d" "$shallow"
 run "$sd" "$shallow" --quiet
 check_status "a shallow clone skips the reconciliation rather than false-GAPing -> exit 0" 0 "$STATUS"
 check_absent "no reconciliation GAP on a shallow clone" "$OUT" "CHANGELOG.md section"
+
+# --- 8b. dir #293: [Unreleased] subsection uniqueness/order --------------------------------------
+# PR #276 duplicated an `### Added` block under [Unreleased] and dir #284 had to consolidate and
+# reorder it by hand — nothing mechanical caught it at the time. These fixtures cover the class
+# directly (found live by /code-review high's cross-file tracer: the new check itself had zero
+# test coverage — the fixtures below close that gap).
+
+# a healthy [Unreleased] (one of each, in Added -> Changed -> Fixed order) -> no GAP, OK line shown.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- a thing.\n\n### Changed\n\n- another thing.\n\n### Fixed\n\n- a third thing.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "one of each subsection, correctly ordered -> exit 0" 0 "$STATUS"
+check_absent "no duplicate-subsection GAP on a healthy Unreleased" "$OUT" "duplicated subsection"
+check_absent "no order GAP on a healthy Unreleased" "$OUT" "subsections out of order"
+run "$sd" "$d"
+check_contains "the OK line names the healthy state" "$OUT" "[Unreleased] subsections are unique and correctly ordered"
+
+# a missing subsection is fine (today's real file has only ### Changed) -> no GAP either.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Changed\n\n- a thing.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "only ### Changed present, nothing else -> exit 0" 0 "$STATUS"
+check_absent "a missing subsection is not itself drift" "$OUT" "duplicated subsection"
+
+# a duplicated ### Added -> GAP, names the kind and the count, exit 1.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- a thing.\n\n### Changed\n\n- another thing.\n\n### Added\n\n- a duplicate block.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a duplicated ### Added -> exit 1 (GAP)" 1 "$STATUS"
+check_contains "names the duplicated kind and count" "$OUT" "duplicated subsection: Added (2)"
+
+# subsections out of order (### Fixed before ### Changed) -> GAP, names the pair, exit 1.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- a thing.\n\n### Changed\n\n- another thing.\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "### Fixed before ### Changed -> exit 1 (GAP)" 1 "$STATUS"
+check_contains "names the out-of-order pair" "$OUT" "### Fixed before ### Changed"
+
+# a `### Added`-shaped line inside a fenced example must not be misread as a real subsection —
+# same fence-blanking guard check 6's own section-count logic already relies on.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- a real thing.\n\n### Changed\n\nExample convention:\n\n```\n### Added\n- example\n```\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "a fenced ### Added example doesn't false-GAP -> exit 0" 0 "$STATUS"
+check_absent "no duplicate-subsection GAP from fenced example text" "$OUT" "duplicated subsection"
 
 # --- 9. commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237) -----------------------
 # A cut-and-tagged v1.0.0 section, kept in every fixture below, so check 6's own tag-reconciliation
