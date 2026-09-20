@@ -75,6 +75,23 @@ sections real content going forward — see that page for exactly when each one 
   hand-copied word list; and a new `bb_closure_word_ok` checks a candidate marker against the
   constant at write time, so the next unlisted word is refused there rather than found by the next
   census.
+- **`tools/self/pool-report.sh` sees three of the readiness scale's five grades** (dir #463): `R4`
+  and `R0` had no `case` arm at all and fell into `unmarked` alongside genuinely ungraded tickets —
+  the two grades a drain planner most needs to tell apart. The extractor is also loosened from the
+  strict `— R[0-9] —` shape to `— R[0-9]([^a-zA-Z0-9]|$)`, so a qualifier suffix ("— R2, needs a
+  design pass —") or a qualifier glued to the digit ("— R1-parked —") both still read without
+  re-typing either live heading, while the right boundary still rejects an unrelated heading
+  mentioning "R\<digit\>" for its own reasons; a body-stated `**Readiness: RN**` counts too when the
+  heading carries no grade at all (heading first, body second, operator decision 2026-09-20), read
+  through the same fence-blanking/backtick-stripping `tools/lib/backlog-blocks.sh` already applies
+  so a fenced-code-block example is never misread as a ticket's own grade.
+- **`tools/self/pool-report.sh`'s pool history could not be corrected once recorded** (dir #461 half
+  2): the release key was idempotent-once, so a stale first reading stuck permanently and
+  `docs/grooming.md` G4 compensated by telling every groom to run the report last. `--record` now
+  takes an explicit `--amend` to make one release's row last-write-wins, substituting it IN PLACE
+  (an earlier shape appended instead, corrupting the growth trigger's positional "last two recorded
+  releases" read) via `ENVIRON[]` rather than `awk -v` (which would run the release name through
+  awk's own string-literal escape processing), and G4's ordering compensation is removed.
 - **`tools/lib/dir-tickets.sh`'s `extract_dir_tickets` now sees through a bold-wrapped bare-`#N`
   continuation** (dir #578) — `**dir #478**, **#480**, **#481**`, the exact shape CHANGELOG.md's own
   `[0.10.1]` known-issues paragraph uses, previously broke the anchor match dead after the first

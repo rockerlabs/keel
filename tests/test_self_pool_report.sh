@@ -61,7 +61,8 @@ f="$(mk_backlog "$backlog")"
 run "$pr" --history "$SANDBOX/hist-empty.jsonl" "$f"
 check_status "basic run -> exit 0" 0 "$STATUS"
 check_contains "pool size excludes the non-pool and closed tickets" "$OUT" "pool size:                     4"
-check_contains "R-level split reports R1/R2/R3" "$OUT" "R1=1 R2=1 R3=2"
+check_contains "R-level split reports R1/R2/R3 (dir #463: now printed R4/R3/R2/R1/R0)" "$OUT" \
+  "R4=0 R3=2 R2=1 R1=1 R0=0 unmarked=0"
 check_contains "structurally-parked excluded by rule (2 of 4: blocked + gate)" "$OUT" \
   "excluding structurally-parked:  2 (of 4; 2 parked by rule"
 check_contains "oldest entry is the earliest dated pool ticket" "$OUT" "d (dir #1)"
@@ -108,6 +109,182 @@ run "$pr" --record 0.9.0 --history "$hist" "$f"
 check_contains "second --record for the same release is a no-op" "$OUT" "already recorded"
 lines_after="$(wc -l < "$hist" | tr -d ' ')"
 check_status "history file has exactly one row after two --record calls" "1" "$lines_after"
+
+# --- dir #463 (first half): all five readiness grades, plus one ungraded, in one fixture -------
+# The scale has R4 (spec-ready) through R0 (not an agent session); before this fix R4 and R0 had
+# no `case` arm at all and fell into `unmarked` alongside genuinely ungraded tickets.
+five_grade_backlog="### dir #10 — spec ready (found 2026-01-01) — R4 — → pool
+
+body
+
+### dir #11 — scope clear (found 2026-01-01) — R3 — → pool
+
+body
+
+### dir #12 — needs a design pass (found 2026-01-01) — R2 — → pool
+
+body
+
+### dir #13 — parked by a gate (found 2026-01-01) — R1 — → pool
+
+body
+
+### dir #14 — not agent work (found 2026-01-01) — R0 — → pool
+
+body
+
+### dir #15 — carries no grade at all (found 2026-01-01) — → pool
+
+body
+"
+ffive="$(mk_backlog "$five_grade_backlog")"
+run "$pr" --history "$SANDBOX/hist-five-grade.jsonl" "$ffive"
+check_contains "MUTATION-PROOF (dir #463): all five grades get their own arm, one ungraded stays unmarked" \
+  "$OUT" "R4=1 R3=1 R2=1 R1=1 R0=1 unmarked=1"
+
+# --- dir #463 (second half): the extractor is loosened from the strict `— R[0-9] —` shape to
+# `— R[0-9]`, so a qualifier SUFFIX after the digit ("— R2, needs a design pass —", dir #423's
+# own live shape) and a qualifier GLUED to the digit ("— R1-parked —", dir #94's own live shape)
+# both still read as their grade, without re-typing either heading into the stricter form (which
+# would silently delete the qualifier prose that carries WHY the grade is what it is). -----------
+qualifier_backlog="### dir #423 — qualifier suffix after the digit (found 2026-01-01) — R2, needs a protocol-extension design pass — → pool
+
+body
+
+### dir #94 — qualifier glued onto the digit (found 2026-01-01) — R1-parked — → pool
+
+body
+"
+fqual="$(mk_backlog "$qualifier_backlog")"
+run "$pr" --history "$SANDBOX/hist-qualifier.jsonl" "$fqual"
+check_contains "MUTATION-PROOF (dir #463): a qualifier-suffix heading still reads its grade (R2, not unmarked)" \
+  "$OUT" "R4=0 R3=0 R2=1 R1=1 R0=0 unmarked=0"
+
+# --- code-review medium (found live, reproduced): the loosened extractor above must still have a
+# RIGHT boundary after the digit — a heading TITLE that happens to contain "— R<digit>" for
+# unrelated reasons ("— R2D2 firmware notes —") must NOT be misread as a real grade. MUTATION-PROOF:
+# dropping the `([^a-zA-Z0-9]|$)` boundary back to a bare `— R[0-9]` wrongly reads this as R2. -----
+title_digit_backlog="### dir #99 — R2D2 firmware notes (found 2026-01-01) — → pool
+
+This ticket carries no real readiness grade anywhere, heading or body.
+"
+ftitledigit="$(mk_backlog "$title_digit_backlog")"
+run "$pr" --history "$SANDBOX/hist-title-digit.jsonl" "$ftitledigit"
+check_contains "MUTATION-PROOF: a title mentioning '— R2D2' is not misread as grade R2 (stays unmarked)" \
+  "$OUT" "R4=0 R3=0 R2=0 R1=0 R0=0 unmarked=1"
+
+# --- dir #463 (second half, the decided fork): a body-stated `**Readiness: RN**` counts too, when
+# the heading itself carries no grade at all — heading first, body second. -----------------------
+body_readiness_backlog="### dir #16 — heading carries no grade, body states one (found 2026-01-01) — → pool
+
+**Groomed 2026-07-14 — Readiness: R1** with named unpark triggers.
+
+### dir #17 — heading carries its OWN grade, body also mentions a different one (found 2026-01-01) — R3 — → pool
+
+An earlier draft of this ticket used Readiness: R1 before it was rescoped; the heading is current.
+"
+fbody="$(mk_backlog "$body_readiness_backlog")"
+run "$pr" --history "$SANDBOX/hist-body-readiness.jsonl" "$fbody"
+check_contains "a body-stated Readiness: RN counts when the heading has none (R1)" "$OUT" \
+  "R4=0 R3=1 R2=0 R1=1 R0=0 unmarked=0"
+
+# --- code-review medium (found live, reproduced): the body scan above must read the SAME
+# fence-blanked, backtick-stripped content the heading/closure scan already does — a ticket whose
+# body quotes `**Readiness: R1**` inside a fenced code block, as an ILLUSTRATIVE EXAMPLE of the
+# convention rather than its own actual grade, must NOT be misread as that grade. MUTATION-PROOF:
+# reading the raw, un-blanked file here wrongly reads this ticket as R1 instead of unmarked. ------
+fenced_example_backlog='### dir #900 — some ticket with no readiness grade on its heading (found 2026-01-01) — → pool
+
+```
+**Readiness: R1** (example convention, not this ticket'"'"'s own grade)
+```
+
+This ticket itself has never been graded.
+'
+ffenced="$(mk_backlog "$fenced_example_backlog")"
+run "$pr" --history "$SANDBOX/hist-fenced-example.jsonl" "$ffenced"
+check_contains "MUTATION-PROOF: a fenced-code-block example Readiness is not misread as this ticket's own grade" \
+  "$OUT" "R4=0 R3=0 R2=0 R1=0 R0=0 unmarked=1"
+
+# --- --record --amend: the release key becomes a correctable record (dir #461, half 2) ---------
+# The plain --record call stays idempotent-once (tested above); --amend is the explicit opt-in
+# that corrects a stale row, last-write-wins, without disturbing any OTHER release's row.
+hist_amend="$SANDBOX/hist-amend.jsonl"
+printf '{"release":"0.8.0","date":"2026-08-01","pool_size":3}\n' > "$hist_amend"
+run "$pr" --record 0.9.0 --history "$hist_amend" "$f"
+check_contains "first --record for 0.9.0 appends" "$OUT" "appended"
+# $f's pool size is 4 (dir #1/#3/#5/#6); amend against a DIFFERENT, one-ticket fixture so the
+# corrected row proves last-write-wins rather than a same-value coincidence.
+amend_backlog="### dir #20 — the only ticket left after a correction (found 2026-01-01) — R2 — → pool
+
+body
+"
+famend="$(mk_backlog "$amend_backlog")"
+run "$pr" --record 0.9.0 --amend --history "$hist_amend" "$famend"
+check_contains "amend reports the correction" "$OUT" "amended"
+check_contains "amended row reflects the NEW pool size (1), not the stale one (4)" \
+  "$(cat "$hist_amend")" "\"release\":\"0.9.0\",\"date\":\"$(date -u +%Y-%m-%d)\",\"pool_size\":1"
+check_contains "amend leaves the OTHER release's row untouched" "$(cat "$hist_amend")" \
+  "\"release\":\"0.8.0\",\"date\":\"2026-08-01\",\"pool_size\":3"
+amend_lines="$(wc -l < "$hist_amend" | tr -d ' ')"
+check_status "amended history file still holds exactly two rows (one per release)" "2" "$amend_lines"
+run "$pr" --record 0.9.0 --history "$hist_amend" "$famend"
+check_contains "a plain --record after an amend is STILL idempotent-once (no --amend given)" \
+  "$OUT" "already recorded"
+
+# --- --amend without --record is a usage error, not a silent no-op -----------------------------
+run "$pr" --amend --history "$SANDBOX/hist-amend-bad.jsonl" "$f"
+check_status "--amend without --record -> exit 2" 2 "$STATUS"
+check_contains "reports why" "$OUT" "--amend requires --record"
+
+# --- code-review medium (found live, reproduced): amending a NON-LAST release must not reorder
+# it to the end of the file — the growth trigger below reads "the last two recorded releases" by
+# FILE POSITION, so an amend that appended instead of replacing in place silently corrupted which
+# two rows a later run compares. MUTATION-PROOF: reverting the amend to remove-then-append moves
+# relA to the end, so relD's run below would compare against relC and the STALE-shaped relA
+# instead of the true last two (relB, relC) — a spurious WARN on a pool that only shrank. --------
+hist_pos="$SANDBOX/hist-amend-position.jsonl"
+printf '{"release":"relA","date":"2026-01-01","pool_size":10}\n{"release":"relB","date":"2026-02-01","pool_size":20}\n{"release":"relC","date":"2026-03-01","pool_size":15}\n' > "$hist_pos"
+one_ticket_backlog="### dir #30 — one ticket only (found 2026-01-01) — R1 — → pool
+
+body
+"
+fone="$(mk_backlog "$one_ticket_backlog")"
+run "$pr" --record relA --amend --history "$hist_pos" "$fone"
+check_contains "amending the OLDEST release still reports the correction" "$OUT" "amended"
+first_line="$(head -1 "$hist_pos")"
+check_contains "amending relA (not the last row) leaves it FIRST in the file, not moved to the end" \
+  "$first_line" "\"release\":\"relA\""
+pos_lines="$(wc -l < "$hist_pos" | tr -d ' ')"
+check_status "the file still holds exactly three rows after the amend" "3" "$pos_lines"
+# 25 pool tickets so relD's own run reads 25 — with relA amended to 1 (in place), the true last
+# two recorded releases are still relB=20 and relC=15 (a DECREASE) — the trigger must not fire.
+grow_ticket_backlog=""
+for i in $(seq 1 25); do
+  grow_ticket_backlog="${grow_ticket_backlog}### dir #${i} — t${i} (found 2026-01-01) — R1 — → pool
+
+body
+
+"
+done
+fgrowpos="$(mk_backlog "$grow_ticket_backlog")"
+run "$pr" --record relD --history "$hist_pos" "$fgrowpos"
+check_absent "MUTATION-PROOF: an in-place amend of a non-last release does not corrupt the growth trigger's positional read (no spurious WARN)" \
+  "$OUT" "WARN"
+
+# --- code-review medium, delta round (found live, reproduced): passing the release key/new row
+# through `awk -v` runs them through awk's own STRING-LITERAL escape processing, so a release name
+# containing a backslash escape sequence (`\n`, `\t`, ...) matched neither the `index()` test nor
+# the printed replacement — the branch silently fell through to `{print}` for every line, reporting
+# "amended" while leaving the file byte-for-byte unchanged. MUTATION-PROOF: passing the values back
+# through `awk -v key=... newrow=...` instead of `ENVIRON[]` reproduces the stale, unchanged row. --
+hist_escape="$SANDBOX/hist-amend-escape.jsonl"
+printf '{"release":"v1\\nbad","date":"2026-01-01","pool_size":5}\n' > "$hist_escape"
+run "$pr" --record 'v1\nbad' --amend --history "$hist_escape" "$fone"
+check_contains "an amend on a release name containing a backslash escape still reports the correction" \
+  "$OUT" "amended"
+check_contains "MUTATION-PROOF: the row is genuinely rewritten (today's date, pool_size 1), not left stale (2026-01-01, 5)" \
+  "$(cat "$hist_escape")" "\"date\":\"$(date -u +%Y-%m-%d)\",\"pool_size\":1"
 
 # --- growth trigger: MUST NOT fire on today's real BACKLOG.md baseline (dir #360's own
 # done-criterion) — insufficient recorded history is the correct reason it can't fire yet. -----
