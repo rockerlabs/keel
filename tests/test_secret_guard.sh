@@ -705,12 +705,13 @@ check_nofile "broken selftest → --global's staging dir has no secret-scan.sh" 
 isg_rb="$(mktemp -d "$SANDBOX/isg-rollback.XXXXXX")"
 cp "$isg" "$isg_rb/install-secret-guard.sh"
 mkdir -p "$isg_rb/secret-guard"
-cp "$REPO_ROOT/tools/secret-guard/pre-commit"   "$isg_rb/secret-guard/pre-commit"
-cp "$REPO_ROOT/tools/secret-guard/pre-push"     "$isg_rb/secret-guard/pre-push"
-cp "$REPO_ROOT/tools/secret-guard/range-lib.sh" "$isg_rb/secret-guard/range-lib.sh"
+for f in pre-commit pre-push range-lib.sh; do
+  cp "$REPO_ROOT/tools/secret-guard/$f" "$isg_rb/secret-guard/$f"
+  chmod +x "$isg_rb/secret-guard/$f"
+done
 rb_scan="$isg_rb/secret-guard/secret-scan.sh"
 printf '#!/nonexistent/not-a-real-interpreter\necho "selftest: OK (stub, bash-interpreted only)"\nexit 0\n' > "$rb_scan"
-chmod +x "$rb_scan" "$isg_rb/secret-guard/pre-commit" "$isg_rb/secret-guard/pre-push" "$isg_rb/secret-guard/range-lib.sh"
+chmod +x "$rb_scan"
 
 # confidence check on the stub's own two-faced behavior first, so a fixture bug can't masquerade as
 # the rollback code working
@@ -725,10 +726,9 @@ run bash "$isg_rb/install-secret-guard.sh" "$rbrepo"
 check_status "post-copy-only failure → exit 4" 4 "$STATUS"
 check_contains "rollback names the installed copy" "$OUT" "INSTALLED copy"
 check_contains "rollback confirms the destination is back to how it was" "$OUT" "rolled back"
-check_nofile "post-copy rollback → no secret-scan.sh left in the repo" "$rbrepo/.git/hooks/secret-scan.sh"
-check_nofile "post-copy rollback → no pre-commit left in the repo" "$rbrepo/.git/hooks/pre-commit"
-check_nofile "post-copy rollback → no pre-push left in the repo" "$rbrepo/.git/hooks/pre-push"
-check_nofile "post-copy rollback → no range-lib.sh left in the repo" "$rbrepo/.git/hooks/range-lib.sh"
+for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
+  check_nofile "post-copy rollback → no $f left in the repo" "$rbrepo/.git/hooks/$f"
+done
 check_nofile "post-copy rollback → no .secret-scan-allow seed written" "$rbrepo/.secret-scan-allow"
 check_absent "post-copy rollback → no 'vendored into' confirmation printed" "$OUT" "vendored into"
 
@@ -743,8 +743,35 @@ check_status "post-copy-only failure with --force → exit 4" 4 "$STATUS"
 check_contains "foreign pre-commit restored verbatim after rollback" \
   "$(cat "$rbforeign/.git/hooks/pre-commit")" "my own pre-commit, pre-dating this install"
 check_nofile "rollback removes the backup after restoring it" "$rbforeign/.git/hooks/pre-commit.pre-keel.bak"
-check_nofile "post-copy rollback (--force case) → no secret-scan.sh left" "$rbforeign/.git/hooks/secret-scan.sh"
-check_nofile "post-copy rollback (--force case) → no pre-push left" "$rbforeign/.git/hooks/pre-push"
+for f in secret-scan.sh pre-push; do
+  check_nofile "post-copy rollback (--force case) → no $f left" "$rbforeign/.git/hooks/$f"
+done
+
+# --- dir #570 (simplify pass, altitude finding): rollback covers a cp failure MID-COPY too, not just
+# the post-copy verify — otherwise a destination-specific failure that trips on the copy itself (disk
+# full, a permission quirk on $hooks_dir) would still exit under set -e with no rollback, leaving the
+# exact half-wired state this ticket exists to close. A genuinely valid source with range-lib.sh
+# missing makes the LAST of the four cp's fail, after three files are already in place — the source
+# selftest above it stays real (byte-identical to the shipped files) so this exercises only the cp
+# failure, nothing selftest-related.
+isg_cpfail="$(mktemp -d "$SANDBOX/isg-cpfail.XXXXXX")"
+cp "$isg" "$isg_cpfail/install-secret-guard.sh"
+mkdir -p "$isg_cpfail/secret-guard"
+for f in secret-scan.sh pre-commit pre-push; do
+  cp "$REPO_ROOT/tools/secret-guard/$f" "$isg_cpfail/secret-guard/$f"
+  chmod +x "$isg_cpfail/secret-guard/$f"
+done
+# range-lib.sh deliberately absent — the 4th cp targets a source file that doesn't exist
+
+cpfrepo="$(new_repo)"
+run bash "$isg_cpfail/install-secret-guard.sh" "$cpfrepo"
+check_ne "a mid-copy cp failure → refuses (non-zero exit)" 0 "$STATUS"
+check_contains "names the file it failed to copy" "$OUT" "range-lib.sh"
+check_contains "rolls back the files copied before the failure" "$OUT" "rolled back"
+for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
+  check_nofile "mid-copy rollback → no $f left in the repo" "$cpfrepo/.git/hooks/$f"
+done
+check_nofile "mid-copy rollback → no .secret-scan-allow seed written" "$cpfrepo/.secret-scan-allow"
 
 # --- the INSTALLED pre-push hook actually runs end-to-end, not just secret-scan.sh's own --selftest:
 # install used to vendor pre-push without its range-lib.sh dependency, so every real push through a

@@ -32,6 +32,23 @@ for a in "$@"; do
 done
 set -- ${rest:+"$rest"}
 
+# dir #570: undo exactly what one install_into() run placed — never a hook a different run or the
+# user left behind — and exit non-zero, so "either fully wired or untouched" holds no matter WHICH
+# step in install_into's copy/verify span failed (a cp, a chmod, or the post-copy selftest). One
+# shared helper, called from every failure point below, instead of duplicating the rollback loop at
+# each one: args are hooks_dir, the copied-files list, the backed-up-hooks list, a one-line reason,
+# and an optional detail block (e.g. a failed selftest's own output) to print indented under it.
+_isg_rollback() {
+  local hooks_dir="$1" copied="$2" backed_up="$3" reason="$4" detail="${5:-}" f
+  echo "secret-guard: $reason — rolling back" >&2
+  [ -n "$detail" ] && echo "$detail" | sed 's/^/  /' >&2
+  for f in $copied; do rm -f "$hooks_dir/$f"; done
+  # Restore ONLY hooks this run itself backed up — never a hook a different run or the user placed.
+  for f in $backed_up; do mv -f "$hooks_dir/$f.pre-keel.bak" "$hooks_dir/$f"; done
+  echo "secret-guard: rolled back — $hooks_dir left as it was before this run" >&2
+  exit 4
+}
+
 install_into() {
   local hooks_dir="$1" h t
   # Verify the SOURCE before touching $hooks_dir at all (dir #250, "second defect" — see CHANGELOG.md
@@ -49,10 +66,11 @@ install_into() {
   bash "$src/secret-scan.sh" --selftest | sed 's/^/  /'
   mkdir -p "$hooks_dir"
 
-  # Track exactly what THIS run places, so a post-copy verification failure below can roll back only
-  # what it put there — never a hook some earlier run (or the user) left behind (dir #570, lead #1).
-  # Space-separated lists, not arrays: busybox/bash-3.2-safe under `set -u`, matching the top-level
-  # arg-parsing above (an empty array expansion crashes on bash <4.4 — keel memory, dir #235-adjacent).
+  # Track exactly what THIS run places, so a failure anywhere below — a cp, a chmod, or the post-copy
+  # verify — can roll back only what it put there, never a hook some earlier run (or the user) left
+  # behind (dir #570, lead #1). Space-separated lists, not arrays: busybox/bash-3.2-safe under
+  # `set -u`, matching the top-level arg-parsing above (an empty array expansion crashes on bash
+  # <4.4 — keel memory, dir #235-adjacent).
   local copied="" backed_up=""
 
   # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
@@ -73,11 +91,21 @@ install_into() {
       fi
     fi
   done
-  cp "$src/secret-scan.sh" "$hooks_dir/secret-scan.sh"; copied="$copied secret-scan.sh"
-  cp "$src/pre-commit"     "$hooks_dir/pre-commit";     copied="$copied pre-commit"
-  cp "$src/pre-push"       "$hooks_dir/pre-push";       copied="$copied pre-push"
-  cp "$src/range-lib.sh"   "$hooks_dir/range-lib.sh";   copied="$copied range-lib.sh"  # pre-push sources this next to itself
-  chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
+  # "Either fully wired or untouched" has to hold against a destination-specific failure ANYWHERE in
+  # this span, not just the post-copy verify below (dir #570, altitude review) — a `cp`/`chmod` that
+  # fails partway through (disk full, a permission/SELinux quirk on $hooks_dir itself) is the identical
+  # half-wired shape dir #250 already closed for the pre-copy source check, so every step here is
+  # checked and rolls back the same way on failure, via the one shared helper below.
+  cp "$src/secret-scan.sh" "$hooks_dir/secret-scan.sh" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "failed to copy secret-scan.sh into $hooks_dir"
+  copied="$copied secret-scan.sh"
+  cp "$src/pre-commit" "$hooks_dir/pre-commit" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "failed to copy pre-commit into $hooks_dir"
+  copied="$copied pre-commit"
+  cp "$src/pre-push" "$hooks_dir/pre-push" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "failed to copy pre-push into $hooks_dir"
+  copied="$copied pre-push"
+  cp "$src/range-lib.sh" "$hooks_dir/range-lib.sh" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "failed to copy range-lib.sh into $hooks_dir"  # pre-push sources this next to itself
+  copied="$copied range-lib.sh"
+  chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push" || \
+    _isg_rollback "$hooks_dir" "$copied" "$backed_up" "failed to make the installed copy executable"
 
   # Verify the INSTALLED copy too (dir #570): the source check above is a PROXY — it can pass while
   # the copy at $hooks_dir still fails for a reason specific to THAT destination (a noexec mount, a
@@ -88,16 +116,10 @@ install_into() {
   # exec (this file's own pre-commit/pre-push call `secret-scan.sh` the same way, not through `bash`),
   # so verifying the installed copy the same way — direct exec — is what actually reaches a noexec
   # mount or a lost/blocked execute bit; `bash`-mediated verification structurally cannot.
-  local verify_err="" verify_ok=0
-  verify_err="$("$hooks_dir/secret-scan.sh" --selftest 2>&1)" && verify_ok=1 || verify_ok=0
-  if [ "$verify_ok" != 1 ]; then
-    echo "secret-guard: the INSTALLED copy at $hooks_dir failed its post-copy selftest — rolling back" >&2
-    [ -n "$verify_err" ] && echo "$verify_err" | sed 's/^/  /' >&2
-    for h in $copied; do rm -f "$hooks_dir/$h"; done
-    # Restore ONLY hooks this run itself backed up — never a hook a different run or the user placed.
-    for h in $backed_up; do mv -f "$hooks_dir/$h.pre-keel.bak" "$hooks_dir/$h"; done
-    echo "secret-guard: rolled back — $hooks_dir left as it was before this run" >&2
-    exit 4
+  local verify_err=""
+  if ! verify_err="$("$hooks_dir/secret-scan.sh" --selftest 2>&1)"; then
+    _isg_rollback "$hooks_dir" "$copied" "$backed_up" \
+      "the INSTALLED copy at $hooks_dir failed its post-copy selftest" "$verify_err"
   fi
 }
 
