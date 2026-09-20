@@ -149,6 +149,25 @@ sections real content going forward — see that page for exactly when each one 
   the expected string — 5 false GAPs, reproduced live on unmodified origin/main. Fixed with
   `-c color.grep=never` on the two `git grep -l` call sites; a sweep of the rest of
   `tools/self/*.sh` found no other bare-`git grep -l`-then-compare call sites.
+- **`pre-push` and `secret-scan.sh` stated a false remote-reachability invariant as the safety
+  rationale for `SECRET_SCAN_LOCAL_PUSH`, at three loci** (dir #569): each said the whole pushed
+  range is, by construction, not yet reachable from any remote-tracking ref — false for interior
+  commits a `git merge origin/main` brings into the range (dir #518's own fix scenario), even though
+  the code's actual security property (an attacker's newly-pushed commit can never retroactively
+  become "already known") holds regardless. Comment-only: all three loci now name the real asymmetry
+  instead — the range's own newly-introduced tip is never yet remote-reachable, while interior
+  commits merged in commonly already are, and that asymmetry is what the `--not --remotes` widening
+  relies on.
+- **`tools/install-secret-guard.sh`'s `install_into` now verifies the INSTALLED copy, not just the
+  vendored source, and rolls back on failure** (dir #570): the dir #250 pre-copy `--selftest` check
+  is a proxy — it can pass while the copy at `$hooks_dir` still fails for a reason specific to that
+  destination (a noexec mount, a permission/SELinux quirk). `install_into` now also runs the
+  installed copy's own `--selftest`, by DIRECT execution — matching how git itself invokes an
+  installed hook, unlike the source check's deliberately `bash`-mediated run — so a lost execute bit
+  or a noexec mount is actually caught; on failure it rolls back exactly what that run placed
+  (removing its own just-copied files, restoring any foreign hook it had backed up to
+  `.pre-keel.bak`), so a destination-specific failure leaves `$hooks_dir` either fully wired or
+  untouched, same as a source-selftest failure already did.
 
 ## [0.10.2] — 2026-09-19
 

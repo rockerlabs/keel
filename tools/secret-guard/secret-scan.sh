@@ -42,8 +42,9 @@
 # SECRET_SCAN_LOCAL_PUSH=1 (env, --range only): set ONLY by the LOCAL pre-push hook (tools/secret-
 #   guard/pre-push), NEVER by ci-scan.sh — tells the --range allowlist-baseline resolution it is safe
 #   to also trust content already reachable via a remote-tracking ref (dir #518). Safe only pre-push,
-#   where the pushed commits are not yet reachable from any local remote-tracking ref by construction;
-#   unsafe post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
+#   where the range's own newly-introduced tip is not yet reachable from any local remote-tracking ref
+#   by construction (interior commits brought in by a merge commonly already are — dir #569); unsafe
+#   post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
 #
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
@@ -731,10 +732,12 @@ esac
 # live: appending `--not --remotes` there doesn't just tighten the boundary, it excludes the tip itself
 # from the walk entirely, collapsing EVERY ordinary CI scan's baseline to nothing and fail-closing every
 # pre-existing allowlist entry on every push, not just the merge case this was meant to fix). The local
-# hook is the one caller where this is actually safe: it runs BEFORE the push transfers, so nothing in
-# $rng can yet be reachable from a remote-tracking ref by construction — an attacker's own newly-pushed
-# commit can never retroactively become "already known" this way, preserving the same-change security
-# property regardless of which branch of this `if` runs. Without the flag (ci-scan.sh, `--selftest`, a
+# hook is the one caller where this is actually safe: it runs BEFORE the push transfers, so the
+# range's own newly-introduced tip cannot yet be reachable from a remote-tracking ref by construction
+# — interior commits merged in via `git merge origin/main` commonly already are, and it is that
+# asymmetry `--not --remotes` above relies on. An attacker's own newly-pushed commit can never
+# retroactively become "already known" this way, preserving the same-change security property
+# regardless of which branch of this `if` runs (dir #569). Without the flag (ci-scan.sh, `--selftest`, a
 # human running `--range` by hand), the union falls back to the THIRD gap's own plain-boundary behavior
 # above — narrower, but exactly as safe as it was before this fourth gap was found.
 #

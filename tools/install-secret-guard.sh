@@ -43,12 +43,18 @@ install_into() {
   # a `bash` invocation doesn't depend on that bit surviving whatever got this file onto disk (a
   # non-mode-preserving archive extraction, e.g.) — the OLD code never had this dependency either,
   # since it ran the selftest against the DESTINATION only after `chmod +x`ing it (code review, dir #250).
-  # Residual, deliberately out of scope: this checks $src, not the eventual $hooks_dir copy, so it
-  # can't catch a destination-specific failure (a noexec mount, a permission quirk unique to
-  # $hooks_dir) that a post-copy check would — closing that needs a copy+verify+rollback-on-failure
-  # redesign, a larger change than this ticket's ordering fix; tracked as a follow-up.
+  # This checks $src, not the eventual $hooks_dir copy, so on its own it can't catch a destination-
+  # specific failure (a noexec mount, a permission/SELinux quirk unique to $hooks_dir) — dir #570 below
+  # closes that residual with its own, differently-shaped check on the installed copy.
   bash "$src/secret-scan.sh" --selftest | sed 's/^/  /'
   mkdir -p "$hooks_dir"
+
+  # Track exactly what THIS run places, so a post-copy verification failure below can roll back only
+  # what it put there — never a hook some earlier run (or the user) left behind (dir #570, lead #1).
+  # Space-separated lists, not arrays: busybox/bash-3.2-safe under `set -u`, matching the top-level
+  # arg-parsing above (an empty array expansion crashes on bash <4.4 — keel memory, dir #235-adjacent).
+  local copied="" backed_up=""
+
   # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
   # pre-push without it is the user's data (higher precedence than our default), so refuse and explain.
   # --force backs it up to <hook>.pre-keel.bak, then replaces. (Closes SEC1's pre-commit clobber.)
@@ -57,6 +63,7 @@ install_into() {
     if [ -e "$t" ] && ! grep -qi 'Keel secret-guard' "$t" 2>/dev/null; then
       if [ "$force" = 1 ]; then
         cp "$t" "$t.pre-keel.bak"
+        backed_up="$backed_up $h"
         echo "secret-guard: backed up your existing $h → $h.pre-keel.bak (--force)" >&2
       else
         echo "secret-guard: $t exists and is not a Keel hook — refusing to overwrite your data." >&2
@@ -66,11 +73,32 @@ install_into() {
       fi
     fi
   done
-  cp "$src/secret-scan.sh" "$hooks_dir/secret-scan.sh"
-  cp "$src/pre-commit"     "$hooks_dir/pre-commit"
-  cp "$src/pre-push"       "$hooks_dir/pre-push"
-  cp "$src/range-lib.sh"   "$hooks_dir/range-lib.sh"     # pre-push sources this next to itself
+  cp "$src/secret-scan.sh" "$hooks_dir/secret-scan.sh"; copied="$copied secret-scan.sh"
+  cp "$src/pre-commit"     "$hooks_dir/pre-commit";     copied="$copied pre-commit"
+  cp "$src/pre-push"       "$hooks_dir/pre-push";       copied="$copied pre-push"
+  cp "$src/range-lib.sh"   "$hooks_dir/range-lib.sh";   copied="$copied range-lib.sh"  # pre-push sources this next to itself
   chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
+
+  # Verify the INSTALLED copy too (dir #570): the source check above is a PROXY — it can pass while
+  # the copy at $hooks_dir still fails for a reason specific to THAT destination (a noexec mount, a
+  # permission/SELinux quirk). Deliberately NOT `bash "$hooks_dir/secret-scan.sh" --selftest` here —
+  # that would re-run the same proxy check one directory over: `bash file` reads the file as a script
+  # argument and never execs it, so it neither depends on the x bit nor on the filesystem permitting
+  # exec, which is exactly what a noexec mount blocks. Git itself invokes an installed hook by DIRECT
+  # exec (this file's own pre-commit/pre-push call `secret-scan.sh` the same way, not through `bash`),
+  # so verifying the installed copy the same way — direct exec — is what actually reaches a noexec
+  # mount or a lost/blocked execute bit; `bash`-mediated verification structurally cannot.
+  local verify_err="" verify_ok=0
+  verify_err="$("$hooks_dir/secret-scan.sh" --selftest 2>&1)" && verify_ok=1 || verify_ok=0
+  if [ "$verify_ok" != 1 ]; then
+    echo "secret-guard: the INSTALLED copy at $hooks_dir failed its post-copy selftest — rolling back" >&2
+    [ -n "$verify_err" ] && echo "$verify_err" | sed 's/^/  /' >&2
+    for h in $copied; do rm -f "$hooks_dir/$h"; done
+    # Restore ONLY hooks this run itself backed up — never a hook a different run or the user placed.
+    for h in $backed_up; do mv -f "$hooks_dir/$h.pre-keel.bak" "$hooks_dir/$h"; done
+    echo "secret-guard: rolled back — $hooks_dir left as it was before this run" >&2
+    exit 4
+  fi
 }
 
 case "${1:-}" in

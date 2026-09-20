@@ -694,6 +694,58 @@ still_unset="$(env "${gbroken_env[@]}" git config --global core.hooksPath 2>/dev
 check_status "broken selftest → --global leaves core.hooksPath unset" "" "$still_unset"
 check_nofile "broken selftest → --global's staging dir has no secret-scan.sh" "$gbroken_home/.config/git/keel-hooks/secret-scan.sh"
 
+# --- dir #570: the SOURCE selftest above is a PROXY — it can't catch a failure specific to the
+# INSTALLED copy (a noexec mount, a permission/SELinux quirk unique to $hooks_dir). Simulate exactly
+# that shape: a stub secret-scan.sh whose shebang names a nonexistent interpreter. Invoked via `bash
+# file` (how the pre-copy check runs it, and how install_into's post-copy check deliberately does NOT
+# run it — see its own comment) the shebang line is just a comment and the stub passes; invoked by
+# DIRECT exec (how git itself runs an installed hook, and how the post-copy check runs it on purpose)
+# the kernel tries to exec the missing interpreter and fails — a genuine post-copy-only failure, no
+# root or real noexec mount needed to reproduce it.
+isg_rb="$(mktemp -d "$SANDBOX/isg-rollback.XXXXXX")"
+cp "$isg" "$isg_rb/install-secret-guard.sh"
+mkdir -p "$isg_rb/secret-guard"
+cp "$REPO_ROOT/tools/secret-guard/pre-commit"   "$isg_rb/secret-guard/pre-commit"
+cp "$REPO_ROOT/tools/secret-guard/pre-push"     "$isg_rb/secret-guard/pre-push"
+cp "$REPO_ROOT/tools/secret-guard/range-lib.sh" "$isg_rb/secret-guard/range-lib.sh"
+rb_scan="$isg_rb/secret-guard/secret-scan.sh"
+printf '#!/nonexistent/not-a-real-interpreter\necho "selftest: OK (stub, bash-interpreted only)"\nexit 0\n' > "$rb_scan"
+chmod +x "$rb_scan" "$isg_rb/secret-guard/pre-commit" "$isg_rb/secret-guard/pre-push" "$isg_rb/secret-guard/range-lib.sh"
+
+# confidence check on the stub's own two-faced behavior first, so a fixture bug can't masquerade as
+# the rollback code working
+run bash "$rb_scan" --selftest
+check_status "rollback fixture: bash-interpreted stub passes" 0 "$STATUS"
+run "$rb_scan" --selftest
+check_ne "rollback fixture: directly-exec'd stub fails" 0 "$STATUS"
+
+# per-repo vendor, no pre-existing hooks → post-copy verify fails → full rollback, nothing left behind
+rbrepo="$(new_repo)"
+run bash "$isg_rb/install-secret-guard.sh" "$rbrepo"
+check_status "post-copy-only failure → exit 4" 4 "$STATUS"
+check_contains "rollback names the installed copy" "$OUT" "INSTALLED copy"
+check_contains "rollback confirms the destination is back to how it was" "$OUT" "rolled back"
+check_nofile "post-copy rollback → no secret-scan.sh left in the repo" "$rbrepo/.git/hooks/secret-scan.sh"
+check_nofile "post-copy rollback → no pre-commit left in the repo" "$rbrepo/.git/hooks/pre-commit"
+check_nofile "post-copy rollback → no pre-push left in the repo" "$rbrepo/.git/hooks/pre-push"
+check_nofile "post-copy rollback → no range-lib.sh left in the repo" "$rbrepo/.git/hooks/range-lib.sh"
+check_nofile "post-copy rollback → no .secret-scan-allow seed written" "$rbrepo/.secret-scan-allow"
+check_absent "post-copy rollback → no 'vendored into' confirmation printed" "$OUT" "vendored into"
+
+# per-repo vendor with --force over a FOREIGN pre-commit → post-copy verify fails → the foreign hook
+# is restored from its own backup, never left stranded as a dangling .pre-keel.bak (dir #570, lead #1)
+rbforeign="$(new_repo)"
+mkdir -p "$rbforeign/.git/hooks"
+printf '#!/bin/sh\n# my own pre-commit, pre-dating this install\nexit 0\n' > "$rbforeign/.git/hooks/pre-commit"
+chmod +x "$rbforeign/.git/hooks/pre-commit"
+run bash "$isg_rb/install-secret-guard.sh" --force "$rbforeign"
+check_status "post-copy-only failure with --force → exit 4" 4 "$STATUS"
+check_contains "foreign pre-commit restored verbatim after rollback" \
+  "$(cat "$rbforeign/.git/hooks/pre-commit")" "my own pre-commit, pre-dating this install"
+check_nofile "rollback removes the backup after restoring it" "$rbforeign/.git/hooks/pre-commit.pre-keel.bak"
+check_nofile "post-copy rollback (--force case) → no secret-scan.sh left" "$rbforeign/.git/hooks/secret-scan.sh"
+check_nofile "post-copy rollback (--force case) → no pre-push left" "$rbforeign/.git/hooks/pre-push"
+
 # --- the INSTALLED pre-push hook actually runs end-to-end, not just secret-scan.sh's own --selftest:
 # install used to vendor pre-push without its range-lib.sh dependency, so every real push through a
 # freshly installed hook crashed on a missing sourced file, not just ones containing a secret --------
