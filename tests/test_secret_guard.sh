@@ -773,6 +773,39 @@ for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
 done
 check_nofile "mid-copy rollback → no .secret-scan-allow seed written" "$cpfrepo/.secret-scan-allow"
 
+# --- dir #570 (code review finding): re-vendoring over an ALREADY-INSTALLED Keel hook, then failing
+# later in the same run, must restore the still-working hook — not delete it and leave the repo with
+# NO hook at all. A real, successful install first (genuine files, real selftest) so the repo carries
+# a real Keel-marked pre-commit/pre-push; then a re-install using the post-copy-failing rollback stub
+# (isg_rb, built above) overwrites them and fails, and the ORIGINAL install must come back.
+uprepo="$(new_repo)"
+run bash "$isg" "$uprepo"
+check_status "genuine first install → exit 0" 0 "$STATUS"
+orig_pre_commit="$(cat "$uprepo/.git/hooks/pre-commit")"
+orig_pre_push="$(cat "$uprepo/.git/hooks/pre-push")"
+
+run bash "$isg_rb/install-secret-guard.sh" "$uprepo"
+check_status "re-vendor over an existing Keel hook, then a post-copy failure → exit 4" 4 "$STATUS"
+check_file "pre-commit still exists — the pre-fix bug deleted it outright" "$uprepo/.git/hooks/pre-commit"
+check_file "pre-push still exists — the pre-fix bug deleted it outright" "$uprepo/.git/hooks/pre-push"
+check_status "the original pre-commit is restored, byte-for-byte" \
+  "$orig_pre_commit" "$(cat "$uprepo/.git/hooks/pre-commit")"
+check_status "the original pre-push is restored, byte-for-byte" \
+  "$orig_pre_push" "$(cat "$uprepo/.git/hooks/pre-push")"
+check_contains "the restored pre-commit still carries the Keel marker" \
+  "$(cat "$uprepo/.git/hooks/pre-commit")" "Keel secret-guard"
+check_nofile "no stray backup left behind after the restore" "$uprepo/.git/hooks/pre-commit.pre-keel.bak"
+check_nofile "no stray backup left behind after the restore (pre-push)" "$uprepo/.git/hooks/pre-push.pre-keel.bak"
+# The still-working ORIGINAL hook actually still runs end-to-end after the restore, not just present
+# as bytes — a real push through it must still block a real secret.
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$uprepo/root.txt"
+git -C "$uprepo" add root.txt
+git -C "$uprepo" commit -qm root --no-verify
+usha="$(git -C "$uprepo" rev-parse HEAD)"
+OUT="$(cd "$uprepo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$usha" "$(rep 0 40)" | bash .git/hooks/pre-push 2>&1)"; STATUS=$?
+check_status "the RESTORED pre-push hook still blocks a real secret" 1 "$STATUS"
+check_contains "restored hook reports BLOCKED, not a missing-dependency crash" "$OUT" "BLOCKED"
+
 # --- the INSTALLED pre-push hook actually runs end-to-end, not just secret-scan.sh's own --selftest:
 # install used to vendor pre-push without its range-lib.sh dependency, so every real push through a
 # freshly installed hook crashed on a missing sourced file, not just ones containing a secret --------
