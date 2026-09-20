@@ -346,9 +346,21 @@ if [ -n "$record_release" ]; then
       # rows the trigger compares against next run. Substitute the row IN PLACE instead (one `awk`
       # pass, matched on the same $release_key the exists-check above already computed) — every
       # other row's position, and this row's own, stay exactly where they were.
+      #
+      # code-review medium, delta round (found live, reproduced): passing $release_key/$new_row
+      # through `awk -v` runs them through awk's own STRING-LITERAL escape processing (POSIX: a
+      # `-v var=value` assignment is interpreted as if `value` were a string token in the awk
+      # program) — a release name containing a backslash escape sequence (`\n`, `\t`, ...) then
+      # matches the file's raw text at neither the `index()` test NOR the printed replacement, so
+      # the branch silently falls through to `{print}` for every line and reports "amended" while
+      # the file is byte-for-byte unchanged. `ENVIRON[]` values come from the process environment,
+      # never through awk's string-token parser, so they carry no such processing — pass both
+      # values that way instead of via `-v`.
       amend_tmp="$(mktemp "${history_file}.XXXXXX")"
-      awk -v key="$release_key" -v newrow="$new_row" \
-        'index($0, key) { print newrow; next } { print }' "$history_file" > "$amend_tmp"
+      POOL_REPORT_AMEND_KEY="$release_key" POOL_REPORT_AMEND_ROW="$new_row" awk '
+        index($0, ENVIRON["POOL_REPORT_AMEND_KEY"]) { print ENVIRON["POOL_REPORT_AMEND_ROW"]; next }
+        { print }
+      ' "$history_file" > "$amend_tmp"
       mv "$amend_tmp" "$history_file"
       echo "  history:                        amended ($history_file)"
     else

@@ -272,6 +272,20 @@ run "$pr" --record relD --history "$hist_pos" "$fgrowpos"
 check_absent "MUTATION-PROOF: an in-place amend of a non-last release does not corrupt the growth trigger's positional read (no spurious WARN)" \
   "$OUT" "WARN"
 
+# --- code-review medium, delta round (found live, reproduced): passing the release key/new row
+# through `awk -v` runs them through awk's own STRING-LITERAL escape processing, so a release name
+# containing a backslash escape sequence (`\n`, `\t`, ...) matched neither the `index()` test nor
+# the printed replacement — the branch silently fell through to `{print}` for every line, reporting
+# "amended" while leaving the file byte-for-byte unchanged. MUTATION-PROOF: passing the values back
+# through `awk -v key=... newrow=...` instead of `ENVIRON[]` reproduces the stale, unchanged row. --
+hist_escape="$SANDBOX/hist-amend-escape.jsonl"
+printf '{"release":"v1\\nbad","date":"2026-01-01","pool_size":5}\n' > "$hist_escape"
+run "$pr" --record 'v1\nbad' --amend --history "$hist_escape" "$fone"
+check_contains "an amend on a release name containing a backslash escape still reports the correction" \
+  "$OUT" "amended"
+check_contains "MUTATION-PROOF: the row is genuinely rewritten (today's date, pool_size 1), not left stale (2026-01-01, 5)" \
+  "$(cat "$hist_escape")" "\"date\":\"$(date -u +%Y-%m-%d)\",\"pool_size\":1"
+
 # --- growth trigger: MUST NOT fire on today's real BACKLOG.md baseline (dir #360's own
 # done-criterion) — insufficient recorded history is the correct reason it can't fire yet. -----
 if [ -f "$REPO_ROOT/BACKLOG.md" ]; then
