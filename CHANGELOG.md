@@ -75,6 +75,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
+  apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
+  repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
+  handed to a third party, since `.gitignore` names the tooling and ships inside `git archive` —
+  GAPped forever, a false alarm the reader learns to skim. The check now runs `git check-ignore`,
+  which honours `.gitignore`, `info/exclude` and the global excludes alike. And a TRACKED `CLAUDE.md`
+  was a `say` note hidden by `--quiet`, i.e. a delegating caller saw `OK` over context already in
+  the index — the one outcome an ignore rule cannot undo. It is now `W-CLAUDEMD-TRACKED`, a WARN a
+  deliberate public fork accepts once per repo through `.keel/doctor-accept`; an accidental commit
+  gets the `git rm --cached` + ignore instruction on the line itself. The AGENTS.md block's own
+  "tracked — deliberate public fork" `say` note is gone with it: `G-AGENTSMD-INHERIT` already pins
+  AGENTS.md's status to CLAUDE.md's, so the one WARN speaks for both files. The two git questions
+  (`_tracked`, `_ignored`) now live in one place, shared by every context check in the file.
 - **`tools/self/prose-drift.sh` — three defects, one editing pass** (dir #240): a non-git `REPO_DIR`
   now fails with a labeled exit-2 error instead of reaching `git ls-files` and aborting raw
   (`fatal: not a git repository`) — decided by correcting the header's stale "test-sandbox friendly"
@@ -184,6 +197,33 @@ sections real content going forward — see that page for exactly when each one 
   producing a well-formed but bogus citation. The prefilter now runs `git grep -I`, which skips a
   binary file outright via git's own platform-independent NUL-sniffing, before it ever reaches the
   awk pass. Verified with fixtures built inside each of macOS/bash and the alpine CI leg.
+- **`tools/secret-guard/ci-scan.sh`'s force-push fallback now resolves a principled allowlist baseline
+  instead of always failing closed** (dir #572): an orphaned `before` sha degraded straight to a bare
+  full-history scan, which leaves `git rev-list --boundary` no exclusion side at all, so
+  `secret-scan.sh`'s dir #518 baseline resolution found ZERO boundary commits and every genuinely
+  pre-existing `.secret-scan-allow` entry read as new-this-push — blocking a push the allowlist was
+  written to exempt, with nothing the operator could do about it. The degrade is now three steps, most
+  principled first: fetch the orphaned `before` by sha from origin (a forge keeps force-pushed-away
+  objects servable until it gc's them — this mechanism was verified over the real upload-pack path,
+  file:// transport rather than a hardlinked local clone, on git 2.43/2.47/2.52; that is necessary
+  evidence that modern git's own fetch/cat-file plumbing behaves this way, but not sufficient evidence
+  that every forge's server-side policy also serves an object unreferenced by any ref by explicit sha —
+  a documented, not silent, residual assumption: if it doesn't hold on a given forge, this step simply
+  fails and falls through to the next one, so the fail-closed guarantee is unaffected either way), which
+  recovers the TRUE pre-push tip and makes the scan an ordinary `before..after`; failing that, an
+  explicit `SECRET_SCAN_CI_FORCE_PUSH_BASELINE` the operator sets deliberately, logged loudly, also
+  fetched by sha from origin if not already local (the identical "servable until gc'd" property applies
+  to whatever rev the operator names, not only the auto-detected `before`); failing both, the original
+  full-history scan, which still BLOCKS and whose message now names the hatch. Whichever baseline is
+  chosen in the first two steps is refused as a config error (exit 2) unless the pushed head is NOT
+  already reachable from it — `git rev-list X..Y` is empty exactly when `Y` is reachable from `X`, so
+  this is one `git merge-base --is-ancestor` check rather than a narrower equality compare (an
+  in-session high-effort review, confirmed live: the equality-only guard an earlier draft of this fix
+  shipped with caught only a hatch pasting the pushed head itself, not the broader case of a baseline
+  that is any DESCENDANT of the pushed head at all — reachable via an operator hatch naming a
+  too-recent commit, or, more severely, via the auto-recovered `before` itself on a rollback-style
+  force-push, a path the earlier draft left with no guard whatsoever). `.github/workflows/ci.yml`'s own
+  secret-scan step documents the hatch where an operator editing the workflow will find it.
 
 ## [0.10.2] — 2026-09-19
 
