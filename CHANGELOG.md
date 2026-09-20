@@ -24,6 +24,14 @@ sections real content going forward — see that page for exactly when each one 
   predicate), never from the session's own say-so — `tools/pre-pr-gate.sh` still matches the earlier
   trace at that level instead of denying. A partly-null fix, or one touching any non-`.sh` file, gets
   no exception and needs a fresh trace exactly as before.
+- **`tools/self/backlog-census.sh`** (dir #496): the shipped remover for three-and-a-half of
+  `docs/grooming.md` G3's four hand-derivation rules — last-arrow release tag
+  (`pool`/`next`/`on-demand`/`N.N[.N]` only, a grade re-tag arrow excluded by the restricted
+  vocabulary, a foreign citation's tag stripped via the shared `bb_strip_foreign_citations`),
+  closure via the shared, citation-aware predicate at a fixed marker position, `untagged` for
+  anything else. `--list TAG` prints ticket numbers in file order, version-tag-aware in the
+  default report's own tie-break. G3 and `commands/groom.md`'s G3 line now point at it; the
+  overloaded-status-glyph half of G3's fourth rule stays a manual check (no scanner resolves it).
 
 ### Changed
 
@@ -86,6 +94,23 @@ sections real content going forward — see that page for exactly when each one 
   markers are now stripped bare (content kept, not blanked the way a backtick span is) before
   extraction — both Markdown bold forms, `**text**` and `__text__`, in one pass, since they are the same
   defect shape; five previously machine-invisible tickets in the `[0.10.1]` paragraph are now extracted.
+- **`tools/read-trace.sh` — the wrap-fuse's `wrapped` outcome no longer hangs on a model-remembered
+  step** (dir #523): `commands/wrap.md`'s persist step folds the completion stamp into the SAME call
+  it already makes for its report line (`docs-line --wrap`), instead of a separate, easily-dropped
+  `wrap-done` call — the fuse had read 0-2 `wrapped` rows across cycles that demonstrably persisted.
+  Wrap-fuse events are now keyed by session id, not (repo,branch): a worktree reused across two
+  different sessions writes two distinctly-labeled rows, and `aggregate` dedupes a real session id by
+  its last recorded outcome (never a legacy (repo,branch)-shaped key, so an installation's pre-#523
+  history stays counted exactly as before), so a duplicate `SessionEnd` fire for one session no longer
+  inflates the denominator either. (The underlying wrapped/not-wrapped *signal* two sessions on the
+  same worktree read — the mutation log and the wrap-done stamp `docs-line --wrap` writes — stays
+  (repo,branch)-scoped, a pre-existing, documented limitation this ticket narrows the symptom of but
+  does not remove; only the row's own label and the aggregate count are now session-accurate.) The
+  `DELEGATION RUN`/`WRAP CENTRALIZED` exclusion now scans the transcript's first few user-role turns,
+  one JSONL record at a time so one malformed/truncated line can't silently defeat the rest of the
+  scan, instead of a single-pass `head -c 8000` byte scan — a chip-launched worker's own brief, read
+  from a file the chip names, can arrive well past that byte window (reproduced live: over 258,000
+  bytes for this ticket's own transcript), which had misread every such worker as a forgotten wrap.
 
 ## [0.10.2] — 2026-09-19
 
