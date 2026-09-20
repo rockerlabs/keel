@@ -307,13 +307,17 @@ and this doc adds only the route: a worker's memory-worthy finding rides in its 
 both were good, and no brief had said where they go.
 
 **The marker's WORD is part of the contract, not the writer's choice (applied 2026-09-20).** The
-backlog's mechanisms read a fixed closure vocabulary (keel: `tools/lib/backlog-blocks.sh`'s closure
-constant), not the glyph alone — the 0.10.2 close wrote `✅ FIXED` on all seventeen fixed headings and
-every consumer read them as still open. Write a word the scanner already recognises (keel today:
-`✅ DONE` or `✅ CLOSED`) or widen the scanner in the same PR; never mint one at the close. A
-remembered spelling rule is the compensation; its remover is `dir #581` — the scanner learns `FIXED`
-AND the closing write is checked against the constant, so the next unlisted word is refused at write
-time rather than discovered by the next census.
+backlog's mechanisms read a fixed closure vocabulary, not the glyph alone — the 0.10.2 close wrote
+`✅ FIXED` on all seventeen fixed headings and every consumer read them as still open. Write a word
+the scanner already recognises — read the vocabulary from the scanner's own constant (keel:
+`tools/lib/backlog-blocks.sh`'s `BB_CLOSURE_TAG_PATTERN`), never a second, hand-copied list here
+(`dir #166`'s sync-drift class: a copy goes stale the next time the scanner widens) — or widen the
+scanner in the same PR. `dir #581` is the remover: the scanner learns `FIXED`, and the closing write
+is checked against the constant at write time — before writing each closure marker, run
+`bash -c 'source tools/lib/backlog-blocks.sh; bb_closure_word_ok "✅ WORD (…)"'` on the exact text;
+a non-zero exit means the word is not recognised, and the manager either writes a recognised word or
+widens the constant in the same PR — so the next unlisted word is refused there rather than
+discovered by the next census.
 
 **This overrides a conforming `/go`'s own claim step.** `/go`'s own instructions have the worker write
 its own `⏳ IN FLIGHT` marker directly onto the ticket heading — correct in a standalone run, and a

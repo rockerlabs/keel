@@ -55,6 +55,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/lib/backlog-blocks.sh`'s closure vocabulary did not recognise `✅ FIXED`** (dir #581): the
+  0.10.2 release manager wrote it on all 17 fixed slate headings, and every consumer of the shared
+  scanner read them as still open. `BB_CLOSURE_TAG_PATTERN` now includes `FIXED`;
+  `docs/release-management.md` R8 points closing writers at the constant instead of a second,
+  hand-copied word list; and a new `bb_closure_word_ok` checks a candidate marker against the
+  constant at write time, so the next unlisted word is refused there rather than found by the next
+  census.
 - **`tools/self/doctor.sh` check 5's BACKLOG.md body scan stops crying wolf on a ticket that cites
   another ticket's closure or discusses the tagging convention** (dir #582): nine live false
   positives (dir #307, #368, #370, #372, #521, #522, #547, #558, #559) plus this ticket's own body,
