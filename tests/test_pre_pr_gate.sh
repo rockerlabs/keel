@@ -3192,4 +3192,389 @@ check_contains "dir #346: polish.5-review missing → names the bare-Agent-spawn
 check_contains "dir #491: polish.5-review missing → also carries the always-present chain-is-intact wording" "$OUT" "chain is intact"
 check_file "dir #376: polish.5-review missing → chain survives" "$(sentinel_for "$d")"
 
+# --- dir #488: a fix commit that is review-null (comment-only, no reviewable claim changed relative to
+# the last commit a real trace vouches for) does not require a fresh polish.5-review trace. Reuses dir
+# #123's tree-relevant-hash PRECEDENT (a mechanically-derived content class, never the session's own
+# say-so) for a DIFFERENT predicate — review relevance, not test relevance — via `_review_null_diff`/
+# `_review_exempt_sha` in tools/pre-pr-gate.sh. Every fixture below uses a BARE review outcome
+# ("medium"): the one case `trusted=0`, so the trace cross-check this ticket touches actually runs —
+# a `-operator-run`/`-waived`/`skip` outcome (already covered by tests 26-28 above) never reaches it.
+
+# 108. POSITIVE acceptance case (dir #488's own): a two-round branch where round 2's ONLY change is a
+# comment added to the reviewed file unlocks with the SAME single trace line round 1 wrote — no new
+# skill-trace invocation, no new AskUserQuestion, nothing but a fresh (never-recovered) polish.5-review
+# receipt naming the SAME level.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 setup: initial bare-level review, trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\n# a clarifying comment, nothing else changed\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "comment-only fix"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+# polish.3-tests/6-retest re-bound fresh to sha2 on purpose — dir #123's OWN exemption is `.md`-only,
+# so a changed `.sh` file (even comment-only) stays test-relevant; only REVIEW is exempt here, a
+# genuinely different predicate (dir #488's body: "a comment can carry a reviewable claim; a test
+# cannot" — the two mechanisms are deliberately not the same one).
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_status "dir #488: comment-only fix commit → unlocks with ONE review invocation total" 0 "$STATUS"
+check_absent "dir #488: unlocked, not denied" "$OUT" "deny"
+check_status "dir #488: the trace file still holds exactly the ONE line round 1 wrote (no re-invocation)" \
+  "1" "$(wc -l < "$tf" | tr -d ' ')"
+
+# 109. NEGATIVE acceptance case (dir #488's own mirror image): the fix commit changes one EXECUTABLE
+# line (not a comment) → the range is NOT review-null → still denies exactly as before this ticket.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 setup: initial bare-level review, trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\necho one-more-executable-line\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "real fix, one executable line"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488: a one-executable-line fix commit → STILL denied (no exemption)" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488: denied for the missing review trace, not silently exempted" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 110. A CHAIN of two review-null fix commits unlocks too — the exemption walks the whole range
+# trace-sha..HEAD as ONE diff, not commit by commit (dir #488's own lead #3): each hop is individually
+# comment-only, and the trace file never gains a second line across either round.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 setup: initial bare-level review, trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\n# note 1\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "comment-only fix 1"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_status "dir #488: chain step 1 (comment-only) → exit 0" 0 "$STATUS"
+
+printf 'echo build\n# note 1\n# note 2\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "comment-only fix 2"
+sha3="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha3"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha3"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha3"
+gate "gh pr create --fill" "$d"
+check_status "dir #488: chain step 2 (comment-only) → STILL unlocks, whole range still review-null" 0 "$STATUS"
+check_absent "dir #488: chain step 2 unlocked, not denied" "$OUT" "deny"
+check_status "dir #488: after TWO comment-only rounds the trace file still holds exactly ONE line" \
+  "1" "$(wc -l < "$tf" | tr -d ' ')"
+rm -f "$tf"
+
+# 111. dir #488 REGRESSION (found by this ticket's own high-effort review, three independent angles): a
+# fix commit whose ONLY change is a real, unindented content line that itself starts with `-` or `+`
+# (e.g. an unindented `case` arm like `-h|--extra)`) must NOT be exempted. An earlier revision matched
+# the diff-marker pattern `^[+-][^+-]` to skip the `+++`/`---` file-header lines, which also (wrongly)
+# skipped any content line whose OWN first character happened to be `+`/`-` — reproduced live: that
+# revision classified this exact range as null.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 setup: initial bare-level review, trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\n-x|--extra) echo extra ;;\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "hidden case arm starting with a dash"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488: an added line starting with '-' is real content, NOT exempt" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 112. dir #488 REGRESSION (altitude finding): a shebang change is a real interpreter change and must
+# never be treated as comment-only, even though both `#!/bin/sh` and `#!/usr/bin/env bash` start with
+# `#` like an ordinary comment.
+d="$(mkrepo)"
+printf '#!/bin/sh\necho build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 setup: initial bare-level review, trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf '#!/usr/bin/env bash\necho build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "change the interpreter"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488: a shebang change is real content, NOT exempt" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 113. dir #488 REGRESSION (found by this ticket's own high-effort review): `_review_null_diff`'s
+# per-file `git show <sha>:<path>` calls used to run with `-C $cwd`, but `<path>` (from `git diff
+# --name-status`) is always TOPLEVEL-relative regardless of cwd — the identical "invocation cwd vs.
+# repo root" mismatch dir #510 (F8) already fixed elsewhere in this file for `_test_relevant_tree_hash`.
+# From a nested cwd this either hard-failed or silently fell back to a DIFFERENT git object, and either
+# way both directions of this fixture must still reach the correct verdict when invoked from `$d/sub`,
+# not `$d`.
+d="$(mkrepo)"
+mkdir -p "$d/sub"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d/sub" "medium"
+gate "gh pr create --fill" "$d/sub"
+check_status "dir #488 nested-cwd setup: initial bare-level review, trace-backed → exit 0" 0 "$STATUS"
+
+printf 'echo build\n# a clarifying comment, nothing else changed\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "comment-only fix"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d/sub" bash "$gate" init
+run_in "$d/sub" bash "$gate" receipt --recover
+run_in "$d/sub" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d/sub" bash "$gate" receipt polish.5-review "medium"
+run_in "$d/sub" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d/sub" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d/sub"
+check_status "dir #488 nested cwd: comment-only fix → STILL unlocks (the shebang check must resolve the toplevel, not \$cwd)" 0 "$STATUS"
+check_absent "dir #488 nested cwd: unlocked, not denied" "$OUT" "deny"
+
+printf '#!/usr/bin/env bash\necho build\n# a clarifying comment, nothing else changed\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "sneak a shebang line in too"
+sha3="$(git -C "$d" rev-parse HEAD)"
+run_in "$d/sub" bash "$gate" init
+run_in "$d/sub" bash "$gate" receipt --recover
+run_in "$d/sub" bash "$gate" receipt polish.3-tests "$sha3"
+run_in "$d/sub" bash "$gate" receipt polish.5-review "medium"
+run_in "$d/sub" bash "$gate" receipt polish.6-retest "$sha3"
+run_in "$d/sub" bash "$gate" receipt polish.8-unlock "$sha3"
+gate "gh pr create --fill" "$d/sub"
+check_contains "dir #488 nested cwd: adding a shebang line → STILL denied (not silently unchecked)" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488 nested cwd: denied for the missing review trace" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 114. dir #488 REGRESSION (found by this ticket's own delta-review round): a repo-local
+# `color.ui`/`color.diff = always` forces ANSI escape sequences into every line of `git diff`'s
+# output, even piped — without `--no-color`, EVERY anchor in the classifier's awk program would fail
+# to match a single line, `found` would never be set, and a real, non-comment content change would be
+# silently read as null (a fail-OPEN bug on an operator/CI config this function does not control).
+# Repo-LOCAL config only (never --global — a global write nearly leaked out of an earlier live probe
+# for this very fix).
+d="$(mkrepo)"
+git -C "$d" config color.ui always
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 color.ui=always setup: initial bare-level review, trace-backed → exit 0" 0 "$STATUS"
+
+printf 'echo build\necho one-more-executable-line\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "real fix under a forced-color repo config"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488: color.ui=always must not blind the classifier into a false exemption" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 115. dir #488 REGRESSION (found by this ticket's own delta-review round): a pure permission-bit
+# change (`chmod +x`, textually identical content) produces a `diff --git`/`old mode`/`new mode` block
+# with NO `@@` hunk at all — the same class dir #123's own `%(objectmode)` fix already closed for the
+# test-relevance predicate (a mode-only change is a real behavior change: whether a script can even be
+# executed), so it must not be exempted here either.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script (not executable)"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 chmod setup: initial bare-level review, trace-backed → exit 0" 0 "$STATUS"
+
+chmod +x "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "chmod +x build.sh (content unchanged, mode only)"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488: a mode-only chmod change is real content, NOT exempt" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 116. dir #488 REGRESSION (found by this ticket's own second delta-review round): `GIT_EXTERNAL_DIFF`
+# (or a `diff.external` config) routes `git diff` through an external program instead of git's own
+# plumbing — with the env var set to a no-op command, the WHOLE diff comes back empty, exit 0, even
+# for a genuinely dangerous content change. Without `--no-ext-diff`, that would silently blind the
+# classifier into treating the range as null.
+d="$(mkrepo)"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+printf '%s\tmedium\n' "$sha1" > "$tf"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 GIT_EXTERNAL_DIFF setup: initial bare-level review, trace-backed → exit 0" 0 "$STATUS"
+
+printf 'echo build\nrm -rf /important\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "a genuinely dangerous change"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate_env "gh pr create --fill" "$d" GIT_EXTERNAL_DIFF=true
+check_contains "dir #488: GIT_EXTERNAL_DIFF must not blind the classifier into a false exemption" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace matching"
+rm -f "$tf"
+
+# 117. dir #488 Amendment B1 (manager's own review of PR #432): the review-trace exemption above only
+# ever exercised a BARE review outcome (trusted=0, needs_dialog=0 — that case-arm never even reaches
+# the dialog check). The realistic, adopter-observed shape is `agent:<level>` (dir #488's own body),
+# which sets needs_dialog=1 too — on any installation where the AskUserQuestion leg is ARMED, that
+# SECOND check used to keep keying strictly on current HEAD with no exemption of its own, denying a
+# review-null fix commit right after the review check had just passed it. POSITIVE: an armed install,
+# a matching `agent:<level>` review trace AND dialog trace both at sha1, a comment-only fix commit to
+# sha2 → still unlocks with no fresh review OR dialog answer.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+agent_trace "$d" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=medium\n')"
+askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=medium Run /code-review too?"
+write_full_receipt_review "$d" "agent:medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 B1 setup: ARMED install, agent:medium review+dialog trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\n# a clarifying comment, nothing else changed\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "comment-only fix"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 B1: ARMED install, comment-only fix → STILL unlocks (dialog check exempted too)" 0 "$STATUS"
+check_absent "dir #488 B1: unlocked, not denied" "$OUT" "deny"
+rm -f "$tf"
+
+# 118. dir #488 Amendment B1 NEGATIVE (the mirror image): the fix commit changes one EXECUTABLE line —
+# the review check itself already denies (no review-null ancestor exists), so the dialog-check
+# exemption's fallback (keyed off that same, absent, `$review_null_ancestor`) never even applies.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+agent_trace "$d" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=medium\n')"
+askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=medium Run /code-review too?"
+write_full_receipt_review "$d" "agent:medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 B1 setup: ARMED install, agent:medium review+dialog trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\necho one-more-executable-line\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "real fix, one executable line"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488 B1: ARMED install, one-executable-line fix → STILL denied (no exemption)" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488 B1: denied for the missing review trace, not silently exempted" "$OUT" "no trace matching"
+rm -f "$tf"
+
 summary

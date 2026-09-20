@@ -17,6 +17,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Added
 
+- **A review-null fix commit no longer needs a fresh `polish.5-review` trace** (dir #488): when a fix
+  commit's diff to the last commit a real review trace vouches for carries no reviewable claim —
+  comment/blank-line-only changes to already-reviewed `.sh` files, mechanically detected from the
+  diff's own content class (dir #123's tree-relevant-hash precedent, generalized to a different
+  predicate), never from the session's own say-so — `tools/pre-pr-gate.sh` still matches the earlier
+  trace at that level instead of denying. A partly-null fix, or one touching any non-`.sh` file, gets
+  no exception and needs a fresh trace exactly as before.
 - **`tools/self/doctor.sh` — a guard against a duplicated or mis-ordered `### Added`/`### Changed`/
   `### Fixed` subsection inside `[Unreleased]`** (dir #293): the class fired inside the release it
   was found in — PR #276 duplicated an `### Added` block and dir #284 had to consolidate and
@@ -34,6 +41,11 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Changed
 
+- **`tools/lib/gate-paths.sh` (new) is the ONE shared project-scope `settings.json` path** (dir #182):
+  `tools/install-pre-pr-gate.sh`'s write target, `tools/doctor.sh`'s `proj_settings`, and
+  `tools/pre-pr-gate.sh`'s `_dialog_leg_armed` first candidate now all derive `gate_project_settings_path`
+  from one place instead of three independently-typed `<repo>/.claude/settings.json` literals — the
+  exact duplication class PR #165 and PR #179 each broke once already.
 - **`docs/grooming.md` G0 — the read-trace rotation is the groom's own closing step** (dir #543):
   read `aggregate`, record both figures, run `rotate`, record the archive suffix. The order was
   already fixed in `docs/release-management.md` R9; the owner was not — `tools/read-trace.sh`'s

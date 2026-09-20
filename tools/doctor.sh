@@ -62,6 +62,8 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_doctor_dir/lib/impact-store.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$_doctor_dir/lib/gate-paths.sh"
 unset _doctor_dir
 
 QUIET=0
@@ -1183,7 +1185,9 @@ for d in "${DIRS[@]}"; do
   # the installer, or hand-wired part of it) but the load-bearing PreToolUse/Bash hook specifically is
   # missing — a rail that looks engaged but doesn't actually enforce anything, same "looks wired but
   # isn't" shape as W-GUARD-BYPASSED.
-  proj_settings="$d/.claude/settings.json"
+  # dir #182: shared with install-pre-pr-gate.sh's write target and the armer's _dialog_leg_armed
+  # first candidate (tools/lib/gate-paths.sh) — no longer its own independent literal.
+  proj_settings="$(gate_project_settings_path "$d")"
   if gate_hook_wired "$proj_settings"; then
     say "  OK   /polish gate: wired (project scope, $proj_settings)"
   elif gate_any_reference "$proj_settings"; then
