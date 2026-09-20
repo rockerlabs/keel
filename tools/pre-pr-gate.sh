@@ -406,6 +406,8 @@ _ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_ppg_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_ppg_dir/lib/impact-store.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$_ppg_dir/lib/gate-paths.sh"
 unset _ppg_dir
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
@@ -655,6 +657,122 @@ _stamp_tests_outcome() {
   printf '%s' "$outcome"
 }
 
+# dir #488: is the range (OLD_SHA, NEW_SHA] "review-null" — carrying no reviewable claim a fresh
+# `polish.5-review` trace would need to cover? Reuses dir #123's `_test_relevant_tree_hash` MOVE (a
+# mechanical content-class predicate the gate derives itself, never the session's own say-so about its
+# own commit) but not its mechanism: test relevance is "does any test read this file"; review relevance
+# is a different question entirely (a comment CAN carry a reviewable claim; a test cannot), so this is
+# its own diff-content classifier rather than a reuse of that function.
+#
+# Deliberately NARROW, per the ticket's own "exempt less, never trust more": null requires ALL of (1)
+# every changed path to be a pure in-place modification (`M` — an add/delete/rename/type-change is
+# never null, whatever it contains) of a `.sh` file (a `.md` change is never null here — this repo's
+# own ATX headings start with `#`, which a comment-line filter can't tell apart from a shell comment,
+# so treating `.md` the same way as `.sh` would risk exempting an edited doc CLAIM, not just its
+# prose — decided against at implementation time; dir #488's own body left this TO VERIFY and named
+# exempting less as the safe default); (2) each such file's own FIRST line unchanged (a shebang change
+# is a real interpreter change, and `#!/bin/sh` -> `#!/usr/bin/env bash` is otherwise invisible to a
+# `^#`-prefix check — found by this ticket's own high-effort review, three independent angles); and
+# (3) every added/removed line in the WHOLE range's diff, once its leading `+`/`-` marker and leading
+# whitespace are stripped, is either empty or starts with `#`. Any other file type, any first-line
+# change, any binary diff, or any single non-comment content line, and the whole range is NOT null.
+#
+# **Residual, accepted (documented, not fixed — same posture as the `.md` exclusion above):** a `.sh`
+# file's multi-line literal — a heredoc body, or a `$'…'`/quoted string continued across lines — can
+# carry a `#`-prefixed line that is DATA, not a shell comment (e.g. a script's own `cat <<EOF`-printed
+# usage text gaining a literal `# NOTE: ...` line, or a multi-line quoted message string whose second
+# line happens to start with `#`) — this line-based predicate cannot tell that apart from a real
+# comment. Exempting less here would mean disqualifying any file that contains such a literal at all,
+# which this implementation does not do; left as a known, narrow gap the way `.md`'s own residual gaps
+# are named rather than silently carried (found by this ticket's own review, altitude angle; broadened
+# from "heredoc" alone to "multi-line literal" by the manager's own read of PR #432, Amendment B1).
+_review_null_diff() {
+  local cwd="$1" old="$2" new="$3" status_lines path status old_line1 new_line1 top pipe_rc
+  # `--no-color --no-ext-diff --no-textconv`, unconditionally, on EVERY `git diff` call in this
+  # function: three separate ambient git configs/env vars can each independently defeat the line-
+  # anchored classifier below, found across two rounds of this ticket's own review, each reproduced
+  # live. `color.ui`/`color.diff = always` (not git's own default `auto`) forces ANSI escapes into
+  # every line even when piped, so `^diff --git `/`^@@ `/`^[+-]` match nothing at all.
+  # `GIT_EXTERNAL_DIFF`/`diff.external` routes the diff through an external program instead of git's
+  # own plumbing — reproduced live with `GIT_EXTERNAL_DIFF=true`, which swallows the WHOLE diff (exit
+  # 0, no output) for a real, dangerous content change. A `.gitattributes` `diff=<driver>` +
+  # `diff.<driver>.textconv` is the surgical version of the same class: it can hide specific added
+  # lines (e.g. one stripped by the textconv command) while leaving the rest of the diff intact,
+  # confirmed live. All three turn a narrow, mechanically-derived exemption into an unconditional
+  # rubber stamp for a config this function does not itself control — `--no-color`/`--no-ext-diff`/
+  # `--no-textconv` override each unconditionally, the same way a caller can't accidentally leave any
+  # of them un-set. The `--name-status` call below never invokes a diff driver on its own, so it isn't
+  # exposed the same way the full-content call further down is — the flags are added here too anyway,
+  # as cheap defense-in-depth against a future git version changing that.
+  status_lines="$(git -C "$cwd" diff --no-color --no-ext-diff --no-textconv --name-status "$old" "$new" 2>/dev/null)" || return 1
+  [ -n "$status_lines" ] || return 0
+  # `git diff --name-status` always reports paths relative to the repo TOPLEVEL, regardless of `$cwd`
+  # (verified live) — but `git show <rev>:<path>` resolves `<path>` relative to `-C`'s own cwd, not the
+  # repo root (also verified live: from a subdirectory, a toplevel-relative path either hard-fails or,
+  # worse, silently falls back to `git show <rev>` — the whole commit's OWN diff — with no error at
+  # all). Same class of bug dir #510 (F8) already fixed in `_test_relevant_tree_hash` above for the
+  # identical "invoked from a nested cwd" case; same fix here — resolve the toplevel once and run the
+  # per-file `show` calls there, not against `$cwd`.
+  top="$(impact_claim_key "$cwd")"
+  [ -n "$top" ] || return 1
+  while IFS=$'\t' read -r status path _; do
+    [ -n "$status" ] || continue
+    [ "$status" = "M" ] || return 1
+    case "$path" in
+      *.sh) : ;;
+      *) return 1 ;;
+    esac
+    # Exit status of `git show` itself, not just string equality — two FAILED lookups would otherwise
+    # both come back empty and silently compare equal, treating "couldn't check" as "unchanged" (the
+    # exact "string emptiness can't tell success from failure" trap `_test_relevant_tree_hash`'s own
+    # header above already documents for the identical shape).
+    old_line1="$(git -C "$top" show "$old:$path" 2>/dev/null)" || return 1
+    new_line1="$(git -C "$top" show "$new:$path" 2>/dev/null)" || return 1
+    [ "${old_line1%%$'\n'*}" = "${new_line1%%$'\n'*}" ] || return 1
+  done <<< "$status_lines"
+  # ONE unrestricted diff for the whole range, not one per file (every file above already passed the
+  # M/`.sh` gate, so a global content check is equivalent to an OR over each file's own check — dir
+  # #488's own simplify-pass finding: simpler AND cheaper than a per-file `git diff | awk` pair).
+  # Hunk boundaries are tracked explicitly (`@@ ` starts a hunk, `diff --git ` starts a new file's
+  # section) rather than inferred from the diff MARKER character alone: an earlier version matched
+  # `^[+-][^+-]` to skip the `+++`/`--- ` file-header lines, which also (wrongly) skipped any REAL
+  # content line whose own first character happens to be `+` or `-` (e.g. an unindented `-h|--help)`
+  # case arm, or a heredoc-embedded `- item` bullet) — found independently by three separate angles in
+  # this ticket's own code-review pass, reproduced live: that pattern reports "no content" for a diff
+  # whose only change is such a line. A `Binary files ... differ` line (no `@@` hunk at all — a binary
+  # diff can never be proven comment-only) or an `old mode `/`new mode ` line (a pure permission-bit
+  # flip on a `.sh` file — e.g. `chmod +x` — is a real behavior change with no `@@` hunk either, the
+  # same class dir #123's own `%(objectmode)` fix already closed for the test-relevance predicate) is
+  # unconditionally treated as real content. Exits as soon as one disqualifying line is found, rather
+  # than scanning the rest of a possibly-large diff for nothing.
+  #
+  # `$pipe_rc` (a snapshot of `PIPESTATUS`, taken as the array in ONE assignment right after the
+  # pipeline — never two separate reads, which would risk an intervening command clobbering it), not
+  # just the pipeline's own `if`: this file sets neither `-e` nor `pipefail`, so `if git ... | awk
+  # ...; then` reflects ONLY awk's exit status — a `git diff` that itself fails (a transient
+  # object-store error, a broken external diff/textconv driver) after the earlier `--name-status` call
+  # already succeeded would feed awk an empty stream, `found` would stay unset, and the range would
+  # silently read as null exactly like a real empty diff would. Checked the same "exit status, not
+  # string/stream emptiness" way as every other git call in this function.
+  git -C "$cwd" diff --no-color --no-ext-diff --no-textconv "$old" "$new" 2>/dev/null | awk '
+      /^diff --git / { in_hunk = 0; next }
+      /^Binary files / { found = 1; exit }
+      /^old mode / { found = 1; exit }
+      /^@@ / { in_hunk = 1; next }
+      in_hunk && /^[+-]/ {
+        line = $0
+        sub(/^[+-]/, "", line)
+        gsub(/^[ \t]+/, "", line)
+        if (line != "" && line !~ /^#/) { found = 1; exit }
+      }
+      END { exit !found }
+    '
+  pipe_rc=("${PIPESTATUS[@]}")
+  [ "${pipe_rc[0]}" -eq 0 ] || return 1
+  [ "${pipe_rc[1]}" -eq 0 ] && return 1
+  return 0
+}
+
 # dir #236: stamp a skip-level `polish.4-depth` outcome with the commit it was decided against — the
 # same trust-boundary move dir #123 made for step 3 above (`_stamp_tests_outcome`): always computed
 # fresh here, server-side, never taken from the caller. `receipt --recover` (below) reads only the LAST
@@ -767,7 +885,12 @@ _dialog_leg_armed() {
   # `_dialog_leg_armed` permanently UNARMED for every ordinary project-scope gate — not just pre-0.7
   # installs — silently disabling the dir #88 mandatory-review-dialog check for the common case forever.
   # That is exactly the "silent behavior change" this whole removal ticket forbids, so this block stays.
-  for f in "$top/.claude/settings.json" "$top/.claude/settings.local.json" \
+  # dir #182: the first candidate below is no longer its own independent literal — it's now the same
+  # shared `gate_project_settings_path` (tools/lib/gate-paths.sh) that install-pre-pr-gate.sh's write
+  # target and doctor.sh's `proj_settings` also derive from, so the three can't drift apart by a typo
+  # the way PR #165/#179 did. `settings.local.json` stays its own, independent candidate — not part of
+  # that shared definition, and not checked by doctor.sh at all (a scope difference, not a bug).
+  for f in "$(gate_project_settings_path "$top")" "$top/.claude/settings.local.json" \
            "${HOME:-}/.claude/settings.json" \
            "${KEEL_HOME:-${HOME:-}/.claude}/settings.json"; do
     [ -f "$f" ] || continue
@@ -1004,6 +1127,53 @@ _trace_levels_for() {
   [ -f "$tp" ] || return 0
   awk -F'\t' -v sha="$sha" '$1==sha && !seen[$2]++{if(out!="")out=out","; out=out$2} END{print out}' "$tp"
 }
+# dir #488: a THIRD query shape over the trace file, next to the two above — "every distinct sha
+# recorded at a given LEVEL" (`_trace_has_line`/`_trace_levels_for` both query by SHA; this one queries
+# by level). Kept behind the same one seam those two were factored out for in the first place ("a
+# future trace-file format change only needs one edit", their own header above) rather than inlined at
+# `_review_exempt_sha`'s own call site. One line per distinct sha, dedup'd, in no particular order —
+# the caller decides how to walk them.
+_trace_shas_for_level() {
+  local wt_key="$1" lvl="$2" tp
+  tp="$(_trace_path_for_key "$wt_key")"
+  [ -f "$tp" ] || return 0
+  awk -F'\t' -v lvl="$lvl" '$2==lvl && !seen[$1]++{print $1}' "$tp"
+}
+# dir #488: the PASS branch's review-trace check (below) reaches here only once `_trace_has_line` has
+# already failed for CURRENT_SHA at LEVEL — this is its one fallback before denying. Looks for an
+# earlier commit the trace file already vouches for at that same LEVEL, that is a real ancestor of
+# CURRENT_SHA (never a sibling/unrelated branch's reviewed commit that merely shares a level string —
+# `merge-base --is-ancestor` is real git history, not a string match), whose diff to CURRENT_SHA is
+# `_review_null_diff` (dir #123's tree-relevant-hash precedent, generalized to a different predicate —
+# see that function's own header). Walks the WHOLE range as one diff per candidate, not commit by
+# commit (dir #488's own lead #3): a chain of several comment-only fix commits unlocks exactly like
+# one, because `_review_null_diff` is a two-commit-range check by construction, regardless of how many
+# real commits sit between them. Prints the qualifying ancestor sha and returns 0 on a match (for the
+# caller to log/expose, not required for correctness); returns 1, silently, when nothing qualifies —
+# the caller's existing deny is unaffected, this only ever ADDS a path to PASS, never removes one.
+#
+# **Residual, accepted (found by the Amendment B1 delta review; same posture as the `.md`/heredoc
+# residuals in `_review_null_diff`'s own header):** candidates come back in the trace file's own
+# append order, and this returns the FIRST qualifying one — if a repo's trace ever accumulates two
+# distinct ancestors reviewed at the same LEVEL with both null-diffing to current HEAD, but only the
+# SECOND one also has step 5(a)'s dialog answered (Amendment B1, below), the caller can still deny on
+# the first (dialog-less) ancestor even though the second would satisfy both checks. Rare in practice
+# (it needs a multi-review trace history at one level), and not something Amendment B1 introduced —
+# this single-first-candidate selection already existed for the review check alone; the dialog check
+# just reuses the same value rather than adding new risk. Not engineered away here.
+_review_exempt_sha() {
+  local cwd="$1" wt_key="$2" current_sha="$3" lvl="$4" cand
+  while IFS= read -r cand; do
+    [ -n "$cand" ] || continue
+    [ "$cand" != "$current_sha" ] || continue
+    git -C "$cwd" merge-base --is-ancestor "$cand" "$current_sha" 2>/dev/null || continue
+    if _review_null_diff "$cwd" "$cand" "$current_sha"; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done < <(_trace_shas_for_level "$wt_key" "$lvl")
+  return 1
+}
 # dir #72: a single-slot backup of whatever receipt was just invalidated — by `init` minting a fresh
 # nonce, or by the gate denying and discarding the sentinel. `retire_sentinel` (below) is the ONE place
 # that both writes this and clears the live sentinel. dir #376 narrowed WHICH denies call it: only a
@@ -1149,15 +1319,19 @@ resolve_impact_log() {
 # taken BEFORE resolve_impact_log's main-checkout fallback — the fallback is only about where the log
 # FILE lives, not who fired the event. Empty outside a repo (matches resolve_impact_log's own git call).
 #
-# CAVEAT: "field 5 = claim key" only holds for a `detail` with no embedded tab. The receipt-pass call
-# below intentionally packs two values into `detail` via a literal tab (dir #63/#64's `sweep` provenance
-# trick), so its actual on-disk line has 6 tab fields, not 5, and $5 there is `prov_tag`, not the claim
-# key — currently harmless only because `keel-impact.sh` doesn't score receipt-pass (EVENT_TYPES excludes
-# it), so nothing ever reads that misplaced field. `keel-impact.sh cmd_add`'s ingest loop round-trips such
-# a line VERBATIM (the original 6-field text, not a 5-field reconstruction) whenever a rewrite happens to
-# preserve it, so the extra field survives on disk even though nothing reads it yet — but don't extend
-# EVENT_TYPES to cover a type whose detail can carry an embedded tab without also sanitizing it here the
-# way `keel-impact.sh cmd_event`'s `_flatten` does for its own writes.
+# CAVEAT: "field 5 = claim key" only holds for a `detail` with no embedded tab. THREE callers
+# intentionally pack a second value into `detail` via a literal tab, all harmless for the same reason:
+# the receipt-pass call below (dir #63/#64's `sweep` provenance trick, `prov_label`+`prov_tag`), the
+# dir #488 `review-null-exempt` call (the exempting ancestor sha + `$trace_match_outcome`), and the
+# dir #488 (Amendment B1) `review-null-dialog-exempt` call (the same ancestor sha + the dialog's own
+# `dialog:$outcome_level`). Each one's actual on-disk line has 6 tab fields, not 5, and $5 there is
+# the second packed value, not the claim key — currently harmless only because `keel-impact.sh`
+# doesn't score any of the three types (EVENT_TYPES excludes all of them), so nothing ever reads that
+# misplaced field. `keel-impact.sh cmd_add`'s ingest loop round-trips such a line VERBATIM (the
+# original 6-field text, not a 5-field reconstruction) whenever a rewrite happens to preserve it, so
+# the extra field survives on disk even though nothing reads it yet — but don't extend EVENT_TYPES to
+# cover ANY of the three whose detail can carry an embedded tab without also sanitizing it here
+# the way `keel-impact.sh cmd_event`'s `_flatten` does for its own writes.
 # Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —
 # never stdout, so a hook's JSON decision stays intact; with no log path resolved, this is a silent no-op.
 log_event() {
@@ -2417,6 +2591,11 @@ case "$status" in
     fi
     trusted=0
     needs_dialog=0
+    # dir #488 (Amendment B1): defined here, unconditionally, so the dialog check further below can
+    # read it under `set -u` regardless of which case arm runs — the `skip` arm sets trusted=1 and
+    # never reaches the block that would otherwise populate this, so without this default a `skip`
+    # outcome (needs_dialog=1 too) would abort on an unbound variable the first time this ran.
+    review_null_ancestor=""
     trace_match_outcome="$review_outcome"
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
@@ -2665,28 +2844,48 @@ case "$status" in
       # dir #80: $wt here is deliberately still repo-only (not $receipt_key) — the trace stays
       # per-repo, unrelated to the sentinel's own (branch-aware) key.
       if ! _trace_has_line "$wt" "$current_sha" "$trace_match_outcome"; then
-        # dir #296: name what WAS traced for this commit, if anything, as an ADDITION to the existing
-        # "no trace matching" wording (kept verbatim — several tests already pin that exact substring).
-        # An empty $traced_levels means no review mechanism fired at all, unchanged from before this fix.
-        # A non-empty one (possibly an `unparsed:<raw>` tag, dir #296's own fix on the write side) means a
-        # review DID run but didn't resolve to the receipted level — a different, usually self-inflicted,
-        # failure the operator can fix by re-invoking cleanly rather than running a whole new review.
-        traced_levels="$(_trace_levels_for "$wt" "$current_sha")"
-        trace_deny_detail=""
-        [ -n "$traced_levels" ] && trace_deny_detail=" The trace recorded '$traced_levels' for this commit instead — re-run the review with a bare level (no extra flags) if that's unexpected."
-        # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
-        # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
-        # A trace is bound to the exact commit it was written against and is never retroactive, so the
-        # common cause here is: a review DID run, its findings were fixed, and the fix commit moved
-        # HEAD past what the trace covers. dir #376 removed this site's own retire_sentinel call —
-        # THIS is dir #346's own ratchet, and the CHEAPER half was always the review re-invocation; the
-        # EXPENSIVE half was the init+--recover cycle this denial used to force by discarding the other
-        # 7 receipts along with the one that actually went stale. With the chain now left intact, that
-        # cycle is gone entirely: a bare `receipt polish.5-review ...` right after this deny lands on
-        # the still-live nonce and works, where before it would fail closed with "no active receipt".
-        _deny_intact "$cwd" "review-trace-missing" \
-          "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346)." \
-          "invoke the review once more at your CURRENT HEAD and write the polish.5-review receipt fresh; no \"init\" or \"receipt --recover\" needed, the other steps' receipts are untouched. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
+        # dir #488: before denying, check whether an ancestor commit the trace already vouches for at
+        # this exact level is separated from current HEAD by nothing but a review-null fix commit (or
+        # chain of them) — see `_review_exempt_sha`/`_review_null_diff` above. This is the ONLY new
+        # path into PASS this ticket adds; it never widens what `_trace_has_line` itself accepts, and a
+        # partly-null range (dir #488's own TO VERIFY #2: any non-comment content anywhere in it) falls
+        # straight through to the same deny as before, unchanged.
+        # No local pre-init/`|| review_null_ancestor=""` fallback needed: this file only sets `-u`,
+        # not `-e` (no pipefail either), so a failing `_review_exempt_sha` already leaves this empty
+        # via the command substitution's own output — it prints nothing on failure, by design.
+        review_null_ancestor="$(_review_exempt_sha "$cwd" "$wt" "$current_sha" "$trace_match_outcome")"
+        if [ -n "$review_null_ancestor" ]; then
+          # dir #488: logged, not silent — the eventual receipt-pass event below still fires with
+          # $prov_label/$prov_tag unchanged (the review outcome itself IS trace-confirmed, just against
+          # an ancestor instead of current HEAD), so this is the one place that says WHICH ancestor and
+          # that the null-diff exemption is what closed the gap, for `sweep`/an impact-log audit later.
+          log_event "review-null-exempt" "$review_null_ancestor -> $current_sha"$'\t'"$trace_match_outcome" "$cwd"
+        else
+          # dir #296: name what WAS traced for this commit, if anything, as an ADDITION to the existing
+          # "no trace matching" wording (kept verbatim — several tests already pin that exact substring).
+          # An empty $traced_levels means no review mechanism fired at all, unchanged from before this fix.
+          # A non-empty one (possibly an `unparsed:<raw>` tag, dir #296's own fix on the write side) means a
+          # review DID run but didn't resolve to the receipted level — a different, usually self-inflicted,
+          # failure the operator can fix by re-invoking cleanly rather than running a whole new review.
+          traced_levels="$(_trace_levels_for "$wt" "$current_sha")"
+          trace_deny_detail=""
+          [ -n "$traced_levels" ] && trace_deny_detail=" The trace recorded '$traced_levels' for this commit instead — re-run the review with a bare level (no extra flags) if that's unexpected."
+          # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
+          # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
+          # A trace is bound to the exact commit it was written against and is never retroactive, so the
+          # common cause here is: a review DID run, its findings were fixed, and the fix commit moved
+          # HEAD past what the trace covers. dir #376 removed this site's own retire_sentinel call —
+          # THIS is dir #346's own ratchet, and the CHEAPER half was always the review re-invocation; the
+          # EXPENSIVE half was the init+--recover cycle this denial used to force by discarding the other
+          # 7 receipts along with the one that actually went stale. With the chain now left intact, that
+          # cycle is gone entirely: a bare `receipt polish.5-review ...` right after this deny lands on
+          # the still-live nonce and works, where before it would fail closed with "no active receipt".
+          # dir #488: this remains the ONLY remedy when no review-null ancestor exists — the exemption
+          # above never lowers the bar, it only recognizes when the bar was already met upstream.
+          _deny_intact "$cwd" "review-trace-missing" \
+            "Pre-PR gate: step 5 recorded review outcome '$review_outcome', which claims a real review ran (an in-session /code-review pass, or an independent agent review) — but no trace matching both this commit AND that level was found.$trace_deny_detail The common cause: a review DID run and its findings were fixed, and the fix moved HEAD past what the trace covers — a trace can only ever prove a review of the exact commit it was written against, never a later fix (dir #346)." \
+            "invoke the review once more at your CURRENT HEAD and write the polish.5-review receipt fresh; no \"init\" or \"receipt --recover\" needed, the other steps' receipts are untouched. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
+        fi
       fi
     fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
@@ -2699,7 +2898,31 @@ case "$status" in
     # dir #88 header section for why an unconditional check would false-deny every `agent:*` unlock
     # between `git pull` and the operator re-running the installer.
     if [ "$needs_dialog" -eq 1 ] && _dialog_leg_armed "$main_top"; then
-      if ! _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
+      # dir #488 (Amendment B1 — the manager's own review of PR #432 found this: "a guard fixed one
+      # function short of its own twin"): the review-trace check above already exempts a review-null
+      # fix commit via $review_null_ancestor, but this dialog check kept keying strictly on
+      # $current_sha with no such fallback — so an `agent:*` outcome (the ordinary, adopter-observed
+      # shape per dir #488's own body) still denied here even after the review check passed, on any
+      # installation where the AskUserQuestion leg is armed (this repo's own project-scope hooks are).
+      # Re-answering that dialog means re-running step 5(a) — a Skill(code-review) invocation — which
+      # is exactly the mechanical cost dir #488 exists to remove, so an unexempted twin here defeated
+      # the whole ticket on every armed install. `$review_null_ancestor` is always defined by this
+      # point (initialized "" alongside `trusted`/`needs_dialog` above, never left unset by `set -u`)
+      # — for the `skip` arm specifically it is unconditionally "" (skip sets trusted=1, so the
+      # review-trace block above that would populate it never runs), so this fallback is structurally
+      # a no-op for skip's own, unrelated dialog (step 4's, not step 5(a)'s) — its behavior is
+      # untouched, deliberately.
+      dialog_ancestor_ok=0
+      if [ -n "$review_null_ancestor" ] && _trace_has_line "$wt" "$review_null_ancestor" "dialog:$outcome_level"; then
+        dialog_ancestor_ok=1
+      fi
+      if _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
+        : # answered for current HEAD directly — the ordinary case, nothing to log.
+      elif [ "$dialog_ancestor_ok" -eq 1 ]; then
+        # dir #488: logged, same as the review-trace exemption above — the dialog was genuinely
+        # answered, just for the ancestor the review check already accepted, not current HEAD.
+        log_event "review-null-dialog-exempt" "$review_null_ancestor -> $current_sha"$'\t'"dialog:$outcome_level" "$cwd"
+      else
         # dir #376: no retire_sentinel here — the chain is otherwise well-formed and only this one
         # dialog trace is missing, a precondition the session can still satisfy without losing the
         # other 7 receipts.

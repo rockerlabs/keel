@@ -89,6 +89,8 @@ esac
 
 # shellcheck source=tools/lib/sh-quote.sh
 . "$here/lib/sh-quote.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$here/lib/gate-paths.sh"
 # gate_sh — $gate quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE
 # place $gate is spliced into a shell command string INSIDE a hand-written JSON heredoc, by hand,
 # rather than through jq's `@sh` (print_snippet below, the no-jq fallback — a heredoc can't call a jq
@@ -188,15 +190,20 @@ if [ -n "$scope_flag" ]; then
     echo "  $settings_dir (matching an install.sh --home / KEEL_HOME install). If your harness isn't" >&2
     echo "  pointed at that home, wire per repo instead:  install-pre-pr-gate.sh <repo>" >&2
   fi
+  settings="$settings_dir/settings.json"
 elif [ -n "${1:-}" ]; then
   repo="$1"
   git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
-  settings_dir="$repo/.claude"
+  # dir #182: the project-scope write target is now the same shared `gate_project_settings_path`
+  # (tools/lib/gate-paths.sh) that the armer's `_dialog_leg_armed` and doctor.sh's `proj_settings`
+  # also derive from — $settings_dir (used below for mkdir -p / cd) is its containing directory, not
+  # an independent literal.
+  settings="$(gate_project_settings_path "$repo")"
+  settings_dir="${settings%/*}"
 else
   usage >&2
   exit 2
 fi
-settings="$settings_dir/settings.json"
 
 # Nothing was ever wired here — say so and stop before creating anything. Checked before the jq
 # requirement below too: an adopter uninstalling on a machine with no jq and no gate ever wired

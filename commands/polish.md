@@ -308,7 +308,12 @@ Steps, in order:
    **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
    directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
    flow doesn't otherwise write to — `tools/pre-pr-gate.sh`'s gate cross-checks it (same commit, same
-   level) before unlocking. The independent-agent-review path below (a) leaves the same kind of mechanical
+   level) before unlocking, with ONE mechanical exception (dir #488): a later fix commit that is
+   *review-null* — the gate's own diff-content check finds nothing but comment/blank-line changes to
+   already-reviewed `.sh` files, never your own say-so about the commit — still matches a trace recorded
+   against an earlier ancestor commit at that same level. Anything else, including a fix that is only
+   PARTLY null, or that touches any non-`.sh` file, gets no exception and needs a fresh trace exactly as
+   before. The independent-agent-review path below (a) leaves the same kind of mechanical
    trace, via a different hook. The gate also cross-checks EVERY outcome, including a hand-off's
    `-operator-run`/`-waived`, against the level step 4 actually recorded — `skip`ping the review while
    claiming a higher depth was sized doesn't unlock the gate either.
