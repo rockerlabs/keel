@@ -103,10 +103,15 @@ a carve-out. Then **verify the push landed** — `git push` returned 0 AND `git 
 rejected): STOP and report it, don't claim it's backed up.
 
 **Read-trace (dir #387), if wired.** If `<keel-checkout>/tools/read-trace.sh` exists, run
-`bash <keel-checkout>/tools/read-trace.sh wrap-done` from the repo root right after the push verifies —
-this stamps *this* session's wrap as complete so the wrap-fuse (a mutating session that ends with no
-`/wrap`) doesn't flag it. Then append the line `bash <keel-checkout>/tools/read-trace.sh docs-line`
-prints to this closing report, verbatim — it is generated from the session's own read log, never
-hand-typed (a hand-typed line would just restate what the session believes it read, defeating the
-mechanism). Both calls are silent no-ops when the tool or its log is absent (the hook is opt-in per
-repo, per `tools/install-read-trace.sh`) — skip this paragraph entirely rather than block on it.
+`bash <keel-checkout>/tools/read-trace.sh docs-line --wrap` from the repo root right after the push
+verifies, and append the line it prints to this closing report, verbatim — it is generated from the
+session's own read log, never hand-typed (a hand-typed line would just restate what the session
+believes it read, defeating the mechanism). The `--wrap` flag folds *this* session's wrap-completion
+stamp into the same call (dir #523): the stamp used to be a separate `wrap-done` call, the LAST
+instruction of this step, gated on a conditional — the exact position a step gets dropped from, and
+the wrap-fuse measured it being dropped even on sessions that demonstrably persisted. Folding it into
+the call this step already makes for the report line removes the separate, model-remembered step
+instead of asking the model to keep remembering it — the wrap-fuse (a mutating session that ends with
+no `/wrap`) won't flag this session. Silent no-op (besides the "docs read:" line) when the tool or its
+log is absent (the hook is opt-in per repo, per `tools/install-read-trace.sh`) — skip this paragraph
+entirely rather than block on it.

@@ -274,6 +274,42 @@ run_hook docs-line "$d"
 check_contains "docs-line after one read names the path" "$OUT" "docs/foo.md"
 check_contains "docs-line carries a count" "$OUT" "(1)"
 
+# --- docs-line --wrap: folds the wrap-done stamp into the SAME call (dir #523, shape (a)) -------------
+# End-to-end via session-end, the actual reader of the stamp: a wrap that calls `docs-line --wrap`
+# instead of the old separate `wrap-done` step still reads `wrapped`, not `no-wrap` — the fix's whole
+# point is that this no longer depends on the model remembering a second instruction.
+d="$(mkrepo)"; rt_env docslinewrap
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+run_hook docs-line --wrap "$d"
+check_status "docs-line --wrap exits 0" 0 "$STATUS"
+check_contains "docs-line --wrap still prints the docs-line report (not swallowed by the stamp)" "$OUT" "docs read:"
+tp="$SANDBOX/transcript.docslinewrap.jsonl"; printf 'ordinary session\n' > "$tp"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_contains "a wrap that called docs-line --wrap (not wrap-done) still reads wrapped" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "wrapped"
+check_absent "a wrap that called docs-line --wrap is NOT classified no-wrap" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
+# --wrap must be FIRST — the parser has no real caller for the flag-last shape (/simplify found the
+# original either-position parser existed only to satisfy this exact test, not any shipped call site),
+# so `docs-line [dir] --wrap` is now just "dir=$d, an ignored trailing arg" — it must NOT stamp.
+d="$(mkrepo)"; rt_env docslinewrap2
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+run_hook docs-line "$d" --wrap
+check_status "docs-line [dir] --wrap (flag last, unsupported) still exits 0" 0 "$STATUS"
+tp="$SANDBOX/transcript.docslinewrap2.jsonl"; printf 'ordinary session\n' > "$tp"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_contains "docs-line [dir] --wrap (flag last) does NOT stamp -- --wrap must lead" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
+# Plain docs-line (no --wrap, /polish's own call shape) must NEVER stamp — a false "wrapped" would
+# hide a genuinely forgotten /wrap from the fuse this ticket exists to make trustworthy.
+d="$(mkrepo)"; rt_env docslinenowrap
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+run_hook docs-line "$d"
+tp="$SANDBOX/transcript.docslinenowrap.jsonl"; printf 'ordinary session\n' > "$tp"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_contains "plain docs-line (no --wrap, /polish's own shape) never stamps a false wrapped" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
+
 # --- wrap-done: writes a marker naming this repo/branch's completion ----------------------------------
 d="$(mkrepo)"; rt_env wrapdone
 run_hook wrap-done "$d"
@@ -328,35 +364,152 @@ check_contains "same path re-edited AFTER wrap-done -> a no-wrap row, not wrappe
 check_absent "same path re-edited AFTER wrap-done -> NOT classified wrapped" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" $'\twrapped\t'
 check_file "same path re-edited AFTER wrap-done -> a pending flag file exists" "$(find "$RT_STORE" -name '*.flag' 2>/dev/null | head -n1)"
 
+# --- session-end: rows are keyed by SESSION ID, not (repo,branch) (dir #523) ---------------------------
+# Two DIFFERENT sessions reusing the same worktree/branch must write two DISTINCTLY-keyed rows, not the
+# same (repo,branch) label twice — the actual defect this ticket's own evidence named ("one worktree
+# flagged twice ... because the worktree was reused across two sessions").
+d="$(mkrepo)"; rt_env sessionid
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tpa="$SANDBOX/transcript.sessionid-a.jsonl"; printf 'session A\n' > "$tpa"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tpa" --arg sid "session-aaa" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp, session_id:$sid}')" session-end
+feed_hook "$(jq -n --arg cwd "$d" '{hook_event_name:"SessionStart", cwd:$cwd}')" startup
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tpb="$SANDBOX/transcript.sessionid-b.jsonl"; printf 'session B\n' > "$tpb"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tpb" --arg sid "session-bbb" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp, session_id:$sid}')" session-end
+check_contains "session A's row carries its OWN session id" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" $'\tsession-aaa'
+check_contains "session B's row carries its OWN, DIFFERENT session id" \
+  "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" $'\tsession-bbb'
+n_sessionid_rows="$(grep -c . "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)"
+check_status "two different sessions on the same worktree/branch -> 2 rows, not 1 repeated" 2 "$n_sessionid_rows"
+run_hook aggregate "$d"
+check_contains "aggregate reads 2 of 2 -- two real misses, not one label flagged twice" \
+  "$OUT" "wrap-fuse: 2 of 2 mutating sessions this cycle ended with no /wrap"
+
+# --- session-end: a DUPLICATE SessionEnd fire for the SAME session id does not inflate the count -------
+# A plain append still writes a row per fire (session-end never rewrites its own store — see that
+# case's own comment on why the dedup lives in aggregate instead), but aggregate must count it once.
+d="$(mkrepo)"; rt_env sessiondup
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tpd="$SANDBOX/transcript.sessiondup.jsonl"; printf 'dup session\n' > "$tpd"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tpd" --arg sid "session-dup" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp, session_id:$sid}')" session-end
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tpd" --arg sid "session-dup" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp, session_id:$sid}')" session-end
+n_dup_rows="$(grep -c . "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)"
+check_status "a duplicate SessionEnd fire for one session id -> 2 raw rows (plain append, no write-time dedup)" 2 "$n_dup_rows"
+run_hook aggregate "$d"
+check_contains "but aggregate reads 1 of 1 -- deduped by session id, not double-counted" \
+  "$OUT" "wrap-fuse: 1 of 1 mutating sessions this cycle ended with no /wrap"
+
 # --- session-end: the two centralized-wrap exclusion markers, parameterized (dir #431 added the
 # second) --------------------------------------------------------------------------------------------
-# assert_marker_excludes MARKER TAG LABEL — a mutating session whose transcript opens with MARKER
-# (within the hook's own byte window) writes no wrap-fuse-events.log at all.
+# write_user_turn FILE TEXT — appends one realistic JSONL "user" turn: `.type=="user"`,
+# `.message.content` a plain string — the shape this hook's marker scan actually reads, confirmed
+# against this SESSION'S OWN live transcript at dir #523's implementation time (both an ordinary chat
+# turn and a tool-result turn — e.g. a brief file's content, returned once a Read/`cat` resolves —
+# serialize their content this way).
+write_user_turn() { jq -cn --arg t "$2" '{type:"user", message:{role:"user", content:$t}}' >> "$1"; }
+# write_noise_turn FILE — a non-"user" JSONL record (Claude-Code-internal bookkeeping: a
+# queue-operation or hook-status attachment) — real transcripts interleave several of these between
+# user turns (confirmed live: 2 queue-operations + 6 attachments before this session's own SECOND user
+# turn); the marker scan's `.type=="user"` filter must skip them, not miscount them as a turn.
+write_noise_turn() { jq -cn '{type:"attachment", hookName:"noise"}' >> "$1"; }
+
+# --- session-end: a MALFORMED line before the marker turn does not defeat the whole scan (dir #523,
+# found live by an operator-run /code-review high pass) --------------------------------------------
+# Regression pin for a real, reproduced defect: jq aborts its ENTIRE stream on the first invalid JSON
+# line, discarding output already produced for earlier, valid lines and never reaching anything after
+# it (confirmed live: `{valid}` / `not json` / `{valid, has marker}` piped through one jq call prints
+# only the first line's result and never reaches the third). A single-call pipeline over the whole
+# capped prefix is one bad line away from silently losing this exclusion — this transcript plants a
+# genuinely malformed line between two valid turns, the second of which carries the marker.
+# The malformed line is a TRUNCATED user-turn object (`{"type":"user","message":{"content":"trunc`,
+# cut off mid-string), not arbitrary prose (found by a delta-round /code-review high pass on the
+# grep pre-filter this ticket's own next round added — an arbitrary non-JSON-looking line like "not
+# valid json at all" never matches that pre-filter's `"type":"user"` substring check, so it would
+# never even reach jq, and this regression pin would pass for the wrong reason instead of exercising
+# jq's own per-line resilience). A truncated real user-record — plausible from a race reading a
+# still-flushing transcript, or the byte cap's own truncation of its last line — DOES match the
+# pre-filter and still needs jq to fail on just that one line, not the whole scan.
+d="$(mkrepo)"; rt_env malformedline
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tp="$SANDBOX/transcript.malformedline.jsonl"; : > "$tp"
+write_user_turn "$tp" "a short chip prompt, no marker here"
+printf '{"type":"user","message":{"content":"truncated mid-strin\n' >> "$tp"
+write_user_turn "$tp" "YOUR TICKET: dir #999. WRAP CENTRALIZED"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_nofile "a malformed line before the marker turn does not defeat the exclusion" "$RT_STORE"/*/wrap-fuse-events.log
+
+# --- session-end: many small non-"user" noise lines before the marker does NOT blow up the scan's
+# runtime (dir #523, found live by TWO independent delta-round /code-review high passes) -----------
+# Regression pin for a real, reproduced defect in this ticket's OWN prior round: forking one `jq`
+# process per RAW line (the fix for the malformed-line bug above) is only cheap when few raw lines
+# precede the marker turn. A transcript with many small non-"user" bookkeeping records reproduced
+# 89-112 SECONDS of wall-clock time through a bare per-line loop, live, twice, independently — a
+# `SessionEnd` hook blocking that long reads exactly like the hang dir #523 exists to stop, just
+# relocated to a new trigger. The fix pre-filters candidate lines with one cheap `grep` pass before
+# any `jq` fork. 5,000 noise lines (a generous multiple of the 20,000 that reproduced the original
+# regression, kept smaller here so this test itself stays fast) precede the marker.
+# Run in the BACKGROUND with a bounded poll, not `timeout` — this suite ships no timeout helper and
+# `timeout` is absent on macOS (tests/test_install.sh's own T14f note, same reasoning here): a naive
+# foreground call would hang the whole suite on a regression instead of failing this one test. The
+# healthy path exits in well under a second; the wait is only ever paid in full when the fork-per-line
+# regression is back.
+d="$(mkrepo)"; rt_env manynoise
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+tp="$SANDBOX/transcript.manynoise.jsonl"; : > "$tp"
+for _i in $(seq 1 5000); do write_noise_turn "$tp"; done
+write_user_turn "$tp" "YOUR TICKET: dir #999. WRAP CENTRALIZED"
+manynoise_json="$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')"
+printf '%s' "$manynoise_json" | TMPDIR="$RT_TMPDIR" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" session-end >/dev/null 2>&1 &
+manynoise_pid=$!
+manynoise_waited=0
+while kill -0 "$manynoise_pid" 2>/dev/null && [ "$manynoise_waited" -lt 10 ]; do
+  sleep 1; manynoise_waited=$((manynoise_waited + 1))
+done
+if kill -0 "$manynoise_pid" 2>/dev/null; then
+  kill -9 "$manynoise_pid" 2>/dev/null || true
+  wait "$manynoise_pid" 2>/dev/null || true
+  fail "5,000 noise lines before the marker still completes well within the bound" \
+    "still running after ${manynoise_waited}s (the fork-per-raw-line regression is back)"
+else
+  wait "$manynoise_pid" 2>/dev/null
+  pass "5,000 noise lines before the marker still completes well within the bound"
+fi
+check_nofile "and the marker among 5,000 noise lines still excludes correctly" "$RT_STORE"/*/wrap-fuse-events.log
+
+# assert_marker_excludes MARKER TAG LABEL — a mutating session whose SECOND user-role turn (not its
+# first) carries MARKER is still excluded. This is dir #523's own regression: a chip-launched worker's
+# brief arrives as a LATER turn, once a Read/`cat` of the brief file returns — the pre-#523 byte-bound
+# scan (`head -c 8000`), reproduced live against this ticket's own transcript at implementation time,
+# needed ~258,000 bytes (32x its window) to reach that turn, so it never matched there. Noise turns
+# interleaved to pin that they're skipped rather than counted toward the turn cap.
 assert_marker_excludes() {
   local marker="$1" tag="$2" label="$3" ame_d ame_tp
   ame_d="$(mkrepo)"; rt_env "$tag"
   feed_hook "$(read_json "$ame_d" Edit "$ame_d/src.sh")" log-tool
-  ame_tp="$SANDBOX/transcript.$tag.jsonl"
-  printf 'YOUR TICKET: dir #999\n%s\n' "$marker" > "$ame_tp"
+  ame_tp="$SANDBOX/transcript.$tag.jsonl"; : > "$ame_tp"
+  write_user_turn "$ame_tp" "a short chip prompt, no marker here"
+  write_noise_turn "$ame_tp"
+  write_noise_turn "$ame_tp"
+  write_user_turn "$ame_tp" "YOUR TICKET: dir #999. $marker"
   feed_hook "$(jq -n --arg cwd "$ame_d" --arg tp "$ame_tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
   check_nofile "$label" "$RT_STORE"/*/wrap-fuse-events.log
 }
-# assert_marker_not_matched_late MARKER TAG LABEL — regression pin: an earlier draft grepped the
-# WHOLE transcript, so any session whose LATER turns happen to mention the literal marker string
-# (this file's own source, or a chat about this ticket) would be silently excluded from the fuse
-# whose entire job is catching a forgotten /wrap. Fixed by scoping the match to the transcript's
-# opening turn — this pads well past the hook's own head-c byte window (8000) before the marker
-# appears, so it actually exercises the byte-bound scoping rather than trivially fitting inside it.
+# assert_marker_not_matched_late MARKER TAG LABEL — regression pin, re-targeted at the turn-count
+# bound this ticket introduces (the original pin targeted the byte bound it replaces): an earlier draft
+# grepped the WHOLE transcript, so any session whose LATER turns happen to mention the literal marker
+# string (this file's own source, or a chat about this ticket) would be silently excluded from the
+# fuse whose entire job is catching a forgotten /wrap. 7 user turns — past the se_marker_turns=5 cap —
+# precede the marker, so it must NOT exclude this ordinary session.
 assert_marker_not_matched_late() {
-  local marker="$1" tag="$2" label="$3" amnl_d amnl_tp
+  local marker="$1" tag="$2" label="$3" amnl_d amnl_tp amnl_i
   amnl_d="$(mkrepo)"; rt_env "$tag"
   feed_hook "$(read_json "$amnl_d" Edit "$amnl_d/src.sh")" log-tool
-  amnl_tp="$SANDBOX/transcript.$tag.jsonl"
-  {
-    printf 'ordinary session, no brief\n'
-    yes 'padding line to push the marker past the scoped byte window' | head -n 200
-    printf 'later turn: discussing read-trace.sh, which greps for the string %s\n' "$marker"
-  } > "$amnl_tp"
+  amnl_tp="$SANDBOX/transcript.$tag.jsonl"; : > "$amnl_tp"
+  for amnl_i in 1 2 3 4 5 6 7; do
+    write_user_turn "$amnl_tp" "ordinary turn $amnl_i, no brief"
+  done
+  write_user_turn "$amnl_tp" "later turn: discussing read-trace.sh, which greps for the string $marker"
   feed_hook "$(jq -n --arg cwd "$amnl_d" --arg tp "$amnl_tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
   check_contains "$label" "$(cat "$RT_STORE"/*/wrap-fuse-events.log 2>/dev/null)" "no-wrap"
 }
@@ -393,17 +546,53 @@ feed_hook "$(jq -n --arg cwd "$d" '{hook_event_name:"SessionStart", cwd:$cwd}')"
 check_status "startup with nothing pending is silent" "" "$OUT"
 
 # --- aggregate: FORMAT, fed a synthetic log (this ticket's own binding-test requirement) ----------------
+# dir #523: the synthetic wrap-fuse-events.log below is keyed by SESSION ID (sess-1/2/3), and is built
+# to pin the dedup this ticket adds to aggregate's own counting (see that case's own comment): sess-1
+# transitions no-wrap -> wrapped (a session that later wrapped must not still count as a miss, even
+# though its FIRST row said no-wrap) and sess-3 fires no-wrap twice (a duplicate SessionEnd fire for
+# the SAME session must collapse to one miss, not two). 5 raw rows, 3 distinct sessions, 2 of them
+# no-wrap (sess-2, sess-3) — "2 of 3", the same numbers the old row-count-only fixture used, but now
+# genuinely exercising the dedup rather than trivially matching a 1:1 row:session ratio.
 d="$(mkrepo)"; rt_env aggregate
 mkdir -p "$RT_STORE"
 agdir="$(KEEL_READ_TRACE_STORE="$RT_STORE" bash -c ". '$lib'; _rt_store_dir '$d'")"
 mkdir -p "$agdir"
 printf '2026-08-01T00:00:00Z\tread\tdocs/never-changes.md\n2026-08-15T00:00:00Z\tread\tdocs/foo.md\n' > "$agdir/reads.log"
-printf '2026-08-01T00:00:00Z\tno-wrap\tp1\n2026-08-05T00:00:00Z\twrapped\tp1\n2026-08-10T00:00:00Z\tno-wrap\tp2\n' > "$agdir/wrap-fuse-events.log"
+printf '2026-08-01T00:00:00Z\tno-wrap\tsess-1\n2026-08-05T00:00:00Z\twrapped\tsess-1\n2026-08-10T00:00:00Z\tno-wrap\tsess-2\n2026-08-12T00:00:00Z\tno-wrap\tsess-3\n2026-08-13T00:00:00Z\tno-wrap\tsess-3\n' > "$agdir/wrap-fuse-events.log"
 run_hook aggregate "$d"
 check_contains "aggregate: pinned table header" "$OUT" "| doc | last read | reads | surface changes since |"
 check_contains "aggregate: a row for each logged doc" "$OUT" "docs/foo.md"
 check_contains "aggregate: a row for the other logged doc too" "$OUT" "docs/never-changes.md"
-check_contains "aggregate: the wrap-fuse summary line, counts derived from the synthetic log (2 of 3)" "$OUT" "wrap-fuse: 2 of 3 mutating sessions this cycle ended with no /wrap"
+check_contains "aggregate: wrap-fuse counts DISTINCT sessions, by last outcome (2 of 3, not 3 of 5 raw rows)" "$OUT" "wrap-fuse: 2 of 3 mutating sessions this cycle ended with no /wrap"
+
+# --- aggregate: a MIXED log (legacy (repo,branch)-keyed rows from before this ticket, alongside real
+# session-id-keyed rows) does not collapse the legacy history (dir #523, found live by an
+# operator-run /code-review high pass) --------------------------------------------------------------
+# A row written by the pre-#523 code is keyed by `_rt_key`, hard-coded `<project-id>__<branch-slug>` —
+# ALWAYS containing a literal `__` — and every real session on that (repo,branch) wrote that exact
+# SAME key. Deduping those the same way a real session id is deduped would silently collapse an
+# entire pre-#523 history down to its last row's status alone — a live concern, not hypothetical:
+# `rotate` is manual (this file's own header), so an installation upgrading straight onto this ticket
+# still has old rows sitting in the store the very first time `aggregate` runs post-upgrade. `proj-a__main`
+# below stands in for that legacy shape: 3 raw rows, none deduped, 2 of them no-wrap — while `sess-x`
+# (a real, non-`__` session id) still dedupes exactly as the case above pins. A blank line (a race
+# with a concurrent `rotate`, or a non-atomic partial append) is also planted and must not count as a
+# phantom session.
+d="$(mkrepo)"; rt_env aggregatelegacy
+mkdir -p "$RT_STORE"
+agdir2="$(KEEL_READ_TRACE_STORE="$RT_STORE" bash -c ". '$lib'; _rt_store_dir '$d'")"
+mkdir -p "$agdir2"
+{
+  printf '2026-07-01T00:00:00Z\tno-wrap\tproj-a__main\n'
+  printf '2026-07-02T00:00:00Z\twrapped\tproj-a__main\n'
+  printf '2026-07-03T00:00:00Z\tno-wrap\tproj-a__main\n'
+  printf '\n'
+  printf '2026-08-01T00:00:00Z\tno-wrap\tsess-x\n'
+  printf '2026-08-02T00:00:00Z\twrapped\tsess-x\n'
+} > "$agdir2/wrap-fuse-events.log"
+run_hook aggregate "$d"
+check_contains "aggregate: legacy (repo,branch)-shaped rows are counted RAW, never deduped (2 no-wrap of 4)" \
+  "$OUT" "wrap-fuse: 2 of 4 mutating sessions this cycle ended with no /wrap"
 
 # --- aggregate: the coverage/denominator disclosure (dir #430 + dir #431's one output contract) --------
 # Printed always (not gated on a non-empty table or wrap-fuse log), and pins the specific claims a

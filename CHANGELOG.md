@@ -15,6 +15,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`tools/self/backlog-census.sh`** (dir #496): the shipped remover for three-and-a-half of
+  `docs/grooming.md` G3's four hand-derivation rules — last-arrow release tag
+  (`pool`/`next`/`on-demand`/`N.N[.N]` only, a grade re-tag arrow excluded by the restricted
+  vocabulary, a foreign citation's tag stripped via the shared `bb_strip_foreign_citations`),
+  closure via the shared, citation-aware predicate at a fixed marker position, `untagged` for
+  anything else. `--list TAG` prints ticket numbers in file order, version-tag-aware in the
+  default report's own tie-break. G3 and `commands/groom.md`'s G3 line now point at it; the
+  overloaded-status-glyph half of G3's fourth rule stays a manual check (no scanner resolves it).
+
 ### Changed
 
 - **`docs/grooming.md` G0 — the read-trace rotation is the groom's own closing step** (dir #543):
@@ -46,6 +57,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/self/prose-drift.sh` — three defects, one editing pass** (dir #240): a non-git `REPO_DIR`
+  now fails with a labeled exit-2 error instead of reaching `git ls-files` and aborting raw
+  (`fatal: not a git repository`) — decided by correcting the header's stale "test-sandbox friendly"
+  claim rather than restoring a degrade path, since no test fixture and no caller (`tools/self/doctor.sh`
+  always passes its own resolved git repo root) ever relied on a non-git `REPO_DIR` working. A heading
+  anchor that fails to resolve only because the heading carries a non-ASCII LETTER (signal 2's own
+  slugger is ASCII-only; GitHub's is not) now downgrades to an advisory WARN instead of a hard GAP —
+  the contract is narrowed, not widened into a Unicode slugger; non-ASCII punctuation (an em dash) is
+  unaffected, since both sluggers already strip it the same way. A link-shaped token quoted inside an
+  INLINE code span (not just a fenced block) is no longer extracted as a real link, via a new shared
+  `blank_inline_code_spans` in `tools/lib/fence-blank.sh`.
 - **`tools/lib/backlog-blocks.sh`'s closure vocabulary did not recognise `✅ FIXED`** (dir #581): the
   0.10.2 release manager wrote it on all 17 fixed slate headings, and every consumer of the shared
   scanner read them as still open. `BB_CLOSURE_TAG_PATTERN` now includes `FIXED`;
@@ -56,15 +78,44 @@ sections real content going forward — see that page for exactly when each one 
 - **`tools/self/pool-report.sh` sees three of the readiness scale's five grades** (dir #463): `R4`
   and `R0` had no `case` arm at all and fell into `unmarked` alongside genuinely ungraded tickets —
   the two grades a drain planner most needs to tell apart. The extractor is also loosened from the
-  strict `— R[0-9] —` shape to `— R[0-9]`, so a qualifier suffix ("— R2, needs a design pass —")
-  or a qualifier glued to the digit ("— R1-parked —") both still read without re-typing either live
-  heading; a body-stated `**Readiness: RN**` counts too when the heading carries no grade at all
-  (heading first, body second, operator decision 2026-09-20).
+  strict `— R[0-9] —` shape to `— R[0-9]([^a-zA-Z0-9]|$)`, so a qualifier suffix ("— R2, needs a
+  design pass —") or a qualifier glued to the digit ("— R1-parked —") both still read without
+  re-typing either live heading, while the right boundary still rejects an unrelated heading
+  mentioning "R\<digit\>" for its own reasons; a body-stated `**Readiness: RN**` counts too when the
+  heading carries no grade at all (heading first, body second, operator decision 2026-09-20), read
+  through the same fence-blanking/backtick-stripping `tools/lib/backlog-blocks.sh` already applies
+  so a fenced-code-block example is never misread as a ticket's own grade.
 - **`tools/self/pool-report.sh`'s pool history could not be corrected once recorded** (dir #461 half
   2): the release key was idempotent-once, so a stale first reading stuck permanently and
   `docs/grooming.md` G4 compensated by telling every groom to run the report last. `--record` now
-  takes an explicit `--amend` to make one release's row last-write-wins, and G4's ordering
-  compensation is removed.
+  takes an explicit `--amend` to make one release's row last-write-wins, substituting it IN PLACE
+  (an earlier shape appended instead, corrupting the growth trigger's positional "last two recorded
+  releases" read) via `ENVIRON[]` rather than `awk -v` (which would run the release name through
+  awk's own string-literal escape processing), and G4's ordering compensation is removed.
+- **`tools/lib/dir-tickets.sh`'s `extract_dir_tickets` now sees through a bold-wrapped bare-`#N`
+  continuation** (dir #578) — `**dir #478**, **#480**, **#481**`, the exact shape CHANGELOG.md's own
+  `[0.10.1]` known-issues paragraph uses, previously broke the anchor match dead after the first
+  fully-spelled ticket, since the `**` sitting between tokens isn't in the separator class. Emphasis
+  markers are now stripped bare (content kept, not blanked the way a backtick span is) before
+  extraction — both Markdown bold forms, `**text**` and `__text__`, in one pass, since they are the same
+  defect shape; five previously machine-invisible tickets in the `[0.10.1]` paragraph are now extracted.
+- **`tools/read-trace.sh` — the wrap-fuse's `wrapped` outcome no longer hangs on a model-remembered
+  step** (dir #523): `commands/wrap.md`'s persist step folds the completion stamp into the SAME call
+  it already makes for its report line (`docs-line --wrap`), instead of a separate, easily-dropped
+  `wrap-done` call — the fuse had read 0-2 `wrapped` rows across cycles that demonstrably persisted.
+  Wrap-fuse events are now keyed by session id, not (repo,branch): a worktree reused across two
+  different sessions writes two distinctly-labeled rows, and `aggregate` dedupes a real session id by
+  its last recorded outcome (never a legacy (repo,branch)-shaped key, so an installation's pre-#523
+  history stays counted exactly as before), so a duplicate `SessionEnd` fire for one session no longer
+  inflates the denominator either. (The underlying wrapped/not-wrapped *signal* two sessions on the
+  same worktree read — the mutation log and the wrap-done stamp `docs-line --wrap` writes — stays
+  (repo,branch)-scoped, a pre-existing, documented limitation this ticket narrows the symptom of but
+  does not remove; only the row's own label and the aggregate count are now session-accurate.) The
+  `DELEGATION RUN`/`WRAP CENTRALIZED` exclusion now scans the transcript's first few user-role turns,
+  one JSONL record at a time so one malformed/truncated line can't silently defeat the rest of the
+  scan, instead of a single-pass `head -c 8000` byte scan — a chip-launched worker's own brief, read
+  from a file the chip names, can arrive well past that byte window (reproduced live: over 258,000
+  bytes for this ticket's own transcript), which had misread every such worker as a forgotten wrap.
 
 ## [0.10.2] — 2026-09-19
 
