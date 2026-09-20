@@ -149,6 +149,20 @@ sections real content going forward — see that page for exactly when each one 
   the expected string — 5 false GAPs, reproduced live on unmodified origin/main. Fixed with
   `-c color.grep=never` on the two `git grep -l` call sites; a sweep of the rest of
   `tools/self/*.sh` found no other bare-`git grep -l`-then-compare call sites.
+- **`tools/lib/sh-quote.sh`'s `sh_quote_json` did not escape a literal `"`** (dir #566): a
+  checkout/HOME path containing `"` spliced into the two installers' hand-written no-jq JSON
+  snippet produced invalid JSON (`jq .` failing with "Invalid numeric literal"), even though the
+  header comment claimed sh_quote's output "never contains a literal `\"`". The backslash-doubling
+  pass now runs first, then `"` is escaped — reversing the order would double the `\` the `"`
+  escape itself introduces — and the header's false absolute is corrected; a new fixture pins the
+  case next to the existing apostrophe one.
+- **`tests/test_run_sh.sh`'s all-pass fixture never observed `tests/run.sh`'s logdir cleanup**
+  (dir #567): only the failure branch's preserved-logdir case was pinned; a mutation disarming the
+  EXIT-trap cleanup unconditionally left every one of the file's 45 prior assertions green. A
+  `mktemp` shim ahead of the real one on `PATH` now records the path run.sh's own `mktemp -d`
+  creates (bare `mktemp -d` does not honor `$TMPDIR` on macOS/BSD, so shimming rather than
+  redirecting `TMPDIR` is the portable probe), and `check_nodir` asserts it is gone once run.sh has
+  exited.
 
 ## [0.10.2] — 2026-09-19
 

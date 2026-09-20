@@ -58,6 +58,14 @@ apjson="$(sh_quote_json "$apostrophe_path")"
 check_status "sh_quote_json: doubles the backslash sh_quote's own escaping introduces" \
   "'/Users/x/Alex'\\\\''s checkout/keel/tools/pre-pr-gate.sh'" "$apjson"
 
+# --- a literal double-quote in the path (dir #566): sh_quote itself does not escape `"` (only single
+# quotes are special to its own quoting), so sh_quote_json must escape it for JSON — the
+# backslash-doubling pass must run FIRST, or the `\` this introduces would itself get doubled -------
+dquote_path='/Users/x/Say "hi" checkout/keel/tools/pre-pr-gate.sh'
+dqjson="$(sh_quote_json "$dquote_path")"
+check_status "sh_quote_json: escapes a literal double-quote" \
+  "'/Users/x/Say \\\"hi\\\" checkout/keel/tools/pre-pr-gate.sh'" "$dqjson"
+
 # --- the real proof: splice sh_quote_json's output into an actual JSON string literal and confirm
 # jq accepts it AND reads back the exact command a real shell would still parse correctly — the two
 # escaping layers (shell, then JSON) must compose, not just each look right in isolation.
@@ -68,5 +76,14 @@ decoded_cmd="$(jq -r '.command' "$SANDBOX/sh-quote-json-snippet.json")"
 eval "set -- $decoded_cmd"
 check_status "sh_quote_json: the JSON-decoded command still resolves to the real path" \
   "$apostrophe_path" "$2"
+
+# --- the same round-trip proof, for the double-quote path this ticket adds (dir #566) ---------------
+printf '{ "command": "bash %s" }\n' "$dqjson" > "$SANDBOX/sh-quote-json-dquote-snippet.json"
+run bash -c "jq . '$SANDBOX/sh-quote-json-dquote-snippet.json'"
+check_status "sh_quote_json: double-quote path spliced into JSON is valid JSON (jq accepts it)" 0 "$STATUS"
+decoded_dquote_cmd="$(jq -r '.command' "$SANDBOX/sh-quote-json-dquote-snippet.json")"
+eval "set -- $decoded_dquote_cmd"
+check_status "sh_quote_json: the JSON-decoded command still resolves to the real double-quote path" \
+  "$dquote_path" "$2"
 
 summary

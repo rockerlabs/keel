@@ -29,12 +29,16 @@ sh_quote() {
 # jq filter to get this for free) produced INVALID JSON whenever the checkout path held an
 # apostrophe (verified live: `jq .` on the printed snippet failed with "Invalid escape at line N"),
 # even though the SHELL-level escaping was already correct — the bug just moved up one layer instead
-# of being fixed. Doubling the backslash is the only JSON-escaping sh_quote's own output ever needs:
-# it never contains a literal `"` or a control character, only printable path characters, `'`, and
-# `\`, so a full general-purpose JSON-string escaper would be solving a problem this call site
-# doesn't have.
+# of being fixed. A literal `"` needs escaping too (dir #566: a checkout/HOME path containing `"` —
+# splicing sh_quote's raw output into the hand-written JSON heredoc produced invalid JSON there as
+# well, `jq .` failing with "Invalid numeric literal") — the backslash-doubling pass MUST run first,
+# or the `\` it introduces for the `"` escape gets doubled too. Backslash and `"` are the only
+# JSON-escaping sh_quote's own output ever needs: it never contains a control character, only
+# printable path characters, `'`, `\`, and `"`, so a full general-purpose JSON-string escaper would
+# be solving a problem this call site doesn't have.
 sh_quote_json() {
   local q
   q="$(sh_quote "$1")"
-  printf '%s' "${q//\\/\\\\}"
+  q="${q//\\/\\\\}"
+  printf '%s' "${q//\"/\\\"}"
 }
