@@ -130,21 +130,23 @@ r4=0; r3=0; r2=0; r1=0; r0=0; runmarked=0
 oldest_age=-1
 oldest_id="unlabeled"
 
-# dir #463, second half (simplify pass): read once, up front, rather than re-opening
-# $backlog_file with a fresh `sed` per ticket whose heading carries no grade at all — the body
-# scan below then slices this in-memory array instead of spawning a process per ticket.
+# dir #463, second half: the body-fallback scan below needs the SAME fence-blanked,
+# backtick-stripped content `tools/lib/backlog-blocks.sh`'s own `backlog_ticket_blocks` already
+# computes internally (code-review medium, found live, reproduced: reading the raw file let a
+# ticket's body quote `**Readiness: R1**` as an ILLUSTRATIVE EXAMPLE — inside a fenced code block
+# or inline backticks, describing the convention or a DIFFERENT ticket's grade — and misread it as
+# this ticket's own; `blank_fenced_blocks` blanks fenced content in place without changing line
+# count, so $start/$end line numbers still line up against it).
 #
-# code-review medium (found live, reproduced): reading the RAW file here — no fence-blanking, no
-# backtick-stripping — let a ticket's body quote `**Readiness: R1**` as an ILLUSTRATIVE EXAMPLE
-# (inside a fenced code block or inline backticks, describing the convention or a DIFFERENT
-# ticket's grade) and have the body scan below misread it as this ticket's own. Mirror the exact
-# preprocessing `tools/lib/backlog-blocks.sh`'s own `backlog_ticket_blocks` already applies before
-# computing anything from this file — `blank_fenced_blocks` (line count unchanged, fenced content
-# blanked in place, so $start/$end line numbers still line up) then the same inline-backtick
-# strip — so a heading- or tag-shaped string living inside a code example is invisible here too.
+# code-review medium, final round (found live): building this array unconditionally, before the
+# loop even starts, pays for a second full fence-blank + backtick-strip pass over the whole
+# backlog file on EVERY run — the exact same pass `backlog_ticket_blocks` already made moments
+# earlier — even on a backlog where every heading already carries its own grade and the fallback
+# below never fires for any ticket. Built lazily instead, on the first ticket that actually needs
+# it (a `loaded` flag rather than re-checking `[ "${#backlog_lines[@]}" -eq 0 ]`, since a
+# genuinely empty backlog and a not-yet-built array are otherwise indistinguishable).
 backlog_lines=()
-while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done \
-  < <(sed -E 's/`[^`]*`//g' <<< "$(blank_fenced_blocks "$backlog_file")")
+backlog_lines_loaded=0
 
 while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] && continue
@@ -205,7 +207,12 @@ while IFS=$'\t' read -r start end closed heading_block; do
     # grade on its heading at all may still state one in prose, `**Readiness: RN**` — two named
     # legacy tickets do exactly this. Scanned only when the heading match above is empty, so the
     # common case (grade on the heading) never pays for the extra pass over the body span; the
-    # slice below reads the in-memory array populated once above, not a fresh file open.
+    # slice below reads the in-memory array, built lazily on this, its first actual use.
+    if [ "$backlog_lines_loaded" = "0" ]; then
+      while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done \
+        < <(sed -E 's/`[^`]*`//g' <<< "$(blank_fenced_blocks "$backlog_file")")
+      backlog_lines_loaded=1
+    fi
     rlvl_match="$(printf '%s\n' "${backlog_lines[@]:$((start - 1)):$((end - start + 1))}" \
       | grep -oE 'Readiness:[[:space:]]*R[0-9]([^a-zA-Z0-9]|$)' | tail -1 || true)"
   fi
