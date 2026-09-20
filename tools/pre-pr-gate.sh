@@ -678,12 +678,14 @@ _stamp_tests_outcome() {
 # change, any binary diff, or any single non-comment content line, and the whole range is NOT null.
 #
 # **Residual, accepted (documented, not fixed — same posture as the `.md` exclusion above):** a `.sh`
-# file's heredoc body can carry a `#`-prefixed line that is DATA, not a shell comment (e.g. a script's
-# own `cat <<EOF`-printed usage text gaining a literal `# NOTE: ...` line) — this line-based predicate
-# cannot tell that apart from a real comment. Exempting less here would mean disqualifying any file
-# that contains a heredoc at all, which this implementation does not do; left as a known, narrow gap
-# the way `.md`'s own residual gaps are named rather than silently carried (found by this ticket's own
-# review, altitude angle).
+# file's multi-line literal — a heredoc body, or a `$'…'`/quoted string continued across lines — can
+# carry a `#`-prefixed line that is DATA, not a shell comment (e.g. a script's own `cat <<EOF`-printed
+# usage text gaining a literal `# NOTE: ...` line, or a multi-line quoted message string whose second
+# line happens to start with `#`) — this line-based predicate cannot tell that apart from a real
+# comment. Exempting less here would mean disqualifying any file that contains such a literal at all,
+# which this implementation does not do; left as a known, narrow gap the way `.md`'s own residual gaps
+# are named rather than silently carried (found by this ticket's own review, altitude angle; broadened
+# from "heredoc" alone to "multi-line literal" by the manager's own read of PR #432, Amendment B1).
 _review_null_diff() {
   local cwd="$1" old="$2" new="$3" status_lines path status old_line1 new_line1 top pipe_rc
   # `--no-color --no-ext-diff --no-textconv`, unconditionally, on EVERY `git diff` call in this
@@ -1149,6 +1151,16 @@ _trace_shas_for_level() {
 # real commits sit between them. Prints the qualifying ancestor sha and returns 0 on a match (for the
 # caller to log/expose, not required for correctness); returns 1, silently, when nothing qualifies —
 # the caller's existing deny is unaffected, this only ever ADDS a path to PASS, never removes one.
+#
+# **Residual, accepted (found by the Amendment B1 delta review; same posture as the `.md`/heredoc
+# residuals in `_review_null_diff`'s own header):** candidates come back in the trace file's own
+# append order, and this returns the FIRST qualifying one — if a repo's trace ever accumulates two
+# distinct ancestors reviewed at the same LEVEL with both null-diffing to current HEAD, but only the
+# SECOND one also has step 5(a)'s dialog answered (Amendment B1, below), the caller can still deny on
+# the first (dialog-less) ancestor even though the second would satisfy both checks. Rare in practice
+# (it needs a multi-review trace history at one level), and not something Amendment B1 introduced —
+# this single-first-candidate selection already existed for the review check alone; the dialog check
+# just reuses the same value rather than adding new risk. Not engineered away here.
 _review_exempt_sha() {
   local cwd="$1" wt_key="$2" current_sha="$3" lvl="$4" cand
   while IFS= read -r cand; do
@@ -1307,16 +1319,18 @@ resolve_impact_log() {
 # taken BEFORE resolve_impact_log's main-checkout fallback — the fallback is only about where the log
 # FILE lives, not who fired the event. Empty outside a repo (matches resolve_impact_log's own git call).
 #
-# CAVEAT: "field 5 = claim key" only holds for a `detail` with no embedded tab. TWO callers intentionally
-# pack a second value into `detail` via a literal tab, both harmless for the same reason: the receipt-pass
-# call below (dir #63/#64's `sweep` provenance trick, `prov_label`+`prov_tag`) and the dir #488
-# `review-null-exempt` call (the exempting ancestor sha + `$trace_match_outcome`). Each one's actual
-# on-disk line has 6 tab fields, not 5, and $5 there is the second packed value, not the claim key —
-# currently harmless only because `keel-impact.sh` doesn't score either type (EVENT_TYPES excludes both),
-# so nothing ever reads that misplaced field. `keel-impact.sh cmd_add`'s ingest loop round-trips such
-# a line VERBATIM (the original 6-field text, not a 5-field reconstruction) whenever a rewrite happens to
-# preserve it, so the extra field survives on disk even though nothing reads it yet — but don't extend
-# EVENT_TYPES to cover EITHER type whose detail can carry an embedded tab without also sanitizing it here
+# CAVEAT: "field 5 = claim key" only holds for a `detail` with no embedded tab. THREE callers
+# intentionally pack a second value into `detail` via a literal tab, all harmless for the same reason:
+# the receipt-pass call below (dir #63/#64's `sweep` provenance trick, `prov_label`+`prov_tag`), the
+# dir #488 `review-null-exempt` call (the exempting ancestor sha + `$trace_match_outcome`), and the
+# dir #488 (Amendment B1) `review-null-dialog-exempt` call (the same ancestor sha + the dialog's own
+# `dialog:$outcome_level`). Each one's actual on-disk line has 6 tab fields, not 5, and $5 there is
+# the second packed value, not the claim key — currently harmless only because `keel-impact.sh`
+# doesn't score any of the three types (EVENT_TYPES excludes all of them), so nothing ever reads that
+# misplaced field. `keel-impact.sh cmd_add`'s ingest loop round-trips such a line VERBATIM (the
+# original 6-field text, not a 5-field reconstruction) whenever a rewrite happens to preserve it, so
+# the extra field survives on disk even though nothing reads it yet — but don't extend EVENT_TYPES to
+# cover ANY of the three whose detail can carry an embedded tab without also sanitizing it here
 # the way `keel-impact.sh cmd_event`'s `_flatten` does for its own writes.
 # Append one event line, resolving the log path for cwd $3 (default $PWD). Writes to the log file only —
 # never stdout, so a hook's JSON decision stays intact; with no log path resolved, this is a silent no-op.
@@ -2577,6 +2591,11 @@ case "$status" in
     fi
     trusted=0
     needs_dialog=0
+    # dir #488 (Amendment B1): defined here, unconditionally, so the dialog check further below can
+    # read it under `set -u` regardless of which case arm runs — the `skip` arm sets trusted=1 and
+    # never reaches the block that would otherwise populate this, so without this default a `skip`
+    # outcome (needs_dialog=1 too) would abort on an unbound variable the first time this ran.
+    review_null_ancestor=""
     trace_match_outcome="$review_outcome"
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
@@ -2879,7 +2898,31 @@ case "$status" in
     # dir #88 header section for why an unconditional check would false-deny every `agent:*` unlock
     # between `git pull` and the operator re-running the installer.
     if [ "$needs_dialog" -eq 1 ] && _dialog_leg_armed "$main_top"; then
-      if ! _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
+      # dir #488 (Amendment B1 — the manager's own review of PR #432 found this: "a guard fixed one
+      # function short of its own twin"): the review-trace check above already exempts a review-null
+      # fix commit via $review_null_ancestor, but this dialog check kept keying strictly on
+      # $current_sha with no such fallback — so an `agent:*` outcome (the ordinary, adopter-observed
+      # shape per dir #488's own body) still denied here even after the review check passed, on any
+      # installation where the AskUserQuestion leg is armed (this repo's own project-scope hooks are).
+      # Re-answering that dialog means re-running step 5(a) — a Skill(code-review) invocation — which
+      # is exactly the mechanical cost dir #488 exists to remove, so an unexempted twin here defeated
+      # the whole ticket on every armed install. `$review_null_ancestor` is always defined by this
+      # point (initialized "" alongside `trusted`/`needs_dialog` above, never left unset by `set -u`)
+      # — for the `skip` arm specifically it is unconditionally "" (skip sets trusted=1, so the
+      # review-trace block above that would populate it never runs), so this fallback is structurally
+      # a no-op for skip's own, unrelated dialog (step 4's, not step 5(a)'s) — its behavior is
+      # untouched, deliberately.
+      dialog_ancestor_ok=0
+      if [ -n "$review_null_ancestor" ] && _trace_has_line "$wt" "$review_null_ancestor" "dialog:$outcome_level"; then
+        dialog_ancestor_ok=1
+      fi
+      if _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
+        : # answered for current HEAD directly — the ordinary case, nothing to log.
+      elif [ "$dialog_ancestor_ok" -eq 1 ]; then
+        # dir #488: logged, same as the review-trace exemption above — the dialog was genuinely
+        # answered, just for the ancestor the review check already accepted, not current HEAD.
+        log_event "review-null-dialog-exempt" "$review_null_ancestor -> $current_sha"$'\t'"dialog:$outcome_level" "$cwd"
+      else
         # dir #376: no retire_sentinel here — the chain is otherwise well-formed and only this one
         # dialog trace is missing, a precondition the session can still satisfy without losing the
         # other 7 receipts.

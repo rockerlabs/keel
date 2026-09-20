@@ -3512,4 +3512,69 @@ check_contains "dir #488: GIT_EXTERNAL_DIFF must not blind the classifier into a
 check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace matching"
 rm -f "$tf"
 
+# 117. dir #488 Amendment B1 (manager's own review of PR #432): the review-trace exemption above only
+# ever exercised a BARE review outcome (trusted=0, needs_dialog=0 — that case-arm never even reaches
+# the dialog check). The realistic, adopter-observed shape is `agent:<level>` (dir #488's own body),
+# which sets needs_dialog=1 too — on any installation where the AskUserQuestion leg is ARMED, that
+# SECOND check used to keep keying strictly on current HEAD with no exemption of its own, denying a
+# review-null fix commit right after the review check had just passed it. POSITIVE: an armed install,
+# a matching `agent:<level>` review trace AND dialog trace both at sha1, a comment-only fix commit to
+# sha2 → still unlocks with no fresh review OR dialog answer.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+agent_trace "$d" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=medium\n')"
+askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=medium Run /code-review too?"
+write_full_receipt_review "$d" "agent:medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 B1 setup: ARMED install, agent:medium review+dialog trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\n# a clarifying comment, nothing else changed\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "comment-only fix"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 B1: ARMED install, comment-only fix → STILL unlocks (dialog check exempted too)" 0 "$STATUS"
+check_absent "dir #488 B1: unlocked, not denied" "$OUT" "deny"
+rm -f "$tf"
+
+# 118. dir #488 Amendment B1 NEGATIVE (the mirror image): the fix commit changes one EXECUTABLE line —
+# the review check itself already denies (no review-null ancestor exists), so the dialog-check
+# exemption's fallback (keyed off that same, absent, `$review_null_ancestor`) never even applies.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+printf 'echo build\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "add build script"
+sha1="$(git -C "$d" rev-parse HEAD)"
+agent_trace "$d" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=medium\n')"
+askuserquestion_trace "$d" "Agent review ran and stands. KEEL-REVIEW-DIALOG: level=medium Run /code-review too?"
+write_full_receipt_review "$d" "agent:medium"
+gate "gh pr create --fill" "$d"
+check_status "dir #488 B1 setup: ARMED install, agent:medium review+dialog trace-backed at sha1 → exit 0" 0 "$STATUS"
+
+printf 'echo build\necho one-more-executable-line\n' > "$d/build.sh"
+git -C "$d" add build.sh
+git -C "$d" commit -q -m "real fix, one executable line"
+sha2="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.3-tests "$sha2"
+run_in "$d" bash "$gate" receipt polish.5-review "agent:medium"
+run_in "$d" bash "$gate" receipt polish.6-retest "$sha2"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$sha2"
+gate "gh pr create --fill" "$d"
+check_contains "dir #488 B1: ARMED install, one-executable-line fix → STILL denied (no exemption)" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #488 B1: denied for the missing review trace, not silently exempted" "$OUT" "no trace matching"
+rm -f "$tf"
+
 summary
