@@ -145,4 +145,14 @@ and that's fine.)
   number, not an opinion. **Promoted 2026-09-21 to dir #613** (spec-ready, a design pass): the
   experiment as designed there, with the API verified live against an early-access key — `jev-latest`
   → `jev-1.13.0`, ~1 s per request, a 72 KB state accepted, a $5 monthly credit that covers the whole
-  run ~500×. The outcome line lands here when dir #613 closes.
+  run ~500×.
+  **Outcome (2026-09-21, dir #613 phase 1):** NOT calibrated — closed with the number, no phase-2
+  ticket. 43 already-adjudicated findings from 4 delta runs, both state conditions (finding-only /
+  finding+hunk): REFUTED-recall 0.636/0.545, REFUTED-precision 0.280/0.261, ECE 0.291/0.313 — below
+  bar (≥0.70 / ≥0.60 / ≤0.10) on every axis, both conditions. `holds`'s class-conditional means are
+  statistically indistinguishable (0.421 vs 0.448) — no signal, not a threshold problem. `severity`:
+  0% exact agreement across 32 scored rows despite ≈95% stated confidence — confidently wrong rather
+  than usefully uncertain. Candidates (B) and (C) inherit this result per this entry's own framing
+  and are not separately tested. Full report:
+  `private/audit-harness/jev/runs/20260921T122220Z/REPORT.md`; narrative:
+  `private/audit/RUNS.md`'s Jev section.
