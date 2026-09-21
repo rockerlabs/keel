@@ -142,4 +142,7 @@ and that's fine.)
   proposed checker's noise before building it): one evening's experiment on candidate (A) — run
   already-adjudicated findings through Jev, score agreement with the human verdict AND calibration
   (is p>0.9 right ~90 % of the time). Calibrated → (B) and (C) become near-free; not → close with a
-  number, not an opinion.
+  number, not an opinion. **Promoted 2026-09-21 to dir #613** (spec-ready, a design pass): the
+  experiment as designed there, with the API verified live against an early-access key — `jev-latest`
+  → `jev-1.13.0`, ~1 s per request, a 72 KB state accepted, a $5 monthly credit that covers the whole
+  run ~500×. The outcome line lands here when dir #613 closes.
