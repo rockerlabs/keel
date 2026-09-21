@@ -43,6 +43,10 @@ sections real content going forward — see that page for exactly when each one 
   gates, not the deep review legs, only the triage middle (delta-audit finding classification,
   audit-harness escalation, a second stage over `prose-drift`'s WARN) — as an opt-in leg with one
   measured experiment as its next step, per dir #344's "measure a checker's noise before building it".
+- **`IDEAS.md` — the Jev entry promoted to dir #613** (2026-09-21): a design pass produced the
+  spec-ready calibration experiment (two labels, two state conditions, a fixed pass bar, a private
+  gitignored harness — no product code) and the entry now points at it; the API was verified live
+  with an early-access key before the ticket was filed. Outcome line lands here when dir #613 closes.
 
 ### Changed
 
