@@ -38,6 +38,11 @@ sections real content going forward — see that page for exactly when each one 
   anything else. `--list TAG` prints ticket numbers in file order, version-tag-aware in the
   default report's own tie-break. G3 and `commands/groom.md`'s G3 line now point at it; the
   overloaded-status-glyph half of G3's fourth rule stays a manual check (no scanner resolves it).
+- **`IDEAS.md` — a "System One" triage leg** (2026-09-21): TypeSafe AI's Jev (non-autoregressive,
+  typed probabilistic decisions) placed against keel's three decision layers — not the deterministic
+  gates, not the deep review legs, only the triage middle (delta-audit finding classification,
+  audit-harness escalation, a second stage over `prose-drift`'s WARN) — as an opt-in leg with one
+  measured experiment as its next step, per dir #344's "measure a checker's noise before building it".
 
 ### Changed
 

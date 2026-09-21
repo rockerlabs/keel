@@ -118,3 +118,28 @@ and that's fine.)
   the run's empirics fired this entry's own promotion trigger; the pattern, the measured field test,
   the "wrap duties are centralized" worker-marker lesson, and the design mandate all live in that
   ticket now.
+- [2026-09-20] **A "System One" leg for keel's triage layer — TypeSafe AI's Jev** — surfaced while
+  reading the Jev launch (a non-autoregressive model: state + typed questions in, typed answers with
+  calibrated probabilities out, ~70–500 ms, output tokens free; early access opened 2026-09-20). Keel's
+  decision surface has three layers, and Jev fits exactly one: NOT the deterministic gates
+  (`pre-pr-gate`, `doctor`, `secret-guard` must stay bash-only, offline, reproducible — a probabilistic
+  network call there is a regression), NOT the deep review legs (find-rate tracks reviewer novelty and
+  depth per `docs/verification-economics.md` §2, and Jev's output is itself a claim, never a
+  verification), but the TRIAGE middle that today is either a noisy heuristic or a full LLM round.
+  Candidates, best first: (A) finding triage in delta-audit/drydock — `{new|known class, class_id,
+  severity, duplicate-of}` with a confidence, escalating below-threshold items to a human; past
+  adjudications in `private/audit/` are labeled data, so the experiment is checkable; (B) escalation
+  in the audit harness — a cheap "does this hunk plausibly carry a defect of class X?" pass to decide
+  which files earn a `deepseek-reasoner` round (it exhausts its completion budget on reasoning), as
+  prioritization, never a stopping rule; (C) a second-stage filter over `tools/self/prose-drift.sh`'s
+  WARN signal, which self-describes as unable to tell a truncated edit from a long sentence.
+  Weaker: `/wrap`'s red-flag classification (volume too low to matter), backlog duplicate detection
+  (context size). NOT a candidate: `keel-impact` — the "model judges with citations, script counts"
+  split is what makes the number honest; a cheaper judge loses the citations. Constraints: keel is
+  publication-first and tool-independent, so any Jev use is an opt-in leg (like the Gemini G6 leg and
+  the DeepSeek harness — `private/` or a flagged tool degrading to "as before" without a key), never
+  in the always-on path or `install.sh`; key via env. Next step, per dir #344's lesson (measure a
+  proposed checker's noise before building it): one evening's experiment on candidate (A) — run
+  already-adjudicated findings through Jev, score agreement with the human verdict AND calibration
+  (is p>0.9 right ~90 % of the time). Calibrated → (B) and (C) become near-free; not → close with a
+  number, not an opinion.
