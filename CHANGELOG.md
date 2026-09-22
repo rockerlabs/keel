@@ -306,7 +306,12 @@ sections real content going forward — see that page for exactly when each one 
   re-installing over an ALREADY-installed Keel hook, then failing later, deleted the working hook
   (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
   instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
-  hook, restored on failure and cleaned up on success.
+  hook, restored on failure and cleaned up on success. A release-candidate audit before the 0.11.0
+  tag then found that same safety-net backup and `--force`'s own permanent backup of a foreign hook
+  shared one path, `<hook>.pre-keel.bak` — so an ordinary re-install right after a `--force` install
+  silently destroyed the user's only copy of their original hook when the safety net's own
+  success-path cleanup deleted it. The safety net now writes to a distinct `<hook>.keel-upgrade.bak`,
+  so a `--force` backup is never touched by a later ordinary re-install.
 - **Two call-site comments (`tools/keel-impact.sh`, `tools/pre-pr-gate.sh`) named a failure the code
   cannot produce** (dir #243): both said an unsanitized override would "crash" a later arithmetic/
   comparison; re-derived from the code, neither one crashes — one silently disables its own age cap

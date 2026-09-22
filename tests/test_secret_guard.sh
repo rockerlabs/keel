@@ -794,8 +794,8 @@ check_status "the original pre-push is restored, byte-for-byte" \
   "$orig_pre_push" "$(cat "$uprepo/.git/hooks/pre-push")"
 check_contains "the restored pre-commit still carries the Keel marker" \
   "$(cat "$uprepo/.git/hooks/pre-commit")" "Keel secret-guard"
-check_nofile "no stray backup left behind after the restore" "$uprepo/.git/hooks/pre-commit.pre-keel.bak"
-check_nofile "no stray backup left behind after the restore (pre-push)" "$uprepo/.git/hooks/pre-push.pre-keel.bak"
+check_nofile "no stray backup left behind after the restore" "$uprepo/.git/hooks/pre-commit.keel-upgrade.bak"
+check_nofile "no stray backup left behind after the restore (pre-push)" "$uprepo/.git/hooks/pre-push.keel-upgrade.bak"
 # The still-working ORIGINAL hook actually still runs end-to-end after the restore, not just present
 # as bytes — a real push through it must still block a real secret.
 printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$uprepo/root.txt"
@@ -842,6 +842,18 @@ check_contains "Keel guard now installed (marker present)" "$(cat "$frepo/.git/h
 # re-vendor over OUR own hook is silent + idempotent — the marker recognizes it as ours, no false refusal
 run "$isg" "$frepo"
 check_status "re-vendor over Keel's own hook → exit 0 (no false refusal)" 0 "$STATUS"
+
+# RC audit regression, RED before the dir #570 backup-suffix fix: --force over a foreign hook backs
+# it up to the PERMANENT .pre-keel.bak; the hook is Keel's now, so this ordinary re-install (no
+# --force) takes the "already ours" branch. Before the fix that branch reused the SAME .pre-keel.bak
+# path for its own run-scoped safety net, and the success path then deleted it — silently destroying
+# the user's --force backup, unrecoverably, on a completely ordinary re-install.
+check_file "--force backup survives an ordinary re-install (RC audit regression)" \
+  "$frepo/.git/hooks/pre-commit.pre-keel.bak"
+check_contains "surviving backup still holds the user's original content" \
+  "$(cat "$frepo/.git/hooks/pre-commit.pre-keel.bak")" "my own pre-commit"
+check_nofile "the re-install's own run-scoped safety net leaves no stray .keel-upgrade.bak" \
+  "$frepo/.git/hooks/pre-commit.keel-upgrade.bak"
 
 # --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
 # The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
