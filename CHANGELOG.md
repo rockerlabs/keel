@@ -87,6 +87,14 @@ sections real content going forward — see that page for exactly when each one 
   `tools/self/pool-report.sh` read-only; the measurement behind the decision is in G4.
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
+- **The review RECORD stops drifting from the tree** (dir #244): PR #250's body wrongly described
+  dir #191's alpine-CI fix as landing via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`
+  (it never shipped; `--system` did, in PR #249) — corrected in place, with a pointer sentence added
+  to this file's `[0.7.1]` entry for dir #191, since a merged PR body is easily missed. Three commit
+  messages (`2b8d83d`, `60c12cb`) describing pre-review versions of their own fixes stay a disclosure,
+  not a fix — commit history is immutable. `commands/polish.md`'s in-run `--amend` path now also
+  re-reads the commit MESSAGE against the final diff, the same way step 9 already re-reads the PR
+  body, so a review-driven amend can no longer leave the message describing the pre-amend fix.
 - **`FRAMEWORK.md`'s Changelog section gains a re-derive-at-writing-time clause** (dir #229):
   a self-drift shape (a late-session summary paraphrasing its own earlier narration) and a
   source-drift shape (a fix round writing a claim about code mechanics from the ticket describing
@@ -97,6 +105,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/read-trace.sh`'s silent hooks (`log-tool`/`session-end`) stayed silent even when the store
+  root is UNWRITABLE** (dir #393): dir #387's V3 fix silenced an UNRESOLVED store root (no HOME/
+  KEEL_HOME/KEEL_READ_TRACE_STORE); this closes the same class on the WRITABILITY axis — a resolved
+  root that the filesystem then refuses to write to (e.g. mode 500) used to leak `mkdir: Permission
+  denied` plus a failed-redirect line to stderr on every persistent-tier write. The `mkdir` and the
+  append now both swallow their own stderr, the latter via a `{ ...; } 2>/dev/null` GROUP command
+  rather than a trailing redirect on the write itself — bash opens the `>>`/`>` target before applying
+  a trailing `2>/dev/null` on the same simple command, so that ordering still leaked (reproduced
+  live); wrapping the write in a group redirects its stderr first. The tool's own header now states
+  the writable-root assumption explicitly.
 - **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
   apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
   repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
@@ -3761,7 +3779,10 @@ independently.
   runs. **`--system` is load-bearing and a future change must not "simplify" it to `--global`:**
   `tests/lib.sh` redirects `GIT_CONFIG_GLOBAL` per test file, which shadows a `--global` write
   entirely, so only `--system` reaches every git call in the suite. As part of the same cleanup
-  `tools/self/prose-drift.sh` lost its own `|| true` guard — see Known issues.
+  `tools/self/prose-drift.sh` lost its own `|| true` guard — see Known issues. *Record correction
+  (dir #244): PR #250, which landed alongside this fix, described this mechanism in its own body as
+  `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` — that never shipped; `--system` above,
+  from this PR, is what did. PR #250's body has been corrected in place.*
 - **`tests/run.sh` no longer reports a false FAIL on a real checkout** (dir #222). One
   `tests/test_pre_pr_gate.sh` assertion scanned the working tree with `grep -r` rather than tracked
   files, so any gitignored file that happened to quote a gate marker — an operator's own backlog or
