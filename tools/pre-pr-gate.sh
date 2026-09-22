@@ -1925,8 +1925,11 @@ case "${1:-}" in
     # shouldn't read as "fine" just because it hasn't accumulated K runs yet — found in the operator-run
     # /code-review high pass on this ticket). Not wired into any hook by design (a sweep needs to run
     # once per /wrap, not per gate decision) — invoking it is a manual follow-up.
-    # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls
-    # back to 3 rather than crashing a later comparison against this value.
+    # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR digit-overflowing override
+    # falls back to 3 rather than letting an oversized `k` defeat the `streak >= k` check in the awk
+    # below — awk coerces an astronomically large `k` to a double with no error, so the comparison
+    # never fires and a genuine self-reported-only streak silently stops being flagged. Not a crash:
+    # a silent wrong answer (the sweep WARN this whole function exists to raise never raises).
     sw_k="$(sanitize_nonneg_int "${2:-3}" 3)"
     sw_log="$(resolve_impact_log "$PWD")"
     if [ -z "$sw_log" ] || [ ! -f "$sw_log" ]; then

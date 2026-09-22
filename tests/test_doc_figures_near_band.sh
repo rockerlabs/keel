@@ -53,4 +53,45 @@ check_status "warn copy: test_doc_figures.sh still exits 0 (still inside ±10%)"
 check_contains "warn copy: prints a near-band note" "$OUT" "  note  "
 check_contains "warn copy: note names the nudged file's label" "$OUT" "$doc_row_file"
 
+# --- leg (c): dir #245 — the commands/*.md OPEN-CEILING range row gets the same 25%-style note as
+# the open-floor rows, once the largest ordinary command has drifted 25%+ above the quoted HI. A
+# SYNTHETIC near-ceiling fixture (shrink the row's own quoted HI in the copy), not a real command
+# pushed toward it — the real tree's own largest command changes size over time and this test must
+# not depend on today's exact figure.
+ceiling_copy="$SANDBOX/near-band-ceiling"
+copy_tree "$ceiling_copy"
+
+ceiling_doc="$ceiling_copy/docs/loading-and-cost.md"
+# The real largest ORDINARY command (excl. polish.md), by the same ~4-chars/token estimate the guard
+# itself uses — this is what the shrunk HI below has to sit 25%+ under.
+max_cmd_tok=0
+for f in "$ceiling_copy"/commands/*.md; do
+  [ -f "$f" ] || continue
+  [ "$(basename "$f")" = "polish.md" ] && continue
+  c="$(wc -c < "$f" | tr -d ' ')"
+  t=$(( c / 4 ))
+  [ "$t" -gt "$max_cmd_tok" ] && max_cmd_tok="$t"
+done
+# new_hi*5/4 must be strictly below max_cmd_tok — new_hi = max_cmd_tok*4/5 - 1 guarantees that with
+# integer division (round-down on the *4/5 already errs low; the -1 covers the exact-multiple case).
+new_hi=$(( (max_cmd_tok * 4 / 5) - 1 ))
+
+# Rewrite the row's own "~LO–HI+ each" cell, keeping LO and the open "+" — only HI shrinks. The
+# LO/HI separator is an EN DASH (U+2013), not a hyphen (found live: a hyphen-anchored sub() silently
+# never matched) — target the digit run immediately before the "+" instead, which is unambiguous
+# either way (only the HI figure in this row carries a trailing "+").
+awk -v newhi="$new_hi" '
+  /^\|.*`commands\/\*/ {
+    sub(/[0-9][0-9,]*\+/, newhi "+")
+  }
+  { print }
+' "$ceiling_doc" > "$ceiling_doc.tmp" && mv "$ceiling_doc.tmp" "$ceiling_doc"
+
+run bash "$ceiling_copy/tests/test_doc_figures.sh"
+check_status "ceiling copy: test_doc_figures.sh still exits 0 (open ceiling never fails)" 0 "$STATUS"
+check_contains "ceiling copy: prints a ceiling-drift note" "$OUT" "  note  "
+check_contains "ceiling copy: note names the commands/*.md range label" "$OUT" \
+  "commands/*.md (excl. polish.md) sizes fall inside the quoted range"
+check_contains "ceiling copy: note cites the shrunk ceiling" "$OUT" "~$new_hi+ ceiling"
+
 summary

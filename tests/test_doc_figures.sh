@@ -125,6 +125,7 @@ assert_figure() {
 assert_commands_range() {
   local label="$1"
   local row="" lo="" hi="" f="" tok="" bad="" open_upper=""   # init all (set -u safe on bash 3.2)
+  local max_tok=0 max_file=""
   row="$(grep -E '^\|.*`commands/\*' "$doc" | head -1)"
   if [ -z "$row" ]; then fail "$label" "no commands/*.md row in loading-and-cost.md"; return; fi
   # the figure cell is "~LO-HI each" (one tilde, an en-dash); read the last table cell, take its two
@@ -144,9 +145,24 @@ assert_commands_range() {
     tok="$(tok_of "$f")"
     if [ "$tok" -lt "$lo" ]; then bad="$bad $(basename "$f")=$tok"; continue; fi
     if [ -z "$open_upper" ] && [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
+    # Tracked regardless of pass/fail, open ceiling or not — the note below (dir #245) needs the
+    # largest ordinary command whether or not this row's own ceiling is open.
+    if [ "$tok" -gt "$max_tok" ]; then max_tok="$tok"; max_file="$(basename "$f")"; fi
   done
   local rangedesc="~$lo-$hi"; [ -n "$open_upper" ] && rangedesc="~$lo-$hi+ (open upper)"
   if [ -z "$bad" ]; then pass "$label (all within $rangedesc)"; else fail "$label" "outside $rangedesc:$bad"; fi
+  # dir #245: an open ceiling (like assert_figure's open FLOOR, dir #105 above) passes by design once
+  # a command has grown past HI — this row had no drift signal at all for that, unlike the open-floor
+  # rows, so a release step telling the operator to "watch for a note" was a no-op here specifically
+  # (docs/release-audit.md's own step named only CHANGELOG.md/polish.md). Same 25%-style trigger as
+  # assert_figure's open-floor note: once the largest ordinary command has drifted to 25%+ above the
+  # quoted ceiling, print a non-failing note naming it, so the PR that pushed a command past HI is the
+  # one that restates the row. Only meaningful when the ceiling is actually open — a closed HI already
+  # fails via $bad above, which is the louder, correct signal for that shape.
+  if [ -n "$open_upper" ] && [ "$max_tok" -gt "$(( hi * 5 / 4 ))" ]; then
+    printf '  note  %s: %s is now ~%s tok, %s%% above the row'"'"'s own ~%s+ ceiling — consider raising it\n' \
+      "$label" "$max_file" "$max_tok" "$(( (max_tok - hi) * 100 / hi ))" "$hi"
+  fi
 }
 
 # README.md's mermaid "How it works" diagram quotes its own rounded ~N.NK figures for the same files —
