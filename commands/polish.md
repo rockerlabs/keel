@@ -623,6 +623,12 @@ Steps, in order:
      delta round WAS an open design question, dir #180 — since SUPERSEDED by dir #254, which moved the
      dialog off the primary path: it now fires only on the refusal fallback, making the re-fire
      question a rare-path one. The SHA-binding holds exactly as described here.)
+   - **The commit MESSAGE, re-read against the FINAL diff, on every `--amend` on this path** (dir #244):
+     an amend can change what the fix does while the message still describes the pre-amend version —
+     three shipped commit messages did exactly this (a flag, a one-liner's shape, and a numeric cap, each
+     rewritten by review after the message was first written). Step 9 already re-reads the PR body
+     against what ran; the commit log gets no second chance once pushed, so catch it here, on the same
+     `--amend` that just changed the diff, while the message is still editable.
 
    If you run `tools/pre-pr-gate.sh receipt --recover` anyway to sanity-check state, its `nothing to
    recover` answer is correct and BY DESIGN here — not a signal that this isn't a convergence round;
