@@ -1401,6 +1401,25 @@ check_contains "the second migrate carries the new row too" "$(cat "$mmrepo_stor
 second_mode="$(stat_portable_mode "$mmrepo_store/impact-events.log")"
 check_contains "the pre-existing target's mode SURVIVES the merge — 600, not umask-000's 666" "$second_mode" "600"
 
+# --- dir #341: the mode-READ failure (stat itself unavailable on a target that DOES exist) must warn
+# — this is the asymmetry the ticket names, where the sibling chmod-WRITE failure at
+# _impact_atomic_write already warns but _impact_prior_mode's own stat failure was silent, so a
+# mode-preservation no-op read as "the fix didn't work" with nothing printed to say why. Faked via
+# path_farm hiding `stat` from PATH (project CLAUDE.md's Alpine root trap: `chmod 000` is a no-op for
+# root, so a permission trick would not reproduce a real stat failure on every leg) rather than any
+# permission manipulation on the target itself, which already has a legitimate 600 from the fixture
+# above and must stay readable throughout.
+mkdir -p "$mmrepo/.keel"
+printf '2026-06-03T00:00:00Z\tguard\tsecret-guard\t%s\t%s\n' "mode-third-row" "$mmrepo" > "$mmrepo/.keel/impact-events.log"
+nostat_farm="$SANDBOX/nostat-bin"; path_farm "$nostat_farm" stat
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE PATH="$nostat_farm" bash "$TOOL" migrate "$mmrepo"
+check_status "a third migrate, with stat hidden from PATH, still succeeds (best-effort, non-fatal)" 0 "$STATUS"
+check_contains "the silent mode-read failure now warns, matching the chmod sibling's own warning" \
+  "$OUT" "could not read"
+check_contains "the warning names the target whose mode it could not read" "$OUT" "impact-events.log"
+check_contains "the merge itself still lands the new row despite the unreadable mode" \
+  "$(cat "$mmrepo_store/impact-events.log")" "mode-third-row"
+
 # a TRACKED legacy ledger is never touched automatically — printed as three options instead
 trepo="$(new_repo)"
 mkdir -p "$trepo/.keel"

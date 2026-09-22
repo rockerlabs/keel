@@ -282,6 +282,28 @@ sections real content going forward — see that page for exactly when each one 
   (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
   instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
   hook, restored on failure and cleaned up on success.
+- **`tools/delta-audit/derive.sh`'s closure check falsely refused a file added and later deleted
+  (or edited and later reverted) inside the range, and a relative `--out` resolved against the repo
+  root instead of the invocation cwd its own `--help` documents** (dir #288): `delta-files.txt` is
+  exactly `git diff --name-only prev..head`, so a map path absent from it has IDENTICAL content at
+  both endpoints by construction, no matter what shape of change inside the range netted to that —
+  it can never indicate the squash/rebase-merge blind spot the check exists to catch (the OTHER
+  direction, a range-diff path attributed to no PR, is unaffected and still refuses). Such a path is
+  now reported to stderr as "transient in range" instead of failing closure (exit 3), unconditionally
+  — an earlier version of this fix instead discriminated by existence-at-head (accepting only a
+  deletion-ended path), which was an arbitrary line, not a principled one, since the same absence
+  proof holds identically for a reverted edit. `--out`'s relative resolution is now captured before
+  the script's own `cd` to `repo_root`, matching `--help`'s "current directory" contract instead of
+  silently landing under the repo root.
+- **`tools/keel-impact.sh`'s `_impact_prior_mode` failed silently when `stat` could not read an
+  EXISTING target's mode, while its sibling `chmod` failure (`_impact_atomic_write`) already warns**
+  (dir #341): a mode-preservation no-op read as "the fix didn't work" with nothing printed to
+  explain why. `_impact_prior_mode` now warns to stderr on an empty answer for a target the `[ -f ]`
+  guard already confirmed exists, naming the target; a first-create's legitimate empty answer (the
+  target does not exist yet) never reaches this branch. `tools/lib/stat-portable.sh`'s own "empty =
+  unknown, fail closed" contract is unchanged, and `tools/branch-cleanup.sh`'s use of the shared lib
+  is mtime-only, in a low-stakes directory-walk heuristic, not the fail-closed mode-preservation
+  path this ticket is about — left silent on purpose, not touched.
 
 ## [0.10.2] — 2026-09-19
 

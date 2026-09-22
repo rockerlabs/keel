@@ -242,11 +242,13 @@ check_contains "the refusal names the orphaned file" "$OUT" "only-in-feature.txt
 check_file "delta-files.txt is still written on a closure failure (it is correct; the MAP is short)" \
   "$SANDBOX/out-sq/delta-files.txt"
 
-# --- the closure check's OTHER direction: a file attributed to a PR but outside the final range
-# diff — e.g. added by one PR and removed by a later PR in the same range, so it nets to no change
-# between the two endpoints yet still appears in both per-merge diffs. The squash fixture above only
-# exercises "in delta-files.txt but attributed to no PR" (the map too SHORT); this exercises the
-# opposite (the map too LONG relative to the net range diff), the closure check's own other half.
+# --- the closure check's OTHER direction, dir #288: a file added by one PR and removed by a later
+# PR in the same range nets to no change between the two endpoints, yet still appears in both
+# per-merge diffs — attributed to a PR but outside the range diff. Unlike the squash fixture above
+# (the map too SHORT), this is the map too LONG relative to the net range diff, and it is a
+# LEGITIMATE closed history, not a squash-merge symptom: delta-files.txt is exactly the range diff,
+# so a path absent from it has identical content at both endpoints by construction, regardless of
+# what shape of change netted to that. derive.sh must accept it (exit 0), not refuse it.
 om="$(mk_repo)"
 om_base="$(git -C "$om" rev-parse HEAD)"
 git -C "$om" checkout -qb add-temp
@@ -261,12 +263,42 @@ git -C "$om" checkout -q main
 merge_pr "$om" 202 remove-temp
 om_head="$(git -C "$om" rev-parse HEAD)"
 run_in "$om" "$TOOL" --out "$SANDBOX/out-om" "$om_base" "$om_head"
-check_status "a file added then removed within the range -> closure fires -> exit 3" 3 "$STATUS"
-check_contains "the refusal says the universe does not close" "$OUT" "does not close"
-check_contains "the refusal names the over-attributed file" "$OUT" "temp.txt"
-check_contains "the refusal labels this direction distinctly" "$OUT" "attributed to a PR but outside the range diff"
+check_status "a file added then removed within the range -> transient, not refused -> exit 0" 0 "$STATUS"
+check_contains "stderr reports it as transient in range" "$OUT" "transient in range"
+check_contains "the transient report names the file" "$OUT" "temp.txt"
+check_absent "stderr does not also claim the universe does not close" "$OUT" "does not close"
 check_absent "temp.txt nets to no change, so it is absent from delta-files.txt itself" \
   "$(cat "$SANDBOX/out-om/delta-files.txt")" "temp.txt"
+
+# --- the closure check's OTHER direction, second shape: an edit later reverted to its ORIGINAL
+# content (the file still exists at head, unlike the deleted case above) is the SAME kind of
+# arithmetic cancellation, not a different one — delta-files.txt's own absence proof holds
+# identically regardless of whether the path exists at head, so this must ALSO be accepted as
+# transient, not refused (an earlier version of this fix discriminated by existence-at-head and
+# still refused this shape, which was an arbitrary line, not a principled one — found by this
+# ticket's own /code-review medium pass, altitude angle).
+rv="$(mk_repo)"
+printf 'original\n' > "$rv/steady.txt"
+git -C "$rv" add -A; git -C "$rv" commit -qm "steady.txt baseline"
+rv_base="$(git -C "$rv" rev-parse HEAD)"
+git -C "$rv" checkout -qb edit-away
+printf 'changed\n' > "$rv/steady.txt"
+git -C "$rv" add -A; git -C "$rv" commit -qm "edit steady.txt"
+git -C "$rv" checkout -q main
+merge_pr "$rv" 301 edit-away
+git -C "$rv" checkout -qb edit-back
+printf 'original\n' > "$rv/steady.txt"
+git -C "$rv" add -A; git -C "$rv" commit -qm "revert steady.txt"
+git -C "$rv" checkout -q main
+merge_pr "$rv" 302 edit-back
+rv_head="$(git -C "$rv" rev-parse HEAD)"
+run_in "$rv" "$TOOL" --out "$SANDBOX/out-rv" "$rv_base" "$rv_head"
+check_status "a file edited then reverted (still exists at head) -> also transient, exit 0" 0 "$STATUS"
+check_contains "stderr reports it as transient in range too" "$OUT" "transient in range"
+check_contains "the transient report names the reverted file" "$OUT" "steady.txt"
+check_absent "stderr does not claim the universe does not close" "$OUT" "does not close"
+check_absent "steady.txt nets to no change, so it is absent from delta-files.txt itself" \
+  "$(cat "$SANDBOX/out-rv/delta-files.txt")" "steady.txt"
 
 # --- dirty-tree invariance: TO VERIFY closed empirically at implementation time, pinned here as a
 # regression test. derive.sh reads only history (git diff/log), never the working tree, so a dirty
@@ -285,6 +317,18 @@ else
   fail "a dirty working tree leaves every output byte-identical to the clean-tree run" \
     "outputs differed between the clean and dirty runs"
 fi
+
+# --- relative --out resolves against the INVOCATION cwd, not the repo root (dir #288). Run from a
+# SUBDIRECTORY of the repo (not the repo root the script `cd`s to internally) with a relative --out,
+# and confirm the output lands under the invocation cwd, matching usage()'s own "current directory"
+# text, rather than silently under repo_root/relout.
+mkdir -p "$r/sub"
+run_in "$r/sub" "$TOOL" --out relout "$base" "$head"
+check_status "relative --out from a repo subdirectory -> exit 0" 0 "$STATUS"
+check_file "relative --out resolves under the invocation cwd, not repo root" \
+  "$r/sub/relout/delta-files.txt"
+check_nofile "relative --out does NOT resolve under repo_root/relout" "$r/relout/delta-files.txt"
+rm -rf "$r/sub"
 
 # --- refusals (exit 3) -------------------------------------------------------------------------
 notrepo="$(mktemp -d "$SANDBOX/notrepo.XXXXXX")"
