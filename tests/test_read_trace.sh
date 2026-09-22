@@ -638,4 +638,48 @@ done < "$map"
 check_status "every non-BACKLOG.md required_doc in read-trace-map.tsv resolves in this repo" 0 "$bad"
 check_status "every bare-path surface in read-trace-map.tsv resolves in this repo" 0 "$bad_surface"
 
+# --- dir #393: silent hooks stay SILENT on a RESOLVED but UNWRITABLE store root (chmod 500) -----------
+# The WRITABILITY axis of dir #387's V3 fix: V3 covers a store root that fails to RESOLVE (no HOME/
+# KEEL_HOME/KEEL_READ_TRACE_STORE); this covers a root that resolves fine but the filesystem then
+# refuses the write — `mkdir -p` on a mode-500 parent leaks "mkdir: Permission denied", and the
+# subsequent `>>`/`>` redirect leaks its own failed-redirect line. Both `log-tool` and `session-end`
+# funnel their persistent-tier writes through the same guarded call sites (tools/lib/read-trace.sh's
+# `_rt_plain_append`, tools/read-trace.sh's wrap-fuse-event and pending-flag writes), so one fixture
+# covers both hooks. Root-reader trap (CLAUDE.md's second Alpine trap): `chmod 500` is a no-op for a
+# root reader (the alpine-busybox CI leg runs as root), so the "nothing was written" content
+# assertion is root-guarded while the exit-code/no-stderr half stays unconditional — a root run still
+# proves silence, it just can't prove the write was blocked.
+d="$(mkrepo)"; rt_env unwritable_root
+mkdir -p "$RT_STORE"
+chmod 500 "$RT_STORE"
+# Restore the mode before the sandbox's own cleanup runs — a mode-500 dir blocks `rm -rf` for a
+# non-root cleanup, which would otherwise strand this case's sandbox tree.
+trap 'chmod 700 "$RT_STORE" 2>/dev/null' EXIT
+
+# A Read (not just an Edit) is required to exercise the persistent-store write at all: mutate rows
+# (_rt_record_mutate) only ever touch the EPHEMERAL, TMPDIR-resident session log, never the
+# persistent store root under test here — see _rt_record_mutate. Feed both so the fixture proves the
+# mutate-only path is unaffected AND the persistent-write path is actually guarded.
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+check_status "log-tool(Read) with an unwritable store root: exit 0" 0 "$STATUS"
+check_status "log-tool(Read) with an unwritable store root: stays silent (no mkdir/redirect stderr leak)" "" "$OUT"
+feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
+check_status "log-tool(Edit) with an unwritable store root: exit 0" 0 "$STATUS"
+check_status "log-tool(Edit) with an unwritable store root: stays silent (no mkdir/redirect stderr leak)" "" "$OUT"
+
+tp="$SANDBOX/transcript.unwritable.jsonl"; printf 'ordinary session\n' > "$tp"
+feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')" session-end
+check_status "session-end with an unwritable store root: exit 0" 0 "$STATUS"
+check_status "session-end with an unwritable store root: stays silent (no mkdir/redirect stderr leak)" "" "$OUT"
+
+if [ "$(id -u)" != 0 ]; then
+  check_status "unwritable store root: nothing written under it (mkdir was actually blocked)" 0 \
+    "$(find "$RT_STORE" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+else
+  pass "unwritable store root: write-blocked content check skipped (root reader — chmod 500 is a no-op for root, per CLAUDE.md's Alpine trap)"
+fi
+
+chmod 700 "$RT_STORE" 2>/dev/null
+trap - EXIT
+
 summary

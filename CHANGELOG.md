@@ -90,6 +90,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tools/read-trace.sh`'s silent hooks (`log-tool`/`session-end`) stayed silent even when the store
+  root is UNWRITABLE** (dir #393): dir #387's V3 fix silenced an UNRESOLVED store root (no HOME/
+  KEEL_HOME/KEEL_READ_TRACE_STORE); this closes the same class on the WRITABILITY axis — a resolved
+  root that the filesystem then refuses to write to (e.g. mode 500) used to leak `mkdir: Permission
+  denied` plus a failed-redirect line to stderr on every persistent-tier write. The `mkdir` and the
+  append now both swallow their own stderr, the latter via a `{ ...; } 2>/dev/null` GROUP command
+  rather than a trailing redirect on the write itself — bash opens the `>>`/`>` target before applying
+  a trailing `2>/dev/null` on the same simple command, so that ordering still leaked (reproduced
+  live); wrapping the write in a group redirects its stderr first. The tool's own header now states
+  the writable-root assumption explicitly.
 - **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
   apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
   repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
