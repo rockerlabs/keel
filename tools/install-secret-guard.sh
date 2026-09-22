@@ -16,6 +16,16 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/secret-guard"
 
+# The two backup-suffix conventions, named once so every writer/restorer/message below references
+# the same value instead of re-typing it (code-review finding: 7 independent literal occurrences
+# risked drifting out of sync on a future rename — the RC-audit regression this file's own history
+# closed was exactly this class of collision, one suffix shared by two writers that should never
+# have touched the same path). isg_bak_force is --force's PERMANENT backup of a foreign hook;
+# isg_bak_upgrade is a re-install's own RUN-SCOPED safety net for an existing Keel hook/scanner —
+# see _isg_rollback's own comment for why they must never collide.
+isg_bak_force="pre-keel.bak"
+isg_bak_upgrade="keel-upgrade.bak"
+
 # --force may sit anywhere on the line; strip it, keep the single subcommand/positional (busybox/bash-3.2
 # safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
 force=0
@@ -36,28 +46,39 @@ set -- ${rest:+"$rest"}
 # user left behind — and exit non-zero, so "either fully wired or untouched" holds no matter WHICH
 # step in install_into's copy/verify span failed (a cp, a chmod, or the post-copy selftest). One
 # shared helper, called from every failure point below, instead of duplicating the rollback loop at
-# each one: args are hooks_dir, the copied-files list, the restore-from-backup list, a one-line
-# reason, and an optional detail block (e.g. a failed selftest's own output) to print indented under
-# it. Every rm/mv below is individually best-effort (`|| { ok=0; ... }`, never a bare statement):
-# `_isg_rollback` runs as the RIGHT-hand side of the `||` at each call site, so — unlike its OWN
-# caller's failing command, which IS exempt from `set -e` as the left operand of `||` — nothing
-# inside this function gets that exemption; a single failed rm/mv here would otherwise abort under
-# `set -e` mid-loop, leaving every remaining file un-rolled-back and skipping the closing message
-# and `exit 4` entirely (code review finding, verified live: reproduced the exact `cmd || fn` shape
-# with a failing loop body and confirmed the abort). Best-effort means one bad restore doesn't stop
-# the rest of the cleanup from at least being attempted.
+# each one: args are hooks_dir, the copied-files list, the two restore-from-backup lists (kept
+# SEPARATE, not smuggled into one string — see the two-suffix note below), a one-line reason, and an
+# optional detail block (e.g. a failed selftest's own output) to print indented under it. Every
+# rm/mv below is individually best-effort (`|| { ok=0; ... }`, never a bare statement): `_isg_rollback`
+# runs as the RIGHT-hand side of the `||` at each call site, so — unlike its OWN caller's failing
+# command, which IS exempt from `set -e` as the left operand of `||` — nothing inside this function
+# gets that exemption; a single failed rm/mv here would otherwise abort under `set -e` mid-loop,
+# leaving every remaining file un-rolled-back and skipping the closing message and `exit 4` entirely
+# (code review finding, verified live: reproduced the exact `cmd || fn` shape with a failing loop
+# body and confirmed the abort). Best-effort means one bad restore doesn't stop the rest of the
+# cleanup from at least being attempted.
 _isg_rollback() {
-  local hooks_dir="$1" copied="$2" restore="$3" reason="$4" detail="${5:-}" f ok=1
+  local hooks_dir="$1" copied="$2" backed_up="$3" upgraded="$4" reason="$5" detail="${6:-}" \
+    f ok=1 pair list suffix
   echo "secret-guard: $reason — rolling back" >&2
   [ -n "$detail" ] && echo "$detail" | sed 's/^/  /' >&2
   for f in $copied; do
     rm -f "$hooks_dir/$f" || { ok=0; echo "secret-guard: could not remove $hooks_dir/$f — remove it by hand" >&2; }
   done
-  # Restore ONLY files this run itself backed up (hooks or the vendored scanner/lib alike) — never
-  # something a different run or the user placed.
-  for f in $restore; do
-    mv -f "$hooks_dir/$f.pre-keel.bak" "$hooks_dir/$f" \
-      || { ok=0; echo "secret-guard: could not restore $hooks_dir/$f from $hooks_dir/$f.pre-keel.bak — restore it by hand" >&2; }
+  # Restore ONLY files this run itself backed up — never something a different run or the user
+  # placed. $backed_up (a FOREIGN hook, --force'd) restores from its PERMANENT .pre-keel.bak;
+  # $upgraded (an existing KEEL hook/scanner this run re-vendored over) restores from its own
+  # run-scoped .keel-upgrade.bak. Two suffixes, not one, so this can never mv a permanent --force
+  # backup back over itself and then have the success path below delete it out from under a later
+  # plain re-install (regression the RC audit caught: both writers used to share .pre-keel.bak, so
+  # an ordinary re-vendor's cleanup deleted the user's --force backup). One list:suffix loop, not
+  # two copy-pasted ones, so the restore/error-message logic has a single place to change.
+  for pair in "$backed_up:$isg_bak_force" "$upgraded:$isg_bak_upgrade"; do
+    list="${pair%%:*}" suffix="${pair#*:}"
+    for f in $list; do
+      mv -f "$hooks_dir/$f.$suffix" "$hooks_dir/$f" \
+        || { ok=0; echo "secret-guard: could not restore $hooks_dir/$f from $hooks_dir/$f.$suffix — restore it by hand" >&2; }
+    done
   done
   if [ "$ok" = 1 ]; then
     echo "secret-guard: rolled back — $hooks_dir left as it was before this run" >&2
@@ -88,11 +109,17 @@ install_into() {
   # verify — can roll back only what it put there, never a hook some earlier run (or the user) left
   # behind (dir #570, lead #1). Space-separated lists, not arrays: busybox/bash-3.2-safe under
   # `set -u`, matching the top-level arg-parsing above (an empty array expansion crashes on bash
-  # <4.4 — keel memory, dir #235-adjacent). Two separate backup lists, not one, because they differ
-  # in what happens to the .bak on SUCCESS: `backed_up` (a FOREIGN hook, --force'd) keeps its .bak
-  # permanently, by design, so the user can recover their original file; `upgraded` (an existing
-  # KEEL hook being re-vendored) is a purely internal safety net for THIS run's own rollback and is
-  # deleted once the new copy is confirmed working, below.
+  # <4.4 — keel memory, dir #235-adjacent). Two separate backup lists, AND two separate backup
+  # SUFFIXES, because they differ in what happens to the .bak on SUCCESS: `backed_up` (a FOREIGN
+  # hook, --force'd) writes to `.pre-keel.bak` and keeps it permanently, by design, so the user can
+  # recover their original file; `upgraded` (an existing KEEL hook/scanner being re-vendored) writes
+  # to the DIFFERENT `.keel-upgrade.bak`, is a purely internal safety net for THIS run's own
+  # rollback, and is deleted once the new copy is confirmed working, below. Sharing one suffix
+  # between the two used to let an ordinary re-install's cleanup delete the user's own --force
+  # backup out from under them (RC audit finding, fixed here): --force a foreign hook → the hook is
+  # Keel's now → the NEXT plain re-install took the `upgraded` branch and re-used `.pre-keel.bak` for
+  # its OWN run-scoped safety net, which the success path below then deleted — destroying the
+  # permanent backup along with it. Distinct suffixes mean the two can never collide on one path.
   local copied="" backed_up="" upgraded=""
 
   # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
@@ -107,15 +134,18 @@ install_into() {
         # later failure in this same run (the next cp, chmod, or the post-copy verify) rolled back
         # by deleting the just-copied file and leaving NO hook at all — not "left as it was before
         # this run" as rollback claims, but a silent loss of the working guard (code review finding).
-        cp "$t" "$t.pre-keel.bak"
+        # `.keel-upgrade.bak`, NOT `.pre-keel.bak` — this branch runs on every ordinary re-install,
+        # including one right after a --force install, and must never touch the permanent backup
+        # a --force run may have left at `.pre-keel.bak` (see the note above `local copied=`).
+        cp "$t" "$t.$isg_bak_upgrade"
         upgraded="$upgraded $h"
       elif [ "$force" = 1 ]; then
-        cp "$t" "$t.pre-keel.bak"
+        cp "$t" "$t.$isg_bak_force"
         backed_up="$backed_up $h"
-        echo "secret-guard: backed up your existing $h → $h.pre-keel.bak (--force)" >&2
+        echo "secret-guard: backed up your existing $h → $h.$isg_bak_force (--force)" >&2
       else
         echo "secret-guard: $t exists and is not a Keel hook — refusing to overwrite your data." >&2
-        echo "  Re-run with --force to back it up (.pre-keel.bak) and replace, or call secret-scan.sh from" >&2
+        echo "  Re-run with --force to back it up (.$isg_bak_force) and replace, or call secret-scan.sh from" >&2
         echo "  your own hook by hand. Nothing was changed." >&2
         exit 3
       fi
@@ -127,11 +157,12 @@ install_into() {
   # this run must restore the still-working prior version, not just delete it. Without this, restoring
   # pre-commit/pre-push above while secret-scan.sh/range-lib.sh stayed deleted left a restored hook
   # that sources/calls a now-missing file and crashes instead of blocking a push (code review finding,
-  # caught live by this file's own new re-vendor-then-fail test).
+  # caught live by this file's own new re-vendor-then-fail test). Always the `upgraded` suffix — these
+  # two files have no foreign-hook clash, so they never touch `.pre-keel.bak`.
   for f in secret-scan.sh range-lib.sh; do
     t="$hooks_dir/$f"
     if [ -e "$t" ]; then
-      cp "$t" "$t.pre-keel.bak"
+      cp "$t" "$t.$isg_bak_upgrade"
       upgraded="$upgraded $f"
     fi
   done
@@ -147,10 +178,10 @@ install_into() {
   # finding) — `rm -f` is a harmless no-op on a file that never got created at all.
   for f in secret-scan.sh pre-commit pre-push range-lib.sh; do  # pre-push sources range-lib.sh next to itself
     copied="$copied $f"
-    cp "$src/$f" "$hooks_dir/$f" || _isg_rollback "$hooks_dir" "$copied" "$backed_up $upgraded" "failed to copy $f into $hooks_dir"
+    cp "$src/$f" "$hooks_dir/$f" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to copy $f into $hooks_dir"
   done
   chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push" || \
-    _isg_rollback "$hooks_dir" "$copied" "$backed_up $upgraded" "failed to make the installed copy executable"
+    _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to make the installed copy executable"
 
   # Verify the INSTALLED copy too (dir #570): the source check above is a PROXY — it can pass while
   # the copy at $hooks_dir still fails for a reason specific to THAT destination (a noexec mount, a
@@ -163,15 +194,16 @@ install_into() {
   # mount or a lost/blocked execute bit; `bash`-mediated verification structurally cannot.
   local verify_err=""
   if ! verify_err="$("$hooks_dir/secret-scan.sh" --selftest 2>&1)"; then
-    _isg_rollback "$hooks_dir" "$copied" "$backed_up $upgraded" \
+    _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" \
       "the INSTALLED copy at $hooks_dir failed its post-copy selftest" "$verify_err"
   fi
 
   # The install is confirmed working — the safety-net backup of an existing KEEL hook this run
   # re-vendored over is no longer needed. Unlike --force's own backup of a FOREIGN hook (kept
-  # permanently, on purpose, so the user can recover it), this one was only ever for THIS run's own
-  # rollback, so a successful run leaves no stray .pre-keel.bak behind for it.
-  for h in $upgraded; do rm -f "$hooks_dir/$h.pre-keel.bak"; done
+  # permanently, on purpose, so the user can recover it, at the DIFFERENT .pre-keel.bak path — left
+  # untouched here), this one was only ever for THIS run's own rollback, so a successful run leaves
+  # no stray .keel-upgrade.bak behind for it.
+  for h in $upgraded; do rm -f "$hooks_dir/$h.$isg_bak_upgrade"; done
 }
 
 case "${1:-}" in
