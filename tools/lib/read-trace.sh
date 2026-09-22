@@ -252,8 +252,16 @@ _rt_plain_append() {
   # first Read of each doc, every distinct mutated path per session), and the target directory already
   # exists on every call but the very first — a `-d` test is a builtin, `dirname`+`mkdir` are forks
   # (found by this ticket's own /code-review high pass).
-  [ -d "$dir" ] || mkdir -p "$dir"
-  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" "$path" >> "$file"
+  # dir #393: the WRITABILITY axis of dir #387 V3's own pattern — a resolved root can still be
+  # unwritable (chmod 500), which V3 never covered since it only guards an UNRESOLVED root. Both the
+  # mkdir and the append below must swallow their own stderr, or an unwritable root leaks "mkdir:
+  # Permission denied" plus a failed-redirect line, breaking the SILENT contract same as V3's own case.
+  # The append is wrapped in a GROUP COMMAND, not a trailing `2>/dev/null` on the simple command: bash
+  # opens `>>`'s target before applying that trailing redirect, so a failed open reports to the
+  # ORIGINAL stderr regardless — reproduced live. A `{ ...; } 2>/dev/null` redirects the group's stderr
+  # before the enclosed command's own redirections are set up, which is what actually suppresses it.
+  [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null
+  { printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" "$path" >> "$file"; } 2>/dev/null
 }
 
 # _rt_dedup_append FILE KIND PATH — _rt_plain_append, but only when that exact KIND+PATH pair is NOT

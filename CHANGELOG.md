@@ -87,9 +87,26 @@ sections real content going forward — see that page for exactly when each one 
   `tools/self/pool-report.sh` read-only; the measurement behind the decision is in G4.
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
+- **`FRAMEWORK.md`'s Changelog section gains a re-derive-at-writing-time clause** (dir #229):
+  a self-drift shape (a late-session summary paraphrasing its own earlier narration) and a
+  source-drift shape (a fix round writing a claim about code mechanics from the ticket describing
+  it rather than from the code) each get a named cheap tell, resolved the same way — open the
+  artifact at writing time. `docs/delta-audit.md` §10 already carries the audit-surface twin of
+  this rule; the new entry is the general form, cited alongside it rather than duplicating its
+  text.
 
 ### Fixed
 
+- **`tools/read-trace.sh`'s silent hooks (`log-tool`/`session-end`) stayed silent even when the store
+  root is UNWRITABLE** (dir #393): dir #387's V3 fix silenced an UNRESOLVED store root (no HOME/
+  KEEL_HOME/KEEL_READ_TRACE_STORE); this closes the same class on the WRITABILITY axis — a resolved
+  root that the filesystem then refuses to write to (e.g. mode 500) used to leak `mkdir: Permission
+  denied` plus a failed-redirect line to stderr on every persistent-tier write. The `mkdir` and the
+  append now both swallow their own stderr, the latter via a `{ ...; } 2>/dev/null` GROUP command
+  rather than a trailing redirect on the write itself — bash opens the `>>`/`>` target before applying
+  a trailing `2>/dev/null` on the same simple command, so that ordering still leaked (reproduced
+  live); wrapping the write in a group redirects its stderr first. The tool's own header now states
+  the writable-root assumption explicitly.
 - **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
   apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
   repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
@@ -296,6 +313,9 @@ sections real content going forward — see that page for exactly when each one 
   reads," wider than the doc's own worker/verifier scope and the four-template split dir #208
   shipped (the fixer template carries only the `DELEGATION RUN:` line). Reworded to name the actual
   scope and point back at the Worker rails section instead of restating the claim.
+- **`CHANGELOG.md`'s `[0.7.1]` dir #190 entry said "five new fixtures" and named four**
+  (dir #247): the fifth, B26 (dir #190's named migration residual, pinned live in
+  `tests/test_uninstall.sh`), is now named in the list so the count and the list agree.
 
 ## [0.10.2] — 2026-09-19
 
@@ -3702,7 +3722,8 @@ independently.
   must not have its shared half stripped) stays intact via the sentinel. Pinned by five new
   `tests/test_uninstall.sh` fixtures — B23 (the regression), B24 (the stray-file scenario), B25A (the
   sentinel's own clear branch on a fresh, non-foreign re-install), B25B (both modes foreign-core,
-  uninstalled in sequence) — alongside the pre-existing B22 (dir #150's own foreign-core case). The
+  uninstalled in sequence), B26 (dir #190's named migration residual, pinned live) — alongside the
+  pre-existing B22 (dir #150's own foreign-core case). The
   checkout-side ledger's own pruning (near uninstall.sh's manifest housekeeping) now also counts a
   surviving `foreign-core.*` sentinel, not just a surviving manifest, before dropping a home — an
   operator-run `/code-review high` pass live-reproduced the ledger silently losing track of a still-live,
