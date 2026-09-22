@@ -287,8 +287,10 @@ disclosure instead of a fact, a status marker, or a shared value — same root c
 one-status-restated-on-N-surfaces class too.
 
 **This does not apply to the worker rails block above.** That block has to be inlined verbatim into
-every prompt an agent actually reads, because a subagent can't reliably dereference a cross-file
-pointer mid-session the way a human reader can — which is exactly why it gets the opposite treatment,
+every worker and verifier prompt — the scope [Worker rails — verbatim, do not
+paraphrase](#worker-rails--verbatim-do-not-paraphrase) names above, and the fixer template's own
+narrower treatment — because a subagent can't reliably dereference a cross-file pointer mid-session the
+way a human reader can — which is exactly why it gets the opposite treatment,
 verbatim copies plus a drift test, instead of a pointer. Minimize mirrors for anything a *human* reads
 across documents; keep the verbatim-copy-plus-drift-test discipline for anything an *agent* has to read
 inline in its own prompt.

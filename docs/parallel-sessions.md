@@ -140,13 +140,20 @@ you notice, the cheaper the tier.
   branch: check `git status` first — `reset --hard` below discards uncommitted work exactly like F2's
   `checkout`/`clean`/`stash`, with the same no-reflog-entry loss, so stash anything you find
   (`git stash push -u`) rather than let the reset take it. Then capture your own commits onto a ref —
-  `git branch rescue-mine HEAD` — and reset that branch back to the commit before yours with
-  `git reset --hard <sha>` (check `git log --oneline` for the actual SHA rather than counting commits
-  blindly: a peer's own commit can have landed on the tip after yours). A plain `reset --soft` instead
-  would leave your work only staged in the shared checkout's index, not on a ref of its own — the
-  peer's next ordinary commit there would silently absorb it. Continue your own work from `rescue-mine`
-  in a throwaway worktree instead of switching branches out from under them; pop the stash back for
-  whoever it belonged to once you're clear.
+  **not** bare `git branch rescue-mine HEAD`: that captures whatever is *currently* at `HEAD`, and if a
+  peer lands an ordinary commit on the shared branch after your accidental one but before you run this
+  recipe, `HEAD` silently pulls their commit onto a branch framed as "yours" too — vanished from the
+  peer's own branch, though still reachable, not destroyed. Read `git log --oneline` for your own last
+  commit and the commit before it (the reset target). Branch from your own SHA explicitly —
+  `git branch rescue-mine <your-last-sha>` — then reset the shared branch back to the commit before
+  yours with `git reset --hard <sha-before-yours>`. A plain `reset --soft` instead would leave your work
+  only staged in the shared checkout's index, not on a ref of its own — the peer's next ordinary commit
+  there would silently absorb it. A peer commit interleaved *between* two of your own accidental commits
+  still rides along onto `rescue-mine`, since everything below your last commit's SHA comes with it —
+  catch that case sooner instead, via the Preemptive tier above. Continue your own work from
+  `rescue-mine` in a throwaway worktree instead of
+  switching branches out from under them; pop the stash back for whoever it belonged to once you're
+  clear.
 - **Retroactive.** Foreign commits have already piled onto your branch — don't push it as-is. Cherry-pick
   only your own SHAs onto a fresh branch cut from a freshly-fetched default branch; rescue any orphaned
   foreign commit onto its own throwaway branch rather than dropping it; re-verify anything you numbered
