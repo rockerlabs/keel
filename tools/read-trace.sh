@@ -76,6 +76,12 @@
 # Wiring is opt-in, same discipline as tools/install-pre-pr-gate.sh (a hook changes what a session can
 # do without asking each time) — see tools/install-read-trace.sh. Nothing above fires until that has
 # been run once for a repo (or --global/--home).
+#
+# Writability assumption (dir #393): the resolved store root (KEEL_READ_TRACE_STORE, else
+# $KEEL_HOME/.keel/read-trace, else $HOME/.claude/.keel/read-trace) is assumed WRITABLE. When it
+# resolves but is not writable, every write path degrades silently (nothing recorded) rather than
+# leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's V3 fix gave the
+# unresolved-root case, extended here to the writability axis.
 set -u
 
 _rt_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -341,7 +347,7 @@ case "${1:-}" in
     # (found by this ticket's own /simplify pass).
     se_wlog="$(_rt_wrapfuse_log "$se_cwd")"
     [ -n "$se_wlog" ] || exit 0
-    mkdir -p "$(dirname "$se_wlog")"
+    mkdir -p "$(dirname "$se_wlog")" 2>/dev/null  # dir #393: writable-root axis of the V3 pattern
     # _rt_wrapfuse_flag already resolves its own dir via _rt_wrapfuse_flag_dir internally and fails
     # exactly when that resolve fails, so checking se_flag alone covers the same empty-root case
     # without a redundant separate resolve of the same directory — resolved ONCE here rather than once
@@ -358,12 +364,18 @@ case "${1:-}" in
     # before: `aggregate` (below) is where the dedup-by-key actually happens, at READ time against a
     # static snapshot — not here, which would need a read-modify-write race this concurrently-written
     # store cannot safely take (see aggregate's own comment).
-    printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_status" "$se_key" >> "$se_wlog" 2>/dev/null
+    # dir #393: the append is wrapped in a GROUP COMMAND, not a trailing `2>/dev/null` on the simple
+    # command — bash opens the `>>`/`>` target before applying a trailing redirect on the same simple
+    # command, so a failed open still reports to the ORIGINAL stderr (reproduced live). A
+    # `{ ...; } 2>/dev/null` redirects the group's stderr before the enclosed redirection is set up,
+    # which is what actually suppresses it — see tools/lib/read-trace.sh's `_rt_plain_append` for the
+    # same fix on the other write path.
+    { printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_status" "$se_key" >> "$se_wlog"; } 2>/dev/null
     if [ "$se_wrapped" -eq 1 ]; then
       [ -n "$se_flag" ] && rm -f "$se_flag" 2>/dev/null
     elif [ -n "$se_flag" ]; then
-      mkdir -p "$(dirname "$se_flag")"
-      printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$se_flag" 2>/dev/null
+      mkdir -p "$(dirname "$se_flag")" 2>/dev/null  # dir #393: writable-root axis of the V3 pattern
+      { printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$se_cwd" > "$se_flag"; } 2>/dev/null
     fi
     exit 0
     ;;

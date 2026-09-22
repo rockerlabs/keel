@@ -87,9 +87,34 @@ sections real content going forward — see that page for exactly when each one 
   `tools/self/pool-report.sh` read-only; the measurement behind the decision is in G4.
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
+- **The review RECORD stops drifting from the tree** (dir #244): PR #250's body wrongly described
+  dir #191's alpine-CI fix as landing via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`
+  (it never shipped; `--system` did, in PR #249) — corrected in place, with a pointer sentence added
+  to this file's `[0.7.1]` entry for dir #191, since a merged PR body is easily missed. Three commit
+  messages (`2b8d83d`, `60c12cb`) describing pre-review versions of their own fixes stay a disclosure,
+  not a fix — commit history is immutable. `commands/polish.md`'s in-run `--amend` path now also
+  re-reads the commit MESSAGE against the final diff, the same way step 9 already re-reads the PR
+  body, so a review-driven amend can no longer leave the message describing the pre-amend fix.
+- **`FRAMEWORK.md`'s Changelog section gains a re-derive-at-writing-time clause** (dir #229):
+  a self-drift shape (a late-session summary paraphrasing its own earlier narration) and a
+  source-drift shape (a fix round writing a claim about code mechanics from the ticket describing
+  it rather than from the code) each get a named cheap tell, resolved the same way — open the
+  artifact at writing time. `docs/delta-audit.md` §10 already carries the audit-surface twin of
+  this rule; the new entry is the general form, cited alongside it rather than duplicating its
+  text.
 
 ### Fixed
 
+- **`tools/read-trace.sh`'s silent hooks (`log-tool`/`session-end`) stayed silent even when the store
+  root is UNWRITABLE** (dir #393): dir #387's V3 fix silenced an UNRESOLVED store root (no HOME/
+  KEEL_HOME/KEEL_READ_TRACE_STORE); this closes the same class on the WRITABILITY axis — a resolved
+  root that the filesystem then refuses to write to (e.g. mode 500) used to leak `mkdir: Permission
+  denied` plus a failed-redirect line to stderr on every persistent-tier write. The `mkdir` and the
+  append now both swallow their own stderr, the latter via a `{ ...; } 2>/dev/null` GROUP command
+  rather than a trailing redirect on the write itself — bash opens the `>>`/`>` target before applying
+  a trailing `2>/dev/null` on the same simple command, so that ordering still leaked (reproduced
+  live); wrapping the write in a group redirects its stderr first. The tool's own header now states
+  the writable-root assumption explicitly.
 - **`tools/doctor.sh`'s private-AI-context check asks git, not `.gitignore`, and tells three states
   apart** (an adopter's KB.72/KB.119): `G-GITIGNORE-CONTEXT` used to grep `.gitignore` literally, so a
   repo that keeps its `CLAUDE.md`/`.claude/` rule in `.git/info/exclude` — the right place for a repo
@@ -296,6 +321,45 @@ sections real content going forward — see that page for exactly when each one 
   `assert_commands_range` now prints the same 25%-style non-failing note the open-floor rows already
   have once the largest command drifts 25%+ above HI; `docs/release-audit.md`'s release-prep step now
   names this row alongside the two it already covered.
+- **`docs/parallel-sessions.md`'s Pre-commit recovery recipe no longer misattributes a peer's
+  interleaved commit** (dir #176): `git branch rescue-mine HEAD` captured whatever landed at `HEAD`
+  by the time the recipe ran, so a peer's ordinary commit made after your accidental one but before
+  you rescued it silently rode onto a branch framed as "yours." The recipe now branches from your own
+  last commit's SHA, read off `git log --oneline` the same way the reset target already is, then
+  resets the shared branch back to the commit before yours. Verified live in a scratch repo: a peer
+  commit landing after the rescue target stays off `rescue-mine`; the doc also states the residual
+  honestly — a peer commit interleaved BETWEEN two of your own accidental commits still rides along,
+  since everything below your last commit's SHA comes with it.
+- **`docs/delegation.md`'s verbatim-rails scope statement narrowed to match the shipped split**
+  (dir #272): one sentence claimed the rails block is inlined "into every prompt an agent actually
+  reads," wider than the doc's own worker/verifier scope and the four-template split dir #208
+  shipped (the fixer template carries only the `DELEGATION RUN:` line). Reworded to name the actual
+  scope and point back at the Worker rails section instead of restating the claim.
+- **`tools/delta-audit/derive.sh`'s closure check falsely refused a file added and later deleted
+  (or edited and later reverted) inside the range, and a relative `--out` resolved against the repo
+  root instead of the invocation cwd its own `--help` documents** (dir #288): `delta-files.txt` is
+  exactly `git diff --name-only prev..head`, so a map path absent from it has IDENTICAL content at
+  both endpoints by construction, no matter what shape of change inside the range netted to that —
+  it can never indicate the squash/rebase-merge blind spot the check exists to catch (the OTHER
+  direction, a range-diff path attributed to no PR, is unaffected and still refuses). Such a path is
+  now reported to stderr as "transient in range" instead of failing closure (exit 3), unconditionally
+  — an earlier version of this fix instead discriminated by existence-at-head (accepting only a
+  deletion-ended path), which was an arbitrary line, not a principled one, since the same absence
+  proof holds identically for a reverted edit. `--out`'s relative resolution is now captured before
+  the script's own `cd` to `repo_root`, matching `--help`'s "current directory" contract instead of
+  silently landing under the repo root.
+- **`tools/keel-impact.sh`'s `_impact_prior_mode` failed silently when `stat` could not read an
+  EXISTING target's mode, while its sibling `chmod` failure (`_impact_atomic_write`) already warns**
+  (dir #341): a mode-preservation no-op read as "the fix didn't work" with nothing printed to
+  explain why. `_impact_prior_mode` now warns to stderr on an empty answer for a target the `[ -f ]`
+  guard already confirmed exists, naming the target; a first-create's legitimate empty answer (the
+  target does not exist yet) never reaches this branch. `tools/lib/stat-portable.sh`'s own "empty =
+  unknown, fail closed" contract is unchanged, and `tools/branch-cleanup.sh`'s use of the shared lib
+  is mtime-only, in a low-stakes directory-walk heuristic, not the fail-closed mode-preservation
+  path this ticket is about — left silent on purpose, not touched.
+- **`CHANGELOG.md`'s `[0.7.1]` dir #190 entry said "five new fixtures" and named four**
+  (dir #247): the fifth, B26 (dir #190's named migration residual, pinned live in
+  `tests/test_uninstall.sh`), is now named in the list so the count and the list agree.
 
 ## [0.10.2] — 2026-09-19
 
@@ -3702,7 +3766,8 @@ independently.
   must not have its shared half stripped) stays intact via the sentinel. Pinned by five new
   `tests/test_uninstall.sh` fixtures — B23 (the regression), B24 (the stray-file scenario), B25A (the
   sentinel's own clear branch on a fresh, non-foreign re-install), B25B (both modes foreign-core,
-  uninstalled in sequence) — alongside the pre-existing B22 (dir #150's own foreign-core case). The
+  uninstalled in sequence), B26 (dir #190's named migration residual, pinned live) — alongside the
+  pre-existing B22 (dir #150's own foreign-core case). The
   checkout-side ledger's own pruning (near uninstall.sh's manifest housekeeping) now also counts a
   surviving `foreign-core.*` sentinel, not just a surviving manifest, before dropping a home — an
   operator-run `/code-review high` pass live-reproduced the ledger silently losing track of a still-live,
@@ -3742,7 +3807,10 @@ independently.
   runs. **`--system` is load-bearing and a future change must not "simplify" it to `--global`:**
   `tests/lib.sh` redirects `GIT_CONFIG_GLOBAL` per test file, which shadows a `--global` write
   entirely, so only `--system` reaches every git call in the suite. As part of the same cleanup
-  `tools/self/prose-drift.sh` lost its own `|| true` guard — see Known issues.
+  `tools/self/prose-drift.sh` lost its own `|| true` guard — see Known issues. *Record correction
+  (dir #244): PR #250, which landed alongside this fix, described this mechanism in its own body as
+  `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` — that never shipped; `--system` above,
+  from this PR, is what did. PR #250's body has been corrected in place.*
 - **`tests/run.sh` no longer reports a false FAIL on a real checkout** (dir #222). One
   `tests/test_pre_pr_gate.sh` assertion scanned the working tree with `grep -r` rather than tracked
   files, so any gitignored file that happened to quote a gate marker — an operator's own backlog or
