@@ -29,7 +29,8 @@ and that's fine.)
   fired; kept.** **Re-reviewed 2026-09-16 (0.10.2 groom, G4(b)): still not fired — `ADAPTING.md` names
   no second always-on module and no adopter has asked for one; kept.** **Re-reviewed 2026-09-20
   (0.11.0 groom, G4(b)): still not fired — `ADAPTING.md` unchanged on this point, no adopter request
-  in the 0.10.2 cycle; kept.**
+  in the 0.10.2 cycle; kept.** **Re-reviewed 2026-09-23 (0.12.0 groom, G4(b)): still not fired in the
+  0.11.0 cycle; kept.**
 - [2026-07-23] **openwiki (langchain-ai/openwiki) — auto-generated CLAUDE.md/AGENTS.md, opposite bet from
   Keel's manual curation** — surfaced while triaging six repos from an Instagram post; the only one that
   overlapped with Keel's domain (the other five dropped without action). OpenWiki synthesizes

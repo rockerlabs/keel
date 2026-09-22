@@ -291,7 +291,10 @@ orchestrator records the GO verdict: **(a)** it OPENS the run's row in the proje
 from the `run-record.md` stub — opened, not completed, because some of the row's own fields are facts
 about the tag (a prior run's row records the annotated tag peeling to the verified commit), which do
 not exist yet; the row is completed at close, the same two-stage lifecycle the releases-side record
-already practises. **(b)** Every `no-action` finding that names a real defect (§4 rule 6) is moved onto
+already practises. **Completing means REPLACING the opener's placeholder in place** — a tag field left
+reading "pending" above an appended completion paragraph tells a reader who stops at the row's header
+that the run never tagged (the 0.11.0 row did exactly that a day after its own tag; the next groom's
+G0 is where it surfaced). **(b)** Every `no-action` finding that names a real defect (§4 rule 6) is moved onto
 the project's standing list, and the run's staged-tickets file is empty or filed. *(Call (b) what it
 is when you brief it — "**move the `no-action` findings to the standing list**". "Harvest" is already
 the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanically-derivable fields and

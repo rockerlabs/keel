@@ -15,6 +15,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/grooming.md` G0 — tell a DESTROYED read-trace store from a rotated one** (compensation;
+  remover dir #630): the store lives inside the harness home, and on 2026-09-22 a test run without its
+  sandbox (dir #627) deleted that whole home, taking the previous release's read cycle with it. A rotation
+  leaves the archive the previous run record names; a destroyed store leaves nothing dated before the
+  event. The groom now checks which, and records a lost cycle as lost rather than as a quiet one.
+- **`docs/grooming.md` G5 — size a release budget's input side from the previous release's measured
+  TOTAL, not a per-item build price.** The v0.11.0 estimate priced thirty items one by one: output landed
+  inside its band, input-side ran 1.6–2.1× over, because standing session context, the audit's subagent
+  fan-out and per-PR rebases scale with the release, not the item.
+- **`docs/delta-audit.md` §8(a) — completing the cross-run row replaces the opener's placeholder in
+  place.** The v0.11.0 row kept a "TAG: pending" header above the completed tag paragraph appended at its
+  foot, so a reader stopping at the header read the run as untagged.
+- **`IDEAS.md`** — the 0.12.0 groom's G4(b) re-review stamp on the one open entry.
+
 ## [0.11.0] — 2026-09-22
 
 **Known issues, disclosed at the cut.** This is the drain: every open backlog heading tagged for
