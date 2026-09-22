@@ -628,7 +628,9 @@ Steps, in order:
      three shipped commit messages did exactly this (a flag, a one-liner's shape, and a numeric cap, each
      rewritten by review after the message was first written). Step 9 already re-reads the PR body
      against what ran; the commit log gets no second chance once pushed, so catch it here, on the same
-     `--amend` that just changed the diff, while the message is still editable.
+     `--amend` that just changed the diff, while the message is still editable — the same
+     re-derive-at-writing-time discipline FRAMEWORK.md states in general (dir #229): read the amended
+     diff itself, not memory of what the fix used to do.
 
    If you run `tools/pre-pr-gate.sh receipt --recover` anyway to sanity-check state, its `nothing to
    recover` answer is correct and BY DESIGN here — not a signal that this isn't a convergence round;
