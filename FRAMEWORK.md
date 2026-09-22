@@ -721,3 +721,14 @@ fit. One, not an exhaustive list — almost everything touches several propertie
 answer is what makes the tag informative instead of a shrug. `unknown` is the valuable outcome, not a
 failure: park a backlog ticket, or a `LEARNINGS.md` entry and let it follow `LEARNINGS.md`'s own
 promote-on-recurrence rule (recur to `[2×]`, then promote the property set or drop the entry).
+
+**Re-derive every claim at writing time — don't paraphrase from the nearest source.** Two shapes,
+each with its own cheap tell, both resolved the same way. **Self-drift:** a late-session summary
+restates your own earlier narration instead of the artifact it described — the tell is a count stated
+near the claims it sums (recount them). **Source-drift:** a fix round writes a claim about code
+mechanics from the ticket or spec describing it, rather than from the code — the tell is a claim the
+source states in one clause but the code spreads over several call sites (grep for all of them). Both
+resolve by opening the artifact as you write the claim (`git show <sha>:<path>`, the diff, the call
+sites) — never by trusting the last place the claim was stated. `docs/delta-audit.md` §10 carries the
+same rule for the audit surface specifically (a disclosure-only fix round); this entry is the general
+form for any changelog or persist writing.
