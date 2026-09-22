@@ -76,10 +76,15 @@ something, which is the whole point of naming it.
 | `run-record.md` | a stub for the cross-run record (§7's sizing table source) |
 
 **The closure check is the headline feature, not a nicety.** It compares the union of every per-PR
-file list against the range diff and refuses when they disagree — the guard against a squash- or
-rebase-merged PR silently under-counting the seam map, which is exactly the class of gap that cost a
-real run an hour of by-hand recount (24 PRs counted by hand, 31 the mechanical map actually held)
-before this script existed. Read `--help` for the full refusal/exit-code contract and the tuning
+file list against the range diff and **refuses (exit 3) on one direction of disagreement**: a path in
+the range diff that no PR's file list claims (`only_in_delta`) fails closure, because that is the
+guard against a squash- or rebase-merged PR silently under-counting the seam map — exactly the class
+of gap that cost a real run a by-hand recount (24 PRs counted by hand, 31 the mechanical map actually
+held) before this script existed. The other direction — a path a PR claims that the net range
+diff no longer shows (`only_in_map`) — is reported as `transient in range` and does **not** fail
+closure: added and then deleted, edited and then reverted, or any other shape whose touches net to
+zero inside the range, its two endpoints agree by construction, so it says nothing about whether the
+map is complete (dir #288). Read `--help` for the full refusal/exit-code contract and the tuning
 environment variables (`DELTA_HISTORICAL`, `DELTA_INVARIANT_PATHS`, `DELTA_SESSION_FILES`).
 
 ## 4. The Protocol — 8 rules, binding for every session this run spawns

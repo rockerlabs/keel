@@ -15,6 +15,51 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-09-22
+
+**Known issues, disclosed at the cut.** This is the drain: every open backlog heading tagged for
+this version, thirty of them, closed in one release — so the ledger below is read against the
+v0.10.2 paragraph, item by item, the way that paragraph was read against v0.10.1's. It named
+**twelve open items**, and **nine are fixed here**, each with its own entry in this section: the
+three residuals the 0.10.2 fixes themselves left behind (**dir #570**, **dir #571**, **dir #572**)
+and all six of that cut's RC-audit findings (**dir #564**, **dir #565**, **dir #566**, **dir #567**,
+**dir #568**, **dir #569**). **The residue is the same three items that cut disclosed, and v0.10.1
+disclosed them before it —
+this is the third consecutive release they ship open** — said plainly, because a re-disclosure that
+reads like the first one is exactly the quietly-abandoned state this paragraph exists to prevent:
+**dir #499** (the private audit harness has no delta-bundling mode — gitignored, outside the public
+tree, research rather than a fix; the two earlier cuts described this ticket by a different defect,
+the second auditor's unused `read_file` mode, and the wording here is the one its backlog body
+carries), **dir #511** (`keel-check-gate.sh`'s opt-in hard veto matches
+only two literal prefixes) and **dir #515** (`docs/keel-ab/seed.sh` accepts a relative `--with-keel`
+path it cannot copy). All three are maintainer-only tooling an adopter never runs by default, and all
+three stayed out of a release whose slate was fixed at planning time; they carry no fix date and are
+named here, not retired. **One behavioural defect was introduced in this range and fixed before the
+tag** — the secret-guard installer destroying a user's permanent `--force` hook backup on the next
+ordinary re-install (**dir #570**'s own PR, caught by the RC audit's cross-vendor leg, fixed with a
+mutation-proved regression test) — and one sibling of it is **pre-existing and still open**: a
+second `--force` run over a *different* foreign hook overwrites the first permanent backup with no
+existence check (**dir #625**). **From this release's own RC audit, ticket-next, none behavioural:**
+the backlog census's foreign-citation guard is structurally inert, its `MUTATION-PROOF` test cannot
+fail under it, and the file header asserts the opposite (**dir #619**, one defect in three places);
+`read-trace.sh` prints "wrap completion recorded" after a stamp whose write can fail (**dir #620**);
+the citation strip does not tolerate `**` emphasis, the third instance of a family ticketed twice
+before (**dir #621**); `pre-pr-gate.sh`'s parser-facing `git diff` is not locale-pinned, measured
+unreachable on both platforms keel targets (**dir #622**); `line-citations.sh` has no test at the
+late-NUL boundary (**dir #623**); `docs/delegation.md` cites a `docs/delta-audit.md` §7 override
+that has never existed in any revision (**dir #624**). One further audit finding was closed in the
+cut commit itself rather than ticketed-and-deferred, under the whole-sentence rule:
+`docs/delta-audit.md` §3 described the closure check as refusing "when they disagree" in both
+directions when only one direction fails it — corrected there, with the exit code now named inline,
+because the `--help` contract the paragraph points at omits closure failure from its own list of
+exit-3 causes (**dir #626** owns fixing that list). **Known process defects, adopter-invisible but
+recorded:** a timing assertion in `tests/test_run_sh.sh` flakes under heavy parallel load
+(**dir #592**, seen by four independent workers, clean in isolation every time); the cross-vendor review
+leg this release leaned on is not a keel artifact at all (**dir #614**); waiting on CI costs a
+session a no-op turn per tick (**dir #616**); and a review subagent reproducing a defect live
+mutated the real machine-global secret-guard, the second hit this release of a class now seven deep
+(**dir #617**).
+
 ### Added
 
 - **A review-null fix commit no longer needs a fresh `polish.5-review` trace** (dir #488): when a fix
