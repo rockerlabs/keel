@@ -433,7 +433,23 @@ ensure_evidence() {
 _impact_prior_mode() {
   local target="$1"
   [ -f "$target" ] || return 0
-  stat_portable_mode "$target"
+  # dir #341: TARGET is confirmed to exist by the guard above, so an EMPTY answer here is not the
+  # ordinary "absent" case the function-header comment discusses — it means `stat` itself failed
+  # (permissions, a race, an unrecognized flavor) on a file that is right there. That silent failure
+  # is exactly the asymmetry the ticket names: _impact_atomic_write's chmod failure below warns to
+  # stderr, but this one, upstream of it, did not — so a mode-preservation no-op read as "the fix
+  # didn't work" with nothing printed to explain why. Warn here, at the one call site where an empty
+  # mode matters (a first-create's legitimate empty answer never reaches this branch); the lib's own
+  # "empty = unknown, fail closed" contract (tools/lib/stat-portable.sh's header) is unchanged — the
+  # empty string still propagates so _impact_atomic_write still skips the chmod, same as before.
+  local mode status
+  mode="$(stat_portable_mode "$target")"; status=$?
+  if [ -z "$mode" ]; then
+    printf 'keel-impact: could not read %s'"'"'s current mode (stat failed) — its prior mode will not be preserved\n' \
+      "$target" >&2
+  fi
+  printf '%s' "$mode"
+  return "$status"
 }
 
 # _impact_atomic_write TARGET OLD_MODE PRODUCER_FN [ARGS...] — the same-directory atomic-write
