@@ -672,7 +672,7 @@ feed_hook "$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd",
 check_status "session-end with an unwritable store root: exit 0" 0 "$STATUS"
 check_status "session-end with an unwritable store root: stays silent (no mkdir/redirect stderr leak)" "" "$OUT"
 
-if [ "$(id -u)" != 0 ]; then
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "unwritable store root: nothing written under it (mkdir was actually blocked)" 0 \
     "$(find "$RT_STORE" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
 else
