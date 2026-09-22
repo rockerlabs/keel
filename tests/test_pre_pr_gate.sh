@@ -849,10 +849,14 @@ run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep
 check_status "3 consecutive self-reported passes → non-zero (advisory warn)" 1 "$STATUS"
 check_contains "warns naming the threshold" "$OUT" "3+ consecutive"
 
-# 38b. dir #196 (same overflow class dir #156 fixed in self/doctor.sh): a digit-SHAPED but overflowing
-# K (20 nines) must fall back to the default (3), not overflow the shell's native integer range and
-# crash whatever later comparison reads it — reproduced live against the unguarded case arm before
-# fixing it here. Same 3-self-reported-row state as #38, so the default-K warn is the expected outcome.
+# 38b. dir #196/#243 (same overflow class dir #156 fixed in self/doctor.sh, re-derived here rather
+# than restated): a digit-SHAPED but overflowing K (20 nines) must fall back to the default (3). K is
+# only ever read by `awk -v k=...`'s `streak >= k`, never by a bash `[ -ge/-gt ]` test, so an
+# unsanitized huge K would not crash with "integer expression expected" — awk coerces it to a double
+# with no error, and `streak >= k` simply never fires, silently suppressing the very self-reported-
+# only-streak WARN this sweep exists to raise. `check_absent` below stays as a defensive pin against a
+# FUTURE call site that does route K through a bash comparison, not a description of this one. Same
+# 3-self-reported-row state as #38, so the default-K warn is the expected outcome either way.
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep 99999999999999999999
 check_status "an overflowing K falls back to the default 3 → same warn (exit 1)" 1 "$STATUS"
 check_contains "warns naming the (fallback) default threshold" "$OUT" "3+ consecutive"

@@ -167,13 +167,15 @@ just cut. This is the pre-tag side of dir #299's allowance: a `## [x.y.z]` headi
 writable here precisely because the tag hasn't landed; write it now, not in `publishing-checklist.md`
 §4, which only starts once the tag is already cut.
 
-**Before that PR lands, re-check `docs/loading-and-cost.md`'s open-floor figures** — run
-`tests/test_doc_figures.sh` and read its output, not just its exit code: an open-floor row
+**Before that PR lands, re-check `docs/loading-and-cost.md`'s open-ended figures** — run
+`tests/test_doc_figures.sh` and read its output, not just its exit code: an open-FLOOR row
 (`CHANGELOG.md`, `commands/polish.md`) passes by design once actual size is above the floor (dir #105),
-so drift shows up only as a non-failing `note` line naming how far actual has pulled ahead. Restate any
-figure a note names, in the same cut-and-land PR — the CHANGELOG section growing IS the drift, so this
-is the one moment in the whole flow it's guaranteed to be checked rather than left to a later pass that
-has no reason to reopen this file. *(dir #202: this floor was hand-bumped five releases running — 25k →
+and the `commands/*.md` range row's own open CEILING (dir #245) passes the same way once a command
+outgrows it — both shapes drift silently by design, so either one shows up only as a non-failing
+`note` line naming how far actual has pulled ahead. Restate any figure a note names, in the same
+cut-and-land PR — the CHANGELOG section growing IS the drift, so this is the one moment in the whole
+flow it's guaranteed to be checked rather than left to a later pass that has no reason to reopen this
+file. *(dir #202: this floor was hand-bumped five releases running — 25k →
 40k → 50k → 60k → 70k — always triggered by a human happening to notice the note during a release pass,
 never by a test failure; this step is that noticing, made a named part of the phase instead of left to
 chance. Placed here, not in `publishing-checklist.md` §4, because §4 only starts once the tag is already

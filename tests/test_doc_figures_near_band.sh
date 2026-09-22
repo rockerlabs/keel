@@ -25,7 +25,16 @@ run bash "$clean_copy/tests/test_doc_figures.sh"
 check_status "clean copy: test_doc_figures.sh exits 0" 0 "$STATUS"
 check_absent "clean copy: no near-band note" "$OUT" "  note  "
 
-# --- leg (a): a figure nudged into the warn zone (still inside ±10%) prints the note --------------
+# --- leg (a) + leg (c): two independent near-band mutations on ONE copy, one run ------------------
+# leg (a): a figure nudged into the warn zone (still inside ±10%) prints the note.
+# leg (c) (dir #245): the commands/*.md OPEN-CEILING range row gets the same 25%-style note as the
+# open-floor rows, once the largest ordinary command has drifted 25%+ above the quoted HI. A
+# SYNTHETIC near-ceiling fixture (shrink the row's own quoted HI in the copy), not a real command
+# pushed toward it — the real tree's own largest command changes size over time and this test must
+# not depend on today's exact figure.
+# Combined into one `copy_tree` + one guard run (found in review — they touch different ROWS of the
+# same doc and neither depends on the other's mutation, so two separate tree copies + two separate
+# full runs were pure duplicated I/O for no isolation benefit).
 warn_copy="$SANDBOX/near-band-warn"
 copy_tree "$warn_copy"
 
@@ -48,9 +57,37 @@ awk -v file="$doc_row_file" -v fig="$warn_fig" '
   { print }
 ' "$doc" > "$doc.tmp" && mv "$doc.tmp" "$doc"
 
+# The real largest ORDINARY command (excl. polish.md), by the same ~4-chars/token estimate the guard
+# itself uses — this is what the shrunk HI below has to sit 25%+ under.
+max_cmd_tok=0
+for f in "$warn_copy"/commands/*.md; do
+  [ -f "$f" ] || continue
+  [ "$(basename "$f")" = "polish.md" ] && continue
+  c="$(wc -c < "$f" | tr -d ' ')"
+  t=$(( c / 4 ))
+  [ "$t" -gt "$max_cmd_tok" ] && max_cmd_tok="$t"
+done
+# new_hi*5/4 must be strictly below max_cmd_tok — new_hi = max_cmd_tok*4/5 - 1 guarantees that with
+# integer division (round-down on the *4/5 already errs low; the -1 covers the exact-multiple case).
+new_hi=$(( (max_cmd_tok * 4 / 5) - 1 ))
+
+# Rewrite the row's own "~LO–HI+ each" cell, keeping LO and the open "+" — only HI shrinks. The
+# LO/HI separator is an EN DASH (U+2013), not a hyphen (found live: a hyphen-anchored sub() silently
+# never matched) — target the digit run immediately before the "+" instead, which is unambiguous
+# either way (only the HI figure in this row carries a trailing "+").
+awk -v newhi="$new_hi" '
+  /^\|.*`commands\/\*/ {
+    sub(/[0-9][0-9,]*\+/, newhi "+")
+  }
+  { print }
+' "$doc" > "$doc.tmp" && mv "$doc.tmp" "$doc"
+
 run bash "$warn_copy/tests/test_doc_figures.sh"
-check_status "warn copy: test_doc_figures.sh still exits 0 (still inside ±10%)" 0 "$STATUS"
+check_status "warn+ceiling copy: test_doc_figures.sh still exits 0 (both are non-failing notes)" 0 "$STATUS"
 check_contains "warn copy: prints a near-band note" "$OUT" "  note  "
 check_contains "warn copy: note names the nudged file's label" "$OUT" "$doc_row_file"
+check_contains "ceiling copy: note names the commands/*.md range label" "$OUT" \
+  "commands/*.md (excl. polish.md) sizes fall inside the quoted range"
+check_contains "ceiling copy: note cites the shrunk ceiling" "$OUT" "ceiling ~$new_hi+"
 
 summary

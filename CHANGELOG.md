@@ -307,6 +307,20 @@ sections real content going forward — see that page for exactly when each one 
   (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
   instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
   hook, restored on failure and cleaned up on success.
+- **Two call-site comments (`tools/keel-impact.sh`, `tools/pre-pr-gate.sh`) named a failure the code
+  cannot produce** (dir #243): both said an unsanitized override would "crash" a later arithmetic/
+  comparison; re-derived from the code, neither one crashes — one silently disables its own age cap
+  (an old event scores as this session's) via the shared date-conversion fail-open, the other lets
+  awk's numeric coercion silently defeat a streak comparison, suppressing the very WARN the sweep
+  exists to raise. A matching test comment carried the same wrong claim; corrected too.
+- **The `commands/*.md` range row had no drift signal at all** (dir #245): unlike the doc's other
+  open-ended rows (`CHANGELOG.md`, `commands/polish.md`), the range row's open ceiling had no note
+  mechanism, so a command outgrowing the quoted `~250–2,100+` figure passed silently — which the
+  largest ordinary command has already done (measured live: `commands/wrap.md` at ~2,498 tok, ~19%
+  above the quoted ceiling, closing in on but not yet past the 25% trigger below).
+  `assert_commands_range` now prints the same 25%-style non-failing note the open-floor rows already
+  have once the largest command drifts 25%+ above HI; `docs/release-audit.md`'s release-prep step now
+  names this row alongside the two it already covered.
 - **`docs/parallel-sessions.md`'s Pre-commit recovery recipe no longer misattributes a peer's
   interleaved commit** (dir #176): `git branch rescue-mine HEAD` captured whatever landed at `HEAD`
   by the time the recipe ran, so a peer's ordinary commit made after your accidental one but before

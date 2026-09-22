@@ -1110,8 +1110,12 @@ cmd_add() {
   # construction, the same way a foreign-keyed line does, needing no dedicated accumulator either.
   local ingested=0 stale=0 kept=0 _ts _ty _src _det _key _raw _cite cutoff_iso="" stale_lines="" consumed_raws="" _awk_out
   local own_key=""
-  # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls
-  # back to 12 rather than crashing the later arithmetic/date math.
+  # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR digit-overflowing override
+  # falls back to 12 rather than letting `max_age_h * 3600` below overflow the shell's arithmetic —
+  # the resulting garbage cutoff fails `_epoch_to_iso`, and THIS FILE'S OWN fail-open two lines down
+  # then ingests everything UNCAPPED, the opposite of the intended fallback. Not a crash: a silent
+  # wrong answer (an old event scores as this session's) — reproduced live in
+  # tests/test_keel_impact.sh's own dir #196 fixture (20 nines).
   local max_age_h; max_age_h="$(sanitize_nonneg_int "${KEEL_INGEST_MAX_AGE_HOURS:-12}" 12)"
   if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
     own_key="$(impact_claim_key)"

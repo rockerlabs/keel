@@ -46,6 +46,30 @@ assert_band() {
   fi
 }
 
+# note_if_over_open_bound LABEL SUBJECT ACTUAL BOUND NOUN — the shared shape behind BOTH an
+# open-FLOOR's drift note (assert_figure below) and an open-CEILING's drift note
+# (assert_commands_range further down, dir #245): once ACTUAL has drifted to 25%+ past BOUND, print
+# a non-failing note naming SUBJECT (what actually grew) and NOUN (what kind of open bound it is,
+# "doc floor"/"row's own ceiling") — same arithmetic either direction, only which side of BOUND
+# actual sits on differs, and that's already decided by the caller before it gets here. Extracted
+# after appearing at exactly these two call sites (found in review — this file already extracts
+# `assert_band`/`tok_of`/`k_fig_to_tokens` the same way once a shape repeats). The printed WORDING
+# is not byte-identical to either pre-extraction inline note (generic "consider raising it" instead
+# of a noun-specific phrase; the ceiling call's number/noun order is now the floor call's) — the
+# arithmetic and pass/fail behavior are unchanged, only free-form log text, and nothing greps for
+# either old exact string (checked in review) — found by /code-review medium's removed-behavior
+# angle, noted here so a future reader isn't surprised by the reworded output.
+note_if_over_open_bound() {
+  local label="$1" subject="$2" actual="$3" bound="$4" noun="$5"
+  if [ "$actual" -gt "$(( bound * 5 / 4 ))" ]; then
+    # (actual-bound)/bound — "SUBJECT exceeds the bound by X%", not "the bound is X% below actual"
+    # (that would need actual, not bound, as the denominator — a different number; found in review
+    # for the original floor-only version of this note). Word it to match what's computed.
+    printf '  note  %s: %s is now ~%s, %s%% above the %s ~%s+ — consider raising it\n' \
+      "$label" "$subject" "$actual" "$(( (actual - bound) * 100 / bound ))" "$noun" "$bound"
+  fi
+}
+
 # table_row_for FILE — print FILE's own File-by-file table row in loading-and-cost.md, or nothing if
 # no row mentions it. Factored out of assert_figure so assert_derived_quoted_sum below can reuse the
 # SAME row-lookup instead of re-deriving it from the actual file (dir #167: the ~16.4K one-off line
@@ -89,13 +113,7 @@ assert_figure() {
       # ~44,600, passing CI the whole time). Once actual has drifted to 25%+ above the floor, print a
       # non-failing note — same shape as assert_band's near-band note — so the drift becomes visible
       # without turning the floor back into a bump-every-PR ceiling.
-      if [ "$actual" -gt "$(( doc_fig * 5 / 4 ))" ]; then
-        # The computed percentage is (actual-floor)/floor — i.e. "actual exceeds the floor by X%",
-        # not "the floor is X% below actual" (that would need actual, not the floor, as the
-        # denominator — a different number; found in review). Word it to match what's computed.
-        printf '  note  %s: actual ~%s is now %s%% above the doc floor ~%s+ — consider raising the floor\n' \
-          "$label" "$actual" "$(( (actual - doc_fig) * 100 / doc_fig ))" "$doc_fig"
-      fi
+      note_if_over_open_bound "$label" "actual" "$actual" "$doc_fig" "doc floor"
     else
       fail "$label" "doc floor ~$doc_fig+ but actual is only ~$actual tok — lower the floor"
     fi
@@ -125,6 +143,7 @@ assert_figure() {
 assert_commands_range() {
   local label="$1"
   local row="" lo="" hi="" f="" tok="" bad="" open_upper=""   # init all (set -u safe on bash 3.2)
+  local max_tok=0 max_file=""
   row="$(grep -E '^\|.*`commands/\*' "$doc" | head -1)"
   if [ -z "$row" ]; then fail "$label" "no commands/*.md row in loading-and-cost.md"; return; fi
   # the figure cell is "~LO-HI each" (one tilde, an en-dash); read the last table cell, take its two
@@ -144,9 +163,21 @@ assert_commands_range() {
     tok="$(tok_of "$f")"
     if [ "$tok" -lt "$lo" ]; then bad="$bad $(basename "$f")=$tok"; continue; fi
     if [ -z "$open_upper" ] && [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
+    # Tracked regardless of pass/fail, open ceiling or not — the note below (dir #245) needs the
+    # largest ordinary command whether or not this row's own ceiling is open.
+    if [ "$tok" -gt "$max_tok" ]; then max_tok="$tok"; max_file="$(basename "$f")"; fi
   done
   local rangedesc="~$lo-$hi"; [ -n "$open_upper" ] && rangedesc="~$lo-$hi+ (open upper)"
   if [ -z "$bad" ]; then pass "$label (all within $rangedesc)"; else fail "$label" "outside $rangedesc:$bad"; fi
+  # dir #245: an open ceiling (like assert_figure's open FLOOR, dir #105 above) passes by design once
+  # a command has grown past HI — this row had no drift signal at all for that, unlike the open-floor
+  # rows, so a release step telling the operator to "watch for a note" was a no-op here specifically
+  # (docs/release-audit.md's own step named only CHANGELOG.md/polish.md). Same 25%-style trigger as
+  # assert_figure's open-floor note: once the largest ordinary command has drifted to 25%+ above the
+  # quoted ceiling, print a non-failing note naming it, so the PR that pushed a command past HI is the
+  # one that restates the row. Only meaningful when the ceiling is actually open — a closed HI already
+  # fails via $bad above, which is the louder, correct signal for that shape.
+  [ -n "$open_upper" ] && note_if_over_open_bound "$label" "$max_file" "$max_tok" "$hi" "row's own ceiling"
 }
 
 # README.md's mermaid "How it works" diagram quotes its own rounded ~N.NK figures for the same files —
