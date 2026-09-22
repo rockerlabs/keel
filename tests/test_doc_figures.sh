@@ -53,7 +53,12 @@ assert_band() {
 # "doc floor"/"row's own ceiling") — same arithmetic either direction, only which side of BOUND
 # actual sits on differs, and that's already decided by the caller before it gets here. Extracted
 # after appearing at exactly these two call sites (found in review — this file already extracts
-# `assert_band`/`tok_of`/`k_fig_to_tokens` the same way once a shape repeats).
+# `assert_band`/`tok_of`/`k_fig_to_tokens` the same way once a shape repeats). The printed WORDING
+# is not byte-identical to either pre-extraction inline note (generic "consider raising it" instead
+# of a noun-specific phrase; the ceiling call's number/noun order is now the floor call's) — the
+# arithmetic and pass/fail behavior are unchanged, only free-form log text, and nothing greps for
+# either old exact string (checked in review) — found by /code-review medium's removed-behavior
+# angle, noted here so a future reader isn't surprised by the reworded output.
 note_if_over_open_bound() {
   local label="$1" subject="$2" actual="$3" bound="$4" noun="$5"
   if [ "$actual" -gt "$(( bound * 5 / 4 ))" ]; then
