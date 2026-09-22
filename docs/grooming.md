@@ -84,9 +84,9 @@ since the previous release and say which cycle your figures are from.
 removes every cycle kept in it: a test run without its sandbox deleted the operator's whole harness
 home (`dir #627`), and the previous release's reads went with it — the archive the previous groom's own
 rotation recorded exists nowhere. Tell the cases apart before quoting a figure: a rotation leaves the
-archive the previous run record names beside the live log; a destroyed store leaves neither that
-archive nor anything dated before the destroying event. Record the lost cycle as lost, in the run record,
-never as a quiet one. A compensation; its remover is `dir #630` (the store's durability).
+archive the previous run record names beside the live log, a destroyed store does not — and then the
+cycle is recorded as lost, never as a quiet one. A compensation; its remover is `dir #630` (the store's
+durability).
 
 **Rotation is this phase's own closing step: once the aggregate is read and both figures recorded,
 run the tool's `rotate` subcommand and record the archive suffix and the new cycle boundary in this
@@ -385,7 +385,7 @@ per-item build price (the 0.12.0 groom, reading the 0.11.0 row).** That release 
 items at a per-item figure: output landed inside the band, input-side ran 1.6–2.1× over it. A per-item
 price omits what scales with the release rather than with the item — every session's standing context,
 the audit's subagent fan-out, one rebase per PR queued behind a shared changelog anchor. Divide the last
-measured release total by its build-ticket count and scale that; a per-item figure is a floor only. A
+measured release total by the build tickets it actually DELIVERED (not its planned slate) and scale that; a per-item figure is a floor only. A
 rule of the procedure, not a compensation — no ticket removes it.
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
