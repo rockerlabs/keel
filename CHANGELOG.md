@@ -87,6 +87,13 @@ sections real content going forward — see that page for exactly when each one 
   `tools/self/pool-report.sh` read-only; the measurement behind the decision is in G4.
 - `docs/delegation.md`: two over-length lines (`:70`, `:110`) reflowed — the standing-list item the
   0.10.1 RC audit filed, carried three cycles.
+- **`FRAMEWORK.md`'s Changelog section gains a re-derive-at-writing-time clause** (dir #229):
+  a self-drift shape (a late-session summary paraphrasing its own earlier narration) and a
+  source-drift shape (a fix round writing a claim about code mechanics from the ticket describing
+  it rather than from the code) each get a named cheap tell, resolved the same way — open the
+  artifact at writing time. `docs/delta-audit.md` §10 already carries the audit-surface twin of
+  this rule; the new entry is the general form, cited alongside it rather than duplicating its
+  text.
 
 ### Fixed
 
@@ -292,6 +299,9 @@ sections real content going forward — see that page for exactly when each one 
   (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
   instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
   hook, restored on failure and cleaned up on success.
+- **`CHANGELOG.md`'s `[0.7.1]` dir #190 entry said "five new fixtures" and named four**
+  (dir #247): the fifth, B26 (dir #190's named migration residual, pinned live in
+  `tests/test_uninstall.sh`), is now named in the list so the count and the list agree.
 
 ## [0.10.2] — 2026-09-19
 
@@ -3698,7 +3708,8 @@ independently.
   must not have its shared half stripped) stays intact via the sentinel. Pinned by five new
   `tests/test_uninstall.sh` fixtures — B23 (the regression), B24 (the stray-file scenario), B25A (the
   sentinel's own clear branch on a fresh, non-foreign re-install), B25B (both modes foreign-core,
-  uninstalled in sequence) — alongside the pre-existing B22 (dir #150's own foreign-core case). The
+  uninstalled in sequence), B26 (dir #190's named migration residual, pinned live) — alongside the
+  pre-existing B22 (dir #150's own foreign-core case). The
   checkout-side ledger's own pruning (near uninstall.sh's manifest housekeeping) now also counts a
   surviving `foreign-core.*` sentinel, not just a surviving manifest, before dropping a home — an
   operator-run `/code-review high` pass live-reproduced the ledger silently losing track of a still-live,
