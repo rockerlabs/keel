@@ -25,7 +25,16 @@ run bash "$clean_copy/tests/test_doc_figures.sh"
 check_status "clean copy: test_doc_figures.sh exits 0" 0 "$STATUS"
 check_absent "clean copy: no near-band note" "$OUT" "  note  "
 
-# --- leg (a): a figure nudged into the warn zone (still inside ±10%) prints the note --------------
+# --- leg (a) + leg (c): two independent near-band mutations on ONE copy, one run ------------------
+# leg (a): a figure nudged into the warn zone (still inside ±10%) prints the note.
+# leg (c) (dir #245): the commands/*.md OPEN-CEILING range row gets the same 25%-style note as the
+# open-floor rows, once the largest ordinary command has drifted 25%+ above the quoted HI. A
+# SYNTHETIC near-ceiling fixture (shrink the row's own quoted HI in the copy), not a real command
+# pushed toward it — the real tree's own largest command changes size over time and this test must
+# not depend on today's exact figure.
+# Combined into one `copy_tree` + one guard run (found in review — they touch different ROWS of the
+# same doc and neither depends on the other's mutation, so two separate tree copies + two separate
+# full runs were pure duplicated I/O for no isolation benefit).
 warn_copy="$SANDBOX/near-band-warn"
 copy_tree "$warn_copy"
 
@@ -48,24 +57,10 @@ awk -v file="$doc_row_file" -v fig="$warn_fig" '
   { print }
 ' "$doc" > "$doc.tmp" && mv "$doc.tmp" "$doc"
 
-run bash "$warn_copy/tests/test_doc_figures.sh"
-check_status "warn copy: test_doc_figures.sh still exits 0 (still inside ±10%)" 0 "$STATUS"
-check_contains "warn copy: prints a near-band note" "$OUT" "  note  "
-check_contains "warn copy: note names the nudged file's label" "$OUT" "$doc_row_file"
-
-# --- leg (c): dir #245 — the commands/*.md OPEN-CEILING range row gets the same 25%-style note as
-# the open-floor rows, once the largest ordinary command has drifted 25%+ above the quoted HI. A
-# SYNTHETIC near-ceiling fixture (shrink the row's own quoted HI in the copy), not a real command
-# pushed toward it — the real tree's own largest command changes size over time and this test must
-# not depend on today's exact figure.
-ceiling_copy="$SANDBOX/near-band-ceiling"
-copy_tree "$ceiling_copy"
-
-ceiling_doc="$ceiling_copy/docs/loading-and-cost.md"
 # The real largest ORDINARY command (excl. polish.md), by the same ~4-chars/token estimate the guard
 # itself uses — this is what the shrunk HI below has to sit 25%+ under.
 max_cmd_tok=0
-for f in "$ceiling_copy"/commands/*.md; do
+for f in "$warn_copy"/commands/*.md; do
   [ -f "$f" ] || continue
   [ "$(basename "$f")" = "polish.md" ] && continue
   c="$(wc -c < "$f" | tr -d ' ')"
@@ -85,13 +80,14 @@ awk -v newhi="$new_hi" '
     sub(/[0-9][0-9,]*\+/, newhi "+")
   }
   { print }
-' "$ceiling_doc" > "$ceiling_doc.tmp" && mv "$ceiling_doc.tmp" "$ceiling_doc"
+' "$doc" > "$doc.tmp" && mv "$doc.tmp" "$doc"
 
-run bash "$ceiling_copy/tests/test_doc_figures.sh"
-check_status "ceiling copy: test_doc_figures.sh still exits 0 (open ceiling never fails)" 0 "$STATUS"
-check_contains "ceiling copy: prints a ceiling-drift note" "$OUT" "  note  "
+run bash "$warn_copy/tests/test_doc_figures.sh"
+check_status "warn+ceiling copy: test_doc_figures.sh still exits 0 (both are non-failing notes)" 0 "$STATUS"
+check_contains "warn copy: prints a near-band note" "$OUT" "  note  "
+check_contains "warn copy: note names the nudged file's label" "$OUT" "$doc_row_file"
 check_contains "ceiling copy: note names the commands/*.md range label" "$OUT" \
   "commands/*.md (excl. polish.md) sizes fall inside the quoted range"
-check_contains "ceiling copy: note cites the shrunk ceiling" "$OUT" "~$new_hi+ ceiling"
+check_contains "ceiling copy: note cites the shrunk ceiling" "$OUT" "ceiling ~$new_hi+"
 
 summary
