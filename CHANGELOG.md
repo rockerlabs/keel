@@ -307,6 +307,20 @@ sections real content going forward — see that page for exactly when each one 
   (and, caught live by that fix's own new test, its `secret-scan.sh`/`range-lib.sh` dependencies too)
   instead of restoring them — both now get the same pre-overwrite safety-net backup as a foreign
   hook, restored on failure and cleaned up on success.
+- **`docs/parallel-sessions.md`'s Pre-commit recovery recipe no longer misattributes a peer's
+  interleaved commit** (dir #176): `git branch rescue-mine HEAD` captured whatever landed at `HEAD`
+  by the time the recipe ran, so a peer's ordinary commit made after your accidental one but before
+  you rescued it silently rode onto a branch framed as "yours." The recipe now branches from your own
+  last commit's SHA, read off `git log --oneline` the same way the reset target already is, then
+  resets the shared branch back to the commit before yours. Verified live in a scratch repo: a peer
+  commit landing after the rescue target stays off `rescue-mine`; the doc also states the residual
+  honestly — a peer commit interleaved BETWEEN two of your own accidental commits still rides along,
+  since everything below your last commit's SHA comes with it.
+- **`docs/delegation.md`'s verbatim-rails scope statement narrowed to match the shipped split**
+  (dir #272): one sentence claimed the rails block is inlined "into every prompt an agent actually
+  reads," wider than the doc's own worker/verifier scope and the four-template split dir #208
+  shipped (the fixer template carries only the `DELEGATION RUN:` line). Reworded to name the actual
+  scope and point back at the Worker rails section instead of restating the claim.
 - **`tools/delta-audit/derive.sh`'s closure check falsely refused a file added and later deleted
   (or edited and later reverted) inside the range, and a relative `--out` resolved against the repo
   root instead of the invocation cwd its own `--help` documents** (dir #288): `delta-files.txt` is
