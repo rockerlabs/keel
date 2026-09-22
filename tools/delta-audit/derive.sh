@@ -109,6 +109,12 @@ done
 [ -n "$prev_rev" ] || die_args "missing <prev-rev> (see --help)"
 [ -n "$head_rev" ] || die_args "missing <head-rev> (see --help)"
 
+# A relative --out is documented (usage()'s own text) as relative to the invocation cwd, so it must
+# be recorded before the `cd "$repo_root"` below moves us — otherwise "." (the default) and any
+# other relative path silently resolve against the repo root instead, which only shows up when the
+# invocation cwd and repo root differ (dir #288).
+invocation_cwd="$(pwd)"
+
 # --- the guard --------------------------------------------------------------------------------
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || refuse "not a git repository (run this inside the repo whose range you are deriving)"
@@ -122,6 +128,12 @@ head_sha="$(git rev-parse --verify --quiet "${head_rev}^{commit}" || true)"
 [ -n "$head_sha" ] || refuse "cannot resolve <head-rev> '$head_rev' — fetch first (git fetch --prune),
 or check the spelling."
 
+# A relative $out_dir is against the invocation cwd (usage()'s contract), not $repo_root, which the
+# `cd` above already left us in — so re-anchor it here, before the first use.
+case "$out_dir" in
+  /*) : ;;
+  *)  out_dir="$invocation_cwd/$out_dir" ;;
+esac
 mkdir -p "$out_dir" 2>/dev/null || refuse "cannot create output directory '$out_dir'"
 [ -w "$out_dir" ] || refuse "output directory '$out_dir' is not writable"
 out_dir="$(cd "$out_dir" && pwd)"
@@ -165,25 +177,44 @@ LC_ALL=C awk -F'\t' '{ prs[$1] = prs[$1] " " $2; n[$1]++ }
 
 # --- the closure check --------------------------------------------------------------------------
 # Symmetric difference between the union of per-PR file lists and delta-files.txt. `comm -3` needs
-# both inputs sorted in the same collation, which the LC_ALL=C sort above already guarantees.
-only_in_delta="$(comm -23 "$out_dir/delta-files.txt" <(cut -f1 "$out_dir/file-pr-map.tsv"))"
-only_in_map="$(comm -13 "$out_dir/delta-files.txt" <(cut -f1 "$out_dir/file-pr-map.tsv"))"
+# both inputs sorted in the same collation it itself merges under — the LC_ALL=C sort above only
+# guarantees the INPUTS' order, not what `comm` assumes while walking them, so `comm` itself is
+# pinned to LC_ALL=C too (every `comm` call in this script is, for the same reason).
+only_in_delta="$(LC_ALL=C comm -23 "$out_dir/delta-files.txt" <(cut -f1 "$out_dir/file-pr-map.tsv"))"
+only_in_map="$(LC_ALL=C comm -13 "$out_dir/delta-files.txt" <(cut -f1 "$out_dir/file-pr-map.tsv"))"
+
+# only_in_map (a map path missing from the net range diff) is NEVER a closure problem, unlike
+# only_in_delta (a range-diff path missing from the map — the actual squash/rebase-merge blind spot
+# this check exists for, dir #207's own motivating case). delta-files.txt IS `git diff --name-only
+# prev..head`, so a path absent from it has IDENTICAL content at prev and head by construction — the
+# two endpoints agree, no matter what happened to the path in between. A path lands in only_in_map
+# only because some qualifying merge's own per-PR diff genuinely touched it (added, deleted, edited)
+# while the OVERALL range summed those touches to nothing: an add later deleted, an edit later
+# reverted, or any other shape that cancels out — the map correctly saw real changes, they just net
+# to zero. None of those indicate an incomplete or untrustworthy map, so only_in_map is reported to
+# stderr as informational ("transient in range") but never fails closure (dir #288). An earlier
+# version of this fix discriminated by existence-at-head — accepting a deletion-ended path but still
+# refusing a reverted-edit one — which was an arbitrary line, not a principled one: delta-files.txt's
+# own absence proof (the paragraph above) holds identically for both shapes, so refusing either one
+# was always wrong, not just the specific shape dir #288's own report happened to hit (found by this
+# ticket's own /code-review medium pass, altitude angle).
 closure_ok=1
-if [ -n "$only_in_delta" ] || [ -n "$only_in_map" ]; then
+if [ -n "$only_in_delta" ]; then
   closure_ok=0
   {
     printf 'derive.sh: the universe does not close — the PR map disagrees with the range diff.\n'
     printf 'This usually means a squash-merged or rebase-merged PR: it changed files but left no\n'
     printf '"Merge pull request #N" commit for this script to find, so its files silently drop out\n'
     printf 'of the seam map. If this repo does not merge with merge commits, the map is unreliable.\n'
-    if [ -n "$only_in_delta" ]; then
-      printf '\nin the range diff but attributed to no PR:\n'
-      printf '%s\n' "$only_in_delta" | sed 's/^/  /'
-    fi
-    if [ -n "$only_in_map" ]; then
-      printf '\nattributed to a PR but outside the range diff:\n'
-      printf '%s\n' "$only_in_map" | sed 's/^/  /'
-    fi
+    printf '\nin the range diff but attributed to no PR:\n'
+    printf '%s\n' "$only_in_delta" | sed 's/^/  /'
+  } >&2
+fi
+if [ -n "$only_in_map" ]; then
+  {
+    printf 'derive.sh: transient in range — attributed to a PR but absent from delta-files.txt (its\n'
+    printf 'own changes net to no difference between prev and head), not a closure failure:\n'
+    printf '%s\n' "$only_in_map" | sed 's/^/  /'
   } >&2
 fi
 
