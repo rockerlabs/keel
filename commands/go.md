@@ -3,7 +3,10 @@ description: Implement one backlog ticket — readiness-checked, autonomous, ask
 argument-hint: <task-id or one sentence> [scope]
 ---
 Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
-resolve. Load only the task's own context — no full onboarding. `[tag]` → Notes.
+resolve. Load only the task's own context — no full onboarding. A defect outside the ticket: record it
+in the PR body or a new ticket; do not fix it. A project without git: `inflight-check`, `worktree` and
+the PR in `close` do not run; the claim is still written; closing runs step 9's `conform` walk,
+reported by hand. `[tag]` → Notes.
 
 **1. resolve.** Backlog source the way `/backlog` resolves it: `<root>/BACKLOG.md`, else the inline
 open-work section of `<root>/CLAUDE.md`, where `<root>` is the MAIN checkout — the first entry of
@@ -24,7 +27,7 @@ open-work section of `<root>/CLAUDE.md`, where `<root>` is the MAIN checkout —
 - R3 → proceed; settle its one pre-decision in-session (a real fork → ask).
 - R4 or `📐 SPEC-READY` → proceed. No grade → proceed; say so.
 An explicit go-ahead from the operator in chat, or a managed-release brief assigning the ticket,
-overrides a stop in this step; name it in your first reply.
+overrides only R1 and R2 — never `✅`, standing `⛔ BLOCKED`, or R0; name it in your first reply.
 
 **3. read.** ONLY that ticket's section, the sections it cross-links, and its spec: the file its `Spec:`
 line names (or a `docs/specs/` file the body names as its spec), relative to the project root — absent
@@ -39,13 +42,14 @@ where the harness exposes them; a mismatch → tell the operator once and contin
 a name carrying `go` and the id first — decoration loose, id exact (`claude/go-issue-34-ab12cd` claims
 34; `go-issue-340-…` does not) — then a keyword grep of branch names against the title. A match → STOP:
 report "in flight on `<branch>`"; offer to continue it or pick another. A `⏳` heading whose branch is
-gone → if its PR merged, stop: done, the heading is stale. [advisory]
+gone → if its PR merged, stop: done, the heading is stale.
 
-**5. worktree.** Before any code, run `git branch --show-current`. On the default branch, a spent
-branch (PR merged), or a DIFFERENT ticket's branch → cut a fresh feature branch from the fresh default. A
-worktree's own branch for this ticket qualifies unless spent — create none. Re-check at every ticket; run
-every git write with `git -C <working-tree-path>`. More: `FRAMEWORK.md` "Worktree
-discipline"; with parallel sessions, `docs/parallel-sessions.md`.
+**5. worktree.** Before any code, run `git branch --show-current`:
+- Default branch, a spent branch (PR merged), or a DIFFERENT ticket's branch → cut a fresh feature
+  branch from the fresh default.
+- A worktree's own branch for THIS ticket qualifies unless spent → keep it; create none.
+Re-check at every ticket; run every git write with `git -C <working-tree-path>`. More: `FRAMEWORK.md`
+"Worktree discipline".
 
 **6. claim.** Write `⏳ IN FLIGHT (YYYY-MM-DD, branch <name>)` onto the ticket's heading in the backlog
 at `<root>`; `/wrap`'s closing sweep replaces it with ✅ on merge — never leave both. **Named override
@@ -53,14 +57,15 @@ inside a managed release (`dir #367` R8)** — or under any brief that names a s
 worker does NOT write the marker; request it through that writer, per the brief.
 This step as written is the standalone default. Once step 7 decides, extend the marker with
 `, tests: first` or `, tests: infeasible — <reason>`. Write main-checkout files by absolute path.
+Without git, `<name>` names the ticket.
 
 **7. acceptance-tests.** First derive acceptance tests from the ticket's `**Acceptance:**` line or its
 spec's (else its done-criterion), write them, show them red, then implement to green (`FRAMEWORK.md`
-design principles). Where test-first is genuinely infeasible (no runnable surface), say so in one line
-— an executed decision, never a silent skip. Record it twice: the PR test plan (`tests: first` /
-`tests: infeasible — <reason>`) and the claim marker. It is self-reported — like `/polish`'s
-`skipped:<reason>` receipts in spirit only, with no receipt, no gate, no trace behind it; never report
-it as gate-checked.
+design principles). Non-git: checks are a checklist with evidence, run by hand, not `infeasible`.
+Where test-first is genuinely infeasible (no runnable surface), say so in one line — an
+executed decision, never a silent skip. Record it twice: the PR test plan (`tests: first` /
+`tests: infeasible — <reason>`) and the claim marker. Self-reported — like `/polish`'s
+`skipped:<reason>` receipts, with no receipt, no gate; never report it as gate-checked.
 
 **8. escapes.** A ticket with a spec file: before closing, append one line to the end of the spec —
 `Escapes at implementation (YYYY-MM-DD, <branch>): <n>` (`0` when none), then one line per escape —
@@ -68,7 +73,11 @@ and put the same lines in the PR body. An escape is a spec defect you hit: a fal
 dependency, an undefined path — anything that made you depart from or complete the design. Inside a
 managed release the spec write goes through the manager, as the claim does.
 
-**9. close.** Close through `/polish` where installed — the pre-PR pass; it opens the PR itself, and
+**9. conform.** Walk every spec rule and `**Acceptance:**` item; write "done + where" or "escape" for
+each. Paste each result into the PR body (or the report); red = not done. `/polish` step 5(a) covers
+this where installed; `conform` is the project-agnostic floor.
+
+**10. close.** Close through `/polish` where installed — the pre-PR pass; it opens the PR itself, and
 its gate, where wired, denies a bare `gh pr create`. A project whose `CLAUDE.md` records a
 direct-to-default carve-out follows that instead. The merge is the operator's.
 
@@ -76,4 +85,3 @@ direct-to-default carve-out follows that instead. The merge is the operator's.
 - **ids** — backlogs mix heading formats (`### 34.`, `### dir #34 —`, `### KB.34`); a format miss reads
   as a missing ticket and stops a task that exists.
 - **reconcile** — a spec is a snapshot; code moves after it is written.
-- **advisory** — not a lock: two sessions starting the same minute still race.
