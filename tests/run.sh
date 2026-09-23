@@ -38,7 +38,7 @@ fi
 # present, and only a change in that snapshot (not its mere non-emptiness) means something moved.
 guard_repo_root="$(cd "$here/.." && pwd)"
 guard_before_branch="" guard_before_head="" guard_before_status=""
-guard_before_owned="" guard_before_refs="" guard_before_reflog=""
+guard_before_reflog=""
 guard_ref_scope_available=0
 
 if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
@@ -59,7 +59,19 @@ if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
   # like tests/lib.sh's own presence check at the top of this file (dir #627): a MISSING helper here
   # degrades to the pre-#333 branch/HEAD/status-only compare with a one-line notice, rather than
   # killing a suite this ticket was never meant to touch (release-manager-verified seam).
-  if [ -f "$guard_repo_root/tools/lib/ref-guard.sh" ] && source "$guard_repo_root/tools/lib/ref-guard.sh"; then
+  guard_lib="$guard_repo_root/tools/lib/ref-guard.sh"
+  # shellcheck source=/dev/null
+  if [ ! -f "$guard_lib" ]; then
+    printf 'NOTE: %s not found here — the refs/heads + reflog half of the corruption canary\n' "$guard_lib" >&2
+    printf '      (dir #333) is skipped; the branch/HEAD/status compare (dir #318) still runs.\n' >&2
+  elif ! source "$guard_lib"; then
+    # A distinct message from the "not found" case above (dir #333, review-caught): the file EXISTS
+    # but failed to source — a syntax error, a permissions problem, a partial checkout — which is a
+    # different, more alarming signal than "this adopter simply doesn't carry tools/lib/" and should
+    # not be reported as if it were that ordinary case.
+    printf 'NOTE: %s exists but failed to source — the refs/heads + reflog half of the corruption\n' "$guard_lib" >&2
+    printf '      canary (dir #333) is skipped; the branch/HEAD/status compare (dir #318) still runs.\n' >&2
+  else
     guard_ref_scope_available=1
     guard_before_owned="$(guard_owned_branches "$guard_repo_root")"
     guard_before_refs="$(guard_refs_snapshot "$guard_repo_root")"
@@ -70,11 +82,7 @@ if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
     # UNCHANGED HEAD is the specific gap this ticket exists to close (a checkout-and-return, or a
     # create-then-delete, that appends to the reflog but leaves `rev-parse HEAD` as if nothing
     # happened).
-    guard_before_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
-  else
-    printf 'NOTE: %s/tools/lib/ref-guard.sh not found here — the refs/heads + reflog half of the\n' "$guard_repo_root" >&2
-    printf '      corruption canary (dir #333) is skipped; the branch/HEAD/status compare (dir #318)\n' >&2
-    printf '      still runs.\n' >&2
+    guard_before_reflog="$(guard_reflog_count "$guard_repo_root")"
   fi
 fi
 
@@ -232,7 +240,7 @@ if [ -n "$guard_before_head" ]; then
   if [ "$guard_ref_scope_available" = 1 ]; then
     guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
     guard_after_refs="$(guard_refs_snapshot "$guard_repo_root")"
-    guard_after_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
+    guard_after_reflog="$(guard_reflog_count "$guard_repo_root")"
 
     # Union of both snapshots' owned branches: one that stopped (or started) being owned mid-run is
     # still explained by that peer's own worktree lifecycle, not by this suite's fixtures.
@@ -257,11 +265,11 @@ if [ -n "$guard_before_head" ]; then
     # trip — still a real "do not push until reconciled" until a human confirms which it was.
     if [ "$guard_after_branch" = "$guard_before_branch" ] && [ "$guard_after_head" != "$guard_before_head" ] \
         && git -C "$guard_repo_root" merge-base --is-ancestor "$guard_before_head" "$guard_after_head" 2>/dev/null; then
-      printf '  HEAD moved FORWARD on the same branch — this may be your own commit landing while this\n'
-      printf '  same ./tests/run.sh was still running in the background against this checkout, rather\n'
-      printf '  than a leak (never commit against a checkout while its own suite run is still alive).\n'
-      printf '  Reconcile by hand either way — a moved HEAD is not automatically safe just because it\n'
-      printf '  fast-forwards.\n'
+      printf '  HEAD moved FORWARD on the same branch — possibly your own commit landing while this\n'
+      printf '  same ./tests/run.sh was still running in the background against this checkout (never\n'
+      printf '  commit against a checkout while its own suite run is still alive), or another ordinary\n'
+      printf '  fast-forward (a pull, a fetch+merge) — rather than a leak. Reconcile by hand either way —\n'
+      printf '  a moved HEAD is not automatically safe just because it fast-forwards.\n'
     fi
     if [ "$guard_after_status" != "$guard_before_status" ]; then
       printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
@@ -282,6 +290,14 @@ if [ -n "$guard_before_head" ]; then
 fi
 
 printf '\n========================================\n'
+# dir #333, review-caught: the NOTE above ran once, near the top, on stderr — easy to miss in a long
+# scrollback or a CI harness that only tails stdout. Repeat it once more, right next to the pass/fail
+# verdict a reader actually looks at, so a checkout missing tools/lib/ref-guard.sh doesn't read as
+# silently equivalent to one with the full canary.
+if [ "$guard_ref_scope_available" != 1 ] && [ -n "$guard_before_head" ]; then
+  printf 'NOTE: the refs/heads + reflog half of the corruption canary (dir #333) did not run this\n' >&2
+  printf '      time — see the NOTE near the top of this output for why.\n' >&2
+fi
 if [ "$failed" -eq 0 ]; then
   printf 'ALL TEST FILES PASSED\n'
   exit 0

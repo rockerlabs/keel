@@ -32,6 +32,12 @@ out="$(guard_filter_unowned "$(printf 'a\nb\n')" "$(printf 'a 1\nb 2\nc 3\n')")"
 check_absent "guard_filter_unowned: multiple owned entries all drop" "$out" "a 1"
 check_contains "guard_filter_unowned: multiple owned entries — unowned survives" "$out" "c 3"
 
+# dir #333, review-caught: an empty REFS_SNAPSHOT must report zero unowned refs, not a synthetic blank
+# line manufactured by `printf '%s\n' ""` always emitting one line.
+out="$(guard_filter_unowned "main" "")"
+if [ -z "$out" ]; then pass "guard_filter_unowned: an empty refs snapshot -> truly empty output, not a blank line"
+else fail "guard_filter_unowned: an empty refs snapshot -> truly empty output, not a blank line" "got [$out]"; fi
+
 # --- guard_owned_branches / guard_filter_unowned against a real sandbox repo ------------------------
 
 repo="$(new_repo)"
@@ -85,6 +91,45 @@ if [ "$before_unowned" = "$after_unowned" ]; then
 else
   fail "OWNED-EXCLUSION: a peer worktree's own commit does not trip the unowned-ref compare" \
     "before=[$before_unowned] after=[$after_unowned]"
+fi
+
+# --- guard_reflog_count -------------------------------------------------------------------------
+
+reflog_repo="$(new_repo)"
+git -C "$reflog_repo" commit -q --allow-empty -m one
+git -C "$reflog_repo" commit -q --allow-empty -m two
+count="$(guard_reflog_count "$reflog_repo")"
+if [ "$count" = "2" ]; then pass "guard_reflog_count: counts two commits correctly"
+else fail "guard_reflog_count: counts two commits correctly" "got [$count]"; fi
+git -C "$reflog_repo" commit -q --allow-empty -m three
+count_after="$(guard_reflog_count "$reflog_repo")"
+if [ "$count_after" = "3" ]; then pass "guard_reflog_count: grows by one per further commit"
+else fail "guard_reflog_count: grows by one per further commit" "got [$count_after]"; fi
+
+# --- NAMED RESIDUAL LIMIT (dir #333, found by an independent /code-review high pass, empirically
+# reproduced): a leak shaped as `git worktree add` against the watched repo — rather than a bare
+# `git branch` (the historical incident's own shape, covered by the RED scenario above) — becomes
+# "owned" the instant it exists, so it is EXEMPTED, not caught. This test pins that known, accepted
+# trade-off (see tools/lib/ref-guard.sh's own header) so a future change to this scoping logic has to
+# consciously decide to alter this behavior rather than silently drift into fixing or worsening it. ---
+
+leak_repo="$(new_repo)"
+git -C "$leak_repo" commit -q --allow-empty -m init
+owned_before="$(guard_owned_branches "$leak_repo")"
+refs_before="$(guard_refs_snapshot "$leak_repo")"
+leak_wt="$SANDBOX/ref-guard-leak-wt"
+run git -C "$leak_repo" worktree add -q -b leaked-worktree-branch "$leak_wt"
+check_status "fixture: worktree-add leak simulation succeeds" 0 "$STATUS"
+owned_after="$(guard_owned_branches "$leak_repo")"
+refs_after="$(guard_refs_snapshot "$leak_repo")"
+owned_union="$(guard_union "$owned_before" "$owned_after")"
+before_unowned="$(guard_filter_unowned "$owned_union" "$refs_before")"
+after_unowned="$(guard_filter_unowned "$owned_union" "$refs_after")"
+if [ "$before_unowned" = "$after_unowned" ]; then
+  pass "NAMED RESIDUAL LIMIT: a worktree-add-shaped leak is exempted (known, accepted trade-off)"
+else
+  fail "NAMED RESIDUAL LIMIT: a worktree-add-shaped leak is exempted (known, accepted trade-off)" \
+    "expected this to STILL be exempted (before=[$before_unowned] after=[$after_unowned]) — if this now fails, the scoping logic changed: update this test AND tools/lib/ref-guard.sh's header comment together, don't just silence the assertion"
 fi
 
 summary
