@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# test_go_command.sh — dir #636: pins the `/go` rework — GO11's word budget, GO12's legend-token
-# contract with commands/backlog.md, the claim/escapes literal formats, the nine step names, the
-# adopter-generic constraint, and one distinguishing needle per new rule clause (leg-1 F-1's class:
-# a rule with no pin can be dropped silently, spec §8 A1(g)). Reads
+# test_go_command.sh — dir #636 (rework) + dir #639 (post-review fixes): pins the `/go` rework —
+# GO11's word budget, GO12's legend-token contract with commands/backlog.md, the claim/escapes literal
+# formats, the ten step names (dir #639 adds `conform`), the adopter-generic constraint, and one
+# distinguishing needle per new rule clause (leg-1 F-1's class: a rule with no pin can be dropped
+# silently, spec §8 A1(g); dir #639 spec §6 extends this to its own four new clauses). Reads
 # ${KEEL_GO_MD:-$REPO_ROOT/commands/go.md} and ${KEEL_BACKLOG_MD:-$REPO_ROOT/commands/backlog.md},
 # so every case below is shown red first by re-invoking THIS file against a mutated SCRATCH copy via
 # those two overrides — no tracked file is ever edited to prove a case.
@@ -17,7 +18,11 @@ check_file "backlog.md target exists" "$backlog_md"
 
 # --- (a) budget: GO11 -----------------------------------------------------------------------------
 # Raising this constant is an operator decision (GO11) — never bump it here just to make a case fit.
-GO_MD_WORD_BUDGET=965
+# Raised 965 -> 1055 (operator decision D1, 2026-09-23, dir #639): the conform step, the non-git line,
+# the narrowed readiness override and the scope line together outgrew the original ceiling even after
+# cutting rationale; ~1050 was the operator's approved target, 1055 gives the live file (1045 words)
+# a small margin.
+GO_MD_WORD_BUDGET=1055
 word_count="$(wc -w < "$go_md" | tr -d ' ')"
 if [ "$word_count" -le "$GO_MD_WORD_BUDGET" ]; then
   pass "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words (got $word_count)"
@@ -64,7 +69,7 @@ pin "(c) claim format: the literal claim marker is byte-identical" "$go_md" \
   "expected the literal '⏳ IN FLIGHT (YYYY-MM-DD, branch <name>)' in $go_md"
 
 # --- (d) step names ----------------------------------------------------------------------------------
-step_names=(resolve readiness read inflight-check worktree claim acceptance-tests escapes close)
+step_names=(resolve readiness read inflight-check worktree claim acceptance-tests escapes conform close)
 for name in "${step_names[@]}"; do
   if grep -qE "\\*\\*[0-9]+\\. ${name}\\.\\*\\*" "$go_md"; then
     pass "(d) step names: '$name' appears as a step label"
@@ -93,13 +98,16 @@ fi
 needle_rules=(
   "GO1 <root>"
   "GO1 phrase notice"
-  "GO2 arm j scope / override"
+  "GO2 arm j narrowed override (dir #639: ✅ excluded)"
   "GO3 TO VERIFY"
   "GO4 model check"
   "GO5 not-your-own"
   "GO5 stale heading"
   "GO6 spent branch"
   "GO10 carve-out"
+  "dir #639: conform step"
+  "dir #639: non-git line"
+  "dir #639: scope line"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -108,13 +116,16 @@ needle_rules=(
 needle_texts=(
   "git worktree list"
   "nothing to act on"
-  "a stop in this step"
+  "never \`✅\`"
   "TO VERIFY"
   "Model rec"
   "not your own"
   "heading is stale"
   "qualifies unless spent"
   "direct-to-default"
+  "project-agnostic floor"
+  "the claim is still written"
+  "do not fix it"
 )
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
@@ -198,11 +209,15 @@ append_line "$a_copy" "$(printf 'filler %.0s' {1..80})"
 assert_case_turns_red "(a) budget mutation" \
   "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words" "KEEL_GO_MD=$a_copy"
 
-# (b) contract — two independent negative controls: delete the R2 bullet from a go.md copy, and add
-# an unhandled token inside the fences of a backlog.md copy.
+# (b) contract — two independent negative controls: delete every line naming the R2 token (its
+# readiness bullet AND step 2's narrowed-override sentence, dir #639 — both mention R2, so both must go
+# for the token to actually disappear from go.md), and add an unhandled token inside the fences of a
+# backlog.md copy. Two anchored deletes, not a blanket "R2" substring match, so a future line that
+# happens to contain "R2" for an unrelated reason isn't silently swept up too.
 b1_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$b1_copy" "- R2 → stop:"
-assert_case_turns_red "(b) contract mutation: R2 bullet removed from go.md" \
+delete_line_containing "$b1_copy" "overrides only R1 and R2"
+assert_case_turns_red "(b) contract mutation: every R2 mention removed from go.md" \
   "(b) contract: every backlog.md legend token appears in go.md" "KEEL_GO_MD=$b1_copy"
 
 b2_copy="$(scratch_copy "$backlog_md" backlog.md)"
@@ -239,5 +254,34 @@ g_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$g_copy" "Model rec"
 assert_case_turns_red "(g) needle mutation: GO4 sentence removed" \
   "(g) needle [GO4 model check]: 'Model rec' present" "KEEL_GO_MD=$g_copy"
+
+# (g) needle — dir #639's four new rule clauses, each shown red by its own mutation (spec §6 A1(g)).
+
+# narrowed override: widen it back to the old, un-narrowed wording (drops the `✅` exclusion).
+go2_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$go2_copy" "overrides only R1 and R2" \
+  "overrides only R1 and R2 — never \`✅\`, standing \`⛔ BLOCKED\`, or R0" \
+  "overrides a stop in this step"
+assert_case_turns_red "(g) needle mutation: narrowed override widened back" \
+  "(g) needle [GO2 arm j narrowed override (dir #639: ✅ excluded)]: 'never \`✅\`' present" \
+  "KEEL_GO_MD=$go2_copy"
+
+# conform step: drop the sentence naming it the project-agnostic floor.
+conform_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$conform_copy" "project-agnostic floor"
+assert_case_turns_red "(g) needle mutation: conform's project-agnostic-floor sentence removed" \
+  "(g) needle [dir #639: conform step]: 'project-agnostic floor' present" "KEEL_GO_MD=$conform_copy"
+
+# non-git line: drop the sentence saying the claim is still written without git.
+nongit_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$nongit_copy" "the claim is still written"
+assert_case_turns_red "(g) needle mutation: non-git line removed" \
+  "(g) needle [dir #639: non-git line]: 'the claim is still written' present" "KEEL_GO_MD=$nongit_copy"
+
+# scope line: drop the sentence limiting out-of-ticket fixes to a report, not a fix.
+scope_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$scope_copy" "do not fix it"
+assert_case_turns_red "(g) needle mutation: scope line removed" \
+  "(g) needle [dir #639: scope line]: 'do not fix it' present" "KEEL_GO_MD=$scope_copy"
 
 summary
