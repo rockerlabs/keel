@@ -61,7 +61,7 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 | `/keel-setup` | Lets the assistant finish setup: fills machine details, drafts a project's `CLAUDE.md` from its code. |
 | `/init-project` | Sets up a new project. |
 | `/context-dump` | Onboards an existing, undocumented codebase by actually reading it. |
-| `/go` | Starts a backlog task on its own. |
+| `/go` | Implements one backlog ticket, after checking it is ready. |
 | `/polish` | Pre-PR pass — simplify, tests, a depth-matched review, then open the PR. Gated by `tools/pre-pr-gate.sh` once you've run `install-pre-pr-gate.sh` for the repo (optional; every step still runs without it). |
 | `/wrap` | Closes out a session: notes, changelog, backlog. |
 | `/global-review` | Reviews across all projects. |
