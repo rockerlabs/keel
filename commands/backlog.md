@@ -88,8 +88,9 @@ one glance instead of a re-read of every heading — the reason the label exists
 source carries the label; don't render an empty grouped section.
 
 **Headline discipline (dir #635) — canon for every ticket heading, in this file or any project's own
-backlog.** A heading carries only: `### <ID> — <title, ≤ ~180 chars> — <R0–R4> — <→ tag>`, then status
-markers appended as they happen. **At most one non-terminal marker** — a specced-then-closed ticket
+backlog.** A heading carries only: `### <ID> — <title, ≤ ~120 chars> — <R0–R4> — <→ tag>`, then status
+markers appended as they happen — the whole heading line stays ≤ ~180 chars, the title's own bound is
+the tighter ~120. **At most one non-terminal marker** — a specced-then-closed ticket
 keeps both (`📐 SPEC-READY — … — ✅ CLOSED (…)`), never a stack of every marker it ever carried. **The
 tag is not required last** — step 3b above already reads it wherever it falls in the status tail,
 because a closure marker written later routinely lands after it (`— R2 — → 0.6.1 — ✅ CLOSED (…)` is
