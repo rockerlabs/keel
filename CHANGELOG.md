@@ -78,6 +78,16 @@ sections real content going forward — see that page for exactly when each one 
   `tests/run.sh` additionally scans each captured log for "command not found" as a portable
   backstop, escalating an otherwise-green file to a failure — a single test file run directly on
   bash < 4 is the one case neither mechanism reaches (named residual, tracked in the ticket body).
+- **`/go` (dir #636) fixed after its first fresh-context review** (dir #639): green tests no longer
+  count as "done" — a new `conform` step walks every spec rule and `**Acceptance:**` item before
+  `close`, writing "done + where" or "escape" for each. A non-git project now has a named path: the
+  git-only steps and the PR skip, the claim is still written, and closing means the `Acceptance:`
+  checks run and reported by hand. The readiness-stop override is narrower — it waives only the R1
+  and R2 stops, never `✅`, a standing `⛔ BLOCKED`, or R0. A new scope line stops the model from
+  fixing an out-of-ticket defect it notices on the way, routing it to the PR body or a new ticket
+  instead. Step `worktree` is rewritten as an if-then list for readability. Word budget raised
+  965 -> 1055 (operator decision) to hold all of the above; `tests/test_go_command.sh` gains a
+  `conform` case and one new mutation-proved needle per new clause.
 
 ## [0.11.0] — 2026-09-22
 
