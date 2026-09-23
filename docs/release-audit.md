@@ -63,8 +63,8 @@ Labeling at filing time is what keeps the tail visible without a retroactive re-
 way v0.6.0's ~20-ticket tail needed.
 
 **Which findings clear the bar to become a ticket at all** is
-[`docs/verification-economics.md`](verification-economics.md)'s filing bar — behavioural, a new
-class, or a guard gap on an invariant-bearing surface. Everything else is dispositioned
+[`docs/verification-economics.md`](verification-economics.md) §4's filing bar, not restated here.
+Everything else is dispositioned
 `no action — <reason>` in the audit report and, if it names a real defect, added to the project's
 standing list — never a ticket of its own; filing one for every sub-bar finding is how a synthesis
 pass reproduces dir #85's snowball at a different layer. The blocker-vs-tail ranking above stays this

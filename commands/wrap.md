@@ -64,7 +64,8 @@ prominently rather than closing silently. **A `/code-review` report relayed afte
 opened** gets the same classification and verdict as an in-flow one, per FRAMEWORK.md's "Classifying a
 finding" section, with `source relayed` — this is the post-PR entry point for that classification. A
 `product-code × breaks` finding found this way is not a wrap note: name it as a new round or a numbered
-follow-up ticket instead.
+follow-up ticket instead — subject, like any finding, to `docs/verification-economics.md` §4's filing
+bar; below it, a standing-list line, not a ticket.
 
 **3. Memory** — only reusable invariants not present in code/git. One file = one topic; update the existing
 file, don't spawn duplicates; the index carries a one-line hook, not a copy of the content.

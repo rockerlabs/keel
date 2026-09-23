@@ -23,10 +23,14 @@
 #
 # The trap this exists to avoid: a version that reads ONLY BACKLOG.md false-positives on every ticket
 # a cooldown sweep has moved to the archive. dir #202 is the worked example — zero headings in
-# BACKLOG.md, one line in the archive, and NOT dead. A citation is resolvable if it resolves in
-# EITHER source; only BACKLOG.md's own live `### dir #N` headings count toward ambiguity (two or more
-# means dir #259's collision has recurred), since the archive accumulates repeated closure-sweep
-# blocks by design and a citation appearing there more than once is not a fresh ambiguity.
+# BACKLOG.md, one line in the archive, and NOT dead. A citation is resolvable if it resolves in ANY
+# of three sources — BACKLOG.md, the archive, or BACKLOG-parked.md (dir #635: the sort's parked-ticket
+# sibling, sibling of BACKLOG.md, main-checkout-only, may not exist yet — an absent file degrades to
+# a silent no-op, the same shape as the archive's own absence, never an error); only BACKLOG.md's own
+# live `### dir #N` headings count toward ambiguity (two or more means dir #259's collision has
+# recurred), since the archive accumulates repeated closure-sweep blocks by design and a citation
+# appearing there more than once is not a fresh ambiguity — BACKLOG-parked.md is read the same
+# presence-only way, by its own `### dir #N` headings (a parked ticket keeps its heading verbatim).
 #
 # Usage:
 #   tools/self/citation-resolvability.sh [REPO_DIR] [--quiet]
@@ -103,6 +107,18 @@ backlog_file="$backlog_root/BACKLOG.md"
 if [ ! -r "$backlog_file" ]; then
   say "  SKIP no readable BACKLOG.md at $backlog_root — nothing to check"
   exit 0
+fi
+
+# dir #635: BACKLOG-parked.md, a sibling of BACKLOG.md at the same main-checkout root, holds tickets
+# the sort moved out of the live backlog verbatim (heading and all) — not closed, not dead. Absent
+# (no sort has run yet, or the project doesn't use one) degrades the same silent way the archive's
+# absence does, never an error.
+parked_file="$backlog_root/BACKLOG-parked.md"
+if [ -r "$parked_file" ]; then
+  say "  parked: $parked_file"
+else
+  say "  parked: absent ($parked_file) — nothing parked yet"
+  parked_file=""
 fi
 
 # Derived per BACKLOG.md:1255's own naming convention: the project dir under ~/.claude/projects/ is
@@ -234,17 +250,29 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
     done < <(blank_fenced_blocks "$archive_file" | extract_dir_tickets)
   fi
 
+  # One pass over BACKLOG-parked.md (when present), fence-blanked and matched on its own `### dir #N`
+  # headings — the same heading-anchor scan as BACKLOG.md's live pass above (a parked ticket's block
+  # is moved verbatim, heading included, so this is presence via the same anchor, not the looser
+  # anywhere-in-prose `extract_dir_tickets` the archive uses). Presence only: a citation resolving
+  # here is not itself an ambiguity signal — only BACKLOG.md's OWN live headings feed that count.
+  if [ -n "$parked_file" ]; then
+    while IFS= read -r n; do
+      [ -n "$n" ] && printf -v "parked_$n" 1
+    done < <(blank_fenced_blocks "$parked_file" | sed -n -E 's/^### dir #([0-9]+).*/\1/p')
+  fi
+
   for n in "${cited_numbers[@]}"; do
     live_var="live_$n"; live_count="${!live_var:-0}"
     arch_var="arch_$n"; archive_hit="${!arch_var:-0}"
+    parked_var="parked_$n"; parked_hit="${!parked_var:-0}"
 
     if [ "$live_count" -ge 2 ]; then
       echo "  AMBIGUOUS dir #$n — $live_count live ### headings in BACKLOG.md"
       ambiguous=$((ambiguous + 1))
       exit_code=1
-    elif [ "$live_count" -eq 0 ] && [ "$archive_hit" != 1 ]; then
+    elif [ "$live_count" -eq 0 ] && [ "$archive_hit" != 1 ] && [ "$parked_hit" != 1 ]; then
       var="cite_first_$n"
-      echo "  DEAD dir #$n — no live BACKLOG.md heading, not in the archive (first cited: ${!var:-?})"
+      echo "  DEAD dir #$n — no live BACKLOG.md heading, not in the archive or BACKLOG-parked.md (first cited: ${!var:-?})"
       dead=$((dead + 1))
       exit_code=1
     fi

@@ -69,6 +69,37 @@ check_status "archived (not live) ticket resolves via the archive -> exit 0" 0 "
 check_absent "no DEAD line once the archive covers it" "$OUT" "DEAD"
 rm -rf "$archive_dir"
 
+# --- dir #635: absent from BACKLOG.md, present in BACKLOG-parked.md's own heading -> resolved -----
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+printf '%s' "### dir #202 — a parked ticket, moved verbatim — R1 — parked
+
+body
+" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "parked (not live, not archived) ticket resolves via BACKLOG-parked.md -> exit 0" 0 "$STATUS"
+check_absent "no DEAD line once BACKLOG-parked.md covers it" "$OUT" "DEAD"
+
+# --- dir #635: BACKLOG-parked.md absent entirely -> silent no-op, same shape as no archive --------
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+run "$cr" "$d"
+check_status "no BACKLOG-parked.md -> still runs, citation stays dead (no crash)" 1 "$STATUS"
+check_contains "reports parked as absent" "$OUT" "parked: absent"
+check_contains "still reports the dead citation" "$OUT" "DEAD dir #202"
+
+# --- dir #635: a citation present ONLY inside a parked ticket's BODY prose (not its own heading)
+# must NOT resolve — the parked scan matches its own `### dir #N` heading anchor, the same
+# discipline BACKLOG.md's live scan already applies, not the looser anywhere-in-prose extractor the
+# archive uses (which would let an incidental cross-reference inside one parked ticket wrongly
+# vouch for an unrelated dead number).
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+printf '%s' "### dir #500 — an unrelated parked ticket — R1 — parked
+
+See also dir #202 for background, though that one is not this ticket.
+" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "a bare body mention inside a parked ticket does not resolve a different number -> exit 1" 1 "$STATUS"
+check_contains "still reports the dead citation" "$OUT" "DEAD dir #202"
+
 # --- mutation pair: duplicate heading makes a previously-clean citation ambiguous ---------------
 d="$(mk_repo "$backlog_ok" "$doc_ok")"
 run "$cr" "$d" --quiet

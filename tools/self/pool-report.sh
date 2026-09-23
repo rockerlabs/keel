@@ -23,8 +23,8 @@
 # BACKLOG.md, untracked (KB-snapshot-backed the same way BACKLOG.md itself is) — never in the
 # tracked tree, so no backlog state leaks into the public repo.
 #
-# R-level split (dir #463): the readiness scale has five grades (R4 spec-ready · R3 scope clear
-# · R2 needs a design pass · R1 parked by a gate · R0 not an agent session) — a heading's own
+# R-level split (dir #463): the readiness scale (R4 through R0) is published once, canonically, in
+# commands/backlog.md's go-contract fence (dir #635) — not re-enumerated here. A heading's own
 # grade is read from the LAST `— R<digit>` on the heading block, matched loosely (stopping at
 # the digit, so a qualifier suffix like "— R2, needs a design pass —" or a qualifier glued to
 # the digit like "— R1-parked —" both still read). Heading first; when no heading match exists,

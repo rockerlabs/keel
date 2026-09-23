@@ -99,9 +99,9 @@ The **one-leg** form is field-tested. The **two-leg** form required above is rea
 and you should know which is which.
 
 **A guard-gap finding does not reset the clock.** §4's filing bar and this rule are deliberately not
-the same test: a known-class instance on an invariant-bearing surface earns a ticket under that bar's
-third criterion while leaving the stop condition satisfied. That criterion exists to catch *placement*
-risk, not novelty.
+the same test: a known-class instance on an always-file surface (§4 condition 1 — a safety guard could
+fail open, including a gap in the guard's own tests) earns a ticket under that bar while leaving the
+stop condition satisfied. That condition exists to catch *placement* risk, not novelty.
 
 **Nor does every behavioural finding — a severity/reachability carve-out, the same shape as the
 guard-gap one above.** A behavioural finding does not reset the clock when **both** hold: (1) it is
@@ -178,8 +178,29 @@ the same thing.
 
 ## 4. The filing bar, symmetric to the stopping rule
 
-A finding earns a **ticket** only if it is (a) behavioural, (b) a **new class**, or
-(c) a guard gap on an invariant-bearing surface.
+A finding — from an audit, a review, a `/polish` round, a groom, a wrap, or a worker — earns a
+**ticket** only if at least one holds:
+
+1. **Always-file surface (no discretion):** it could expose a secret or credential; it could write,
+   overwrite or delete something outside the repository (user files,
+   `$HOME`, machine-global config such as git config or hooks — leftover scratch files alone are not
+   this; they qualify when felt); it could destroy git history or refs; it is in the installer /
+   uninstaller; or a safety guard (secret guard, pre-PR gate, test sandbox) could fail open —
+   including a gap in the guard's own tests that would let a fail-open regress unnoticed.
+2. **Felt:** it actually happened in real work — the finding names the date and the session or
+   project where it hurt. Reproducing it in a sandbox during an audit or review is not "felt".
+3. **Beyond this project:** it blocks or degrades work in a project that consumes this one, or an
+   adopter's.
+4. **Severe:** left unfixed, its realistic worst case is data loss, a leak, or a broken daily
+   workflow.
+5. **Requested:** a capability the operator asked for.
+
+**In doubt on 1–4 → file**, and say in the body which condition was doubted.
+
+A finding that is merely a **new class** — new to the class registry §8 bootstraps — is not on this
+list: retire it as a filing test on its own. Record it in the registry (or a `LEARNINGS.md`-style
+staging file), not as a ticket, unless it also clears one of 1–5 above — a known-class instance on an
+always-file surface still files under condition 1 regardless (§3's guard-gap carve-out is this case).
 
 **The bar's other half is disposition, not detection.** Saying what earns a ticket is only useful
 alongside saying where everything *else* lands — because "recorded in a body" reads as persisted while
@@ -191,12 +212,16 @@ ticket's filing that added the symptom, a design pass after that — each notice
 inside an unrelated ticket's body. **Detection never failed. Disposition did, three times**, and every
 session re-derived the problem at full cost while none could act on it.
 
-So: a finding that does not clear the bar is dispositioned "no action — <reason>" in the report *and*,
-if it names a real defect, goes onto **a named line in the project's standing list** — never a ticket
-of its own. **That distinction is the whole point.** A sub-bar finding that may open its own ticket
-means the bar restricts nothing, and an engineer reading both sentences either violates the bar to
-save the defect or obeys it and loses the defect. The standing list is what makes "no action" a
-persist. An aside in an unrelated ticket's body is neither a list nor a ticket.
+So: a finding that does not clear the bar is **not a ticket** — fix it inside the diff you are already
+touching if it is trivial there; otherwise it is dispositioned "no action — <reason>" in the report
+*and*, ONLY IF it names a real defect, goes onto **a named line in the project's standing list**
+(date · line · source · which of 1–5 failed) — never a ticket of its own. **That distinction is the
+whole point.** A sub-bar finding that may open its own ticket means the bar restricts nothing, and an
+engineer reading both sentences either violates the bar to save the defect or obeys it and loses the
+defect. The standing list is what makes "no action" a persist. An aside in an unrelated ticket's body
+is neither a list nor a ticket. **A second independent sighting of the same standing-list line
+promotes it to a ticket** — [`docs/grooming.md`](grooming.md) G4(a)'s existing re-examine-on-merit
+mechanics, not a new promotion path.
 
 **"The standing list" is not a new artifact to create** — same answer as the class registry in §8. It
 is whichever durable, *re-read* list your project already keeps and actually works from: a `KNOWN
@@ -302,9 +327,9 @@ problem; it is a missing check one layer up.
 
 ## 8. Bootstrapping the class registry, if you have no history yet
 
-Every rule that turns on "new class vs known class" — Clause A, Clause B, §4's second criterion —
-presupposes a maintained registry of known classes to compare against. Every worked example in this
-document is this repo's own. If you are starting from nothing:
+Every rule that turns on "new class vs known class" — Clause A, Clause B, and §4's class-registry
+aside — presupposes a maintained registry of known classes to compare against. Every worked example in
+this document is this repo's own. If you are starting from nothing:
 
 - **Your first run's classes are all new, and that is correct, not a defect.** Clause A's "new to the
   registry as it stands at that moment" is what makes the rule satisfiable on run 1.

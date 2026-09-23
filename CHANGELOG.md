@@ -60,6 +60,24 @@ sections real content going forward — see that page for exactly when each one 
   across the block's 6 tracked copies (`docs/delegation.md`, `docs/delta-audit.md` ×5,
   `docs/drydock/{auditor,code-auditor,verifier}.md`, `commands/polish.md`), verified by the existing
   drift tests.
+- **The backlog filing bar is now value-based, replacing its old defect-shape test** (dir #635 PR1,
+  adopter-facing): `docs/verification-economics.md` §4 no longer files a ticket for being merely
+  behavioural, a new class, or a guard gap. Five conditions replace it — an always-file surface (a
+  secret, a destructive write outside the repo, an installer, or a guard that could fail open), felt
+  pain (it actually happened, not a sandbox reproduction), impact beyond this project, severity (data
+  loss, a leak, or a broken daily workflow), or an explicit request — any ONE of which earns a ticket,
+  with doubt on the first four resolving to file. A new class alone is no longer a filing test; it goes
+  to the class registry instead unless it also clears one of the five. Below the bar: a standing-list
+  line naming which condition failed, promoted to a ticket on a second independent sighting. Every door
+  that used to restate the old three-criterion test (`CORE.md`, `commands/wrap.md`,
+  `commands/polish.md`, `docs/drydock.md`, `docs/release-audit.md`, `docs/release-management.md`) now
+  points at §4 instead. `commands/backlog.md` publishes a headline-discipline convention alongside its
+  readiness legend: a ticket heading carries only ID/title/grade/tag, everything else (re-tags,
+  corrections, origin, PR links) goes in dated `Log:` body lines, and a spec nests under `####` or
+  lives in its own file. `tools/self/citation-resolvability.sh` also resolves a `dir #N` citation
+  against a project's `BACKLOG-parked.md`, a sibling of `BACKLOG.md` that may not exist yet. `.gitignore`
+  gains `/docs/specs/`, where `/design` now writes every spec — personal paths and internal process that
+  don't belong in this public tree.
 
 ### Fixed
 

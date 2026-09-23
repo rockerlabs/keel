@@ -87,12 +87,33 @@ one glance instead of a re-read of every heading — the reason the label exists
 [`docs/release-audit.md`](../docs/release-audit.md) phase 2). Skip this step entirely when nothing in the
 source carries the label; don't render an empty grouped section.
 
+**Headline discipline (dir #635) — canon for every ticket heading, in this file or any project's own
+backlog.** A heading carries only: `### <ID> — <title, ≤ ~180 chars> — <R0–R4> — <→ tag>`, then status
+markers appended as they happen. **At most one non-terminal marker** — a specced-then-closed ticket
+keeps both (`📐 SPEC-READY — … — ✅ CLOSED (…)`), never a stack of every marker it ever carried. **The
+tag is not required last** — step 3b above already reads it wherever it falls in the status tail,
+because a closure marker written later routinely lands after it (`— R2 — → 0.6.1 — ✅ CLOSED (…)` is
+the ordinary closed shape once a tail ticket closes).
+
+Everything else — re-tags and their reasons, re-grades, corrections, origin, PR links — goes into the
+ticket's BODY as dated `Log:` lines, never back into the heading. A ticket's own spec content nests
+under `####` and deeper — never `##` / `###`, which are this file's own section structure — or lives in
+its own file. Release plans, cut-readiness sections and retros do not belong in the backlog file at all
+(a project's own sibling file, or wherever it already tracks release state, holds those instead).
+
+This is backward compatible on purpose: every existing parser keys on the `### <ID> — ` heading prefix,
+which is unchanged, so no project has to migrate wholesale — the discipline applies to new and touched
+entries going forward.
+
 **Readiness & field legend.** A different consumer than step 3's status table above: that table maps
 markers to this command's OWN render status (Active/In flight/Parked/…); this legend is what `/go`'s
 readiness gate and `read` step act on directly — `tests/test_go_command.sh` DERIVES the token list from
 the fence comments below, so a token added here that `commands/go.md` doesn't yet handle turns that test
-red. dir #635 grows this into a fuller legend around the same fences; this bare list is the placeholder
-until then.
+red. **This fenced list, plus the headline-discipline block above, is keel's one canonical,
+adopter-facing legend (dir #635)** — a tool's own comment (e.g. `tools/self/pool-report.sh`'s R-level
+split) points back here instead of hand-copying the scale a second time; the closure-word vocabulary
+specifically is `BB_CLOSURE_TAG_PATTERN` (`tools/lib/backlog-blocks.sh`), never a hand-copied second
+list.
 
 <!-- go-contract:begin -->
 R0 — not an agent-ready task
