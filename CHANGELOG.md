@@ -71,6 +71,25 @@ sections real content going forward — see that page for exactly when each one 
   instead. Step `worktree` is rewritten as an if-then list for readability. Word budget raised
   965 -> 1055 (operator decision) to hold all of the above; `tests/test_go_command.sh` gains a
   `conform` case and one new mutation-proved needle per new clause.
+- **`/go` fixed after a second fresh-context review** (dir #641, absorbing dir #640): step
+  `inflight-check` now stops FIRST on a `⏳` heading naming a live branch that isn't yours — the
+  old text stopped only on a name-based scan that harness-made branches (`claude/hungry-hermann-…`)
+  never match, so two sessions could take one ticket. Step `worktree`'s branch list is exhaustive: a
+  fresh, otherwise-unmatched worktree branch with no commits past the default now has its own rule
+  instead of falling through every listed case. Step `acceptance-tests` no longer conflates "non-git"
+  with "no runnable surface" — a git repo of documents (a designer's, an HR project's) gets the same
+  checklist-with-evidence path a non-git project does, instead of reading itself as `infeasible`. Step
+  `read`'s stop-vs-escape choice for a broken premise now has a criterion: stop only if the fix would
+  change a resolved fork or the `Acceptance:` list, otherwise record it as an escape and continue. Step
+  `conform` names an action for a red check (back to `acceptance-tests` until green, or an escape when
+  the check itself is wrong) and no longer over-claims that `/polish` step 5(a) covers it everywhere —
+  `conform` always runs. A non-git project now gets `<root>` defined (the project directory) and a
+  non-yours `⏳` marker stops it too, both previously silent. Step `escapes`' "put the same lines in
+  the PR body" gains "(or the report)", mirroring `conform`, closing dir #640 (a non-git project has
+  no PR). The `argument-hint`'s undocumented `[scope]` is dropped. Word budget raised 1055 -> 1125
+  (operator decision D1, ~1110 target) to hold all of the above without cutting a pinned phrase (round
+  1's lesson); `tests/test_go_command.sh` gains a mutation-proved needle per new clause (F1, F2, F3,
+  F4, F5, F10, dir #640).
 
 ## [0.11.0] — 2026-09-22
 
