@@ -188,9 +188,13 @@ if [ -n "${KEEL_GO_TEST_SKIP_MUTATIONS:-}" ]; then
   exit $?
 fi
 
-# (a) budget — append 10 words to a go.md copy.
+# (a) budget — append enough words to a go.md copy to cross the budget on every wc(1) this suite runs
+# under. Found live on the alpine-busybox CI leg (dir #636): busybox's wc -w counts this file's
+# non-ASCII characters (—, →, ⏳, 📐, …) differently from GNU/BSD wc, undercounting the real file by
+# ~45 words there (919 vs macOS's 964) — a fixed +10-word nudge crossed 965 on macOS but not on
+# busybox. 80 padding words clears that gap with margin on any wc's word-boundary handling.
 a_copy="$(scratch_copy "$go_md" go.md)"
-append_line "$a_copy" "alpha beta gamma delta epsilon zeta eta theta iota kappa"
+append_line "$a_copy" "$(printf 'filler %.0s' {1..80})"
 assert_case_turns_red "(a) budget mutation" \
   "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words" "KEEL_GO_MD=$a_copy"
 
