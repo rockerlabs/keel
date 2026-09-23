@@ -1,6 +1,7 @@
 ---
 description: Implement one backlog ticket — readiness-checked, autonomous, ask only on real forks
 argument-hint: <task-id or one sentence>
+effort: high
 ---
 Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
 resolve. Load only the task's own context — no full onboarding. A defect outside the ticket: record it
