@@ -39,33 +39,43 @@ fi
 guard_repo_root="$(cd "$here/.." && pwd)"
 guard_before_branch="" guard_before_head="" guard_before_status=""
 guard_before_owned="" guard_before_refs="" guard_before_reflog=""
+guard_ref_scope_available=0
 
 if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
+  guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
+  guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
+  guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+
   # dir #333: the compare above cannot see the two channels dir #320's own leak was actually found
   # through — a stray BRANCH left in the real repo, or a REFLOG entry appended without moving HEAD.
   # tools/lib/ref-guard.sh has the full rationale and the ownership-scoping helpers this needs (a
   # naive whole-namespace refs/heads compare trips on every sibling worktree's own branch churn).
-  # Sourced HERE, inside the real-repo branch, not unconditionally at top level: test_run_sh.sh
-  # exercises this script's OWN aggregation logic against synthetic, non-git fixture dirs, and those
-  # must keep working without a tools/ tree of their own — this guard is simply inert for them, same
-  # as the branch/HEAD/status compare already was before this ticket.
-  if ! source "$guard_repo_root/tools/lib/ref-guard.sh"; then
-    printf 'FATAL: %s/tools/lib/ref-guard.sh is missing or failed to source — refusing to run the\n' "$guard_repo_root" >&2
-    printf '       suite: the corruption canary (dir #318, dir #333) needs its ref-scoping helpers.\n' >&2
-    exit 1
+  #
+  # Sourced from guard_repo_root (the WATCHED checkout), not $here — deliberately, since the two can
+  # differ: the claude-kb adopter shape symlinks only tests/run.sh and tests/lib.sh (dir #627) into a
+  # DIFFERENT real checkout (~/.keel/kb) than the one this file's own code lives in
+  # (~/.keel/engine) — `$here` there is the symlink's directory, and `guard_repo_root` is one level up
+  # from that, i.e. the KB checkout, which carries no tools/lib/ of its own. Optional, not fail-closed
+  # like tests/lib.sh's own presence check at the top of this file (dir #627): a MISSING helper here
+  # degrades to the pre-#333 branch/HEAD/status-only compare with a one-line notice, rather than
+  # killing a suite this ticket was never meant to touch (release-manager-verified seam).
+  if [ -f "$guard_repo_root/tools/lib/ref-guard.sh" ] && source "$guard_repo_root/tools/lib/ref-guard.sh"; then
+    guard_ref_scope_available=1
+    guard_before_owned="$(guard_owned_branches "$guard_repo_root")"
+    guard_before_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
+    # Bounded reflog-HEAD compare: unlike refs/heads, HEAD's reflog is PRIVATE per worktree (logs/HEAD
+    # lives under .git/worktrees/<name>, never the common dir), so there is no sibling-session noise
+    # to filter here. Count entries, not content — a developer legitimately committing mid-run also
+    # grows this count, but that already trips the HEAD compare above, so growth here alongside an
+    # UNCHANGED HEAD is the specific gap this ticket exists to close (a checkout-and-return, or a
+    # create-then-delete, that appends to the reflog but leaves `rev-parse HEAD` as if nothing
+    # happened).
+    guard_before_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
+  else
+    printf 'NOTE: %s/tools/lib/ref-guard.sh not found here — the refs/heads + reflog half of the\n' "$guard_repo_root" >&2
+    printf '      corruption canary (dir #333) is skipped; the branch/HEAD/status compare (dir #318)\n' >&2
+    printf '      still runs.\n' >&2
   fi
-  guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
-  guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
-  guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
-  guard_before_owned="$(guard_owned_branches "$guard_repo_root")"
-  guard_before_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
-  # Bounded reflog-HEAD compare: unlike refs/heads, HEAD's reflog is PRIVATE per worktree (logs/HEAD
-  # lives under .git/worktrees/<name>, never the common dir), so there is no sibling-session noise to
-  # filter here. Count entries, not content — a developer legitimately committing mid-run also grows
-  # this count, but that already trips the HEAD compare above, so growth here alongside an UNCHANGED
-  # HEAD is the specific gap this ticket exists to close (a checkout-and-return, or a
-  # create-then-delete, that appends to the reflog but leaves `rev-parse HEAD` as if nothing happened).
-  guard_before_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
 fi
 
 # KEEL_TEST_JOBS overrides the concurrency cap (e.g. `KEEL_TEST_JOBS=1 ./tests/run.sh` to force the
@@ -218,15 +228,18 @@ if [ -n "$guard_before_head" ]; then
   guard_after_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_after_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_after_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
-  guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
-  guard_after_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
-  guard_after_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
+  guard_before_refs_unowned="" guard_after_refs_unowned="" guard_after_reflog=""
+  if [ "$guard_ref_scope_available" = 1 ]; then
+    guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
+    guard_after_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
+    guard_after_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
 
-  # Union of both snapshots' owned branches: one that stopped (or started) being owned mid-run is
-  # still explained by that peer's own worktree lifecycle, not by this suite's fixtures.
-  guard_owned_union="$(printf '%s\n%s\n' "$guard_before_owned" "$guard_after_owned" | LC_ALL=C sort -u)"
-  guard_before_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_before_refs")"
-  guard_after_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_after_refs")"
+    # Union of both snapshots' owned branches: one that stopped (or started) being owned mid-run is
+    # still explained by that peer's own worktree lifecycle, not by this suite's fixtures.
+    guard_owned_union="$(printf '%s\n%s\n' "$guard_before_owned" "$guard_after_owned" | LC_ALL=C sort -u)"
+    guard_before_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_before_refs")"
+    guard_after_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_after_refs")"
+  fi
 
   if [ "$guard_after_branch" != "$guard_before_branch" ] || [ "$guard_after_head" != "$guard_before_head" ] \
       || [ "$guard_after_status" != "$guard_before_status" ] \
@@ -244,10 +257,11 @@ if [ -n "$guard_before_head" ]; then
     # trip — still a real "do not push until reconciled" until a human confirms which it was.
     if [ "$guard_after_branch" = "$guard_before_branch" ] && [ "$guard_after_head" != "$guard_before_head" ] \
         && git -C "$guard_repo_root" merge-base --is-ancestor "$guard_before_head" "$guard_after_head" 2>/dev/null; then
-      printf '  HEAD moved FORWARD on the same branch — this may be your own commit landing while a\n'
-      printf '  background suite run was still alive (see CLAUDE.md: never commit against the watched\n'
-      printf '  checkout while its own ./tests/run.sh is running) rather than a leak. Reconcile by hand\n'
-      printf '  either way — a moved HEAD is not automatically safe just because it fast-forwards.\n'
+      printf '  HEAD moved FORWARD on the same branch — this may be your own commit landing while this\n'
+      printf '  same ./tests/run.sh was still running in the background against this checkout, rather\n'
+      printf '  than a leak (never commit against a checkout while its own suite run is still alive).\n'
+      printf '  Reconcile by hand either way — a moved HEAD is not automatically safe just because it\n'
+      printf '  fast-forwards.\n'
     fi
     if [ "$guard_after_status" != "$guard_before_status" ]; then
       printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
