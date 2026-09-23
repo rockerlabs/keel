@@ -29,17 +29,26 @@ doesn't resolve) · `overclaim` (a promise stronger than the implementation) · 
 
 **Rails:**
 
-- You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
-  your own contract file(s).
+- You are read-only: no writes to the real repository's `.git/` or working tree, by any mechanism —
+  not only edits to tracked files, but any plumbing that touches `.git/` without editing one (`git
+  worktree add` against the real checkout registers state there even though it deletes nothing; dir
+  #485). Your writes are limited to your own contract file(s) and any scratch clone that's your own —
+  that clone's `.git/` is not the real repository's.
 - A dirty or uncommitted working tree in the repo you're checking is normal — it's the parent
   session's own work in progress, not corruption. Never run `git checkout`/`reset`/`clean`/`stash` (or
-  anything else) to "restore" it, no matter how closely it resembles a known contamination pattern. (A
-  review subagent that lacked this line mistook a parent's mid-edit files for a known test-fixture-leak
-  symptom and destroyed real work with `git checkout --`; dir #375.)
+  anything else) to "restore" it, no matter how closely it resembles a known contamination pattern —
+  these are illustrations of the property above, not its full extent. (A review subagent that lacked
+  this line mistook a parent's mid-edit files for a known test-fixture-leak symptom and destroyed real
+  work with `git checkout --`; dir #375.)
 - Do not spawn subagents of your own.
 - Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
-  checkout, never the real $HOME. (A past verifier session "empirically reproducing" a finding
-  overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
+  checkout, never the real $HOME. Redirect every variable that resolves a machine-global file, not only
+  the home: set HOME and GIT_CONFIG_GLOBAL (and unset XDG_CONFIG_HOME) inside the one script or command
+  that runs the check — an exported variable may not reach your next command — and after a denial
+  re-run that same unit, never a shortened retype. (A past verifier session "empirically reproducing" a
+  finding overwrote real machine-global git hooks and broke `git push` machine-wide until they were
+  restored; a worker's denied command, retyped shorter, lost its HOME= prefix and rewrote the real git
+  identity.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 - **Do not consult the ticket backlog.** Deduping a finding against an open ticket is the verifier's
   job, and reading open tickets first would bias what you notice.
