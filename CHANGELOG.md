@@ -43,6 +43,23 @@ sections real content going forward — see that page for exactly when each one 
   place.** The v0.11.0 row kept a "TAG: pending" header above the completed tag paragraph appended at its
   foot, so a reader stopping at the header read the run as untagged.
 - **`IDEAS.md`** — the 0.12.0 groom's G4(b) re-review stamp on the one open entry.
+- **`docs/delegation.md`'s Worker rails block — an honest paragraph on what it buys, a vendor-fan-out
+  scope note, and the read-only rail restated as a property** (dir #295, dir #617, dir #485): a new
+  paragraph names the block a norm whose measured value is self-reporting, not a control that prevents
+  a violation — prose only nudges, per FRAMEWORK.md's own rule (dir #295). A second new paragraph
+  states that a vendor-composed review fan-out (a built-in skill's own finder agents) never receives
+  keel's injected rails, so protecting that surface is necessarily the reviewed tool's job, not the
+  prompt's (dir #617). The read-only bullet is restated as no writes to the real repository's `.git/`
+  or working tree by any mechanism, with the destructive-command list kept as illustration rather than
+  the whole rule, since a non-destructive write like `git worktree add` used to pass straight through
+  it (dir #485(a)); `docs/delta-audit.md` §4 rule 5 now requires a leg with a mutation mandate to use
+  its own dedicated scratch clone rather than one shared with a leg reading it as ground truth (dir
+  #485(b)). The block's fourth bullet also now carries dir #437's rail words (MW0): redirect
+  `GIT_CONFIG_GLOBAL`, not only `HOME`, inside the one command that runs a live check, and re-run the
+  same unit — never a shortened retype — after a denial. All four changes are propagated byte-identical
+  across the block's 6 tracked copies (`docs/delegation.md`, `docs/delta-audit.md` ×5,
+  `docs/drydock/{auditor,code-auditor,verifier}.md`, `commands/polish.md`), verified by the existing
+  drift tests.
 
 ### Fixed
 
