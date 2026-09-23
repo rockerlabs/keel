@@ -1,75 +1,79 @@
 ---
-description: Start a backlog task with minimal context (autonomous, ask only on real forks)
+description: Implement one backlog ticket — readiness-checked, autonomous, ask only on real forks
 argument-hint: <task-id or one sentence> [scope]
 ---
-Do $ARGUMENTS. Work autonomously: feature branch → tests → PR. Ask only if you hit a real fork that
-can't be resolved from the code, the notes, or common sense. **Close through `/polish` where it is
-installed** — it *is* the pre-PR pass (simplify, tests, a depth-matched review) and it opens the PR
-itself at its last step, so "→ PR" here means invoking it, not a bare `gh pr create`; where its gate is
-wired, `gh pr create` is denied until it has run.
+Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
+resolve. Load only the task's own context — no full onboarding. `[tag]` → Notes.
 
-**Load only the task's own context — no full onboarding or summaries.** Resolve the project's **backlog
-source** the way `/backlog` does: the first that exists of `<path>/BACKLOG.md` (the on-demand backlog a
-project splits its `CLAUDE.md` map onto — it lives at the **main checkout root**, so resolve it there
-even from a worktree) → the inline open-work section of `<path>/CLAUDE.md`. Then, by argument shape:
+**1. resolve.** Backlog source the way `/backlog` resolves it: `<root>/BACKLOG.md`, else the inline
+open-work section of `<root>/CLAUDE.md`, where `<root>` is the MAIN checkout — the first entry of
+`git worktree list`, also from a worktree.
+- A task id (`34`, `dir #34`, `#34`, `KB.34`) → list the `^### ` headings and take the one carrying that
+  id, whatever decorates it. [ids]
+- A phrase → one keyword grep; check the item's status first. It names a ticket → continue with that
+  id. It names none (an external queue, ad-hoc work) → say in your first reply that steps 4 and 6 have
+  nothing to act on — no collision guard runs.
+- Not found → say so and stop; never guess.
 
-- **A task id (`34`, `dir #34`, `#34`)** → find the heading that carries that id and read ONLY that
-  section, plus any section it explicitly cross-links (`dir #N`) — not the whole file. **Match the id,
-  not one fixed heading format:** a backlog accumulates several over its life (`### 34.`, `### dir #34 —`,
-  `### KB.34`), often side by side in the same file. So list the headings (`^### `), then pick the one
-  whose id is the one you were given, whatever decorates it — a format miss is indistinguishable from a
-  missing ticket, and the not-found rule below would then stop a task that exists.
-- **A phrase** → one keyword grep to locate the item; check its status first — it may already be closed
-  in a parallel session.
-- **Heading / item not found** → say so and stop. Don't invent a task or guess which one was meant — a
-  blank beats a wrong guess.
+**2. readiness.** Read the heading's markers against the backlog's legend (keel's:
+`commands/backlog.md`). First match wins (`⏳` is step 4's):
+- `✅` → stop: closed. `⛔ BLOCKED by <ref>` → stop, name the blocker.
+- The current grade is unclear (conflicting grades, `📐` beside a lower one) → ask once which holds.
+- R0 → stop: not an agent session. R1 → stop: parked; unparking is the operator's call.
+- R2 → stop: it needs a design pass first — offer one (/design <id>, harness-provided).
+- R3 → proceed; settle its one pre-decision in-session (a real fork → ask).
+- R4 or `📐 SPEC-READY` → proceed. No grade → proceed; say so.
+An explicit go-ahead from the operator in chat, or a managed-release brief assigning the ticket,
+overrides a stop in this step; name it in your first reply.
 
-**In-flight check (before picking, after resolving ticket N):** `git fetch --prune`, then scan
-`git branch -a` for a live branch already working this ticket — any name carrying `go` and the ticket id
-first. Match the *decoration* loosely and the *id* exactly, the same way as the heading above: harnesses
-prefix and suffix their own branch names, so `claude/go-issue-34-ab12cd` is the same claim as
-`go-34-foo`, but `go-issue-340-…` is a different ticket and must not count — a substring hit fires the
-hard STOP below on a ticket nobody has claimed. Then a keyword grep of branch names against the ticket
-title. A match means another session is already on it (in progress, not closed — the
-"closed in a parallel session" rail above doesn't cover this case).
-**STOP: report "in flight on `<branch>`"** and do not re-pick; offer to continue that branch or pick a
-different ticket instead. This is advisory, not a lock — two sessions starting in the same minute can
-still race, and only sessions running this version of `/go` apply it.
+**3. read.** ONLY that ticket's section, the sections it cross-links, and its spec: the file its `Spec:`
+line names (or a `docs/specs/` file the body names as its spec), relative to the project root — absent
+from your worktree (a gitignored spec) → read it at `<root>`. Skim project memory for what they
+cross-link. Before code, run every `TO VERIFY` the spec assigns to the implementer; one that breaks a
+premise the design depends on → stop and report. The spec overrides an older body; what either says
+about the live code yields to the code. [reconcile]
+Model: compare the ticket's model line (keel: `**Model rec:**`) with this session's tier and effort
+where the harness exposes them; a mismatch → tell the operator once and continue.
 
-Also skim the project memory for anything the section cross-links.
+**4. inflight-check.** `git fetch --prune`, then scan `git branch -a` for a live branch, not your own:
+a name carrying `go` and the id first — decoration loose, id exact (`claude/go-issue-34-ab12cd` claims
+34; `go-issue-340-…` does not) — then a keyword grep of branch names against the title. A match → STOP:
+report "in flight on `<branch>`"; offer to continue it or pick another. A `⏳` heading whose branch is
+gone → if its PR merged, stop: done, the heading is stale. [advisory]
 
-**Worktree check (first step, before any code):**
-Run `git branch --show-current` from the current cwd.
+**5. worktree.** Before any code, run `git branch --show-current`. On the default branch, a spent
+branch (PR merged), or a DIFFERENT ticket's branch → cut a fresh feature branch from the fresh default. A
+worktree's own branch for this ticket qualifies unless spent — create none. Re-check at every ticket; run
+every git write with `git -C <working-tree-path>`. More: `FRAMEWORK.md` "Worktree
+discipline"; with parallel sessions, `docs/parallel-sessions.md`.
 
-- If the cwd is inside a worktree dir (e.g. `.../worktrees/...`) — you are already on the session's feature
-  branch. Do NOT create a branch. Run every git operation (`git add`, `git commit`, `git push`) with an
-  explicit `-C <worktree-path>`, or after confirming the shell cwd is the worktree, not the main checkout.
-- If the cwd is the main checkout — create a feature branch as usual.
+**6. claim.** Write `⏳ IN FLIGHT (YYYY-MM-DD, branch <name>)` onto the ticket's heading in the backlog
+at `<root>`; `/wrap`'s closing sweep replaces it with ✅ on merge — never leave both. **Named override
+inside a managed release (`dir #367` R8)** — or under any brief that names a single backlog writer: a
+worker does NOT write the marker; request it through that writer, per the brief.
+This step as written is the standalone default. Once step 7 decides, extend the marker with
+`, tests: first` or `, tests: infeasible — <reason>`. Write main-checkout files by absolute path.
 
-Never rely on the implicit shell cwd as proof of which working tree you are in.
+**7. acceptance-tests.** First derive acceptance tests from the ticket's `**Acceptance:**` line or its
+spec's (else its done-criterion), write them, show them red, then implement to green (`FRAMEWORK.md`
+design principles). Where test-first is genuinely infeasible (no runnable surface), say so in one line
+— an executed decision, never a silent skip. Record it twice: the PR test plan (`tests: first` /
+`tests: infeasible — <reason>`) and the claim marker. It is self-reported — like `/polish`'s
+`skipped:<reason>` receipts in spirit only, with no receipt, no gate, no trace behind it; never report
+it as gate-checked.
 
-**Claim step (right after cutting/confirming the feature branch):** write `⏳ IN FLIGHT (YYYY-MM-DD,
-branch <name>)` onto the ticket's own heading line in the project's backlog file, resolved at the
-**main checkout root** (per the `dir #34` worktree rule above). On merge, the closing sweep replaces
-this with ✅ (existing convention) — don't leave both markers on the same heading. **Named override
-inside a managed release (`dir #367` R8):** the release manager is the single writer to the backlog
-file for the whole release — a worker inside a managed release does NOT write this marker itself;
-request the write through the manager instead, per your brief. This step as written is the standalone
-default. **Come back and
-extend this marker** once the next rail decides — `, tests: first` or `, tests: infeasible — <reason>`:
-the decision doesn't exist yet at claim time, so writing the field now would leave a placeholder
-standing for the ticket's whole life, which is worse than the missing field.
+**8. escapes.** A ticket with a spec file: before closing, append one line to the end of the spec —
+`Escapes at implementation (YYYY-MM-DD, <branch>): <n>` (`0` when none), then one line per escape —
+and put the same lines in the PR body. An escape is a spec defect you hit: a false premise, a missed
+dependency, an undefined path — anything that made you depart from or complete the design. Inside a
+managed release the spec write goes through the manager, as the claim does.
 
-**Acceptance tests first, when the ticket names a done-criterion.** Before writing implementation code,
-derive acceptance tests from the ticket's own acceptance/done-criterion (a groomed ticket names one by
-contract; others may too) and write them first — show them red, then implement to green, per
-`FRAMEWORK.md`'s design-principles rail. Where test-first is genuinely infeasible for this ticket
-(pure-wording change, no runnable surface to test against), say so explicitly in one line before
-proceeding — an executed decision, never a silent skip.
+**9. close.** Close through `/polish` where installed — the pre-PR pass; it opens the PR itself, and
+its gate, where wired, denies a bare `gh pr create`. A project whose `CLAUDE.md` records a
+direct-to-default carve-out follows that instead. The merge is the operator's.
 
-**Write that decision down twice, and don't call it checked.** In the PR body's test plan —
-`tests: first` or `tests: infeasible — <reason>` — which is the copy that outlives the ticket, and on
-the claim marker above while the ticket is open, so a parallel session sees it. Why the writing matters:
-this rail is in the spirit of `/polish`'s `skipped:<reason>` receipts but has none of the mechanism —
-`/go` has no receipt, no gate, no trace, so an autonomous run can skip the tests AND the disclosure with
-nothing noticing. Self-reported is the honest status; report it that way, never as gate-checked.
+## Notes
+- **ids** — backlogs mix heading formats (`### 34.`, `### dir #34 —`, `### KB.34`); a format miss reads
+  as a missing ticket and stops a task that exists.
+- **reconcile** — a spec is a snapshot; code moves after it is written.
+- **advisory** — not a lock: two sessions starting the same minute still race.

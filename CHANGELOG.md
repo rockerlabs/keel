@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`/go` now checks a ticket's readiness before implementing it, reads its spec file, and writes an
+  "escapes" line back to the spec at close** (dir #636): a heading graded R0/R1/R2 (or `⛔`/`✅`) stops
+  instead of being implemented blind, with an explicit operator override named in the first reply; the
+  `read` step follows the ticket's `Spec:` line (or a `docs/specs/` file the body names) and runs every
+  `TO VERIFY` the spec assigns the implementer; the `escapes` step appends what the spec got wrong to the
+  spec file and the PR body, filling a tally column that had no writer before. Rewritten as nine named,
+  execution-ordered steps, held at or under its previous size (965 words) despite the new reads and
+  write. `commands/backlog.md` gains a `<!-- go-contract:begin/end -->` fenced legend that `/go`'s
+  readiness step reads and a new test DERIVES its token list from, rather than a copy, so a future legend
+  change `/go` doesn't yet handle turns that test red.
+
 ### Changed
 
 - **`docs/grooming.md` G0 — tell a DESTROYED read-trace store from a rotated one** (compensation;

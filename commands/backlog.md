@@ -87,6 +87,27 @@ one glance instead of a re-read of every heading — the reason the label exists
 [`docs/release-audit.md`](../docs/release-audit.md) phase 2). Skip this step entirely when nothing in the
 source carries the label; don't render an empty grouped section.
 
+**Readiness & field legend.** A different consumer than step 3's status table above: that table maps
+markers to this command's OWN render status (Active/In flight/Parked/…); this legend is what `/go`'s
+readiness gate and `read` step act on directly — `tests/test_go_command.sh` DERIVES the token list from
+the fence comments below, so a token added here that `commands/go.md` doesn't yet handle turns that test
+red. dir #635 grows this into a fuller legend around the same fences; this bare list is the placeholder
+until then.
+
+<!-- go-contract:begin -->
+R0 — not an agent-ready task
+R1 — parked; unparking is the operator's call
+R2 — needs a design pass first
+R3 — ready; settle one pre-decision in-session
+R4 — ready to implement
+📐 SPEC-READY — a design session's spec exists; ready to implement
+⛔ BLOCKED — blocked by a named ref
+✅ — closed
+⏳ IN FLIGHT — claimed (YYYY-MM-DD, branch `<name>`)
+Spec: — the ticket's spec file, relative to the project root
+**Acceptance:** — the ticket's falsifiable done-checks
+<!-- go-contract:end -->
+
 **Personal-fork note (not a Keel mechanic, recorded here because a Keel change to this file doesn't reach
 it automatically):** an adopter running a personal, KB-forked copy of this command (diverged from Keel's
 shipped `commands/backlog.md` on purpose, e.g. to add workflow-specific columns) does not get step 3b/6 for
