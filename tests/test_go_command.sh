@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# test_go_command.sh — dir #636 (rework) + dir #639 (post-review fixes): pins the `/go` rework —
-# GO11's word budget, GO12's legend-token contract with commands/backlog.md, the claim/escapes literal
-# formats, the ten step names (dir #639 adds `conform`), the adopter-generic constraint, and one
-# distinguishing needle per new rule clause (leg-1 F-1's class: a rule with no pin can be dropped
-# silently, spec §8 A1(g); dir #639 spec §6 extends this to its own four new clauses). Reads
+# test_go_command.sh — dir #636 (rework) + dir #639 (post-review fixes) + dir #641 round 2 (absorbs
+# dir #640): pins the `/go` rework — GO11's word budget, GO12's legend-token contract with
+# commands/backlog.md, the claim/escapes literal formats, the ten step names (dir #639 adds
+# `conform`), the adopter-generic constraint, and one distinguishing needle per new rule clause
+# (leg-1 F-1's class: a rule with no pin can be dropped silently, spec §8 A1(g); dir #639 spec §6
+# extends this to its own four new clauses; dir #641 spec §5 extends it again to F1, F2, F3, F4, F5,
+# F10 and dir #640's absorbed clause). Reads
 # ${KEEL_GO_MD:-$REPO_ROOT/commands/go.md} and ${KEEL_BACKLOG_MD:-$REPO_ROOT/commands/backlog.md},
 # so every case below is shown red first by re-invoking THIS file against a mutated SCRATCH copy via
 # those two overrides — no tracked file is ever edited to prove a case.
@@ -18,11 +20,11 @@ check_file "backlog.md target exists" "$backlog_md"
 
 # --- (a) budget: GO11 -----------------------------------------------------------------------------
 # Raising this constant is an operator decision (GO11) — never bump it here just to make a case fit.
-# Raised 965 -> 1055 (operator decision D1, 2026-09-23, dir #639): the conform step, the non-git line,
-# the narrowed readiness override and the scope line together outgrew the original ceiling even after
-# cutting rationale; ~1050 was the operator's approved target, 1055 gives the live file (1045 words)
-# a small margin.
-GO_MD_WORD_BUDGET=1055
+# Raised 1055 -> 1125 (operator decision D1, 2026-09-24, dir #641 round 2, absorbing dir #640): the
+# operator approved "~1110" as the target; the six mandatory fixes (F1-F5, dir #640) plus F7/F9/F10
+# landed the live file at 1114 words after cutting every unpinned rationale word available (round 1's
+# lesson: never a pinned phrase) — 1125 gives it the same small margin round 1's 1055/1045 pair did.
+GO_MD_WORD_BUDGET=1125
 word_count="$(wc -w < "$go_md" | tr -d ' ')"
 if [ "$word_count" -le "$GO_MD_WORD_BUDGET" ]; then
   pass "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words (got $word_count)"
@@ -108,6 +110,13 @@ needle_rules=(
   "dir #639: conform step"
   "dir #639: non-git line"
   "dir #639: scope line"
+  "dir #641 F1: live-branch heading stop"
+  "dir #641 F2: worktree exhaustive rule"
+  "dir #641 F3: no-runnable-surface axis"
+  "dir #641 F4: stop-vs-escape criterion"
+  "dir #641 F5: conform's red path"
+  "dir #641 F10: non-git heading stop"
+  "dir #640 (absorbed): escapes non-git fallback"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -126,6 +135,13 @@ needle_texts=(
   "project-agnostic floor"
   "the claim is still written"
   "do not fix it"
+  "naming a live branch"
+  "no commits past the default"
+  "checklist item"
+  "changes a resolved fork"
+  "back to step 7 until green"
+  "marker not yours"
+  "same lines in the PR body (or the report)"
 )
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
@@ -283,5 +299,67 @@ scope_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$scope_copy" "do not fix it"
 assert_case_turns_red "(g) needle mutation: scope line removed" \
   "(g) needle [dir #639: scope line]: 'do not fix it' present" "KEEL_GO_MD=$scope_copy"
+
+# (g) needle — dir #641 round 2's mandatory + minor clauses, each shown red by its own mutation
+# (spec §5 A1(g); dir #640's absorbed clause included).
+
+# F1: drop step 4's new first rule (live `⏳`-claimed branch → stop), scoped to its own clause so the
+# step label ("**4. inflight-check.**") on the same line survives — case (d) must stay green here.
+f1_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$f1_copy" "naming a live branch" \
+  "A \`⏳\` heading naming a live branch that is not yours →" ""
+assert_case_turns_red "(g) needle mutation: F1 live-branch stop rule removed" \
+  "(g) needle [dir #641 F1: live-branch heading stop]: 'naming a live branch' present" \
+  "KEEL_GO_MD=$f1_copy"
+
+# F2: drop step 5's third, exhaustive bullet (a fresh worktree branch with no commits past the
+# default) — the whole line is the clause, nothing else shares it.
+f2_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$f2_copy" "no commits past the default"
+assert_case_turns_red "(g) needle mutation: F2 worktree exhaustive rule removed" \
+  "(g) needle [dir #641 F2: worktree exhaustive rule]: 'no commits past the default' present" \
+  "KEEL_GO_MD=$f2_copy"
+
+# F3: drop step 7's "checklist item" word, collapsing the no-runnable-surface axis back to a
+# checklist with no item to record evidence against.
+f3_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$f3_copy" "checklist item" "checklist item" "checklist"
+assert_case_turns_red "(g) needle mutation: F3 checklist-item wording removed" \
+  "(g) needle [dir #641 F3: no-runnable-surface axis]: 'checklist item' present" "KEEL_GO_MD=$f3_copy"
+
+# F4: drop step 3's stop-vs-escape criterion, scoped to its own clause so the surrounding sentence
+# (and the step label two lines up) survive.
+f4_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$f4_copy" "changes a resolved fork" \
+  "changes a resolved fork or the Acceptance list" "breaks it"
+assert_case_turns_red "(g) needle mutation: F4 stop-vs-escape criterion removed" \
+  "(g) needle [dir #641 F4: stop-vs-escape criterion]: 'changes a resolved fork' present" \
+  "KEEL_GO_MD=$f4_copy"
+
+# F5: drop step 9's red-check action (back to step 7 until green), scoped to its own clause.
+f5_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$f5_copy" "back to step 7 until green" \
+  "a red check → back to step 7 until green, or" "a red check needs fixing, or"
+assert_case_turns_red "(g) needle mutation: F5 conform red-path action removed" \
+  "(g) needle [dir #641 F5: conform's red path]: 'back to step 7 until green' present" \
+  "KEEL_GO_MD=$f5_copy"
+
+# F10: drop the header's non-git ⏳-marker stop rule, scoped to its own clause so the surrounding
+# non-git sentence survives.
+f10_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$f10_copy" "marker not yours" \
+  " — except a \`⏳\` marker not yours" ""
+assert_case_turns_red "(g) needle mutation: F10 non-git heading-stop rule removed" \
+  "(g) needle [dir #641 F10: non-git heading stop]: 'marker not yours' present" "KEEL_GO_MD=$f10_copy"
+
+# dir #640 (absorbed): drop the "(or the report)" fallback from step 8's escapes line only — step 9
+# has its own separate "(or the report)" on a different line, so this anchor must stay scoped to
+# step 8's line to avoid a false-negative (the class leg-1 F-1 warns against).
+d640_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$d640_copy" "same lines in the PR body (or the report)" \
+  " (or the report)" ""
+assert_case_turns_red "(g) needle mutation: dir #640 escapes non-git fallback removed" \
+  "(g) needle [dir #640 (absorbed): escapes non-git fallback]: 'same lines in the PR body (or the report)' present" \
+  "KEEL_GO_MD=$d640_copy"
 
 summary
