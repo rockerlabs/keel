@@ -247,8 +247,23 @@ EOF
       install_into "$hpd"
     else
       # The real hooks dir — NOT $repo/.git/hooks: in a worktree/submodule .git is a file and hooks
-      # live in the common dir. --git-path resolves it; make it absolute relative to $repo if needed.
-      hooks="$(git -C "$repo" rev-parse --git-path hooks)"
+      # live in the common dir. dir #617: `--git-path hooks` (the old resolution here) also honors
+      # GLOBAL/SYSTEM core.hooksPath, so a repo with no LOCAL override could resolve straight into a
+      # machine-wide hooks dir instead of its own. --git-common-dir names the repo's own git
+      # directory and never consults core.hooksPath at any scope — still worktree/submodule-safe like
+      # the old call, just without the global-hooksPath leak. Considered instead: keep --git-path
+      # hooks and refuse when its result lies outside $repo — rejected because a submodule's real
+      # hooks dir legitimately lives under the SUPERPROJECT's .git/modules/, outside $repo's own
+      # tree, so an "under $repo" containment check would misfire there. (Full incident history:
+      # CHANGELOG.md and tests/test_secret_guard.sh's dir #617(a) block.)
+      common_dir="$(git -C "$repo" rev-parse --git-common-dir)"
+      # An exit-0-yet-empty result would otherwise concatenate straight into the literal "/hooks"
+      # below, which the very next case guard reads as already-absolute — vendoring at the
+      # filesystem ROOT instead of merely failing loud (code review finding, dir #617: the old
+      # call's own empty-output case degraded no worse than "$repo/", still contained). Never
+      # observed live, but "never outside $repo" is the one property this ticket exists to hold.
+      [ -n "$common_dir" ] || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-common-dir returned nothing — refusing to guess a hooks dir" >&2; exit 2; }
+      hooks="$common_dir/hooks"
       case "$hooks" in /*) ;; *) hooks="$repo/$hooks" ;; esac
       install_into "$hooks"
     fi
