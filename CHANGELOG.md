@@ -63,6 +63,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`tests/run.sh`'s real-checkout corruption canary (dir #318) now also snapshots `refs/heads` and
+  a bounded HEAD-reflog count** (dir #333): the existing branch/HEAD/status compare couldn't see a
+  stray branch left behind in the real repo, or a reflog entry appended without moving HEAD — the
+  exact two channels dir #320's own leak was found through. refs/heads lives in the git COMMON dir,
+  shared by every worktree of this checkout, so the new snapshot excludes branches any worktree
+  currently owns (`tools/lib/ref-guard.sh`, new) before comparing — a sibling session's own branch
+  churn no longer trips it; only a branch nobody owns appearing, moving, or disappearing does. HEAD's
+  reflog needs no such scoping (it is private per worktree).
 - **The test harness failed OPEN, not closed, when its own sandbox setup was missing or broken**
   (dir #627): every `tests/test_*.sh` sourced `tests/lib.sh` with a bare `.` and no `|| exit`, so a
   missing `lib.sh` (a gitignored symlink in the claude-kb adopter, absent from a fresh `git worktree
