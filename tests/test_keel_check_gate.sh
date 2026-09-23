@@ -104,4 +104,12 @@ gate "git commit -m done" "$d" 1 "$nojq"
 check_status "jq missing from PATH → hook still exits 0" 0 "$STATUS"
 check_absent "jq missing → fails OPEN (no deny), even with veto on + a red check" "$OUT" "deny"
 
+# 9. dir #398/#399/#637: HOME unset AND no override -> the shared state root can't be resolved at
+# all, so this hook fails OPEN (same philosophy as jq-missing above — "nothing to veto", not a deny),
+# never a scary denial on every commit just because $HOME happened to be unset.
+json9="$(jq -n --arg c "git commit -m done" --arg w "$d" '{tool_input:{command:$c}, cwd:$w}')"
+out9="$(env -u KEEL_CHECK_STATE_DIR -u HOME KEEL_CHECK_VETO=1 bash "$GATE" 2>&1 <<< "$json9")"; status9=$?
+check_status "HOME unset, no override, veto on -> hook still exits 0" 0 "$status9"
+check_absent "HOME unset, no override -> fails OPEN (no deny)" "$out9" "deny"
+
 summary

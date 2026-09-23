@@ -750,7 +750,7 @@ check_contains "trace-confirmed outcome → provenance names the mechanical trac
 rm -f "$tf"
 
 # --- dir #64 tier 1: rollout-check (SessionStart hook) --------------------------------------------
-rollout_state_for() { printf '/tmp/pre-pr-gate-rollout-%s' "$(repo_key_for "$1")"; }
+rollout_state_for() { printf '%s/%s' "$(gate_tmp_purpose_dir rollout)" "$(repo_key_for "$1")"; }
 
 # A fake `claude` binary on PATH so version-drift assertions don't depend on whatever real Claude
 # Code build happens to be installed on the machine running these tests. $1 = version text to print.
@@ -1320,7 +1320,9 @@ agent_trace "$d"
 write_full_receipt_review "$d" "medium-waived:trace-broken" "" "" "medium"
 gate "gh pr create --fill" "$d"
 check_contains "waived:trace-broken contradicted by an existing trace file → denied" "$OUT" '"permissionDecision":"deny"'
-check_contains "...names the file that contradicts the claim" "$OUT" "pre-pr-gate-trace-"
+# dir #398: the exact resolved path, not a hand-typed substring of its old flat-/tmp shape — robust
+# to the path shape itself changing again (dir #637's later work).
+check_contains "...names the file that contradicts the claim" "$OUT" "$(trace_for "$d")"
 check_contains "...names the reasoned claim it contradicts" "$OUT" "reasoned as 'trace-broken'"
 check_contains "...the chain stays intact (dir #376) — no need to init/recover" "$OUT" "The chain is intact"
 rm -f "$tf"
@@ -1909,19 +1911,26 @@ t78_ledger="$SANDBOX/t78-ledger"
 run env HOME="$empty_home" KEEL_HOME="$kh" "KEEL_LEDGER_FILE=$t78_ledger" "$REPO_ROOT/tools/install-pre-pr-gate.sh" --global
 check_status "install-pre-pr-gate.sh --global under a custom KEEL_HOME → exit 0" 0 "$STATUS"
 check_file "…and it wrote settings.json inside KEEL_HOME, not \$HOME/.claude" "$kh/settings.json"
+# dir #398: the write must land under $empty_home, the SAME HOME gate_env's read below uses — the
+# gate's own sentinel/trace root is $HOME-keyed now (it wasn't under the old flat /tmp path).
+_ppg_saved_home="$HOME"; export HOME="$empty_home"
 agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
+export HOME="$_ppg_saved_home"
 gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$kh" "KEEL_LEDGER_FILE=$t78_ledger"
 check_contains "KEEL_HOME-armed dialog leg is seen as ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
 check_contains "KEEL_HOME-armed leg denies for the missing dialog specifically" "$OUT" "reminder dialog was never opened"
 # ...and with no arming anywhere (same empty HOME, no KEEL_HOME) the same receipt still passes, so the
 # assertion above really is about the KEEL_HOME file and not about some unrelated deny.
 d="$(mkrepo)"
+export HOME="$empty_home"
 agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
+export HOME="$_ppg_saved_home"
 gate_env "gh pr create --fill" "$d" "HOME=$empty_home" "KEEL_HOME=$SANDBOX/no-such-keel-home"
 check_status "no arming anywhere → the same receipt still passes" 0 "$STATUS"
 check_absent "no arming anywhere → allowed" "$OUT" "deny"
+unset _ppg_saved_home
 rm -f "$tf"
 
 # 78b. The KEEL_HOME candidate is ADDED, never SUBSTITUTED for $HOME/.claude — regression guard from
@@ -1934,8 +1943,11 @@ home_armed="$SANDBOX/home-armed"; mkdir -p "$home_armed/.claude"
 jq -n --arg gate "$gate" \
   '{hooks:{PostToolUse:[{matcher:"AskUserQuestion", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
   > "$home_armed/.claude/settings.json"
+# dir #398: same HOME agreement as the block above — write under $home_armed, the HOME gate_env reads.
+_ppg_saved_home="$HOME"; export HOME="$home_armed"
 agent_trace "$d"
 write_full_receipt_review "$d" "agent:high"
+export HOME="$_ppg_saved_home"; unset _ppg_saved_home
 gate_env "gh pr create --fill" "$d" "HOME=$home_armed" "KEEL_HOME=$SANDBOX/some-unrelated-keel-home"
 check_contains "an unrelated KEEL_HOME does not hide a hook wired in \$HOME/.claude" "$OUT" '"permissionDecision":"deny"'
 check_contains "…and it denies for the missing dialog, not some other reason" "$OUT" "reminder dialog was never opened"
@@ -1957,9 +1969,20 @@ rm -f "$tf"
 # 4 copies of the same 6-line arm/check sequence, varying only the label/env/expected outcome, into one
 # call per case (found by an independent /simplify pass).
 assert_dialog_arming() {
-  local d="$1" expect="$2" label="$3" tf; shift 3
+  local d="$1" expect="$2" label="$3" tf saved_home="$HOME" write_home="$HOME" a
+  shift 3
+  # dir #398: the receipt/trace WRITE below must land under whatever HOME "$@" will later hand
+  # gate_env for the READ — the gate's own sentinel/trace root is $HOME-keyed now, so a caller
+  # passing "HOME=..." here (every call site in this test does, to test dialog-arming under an
+  # isolated home) needs the write to agree, or the gate sees "no active receipt" instead of the
+  # dialog-arming behavior this helper exists to test.
+  for a in "$@"; do
+    case "$a" in HOME=*) write_home="${a#HOME=}" ;; esac
+  done
+  export HOME="$write_home"
   agent_trace "$d"
   write_full_receipt_review "$d" "agent:high"
+  export HOME="$saved_home"
   gate_env "gh pr create --fill" "$d" "$@"
   if [ "$expect" = "armed" ]; then
     check_contains "$label: ARMED (agent:* + no dialog → denied)" "$OUT" '"permissionDecision":"deny"'
@@ -2032,8 +2055,8 @@ check_contains "the second branch reads back the FIRST branch's recorded model" 
 # repo-keyed helpers' own prefixes with combined_key_for's key swapped in — the one composition no
 # helper builds, precisely because production must never build it either.
 bk="$(combined_key_for "$d")"
-check_nofile "no branch-keyed trace file is created"            "/tmp/pre-pr-gate-trace-$bk"
-check_nofile "no branch-keyed rollout-state file is created"    "/tmp/pre-pr-gate-rollout-$bk"
+check_nofile "no branch-keyed trace file is created"            "$(gate_tmp_root_for_tests)/trace/$bk"
+check_nofile "no branch-keyed rollout-state file is created"    "$(gate_tmp_root_for_tests)/rollout/$bk"
 rm -f "$tf" "$rs"
 
 
@@ -3580,5 +3603,30 @@ gate "gh pr create --fill" "$d"
 check_contains "dir #488 B1: ARMED install, one-executable-line fix → STILL denied (no exemption)" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #488 B1: denied for the missing review trace, not silently exempted" "$OUT" "no trace matching"
 rm -f "$tf"
+
+# --- dir #398/#399/#637: prove the leak is CLOSED, not just moved — a full receipt cycle through the
+# real CLI subcommands must write zero files under the real /tmp for this run's own key, and the
+# expected files under this sandbox's $HOME/.keel/tmp/pre-pr-gate. A before/after `ls /private/tmp |
+# grep -c` is NOT proof (other concurrent sessions write there too, dir #398 brief) — this instead
+# names the EXACT key this run used and greps the real /tmp for that specific, unambiguous shape. Red
+# on origin/main (where every one of these writes a literal /tmp/pre-pr-gate-<key> file), green here.
+d="$(mkrepo)"
+run_in "$d" bash "$gate" keys "$d"
+repokey398="$(printf '%s' "$OUT" | cut -f1)"
+receiptkey398="$(printf '%s' "$OUT" | cut -f2)"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_contains "dir #398 proof: the receipt still unlocks normally (PASS is unaffected by the re-root)" "$OUT" '"permissionDecision":"allow"'
+
+check_nofile "dir #398 proof: no /tmp/pre-pr-gate-<key> sentinel-shaped leftover under the real /tmp" \
+  "/tmp/pre-pr-gate-${receiptkey398}"
+check_nofile "dir #398 proof: no /tmp/pre-pr-gate-trace-<key> shaped leftover under the real /tmp" \
+  "/tmp/pre-pr-gate-trace-${repokey398}"
+
+check_status "dir #398 proof: the sentinel WAS created, but under \$HOME/.keel/tmp/pre-pr-gate, not /tmp" \
+  "$HOME/.keel/tmp/pre-pr-gate/sentinel/$receiptkey398" "$(sentinel_for "$d")"
+# The receipt PASSED above, which consumes (removes) the live sentinel via retire_sentinel — so its
+# retired backup, not the live file, is the artifact left behind to assert on.
+check_file "dir #398 proof: the retired backup exists under the sandboxed root" "$(prev_sentinel_for "$d")"
 
 summary

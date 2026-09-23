@@ -63,6 +63,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **The pre-PR gate's rendezvous files (sentinel/prev-sentinel/trace/handoff/rollout) and
+  `keel-check.sh`/`pipeline-canary.sh`'s own state no longer leak into the shared, OS-swept `/tmp`**
+  (dir #398 and dir #399): every sandboxed test repo left its own sentinel/trace/prev files behind
+  forever, ~31,000 files and 1.9G at the v0.8.3 close, invisible to every check because it lived
+  outside the repo and outside `tests/lib.sh`'s own `$HOME` sandbox. All five now resolve under one
+  keel-owned root, `$HOME/.keel/tmp/pre-pr-gate/<purpose>/<key>` (`tools/lib/gate-paths.sh`'s new
+  `gate_state_root`, dir #637's operator override — `$HOME`, never `$KEEL_HOME`, which keeps meaning
+  the harness home keel installs into), which `tests/lib.sh`'s existing HOME redirection now contains
+  for free, no new override variable. `init` also prunes entries older than 30 days under this root
+  only — never `/tmp`, never a live PR's sentinel — so re-rooting alone doesn't just relocate the
+  leak to a tidier address. No fallback reads a legacy `/tmp` file: any receipt in flight when this
+  merges needs a fresh `pre-pr-gate.sh init`.
 - **`install-secret-guard.sh`'s `<repo>` branch could vendor OUTSIDE the given repo**
   (dir #617, half (a)): with no LOCAL `core.hooksPath` override, it resolved the hooks dir via
   `git rev-parse --git-path hooks`, which honors a GLOBAL or SYSTEM `core.hooksPath` too — on a

@@ -60,4 +60,29 @@ else
   pass "tools/doctor.sh does not check settings.local.json (unchanged scope, dir #182 out of scope)"
 fi
 
+# --- dir #398/#399/#637: gate_state_root — the ONE resolver the gate's five rendezvous-file paths,
+# keel-check.sh, keel-check-gate.sh and pipeline-canary.sh all build on ------------------------------
+out="$(gate_state_root)"
+check_status "gate_state_root: \$HOME/.keel/tmp, extending dir #397's own alpine-clone precedent" \
+  "$HOME/.keel/tmp" "$out"
+
+if out="$(HOME='' gate_state_root 2>&1)"; then
+  fail "gate_state_root: HOME unset/empty -> non-zero exit (fail closed, never a bare \"/.keel/tmp\")" \
+    "exited 0 with: $out"
+else
+  pass "gate_state_root: HOME unset/empty -> non-zero exit (fail closed, never a bare \"/.keel/tmp\")"
+fi
+check_status "gate_state_root: HOME unset/empty -> prints nothing" "" "$(HOME='' gate_state_root 2>/dev/null)"
+
+check_contains "tools/pre-pr-gate.sh sources gate-paths.sh for gate_state_root too" \
+  "$(cat "$REPO_ROOT/tools/pre-pr-gate.sh")" 'lib/gate-paths.sh'
+check_contains "tools/pre-pr-gate.sh fails closed at top level on gate_state_root" \
+  "$(cat "$REPO_ROOT/tools/pre-pr-gate.sh")" 'gate_state_root >/dev/null ||'
+check_contains "tools/keel-check.sh sources gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/keel-check.sh")" 'lib/gate-paths.sh'
+check_contains "tools/keel-check-gate.sh sources gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/keel-check-gate.sh")" 'lib/gate-paths.sh'
+check_contains "tools/pipeline-canary.sh sources gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/pipeline-canary.sh")" 'lib/gate-paths.sh'
+
 summary

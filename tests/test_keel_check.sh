@@ -109,4 +109,22 @@ fresh_sd
 KEEL_CHECK_THRESHOLD=0 run "$TOOL" "false"
 check_contains "zero threshold clamps to 1 → STOP on the very first failure" "$OUT" "keel-check: STOP"
 
+# --- dir #398/#399/#637: the default root moved off shared /tmp to $HOME/.keel/tmp ------------------
+# No KEEL_CHECK_STATE_DIR override this time — the counter must land under $HOME/.keel/tmp/keel-check,
+# never in the real /tmp (this run's own $HOME is already the sandbox, dir #64).
+run env -u KEEL_CHECK_STATE_DIR "$TOOL" "false"
+check_status "no override: exit code still passes through" 1 "$STATUS"
+check_dir "no override: the default root lands under \$HOME/.keel/tmp/keel-check" "$HOME/.keel/tmp/keel-check"
+
+# HOME unset AND no override -> fail closed with a clear message, never a silent "/.keel/tmp".
+run env -u KEEL_CHECK_STATE_DIR -u HOME "$TOOL" "false"
+check_status "HOME unset, no override -> exit 1 (fail closed)" 1 "$STATUS"
+check_contains "HOME unset, no override -> names the cause" "$OUT" 'HOME is unset/empty'
+
+# An explicit override still works even with HOME unset.
+fresh_sd
+run env -u HOME "KEEL_CHECK_STATE_DIR=$KEEL_CHECK_STATE_DIR" "$TOOL" "false"
+check_status "HOME unset, explicit override -> exit code still passes through" 1 "$STATUS"
+check_contains "HOME unset, explicit override -> still counts (FAIL #1)" "$OUT" "FAIL #1"
+
 summary
