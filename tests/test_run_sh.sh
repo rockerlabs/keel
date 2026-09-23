@@ -281,4 +281,26 @@ run bash "$d/run.sh"
 check_status "a PASS string merely mentioning the phrase does NOT false-fire the backstop" 0 "$STATUS"
 check_contains "the fixture's own output still prints" "$OUT" "ALL TEST FILES PASSED"
 
+# --- dir #333, release-manager-verified seam: the claude-kb adopter shape symlinks ONLY tests/run.sh
+# and tests/lib.sh (dir #627) into a checkout that carries no tools/lib/ of its own. `here` there is
+# the SYMLINK's directory (dirname does not resolve it), so guard_repo_root (one level up) is that
+# other checkout, and `guard_repo_root/tools/lib/ref-guard.sh` genuinely does not exist. Reproduced
+# here without touching the real KB: a git repo whose tests/run.sh is a symlink to the real one, with
+# no tools/ tree beside it at all — the ref-scoping half of the canary must degrade to a one-line
+# NOTE, never crash or kill the suite (the branch/HEAD/status half, dir #318, is unaffected either
+# way since these are synthetic fixtures with no real leak to catch).
+symroot="$(mktemp -d "$SANDBOX/symlinked-adopter.XXXXXX")"
+git -C "$symroot" init -q
+git -C "$symroot" commit -q --allow-empty -m init
+mkdir -p "$symroot/tests"
+ln -s "$runner" "$symroot/tests/run.sh"
+: > "$symroot/tests/lib.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$symroot/tests/test_a.sh"
+run bash "$symroot/tests/run.sh"
+check_status "symlinked run.sh with no sibling tools/ -> still exit 0" 0 "$STATUS"
+check_contains "symlinked run.sh -> ALL TEST FILES PASSED still reported" "$OUT" "ALL TEST FILES PASSED"
+check_contains "symlinked run.sh -> the ref-scope NOTE names dir #333" "$OUT" "dir #333"
+check_contains "symlinked run.sh -> the ref-scope NOTE says ref-guard.sh was not found" "$OUT" "ref-guard.sh not found"
+check_contains "symlinked run.sh -> the fixture still ran despite the NOTE" "$OUT" "=== test_a.sh ==="
+
 summary
