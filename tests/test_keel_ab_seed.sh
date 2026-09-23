@@ -5,7 +5,7 @@
 # repro used to find the bug (see private/audit/delta-0.8.3-0.9.0/reports/{CA2-blind,
 # S8-ab-extension}.md) and checks the FIXED behavior, not just "doesn't crash".
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 seed="$REPO_ROOT/docs/keel-ab/seed.sh"
 check_file "docs/keel-ab/seed.sh exists" "$seed"

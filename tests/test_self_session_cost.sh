@@ -4,7 +4,7 @@
 # tools/lib/transcript-usage.sh (covered separately by test_transcript_usage_lib.sh). These tests pin
 # the aggregation/median layer this script adds; every fixture is synthetic.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 tool="$REPO_ROOT/tools/self/session-cost.sh"
 check_file "tools/self/session-cost.sh exists" "$tool"

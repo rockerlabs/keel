@@ -10,7 +10,7 @@
 # became the third file needing the same idiom test_drydock_doc.sh and test_delta_audit_doc.sh each
 # already had independently).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 delegation="$REPO_ROOT/docs/delegation.md"
 polish="$REPO_ROOT/commands/polish.md"

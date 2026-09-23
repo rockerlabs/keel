@@ -3,7 +3,7 @@
 # scripts, and nothing else. The canonical selection ci.yml's shellcheck job and
 # tools/self/doctor.sh both call instead of each keeping its own copy.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 st="$REPO_ROOT/tools/self/shellcheck-targets.sh"
 

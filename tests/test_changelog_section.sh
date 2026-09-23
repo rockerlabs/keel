@@ -5,7 +5,7 @@
 # CHANGELOG (a loop over `git tag`, per the ticket's own acceptance test); (b) a fenced `## [x.y.z]`
 # example inside the file must not be mistaken for a real heading.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 helper="$REPO_ROOT/tools/changelog-section.sh"
 

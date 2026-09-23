@@ -5,7 +5,7 @@
 # shells out), and every canary state file is redirected under this test's own $SANDBOX so a run of this
 # suite never touches a real, in-progress canary session on the machine.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 # shellcheck source=tools/lib/impact-store.sh
 . "$REPO_ROOT/tools/lib/impact-store.sh"
 

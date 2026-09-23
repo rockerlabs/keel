@@ -9,7 +9,7 @@
 # test file (see its own fresh_home_env-style setup), which shadows a `--global` write outright — a
 # "fix" that reverts to `--global` must fail this guard, not just fail to help.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 ci="$REPO_ROOT/.github/workflows/ci.yml"
 check_file "ci.yml exists" "$ci"

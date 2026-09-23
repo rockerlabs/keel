@@ -9,7 +9,7 @@
 # name) as well as the output level (the extraction itself, including the shapes that caused real
 # regressions before).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/dir-tickets.sh"
 check_file "tools/lib/dir-tickets.sh exists" "$lib"

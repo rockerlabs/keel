@@ -15,7 +15,7 @@
 # Byte-identity with templates/CLAUDE.md is already pinned generically by test_core_wrapper_sync.sh
 # (the whole KEEL-CORE block, this section included) — not re-checked here.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 core="$REPO_ROOT/CORE.md"
 check_file "CORE.md exists" "$core"

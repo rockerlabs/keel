@@ -10,7 +10,7 @@
 # read-contract rests on, so their own edge cases (missing key, missing file, unreadable file, corrupt
 # version) deserve a test that isn't buried inside a larger installer fixture.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/manifest.sh"
 check_file "tools/lib/manifest.sh exists" "$lib"

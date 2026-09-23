@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # init-project — scaffolds a born-compliant project; a second run never clobbers existing files.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 init="$REPO_ROOT/tools/init-project.sh"
 

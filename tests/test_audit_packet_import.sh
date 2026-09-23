@@ -2,7 +2,7 @@
 # Tests for tools/audit-packet/import.sh — dir #495 PR1: import an external auditor's replies back
 # into drydock's ordinary file contract.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/audit-packet/import.sh"
 check_file "import.sh exists" "$TOOL"

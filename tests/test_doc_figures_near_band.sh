@@ -6,7 +6,7 @@
 # note-free. Works on a plain `cp -R` COPY of the repo, not a git clone — no git object touched, so the
 # Alpine `safe.directory` trap (CLAUDE.md) does not apply here.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 # A plain tree copy (tar avoids cp's non-portable exclude flags across BSD/GNU cp); .git is skipped —
 # this test never runs git and a full history copy would only slow the sandbox down.

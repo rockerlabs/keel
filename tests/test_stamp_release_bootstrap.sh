@@ -6,7 +6,7 @@
 #  (b) the stamped copy actually changes bootstrap.sh's behaviour: it clones its OWN tag by
 #      default, and KEEL_REF still overrides it.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 stamp="$REPO_ROOT/tools/stamp-release-bootstrap.sh"
 

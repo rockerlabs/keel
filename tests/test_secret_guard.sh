@@ -2,7 +2,7 @@
 # secret-guard — the only fires-by-itself mechanism. Cover block (every pattern), allow
 # (clean + bare prefix), the three allowlist channels, and real git-hook integration.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 scan="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 

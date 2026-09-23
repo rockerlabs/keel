@@ -15,7 +15,7 @@
 # mechanism) never matches a pattern spanning a literal newline, since it reads input line by line —
 # a needle copied verbatim across a hand-wrapped paragraph's line break would silently never match.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 framework="$REPO_ROOT/FRAMEWORK.md"
 polish="$REPO_ROOT/commands/polish.md"

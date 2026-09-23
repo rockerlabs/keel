@@ -8,7 +8,7 @@
 # command names the doc, the doc names the command back, and the doc carries anchors for G0, G3 and
 # G6 (the three requirements most likely to be silently dropped in a rewrite).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/grooming.md"
 cmd="$REPO_ROOT/commands/groom.md"

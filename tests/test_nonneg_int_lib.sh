@@ -10,7 +10,7 @@
 # pending_max_commits, tools/keel-impact.sh's require_count) at the source level, the same way
 # test_fence_blank_lib.sh pins fence-blank.sh's consumers.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/nonneg-int.sh"
 check_file "tools/lib/nonneg-int.sh exists" "$lib"

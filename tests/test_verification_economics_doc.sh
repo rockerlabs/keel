@@ -20,7 +20,7 @@
 # both cases the absent string is the RETIRED claim — a form that a correct doc cannot contain, not
 # a fail-closed rejection that a broken doc would also satisfy.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/verification-economics.md"
 delta="$REPO_ROOT/docs/delta-audit.md"

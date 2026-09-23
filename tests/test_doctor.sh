@@ -2,7 +2,7 @@
 # doctor — GAP (fails the audit) vs WARN (advisory), the public-fork special case, and the
 # --registry sweep over an INSTANCE.md Projects table.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doctor="$REPO_ROOT/tools/doctor.sh"
 mkproj() { mktemp -d "$SANDBOX/proj.XXXXXX"; }

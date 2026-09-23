@@ -5,7 +5,7 @@
 # test_doc_figures.sh's droppable-heading pins — a later edit that silently drops this prose should
 # fail loudly instead of just being unnoticed.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 go="$REPO_ROOT/commands/go.md"
 polish="$REPO_ROOT/commands/polish.md"

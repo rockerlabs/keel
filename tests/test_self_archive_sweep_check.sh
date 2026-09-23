@@ -4,7 +4,7 @@
 # datability half), and a mutation-proof pair for the wrapped-heading trap (dir #255/#352) —
 # a heading whose closure tag sits on a continuation line must still count as closed.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 sc="$REPO_ROOT/tools/self/archive-sweep-check.sh"
 

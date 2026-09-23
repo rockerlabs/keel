@@ -8,7 +8,7 @@
 # just as easily be passing because the checker is blind to that content entirely, not because the
 # exemption is working.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 pd="$REPO_ROOT/tools/self/prose-drift.sh"
 

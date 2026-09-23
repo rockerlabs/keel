@@ -14,7 +14,7 @@
 # see the "no jq" block below, which stays real coverage on the legs that DO have jq by hiding it via
 # PATH regardless of what's actually installed).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"

@@ -6,7 +6,7 @@
 # suite itself was invoked from — the real checkout when iterating locally. This file proves the
 # fix fails LOUDLY on an empty dir instead of running the command in the invocation directory.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 before="$PWD"
 run_in "" pwd

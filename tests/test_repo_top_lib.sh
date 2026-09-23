@@ -8,7 +8,7 @@
 # home, so a future third consumer (or a change here) is caught at the source rather than only via
 # whichever wrapper happens to still call it.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/repo-top.sh"
 check_file "tools/lib/repo-top.sh exists" "$lib"

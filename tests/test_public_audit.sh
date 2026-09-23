@@ -2,7 +2,7 @@
 # public-audit — GAP on declared-private tokens and non-public-safe history identities; WARN on
 # heuristic hits (home paths, content emails, Cyrillic); allowlist + --no-history behaviour.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 pa="$REPO_ROOT/tools/public-audit.sh"
 

@@ -6,7 +6,7 @@
 # indirectly through ci-scan.sh, the same way test_secret_guard.sh covers resolve_range_local()
 # through the pre-push hook.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 ci="$REPO_ROOT/tools/secret-guard/ci-scan.sh"
 zero="$(rep 0 40)"

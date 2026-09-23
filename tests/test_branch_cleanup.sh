@@ -6,7 +6,7 @@
 # valued one is never auto-touched; and that report mode touches nothing. All offline — no remote is
 # needed for the core cases; one section builds a real origin to exercise the origin/<default> base path.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/branch-cleanup.sh"
 OLD="2020-01-01T12:00:00"   # a committer date safely older than any --days threshold

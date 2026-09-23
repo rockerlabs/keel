@@ -8,7 +8,7 @@
 # an output-level check would only prove today's two callers happen to agree, not that a third copy
 # can't reappear.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/fence-blank.sh"
 check_file "tools/lib/fence-blank.sh exists" "$lib"

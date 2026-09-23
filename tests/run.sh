@@ -12,6 +12,20 @@
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
+# dir #627: every tests/test_*.sh sources tests/lib.sh, which is what redirects HOME into a
+# disposable sandbox before any fixture runs. Each test file's own source line now fails closed too
+# (`|| exit`, same ticket), but refusing HERE, before any test file even starts, catches it earlier
+# and names the remedy in one place instead of 82 near-identical stderr lines. The adopter shape
+# (claude-kb) consumes both this file and lib.sh as gitignored symlinks into this checkout, which
+# `git worktree add` does not materialise (KB.100) — the felt incident this ticket exists for.
+if [ ! -f "$here/lib.sh" ]; then
+  printf 'FATAL: %s/lib.sh is missing — refusing to run the suite outside its sandbox (dir #627).\n' "$here" >&2
+  printf '       every test file depends on it to redirect HOME; without it, fixtures run against\n' >&2
+  printf '       the real machine. If tests/lib.sh is a symlink in your checkout, re-run whatever\n' >&2
+  printf '       bootstrap step creates it (a fresh worktree omits gitignored symlinks).\n' >&2
+  exit 1
+fi
+
 # dir #318: a corruption canary for the checkout this suite itself runs from — every test file's
 # fixtures are supposed to mutate only their own tests/lib.sh sandbox (mktemp'd HOME/repo dirs), never
 # the real repo the process happened to start in. A rare, non-deterministic leak of that kind was found
@@ -89,7 +103,7 @@ trap on_interrupt INT TERM
 # skip the poll sleep on a pass that just freed a slot instead of idling out the rest of it.
 reap_finished() {
   local new_pids=() new_files=() new_logs=()
-  local i pid rc reaped=0
+  local i pid rc reaped=0 log_content
   for i in "${!active_pids[@]}"; do
     pid="${active_pids[$i]}"
     if kill -0 "$pid" 2>/dev/null; then
@@ -100,8 +114,43 @@ reap_finished() {
     fi
     wait "$pid"
     rc=$?
+    # Read the log ONCE into a variable — it's about to be both printed and pattern-matched below,
+    # and this loop runs once per completed test file (~83 times a full suite run), so a second read
+    # + an external `grep` fork per file is avoidable work. The trailing `printf x` + `%x` strip is
+    # NOT decorative: bare `$(<file)`/`$(cat file)` command substitution strips ALL trailing
+    # newlines, so a log that is empty, or ends in multiple blank lines, or has no trailing newline
+    # at all, would no longer print identically to what the old bare `cat` printed (verified live:
+    # an empty log used to print nothing and would otherwise gain a spurious blank line). Appending a
+    # sentinel byte defeats the stripping; stripping the sentinel back off afterward restores the
+    # log's exact original bytes for any log this suite actually produces. One narrower caveat a
+    # bare `cat` didn't have (found live by an independent /code-review high delta pass): bash
+    # strings can't hold NUL, so `$(...)` silently drops any embedded NUL byte, unlike a bare `cat`
+    # writing raw bytes straight to stdout — currently latent, since every test file in this suite
+    # writes NUL-bearing content (e.g. `utf16le()` fixtures) to a FILE a scanned tool reports on by
+    # name, never to its own stdout that this loop captures.
+    log_content="$(cat "${active_logs[$i]}"; printf x)"
+    log_content="${log_content%x}"
     printf '\n=== %s ===\n' "${active_files[$i]}"
-    cat "${active_logs[$i]}"
+    printf '%s' "$log_content"
+    # dir #627, second fail-open: a test file calling an assertion lib.sh does not define loses that
+    # assertion SILENTLY (bash prints its own "command not found" and, under lib.sh's `set -uo
+    # pipefail` with no `-e`, keeps going) — the file can still exit 0 with fewer checks than it meant
+    # to run. lib.sh's own command_not_found_handle (same ticket) closes this on bash >= 4 (CI's Linux
+    # legs, where it also means the literal string below is never bash's own — that handler's own FATAL
+    # message runs instead, and kills the file outright, so $rc is already nonzero there); this scan is
+    # the portable backstop for bash 3.2 (this project's own dev machine), where the handler never fires
+    # and bash prints its own message and returns 127. Anchored to bash's own exact message SUFFIX
+    # (`: command not found` at a line's end — verified live, identical on macOS bash 3.2 and GNU bash,
+    # only the leading `bash:`/`bash: line N:` prefix differs), not a bare substring: a future test's
+    # own PASS-labeled string that happens to mention the phrase in some other shape won't false-fire
+    # this (found by an independent /code-review high pass on this ticket's own diff). Two bash pattern
+    # alternatives, no subprocess: mid-content (followed by a newline) or the very last line (string
+    # end, no trailing newline). Only escalates an otherwise-green ($rc -eq 0) file: one that already
+    # failed is already counted below.
+    if [ "$rc" -eq 0 ] && { [[ "$log_content" == *': command not found'$'\n'* ]] || [[ "$log_content" == *': command not found' ]]; }; then
+      printf '!!! %s exited 0 but its log shows "command not found" — an unknown assertion likely vanished silently (dir #627)\n' "${active_files[$i]}"
+      rc=1
+    fi
     [ "$rc" -eq 0 ] || failed=$((failed + 1))
     reaped=$((reaped + 1))
   done

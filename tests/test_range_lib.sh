@@ -5,7 +5,7 @@
 # using a real repo's (SHA-1) all-zero sentinel. This file adds what a real-repo fixture can't easily
 # exercise: a SHA-256 repo's 64-char all-zero sentinel, and secret_guard_is_zero_sha()'s own edge cases.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 # shellcheck source=tools/secret-guard/range-lib.sh
 . "$REPO_ROOT/tools/secret-guard/range-lib.sh"

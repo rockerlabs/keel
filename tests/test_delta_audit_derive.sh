@@ -14,7 +14,7 @@
 # main-checkout-only) is dir #207's own done-criteria 1-2, verified by hand at implementation time
 # and recorded in the PR body — this suite tests the general mechanism against fixtures it owns.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/delta-audit/derive.sh"
 check_file "derive.sh exists" "$TOOL"

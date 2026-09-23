@@ -6,7 +6,7 @@
 # (private/audit/delta-0.8.3-0.9.0/reports/CA2-blind.md) with its own control, so a regression that
 # silently reverts the fix trips the case, not just the control.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 seed="$REPO_ROOT/docs/keel-ab/seed.sh"
 grade="$REPO_ROOT/docs/keel-ab/grade.sh"

@@ -7,7 +7,7 @@
 # the gate manifest's own write/uninstall path. The ledger-append assertions below (dedup, ephemeral
 # skip, prune-on-uninstall) exercise tools/lib/ledger.sh's ledger_append(), shared by both writers.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 install="$REPO_ROOT/install.sh"
 uninstall="$REPO_ROOT/uninstall.sh"

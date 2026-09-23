@@ -9,7 +9,7 @@
 # The gate parses its input with jq; the busybox/Alpine CI job ships it (dir #220), so this file runs
 # for real there too, not skip-only.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 CHECK="$REPO_ROOT/tools/keel-check.sh"
 GATE="$REPO_ROOT/tools/keel-check-gate.sh"

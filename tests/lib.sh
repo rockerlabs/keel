@@ -16,6 +16,18 @@ REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 # Redirect HOME and the global git config into a throwaway dir. secret-guard --global and
 # install.sh both write there; this keeps them off the real machine and the CI runner.
 SANDBOX="$(mktemp -d)"
+# dir #627: `mktemp -d` can fail silently under this file's `set -uo pipefail` (no `-e`, see the file
+# banner) — a failed mktemp leaves SANDBOX empty, and deriving HOME from it below would then produce
+# HOME=/home, pointing every fixture (git config --global, install.sh, secret-guard, …) at the real
+# machine's root-level /home instead of a throwaway dir. This is the ONE place the sandbox is
+# created, so checking it here — BEFORE HOME is derived from it — protects every caller, including
+# one whose own `. lib.sh` source line forgot its `|| exit` (the felt incident this ticket exists
+# for: a missing lib.sh ran fixtures against the real machine and deleted a live `~/.claude` harness
+# home).
+if [ -z "$SANDBOX" ] || [ "$SANDBOX" = / ] || [ ! -d "$SANDBOX" ]; then
+  printf 'FATAL: mktemp -d did not return a usable sandbox dir (got %s) — refusing to run outside an isolated HOME (dir #627).\n' "$SANDBOX" >&2
+  exit 1
+fi
 export HOME="$SANDBOX/home"
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 unset XDG_CONFIG_HOME 2>/dev/null || true
@@ -46,6 +58,34 @@ export KEEL_IMPACT_STORE="$SANDBOX/harness-impact-store"
 export KEEL_LEDGER_FILE="$SANDBOX/harness-installed-homes"
 
 trap 'rm -rf "$SANDBOX"' EXIT
+
+# dir #627, second fail-open: a test file calling an assertion this library does not define (e.g.
+# `check_eq` when only `check_ne` exists) loses that assertion SILENTLY — bash prints its own
+# "command not found" to stderr and, under this file's `set -uo pipefail` (no `-e`), the test file
+# keeps running with fewer checks than it meant to have. Felt live: four equality assertions vanished
+# from a new test file and the suite stayed green; the miscount (30 expected, 26 reported) was what
+# gave it away, not any failure. command_not_found_handle is a bash >= 4.0 feature — this project's
+# own dev machine ships /bin/bash 3.2.57, where an unknown command just prints bash's own message and
+# returns 127 without ever invoking this handler, so it is LINUX-ONLY protection here, closing the
+# hole on CI's bash 5 legs and any adopter running bash >= 4 locally. The portable backstop that also
+# covers bash 3.2 is tests/run.sh's own "command not found" scan of each test file's captured log
+# (dir #627) — but that only fires for a run THROUGH run.sh; a single test file run directly
+# (`./tests/test_x.sh`) on bash < 4 is the one case neither mechanism reaches (named residual, see
+# BACKLOG.md dir #627). A bare `exit` does NOT work here — verified live on this project's
+# alpine/bash-5 CI image (dir #627): bash dispatches command_not_found_handle in a SEPARATE forked
+# execution environment (its own $BASHPID, confirmed live), the exact same shape
+# require_sandbox_path() above documents for its own `$(...)`-subshell callers — an `exit` inside it
+# only ends that fork, and the calling script continues right past the undefined call as if it had
+# simply returned nonzero. `kill -TERM $$` reaches the top-level pid the same way it does there
+# (`$$` stays the top-level script's pid even inside the fork — verified live), so it actually stops
+# the whole test file; the trailing `exit 90` is the same belt-and-suspenders fallback
+# require_sandbox_path() uses, in case the signal is not yet delivered by the time this function
+# would otherwise return.
+command_not_found_handle() {
+  printf 'FATAL: %s: unknown command/assertion "%s" — lib.sh does not define it (dir #627: an unknown assertion must fail loudly, not vanish silently).\n' "$(basename "$0")" "$1" >&2
+  kill -TERM $$
+  exit 90
+}
 
 # --- assertions ---------------------------------------------------------------------------------
 _pass=0
@@ -174,9 +214,19 @@ fresh_home_env() { FRESH_HOME_ENV=("HOME=$1" "GIT_CONFIG_GLOBAL=$1/.gitconfig");
 # variable first, not piped straight into `grep -q`: under a `set -o pipefail` file, `-q`'s
 # first-match exit would SIGPIPE the still-writing `locale -a` and read as failure (the same hazard
 # `count_matches()` in secret-scan.sh documents for `git cat-file --batch`).
+# dir #627 (found live by an independent /code-review high pass on this ticket's own diff, reproduced
+# on the project's alpine CI image): the explicit `command -v locale` guard below is now load-bearing,
+# not decoration — CI's alpine leg ships no `locale` binary at all (`command -v locale` there is exit
+# 127), and this file's own new command_not_found_handle() now catches exactly that lookup failure and
+# kills the WHOLE test-file process with SIGTERM before this function ever gets to its documented
+# graceful "return 1" — defeating the two real callers' `utf8_locale="$(pick_utf8_locale)" ||
+# utf8_locale=""` fallback and turning a legitimately-passing file red. A `2>/dev/null` on the call
+# does NOT protect against this: command_not_found_handle fires on the shell's COMMAND LOOKUP itself,
+# before anything resembling `locale`'s own stderr exists to redirect.
 # Usage:  utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
 pick_utf8_locale() {
   local avail cand
+  command -v locale >/dev/null 2>&1 || return 1
   avail="$(locale -a 2>/dev/null)"
   # Both namings per non-C locale too (dir #250 code review): glibc's `locale -a` spells these
   # lowercase/no-hyphen (`en_US.utf8`) on Debian/Ubuntu, not just the hyphenated form macOS/BSD use.

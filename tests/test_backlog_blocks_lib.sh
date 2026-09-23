@@ -5,7 +5,7 @@
 # to be tested directly, not only exercised indirectly through its consumers). Pins both
 # functions the lib exports: backlog_ticket_blocks() and backlog_root_for().
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/backlog-blocks.sh"
 check_file "tools/lib/backlog-blocks.sh exists" "$lib"

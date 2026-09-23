@@ -5,7 +5,7 @@
 # growth trigger — must fire on a constructed fixture and must NOT fire on today's real
 # BACKLOG.md baseline (dir #360's own done-criterion).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 pr="$REPO_ROOT/tools/self/pool-report.sh"
 

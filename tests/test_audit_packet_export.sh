@@ -7,7 +7,7 @@
 # BLOCKED message must carry ONLY the offending path, never the matched content (a from-the-end strip
 # tried first leaked a content fragment; see export.sh's own comment on `${rec%%:*}`).
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/audit-packet/export.sh"
 check_file "export.sh exists" "$TOOL"

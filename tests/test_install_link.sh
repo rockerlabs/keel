@@ -4,7 +4,7 @@
 # dangling links on a re-run, and the doctor closes the composition gap (`git pull` refreshes
 # content, never composition). bootstrap.sh must refuse --link (its temp clone is reaped on exit).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 install="$REPO_ROOT/install.sh"
 doctor="$REPO_ROOT/tools/doctor.sh"

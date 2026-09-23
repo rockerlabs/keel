@@ -7,7 +7,7 @@
 # DELEGATION RUN), the SessionStart pickup/banner, and the tier-2 aggregate's pinned FORMAT (fed a
 # synthetic log, per the ticket's own binding-test requirement).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 rt="$REPO_ROOT/tools/read-trace.sh"
 lib="$REPO_ROOT/tools/lib/read-trace.sh"
