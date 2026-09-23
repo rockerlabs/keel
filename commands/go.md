@@ -5,8 +5,9 @@ argument-hint: <task-id or one sentence>
 Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
 resolve. Load only the task's own context — no full onboarding. A defect outside the ticket: record it
 in the PR body or a new ticket; do not fix it. A project without git: `<root>` is the project
-directory; a `⏳` marker not yours → stop; `inflight-check`, `worktree` and the PR in `close` do not run;
-the claim is still written; closing runs step 9's `conform` walk, reported by hand. `[tag]` → Notes.
+directory; `inflight-check`, `worktree` and the PR in `close` do not run — except a `⏳` marker not yours
+still stops you first; the claim is still written; closing runs step 9's `conform` walk, reported by
+hand. `[tag]` → Notes.
 
 **1. resolve.** Backlog source the way `/backlog` resolves it: `<root>/BACKLOG.md`, else the inline
 open-work section of `<root>/CLAUDE.md`, where `<root>` is the MAIN checkout — the first entry of
@@ -45,7 +46,7 @@ ticket: scan `git branch -a` for a live branch, not your own — `go` + the id f
 id exact — then a keyword grep of branch names against the title; a match → same stop. A `⏳` heading
 whose branch is gone → if its PR merged, stop: done, the heading is stale.
 
-**5. worktree.** Before any code, run `git branch --show-current`:
+**5. worktree.** Before any code, run `git branch --show-current` (first match wins):
 - Default branch, a spent branch (PR merged), or a DIFFERENT ticket's branch → cut a fresh feature
   branch from the fresh default.
 - A worktree's own branch for THIS ticket qualifies unless spent → keep it; create none.

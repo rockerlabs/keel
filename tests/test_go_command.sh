@@ -348,7 +348,7 @@ assert_case_turns_red "(g) needle mutation: F5 conform red-path action removed" 
 # non-git sentence survives.
 f10_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$f10_copy" "marker not yours" \
-  "; a \`⏳\` marker not yours → stop" ""
+  " — except a \`⏳\` marker not yours" ""
 assert_case_turns_red "(g) needle mutation: F10 non-git heading-stop rule removed" \
   "(g) needle [dir #641 F10: non-git heading stop]: 'marker not yours' present" "KEEL_GO_MD=$f10_copy"
 
