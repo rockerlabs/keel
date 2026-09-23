@@ -62,7 +62,7 @@ if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
   if [ -f "$guard_repo_root/tools/lib/ref-guard.sh" ] && source "$guard_repo_root/tools/lib/ref-guard.sh"; then
     guard_ref_scope_available=1
     guard_before_owned="$(guard_owned_branches "$guard_repo_root")"
-    guard_before_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
+    guard_before_refs="$(guard_refs_snapshot "$guard_repo_root")"
     # Bounded reflog-HEAD compare: unlike refs/heads, HEAD's reflog is PRIVATE per worktree (logs/HEAD
     # lives under .git/worktrees/<name>, never the common dir), so there is no sibling-session noise
     # to filter here. Count entries, not content — a developer legitimately committing mid-run also
@@ -231,12 +231,12 @@ if [ -n "$guard_before_head" ]; then
   guard_before_refs_unowned="" guard_after_refs_unowned="" guard_after_reflog=""
   if [ "$guard_ref_scope_available" = 1 ]; then
     guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
-    guard_after_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
+    guard_after_refs="$(guard_refs_snapshot "$guard_repo_root")"
     guard_after_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
 
     # Union of both snapshots' owned branches: one that stopped (or started) being owned mid-run is
     # still explained by that peer's own worktree lifecycle, not by this suite's fixtures.
-    guard_owned_union="$(printf '%s\n%s\n' "$guard_before_owned" "$guard_after_owned" | LC_ALL=C sort -u)"
+    guard_owned_union="$(guard_union "$guard_before_owned" "$guard_after_owned")"
     guard_before_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_before_refs")"
     guard_after_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_after_refs")"
   fi

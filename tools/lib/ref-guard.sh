@@ -27,13 +27,27 @@ guard_owned_branches() {
   git -C "$1" worktree list --porcelain 2>/dev/null | sed -n 's#^branch refs/heads/##p' | LC_ALL=C sort -u
 }
 
+# guard_refs_snapshot REPO_ROOT
+# A "name sha" snapshot of every refs/heads ref in the repo at REPO_ROOT, one per line. No explicit
+# sort: `for-each-ref`'s default key is `refname`, compared byte-wise — already the same order
+# `LC_ALL=C sort` would produce (verified empirically), so pinning it again would just pay for a
+# second fork on every call for no behavior change.
+guard_refs_snapshot() {
+  git -C "$1" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null
+}
+
+# guard_union LIST_A LIST_B
+# The sorted, deduplicated union of two newline-lists (e.g. two guard_owned_branches snapshots).
+guard_union() {
+  printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort -u
+}
+
 # guard_filter_unowned OWNED_LIST REFS_SNAPSHOT
 # Excludes OWNED_LIST (one branch name per line, e.g. guard_owned_branches's output) from
-# REFS_SNAPSHOT (a "name sha" refs/heads snapshot, e.g.
-# `git for-each-ref refs/heads --format='%(refname:short) %(objectname)'`), matching by first field.
-# `printf '%s\n' "$1"` always emits at least one line (even for an empty string), so the NR==FNR arm
-# always sees OWNED_LIST first regardless of whether it is logically empty — no empty-first-file join
-# gotcha here.
+# REFS_SNAPSHOT (a "name sha" refs/heads snapshot, e.g. guard_refs_snapshot's output), matching by
+# first field. `printf '%s\n' "$1"` always emits at least one line (even for an empty string), so the
+# NR==FNR arm always sees OWNED_LIST first regardless of whether it is logically empty — no
+# empty-first-file join gotcha here.
 guard_filter_unowned() {
   awk 'FNR==NR{owned[$1]=1; next} !($1 in owned)' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
 }

@@ -19,9 +19,6 @@ check_file "tools/lib/ref-guard.sh exists" "$lib"
 # shellcheck source=/dev/null
 . "$lib"
 
-refs_of() { git -C "$1" for-each-ref refs/heads --format='%(refname:short) %(objectname)' | LC_ALL=C sort; }
-owned_union_of() { printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort -u; }
-
 # --- guard_filter_unowned: pure string-matching edge cases, no git involved -------------------------
 
 out="$(guard_filter_unowned "main" "$(printf 'main abc123\nside def456\n')")"
@@ -42,10 +39,10 @@ git -C "$repo" commit -q --allow-empty -m init
 
 # GREEN: an untouched repo between two snapshots — nothing to report.
 owned_before="$(guard_owned_branches "$repo")"
-refs_before="$(refs_of "$repo")"
+refs_before="$(guard_refs_snapshot "$repo")"
 owned_after="$(guard_owned_branches "$repo")"
-refs_after="$(refs_of "$repo")"
-owned_union="$(owned_union_of "$owned_before" "$owned_after")"
+refs_after="$(guard_refs_snapshot "$repo")"
+owned_union="$(guard_union "$owned_before" "$owned_after")"
 before_unowned="$(guard_filter_unowned "$owned_union" "$refs_before")"
 after_unowned="$(guard_filter_unowned "$owned_union" "$refs_after")"
 if [ "$before_unowned" = "$after_unowned" ]; then pass "GREEN: untouched repo — unowned-ref snapshots match"
@@ -54,13 +51,13 @@ else fail "GREEN: untouched repo — unowned-ref snapshots match" "before=[$befo
 # RED: a fixture creates AND deletes a ref, plus leaves one stray behind — the exact shape dir #320's
 # incident took (branches left in the real repo that nobody's worktree explains).
 owned_before="$(guard_owned_branches "$repo")"
-refs_before="$(refs_of "$repo")"
+refs_before="$(guard_refs_snapshot "$repo")"
 git -C "$repo" branch leaked-fixture-branch
 git -C "$repo" branch -D leaked-fixture-branch >/dev/null
 git -C "$repo" branch stray-leftover-branch
 owned_after="$(guard_owned_branches "$repo")"
-refs_after="$(refs_of "$repo")"
-owned_union="$(owned_union_of "$owned_before" "$owned_after")"
+refs_after="$(guard_refs_snapshot "$repo")"
+owned_union="$(guard_union "$owned_before" "$owned_after")"
 before_unowned="$(guard_filter_unowned "$owned_union" "$refs_before")"
 after_unowned="$(guard_filter_unowned "$owned_union" "$refs_after")"
 check_ne "RED: a leaked-and-deleted ref plus a stray leftover trips the unowned-ref compare" \
@@ -76,11 +73,11 @@ wt="$SANDBOX/ref-guard-peer-wt"
 run git -C "$repo" worktree add -q -b peer-branch "$wt"
 check_status "worktree add for the peer-ownership case succeeds" 0 "$STATUS"
 owned_before="$(guard_owned_branches "$repo")"
-refs_before="$(refs_of "$repo")"
+refs_before="$(guard_refs_snapshot "$repo")"
 git -C "$wt" commit -q --allow-empty -m "peer commit"
 owned_after="$(guard_owned_branches "$repo")"
-refs_after="$(refs_of "$repo")"
-owned_union="$(owned_union_of "$owned_before" "$owned_after")"
+refs_after="$(guard_refs_snapshot "$repo")"
+owned_union="$(guard_union "$owned_before" "$owned_after")"
 before_unowned="$(guard_filter_unowned "$owned_union" "$refs_before")"
 after_unowned="$(guard_filter_unowned "$owned_union" "$refs_after")"
 if [ "$before_unowned" = "$after_unowned" ]; then
