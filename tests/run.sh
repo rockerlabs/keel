@@ -236,6 +236,19 @@ if [ -n "$guard_before_head" ]; then
     printf 'the real checkout this suite ran from changed during the run:\n'
     printf '  before: branch=%s head=%s\n' "$guard_before_branch" "$guard_before_head"
     printf '  after:  branch=%s head=%s\n' "$guard_after_branch" "$guard_after_head"
+    # dir #333 (release-manager amendment, W10's reproduction): the likeliest innocent cause is the
+    # worker's OWN commit landing while a background `./tests/run.sh` was still alive against this
+    # same checkout — the branch/HEAD compare above cannot tell that apart from a real leak, but it
+    # CAN tell whether after-HEAD is a plain fast-forward of before-HEAD on the same branch, which a
+    # fixture's stray mutation would not typically be. Name the likely cause without downgrading the
+    # trip — still a real "do not push until reconciled" until a human confirms which it was.
+    if [ "$guard_after_branch" = "$guard_before_branch" ] && [ "$guard_after_head" != "$guard_before_head" ] \
+        && git -C "$guard_repo_root" merge-base --is-ancestor "$guard_before_head" "$guard_after_head" 2>/dev/null; then
+      printf '  HEAD moved FORWARD on the same branch — this may be your own commit landing while a\n'
+      printf '  background suite run was still alive (see CLAUDE.md: never commit against the watched\n'
+      printf '  checkout while its own ./tests/run.sh is running) rather than a leak. Reconcile by hand\n'
+      printf '  either way — a moved HEAD is not automatically safe just because it fast-forwards.\n'
+    fi
     if [ "$guard_after_status" != "$guard_before_status" ]; then
       printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
     fi
