@@ -238,22 +238,32 @@ Split what the run produces in two, deliberately:
 ## Worker rails — verbatim, do not paraphrase
 
 The block below is reproduced **verbatim** in every worker and verifier prompt this pattern generates.
-Copy it in exactly; do not summarize or reword it into "the spirit of" these rules — each line is a
-direct countermeasure to something that went wrong without it during the field test, most of it recorded
-in [`docs/drydock.md`](drydock.md)'s own felt incidents:
+Copy it in exactly; do not summarize or reword it into "the spirit of" these rules — each line answers
+something that went wrong without it during the field test, most of it recorded in
+[`docs/drydock.md`](drydock.md)'s own felt incidents. Copying it exactly is what let those incidents be
+recognized and self-reported at all — see below for what the block does, and does not, buy:
 
 ```
-- You are read-only: no commits, no branch changes, no edits to any repo file. Your only writes are
-  your own contract file(s).
+- You are read-only: no writes to the real repository's `.git/` or working tree, by any mechanism —
+  not only edits to tracked files, but any plumbing that touches `.git/` without editing one (`git
+  worktree add` against the real checkout registers state there even though it deletes nothing; dir
+  #485). Your writes are limited to your own contract file(s) and any scratch clone that's your own —
+  that clone's `.git/` is not the real repository's.
 - A dirty or uncommitted working tree in the repo you're checking is normal — it's the parent
   session's own work in progress, not corruption. Never run `git checkout`/`reset`/`clean`/`stash` (or
-  anything else) to "restore" it, no matter how closely it resembles a known contamination pattern. (A
-  review subagent that lacked this line mistook a parent's mid-edit files for a known test-fixture-leak
-  symptom and destroyed real work with `git checkout --`; dir #375.)
+  anything else) to "restore" it, no matter how closely it resembles a known contamination pattern —
+  these are illustrations of the property above, not its full extent. (A review subagent that lacked
+  this line mistook a parent's mid-edit files for a known test-fixture-leak symptom and destroyed real
+  work with `git checkout --`; dir #375.)
 - Do not spawn subagents of your own.
 - Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
-  checkout, never the real $HOME. (A past verifier session "empirically reproducing" a finding
-  overwrote real machine-global git hooks and broke `git push` machine-wide until they were restored.)
+  checkout, never the real $HOME. Redirect every variable that resolves a machine-global file, not only
+  the home: set HOME and GIT_CONFIG_GLOBAL (and unset XDG_CONFIG_HOME) inside the one script or command
+  that runs the check — an exported variable may not reach your next command — and after a denial
+  re-run that same unit, never a shortened retype. (A past verifier session "empirically reproducing" a
+  finding overwrote real machine-global git hooks and broke `git push` machine-wide until they were
+  restored; a worker's denied command, retyped shorter, lost its HOME= prefix and rewrote the real git
+  identity.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 ```
 
@@ -263,6 +273,24 @@ test saw exactly this fire on every one of one run's mutator sessions. `/wrap` n
 harness convention; ship the line as-is regardless of what (if anything) your own harness calls its
 equivalent — reproducing it exactly is what makes it a reliable countermeasure. It belongs in mutator
 prompts too, not only worker and verifier ones — see the templates below.
+
+**This block is a norm, not a control.** [`FRAMEWORK.md`](../FRAMEWORK.md) already states the general
+rule this block is an instance of: "the guard, not its prose, is the enforcement. Deterministic gates
+enforce; loaded prose only nudges." What this block has measurably bought, across the felt incidents
+above, is **disclosure** — a worker that violated it self-reported rather than hiding the residue, which
+is the only reason those incidents are on record at all. It has not bought **prevention**: the incidents
+happened regardless of the block's presence. Whether keel can additionally ship an enforcement mechanism
+for the sandbox requirement (a hook, a deny rule, a fingerprint check) is a separate, harness-dependent
+matter — it does not have to be settled for the norm/control distinction above to be stated plainly.
+
+**Keel's reach stops at the prompts keel writes.** This block, and the rest of this pattern's rails, are
+injected only where keel controls the prompt text: the worker/verifier prompts this pattern generates,
+`/polish`'s own fallback review subagent, and the managed-release brief templates. A review fan-out a
+vendor tool composes on its own — a built-in skill spawning its own finder agents, for instance — never
+receives this text, because keel never writes that prompt (dir #617: a vendor-composed finder agent
+reproducing a defect live mutated a machine-global installer target this block would have named, had it
+reached that prompt). Protecting a surface keel cannot inject into is necessarily a property of the
+*tool* being reviewed, not something a prompt rail can reach.
 
 ## Disclosures — one canonical text, not mirrors
 
