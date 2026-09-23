@@ -38,10 +38,34 @@ fi
 # present, and only a change in that snapshot (not its mere non-emptiness) means something moved.
 guard_repo_root="$(cd "$here/.." && pwd)"
 guard_before_branch="" guard_before_head="" guard_before_status=""
+guard_before_owned="" guard_before_refs="" guard_before_reflog=""
+
 if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
+  # dir #333: the compare above cannot see the two channels dir #320's own leak was actually found
+  # through — a stray BRANCH left in the real repo, or a REFLOG entry appended without moving HEAD.
+  # tools/lib/ref-guard.sh has the full rationale and the ownership-scoping helpers this needs (a
+  # naive whole-namespace refs/heads compare trips on every sibling worktree's own branch churn).
+  # Sourced HERE, inside the real-repo branch, not unconditionally at top level: test_run_sh.sh
+  # exercises this script's OWN aggregation logic against synthetic, non-git fixture dirs, and those
+  # must keep working without a tools/ tree of their own — this guard is simply inert for them, same
+  # as the branch/HEAD/status compare already was before this ticket.
+  if ! source "$guard_repo_root/tools/lib/ref-guard.sh"; then
+    printf 'FATAL: %s/tools/lib/ref-guard.sh is missing or failed to source — refusing to run the\n' "$guard_repo_root" >&2
+    printf '       suite: the corruption canary (dir #318, dir #333) needs its ref-scoping helpers.\n' >&2
+    exit 1
+  fi
   guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+  guard_before_owned="$(guard_owned_branches "$guard_repo_root")"
+  guard_before_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
+  # Bounded reflog-HEAD compare: unlike refs/heads, HEAD's reflog is PRIVATE per worktree (logs/HEAD
+  # lives under .git/worktrees/<name>, never the common dir), so there is no sibling-session noise to
+  # filter here. Count entries, not content — a developer legitimately committing mid-run also grows
+  # this count, but that already trips the HEAD compare above, so growth here alongside an UNCHANGED
+  # HEAD is the specific gap this ticket exists to close (a checkout-and-return, or a
+  # create-then-delete, that appends to the reflog but leaves `rev-parse HEAD` as if nothing happened).
+  guard_before_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
 fi
 
 # KEEL_TEST_JOBS overrides the concurrency cap (e.g. `KEEL_TEST_JOBS=1 ./tests/run.sh` to force the
@@ -194,14 +218,35 @@ if [ -n "$guard_before_head" ]; then
   guard_after_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_after_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_after_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+  guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
+  guard_after_refs="$(git -C "$guard_repo_root" for-each-ref refs/heads --format='%(refname:short) %(objectname)' 2>/dev/null | LC_ALL=C sort)"
+  guard_after_reflog="$(git -C "$guard_repo_root" reflog show HEAD 2>/dev/null | wc -l | tr -d ' ')"
+
+  # Union of both snapshots' owned branches: one that stopped (or started) being owned mid-run is
+  # still explained by that peer's own worktree lifecycle, not by this suite's fixtures.
+  guard_owned_union="$(printf '%s\n%s\n' "$guard_before_owned" "$guard_after_owned" | LC_ALL=C sort -u)"
+  guard_before_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_before_refs")"
+  guard_after_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_after_refs")"
+
   if [ "$guard_after_branch" != "$guard_before_branch" ] || [ "$guard_after_head" != "$guard_before_head" ] \
-      || [ "$guard_after_status" != "$guard_before_status" ]; then
+      || [ "$guard_after_status" != "$guard_before_status" ] \
+      || [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ] \
+      || [ "$guard_after_reflog" != "$guard_before_reflog" ]; then
     printf '\n!!! TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318) !!!\n'
     printf 'the real checkout this suite ran from changed during the run:\n'
     printf '  before: branch=%s head=%s\n' "$guard_before_branch" "$guard_before_head"
     printf '  after:  branch=%s head=%s\n' "$guard_after_branch" "$guard_after_head"
     if [ "$guard_after_status" != "$guard_before_status" ]; then
       printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
+    fi
+    if [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ]; then
+      printf '  an unowned branch (in refs/heads, checked out by no worktree) appeared, moved, or\n'
+      printf '  disappeared during the run (dir #333):\n%s\n' \
+        "$(diff <(printf '%s\n' "$guard_before_refs_unowned") <(printf '%s\n' "$guard_after_refs_unowned"))"
+    fi
+    if [ "$guard_after_reflog" != "$guard_before_reflog" ]; then
+      printf '  HEAD reflog entry count changed during the run (%s -> %s) (dir #333)\n' \
+        "$guard_before_reflog" "$guard_after_reflog"
     fi
     printf 'a fixture helper mutated the real repo instead of its own sandbox — do not push this\n'
     printf 'branch until the real history is reconciled by hand.\n'
