@@ -46,6 +46,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`install-secret-guard.sh`'s `<repo>` branch could vendor OUTSIDE the given repo**
+  (dir #617, half (a)): with no LOCAL `core.hooksPath` override, it resolved the hooks dir via
+  `git rev-parse --git-path hooks`, which honors a GLOBAL or SYSTEM `core.hooksPath` too — on a
+  machine that had already run `install-secret-guard.sh --global` (or set any unrelated global
+  override), every plain per-repo vendor call silently redirected into that machine-wide dir instead
+  of the repo (0.11.0 RC's F1 and W12 both hit this class live, once flipping a mode bit on the real
+  machine-global guard). Now resolves via `git rev-parse --git-common-dir` instead, which names the
+  repo's own git directory — worktree- and submodule-safe like the old call — without ever
+  consulting `core.hooksPath` at any scope, and refuses loudly (exit 2) rather than resolving to the
+  filesystem root on the one edge case where that call could exit 0 with empty output. Coverage now
+  includes the SYSTEM scope, not just GLOBAL.
 - **The test harness failed OPEN, not closed, when its own sandbox setup was missing or broken**
   (dir #627): every `tests/test_*.sh` sourced `tests/lib.sh` with a bare `.` and no `|| exit`, so a
   missing `lib.sh` (a gitignored symlink in the claude-kb adopter, absent from a fresh `git worktree

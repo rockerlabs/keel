@@ -1136,4 +1136,89 @@ range_repo "$(key 'ghp_' 'A')" 1
 run_in "$repo" "$scan" --range "$oldtip..$tip"
 check_status "dir #518: NO LOCAL_PUSH flag (ci-scan.sh's own shape) → fix not applied, BLOCKED (safe)" 1 "$STATUS"
 
+# =================================================================================================
+# --- dir #617(a): a repo argument to install-secret-guard.sh must never cause a write outside that
+# repo's own git dir — the mechanism behind two felt incidents (0.11.0 RC's F1: a review subagent's
+# own install_into reproduction flipped a mode bit on the real live ~/.keel/kb/githooks-global;
+# 0.11.0 W12: an ad-hoc verification script hit the same class). `git rev-parse --git-path hooks`
+# (the pre-fix resolution for a repo with no LOCAL hooksPath override) honors core.hooksPath from ANY
+# scope, including GLOBAL or SYSTEM — so on a machine that already ran `install-secret-guard.sh
+# --global` (or has any unrelated global/system hooksPath set), every plain `install-secret-guard.sh
+# <repo>` call for a repo with no local override silently redirected into that machine-wide dir
+# instead of the repo. This is a NEGATIVE claim ("cannot write outside") — proven the way memory
+# reference_deny_assertion_does_not_bind_in_fail_closed_system insists on: snapshot the fake hooks
+# dir's CONTENT before and after each vendor call, not just its exit status — an exit-0-only check
+# would have passed on the pre-fix code too, whose own (misdirected) vendor call also exits 0. Two
+# independent axes, each covered on its own: TOPOLOGY (a plain repo, a worktree — hooks live in the
+# MAIN checkout's common dir, not the linked worktree's own gitdir — and a submodule — hooks live in
+# the SUPERPROJECT's .git/modules/<name>, outside the submodule's own working tree) via the loop
+# below, and CONFIG SCOPE (GLOBAL vs SYSTEM) via the separate SYSTEM-scope case further down — the two
+# are independent, so one topology is enough to prove the scope axis. Isolated via fresh_home_env, not
+# a bare `git config --global` on the file-wide shared sandbox config — this fixture's whole point is
+# a machine-wide hooksPath override, and mutating the SHARED config directly would leak that override
+# to every later test in the file if anything went wrong before an eventual unset (the dir #85
+# --global-force block above already established this exact idiom for the same core.hooksPath key).
+gh617_home="$SANDBOX/gh617-home"; mkdir -p "$gh617_home"
+fresh_home_env "$gh617_home"; gh617_env=("${FRESH_HOME_ENV[@]}")
+in_gh617_home() { env "${gh617_env[@]}" "$@"; }
+
+grepo="$(new_repo)"
+
+gwtbase="$(new_repo)"; git -C "$gwtbase" commit -qm seed --allow-empty
+gwt="$SANDBOX/gwt-617"
+git -C "$gwtbase" worktree add -q -b wt-617 "$gwt"
+
+gsuper="$(new_repo)"; git -C "$gsuper" commit -qm seed --allow-empty
+gsubsrc="$(new_repo)"; git -C "$gsubsrc" commit -qm seed --allow-empty
+run git -c protocol.file.allow=always -C "$gsuper" submodule add -q "$gsubsrc" sub
+check_status "dir #617(a) setup: submodule add succeeds" 0 "$STATUS"
+
+# One record per shape (label|target|expected), not three parallel arrays matched only by numeric
+# position — a future edit to one array without the other two would silently mispair label/target/
+# expected instead of erroring (code review finding). WORKTREE gets its OWN base repo ($gwtbase, not
+# $grepo) so its expected path is never one an earlier shape's own check already populated — sharing
+# $grepo's path made that assertion vacuous: it would still pass even if worktree resolution broke
+# entirely elsewhere (code review finding, confirmed by mutation test). Each shape also gets its OWN
+# fresh fake-global directory, created right before its own vendor call — sharing one directory across
+# iterations let a same-name/same-size overwrite within the same wall-clock minute go invisible to an
+# `ls -la` text diff, silently losing the "untouched" check's power for two of the three shapes (code
+# review finding, confirmed by mutation-testing against the pre-fix installer).
+shapes=(
+  "repo|$grepo|$grepo/.git/hooks/secret-scan.sh"
+  "WORKTREE|$gwt|$gwtbase/.git/hooks/secret-scan.sh"
+  "SUBMODULE|$gsuper/sub|$gsuper/.git/modules/sub/hooks/secret-scan.sh"
+)
+for shape in "${shapes[@]}"; do
+  IFS='|' read -r label target expected <<< "$shape"
+  fake_global="$SANDBOX/fake-global-hooks-617-$label"
+  mkdir -p "$fake_global"
+  in_gh617_home git config --global core.hooksPath "$fake_global"
+  before_global="$(ls -la "$fake_global")"
+  run in_gh617_home "$isg" "$target"
+  check_status "dir #617(a): vendor into a $label, global hooksPath set elsewhere → still succeeds" 0 "$STATUS"
+  check_block_equal "dir #617(a): $label vendor leaves the global hooks dir untouched" "$before_global" "$(ls -la "$fake_global")"
+  check_file "dir #617(a): the $label's hooks dir got the vendored copy" "$expected"
+done
+
+# SYSTEM scope is a genuinely distinct leak vector from GLOBAL, not just the same case retested — old
+# `git rev-parse --git-path hooks` honors it too, but `fresh_home_env` only isolates HOME/
+# GIT_CONFIG_GLOBAL, so the loop above never exercises it (code review finding: this file's own
+# comment above, CHANGELOG.md, and install-secret-guard.sh's own comment all claim "GLOBAL or SYSTEM"
+# coverage, but SYSTEM was asserted, never tested). A dedicated GIT_CONFIG_SYSTEM override, on its own
+# isolated home with no global hooksPath set at all, isolates the axis cleanly; one topology (plain
+# repo) is enough since topology is already covered above and the two axes are independent.
+gh617_sys_home="$SANDBOX/gh617-sys-home"; mkdir -p "$gh617_sys_home"
+fresh_home_env "$gh617_sys_home"
+gh617_sys_env=("${FRESH_HOME_ENV[@]}" "GIT_CONFIG_SYSTEM=$gh617_sys_home/gitconfig-system")
+in_gh617_sys_home() { env "${gh617_sys_env[@]}" "$@"; }
+fake_system="$SANDBOX/fake-system-hooks-617"; mkdir -p "$fake_system"
+in_gh617_sys_home git config --system core.hooksPath "$fake_system"
+
+gsysrepo="$(new_repo)"
+before_system="$(ls -la "$fake_system")"
+run in_gh617_sys_home "$isg" "$gsysrepo"
+check_status "dir #617(a): vendor into a repo, SYSTEM hooksPath set elsewhere → still succeeds" 0 "$STATUS"
+check_block_equal "dir #617(a): SYSTEM-scope vendor leaves the system hooks dir untouched" "$before_system" "$(ls -la "$fake_system")"
+check_file "dir #617(a): the repo's own hooks dir got the vendored copy (SYSTEM-scope case)" "$gsysrepo/.git/hooks/secret-scan.sh"
+
 summary
