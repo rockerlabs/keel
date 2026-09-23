@@ -8,7 +8,7 @@
 # be observed from OUTSIDE the process under test — the guard's whole point is that the process dies)
 # rather than sourcing lib.sh in-process, where a triggered abort would kill this test file too.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 # A caller that reaches require_sandbox_path() through the SAME command-substitution shape every real
 # caller uses (`d="$(new_repo)")` — that's the shape a bare `exit` fails to escape.

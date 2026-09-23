@@ -6,7 +6,7 @@
 # one of the two files fails here. Also pin what makes CORE.md *consumable*: no template placeholders
 # may ever land in it (they'd ride into every linked consumer's session).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 core="$REPO_ROOT/CORE.md"
 wrapper="$REPO_ROOT/templates/CLAUDE.md"

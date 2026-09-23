@@ -3,17 +3,30 @@
 # fake tests/ directory (a copy of run.sh plus synthetic test_*.sh fixtures) rather than the real
 # suite, so a fixture's deliberate failure never pollutes this suite's own pass/fail count.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 runner="$REPO_ROOT/tests/run.sh"
 check_file "run.sh exists" "$runner"
 
 # mkfakedir NAME — a throwaway tests/-shaped dir under $SANDBOX with its own copy of run.sh, so a
-# fixture test_*.sh file inside it is the only thing run.sh's glob picks up.
+# fixture test_*.sh file inside it is the only thing run.sh's glob picks up. Includes a stub lib.sh
+# (dir #627: run.sh now refuses to start when lib.sh is absent) so every fixture below — none of
+# which sources lib.sh itself, they're synthetic scripts probing run.sh's OWN aggregation logic —
+# clears that pre-flight check unaffected; mkfakedir_no_lib below is the variant that omits it, for
+# testing the check itself.
 mkfakedir() {
   local d; d="$(mktemp -d "$SANDBOX/faketests.XXXXXX")"
   cp "$runner" "$d/run.sh"
   chmod +x "$d/run.sh"
+  : > "$d/lib.sh"
+  printf '%s' "$d"
+}
+
+# mkfakedir_no_lib — same as mkfakedir but WITHOUT the lib.sh stub, for dir #627's own pre-flight
+# check (run.sh must refuse to start, before any fixture runs, when lib.sh is missing).
+mkfakedir_no_lib() {
+  local d; d="$(mkfakedir)"
+  rm -f "$d/lib.sh"
   printf '%s' "$d"
 }
 
@@ -229,5 +242,43 @@ check_status "all-pass fixture -> exit 0 (logdir cleanup probe)" 0 "$STATUS"
 logdir_probe="$(tail -1 "$mktemp_log")"
 check_nodir "an all-pass run's logdir is actually removed, not just unreported" "$logdir_probe"
 rm -rf "$mktemp_shim_dir" "$mktemp_log"
+
+# --- dir #627, fix 2: run.sh refuses to start when lib.sh is missing, BEFORE any fixture runs -----
+# (the felt incident: a missing tests/lib.sh — a gitignored symlink in the claude-kb adopter, absent
+# from a fresh `git worktree add` — let fixtures run unsandboxed against the real machine).
+d="$(mkfakedir_no_lib)"
+printf '#!/usr/bin/env bash\necho should-not-run\nexit 0\n' > "$d/test_a.sh"
+run bash "$d/run.sh"
+check_status "missing lib.sh -> exit 1, before any fixture" 1 "$STATUS"
+check_contains "missing lib.sh -> names the file and cites the ticket" "$OUT" "dir #627"
+check_contains "missing lib.sh -> names the remedy" "$OUT" "lib.sh is missing"
+check_absent "missing lib.sh -> no fixture actually ran" "$OUT" "should-not-run"
+check_absent "missing lib.sh -> run.sh never even printed the fixture's own header" "$OUT" "=== test_a.sh ==="
+
+# --- dir #627, second fail-open backstop: a fixture that exits 0 but logged "command not found" (the
+# shape of an undefined check_* silently vanishing, bash's own message when lib.sh's
+# command_not_found_handle doesn't exist yet — bash < 4 — or wasn't reached) is escalated to a
+# failure, not counted as a pass. Portable: this scan doesn't depend on the ambient bash version, only
+# on grepping the log line bash itself already prints. ------------------------------------------------
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\necho fine-a\nexit 0\n' > "$d/test_a.sh"
+printf '#!/usr/bin/env bash\necho fine-before\ncheck_totally_undefined_thing_dir627 2>&1\necho fine-after\nexit 0\n' > "$d/test_b.sh"
+run env KEEL_TEST_JOBS=2 bash "$d/run.sh"
+check_status "command-not-found in an exit-0 fixture -> escalated to a suite failure" 1 "$STATUS"
+check_contains "escalation names the fixture and cites the ticket" "$OUT" "dir #627"
+check_contains "the fixture's own output still survives (not just the escalation line)" "$OUT" "fine-before"
+check_contains "a genuinely clean sibling fixture still passes" "$OUT" "fine-a"
+check_contains "the failure count reflects the escalation" "$OUT" "1 TEST FILE(S) FAILED"
+
+# --- dir #627, the SAME backstop must NOT false-fire on a fixture whose own legitimate PASS-labeled
+# output happens to mention the phrase "command not found" in some OTHER shape than bash's own exact
+# message suffix (found by an independent /code-review high pass on this ticket's own diff: an
+# earlier version matched the bare substring anywhere in the log, which a check label like this one
+# would have wrongly escalated). --------------------------------------------------------------------
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\necho "ok handles a missing binary and prints command not found gracefully"\nexit 0\n' > "$d/test_a.sh"
+run bash "$d/run.sh"
+check_status "a PASS string merely mentioning the phrase does NOT false-fire the backstop" 0 "$STATUS"
+check_contains "the fixture's own output still prints" "$OUT" "ALL TEST FILES PASSED"
 
 summary

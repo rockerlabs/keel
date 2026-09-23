@@ -5,7 +5,7 @@
 # the threshold is tunable; two different checks keep independent counters; the check's own exit code
 # passes through; and a STOP appends exactly one zero-token friction event when KEEL_IMPACT_LOG is set.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/keel-check.sh"
 check_file "keel-check.sh exists" "$TOOL"

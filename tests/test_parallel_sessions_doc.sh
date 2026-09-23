@@ -4,7 +4,7 @@
 # from tests/lib.sh, both legs of a naming coupling pinned so a rename on either side fails loudly
 # instead of drifting silently).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/parallel-sessions.md"
 core="$REPO_ROOT/CORE.md"

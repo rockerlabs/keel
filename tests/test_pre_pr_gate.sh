@@ -13,7 +13,7 @@
 # (`command -v jq || exit 0`) — it can't tell `gh pr create` from any other Bash call, so it allows rather
 # than block everything; it's a workflow reminder, not the secret boundary (that's secret-guard, no jq).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
 check_file "pre-pr-gate.sh exists" "$gate"

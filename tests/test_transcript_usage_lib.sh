@@ -6,7 +6,7 @@
 # own rule); the shapes are copied by hand from what was verified live against real files during
 # implementation (see the lib's own header comment for the empirical basis).
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/transcript-usage.sh"
 check_file "tools/lib/transcript-usage.sh exists" "$lib"

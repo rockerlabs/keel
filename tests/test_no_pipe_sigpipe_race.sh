@@ -12,7 +12,7 @@
 # either file set pipefail, and dir #280 fixed those anyway rather than leaving them as a live
 # exception here.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 # The unsafe shape itself: a producer piped straight into a consumer that can exit before
 # consuming everything — `grep` with any flag cluster or long option that includes -q/--quiet or

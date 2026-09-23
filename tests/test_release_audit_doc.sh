@@ -5,7 +5,7 @@
 # loop (pin BOTH legs of a naming coupling) — a rename on either side of any of these couplings would
 # otherwise strand the citation silently, exactly the class of drift dir #85's docs layer audited for.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 audit="$REPO_ROOT/docs/release-audit.md"
 backlog_cmd="$REPO_ROOT/commands/backlog.md"

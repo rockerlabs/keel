@@ -58,7 +58,7 @@
 # $REPO_ROOT (tour.sh only `git init`s its own disposable sandbox project), and it makes no
 # `chmod 000` content assertion.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 tour="$REPO_ROOT/examples/tour.sh"
 readme="$REPO_ROOT/examples/README.md"

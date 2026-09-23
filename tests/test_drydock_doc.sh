@@ -6,7 +6,7 @@
 # drydock.md itself defines. A doc that defines a defect class and then ships an instance of it is the
 # one prose defect this repo should never merge twice.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/drydock.md"
 audit="$REPO_ROOT/docs/release-audit.md"

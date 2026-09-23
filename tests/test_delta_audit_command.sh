@@ -6,7 +6,7 @@
 # and the skill carries anchors for the four checklist items most likely to be silently dropped in a
 # rewrite — A3 (budget flow), A4 (diversity leg), A6 (run record + harvest), A7 (operator tags).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 skill="$REPO_ROOT/commands/delta-audit.md"
 doc="$REPO_ROOT/docs/delta-audit.md"

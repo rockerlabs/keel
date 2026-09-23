@@ -3,7 +3,7 @@
 # then assert uninstall returns it to pre-install state: Keel-owned content gone and backed up, the
 # user's own files (INSTANCE.md, a command they authored) untouched, and the whole thing idempotent.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 # Defensive: install.sh / uninstall.sh may run git against this checkout; the alpine CI leg mounts the
 # repo under a different uid, so without this git aborts with "dubious ownership" (see CLAUDE.md).

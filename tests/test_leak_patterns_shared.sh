@@ -6,7 +6,7 @@
 # tools/lib/leak-patterns.sh instead. Pinned at the SOURCE level (grep the scripts for a
 # re-duplicated pattern), mirroring test_safe_emails_shared.sh's own approach.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/leak-patterns.sh"
 check_file "tools/lib/leak-patterns.sh exists" "$lib"

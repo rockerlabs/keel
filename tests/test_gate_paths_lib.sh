@@ -6,7 +6,7 @@
 # pins the function itself and, source-level, that all three consumers now derive from it instead of
 # retyping the literal — the exact duplication class that already caused PR #165 and PR #179.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/gate-paths.sh"
 check_file "tools/lib/gate-paths.sh exists" "$lib"

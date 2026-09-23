@@ -6,7 +6,7 @@
 # pattern body. Same idiom as test_drydock_doc.sh: fixed-string pins on both legs of a naming coupling,
 # so a rename on either side strands the citation silently instead of failing loudly here.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/delegation.md"
 drydock="$REPO_ROOT/docs/drydock.md"

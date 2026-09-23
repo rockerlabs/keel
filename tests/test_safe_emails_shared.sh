@@ -6,7 +6,7 @@
 # (grep the scripts for a re-duplicated pattern), not the output level — an output-level check would
 # only prove today's two callers happen to agree, not that a third copy can't reappear.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/safe-emails.sh"
 check_file "tools/lib/safe-emails.sh exists" "$lib"

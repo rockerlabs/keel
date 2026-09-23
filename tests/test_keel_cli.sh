@@ -7,7 +7,7 @@
 # chosen code), so a green run means "keel routed correctly", independent of what the real install.sh /
 # tools/*.sh happen to do today.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 # A fake checkout: a copy of the real `keel` beside stub scripts it dispatches to. Copied (not
 # symlinked) so keel's self-resolution lands on THIS dir as the checkout.

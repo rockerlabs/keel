@@ -4,7 +4,7 @@
 # fixed formula (never asserted), the confidence tier, header/row bookkeeping, the rolling trend, the honest
 # cumulative signals, input validation, and table-safety escaping.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/keel-impact.sh"
 LEDGER="$SANDBOX/ledger.md"

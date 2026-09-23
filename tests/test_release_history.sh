@@ -18,7 +18,7 @@
 # already, so nothing stopped them sharing one copy. doctor.sh keeps its own private copy (bare
 # version, `v` stripped) since it isn't a consumer of this file.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 # shellcheck source=tools/lib/fence-blank.sh
 . "$REPO_ROOT/tools/lib/fence-blank.sh"
 # shellcheck source=tools/lib/nonneg-int.sh

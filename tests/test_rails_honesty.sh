@@ -11,7 +11,7 @@
 # the real checkout), and mutation-tested against a synthetic sandbox the same way check 2's dead
 # internal references already are — coverage this file's own live-tree scan never had.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 checklist="$REPO_ROOT/docs/publishing-checklist.md"
 going="$REPO_ROOT/docs/going-public.md"

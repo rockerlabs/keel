@@ -5,7 +5,7 @@
 # regression in it) is caught here, not only via the two installers' own end-to-end fixtures
 # (tests/test_install_pre_pr_gate.sh, tests/test_install_read_trace.sh).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/sh-quote.sh"
 check_file "tools/lib/sh-quote.sh exists" "$lib"

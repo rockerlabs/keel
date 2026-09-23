@@ -9,7 +9,7 @@
 # test_fence_blank_lib.sh): the coverage ratchet (dir #142, tools/self/doctor.sh) requires a real
 # tests/*.sh reference outside a comment, not just a consumer that happens to source the file.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/stat-portable.sh"
 check_file "tools/lib/stat-portable.sh exists" "$lib"

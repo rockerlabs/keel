@@ -4,7 +4,7 @@
 # ambiguity signal (dir #266 subsumes dir #259's duplicate-heading check, so this pair stands in for
 # both) — introduce a genuinely ambiguous heading, confirm red; remove it, confirm green.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 # shellcheck source=tools/lib/transcript-usage.sh
 . "$REPO_ROOT/tools/lib/transcript-usage.sh"
 

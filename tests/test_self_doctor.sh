@@ -2,7 +2,7 @@
 # self/doctor.sh — its native checks (ship-skip sync, dead refs, tool wiring, CHANGELOG staleness)
 # against a synthetic sandbox repo, plus --help/bad-args and a smoke test on the real checkout.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 sd="$REPO_ROOT/tools/self/doctor.sh"
 

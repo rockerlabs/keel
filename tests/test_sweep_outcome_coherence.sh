@@ -10,7 +10,7 @@
 # ratchet); P6-3 extends the same coherence set to the swept files' self-descriptions after PRs #212
 # and #213 landed individually-correct fixes that contradicted each other within a day.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 core="$REPO_ROOT/CORE.md"
 wrap="$REPO_ROOT/commands/wrap.md"

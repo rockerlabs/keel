@@ -10,7 +10,7 @@
 # (tests/test_pre_pr_gate.sh's own `command -v jq` skip block) is defence-in-depth, not the normal
 # path.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 tool="$REPO_ROOT/tools/token-report.sh"
 check_file "tools/token-report.sh exists" "$tool"

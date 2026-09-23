@@ -19,7 +19,7 @@
 #      words "induced" or "original" without that marker is not silently counted (the false-positive
 #      case this design explicitly declined to guess at).
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/delta-audit/harvest.sh"
 check_file "harvest.sh exists" "$TOOL"

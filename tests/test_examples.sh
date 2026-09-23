@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # examples/tour.sh is part of the product — guard it so the demo can't rot as the tools evolve.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 tour="$REPO_ROOT/examples/tour.sh"
 

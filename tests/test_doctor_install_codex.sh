@@ -6,7 +6,7 @@
 # and a mode/home mismatch redirects to the RIGHT re-run instead of advising `install.sh` in a way that
 # would create a second mode in the same home.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 install="$REPO_ROOT/install.sh"
 doctor="$REPO_ROOT/tools/doctor.sh"

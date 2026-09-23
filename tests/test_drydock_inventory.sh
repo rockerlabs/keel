@@ -16,7 +16,7 @@
 #      the run still exiting 0 — a partial inventory being indistinguishable from a small tree is the
 #      exact failure the guard exists to prevent. `docs/dangling.md` is that fixture.
 set -uo pipefail
-. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 TOOL="$REPO_ROOT/tools/drydock/inventory.sh"
 check_file "inventory.sh exists" "$TOOL"

@@ -6,7 +6,7 @@
 # figure-bearing row, not a subset: a prior pass left FRAMEWORK.md understated, and a partial guard then
 # let CHANGELOG.md drift the same way — so the lock has to cover all of them or it doesn't close the hole.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/loading-and-cost.md"
 check_file "loading-and-cost.md exists" "$doc"

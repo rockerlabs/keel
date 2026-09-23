@@ -8,7 +8,7 @@
 # a contract line outright, all left that suite green — and this ticket's own spec says do it right
 # the first time here rather than shipping the same gap into a second doc.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/delta-audit.md"
 delegation="$REPO_ROOT/docs/delegation.md"

@@ -5,7 +5,7 @@
 # re-tag arrow are docs/grooming.md G3's own four extraction rules plus the re-grade shape this
 # tool's own header names as excluded by construction), `untagged`, and `--list TAG` file order.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 bc="$REPO_ROOT/tools/self/backlog-census.sh"
 

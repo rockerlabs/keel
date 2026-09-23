@@ -31,6 +31,24 @@ sections real content going forward — see that page for exactly when each one 
   foot, so a reader stopping at the header read the run as untagged.
 - **`IDEAS.md`** — the 0.12.0 groom's G4(b) re-review stamp on the one open entry.
 
+### Fixed
+
+- **The test harness failed OPEN, not closed, when its own sandbox setup was missing or broken**
+  (dir #627): every `tests/test_*.sh` sourced `tests/lib.sh` with a bare `.` and no `|| exit`, so a
+  missing `lib.sh` (a gitignored symlink in the claude-kb adopter, absent from a fresh `git worktree
+  add`) let a test's fixtures run against the REAL machine instead of stopping — on 2026-09-22 this
+  deleted a live `~/.claude` harness home. All 82 test files now fail closed on their own source
+  line, `lib.sh` itself refuses to be sourced if `mktemp -d` silently failed to create the sandbox,
+  and `tests/run.sh` refuses to start the whole suite when `lib.sh` is missing, before any fixture
+  runs. A second, independent fail-open in the same harness: a test file calling an assertion
+  `lib.sh` does not define (e.g. `check_eq` when only `check_ne` exists) lost that assertion
+  SILENTLY — bash printed its own "command not found" and the file stayed green with fewer checks
+  than it meant to run. `lib.sh` now defines `command_not_found_handle()` to make that loud on
+  bash >= 4 (this project's own dev machine ships bash 3.2, where the handler never fires);
+  `tests/run.sh` additionally scans each captured log for "command not found" as a portable
+  backstop, escalating an otherwise-green file to a failure — a single test file run directly on
+  bash < 4 is the one case neither mechanism reaches (named residual, tracked in the ticket body).
+
 ## [0.11.0] — 2026-09-22
 
 **Known issues, disclosed at the cut.** This is the drain: every open backlog heading tagged for

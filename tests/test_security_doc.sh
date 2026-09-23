@@ -6,7 +6,7 @@
 # stale after v0.3.0 shipped. The fix removed the literal; this guard keeps a vN.N.N from creeping back
 # in — single source of truth (FRAMEWORK "Knowledge & context upkeep").
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/SECURITY.md"
 check_file "SECURITY.md exists" "$doc"

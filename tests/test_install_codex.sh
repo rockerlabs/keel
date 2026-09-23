@@ -4,7 +4,7 @@
 # (no (TEMPLATE) tag, no "copy this" line, no commands/ dir), a re-run never clobbers user edits outside
 # the KEEL-CORE block, a drifted block WARNs non-interactively, and --codex + --link is a usage error.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 install="$REPO_ROOT/install.sh"
 

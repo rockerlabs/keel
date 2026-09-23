@@ -4,7 +4,7 @@
 # this file pins those two (plus the path resolvers and impact_claim_key's independence from the
 # main-checkout fallback, dir #74) directly rather than only indirectly through test_keel_impact.sh.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib="$REPO_ROOT/tools/lib/impact-store.sh"
 check_file "tools/lib/impact-store.sh exists" "$lib"

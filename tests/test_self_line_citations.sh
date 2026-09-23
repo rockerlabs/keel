@@ -5,7 +5,7 @@
 # CHANGELOG.md exclusions, the allowlist (with a mutation-proof pair), and a live leg asserting keel's
 # OWN tree is clean so a new citation fails `tests/run.sh` locally, not just CI.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lc="$REPO_ROOT/tools/self/line-citations.sh"
 

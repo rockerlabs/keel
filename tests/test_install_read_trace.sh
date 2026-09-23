@@ -3,7 +3,7 @@
 # machine-global) Claude Code settings.json. Trimmed mirror of test_install_pre_pr_gate.sh's own
 # coverage (same installer shape, 3 hooks instead of 6).
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 installer="$REPO_ROOT/tools/install-read-trace.sh"
 rt="$REPO_ROOT/tools/read-trace.sh"

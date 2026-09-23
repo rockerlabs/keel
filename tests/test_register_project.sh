@@ -2,7 +2,7 @@
 # register-project — appends project rows to the INSTANCE.md Projects table; idempotent; the rows it
 # writes are what `doctor --registry` reads back.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 reg="$REPO_ROOT/tools/register-project.sh"
 doctor="$REPO_ROOT/tools/doctor.sh"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — one-command bootstrap: copy the core, wire the hook, idempotent, never clobber.
 # shellcheck source=tests/lib.sh
-. "$(dirname "$0")/lib.sh"
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 install="$REPO_ROOT/install.sh"
 core=(CLAUDE.md INSTANCE.md LEARNINGS.md FRAMEWORK.md PRINCIPLES.md)
