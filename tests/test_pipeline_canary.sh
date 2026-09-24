@@ -68,7 +68,7 @@ check_contains "settings.json wires the PreToolUse gate" "$(cat "$sandbox/settin
 check_contains "settings.json wires the SessionStart rollout-check" "$(cat "$sandbox/settings.json" 2>/dev/null)" "rollout-check"
 check_contains "the toy repo is a real git repo" "$(git -C "$repo" rev-parse --is-inside-work-tree 2>&1)" "true"
 
-# Two separate `setup` runs must not collide on the same /tmp sentinel — pre-pr-gate.sh keys off a
+# Two separate `setup` runs must not collide on the same sentinel — pre-pr-gate.sh keys off a
 # basename-plus-hash-of-the-full-path (dir #481), so a fixed toy-repo dir name (even one whose full
 # path would still differ per run, as mktemp's own random suffix already guarantees) would be one less
 # thing standing between a bug in that hashing and two canary sessions silently sharing one sentinel.
@@ -115,7 +115,11 @@ gate_env() {
   shift 2
   printf '%s' "$json" | env "$@" bash "$gate"
 }
-write_full_receipt_review "$repo" "low-operator-run"
+# dir #398: the receipt WRITE must land under the SAME $HOME the gate's later READ resolves
+# (gate_env below explicitly sets HOME="$sandbox/home", matching cmd_setup's own printed
+# instructions for a real /polish session) — a plain root move exposed this: the old flat /tmp path
+# was HOME-independent, so the write/read mismatch this subshell now closes was invisible before.
+( export HOME="$sandbox/home"; write_full_receipt_review "$repo" "low-operator-run" )
 
 # dir #102: with a full receipt written but the gate not yet asked to unlock, the sentinel is still
 # on disk — `check`'s "still present" branch (as opposed to the "no leftover sentinel" PASS it asserts
@@ -134,8 +138,11 @@ check_contains "the gate itself allows the simulated run" "$gate_decision" '"per
 
 # dir #102: a trace file present (skill-trace fired at least once) → the "trace file exists" INFO
 # branch, otherwise never exercised (every other fixture in this suite leaves no trace behind).
-# trace_for() lives in lib.sh (shared with test_pre_pr_gate.sh).
-printf '2026-01-01T00:00:00Z\tcode-review\thigh\n' > "$(trace_for "$repo")"
+# trace_for() lives in lib.sh (shared with test_pre_pr_gate.sh) and ensures its own trace/
+# subdirectory (gate_tmp_purpose_dir). dir #398: HOME="$sandbox/home" so this fabricated trace lands
+# where `check` (HOME="$home" internally, same value) actually looks — the gate's trace root is
+# $HOME-keyed now, unlike the old flat /tmp path.
+printf '2026-01-01T00:00:00Z\tcode-review\thigh\n' > "$(HOME="$sandbox/home" trace_for "$repo")"
 
 # -u KEEL_IMPACT_LOG here too: cmd_check now follows the same $KEEL_IMPACT_LOG-outranks-.keel/-marker
 # precedence as resolve_impact_log() (the fix under test further below) — since the event above was
@@ -148,7 +155,7 @@ check_contains "check after a completed run → PASSes the sentinel-consumed ass
 check_contains "check after a completed run → reports the receipt-pass provenance" "$OUT" "PASS  a receipt-pass event was recorded"
 check_contains "check after a completed run → provenance names it self-reported" "$OUT" "review: low, operator-run (self-reported)"
 check_contains "check after a completed run → reports the trace file (dir #102)" "$OUT" "INFO  a code-review trace file exists"
-rm -f "$(trace_for "$repo")"
+rm -f "$(HOME="$sandbox/home" trace_for "$repo")"
 
 # --- clean: removes the sandbox and the state file --------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" clean
@@ -228,7 +235,10 @@ check_nodir "setup's store entry must not exist under the operator's real KEEL_I
 # KEEL_HOME/KEEL_IMPACT_STORE forced empty) despite their real shell exporting $escape_store — and
 # confirm both the write and the read (`check`, run below with $escape_store still ambient) land in,
 # and agree on, the sandboxed location, never the operator's real store.
-write_full_receipt_review "$repo6" "low-operator-run"
+# dir #398: HOME=$home6 for the write too (see the identical dir #398 note on the first
+# write_full_receipt_review call above) — the gate's own sentinel/trace root is HOME-keyed now, so
+# the write and the read below must share the same HOME to agree on one path.
+( export HOME="$home6"; write_full_receipt_review "$repo6" "low-operator-run" )
 gate_decision6="$(gate_env "gh pr create --fill" "$repo6" -u KEEL_IMPACT_LOG HOME="$home6" KEEL_HOME= KEEL_IMPACT_STORE=)"
 check_contains "the gate allows the escape-scenario simulated run" "$gate_decision6" '"permissionDecision":"allow"'
 "$sandbox6/bin/gh" pr create --fill >/dev/null

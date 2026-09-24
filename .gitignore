@@ -15,6 +15,11 @@
 # Draft zone — capture-first / work-in-progress material kept out of the public repo
 /private/
 
+# /design writes every spec to docs/specs/<id>-<slug>.md (KB d004428, operator decision D2, dir #635)
+# — specs carry personal paths and internal process, and this tree is public. The KB snapshot already
+# mirrors this directory untracked, the same way it backs up BACKLOG.md.
+/docs/specs/
+
 # doctor's map-drift baseline (dir #39 T1) — an accepted stale-path mention; per-checkout, script-only read.
 /.keel/map-drift-baseline
 

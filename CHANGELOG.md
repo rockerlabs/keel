@@ -60,6 +60,25 @@ sections real content going forward — see that page for exactly when each one 
   across the block's 6 tracked copies (`docs/delegation.md`, `docs/delta-audit.md` ×5,
   `docs/drydock/{auditor,code-auditor,verifier}.md`, `commands/polish.md`), verified by the existing
   drift tests.
+- **The backlog filing bar is now value-based, replacing its old defect-shape test** (dir #635 PR1,
+  adopter-facing): `docs/verification-economics.md` §4 no longer files a ticket for being merely
+  behavioural, a new class, or a guard gap. Five conditions replace it — an always-file surface (a
+  secret, a destructive write outside the repo, an installer, or a guard that could fail open), felt
+  pain (it actually happened, not a sandbox reproduction), impact beyond this project, severity (data
+  loss, a leak, or a broken daily workflow), or an explicit request — any ONE of which earns a ticket,
+  with doubt on the first four resolving to file. A new class alone is no longer a filing test; it goes
+  to the class registry instead unless it also clears one of the five. Below the bar: a standing-list
+  line naming which condition failed, promoted to a ticket on a second independent sighting. The two
+  doors that restated the old three-criterion test verbatim (`docs/drydock.md`, `docs/release-audit.md`)
+  now point at §4 instead; four more that used to file unconditionally (`CORE.md`, `commands/wrap.md`,
+  `commands/polish.md`, `docs/release-management.md`) now route through the same §4 gate rather than
+  filing every finding by default. `commands/backlog.md` publishes a headline-discipline convention
+  alongside its readiness legend: a ticket heading carries only ID/title/grade/tag, everything else
+  (re-tags, corrections, origin, PR links) goes in dated `Log:` body lines, and a spec nests under `####` or
+  lives in its own file. `tools/self/citation-resolvability.sh` also resolves a `dir #N` citation
+  against a project's `BACKLOG-parked.md`, a sibling of `BACKLOG.md` that may not exist yet. `.gitignore`
+  gains `/docs/specs/`, where `/design` now writes every spec — personal paths and internal process that
+  don't belong in this public tree.
 - **`commands/go.md` frontmatter gains `effort: high`** (dir #645): verified, not assumed — a command
   file in `.claude/commands/` accepts the same frontmatter fields as a skill except `name`/`paths`,
   `effort` among them, overriding the session's effort level while the command runs
@@ -68,6 +87,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **The pre-PR gate's rendezvous files (sentinel/prev-sentinel/trace/handoff/rollout) and
+  `keel-check.sh`/`pipeline-canary.sh`'s own state no longer leak into the shared, OS-swept `/tmp`**
+  (dir #398 and dir #399): every sandboxed test repo left its own sentinel/trace/prev files behind
+  forever, ~31,000 files and 1.9G at the v0.8.3 close, invisible to every check because it lived
+  outside the repo and outside `tests/lib.sh`'s own `$HOME` sandbox. All five now resolve under one
+  keel-owned root, `$HOME/.keel/tmp/pre-pr-gate/<purpose>/<key>` (`tools/lib/gate-paths.sh`'s new
+  `gate_state_root`, dir #637's operator override — `$HOME`, never `$KEEL_HOME`, which keeps meaning
+  the harness home keel installs into), which `tests/lib.sh`'s existing HOME redirection now contains
+  for free, no new override variable. `init` also prunes entries older than 30 days under this root
+  only — never `/tmp`, never a live PR's sentinel — so re-rooting alone doesn't just relocate the
+  leak to a tidier address. No fallback reads a legacy `/tmp` file: any receipt in flight when this
+  merges needs a fresh `pre-pr-gate.sh init`.
 - **`install-secret-guard.sh`'s `<repo>` branch could vendor OUTSIDE the given repo**
   (dir #617, half (a)): with no LOCAL `core.hooksPath` override, it resolved the hooks dir via
   `git rev-parse --git-path hooks`, which honors a GLOBAL or SYSTEM `core.hooksPath` too — on a

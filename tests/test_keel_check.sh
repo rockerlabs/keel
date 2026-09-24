@@ -109,4 +109,38 @@ fresh_sd
 KEEL_CHECK_THRESHOLD=0 run "$TOOL" "false"
 check_contains "zero threshold clamps to 1 → STOP on the very first failure" "$OUT" "keel-check: STOP"
 
+# --- dir #398/#399/#637: the default root moved off shared /tmp to $HOME/.keel/tmp ------------------
+# No KEEL_CHECK_STATE_DIR override this time — the counter must land under $HOME/.keel/tmp/keel-check,
+# never in the real /tmp (this run's own $HOME is already the sandbox, dir #64).
+run env -u KEEL_CHECK_STATE_DIR "$TOOL" "false"
+check_status "no override: exit code still passes through" 1 "$STATUS"
+check_dir "no override: the default root lands under \$HOME/.keel/tmp/keel-check" "$HOME/.keel/tmp/keel-check"
+
+# HOME unset AND no override -> fail closed with a clear message, never a silent "/.keel/tmp".
+run env -u KEEL_CHECK_STATE_DIR -u HOME "$TOOL" "false"
+check_status "HOME unset, no override -> exit 1 (fail closed)" 1 "$STATUS"
+check_contains "HOME unset, no override -> names the cause" "$OUT" 'HOME is unset/empty'
+
+# An explicit override still works even with HOME unset.
+fresh_sd
+run env -u HOME "KEEL_CHECK_STATE_DIR=$KEEL_CHECK_STATE_DIR" "$TOOL" "false"
+check_status "HOME unset, explicit override -> exit code still passes through" 1 "$STATUS"
+check_contains "HOME unset, explicit override -> still counts (FAIL #1)" "$OUT" "FAIL #1"
+
+# --- dir #398 R5's empty-dir reap must not race a DIFFERENT concurrent invocation's just-created,
+# still-empty repo_dir (found by this ticket's own /code-review high pass, angles A and B): the reap
+# walks the WHOLE $state_dir/keel-check tree, not just this invocation's own repo, so an unconditional
+# empty-dir rmdir could remove a sibling repo's dir the instant after it was mkdir'd but before its
+# first counter write. Fixed by giving the directory reap the SAME -mtime +30 age floor as the file
+# sweep — simulated here deterministically (no real race needed): a fresh, still-empty "other repo"
+# dir must survive a forced prune pass, the same way a fresh file would.
+fresh_sd
+mkdir -p "$KEEL_CHECK_STATE_DIR/keel-check"
+other_repo_dir="$KEEL_CHECK_STATE_DIR/keel-check/simulated-other-repo-key"
+mkdir -p "$other_repo_dir"          # empty, freshly created — mtime is "now"
+: > "$KEEL_CHECK_STATE_DIR/keel-check/.last-prune"
+touch -t 202001010000 "$KEEL_CHECK_STATE_DIR/keel-check/.last-prune"   # force the rate-limit to fire
+run "$TOOL" "false"                 # any check on any repo forces a prune pass under this state dir
+check_dir "R5 prune: a fresh, still-empty sibling repo dir survives the reap" "$other_repo_dir"
+
 summary

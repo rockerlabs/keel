@@ -441,8 +441,8 @@ ticketed, not fixed. Without this rule the run has no termination condition, sin
 new prose that can be audited.
 
 **"Ticketed" is not automatic — apply the filing bar here**
-([`docs/verification-economics.md`](verification-economics.md)): a finding earns a ticket when it is
-behavioural, a new class, or a guard gap on an invariant-bearing surface. Anything else is recorded as
+([`docs/verification-economics.md`](verification-economics.md) §4, never restated here): a finding
+earns a ticket only when that bar's own conditions are met. Anything else is recorded as
 "no action — <reason>" in the run's summary and, if it names a real defect, added to a standing list
 the project already keeps. "Recorded, ticketed" otherwise reads as *ticket everything*, and a run that
 files one ticket per residual buries its own class tickets in one-off instances. (The bar applies again
