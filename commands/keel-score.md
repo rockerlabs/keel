@@ -67,7 +67,9 @@ measure), not a fake 0. `conf` (none/low/med/high) comes from how many events ba
    `tools/…` is your **Keel checkout's** copy, so spell it `<keel-checkout>/tools/keel-impact.sh` when
    the session's cwd is the project being scored — and it should be: the store entry resolves from the
    cwd's repo, so a call made from the wrong directory silently scores that repo instead (or, if it was
-   never enabled, refuses outright — run `keel-impact.sh enable` first):
+   never enabled, refuses outright — run `keel-impact.sh enable` first; if it WAS enabled and its store
+   entry is now missing — a wiped harness home, a moved `KEEL_HOME` — the refusal instead names the lost
+   entry and points at `keel-impact.sh restore` / `enable --restart`, never a silent restart at zero):
 
    ```bash
    tools/keel-impact.sh add \

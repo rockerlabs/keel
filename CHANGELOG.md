@@ -69,6 +69,31 @@ sections real content going forward — see that page for exactly when each one 
   `tests/test_impact_store_lib.sh` A1–A4 pin `impact_isolated`/`IMPACT_ISOLATION_VARS` directly, A3 with
   a mutation proof; `tests/test_pipeline_canary.sh` A5 pins the derived printed command and `check`'s own
   isolated read. Test-internal; no shipped behaviour change beyond the printed-command fix above.
+- **`keel-impact.sh` now tells a LOST store entry from one that was never enabled, and can restore or
+  restart it** (dir #630 PR-B, the impact half): every `enable` records a durable provenance value —
+  the multi-valued `keel.impactStore` key in the repo's own LOCAL git config (`tools/lib/impact-store.sh`'s
+  new `keel_store_record`/`keel_store_recorded`/`keel_store_state`, generic pair shared with the
+  read-trace half PR-C builds next; `impact_store_create`, the one entry creator every site that brings
+  a store entry into existence now calls; `impact_entry_state`, the full seven-rung state — unresolved /
+  override / legacy / enabled / lost / moved / never). `add`/`rollup`/`enable` all refuse on a `lost`
+  entry with a named "store entry is missing" error (M-LOST: the entry's path, `restore`, and
+  `enable --restart`), never the old silent restart at zero; `event` on a lost entry prints one line and
+  records nothing. Two ways forward: **`keel-impact.sh restore FROM_DIR`**, built on the existing dedup
+  merge helpers, merges a prior copy's ledger/evidence/log/history into a fresh entry — idempotent,
+  never touches FROM — or **`keel-impact.sh enable --restart`**, which starts a new trend on purpose and
+  records the restart in the entry's new append-only `history` file (`rollup` prints it, live mode
+  only). A `moved` entry (the record names another existing entry — `KEEL_HOME` changed, or the repo's
+  own id changed) gets its own notice on `enable` and its own refusal on `add`/`rollup`, listing the
+  recorded entries. `tools/doctor.sh` gains `W-IMPACT-LOST`, checked at the main checkout only;
+  `rollup --registry` prints a lost row's own form instead of "tracking off"; `tools/init-project.sh`'s
+  own `enable` call no longer aborts scaffolding on a lost-state refusal. Backfill: an entry that
+  already existed before this change (or was `mkdir`'d by a path that predates `impact_store_create`)
+  gets its record on the next verb, via `_impact_begin`. `tests/run.sh` gains a tripwire: the real
+  checkout's own `keel.impactStore`/`keel.readTraceStore` values are compared before and after the
+  suite, and any change fails the run naming it — no B-test may write the real repo's own record. New
+  tests: `tests/test_impact_store_lib.sh` (the generic pair, `impact_store_create`, `impact_entry_state`,
+  `impact_recorded_entries`); `tests/test_keel_impact.sh` B1–B12, B16–B18, B21; `tests/test_doctor.sh`
+  B13; `tests/test_init_project.sh` B14; `tests/test_run_sh.sh` B19.
 
 ### Changed
 
@@ -139,6 +164,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ### Fixed
 
+- **`keel-impact.sh enable` silently restarted a project's trend at zero when its store entry had been
+  lost, and `enable --help`/`enable /no/such/dir` each silently created a junk store entry (both dir
+  #630 PR-B)**: `enable` now refuses a `lost` entry outright (exit 2, naming the lost entry and
+  `restore`/`enable --restart`) instead of proceeding as if the project had never been tracked. `enable`
+  also gains its own argument validation (S9): `-h`/`--help` prints usage and exits 0 without touching
+  any state; any other `-`-leading argument, or more than one positional, refuses with exit 2; a DIR
+  that is not an existing directory refuses with `migrate`'s own "not a directory" wording. Neither
+  creates an entry any more.
 - **The pre-PR gate's rendezvous files (sentinel/prev-sentinel/trace/handoff/rollout) and
   `keel-check.sh`/`pipeline-canary.sh`'s own state no longer leak into the shared, OS-swept `/tmp`**
   (dir #398 and dir #399): every sandboxed test repo left its own sentinel/trace/prev files behind

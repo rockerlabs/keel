@@ -181,7 +181,10 @@ GHEOF
   # #317) so its own store resolution lands inside this sandbox on its own — pre-create that store
   # entry (mirrors keel-impact.sh's own `enable`) so a real run's impact events land somewhere `check`
   # can read without extra env. `cmd_check` recomputes the identical path (search "impact_store_dir").
-  mkdir -p "$(impact_isolated "$home" impact_store_dir "$repo")"
+  # dir #630 S5: routed through impact_store_create (mkdir + the S4 provenance record), the one entry
+  # creator every site now uses — a bare `mkdir -p` here would leave this sandboxed repo's own entry
+  # unrecorded, the one call site the spec names explicitly.
+  impact_isolated "$home" impact_store_create "$repo" >/dev/null
   git -C "$repo" add README.md
   HOME="$home" git -C "$repo" commit -q -m "init"
 

@@ -615,6 +615,30 @@ mkdir -p "$wts/.keel"; : > "$wts/.keel/impact-events.log"
 run "$doctor" "$wts"
 check_contains "a worktree-local leftover warns when auditing the worktree itself" "$OUT" "W-KEEL-LEGACY"
 
+# --- dir #630 S11 (B13): W-IMPACT-LOST — an S4-recorded store entry that is gone now. Checked ONLY
+# at the main checkout, unlike W-KEEL-LEGACY's own per-directory audit above -------------------------
+kitool="$REPO_ROOT/tools/keel-impact.sh"
+b13repo="$(newbase)"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$kitool" enable "$b13repo"
+check_status "B13 setup: enable succeeds" 0 "$STATUS"
+b13_id="$(printf '%s' "$(cd "$b13repo" && pwd -P)" | tr '/' '-')"
+b13_store="$KEEL_IMPACT_STORE/$b13_id"
+check_dir "B13 setup: the store entry exists" "$b13_store"
+rm -rf "$b13_store"
+
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE "$doctor" "$b13repo"
+check_contains "B13: W-IMPACT-LOST fires for a lost main checkout" "$OUT" "[W-IMPACT-LOST]"
+
+b13_never="$(newbase)"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE "$doctor" "$b13_never"
+check_absent "B13: W-IMPACT-LOST does not fire for a never-enabled repo" "$OUT" "W-IMPACT-LOST"
+
+git -C "$b13repo" -c user.email=t@keel.invalid -c user.name=t commit -q --allow-empty -m seed
+b13wt="$SANDBOX/b13-wt"
+git -C "$b13repo" worktree add -q -b b13-wt-branch "$b13wt" >/dev/null 2>&1
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE "$doctor" "$b13wt"
+check_absent "B13: W-IMPACT-LOST does not repeat for a linked worktree audit" "$OUT" "W-IMPACT-LOST"
+
 # --- secret-guard drift: an installed copy that differs from the shipped engine → WARN -----------
 shipped="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 

@@ -98,7 +98,9 @@ _impact_auto_migrate() {
     fi
   done
   { [ "$any" -eq 1 ] && [ "$all_untracked" -eq 1 ]; } || return 0
-  mkdir -p "$store" || return 0
+  # dir #630 S5: routed through the one entry creator (mkdir + the S4 provenance record), not a bare
+  # mkdir — every site that brings a store entry into existence must record it the same way.
+  impact_store_create "$top" >/dev/null || return 0
   local ok=1
   if [ -f "$top/.keel/ledger.md" ]; then
     _impact_merge_ledger "$store/ledger.md" "$top/.keel/ledger.md" && rm -f "$top/.keel/ledger.md" || ok=0
@@ -199,6 +201,15 @@ _impact_begin() {
   if [ -n "${_IMPACT_BEGUN:-}" ]; then return 0; fi
   _IMPACT_BEGUN=1
   _impact_auto_migrate "$dir" || true
+  # dir #630 S5 backfill: an entry created before this ticket (or by a path that predates
+  # impact_store_create) has no S4 record yet — write it now, once, on the next verb that reaches
+  # here (add/event/rollup/enable all call _impact_begin). Only when nothing bypasses the store
+  # outright (S4's own scope note, same guard impact_store_create itself applies), and only when the
+  # entry actually exists (impact_enabled) — an unresolved/never/lost/moved repo has nothing to
+  # backfill.
+  if ! _impact_override_active && impact_enabled "$dir"; then
+    keel_store_record "$IMPACT_STORE_RECORD_KEY" "$(impact_store_dir "$dir" 2>/dev/null || true)" "$(_impact_resolve_top "$dir")"
+  fi
   LEDGER="$(impact_ledger_path "$dir")"
   LOG="$(impact_log_path "$dir")"
   EVIDENCE="$(impact_evidence_path "$dir")"
@@ -215,7 +226,9 @@ Usage:
   keel-impact.sh add ... --retro [--asof YYYY-MM-DD]   record a quarantined retrospective score (see below)
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh enable [dir]                    opt a repo into tracking (creates an external store entry)
+  keel-impact.sh enable [dir] --restart          start a NEW trend on a LOST entry, on purpose (see below)
   keel-impact.sh migrate [dir] [--dry-run]       sweep a legacy in-tree .keel/ marker into the store
+  keel-impact.sh restore FROM_DIR                recover this repo's entry from a copy (see below)
   keel-impact.sh rollup                          this repo's live trend + cumulative signals
   keel-impact.sh rollup --retro                  only the quarantined retrospective scores
   keel-impact.sh rollup --registry FILE          cross-project sweep of an INSTANCE.md Projects table
@@ -227,6 +240,16 @@ with no env needed; `add` auto-ingests any logged events and folds them into the
 events (e.g. a secret-guard block) reach the score deterministically, at zero token cost, without the
 model counting them. $KEEL_IMPACT_LOG overrides the log path outright; pass --no-ingest to skip
 ingestion. TYPE ∈ hold guard fire hit miss friction.
+
+dir #630: this repo's `enable` is recorded durably — a multi-valued `keel.impactStore` key in the repo's
+own LOCAL git config (never the global one; documented so a `git config --local -l` doesn't surprise you)
+— so a store entry that later goes missing (a wiped harness home, a moved KEEL_HOME) is told apart from
+one that was simply never created. `add`/`rollup`/`enable` all refuse with a named "store entry is
+missing" error on a LOST entry rather than silently inviting you to re-enable and restart the trend at
+zero. Two ways forward: `keel-impact.sh restore FROM_DIR` recovers the old trend from a copy of a prior
+entry (its ledger/evidence/log/history are merged in, byte-for-byte from FROM — nothing under FROM is
+ever modified); `keel-impact.sh enable --restart` starts a fresh trend here on purpose, records the
+restart, and does NOT recover the old one.
 
 Auto-ingest only counts events younger than $KEEL_INGEST_MAX_AGE_HOURS hours (default 12) — an event a
 session left unconsumed (no `add` ran) is stale past that: skipped from the counts, archived to the
@@ -778,6 +801,19 @@ cmd_event() {
   is_event_type "$type" || { printf 'keel-impact: unknown event type %s (want: %s)\n' "$type" "$EVENT_TYPES" >&2; exit 2 ; }
   # Known-valid from here — only now may this run touch project state (see _impact_begin, top of file).
   _impact_begin
+  # dir #630 S7: `lost` gets its own one-line message (naming the lost entry) instead of reading as a
+  # plain "not enabled" — everything else (including `moved`, which also resolves $LOG empty) keeps
+  # today's generic message below. Deliberately terse (S7: "one stderr line") — this fires from
+  # guardrail hooks, potentially many times per session, unlike enable/add/rollup's own multi-line
+  # M-LOST refusal (_impact_print_lost_refusal). Still names both recovery commands, so an operator
+  # whose only signal is a hook's own stderr (never running add/rollup/enable interactively) isn't left
+  # without a pointer (an altitude review round's finding — the terse shape itself is spec-mandated,
+  # this is the cheap middle ground: still one line).
+  if [ "$(impact_entry_state .)" = "lost" ]; then
+    printf 'keel-impact: store entry is missing for %s (recorded at %s) — %s event not recorded (see restore / enable --restart)\n' \
+      "$(_impact_resolve_top .)" "$(impact_store_dir . 2>/dev/null || true)" "$type" >&2
+    return 0
+  fi
   if [ -z "$LOG" ]; then
     printf 'keel-impact: impact tracking not enabled — %s event not recorded (run "keel-impact.sh enable")\n' "$type" >&2
     return 0
@@ -790,17 +826,93 @@ cmd_event() {
   printf 'keel-impact: recorded %s event to %s\n' "$type" "$LOG"
 }
 
-# enable [dir] — opt a repo into impact tracking: create its external store entry (dir #251 — NOTHING is
-# written inside the project's own working tree anymore: no marker, no gitignore line). Idempotent. Run
-# once per project; the AI-session flow then works with no env: guardrail hooks record events straight
-# into the store, `add` auto-ingests them.
+# _impact_print_lost_refusal TOP ENTRY — S7's M-LOST message, the wording every `lost`-state refusal
+# below (enable, add/rollup via _impact_require_enabled) shares. Content, not wording, is pinned by the
+# spec: the literal `store entry is missing`, ENTRY's path, `keel-impact.sh restore`, `enable --restart`,
+# and a statement that --restart begins a NEW trend and does not recover the old one.
+_impact_print_lost_refusal() {
+  local top="$1" entry="$2"
+  printf 'keel-impact: store entry is missing for %s (recorded at %s, not there now — destroyed or moved away)\n' "$top" "$entry"
+  printf '  keel-impact.sh restore FROM_DIR    recover the old trend from a copy, merged into a fresh entry\n'
+  printf '  keel-impact.sh enable --restart    start a NEW trend here on purpose — this does NOT recover the old one\n'
+}
+
+# _impact_recorded_existing DIR — impact_recorded_entries filtered to values that still exist as a
+# directory: the set a `moved` notice's own "still exists" claim can honestly list. S4 only ever ADDS
+# a value, never prunes one whose directory later vanished too (found live by a code-review round: a
+# project with more than one historical record — e.g. two past KEEL_HOME migrations — could otherwise
+# print a genuinely-lost entry right alongside the moved-to one, under a header that says both "still
+# exist").
+_impact_recorded_existing() {
+  local dir="$1" r
+  impact_recorded_entries "$dir" | while IFS= read -r r; do
+    [ -n "$r" ] && [ -d "$r" ] && printf '%s\n' "$r"
+  done
+}
+
+# _impact_history_append DIR TYPE DETAIL — S8: append one record to DIR's project's entry's `history`
+# TSV (append-only: <ISO-UTC>\t<restart|restore>\t<detail>). DETAIL is already known-good text (a shell-
+# provided path, never free user input), so no _flatten needed.
+_impact_history_append() {
+  local dir="$1" type="$2" detail="$3" store
+  store="$(impact_store_dir "$dir")" || return 1
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$type" "$detail" >> "$store/history"
+}
+
+# enable [dir] [--restart] — opt a repo into impact tracking: create its external store entry (dir #251
+# — NOTHING is written inside the project's own working tree anymore: no marker, no gitignore line).
+# Idempotent. Run once per project; the AI-session flow then works with no env: guardrail hooks record
+# events straight into the store, `add` auto-ingests them.
+#
+# dir #630 S7/S9: state-dependent from here. `lost` refuses outright (M-LOST) unless --restart says the
+# operator means it; --restart on a repo that was never using the store (override/legacy) has nothing
+# to restart and refuses too; `moved` and `never` proceed exactly as before (a notice is added for
+# `moved`); `unresolved` is untouched (today's crash on unset HOME, unaffected by this ticket).
 cmd_enable() {
-  local dir="${1:-.}" top already=0
+  local dir="." restart=0 positional=0 a top state already=0 entry moved_prior
+  for a in "$@"; do
+    case "$a" in
+      -h|--help) usage; return 0 ;;
+      --restart) restart=1 ;;
+      -*) printf 'keel-impact: enable: unknown flag %s\n' "$a" >&2; usage >&2; exit 2 ;;
+      *)
+        positional=$((positional + 1))
+        if [ "$positional" -gt 1 ]; then
+          printf 'keel-impact: enable: too many arguments\n' >&2; usage >&2; exit 2
+        fi
+        dir="$a"
+        ;;
+    esac
+  done
+  # S9: a DIR that is not an existing directory refuses, same wording as migrate's.
+  if [ "$dir" != "." ] && [ ! -d "$dir" ]; then
+    printf 'keel-impact: enable: not a directory: %s\n' "$dir" >&2
+    exit 2
+  fi
+
+  top="$(_impact_resolve_top "$dir")"
+  state="$(impact_entry_state "$dir")"
+  entry="$(impact_store_dir "$dir" 2>/dev/null || true)"
+  # Captured HERE, before impact_store_enable below records the brand-new entry under the SAME
+  # multi-valued key — a `moved` capture taken any later would include the entry this very call is
+  # about to create, and the "a different entry that still exists" notice would misleadingly list it
+  # back at the operator as if it were a distinct prior record (found live: `enable` under a second
+  # store root printed both the old entry AND the one it just made).
+  moved_prior="$([ "$state" = "moved" ] && _impact_recorded_existing "$dir" || true)"
+
+  if [ "$state" = "lost" ] && [ "$restart" -eq 0 ]; then
+    _impact_print_lost_refusal "$top" "$entry" >&2
+    exit 2
+  fi
+  if { [ "$state" = "override" ] || [ "$state" = "legacy" ]; } && [ "$restart" -eq 1 ]; then
+    printf 'keel-impact: enable --restart: %s is not using the store (a per-file override, or a legacy in-tree marker) — nothing to restart\n' "$top" >&2
+    exit 2
+  fi
+
   # Captured BEFORE _impact_begin, not after: _impact_begin runs _impact_auto_migrate, which creates
   # the store as a side effect of carrying a legacy marker in. Checking impact_enabled afterward means
   # a legacy-marker project's genuinely FIRST enable already has a store by the time the check runs, so
   # it wrongly reports "already enabled" and skips the /keel-score onboarding line below (dir #287).
-  # `enable` takes no flags to validate, so its first line is already the known-valid point.
   impact_enabled "$dir" && already=1
   # BEFORE impact_store_enable's unconditional mkdir, never after: that is the one ordering constraint
   # _impact_begin's own comment (top of file) states, and losing auto-migration is permanent — a marker
@@ -808,16 +920,34 @@ cmd_enable() {
   # (W-KEEL-LEGACY) ever tells the operator to run.
   # Pass $dir through, not bare — see _impact_begin's own comment, top of file, dir #251 finding 5a.
   _impact_begin "$dir"
-  top="$(_impact_resolve_top "$dir")"
   # The store's own absolute path is an internal implementation detail (never inside the project's own
   # tree, never something an adopter browses directly) — deliberately NOT echoed here, unlike the old
   # in-tree marker message: that path was actionable ("here's the file to `git add`"), this one isn't.
   impact_store_enable "$dir" >/dev/null
   if [ "$already" -eq 1 ]; then
     printf 'keel-impact: impact tracking already enabled for %s\n' "$top"
+    # Explicit `if`, never a `test && printf` chain — this is the LAST statement of this branch, and
+    # `test`'s own failure (restart=0, the common case) under `set -e` would otherwise abort the whole
+    # function right here (the same class of bug add_cite's own comment names elsewhere in this file).
+    if [ "$restart" -eq 1 ]; then
+      printf '  nothing to restart: this entry was never lost.\n'
+    fi
   else
     printf 'keel-impact: impact tracking enabled for %s\n' "$top"
-    printf '  guardrail fires now record events with no env needed; run /keel-score to score.\n'
+    case "$state" in
+      lost)
+        _impact_history_append "$dir" restart "$entry"
+        printf '  a NEW trend starts here — the old one ended at %s. This does not recover it: run keel-impact.sh restore FROM_DIR to merge a copy back in.\n' "$entry"
+        ;;
+      moved)
+        printf '  this repo previously recorded a different entry that still exists:\n'
+        printf '%s\n' "$moved_prior" | sed 's/^/    /'
+        printf '  run keel-impact.sh restore FROM_DIR to bring that history into this new entry.\n'
+        ;;
+      *)
+        printf '  guardrail fires now record events with no env needed; run /keel-score to score.\n'
+        ;;
+    esac
   fi
 }
 
@@ -880,10 +1010,47 @@ _ledger_parse() {
 # docs/keel-impact.md) is gone — a hard, named refusal replaces it. $LEDGER empty means neither an
 # explicit env override nor a store entry nor even a legacy in-tree marker resolved (impact_ledger_path's
 # own fallback chain already covers the legacy case) — i.e. this project was genuinely never enabled.
+#
+# dir #630 S7: `lost` and `moved` get their own message BEFORE the generic $LEDGER-empty fallback below
+# — both resolve $LEDGER empty too (their store dir doesn't physically exist), so without this they'd
+# read as plain "never enabled", exactly the blindness this ticket exists to close. Everything else
+# (enabled/override/legacy resolve $LEDGER non-empty; never/unresolved fall through unaffected) keeps
+# today's behaviour.
 _impact_require_enabled() {
+  local top state entry
+  top="$(_impact_resolve_top .)"
+  state="$(impact_entry_state .)"
+  case "$state" in
+    lost)
+      entry="$(impact_store_dir . 2>/dev/null || true)"
+      _impact_print_lost_refusal "$top" "$entry" >&2
+      return 1
+      ;;
+    moved)
+      printf 'keel-impact: impact tracking is not enabled for %s — the recorded entry moved:\n' "$top" >&2
+      _impact_recorded_existing . | sed 's/^/    /' >&2
+      printf '  run keel-impact.sh enable to start a new one here, or keel-impact.sh restore FROM_DIR to bring it back\n' >&2
+      return 1
+      ;;
+  esac
   [ -n "$LEDGER" ] && return 0
-  printf 'keel-impact: impact tracking is not enabled for %s — run keel-impact.sh enable\n' "$(_impact_resolve_top .)" >&2
+  printf 'keel-impact: impact tracking is not enabled for %s — run keel-impact.sh enable\n' "$top" >&2
   return 1
+}
+
+# _impact_print_history — S8: "live rollup prints one line per history record after its trend line;
+# rollup --retro does not." Called from both of rollup()'s exit points (the early "no sessions yet"
+# return and the normal end) so a freshly --restart'd entry (0 sessions, one restart record) still
+# shows it — B5's own requirement. A silent no-op when there is no history file (every state but a
+# restarted/restored entry) or in retro mode.
+_impact_print_history() {
+  local mode="$1" store="$2" ts htype hdetail
+  [ "$mode" = "retro" ] && return 0
+  [ -f "$store/history" ] || return 0
+  while IFS=$'\t' read -r ts htype hdetail; do
+    [ -n "$ts" ] || continue
+    printf '  %s: %s %s\n' "$ts" "$htype" "$hdetail"
+  done < "$store/history"
 }
 
 # --- rollup: score trend + the honest cumulative signals (guardrail fires, agent-holds, retrieval misses) --
@@ -904,12 +1071,14 @@ rollup() {
     printf 'keel-impact: failed to read ledger: %s\n' "$LEDGER" >&2
     return 1
   fi
-  local sessions n sum guard hold miss recent
+  local sessions n sum guard hold miss recent store
   read -r sessions n sum guard hold miss recent <<<"$parsed"
+  store="$(impact_store_dir . 2>/dev/null || true)"
   local label="impact ledger"; [ "$mode" = "retro" ] && label="retro impact ledger"
   if [ "$sessions" -eq 0 ]; then
     local what="scored"; [ "$mode" = "retro" ] && what="retrospective"
     printf '%s: no %s sessions yet.\n' "$label" "$what"
+    _impact_print_history "$mode" "$store"
     return
   fi
   if [ "$n" -gt 0 ]; then
@@ -922,6 +1091,7 @@ rollup() {
   # the honest cumulative signals, straight from counted events (not judged)
   printf '  cumulative: %d guardrail fire(s), %d agent-hold(s), %d retrieval miss(es) — the standing promote pressure\n' \
     "$guard" "$hold" "$miss"
+  _impact_print_history "$mode" "$store"
 }
 
 # Emit "sessions scored sum guard hold miss" for one ledger file (all zeros if absent/empty). The single
@@ -960,7 +1130,18 @@ rollup_registry() {
     ledger="$(impact_store_dir "$path" || true)/ledger.md"
     [ -f "$ledger" ] || ledger="$path/.keel/ledger.md"
     if [ ! -f "$ledger" ]; then
-      printf '  %-28s —  (tracking off or no sessions scored)\n' "$(basename "$path")"
+      # dir #630 S11: a `lost` row (S4 recorded it, the entry is gone) gets its own line instead of
+      # reading as indistinguishable from "tracking off" — keel_store_state directly (rungs 3-6 only,
+      # not the full impact_entry_state), since an override/legacy rung is meaningless for a row swept
+      # by EXPLICIT path rather than the sweep's own cwd/env.
+      local reg_entry reg_state
+      reg_entry="$(impact_store_dir "$path" 2>/dev/null || true)"
+      reg_state="$(keel_store_state "$IMPACT_STORE_RECORD_KEY" "$reg_entry" "$(_impact_resolve_top "$path")" 2>/dev/null || true)"
+      if [ "$reg_state" = "lost" ]; then
+        printf '  %-28s !  (store entry lost — recorded at %s)\n' "$(basename "$path")" "$reg_entry"
+      else
+        printf '  %-28s —  (tracking off or no sessions scored)\n' "$(basename "$path")"
+      fi
       continue
     fi
     local sess scored sum g ho m stats=""
@@ -1419,7 +1600,8 @@ cmd_migrate() {
   # ask which of the three options the operator wants for the tracked leftover.
   local ok=1
   if [ "$any_untracked" -eq 1 ]; then
-    mkdir -p "$store"
+    # dir #630 S5: routed through the one entry creator, same reason as _impact_auto_migrate's own site.
+    impact_store_create "$top" >/dev/null
     if [ "${#ledger_srcs[@]}" -gt 0 ]; then
       _impact_merge_ledger "$store/ledger.md" "${ledger_srcs[@]}" && rm -f "${ledger_srcs[@]}" || ok=0
     fi
@@ -1453,11 +1635,101 @@ cmd_migrate() {
   [ "$ok" -eq 1 ] || return 1
 }
 
+# restore FROM_DIR — dir #630 S9/S10: recover this repo's impact entry (targets the cwd's project, like
+# add/rollup) from a copy of a prior store entry — the S4 provenance record's own recovery path, and the
+# fix for a `lost`/`moved`/`never` entry that `enable`/`enable --restart` alone cannot bring rows back
+# for. Built on the same dedup merge helpers migrate already uses, so re-running is idempotent for the
+# ledger/evidence/log content (each run still adds its own S8 history line).
+#
+# Order (S10): S9 validation first (nothing below reads project state until FROM_DIR itself is known
+# good); then the entry-state check (override/legacy/unresolved refuse outright — restore targets the
+# STORE only) BEFORE _impact_begin, so an unresolved store root (unset HOME) refuses cleanly here
+# instead of crashing inside _impact_begin's own resolution (a deliberate resequencing from the spec's
+# literal order — same outcome, "exit 2, no store root", without the crash); then _impact_begin +
+# impact_store_enable (creates the entry via S5, writing `origin` exactly as `enable` does); then the
+# merge targets are computed AFTER that — `$(impact_store_dir)/<file>`, never `_impact_begin`'s own
+# captured $LEDGER/$EVIDENCE/$LOG, which are empty in `lost`/`never` (a cross-vendor review finding).
+cmd_restore() {
+  local from="" positional=0 a
+  for a in "$@"; do
+    positional=$((positional + 1))
+    from="$a"
+  done
+  if [ "$positional" -ne 1 ] || [ -z "$from" ]; then
+    printf 'keel-impact: restore requires exactly one FROM_DIR\n' >&2
+    exit 2
+  fi
+  if [ ! -d "$from" ]; then
+    printf 'keel-impact: restore: not a directory: %s\n' "$from" >&2
+    exit 2
+  fi
+  if [ ! -f "$from/ledger.md" ] && [ ! -f "$from/evidence.md" ] && [ ! -f "$from/impact-events.log" ]; then
+    printf 'keel-impact: restore: %s holds none of ledger.md, evidence.md, impact-events.log\n' "$from" >&2
+    exit 2
+  fi
+  local from_p
+  from_p="$(cd "$from" && pwd -P)" || { printf 'keel-impact: restore: cannot resolve %s\n' "$from" >&2; exit 2; }
+
+  local state; state="$(impact_entry_state .)"
+  case "$state" in
+    override|legacy)
+      printf 'keel-impact: restore targets the store only — %s is using a per-file override or a legacy in-tree marker\n' "$(_impact_resolve_top .)" >&2
+      exit 2
+      ;;
+    unresolved)
+      printf 'keel-impact: restore: no store root resolved (set HOME, or export KEEL_HOME/KEEL_IMPACT_STORE)\n' >&2
+      exit 2
+      ;;
+  esac
+
+  local target target_p
+  target="$(impact_store_dir . 2>/dev/null || true)"
+  if [ -n "$target" ] && [ -d "$target" ]; then
+    target_p="$(cd "$target" && pwd -P)"
+    if [ "$from_p" = "$target_p" ]; then
+      printf 'keel-impact: restore: FROM_DIR is the target entry itself (%s)\n' "$target_p" >&2
+      exit 2
+    fi
+  fi
+
+  _impact_begin
+  impact_store_enable . >/dev/null
+  local store; store="$(impact_store_dir .)" || { printf 'keel-impact: restore: store root could not resolve\n' >&2; exit 1; }
+
+  local before=0 after
+  [ -f "$store/ledger.md" ] && before="$(_ledger_stats "$store/ledger.md" | cut -d' ' -f1)"
+
+  _impact_merge_ledger "$store/ledger.md" "$from/ledger.md" \
+    || { printf 'keel-impact: restore: failed to merge %s\n' "$from/ledger.md" >&2; exit 1; }
+  _impact_merge_evidence "$store/evidence.md" "$from/evidence.md" \
+    || { printf 'keel-impact: restore: failed to merge %s\n' "$from/evidence.md" >&2; exit 1; }
+  _impact_merge_log "$store/impact-events.log" "$from/impact-events.log" \
+    || { printf 'keel-impact: restore: failed to merge %s\n' "$from/impact-events.log" >&2; exit 1; }
+  if [ -f "$from/history" ]; then
+    _impact_merge_log "$store/history" "$from/history" \
+      || { printf 'keel-impact: restore: failed to merge %s\n' "$from/history" >&2; exit 1; }
+  fi
+
+  _impact_history_append . restore "$from_p"
+
+  # Guarded exactly like `before` above (found live by a code-review round): a FROM_DIR is only
+  # required to hold at least ONE of the three files (S9) — a FROM holding only evidence.md/
+  # impact-events.log never gives _impact_merge_ledger anything to merge, so it returns 0 without ever
+  # calling ensure_ledger to create $store/ledger.md. An unguarded _ledger_stats on that missing file
+  # would abort the whole script under `set -e` (awk's own open failure), right after the merge and
+  # the history record already succeeded — the recovery would have mostly worked while the operator
+  # saw a raw crash instead of the success line.
+  after=0
+  [ -f "$store/ledger.md" ] && after="$(_ledger_stats "$store/ledger.md" | cut -d' ' -f1)"
+  printf 'keel-impact: restored from %s — ledger data rows %s -> %s\n' "$from_p" "$before" "$after"
+}
+
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
   event)          shift; cmd_event "$@" ;;
   enable)         shift; cmd_enable "$@" ;;
   migrate)        shift; cmd_migrate "$@" ;;
+  restore)        shift; cmd_restore "$@" ;;
   rollup)
     # rollup is the one verb whose flag DISPATCH lives HERE rather than in its function body the way
     # cmd_add's and cmd_event's argument validation does. That placement is safe for the ordering rule

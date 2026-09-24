@@ -165,4 +165,19 @@ check_absent "the two rules are never concatenated" "$(cat "$bf/.gitignore")" "n
 # blank line, which is what a guard testing the wrong end of the file would do.
 check_status "no blank line is introduced between rules" "0" "$(grep -c '^$' "$bf/.gitignore")"
 
+# --- dir #630 S12 (B14): a `lost` refusal from `enable` must not abort scaffolding under this
+# file's own `set -euo pipefail` — init-project completes and exits 0, showing the refusal -----------
+b14="$SANDBOX/b14-lost-proj"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$init" "$b14"
+check_status "B14 setup: a normal init still exits 0" 0 "$STATUS"
+b14_id="$(cd "$b14" && pwd -P | tr '/' '-')"
+b14_store="$KEEL_IMPACT_STORE/$b14_id"
+check_dir "B14 setup: the store entry was created" "$b14_store"
+rm -rf "$b14_store"
+
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$init" "$b14"
+check_status "B14: init-project on a lost-state repo still exits 0 (S12)" 0 "$STATUS"
+check_contains "B14: init-project shows enable's own M-LOST refusal" "$OUT" "store entry is missing"
+check_file "B14: CLAUDE.md still exists (scaffolding completed despite the refusal)" "$b14/CLAUDE.md"
+
 summary

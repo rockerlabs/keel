@@ -345,4 +345,121 @@ run bash -c ". '$lib'
   echo ok"
 check_contains "_impact_resolve_top is correct across repeat and different-dir calls" "$OUT" "ok"
 
+# ==== dir #630: keel_store_record/keel_store_recorded/keel_store_state, impact_store_create,
+# impact_entry_state, impact_recorded_entries — the S4/S5/S6 generic pair + impact's own wrappers ====
+
+# --- keel_store_record / keel_store_recorded ---------------------------------------------------
+ksr_repo="$(new_repo)"
+ksr_top="$(cd "$ksr_repo" && pwd -P)"
+run bash -c ". '$lib'; keel_store_record k.test '/some/entry' '$ksr_top'; git -C '$ksr_top' config --local --get-all k.test"
+check_status "keel_store_record writes a retrievable value" 0 "$STATUS"
+check_contains "keel_store_record's value round-trips" "$OUT" "/some/entry"
+
+run bash -c ". '$lib'; keel_store_record k.test '/some/entry' '$ksr_top'; keel_store_record k.test '/some/entry' '$ksr_top'; git -C '$ksr_top' config --local --get-all k.test | wc -l | tr -d ' '"
+check_contains "keel_store_record is idempotent (no duplicate value)" "$OUT" "1"
+
+run bash -c ". '$lib'; keel_store_recorded k.nosuch '$ksr_top'; echo \"rc=\$?\""
+check_contains "keel_store_recorded on a missing key never fails the caller (rc 1 swallowed)" "$OUT" "rc=0"
+check_contains "keel_store_recorded prints nothing for a missing key" "|$OUT|" "|rc=0|"
+
+run bash -c ". '$lib'; keel_store_record k.test '/some/entry' /nonexistent/not-a-repo; echo done"
+check_status "keel_store_record on a non-repo TOP is a silent no-op, never fails" 0 "$STATUS"
+check_contains "keel_store_record on a non-repo TOP still reports done" "$OUT" "done"
+
+# --- keel_store_state: enabled / lost / moved / never (the generic rungs 3-6) --------------------
+kss_dir="$SANDBOX/kss-entry"
+run bash -c ". '$lib'; mkdir -p '$kss_dir'; keel_store_state k.test '$kss_dir' '$ksr_top'"
+check_contains "keel_store_state: entry dir exists -> enabled" "$OUT" "enabled"
+
+run bash -c ". '$lib'; keel_store_record k.moved '$SANDBOX/kss-gone' '$ksr_top'; keel_store_state k.moved '$SANDBOX/kss-gone' '$ksr_top'"
+check_contains "keel_store_state: recorded, dir absent -> lost" "$OUT" "lost"
+
+kss_other="$SANDBOX/kss-other-entry"; mkdir -p "$kss_other"
+# ENTRY ('kss-gone2') is never itself recorded here — only $kss_other is — so it can't hit `lost`
+# (that rung requires ENTRY itself to be a recorded value); the only recorded value existing as a
+# directory (kss_other) is what makes this `moved`, not `lost`.
+run bash -c ". '$lib'; keel_store_record k.moved2 '$kss_other' '$ksr_top'; keel_store_state k.moved2 '$SANDBOX/kss-gone2' '$ksr_top'"
+check_contains "keel_store_state: unrecorded entry, but another recorded value exists -> moved" "$OUT" "moved"
+
+run bash -c ". '$lib'; keel_store_state k.nothing-recorded '$SANDBOX/kss-never' '$ksr_top'"
+check_contains "keel_store_state: nothing recorded at all -> never" "$OUT" "never"
+
+# --- impact_store_create: mkdir + the S4 record, skipped under a per-file override ---------------
+isc_repo="$(new_repo)"
+isc_top="$(cd "$isc_repo" && pwd -P)"
+isc_store="$SANDBOX/isc-store"
+run env -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$isc_store" \
+  bash -c ". '$lib'; impact_store_create '$isc_repo'"
+isc_id="$(printf '%s' "$isc_top" | tr '/' '-')"
+check_status "impact_store_create succeeds" 0 "$STATUS"
+check_dir "impact_store_create creates the entry dir" "$isc_store/$isc_id"
+check_contains "impact_store_create prints the entry path" "$OUT" "$isc_store/$isc_id"
+run bash -c "git -C '$isc_top' config --local --get-all keel.impactStore"
+check_contains "impact_store_create records the S4 provenance value" "$OUT" "$isc_store/$isc_id"
+
+isc_repo2="$(new_repo)"
+isc_top2="$(cd "$isc_repo2" && pwd -P)"
+run env -u KEEL_IMPACT_EVIDENCE -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$SANDBOX/isc-store-2" KEEL_IMPACT_LEDGER="$SANDBOX/isc-override-ledger.md" \
+  bash -c ". '$lib'; impact_store_create '$isc_repo2'"
+check_status "impact_store_create still mkdir's under a per-file override" 0 "$STATUS"
+run bash -c "git -C '$isc_top2' config --local --get-all keel.impactStore"
+check_status "impact_store_create records NOTHING under a per-file override (S4 scope)" 1 "$STATUS"
+
+# --- impact_entry_state: rungs 0-2 (unresolved / override / legacy) ------------------------------
+ies_repo="$(new_repo)"
+run env -u KEEL_IMPACT_STORE -u KEEL_HOME -u HOME bash -c ". '$lib'; impact_entry_state '$ies_repo' 2>/tmp/ies-stderr-\$\$; echo \"[stderr:\$(cat /tmp/ies-stderr-\$\$)]\"; rm -f /tmp/ies-stderr-\$\$"
+check_contains "impact_entry_state rung 0: everything unset -> unresolved" "$OUT" "unresolved"
+check_contains "impact_entry_state rung 0: stderr stays empty (suppressed, per S6)" "$OUT" "[stderr:]"
+
+run env KEEL_IMPACT_STORE="$SANDBOX/ies-store" KEEL_IMPACT_LEDGER="$SANDBOX/ies-ledger.md" \
+  bash -c ". '$lib'; impact_entry_state '$ies_repo'"
+check_contains "impact_entry_state rung 1: a per-file override -> override" "$OUT" "override"
+
+ies_legacy="$(new_repo)"
+mkdir -p "$ies_legacy/.keel"
+: > "$ies_legacy/.keel/evidence.md"
+run env -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$SANDBOX/ies-store-2" \
+  bash -c ". '$lib'; impact_entry_state '$ies_legacy'"
+check_contains "impact_entry_state rung 2: an in-tree legacy file -> legacy" "$OUT" "legacy"
+
+# --- impact_recorded_entries: prints recorded values, one per line -------------------------------
+ire_repo="$(new_repo)"
+ire_top="$(cd "$ire_repo" && pwd -P)"
+run bash -c ". '$lib'; keel_store_record keel.impactStore '$SANDBOX/ire-1' '$ire_top'; keel_store_record keel.impactStore '$SANDBOX/ire-2' '$ire_top'; impact_recorded_entries '$ire_repo'"
+check_contains "impact_recorded_entries lists the first recorded value" "$OUT" "$SANDBOX/ire-1"
+check_contains "impact_recorded_entries lists the second recorded value" "$OUT" "$SANDBOX/ire-2"
+
+# --- spec §9 V4: a read-only .git/config degrades to "no record", never a hard failure (S4: "any
+# failure is ignored"). Skipped on a root CI runner, where chmod is a no-op for the root reader (the
+# project's own documented Linux-leg trap 2) — the platform-independent half (no crash, rc 0 either
+# way) still runs unconditionally below. ------------------------------------------------------------
+v4_repo="$(new_repo)"
+v4_top="$(cd "$v4_repo" && pwd -P)"
+run bash -c ". '$lib'; keel_store_record k.v4 '/some/entry' '$v4_top'; echo done"
+check_status "V4: keel_store_record never fails the caller, even a healthy write" 0 "$STATUS"
+check_contains "V4: keel_store_record's caller still completes" "$OUT" "done"
+
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  # V4 escape, found live: `chmod 444` on the FILE alone does NOT reproduce "read-only .git/config" —
+  # `git config --add` writes via a lock file (`config.lock`) then renames it over `config`, and a
+  # rename only needs WRITE permission on the containing DIRECTORY, never the target file's own bits
+  # (reproduced live: a 444 `.git/config` still accepted a new value). The read-only DIRECTORY is what
+  # actually blocks it (`error: could not lock config file .git/config: Permission denied`, rc 255).
+  v4_cfg="$v4_top/.git/config"
+  v4_before="$(cat "$v4_cfg")"
+  chmod 555 "$v4_top/.git"
+  run bash -c ". '$lib'; keel_store_record k.v4ro '/some/other/entry' '$v4_top'; echo done"
+  chmod 755 "$v4_top/.git"   # restore so cleanup can remove the sandbox
+  check_status "V4: a read-only .git/ dir never fails the caller" 0 "$STATUS"
+  check_contains "V4: the caller still completes despite the write failing" "$OUT" "done"
+  run bash -c "git -C '$v4_top' config --local --get-all k.v4ro 2>&1"
+  check_status "V4: nothing was recorded through the read-only .git/ dir" 1 "$STATUS"
+  v4_after="$(cat "$v4_cfg")"
+  if [ "$v4_before" = "$v4_after" ]; then
+    pass "V4: the read-only config's own content is unchanged"
+  else
+    fail "V4: the read-only config's own content is unchanged" "before=[$v4_before] after=[$v4_after]"
+  fi
+fi
+
 summary

@@ -1888,4 +1888,296 @@ else
   [ "$map_ok" -eq 1 ] && pass "cmd_add maps every _LEDGER_COLS entry to a row value"
 fi
 
+# ==== dir #630 PR-B acceptance: B1-B21 (S4-S12's state machine, provenance, restore, backfill) =====
+run_tool() { run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" "$@"; }
+run_tool_in() { local d="$1"; shift; run_in "$d" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" "$@"; }
+# count of ledger DATA rows (a table line whose first cell is an ISO date) — the same shape
+# _ledger_parse's own "sessions" tally matches, read here from the outside via a plain grep so these
+# tests don't need to reach into the tool's own private functions.
+ledger_rows() { grep -cE '^\| [0-9]{4}-[0-9]{2}-[0-9]{2} ' "$1" 2>/dev/null; }
+b_config_top() { cd "$1" && pwd -P; }
+
+# --- B1: enable's own argument validation (S9, the papercut) ---------------------------------------
+b1repo="$(new_repo)"
+b1_store="$KEEL_IMPACT_STORE/$(store_id_for "$b1repo")"
+run_tool enable "$b1repo" --bogus
+check_status "B1: enable --bogus exits 2" 2 "$STATUS"
+check_nodir "B1: enable --bogus creates no entry" "$b1_store"
+
+run_tool enable /no/such/dir/for-b1
+check_status "B1: enable /no/such/dir exits 2" 2 "$STATUS"
+
+run_tool enable "$b1repo" extra-positional
+check_status "B1: enable with two positionals exits 2" 2 "$STATUS"
+check_nodir "B1: enable with two positionals creates no entry" "$b1_store"
+
+run_tool enable "$b1repo" --help
+check_status "B1: enable --help exits 0" 0 "$STATUS"
+check_contains "B1: enable --help prints usage" "$OUT" "Usage:"
+check_nodir "B1: enable --help creates no entry" "$b1_store"
+
+# --- B2: enable records keel.impactStore = the entry dir; idempotent; a linked worktree lands in
+# the MAIN checkout's common config -------------------------------------------------------------
+b2repo="$(new_repo)"
+b2_top="$(b_config_top "$b2repo")"
+b2_store="$KEEL_IMPACT_STORE/$(store_id_for "$b2repo")"
+run_tool enable "$b2repo"
+check_status "B2: enable succeeds" 0 "$STATUS"
+run bash -c "git -C '$b2_top' config --local --get-all keel.impactStore"
+check_contains "B2: enable records keel.impactStore = the entry dir" "$OUT" "$b2_store"
+
+run_tool enable "$b2repo"
+run bash -c "git -C '$b2_top' config --local --get-all keel.impactStore | wc -l | tr -d ' '"
+check_contains "B2: a second enable adds no duplicate value" "$OUT" "1"
+
+git -C "$b2repo" commit -q --allow-empty -m seed
+b2wt="$SANDBOX/b2-wt"
+git -C "$b2repo" worktree add -q -b b2-wt-branch "$b2wt" >/dev/null 2>&1
+run_tool_in "$b2wt" enable .
+check_status "B2: enable from a linked worktree succeeds" 0 "$STATUS"
+run bash -c "git -C '$b2_top' config --local --get-all keel.impactStore"
+check_contains "B2: enable from a linked worktree lands in the MAIN checkout's common config" "$OUT" "$b2_store"
+
+# --- B3: a not-yet-git dir still enables (unchanged); nothing is recorded there (no repo to record
+# against) --------------------------------------------------------------------------------------
+b3dir="$(mktemp -d "$SANDBOX/b3-nogit.XXXXXX")"
+b3_store="$KEEL_IMPACT_STORE/$(store_id_for "$b3dir")"
+run_tool enable "$b3dir"
+check_status "B3: enable on a not-yet-git dir still succeeds" 0 "$STATUS"
+check_dir "B3: the store entry is created" "$b3_store"
+run bash -c "git -C '$b3dir' config --local --get-all keel.impactStore 2>&1"
+check_status "B3: nothing is recorded for a non-git dir" 128 "$STATUS"
+
+# --- B4: incident replay — enable, add, destroy the store root; every verb reports LOST (S7's
+# M-LOST), never "not enabled" ---------------------------------------------------------------------
+b4repo="$(new_repo)"
+b4_store="$KEEL_IMPACT_STORE/$(store_id_for "$b4repo")"
+run_tool_in "$b4repo" enable .
+check_status "B4: enable succeeds" 0 "$STATUS"
+run_tool_in "$b4repo" add --fire "pre-loss row" --gap none
+check_status "B4: add succeeds while enabled" 0 "$STATUS"
+check_file "B4: the ledger exists before the incident" "$b4_store/ledger.md"
+
+b4_backup="$SANDBOX/b4-backup"
+cp -Rp "$b4_store" "$b4_backup"
+rm -rf "$b4_store"
+
+run_tool_in "$b4repo" rollup
+check_status "B4: rollup on a lost entry exits 2" 2 "$STATUS"
+check_contains "B4: rollup's refusal says the literal M-LOST phrase" "$OUT" "store entry is missing"
+check_contains "B4: rollup's refusal names the lost entry's path" "$OUT" "$b4_store"
+check_contains "B4: rollup's refusal names restore" "$OUT" "restore"
+
+run_tool_in "$b4repo" add --fire "e2" --gap none
+check_status "B4: add on a lost entry exits 2" 2 "$STATUS"
+check_contains "B4: add's refusal is also M-LOST" "$OUT" "store entry is missing"
+
+run_tool_in "$b4repo" event guard secret-guard blocked
+check_status "B4: event on a lost entry exits 0" 0 "$STATUS"
+check_contains "B4: event's own message names the lost entry" "$OUT" "store entry is missing"
+check_nodir "B4: event writes nothing (no entry re-created)" "$b4_store"
+
+run_tool_in "$b4repo" enable .
+check_status "B4: enable (no --restart) on a lost entry exits 2" 2 "$STATUS"
+check_contains "B4: enable's own M-LOST refusal" "$OUT" "store entry is missing"
+check_nodir "B4: enable (no --restart) creates no entry" "$b4_store"
+
+# --- B5: enable --restart on a lost entry starts a NEW trend on purpose, records it ----------------
+run_tool_in "$b4repo" enable . --restart
+check_status "B5: enable --restart on a lost entry exits 0" 0 "$STATUS"
+check_dir "B5: the entry exists again" "$b4_store"
+check_file "B5: the entry has a history file" "$b4_store/history"
+check_contains "B5: history has one restart line" "$(cat "$b4_store/history")" "restart"
+run_tool_in "$b4repo" rollup
+check_status "B5: rollup on the restarted entry succeeds" 0 "$STATUS"
+check_contains "B5: rollup prints the restart history line" "$OUT" "restart"
+
+# --- B6: restore FROM a copy recovers every pre-loss row; FROM stays byte-identical; idempotent ----
+b6repo="$(new_repo)"
+b6_store="$KEEL_IMPACT_STORE/$(store_id_for "$b6repo")"
+run_tool_in "$b6repo" enable .
+run_tool_in "$b6repo" add --fire "row one" --gap none
+run_tool_in "$b6repo" add --miss "row two" --gap none
+b6_rows_before="$(ledger_rows "$b6_store/ledger.md")"
+b6_backup="$SANDBOX/b6-backup"
+cp -Rp "$b6_store" "$b6_backup"
+b6_cksum_before="$(find "$b6_backup" -type f -exec cksum {} \; | sort)"
+rm -rf "$b6_store"
+
+run_tool_in "$b6repo" restore "$b6_backup"
+check_status "B6: restore on a lost entry exits 0" 0 "$STATUS"
+# "before" is the just-recreated (freshly re-enabled) entry's own row count, 0 — not the backup's;
+# the merge is what brings the backup's rows in, so "after" is where $b6_rows_before shows up.
+check_contains "B6: restore reports the data-row count before -> after" "$OUT" "0 -> $b6_rows_before"
+b6_rows_after="$(ledger_rows "$b6_store/ledger.md")"
+check_eq "B6: every pre-loss row came back" "$b6_rows_before" "$b6_rows_after"
+check_contains "B6: history has one restore line" "$(cat "$b6_store/history")" "restore"
+b6_cksum_after="$(find "$b6_backup" -type f -exec cksum {} \; | sort)"
+check_eq "B6: FROM is byte-identical before and after restore" "$b6_cksum_before" "$b6_cksum_after"
+
+run_tool_in "$b6repo" restore "$b6_backup"
+check_status "B6: a second restore run succeeds (idempotent)" 0 "$STATUS"
+b6_rows_second="$(ledger_rows "$b6_store/ledger.md")"
+check_eq "B6: a second restore leaves the row count unchanged" "$b6_rows_before" "$b6_rows_second"
+
+# --- B7: restore into an already-restarted entry merges old + new rows, sorted, deduped ------------
+run_tool_in "$b4repo" add --fire "post-restart row" --gap none
+b7_rows_before="$(ledger_rows "$b4_store/ledger.md")"
+run_tool_in "$b4repo" restore "$b4_backup"
+check_status "B7: restore into a restarted entry exits 0" 0 "$STATUS"
+b7_rows_after="$(ledger_rows "$b4_store/ledger.md")"
+b7_backup_rows="$(ledger_rows "$b4_backup/ledger.md")"
+b7_expected=$((b7_rows_before + b7_backup_rows))
+check_eq "B7: old and new rows merged (no loss, no duplicates)" "$b7_expected" "$b7_rows_after"
+b7_sorted="$(grep -E '^\| [0-9]{4}-[0-9]{2}-[0-9]{2} ' "$b4_store/ledger.md" | awk -F'|' '{print $2}' | tr -d ' ')"
+check_eq "B7: merged rows are sorted by date" "$b7_sorted" "$(printf '%s\n' "$b7_sorted" | sort)"
+
+# --- B8: restore's own input validation (S9): each exits 2 and writes nothing ----------------------
+b8repo="$(new_repo)"
+run_tool_in "$b8repo" enable .
+run_tool_in "$b8repo" restore
+check_status "B8: restore with no argument exits 2" 2 "$STATUS"
+
+run_tool_in "$b8repo" restore /no/such/copy-dir
+check_status "B8: restore from a nonexistent FROM exits 2" 2 "$STATUS"
+
+b8_empty="$(mktemp -d "$SANDBOX/b8-empty.XXXXXX")"
+run_tool_in "$b8repo" restore "$b8_empty"
+check_status "B8: restore from a FROM holding none of the three files exits 2" 2 "$STATUS"
+
+b8_target="$KEEL_IMPACT_STORE/$(store_id_for "$b8repo")"
+run_tool_in "$b8repo" restore "$b8_target"
+check_status "B8: restore FROM = the target entry itself exits 2" 2 "$STATUS"
+
+b8_ledger_override="$SANDBOX/b8-override-ledger.md"
+run_in "$b8repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LEDGER="$b8_ledger_override" bash "$TOOL" restore "$b6_backup"
+check_status "B8: restore under a per-file override (KEEL_IMPACT_LEDGER) exits 2" 2 "$STATUS"
+check_nofile "B8: no file was written under the per-file override target" "$b8_ledger_override"
+
+# S9/S10 regression (found live by a code-review round on this ticket): a FROM_DIR holding only ONE
+# of the three files (S9 requires just one) must not crash restore's own final row-count report — a
+# FROM with only evidence.md never gives _impact_merge_ledger anything to merge, so ledger.md is never
+# created in the target, and an earlier draft's unguarded final _ledger_stats read aborted the whole
+# script (awk: can't open file) right after the merge and the history record had already succeeded.
+b8b_repo="$(new_repo)"
+b8b_from="$(mktemp -d "$SANDBOX/b8b-evidence-only.XXXXXX")"
+printf '# Keel impact — per-event evidence\n\n## 2026-01-01 some note\n' > "$b8b_from/evidence.md"
+run_tool_in "$b8b_repo" restore "$b8b_from"
+check_status "B8b: restore from a FROM holding only evidence.md exits 0, not a crash" 0 "$STATUS"
+check_contains "B8b: restore still prints its row-count report (0 -> 0)" "$OUT" "0 -> 0"
+
+# --- B9: moved — the record names an existing entry under ANOTHER store root -----------------------
+b9repo="$(new_repo)"
+b9_store1="$SANDBOX/b9-store-1"
+run_in "$b9repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE KEEL_IMPACT_STORE="$b9_store1" bash "$TOOL" enable .
+check_status "B9: enable under the first store root succeeds" 0 "$STATUS"
+b9_entry1="$b9_store1/$(store_id_for "$b9repo")"
+check_dir "B9: the first entry exists" "$b9_entry1"
+
+b9_store2="$SANDBOX/b9-store-2"
+run_in "$b9repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE KEEL_IMPACT_STORE="$b9_store2" bash "$TOOL" rollup
+check_status "B9: rollup under a DIFFERENT store root (moved) exits 2" 2 "$STATUS"
+check_contains "B9: the refusal lists the recorded (elsewhere) entry" "$OUT" "$b9_entry1"
+
+run_in "$b9repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE KEEL_IMPACT_STORE="$b9_store2" bash "$TOOL" enable .
+check_status "B9: enable under the DIFFERENT store root proceeds (new entry) with a notice" 0 "$STATUS"
+check_contains "B9: enable's moved notice lists the recorded entry" "$OUT" "$b9_entry1"
+b9_entry2="$b9_store2/$(store_id_for "$b9repo")"
+check_dir "B9: a NEW entry is created under the second store root" "$b9_entry2"
+# regression (found live by a code-review round): the notice must list the OLD entry only — the entry
+# THIS call just created must never appear as if it were a second "different" prior record (the old
+# capture ran AFTER impact_store_enable had already added the new entry under the same S4 key).
+check_absent "B9: the moved notice does NOT list the entry this call just created" "$OUT" "$b9_entry2"
+
+# regression (found live by a code-review round, cross-file tracer angle): a project with MORE than
+# one historical record must only list entries that still exist under a "still exists" header — a
+# stale (also-lost) prior record must not appear alongside a genuinely moved-to one.
+rm -rf "$b9_entry1"
+b9_store3="$SANDBOX/b9-store-3"
+run_in "$b9repo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE KEEL_IMPACT_STORE="$b9_store3" bash "$TOOL" rollup
+check_status "B9: rollup under a THIRD store root (moved, one stale record) exits 2" 2 "$STATUS"
+check_contains "B9: the refusal lists the entry that still exists" "$OUT" "$b9_entry2"
+check_absent "B9: the refusal does NOT list the now-destroyed first entry" "$OUT" "$b9_entry1"
+
+# --- B10: backfill through rollup (S5) — an entry mkdir'd (never recorded) gets its S4 record ------
+b10repo="$(new_repo)"
+b10_store="$KEEL_IMPACT_STORE/$(store_id_for "$b10repo")"
+mkdir -p "$b10_store"
+run bash -c "git -C '$(b_config_top "$b10repo")' config --local --get-all keel.impactStore 2>&1"
+check_status "B10: before backfill, nothing is recorded" 1 "$STATUS"
+run_tool_in "$b10repo" rollup
+check_status "B10: rollup on the unrecorded (but existing) entry succeeds" 0 "$STATUS"
+run bash -c "git -C '$(b_config_top "$b10repo")' config --local --get-all keel.impactStore"
+check_contains "B10: rollup backfilled the S4 record" "$OUT" "$b10_store"
+
+# --- B11: per-file overrides never write the S4 record (S4's scope note) ---------------------------
+b11repo="$(new_repo)"
+run_in "$b11repo" bash "$TOOL" add --fire "e" --gap none   # the harness's own ambient per-file overrides, no -u
+check_status "B11: add succeeds under the harness's own per-file overrides" 0 "$STATUS"
+run bash -c "git -C '$(b_config_top "$b11repo")' config --local --get-all keel.impactStore 2>&1"
+check_status "B11: nothing is recorded for a per-file-override repo" 1 "$STATUS"
+
+# --- B12: rollup --registry prints the `lost` row form, not "tracking off" -------------------------
+b12repo="$(new_repo)"
+run_tool_in "$b12repo" enable .
+b12_entry="$KEEL_IMPACT_STORE/$(store_id_for "$b12repo")"
+rm -rf "$b12_entry"
+b12reg="$SANDBOX/INSTANCE-b12.md"
+{
+  printf '## Projects\n\n| Name | Path | Tag |\n|------|------|-----|\n'
+  printf '| b12 | `%s` | x |\n' "$b12repo"
+} > "$b12reg"
+run bash "$TOOL" rollup --registry "$b12reg"
+check_status "B12: rollup --registry succeeds even with a lost row" 0 "$STATUS"
+check_contains "B12: the lost row prints its own form, not 'tracking off'" "$OUT" "store entry lost — recorded at $b12_entry"
+
+# --- B16: rollup --retro never prints a history line ------------------------------------------------
+run_tool_in "$b4repo" add --retro --fire "a retro row" --gap none --asof 2026-01-01
+run_tool_in "$b4repo" rollup --retro
+check_status "B16: rollup --retro succeeds" 0 "$STATUS"
+check_absent "B16: rollup --retro prints no history line" "$OUT" "restart"
+check_absent "B16: rollup --retro prints no history line (restore either)" "$OUT" "restore"
+
+# --- B17: a forced merge failure -> rc 1, naming the failing file (S10) ----------------------------
+b17repo="$(new_repo)"
+run_tool_in "$b17repo" enable .
+run_tool_in "$b17repo" add --fire "e" --gap none
+b17_store="$KEEL_IMPACT_STORE/$(store_id_for "$b17repo")"
+b17_backup="$SANDBOX/b17-backup"
+cp -Rp "$b17_store" "$b17_backup"
+rm -f "$b17_store/evidence.md"
+mkdir -p "$b17_store/evidence.md"   # a directory where a regular file belongs -> the atomic writer refuses
+run_tool_in "$b17repo" restore "$b17_backup"
+check_status "B17: restore with a forced merge failure exits 1" 1 "$STATUS"
+check_contains "B17: the failure names the failing file" "$OUT" "evidence.md"
+
+# --- B18: backfill through `add` as well as `rollup` (S5) -------------------------------------------
+b18repo="$(new_repo)"
+b18_store="$KEEL_IMPACT_STORE/$(store_id_for "$b18repo")"
+mkdir -p "$b18_store"
+run_tool_in "$b18repo" add --fire "e" --gap none
+check_status "B18: add on the unrecorded (but existing) entry succeeds" 0 "$STATUS"
+run bash -c "git -C '$(b_config_top "$b18repo")' config --local --get-all keel.impactStore"
+check_contains "B18: add backfilled the S4 record" "$OUT" "$b18_store"
+
+# --- B21: partial migration (store ledger + a TRACKED in-tree evidence.md) -> legacy; restore exits
+# 2 and leaves the tracked in-tree file unchanged (S6 rung 2) --------------------------------------
+b21repo="$(new_repo)"
+run_tool_in "$b21repo" enable .
+run_tool_in "$b21repo" add --fire "e" --gap none
+b21_store="$KEEL_IMPACT_STORE/$(store_id_for "$b21repo")"
+mkdir -p "$b21repo/.keel"
+printf 'tracked in-tree evidence\n' > "$b21repo/.keel/evidence.md"
+git -C "$b21repo" add .keel/evidence.md
+git -C "$b21repo" commit -qm "tracked legacy evidence"
+b21_before="$(cat "$b21repo/.keel/evidence.md")"
+b21_backup="$SANDBOX/b21-backup"
+cp -Rp "$b21_store" "$b21_backup"
+run_tool_in "$b21repo" restore "$b21_backup"
+check_status "B21: restore on a partial-migration (legacy) repo exits 2" 2 "$STATUS"
+check_contains "B21: restore's refusal says the store only" "$OUT" "store only"
+b21_after="$(cat "$b21repo/.keel/evidence.md")"
+check_eq "B21: the in-tree tracked file is unchanged" "$b21_before" "$b21_after"
+
+
 summary

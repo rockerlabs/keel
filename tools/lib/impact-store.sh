@@ -252,8 +252,159 @@ impact_store_mark_migrated() {
 impact_store_enable() {
   local dir="${1:-.}" top store
   top="$(_impact_resolve_top "$dir")"
-  store="$(impact_store_dir "$dir")"
-  mkdir -p "$store"
+  # dir #630 S5: the mkdir moved into impact_store_create, the ONE entry creator — it also writes the
+  # S4 provenance record (keel.impactStore in the repo's local git config), which every site that
+  # brings a store entry into existence must do, not just this one.
+  store="$(impact_store_create "$dir")" || return 1
   impact_has_legacy_files "$dir" "$top" || impact_store_mark_migrated "$store" "$top"
   printf '%s' "$store"
+}
+
+# ==== dir #630: provenance (S4), one entry creator (S5), state machine (S6) ========================
+#
+# S0 vocabulary (stated once, read by every function below):
+#   lost  — this repo recorded an entry (S4) and its directory is absent now. The tool cannot tell
+#           *destroyed* from *moved away*, and says so.
+#   never — no record exists on this clone. A fresh clone of a once-enabled repo reads `never`; that
+#           limit is accepted.
+#   moved — this repo recorded some OTHER entry that still exists (KEEL_HOME changed, or the repo's own
+#           path changed and so did its id).
+# The read-trace half (S13, PR-C) reuses the same three words and the same generic pair below.
+
+# IMPACT_STORE_RECORD_KEY — S4: the git-config key the impact half's provenance record lives under.
+# Named once so keel-impact.sh and this file never hand-type the string independently.
+IMPACT_STORE_RECORD_KEY="keel.impactStore"
+
+# _impact_override_active — true iff any per-file override (KEEL_IMPACT_LEDGER/_EVIDENCE/_LOG) is set,
+# the ONE place this three-variable check lives (found by a cross-vendor-style review round: it was
+# hand-typed three times — impact_store_create, impact_entry_state's rung 1, and _impact_begin's S5
+# backfill — twice as a negated-AND and once as a positive-OR). A future 4th per-file override (or the
+# removal of one of the three) now needs updating in exactly one place, the same discipline
+# IMPACT_ISOLATION_VARS above exists for on the isolation side (dir #317's own history).
+_impact_override_active() {
+  [ -n "${KEEL_IMPACT_LEDGER:-}" ] || [ -n "${KEEL_IMPACT_EVIDENCE:-}" ] || [ -n "${KEEL_IMPACT_LOG:-}" ]
+}
+
+# keel_store_record KEY ENTRY TOP — S4: record that TOP's project has (or had) a store entry at ENTRY,
+# under the LOCAL git config key KEY (`git -C "$TOP" config --local`), multi-valued. Generic — read-
+# trace's own S13 record (key `keel.readTraceStore`) reuses this unchanged rather than a second
+# hand-rolled writer. A TOP that is not a git repo, or a value already present, is a silent no-op;
+# ANY failure is ignored (S4: "never fails the verb") — this function always returns 0. Precedent for
+# writing into an adopter's own git dir: install-secret-guard.sh vendors into the repo's hooks dir (S4).
+keel_store_record() {
+  local key="$1" entry="$2" top="$3"
+  [ -n "$top" ] && [ -n "$entry" ] || return 0
+  git -C "$top" rev-parse --show-toplevel >/dev/null 2>&1 || return 0
+  _keel_store_has_entry "$key" "$entry" "$top" && return 0
+  git -C "$top" config --local --add "$key" "$entry" >/dev/null 2>&1 || true
+  return 0
+}
+
+# keel_store_recorded KEY TOP — S4 reads: print each value recorded under KEY at TOP, one per line.
+# `--get-all` returns rc 1 (no values) or rc 128 (TOP is not a repo) — S4: "both mean 'no record'", so
+# both are swallowed here rather than surfaced as an error.
+keel_store_recorded() {
+  local key="$1" top="$2"
+  [ -n "$top" ] || return 0
+  git -C "$top" config --local --get-all "$key" 2>/dev/null || true
+  return 0
+}
+
+# _keel_store_has_entry KEY ENTRY TOP — true iff ENTRY is among the values recorded under KEY at TOP.
+# The ONE membership test both `keel_store_record` (idempotency: don't --add a value already there)
+# and `keel_store_state` (the `lost` rung: ENTRY itself is recorded) need — factored here so the
+# SIGPIPE-safe here-string form (dir #280 — a `printf | grep -q` race) exists in one place, not two.
+_keel_store_has_entry() {
+  local key="$1" entry="$2" top="$3" recorded
+  recorded="$(keel_store_recorded "$key" "$top")"
+  [ -n "$recorded" ] && grep -qxF "$entry" <<<"$recorded"
+}
+
+# keel_store_state KEY ENTRY TOP — the S6 rungs that do NOT depend on anything impact-specific
+# (override/legacy have no read-trace equivalent — S13 has neither): rung 3 `enabled` (ENTRY exists),
+# rung 4 `lost` (ENTRY is recorded but absent), rung 5 `moved` (unrecorded, but some OTHER recorded
+# value still exists as a directory), rung 6 `never`. impact_entry_state (below) wraps this after its
+# own rungs 0-2; S13's read-trace half calls it directly, since it has no rungs 0-2 of its own.
+keel_store_state() {
+  local key="$1" entry="$2" top="$3"
+  if [ -n "$entry" ] && [ -d "$entry" ]; then printf 'enabled'; return 0; fi
+  if _keel_store_has_entry "$key" "$entry" "$top"; then
+    printf 'lost'; return 0
+  fi
+  local recorded r
+  recorded="$(keel_store_recorded "$key" "$top")"
+  while IFS= read -r r; do
+    [ -n "$r" ] && [ -d "$r" ] && { printf 'moved'; return 0; }
+  done <<<"$recorded"
+  printf 'never'
+}
+
+# impact_store_create [DIR] — S5: the ONE entry creator. `mkdir -p` of DIR's project's store entry plus
+# the S4 record — every site that brings a store entry into existence calls this (impact_store_enable
+# above; _impact_auto_migrate, cmd_migrate and cmd_restore in keel-impact.sh; the canary's pre-create).
+# Prints the store dir. S4's scope note ("never written when a per-file override is set...") is honoured
+# here: a caller running under KEEL_IMPACT_LEDGER/_EVIDENCE/_LOG still gets its mkdir (unaffected
+# behaviour — those overrides bypass the store outright, but nothing here depends on that), just no
+# provenance record, since that triple isn't resolving through the store at all.
+impact_store_create() {
+  local dir="${1:-.}" top store
+  top="$(_impact_resolve_top "$dir")"
+  store="$(impact_store_dir "$dir")" || return 1
+  # `|| return 1` (found by a final review round): a non-final failing command inside a function does
+  # NOT propagate as the function's own exit status in bash — only the LAST command's status does
+  # (here, the trailing `printf`, which always succeeds). Without this guard, a genuine mkdir failure
+  # (permission denied, disk full, a deleted parent mid-race) was silently swallowed: every caller's
+  # own `|| return 1`/`|| return 0` guard around this function never fired, and the very next line at
+  # most call sites (impact_store_mark_migrated's `printf ... > "$store/origin"`) would then hit the
+  # missing directory as a raw, uncaught shell error under `set -e` instead of a clean, named failure.
+  mkdir -p "$store" || return 1
+  _impact_override_active || keel_store_record "$IMPACT_STORE_RECORD_KEY" "$store" "$top"
+  printf '%s' "$store"
+}
+
+# _impact_is_legacy_state DIR TOP — S6 rung 2's two conditions, both read-only: (a) a legacy in-tree
+# file is PHYSICALLY present (impact_has_legacy_files, including a partial migration — one file moved,
+# another tracked one left behind); (b) no physical file yet, but the marker-but-not-yet-scored
+# fallback (_impact_file_path's own rung 4 — a genuine old-style `enable` gitignore line, no store entry
+# and no file written yet) would still resolve one of the three names in-tree. Either counts as `legacy`.
+_impact_is_legacy_state() {
+  local dir="$1" top="$2" name f
+  impact_has_legacy_files "$dir" "$top" && return 0
+  [ -n "$top" ] || return 1
+  for name in $IMPACT_LEGACY_NAMES; do
+    f="$(_impact_file_path "$name" "$dir")"
+    case "$f" in "$top/.keel/"*) return 0 ;; esac
+  done
+  return 1
+}
+
+# impact_entry_state [DIR] — S6: prints exactly one word — unresolved/override/legacy/enabled/lost/
+# moved/never — read-only, never errors (rung 0's own resolution failure is swallowed, not propagated).
+# Rungs 0-2 are impact-specific (a per-file override, or an unmigrated legacy marker, both bypass the
+# store outright); rungs 3-6 delegate to keel_store_state, shared with S13's read-trace half.
+impact_entry_state() {
+  local dir="${1:-.}" entry top
+  # rung 0: unresolved — impact_store_dir fails when HOME, KEEL_HOME and KEEL_IMPACT_STORE are all
+  # unset (impact_store_root's own `${HOME:?...}`); stderr is suppressed, per S6's own wording.
+  if ! entry="$(impact_store_dir "$dir" 2>/dev/null)"; then
+    printf 'unresolved'; return 0
+  fi
+  # rung 1: override — any per-file override is set, regardless of whether it happens to resolve.
+  if _impact_override_active; then
+    printf 'override'; return 0
+  fi
+  top="$(_impact_resolve_top "$dir")"
+  # rung 2: legacy
+  if _impact_is_legacy_state "$dir" "$top"; then
+    printf 'legacy'; return 0
+  fi
+  keel_store_state "$IMPACT_STORE_RECORD_KEY" "$entry" "$top"
+}
+
+# impact_recorded_entries [DIR] — S6's companion: print DIR's project's recorded store entries (S4),
+# one per line, for a `lost`/`moved` message to list. Read-only.
+impact_recorded_entries() {
+  local dir="${1:-.}" top
+  top="$(_impact_resolve_top "$dir")"
+  keel_store_recorded "$IMPACT_STORE_RECORD_KEY" "$top"
 }

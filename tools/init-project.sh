@@ -82,7 +82,12 @@ ensure_ignore "/.keel/map-drift-baseline"
 # entry every other worktree does. Nothing is written into the project's own tree. Zero token cost;
 # --no-impact to skip.
 if [ "$IMPACT" = 1 ]; then
-  "$here/keel-impact.sh" enable . | sed 's/^/  /'
+  # dir #630 S12: `enable` now exits 2 on a `lost` store entry (a durable M-LOST refusal, not the old
+  # silent restart) — under this file's own `set -euo pipefail`, an unguarded pipeline would abort
+  # scaffolding entirely on that one refusal. `|| true` keeps init-project completing and exiting 0
+  # either way; `enable`'s own output (refusal included) still prints, since `sed` runs regardless of
+  # the left side of the pipe failing — only the pipeline's own exit status needed catching.
+  "$here/keel-impact.sh" enable . | sed 's/^/  /' || true
 fi
 
 # 3. project CLAUDE.md from template

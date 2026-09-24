@@ -38,6 +38,9 @@
 #                             before impact tracking moved to an external store (dir #251) — run
 #                             `keel-impact.sh migrate` (retired: W-EVENTLOG-TRACKED, W-KEEL-SPLIT, which
 #                             lost their reason to exist once nothing is written in-tree any more)
+#   WARN  W-IMPACT-LOST        this project's impact store entry was recorded (dir #630's S4 provenance
+#                             record) but its directory is gone now — `keel-impact.sh restore FROM_DIR`
+#                             or `enable --restart`; checked at the main checkout only
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
 #                              carrying no executable pre-commit) and no local hook. Sensitive to a
 #                              redirected global git config, so it names its source (dir #97)
@@ -1047,6 +1050,24 @@ for d in "${DIRS[@]}"; do
   # The MAIN checkout's top, never a worktree-local one — role 3's (D3) doctor-accept/map-drift-baseline
   # files are still project-local and still resolved at the main checkout only, unaffected by dir #251.
   unit_top="${main_top:-${d_top:-$d}}"
+
+  # dir #630 S11: W-IMPACT-LOST — this project recorded a store entry (S4) that is gone now
+  # (impact_entry_state = lost). Checked against the MAIN checkout only, unlike W-KEEL-LEGACY's own
+  # per-directory audit just above: the state belongs to the PROJECT (S4's record lives in the main
+  # checkout's own .git/config), not to whichever worktree this loop happens to be walking, so a linked
+  # worktree audit does not repeat it — EXCEPT under a bare-main topology (`main_top` empty, the
+  # fallback arm below), where `_impact_resolve_top`/`impact_store_dir` themselves already treat each
+  # worktree as its own independent project (no shared main to fold onto, same convention
+  # tests/test_keel_impact.sh's own "bare-main… falls back to the worktree's own top" pins) — there
+  # each worktree genuinely owns a distinct S4 record, so firing once per worktree is that many
+  # correct, independent signals, not a repeat of one.
+  if [ "$d_top" = "$main_top" ] || { [ -z "$main_top" ] && [ -n "$d_top" ]; }; then
+    impact_state="$(impact_entry_state "$d" 2>/dev/null || true)"
+    if [ "$impact_state" = "lost" ]; then
+      impact_entry="$(impact_store_dir "$d" 2>/dev/null || true)"
+      warn W-IMPACT-LOST "this project's impact store entry was recorded but is gone now (recorded at $impact_entry) — run 'keel-impact.sh restore FROM_DIR' to recover it, or 'keel-impact.sh enable --restart' to start fresh"
+    fi
+  fi
 
   # Map-drift (dir #39 T1): a backtick-spanned path/filename in the LIVE map that no longer exists on
   # disk — code moves, the map doesn't, and the agent confidently follows a dead path. Backtick-spans

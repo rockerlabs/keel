@@ -330,4 +330,28 @@ check_contains "the kept 'do not push' clause survives word for word (dir #318, 
   "$OUT" "do not push this branch until the real history is reconciled by hand."
 git -C "$leakroot" branch -D leak >/dev/null 2>&1 || true
 
+# --- dir #630 S4 (B19): the tests/run.sh tripwire — a test that writes the real checkout's own
+# keel.impactStore/keel.readTraceStore record trips the canary, naming the new value; an unchanged
+# run passes. Needs no tools/lib/ref-guard.sh copy (unlike the T8 fixture above): this check runs
+# whenever guard_repo_root is a git repo at all, independent of the ref-scope half. ------------------
+b19root="$(new_repo)"
+git -C "$b19root" commit -q --allow-empty -m init
+mkdir -p "$b19root/tests"
+cp "$runner" "$b19root/tests/run.sh"
+: > "$b19root/tests/lib.sh"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local --add keel.impactStore /fake/lost-entry\nexit 0\n' \
+  > "$b19root/tests/test_b19_leak.sh"
+run bash "$b19root/tests/run.sh"
+check_status "B19: a test writing the real repo's keel.impactStore trips the canary -> exit 1" 1 "$STATUS"
+check_contains "B19: the trip names dir #630's S4 tripwire" "$OUT" "dir #630 S4 tripwire"
+check_contains "B19: the trip names the new value" "$OUT" "/fake/lost-entry"
+git -C "$b19root" config --local --unset-all keel.impactStore >/dev/null 2>&1 || true
+
+# an UNCHANGED run (no test file mutates the config) passes
+rm -f "$b19root/tests/test_b19_leak.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$b19root/tests/test_b19_clean.sh"
+run bash "$b19root/tests/run.sh"
+check_status "B19: an unchanged run passes" 0 "$STATUS"
+check_contains "B19: an unchanged run reports ALL TEST FILES PASSED" "$OUT" "ALL TEST FILES PASSED"
+
 summary
