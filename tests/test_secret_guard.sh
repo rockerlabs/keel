@@ -1230,14 +1230,11 @@ check_file "dir #617(a): the repo's own hooks dir got the vendored copy (SYSTEM-
 # operator's (or a peer process's) already-exported GIT_DIR/GIT_COMMON_DIR happens to name; `repo644`
 # is the repo actually named on the command line, the one the vendor write is SUPPOSED to land in.
 #
-# `snap644` is a stronger byte-identical proof than the dir #617(a) block's own `ls -la`: this
-# ticket's write is a HOOK FILE (content, not just presence/size/mtime-minute), so a path+content-hash
-# snapshot of every file under decoy644/.git is what actually rules out a leak, the same reasoning
-# check_block_equal's own header comment gives for choosing content over a directory listing. `cksum`,
-# not `shasum`: POSIX, on every leg (alpine's busybox included) — `shasum` is a macOS/perl tool this
-# host has but the alpine CI leg does not (found live: `find: shasum: No such file or directory`,
-# every check silently reading as "identical" against empty output on both sides). Same idiom
-# tests/test_install.sh's own T12b already uses for its "byte for byte" proof.
+# `snapshot_tree_cksum` (tests/lib.sh) is a stronger byte-identical proof than the dir #617(a) block's
+# own `ls -la`: this ticket's write is a HOOK FILE (content, not just presence/size/mtime-minute), so
+# a path+content-hash snapshot of every file under decoy644/.git is what actually rules out a leak,
+# the same reasoning check_block_equal's own header comment gives for choosing content over a
+# directory listing.
 # =================================================================================================
 decoy644="$(new_repo)"; git -C "$decoy644" commit -qm seed --allow-empty
 decoy644_gitdir="$(git -C "$decoy644" rev-parse --git-dir)"
@@ -1245,15 +1242,14 @@ case "$decoy644_gitdir" in /*) ;; *) decoy644_gitdir="$decoy644/$decoy644_gitdir
 decoy644_common="$(git -C "$decoy644" rev-parse --git-common-dir)"
 case "$decoy644_common" in /*) ;; *) decoy644_common="$decoy644/$decoy644_common" ;; esac
 in_ambient644() { env GIT_DIR="$decoy644_gitdir" GIT_COMMON_DIR="$decoy644_common" "$@"; }
-snap644() { find "$1" -type f -exec cksum {} + | sort; }
-decoy644_before="$(snap644 "$decoy644/.git")"
+decoy644_before="$(snapshot_tree_cksum "$decoy644/.git")"
 
 repo644="$(new_repo)"
 run in_ambient644 "$isg" "$repo644"
 check_status "dir #644: vendor into a valid <repo> under an ambient GIT_DIR/GIT_COMMON_DIR → still succeeds" 0 "$STATUS"
 check_file "dir #644: the vendor write landed in repo644's own hooks dir, not the decoy" "$repo644/.git/hooks/secret-scan.sh"
 check_block_equal "dir #644: the decoy repo is byte-identical before/after the valid-<repo> vendor" \
-  "$decoy644_before" "$(snap644 "$decoy644/.git")"
+  "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
 
 notrepo644="$(mktemp -d "$SANDBOX/notrepo644.XXXXXX")"
 run in_ambient644 "$isg" "$notrepo644"
@@ -1261,6 +1257,6 @@ check_ne "dir #644: a non-git <repo> is refused regardless of the ambient GIT_DI
 check_contains "dir #644: the refusal names it as not a git repo" "$OUT" "not a git repo"
 check_nofile "dir #644: no hooks were written into the non-git <repo>" "$notrepo644/.git/hooks/secret-scan.sh"
 check_block_equal "dir #644: the decoy repo is STILL byte-identical after the refused non-git attempt" \
-  "$decoy644_before" "$(snap644 "$decoy644/.git")"
+  "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
 
 summary

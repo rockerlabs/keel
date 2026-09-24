@@ -59,6 +59,11 @@ GATE="$SELF_DIR/pre-pr-gate.sh"
 . "$SELF_DIR/lib/impact-store.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$SELF_DIR/lib/gate-paths.sh"
+# dir #644: sourcing this unsets an inherited GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE
+# before this script's own fixture-creation git calls (setup's `git init`/`git -C "$repo"` …) can be
+# redirected by them — see the lib's own header for the mechanism this closes.
+# shellcheck source=tools/lib/repo-arg-guard.sh
+. "$SELF_DIR/lib/repo-arg-guard.sh"
 
 # This runs before the -h/--help and subcommand dispatch below, so even `pipeline-canary.sh -h` or
 # `... clean` now pays the cost of resolving $HOME — the same trade-off tools/pre-pr-gate.sh's own

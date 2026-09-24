@@ -300,6 +300,19 @@ $(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
   fi
 }
 
+# snapshot_tree_cksum DIR — every regular file under DIR, path + content hash, sorted for order-
+# independence: a byte-identical-before/after proof strong enough to catch a CONTENT change to an
+# existing file of the same size/mtime-minute, which `ls -la` (the dir #617(a) block's own snapshot)
+# would miss. `cksum`, not `shasum`: POSIX, present on every CI leg including alpine's busybox —
+# `shasum` is a macOS/perl tool alpine does not have (found live, dir #644: every check silently read
+# as "identical" against empty `find` output on both sides there). Promoted here at its second use
+# (lib.sh's own convention, pin()'s comment: "one caller; promote... only at a second use") —
+# tests/test_install.sh's own T12b inlines the same idiom with one extra exclusion
+# (`! -path '*/.keel/install-manifest.*'`), left as its own inline copy rather than folded onto this
+# general form: its excluded path is specific to what install.sh itself writes, not a general
+# snapshot need. Pair with check_block_equal, same as the dir #617(a) block's `ls -la` pairing.
+snapshot_tree_cksum() { find "$1" -type f -exec cksum {} + | sort; }
+
 # check_count LABEL FILE PATTERN EXPECTED — assert PATTERN (a grep BRE, as-is — callers already anchor
 # their own patterns with `^` where that's the point, same as their pre-promotion call sites did)
 # occurs exactly EXPECTED times in FILE, reporting under LABEL with the actual count on failure.
