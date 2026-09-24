@@ -127,4 +127,20 @@ run env -u HOME "KEEL_CHECK_STATE_DIR=$KEEL_CHECK_STATE_DIR" "$TOOL" "false"
 check_status "HOME unset, explicit override -> exit code still passes through" 1 "$STATUS"
 check_contains "HOME unset, explicit override -> still counts (FAIL #1)" "$OUT" "FAIL #1"
 
+# --- dir #398 R5's empty-dir reap must not race a DIFFERENT concurrent invocation's just-created,
+# still-empty repo_dir (found by this ticket's own /code-review high pass, angles A and B): the reap
+# walks the WHOLE $state_dir/keel-check tree, not just this invocation's own repo, so an unconditional
+# empty-dir rmdir could remove a sibling repo's dir the instant after it was mkdir'd but before its
+# first counter write. Fixed by giving the directory reap the SAME -mtime +30 age floor as the file
+# sweep — simulated here deterministically (no real race needed): a fresh, still-empty "other repo"
+# dir must survive a forced prune pass, the same way a fresh file would.
+fresh_sd
+mkdir -p "$KEEL_CHECK_STATE_DIR/keel-check"
+other_repo_dir="$KEEL_CHECK_STATE_DIR/keel-check/simulated-other-repo-key"
+mkdir -p "$other_repo_dir"          # empty, freshly created — mtime is "now"
+: > "$KEEL_CHECK_STATE_DIR/keel-check/.last-prune"
+touch -t 202001010000 "$KEEL_CHECK_STATE_DIR/keel-check/.last-prune"   # force the rate-limit to fire
+run "$TOOL" "false"                 # any check on any repo forces a prune pass under this state dir
+check_dir "R5 prune: a fresh, still-empty sibling repo dir survives the reap" "$other_repo_dir"
+
 summary

@@ -3629,4 +3629,24 @@ check_status "dir #398 proof: the sentinel WAS created, but under \$HOME/.keel/t
 # retired backup, not the live file, is the artifact left behind to assert on.
 check_file "dir #398 proof: the retired backup exists under the sandboxed root" "$(prev_sentinel_for "$d")"
 
+# --- dir #398: HOME-unset in HOOK mode must still emit a JSON deny (exit 0), never a bare non-zero
+# exit — this file's only real decision-signalling mechanism to Claude Code is deny()'s own
+# exit-0-plus-JSON (found by this ticket's own /code-review high pass, altitude angle: an earlier
+# version of the top-level HOME guard exited 1 with only a stderr message even in hook mode, which
+# carries no such guarantee and could be read as an ERRORED hook rather than a DENIED one — silently
+# flipping fail-closed into fail-open in exactly the invocation this guard exists to protect).
+d="$(mkrepo)"
+gate_env "gh pr create --fill" "$d" -u HOME
+check_status "HOME unset in hook mode -> hook still exits 0 (never a bare non-zero)" 0 "$STATUS"
+check_contains "HOME unset in hook mode -> a real deny JSON, not a bare stderr message" "$OUT" '"permissionDecision":"deny"'
+check_contains "HOME unset in hook mode -> names the actual cause" "$OUT" 'HOME is unset or empty'
+
+# --- dir #398: HOME-unset in CLI mode keeps this file's own established convention — a plain stderr
+# message and a non-zero exit, matching every other CLI-mode failure (_require_receipt_key's
+# detached-HEAD case, receipt/init/etc.) — never a JSON payload nobody but the hook runner reads.
+out_cli398="$(env -u HOME bash "$gate" repo-key "$d" 2>&1)"; status_cli398=$?
+check_status "HOME unset in CLI mode -> exit 1" 1 "$status_cli398"
+check_contains "HOME unset in CLI mode -> a plain stderr message, not JSON" "$out_cli398" 'HOME is unset or empty'
+check_absent "HOME unset in CLI mode -> no JSON payload" "$out_cli398" 'permissionDecision'
+
 summary

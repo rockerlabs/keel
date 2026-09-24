@@ -60,6 +60,10 @@ GATE="$SELF_DIR/pre-pr-gate.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$SELF_DIR/lib/gate-paths.sh"
 
+# This runs before the -h/--help and subcommand dispatch below, so even `pipeline-canary.sh -h` or
+# `... clean` now pays the cost of resolving $HOME — the same trade-off tools/pre-pr-gate.sh's own
+# top-level guard makes and documents (accepted there since an unset $HOME is a rare, exceptional
+# shell state); this file is a manual, low-frequency dev ritual, so the cost is smaller here still.
 if [ -n "${KEEL_CANARY_STATE:-}" ]; then
   CANARY_STATE="$KEEL_CANARY_STATE"
 else

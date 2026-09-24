@@ -85,4 +85,29 @@ check_contains "tools/keel-check-gate.sh sources gate-paths.sh" \
 check_contains "tools/pipeline-canary.sh sources gate-paths.sh" \
   "$(cat "$REPO_ROOT/tools/pipeline-canary.sh")" 'lib/gate-paths.sh'
 
+# --- dir #398: the three key-to-path builders propagate gate_pre_pr_gate_root's own failure (return
+# 1, print nothing) rather than silently building a bogus root-relative path like "/sentinel/<key>"
+# when $HOME is unset/empty (found by this ticket's own /code-review high pass, angle A) ------------
+out="$(gate_sentinel_path_for_key somekey)"
+check_status "gate_sentinel_path_for_key: HOME set -> a real, HOME-rooted path" \
+  "$HOME/.keel/tmp/pre-pr-gate/sentinel/somekey" "$out"
+if out="$(HOME='' gate_sentinel_path_for_key somekey 2>&1)"; then
+  fail "gate_sentinel_path_for_key: HOME unset -> non-zero exit, never a bogus /sentinel/<key>" \
+    "exited 0 with: $out"
+else
+  pass "gate_sentinel_path_for_key: HOME unset -> non-zero exit, never a bogus /sentinel/<key>"
+fi
+check_status "gate_sentinel_path_for_key: HOME unset -> prints nothing" "" "$(HOME='' gate_sentinel_path_for_key somekey 2>/dev/null)"
+
+if out="$(HOME='' gate_prev_sentinel_path_for_key somekey 2>&1)"; then
+  fail "gate_prev_sentinel_path_for_key: HOME unset -> non-zero exit" "exited 0 with: $out"
+else
+  pass "gate_prev_sentinel_path_for_key: HOME unset -> non-zero exit"
+fi
+if out="$(HOME='' gate_trace_path_for_key somekey 2>&1)"; then
+  fail "gate_trace_path_for_key: HOME unset -> non-zero exit" "exited 0 with: $out"
+else
+  pass "gate_trace_path_for_key: HOME unset -> non-zero exit"
+fi
+
 summary

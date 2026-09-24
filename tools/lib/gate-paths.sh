@@ -76,17 +76,35 @@ gate_pre_pr_gate_root() {
 
 # gate_sentinel_path_for_key / gate_prev_sentinel_path_for_key / gate_trace_path_for_key — the three
 # pure, key-to-path builders every caller of the gate's rendezvous files needs: pre-pr-gate.sh (which
-# also builds handoff/rollout paths from its own already-resolved keys, and caches
-# gate_pre_pr_gate_root's value once at startup rather than calling these directly on its own hot
-# path) and pipeline-canary.sh (which only ever needs these three, for keys it resolves via
-# pre-pr-gate.sh's repo-key/receipt-key/keys subcommands). pipeline-canary.sh used to reach these by
-# shelling out to a whole extra `bash tools/pre-pr-gate.sh sentinel-path <key>` process per lookup — a
-# full reparse of that ~2900-line script just to print one string — instead of sourcing this lib
-# directly the way it already does for gate_state_root (found by this ticket's own /simplify pass,
-# efficiency + altitude angles). Moved here so every caller derives from ONE definition.
-gate_sentinel_path_for_key()      { printf '%s/sentinel/%s' "$(gate_pre_pr_gate_root)" "$1"; }
-gate_prev_sentinel_path_for_key() { printf '%s/prev-sentinel/%s' "$(gate_pre_pr_gate_root)" "$1"; }
-gate_trace_path_for_key()         { printf '%s/trace/%s' "$(gate_pre_pr_gate_root)" "$1"; }
+# also builds handoff/rollout paths from its own already-resolved keys) and pipeline-canary.sh (which
+# only ever needs these three, for keys it resolves via pre-pr-gate.sh's repo-key/receipt-key/keys
+# subcommands). pipeline-canary.sh used to reach these by shelling out to a whole extra
+# `bash tools/pre-pr-gate.sh sentinel-path <key>` process per lookup — a full reparse of that
+# ~2900-line script just to print one string — instead of sourcing this lib directly the way it
+# already does for gate_state_root (found by this ticket's own /simplify pass, efficiency + altitude
+# angles). Moved here so every caller derives from ONE definition.
+#
+# Each propagates gate_pre_pr_gate_root's own failure (return 1, print nothing) rather than silently
+# building a bogus root-relative path like "/sentinel/<key>" when $HOME is unset — the exact "fail
+# closed, never silently resolve the wrong root" contract gate_state_root's own header states, which
+# an earlier version of these three violated (found by this ticket's own /code-review high pass, angle
+# A): pre-pr-gate.sh is safe regardless (it validates $HOME once at its own top level before any of
+# these are reachable), but pipeline-canary.sh calls these directly and only re-validates $HOME when
+# $KEEL_CANARY_STATE is NOT set — an operator setting that override explicitly while $HOME is also
+# unset would previously have gotten a silently-wrong path instead of an empty one a caller's own
+# `[ -f "$path" ]`/`[ -n "$path" ]` check can at least notice.
+gate_sentinel_path_for_key() {
+  local root; root="$(gate_pre_pr_gate_root)" || return 1
+  printf '%s/sentinel/%s' "$root" "$1"
+}
+gate_prev_sentinel_path_for_key() {
+  local root; root="$(gate_pre_pr_gate_root)" || return 1
+  printf '%s/prev-sentinel/%s' "$root" "$1"
+}
+gate_trace_path_for_key() {
+  local root; root="$(gate_pre_pr_gate_root)" || return 1
+  printf '%s/trace/%s' "$root" "$1"
+}
 
 # gate_ensure_owner_dir DIR — mkdir -p DIR, then chmod it owner-only, both best-effort
 # (2>/dev/null || true — a permissions/disk failure here degrades to "less private", never a crash).
@@ -97,6 +115,14 @@ gate_trace_path_for_key()         { printf '%s/trace/%s' "$(gate_pre_pr_gate_roo
 # always-correct way (and the one that keeps shellcheck clean) to land an owner-only leaf regardless
 # of what already existed.
 gate_ensure_owner_dir() {
+  # A plain `[ -d ]` builtin test short-circuits both forks below on the overwhelming common case —
+  # the directory already exists (found by this ticket's own /code-review high pass, efficiency
+  # angle): several call sites run this on every single write (every trace append, every handoff,
+  # every rollout-state write), long after the directory's first creation. A directory that already
+  # existed before this diff shipped (default, non-owner-only permissions) stays that way rather than
+  # being re-chmod'd on every call — a one-time, minor laxity accepted in exchange for not forking
+  # mkdir+chmod on every write for the rest of that directory's life.
+  [ -d "$1" ] && return 0
   mkdir -p "$1" 2>/dev/null || true
   chmod 700 "$1" 2>/dev/null || true
 }

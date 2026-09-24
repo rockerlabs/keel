@@ -72,13 +72,22 @@ state="$repo_dir/$cmd_key"
 # other invocation — this script runs on every declared check, potentially many times per session, so
 # the sweep itself must not become the cost dir #398 exists to remove. `find -mtime`, no GNU-only
 # flags (CLAUDE.md Linux-leg trap 5) — portable across BSD/busybox/dash alike. Runs BEFORE this run's
-# own `mkdir -p` below — the empty-dir reap would otherwise immediately remove the very directory this
-# invocation is about to create for itself (found live: it raced with the very first counter write).
+# own `mkdir -p` below — an unconditional empty-dir reap would otherwise immediately remove the very
+# directory this invocation is about to create for itself (found live: it raced with the very first
+# counter write). The empty-dir reap ALSO carries the same `-mtime +30` age floor as the file sweep
+# (found by this ticket's own /code-review high pass, angles A and B): without it, this reap is
+# GLOBAL across every repo's subdirectory, not scoped to this invocation's own `repo_dir` — a second,
+# concurrent keel-check.sh invocation for a DIFFERENT (or the same) repo whose own `repo_dir` was just
+# created (mkdir'd, no counter file written yet) is indistinguishable from an abandoned one by
+# emptiness alone, and this same day-boundary sweep could reap it out from under that other
+# invocation before it ever gets to write. A directory's mtime is its creation time until something
+# changes inside it, so `-mtime +30` excludes anything created within this release's entire review
+# window, closing the race the same way the file sweep already avoids touching a live PR's sentinel.
 _kc_prune_marker="$state_dir/keel-check/.last-prune"
 if [ ! -f "$_kc_prune_marker" ] || [ -z "$(find "$_kc_prune_marker" -mtime -1 2>/dev/null)" ]; then
   find "$state_dir/keel-check" -mindepth 2 -type f -mtime +30 -exec rm -f {} + 2>/dev/null
-  find "$state_dir/keel-check" -mindepth 1 -type d -empty -exec rmdir {} + 2>/dev/null
-  mkdir -p "$state_dir/keel-check" 2>/dev/null || true
+  find "$state_dir/keel-check" -mindepth 1 -type d -empty -mtime +30 -exec rmdir {} + 2>/dev/null
+  gate_ensure_owner_dir "$state_dir/keel-check"
   : > "$_kc_prune_marker" 2>/dev/null || true
 fi
 unset _kc_prune_marker

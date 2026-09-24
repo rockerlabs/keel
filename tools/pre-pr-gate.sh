@@ -41,10 +41,9 @@
 #   pre-pr-gate.sh sweep [K]               /wrap-time floor (dir #64 tier 2b): warn when the last K
 #                                           polish runs closed without a verified (non-self-reported) review (default K=3)
 #   pre-pr-gate.sh sentinel-path <key>      print the sentinel path for a receipt key (dir #398, for
-#                                           other tools — currently pipeline-canary.sh — same
-#                                           never-hand-copy-the-path-shape rationale as repo-key/
-#                                           receipt-key/keys below, sharper now the root itself can move)
-#   pre-pr-gate.sh trace-path <key>         print the trace path for a repo key (dir #398, ditto)
+#                                           commands/polish.md's own recipes — never-hand-copy-the-
+#                                           path-shape rationale as repo-key/receipt-key/keys below,
+#                                           sharper now the root itself can move)
 #   pre-pr-gate.sh prev-sentinel-path <key> print the retired-backup path for a receipt key (dir #398,
 #                                           ditto — commands/polish.md's step 5(c) recipe uses this)
 #
@@ -419,26 +418,38 @@ _ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_ppg_dir/lib/gate-paths.sh"
 unset _ppg_dir
 
-# dir #398/#399/#637: fail the WHOLE script closed, right here at top level (never inside a $(...)
-# capture — bash's `exit` inside a command substitution only kills that subshell, the exact hazard
+# dir #398/#399/#637: fail closed, right here at top level (never inside a $(...) capture — bash's
+# `exit` inside a command substitution only kills that subshell, the exact hazard
 # _require_receipt_key's own comment documents below), if $HOME can't back the gate's state root.
 # Every rendezvous-file path this file resolves (_sentinel_path_for_key and its four siblings) now
-# depends on gate_state_root() succeeding — checking it once, here, means those five stay simple, pure
-# path-builders instead of each re-deriving and re-failing the same check through a subshell that
-# could never actually stop the script. `-h`/usage output and no-op invocations pay this cost too;
-# accepted, since an unset $HOME is a rare, exceptional shell state, not a normal one this file must
-# stay cheap for (unlike the R5 prune below, which is scoped to run only on `init`, not every hook call).
+# depends on gate_state_root() succeeding. `-h`/usage output and no-op CLI invocations pay this cost
+# too; accepted, since an unset $HOME is a rare, exceptional shell state, not a normal one this file
+# must stay cheap for (unlike the R5 prune below, which is scoped to run only on `init`, not every
+# hook call) — but the RESPONSE differs by mode, and that split is load-bearing, not cosmetic (found
+# by this ticket's own /code-review high pass, altitude angle): CLI mode ($1 non-empty) exits 1 with a
+# plain stderr message, this file's own established convention for every other CLI-mode failure
+# (_require_receipt_key's detached-HEAD case, receipt/init/etc.). HOOK mode ($1 empty — the
+# PreToolUse(Bash) invocation, no subcommand) must NOT just exit non-zero: this file's only real
+# decision-signalling mechanism is deny()'s own exit-0-PLUS-JSON (see deny()'s definition below,
+# and the "always emit a JSON decision, never die mid-hook" rule the dir #61 section above states) —
+# a bare `exit 1` here carries no such guarantee to Claude Code's hook runner and could be read as an
+# ERRORED hook (tool call proceeds) rather than a DENIED one, silently flipping "fail closed" into
+# fail-open in exactly the invocation this guard exists to protect. `deny()` itself isn't defined yet
+# at this point in the file (and needs `$cwd`, not yet parsed from the event either), so this inlines
+# the minimal equivalent rather than restructuring hook mode's own flow to move deny() earlier.
 gate_state_root >/dev/null || {
-  printf 'pre-pr-gate: $HOME is unset or empty — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' >&2
-  exit 1
+  _gate_home_unset_msg='pre-pr-gate: $HOME is unset or empty — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry'
+  if [ -n "${1:-}" ]; then
+    printf '%s\n' "$_gate_home_unset_msg" >&2
+    exit 1
+  fi
+  # Hook mode: degrade the same way the very next real hook-mode check does for a missing jq (fail
+  # OPEN, silently — a documented, pre-existing tradeoff for this WORKFLOW gate, not a new one) if jq
+  # itself is also unavailable, since there is no way to emit valid JSON without it either way.
+  command -v jq >/dev/null 2>&1 && jq -cn --arg r "$_gate_home_unset_msg" \
+    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  exit 0
 }
-# Cached once, right here, now that the check above guarantees it can never fail: every rendezvous-file
-# path below is built from this same invariant value, so re-deriving it via a fresh $(...) subshell
-# fork per lookup (dir #398 brief: cost matters, this hook fires on every Bash call) was pure repeated
-# overhead for a constant — found by this ticket's own /simplify pass (efficiency + simplification
-# angles). `gate_pre_pr_gate_root` cannot fail here (its only failure mode, $HOME unset, was already
-# ruled out above), so this capture is safe to trust without its own error check.
-_GATE_TMP_ROOT="$(gate_pre_pr_gate_root)"
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 # dir #149: the single membership test every raw write into the sentinel routes through — both
@@ -1097,10 +1108,16 @@ _require_receipt_key() {
   RECEIPT_KEY="$(_receipt_key_for "$RECEIPT_REPO_KEY" "$raw")"
 }
 
-# dir #398/#399/#637: `$_GATE_TMP_ROOT` (cached once at the top-level HOME check, above) is the ONE
-# value every one of the five rendezvous-file path functions below builds on, so a later root move
-# (dir #637's own log entry: the stores still need to migrate off $KEEL_HOME-adjacent paths next
-# release) is a one-place change, not five.
+# dir #398/#399/#637: `gate_pre_pr_gate_root` (tools/lib/gate-paths.sh) is the ONE resolver every one
+# of the five rendezvous-file path functions below builds on, so a later root move (dir #637's own log
+# entry: the stores still need to migrate off $KEEL_HOME-adjacent paths next release) is a one-place
+# change, not five. Resolved fresh per call, not cached into a top-level variable: an earlier version
+# of this file cached it unconditionally at top level, which meant every ordinary hook-mode Bash call
+# (the overwhelming majority — anything that isn't `gh pr create`) forked this resolver before the
+# hook's own fast-exit even ran (found by this ticket's own /code-review high pass, efficiency angle;
+# dir #398 brief's own cost concern — "the hook fires on every Bash call"). Paying the fork only when
+# a path is actually needed is cheaper in the common case, at the cost of re-forking on the rare
+# invocation that needs more than one path — the right trade given how lopsided that split is.
 # dir #398: creates the parent directory for a gate state file, owner-only, right before the FIRST
 # write into it — never on a read-only check, so a plain `[ -f "$sentinel" ]` (the common case: most
 # hook-mode invocations just test-and-deny, dir #398 brief's own cost concern — "the hook fires on
@@ -1113,8 +1130,9 @@ _require_receipt_key() {
 _gate_ensure_parent() { gate_ensure_owner_dir "$(dirname "$1")"; }
 
 # dir #398 R5: age-based prune of this gate's OWN rendezvous files, scoped STRICTLY to its own root —
-# never /tmp, never anything outside $_GATE_TMP_ROOT — so it can only ever remove what this file itself
-# wrote. Re-rooting alone (R1) makes the growth visible and enumerable but does not bound it (SPEC §5:
+# never /tmp, never anything outside the root the caller passes in — so it can only ever remove what
+# this file itself wrote. Re-rooting alone (R1) makes the growth visible and enumerable but does not
+# bound it (SPEC §5:
 # "consolidation without a sweep just relocates the 1.9G problem to a tidier address"); this is the
 # other half. N=30 days by default: generous past R11's own 3-review-round bound on a /polish
 # convergence and this release's typical PR lifecycle, so a live PR's sentinel is never at real risk —
@@ -1161,10 +1179,11 @@ trace_path_for() { _trace_path_for_key "$(_repo_key "${1:-$PWD}")"; }
 # every CLI subcommand that uses this below) rather than re-deriving it itself — deriving it here
 # would mean calling the detached-HEAD-checking _require_receipt_key from inside a function that's
 # itself invoked via `$(...)` everywhere below, where its `exit 1` would only kill the capturing
-# subshell instead of the whole script. Built from $_GATE_TMP_ROOT directly (not the shared lib's
-# gate_sentinel_path_for_key family) since $RECEIPT_KEY is this file's own internal state, not a key a
-# caller resolved through the repo-key/receipt-key/keys CLI subcommands the way pipeline-canary.sh does.
-handoff_path()   { printf '%s/handoff/%s' "$_GATE_TMP_ROOT" "$RECEIPT_KEY"; }
+# subshell instead of the whole script. Built from gate_pre_pr_gate_root directly (not the shared
+# lib's gate_sentinel_path_for_key family) since $RECEIPT_KEY is this file's own internal state, not a
+# key a caller resolved through the repo-key/receipt-key/keys CLI subcommands the way
+# pipeline-canary.sh does.
+handoff_path()   { printf '%s/handoff/%s' "$(gate_pre_pr_gate_root)" "$RECEIPT_KEY"; }
 # dir #88 (found in the operator-run /code-review high pass on this ticket): all three `skill-trace`
 # legs below (SubagentStop, PostToolUse/AskUserQuestion, Skill/UserPromptExpansion) share this exact
 # tail — resolve THIS hook's own observed sha, guard a missing one, append `<sha>\t<tag_level>` to the
@@ -1384,7 +1403,7 @@ require_active_receipt() {
 }
 # dir #64 tier 1: the last-seen model/harness version per repo, keyed the same way — a fresh file, so
 # `init`'s nonce reset (the sentinel's job) never touches it, same rationale as the trace/hand-off files.
-rollout_state_path() { printf '%s/rollout/%s' "$_GATE_TMP_ROOT" "$(_repo_key "${1:-$PWD}")"; }
+rollout_state_path() { printf '%s/rollout/%s' "$(gate_pre_pr_gate_root)" "$(_repo_key "${1:-$PWD}")"; }
 
 # Resolve the impact log path for a given cwd ($1): $KEEL_IMPACT_LOG, else this project's external
 # store entry (dir #251), else a legacy in-tree .keel/impact-events.log left over from before the
@@ -1463,16 +1482,14 @@ case "${1:-}" in
     exit 0
     ;;
   sentinel-path)
-    # dir #398: exposes _sentinel_path_for_key() to other tools (pipeline-canary.sh's cmd_check/
-    # cmd_demo_bypass) — same never-hand-copy-the-path-shape rationale as repo-key/receipt-key/keys
-    # above, sharper now that the root itself can move (dir #637's later work) and a hand-copied
-    # literal in a second file would silently go stale instead of loudly breaking.
+    # dir #398: exposes _sentinel_path_for_key() for commands/polish.md's own step-6 recipe (reading
+    # the live sentinel's last-written polish.5-review line) — never-hand-copy-the-path-shape, same
+    # rationale as repo-key/receipt-key/keys above, sharper now that the root itself can move (dir
+    # #637's later work) and a hand-copied literal in a doc would silently go stale instead of loudly
+    # breaking. pipeline-canary.sh does NOT call this subcommand (it sources tools/lib/gate-paths.sh
+    # directly and calls gate_sentinel_path_for_key in-process instead — this ticket's own
+    # /simplify pass — cheaper than shelling out to this whole script per lookup).
     printf '%s\n' "$(_sentinel_path_for_key "${2:?pre-pr-gate: sentinel-path <key> — key required}")"
-    exit 0
-    ;;
-  trace-path)
-    # dir #398: same rationale, for _trace_path_for_key().
-    printf '%s\n' "$(_trace_path_for_key "${2:?pre-pr-gate: trace-path <key> — key required}")"
     exit 0
     ;;
   prev-sentinel-path)
@@ -1494,7 +1511,7 @@ case "${1:-}" in
     # address). Runs here, on `init`, not in hook mode: `init` fires once per /polish run, while the
     # hook fires on EVERY Bash call in a wired repo (dir #398 brief's own cost concern) — a directory
     # walk on that path would multiply by every command the session runs, not just once per run.
-    _gate_prune_stale "$_GATE_TMP_ROOT"
+    _gate_prune_stale "$(gate_pre_pr_gate_root)"
     nonce="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM"
     _gate_ensure_parent "$sentinel"
     printf 'nonce\t%s\n' "$nonce" > "$sentinel"
