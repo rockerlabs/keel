@@ -1233,7 +1233,11 @@ check_file "dir #617(a): the repo's own hooks dir got the vendored copy (SYSTEM-
 # `snap644` is a stronger byte-identical proof than the dir #617(a) block's own `ls -la`: this
 # ticket's write is a HOOK FILE (content, not just presence/size/mtime-minute), so a path+content-hash
 # snapshot of every file under decoy644/.git is what actually rules out a leak, the same reasoning
-# check_block_equal's own header comment gives for choosing content over a directory listing.
+# check_block_equal's own header comment gives for choosing content over a directory listing. `cksum`,
+# not `shasum`: POSIX, on every leg (alpine's busybox included) — `shasum` is a macOS/perl tool this
+# host has but the alpine CI leg does not (found live: `find: shasum: No such file or directory`,
+# every check silently reading as "identical" against empty output on both sides). Same idiom
+# tests/test_install.sh's own T12b already uses for its "byte for byte" proof.
 # =================================================================================================
 decoy644="$(new_repo)"; git -C "$decoy644" commit -qm seed --allow-empty
 decoy644_gitdir="$(git -C "$decoy644" rev-parse --git-dir)"
@@ -1241,7 +1245,7 @@ case "$decoy644_gitdir" in /*) ;; *) decoy644_gitdir="$decoy644/$decoy644_gitdir
 decoy644_common="$(git -C "$decoy644" rev-parse --git-common-dir)"
 case "$decoy644_common" in /*) ;; *) decoy644_common="$decoy644/$decoy644_common" ;; esac
 in_ambient644() { env GIT_DIR="$decoy644_gitdir" GIT_COMMON_DIR="$decoy644_common" "$@"; }
-snap644() { find "$1" -type f -exec shasum {} \; | sort; }
+snap644() { find "$1" -type f -exec cksum {} + | sort; }
 decoy644_before="$(snap644 "$decoy644/.git")"
 
 repo644="$(new_repo)"
