@@ -15,9 +15,11 @@
 #           keel-check.sh go test ./...     # many args -> run as an argv
 # Exit:   passes through the check's own exit code (0 on green), so callers/CI see the real result.
 # Env:    KEEL_CHECK_THRESHOLD  (default 2) — consecutive failures before the STOP banner fires.
-#         KEEL_CHECK_STATE_DIR  (default /tmp) — where the per-task counter lives. Fixed /tmp, not
-#                                 $TMPDIR, so this shim and keel-check-gate.sh (a separate process, whose
-#                                 $TMPDIR may differ) always agree on the path — matches pre-pr-gate.sh.
+#         KEEL_CHECK_STATE_DIR  (default $HOME/.keel/tmp, dir #398/#399/#637 — was /tmp) — where the
+#                                 per-task counter lives. Fixed, not $TMPDIR, so this shim and
+#                                 keel-check-gate.sh (a separate process, whose $TMPDIR may differ)
+#                                 always agree on the path — matches pre-pr-gate.sh, which shares this
+#                                 same root (tools/lib/gate-paths.sh's gate_state_root).
 #         KEEL_IMPACT_LOG       — if set, append one zero-token friction event when the banner fires
 #                                 (metadata only; never the check's output). Mirrors pre-pr-gate.sh.
 set -uo pipefail
@@ -25,6 +27,8 @@ set -uo pipefail
 _kc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_kc_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$_kc_dir/lib/gate-paths.sh"
 unset _kc_dir
 
 # Sanitize the threshold: a non-numeric OR overflowing env value falls back to 2 rather than crashing
@@ -48,10 +52,56 @@ cmd="$*"
 repo_top="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
 repo_key="$(printf '%s' "$repo_top" | cksum | tr -cd '0-9')"
 cmd_key="$(printf '%s' "$cmd" | cksum | tr -cd '0-9')"
-state_dir="${KEEL_CHECK_STATE_DIR:-/tmp}"
+# dir #398/#399/#637: the default moved off shared /tmp to the keel-owned root — fail closed with a
+# clear message (not a raw "unbound variable") only when BOTH the override is unset AND $HOME can't
+# back the default, so an explicit override still works with $HOME unset or empty.
+if [ -n "${KEEL_CHECK_STATE_DIR:-}" ]; then
+  state_dir="$KEEL_CHECK_STATE_DIR"
+elif state_dir="$(gate_state_root)"; then
+  :
+else
+  printf 'keel-check: $HOME is unset/empty and $KEEL_CHECK_STATE_DIR is not set — cannot resolve the state dir\n' >&2
+  exit 1
+fi
 repo_dir="$state_dir/keel-check/$repo_key"
 state="$repo_dir/$cmd_key"
-mkdir -p "$repo_dir" 2>/dev/null || true
+# dir #398 R5: keel-check's own leak — a check that starts failing and is then abandoned (the task
+# moves on, the repo goes stale) leaves its counter file forever; the PASS branch below already
+# self-cleans the common case (a check that eventually goes green), this covers the abandoned one.
+# Rate-limited to once per day via a marker's own mtime (a single stat, not a directory walk) on every
+# other invocation — this script runs on every declared check, potentially many times per session, so
+# the sweep itself must not become the cost dir #398 exists to remove. `find -mtime`, no GNU-only
+# flags (CLAUDE.md Linux-leg trap 5) — portable across BSD/busybox/dash alike. Runs BEFORE this run's
+# own `mkdir -p` below — an unconditional empty-dir reap would otherwise immediately remove the very
+# directory this invocation is about to create for itself (found live: it raced with the very first
+# counter write). The empty-dir reap ALSO carries the same `-mtime +30` age floor as the file sweep
+# (found by this ticket's own /code-review high pass, angles A and B): without it, this reap is
+# GLOBAL across every repo's subdirectory, not scoped to this invocation's own `repo_dir` — a second,
+# concurrent keel-check.sh invocation for a DIFFERENT (or the same) repo whose own `repo_dir` was just
+# created (mkdir'd, no counter file written yet) is indistinguishable from an abandoned one by
+# emptiness alone, and this same day-boundary sweep could reap it out from under that other
+# invocation before it ever gets to write. A directory's mtime is its creation time until something
+# changes inside it, so `-mtime +30` excludes anything created within this release's entire review
+# window, closing the race the same way the file sweep already avoids touching a live PR's sentinel.
+# **Residual, accepted (found by this ticket's own /code-review delta-round pass):** the file sweep's
+# own `rm -f` bumps a directory's mtime to "now" the moment it empties it, so a repo dir that just
+# became empty in THIS pass will not itself match `-mtime +30` until roughly another 30 days pass —
+# the empty-dir reap effectively runs on a ~60-day cadence for the common case, not 30. Not a
+# correctness bug (an empty directory costs one inode, not the unbounded per-repo file growth this
+# prune exists to bound) and not chased further: closing it exactly would need tracking "time since
+# last emptied" separately from mtime, more machinery than an empty directory's near-zero cost
+# justifies.
+_kc_prune_marker="$state_dir/keel-check/.last-prune"
+if [ ! -f "$_kc_prune_marker" ] || [ -z "$(find "$_kc_prune_marker" -mtime -1 2>/dev/null)" ]; then
+  find "$state_dir/keel-check" -mindepth 2 -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+  find "$state_dir/keel-check" -mindepth 1 -type d -empty -mtime +30 -exec rmdir {} + 2>/dev/null
+  gate_ensure_owner_dir "$state_dir/keel-check"
+  : > "$_kc_prune_marker" 2>/dev/null || true
+fi
+unset _kc_prune_marker
+# The shared "mkdir -p, then chmod 700 separately" idiom (tools/lib/gate-paths.sh) — pre-pr-gate.sh
+# and pipeline-canary.sh call the same helper instead of each hand-copying these two lines.
+gate_ensure_owner_dir "$repo_dir"
 
 # Run the check with its output inherited (the agent still sees the real failure), then capture its code.
 if [ "$#" -eq 1 ]; then

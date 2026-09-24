@@ -467,7 +467,7 @@ Steps, in order:
      source — verified by reproduction, both halves): on the CROSS-RUN path, `init` retires the prior
      round's sentinel into the single-slot backup, where its `polish.5-review` line survives verbatim.
      Read it the same way you read the live sentinel, one path over —
-     `grep polish.5-review /tmp/pre-pr-gate-prev-$(tools/pre-pr-gate.sh receipt-key)`. It is
+     `grep polish.5-review "$(tools/pre-pr-gate.sh prev-sentinel-path "$(tools/pre-pr-gate.sh receipt-key)")"`. It is
      best-effort, not a guarantee: the backup holds only the MOST RECENT retirement, and because `init`
      always leaves a live sentinel behind, a further `init` retires that (add-on-less) file over the
      backup and the line is gone. So read it early, and treat a miss as "no record", never as "no add-on".
@@ -479,7 +479,7 @@ Steps, in order:
      against an already-SHIPPED round while advising a review that never saw the commit (dir #226). It
      signalled unreliably in exactly the situations it existed for. **What replaces it: read this run's own
      earlier `polish.5-review` line out of the live sentinel
-     (`/tmp/pre-pr-gate-$(tools/pre-pr-gate.sh receipt-key)`, last write wins) before writing a new one,
+     (`$(tools/pre-pr-gate.sh sentinel-path "$(tools/pre-pr-gate.sh receipt-key)")`, last write wins) before writing a new one,
      and carry every mechanism into the step-10 disclosure.** On the IN-RUN convergence path (resolve a
      finding, `--amend`, keep going without re-`init`-ing — the path named further down in this step)
      nothing is retired, so the live sentinel is the only place your own earlier add-on still exists.

@@ -432,14 +432,32 @@ receipt_hash_for() { printf '%s\x1f%s' "$1" "$2" | cksum | tr -cd '0-9'; }
 # sentinel_for/prev_sentinel_for/handoff_for, called on a single dir, only ever combine that SAME
 # dir's own repo+branch, which is right for every non-worktree fixture but wrong for a worktree one
 # (see the dir #61 test section's own comments for why).
+# dir #398/#399/#637: the gate's state root, mirroring production's gate_state_root()/
+# gate_pre_pr_gate_root() (tools/lib/gate-paths.sh) — $HOME/.keel/tmp/pre-pr-gate.
+# $HOME is already this file's own sandbox (line ~31 above), so every fixture below lands inside
+# $SANDBOX automatically, same as production would resolve it in a real session. Kept in sync
+# manually with production, same rationale as repo_key_for/branch_key_for above.
+gate_tmp_root_for_tests() { printf '%s/.keel/tmp/pre-pr-gate' "$HOME"; }
+# dir #398: every purpose now lives in its OWN subdirectory (sentinel/, trace/, …) rather than a flat
+# filename, and production only `mkdir -p`s one right before its first real write (never on a plain
+# read, dir #398's own hook-cost concern). A test fixture has no such hot-path cost to protect, and
+# several fixtures below write DIRECTLY through the path this returns (no real gate subcommand in
+# between to do that mkdir for them) — so this ensures the directory eagerly, every call, read or
+# write. Found live: a bare `: > "$(sentinel_for "$d")"` fixture failed with "No such file or
+# directory" the first time a repo's sentinel/ subdirectory didn't exist yet.
+gate_tmp_purpose_dir() {
+  local d; d="$(gate_tmp_root_for_tests)/$1"
+  mkdir -p "$d" 2>/dev/null
+  printf '%s' "$d"
+}
 combined_key_for() {
   local rk; rk="$(repo_key_for "$1")"
   printf '%s-%s-%s' "$rk" "$(receipt_hash_for "$rk" "$(branch_raw_for "$1")")" "$(branch_key_for "$1")"
 }
-sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(combined_key_for "$1")"; }
+sentinel_for() { printf '%s/%s' "$(gate_tmp_purpose_dir sentinel)" "$(combined_key_for "$1")"; }
 # dir #72: the single-slot backup `retire_sentinel()`/`init` write on every sentinel invalidation —
 # `receipt --recover` reads it.
-prev_sentinel_for() { printf '/tmp/pre-pr-gate-prev-%s' "$(combined_key_for "$1")"; }
+prev_sentinel_for() { printf '%s/%s' "$(gate_tmp_purpose_dir prev-sentinel)" "$(combined_key_for "$1")"; }
 # dir #80: the REAL (repo, branch) key as production resolves it when the two halves come from
 # DIFFERENT checkouts of the same repo — $1 = the repo dir (pass the MAIN checkout when it differs
 # from where the branch was read), $2 = the dir whose OWN current branch is the branch component (a
@@ -452,17 +470,17 @@ real_key_for() {
 }
 # dir #80: the real sentinel path for a (repo dir, branch-source dir) pair — wraps real_key_for the
 # same way sentinel_for wraps the single-dir key, so the dir #61 worktree tests build the path once
-# instead of re-typing the `/tmp/pre-pr-gate-` prefix at every call site.
-real_sentinel_for() { printf '/tmp/pre-pr-gate-%s' "$(real_key_for "$1" "$2")"; }
+# instead of re-typing the state-root prefix at every call site.
+real_sentinel_for() { printf '%s/%s' "$(gate_tmp_purpose_dir sentinel)" "$(real_key_for "$1" "$2")"; }
 # dir #63/#80: the hand-off note's own file, keyed the same way as the sentinel. Lives here next to
 # sentinel_for/real_sentinel_for (this ticket's own /code-review found the naive handoff_for had
 # drifted into test_pre_pr_gate.sh instead, duplicating this same composition a third time).
-handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(combined_key_for "$1")"; }
-real_handoff_for() { printf '/tmp/pre-pr-gate-handoff-%s' "$(real_key_for "$1" "$2")"; }
+handoff_for() { printf '%s/%s' "$(gate_tmp_purpose_dir handoff)" "$(combined_key_for "$1")"; }
+real_handoff_for() { printf '%s/%s' "$(gate_tmp_purpose_dir handoff)" "$(real_key_for "$1" "$2")"; }
 # dir #63: the code-review skill-trace file, keyed by repo only (not repo+branch, unlike the
 # sentinel/handoff above — see pre-pr-gate.sh's own trace_path_for). Shared by test_pre_pr_gate.sh and
 # test_pipeline_canary.sh, same rationale as repo_key_for/sentinel_for above.
-trace_for() { printf '/tmp/pre-pr-gate-trace-%s' "$(repo_key_for "$1")"; }
+trace_for() { printf '%s/%s' "$(gate_tmp_purpose_dir trace)" "$(repo_key_for "$1")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the

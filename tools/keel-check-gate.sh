@@ -31,13 +31,31 @@ esac
 # OFF unless explicitly enabled for this session.
 [ -z "${KEEL_CHECK_VETO:-}" ] && exit 0
 
+# Sourced here, not at the top: this hook fires on EVERY Bash call in a wired repo, and the two
+# fast-exits above already dispose of the overwhelming majority of invocations (any non-artifact
+# command, and every artifact command when the opt-in veto is off, its default) — paying for an
+# extra file read/parse before either of those checks would tax every one of them for a lib only the
+# rare surviving invocation needs (found by this ticket's own /simplify pass, efficiency angle).
+_kcg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$_kcg_dir/lib/gate-paths.sh"
+unset _kcg_dir
+
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
 repo_top="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
 repo_key="$(printf '%s' "$repo_top" | cksum | tr -cd '0-9')"
-# Fixed /tmp (not $TMPDIR) so this hook and keel-check.sh — separate processes with possibly different
+# Fixed (not $TMPDIR) so this hook and keel-check.sh — separate processes with possibly different
 # $TMPDIR — always resolve the same state path; a mismatch would make the veto silently never fire.
-state_dir="${KEEL_CHECK_STATE_DIR:-/tmp}"
+# dir #398/#399/#637: the default moved off shared /tmp to the keel-owned root, same as
+# keel-check.sh. This hook is fail-OPEN by design (see the jq check above) — an explicit override
+# still wins; a genuinely unresolvable default (HOME unset/empty) means "nothing to veto", not a
+# denial, matching every other "can't tell" branch in this file.
+if [ -n "${KEEL_CHECK_STATE_DIR:-}" ]; then
+  state_dir="$KEEL_CHECK_STATE_DIR"
+else
+  state_dir="$(gate_state_root)" || exit 0
+fi
 repo_dir="$state_dir/keel-check/$repo_key"
 
 deny() {

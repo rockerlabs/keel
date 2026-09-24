@@ -60,4 +60,54 @@ else
   pass "tools/doctor.sh does not check settings.local.json (unchanged scope, dir #182 out of scope)"
 fi
 
+# --- dir #398/#399/#637: gate_state_root — the ONE resolver the gate's five rendezvous-file paths,
+# keel-check.sh, keel-check-gate.sh and pipeline-canary.sh all build on ------------------------------
+out="$(gate_state_root)"
+check_status "gate_state_root: \$HOME/.keel/tmp, extending dir #397's own alpine-clone precedent" \
+  "$HOME/.keel/tmp" "$out"
+
+if out="$(HOME='' gate_state_root 2>&1)"; then
+  fail "gate_state_root: HOME unset/empty -> non-zero exit (fail closed, never a bare \"/.keel/tmp\")" \
+    "exited 0 with: $out"
+else
+  pass "gate_state_root: HOME unset/empty -> non-zero exit (fail closed, never a bare \"/.keel/tmp\")"
+fi
+check_status "gate_state_root: HOME unset/empty -> prints nothing" "" "$(HOME='' gate_state_root 2>/dev/null)"
+
+check_contains "tools/pre-pr-gate.sh sources gate-paths.sh for gate_state_root too" \
+  "$(cat "$REPO_ROOT/tools/pre-pr-gate.sh")" 'lib/gate-paths.sh'
+check_contains "tools/pre-pr-gate.sh fails closed at top level on gate_state_root" \
+  "$(cat "$REPO_ROOT/tools/pre-pr-gate.sh")" 'gate_state_root >/dev/null ||'
+check_contains "tools/keel-check.sh sources gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/keel-check.sh")" 'lib/gate-paths.sh'
+check_contains "tools/keel-check-gate.sh sources gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/keel-check-gate.sh")" 'lib/gate-paths.sh'
+check_contains "tools/pipeline-canary.sh sources gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/pipeline-canary.sh")" 'lib/gate-paths.sh'
+
+# --- dir #398: the three key-to-path builders propagate gate_pre_pr_gate_root's own failure (return
+# 1, print nothing) rather than silently building a bogus root-relative path like "/sentinel/<key>"
+# when $HOME is unset/empty (found by this ticket's own /code-review high pass, angle A) ------------
+out="$(gate_sentinel_path_for_key somekey)"
+check_status "gate_sentinel_path_for_key: HOME set -> a real, HOME-rooted path" \
+  "$HOME/.keel/tmp/pre-pr-gate/sentinel/somekey" "$out"
+if out="$(HOME='' gate_sentinel_path_for_key somekey 2>&1)"; then
+  fail "gate_sentinel_path_for_key: HOME unset -> non-zero exit, never a bogus /sentinel/<key>" \
+    "exited 0 with: $out"
+else
+  pass "gate_sentinel_path_for_key: HOME unset -> non-zero exit, never a bogus /sentinel/<key>"
+fi
+check_status "gate_sentinel_path_for_key: HOME unset -> prints nothing" "" "$(HOME='' gate_sentinel_path_for_key somekey 2>/dev/null)"
+
+if out="$(HOME='' gate_prev_sentinel_path_for_key somekey 2>&1)"; then
+  fail "gate_prev_sentinel_path_for_key: HOME unset -> non-zero exit" "exited 0 with: $out"
+else
+  pass "gate_prev_sentinel_path_for_key: HOME unset -> non-zero exit"
+fi
+if out="$(HOME='' gate_trace_path_for_key somekey 2>&1)"; then
+  fail "gate_trace_path_for_key: HOME unset -> non-zero exit" "exited 0 with: $out"
+else
+  pass "gate_trace_path_for_key: HOME unset -> non-zero exit"
+fi
+
 summary

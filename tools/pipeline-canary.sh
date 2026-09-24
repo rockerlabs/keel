@@ -47,16 +47,36 @@
 #                                      that it CAN fail (a canary that has never failed proves nothing)
 #   pipeline-canary.sh clean          remove the sandbox and its state
 #
-# State: $KEEL_CANARY_STATE (default /tmp/pre-pr-gate-canary-state) records the sandbox path setup built,
-# so `check`/`clean` find the same sandbox without the operator re-typing it. A single canary sandbox at
-# a time — this is a one-operator dev ritual, not a concurrent-session mechanism.
+# State: $KEEL_CANARY_STATE (default $HOME/.keel/tmp/pre-pr-gate/canary-state, dir #398/#399/#637 —
+# was /tmp/pre-pr-gate-canary-state) records the sandbox path setup built, so `check`/`clean` find the
+# same sandbox without the operator re-typing it. A single canary sandbox at a time — this is a
+# one-operator dev ritual, not a concurrent-session mechanism.
 set -u
 
-CANARY_STATE="${KEEL_CANARY_STATE:-/tmp/pre-pr-gate-canary-state}"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$SELF_DIR/pre-pr-gate.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$SELF_DIR/lib/impact-store.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$SELF_DIR/lib/gate-paths.sh"
+
+# This runs before the -h/--help and subcommand dispatch below, so even `pipeline-canary.sh -h` or
+# `... clean` now pays the cost of resolving $HOME — the same trade-off tools/pre-pr-gate.sh's own
+# top-level guard makes and documents (accepted there since an unset $HOME is a rare, exceptional
+# shell state); this file is a manual, low-frequency dev ritual, so the cost is smaller here still.
+if [ -n "${KEEL_CANARY_STATE:-}" ]; then
+  CANARY_STATE="$KEEL_CANARY_STATE"
+else
+  # gate_pre_pr_gate_root, not a hand-typed "$root/pre-pr-gate/..." — the "pre-pr-gate" segment name
+  # has exactly one spelling, in tools/lib/gate-paths.sh, not a second one here (found by this
+  # ticket's own /simplify pass, altitude angle).
+  _pc_root="$(gate_pre_pr_gate_root)" || {
+    printf 'pipeline-canary: $HOME is unset/empty and $KEEL_CANARY_STATE is not set — cannot resolve the state path\n' >&2
+    exit 1
+  }
+  CANARY_STATE="$_pc_root/canary-state"
+  unset _pc_root
+fi
 
 usage() {
   cat <<'EOF'
@@ -171,6 +191,10 @@ GHEOF
 }
 EOF
 
+  # dir #398: CANARY_STATE now lives under the keel-owned root instead of flat in /tmp — the parent
+  # may not exist yet on a machine where the gate itself has never run. Shared idiom
+  # (tools/lib/gate-paths.sh) instead of a third hand-copy of "mkdir -p, then chmod separately".
+  gate_ensure_owner_dir "$(dirname "$CANARY_STATE")"
   {
     printf 'sandbox\t%s\n' "$sandbox"
     printf 'repo\t%s\n' "$repo"
@@ -213,6 +237,14 @@ cmd_check() {
     fail=1
   fi
 
+  # dir #251: the store entry lives at $home/.claude/.keel/impact/<project-id>/ — `home` is
+  # deterministic from `sandbox` (cmd_setup always sets it to "$sandbox/home"), so it needs no
+  # CANARY_STATE field of its own. Resolved here (not just below, where it was originally used only
+  # for the impact log) because dir #398 needs it too: the gate's own sentinel/trace root is now
+  # $HOME-keyed, and the REAL /polish session that wrote them ran with HOME=$home (cmd_setup's own
+  # printed instructions), never the operator's ambient shell HOME running THIS `check` command.
+  home="$sandbox/home"
+
   if ! _keys_of "$repo"; then
     printf 'FAIL  could not resolve the sandbox repo'"'"'s keys (the gate hard-errors on a detached HEAD — check the sandbox repo has a branch checked out)\n'
     fail=1
@@ -220,7 +252,13 @@ cmd_check() {
   else
     key="$KEYS_REPO"; receipt_key="$KEYS_RECEIPT"
   fi
-  sentinel="/tmp/pre-pr-gate-$receipt_key"
+  # dir #398: resolved through the shared lib's gate_sentinel_path_for_key (tools/lib/gate-paths.sh,
+  # already sourced above) instead of a hand-copied literal, so a root move (dir #637's later work)
+  # only ever needs to change one file — HOME="$home" so this agrees with the sandboxed session that
+  # actually wrote it (see the $home comment above). A direct in-process call, not a
+  # `bash "$GATE" sentinel-path ...` shell-out: that would reparse this whole ~2900-line script just
+  # to print one string (found by this ticket's own /simplify pass, efficiency + altitude angles).
+  sentinel="$([ -n "$receipt_key" ] && HOME="$home" gate_sentinel_path_for_key "$receipt_key")"
   if [ -z "$receipt_key" ]; then
     : # already reported above; skip the sentinel/trace checks below, nothing meaningful to compare
   elif [ -f "$sentinel" ]; then
@@ -234,10 +272,7 @@ cmd_check() {
   # on purpose), or an operator with that env var set (plausible if they use it for their real repos,
   # and it's inherited into the sandboxed `claude --settings ...` session) would see a fully successful
   # canary run misreported as "no receipt-pass event recorded" (found in the operator-run /code-review
-  # high pass on this ticket). dir #251: the store entry itself lives at
-  # $home/.claude/.keel/impact/<project-id>/ — `home` is deterministic from `sandbox` (cmd_setup always
-  # sets it to "$sandbox/home"), so it needs no CANARY_STATE field of its own.
-  home="$sandbox/home"
+  # high pass on this ticket).
   ilog="$(_sandboxed_impact "$home" impact_log_path "$repo")"
   if [ -f "$ilog" ] && grep -q 'receipt-pass' "$ilog" 2>/dev/null; then
     printf 'PASS  a receipt-pass event was recorded: %s\n' "$(grep 'receipt-pass' "$ilog" | tail -n1)"
@@ -245,7 +280,9 @@ cmd_check() {
     printf 'INFO  no receipt-pass event recorded yet in %s\n' "$ilog"
   fi
 
-  trace="/tmp/pre-pr-gate-trace-$key"
+  # dir #398: same rationale as sentinel above — gate_trace_path_for_key, HOME="$home" for the same
+  # reason.
+  trace="$([ -n "$key" ] && HOME="$home" gate_trace_path_for_key "$key")"
   if [ -f "$trace" ]; then
     printf 'INFO  a code-review trace file exists (skill-trace fired at least once): %s\n' "$(tail -n1 "$trace")"
   else
@@ -282,7 +319,7 @@ cmd_demo_bypass() {
     bash "$GATE" receipt polish.7-selfcheck "skipped:no-doctor"
     bash "$GATE" receipt polish.8-unlock "$(git rev-parse HEAD)"
   ) >/dev/null 2>&1
-  rm -f "/tmp/pre-pr-gate-trace-$(_repo_key_of "$d")"   # make certain no trace exists to (correctly) vouch for this
+  rm -f "$(gate_trace_path_for_key "$(_repo_key_of "$d")")"   # make certain no trace exists to (correctly) vouch for this
 
   out="$(jq -n --arg c "gh pr create --fill" --arg d "$d" '{tool_input:{command:$c}, cwd:$d}' 2>/dev/null | bash "$GATE" 2>&1)"
   status=$?
