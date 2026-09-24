@@ -278,13 +278,18 @@ if [ -n "$guard_before_head" ]; then
       printf '  an unowned branch (in refs/heads, checked out by no worktree) appeared, moved, or\n'
       printf '  disappeared during the run (dir #333):\n%s\n' \
         "$(diff <(printf '%s\n' "$guard_before_refs_unowned") <(printf '%s\n' "$guard_after_refs_unowned"))"
+      printf '  an ordinary test file cannot have done this on its own — tests/lib.sh guard (dir #318) refuses every test ref write it makes — so look outside the suite first (one narrow, named exception: an inherited GIT_DIR+GIT_COMMON_DIR pair, dir #318 residual N8, tracked for closure by dir #644).\n'
     fi
     if [ "$guard_after_reflog" != "$guard_before_reflog" ]; then
       printf '  HEAD reflog entry count changed during the run (%s -> %s) (dir #333)\n' \
         "$guard_before_reflog" "$guard_after_reflog"
     fi
-    printf 'a fixture helper mutated the real repo instead of its own sandbox — do not push this\n'
-    printf 'branch until the real history is reconciled by hand.\n'
+    # dir #318: this used to name only "a fixture helper" as the cause. tests/lib.sh's guard now
+    # refuses every ref write a test makes against this checkout, so an unowned-branch change can no
+    # longer come from a test file — the two-way attribution below reflects that (either a test
+    # somehow escaped its sandbox, or something outside the suite changed the checkout mid-run).
+    printf 'either a test escaped its sandbox, or something outside the suite changed this checkout during the run:\n'
+    printf 'do not push this branch until the real history is reconciled by hand.\n'
     failed=$((failed + 1))
   fi
 fi

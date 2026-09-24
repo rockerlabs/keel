@@ -27,6 +27,26 @@ sections real content going forward — see that page for exactly when each one 
   write. `commands/backlog.md` gains a `<!-- go-contract:begin/end -->` fenced legend that `/go`'s
   readiness step reads and a new test DERIVES its token list from, rather than a copy, so a future legend
   change `/go` doesn't yet handle turns that test red.
+- **`tests/lib.sh` now arms a git-level guard so no test process can write a ref into the real
+  repository the suite runs from** (dir #318): every test file sourcing `lib.sh` gets a command-scope
+  `includeIf.gitdir` pointing `core.hooksPath` at a sandboxed `reference-transaction` hook that
+  refuses every branch, tag, commit, fetch, `update-ref` and `worktree add` against `$REPO_ROOT` or any
+  of its worktrees — command scope so it outranks the worktree-scope `core.hooksPath` keel's own
+  worktrees carry, verified on git 2.52, 2.47 (alpine), 2.43 (ubuntu) and Apple 2.39. A refusal fails
+  the whole test file via `summary()`, even when the caller swallowed the failure (`|| true`,
+  `2>/dev/null`) — the exact shape the one live instance had:
+  `tests/test_changelog_section.sh`'s own `fetch --prune --tags` against `$REPO_ROOT` on every suite
+  run, now replaced with a read-only `git ls-remote` (unioned with the local tag list, deduplicated).
+  `tests/run.sh`'s corruption-canary trip text is reworded to a two-way attribution (a test escaping
+  its sandbox, or something outside the suite) and gains a line stating that an unowned-branch change
+  cannot come from a test file, since the guard now refuses that at write time; `tools/lib/ref-
+  guard.sh`'s named-residual header and `tools/branch-cleanup.sh`'s header both gain a sentence
+  recording this. Disposal stays a manual, tree-compared process — no new cleanup tool (dir #318's own
+  design pass, operator decision) — since the guard closes the source the ticket's 14 fixture branches
+  came from. New `tests/test_lib_ref_guard.sh` (13 T-numbered scenarios incl. linked worktrees,
+  conflicting `core.hooksPath` scopes, an inherited `GIT_DIR`, and an inert/pre-2.31-shaped git);
+  `tests/test_ref_guard.sh`, `tests/test_run_sh.sh`, `tests/test_changelog_section.sh` and
+  `tests/test_branch_cleanup.sh` each gain a pin for their own piece of this.
 
 ### Changed
 

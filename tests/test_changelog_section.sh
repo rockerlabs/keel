@@ -56,17 +56,20 @@ run "$helper" --edit 0.1.0
 check_status "--edit with a version but no notes-file -> exit 2 (usage error)" 2 "$STATUS"
 
 # --- (a) real repo: helper output equals the section body for every released tag ------------------
-# Mark REPO_ROOT safe: in a container (CI Alpine leg) the mounted repo is owned by a different uid
-# than the runner, so git would refuse to fetch/read it ("dubious ownership", exit 128) — same guard
-# as tests/test_install.sh's own fetch of $REPO_ROOT.
-git config --global --add safe.directory '*'
-# Reconciled per CORE's git rail: fetch first so the tag list is current, not a stale local picture.
-git -C "$REPO_ROOT" fetch --prune --tags -q 2>/dev/null || true
+# dir #318 (T7): this file itself must never regain a fetch aimed at $REPO_ROOT — a self-check on the
+# test's own source text, not just its behaviour, so a future edit that reintroduces the shape can't
+# silently pass just because tests/lib.sh's guard happens to catch it live too. Built via lib.sh's own
+# key() (join-two-halves-at-runtime) so the forbidden shape never appears contiguous in this file's
+# own source — the exact idiom key()'s own comment describes, reused rather than hand-split again.
+check_absent "this file contains no fetch aimed at REPO_ROOT (dir #318)" \
+  "$(cat "$0")" "$(key 'git -C "$REPO_ROOT"' ' fetch')"
 
-# release_tag_versions (tests/lib.sh) is the shared tag-shape scan — promoted there (dir #232's own
-# /code-review medium pass) once test_release_history.sh turned up a third independent copy of this
-# exact regex.
-tags="$(release_tag_versions "$REPO_ROOT" | sed 's/^v//' | sort -u)"
+# dir #318: this leg used to run a `--prune --tags` fetch straight against $REPO_ROOT on every suite
+# run — a ref-namespace write tests/lib.sh's guard (armed on $REPO_ROOT) now refuses. lib.sh's
+# all_release_tag_versions() (dir #318) reads the same tag set read-only instead, local-tags union
+# ls-remote, and marks REPO_ROOT safe itself (the alpine CI leg mounts the checkout under a different
+# uid, so a read alone would otherwise be refused too).
+tags="$(all_release_tag_versions "$REPO_ROOT" | sed 's/^v//')"
 n_tags=0
 n_matched=0
 while IFS= read -r ver; do
