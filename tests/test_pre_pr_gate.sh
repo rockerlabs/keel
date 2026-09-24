@@ -3649,4 +3649,12 @@ check_status "HOME unset in CLI mode -> exit 1" 1 "$status_cli398"
 check_contains "HOME unset in CLI mode -> a plain stderr message, not JSON" "$out_cli398" 'HOME is unset or empty'
 check_absent "HOME unset in CLI mode -> no JSON payload" "$out_cli398" 'permissionDecision'
 
+# --- dir #398 (found by this ticket's own /code-review delta-round pass): HOME-unset must NOT deny
+# every Bash command in a wired repo — only the ones the gate actually polices. An earlier version of
+# the hook-mode HOME check ran before the command-type fast-exit, so ANY command (a plain `ls`,
+# `git status`) was denied the instant $HOME was unset, not just `gh pr create`.
+gate_env "ls -la" "$d" -u HOME
+check_status "HOME unset + a non-gate command -> hook still exits 0" 0 "$STATUS"
+check_absent "HOME unset + a non-gate command -> allowed (empty out), never denied for an unrelated command" "$OUT" "deny"
+
 summary

@@ -83,6 +83,14 @@ state="$repo_dir/$cmd_key"
 # invocation before it ever gets to write. A directory's mtime is its creation time until something
 # changes inside it, so `-mtime +30` excludes anything created within this release's entire review
 # window, closing the race the same way the file sweep already avoids touching a live PR's sentinel.
+# **Residual, accepted (found by this ticket's own /code-review delta-round pass):** the file sweep's
+# own `rm -f` bumps a directory's mtime to "now" the moment it empties it, so a repo dir that just
+# became empty in THIS pass will not itself match `-mtime +30` until roughly another 30 days pass —
+# the empty-dir reap effectively runs on a ~60-day cadence for the common case, not 30. Not a
+# correctness bug (an empty directory costs one inode, not the unbounded per-repo file growth this
+# prune exists to bound) and not chased further: closing it exactly would need tracking "time since
+# last emptied" separately from mtime, more machinery than an empty directory's near-zero cost
+# justifies.
 _kc_prune_marker="$state_dir/keel-check/.last-prune"
 if [ ! -f "$_kc_prune_marker" ] || [ -z "$(find "$_kc_prune_marker" -mtime -1 2>/dev/null)" ]; then
   find "$state_dir/keel-check" -mindepth 2 -type f -mtime +30 -exec rm -f {} + 2>/dev/null

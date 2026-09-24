@@ -422,34 +422,25 @@ unset _ppg_dir
 # `exit` inside a command substitution only kills that subshell, the exact hazard
 # _require_receipt_key's own comment documents below), if $HOME can't back the gate's state root.
 # Every rendezvous-file path this file resolves (_sentinel_path_for_key and its four siblings) now
-# depends on gate_state_root() succeeding. `-h`/usage output and no-op CLI invocations pay this cost
-# too; accepted, since an unset $HOME is a rare, exceptional shell state, not a normal one this file
-# must stay cheap for (unlike the R5 prune below, which is scoped to run only on `init`, not every
-# hook call) — but the RESPONSE differs by mode, and that split is load-bearing, not cosmetic (found
-# by this ticket's own /code-review high pass, altitude angle): CLI mode ($1 non-empty) exits 1 with a
-# plain stderr message, this file's own established convention for every other CLI-mode failure
-# (_require_receipt_key's detached-HEAD case, receipt/init/etc.). HOOK mode ($1 empty — the
-# PreToolUse(Bash) invocation, no subcommand) must NOT just exit non-zero: this file's only real
-# decision-signalling mechanism is deny()'s own exit-0-PLUS-JSON (see deny()'s definition below,
-# and the "always emit a JSON decision, never die mid-hook" rule the dir #61 section above states) —
-# a bare `exit 1` here carries no such guarantee to Claude Code's hook runner and could be read as an
-# ERRORED hook (tool call proceeds) rather than a DENIED one, silently flipping "fail closed" into
-# fail-open in exactly the invocation this guard exists to protect. `deny()` itself isn't defined yet
-# at this point in the file (and needs `$cwd`, not yet parsed from the event either), so this inlines
-# the minimal equivalent rather than restructuring hook mode's own flow to move deny() earlier.
-gate_state_root >/dev/null || {
-  _gate_home_unset_msg='pre-pr-gate: $HOME is unset or empty — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry'
-  if [ -n "${1:-}" ]; then
-    printf '%s\n' "$_gate_home_unset_msg" >&2
+# depends on gate_state_root() succeeding. Scoped to CLI mode ONLY ($1 non-empty) — a plain stderr
+# message and exit 1, this file's own established convention for every other CLI-mode failure
+# (_require_receipt_key's detached-HEAD case, receipt/init/etc.). `-h`/usage output and no-op CLI
+# invocations pay this cost too; accepted, since an unset $HOME is a rare, exceptional shell state.
+# HOOK mode ($1 empty) is deliberately NOT checked here (found by this ticket's own /code-review high
+# pass, angle A, on an EARLIER version of this guard that did check it here): every hook-mode
+# invocation shares this one entry point regardless of which command is being evaluated, so checking
+# $HOME this early would deny EVERY Bash tool call in the session — not just `gh pr create` — the
+# instant $HOME is unset, even for a plain `ls`. Hook mode instead checks $HOME only once it has
+# already confirmed the command is a real `gh pr create`-shaped one worth gating at all (see the
+# `gate_state_root` check just before the first `sentinel=` resolution, further down) — by then
+# `deny()` is defined and `$cwd` is parsed, so that check uses the file's own real, established
+# decision-signalling mechanism (exit-0-plus-JSON) directly, rather than inlining a duplicate here.
+if [ -n "${1:-}" ]; then
+  gate_state_root >/dev/null || {
+    printf 'pre-pr-gate: $HOME is unset or empty — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' >&2
     exit 1
-  fi
-  # Hook mode: degrade the same way the very next real hook-mode check does for a missing jq (fail
-  # OPEN, silently — a documented, pre-existing tradeoff for this WORKFLOW gate, not a new one) if jq
-  # itself is also unavailable, since there is no way to emit valid JSON without it either way.
-  command -v jq >/dev/null 2>&1 && jq -cn --arg r "$_gate_home_unset_msg" \
-    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
-  exit 0
-}
+  }
+fi
 
 EXPECTED_STEPS="polish.1-diff polish.2-simplify polish.3-tests polish.4-depth polish.5-review polish.6-retest polish.7-selfcheck polish.8-unlock"
 # dir #149: the single membership test every raw write into the sentinel routes through — both
@@ -2379,6 +2370,12 @@ else
   fi
 fi
 receipt_key="$(_receipt_key_for "$wt" "$resolved_branch")"
+# dir #398: checked HERE, not at top level (see that guard's own comment) — by this point the command
+# has already been confirmed a real `gh pr create`/write-to-pulls one, so this deny only ever fires
+# for the class of command the gate exists to police, never for an unrelated `ls`/`git status`/etc.
+# `deny()` is defined and `$cwd` is parsed by now, so this uses the file's own real decision-
+# signalling mechanism directly instead of an inlined duplicate.
+gate_state_root >/dev/null || deny "pre-pr-gate: \$HOME is unset or empty — cannot resolve the gate state root (\$HOME/.keel/tmp); set \$HOME and retry"
 # dir #398: reuse the shared path builder instead of hand-copying its format a second time in this
 # file — the format is only defined once now, in _sentinel_path_for_key above.
 sentinel="$(_sentinel_path_for_key "$receipt_key")"
