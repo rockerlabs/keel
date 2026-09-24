@@ -91,6 +91,8 @@ esac
 . "$here/lib/sh-quote.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$here/lib/gate-paths.sh"
+# shellcheck source=tools/lib/repo-arg-guard.sh
+. "$here/lib/repo-arg-guard.sh"
 # gate_sh — $gate quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE
 # place $gate is spliced into a shell command string INSIDE a hand-written JSON heredoc, by hand,
 # rather than through jq's `@sh` (print_snippet below, the no-jq fallback — a heredoc can't call a jq
@@ -193,7 +195,7 @@ if [ -n "$scope_flag" ]; then
   settings="$settings_dir/settings.json"
 elif [ -n "${1:-}" ]; then
   repo="$1"
-  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+  keel_repo_arg_guard "$repo"
   # dir #182: the project-scope write target is now the same shared `gate_project_settings_path`
   # (tools/lib/gate-paths.sh) that the armer's `_dialog_leg_armed` and doctor.sh's `proj_settings`
   # also derive from — $settings_dir (used below for mkdir -p / cd) is its containing directory, not

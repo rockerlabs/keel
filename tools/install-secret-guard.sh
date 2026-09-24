@@ -239,6 +239,16 @@ EOF
     echo "usage: install-secret-guard.sh --global | <repo-path>" >&2; exit 2 ;;
   *)
     repo="$1"
+    # dir #644: an inherited GIT_DIR / GIT_COMMON_DIR / GIT_WORK_TREE / GIT_INDEX_FILE redirects
+    # every `git -C "$repo"` call below — including the validity gate on the next line — into a
+    # DIFFERENT repository than the one named on the command line, so this can pass a non-git $repo
+    # as valid and vendor the hook write somewhere else entirely (docs/specs/318-test-ref-isolation.md
+    # E19(c)). Inlined rather than sourced from a shared tools/lib/ helper: this script is designed to
+    # be copied standalone alongside only its sibling secret-guard/ dir (see the header and this
+    # file's own test fixtures in tests/test_secret_guard.sh, which run scratch copies that carry no
+    # tools/lib/) — install-read-trace.sh and install-pre-pr-gate.sh share tools/lib/repo-arg-guard.sh
+    # instead, since both already depend on tools/lib/ unconditionally.
+    unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
     git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
     if hp="$(git -C "$repo" config --local core.hooksPath 2>/dev/null)" && [ -n "$hp" ]; then
       # hooksPath may be absolute — joining it under $repo would vendor into a junk dir while the

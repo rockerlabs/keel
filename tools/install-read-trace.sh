@@ -52,6 +52,8 @@ esac
 
 # shellcheck source=tools/lib/sh-quote.sh
 . "$here/lib/sh-quote.sh"
+# shellcheck source=tools/lib/repo-arg-guard.sh
+. "$here/lib/repo-arg-guard.sh"
 # rt_sh — $rt quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE place
 # $rt is spliced into a shell command string INSIDE a hand-written JSON heredoc, by hand, rather than
 # through jq's `@sh` (print_snippet below, the no-jq fallback — a heredoc can't call a jq filter, so
@@ -132,7 +134,7 @@ if [ -n "$scope_flag" ]; then
   fi
 elif [ -n "${1:-}" ]; then
   repo="$1"
-  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+  keel_repo_arg_guard "$repo"
   settings_dir="$repo/.claude"
 else
   usage >&2

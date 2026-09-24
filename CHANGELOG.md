@@ -47,6 +47,19 @@ sections real content going forward — see that page for exactly when each one 
   conflicting `core.hooksPath` scopes, an inherited `GIT_DIR`, and an inert/pre-2.31-shaped git);
   `tests/test_ref_guard.sh`, `tests/test_run_sh.sh`, `tests/test_changelog_section.sh` and
   `tests/test_branch_cleanup.sh` each gain a pin for their own piece of this.
+- **An inherited `GIT_DIR`/`GIT_COMMON_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` in the environment can no
+  longer redirect a caller-named `<repo>` argument into a different repository** (dir #644, closing
+  dir #318's residual N8): `tests/lib.sh` unsets all four before its own first git call, so `-C` is the
+  only thing left that can select a repo for a test process and everything it spawns —
+  `tests/test_lib_ref_guard.sh` gains T13, reproducing the escape live and pinning the closure.
+  `tools/install-secret-guard.sh`'s `<repo>` branch does the same inline (its own tests run
+  standalone scratch copies that carry no `tools/lib/`); the shared new `tools/lib/repo-arg-guard.sh`
+  (`keel_repo_arg_guard`) does it for `tools/install-read-trace.sh` and `tools/install-pre-pr-gate.sh`,
+  which already depend on `tools/lib/` unconditionally — `tools/pipeline-canary.sh`'s own `git -C
+  "$repo"` calls are a named residual (its `$repo` is always a fixture it creates itself, never a
+  caller-supplied path). New `tests/test_repo_arg_guard_lib.sh`; `tests/test_secret_guard.sh` gains a
+  decoy-repo block proving the vendor write lands only in the named `<repo>` and a non-git `<repo>` is
+  refused regardless of the environment.
 
 ### Changed
 

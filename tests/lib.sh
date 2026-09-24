@@ -15,6 +15,19 @@
 # refuses the rest and fails the file.
 set -uo pipefail
 
+# dir #644 (closes dir #318 residual N8): a foreign GIT_DIR + a GIT_COMMON_DIR that happens to equal
+# REPO_ROOT's own real common dir is NOT bound by ref_guard_arm's includeIf.gitdir pattern below —
+# that pattern matches GIT_DIR, not GIT_COMMON_DIR (measured live, docs/specs/318-test-ref-isolation.md
+# E19(c)) — so that combination bypasses the guard entirely and a git write from this process lands in
+# the real repo even though REPO_ROOT below is computed correctly. Unsetting all four ambient
+# repo-selector vars before this file's first git call — including ref_guard_arm's own
+# `rev-parse --git-common-dir` on $REPO_ROOT further down — closes the vector: once unset, `-C` is the
+# only thing left that can select a repo for the rest of this process and everything it spawns (unset
+# removes the var from the exported environment table, not just this shell's view of it). A test that
+# deliberately EXERCISES an inherited GIT_DIR (test_lib_ref_guard.sh's T12(a)) is unaffected — it sets
+# the var only for one subprocess via `env VAR=... cmd`, which this shell-level unset does not touch.
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 

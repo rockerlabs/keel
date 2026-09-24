@@ -290,6 +290,74 @@ else
   fail "T12: an empty resolved common dir arms nothing — core.hooksPath stays unset" "got [$r12c_hooks]"
 fi
 
+# ============================================================================================
+# T13 — dir #644 residual N8, closed. Reproduced live (git 2.52.0, this host — E19(c) itself was
+# probed on Homebrew 2.52.0): an inherited GIT_DIR (whether or not paired with a foreign
+# GIT_COMMON_DIR) is NOT bound by ref_guard_arm's includeIf.gitdir pattern unless it names the
+# guarded repo's OWN gitdir (E19a/b) — so a GIT_DIR naming any OTHER real repo makes `git -C
+# <target>` silently operate on THAT other repo instead of the one named on the command line: the
+# write escapes -C entirely, unrefused, and lands in the ambient repo. tests/lib.sh now unsets
+# GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE before its own first git call, closing this for
+# every process that sources it — once unset, -C is the only thing left that can select a repo.
+#
+# `other13` and `foreign13` are BOTH created in THIS (unpoisoned) process, before the child ever
+# runs — load-bearing: `new_repo()` is itself a `git init`, and `git init` under an ambient GIT_DIR
+# does not create a `.git` in its own `-C` target at all, it silently no-ops against GIT_DIR's repo
+# instead (verified live) — a fixture created INSIDE the poisoned child would never become a real repo
+# to begin with, and any later `-C other` read-back inside that same child is reading through the
+# exact mechanism under test, which is no proof of anything. Reading `other13`/`foreign13` back from
+# THIS unpoisoned process after the child exits is what makes the result trustworthy. Reproduced via a
+# CHILD process (T1's own idiom) only for `g13` (the fixture that must itself source a COPY of
+# tests/lib.sh — the thing dir #644 actually changed): fixture g13 stands in for "the real repo" being
+# protected; `foreign13` stands in for whatever repo an inherited GIT_DIR happens to name;
+# `other13` is the repo -C names, i.e. the one the write is SUPPOSED to land in.
+#
+# Escape from the spec (docs/specs/318-test-ref-isolation.md E19(c)): its own wording — "the branch
+# landed in the real repo [GIT_COMMON_DIR's target]" — did not reproduce live on this host/git
+# version; the write reproducibly lands in GIT_DIR's target (foreign13) instead, GIT_COMMON_DIR
+# playing no observable role either way. The underlying claim this ticket exists to close — an
+# ambient var makes `-C` lose control of which repo is written to, unrefused — reproduces exactly as
+# described; only the WHICH-repo detail differs. Recorded in the PR body (dir #644 escapes).
+# ============================================================================================
+g13="$(new_repo)"
+git -C "$g13" commit -q --allow-empty -m init
+mkdir -p "$g13/tests"
+cp "$lib_src" "$g13/tests/lib.sh"
+g13_common_dir="$(git -C "$g13" rev-parse --git-common-dir)"
+case "$g13_common_dir" in /*) ;; *) g13_common_dir="$g13/$g13_common_dir" ;; esac
+foreign13="$(new_repo)"; git -C "$foreign13" commit -q --allow-empty -m init
+other13="$(new_repo)"; git -C "$other13" commit -q --allow-empty -m init
+cat > "$g13/tests/test_leak_n8.sh" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+. "\$(dirname "\$0")/lib.sh"
+run git -C '$other13' branch t13-n8
+printf 'STATUS=%s\n' "\$STATUS"
+summary
+EOF
+g13_refs_before="$(git -C "$g13" for-each-ref)"
+foreign13_refs_before="$(git -C "$foreign13" for-each-ref)"
+child13_out="$(env GIT_DIR="$foreign13/.git" GIT_COMMON_DIR="$g13_common_dir" bash "$g13/tests/test_leak_n8.sh" 2>&1)"
+g13_refs_after="$(git -C "$g13" for-each-ref)"
+foreign13_refs_after="$(git -C "$foreign13" for-each-ref)"
+other13_branches_after="$(git -C "$other13" branch --format='%(refname:short)' | tr '\n' ',')"
+
+check_contains "T13: the write against -C other13 under an ambient GIT_DIR=foreign13 exits 0 (unrefused)" \
+  "$child13_out" "STATUS=0"
+check_contains "T13: the branch landed in other13, the repo actually named via -C (N8 closed)" \
+  "$other13_branches_after" "t13-n8,"
+if [ "$g13_refs_before" = "$g13_refs_after" ]; then
+  pass "T13: g13's own refs are unchanged"
+else
+  fail "T13: g13's own refs are unchanged" "before=[$g13_refs_before] after=[$g13_refs_after]"
+fi
+if [ "$foreign13_refs_before" = "$foreign13_refs_after" ]; then
+  pass "T13: foreign13's own refs are unchanged — the ambient GIT_DIR named it but did not divert the write into it"
+else
+  fail "T13: foreign13's own refs are unchanged — the ambient GIT_DIR named it but did not divert the write into it" \
+    "before=[$foreign13_refs_before] after=[$foreign13_refs_after]"
+fi
+
 # The authoritative check this whole file rests on: REPO_ROOT's own refs, proven unchanged by direct
 # comparison — not by trusting the shared refused-log's contents, since that log cannot say which
 # armed repo each refusal came from (every fixture above points its guard.cfg at the same
