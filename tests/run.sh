@@ -39,12 +39,20 @@ fi
 guard_repo_root="$(cd "$here/.." && pwd)"
 guard_before_branch="" guard_before_head="" guard_before_status=""
 guard_before_reflog=""
+guard_before_impact_store="" guard_before_read_trace_store=""
 guard_ref_scope_available=0
 
 if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
   guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+  # dir #630 S4: this suite must never write the real checkout's own provenance record (multi-valued
+  # keel.impactStore / keel.readTraceStore in ITS local git config) — every B-test that exercises S4
+  # writes that key only inside a $SANDBOX-cloned repo (new_repo()), never against $guard_repo_root
+  # itself. `--get-all` returns rc 1 (no value) or rc 128 (not a repo); both are swallowed by `|| true`,
+  # same as the rest of this canary. Captured here, compared after the run below.
+  guard_before_impact_store="$(git -C "$guard_repo_root" config --local --get-all keel.impactStore 2>/dev/null || true)"
+  guard_before_read_trace_store="$(git -C "$guard_repo_root" config --local --get-all keel.readTraceStore 2>/dev/null || true)"
 
   # dir #333: the compare above cannot see the two channels dir #320's own leak was actually found
   # through — a stray BRANCH left in the real repo, or a REFLOG entry appended without moving HEAD.
@@ -236,6 +244,8 @@ if [ -n "$guard_before_head" ]; then
   guard_after_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_after_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_after_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+  guard_after_impact_store="$(git -C "$guard_repo_root" config --local --get-all keel.impactStore 2>/dev/null || true)"
+  guard_after_read_trace_store="$(git -C "$guard_repo_root" config --local --get-all keel.readTraceStore 2>/dev/null || true)"
   guard_before_refs_unowned="" guard_after_refs_unowned="" guard_after_reflog=""
   if [ "$guard_ref_scope_available" = 1 ]; then
     guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
@@ -252,7 +262,9 @@ if [ -n "$guard_before_head" ]; then
   if [ "$guard_after_branch" != "$guard_before_branch" ] || [ "$guard_after_head" != "$guard_before_head" ] \
       || [ "$guard_after_status" != "$guard_before_status" ] \
       || [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ] \
-      || [ "$guard_after_reflog" != "$guard_before_reflog" ]; then
+      || [ "$guard_after_reflog" != "$guard_before_reflog" ] \
+      || [ "$guard_after_impact_store" != "$guard_before_impact_store" ] \
+      || [ "$guard_after_read_trace_store" != "$guard_before_read_trace_store" ]; then
     printf '\n!!! TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318) !!!\n'
     printf 'the real checkout this suite ran from changed during the run:\n'
     printf '  before: branch=%s head=%s\n' "$guard_before_branch" "$guard_before_head"
@@ -283,6 +295,12 @@ if [ -n "$guard_before_head" ]; then
     if [ "$guard_after_reflog" != "$guard_before_reflog" ]; then
       printf '  HEAD reflog entry count changed during the run (%s -> %s) (dir #333)\n' \
         "$guard_before_reflog" "$guard_after_reflog"
+    fi
+    if [ "$guard_after_impact_store" != "$guard_before_impact_store" ] || [ "$guard_after_read_trace_store" != "$guard_before_read_trace_store" ]; then
+      printf '  this checkout'"'"'s own git config gained/lost a keel.impactStore or keel.readTraceStore value during the run (dir #630 S4 tripwire):\n'
+      printf '    keel.impactStore:    before=[%s] after=[%s]\n' "$guard_before_impact_store" "$guard_after_impact_store"
+      printf '    keel.readTraceStore: before=[%s] after=[%s]\n' "$guard_before_read_trace_store" "$guard_after_read_trace_store"
+      printf '  a test wrote the real repo'"'"'s own provenance record instead of a $SANDBOX-cloned one — fix the fixture, never disable this check.\n'
     fi
     # dir #318: this used to name only "a fixture helper" as the cause. tests/lib.sh's guard now
     # refuses every ref write a test makes against this checkout, so an unowned-branch change can no
