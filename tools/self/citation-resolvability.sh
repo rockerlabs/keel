@@ -109,14 +109,24 @@ if [ ! -r "$backlog_file" ]; then
   exit 0
 fi
 
+# resolve_optional_file VAR_NAME LABEL PATH ABSENT_MSG — the presence/absence half every optional
+# resolution source (the archive, BACKLOG-parked.md) shares: announce it if readable, else announce it
+# absent with its own message and clear VAR_NAME to "". `printf -v`, not a return value, for the same
+# bash-3.2-indirection reason `live_$n`/`arch_$n` already use it — a caller reading the resolved path
+# back via `$(...)` would also capture this function's own `say` output on stdout.
+resolve_optional_file() {
+  local var="$1" label="$2" path="$3" absent_msg="$4"
+  if [ -r "$path" ]; then
+    say "  $label: $path"
+    printf -v "$var" '%s' "$path"
+  else
+    say "  $label: absent ($path) — $absent_msg"
+    printf -v "$var" '%s' ""
+  fi
+}
+
 # dir #635: BACKLOG-parked.md, third resolution source — see the file header for the full rationale.
-parked_file="$backlog_root/BACKLOG-parked.md"
-if [ -r "$parked_file" ]; then
-  say "  parked: $parked_file"
-else
-  say "  parked: absent ($parked_file) — nothing parked yet"
-  parked_file=""
-fi
+resolve_optional_file parked_file parked "$backlog_root/BACKLOG-parked.md" "nothing parked yet"
 
 # Derived per BACKLOG.md:1255's own naming convention: the project dir under ~/.claude/projects/ is
 # the repo's absolute path with every '/' AND every '.' replaced by '-' — `tu_project_slug`
@@ -143,12 +153,7 @@ else
   archive_slug="$(tu_project_slug "$backlog_root" 2>/dev/null)" || archive_slug=""
   archive_file="$archive_root/$archive_slug/CLAUDE-archive.md"
 fi
-if [ -r "$archive_file" ]; then
-  say "  archive: $archive_file"
-else
-  say "  archive: absent ($archive_file) — a moved-to-archive ticket will read as dead"
-  archive_file=""
-fi
+resolve_optional_file archive_file archive "$archive_file" "a moved-to-archive ticket will read as dead"
 
 # Tracked doc set: docs/*.md only — matching dir #266's own proof run (26 unique numbers, 41
 # mentions, 1 unresolvable). CHANGELOG.md and commands/*.md/templates/*.md are deliberately excluded,
@@ -255,25 +260,31 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
     done < <(blank_fenced_blocks "$archive_file" | extract_dir_tickets)
   fi
 
-  # One pass over BACKLOG-parked.md (when present), same heading_dir_numbers anchor scan as BACKLOG.md's
-  # live pass above — see the file header for why presence there resolves a citation without itself
-  # counting toward ambiguity.
+  # One pass over BACKLOG-parked.md (when present), same heading_dir_numbers anchor scan and the same
+  # per-number COUNT (not presence) as BACKLOG.md's live pass above — a parked ticket is "moved out of
+  # the live backlog verbatim" (file header), so BACKLOG.md and BACKLOG-parked.md share the same
+  # one-true-heading invariant BACKLOG.md alone already enforces; counting lets the ambiguity check
+  # below fold both sources into one tally instead of bolting on a second, narrower live-vs-parked
+  # branch (dir #635 review: a ticket present in both was previously invisible to the AMBIGUOUS check).
   if [ -n "$parked_file" ]; then
     while IFS= read -r n; do
-      [ -n "$n" ] && printf -v "parked_$n" 1
+      [ -n "$n" ] || continue
+      var="parked_$n"
+      printf -v "$var" '%s' "$(( ${!var:-0} + 1 ))"
     done < <(heading_dir_numbers "$parked_file")
   fi
 
   for n in "${cited_numbers[@]}"; do
     live_var="live_$n"; live_count="${!live_var:-0}"
     arch_var="arch_$n"; archive_hit="${!arch_var:-0}"
-    parked_var="parked_$n"; parked_hit="${!parked_var:-0}"
+    parked_var="parked_$n"; parked_count="${!parked_var:-0}"
+    canonical_count=$((live_count + parked_count))
 
-    if [ "$live_count" -ge 2 ]; then
-      echo "  AMBIGUOUS dir #$n — $live_count live ### headings in BACKLOG.md"
+    if [ "$canonical_count" -ge 2 ]; then
+      echo "  AMBIGUOUS dir #$n — $live_count live ### heading(s) in BACKLOG.md, $parked_count in BACKLOG-parked.md"
       ambiguous=$((ambiguous + 1))
       exit_code=1
-    elif [ "$live_count" -eq 0 ] && [ "$archive_hit" != 1 ] && [ "$parked_hit" != 1 ]; then
+    elif [ "$canonical_count" -eq 0 ] && [ "$archive_hit" != 1 ]; then
       var="cite_first_$n"
       echo "  DEAD dir #$n — no live BACKLOG.md heading, not in the archive or BACKLOG-parked.md (first cited: ${!var:-?})"
       dead=$((dead + 1))

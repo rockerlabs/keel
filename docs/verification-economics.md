@@ -184,9 +184,9 @@ A finding — from an audit, a review, a `/polish` round, a groom, a wrap, or a 
 1. **Always-file surface (no discretion):** it could expose a secret or credential; it could write,
    overwrite or delete something outside the repository (user files,
    `$HOME`, machine-global config such as git config or hooks — leftover scratch files alone are not
-   this; they qualify when felt); it could destroy git history or refs; it is in the installer /
-   uninstaller; or a safety guard (secret guard, pre-PR gate, test sandbox) could fail open —
-   including a gap in the guard's own tests that would let a fail-open regress unnoticed.
+   this; they qualify only under condition 2, below); it could destroy git history or refs; it is in
+   the installer / uninstaller; or a safety guard (secret guard, pre-PR gate, test sandbox) could fail
+   open — including a gap in the guard's own tests that would let a fail-open regress unnoticed.
 2. **Felt:** it actually happened in real work — the finding names the date and the session or
    project where it hurt. Reproducing it in a sandbox during an audit or review is not "felt".
 3. **Beyond this project:** it blocks or degrades work in a project that consumes this one, or an
@@ -233,8 +233,10 @@ worked case above describes.
 Two corollaries:
 
 - **New classes apply FORWARD; backfill is targeted.** A newly-demoted check binds new code via your
-  commit gate. Tree-wide backfill tickets are filed only for invariant-bearing surfaces — otherwise
-  every method upgrade taxes the whole history and the backlog reads as a fix snowball.
+  commit gate. Tree-wide backfill tickets are filed only for invariant-bearing surfaces —
+  [`FRAMEWORK.md`](../FRAMEWORK.md)'s sense, a gate, an installer, a protocol, not this section's own
+  always-file surface list — otherwise every method upgrade taxes the whole history and the backlog
+  reads as a fix snowball.
 - **A per-release debt budget.** A release is feature-first by default; its audit tail is a small
   fixed quota of tagged tickets, the rest staying an untagged background pool taken as passengers —
   deliberately, not as neglect. The snowball fear is measurable rather than felt: this repo's larger

@@ -68,12 +68,13 @@ sections real content going forward — see that page for exactly when each one 
   loss, a leak, or a broken daily workflow), or an explicit request — any ONE of which earns a ticket,
   with doubt on the first four resolving to file. A new class alone is no longer a filing test; it goes
   to the class registry instead unless it also clears one of the five. Below the bar: a standing-list
-  line naming which condition failed, promoted to a ticket on a second independent sighting. Every door
-  that used to restate the old three-criterion test (`CORE.md`, `commands/wrap.md`,
-  `commands/polish.md`, `docs/drydock.md`, `docs/release-audit.md`, `docs/release-management.md`) now
-  points at §4 instead. `commands/backlog.md` publishes a headline-discipline convention alongside its
-  readiness legend: a ticket heading carries only ID/title/grade/tag, everything else (re-tags,
-  corrections, origin, PR links) goes in dated `Log:` body lines, and a spec nests under `####` or
+  line naming which condition failed, promoted to a ticket on a second independent sighting. The two
+  doors that restated the old three-criterion test verbatim (`docs/drydock.md`, `docs/release-audit.md`)
+  now point at §4 instead; four more that used to file unconditionally (`CORE.md`, `commands/wrap.md`,
+  `commands/polish.md`, `docs/release-management.md`) now route through the same §4 gate rather than
+  filing every finding by default. `commands/backlog.md` publishes a headline-discipline convention
+  alongside its readiness legend: a ticket heading carries only ID/title/grade/tag, everything else
+  (re-tags, corrections, origin, PR links) goes in dated `Log:` body lines, and a spec nests under `####` or
   lives in its own file. `tools/self/citation-resolvability.sh` also resolves a `dir #N` citation
   against a project's `BACKLOG-parked.md`, a sibling of `BACKLOG.md` that may not exist yet. `.gitignore`
   gains `/docs/specs/`, where `/design` now writes every spec — personal paths and internal process that

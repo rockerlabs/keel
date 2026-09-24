@@ -100,6 +100,23 @@ run "$cr" "$d" --quiet
 check_status "a bare body mention inside a parked ticket does not resolve a different number -> exit 1" 1 "$STATUS"
 check_contains "still reports the dead citation" "$OUT" "DEAD dir #202"
 
+# --- dir #635 review (altitude finding, confirmed live): a ticket LIVE in BACKLOG.md AND present in
+# BACKLOG-parked.md at the same time must be AMBIGUOUS — the header's own "moved out of the live
+# backlog verbatim" invariant says a ticket is never canonically in both at once, so this is the same
+# collision class dir #259/#266 already catch for two live headings within BACKLOG.md alone.
+# MUTATION-PROOF: before this fix, `parked_$n` was a presence-only flag never folded into the
+# ambiguity count, so this exact fixture read as "0 dead, 0 ambiguous" (reproduced live pre-fix).
+both_backlog="### dir #202 — a ticket that should have been parked, not both — R1 — open
+"
+both_parked="### dir #202 — a ticket that should have been parked, not both — R1 — parked
+"
+d="$(mk_repo "$both_backlog" "$doc_dead")"
+printf '%s' "$both_parked" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "live in BACKLOG.md AND present in BACKLOG-parked.md -> exit 1 (ambiguous)" 1 "$STATUS"
+check_contains "reports it AMBIGUOUS, not a clean resolve" "$OUT" "AMBIGUOUS dir #202"
+check_absent "no DEAD line — it does resolve, just to two canonical sources at once" "$OUT" "DEAD dir #202"
+
 # --- mutation pair: duplicate heading makes a previously-clean citation ambiguous ---------------
 d="$(mk_repo "$backlog_ok" "$doc_ok")"
 run "$cr" "$d" --quiet

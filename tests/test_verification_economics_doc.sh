@@ -141,6 +141,12 @@ pin "the bar keeps 'in doubt on 1-4, file'" "$doc" 'In doubt on 1–4' \
 pin "the bar retires 'new class' as a filing test on its own" \
   "$doc" 'retire it as a filing test on its own' \
   "expected the new-class retirement — a new class alone no longer earns a ticket"
+pin "a sub-bar finding may be fixed inline, scoped to the diff already open" \
+  "$doc" 'fix it inside the diff you are already' \
+  "expected the inline-fix escape hatch, scoped to the diff already open — a wider scope reopens the aside-in-an-unrelated-body failure mode the standing list exists to close"
+pin "...and scoped to a TRIVIAL fix there, not fixes generally" \
+  "$doc" 'touching if it is trivial there' \
+  "expected the inline-fix escape hatch's trivial-only scoping, the other half of its own guard"
 pin "the sub-bar disposition names a standing list, not a ticket of its own" \
   "$doc" 'a named line in the project'"'"'s standing list' \
   "without this the bar dissolves: a sub-bar finding that may open its own ticket restricts nothing"
