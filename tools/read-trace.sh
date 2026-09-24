@@ -441,8 +441,10 @@ case "${1:-}" in
 
   aggregate)
     ag_dir="${2:-.}"
-    # S13: top resolved once, threaded through both the entry-state check below and the reads-log
-    # lookup that follows (same discipline as log-tool's lt_top / session-end's se_top).
+    # S13: top resolved once, threaded through the entry-state check, the reads-log lookup and the
+    # wrap-fuse-log lookup below (same discipline as log-tool's lt_top / session-end's se_top) — a
+    # second, unthreaded _rt_wrapfuse_log call here was found and fixed by this ticket's own review
+    # round; it forked _impact_resolve_top a second time for the same $ag_dir.
     ag_top="$(_impact_resolve_top "$ag_dir")"
     ag_entry="$(_rt_store_dir "$ag_dir" "$ag_top" 2>/dev/null)" || ag_entry=""
     if [ -n "$ag_entry" ]; then
@@ -457,7 +459,10 @@ case "${1:-}" in
         printf 'read-trace: store entry lost — recorded at %s, absent now (destroyed or moved away; not a rotation): reads before the loss are gone\n' "$ag_entry"
       fi
     fi
-    ag_rlog="$(_rt_reads_log "$ag_dir" "$ag_top")"
+    # Built from $ag_entry directly, not _rt_reads_log (which would re-resolve _rt_store_dir for the
+    # value already in hand) — same fix as _rt_record_read's own reads.log write, found by this
+    # ticket's own review round.
+    ag_rlog="${ag_entry:+$ag_entry/reads.log}"
     printf '| doc | last read | reads | surface changes since |\n'
     printf '| --- | --- | --- | --- |\n'
     if [ -f "$ag_rlog" ]; then
@@ -478,7 +483,7 @@ case "${1:-}" in
         printf '| %s | %s | %s | %s |\n' "$ag_p" "${ag_last:-never}" "$ag_cnt" "$ag_chg"
       done <<<"$ag_summary"
     fi
-    ag_wlog="$(_rt_wrapfuse_log "$ag_dir")"
+    ag_wlog="$(_rt_wrapfuse_log "$ag_dir" "$ag_top")"
     if [ -f "$ag_wlog" ]; then
       # dir #523: M and N count DISTINCT rows-by-key (session id, since session-end above now keys
       # each row that way), not raw lines — keeping only the LAST status seen for a given key, since

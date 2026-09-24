@@ -329,13 +329,15 @@ _rt_dedup_append() {
 # persistent write of a session is exactly the call that creates the entry dir, and that creation is
 # the one moment S13's provenance record must be written (never on a resolve failure: an unresolved
 # store root here just means _rt_store_dir fails and this whole persistent-tier write no-ops, same as
-# before this ticket).
+# before this ticket). The reads.log write below builds its path from `$entry` directly rather than
+# calling _rt_reads_log (which would re-resolve _rt_store_dir — root + project-id, two more forks —
+# for the exact value already sitting in `$entry`); found by this ticket's own review round.
 _rt_record_read() {
   local dir="$1" path="$2" top="${3:-}" entry
   _rt_dedup_append "$(_rt_session_log "$dir" "$top")" read "$path" || return 0
   entry="$(_rt_store_dir "$dir" "$top")" || return 0
   _rt_ensure_persistent_entry "$entry" "$top"
-  _rt_plain_append "$(_rt_reads_log "$dir" "$top")" read "$path"
+  _rt_plain_append "$entry/reads.log" read "$path"
 }
 
 # _rt_record_mutate DIR PATH [TOP] — ephemeral-only: feeds the wrap-fuse's "did this session mutate"
