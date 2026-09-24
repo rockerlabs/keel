@@ -92,9 +92,7 @@ backlog.** A heading carries only: `### <ID> — <title, ≤ ~120 chars> — <R0
 markers appended as they happen — the whole heading line stays ≤ ~180 chars, the title's own bound is
 the tighter ~120. **At most one non-terminal marker** — a specced-then-closed ticket
 keeps both (`📐 SPEC-READY — … — ✅ CLOSED (…)`), never a stack of every marker it ever carried. **The
-tag is not required last** — step 3b above already reads it wherever it falls in the status tail,
-because a closure marker written later routinely lands after it (`— R2 — → 0.6.1 — ✅ CLOSED (…)` is
-the ordinary closed shape once a tail ticket closes).
+tag is not required last** — step 3b above already covers this.
 
 Everything else — re-tags and their reasons, re-grades, corrections, origin, PR links — goes into the
 ticket's BODY as dated `Log:` lines, never back into the heading. A ticket's own spec content nests

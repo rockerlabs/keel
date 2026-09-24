@@ -148,7 +148,7 @@ pin "the standing-list line format names which condition 1-5 failed" \
   "$doc" 'date · line · source · which of 1–5 failed' \
   "expected the standing-list line's field format, naming the failed condition"
 pin "a second independent sighting promotes a standing-list line to a ticket" \
-  "$doc" 'A second independent sighting of the same standing-list line' \
+  "$doc" 'A second independent sighting promotes a standing-list line' \
   "expected the recurrence-promotion rule, tied to G4(a)'s existing mechanics"
 
 # --- D5: the diversity axis names all THREE axes. A doc that drops back to vendor-only has -------

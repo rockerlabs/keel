@@ -109,10 +109,7 @@ if [ ! -r "$backlog_file" ]; then
   exit 0
 fi
 
-# dir #635: BACKLOG-parked.md, a sibling of BACKLOG.md at the same main-checkout root, holds tickets
-# the sort moved out of the live backlog verbatim (heading and all) — not closed, not dead. Absent
-# (no sort has run yet, or the project doesn't use one) degrades the same silent way the archive's
-# absence does, never an error.
+# dir #635: BACKLOG-parked.md, third resolution source — see the file header for the full rationale.
 parked_file="$backlog_root/BACKLOG-parked.md"
 if [ -r "$parked_file" ]; then
   say "  parked: $parked_file"
@@ -177,6 +174,14 @@ as_ticket_number() {   # as_ticket_number LINE — prints the bare number, or no
   [[ "$1" =~ ^dir\ \#([0-9]+)$ ]] && printf '%s' "${BASH_REMATCH[1]}"
 }
 
+# heading_dir_numbers FILE — one `### dir #N` heading number per line, fence-blanked first. Shared by
+# BACKLOG.md's live-heading scan and BACKLOG-parked.md's scan (dir #635) — same anchor-match job on two
+# files, one regex to keep in lockstep rather than two copies (the same reasoning as as_ticket_number
+# above, applied to this file's OTHER duplicated-filter risk).
+heading_dir_numbers() {
+  blank_fenced_blocks "$1" | sed -n -E 's/^### dir #([0-9]+).*/\1/p'
+}
+
 # One pass per doc file (not per cited number): fence-blank it (a `dir #N`-shaped line inside a
 # fenced code example must not read as a real citation — tools/lib/fence-blank.sh, dir #169) and run
 # it through `extract_dir_tickets` (tools/lib/dir-tickets.sh, dir #274, promoted from
@@ -235,7 +240,7 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
     [ -n "$n" ] || continue
     var="live_$n"
     printf -v "$var" '%s' "$(( ${!var:-0} + 1 ))"
-  done < <(blank_fenced_blocks "$backlog_file" | sed -n -E 's/^### dir #([0-9]+).*/\1/p')
+  done < <(heading_dir_numbers "$backlog_file")
 
   # One pass over the archive (when present), fence-blanked the same way as the two sources above (an
   # illustrative `dir #N` inside a pasted fenced transcript must not count as a real archival
@@ -250,15 +255,13 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
     done < <(blank_fenced_blocks "$archive_file" | extract_dir_tickets)
   fi
 
-  # One pass over BACKLOG-parked.md (when present), fence-blanked and matched on its own `### dir #N`
-  # headings — the same heading-anchor scan as BACKLOG.md's live pass above (a parked ticket's block
-  # is moved verbatim, heading included, so this is presence via the same anchor, not the looser
-  # anywhere-in-prose `extract_dir_tickets` the archive uses). Presence only: a citation resolving
-  # here is not itself an ambiguity signal — only BACKLOG.md's OWN live headings feed that count.
+  # One pass over BACKLOG-parked.md (when present), same heading_dir_numbers anchor scan as BACKLOG.md's
+  # live pass above — see the file header for why presence there resolves a citation without itself
+  # counting toward ambiguity.
   if [ -n "$parked_file" ]; then
     while IFS= read -r n; do
       [ -n "$n" ] && printf -v "parked_$n" 1
-    done < <(blank_fenced_blocks "$parked_file" | sed -n -E 's/^### dir #([0-9]+).*/\1/p')
+    done < <(heading_dir_numbers "$parked_file")
   fi
 
   for n in "${cited_numbers[@]}"; do

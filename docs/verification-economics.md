@@ -219,9 +219,8 @@ touching if it is trivial there; otherwise it is dispositioned "no action — <r
 whole point.** A sub-bar finding that may open its own ticket means the bar restricts nothing, and an
 engineer reading both sentences either violates the bar to save the defect or obeys it and loses the
 defect. The standing list is what makes "no action" a persist. An aside in an unrelated ticket's body
-is neither a list nor a ticket. **A second independent sighting of the same standing-list line
-promotes it to a ticket** — [`docs/grooming.md`](grooming.md) G4(a)'s existing re-examine-on-merit
-mechanics, not a new promotion path.
+is neither a list nor a ticket. **A second independent sighting promotes a standing-list line to a
+ticket** — [`docs/grooming.md`](grooming.md) G4(a)'s existing mechanics, not restated here.
 
 **"The standing list" is not a new artifact to create** — same answer as the class registry in §8. It
 is whichever durable, *re-read* list your project already keeps and actually works from: a `KNOWN
