@@ -53,6 +53,21 @@ check_status "demo-bypass with mktemp missing → non-zero (guard catches it, no
 check_contains "demo-bypass with mktemp missing → names the mktemp failure" "$OUT" "mktemp -d failed"
 check_nodir "demo-bypass with mktemp missing → no stray .git landed in the invocation directory" "$nomktemp_cwd/.git"
 
+# --- demo-bypass under an ambient GIT_DIR (dir #644) — its own fixture creation (mktemp'd $d, then
+# git init/config/commit against it) must not get redirected into whatever repo an inherited GIT_DIR
+# names, the same class of hijack tools/lib/repo-arg-guard.sh closes for the other three consumers
+# (/code-review max finding: this file had zero coverage of it despite already having the exact right
+# idiom, one test block up, for a different pipeline-canary.sh guard). `decoy644` stands in for
+# whatever repo an operator's already-exported GIT_DIR happens to name.
+decoy644="$(new_repo)"; git -C "$decoy644" commit -q --allow-empty -m init
+decoy644_gitdir="$(git -C "$decoy644" rev-parse --absolute-git-dir)"
+decoy644_before="$(snapshot_tree_cksum "$decoy644/.git")"
+run env GIT_DIR="$decoy644_gitdir" KEEL_CANARY_STATE="$STATE" bash "$canary" demo-bypass
+check_status "demo-bypass under an ambient GIT_DIR → still exit 0 (unaffected, not redirected)" 0 "$STATUS"
+check_contains "demo-bypass under an ambient GIT_DIR → still reports PASS" "$OUT" "PASS  demo-bypass"
+check_block_equal "demo-bypass under an ambient GIT_DIR → the decoy repo is byte-identical before/after" \
+  "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
+
 # --- setup: builds the sandbox -----------------------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" setup
 check_status "setup → exit 0" 0 "$STATUS"

@@ -310,8 +310,13 @@ $(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
 # tests/test_install.sh's own T12b inlines the same idiom with one extra exclusion
 # (`! -path '*/.keel/install-manifest.*'`), left as its own inline copy rather than folded onto this
 # general form: its excluded path is specific to what install.sh itself writes, not a general
-# snapshot need. Pair with check_block_equal, same as the dir #617(a) block's `ls -la` pairing.
-snapshot_tree_cksum() { find "$1" -type f -exec cksum {} + | sort; }
+# snapshot need. Pair with check_block_equal, same as the dir #617(a) block's `ls -la` pairing. `--`
+# before `$1`: every call site today passes an absolute mktemp-derived path, but this is a shared
+# helper now — without it, a future caller passing a dir whose basename starts with `-` (or any
+# relative path shaped like one) makes `find` parse it as a flag instead of a path and fail loud,
+# unrelated to whatever the caller is actually testing (found by /code-review max's own line-by-line
+# pass, reproduced live).
+snapshot_tree_cksum() { find -- "$1" -type f -exec cksum {} + | sort; }
 
 # check_count LABEL FILE PATTERN EXPECTED — assert PATTERN (a grep BRE, as-is — callers already anchor
 # their own patterns with `^` where that's the point, same as their pre-promotion call sites did)

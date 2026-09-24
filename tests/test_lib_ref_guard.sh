@@ -346,17 +346,9 @@ check_contains "T13: the write against -C other13 under an ambient GIT_DIR=forei
   "$child13_out" "STATUS=0"
 check_contains "T13: the branch landed in other13, the repo actually named via -C (N8 closed)" \
   "$other13_branches_after" "t13-n8,"
-if [ "$g13_refs_before" = "$g13_refs_after" ]; then
-  pass "T13: g13's own refs are unchanged"
-else
-  fail "T13: g13's own refs are unchanged" "before=[$g13_refs_before] after=[$g13_refs_after]"
-fi
-if [ "$foreign13_refs_before" = "$foreign13_refs_after" ]; then
-  pass "T13: foreign13's own refs are unchanged — the ambient GIT_DIR named it but did not divert the write into it"
-else
-  fail "T13: foreign13's own refs are unchanged — the ambient GIT_DIR named it but did not divert the write into it" \
-    "before=[$foreign13_refs_before] after=[$foreign13_refs_after]"
-fi
+check_block_equal "T13: g13's own refs are unchanged" "$g13_refs_before" "$g13_refs_after"
+check_block_equal "T13: foreign13's own refs are unchanged — the ambient GIT_DIR named it but did not divert the write into it" \
+  "$foreign13_refs_before" "$foreign13_refs_after"
 
 # The authoritative check this whole file rests on: REPO_ROOT's own refs, proven unchanged by direct
 # comparison — not by trusting the shared refused-log's contents, since that log cannot say which

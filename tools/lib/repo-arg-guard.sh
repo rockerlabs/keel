@@ -30,9 +30,24 @@
 # sibling secret-guard/ dir (its own tests run scratch copies that carry no tools/lib/), so it inlines
 # the same unset instead of gaining a new tools/lib/ dependency — see its own comment at the call site.
 #
-# Sourced, not executed — no shebang, no set -e (inherits the caller's, and the caller's own `set -e`
-# is exactly what makes keel_repo_arg_guard's `exit 2` on failure behave the same as the inline check
-# it replaces).
+# NOT a complete census of the vulnerability class (found by this ticket's own /code-review max pass,
+# after the fix above shipped): the grep pattern was anchored to the literal variable name `repo`, so
+# it structurally cannot see the identical `git -C "$X"` shape under any other name. tools/doctor.sh
+# ($d), tools/public-audit.sh ($DIR), tools/pre-pr-gate.sh ($cwd — the actual /polish enforcement
+# gate), the tools/self/*.sh family, tools/keel-impact.sh ($dir/$top via tools/lib/repo-top.sh), and
+# others all resolve a caller-named or cwd-derived repo path via unsourced `git -C` the same way this
+# file's four consumers used to. Left for a follow-up ticket (see this PR's body) — fixing it here
+# would have meant auditing and testing ~7 more files, several of them security-sensitive production
+# gates, well past this ticket's own scope and review budget.
+#
+# Sourced, not executed — no shebang, no set -e (inherits the caller's). keel_repo_arg_guard's `exit 2`
+# on failure does NOT depend on the caller's `set -e` (correction, /code-review max, two independent
+# passes): it fires unconditionally as the explicit right-hand side of `||`, the same way the inline
+# check it replaces did — identical behavior whether or not the caller has `set -e`, and even from
+# inside an `if`/`&&`/`||` (a `set -e`-exempted context, the exact trap class this project's own
+# `install-secret-guard.sh:_isg_rollback` comment names for a sibling function). Do not "simplify" this
+# to a `return` on the theory that the caller's `set -e` will catch it — a `return` value consumed
+# inside any of those exempted contexts would silently swallow the failure instead.
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 # keel_repo_arg_guard REPO — exit 2 with "not a git repo: REPO" (unchanged wording — the exact message

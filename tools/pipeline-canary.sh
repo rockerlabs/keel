@@ -61,9 +61,19 @@ GATE="$SELF_DIR/pre-pr-gate.sh"
 . "$SELF_DIR/lib/gate-paths.sh"
 # dir #644: sourcing this unsets an inherited GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE
 # before this script's own fixture-creation git calls (setup's `git init`/`git -C "$repo"` …) can be
-# redirected by them — see the lib's own header for the mechanism this closes.
+# redirected by them — see the lib's own header for the mechanism this closes. Explicitly guarded,
+# unlike the two sibling `.` lines above: this script runs `set -u` only (no `-e`, same reasoning the
+# mktemp guard below states for itself), so a failed source here — missing file, bad checkout — would
+# otherwise print to stderr and let execution continue with the vars still exported, reopening dir
+# #644 with NO later symptom anywhere (unlike impact-store.sh/gate-paths.sh, whose functions this
+# script actually CALLS, so a failed source of either of those still fails loudly later at the call
+# site; nothing here ever calls a function FROM repo-arg-guard.sh in this file, only its source-time
+# side effect).
 # shellcheck source=tools/lib/repo-arg-guard.sh
-. "$SELF_DIR/lib/repo-arg-guard.sh"
+. "$SELF_DIR/lib/repo-arg-guard.sh" || {
+  echo "pipeline-canary: failed to source lib/repo-arg-guard.sh — dir #644's guard is not armed, refusing to continue" >&2
+  exit 1
+}
 
 # This runs before the -h/--help and subcommand dispatch below, so even `pipeline-canary.sh -h` or
 # `... clean` now pays the cost of resolving $HOME — the same trade-off tools/pre-pr-gate.sh's own
