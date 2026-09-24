@@ -12,11 +12,13 @@
 # doctor.sh machinery that has nothing to earn its keep against here: section-count arithmetic, since
 # this file has no `[Unreleased]`-equivalent for a count invariant to reconcile against.
 #
-# Tag collection uses lib.sh's own `release_tag_versions()` — promoted there (dir #232's own
-# /code-review medium pass) once a THIRD copy of doctor.sh's `_release_tag_versions()` regex turned up
-# here, on top of the one already living in test_changelog_section.sh; both test files source lib.sh
-# already, so nothing stopped them sharing one copy. doctor.sh keeps its own private copy (bare
-# version, `v` stripped) since it isn't a consumer of this file.
+# Tag collection uses lib.sh's own `all_release_tag_versions()` (dir #318) — local `release_tag_versions()`
+# (promoted there, dir #232's own /code-review medium pass, once a THIRD copy of doctor.sh's own
+# `_release_tag_versions()` regex turned up here on top of test_changelog_section.sh's) UNIONED with a
+# read-only `git ls-remote`, since local tags alone go empty on a shallow/tagless CI checkout — this
+# file used to be rescued only by test_changelog_section.sh's own (now-removed) fetch populating real
+# tags for every test in the same run. doctor.sh keeps its own private copy (bare version, `v`
+# stripped) since it isn't a consumer of this file.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 # shellcheck source=tools/lib/fence-blank.sh

@@ -420,10 +420,10 @@ check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2";
 match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 
 # STRICT_SEMVER_TAG_RE — a v-prefixed strict-semver tag name (`v<x.y.z>`, the `v` kept), anchored.
-# Exposed as its own variable (dir #318) so a second data source for the same tag SHAPE — G3's
-# `ls-remote` leg in test_changelog_section.sh, which release_tag_versions() below can't cover since
-# it always reads local `git tag -l`, never arbitrary ref-listing text — filters through the identical
-# pattern instead of hand-copying it a fourth time.
+# Exposed as its own variable (dir #318) so a second data source for the same tag SHAPE —
+# all_release_tag_versions()'s own `ls-remote` leg below, which release_tag_versions() can't cover
+# since it always reads local `git tag -l`, never arbitrary ref-listing text — filters through the
+# identical pattern instead of hand-copying it a fourth time.
 STRICT_SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
 # release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver release tag (`v<x.y.z>`, the
