@@ -310,13 +310,22 @@ $(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
 # tests/test_install.sh's own T12b inlines the same idiom with one extra exclusion
 # (`! -path '*/.keel/install-manifest.*'`), left as its own inline copy rather than folded onto this
 # general form: its excluded path is specific to what install.sh itself writes, not a general
-# snapshot need. Pair with check_block_equal, same as the dir #617(a) block's `ls -la` pairing. `--`
-# before `$1`: every call site today passes an absolute mktemp-derived path, but this is a shared
-# helper now — without it, a future caller passing a dir whose basename starts with `-` (or any
-# relative path shaped like one) makes `find` parse it as a flag instead of a path and fail loud,
-# unrelated to whatever the caller is actually testing (found by /code-review max's own line-by-line
-# pass, reproduced live).
-snapshot_tree_cksum() { find -- "$1" -type f -exec cksum {} + | sort; }
+# snapshot need. Pair with check_block_equal, same as the dir #617(a) block's `ls -la` pairing. Every
+# call site today passes an absolute mktemp-derived path, but this is a shared helper now — a future
+# caller passing a relative path whose first component starts with `-` would make `find` parse it as
+# a flag instead of a path and fail loud, unrelated to whatever the caller is actually testing (found
+# by /code-review max's own line-by-line pass). A leading `--` does NOT fix this (tried first,
+# corrected by a later /code-review max round, reproduced live on all three `find`s this project's own
+# CLAUDE.md documents — macOS BSD find, alpine busybox, ubuntu GNU findutils: none treats `--` as a
+# strict end-of-options marker for `find`'s own path/predicate grammar, so a bare relative
+# dash-leading argument still misparses with or without it). The actual fix is the standard technique
+# for this class of pitfall (the same one `rm ./-file` uses): prefix a non-absolute `$1` with `./` so
+# its first character is never `-`, portable across all three.
+snapshot_tree_cksum() {
+  local d="$1"
+  case "$d" in /*) ;; *) d="./$d" ;; esac
+  find "$d" -type f -exec cksum {} + | sort
+}
 
 # check_count LABEL FILE PATTERN EXPECTED — assert PATTERN (a grep BRE, as-is — callers already anchor
 # their own patterns with `^` where that's the point, same as their pre-promotion call sites did)

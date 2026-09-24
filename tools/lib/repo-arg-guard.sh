@@ -36,9 +36,10 @@
 # ($d), tools/public-audit.sh ($DIR), tools/pre-pr-gate.sh ($cwd — the actual /polish enforcement
 # gate), the tools/self/*.sh family, tools/keel-impact.sh ($dir/$top via tools/lib/repo-top.sh), and
 # others all resolve a caller-named or cwd-derived repo path via unsourced `git -C` the same way this
-# file's four consumers used to. Left for a follow-up ticket (see this PR's body) — fixing it here
-# would have meant auditing and testing ~7 more files, several of them security-sensitive production
-# gates, well past this ticket's own scope and review budget.
+# file's four consumers used to. Flagged for a follow-up ticket (see this PR's body for the full list
+# and a candidate deeper fix) rather than fixed here — it would have meant auditing and testing ~7 more
+# files, several of them security-sensitive production gates (tools/pre-pr-gate.sh among them), well
+# past this ticket's own scope and review budget.
 #
 # Sourced, not executed — no shebang, no set -e (inherits the caller's). keel_repo_arg_guard's `exit 2`
 # on failure does NOT depend on the caller's `set -e` (correction, /code-review max, two independent

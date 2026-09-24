@@ -72,11 +72,16 @@ done
 isg_src="$(cat "$REPO_ROOT/tools/install-secret-guard.sh")"
 check_contains "tools/install-secret-guard.sh unsets the four vars inline (not sourced), at the top" \
   "$isg_src" 'unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE'
-# ...and its validity-check line stays byte-identical to the shared lib's own — the two are duplicated
-# on purpose (install-secret-guard.sh must stay copy-standalone), but nothing else pins them to the
-# SAME text, so a future fix to one could silently drift from the other without either test file
-# noticing (/code-review max finding).
+# ...and its validity-check line stays identical (modulo indentation — the two live at different
+# nesting depths) to the shared lib's own — the two are duplicated on purpose (install-secret-guard.sh
+# must stay copy-standalone). Read directly out of $lib rather than a literal frozen into this test
+# (/code-review max, round 2: the first version pinned a hand-typed copy of the line, which caught
+# install-secret-guard.sh drifting away from it but NOT keel_repo_arg_guard's own body changing — a
+# one-directional pin); this way EITHER file changing without the other breaks this check, not just
+# one direction of the drift.
+lib_check_line="$(grep -F 'rev-parse --is-inside-work-tree' "$lib")"
+lib_check_line="${lib_check_line#"${lib_check_line%%[! ]*}"}"
 check_contains "tools/install-secret-guard.sh's validity check matches keel_repo_arg_guard's, verbatim" \
-  "$isg_src" 'git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }'
+  "$isg_src" "$lib_check_line"
 
 summary
