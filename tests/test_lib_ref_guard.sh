@@ -12,12 +12,15 @@
 # whole time this file runs; nothing here writes to it).
 #
 # One consequence of arming several DIFFERENT fixture repos in this same process: $SANDBOX/ref-
-# guard/refused is one shared log per $SANDBOX (G1/G2's own design, sized for the normal case of one
-# arm call per real test file), so this file's own deliberate refusals (T2 onward) land in the exact
-# file G2's summary() reads. Verified explicitly instead of assumed: REPO_ROOT's own refs are
-# snapshotted below and compared again at the end, and the shared log is inspected line-by-line
-# against the fixture repos this file itself created before being cleared ahead of the final
-# summary() — never blindly, so a genuine leak into REPO_ROOT still fails this file.
+# guard/refused is one shared, ACCUMULATING log per $SANDBOX (G1/G2's own design, sized for the normal
+# case of one arm call per real test file — a later arm call no longer truncates an earlier arm's
+# entries, dir #318's own live-found fix), so this file's own deliberate refusals (T2 onward) land in
+# the exact file G2's summary() reads, and its content alone cannot say which armed repo a given line
+# came from (every fixture below points its guard.cfg at the same $SANDBOX/ref-guard/hooks). What
+# actually proves this file leaked nothing into the real checkout is NOT log inspection — it's
+# REPO_ROOT's own refs, snapshotted below and compared again at the end. Only once that direct
+# ref-state proof holds is the log cleared, right before summary(), so this file's own intentional
+# coverage of the guard doesn't fail itself via the exact mechanism it's testing.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -302,7 +305,9 @@ fi
 # Having proven that directly, the shared refused-log's entries can only be this file's own
 # deliberate T2/T3/T4/T6/T12 fixture refusals (dir #318, G2's own log path is one-per-$SANDBOX, sized
 # for the normal one-arm-per-process case) — clear it before summary() so this file's own intentional
-# coverage of the guard doesn't fail itself via the exact mechanism it's testing.
+# coverage of the guard doesn't fail itself via the exact mechanism it's testing. This is a clear, not
+# a per-line inspection: the log's own content has no way to name which armed repo a line came from
+# (see the header comment), so the ref-state proof above is what does the real work here.
 : > "$SANDBOX/ref-guard/refused"
 
 summary

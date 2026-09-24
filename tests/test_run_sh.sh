@@ -310,8 +310,7 @@ check_contains "symlinked run.sh -> the fixture still ran despite the NOTE" "$OU
 # detection half, not tests/lib.sh's prevention half), but it DOES carry a copy of
 # tools/lib/ref-guard.sh, so guard_ref_scope_available stays 1 and the unowned-refs block actually
 # runs (E20: without it, that block is skipped entirely).
-leakroot="$(mktemp -d "$SANDBOX/leak-fixture.XXXXXX")"
-git -C "$leakroot" init -q
+leakroot="$(new_repo)"
 git -C "$leakroot" commit -q --allow-empty -m init
 mkdir -p "$leakroot/tests" "$leakroot/tools/lib"
 cp "$runner" "$leakroot/tests/run.sh"
@@ -322,7 +321,9 @@ run bash "$leakroot/tests/run.sh"
 check_status "a leaked branch trips the canary -> exit 1" 1 "$STATUS"
 check_contains "the trip block prints TRIPPED" "$OUT" "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318)"
 check_contains "the trip names the unowned-branch change and points at tests/lib.sh's guard (dir #318, G4)" \
-  "$OUT" "this cannot have come from a test file sourcing tests/lib.sh — its guard (dir #318) refuses every test ref write it makes — so look outside the suite first."
+  "$OUT" "an ordinary test file cannot have done this on its own — tests/lib.sh guard (dir #318) refuses every test ref write it makes — so look outside the suite first"
+check_contains "the trip hedges for the named N8 residual (dir #644 closes it), not a blanket claim" \
+  "$OUT" "dir #318 residual N8, closed by dir #644"
 check_contains "the changed two-way attribution line (dir #318, G4)" \
   "$OUT" "either a test escaped its sandbox, or something outside the suite changed this checkout during the run:"
 check_contains "the kept 'do not push' clause survives word for word (dir #318, G4)" \

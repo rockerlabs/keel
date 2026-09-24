@@ -278,7 +278,7 @@ if [ -n "$guard_before_head" ]; then
       printf '  an unowned branch (in refs/heads, checked out by no worktree) appeared, moved, or\n'
       printf '  disappeared during the run (dir #333):\n%s\n' \
         "$(diff <(printf '%s\n' "$guard_before_refs_unowned") <(printf '%s\n' "$guard_after_refs_unowned"))"
-      printf '  this cannot have come from a test file sourcing tests/lib.sh — its guard (dir #318) refuses every test ref write it makes — so look outside the suite first.\n'
+      printf '  an ordinary test file cannot have done this on its own — tests/lib.sh guard (dir #318) refuses every test ref write it makes — so look outside the suite first (one narrow, named exception: an inherited GIT_DIR+GIT_COMMON_DIR pair, dir #318 residual N8, closed by dir #644).\n'
     fi
     if [ "$guard_after_reflog" != "$guard_before_reflog" ]; then
       printf '  HEAD reflog entry count changed during the run (%s -> %s) (dir #333)\n' \

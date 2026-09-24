@@ -56,12 +56,6 @@ run "$helper" --edit 0.1.0
 check_status "--edit with a version but no notes-file -> exit 2 (usage error)" 2 "$STATUS"
 
 # --- (a) real repo: helper output equals the section body for every released tag ------------------
-# Mark REPO_ROOT safe: in a container (CI Alpine leg) the mounted repo is owned by a different uid
-# than the runner, so git would refuse to read it ("dubious ownership", exit 128) — same guard as
-# tests/test_install.sh's own read of $REPO_ROOT. `ls-remote` below still reads the repo, so this
-# stays even though the write-shaped `fetch` it used to guard for is gone (dir #318).
-git config --global --add safe.directory '*'
-
 # dir #318 (T7): this file itself must never regain a fetch aimed at $REPO_ROOT — a self-check on the
 # test's own source text, not just its behaviour, so a future edit that reintroduces the shape can't
 # silently pass just because tests/lib.sh's guard happens to catch it live too. Built via lib.sh's own
@@ -71,22 +65,11 @@ check_absent "this file contains no fetch aimed at REPO_ROOT (dir #318)" \
   "$(cat "$0")" "$(key 'git -C "$REPO_ROOT"' ' fetch')"
 
 # dir #318: this leg used to run a `--prune --tags` fetch straight against $REPO_ROOT on every suite
-# run — a ref-namespace write tests/lib.sh's guard (armed on $REPO_ROOT) now refuses. The test needs
-# only the tag NAMES a CI checkout's shallow clone doesn't carry locally, and `ls-remote` reads them
-# without writing anything. Union with the local list (release_tag_versions, deduplicated)
-# rather than replacing it outright: a tag reachable only from a stale local ref (unlikely, but no
-# reason to drop it) still counts. `ls-remote`'s own lines are `<sha><TAB>refs/tags/<name>`, so `cut
-# -f2` first (a bare `sed` strip alone would leave the sha glued to the name). Falls back to the local
-# list alone on failure (no network, no `origin`) — the same fail-open the old `fetch | true` had.
-remote_tags=""
-if remote_tags_raw="$(git -C "$REPO_ROOT" ls-remote --tags --refs origin 'v*' 2>/dev/null)"; then
-  remote_tags="$(printf '%s\n' "$remote_tags_raw" | cut -f2 | sed 's#^refs/tags/##' | grep -E "$STRICT_SEMVER_TAG_RE" || true)"
-fi
-
-# release_tag_versions (tests/lib.sh) is the shared tag-shape scan — promoted there (dir #232's own
-# /code-review medium pass) once test_release_history.sh turned up a third independent copy of this
-# exact regex.
-tags="$(printf '%s\n%s\n' "$(release_tag_versions "$REPO_ROOT")" "$remote_tags" | sed -e 's/^v//' -e '/^$/d' | sort -u)"
+# run — a ref-namespace write tests/lib.sh's guard (armed on $REPO_ROOT) now refuses. lib.sh's
+# all_release_tag_versions() (dir #318) reads the same tag set read-only instead, local-tags union
+# ls-remote, and marks REPO_ROOT safe itself (the alpine CI leg mounts the checkout under a different
+# uid, so a read alone would otherwise be refused too).
+tags="$(all_release_tag_versions "$REPO_ROOT" | sed 's/^v//')"
 n_tags=0
 n_matched=0
 while IFS= read -r ver; do

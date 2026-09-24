@@ -72,7 +72,14 @@ blanked_tmp="$(mktemp "$SANDBOX/release-history-blanked.XXXXXX")"
 blank_fenced_blocks "$history" > "$blanked_tmp"
 heading_lines="$(grep -E '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp")"
 headings="$(sed 's/^## //' <<< "$heading_lines" | grep -oE '^v[0-9]+\.[0-9]+\.[0-9]+')"
-tags="$(release_tag_versions "$REPO_ROOT")"
+# dir #318: local `git tag -l` alone (release_tag_versions()) goes empty on a shallow, tagless CI
+# checkout — this file used to be rescued only by test_changelog_section.sh's own (now-removed) fetch
+# against $REPO_ROOT populating local tags for every other test in the same run, an undocumented
+# cross-test dependency dir #318's own design didn't account for (found live: this file went red on a
+# tagless clone once that fetch was gone). all_release_tag_versions() unions in a read-only
+# `git ls-remote` so this file's own tag/heading reconciliation no longer depends on a sibling test's
+# side effect.
+tags="$(all_release_tag_versions "$REPO_ROOT")"
 
 # _semver_gt A B — true iff v-prefixed semver A is strictly greater than v-prefixed semver B. Own copy,
 # not a shared lib call: doctor.sh's own `_semver_gt` (mirrored, not shared, here — dir #299) operates

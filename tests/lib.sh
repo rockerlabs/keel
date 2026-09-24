@@ -107,6 +107,33 @@ ref_guard_arm() {
       ;;
   esac
 
+  # `${GIT_CONFIG_COUNT:-0}` already substitutes 0 for unset OR empty, so this only needs to reject
+  # non-digit content — and, mirroring tools/lib/nonneg-int.sh's own conservative default bound (dir
+  # #196: an all-digit string long enough overflows bash's native integer range and silently defeats a
+  # later arithmetic comparison), a run of 10 or more digits, which this env var should never
+  # legitimately reach (this file is its only writer; E12 found nothing else touches it). Checked here,
+  # before anything is written, and refused the same way an unresolvable common dir is refused above
+  # (a NOTE, arm nothing) rather than falling back to index 0 — silently defaulting to 0 here would
+  # itself violate this function's own "never overwrite an existing entry" rule (item 3) whenever a
+  # nested arm call is the one that hits this branch. Kept inline rather than sourcing nonneg-int.sh:
+  # tests/lib.sh has no `tools/lib/*.sh` dependency today, and the claude-kb adopter symlinks only this
+  # file in (spec E13) — every new dependency here stays optional.
+  n="${GIT_CONFIG_COUNT:-0}"
+  case "$n" in
+    (*[!0-9]*|??????????*)
+      printf 'NOTE: dir #318 ref guard: GIT_CONFIG_COUNT is not a small non-negative integer (got %s) for %s — arming nothing rather than risk overwriting an existing entry.\n' "$n" "$repo" >&2
+      return 0
+      ;;
+  esac
+  # Normalize to a clean base-10 value now that the shape is known-safe: a leading zero (e.g. "008",
+  # "017") would otherwise make bash's own `$((n + 1))` arithmetic below read $n as OCTAL, not decimal
+  # — "008" contains an invalid octal digit and crashes arithmetic evaluation outright ("value too
+  # great for base"), silently skipping every line after it, including the step-6 self-check that
+  # exists specifically so this function never fails open silently; "017" would silently compute the
+  # WRONG (smaller) index instead. `10#$n` forces decimal reading of the digit string regardless of
+  # leading zeros. Found live (reproduced with `bash -c 'n="008"; echo $((n+1))'`).
+  n=$((10#$n))
+
   # TO VERIFY V1: escape wildmatch metacharacters so includeIf.gitdir never matches an unrelated
   # repository whose path happens to contain one. Not load-bearing either way — the self-check below
   # (step 6) reports an unmatched pattern the same way it reports every other inert-guard cause. Runs
@@ -124,7 +151,13 @@ ref_guard_arm() {
 
   hooks_dir="$SANDBOX/ref-guard/hooks"
   mkdir -p "$hooks_dir"
-  : > "$SANDBOX/ref-guard/refused"
+  # Create the refused-log ONLY if it doesn't already exist — never truncate it. This function can be
+  # called more than once in the same process (nested arming, or a test file that arms a second
+  # fixture directly), and a later call unconditionally truncating this file would silently erase an
+  # earlier refusal's record before summary() ever inspects it, which is precisely the "every refusal
+  # fails its test file" guarantee (G2) this file exists to provide. Found live: two sequential arm
+  # calls with a refusal in between left the log empty by the time of a simulated summary() check.
+  [ -e "$SANDBOX/ref-guard/refused" ] || : > "$SANDBOX/ref-guard/refused"
 
   # A POSIX sh reference-transaction hook (CLAUDE.md Linux trap 5: not bash). Built via bash
   # parameter substitution, not sed -i or an unquoted heredoc, so the baked-in $SANDBOX path can
@@ -146,15 +179,6 @@ exit 0
 
   printf '[core]\n\thooksPath = %s\n' "$hooks_dir" > "$SANDBOX/ref-guard/guard.cfg"
 
-  # `${GIT_CONFIG_COUNT:-0}` already substitutes 0 for unset OR empty, so the digit-shape guard below
-  # only needs to reject non-digit content — and, mirroring tools/lib/nonneg-int.sh's own conservative
-  # default bound (dir #196: an all-digit string long enough overflows bash's native integer range and
-  # silently defeats a later arithmetic comparison), a run of 10 or more digits, which this env var
-  # should never legitimately reach (this file is its only writer). Kept inline rather than sourcing
-  # that helper: tests/lib.sh has no `tools/lib/*.sh` dependency today, and the claude-kb adopter
-  # symlinks only this file in (spec E13) — every new dependency here stays optional.
-  n="${GIT_CONFIG_COUNT:-0}"
-  case "$n" in (*[!0-9]*|??????????*) n=0 ;; esac
   export "GIT_CONFIG_KEY_$n=includeIf.gitdir:$escaped.path"
   export "GIT_CONFIG_VALUE_$n=$SANDBOX/ref-guard/guard.cfg"
   export "GIT_CONFIG_KEY_$((n + 1))=includeIf.gitdir:$escaped/**.path"
@@ -163,11 +187,17 @@ exit 0
 
   # Step 6 self-check, so the guard never fails open silently: git older than 2.31 ignores
   # GIT_CONFIG_COUNT (dir #318 residual N7), an escaped pattern may not have matched, or something in
-  # the environment may have overridden the entries. The test file still runs, unguarded but not
-  # silently so.
+  # the environment may have overridden the entries. Also checks the hook file itself is present and
+  # executable, not just that core.hooksPath resolves to the right directory: a hook git can't execute
+  # is silently ignored (git prints only an advisory hint and lets the write through), which
+  # core.hooksPath alone reading correctly would never catch (found live: an unexecutable hook let a
+  # branch write through with exit 0 despite hooksPath resolving exactly as expected). The test file
+  # still runs, unguarded but not silently so.
   seen="$(git -C "$repo" config --get core.hooksPath 2>/dev/null)"
   if [ "$seen" != "$hooks_dir" ]; then
     printf 'NOTE: dir #318 ref guard did not arm for %s (core.hooksPath reads [%s], expected [%s]) — an old git, an unmatched escaped pattern, or the environment overrode it. This test file runs unguarded.\n' "$repo" "$seen" "$hooks_dir" >&2
+  elif [ ! -x "$hooks_dir/reference-transaction" ]; then
+    printf 'NOTE: dir #318 ref guard did not arm for %s (core.hooksPath is correct, but %s/reference-transaction is missing or not executable) — this test file runs unguarded.\n' "$repo" "$hooks_dir" >&2
   fi
 }
 
@@ -405,6 +435,31 @@ STRICT_SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 # stripped) since it isn't a consumer of this file.
 release_tag_versions() {
   git -C "$1" tag -l 'v*' | grep -E "$STRICT_SEMVER_TAG_RE" || true
+}
+
+# all_release_tag_versions REPO_ROOT — the union of release_tag_versions() (local `git tag -l`) and a
+# read-only `git ls-remote` of origin, deduplicated, v kept, one per line (dir #318, found live during
+# this ticket's own /code-review). A CI checkout starts shallow AND tagless (actions/checkout's default
+# depth carries no tags), so before this ticket every test in this suite that needed real tags was
+# quietly riding on test_changelog_section.sh's OWN now-removed `fetch --prune --tags` against
+# $REPO_ROOT — an undocumented cross-test dependency the ticket's own design missed: removing that
+# fetch (G3) took test_release_history.sh's tag source down with it, reproduced live on a tagless
+# clone. Every consumer that needs real tags on a shallow/tagless checkout calls this instead of
+# release_tag_versions() alone. Marks REPO_ROOT safe first — the alpine CI leg mounts the checkout
+# under a different uid, so git would otherwise refuse to even read it ("dubious ownership"); safe to
+# call from more than one test file, since each runs in its own sandboxed HOME/GIT_CONFIG_GLOBAL (dir
+# #64) and this only ever writes `safe.directory = *`, not a path-specific entry. `ls-remote`'s own
+# lines are `<sha><TAB>refs/tags/<name>`, so `cut -f2` before stripping the `refs/tags/` prefix (a bare
+# `sed` strip alone would leave the sha glued to the name — E1b). Falls back to the local list alone on
+# failure (no network, no `origin`) — the same fail-open the removed fetch's own `|| true` had.
+all_release_tag_versions() {
+  local repo="$1" remote remote_raw
+  git config --global --add safe.directory '*'
+  remote=""
+  if remote_raw="$(git -C "$repo" ls-remote --tags --refs origin 'v*' 2>/dev/null)"; then
+    remote="$(printf '%s\n' "$remote_raw" | cut -f2 | sed 's#^refs/tags/##' | grep -E "$STRICT_SEMVER_TAG_RE" || true)"
+  fi
+  printf '%s\n%s\n' "$(release_tag_versions "$repo")" "$remote" | sed '/^$/d' | LC_ALL=C sort -u
 }
 
 # --- fixtures -----------------------------------------------------------------------------------
@@ -725,6 +780,15 @@ apostrophe_cmd_argv() {
 # dir #318, G2: a refused ref write fails the file even when the refused command's own failure was
 # swallowed (`|| true`, `2>/dev/null` — test_changelog_section.sh's old `fetch` had exactly this
 # shape). Checked here, once, right before the totals line, rather than at every call site.
+#
+# NAMED RESIDUAL, alongside tools/lib/ref-guard.sh's own N1-N9 (dir #333): a ref-mutating git call
+# that turns out to be a no-op (E7 — a `fetch` with nothing new to pull, a `branch` that already
+# exists at the same tip) never reaches the reference-transaction hook's "prepared" state at all, so
+# it produces no transaction for the hook to refuse and G2 has nothing to catch. This is a structural
+# property of the reference-transaction mechanism, not specific to any one test file — measured, not
+# closed: G3 (the same PR) fixes the one shipped instance this class had (test_changelog_section.sh's
+# old fetch, which only ever wrote something on a genuine origin move), but a future ref-mutating call
+# that happens to no-op on the day it's written is not caught here, or anywhere else in the suite.
 summary() {
   if [ -s "$SANDBOX/ref-guard/refused" ]; then
     fail "no test wrote the real repository's refs (dir #318)" "$(cat "$SANDBOX/ref-guard/refused")"
