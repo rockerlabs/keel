@@ -112,18 +112,14 @@ assert_refused "T3: a cwd-resolved branch inside that worktree is refused" \
 # (E4). This project's own worktrees carry a worktree-scope core.hooksPath, which is exactly why
 # command scope (not a config file) is load-bearing.
 # ============================================================================================
+# Only the core.hooksPath VALUES matter for this precedence check (branch never invokes pre-commit
+# at all), so the two hooksPath targets below need not exist as real, executable hooks.
 r4="$(new_repo)"
 git -C "$r4" commit -q --allow-empty -m init
-mkdir -p "$SANDBOX/T4-localhooks"
-printf '#!/bin/sh\nexit 0\n' > "$SANDBOX/T4-localhooks/pre-commit"
-chmod +x "$SANDBOX/T4-localhooks/pre-commit"
 git -C "$r4" config core.hooksPath "$SANDBOX/T4-localhooks"
 git -C "$r4" config extensions.worktreeConfig true
 wt4="$SANDBOX/T4-wt"
 git -C "$r4" worktree add -q -b t4-peer "$wt4"
-mkdir -p "$SANDBOX/T4-wthooks"
-printf '#!/bin/sh\nexit 0\n' > "$SANDBOX/T4-wthooks/pre-commit"
-chmod +x "$SANDBOX/T4-wthooks/pre-commit"
 git -C "$wt4" config --worktree core.hooksPath "$SANDBOX/T4-wthooks"
 ref_guard_arm "$r4"
 assert_refused "T4: branch refused even with repo-local AND worktree-scope core.hooksPath set (E4)" \
@@ -165,10 +161,11 @@ check_absent "T6: ref_guard_arm on a non-git dir prints no NOTE (silent no-op)" 
 r6b="$(new_repo)"; git -C "$r6b" commit -q --allow-empty -m init
 r6c="$(new_repo)"; git -C "$r6c" commit -q --allow-empty -m init
 count_before_t6="${GIT_CONFIG_COUNT:-0}"
+key_at_before_index_var="GIT_CONFIG_KEY_${count_before_t6}"
 ref_guard_arm "$r6b"
-key_at_before_index="$(eval "printf '%s' \"\${GIT_CONFIG_KEY_${count_before_t6}:-}\"")"
+key_at_before_index="${!key_at_before_index_var:-}"
 ref_guard_arm "$r6c"
-key_at_before_index_after="$(eval "printf '%s' \"\${GIT_CONFIG_KEY_${count_before_t6}:-}\"")"
+key_at_before_index_after="${!key_at_before_index_var:-}"
 check_ne "T6: nested arming increases GIT_CONFIG_COUNT" "$count_before_t6" "$GIT_CONFIG_COUNT"
 if [ -n "$key_at_before_index" ] && [ "$key_at_before_index" = "$key_at_before_index_after" ]; then
   pass "T6: nested arming keeps the earlier GIT_CONFIG_KEY_* entry intact"

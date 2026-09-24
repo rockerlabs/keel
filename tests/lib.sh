@@ -84,17 +84,20 @@ trap 'rm -rf "$SANDBOX"' EXIT
 # GIT_CONFIG_COUNT and only appends, so calling this twice (e.g. a child script that sources its own
 # copy of this file) keeps the parent's entries intact.
 ref_guard_arm() {
-  local repo="$1" raw cd_path n hooks_dir escaped needs_escape i c hook_src seen
+  local repo="$1" raw cd_path n hooks_dir escaped i c hook_src seen
 
-  git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || return 0
-
+  # `rev-parse --git-common-dir` alone answers "is this a repo" too (it fails identically to
+  # `--git-dir`, same message and exit code, when $repo isn't one — verified live) — a separate
+  # `--git-dir` probe first would just be a second git fork to learn what this call's own failure
+  # already tells us.
+  #
   # Resolve the common dir. `rev-parse --git-common-dir` may print a path relative to $repo, so
   # resolve it from there with `cd`, then take the physical path with `pwd -P` (not
   # --path-format=absolute: that needs git >= 2.31, and the self-check below already reports an old
   # git some other way). An empty or non-absolute result is refused, never armed: an empty <cd> would
   # turn the second includeIf pattern into `/**`, which matches EVERY repository (measured by
   # accident during this ticket's design: every fixture write was refused when this happened).
-  raw="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null)"
+  raw="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null)" || return 0
   cd_path="$(cd "$repo" 2>/dev/null && cd "$raw" 2>/dev/null && pwd -P 2>/dev/null)"
   case "$cd_path" in
     /*) ;;
@@ -106,25 +109,21 @@ ref_guard_arm() {
 
   # TO VERIFY V1: escape wildmatch metacharacters so includeIf.gitdir never matches an unrelated
   # repository whose path happens to contain one. Not load-bearing either way — the self-check below
-  # (step 6) reports an unmatched pattern the same way it reports every other inert-guard cause.
-  needs_escape=0
-  case "$cd_path" in
-    *'*'*|*'?'*|*'['*|*'\'*) needs_escape=1 ;;
-  esac
-  if [ "$needs_escape" = 1 ]; then
-    escaped=""
-    for ((i = 0; i < ${#cd_path}; i++)); do
-      c="${cd_path:i:1}"
-      case "$c" in
-        '*'|'?'|'['|'\') escaped="${escaped}\\${c}" ;;
-        *) escaped="${escaped}${c}" ;;
-      esac
-    done
-  else
-    escaped="$cd_path"
-  fi
+  # (step 6) reports an unmatched pattern the same way it reports every other inert-guard cause. Runs
+  # unconditionally rather than gating on a separate "does it need escaping" pre-check: the loop
+  # already produces the identical, unescaped output on a path with no metacharacters, so a pre-check
+  # would only be a second copy of the same four-character class to keep in sync.
+  escaped=""
+  for ((i = 0; i < ${#cd_path}; i++)); do
+    c="${cd_path:i:1}"
+    case "$c" in
+      '*'|'?'|'['|'\') escaped="${escaped}\\${c}" ;;
+      *) escaped="${escaped}${c}" ;;
+    esac
+  done
 
-  mkdir -p "$SANDBOX/ref-guard/hooks"
+  hooks_dir="$SANDBOX/ref-guard/hooks"
+  mkdir -p "$hooks_dir"
   : > "$SANDBOX/ref-guard/refused"
 
   # A POSIX sh reference-transaction hook (CLAUDE.md Linux trap 5: not bash). Built via bash
@@ -142,14 +141,20 @@ fi
 exit 0
 '
   hook_src="${hook_src//__REFUSED__/$SANDBOX/ref-guard/refused}"
-  printf '%s' "$hook_src" > "$SANDBOX/ref-guard/hooks/reference-transaction"
-  chmod +x "$SANDBOX/ref-guard/hooks/reference-transaction"
+  printf '%s' "$hook_src" > "$hooks_dir/reference-transaction"
+  chmod +x "$hooks_dir/reference-transaction"
 
-  hooks_dir="$SANDBOX/ref-guard/hooks"
   printf '[core]\n\thooksPath = %s\n' "$hooks_dir" > "$SANDBOX/ref-guard/guard.cfg"
 
+  # `${GIT_CONFIG_COUNT:-0}` already substitutes 0 for unset OR empty, so the digit-shape guard below
+  # only needs to reject non-digit content — and, mirroring tools/lib/nonneg-int.sh's own conservative
+  # default bound (dir #196: an all-digit string long enough overflows bash's native integer range and
+  # silently defeats a later arithmetic comparison), a run of 10 or more digits, which this env var
+  # should never legitimately reach (this file is its only writer). Kept inline rather than sourcing
+  # that helper: tests/lib.sh has no `tools/lib/*.sh` dependency today, and the claude-kb adopter
+  # symlinks only this file in (spec E13) — every new dependency here stays optional.
   n="${GIT_CONFIG_COUNT:-0}"
-  case "$n" in (*[!0-9]*|'') n=0 ;; esac
+  case "$n" in (*[!0-9]*|??????????*) n=0 ;; esac
   export "GIT_CONFIG_KEY_$n=includeIf.gitdir:$escaped.path"
   export "GIT_CONFIG_VALUE_$n=$SANDBOX/ref-guard/guard.cfg"
   export "GIT_CONFIG_KEY_$((n + 1))=includeIf.gitdir:$escaped/**.path"
@@ -384,6 +389,13 @@ check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2";
 # signal — pass grep's own flags (including -q) straight through, e.g. `match "$s" -qw "$v"`.
 match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 
+# STRICT_SEMVER_TAG_RE — a v-prefixed strict-semver tag name (`v<x.y.z>`, the `v` kept), anchored.
+# Exposed as its own variable (dir #318) so a second data source for the same tag SHAPE — G3's
+# `ls-remote` leg in test_changelog_section.sh, which release_tag_versions() below can't cover since
+# it always reads local `git tag -l`, never arbitrary ref-listing text — filters through the identical
+# pattern instead of hand-copying it a fourth time.
+STRICT_SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
+
 # release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver release tag (`v<x.y.z>`, the
 # `v` kept), one per line, `git tag -l`'s own order. Third independent copy of this exact regex found
 # by /code-review medium on dir #232's own diff (tools/self/doctor.sh's `_release_tag_versions()` — not
@@ -392,7 +404,7 @@ match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 # files share one copy instead of three total. doctor.sh keeps its own private copy (bare version, `v`
 # stripped) since it isn't a consumer of this file.
 release_tag_versions() {
-  git -C "$1" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true
+  git -C "$1" tag -l 'v*' | grep -E "$STRICT_SEMVER_TAG_RE" || true
 }
 
 # --- fixtures -----------------------------------------------------------------------------------

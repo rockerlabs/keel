@@ -64,13 +64,11 @@ git config --global --add safe.directory '*'
 
 # dir #318 (T7): this file itself must never regain a fetch aimed at $REPO_ROOT — a self-check on the
 # test's own source text, not just its behaviour, so a future edit that reintroduces the shape can't
-# silently pass just because tests/lib.sh's guard happens to catch it live too. Built from two halves
-# so the forbidden shape itself never appears contiguous in this file's own source (the same reason
-# key() in lib.sh splits a key-shaped fixture in two).
-forbidden_fetch_a='git -C "$REPO_ROOT"'
-forbidden_fetch_b=' fetch'
+# silently pass just because tests/lib.sh's guard happens to catch it live too. Built via lib.sh's own
+# key() (join-two-halves-at-runtime) so the forbidden shape never appears contiguous in this file's
+# own source — the exact idiom key()'s own comment describes, reused rather than hand-split again.
 check_absent "this file contains no fetch aimed at REPO_ROOT (dir #318)" \
-  "$(cat "$0")" "${forbidden_fetch_a}${forbidden_fetch_b}"
+  "$(cat "$0")" "$(key 'git -C "$REPO_ROOT"' ' fetch')"
 
 # dir #318: this leg used to run a `--prune --tags` fetch straight against $REPO_ROOT on every suite
 # run — a ref-namespace write tests/lib.sh's guard (armed on $REPO_ROOT) now refuses. The test needs
@@ -82,13 +80,13 @@ check_absent "this file contains no fetch aimed at REPO_ROOT (dir #318)" \
 # list alone on failure (no network, no `origin`) — the same fail-open the old `fetch | true` had.
 remote_tags=""
 if remote_tags_raw="$(git -C "$REPO_ROOT" ls-remote --tags --refs origin 'v*' 2>/dev/null)"; then
-  remote_tags="$(printf '%s\n' "$remote_tags_raw" | cut -f2 | sed 's#^refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+  remote_tags="$(printf '%s\n' "$remote_tags_raw" | cut -f2 | sed 's#^refs/tags/##' | grep -E "$STRICT_SEMVER_TAG_RE" || true)"
 fi
 
 # release_tag_versions (tests/lib.sh) is the shared tag-shape scan — promoted there (dir #232's own
 # /code-review medium pass) once test_release_history.sh turned up a third independent copy of this
 # exact regex.
-tags="$(printf '%s\n%s\n' "$(release_tag_versions "$REPO_ROOT")" "$remote_tags" | sed 's/^v//' | sed '/^$/d' | sort -u)"
+tags="$(printf '%s\n%s\n' "$(release_tag_versions "$REPO_ROOT")" "$remote_tags" | sed -e 's/^v//' -e '/^$/d' | sort -u)"
 n_tags=0
 n_matched=0
 while IFS= read -r ver; do
