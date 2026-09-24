@@ -104,9 +104,12 @@ sections real content going forward — see that page for exactly when each one 
   git-config read. `aggregate` and `rotate` also backfill the record for an entry that already existed
   before this change. When the recorded entry is gone, `aggregate` prints
   `read-trace: store entry lost — recorded at <entry>, absent now (destroyed or moved away; not a
-  rotation): reads before the loss are gone` before its table, exit status unchanged (0) — the hook's
-  SILENT contract (log-tool/session-end never print) is unaffected; only the operator-invoked `aggregate`
-  gains output. New `tests/test_read_trace.sh` C1–C3.
+  rotation): reads before the loss are gone` before its table; when the entry moved (the store root
+  changed but a prior recorded entry still exists elsewhere) it names that entry instead of printing a
+  silent empty table — reusing `keel_store_state`'s full state machine, not just its `lost` rung (found
+  by this ticket's own review round). Exit status unchanged (0) either way — the hook's SILENT contract
+  (log-tool/session-end never print) is unaffected; only the operator-invoked `aggregate` gains output.
+  New `tests/test_read_trace.sh` C1–C3 plus a `moved`-state regression test.
 
 ### Changed
 
