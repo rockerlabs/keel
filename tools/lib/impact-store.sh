@@ -285,6 +285,30 @@ _impact_override_active() {
   [ -n "${KEEL_IMPACT_LEDGER:-}" ] || [ -n "${KEEL_IMPACT_EVIDENCE:-}" ] || [ -n "${KEEL_IMPACT_LOG:-}" ]
 }
 
+# _keel_store_git ARGS… — dir #630 fix round (F1): run `git ARGS…` with GIT_DIR/GIT_COMMON_DIR/
+# GIT_WORK_TREE/GIT_INDEX_FILE cleared, for the one-off `-C "$top"` calls keel_store_record and
+# keel_store_recorded make. A caller process started with one of those already set (a hook, a tool
+# invoked from inside another repo's git machinery) otherwise hijacks `-C`: git honors an inherited
+# GIT_DIR over it, so e.g. `rev-parse --show-toplevel` silently succeeds against the HIJACKED repo
+# (not `$top`) and a `--add` lands in ITS .git/config — as long as `$top` exists as SOME directory on
+# disk (a project not yet git-initialized is enough: `-C` only needs a `chdir` to succeed, and git
+# resolves the repo from `GIT_DIR` from there, never from `$top`'s own contents). A `$top` that
+# doesn't exist on disk at all was already safe before this fix, verified live (git 2.52.0): `-C`
+# fails outright on the `chdir` before git ever consults `GIT_DIR`, hijacked or not — tests below
+# cover the exists-but-not-a-repo case, the one that actually reproduces the hijack. `env -u` clears
+# the four variables for this one exec without a subshell fork (`( unset …; git … )` forks
+# once for the subshell and once for git; `env -u … git …` execs git directly). Scoped to these two
+# functions' own calls, not a lib-level unset (this file is sourced by tools/pre-pr-gate.sh,
+# public-audit.sh, doctor.sh, citation-resolvability.sh, pipeline-canary.sh, keel-impact.sh and
+# read-trace — a process-wide unset would change their own git calls too; dir #647 covers that class
+# for the rest of the codebase). Not `tools/lib/repo-arg-guard.sh`'s own unset: that one is
+# unconditional at SOURCE time for the whole process (its own header explains why), which is exactly
+# the process-wide effect dir #647 is scoped to avoid here. `impact_claim_key` (:71-73) is
+# deliberately left alone — it is baseline v0.11.0 behavior, not part of this fix's scope.
+_keel_store_git() {
+  env -u GIT_DIR -u GIT_COMMON_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git "$@"
+}
+
 # keel_store_record KEY ENTRY TOP — S4: record that TOP's project has (or had) a store entry at ENTRY,
 # under the LOCAL git config key KEY (`git -C "$TOP" config --local`), multi-valued. Generic — read-
 # trace's own S13 record (key `keel.readTraceStore`) reuses this unchanged rather than a second
@@ -294,19 +318,21 @@ _impact_override_active() {
 keel_store_record() {
   local key="$1" entry="$2" top="$3"
   [ -n "$top" ] && [ -n "$entry" ] || return 0
-  git -C "$top" rev-parse --show-toplevel >/dev/null 2>&1 || return 0
+  _keel_store_git -C "$top" rev-parse --show-toplevel >/dev/null 2>&1 || return 0
   _keel_store_has_entry "$key" "$entry" "$top" && return 0
-  git -C "$top" config --local --add "$key" "$entry" >/dev/null 2>&1 || true
+  _keel_store_git -C "$top" config --local --add "$key" "$entry" >/dev/null 2>&1 || true
   return 0
 }
 
 # keel_store_recorded KEY TOP — S4 reads: print each value recorded under KEY at TOP, one per line.
 # `--get-all` returns rc 1 (no values) or rc 128 (TOP is not a repo) — S4: "both mean 'no record'", so
-# both are swallowed here rather than surfaced as an error.
+# both are swallowed here rather than surfaced as an error. dir #630 F1: same inherited-GIT_DIR guard
+# (_keel_store_git above) as keel_store_record, so a read never reports a HIJACKED repo's values as
+# TOP's own.
 keel_store_recorded() {
   local key="$1" top="$2"
   [ -n "$top" ] || return 0
-  git -C "$top" config --local --get-all "$key" 2>/dev/null || true
+  _keel_store_git -C "$top" config --local --get-all "$key" 2>/dev/null || true
   return 0
 }
 
