@@ -53,7 +53,8 @@ the whole project, and never a mean.**
 Two candidate metrics from the ticket's own body — **cost per confirmed defect** and **cost per
 convergence round** — are documented as future work, not built: neither is computable from data on disk
 today (no durable, structured findings-count record survives per session; `pre-pr-gate`'s own
-convergence trace is an ephemeral `/tmp` sentinel that does not survive to be read back later).
+convergence trace is an ephemeral sentinel (dir #398: under `$HOME/.keel/tmp`, not `/tmp`) that does
+not survive to be read back later).
 
 ## The corrected table
 
