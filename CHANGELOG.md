@@ -50,14 +50,15 @@ sections real content going forward — see that page for exactly when each one 
 - **An inherited `GIT_DIR`/`GIT_COMMON_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` in the environment can no
   longer redirect a `git -C` call into a different repository than the one actually named, in the four
   tools it was found in** (dir #644, closing dir #318's residual N8 — a wider class of the same pattern,
-  in other keel tools that resolve `git -C` from a variable, was found by this ticket's own `/code-review
-  max` pass and filed separately as its own follow-up ticket, not fixed here): `tests/lib.sh` unsets all
-  four before its own first git call, so `-C` is the only thing left that can select a repo for a test
-  process and everything it spawns — `tests/test_lib_ref_guard.sh` gains T13, reproducing the escape live
-  and pinning the closure. New `tools/lib/repo-arg-guard.sh` does the same, unconditionally, at source
-  time, for `tools/pipeline-canary.sh`, `tools/install-read-trace.sh` and `tools/install-pre-pr-gate.sh`,
-  which all source it (the source-time unset alone protects `pipeline-canary.sh`'s own fixture-creation
-  calls; the other two also call its `keel_repo_arg_guard` as their `<repo>` argument's validity gate).
+  in other keel tools that resolve `git -C` from a variable, was found by this ticket's own
+  `/code-review max` pass and filed as dir #647, not fixed here): `tests/lib.sh` unsets all four
+  before its own first git call, so `-C` is the only thing left that can select a repo for a test
+  process and everything it spawns — `tests/test_lib_ref_guard.sh` gains T13, reproducing the escape
+  live and pinning the closure. New `tools/lib/repo-arg-guard.sh` does the same, unconditionally, at
+  source time, for `tools/pipeline-canary.sh`, `tools/install-read-trace.sh` and
+  `tools/install-pre-pr-gate.sh`, which all source it (the source-time unset alone protects
+  `pipeline-canary.sh`'s own fixture-creation calls; the other two also call its
+  `keel_repo_arg_guard` as their `<repo>` argument's validity gate).
   `tools/install-secret-guard.sh` inlines the same unset instead, at the top of the file, since it must
   stay copy-standalone with no `tools/lib/` dependency (its own tests run scratch copies that carry no
   `tools/lib/`). New `tests/test_repo_arg_guard_lib.sh`; `tests/test_secret_guard.sh` gains a decoy-repo
