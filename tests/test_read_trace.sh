@@ -44,6 +44,12 @@ feed_hook() { local json="$1"; shift; OUT="$(printf '%s' "$json" | TMPDIR="$RT_T
 # session_log_of DIR — this case's ephemeral session-log path, resolved in the SAME $RT_TMPDIR the
 # hooks above were fed (so the test reads exactly what the hook wrote, not the real machine's /tmp).
 session_log_of() { TMPDIR="$RT_TMPDIR" bash -c ". '$lib'; _rt_session_log \"\$1\"" _ "$1"; }
+# entry_dir_of DIR — this case's persistent entry dir, resolved the same deterministic way the
+# existing aggregate fixtures below do (KEEL_READ_TRACE_STORE="$RT_STORE" + _rt_store_dir) rather than
+# a `find "$RT_STORE" -name reads.log | head -n1 | dirname` scan — which only works after a write has
+# actually happened and picks an arbitrary match if more than one entry exists under $RT_STORE (found
+# by this ticket's own review round).
+entry_dir_of() { KEEL_READ_TRACE_STORE="$RT_STORE" bash -c ". '$lib'; _rt_store_dir \"\$1\"" _ "$1"; }
 
 # --- lib: _rt_normalize_path -------------------------------------------------------------------------
 d="$(mkrepo)"; rt_env n1
@@ -691,7 +697,7 @@ d="$(mkrepo)"; rt_env s13c1
 feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
 check_status "C1: log-tool's Read write (which now also records S13's provenance) still exits 0" 0 "$STATUS"
 check_status "C1: log-tool's Read write is still silent (no output leaked by the new git-config call)" "" "$OUT"
-c1_entry="$(dirname "$(find "$RT_STORE" -name reads.log 2>/dev/null | head -n1)")"
+c1_entry="$(entry_dir_of "$d")"
 check_dir "C1: the persistent entry dir was created" "$c1_entry"
 run bash -c "git -C '$d' config --local --get-all keel.readTraceStore"
 check_contains "C1: the first log-tool write recorded keel.readTraceStore = the entry dir" "$OUT" "$c1_entry"
@@ -706,7 +712,7 @@ check_contains "C1: a second write to the same entry records no duplicate value"
 # and the two must not be confused).
 d="$(mkrepo)"; rt_env s13c2
 feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
-c2_entry="$(dirname "$(find "$RT_STORE" -name reads.log 2>/dev/null | head -n1)")"
+c2_entry="$(entry_dir_of "$d")"
 rm -rf "$c2_entry"
 run_hook aggregate "$d"
 check_status "C2: aggregate on a lost read-trace entry still exits 0" 0 "$STATUS"
@@ -729,6 +735,26 @@ run_hook aggregate "$d"
 check_absent "C2: after rotate, the still-existing entry does NOT read as lost" "$OUT" "store entry lost"
 check_status "C2: the entry directory itself still exists after rotate" 0 \
   "$( [ -d "$c2_entry" ] && printf 0 || printf 1 )"
+
+# moved — an escape found by this ticket's own review round (not one of C1-C3, added on top of the
+# spec's own acceptance list): keel_store_state's full state machine (enabled/lost/moved/never) is
+# reused, not just its `lost` rung — a repo whose KEEL_READ_TRACE_STORE root changed between sessions
+# (KEEL_HOME repointed, same trigger S0's vocabulary names) still has a recorded entry that physically
+# exists, just not where the CURRENT resolve looks. aggregate must say where it still is, not print a
+# silent empty table indistinguishable from "nothing ever happened here".
+d="$(mkrepo)"; rt_env s13moved
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+moved_old_entry="$(entry_dir_of "$d")"
+check_dir "moved: the original entry exists before the store root changes" "$moved_old_entry"
+# A fresh store root for the SAME repo (rt_env points both RT_STORE and RT_TMPDIR at a new sandbox
+# pair) — the old entry is left on disk untouched, still recorded in the repo's git config, but
+# aggregate now resolves a DIFFERENT, never-created path under the new root.
+rt_env s13moved2
+run_hook aggregate "$d"
+check_status "moved: aggregate still exits 0" 0 "$STATUS"
+check_contains "moved: aggregate says the entry moved, not lost or silent" "$OUT" "store entry moved"
+check_contains "moved: aggregate names the still-existing prior entry" "$OUT" "$moved_old_entry"
+check_absent "moved: aggregate does NOT call this case 'lost'" "$OUT" "store entry lost"
 
 # C3 — the existing no-HOME / unwritable-root silence cases stay green under S13's added record calls.
 # No new fixture: "log-tool with no HOME/KEEL_HOME/KEEL_READ_TRACE_STORE" and "dir #393: silent hooks

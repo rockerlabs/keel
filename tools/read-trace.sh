@@ -452,11 +452,31 @@ case "${1:-}" in
         # Backfill: an entry that already exists but predates this ticket (or was created by a caller
         # S13's creation-time gate missed) gets its record here — idempotent, safe every run.
         _rt_backfill_entry_record "$ag_entry" "$ag_top"
-      elif [ "$(keel_store_state "$RT_STORE_RECORD_KEY" "$ag_entry" "$ag_top")" = lost ]; then
-        # G0's own worry (docs/grooming.md): an empty aggregate reads as either "nothing happened" or
-        # "a rotation archived it" — this is the THIRD, worse case (data loss), and it must say so
-        # before the table below prints an ordinary-looking empty result.
-        printf 'read-trace: store entry lost — recorded at %s, absent now (destroyed or moved away; not a rotation): reads before the loss are gone\n' "$ag_entry"
+      else
+        # keel_store_state's full four rungs (enabled/lost/moved/never), not just `lost` — an escape
+        # found by this ticket's own review round: reusing the generic state machine (S13's own
+        # "shared code" clause) but branching on only one of its outcomes left `moved` silently
+        # indistinguishable from an ordinary, nothing-ever-happened empty aggregate, exactly the
+        # "quiet empty aggregate that isn't actually quiet" failure G0/dir #627 exists to catch — just
+        # for the one rung this reuse had missed.
+        case "$(keel_store_state "$RT_STORE_RECORD_KEY" "$ag_entry" "$ag_top")" in
+          lost)
+            # G0's own worry (docs/grooming.md): an empty aggregate reads as either "nothing happened"
+            # or "a rotation archived it" — this is the THIRD, worse case (data loss), and it must say
+            # so before the table below prints an ordinary-looking empty result.
+            printf 'read-trace: store entry lost — recorded at %s, absent now (destroyed or moved away; not a rotation): reads before the loss are gone\n' "$ag_entry"
+            ;;
+          moved)
+            # The recorded entry for THIS resolve is gone, but a DIFFERENT recorded value for this
+            # project still exists as a directory (KEEL_HOME/KEEL_READ_TRACE_STORE changed) — its
+            # history is not lost, just not where aggregate looked; name where it still is rather than
+            # printing a silent empty table (same wording style as keel-impact.sh's own moved notice).
+            printf 'read-trace: store entry moved — recorded at %s, not there now; a prior entry still exists:\n' "$ag_entry"
+            keel_store_recorded "$RT_STORE_RECORD_KEY" "$ag_top" | while IFS= read -r ag_r; do
+              [ -n "$ag_r" ] && [ -d "$ag_r" ] && printf '    %s\n' "$ag_r"
+            done
+            ;;
+        esac
       fi
     fi
     # Built from $ag_entry directly, not _rt_reads_log (which would re-resolve _rt_store_dir for the

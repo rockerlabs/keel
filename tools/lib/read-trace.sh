@@ -329,15 +329,20 @@ _rt_dedup_append() {
 # persistent write of a session is exactly the call that creates the entry dir, and that creation is
 # the one moment S13's provenance record must be written (never on a resolve failure: an unresolved
 # store root here just means _rt_store_dir fails and this whole persistent-tier write no-ops, same as
-# before this ticket). The reads.log write below builds its path from `$entry` directly rather than
-# calling _rt_reads_log (which would re-resolve _rt_store_dir — root + project-id, two more forks —
-# for the exact value already sitting in `$entry`); found by this ticket's own review round.
+# before this ticket). The reads.log write below appends directly (the same group-redirected form
+# _rt_plain_append itself uses — dir #393's writable-root guard), rather than calling _rt_plain_append
+# with a path built from `$entry`: that would still re-derive `$entry` via its own internal `dirname`
+# fork and re-run its own `[ -d ]` test, both already just done by _rt_ensure_persistent_entry one line
+# above for the exact same directory — found by this ticket's own review round (two independent
+# passes), the same class as the double _rt_store_dir resolution this comment already used to name.
+# Mirrors session-end's own inline append in tools/read-trace.sh, which never routed through
+# _rt_plain_append either.
 _rt_record_read() {
   local dir="$1" path="$2" top="${3:-}" entry
   _rt_dedup_append "$(_rt_session_log "$dir" "$top")" read "$path" || return 0
   entry="$(_rt_store_dir "$dir" "$top")" || return 0
   _rt_ensure_persistent_entry "$entry" "$top"
-  _rt_plain_append "$entry/reads.log" read "$path"
+  { printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" read "$path" >> "$entry/reads.log"; } 2>/dev/null
 }
 
 # _rt_record_mutate DIR PATH [TOP] — ephemeral-only: feeds the wrap-fuse's "did this session mutate"
