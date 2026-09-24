@@ -59,6 +59,27 @@ GATE="$SELF_DIR/pre-pr-gate.sh"
 . "$SELF_DIR/lib/impact-store.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$SELF_DIR/lib/gate-paths.sh"
+# dir #644: sourcing this unsets an inherited GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE
+# before this script's own fixture-creation git calls (setup's `git init`/`git -C "$repo"` …) can be
+# redirected by them — see the lib's own header for the mechanism this closes. Explicitly guarded,
+# unlike the two sibling `.` lines above: this script runs `set -u` only (no `-e`, same reasoning the
+# mktemp guard below states for itself), so a failure here would otherwise let execution continue with
+# the vars still exported, reopening dir #644 with NO later symptom anywhere (unlike impact-store.sh/
+# gate-paths.sh, whose functions this script actually CALLS, so a failed source of either of those
+# still fails loudly later at the call site; nothing here ever calls a function FROM repo-arg-guard.sh
+# in this file, only its source-time side effect). The check is on the RESULT (all four vars actually
+# gone), not merely on `.`'s own exit status: a `.` that "succeeds" (exit 0) but reads a truncated or
+# otherwise malformed copy of the file — one that parses fine but never reaches its own `unset` line —
+# would leave `|| { ...; exit 1; }` on the source line alone none the wiser (verified live,
+# /code-review max: a 0-byte repo-arg-guard.sh sourced with exit 0 and no error). If none of the four
+# were exported to begin with, this check trivially passes either way — correctly, since there is then
+# nothing for a failed unset to have left behind, and nothing dir #644 protects against in that case.
+# shellcheck source=tools/lib/repo-arg-guard.sh
+. "$SELF_DIR/lib/repo-arg-guard.sh"
+if [ -n "${GIT_DIR:-}${GIT_COMMON_DIR:-}${GIT_WORK_TREE:-}${GIT_INDEX_FILE:-}" ]; then
+  echo "pipeline-canary: lib/repo-arg-guard.sh sourced but GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE are not all unset (dir #644's guard did not take effect — a missing, unreadable, or corrupted lib/repo-arg-guard.sh?) — refusing to continue" >&2
+  exit 1
+fi
 
 # This runs before the -h/--help and subcommand dispatch below, so even `pipeline-canary.sh -h` or
 # `... clean` now pays the cost of resolving $HOME — the same trade-off tools/pre-pr-gate.sh's own

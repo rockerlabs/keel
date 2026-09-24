@@ -1221,4 +1221,42 @@ check_status "dir #617(a): vendor into a repo, SYSTEM hooksPath set elsewhere �
 check_block_equal "dir #617(a): SYSTEM-scope vendor leaves the system hooks dir untouched" "$before_system" "$(ls -la "$fake_system")"
 check_file "dir #617(a): the repo's own hooks dir got the vendored copy (SYSTEM-scope case)" "$gsysrepo/.git/hooks/secret-scan.sh"
 
+# =================================================================================================
+# --- dir #644: an inherited GIT_DIR / GIT_COMMON_DIR must never redirect install-secret-guard.sh's
+# <repo> branch into a DIFFERENT repository than the one named on the command line — including its
+# own validity gate: the ticket's own claim is that this hijack works "even when $repo is not a git
+# repo at all", i.e. the ambient vars can make the FIRST `git -C "$repo" rev-parse
+# --is-inside-work-tree` falsely pass for a non-git path. `decoy644` stands in for whatever repo an
+# operator's (or a peer process's) already-exported GIT_DIR/GIT_COMMON_DIR happens to name; `repo644`
+# is the repo actually named on the command line, the one the vendor write is SUPPOSED to land in.
+#
+# `snapshot_tree_cksum` (tests/lib.sh) is a stronger byte-identical proof than the dir #617(a) block's
+# own `ls -la`: this ticket's write is a HOOK FILE (content, not just presence/size/mtime-minute), so
+# a path+content-hash snapshot of every file under decoy644/.git is what actually rules out a leak,
+# the same reasoning check_block_equal's own header comment gives for choosing content over a
+# directory listing.
+# =================================================================================================
+decoy644="$(new_repo)"; git -C "$decoy644" commit -qm seed --allow-empty
+decoy644_gitdir="$(git -C "$decoy644" rev-parse --git-dir)"
+case "$decoy644_gitdir" in /*) ;; *) decoy644_gitdir="$decoy644/$decoy644_gitdir" ;; esac
+decoy644_common="$(git -C "$decoy644" rev-parse --git-common-dir)"
+case "$decoy644_common" in /*) ;; *) decoy644_common="$decoy644/$decoy644_common" ;; esac
+in_ambient644() { env GIT_DIR="$decoy644_gitdir" GIT_COMMON_DIR="$decoy644_common" "$@"; }
+decoy644_before="$(snapshot_tree_cksum "$decoy644/.git")"
+
+repo644="$(new_repo)"
+run in_ambient644 "$isg" "$repo644"
+check_status "dir #644: vendor into a valid <repo> under an ambient GIT_DIR/GIT_COMMON_DIR → still succeeds" 0 "$STATUS"
+check_file "dir #644: the vendor write landed in repo644's own hooks dir, not the decoy" "$repo644/.git/hooks/secret-scan.sh"
+check_block_equal "dir #644: the decoy repo is byte-identical before/after the valid-<repo> vendor" \
+  "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
+
+notrepo644="$(mktemp -d "$SANDBOX/notrepo644.XXXXXX")"
+run in_ambient644 "$isg" "$notrepo644"
+check_ne "dir #644: a non-git <repo> is refused regardless of the ambient GIT_DIR/GIT_COMMON_DIR" 0 "$STATUS"
+check_contains "dir #644: the refusal names it as not a git repo" "$OUT" "not a git repo"
+check_nofile "dir #644: no hooks were written into the non-git <repo>" "$notrepo644/.git/hooks/secret-scan.sh"
+check_block_equal "dir #644: the decoy repo is STILL byte-identical after the refused non-git attempt" \
+  "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
+
 summary

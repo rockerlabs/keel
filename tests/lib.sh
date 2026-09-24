@@ -15,6 +15,19 @@
 # refuses the rest and fails the file.
 set -uo pipefail
 
+# dir #644 (closes dir #318 residual N8): a foreign GIT_DIR + a GIT_COMMON_DIR that happens to equal
+# REPO_ROOT's own real common dir is NOT bound by ref_guard_arm's includeIf.gitdir pattern below —
+# that pattern matches GIT_DIR, not GIT_COMMON_DIR (measured live, docs/specs/318-test-ref-isolation.md
+# E19(c)) — so that combination bypasses the guard entirely and a git write from this process lands in
+# the real repo even though REPO_ROOT below is computed correctly. Unsetting all four ambient
+# repo-selector vars before this file's first git call — including ref_guard_arm's own
+# `rev-parse --git-common-dir` on $REPO_ROOT further down — closes the vector: once unset, `-C` is the
+# only thing left that can select a repo for the rest of this process and everything it spawns (unset
+# removes the var from the exported environment table, not just this shell's view of it). A test that
+# deliberately EXERCISES an inherited GIT_DIR (test_lib_ref_guard.sh's T12(a)) is unaffected — it sets
+# the var only for one subprocess via `env VAR=... cmd`, which this shell-level unset does not touch.
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 
@@ -285,6 +298,33 @@ check_block_equal() {
     fail "$label" "block-extracted text differs or is empty — diff:
 $(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b"))"
   fi
+}
+
+# snapshot_tree_cksum DIR — every regular file under DIR, path + content hash, sorted for order-
+# independence: a byte-identical-before/after proof strong enough to catch a CONTENT change to an
+# existing file of the same size/mtime-minute, which `ls -la` (the dir #617(a) block's own snapshot)
+# would miss. `cksum`, not `shasum`: POSIX, present on every CI leg including alpine's busybox —
+# `shasum` is a macOS/perl tool alpine does not have (found live, dir #644: every check silently read
+# as "identical" against empty `find` output on both sides there). Promoted here at its second use
+# (lib.sh's own convention, pin()'s comment: "one caller; promote... only at a second use") —
+# tests/test_install.sh's own T12b inlines the same idiom with one extra exclusion
+# (`! -path '*/.keel/install-manifest.*'`), left as its own inline copy rather than folded onto this
+# general form: its excluded path is specific to what install.sh itself writes, not a general
+# snapshot need. Pair with check_block_equal, same as the dir #617(a) block's `ls -la` pairing. Every
+# call site today passes an absolute mktemp-derived path, but this is a shared helper now — a future
+# caller passing a relative path whose first component starts with `-` would make `find` parse it as
+# a flag instead of a path and fail loud, unrelated to whatever the caller is actually testing (found
+# by /code-review max's own line-by-line pass). A leading `--` does NOT fix this (tried first,
+# corrected by a later /code-review max round, reproduced live on all three `find`s this project's own
+# CLAUDE.md documents — macOS BSD find, alpine busybox, ubuntu GNU findutils: none treats `--` as a
+# strict end-of-options marker for `find`'s own path/predicate grammar, so a bare relative
+# dash-leading argument still misparses with or without it). The actual fix is the standard technique
+# for this class of pitfall (the same one `rm ./-file` uses): prefix a non-absolute `$1` with `./` so
+# its first character is never `-`, portable across all three.
+snapshot_tree_cksum() {
+  local d="$1"
+  case "$d" in /*) ;; *) d="./$d" ;; esac
+  find "$d" -type f -exec cksum {} + | sort
 }
 
 # check_count LABEL FILE PATTERN EXPECTED — assert PATTERN (a grep BRE, as-is — callers already anchor
