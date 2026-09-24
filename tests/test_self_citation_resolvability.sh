@@ -117,6 +117,19 @@ check_status "live in BACKLOG.md AND present in BACKLOG-parked.md -> exit 1 (amb
 check_contains "reports it AMBIGUOUS, not a clean resolve" "$OUT" "AMBIGUOUS dir #202"
 check_absent "no DEAD line — it does resolve, just to two canonical sources at once" "$OUT" "DEAD dir #202"
 
+# --- dir #635 review, delta round: a duplicate heading WITHIN BACKLOG-parked.md alone (no BACKLOG.md
+# heading at all) must also read AMBIGUOUS — the canonical_count fold pools BOTH files' counts, so a
+# collision entirely inside the parked file is the same class as BACKLOG.md's own dir #259 case, not a
+# narrower live-vs-parked special case.
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+printf '%s' "### dir #202 — a parked ticket — R1 — parked
+
+### dir #202 — a second parked ticket claiming the same number — R1 — parked
+" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "duplicate heading within BACKLOG-parked.md alone -> exit 1 (ambiguous)" 1 "$STATUS"
+check_contains "reports it AMBIGUOUS" "$OUT" "AMBIGUOUS dir #202"
+
 # --- mutation pair: duplicate heading makes a previously-clean citation ambiguous ---------------
 d="$(mk_repo "$backlog_ok" "$doc_ok")"
 run "$cr" "$d" --quiet

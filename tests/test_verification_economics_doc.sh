@@ -125,6 +125,9 @@ pin "filing bar is a disjunctive union: at least one of five conditions" \
 pin "filing bar condition 1 — always-file surface, no discretion" \
   "$doc" '**Always-file surface (no discretion):**' \
   "expected condition 1 — secrets, destructive writes, installers, a guard failing open"
+pin "condition 1's scratch-files carve-out points forward to condition 2 by number, not by term" \
+  "$doc" 'they qualify only under condition 2, below' \
+  "expected an explicit forward pointer — the bare word 'felt' is undefined at this point in the list"
 pin "filing bar condition 2 — felt" "$doc" '**Felt:**' \
   "expected condition 2, scoped to real work that actually hurt"
 pin "filing bar condition 2 excludes a sandbox reproduction" \
@@ -156,6 +159,17 @@ pin "the standing-list line format names which condition 1-5 failed" \
 pin "a second independent sighting promotes a standing-list line to a ticket" \
   "$doc" 'A second independent sighting promotes a standing-list line' \
   "expected the recurrence-promotion rule, tied to G4(a)'s existing mechanics"
+
+# --- dir #635 review, delta round: the backfill corollary's "invariant-bearing surfaces" term is a
+# different taxonomy from §4's own "always-file surface" list (§4's rewrite dropped the local
+# definition that used to sit beside this corollary) — pin that it points at FRAMEWORK.md instead of
+# leaving the term orphaned in this doc.
+pin "the backfill corollary points invariant-bearing surfaces at FRAMEWORK.md, not left undefined" \
+  "$doc" "FRAMEWORK.md\`](../FRAMEWORK.md)'s sense, a gate, an installer, a protocol" \
+  "expected a pointer to FRAMEWORK.md's definition — this doc's own §4 rewrite dropped the local one"
+pin "FRAMEWORK.md still carries the invariant-bearing-surface definition the corollary points at" \
+  "$framework" 'An invariant-bearing surface (a gate, an installer, a protocol' \
+  "expected FRAMEWORK.md's own definition to still exist at the cited sense"
 
 # --- D5: the diversity axis names all THREE axes. A doc that drops back to vendor-only has -------
 # --- regressed to the superseded 'method > model' framing. ---------------------------------------

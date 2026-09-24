@@ -26,11 +26,12 @@
 # BACKLOG.md, one line in the archive, and NOT dead. A citation is resolvable if it resolves in ANY
 # of three sources — BACKLOG.md, the archive, or BACKLOG-parked.md (dir #635: the sort's parked-ticket
 # sibling, sibling of BACKLOG.md, main-checkout-only, may not exist yet — an absent file degrades to
-# a silent no-op, the same shape as the archive's own absence, never an error); only BACKLOG.md's own
-# live `### dir #N` headings count toward ambiguity (two or more means dir #259's collision has
-# recurred), since the archive accumulates repeated closure-sweep blocks by design and a citation
-# appearing there more than once is not a fresh ambiguity — BACKLOG-parked.md is read the same
-# presence-only way, by its own `### dir #N` headings (a parked ticket keeps its heading verbatim).
+# a silent no-op, the same shape as the archive's own absence, never an error); BACKLOG.md's and
+# BACKLOG-parked.md's own live `### dir #N` headings are COUNTED and pooled into one canonical tally
+# (two or more, in either file or split across both, means dir #259's collision has recurred — a
+# parked ticket is "moved out of the live backlog verbatim," so the two files share one true-heading
+# invariant), since the archive accumulates repeated closure-sweep blocks by design and a citation
+# appearing there more than once is not a fresh ambiguity.
 #
 # Usage:
 #   tools/self/citation-resolvability.sh [REPO_DIR] [--quiet]
@@ -44,7 +45,8 @@
 #   KEEL_CITATION_ARCHIVE_FILE   full path to the archive index; overrides the derived
 #                                ~/.claude/projects/<slug>/CLAUDE-archive.md default
 #
-# Exit 0 unless a dead (zero-source) or ambiguous (2+ live BACKLOG.md headings) citation is found.
+# Exit 0 unless a dead (zero-source) or ambiguous (2+ live headings, BACKLOG.md and/or
+# BACKLOG-parked.md pooled) citation is found.
 set -euo pipefail
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
