@@ -338,9 +338,11 @@ release-readiness doc directly rather than skipping the step.
 **Hand the auditor a starting brief**, in the five-part shape this doc names above under [The worker
 brief](#the-worker-brief--one-shape-whether-launched-or-handed-over) — state to re-derive, the range,
 the PR→ticket→surface map, the manager's own seam suspicions marked "leads, not findings," and a
-"Handed to you" line below which every judgment is the auditor's own. File findings as tickets
-promptly rather than only when asked; the non-delegable set is unchanged from
-[`docs/delegation.md`](delegation.md) — merges, the release itself, and deletions stay the operator's.
+"Handed to you" line below which every judgment is the auditor's own. File a finding that clears
+[`docs/verification-economics.md`](verification-economics.md) §4's filing bar as a ticket promptly
+rather than only when asked — below the bar it's a standing-list line, not a ticket; the non-delegable
+set is unchanged from [`docs/delegation.md`](delegation.md) — merges, the release itself, and deletions
+stay the operator's.
 
 **"The operator's" means paste-and-run, not re-derivation.** Every operator action the manager hands
 over — a merge queue, the tag, the release — arrives as a copy-paste-ready command block with the

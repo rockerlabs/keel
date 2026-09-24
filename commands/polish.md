@@ -656,7 +656,8 @@ Steps, in order:
      it happens.
    - **Budget: the full review runs once; after it, at most TWO delta rounds.** If a SECOND consecutive
      delta round still returns substantive findings (not a style nit — those still just park in step 10),
-     stop fix-forward and do not attempt a third round. File the residual as a numbered backlog ticket,
+     stop fix-forward and do not attempt a third round. File the residual as a numbered backlog ticket
+     if it clears `docs/verification-economics.md` §4's filing bar, else as a standing-list line;
      name it honestly in the PR body's own words (not just a code comment), and open the PR as-is — an
      executed decision, recorded the same deliberate way a `skipped:<reason>` receipt outcome is, never a
      silent abandon. **The step 5 receipt itself does not change shape for this exit**: write whatever

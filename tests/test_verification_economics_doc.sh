@@ -117,22 +117,59 @@ pin "the doc distinguishes the verdict contract's coverage question from Clause 
   "$doc" 'different question from whether a diverse round has gone silent' \
   "expected coverage and stopping named as two different questions, not treated as one"
 
-# --- D4: the filing bar's three criteria, all present --------------------------------------------
-pin "filing bar criterion (a) — behavioural" "$doc" 'it is (a) behavioural' \
-  "expected the bar's first criterion stated verbatim as a criterion"
-# The trailing ", or" is part of the needle on purpose: the bar is a UNION, and flipping that one
-# connective to "and" silently inverts it to an intersection. Three presence-only pins would all stay
-# green through that flip — the substring-survives-a-contract-drift gap dir #209 found in an earlier
-# doc test. Pinning the connective with the criterion is what makes the flip red.
-pin "filing bar criterion (b) — a new class, and the bar is a UNION not an intersection" \
-  "$doc" '(b) a **new class**, or' \
-  "expected the bar's second criterion AND the disjunctive connective that makes the three a union"
-pin "filing bar criterion (c) — a guard gap on an invariant-bearing surface" \
-  "$doc" '(c) a guard gap on an invariant-bearing surface' \
-  "expected the bar's third criterion"
+# --- D4: the filing bar's five conditions, all present (dir #635: retires the old three-criteria
+# test — behavioural/new-class/guard-gap — for a value-based union of five conditions) ------------
+pin "filing bar is a disjunctive union: at least one of five conditions" \
+  "$doc" 'only if at least one holds' \
+  "expected the bar's disjunctive framing — filed if ANY of the five conditions holds"
+pin "filing bar condition 1 — always-file surface, no discretion" \
+  "$doc" '**Always-file surface (no discretion):**' \
+  "expected condition 1 — secrets, destructive writes, installers, a guard failing open"
+pin "condition 1's scratch-files carve-out points forward to condition 2 by number, not by term" \
+  "$doc" 'they qualify only under condition 2, below' \
+  "expected an explicit forward pointer — the bare word 'felt' is undefined at this point in the list"
+pin "filing bar condition 2 — felt" "$doc" '**Felt:**' \
+  "expected condition 2, scoped to real work that actually hurt"
+pin "filing bar condition 2 excludes a sandbox reproduction" \
+  "$doc" 'Reproducing it in a sandbox during an audit or review is not "felt"' \
+  "without this exclusion any audit finding could self-certify as felt"
+pin "filing bar condition 3 — beyond this project" "$doc" '**Beyond this project:**' \
+  "expected condition 3, scoped to a consuming project or an adopter"
+pin "filing bar condition 4 — severe" "$doc" '**Severe:**' \
+  "expected condition 4, scoped to data loss, a leak, or a broken daily workflow"
+pin "filing bar condition 5 — requested" "$doc" '**Requested:**' \
+  "expected condition 5, an operator-requested capability"
+pin "the bar keeps 'in doubt on 1-4, file'" "$doc" 'In doubt on 1–4' \
+  "expected the doubt clause — narrowing it would loosen a filing guarantee the spec vetted"
+pin "the bar retires 'new class' as a filing test on its own" \
+  "$doc" 'retire it as a filing test on its own' \
+  "expected the new-class retirement — a new class alone no longer earns a ticket"
+pin "a sub-bar finding may be fixed inline, scoped to the diff already open" \
+  "$doc" 'fix it inside the diff you are already' \
+  "expected the inline-fix escape hatch, scoped to the diff already open — a wider scope reopens the aside-in-an-unrelated-body failure mode the standing list exists to close"
+pin "...and scoped to a TRIVIAL fix there, not fixes generally" \
+  "$doc" 'touching if it is trivial there' \
+  "expected the inline-fix escape hatch's trivial-only scoping, the other half of its own guard"
 pin "the sub-bar disposition names a standing list, not a ticket of its own" \
   "$doc" 'a named line in the project'"'"'s standing list' \
   "without this the bar dissolves: a sub-bar finding that may open its own ticket restricts nothing"
+pin "the standing-list line format names which condition 1-5 failed" \
+  "$doc" 'date · line · source · which of 1–5 failed' \
+  "expected the standing-list line's field format, naming the failed condition"
+pin "a second independent sighting promotes a standing-list line to a ticket" \
+  "$doc" 'A second independent sighting promotes a standing-list line' \
+  "expected the recurrence-promotion rule, tied to G4(a)'s existing mechanics"
+
+# --- dir #635 review, delta round: the backfill corollary's "invariant-bearing surfaces" term is a
+# different taxonomy from §4's own "always-file surface" list (§4's rewrite dropped the local
+# definition that used to sit beside this corollary) — pin that it points at FRAMEWORK.md instead of
+# leaving the term orphaned in this doc.
+pin "the backfill corollary points invariant-bearing surfaces at FRAMEWORK.md, not left undefined" \
+  "$doc" "FRAMEWORK.md\`](../FRAMEWORK.md)'s sense, a gate, an installer, a protocol" \
+  "expected a pointer to FRAMEWORK.md's definition — this doc's own §4 rewrite dropped the local one"
+pin "FRAMEWORK.md still carries the invariant-bearing-surface definition the corollary points at" \
+  "$framework" 'An invariant-bearing surface (a gate, an installer, a protocol' \
+  "expected FRAMEWORK.md's own definition to still exist at the cited sense"
 
 # --- D5: the diversity axis names all THREE axes. A doc that drops back to vendor-only has -------
 # --- regressed to the superseded 'method > model' framing. ---------------------------------------

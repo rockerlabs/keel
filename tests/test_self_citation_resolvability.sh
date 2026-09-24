@@ -69,6 +69,67 @@ check_status "archived (not live) ticket resolves via the archive -> exit 0" 0 "
 check_absent "no DEAD line once the archive covers it" "$OUT" "DEAD"
 rm -rf "$archive_dir"
 
+# --- dir #635: absent from BACKLOG.md, present in BACKLOG-parked.md's own heading -> resolved -----
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+printf '%s' "### dir #202 — a parked ticket, moved verbatim — R1 — parked
+
+body
+" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "parked (not live, not archived) ticket resolves via BACKLOG-parked.md -> exit 0" 0 "$STATUS"
+check_absent "no DEAD line once BACKLOG-parked.md covers it" "$OUT" "DEAD"
+
+# --- dir #635: BACKLOG-parked.md absent entirely -> silent no-op, same shape as no archive --------
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+run "$cr" "$d"
+check_status "no BACKLOG-parked.md -> still runs, citation stays dead (no crash)" 1 "$STATUS"
+check_contains "reports parked as absent" "$OUT" "parked: absent"
+check_contains "still reports the dead citation" "$OUT" "DEAD dir #202"
+
+# --- dir #635: a citation present ONLY inside a parked ticket's BODY prose (not its own heading)
+# must NOT resolve — the parked scan matches its own `### dir #N` heading anchor, the same
+# discipline BACKLOG.md's live scan already applies, not the looser anywhere-in-prose extractor the
+# archive uses (which would let an incidental cross-reference inside one parked ticket wrongly
+# vouch for an unrelated dead number).
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+printf '%s' "### dir #500 — an unrelated parked ticket — R1 — parked
+
+See also dir #202 for background, though that one is not this ticket.
+" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "a bare body mention inside a parked ticket does not resolve a different number -> exit 1" 1 "$STATUS"
+check_contains "still reports the dead citation" "$OUT" "DEAD dir #202"
+
+# --- dir #635 review (altitude finding, confirmed live): a ticket LIVE in BACKLOG.md AND present in
+# BACKLOG-parked.md at the same time must be AMBIGUOUS — the header's own "moved out of the live
+# backlog verbatim" invariant says a ticket is never canonically in both at once, so this is the same
+# collision class dir #259/#266 already catch for two live headings within BACKLOG.md alone.
+# MUTATION-PROOF: before this fix, `parked_$n` was a presence-only flag never folded into the
+# ambiguity count, so this exact fixture read as "0 dead, 0 ambiguous" (reproduced live pre-fix).
+both_backlog="### dir #202 — a ticket that should have been parked, not both — R1 — open
+"
+both_parked="### dir #202 — a ticket that should have been parked, not both — R1 — parked
+"
+d="$(mk_repo "$both_backlog" "$doc_dead")"
+printf '%s' "$both_parked" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "live in BACKLOG.md AND present in BACKLOG-parked.md -> exit 1 (ambiguous)" 1 "$STATUS"
+check_contains "reports it AMBIGUOUS, not a clean resolve" "$OUT" "AMBIGUOUS dir #202"
+check_absent "no DEAD line — it does resolve, just to two canonical sources at once" "$OUT" "DEAD dir #202"
+
+# --- dir #635 review, delta round: a duplicate heading WITHIN BACKLOG-parked.md alone (no BACKLOG.md
+# heading at all) must also read AMBIGUOUS — the canonical_count fold pools BOTH files' counts, so a
+# collision entirely inside the parked file is the same class as BACKLOG.md's own dir #259 case, not a
+# narrower live-vs-parked special case.
+d="$(mk_repo "$backlog_ok" "$doc_dead")"
+printf '%s' "### dir #202 — a parked ticket — R1 — parked
+
+### dir #202 — a second parked ticket claiming the same number — R1 — parked
+" > "$d/BACKLOG-parked.md"
+run "$cr" "$d" --quiet
+check_status "duplicate heading within BACKLOG-parked.md alone -> exit 1 (ambiguous)" 1 "$STATUS"
+check_contains "reports it AMBIGUOUS" "$OUT" "AMBIGUOUS dir #202"
+
 # --- mutation pair: duplicate heading makes a previously-clean citation ambiguous ---------------
 d="$(mk_repo "$backlog_ok" "$doc_ok")"
 run "$cr" "$d" --quiet

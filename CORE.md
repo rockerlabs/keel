@@ -115,6 +115,10 @@ committed rule, the `LEARNINGS.md` staging tier, or — for a raw idea with no c
 session starts cold and won't recall it. Each session wrap ends with a **red-flag sweep** that catches
 anything left unpersisted. (Why → `PRINCIPLES.md` P0.)
 
+**A finding (an observed defect or gap) persists as a ticket only once it clears a project's own filing
+bar** — a keel project's is `docs/verification-economics.md` §4; below the bar it's a standing-list
+line, never a ticket of its own.
+
 **Propose in real time — the agent spots, the human judges.** When something worth keeping surfaces
 mid-session, propose the entry *then and there*, by a bar: **reusable + non-obvious + costly to
 re-derive** — an incident (→ rule/`LEARNINGS.md`), a repeated manual action (→ mechanize it), an
