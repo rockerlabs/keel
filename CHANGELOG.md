@@ -79,6 +79,11 @@ sections real content going forward — see that page for exactly when each one 
   against a project's `BACKLOG-parked.md`, a sibling of `BACKLOG.md` that may not exist yet. `.gitignore`
   gains `/docs/specs/`, where `/design` now writes every spec — personal paths and internal process that
   don't belong in this public tree.
+- **`commands/go.md` frontmatter gains `effort: high`** (dir #645): verified, not assumed — a command
+  file in `.claude/commands/` accepts the same frontmatter fields as a skill except `name`/`paths`,
+  `effort` among them, overriding the session's effort level while the command runs
+  (code.claude.com/docs/en/skills, read 2026-09-24). `/go`'s target reader skews mid-tier; this raises
+  its own reasoning depth rather than relying on the invoking session's.
 
 ### Fixed
 

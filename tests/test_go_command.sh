@@ -18,6 +18,13 @@ backlog_md="${KEEL_BACKLOG_MD:-$REPO_ROOT/commands/backlog.md}"
 check_file "go.md target exists" "$go_md"
 check_file "backlog.md target exists" "$backlog_md"
 
+# --- dir #645: go.md's frontmatter carries effort: high (Claude Code honours a command's own
+# `effort:` key per code.claude.com/docs/en/skills, read 2026-09-24 — a command file in
+# .claude/commands/ "accepts the same fields except name and paths", and effort is one of them,
+# overriding the session's effort level while the command is active). ------------------------------
+pin "go.md frontmatter carries effort: high" "$go_md" 'effort: high' \
+  "expected the effort: high frontmatter key dir #645 adds"
+
 # --- (a) budget: GO11 -----------------------------------------------------------------------------
 # Raising this constant is an operator decision (GO11) — never bump it here just to make a case fit.
 # Raised 1055 -> 1125 (operator decision D1, 2026-09-24, dir #641 round 2, absorbing dir #640): the
