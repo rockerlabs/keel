@@ -11,6 +11,150 @@ check_file "tools/lib/impact-store.sh exists" "$lib"
 # shellcheck source=/dev/null
 . "$lib"
 
+# --- A1-A4 (dir #317 S1/S2/S3c) run FIRST, before any test below overrides KEEL_IMPACT_STORE/
+# KEEL_HOME/etc for its own purposes — A4 pins tests/lib.sh's own harness defaults, which only reads
+# true here, at the top, before this file's own later blocks shadow them (/code-review high finding:
+# A4 used to run at the bottom, after an earlier block's `export KEEL_IMPACT_STORE=...` had already
+# overwritten the value it meant to check, so it could never go red for a broken harness default). ---
+
+# --- A1: impact_isolated actually isolates every S1 variable (dir #317 S2) -------------------------
+rt_lib="$REPO_ROOT/tools/lib/read-trace.sh"
+check_file "tools/lib/read-trace.sh exists" "$rt_lib"
+
+a1_h="$SANDBOX/a1-home"
+a1_fixture="$(new_repo)"
+# Derived from IMPACT_ISOLATION_VARS, not hand-typed — a future addition to that list is automatically
+# exercised as a decoy here too, the same discipline A3/A4/A5 already follow.
+a1_decoys=()
+for a1_var in $IMPACT_ISOLATION_VARS; do
+  a1_decoys+=("$a1_var=$SANDBOX/a1-decoy-$a1_var")
+done
+
+# a1_check_no_leak LABEL — asserts none of $a1_decoys' values appear in the just-run $OUT, one check
+# per decoy (shared by the three resolver checks below instead of each repeating the same loop).
+a1_check_no_leak() {
+  local label="$1" a1_decoy
+  for a1_decoy in "${a1_decoys[@]}"; do
+    check_absent "$label's output does not leak into decoy ${a1_decoy%%=*}" "$OUT" "${a1_decoy#*=}"
+  done
+}
+
+run env "${a1_decoys[@]}" bash -c ". '$lib'; impact_isolated '$a1_h' impact_store_root"
+check_status "A1: impact_isolated + a decoy on every S1 var → impact_store_root still succeeds" 0 "$STATUS"
+check_contains "A1: impact_store_root resolves to \$h/.claude/.keel/impact" "$OUT" "$a1_h/.claude/.keel/impact"
+a1_check_no_leak "A1: impact_store_root"
+
+run env "${a1_decoys[@]}" bash -c \
+  ". '$lib'; impact_isolated '$a1_h' impact_store_enable '$a1_fixture' >/dev/null; impact_isolated '$a1_h' impact_log_path '$a1_fixture'"
+check_status "A1: impact_log_path on an enabled fixture resolves under impact_isolated" 0 "$STATUS"
+check_contains "A1: impact_log_path resolves inside \$h's store" "$OUT" "$a1_h/.claude/.keel/impact"
+a1_check_no_leak "A1: impact_log_path"
+
+run env "${a1_decoys[@]}" bash -c ". '$lib'; . '$rt_lib'; impact_isolated '$a1_h' read_trace_store_root"
+check_status "A1: read_trace_store_root succeeds under impact_isolated" 0 "$STATUS"
+check_contains "A1: read_trace_store_root resolves to \$h/.claude/.keel/read-trace" "$OUT" "$a1_h/.claude/.keel/read-trace"
+a1_check_no_leak "A1: read_trace_store_root"
+
+# --- A2: impact_isolated's own mechanics (dir #317 S2) ------------------------------------------------
+run bash -c ". '$lib'; a2fn() { return 3; }; impact_isolated '$SANDBOX/a2-home' a2fn"
+check_status "A2: impact_isolated returns a shell function's own exit status (3)" 3 "$STATUS"
+
+run bash -c ". '$lib'; impact_isolated '$SANDBOX/a2-home' false"
+check_status "A2: impact_isolated returns an external command's own exit status" 1 "$STATUS"
+
+run bash -c ". '$lib'; impact_isolated '' true"
+check_status "A2: an empty HOME_DIR refuses with exit 2" 2 "$STATUS"
+
+run bash -c ". '$lib'; impact_isolated 'relative/path' true"
+check_status "A2: a non-absolute HOME_DIR also refuses with exit 2" 2 "$STATUS"
+
+run env KEEL_HOME="$SANDBOX/a2-caller-keelhome" bash -c \
+  ". '$lib'; impact_isolated '$SANDBOX/a2-home2' true >/dev/null; printf '%s' \"\${KEEL_HOME:-unset}\""
+check_contains "A2: the caller's own KEEL_HOME survives an impact_isolated call untouched" "$OUT" "$SANDBOX/a2-caller-keelhome"
+
+run bash -c \
+  ". '$lib'; HOME=/pretend/caller-home; impact_isolated '$SANDBOX/a2-home3' true >/dev/null; printf '%s' \"\$HOME\""
+check_contains "A2: the caller's own HOME survives an impact_isolated call untouched" "$OUT" "/pretend/caller-home"
+
+# --- A3: IMPACT_ISOLATION_VARS variable-coverage pin, mutation-proven (dir #317 S1) ------------------
+# Every var (besides HOME) that impact_store_root, _impact_file_path, read_trace_store_root and the
+# vendored secret-scan.sh's own _impact_log_path_inline copy read must be listed in
+# IMPACT_ISOLATION_VARS — a new store-resolving variable anywhere is then forced onto that list or this
+# test goes red. Mutated below to prove it: a resolver gaining an unlisted var must fail, and the
+# extraction itself must not be satisfiable by matching nothing (that would pass A3 vacuously).
+a3_pattern='\$\{?[A-Z][A-Z0-9_]*'
+# The floor vars a3_check must actually see at least once, or its own extraction is suspect (vacuous-
+# pass guard) — named ONCE here, read by both a3_check itself and the "not vacuous" loop below it.
+a3_floor_vars="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE"
+
+# a3_check TARGETS PATTERN — TARGETS is a newline-separated "file:func" list. Extracts every var each
+# target function reads (a sed range over the function body, piped through grep -E PATTERN), prints one
+# var per line, and returns non-zero if any var is neither HOME nor in IMPACT_ISOLATION_VARS — OR if the
+# combined extraction never saw every $a3_floor_vars entry (the guard that stops a broken PATTERN, or a
+# TARGETS list that resolves nothing, from passing on zero matches).
+a3_check() {
+  local targets="$1" pattern="$2" spec file func var bad=0 seen=""
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    file="${spec%%:*}"; func="${spec#*:}"
+    while IFS= read -r var; do
+      [ -n "$var" ] || continue
+      printf '%s\n' "$var"
+      case " $IMPACT_ISOLATION_VARS " in
+        *" $var "*) ;;
+        *) [ "$var" = "HOME" ] || bad=1 ;;
+      esac
+      case " $a3_floor_vars " in *" $var "*) seen="$seen $var " ;; esac
+    done < <(sed -n "/^${func}() {/,/^}/p" "$file" | grep -oE "$pattern" | sed -E 's/^\$\{?//' | sort -u)
+  done <<< "$targets"
+  for var in $a3_floor_vars; do
+    case "$seen" in *" $var "*) ;; *) bad=1 ;; esac
+  done
+  return "$bad"
+}
+
+a3_targets="$lib:impact_store_root
+$lib:_impact_file_path
+$REPO_ROOT/tools/lib/read-trace.sh:read_trace_store_root
+$REPO_ROOT/tools/secret-guard/secret-scan.sh:_impact_log_path_inline"
+
+a3_vars="$(a3_check "$a3_targets" "$a3_pattern")"
+check_status "A3: every var the four resolvers read is HOME or in IMPACT_ISOLATION_VARS" 0 "$?"
+for a3_required in $a3_floor_vars; do
+  check_contains "A3 floor: the extraction actually sees $a3_required (not vacuous)" "$a3_vars" "$a3_required"
+done
+
+# Mutation 1: a resolver reading an unlisted variable (KEEL_FOO) must go red. Only impact_store_root's
+# OWN target is swapped for a mutated copy — the other three stay real (derived from $a3_targets by
+# swapping just its first line, not a second hand-typed copy that could drift out of sync), so the
+# floor stays satisfied and the only possible reason left for going red is the injected KEEL_FOO read.
+a3_mut1="$SANDBOX/impact-store-mut1.sh"
+sed 's/^impact_store_root() {/impact_store_root() { : "${KEEL_FOO:-}"/' "$lib" > "$a3_mut1"
+a3_targets_mut1="$a3_mut1:impact_store_root
+$(printf '%s\n' "$a3_targets" | tail -n +2)"
+a3_check "$a3_targets_mut1" "$a3_pattern" >/dev/null
+check_status "A3 mutation proof: a resolver reading an unlisted var (KEEL_FOO) goes red" 1 "$?"
+
+# Mutation 2: an extraction pattern that matches nothing must ALSO go red — the floor-vars guard above
+# is what stops A3 from passing vacuously if its own extraction were ever broken.
+a3_check "$a3_targets" '\$NEVER_MATCHES_ANYTHING_XYZ' >/dev/null
+check_status "A3 mutation proof: a broken (non-matching) extraction pattern goes red too" 1 "$?"
+
+# --- A4: harness hygiene — every S1 variable is unset or points inside $SANDBOX (dir #317 S3c) -------
+# Runs here, at the top of the file, before anything below gets a chance to override one of these for
+# its own test purposes — see this section's own opening comment.
+for a4_var in $IMPACT_ISOLATION_VARS; do
+  a4_val="${!a4_var:-}"
+  if [ -z "$a4_val" ]; then
+    pass "A4: \$$a4_var is unset under the harness"
+  else
+    case "$a4_val" in
+      "$SANDBOX"/*) pass "A4: \$$a4_var points inside \$SANDBOX ($a4_val)" ;;
+      *) fail "A4: \$$a4_var points outside \$SANDBOX" "$a4_val" ;;
+    esac
+  fi
+done
+
 # --- impact_store_root: KEEL_IMPACT_STORE wins outright; else $KEEL_HOME/.keel/impact -------------
 store_home="$SANDBOX/store-home"
 run env -u KEEL_IMPACT_STORE KEEL_HOME="$store_home" bash -c ". '$lib'; impact_store_root"
@@ -185,6 +329,5 @@ run bash -c ". '$lib'
   [ \"\$a\" = \"\$c\" ] && { echo 'MISMATCH c matches a'; exit 1; }
   echo ok"
 check_contains "_impact_resolve_top is correct across repeat and different-dir calls" "$OUT" "ok"
-unset KEEL_IMPACT_STORE
 
 summary

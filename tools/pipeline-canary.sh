@@ -29,10 +29,12 @@
 # touches the real HOME: `setup` builds a throwaway sandbox HOME and prints it explicitly in every
 # instruction; setting HOME alone is also not treated as sufficient by itself (dir #24 finding: a
 # user-level ~/.claude/CLAUDE.md can still leak into an "isolated" session) — the printed command also
-# passes `--setting-sources project,local` to exclude the user scope, and forces $KEEL_HOME/
-# $KEEL_IMPACT_STORE empty (dir #290 finding: both outrank HOME in tools/lib/impact-store.sh's own
-# resolution, so either one being exported in the operator's real shell would otherwise redirect the
-# canary's impact events into the operator's REAL store, keyed by the throwaway toy repo's path).
+# passes `--setting-sources project,local` to exclude the user scope, and blanks every
+# tools/lib/impact-store.sh IMPACT_ISOLATION_VARS variable (dir #290 found the first two of these,
+# KEEL_HOME/KEEL_IMPACT_STORE, outrank HOME in that file's own resolution; dir #317 generalized the fix
+# to the whole list after E11 found KEEL_IMPACT_LOG was still leaking through dir #290's narrower
+# version) — so any one of them being exported in the operator's real shell would otherwise redirect
+# part of the canary's own writes into the operator's REAL store, keyed by the throwaway toy repo's path.
 # The rule governs WRITES: a probe that only READS the machine's own configuration is exempt — see
 # docs/rollout-audit.md's Layer 0 carve-out for when that read has to face the real environment
 # (dir #97).
@@ -116,12 +118,11 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
-# dir #290: the ONE place that knows what neutralizes tools/lib/impact-store.sh's isolation escape —
-# $KEEL_IMPACT_STORE, then $KEEL_HOME, both checked by impact_store_root() BEFORE it ever falls back
-# to $HOME. Used at every call into that lib below (cmd_setup's pre-create, cmd_check's read) so the
-# two-variable knowledge is stated once, not re-derived at each site (the exact way this ticket's own
-# bug happened: one call site had it, the other didn't).
-_sandboxed_impact() { HOME="$1" KEEL_HOME='' KEEL_IMPACT_STORE='' "${@:2}"; }
+# dir #317: isolation now goes through tools/lib/impact-store.sh's own impact_isolated + its
+# IMPACT_ISOLATION_VARS list (sourced above) — the two-variable knowledge dir #290's narrower
+# `_sandboxed_impact` used to hand-carry here (and which E11 found still missed KEEL_IMPACT_LOG) is now
+# stated in exactly one place, used at every call into that lib below (cmd_setup's pre-create, cmd_check's
+# read) and by the printed session command's own derivation further down.
 
 # The authoritative repo-key resolution (worktree-aware — dir #61) lives in pre-pr-gate.sh itself;
 # calling its own `repo-key` subcommand instead of re-deriving the algorithm here means this stays
@@ -176,11 +177,11 @@ GHEOF
   HOME="$home" git -C "$repo" config user.name "Keel Canary"
   printf 'canary toy project\n' > "$repo/README.md"
   # dir #251: impact events now live in an EXTERNAL store, $KEEL_HOME/.keel/impact/<project-id>/, never
-  # inside the repo itself. The real /polish session below runs sandboxed (see _sandboxed_impact, dir
-  # #290) so its own store resolution lands inside this sandbox on its own — pre-create that store
+  # inside the repo itself. The real /polish session below runs sandboxed (see impact_isolated, dir
+  # #317) so its own store resolution lands inside this sandbox on its own — pre-create that store
   # entry (mirrors keel-impact.sh's own `enable`) so a real run's impact events land somewhere `check`
   # can read without extra env. `cmd_check` recomputes the identical path (search "impact_store_dir").
-  mkdir -p "$(_sandboxed_impact "$home" impact_store_dir "$repo")"
+  mkdir -p "$(impact_isolated "$home" impact_store_dir "$repo")"
   git -C "$repo" add README.md
   HOME="$home" git -C "$repo" commit -q -m "init"
 
@@ -222,16 +223,25 @@ EOF
     printf 'key\t%s\n' "$key"
   } > "$CANARY_STATE"
 
+  # dir #317: DERIVED from IMPACT_ISOLATION_VARS (tools/lib/impact-store.sh, sourced above), not
+  # hand-typed — a variable added to that one list is blanked here automatically, closing the exact
+  # class of miss E11 found (KEEL_IMPACT_LOG left unblanked by dir #290's narrower, hand-typed version).
+  blanked=""
+  for _pc_var in $IMPACT_ISOLATION_VARS; do
+    blanked="$blanked $_pc_var="
+  done
+
   cat <<EOF
 pipeline-canary: sandbox ready at $sandbox
 
 Run the real /polish scenario yourself, isolated from your real HOME/hooks:
 
   cd $repo
-  HOME=$home KEEL_HOME= KEEL_IMPACT_STORE= PATH=$bin:\$PATH claude --settings $settings --setting-sources project,local
+  HOME=$home${blanked} PATH=$bin:\$PATH claude --settings $settings --setting-sources project,local
 
-(dir #290: KEEL_HOME= and KEEL_IMPACT_STORE= are not decorative — if either is exported in your real
-shell, HOME=$home alone would NOT stop the session's impact events from landing in your real store.)
+(dir #317: every variable blanked above is IMPACT_ISOLATION_VARS, not decorative — any one of them
+exported in your real shell would otherwise redirect part of the session's impact/read-trace writes at
+your real store instead of this sandbox, HOME=$home alone notwithstanding.)
 
 Then, inside that session: make a small edit (toy.py is already staged as a starter diff), run /polish
 for real through to \`gh pr create\` (the stubbed gh above accepts it without touching the network), and
@@ -288,13 +298,15 @@ cmd_check() {
     printf 'PASS  no leftover receipt sentinel — consistent with a consumed, successful pass\n'
   fi
 
-  # resolve_impact_log() in pre-pr-gate.sh prefers $KEEL_IMPACT_LOG over the repo's own store entry —
-  # match that precedence here (via _sandboxed_impact, dir #290, which leaves $KEEL_IMPACT_LOG alone
-  # on purpose), or an operator with that env var set (plausible if they use it for their real repos,
-  # and it's inherited into the sandboxed `claude --settings ...` session) would see a fully successful
-  # canary run misreported as "no receipt-pass event recorded" (found in the operator-run /code-review
-  # high pass on this ticket).
-  ilog="$(_sandboxed_impact "$home" impact_log_path "$repo")"
+  # dir #317: read via impact_isolated, the SAME way the printed session command (cmd_setup, above)
+  # now blanks every IMPACT_ISOLATION_VARS variable for the real /polish session — so `check` and the
+  # session it is checking always agree on where an event landed, regardless of what the operator's
+  # own real shell happens to have exported. This supersedes an earlier, narrower fix (dir #64) that
+  # made `check` deliberately FOLLOW an ambient $KEEL_IMPACT_LOG, back when the session still inherited
+  # it too (resolve_impact_log() in pre-pr-gate.sh still does that un-isolated resolution — S3(e), it
+  # has no isolation concept of its own); once the session stopped inheriting it, following it here
+  # would have made `check` look in the wrong place instead (operator-run /code-review high pass).
+  ilog="$(impact_isolated "$home" impact_log_path "$repo")"
   if [ -f "$ilog" ] && grep -q 'receipt-pass' "$ilog" 2>/dev/null; then
     printf 'PASS  a receipt-pass event was recorded: %s\n' "$(grep 'receipt-pass' "$ilog" | tail -n1)"
   else

@@ -67,6 +67,13 @@ export KEEL_IMPACT_EVIDENCE="$SANDBOX/harness-evidence.md"
 # store-based path (enable/migrate/rollup --registry) unsets the three explicit overrides above and
 # relies on this instead, so it must never resolve into the real $HOME/.claude/.keel/impact/.
 export KEEL_IMPACT_STORE="$SANDBOX/harness-impact-store"
+# dir #317 S3c: no harness default for KEEL_HOME — a test that needs one sets it itself
+# (`env KEEL_HOME=...`, per V1's grep of every read in tests/) — and unset explicitly in case the
+# operator's own shell happens to export one, so no tool this harness spawns can resolve through an
+# inherited KEEL_HOME by accident.
+unset KEEL_HOME
+# Same reasoning as KEEL_IMPACT_STORE above, for the read-trace store's own external root (dir #317).
+export KEEL_READ_TRACE_STORE="$SANDBOX/harness-read-trace-store"
 
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
 # both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS

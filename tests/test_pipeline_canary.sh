@@ -142,11 +142,13 @@ gate_env() {
 run env KEEL_CANARY_STATE="$STATE" env -u KEEL_IMPACT_LOG bash "$canary" check
 check_contains "check with a not-yet-consumed sentinel → INFO, not PASS/FAIL" "$OUT" "INFO  a receipt sentinel is still present"
 
-# dir #290: HOME="$home" KEEL_HOME= KEEL_IMPACT_STORE= — matches how cmd_setup's printed instructions
-# now launch the real /polish session (fixed by this ticket), so this simulated gate/ALLOW call writes
-# its receipt-pass event into the canary's OWN sandboxed store, the same place `check` (fixed below)
-# now reads from. -u KEEL_IMPACT_LOG: lib.sh exports a sandbox-wide default for the whole test run,
-# which would otherwise outrank that resolution — unset it so the event lands where `check` reads.
+# dir #317 (was dir #290): HOME="$home" KEEL_HOME= KEEL_IMPACT_STORE= — matches how cmd_setup's printed
+# instructions launch the real /polish session, so this simulated gate/ALLOW call writes its
+# receipt-pass event into the canary's OWN sandboxed store, the same place `check` reads from.
+# -u KEEL_IMPACT_LOG: lib.sh exports a sandbox-wide default for the whole test run, which would
+# otherwise outrank that resolution — unset it so the event lands where `check` reads. (This event's
+# resolution only depends on KEEL_IMPACT_LOG/KEEL_HOME/KEEL_IMPACT_STORE — the printed command's other
+# blanked variables, KEEL_IMPACT_LEDGER/_EVIDENCE/KEEL_READ_TRACE_STORE, are exercised by A1/A5 below.)
 gate_decision="$(gate_env "gh pr create --fill" "$repo" -u KEEL_IMPACT_LOG HOME="$sandbox/home" KEEL_HOME= KEEL_IMPACT_STORE=)"
 check_contains "the gate itself allows the simulated run" "$gate_decision" '"permissionDecision":"allow"'
 "$sandbox/bin/gh" pr create --fill >/dev/null
@@ -180,21 +182,32 @@ if [ -d "$sandbox" ]; then fail "clean removes the sandbox dir" "still present: 
 
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-2" bash "$canary" clean
 
-# --- dir #64/operator-run /code-review high fix: `check` must respect $KEEL_IMPACT_LOG precedence,
-# same as pre-pr-gate.sh's own resolve_impact_log() — an operator with that env var set (plausible for
-# their real repos) would otherwise see a fully successful run misreported as "no event recorded". ---
+# --- A5 (dir #317) — supersedes the earlier dir #64/operator-run /code-review high fix above: `check`
+# now reads via impact_isolated (S1/S2), the SAME isolation the printed session command applies
+# (cmd_setup, above) — so an ambient $KEEL_IMPACT_LOG can no longer redirect either side. Reproduces
+# dir #64's exact fixture (an event written outside the sandbox, then `check` invoked with that same
+# path exported) to prove the behaviour is now the OPPOSITE of the old fix: `check` must resolve INSIDE
+# the sandbox and never follow the decoy, even with $KEEL_IMPACT_LOG exported. -------------------------
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" bash "$canary" setup
 sandbox3="$(awk -F'\t' '$1=="sandbox"{print $2}' "$SANDBOX/canary-state-3")"
 repo3="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-3")"
-extlog="$SANDBOX/external-impact.log"; rm -f "$extlog"
-write_full_receipt_review "$repo3" "low-operator-run"
-gate_env "gh pr create --fill" "$repo3" KEEL_IMPACT_LOG="$extlog" >/dev/null
+home3="$sandbox3/home"
+decoylog="$SANDBOX/a5-decoy-impact.log"; rm -f "$decoylog"
+( export HOME="$home3"; write_full_receipt_review "$repo3" "low-operator-run" )
+# Derived from IMPACT_ISOLATION_VARS, like cmd_setup's own printed command — not hand-typed, so a
+# future addition to that one list is exercised here too instead of silently under-isolating this call
+# the way dir #290/E11's hand-typed original did.
+a5_isolation_args=(HOME="$home3")
+for a5_isolate_var in $IMPACT_ISOLATION_VARS; do
+  a5_isolation_args+=("$a5_isolate_var=")
+done
+gate_env "gh pr create --fill" "$repo3" "${a5_isolation_args[@]}" >/dev/null
 "$sandbox3/bin/gh" pr create --fill >/dev/null
 
-run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" KEEL_IMPACT_LOG="$extlog" bash "$canary" check
-check_status "check with KEEL_IMPACT_LOG set → exit 0" 0 "$STATUS"
-check_contains "check follows KEEL_IMPACT_LOG precedence, finds the event in the external file" "$OUT" "PASS  a receipt-pass event was recorded"
-check_nofile "the repo's own .keel/ marker never got the event (env var outranked it, as production does)" "$repo3/.keel/impact-events.log"
+run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" KEEL_IMPACT_LOG="$decoylog" bash "$canary" check
+check_status "A5: check with KEEL_IMPACT_LOG exported to a decoy → exit 0" 0 "$STATUS"
+check_contains "A5: check still finds the receipt-pass event, isolated the same way as the session" "$OUT" "PASS  a receipt-pass event was recorded"
+check_nofile "A5: nothing was ever written to the decoy KEEL_IMPACT_LOG path" "$decoylog"
 
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-3" bash "$canary" clean
 
@@ -235,7 +248,11 @@ check_contains "clean reports nothing to remove" "$OUT" "no sandbox to remove"
 escape_store="$SANDBOX/operator-real-store"
 mkdir -p "$escape_store"
 run env KEEL_CANARY_STATE="$SANDBOX/canary-state-6" KEEL_IMPACT_STORE="$escape_store" bash "$canary" setup
-check_contains "setup's printed instructions neutralize KEEL_HOME/KEEL_IMPACT_STORE for the real session" "$OUT" 'KEEL_HOME= KEEL_IMPACT_STORE='
+# A5 (dir #317): the printed command blanks every IMPACT_ISOLATION_VARS variable, not just
+# KEEL_HOME/KEEL_IMPACT_STORE (dir #290's narrower original — the "old l.216 pin" this replaces).
+for a5_var in $IMPACT_ISOLATION_VARS; do
+  check_contains "setup's printed instructions blank \$$a5_var for the real session" "$OUT" "$a5_var="
+done
 sandbox6="$(awk -F'\t' '$1=="sandbox"{print $2}' "$SANDBOX/canary-state-6")"
 repo6="$(awk -F'\t' '$1=="repo"{print $2}' "$SANDBOX/canary-state-6")"
 home6="$sandbox6/home"

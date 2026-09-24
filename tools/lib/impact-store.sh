@@ -23,6 +23,12 @@
 #   KEEL_IMPACT_LEDGER / KEEL_IMPACT_EVIDENCE / KEEL_IMPACT_LOG   explicit per-file overrides, unchanged
 #                          from before this ticket — still win over the store outright.
 #
+# Both KEEL_IMPACT_STORE and KEEL_HOME outrank $HOME outright: a caller that sets $HOME alone is NOT
+# isolated from either one (dir #290 found this the hard way — a sandbox that only pointed $HOME
+# elsewhere still had its impact events land in the real store). dir #317's impact_isolated (below) is
+# the one supported way to isolate a call: it unsets every variable this file's resolvers read, not
+# just these two.
+#
 # A project is "enabled" iff a store dir already exists for its id. Every path resolver below is
 # read-only (no writes, no mutation) and never errors: empty output means "no explicit override, and
 # this project isn't enabled" — refusing on that (keel-impact.sh's `add`/`rollup`) vs. silently doing
@@ -68,10 +74,45 @@ impact_claim_key() {
 
 # impact_store_root — D1: $HOME_DIR/.keel/impact, or $KEEL_IMPACT_STORE verbatim when set. $HOME is
 # required only on the fallback path (mirrors install.sh's own `${HOME:?...}` placement) so a caller
-# that always sets KEEL_HOME or KEEL_IMPACT_STORE never needs $HOME under `set -u`.
+# that always sets KEEL_HOME or KEEL_IMPACT_STORE never needs $HOME under `set -u`. KEEL_IMPACT_STORE
+# and KEEL_HOME both outrank HOME outright (dir #290: setting HOME alone does NOT isolate a caller from
+# either) — impact_isolated (below) is the one supported way to isolate a call from every override this
+# file's resolvers read, not just these two.
 impact_store_root() {
   if [ -n "${KEEL_IMPACT_STORE:-}" ]; then printf '%s' "$KEEL_IMPACT_STORE"; return; fi
   printf '%s/.keel/impact' "${KEEL_HOME:-${HOME:?impact-store: set HOME, or export KEEL_HOME}/.claude}"
+}
+
+# IMPACT_ISOLATION_VARS — every environment variable, other than HOME, that any keel store resolver
+# reads: impact_store_root above, _impact_file_path below, tools/lib/read-trace.sh's
+# read_trace_store_root, and the vendored tools/secret-guard/secret-scan.sh's own
+# _impact_log_path_inline copy. Named in this ONE place (dir #317) so impact_isolated (below) — and any
+# future caller that wants a truly sandboxed store root — unsets the whole list, not just whichever two
+# variables a fix happens to know about at the time: the exact class of miss that let dir #290's own
+# canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its printed command). A new store-resolving
+# variable anywhere must be added here; tests/test_impact_store_lib.sh's A3 pins that with a mutation
+# proof, so a resolver that starts reading an unlisted variable fails the suite.
+IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE"
+
+# impact_isolated HOME_DIR CMD [ARG…] — dir #317: the ONE way to run CMD (a shell function or an
+# external command) fully isolated from every ambient keel store override, without a caller having to
+# remember which variables that means. Runs CMD in a subshell with HOME=HOME_DIR exported and every
+# IMPACT_ISOLATION_VARS variable unset (not merely blanked — every resolver's `${VAR:-}` form treats an
+# empty value the same as unset, but unsetting is the more explicit contract and costs nothing here).
+# The subshell already keeps the caller's own environment untouched afterwards, so there is nothing to
+# save and restore. Refuses with return 2 and one stderr line when HOME_DIR is empty or not absolute,
+# rather than silently isolating into a relative path whose meaning would depend on the caller's cwd.
+impact_isolated() {
+  local home_dir="$1"
+  case "$home_dir" in
+    /*) : ;;
+    *) printf 'impact_isolated: HOME_DIR must be a non-empty absolute path (got %s)\n' "$home_dir" >&2; return 2 ;;
+  esac
+  shift
+  # shellcheck disable=SC2086  # IMPACT_ISOLATION_VARS is deliberately word-split here: a space-
+  # separated list of variable NAMES, exactly the form `unset` itself takes (same convention
+  # IMPACT_LEGACY_NAMES below uses for `impact_has_legacy_files`'s file-name list).
+  ( unset $IMPACT_ISOLATION_VARS; export HOME="$home_dir"; "$@" )
 }
 
 # impact_store_dir [DIR] — the store directory for DIR's project (computed; existence not checked).

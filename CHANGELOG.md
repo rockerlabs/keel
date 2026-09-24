@@ -64,6 +64,11 @@ sections real content going forward — see that page for exactly when each one 
   `tools/lib/`). New `tests/test_repo_arg_guard_lib.sh`; `tests/test_secret_guard.sh` gains a decoy-repo
   block proving the vendor write lands only in the named `<repo>` and a non-git `<repo>` is refused
   regardless of the environment.
+- `tests/lib.sh` also unsets an inherited `KEEL_HOME` and exports a sandboxed `KEEL_READ_TRACE_STORE`
+  default, alongside its existing `KEEL_IMPACT_STORE` redirection (dir #317 S3c). New
+  `tests/test_impact_store_lib.sh` A1–A4 pin `impact_isolated`/`IMPACT_ISOLATION_VARS` directly, A3 with
+  a mutation proof; `tests/test_pipeline_canary.sh` A5 pins the derived printed command and `check`'s own
+  isolated read. Test-internal; no shipped behaviour change beyond the printed-command fix above.
 
 ### Changed
 
@@ -121,6 +126,16 @@ sections real content going forward — see that page for exactly when each one 
   `effort` among them, overriding the session's effort level while the command runs
   (code.claude.com/docs/en/skills, read 2026-09-24). `/go`'s target reader skews mid-tier; this raises
   its own reasoning depth rather than relying on the invoking session's.
+- **`pipeline-canary.sh`'s printed session command now blanks every keel store-isolation variable, not
+  just two** (dir #317, PR-A of the dir #630 spec): `tools/lib/impact-store.sh` gains
+  `IMPACT_ISOLATION_VARS` — the one list, `KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER
+  KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE`, of every variable any keel store resolver
+  reads besides `HOME` — and `impact_isolated HOME_DIR CMD…`, which runs CMD in a subshell with `HOME`
+  set and that whole list unset. `setup`'s printed `claude --settings ...` command is now DERIVED from
+  that list instead of hand-typing `KEEL_HOME=`/`KEEL_IMPACT_STORE=` (dir #290's narrower original,
+  which E11 found still let `KEEL_IMPACT_LOG` leak a sandboxed session's events into an operator's real
+  log); `check`'s own read isolates the same way now, so it and the session it is checking always agree
+  on where an event landed.
 
 ### Fixed
 
