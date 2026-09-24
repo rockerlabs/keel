@@ -30,16 +30,25 @@
 # sibling secret-guard/ dir (its own tests run scratch copies that carry no tools/lib/), so it inlines
 # the same unset instead of gaining a new tools/lib/ dependency — see its own comment at the call site.
 #
+# Also sourced (dir #647 fix round, S3 FINDING-S3-1): tools/keel-check.sh's `$PWD`-relative
+# `repo_top` resolution and tools/keel-check-gate.sh's `$cwd`-relative one — both were in the "NOT a
+# complete census" list below and are now fixed and moved up here, six consumers total. keel-check.sh's
+# unset is process-wide, per the source-time contract above, and so also reaches the operator's
+# declared check command it spawns — see keel-check.sh's own call-site comment for why that's accepted
+# rather than scoped down to just the resolver call.
+#
 # NOT a complete census of the vulnerability class (found by this ticket's own /code-review max pass,
 # after the fix above shipped): the grep pattern was anchored to the literal variable name `repo`, so
 # it structurally cannot see the identical `git -C "$X"` shape under any other name. tools/doctor.sh
 # ($d), tools/public-audit.sh ($DIR), tools/pre-pr-gate.sh ($cwd — the actual /polish enforcement
-# gate), the tools/self/*.sh family, tools/keel-impact.sh ($dir/$top via tools/lib/repo-top.sh), and
-# others all resolve a caller-named or cwd-derived repo path via unsourced `git -C` the same way this
-# file's four consumers used to. Flagged for a follow-up ticket (see this PR's body for the full list
-# and a candidate deeper fix) rather than fixed here — it would have meant auditing and testing ~7 more
-# files, several of them security-sensitive production gates (tools/pre-pr-gate.sh among them), well
-# past this ticket's own scope and review budget.
+# gate), the tools/self/*.sh family, tools/keel-impact.sh ($dir/$top via tools/lib/repo-top.sh),
+# tools/lib/impact-store.sh's `impact_claim_key` (dir #74's own worktree-top resolver, `git -C
+# "${1:-.}"` — F1's dir #647 fix round guarded that file's two new S4 functions only, not this
+# pre-existing one), and others all resolve a caller-named or cwd-derived repo path via unsourced
+# `git -C` the same way this file's consumers used to. Flagged for a follow-up ticket (see this PR's
+# body for the full list and a candidate deeper fix) rather than fixed here — it would have meant
+# auditing and testing several more files, some of them security-sensitive production gates
+# (tools/pre-pr-gate.sh among them), well past this ticket's own scope and review budget.
 #
 # Sourced, not executed — no shebang, no set -e (inherits the caller's). keel_repo_arg_guard's `exit 2`
 # on failure does NOT depend on the caller's `set -e` (correction, /code-review max, two independent

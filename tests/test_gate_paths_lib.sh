@@ -74,6 +74,30 @@ else
 fi
 check_status "gate_state_root: HOME unset/empty -> prints nothing" "" "$(HOME='' gate_state_root 2>/dev/null)"
 
+# --- dir #647 (S3 FINDING-S3-2): HOME set, non-empty, but NOT A DIRECTORY (e.g. a regular file) must
+# fail gate_state_root the same way unset/empty does — before this fix, only `-n "$HOME"` was checked,
+# so a HOME pointing at a regular file silently passed this gate and built a bogus path underneath a
+# file instead of a directory. Mutation proof: remove the `-d "$HOME"` check below and this pair goes
+# RED (gate_state_root wrongly succeeds); restore it and both go green.
+home_as_file="$(mktemp "$SANDBOX/home-is-a-file.XXXXXX")"
+if out="$(HOME="$home_as_file" gate_state_root 2>&1)"; then
+  fail "gate_state_root: HOME is a regular file -> non-zero exit (fail closed, not a bogus path)" \
+    "exited 0 with: $out"
+else
+  pass "gate_state_root: HOME is a regular file -> non-zero exit (fail closed, not a bogus path)"
+fi
+check_status "gate_state_root: HOME is a regular file -> prints nothing" "" \
+  "$(HOME="$home_as_file" gate_state_root 2>/dev/null)"
+
+# --- gate_home_diagnosis: the three-way phrase a caller's own fail-closed message embeds, matching
+# gate_state_root's own three failure reasons exactly (so the two can never silently drift apart) ----
+check_status "gate_home_diagnosis: HOME unset -> 'is unset'" "is unset" "$(env -u HOME bash -c '. "$1"; gate_home_diagnosis' _ "$lib")"
+check_status "gate_home_diagnosis: HOME empty -> 'is empty'" "is empty" "$(HOME='' gate_home_diagnosis)"
+check_status "gate_home_diagnosis: HOME=regular file -> 'is not a directory (<path>)'" \
+  "is not a directory ($home_as_file)" "$(HOME="$home_as_file" gate_home_diagnosis)"
+check_status "gate_home_diagnosis: HOME is a real directory -> no complaint (unused in practice, but correct)" \
+  "is a directory (no problem)" "$(gate_home_diagnosis)"
+
 check_contains "tools/pre-pr-gate.sh sources gate-paths.sh for gate_state_root too" \
   "$(cat "$REPO_ROOT/tools/pre-pr-gate.sh")" 'lib/gate-paths.sh'
 check_contains "tools/pre-pr-gate.sh fails closed at top level on gate_state_root" \

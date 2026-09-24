@@ -25,6 +25,22 @@ check_file "backlog.md target exists" "$backlog_md"
 pin "go.md frontmatter carries effort: high" "$go_md" 'effort: high' \
   "expected the effort: high frontmatter key dir #645 adds"
 
+# --- (h) three load-bearing rules with no pin until now (S5 FINDING-1, below-bar, fixed because
+# cheap, dir #647 fix round): each survived deleting its own sentence through a KEEL_GO_MD-pointed
+# scratch copy with the rest of this suite green (38/38) — the exact "a rule with no pin can be
+# dropped silently" class dir #636's own spec §8 A1(g) names. One needle per rule, verbatim from
+# go.md at HEAD, each ONE LINE (pin() is line-mode `grep -F`; a wrapped needle never matches). ------
+pin "(h) resolve: backlog-source resolution rule is pinned (dir #636/#639/#641)" "$go_md" \
+  '**1. resolve.** Backlog source the way `/backlog` resolves it: `<root>/BACKLOG.md`, else the inline' \
+  "expected step 1's backlog-source resolution sentence, verbatim"
+pin "(h) acceptance-tests: 'show them red, then implement to green' is pinned (dir #636/#639/#641)" \
+  "$go_md" \
+  "spec's (else its done-criterion), write them, show them red, then implement to green (\`FRAMEWORK.md\`" \
+  "expected step 7's red-then-green sentence, verbatim"
+pin "(h) close: 'close through /polish' rule is pinned (dir #636/#639/#641)" "$go_md" \
+  '**10. close.** Close through `/polish` where installed — the pre-PR pass; it opens the PR itself, and' \
+  "expected step 10's close-through-/polish sentence, verbatim"
+
 # --- (a) budget: GO11 -----------------------------------------------------------------------------
 # Raising this constant is an operator decision (GO11) — never bump it here just to make a case fit.
 # Raised 1055 -> 1125 (operator decision D1, 2026-09-24, dir #641 round 2, absorbing dir #640): the
@@ -368,5 +384,22 @@ replace_in_line_containing "$d640_copy" "same lines in the PR body (or the repor
 assert_case_turns_red "(g) needle mutation: dir #640 escapes non-git fallback removed" \
   "(g) needle [dir #640 (absorbed): escapes non-git fallback]: 'same lines in the PR body (or the report)' present" \
   "KEEL_GO_MD=$d640_copy"
+
+# (h) the three previously-unpinned rules, each dropped through its own KEEL_GO_MD scratch copy.
+h1_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$h1_copy" '**1. resolve.** Backlog source the way `/backlog` resolves it'
+assert_case_turns_red "(h) mutation: resolve rule removed" \
+  "(h) resolve: backlog-source resolution rule is pinned (dir #636/#639/#641)" "KEEL_GO_MD=$h1_copy"
+
+h2_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$h2_copy" 'show them red, then implement to green'
+assert_case_turns_red "(h) mutation: acceptance-tests red-then-green rule removed" \
+  "(h) acceptance-tests: 'show them red, then implement to green' is pinned (dir #636/#639/#641)" \
+  "KEEL_GO_MD=$h2_copy"
+
+h3_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$h3_copy" '**10. close.** Close through `/polish` where installed'
+assert_case_turns_red "(h) mutation: close rule removed" \
+  "(h) close: 'close through /polish' rule is pinned (dir #636/#639/#641)" "KEEL_GO_MD=$h3_copy"
 
 summary

@@ -437,7 +437,8 @@ unset _ppg_dir
 # decision-signalling mechanism (exit-0-plus-JSON) directly, rather than inlining a duplicate here.
 if [ -n "${1:-}" ]; then
   gate_state_root >/dev/null || {
-    printf 'pre-pr-gate: $HOME is unset or empty — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' >&2
+    printf 'pre-pr-gate: $HOME %s — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' \
+      "$(gate_home_diagnosis)" >&2
     exit 1
   }
 fi
@@ -2375,7 +2376,7 @@ receipt_key="$(_receipt_key_for "$wt" "$resolved_branch")"
 # for the class of command the gate exists to police, never for an unrelated `ls`/`git status`/etc.
 # `deny()` is defined and `$cwd` is parsed by now, so this uses the file's own real decision-
 # signalling mechanism directly instead of an inlined duplicate.
-gate_state_root >/dev/null || deny "pre-pr-gate: \$HOME is unset or empty — cannot resolve the gate state root (\$HOME/.keel/tmp); set \$HOME and retry"
+gate_state_root >/dev/null || deny "pre-pr-gate: \$HOME $(gate_home_diagnosis) — cannot resolve the gate state root (\$HOME/.keel/tmp); set \$HOME and retry"
 # dir #398: reuse the shared path builder instead of hand-copying its format a second time in this
 # file — the format is only defined once now, in _sentinel_path_for_key above.
 sentinel="$(_sentinel_path_for_key "$receipt_key")"

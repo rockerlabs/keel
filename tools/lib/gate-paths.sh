@@ -49,16 +49,46 @@ gate_project_settings_path() {
 # at this exact address. No new override variable: tests already redirect $HOME (dir #64), so this
 # follows the sandbox for free — an override is added only if a real need is ever shown.
 #
-# Prints the root and returns 0; prints NOTHING and returns 1 when $HOME is unset/empty, so a caller
+# gate_home_diagnosis — dir #398/#647 (S3 FINDING-S3-2): names WHY $HOME can't back the gate's state
+# root when it can't — unset, empty, or set but not a directory (e.g. pointing at a regular file) — for
+# a caller whose gate_state_root just failed to embed in its own fail-closed message, instead of a
+# blanket "unset or empty" that was wrong once $HOME could also fail the directory check. Always
+# returns 0 — it's a pure string builder, not another fallible resolver, so no caller needs to guard
+# its own call to this. **Deliberately NOT the thing gate_state_root branches on** (round 2 of this
+# ticket's own /code-review high pass, angles simplification/reuse/efficiency/altitude, four
+# independently: an earlier draft had gate_state_root `case`-match a prefix of this function's prose
+# output, coupling control flow to a string meant for humans — a wording tweak to the success message
+# would have silently flipped gate_state_root to fail-closed with a perfectly valid $HOME, the same
+# "two things that must stay in lockstep by convention" class this file's own header blames for two
+# real bugs, PR #165/#179 — and forked a subshell on every call, including the success path). The
+# `-d "${HOME:-}"` test below already subsumes all three failure reasons in one builtin, fork-free
+# check; this function exists only to explain that check's failure in words, never to decide it.
+gate_home_diagnosis() {
+  if [ -z "${HOME+x}" ]; then
+    printf 'is unset'
+  elif [ -z "$HOME" ]; then
+    printf 'is empty'
+  elif [ ! -d "$HOME" ]; then
+    printf 'is not a directory (%s)' "$HOME"
+  else
+    printf 'is a directory (no problem)'
+  fi
+}
+
+# Prints the root and returns 0; prints NOTHING and returns 1 when $HOME can't back it — unset, empty,
+# or not a directory, the same three reasons gate_home_diagnosis above names in prose — so a caller
 # building a path on top of this can fail closed instead of silently resolving the wrong "/.keel/tmp"
-# (dir #398 brief lead #3). This function is pure and side-effect-free (no mkdir) — every caller that
-# needs a hard stop on failure must call it the same "inline, never through a bare $(...) that would
-# only kill the capturing subshell" way pre-pr-gate.sh's own _require_receipt_key documents for the
-# identical hazard (bash `exit` inside a command substitution only kills that subshell); a caller that
-# can tolerate skipping instead (keel-check-gate.sh's fail-open philosophy — it already fails open on
-# a missing jq) checks the exit status and no-ops rather than denying.
+# (dir #398 brief lead #3). `-d "${HOME:-}"` alone covers all three: an unset or empty `$HOME` expands
+# to `""`, and `-d ""` is false the same as `-d` on a real non-directory path — one builtin test, no
+# subshell fork, and no coupling to gate_home_diagnosis's own wording (see that function's own comment).
+# This function is pure and side-effect-free (no mkdir) — every caller that needs a hard stop on
+# failure must call it the same "inline, never through a bare $(...) that would only kill the
+# capturing subshell" way pre-pr-gate.sh's own _require_receipt_key documents for the identical hazard
+# (bash `exit` inside a command substitution only kills that subshell); a caller that can tolerate
+# skipping instead (keel-check-gate.sh's fail-open philosophy — it already fails open on a missing jq)
+# checks the exit status and no-ops rather than denying.
 gate_state_root() {
-  [ -n "${HOME:-}" ] || return 1
+  [ -d "${HOME:-}" ] || return 1
   printf '%s/.keel/tmp' "$HOME"
 }
 

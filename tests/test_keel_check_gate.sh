@@ -112,4 +112,21 @@ out9="$(env -u KEEL_CHECK_STATE_DIR -u HOME KEEL_CHECK_VETO=1 bash "$GATE" 2>&1 
 check_status "HOME unset, no override, veto on -> hook still exits 0" 0 "$status9"
 check_absent "HOME unset, no override -> fails OPEN (no deny)" "$out9" "deny"
 
+# 10. dir #647 (S3 FINDING-S3-1): an inherited GIT_DIR+GIT_WORK_TREE naming a DECOY repo — itself
+# clean, no declared check at all — must not let the gate resolve the decoy's clean state instead of
+# the real repo's red one: that would silently allow a commit despite a real, armed red check (fail
+# OPEN, the live scenario named in the finding). $cwd in the event still names the real repo ($d); the
+# hijack is purely about whether the ambient env, not the event, wins the resolution. Driven directly
+# (not through the `gate()` helper above) since this scenario needs ambient env the helper has no slot
+# for.
+decoy_clean="$(new_repo)"; git -C "$decoy_clean" commit --allow-empty -qm init
+decoy_clean_gitdir="$(git -C "$decoy_clean" rev-parse --absolute-git-dir)"
+rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1     # re-arm red in the real repo ($d)
+json10="$(jq -n --arg c "git commit -m done" --arg w "$d" '{tool_input:{command:$c}, cwd:$w}')"
+out10="$(GIT_DIR="$decoy_clean_gitdir" GIT_WORK_TREE="$decoy_clean" KEEL_CHECK_VETO=1 \
+  bash "$GATE" 2>&1 <<< "$json10")"; status10=$?
+check_status "hijack: hook still exits 0" 0 "$status10"
+check_contains "hijack: gate resolves the REAL repo's red marker (not the clean decoy's) -> still denies" \
+  "$out10" '"permissionDecision":"deny"'
+
 summary
