@@ -31,6 +31,8 @@
 # is the failure mode this file exists to close. Tracked, not silently shipped — see the ticket's own
 # checkpoint report for the follow-up.
 #
+# For test processes specifically, the `worktree add` and `update-ref` shapes named above are now refused at write time by tests/lib.sh's guard (dir #318) — this file's detection-layer limit still stands for anything outside the suite (a developer's own command, a peer session).
+#
 # Sourced, not executed — no shebang, no set -e (inherits the caller's). Pure and side-effect-free:
 # neither function touches HOME, cwd, or any file outside the repo passed in, so a caller (tests/run.sh
 # itself, or a unit test) can source this file directly without pulling in tests/lib.sh's sandbox

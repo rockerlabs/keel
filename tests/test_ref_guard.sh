@@ -113,6 +113,13 @@ else fail "guard_reflog_count: grows by one per further commit" "got [$count_aft
 # trade-off (see tools/lib/ref-guard.sh's own header) so a future change to this scoping logic has to
 # consciously decide to alter this behavior rather than silently drift into fixing or worsening it. ---
 
+# dir #318 (G5): the header now names that, for test processes, this residual is closed at write
+# time by tests/lib.sh's guard — the detection-layer limit this test pins above still stands for
+# anything outside the suite.
+pin "residual header names dir #318's write-time closure for test processes" "$lib" \
+  "refused at write time by tests/lib.sh's guard (dir #318)" \
+  "expected the NAMED RESIDUAL LIMIT paragraph to gain this sentence"
+
 leak_repo="$(new_repo)"
 git -C "$leak_repo" commit -q --allow-empty -m init
 owned_before="$(guard_owned_branches "$leak_repo")"

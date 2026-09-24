@@ -303,4 +303,30 @@ check_contains "symlinked run.sh -> the ref-scope NOTE names dir #333" "$OUT" "d
 check_contains "symlinked run.sh -> the ref-scope NOTE says ref-guard.sh was not found" "$OUT" "ref-guard.sh not found"
 check_contains "symlinked run.sh -> the fixture still ran despite the NOTE" "$OUT" "=== test_a.sh ==="
 
+# --- dir #318 T8: a fixture test file that leaks a bare `git branch` against its own watched repo
+# trips the canary end-to-end (unlike the guard itself, which this file cannot exercise against the
+# REAL checkout without corrupting the very thing it protects — this fixture repo is disposable).
+# The fixture's own lib.sh is a stub (the guard is not armed there — this drives run.sh's OWN
+# detection half, not tests/lib.sh's prevention half), but it DOES carry a copy of
+# tools/lib/ref-guard.sh, so guard_ref_scope_available stays 1 and the unowned-refs block actually
+# runs (E20: without it, that block is skipped entirely).
+leakroot="$(mktemp -d "$SANDBOX/leak-fixture.XXXXXX")"
+git -C "$leakroot" init -q
+git -C "$leakroot" commit -q --allow-empty -m init
+mkdir -p "$leakroot/tests" "$leakroot/tools/lib"
+cp "$runner" "$leakroot/tests/run.sh"
+: > "$leakroot/tests/lib.sh"
+cp "$REPO_ROOT/tools/lib/ref-guard.sh" "$leakroot/tools/lib/ref-guard.sh"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." branch leak\nexit 0\n' > "$leakroot/tests/test_leak.sh"
+run bash "$leakroot/tests/run.sh"
+check_status "a leaked branch trips the canary -> exit 1" 1 "$STATUS"
+check_contains "the trip block prints TRIPPED" "$OUT" "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318)"
+check_contains "the trip names the unowned-branch change and points at tests/lib.sh's guard (dir #318, G4)" \
+  "$OUT" "this cannot have come from a test file sourcing tests/lib.sh — its guard (dir #318) refuses every test ref write it makes — so look outside the suite first."
+check_contains "the changed two-way attribution line (dir #318, G4)" \
+  "$OUT" "either a test escaped its sandbox, or something outside the suite changed this checkout during the run:"
+check_contains "the kept 'do not push' clause survives word for word (dir #318, G4)" \
+  "$OUT" "do not push this branch until the real history is reconciled by hand."
+git -C "$leakroot" branch -D leak >/dev/null 2>&1 || true
+
 summary

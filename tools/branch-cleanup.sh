@@ -28,6 +28,8 @@
 #          gh -- left alone by design: zero-dep buys no false positives at the cost of not cleaning
 #          squash-merged branches), the default branch itself, and the current branch / worktree.
 #
+# Unmerged refs, including any fixture ref leaked by a checkout that predates dir #318's guard, are out of this tool's scope by design (dir #318, F2 = no new tool): dir #318's guard prevents new test-made ones from arising, so cleanup here stays merged-only. Dispose of a leaked one by hand only after proving it disposable -- every commit on it is reachable from origin/<default>, or its tree holds no file content that origin/<default> lacks -- never trust the branch name, and record `git branch <name> <sha>` before deleting.
+#
 # "merged" = the branch tip is reachable from origin/<default> (git for-each-ref --merged). This assumes
 # a recent `git fetch --prune`; commands/wrap.md runs one in step 0 before calling this. The script itself
 # does NO network and NO deletion in report mode, so it is safe to run and unit-test offline.

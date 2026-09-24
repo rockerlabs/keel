@@ -7,6 +7,12 @@
 # environment or the CI runner), small assertion helpers, key-shaped fixture builders, and a
 # pass/fail summary. NOT `set -e`: the tests deliberately run commands expected to fail and
 # inspect the status.
+#
+# The ref-namespace rule (dir #318): a test never writes refs (branch, tag, commit, fetch,
+# `update-ref`, `worktree add`) in $REPO_ROOT; reading it is fine. For a repo to write in, use
+# new_repo() / new_repo_with_origin() below. For this repo's own content or history,
+# git clone "$REPO_ROOT" into $SANDBOX and write in the clone. The guard armed below (ref_guard_arm)
+# refuses the rest and fails the file.
 set -uo pipefail
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,6 +64,109 @@ export KEEL_IMPACT_STORE="$SANDBOX/harness-impact-store"
 export KEEL_LEDGER_FILE="$SANDBOX/harness-installed-homes"
 
 trap 'rm -rf "$SANDBOX"' EXIT
+
+# --- ref guard (dir #318) ------------------------------------------------------------------------
+# ref_guard_arm REPO — arm a git-level guard, keyed on REPO's own git common dir, so no git process a
+# test spawns (this test's own calls, any tool it runs, any binary on any PATH) can write a ref —
+# branch, tag, commit, fetch, update-ref, worktree add — into REPO or any of its worktrees. Reading
+# REPO is unaffected; an unrelated repo, or a clone of REPO, is unaffected. Mechanism: two
+# command-scope `includeIf.gitdir` entries (via GIT_CONFIG_COUNT/KEY/VALUE, so they reach every git
+# process this test spawns, not just ones invoked through this shell) pointing `core.hooksPath` at a
+# sandboxed `reference-transaction` hook that aborts every transaction in state "prepared". Command
+# scope is required, not optional: it outranks a repo-local or worktree-scope `core.hooksPath`, which
+# this project's own worktrees carry (measured; a config-file-based guard would silently lose to it).
+#
+# If REPO is not a git repository, this is a silent no-op (return 0) — there is nothing to protect.
+# This is load-bearing for test_lib_sandbox_guard.sh's copied lib.sh (its REPO_ROOT resolves to the
+# copy's parent, not a git repo) and for any other copied-tree fixture.
+#
+# Never overwrites an existing GIT_CONFIG_KEY_*/VALUE_* entry: it starts at the current
+# GIT_CONFIG_COUNT and only appends, so calling this twice (e.g. a child script that sources its own
+# copy of this file) keeps the parent's entries intact.
+ref_guard_arm() {
+  local repo="$1" raw cd_path n hooks_dir escaped needs_escape i c hook_src seen
+
+  git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || return 0
+
+  # Resolve the common dir. `rev-parse --git-common-dir` may print a path relative to $repo, so
+  # resolve it from there with `cd`, then take the physical path with `pwd -P` (not
+  # --path-format=absolute: that needs git >= 2.31, and the self-check below already reports an old
+  # git some other way). An empty or non-absolute result is refused, never armed: an empty <cd> would
+  # turn the second includeIf pattern into `/**`, which matches EVERY repository (measured by
+  # accident during this ticket's design: every fixture write was refused when this happened).
+  raw="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null)"
+  cd_path="$(cd "$repo" 2>/dev/null && cd "$raw" 2>/dev/null && pwd -P 2>/dev/null)"
+  case "$cd_path" in
+    /*) ;;
+    *)
+      printf 'NOTE: dir #318 ref guard: could not resolve a usable git common dir for %s (got %s) — arming nothing; this test file runs unguarded.\n' "$repo" "$cd_path" >&2
+      return 0
+      ;;
+  esac
+
+  # TO VERIFY V1: escape wildmatch metacharacters so includeIf.gitdir never matches an unrelated
+  # repository whose path happens to contain one. Not load-bearing either way — the self-check below
+  # (step 6) reports an unmatched pattern the same way it reports every other inert-guard cause.
+  needs_escape=0
+  case "$cd_path" in
+    *'*'*|*'?'*|*'['*|*'\'*) needs_escape=1 ;;
+  esac
+  if [ "$needs_escape" = 1 ]; then
+    escaped=""
+    for ((i = 0; i < ${#cd_path}; i++)); do
+      c="${cd_path:i:1}"
+      case "$c" in
+        '*'|'?'|'['|'\') escaped="${escaped}\\${c}" ;;
+        *) escaped="${escaped}${c}" ;;
+      esac
+    done
+  else
+    escaped="$cd_path"
+  fi
+
+  mkdir -p "$SANDBOX/ref-guard/hooks"
+  : > "$SANDBOX/ref-guard/refused"
+
+  # A POSIX sh reference-transaction hook (CLAUDE.md Linux trap 5: not bash). Built via bash
+  # parameter substitution, not sed -i or an unquoted heredoc, so the baked-in $SANDBOX path can
+  # contain no shell metacharacters that would need escaping either way.
+  hook_src='#!/bin/sh
+# dir #318 -- refuses every ref write in the repository tests/lib.sh guards; see its header for the
+# remedy this refusal points back to.
+state="$1"
+if [ "$state" = "prepared" ]; then
+  cat >> "__REFUSED__"
+  echo "dir #318: a test tried to write a ref in the real repository this suite guards -- refused. Use new_repo()/new_repo_with_origin(), or clone \$REPO_ROOT into \$SANDBOX and write there instead." >&2
+  exit 1
+fi
+exit 0
+'
+  hook_src="${hook_src//__REFUSED__/$SANDBOX/ref-guard/refused}"
+  printf '%s' "$hook_src" > "$SANDBOX/ref-guard/hooks/reference-transaction"
+  chmod +x "$SANDBOX/ref-guard/hooks/reference-transaction"
+
+  hooks_dir="$SANDBOX/ref-guard/hooks"
+  printf '[core]\n\thooksPath = %s\n' "$hooks_dir" > "$SANDBOX/ref-guard/guard.cfg"
+
+  n="${GIT_CONFIG_COUNT:-0}"
+  case "$n" in (*[!0-9]*|'') n=0 ;; esac
+  export "GIT_CONFIG_KEY_$n=includeIf.gitdir:$escaped.path"
+  export "GIT_CONFIG_VALUE_$n=$SANDBOX/ref-guard/guard.cfg"
+  export "GIT_CONFIG_KEY_$((n + 1))=includeIf.gitdir:$escaped/**.path"
+  export "GIT_CONFIG_VALUE_$((n + 1))=$SANDBOX/ref-guard/guard.cfg"
+  export GIT_CONFIG_COUNT=$((n + 2))
+
+  # Step 6 self-check, so the guard never fails open silently: git older than 2.31 ignores
+  # GIT_CONFIG_COUNT (dir #318 residual N7), an escaped pattern may not have matched, or something in
+  # the environment may have overridden the entries. The test file still runs, unguarded but not
+  # silently so.
+  seen="$(git -C "$repo" config --get core.hooksPath 2>/dev/null)"
+  if [ "$seen" != "$hooks_dir" ]; then
+    printf 'NOTE: dir #318 ref guard did not arm for %s (core.hooksPath reads [%s], expected [%s]) — an old git, an unmatched escaped pattern, or the environment overrode it. This test file runs unguarded.\n' "$repo" "$seen" "$hooks_dir" >&2
+  fi
+}
+
+ref_guard_arm "$REPO_ROOT"
 
 # dir #627, second fail-open: a test file calling an assertion this library does not define (e.g.
 # `check_eq` when only `check_ne` exists) loses that assertion SILENTLY — bash prints its own
@@ -601,7 +710,13 @@ apostrophe_cmd_argv() {
   eval "APOSTROPHE_ARGV=($1)"
 }
 
+# dir #318, G2: a refused ref write fails the file even when the refused command's own failure was
+# swallowed (`|| true`, `2>/dev/null` — test_changelog_section.sh's old `fetch` had exactly this
+# shape). Checked here, once, right before the totals line, rather than at every call site.
 summary() {
+  if [ -s "$SANDBOX/ref-guard/refused" ]; then
+    fail "no test wrote the real repository's refs (dir #318)" "$(cat "$SANDBOX/ref-guard/refused")"
+  fi
   printf '\n%s: %d passed, %d failed\n' "$(basename "$0")" "$_pass" "$_fail"
   [ "$_fail" -eq 0 ]
 }

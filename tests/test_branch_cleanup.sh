@@ -314,4 +314,10 @@ run_in "$repo" bash "$TOOL" --live-hours 99999999999999999999
 check_status   "an overflowing --live-hours is rejected, not accepted and crashed later" 2 "$STATUS"
 check_contains "overflowing --live-hours explains itself" "$OUT" "non-negative integer"
 
+# dir #318 (G6, disposal = no new tool): the header states unmerged refs, including a leaked fixture
+# one, are out of this tool's scope by design.
+pin "header states unmerged refs are out of scope by design (dir #318)" "$TOOL" \
+  "Unmerged refs, including any fixture ref leaked by a checkout that predates dir #318's guard, are out of this tool's scope by design" \
+  "expected the new (skip)-tier paragraph naming dir #318"
+
 summary
