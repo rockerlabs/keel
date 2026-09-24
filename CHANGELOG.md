@@ -94,14 +94,32 @@ sections real content going forward — see that page for exactly when each one 
   tests: `tests/test_impact_store_lib.sh` (the generic pair, `impact_store_create`, `impact_entry_state`,
   `impact_recorded_entries`); `tests/test_keel_impact.sh` B1–B12, B16–B18, B21; `tests/test_doctor.sh`
   B13; `tests/test_init_project.sh` B14; `tests/test_run_sh.sh` B19.
+- **`tools/read-trace.sh` now tells a LOST persistent entry from an ordinary rotation too** (dir #630
+  PR-C, the read-trace half — closes dir #630): the first write into a project's persistent entry
+  (`log-tool`'s first in-scope Read, or `session-end`'s wrap-fuse write when a session mutated without
+  one) records the entry's path under `keel.readTraceStore` in the repo's own local git config, reusing
+  the impact half's S4/S6 pair unchanged (`tools/lib/impact-store.sh`'s `keel_store_record`/
+  `keel_store_state` — no second hand-rolled writer). The check runs only at that one creation point,
+  never again on the hot path — an already-existing entry short-circuits on a plain `-d` test before any
+  git-config read. `aggregate` and `rotate` also backfill the record for an entry that already existed
+  before this change. When the recorded entry is gone, `aggregate` prints
+  `read-trace: store entry lost — recorded at <entry>, absent now (destroyed or moved away; not a
+  rotation): reads before the loss are gone` before its table, exit status unchanged (0) — the hook's
+  SILENT contract (log-tool/session-end never print) is unaffected; only the operator-invoked `aggregate`
+  gains output. New `tests/test_read_trace.sh` C1–C3.
 
 ### Changed
 
-- **`docs/grooming.md` G0 — tell a DESTROYED read-trace store from a rotated one** (compensation;
-  remover dir #630): the store lives inside the harness home, and on 2026-09-22 a test run without its
-  sandbox (dir #627) deleted that whole home, taking the previous release's read cycle with it. A rotation
-  leaves the archive the previous run record names; a destroyed store leaves nothing dated before the
-  event. The groom now checks which, and records a lost cycle as lost rather than as a quiet one.
+- **`docs/grooming.md` G0 — tell a DESTROYED read-trace store from a rotated one, now reported by the
+  tool itself** (dir #630 PR-C, the read-trace half — closes dir #630): the store lives inside the
+  harness home, and on 2026-09-22 a test run without its sandbox (dir #627) deleted that whole home,
+  taking the previous release's read cycle with it. `tools/read-trace.sh aggregate` now prints
+  `read-trace: store entry lost — recorded at <entry>, absent now (destroyed or moved away; not a
+  rotation): reads before the loss are gone` before its table when the entry it recorded for a project
+  is gone, so a destroyed store no longer reads as an ordinary empty aggregate; a rotation, which
+  archives the logs inside the entry but never removes the entry dir itself, is never mistaken for one.
+  This was a hand-check compensation in the groom's own text since the 0.12.0 retro; the note is now
+  gone and G0 reads what the tool prints instead.
 - **`docs/grooming.md` G5 — size a release budget's input side from the previous release's measured
   TOTAL, not a per-item build price.** The v0.11.0 estimate priced thirty items one by one: output landed
   inside its band, input-side ran 1.6–2.1× over, because standing session context, the audit's subagent

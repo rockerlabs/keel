@@ -682,4 +682,60 @@ fi
 chmod 700 "$RT_STORE" 2>/dev/null
 trap - EXIT
 
+# --- S13 (dir #630 PR-C): read-trace loss detection, the read-trace half of the impact store's S4/S6
+# provenance mechanism (tools/lib/impact-store.sh's keel_store_record/keel_store_state, reused
+# unchanged — spec §3 S13's own "shared code" clause). Vocabulary: S0.
+# C1 — the first log-tool write records keel.readTraceStore, and the hook's output stays empty (the
+# SILENT contract — ECONOMICS #1 — must hold even though this write now also touches git config).
+d="$(mkrepo)"; rt_env s13c1
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+check_status "C1: log-tool's Read write (which now also records S13's provenance) still exits 0" 0 "$STATUS"
+check_status "C1: log-tool's Read write is still silent (no output leaked by the new git-config call)" "" "$OUT"
+c1_entry="$(dirname "$(find "$RT_STORE" -name reads.log 2>/dev/null | head -n1)")"
+check_dir "C1: the persistent entry dir was created" "$c1_entry"
+run bash -c "git -C '$d' config --local --get-all keel.readTraceStore"
+check_contains "C1: the first log-tool write recorded keel.readTraceStore = the entry dir" "$OUT" "$c1_entry"
+# A second write to the same entry must not run a second git-config check on the hot path in any way
+# that changes the recorded value — still exactly one recorded value, and still silent.
+feed_hook "$(read_json "$d" Read "$d/commands/bar.md")" log-tool >/dev/null
+run bash -c "git -C '$d' config --local --get-all keel.readTraceStore | wc -l | tr -d ' '"
+check_contains "C1: a second write to the same entry records no duplicate value" "$OUT" "1"
+
+# C2 — aggregate on a lost entry prints the lost line (rc 0); rotate never makes an existing entry
+# read as lost (G0's own worry in docs/grooming.md: an empty aggregate can be a rotation OR data loss,
+# and the two must not be confused).
+d="$(mkrepo)"; rt_env s13c2
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+c2_entry="$(dirname "$(find "$RT_STORE" -name reads.log 2>/dev/null | head -n1)")"
+rm -rf "$c2_entry"
+run_hook aggregate "$d"
+check_status "C2: aggregate on a lost read-trace entry still exits 0" 0 "$STATUS"
+check_contains "C2: aggregate on a lost read-trace entry prints the lost line" "$OUT" "store entry lost"
+check_contains "C2: the lost line names the recorded (now-absent) entry path" "$OUT" "$c2_entry"
+check_contains "C2: the lost line says this is not a rotation" "$OUT" "not a rotation"
+# A fresh write after the loss recreates the entry at its same deterministic path — read-trace carries
+# no restart ceremony (unlike the impact half's `enable --restart`), it just resumes. A `startup` first
+# resets THIS (repo,branch)'s ephemeral session log, same as the CROSS-SESSION regression case above —
+# without it, a re-read of the SAME path (docs/foo.md) in the SAME session is deduped at the ephemeral
+# gate before it ever reaches the persistent tier, and the entry would never actually get recreated.
+# Then rotate it: rotate only renames the logs INSIDE the entry, never removes the entry dir itself, so
+# the directory must keep reading as present (never "lost") afterward.
+feed_hook "$(jq -n --arg cwd "$d" '{hook_event_name:"SessionStart", cwd:$cwd}')" startup
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+check_dir "C2: the entry exists again after a fresh write" "$c2_entry"
+run_hook rotate "$d"
+check_status "C2: rotate exits 0" 0 "$STATUS"
+run_hook aggregate "$d"
+check_absent "C2: after rotate, the still-existing entry does NOT read as lost" "$OUT" "store entry lost"
+check_status "C2: the entry directory itself still exists after rotate" 0 \
+  "$( [ -d "$c2_entry" ] && printf 0 || printf 1 )"
+
+# C3 — the existing no-HOME / unwritable-root silence cases stay green under S13's added record calls.
+# No new fixture: "log-tool with no HOME/KEEL_HOME/KEEL_READ_TRACE_STORE" and "dir #393: silent hooks
+# stay SILENT on a RESOLVED but UNWRITABLE store root", both earlier in this file, already cover it —
+# the first never reaches _rt_ensure_persistent_entry at all (its _rt_store_dir call already failed),
+# and the second's mkdir failure short-circuits keel_store_record via the `&&` gate (S13's own comment
+# in tools/lib/read-trace.sh). This line exists so a reader of the acceptance table finds where C3 is
+# actually pinned, rather than a name that resolves to nothing.
+
 summary

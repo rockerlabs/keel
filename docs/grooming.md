@@ -79,14 +79,16 @@ otherwise forbids, so it is a **compensation with a named end**: `dir #459` owns
 candidate shapes, deliberately not chosen here. Until it lands, check whether a rotation has happened
 since the previous release and say which cycle your figures are from.
 
-**An empty aggregate can also be a DESTROYED store, and that one is data loss, not a rotation (the
-0.12.0 groom, 2026-09-23).** The store lives inside the harness home, so whatever removes that home
-removes every cycle kept in it: a test run without its sandbox deleted the operator's whole harness
-home (`dir #627`), and the previous release's reads went with it — the archive the previous groom's own
-rotation recorded exists nowhere. Tell the cases apart before quoting a figure: a rotation leaves the
-archive the previous run record names beside the live log, a destroyed store does not — and then the
-cycle is recorded as lost, never as a quiet one. A compensation; its remover is `dir #630` (the store's
-durability).
+**An empty aggregate can also be a DESTROYED store, and that one is data loss, not a rotation — the
+tool now says so itself (the 0.12.0 groom, 2026-09-23, found it; `dir #630` made it self-reporting).**
+The store lives inside the harness home, so whatever removes that home removes every cycle kept in it:
+a test run without its sandbox deleted the operator's whole harness home (`dir #627`), and the previous
+release's reads went with it — the archive the previous groom's own rotation recorded exists nowhere.
+`aggregate` now tells the cases apart on its own: when the entry it recorded for this project is gone,
+it prints `read-trace: store entry lost — recorded at <entry>, absent now (destroyed or moved away; not
+a rotation): reads before the loss are gone` before its table, so a destroyed store no longer looks like
+an ordinary empty aggregate — and then the cycle is recorded as lost, never as a quiet one. Read what
+the tool prints; it is no longer guidance to remember by hand.
 
 **Rotation is this phase's own closing step: once the aggregate is read and both figures recorded,
 run the tool's `rotate` subcommand and record the archive suffix and the new cycle boundary in this

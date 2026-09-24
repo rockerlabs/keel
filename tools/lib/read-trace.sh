@@ -122,6 +122,43 @@ _rt_wrapfuse_log() { _rt_store_path "${1:-.}" "${2:-}" wrap-fuse-events.log; }
 _rt_wrapfuse_flag_dir() { _rt_store_path "${1:-.}" "${2:-}" wrap-fuse; }
 _rt_wrapfuse_flag() { local d; d="$(_rt_wrapfuse_flag_dir "${1:-.}" "${2:-}")" || return 1; printf '%s/%s.flag' "$d" "$(_rt_branch "${1:-.}")"; }
 
+# RT_STORE_RECORD_KEY — S13: the git-config key the read-trace half's provenance record lives under
+# (S4, generic — reuses the same writer/reader pair the impact half's IMPACT_STORE_RECORD_KEY does,
+# never a second hand-rolled copy).
+RT_STORE_RECORD_KEY="keel.readTraceStore"
+
+# _rt_ensure_persistent_entry ENTRY TOP — S13's "record only where the persistent entry dir is first
+# created": ENTRY already exists on every call but the very first for a given (repo, store-root) pair,
+# so the `-d` test below is the ONLY per-call cost the hot path (log-tool's every in-scope Read) pays —
+# keel_store_record's own git-config read/write runs exactly once, on the ONE call that actually
+# creates ENTRY, never again for that entry's lifetime ("the per-call hot path of log-tool never runs a
+# git config read beyond the creation point" — spec S13). Read-trace has no S6 rungs 0-2 of its own (no
+# per-file override, no legacy in-tree marker) — this is the read-trace half's entire creation gate,
+# simpler than impact_store_create's, which also carries S1's isolation concerns.
+# `mkdir -p ... && keel_store_record` (not `;`): a failed mkdir (dir #393's writability axis — a
+# resolved but unwritable root) must never record an entry that was never actually created, or a
+# provenance record for a directory that doesn't exist would read as permanently `lost`. Always returns
+# 0 — this must never fail its caller, matching S4's "never fails the verb".
+_rt_ensure_persistent_entry() {
+  local entry="$1" top="$2"
+  [ -n "$entry" ] || return 0
+  [ -d "$entry" ] && return 0
+  mkdir -p "$entry" 2>/dev/null && keel_store_record "$RT_STORE_RECORD_KEY" "$entry" "$top"
+  return 0
+}
+
+# _rt_backfill_entry_record ENTRY TOP — S13's "aggregate and rotate also backfill": unlike
+# _rt_ensure_persistent_entry above, `aggregate`/`rotate` are operator-invoked CLI calls, not a
+# per-tool-call hot path, so recording an entry that already exists but predates this ticket (or was
+# created by some other caller before S13 shipped) is cheap enough to attempt on every run rather than
+# gated on "did I just create this". keel_store_record is itself idempotent (a no-op once the value is
+# already recorded), so calling it unconditionally here is safe.
+_rt_backfill_entry_record() {
+  local entry="$1" top="$2"
+  [ -n "$entry" ] && [ -d "$entry" ] || return 0
+  keel_store_record "$RT_STORE_RECORD_KEY" "$entry" "$top"
+}
+
 # _rt_normalize_path DIR RAW [OWNTOP] — a repo-relative path for logging, or the literal token
 # "BACKLOG.md" for a main-checkout ticket-body read: that file is gitignored and main-checkout-only,
 # so "repo-relative" is undefined for exactly that surface (dir #387's own note) — a canonical single
@@ -287,9 +324,17 @@ _rt_dedup_append() {
 # distinction fixes (confirmed live, review round, prior to this fix landing). TOP, when the caller
 # already resolved it, is threaded through to _rt_session_log/_rt_reads_log to avoid a second
 # `_impact_resolve_top` fork — see _rt_project_id's own comment for why a cache can't do this instead.
+#
+# S13: _rt_ensure_persistent_entry runs BEFORE the persistent-tier write, not after — the FIRST
+# persistent write of a session is exactly the call that creates the entry dir, and that creation is
+# the one moment S13's provenance record must be written (never on a resolve failure: an unresolved
+# store root here just means _rt_store_dir fails and this whole persistent-tier write no-ops, same as
+# before this ticket).
 _rt_record_read() {
-  local dir="$1" path="$2" top="${3:-}"
+  local dir="$1" path="$2" top="${3:-}" entry
   _rt_dedup_append "$(_rt_session_log "$dir" "$top")" read "$path" || return 0
+  entry="$(_rt_store_dir "$dir" "$top")" || return 0
+  _rt_ensure_persistent_entry "$entry" "$top"
   _rt_plain_append "$(_rt_reads_log "$dir" "$top")" read "$path"
 }
 

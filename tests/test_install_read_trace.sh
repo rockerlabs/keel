@@ -168,8 +168,15 @@ printf '%s\n' "$apcmd" > "$SANDBOX/apostrophe-command.sh"
 run bash -n "$SANDBOX/apostrophe-command.sh"
 check_status "the generated command parses (bash -n)" 0 "$STATUS"
 # The "hook fires" half, not just "parses": actually run it, the way Claude Code's hook runner would —
-# session-end reads a JSON blob on stdin and exits 0 on a fresh sandbox with no session log (jq present).
-run bash -c "printf '{}' | $apcmd"
+# session-end reads a JSON blob on stdin and exits 0 on a fresh sandbox with no session log (jq
+# present). The `{}` payload carries no `cwd`, so session-end falls back to `$PWD` (tools/read-
+# trace.sh's own documented degrade) — run it from `$SANDBOX`, never from wherever this test process's
+# own cwd happens to be (this suite's own REPO_ROOT), or dir #630 S13's provenance write would resolve
+# its git-config TOP against the REAL checkout instead of a fixture, tripping tests/run.sh's own S4
+# tripwire (found live by this ticket's own run: `$SANDBOX` is not a git repo, so `keel_store_record`'s
+# own `git -C "$top" rev-parse --show-toplevel` guard makes the write a silent no-op here, same as an
+# ordinary non-repo TOP).
+run bash -c "cd '$SANDBOX' && printf '{}' | $apcmd"
 check_status "the generated command actually runs (the hook fires)" 0 "$STATUS"
 
 summary

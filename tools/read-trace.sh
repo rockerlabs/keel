@@ -82,6 +82,14 @@
 # resolves but is not writable, every write path degrades silently (nothing recorded) rather than
 # leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's V3 fix gave the
 # unresolved-root case, extended here to the writability axis.
+#
+# Loss detection (dir #630 S13): the FIRST write into a project's persistent entry dir records that
+# path under the LOCAL git config key `keel.readTraceStore` in the repo it belongs to (the same S4
+# mechanism the impact store's `keel.impactStore` uses — tools/lib/impact-store.sh). When the entry the
+# repo remembers is gone (the harness home was wiped, not merely rotated — dir #627), `aggregate`
+# prints one line saying so before its table, so an empty aggregate never quietly reads as "nothing to
+# report" when it actually means "the data existed and is gone". `rotate` never deletes the entry dir
+# itself, only archives the logs inside it, so a routine rotation never trips this.
 set -u
 
 _rt_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -345,15 +353,24 @@ case "${1:-}" in
     # which breaks this hook's SILENT contract same as the junk mkdir does). A guard clause, matching
     # this case's own earlier exclusion checks, rather than wrapping the rest of the branch in an `if`
     # (found by this ticket's own /simplify pass).
-    se_wlog="$(_rt_wrapfuse_log "$se_cwd")"
+    # se_top (S13): resolved once here, not before — the exclusions above may already have exited, and
+    # this is the first point in this branch that needs it (threaded into _rt_wrapfuse_log/_flag below,
+    # same discipline as log-tool's lt_top, and into _rt_ensure_persistent_entry's S13 record).
+    se_top="$(_impact_resolve_top "$se_cwd")"
+    se_wlog="$(_rt_wrapfuse_log "$se_cwd" "$se_top")"
     [ -n "$se_wlog" ] || exit 0
-    mkdir -p "$(dirname "$se_wlog")" 2>/dev/null  # dir #393: writable-root axis of the V3 pattern
+    # S13: a mutate-only session (no in-scope Read, so log-tool's own creation gate never ran) can still
+    # be the FIRST write into this entry — _rt_ensure_persistent_entry's mkdir-if-new gate covers that
+    # case too (dir #393's writable-root axis: its own mkdir swallows a permission failure the same way
+    # this call site's old bare `mkdir -p ... 2>/dev/null` did), so the S4 record is written exactly
+    # once regardless of which write got there first.
+    _rt_ensure_persistent_entry "$(dirname "$se_wlog")" "$se_top"
     # _rt_wrapfuse_flag already resolves its own dir via _rt_wrapfuse_flag_dir internally and fails
     # exactly when that resolve fails, so checking se_flag alone covers the same empty-root case
     # without a redundant separate resolve of the same directory — resolved ONCE here rather than once
     # per branch, since both branches need the identical value (found by this ticket's own
     # /code-review high pass).
-    se_flag="$(_rt_wrapfuse_flag "$se_cwd")"
+    se_flag="$(_rt_wrapfuse_flag "$se_cwd" "$se_top")"
     se_status=wrapped; [ "$se_wrapped" -eq 1 ] || se_status=no-wrap
     # dir #523: the row's identifying column is the SESSION id, not `_rt_key` (repo,branch) — a
     # worktree/branch reused across two DIFFERENT sessions used to write the SAME label for both,
@@ -424,7 +441,23 @@ case "${1:-}" in
 
   aggregate)
     ag_dir="${2:-.}"
-    ag_rlog="$(_rt_reads_log "$ag_dir")"
+    # S13: top resolved once, threaded through both the entry-state check below and the reads-log
+    # lookup that follows (same discipline as log-tool's lt_top / session-end's se_top).
+    ag_top="$(_impact_resolve_top "$ag_dir")"
+    ag_entry="$(_rt_store_dir "$ag_dir" "$ag_top" 2>/dev/null)" || ag_entry=""
+    if [ -n "$ag_entry" ]; then
+      if [ -d "$ag_entry" ]; then
+        # Backfill: an entry that already exists but predates this ticket (or was created by a caller
+        # S13's creation-time gate missed) gets its record here — idempotent, safe every run.
+        _rt_backfill_entry_record "$ag_entry" "$ag_top"
+      elif [ "$(keel_store_state "$RT_STORE_RECORD_KEY" "$ag_entry" "$ag_top")" = lost ]; then
+        # G0's own worry (docs/grooming.md): an empty aggregate reads as either "nothing happened" or
+        # "a rotation archived it" — this is the THIRD, worse case (data loss), and it must say so
+        # before the table below prints an ordinary-looking empty result.
+        printf 'read-trace: store entry lost — recorded at %s, absent now (destroyed or moved away; not a rotation): reads before the loss are gone\n' "$ag_entry"
+      fi
+    fi
+    ag_rlog="$(_rt_reads_log "$ag_dir" "$ag_top")"
     printf '| doc | last read | reads | surface changes since |\n'
     printf '| --- | --- | --- | --- |\n'
     if [ -f "$ag_rlog" ]; then
@@ -498,15 +531,19 @@ case "${1:-}" in
 
   rotate)
     ro_dir="${2:-.}"
+    ro_top="$(_impact_resolve_top "$ro_dir")"
     # Same empty-root guard as session-end's persistent-tier writes (dir #387 V3) — without it, an
     # unresolved store root reaches `$ro_store/$ro_f` as a bare "/reads.log"-shaped path at filesystem
     # root (found by this ticket's own /simplify altitude pass: every OTHER _rt_store_dir-derived call
     # site in this file already guards this, `rotate` was the one left over). Unlike the silent hooks,
     # `rotate` is an operator-invoked CLI, so it reports the failure instead of silently no-op'ing.
-    ro_store="$(_rt_store_dir "$ro_dir")" || {
+    ro_store="$(_rt_store_dir "$ro_dir" "$ro_top")" || {
       printf 'read-trace: no persistent store resolves (set HOME, KEEL_HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
       exit 1
     }
+    # S13 backfill (same reasoning as aggregate's own): only when the entry physically exists — never
+    # record a path that isn't actually there to rotate.
+    [ -d "$ro_store" ] && _rt_backfill_entry_record "$ro_store" "$ro_top"
     ro_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     ro_any=0
     for ro_f in reads.log wrap-fuse-events.log; do
