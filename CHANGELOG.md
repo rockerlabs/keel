@@ -268,6 +268,12 @@ sections real content going forward — see that page for exactly when each one 
   (operator decision D1, ~1110 target) to hold all of the above without cutting a pinned phrase (round
   1's lesson); `tests/test_go_command.sh` gains a mutation-proved needle per new clause (F1, F2, F3,
   F4, F5, F10, dir #640).
+- **`tests/run.sh`'s corruption-canary tripwire (dir #630) now diffs the WHOLE local git config of the
+  real checkout instead of snapshotting two named keys, naming any excluded key class (`branch.*`,
+  disclosed in the file's own comment) rather than silently allowing it; a status-only trip with HEAD
+  unmoved now names a concurrent own edit as the likely cause, mirroring the existing HEAD-moved hint
+  (dir #333's release-manager amendment; dir #318 is the optional isolation class either trip sits
+  alongside).
 
 ## [0.11.0] — 2026-09-22
 
