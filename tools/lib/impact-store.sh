@@ -111,8 +111,14 @@ impact_isolated() {
   shift
   # shellcheck disable=SC2086  # IMPACT_ISOLATION_VARS is deliberately word-split here: a space-
   # separated list of variable NAMES, exactly the form `unset` itself takes (same convention
-  # IMPACT_LEGACY_NAMES below uses for `impact_has_legacy_files`'s file-name list).
-  ( unset $IMPACT_ISOLATION_VARS; export HOME="$home_dir"; "$@" )
+  # IMPACT_LEGACY_NAMES below uses for `impact_has_legacy_files`'s file-name list). IFS is forced to
+  # bash's own default (space/tab/newline) for that split — found live by a cross-vendor review
+  # (agy/Gemini): a caller with a customized $IFS (e.g. a line-based parser doing IFS=$'\n' right
+  # before calling this) would otherwise hand `unset` the WHOLE list as one invalid identifier —
+  # `unset` errors on stderr but does not abort (no `set -e` here), so every S1 variable then survives
+  # UNTOUCHED, silently defeating the one guarantee this function exists to make. Scoped to the
+  # subshell only, so it cannot itself change the caller's own $IFS (see A2's own test for this).
+  ( IFS=$' \t\n'; unset $IMPACT_ISOLATION_VARS; export HOME="$home_dir"; "$@" )
 }
 
 # impact_store_dir [DIR] — the store directory for DIR's project (computed; existence not checked).

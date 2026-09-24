@@ -76,12 +76,27 @@ run bash -c \
   ". '$lib'; HOME=/pretend/caller-home; impact_isolated '$SANDBOX/a2-home3' true >/dev/null; printf '%s' \"\$HOME\""
 check_contains "A2: the caller's own HOME survives an impact_isolated call untouched" "$OUT" "/pretend/caller-home"
 
+# A2 regression (found live by a cross-vendor agy/Gemini review): a caller with a customized $IFS (no
+# space in it) used to make the unquoted `unset $IMPACT_ISOLATION_VARS` word-split fail silently —
+# `unset` got the whole list as one invalid identifier, errored on stderr, and every S1 variable
+# survived untouched. impact_isolated now forces IFS to bash's own default for that one word-split.
+run env KEEL_HOME="$SANDBOX/a2-ifs-decoy" bash -c \
+  ". '$lib'; IFS=\$'\n'; a2fn_ifs() { printf '%s' \"\${KEEL_HOME:-isolated}\"; }; impact_isolated '$SANDBOX/a2-home4' a2fn_ifs"
+check_contains "A2: a caller with IFS=\$'\\\\n' (no space) still gets real isolation, not a silent no-op" "$OUT" "isolated"
+check_absent "A2: ...the decoy KEEL_HOME never leaks through under a customized IFS" "$OUT" "a2-ifs-decoy"
+
 # --- A3: IMPACT_ISOLATION_VARS variable-coverage pin, mutation-proven (dir #317 S1) ------------------
 # Every var (besides HOME) that impact_store_root, _impact_file_path, read_trace_store_root and the
 # vendored secret-scan.sh's own _impact_log_path_inline copy read must be listed in
 # IMPACT_ISOLATION_VARS — a new store-resolving variable anywhere is then forced onto that list or this
 # test goes red. Mutated below to prove it: a resolver gaining an unlisted var must fail, and the
 # extraction itself must not be satisfiable by matching nothing (that would pass A3 vacuously).
+# Scope, named honestly (found by a cross-vendor agy/Gemini review): the extraction matches only a
+# LITERAL `$NAME`/`${NAME` in the source, the exact form S1/S11-A3 specify and every real resolver in
+# this codebase uses today — it does NOT see indirect expansion (`${!var}`) or a name built up
+# dynamically (string concatenation into `eval`). A resolver written in one of those forms would read
+# an unlisted variable without A3 catching it. None of the four target functions use either form
+# (verified by reading them), and neither does anything else in this codebase's store resolvers.
 a3_pattern='\$\{?[A-Z][A-Z0-9_]*'
 # The floor vars a3_check must actually see at least once, or its own extraction is suspect (vacuous-
 # pass guard) — named ONCE here, read by both a3_check itself and the "not vacuous" loop below it.
