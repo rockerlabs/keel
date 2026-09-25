@@ -126,6 +126,7 @@ R4 — ready to implement
 ⏳ IN FLIGHT — claimed (YYYY-MM-DD, branch `<name>`)
 Spec: — the ticket's spec file, relative to the project root
 **Acceptance:** — the ticket's falsifiable done-checks
+Status: — a spec-only ticket's marker line (no backlog; see go.md step 1)
 <!-- go-contract:end -->
 
 **Personal-fork note (not a Keel mechanic, recorded here because a Keel change to this file doesn't reach
