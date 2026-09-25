@@ -276,6 +276,22 @@ sections real content going forward — see that page for exactly when each one 
   (operator decision D1, ~1110 target) to hold all of the above without cutting a pinned phrase (round
   1's lesson); `tests/test_go_command.sh` gains a mutation-proved needle per new clause (F1, F2, F3,
   F4, F5, F10, dir #640).
+- **`keel-check.sh`'s and `keel-check-gate.sh`'s repo-top resolution could be hijacked by an inherited
+  `GIT_DIR`/`GIT_WORK_TREE`** (dir #644, dir #647 — partial: #647 stays open for the rest of its
+  list): an ambient pair naming a decoy repo made `git -C "$PWD"`/`git -C "$cwd"` answer for the decoy
+  instead of the real repo, so the opt-in veto gate checked the wrong repo's red marker and let a
+  failing check through (fail OPEN). Both now source `tools/lib/repo-arg-guard.sh` before their first
+  `git -C` call, the same fix dir #644 already gave four other resolvers.
+- **Three load-bearing `/go` rules had no pin** (dir #636, dir #639, dir #641): the backlog-source
+  resolution in step `resolve`, "show them red, then implement to green" in step `acceptance-tests`,
+  and "close through `/polish`" in step `close` could each be deleted from `commands/go.md` with
+  `tests/test_go_command.sh` staying 38/38 green — the exact "a rule with no pin can be dropped
+  silently" class dir #636's own spec names. Each now has its own mutation-proved needle.
+- **`gate_state_root()` (`tools/lib/gate-paths.sh`, dir #398) only checked `$HOME` was non-empty**,
+  so `$HOME` pointing at a regular file reached `pre-pr-gate.sh`'s generic "run /polish first" deny
+  instead of the real cause — still fail-CLOSED, but misleading. Now also requires `-d "$HOME"`, and
+  every caller's message (`keel-check.sh`, `pre-pr-gate.sh`'s CLI and hook modes) names the actual
+  reason via the new `gate_home_diagnosis()` (unset, empty, or not a directory).
 
 ## [0.11.0] — 2026-09-22
 

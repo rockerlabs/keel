@@ -29,6 +29,18 @@ _kc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_kc_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$_kc_dir/lib/gate-paths.sh"
+# shellcheck source=tools/lib/repo-arg-guard.sh
+# dir #647 (S3 FINDING-S3-1): sanitizes GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, BEFORE the
+# `repo_top` resolution below can be hijacked into answering for a different repo — a foreign GIT_DIR
+# paired with a matching GIT_WORK_TREE otherwise makes `git -C "$PWD" rev-parse --show-toplevel` name
+# the WRONG repo, so a red marker armed for the real repo is checked (by keel-check-gate.sh) against
+# the decoy's key instead, silently allowing the commit through (fail OPEN). The unset is process-wide
+# (repo-arg-guard.sh's own source-time contract), so it also reaches the operator's declared check
+# command spawned further down, not just the resolver call above — accepted rather than scoped to a
+# subshell around just that one `git -C`: an operator check that depends on an inherited
+# GIT_DIR/GIT_WORK_TREE is exotic, and stripping them is the safer default for a check that might
+# itself shell out to git.
+. "$_kc_dir/lib/repo-arg-guard.sh"
 unset _kc_dir
 
 # Sanitize the threshold: a non-numeric OR overflowing env value falls back to 2 rather than crashing
@@ -60,7 +72,8 @@ if [ -n "${KEEL_CHECK_STATE_DIR:-}" ]; then
 elif state_dir="$(gate_state_root)"; then
   :
 else
-  printf 'keel-check: $HOME is unset/empty and $KEEL_CHECK_STATE_DIR is not set — cannot resolve the state dir\n' >&2
+  printf 'keel-check: $HOME %s, and $KEEL_CHECK_STATE_DIR is not set — cannot resolve the state dir\n' \
+    "$(gate_home_diagnosis)" >&2
   exit 1
 fi
 repo_dir="$state_dir/keel-check/$repo_key"
