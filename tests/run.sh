@@ -63,39 +63,79 @@ guard_ref_scope_available=0
 # (core.*, extensions.*, remote.*, keel.*, …) changes rarely enough in ordinary operation that a
 # change there still deserves the loud trip below — this is the one disclosed, named residual, not a
 # silent blanket allowance for every namespace.
+# F4b (S-fix F2-T1, delta-audit 0.11.0-0.12.0 fix round): the version above kept raw `key=value`
+# lines from `--list`, and guard_redact_diff_values (below) cut each DIFF line at its first `=` —
+# but `--list` prints a MULTI-LINE config value with a literal embedded newline, so that value's own
+# continuation line carries no `key=` prefix and passed the cut filter through untouched: a trip on a
+# changed multi-line value printed the key name AND its raw second (and any further) line, unredacted
+# (live-reproduced, macOS + alpine, git 2.52.0 — the exact gap the paragraph this replaces disclosed
+# as accepted). Fixed at the SOURCE, not by patching the filter a third time: `git config --local
+# --list -z` emits one NUL-terminated RECORD per entry, `key` LF `value` (a valueless boolean key's
+# record has no LF at all) — a multi-line value's own embedded newlines stay INSIDE that one record,
+# so no continuation line can ever exist to leak past a downstream filter. The raw value is never held
+# in a variable at all past the read: each line below is `key <fingerprint>`, fingerprint =
+# `printf '%s' "$value" | cksum` (POSIX; present on alpine's busybox) — a value-only change (including
+# a multi-line one) still changes the fingerprint, so the trip still fires, but nothing that could BE
+# a credential ever reaches a variable this file might print. Multi-valued keys (e.g. two
+# `keel.impactStore` entries) are two separate `-z` records — two separate lines here — and the
+# trailing `LC_ALL=C sort` keeps their relative order stable regardless of git's own listing order.
+# The per-branch-tracking exclusion above (dir #630 T1's own rationale: `.merge`/`.remote` churn on
+# every ordinary `git push -u`) is now applied to the KEY NAME directly instead of a `key=` line
+# prefix — same exact shape as before, exactly THREE dot-separated segments
+# (`branch.<name>.<subkey>`; a bare top-level `branch.autoSetupMerge` still trips, pinned by
+# tests/test_run_sh.sh). Pure bash — no `sed -E`/`-r`, and deliberately NOT `awk` with `RS="\0"`
+# (a known trap in this repo: busybox awk splits NULs into newlines, and BSD awk is unreliable on NUL
+# too) — verified on macOS bash 3.2 and the alpine leg's bash.
 guard_config_snapshot() {
-  git -C "$1" config --local --list 2>/dev/null | grep -vE '^branch\.[^.=]+\.[^.=]+=' | LC_ALL=C sort || true
+  local repo="$1" rec key value rest fp lines=()
+  while IFS= read -r -d '' rec; do
+    key="${rec%%$'\n'*}"
+    if [ "$rec" = "$key" ]; then
+      value=""                       # a valueless boolean key's -z record has no embedded LF at all
+    else
+      value="${rec#*$'\n'}"
+    fi
+    case "$key" in
+      branch.*.*)
+        rest="${key#branch.}"
+        case "$rest" in
+          *.*.*) ;;                  # 3+ segments after "branch." — a real key, not per-branch tracking
+          *) continue ;;             # exactly "name.subkey" — branch.<name>.<merge|remote|...>, excluded
+        esac
+        ;;
+    esac
+    fp="$(printf '%s' "$value" | cksum)"
+    lines+=("$key $fp")
+  done < <(git -C "$repo" config --local --list -z 2>/dev/null)
+  printf '%s\n' "${lines[@]+"${lines[@]}"}" | LC_ALL=C sort
 }
 
-# guard_redact_diff_values — the widened snapshot above compares full `key=value` lines (a value-only
-# change on an existing key must still trip), but a CHANGED VALUE is exactly what must never reach the
-# trip report's own printed output: some config namespaces this snapshot now also watches CAN
-# legitimately carry a credential (`actions/checkout` persists one into `http.<url>.extraHeader` by
-# default; a `remote.*.url` sometimes embeds a token) — manager-flagged, dir #630 S4/T1 (delta-audit
-# 0.11.0-0.12.0 fix round), the old two-key snapshot never had this exposure since it only ever
-# watched two path-like keel.* keys. Does NOT key off `diff`'s own line-prefix convention (an earlier
-# version of this filter matched a literal `< `/`> ` two-byte prefix and shipped believing that was
-# universal — found live by this ticket's own /code-review high pass, run against a real alpine:3.21
-# container: busybox `diff` defaults to UNIFIED format with no such prefix at all, `-`/`+`/`---`/`+++`/
-# `@@`, so that version's redaction silently no-opped on the one CI leg this exists to protect,
-# printing the raw credential straight through). Instead: any line containing `=` gets everything from
-# its FIRST `=` onward cut, keeping only what precedes it (a key name, plus whatever diff's own
-# leading marker character(s) already are — `<`/`>`/`-`/`+`, unaffected either way); a line with no `=`
-# at all (a hunk header, a `---`/`+++`/`@@` divider) passes through untouched. This works identically
-# under GNU/BSD diff's normal format and busybox's unified format, verified against both. Known,
-# accepted residual (disclosed, not silently accepted): a MULTI-LINE config value's own continuation
-# line carries no `key=` prefix of its own, so it isn't cut by this filter — git-config values with an
-# embedded literal newline are exceedingly rare in practice (neither of this fix's two motivating
-# shapes, `http.*.extraHeader` or an inline-token URL, is ever multi-line) and are left as a stated gap
-# rather than a stateful multi-line-aware parser this fix's scope doesn't call for. Pure bash (no
-# `sed -E`/`-r`): a GNU-only sed flag is the exact live portability trap category this replaces
-# (CLAUDE.md's Linux-leg traps), and this filter needs none.
-guard_redact_diff_values() {
-  local line
+# guard_diff_keys_only — F4b: the ONE remaining redaction mechanism (the old guard_redact_diff_values
+# it replaces is retired — two mechanisms doing the same job is one too many). guard_config_snapshot
+# above never holds a raw value at all, only a `key <checksum> <bytecount>` line (cksum's own two-
+# field output), so nothing here is technically a "value" — but the trip report still has no business
+# printing anything past the key name, so this strips the fingerprint's own two trailing fields before
+# printing. Does NOT key off `diff`'s own line-prefix convention (found live against a real
+# alpine:3.21 container by an earlier version of this file's redaction: busybox `diff` defaults to
+# UNIFIED format, no `< `/`> ` prefix at all, just `-`/`+`/`---`/`+++`/`@@`): a hunk/file-header line
+# (`---`/`+++`/`@@`, either format) is named explicitly and passed through untouched; any other line
+# has its last two space-separated fields stripped via shortest-suffix removal (`${line% *}` twice —
+# matches the LAST space each time, unlike `%%` which would match the first), which is exactly the
+# checksum + byte-count fields `cksum` appends, however many characters the key name itself is or
+# whichever marker style (`< `/`> ` with a space, or busybox's bare `-`/`+`) precedes it. A line with
+# fewer than two spaces (nothing to strip) passes through unchanged either way, since the pattern
+# simply fails to match. Verified against both diff formats.
+guard_diff_keys_only() {
+  local line rest
   while IFS= read -r line; do
     case "$line" in
-      *=*) printf '%s\n' "${line%%=*}" ;;
-      *)   printf '%s\n' "$line" ;;
+      ---*|+++*|@@*) printf '%s\n' "$line" ;;
+      *' '*' '*)
+        rest="${line% *}"
+        rest="${rest% *}"
+        printf '%s\n' "$rest"
+        ;;
+      *) printf '%s\n' "$line" ;;
     esac
   done
 }
@@ -107,8 +147,10 @@ if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
   # dir #630 S4: this suite must never write the real checkout's own provenance record (multi-valued
   # keel.impactStore / keel.readTraceStore, or any other key, in ITS local git config) — every B-test
   # that exercises S4 writes that key only inside a $SANDBOX-cloned repo (new_repo()), never against
-  # $guard_repo_root itself. `--list` returns rc 1 (no local config) or rc 128 (not a repo); both are
-  # swallowed by `|| true`, same as the rest of this canary. Captured here, compared after the run
+  # $guard_repo_root itself. `--list -z` returns rc 1 (no local config) or rc 128 (not a repo); both
+  # are swallowed — the `while read` loop inside guard_config_snapshot (F4b) simply sees zero `-z`
+  # records either way, same net effect as the explicit `|| true` the rest of this canary uses, since
+  # bash never checks a process substitution's own exit status. Captured here, compared after the run
   # below. The old two named-key snapshot is a subset of this one, so keel.impactStore /
   # keel.readTraceStore still trip exactly as before — deliberately not excluded, unlike branch.*
   # above: this is the exact leak class dir #630 S4 exists to catch (the #466 incident wrote
@@ -376,10 +418,9 @@ if [ -n "$guard_before_head" ]; then
     if [ "$guard_after_config" != "$guard_before_config" ]; then
       printf '  this checkout'"'"'s own local git config changed during the run (dir #630 S4 tripwire,\n'
       printf '  widened to the whole local config — per-branch tracking keys excluded, see tests/run.sh\n'
-      printf '  comment above). Key(s) that changed (values withheld — see guard_redact_diff_values'"'"'s\n'
-      printf '  own comment: some namespaces this snapshot now also watches can legitimately carry a\n'
-      printf '  credential, e.g. actions/checkout'"'"'s own http.*.extraHeader):\n'
-      printf '%s\n' "$(diff <(printf '%s\n' "$guard_before_config") <(printf '%s\n' "$guard_after_config") | guard_redact_diff_values)"
+      printf '  comment above). Key(s) that changed (fingerprints only — this snapshot (F4b) never holds\n'
+      printf '  a raw value at all, multi-line or not; see guard_config_snapshot'"'"'s own comment):\n'
+      printf '%s\n' "$(diff <(printf '%s\n' "$guard_before_config") <(printf '%s\n' "$guard_after_config") | guard_diff_keys_only)"
       printf '  a test wrote to the real repo'"'"'s own local git config instead of a $SANDBOX-cloned one — fix the fixture, never disable this check.\n'
     fi
     # dir #318: this used to name only "a fixture helper" as the cause. tests/lib.sh's guard now
