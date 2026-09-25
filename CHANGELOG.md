@@ -249,6 +249,14 @@ sections real content going forward — see that page for exactly when each one 
   instead. Step `worktree` is rewritten as an if-then list for readability. Word budget raised
   965 -> 1055 (operator decision) to hold all of the above; `tests/test_go_command.sh` gains a
   `conform` case and one new mutation-proved needle per new clause.
+- **`keel_store_record`/`keel_store_recorded` (dir #630) honored an inherited `GIT_DIR`/
+  `GIT_COMMON_DIR` over their own `-C "$top"`**, so a caller process started with one already set (a
+  hook, a tool invoked from inside another repo's git machinery) wrote — or read — the S4 provenance
+  record against that OTHER repo instead of `$top`, as long as `$top` existed as SOME directory on
+  disk (a project not yet git-initialized is enough; a `$top` that doesn't exist at all was already
+  safe — git's own `-C` fails outright before ever consulting `GIT_DIR`). Both now clear `GIT_DIR`/
+  `GIT_COMMON_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` for their own git calls only (a new
+  `_keel_store_git` helper, `env -u`-based), not a lib-level unset.
 - **`/go` fixed after a second fresh-context review** (dir #641, absorbing dir #640): step
   `inflight-check` now stops FIRST on a `⏳` heading naming a live branch that isn't yours — the
   old text stopped only on a name-based scan that harness-made branches (`claude/hungry-hermann-…`)

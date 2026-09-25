@@ -366,6 +366,60 @@ run bash -c ". '$lib'; keel_store_record k.test '/some/entry' /nonexistent/not-a
 check_status "keel_store_record on a non-repo TOP is a silent no-op, never fails" 0 "$STATUS"
 check_contains "keel_store_record on a non-repo TOP still reports done" "$OUT" "done"
 
+# --- dir #630 F1: an inherited GIT_DIR/GIT_COMMON_DIR must not hijack `-C "$top"` (S4 finding) ---
+# A caller process started with GIT_DIR/GIT_COMMON_DIR already set (a hook, a tool invoked from
+# inside another repo's git machinery) makes git honor those over `-C "$top"` — before this fix,
+# `keel_store_record`/`keel_store_recorded` silently operated on the HIJACKED repo instead of TOP.
+gd_decoy="$(new_repo)"
+gd_decoy_top="$(cd "$gd_decoy" && pwd -P)"
+gd_top_repo="$(new_repo)"
+gd_top="$(cd "$gd_top_repo" && pwd -P)"
+gd_decoy_git="$gd_decoy_top/.git"
+
+gd_cfg_before="$(cat "$gd_decoy_git/config")"
+run env GIT_DIR="$gd_decoy_git" GIT_COMMON_DIR="$gd_decoy_git" bash -c \
+  ". '$lib'; keel_store_record k.gd '$SANDBOX/gd-entry' '$gd_top'; echo done"
+check_status "GIT_DIR hijack: keel_store_record under a decoy GIT_DIR still completes" 0 "$STATUS"
+check_contains "GIT_DIR hijack: keel_store_record's caller still reports done" "$OUT" "done"
+gd_cfg_after="$(cat "$gd_decoy_git/config")"
+if [ "$gd_cfg_before" = "$gd_cfg_after" ]; then
+  pass "GIT_DIR hijack: the decoy's .git/config is byte-identical before/after"
+else
+  fail "GIT_DIR hijack: the decoy's .git/config is byte-identical before/after" \
+    "before=[$gd_cfg_before] after=[$gd_cfg_after]"
+fi
+run bash -c "git -C '$gd_top' config --local --get-all k.gd"
+check_status "GIT_DIR hijack: the value landed in the real TOP's own config" 0 "$STATUS"
+check_contains "GIT_DIR hijack: TOP's config holds the recorded entry" "$OUT" "$SANDBOX/gd-entry"
+
+# --- GIT_DIR hijack with a TOP that EXISTS but is not (yet) a git repository: this, not a TOP
+# missing from disk outright, is the live failure mode — `-C "$top"` only needs `chdir` to succeed
+# for git to then resolve the repo from the hijacked GIT_DIR instead of $top's own (nonexistent)
+# .git, regardless of what $top itself contains. A genuinely nonexistent $top is NOT an equivalent
+# case and is deliberately not pinned here: verified live (git 2.52.0) that `-C` fails outright on
+# the `chdir` before git ever consults GIT_DIR, hijacked or not — a mutation proof confirmed that
+# variant's assertions stayed green whether or not the fix was applied, so it pinned nothing. -------
+gd_notrepo="$SANDBOX/gd-not-a-repo-$$"
+mkdir -p "$gd_notrepo"
+gd_cfg_before2="$(cat "$gd_decoy_git/config")"
+run env GIT_DIR="$gd_decoy_git" GIT_COMMON_DIR="$gd_decoy_git" bash -c \
+  ". '$lib'; keel_store_record k.gd-notrepo '$SANDBOX/gd-notrepo-entry' '$gd_notrepo'; echo done"
+check_status "GIT_DIR hijack + existing non-repo TOP: still completes without failing the caller" 0 "$STATUS"
+gd_cfg_after2="$(cat "$gd_decoy_git/config")"
+if [ "$gd_cfg_before2" = "$gd_cfg_after2" ]; then
+  pass "GIT_DIR hijack + existing non-repo TOP: the decoy's .git/config stays untouched"
+else
+  fail "GIT_DIR hijack + existing non-repo TOP: the decoy's .git/config stays untouched" \
+    "before=[$gd_cfg_before2] after=[$gd_cfg_after2]"
+fi
+check_nodir "GIT_DIR hijack + existing non-repo TOP: no .git materialized at TOP either" "$gd_notrepo/.git"
+
+# --- keel_store_recorded under the same hijack: reads TOP's own value, never the decoy's ---------
+run bash -c "git -C '$gd_decoy_top' config --local --add k.gd decoys-own-value"
+run env GIT_DIR="$gd_decoy_git" GIT_COMMON_DIR="$gd_decoy_git" bash -c ". '$lib'; keel_store_recorded k.gd '$gd_top'"
+check_contains "GIT_DIR hijack: keel_store_recorded reads TOP's recorded value" "$OUT" "$SANDBOX/gd-entry"
+check_absent "GIT_DIR hijack: keel_store_recorded does not read the decoy's own value" "$OUT" "decoys-own-value"
+
 # --- keel_store_state: enabled / lost / moved / never (the generic rungs 3-6) --------------------
 kss_dir="$SANDBOX/kss-entry"
 run bash -c ". '$lib'; mkdir -p '$kss_dir'; keel_store_state k.test '$kss_dir' '$ksr_top'"
