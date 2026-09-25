@@ -11,6 +11,12 @@
 
 guide_md="${KEEL_GO_GUIDE_MD:-$REPO_ROOT/commands/go-guide.md}"
 
+# Config for tests/lib.sh's shared scratch_copy/assert_case_turns_red (promoted there once this file
+# needed the exact same idiom tests/test_go_command.sh had already defined for itself).
+SCRATCH_COPY_PREFIX="go-guide-copy"
+MUTATION_SCRIPT="$REPO_ROOT/tests/test_go_guide.sh"
+MUTATION_SKIP_VAR="KEEL_GO_GUIDE_TEST_SKIP_MUTATIONS"
+
 check_file "go-guide.md target exists" "$guide_md"
 
 # --- (a) budget: GUIDE7 ≤ 1500 words -----------------------------------------------------------------
@@ -89,59 +95,19 @@ i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
   rule="${needle_rules[$i]}"
   needle="${needle_texts[$i]}"
-  count="$(grep -cF -- "$needle" "$guide_md")"
-  if [ "$count" -eq 1 ]; then
-    pass "(f) needle [$rule]: '$needle' matches exactly one line"
-  else
-    fail "(f) needle [$rule]: '$needle' matches exactly one line" \
-      "found $count matching lines in $guide_md (want exactly 1)"
-  fi
+  pin_exact "(f) needle [$rule]: '$needle' matches exactly one line" "$guide_md" "$needle" \
+    "missing needle for $rule in $guide_md"
   i=$((i + 1))
 done
 
 # =======================================================================================================
-# Mutation proof: each case above is shown red first — never on a tracked file (spec A1). Every helper
-# here works on a SCRATCH copy under $SANDBOX and re-invokes THIS file with KEEL_GO_GUIDE_MD pointed at
-# it, so the positive checks above and their negative controls below share one definition of each case,
-# never a second hard-coded copy.
-
-scratch_copy() {
-  local src="$1" name="$2" dir
-  dir="$(mktemp -d "$SANDBOX/go-guide-copy.XXXXXX")"
-  require_sandbox_path "$dir" scratch_copy
-  cp "$src" "$dir/$name"
-  printf '%s' "$dir/$name"
-}
-
-delete_line_containing() {
-  local file="$1" substr="$2"
-  awk -v s="$substr" 'index($0, s) == 0' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-}
-
-replace_in_line_containing() {
-  local file="$1" anchor="$2" find="$3" repl="$4"
-  awk -v a="$anchor" -v f="$find" -v r="$repl" '
-    index($0, a) > 0 {
-      i = index($0, f)
-      if (i > 0) { $0 = substr($0, 1, i - 1) r substr($0, i + length(f)) }
-    }
-    { print }
-  ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-}
-
-append_line() { printf '%s\n' "$2" >> "$1"; }
-
-# assert_case_turns_red LABEL FAIL_NEEDLE ENV_ASSIGN — re-invoke this file with ENV_ASSIGN
-# (KEEL_GO_GUIDE_MD=<scratch>) and assert the run exits nonzero AND reports FAIL_NEEDLE as a FAIL line —
-# the check is not vacuously true (leg-1 F-1's class).
-assert_case_turns_red() {
-  local label="$1" fail_needle="$2" env_assign="$3"
-  # KEEL_GO_GUIDE_TEST_SKIP_MUTATIONS=1 stops the child from running THIS section again — without it
-  # every child re-runs its own full mutation section, each spawning its own children without bound.
-  run env "$env_assign" KEEL_GO_GUIDE_TEST_SKIP_MUTATIONS=1 bash "$REPO_ROOT/tests/test_go_guide.sh"
-  check_ne "$label: mutated copy makes the suite exit nonzero" "$STATUS" "0"
-  check_contains "$label: the mutated case itself is reported FAIL" "$OUT" "FAIL  $fail_needle"
-}
+# Mutation proof: each case above is shown red first — never on a tracked file (spec A1). scratch_copy,
+# delete_line_containing, replace_in_line_containing, append_line and assert_case_turns_red are shared
+# from tests/lib.sh (promoted there once this file needed the exact same idiom
+# tests/test_go_command.sh had already defined for itself); the SCRATCH_COPY_PREFIX/MUTATION_SCRIPT/
+# MUTATION_SKIP_VAR set above are this file's config for them. Every case re-invokes THIS file with
+# KEEL_GO_GUIDE_MD pointed at a mutated scratch copy, so the positive checks above and their negative
+# controls below share one definition of each case, never a second hard-coded copy.
 
 if [ -n "${KEEL_GO_GUIDE_TEST_SKIP_MUTATIONS:-}" ]; then
   summary

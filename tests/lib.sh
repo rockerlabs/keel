@@ -596,6 +596,83 @@ new_repo_with_origin() {
   printf '%s' "$d"
 }
 
+# --- mutation-proof scratch-copy helpers ----------------------------------------------------------
+# Promoted here (dir #642) once a SECOND file (tests/test_go_guide.sh) needed the exact same
+# copy-mutate-reinvoke idiom tests/test_go_command.sh had already defined for itself — this file's own
+# "second use = promote" convention (see pin()'s comment above). The two things that vary between
+# callers — the scratch-dir name prefix and which script/env-var a mutation re-invokes to prove itself
+# red — are read from two variables the CALLER sets before using these (same convention `gate` follows
+# for the pre-pr-gate.sh fixtures below): $SCRATCH_COPY_PREFIX and, for assert_case_turns_red,
+# $MUTATION_SCRIPT / $MUTATION_SKIP_VAR.
+
+# scratch_copy SRC NAME — copy SRC into a fresh scratch dir under $SANDBOX (named from the caller's
+# $SCRATCH_COPY_PREFIX) as NAME, print the copy's path.
+scratch_copy() {
+  local src="$1" name="$2" dir
+  dir="$(mktemp -d "$SANDBOX/${SCRATCH_COPY_PREFIX}.XXXXXX")"
+  require_sandbox_path "$dir" scratch_copy
+  cp "$src" "$dir/$name"
+  printf '%s' "$dir/$name"
+}
+
+# delete_line_containing FILE SUBSTR — drop every line containing SUBSTR (literal).
+delete_line_containing() {
+  local file="$1" substr="$2"
+  awk -v s="$substr" 'index($0, s) == 0' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+}
+
+# replace_in_line_containing FILE ANCHOR FIND REPL — on the line(s) containing ANCHOR literally,
+# replace the first occurrence of FIND with REPL; every other line is untouched.
+replace_in_line_containing() {
+  local file="$1" anchor="$2" find="$3" repl="$4"
+  awk -v a="$anchor" -v f="$find" -v r="$repl" '
+    index($0, a) > 0 {
+      i = index($0, f)
+      if (i > 0) { $0 = substr($0, 1, i - 1) r substr($0, i + length(f)) }
+    }
+    { print }
+  ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+}
+
+append_line() { printf '%s\n' "$2" >> "$1"; }
+
+# insert_before_line_containing FILE ANCHOR TEXT — insert one line just before the (single) line
+# containing ANCHOR literally.
+insert_before_line_containing() {
+  local file="$1" anchor="$2" text="$3"
+  awk -v a="$anchor" -v t="$text" '
+    index($0, a) > 0 { print t }
+    { print }
+  ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+}
+
+# assert_case_turns_red LABEL FAIL_NEEDLE ENV_ASSIGN — re-invoke the caller's $MUTATION_SCRIPT with
+# ENV_ASSIGN (e.g. KEEL_GO_MD=<scratch>) plus "$MUTATION_SKIP_VAR=1" (stops the child from running its
+# own mutation section again — without it every child re-runs its full mutation section, each spawning
+# its own children without bound) and assert the run exits nonzero AND reports FAIL_NEEDLE as a FAIL
+# line — the check is not vacuously true (leg-1 F-1's class).
+assert_case_turns_red() {
+  local label="$1" fail_needle="$2" env_assign="$3"
+  run env "$env_assign" "${MUTATION_SKIP_VAR}=1" bash "$MUTATION_SCRIPT"
+  check_ne "$label: mutated copy makes the suite exit nonzero" "$STATUS" "0"
+  check_contains "$label: the mutated case itself is reported FAIL" "$OUT" "FAIL  $fail_needle"
+}
+
+# pin_exact LABEL FILE NEEDLE HINT — assert FILE contains NEEDLE on EXACTLY ONE line (`grep -cF` = 1),
+# not merely present. T5's rule (dir #642 spec §5.4): a needle shared with an unrelated clause would
+# still satisfy mere presence after the actual clause was dropped — the same false-negative class
+# test_go_command.sh's own comment above its needle_texts records, now checked mechanically rather than
+# by eye whenever a clause's pin must be distinguishing.
+pin_exact() {
+  local label="$1" file="$2" needle="$3" hint="$4" count
+  count="$(grep -cF -- "$needle" "$file")"
+  if [ "$count" -eq 1 ]; then
+    pass "$label"
+  else
+    fail "$label" "$hint (found $count matching lines in $file, want exactly 1)"
+  fi
+}
+
 # --- pre-pr-gate.sh receipt fixtures -------------------------------------------------------------
 # Shared by test_pre_pr_gate.sh and test_pipeline_canary.sh (dir #64) — both drive the SAME gate CLI
 # subcommands to build a complete, matching receipt. Expects the CALLER to have already set a $gate
