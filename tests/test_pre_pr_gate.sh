@@ -3639,15 +3639,35 @@ d="$(mkrepo)"
 gate_env "gh pr create --fill" "$d" -u HOME
 check_status "HOME unset in hook mode -> hook still exits 0 (never a bare non-zero)" 0 "$STATUS"
 check_contains "HOME unset in hook mode -> a real deny JSON, not a bare stderr message" "$OUT" '"permissionDecision":"deny"'
-check_contains "HOME unset in hook mode -> names the actual cause" "$OUT" 'HOME is unset or empty'
+check_contains "HOME unset in hook mode -> names the actual cause" "$OUT" '$HOME is unset'
 
 # --- dir #398: HOME-unset in CLI mode keeps this file's own established convention — a plain stderr
 # message and a non-zero exit, matching every other CLI-mode failure (_require_receipt_key's
 # detached-HEAD case, receipt/init/etc.) — never a JSON payload nobody but the hook runner reads.
 out_cli398="$(env -u HOME bash "$gate" repo-key "$d" 2>&1)"; status_cli398=$?
 check_status "HOME unset in CLI mode -> exit 1" 1 "$status_cli398"
-check_contains "HOME unset in CLI mode -> a plain stderr message, not JSON" "$out_cli398" 'HOME is unset or empty'
+check_contains "HOME unset in CLI mode -> a plain stderr message, not JSON" "$out_cli398" '$HOME is unset'
 check_absent "HOME unset in CLI mode -> no JSON payload" "$out_cli398" 'permissionDecision'
+
+# --- dir #647 (S3 FINDING-S3-2): HOME pointing at a REGULAR FILE (set, non-empty, but not a
+# directory) used to reach the exact same "$HOME is unset or empty" message as a genuinely unset
+# $HOME — technically fail-closed (still denied/exit-1), but the wrong reason: nothing here was ever
+# unset or empty. gate_state_root() now also requires `-d "$HOME"`, and the deny/message names the
+# real cause instead. Mutation proof (report only, not asserted by this file itself): remove the `-d`
+# check from gate_state_root() in tools/lib/gate-paths.sh and this pair goes RED (back to "is unset");
+# restore it and both go green again.
+home_as_file398="$SANDBOX/home-is-a-file.398"; : > "$home_as_file398"
+out_cli398_notdir="$(env HOME="$home_as_file398" bash "$gate" repo-key "$d" 2>&1)"; status398_notdir=$?
+check_status "HOME=regular file in CLI mode -> exit 1 (still fail-closed)" 1 "$status398_notdir"
+check_contains "HOME=regular file in CLI mode -> names the real cause (not a directory)" \
+  "$out_cli398_notdir" "\$HOME is not a directory ($home_as_file398)"
+check_absent "HOME=regular file -> no longer misreported as unset/empty" \
+  "$out_cli398_notdir" 'is unset'
+
+gate_env "gh pr create --fill" "$d" "HOME=$home_as_file398"
+check_status "HOME=regular file in hook mode -> hook still exits 0" 0 "$STATUS"
+check_contains "HOME=regular file in hook mode -> deny names the real cause (not a directory)" \
+  "$OUT" "\$HOME is not a directory ($home_as_file398)"
 
 # --- dir #398 (found by this ticket's own /code-review delta-round pass): HOME-unset must NOT deny
 # every Bash command in a wired repo — only the ones the gate actually polices. An earlier version of

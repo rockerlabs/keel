@@ -119,13 +119,35 @@ check_dir "no override: the default root lands under \$HOME/.keel/tmp/keel-check
 # HOME unset AND no override -> fail closed with a clear message, never a silent "/.keel/tmp".
 run env -u KEEL_CHECK_STATE_DIR -u HOME "$TOOL" "false"
 check_status "HOME unset, no override -> exit 1 (fail closed)" 1 "$STATUS"
-check_contains "HOME unset, no override -> names the cause" "$OUT" 'HOME is unset/empty'
+check_contains "HOME unset, no override -> names the cause" "$OUT" '$HOME is unset'
 
 # An explicit override still works even with HOME unset.
 fresh_sd
 run env -u HOME "KEEL_CHECK_STATE_DIR=$KEEL_CHECK_STATE_DIR" "$TOOL" "false"
 check_status "HOME unset, explicit override -> exit code still passes through" 1 "$STATUS"
 check_contains "HOME unset, explicit override -> still counts (FAIL #1)" "$OUT" "FAIL #1"
+
+# --- dir #647 (S3 FINDING-S3-1): an inherited GIT_DIR+GIT_WORK_TREE naming a DECOY repo must not
+# redirect the repo_top resolution away from the real repo — otherwise the counter (and, downstream,
+# keel-check-gate.sh's red marker) is keyed to the wrong repo entirely. Live hijack scenario: a decoy
+# repo's GIT_DIR paired with its own GIT_WORK_TREE, present in the environment BEFORE keel-check.sh
+# sources tools/lib/repo-arg-guard.sh, must not make `git -C "$PWD" rev-parse --show-toplevel` answer
+# for the decoy while $PWD is really inside the real repo. Mirrors
+# tests/test_repo_arg_guard_lib.sh's own hijack pattern.
+fresh_sd
+real="$(new_repo)"; git -C "$real" commit -q --allow-empty -m init
+decoy="$(new_repo)"; git -C "$decoy" commit -q --allow-empty -m init
+decoy_gitdir="$(git -C "$decoy" rev-parse --absolute-git-dir)"
+real_top="$(git -C "$real" rev-parse --show-toplevel)"
+decoy_top="$(git -C "$decoy" rev-parse --show-toplevel)"
+real_key="$(printf '%s' "$real_top" | cksum | tr -cd '0-9')"
+decoy_key="$(printf '%s' "$decoy_top" | cksum | tr -cd '0-9')"
+run_in "$real" env GIT_DIR="$decoy_gitdir" GIT_WORK_TREE="$decoy" "$TOOL" "false"
+check_status "hijack: exit code still passes through" 1 "$STATUS"
+check_dir "hijack: the REAL repo's key dir is created (not redirected to the decoy)" \
+  "$KEEL_CHECK_STATE_DIR/keel-check/$real_key"
+check_nodir "hijack: the decoy's key dir is never created" \
+  "$KEEL_CHECK_STATE_DIR/keel-check/$decoy_key"
 
 # --- dir #398 R5's empty-dir reap must not race a DIFFERENT concurrent invocation's just-created,
 # still-empty repo_dir (found by this ticket's own /code-review high pass, angles A and B): the reap

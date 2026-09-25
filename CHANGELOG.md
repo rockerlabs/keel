@@ -249,6 +249,14 @@ sections real content going forward — see that page for exactly when each one 
   instead. Step `worktree` is rewritten as an if-then list for readability. Word budget raised
   965 -> 1055 (operator decision) to hold all of the above; `tests/test_go_command.sh` gains a
   `conform` case and one new mutation-proved needle per new clause.
+- **`keel_store_record`/`keel_store_recorded` (dir #630) honored an inherited `GIT_DIR`/
+  `GIT_COMMON_DIR` over their own `-C "$top"`**, so a caller process started with one already set (a
+  hook, a tool invoked from inside another repo's git machinery) wrote — or read — the S4 provenance
+  record against that OTHER repo instead of `$top`, as long as `$top` existed as SOME directory on
+  disk (a project not yet git-initialized is enough; a `$top` that doesn't exist at all was already
+  safe — git's own `-C` fails outright before ever consulting `GIT_DIR`). Both now clear `GIT_DIR`/
+  `GIT_COMMON_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` for their own git calls only (a new
+  `_keel_store_git` helper, `env -u`-based), not a lib-level unset.
 - **`/go` fixed after a second fresh-context review** (dir #641, absorbing dir #640): step
   `inflight-check` now stops FIRST on a `⏳` heading naming a live branch that isn't yours — the
   old text stopped only on a name-based scan that harness-made branches (`claude/hungry-hermann-…`)
@@ -269,11 +277,28 @@ sections real content going forward — see that page for exactly when each one 
   1's lesson); `tests/test_go_command.sh` gains a mutation-proved needle per new clause (F1, F2, F3,
   F4, F5, F10, dir #640).
 - **`tests/run.sh`'s corruption-canary tripwire (dir #630) now diffs the WHOLE local git config of the
-  real checkout instead of snapshotting two named keys, naming any excluded key class (`branch.*`,
-  disclosed in the file's own comment) rather than silently allowing it; a status-only trip with HEAD
-  unmoved now names a concurrent own edit as the likely cause, mirroring the existing HEAD-moved hint
-  (dir #333's release-manager amendment; dir #318 is the optional isolation class either trip sits
-  alongside).
+  real checkout instead of snapshotting two named keys, redacting any changed key's VALUE from the trip
+  report (found live against the alpine CI leg's busybox `diff`) and naming any excluded key class
+  (`branch.<name>.merge`/`.remote`, disclosed in the file's own comment) rather than silently allowing
+  it; a status-only trip with HEAD unmoved now names a concurrent own edit as the likely cause,
+  mirroring the existing HEAD-moved hint (dir #333's release-manager amendment; dir #318 is the
+  optional isolation class either trip sits alongside).
+- **`keel-check.sh`'s and `keel-check-gate.sh`'s repo-top resolution could be hijacked by an inherited
+  `GIT_DIR`/`GIT_WORK_TREE`** (dir #644, dir #647 — partial: #647 stays open for the rest of its
+  list): an ambient pair naming a decoy repo made `git -C "$PWD"`/`git -C "$cwd"` answer for the decoy
+  instead of the real repo, so the opt-in veto gate checked the wrong repo's red marker and let a
+  failing check through (fail OPEN). Both now source `tools/lib/repo-arg-guard.sh` before their first
+  `git -C` call, the same fix dir #644 already gave four other resolvers.
+- **Three load-bearing `/go` rules had no pin** (dir #636, dir #639, dir #641): the backlog-source
+  resolution in step `resolve`, "show them red, then implement to green" in step `acceptance-tests`,
+  and "close through `/polish`" in step `close` could each be deleted from `commands/go.md` with
+  `tests/test_go_command.sh` staying 38/38 green — the exact "a rule with no pin can be dropped
+  silently" class dir #636's own spec names. Each now has its own mutation-proved needle.
+- **`gate_state_root()` (`tools/lib/gate-paths.sh`, dir #398) only checked `$HOME` was non-empty**,
+  so `$HOME` pointing at a regular file reached `pre-pr-gate.sh`'s generic "run /polish first" deny
+  instead of the real cause — still fail-CLOSED, but misleading. Now also requires `-d "$HOME"`, and
+  every caller's message (`keel-check.sh`, `pre-pr-gate.sh`'s CLI and hook modes) names the actual
+  reason via the new `gate_home_diagnosis()` (unset, empty, or not a directory).
 
 ## [0.11.0] — 2026-09-22
 
