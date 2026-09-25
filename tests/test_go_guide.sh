@@ -109,7 +109,10 @@ done
 # KEEL_GO_GUIDE_MD pointed at a mutated scratch copy, so the positive checks above and their negative
 # controls below share one definition of each case, never a second hard-coded copy.
 
-if [ -n "${KEEL_GO_GUIDE_TEST_SKIP_MUTATIONS:-}" ]; then
+# Indirect expansion (${!MUTATION_SKIP_VAR}) reads through the config var above rather than
+# hardcoding its value a second time — a rename would otherwise silently desync this guard from what
+# assert_case_turns_red actually sets (code-review high finding on this ticket's own diff).
+if [ -n "${!MUTATION_SKIP_VAR:-}" ]; then
   summary
   exit $?
 fi

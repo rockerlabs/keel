@@ -16,7 +16,7 @@ Read this table once; from then on, every word in the left column means its righ
 | `branch <name>` in the claim marker, `<branch>` in the escapes line | the ticket's id or file name |
 | an automated test | a checklist item: the check, plus the evidence it needs |
 | the PR body | the report: a dated `## Implementation report (YYYY-MM-DD)` section appended to the spec file (no spec → to the ticket), and the same text in chat |
-| `/polish` | action I6's self-check, done by you |
+| `/polish` | actions I4 + I6, done by you |
 | the operator merges | the operator signs the report off in chat |
 
 **Evidence** means something another person can check without trusting you: a test's output, a

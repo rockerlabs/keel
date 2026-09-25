@@ -200,21 +200,16 @@ needle_texts=(
   "spec mode: its"
   "closed per the guide"
 )
+# T5 (spec §5.4): every needle must match exactly one line, not merely be present — checked uniformly
+# for every row here, old and new alike (verified live: all 31 needles below already satisfy this,
+# so the exact check is a strict superset of mere presence, not a special case for dir #642's own
+# additions — code-review high's altitude finding on this ticket's own diff).
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
   rule="${needle_rules[$i]}"
   needle="${needle_texts[$i]}"
-  case "$rule" in
-    "dir #642"*)
-      # T5 (spec §5.4): a NEW clause's needle must match exactly one line, not merely be present — the
-      # same rule tests/test_go_guide.sh's T1(f) applies to the guide, via lib.sh's shared pin_exact().
-      pin_exact "(g) needle [$rule]: '$needle' matches exactly one line" "$go_md" "$needle" \
-        "missing needle for $rule in $go_md"
-      ;;
-    *)
-      pin "(g) needle [$rule]: '$needle' present" "$go_md" "$needle" "missing needle for $rule in $go_md"
-      ;;
-  esac
+  pin_exact "(g) needle [$rule]: '$needle' matches exactly one line" "$go_md" "$needle" \
+    "missing needle for $rule in $go_md"
   i=$((i + 1))
 done
 
@@ -228,7 +223,10 @@ done
 # positive checks above and their negative controls below share one definition of each case, never a
 # second hard-coded copy.
 
-if [ -n "${KEEL_GO_TEST_SKIP_MUTATIONS:-}" ]; then
+# Indirect expansion (${!MUTATION_SKIP_VAR}) reads through the config var above rather than
+# hardcoding its value a second time — a rename would otherwise silently desync this guard from what
+# assert_case_turns_red actually sets (code-review high finding on this ticket's own diff).
+if [ -n "${!MUTATION_SKIP_VAR:-}" ]; then
   summary
   exit $?
 fi
@@ -297,7 +295,7 @@ assert_case_turns_red "(f) adopter-generic mutation" \
 g_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$g_copy" "Model rec"
 assert_case_turns_red "(g) needle mutation: GO4 sentence removed" \
-  "(g) needle [GO4 model check]: 'Model rec' present" "KEEL_GO_MD=$g_copy"
+  "(g) needle [GO4 model check]: 'Model rec' matches exactly one line" "KEEL_GO_MD=$g_copy"
 
 # (g) needle — dir #639's four new rule clauses, each shown red by its own mutation (spec §6 A1(g)).
 
@@ -307,26 +305,26 @@ replace_in_line_containing "$go2_copy" "overrides only R1 and R2" \
   "overrides only R1 and R2 — never \`✅\`, standing \`⛔ BLOCKED\`, or R0" \
   "overrides a stop in this step"
 assert_case_turns_red "(g) needle mutation: narrowed override widened back" \
-  "(g) needle [GO2 arm j narrowed override (dir #639: ✅ excluded)]: 'never \`✅\`' present" \
+  "(g) needle [GO2 arm j narrowed override (dir #639: ✅ excluded)]: 'never \`✅\`' matches exactly one line" \
   "KEEL_GO_MD=$go2_copy"
 
 # conform step: drop the sentence naming it the project-agnostic floor.
 conform_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$conform_copy" "project-agnostic floor"
 assert_case_turns_red "(g) needle mutation: conform's project-agnostic-floor sentence removed" \
-  "(g) needle [dir #639: conform step]: 'project-agnostic floor' present" "KEEL_GO_MD=$conform_copy"
+  "(g) needle [dir #639: conform step]: 'project-agnostic floor' matches exactly one line" "KEEL_GO_MD=$conform_copy"
 
 # non-git line: drop the sentence saying the claim is still written without git.
 nongit_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$nongit_copy" "the claim is still written"
 assert_case_turns_red "(g) needle mutation: non-git line removed" \
-  "(g) needle [dir #639: non-git line]: 'the claim is still written' present" "KEEL_GO_MD=$nongit_copy"
+  "(g) needle [dir #639: non-git line]: 'the claim is still written' matches exactly one line" "KEEL_GO_MD=$nongit_copy"
 
 # scope line: drop the sentence limiting out-of-ticket fixes to a report, not a fix.
 scope_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$scope_copy" "do not fix it"
 assert_case_turns_red "(g) needle mutation: scope line removed" \
-  "(g) needle [dir #639: scope line]: 'do not fix it' present" "KEEL_GO_MD=$scope_copy"
+  "(g) needle [dir #639: scope line]: 'do not fix it' matches exactly one line" "KEEL_GO_MD=$scope_copy"
 
 # (g) needle — dir #641 round 2's mandatory + minor clauses, each shown red by its own mutation
 # (spec §5 A1(g); dir #640's absorbed clause included).
@@ -337,7 +335,7 @@ f1_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$f1_copy" "naming a live branch" \
   "A \`⏳\` heading naming a live branch that is not yours →" ""
 assert_case_turns_red "(g) needle mutation: F1 live-branch stop rule removed" \
-  "(g) needle [dir #641 F1: live-branch heading stop]: 'naming a live branch' present" \
+  "(g) needle [dir #641 F1: live-branch heading stop]: 'naming a live branch' matches exactly one line" \
   "KEEL_GO_MD=$f1_copy"
 
 # F2: drop step 5's third, exhaustive bullet (a fresh worktree branch with no commits past the
@@ -345,7 +343,7 @@ assert_case_turns_red "(g) needle mutation: F1 live-branch stop rule removed" \
 f2_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$f2_copy" "no commits past the default"
 assert_case_turns_red "(g) needle mutation: F2 worktree exhaustive rule removed" \
-  "(g) needle [dir #641 F2: worktree exhaustive rule]: 'no commits past the default' present" \
+  "(g) needle [dir #641 F2: worktree exhaustive rule]: 'no commits past the default' matches exactly one line" \
   "KEEL_GO_MD=$f2_copy"
 
 # F4: drop step 3's stop-vs-escape criterion, scoped to its own clause so the surrounding sentence
@@ -354,7 +352,7 @@ f4_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$f4_copy" "changes a resolved fork" \
   "changes a resolved fork or the Acceptance list" "breaks it"
 assert_case_turns_red "(g) needle mutation: F4 stop-vs-escape criterion removed" \
-  "(g) needle [dir #641 F4: stop-vs-escape criterion]: 'changes a resolved fork' present" \
+  "(g) needle [dir #641 F4: stop-vs-escape criterion]: 'changes a resolved fork' matches exactly one line" \
   "KEEL_GO_MD=$f4_copy"
 
 # F5: drop step 9's red-check action (back to step 7 until green), scoped to its own clause.
@@ -362,7 +360,7 @@ f5_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$f5_copy" "back to step 7 until green" \
   "a red check → back to step 7 until green, or" "a red check needs fixing, or"
 assert_case_turns_red "(g) needle mutation: F5 conform red-path action removed" \
-  "(g) needle [dir #641 F5: conform's red path]: 'back to step 7 until green' present" \
+  "(g) needle [dir #641 F5: conform's red path]: 'back to step 7 until green' matches exactly one line" \
   "KEEL_GO_MD=$f5_copy"
 
 # F10: drop the header's non-git ⏳-marker stop rule, scoped to its own clause so the surrounding
@@ -371,7 +369,7 @@ f10_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$f10_copy" "marker not yours" \
   " — except a \`⏳\` marker not yours" ""
 assert_case_turns_red "(g) needle mutation: F10 non-git heading-stop rule removed" \
-  "(g) needle [dir #641 F10: non-git heading stop]: 'marker not yours' present" "KEEL_GO_MD=$f10_copy"
+  "(g) needle [dir #641 F10: non-git heading stop]: 'marker not yours' matches exactly one line" "KEEL_GO_MD=$f10_copy"
 
 # dir #640 (absorbed): drop the "(or the report)" fallback from step 8's escapes line only — step 9
 # has its own separate "(or the report)" on a different line, so this anchor must stay scoped to
@@ -380,7 +378,7 @@ d640_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$d640_copy" "same lines in the PR body (or the report)" \
   " (or the report)" ""
 assert_case_turns_red "(g) needle mutation: dir #640 escapes non-git fallback removed" \
-  "(g) needle [dir #640 (absorbed): escapes non-git fallback]: 'same lines in the PR body (or the report)' present" \
+  "(g) needle [dir #640 (absorbed): escapes non-git fallback]: 'same lines in the PR body (or the report)' matches exactly one line" \
   "KEEL_GO_MD=$d640_copy"
 
 # (g) needle — dir #642 round 3's new CORE/SPEC clauses, each shown red by its own mutation
