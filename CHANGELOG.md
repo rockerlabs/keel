@@ -15,6 +15,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/go` splits into a small gate and a separate implementer guide** (dir #642, round 3 of three
+  fresh-context reviews): `commands/go.md` keeps its ten steps and word budget (≤ 1125), but the "how"
+  three patch rounds had squeezed out of it now lives in NEW `commands/go-guide.md` — a hidden command
+  (`user-invocable: false`, ships through the existing `commands/*.md` install loop, never shows in the
+  `/` menu) that step 7 loads for steps 7–9: numbered actions I1–I8 (reconcile against the spec's Impact
+  map, checks first, build one item at a time, self-check, escapes, a conform table keyed by rule id,
+  the outcome test), a git → no-git map, and an eleven-line final-report form. The `Guide:` line in that
+  form is the read-enforcement: a session that skipped the guide cannot produce it, so the skip shows in
+  every report. `/go` also gains **spec mode**: `/go <path-to-spec.md>` works in a project with no
+  backlog — the spec file's own `Status:` line plays the ticket heading's part for readiness, the
+  in-flight check and the claim (`commands/backlog.md`'s legend gains the `Status:` token); no closing
+  sweep reaches a spec file, so the report asks the operator to set `✅` by hand. `tests/test_go_guide.sh`
+  is new (the guide's own pins, ≤ 1500 words); `tests/test_go_command.sh` gains one needle per changed
+  clause, each proven to match exactly one line (T5), and the `checklist item` needle + its mutation move
+  to the new file along with the text they pin.
+
 ## [0.12.0] — 2026-09-25
 
 **Known issues, disclosed at the cut.** This reads the previous cut's paragraph item by item, the

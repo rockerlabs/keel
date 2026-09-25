@@ -68,6 +68,8 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 | `/backlog` | Shows the backlog. |
 | `/keel-score` | Scores how much Keel shaped a session — derived from cited events, not asserted. |
 
+`go-guide` is not a slash command: it is the implementer guide `/go` loads at its step 7.
+
 ## Extras
 
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard

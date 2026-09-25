@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # test_go_command.sh — dir #636 (rework) + dir #639 (post-review fixes) + dir #641 round 2 (absorbs
-# dir #640): pins the `/go` rework — GO11's word budget, GO12's legend-token contract with
-# commands/backlog.md, the claim/escapes literal formats, the ten step names (dir #639 adds
-# `conform`), the adopter-generic constraint, and one distinguishing needle per new rule clause
-# (leg-1 F-1's class: a rule with no pin can be dropped silently, spec §8 A1(g); dir #639 spec §6
-# extends this to its own four new clauses; dir #641 spec §5 extends it again to F1, F2, F3, F4, F5,
-# F10 and dir #640's absorbed clause). Reads
+# dir #640) + dir #642 round 3 (the gate/guide split): pins the `/go` rework — GO11's word budget,
+# GO12's legend-token contract with commands/backlog.md, the claim/escapes literal formats, the ten
+# step names (dir #639 adds `conform`), the adopter-generic constraint, and one distinguishing needle
+# per new rule clause (leg-1 F-1's class: a rule with no pin can be dropped silently, spec §8 A1(g);
+# dir #639 spec §6 extends this to its own four new clauses; dir #641 spec §5 extends it again to F1,
+# F2, F3, F4, F5, F10 and dir #640's absorbed clause; dir #642 spec §5.4 T2 extends it again to
+# CORE1-CORE8 and SPEC1, and moves the `checklist item` needle + its F3 mutation to
+# tests/test_go_guide.sh, T1(f), since that text now lives in commands/go-guide.md). Reads
 # ${KEEL_GO_MD:-$REPO_ROOT/commands/go.md} and ${KEEL_BACKLOG_MD:-$REPO_ROOT/commands/backlog.md},
 # so every case below is shown red first by re-invoking THIS file against a mutated SCRATCH copy via
 # those two overrides — no tracked file is ever edited to prove a case.
@@ -135,11 +137,24 @@ needle_rules=(
   "dir #639: scope line"
   "dir #641 F1: live-branch heading stop"
   "dir #641 F2: worktree exhaustive rule"
-  "dir #641 F3: no-runnable-surface axis"
   "dir #641 F4: stop-vs-escape criterion"
   "dir #641 F5: conform's red path"
   "dir #641 F10: non-git heading stop"
   "dir #640 (absorbed): escapes non-git fallback"
+  "dir #642 CORE1: guide pointer (step 7)"
+  "dir #642 CORE1: guide's form (step 10)"
+  "dir #642 CORE2: the guide defines an escape"
+  "dir #642 CORE2: the guide's checklist"
+  "dir #642 CORE3: [tag] note heading"
+  "dir #642 CORE4: phrase path in order"
+  "dir #642 CORE5: R3 pre-decision address"
+  "dir #642 CORE6: memory by name"
+  "dir #642 CORE7: conform is id-bound"
+  "dir #642 CORE8: model mismatch direction"
+  "dir #642 SPEC1: argument-hint spec path"
+  "dir #642 SPEC1: spec-path heading of steps 2, 4, 6"
+  "dir #642 SPEC1: claim into Status: line"
+  "dir #642 SPEC1: closed per the guide"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -160,17 +175,45 @@ needle_texts=(
   "do not fix it"
   "naming a live branch"
   "no commits past the default"
-  "checklist item"
   "changes a resolved fork"
   "back to step 7 until green"
   "marker not yours"
   "same lines in the PR body (or the report)"
+  "the \`go-guide\` skill"
+  "guide's form"
+  "the guide defines an escape"
+  "the guide's checklist"
+  "\`[tag]\` → \`## Notes\`"
+  "continue with that id"
+  "its body names"
+  "Read only the memory files"
+  "by its id"
+  "cannot raise its own"
+  "spec path"
+  "the heading of steps 2, 4 and 6"
+  "spec mode: its"
+  "closed per the guide"
 )
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
   rule="${needle_rules[$i]}"
   needle="${needle_texts[$i]}"
-  pin "(g) needle [$rule]: '$needle' present" "$go_md" "$needle" "missing needle for $rule in $go_md"
+  case "$rule" in
+    "dir #642"*)
+      # T5 (spec §5.4): a NEW clause's needle must match exactly one line, not merely be present —
+      # asserted with grep -cF, the same rule tests/test_go_guide.sh's T1(f) applies to the guide.
+      count="$(grep -cF -- "$needle" "$go_md")"
+      if [ "$count" -eq 1 ]; then
+        pass "(g) needle [$rule]: '$needle' matches exactly one line"
+      else
+        fail "(g) needle [$rule]: '$needle' matches exactly one line" \
+          "found $count matching lines in $go_md (want exactly 1, T5)"
+      fi
+      ;;
+    *)
+      pin "(g) needle [$rule]: '$needle' present" "$go_md" "$needle" "missing needle for $rule in $go_md"
+      ;;
+  esac
   i=$((i + 1))
 done
 
@@ -264,6 +307,16 @@ insert_before_line_containing "$b2_copy" "<!-- go-contract:end -->" "R5 — a to
 assert_case_turns_red "(b) contract mutation: unhandled token added to backlog.md fence" \
   "(b) contract: every backlog.md legend token appears in go.md" "KEEL_BACKLOG_MD=$b2_copy"
 
+# (b) contract, dir #642 SPEC4 — the `Status:` token now sits in backlog.md's fence too, so go.md must
+# carry it. Deleting only ONE of go.md's two `Status:` lines (step 1's spec-path line, step 6's
+# spec-mode line) leaves the token present and this case wrongly stays green — both must go for the
+# mutation to actually remove the token (spec A2).
+status_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$status_copy" "the heading of steps 2, 4 and 6"
+delete_line_containing "$status_copy" "spec mode: its \`Status:\` line"
+assert_case_turns_red "(b) contract mutation: every Status: line removed from go.md" \
+  "(b) contract: every backlog.md legend token appears in go.md" "KEEL_GO_MD=$status_copy"
+
 # (c) claim format — `branch` -> `br`, scoped to the claim-marker line only.
 c_copy="$(scratch_copy "$go_md" go.md)"
 replace_in_line_containing "$c_copy" "⏳ IN FLIGHT (YYYY-MM-DD," "branch" "br"
@@ -343,13 +396,6 @@ assert_case_turns_red "(g) needle mutation: F2 worktree exhaustive rule removed"
   "(g) needle [dir #641 F2: worktree exhaustive rule]: 'no commits past the default' present" \
   "KEEL_GO_MD=$f2_copy"
 
-# F3: drop step 7's "checklist item" word, collapsing the no-runnable-surface axis back to a
-# checklist with no item to record evidence against.
-f3_copy="$(scratch_copy "$go_md" go.md)"
-replace_in_line_containing "$f3_copy" "checklist item" "checklist item" "checklist"
-assert_case_turns_red "(g) needle mutation: F3 checklist-item wording removed" \
-  "(g) needle [dir #641 F3: no-runnable-surface axis]: 'checklist item' present" "KEEL_GO_MD=$f3_copy"
-
 # F4: drop step 3's stop-vs-escape criterion, scoped to its own clause so the surrounding sentence
 # (and the step label two lines up) survive.
 f4_copy="$(scratch_copy "$go_md" go.md)"
@@ -384,6 +430,111 @@ replace_in_line_containing "$d640_copy" "same lines in the PR body (or the repor
 assert_case_turns_red "(g) needle mutation: dir #640 escapes non-git fallback removed" \
   "(g) needle [dir #640 (absorbed): escapes non-git fallback]: 'same lines in the PR body (or the report)' present" \
   "KEEL_GO_MD=$d640_copy"
+
+# (g) needle — dir #642 round 3's new CORE/SPEC clauses, each shown red by its own mutation
+# (spec §5.4 T2/T5).
+
+# CORE1: step 7's guide pointer.
+core1a_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core1a_copy" "First load the implementer guide" \
+  "the \`go-guide\` skill" "the guide"
+assert_case_turns_red "(g) needle mutation: CORE1 guide pointer (step 7) removed" \
+  "(g) needle [dir #642 CORE1: guide pointer (step 7)]: 'the \`go-guide\` skill' matches exactly one line" \
+  "KEEL_GO_MD=$core1a_copy"
+
+# CORE1: step 10's guide's-form pointer.
+core1b_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core1b_copy" "in the guide's form." "guide's form" "reported form"
+assert_case_turns_red "(g) needle mutation: CORE1 guide's-form pointer (step 10) removed" \
+  "(g) needle [dir #642 CORE1: guide's form (step 10)]: 'guide's form' matches exactly one line" \
+  "KEEL_GO_MD=$core1b_copy"
+
+# CORE2: step 8 names the guide as the escape definition's owner.
+core2a_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core2a_copy" "the guide defines an escape" \
+  "the guide defines an escape" "the guide names one"
+assert_case_turns_red "(g) needle mutation: CORE2 guide-defines-an-escape pointer removed" \
+  "(g) needle [dir #642 CORE2: the guide defines an escape]: 'the guide defines an escape' matches exactly one line" \
+  "KEEL_GO_MD=$core2a_copy"
+
+# CORE2: step 7's no-runnable-surface clause now points at the guide's checklist.
+core2b_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core2b_copy" "no runnable surface →" "the guide's checklist" "a checklist"
+assert_case_turns_red "(g) needle mutation: CORE2 guide's-checklist pointer removed" \
+  "(g) needle [dir #642 CORE2: the guide's checklist]: 'the guide's checklist' matches exactly one line" \
+  "KEEL_GO_MD=$core2b_copy"
+
+# CORE3: `[tag]` now points at `## Notes`, not the bare word.
+core3_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core3_copy" "hand." "\`[tag]\` → \`## Notes\`" "[tag] noted separately"
+assert_case_turns_red "(g) needle mutation: CORE3 [tag] -> ## Notes wording removed" \
+  "(g) needle [dir #642 CORE3: [tag] note heading]: '\`[tag]\` → \`## Notes\`' matches exactly one line" \
+  "KEEL_GO_MD=$core3_copy"
+
+# CORE4: the phrase path's ticket branch, in order.
+core4_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core4_copy" "one keyword grep" "continue with that id" "proceed with it"
+assert_case_turns_red "(g) needle mutation: CORE4 phrase-path ticket branch removed" \
+  "(g) needle [dir #642 CORE4: phrase path in order]: 'continue with that id' matches exactly one line" \
+  "KEEL_GO_MD=$core4_copy"
+
+# CORE5: the R3 pre-decision's address (its body, not "one").
+core5_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core5_copy" "R3 → proceed" "its body names" "described"
+assert_case_turns_red "(g) needle mutation: CORE5 R3 pre-decision address removed" \
+  "(g) needle [dir #642 CORE5: R3 pre-decision address]: 'its body names' matches exactly one line" \
+  "KEEL_GO_MD=$core5_copy"
+
+# CORE6: memory by name, not a skim.
+core6_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core6_copy" "gitignored spec" "Read only the memory files" \
+  "Skim memory for files"
+assert_case_turns_red "(g) needle mutation: CORE6 memory-by-name wording removed" \
+  "(g) needle [dir #642 CORE6: memory by name]: 'Read only the memory files' matches exactly one line" \
+  "KEEL_GO_MD=$core6_copy"
+
+# CORE7: conform walks by rule id.
+core7_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core7_copy" "Walk every spec rule" "by its id" "thoroughly"
+assert_case_turns_red "(g) needle mutation: CORE7 conform-by-id wording removed" \
+  "(g) needle [dir #642 CORE7: conform is id-bound]: 'by its id' matches exactly one line" \
+  "KEEL_GO_MD=$core7_copy"
+
+# CORE8: a model mismatch names its own fix, not a bare "tell the operator".
+core8_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$core8_copy" "relaunch —" "cannot raise its own" "may not increase it"
+assert_case_turns_red "(g) needle mutation: CORE8 model-mismatch-direction wording removed" \
+  "(g) needle [dir #642 CORE8: model mismatch direction]: 'cannot raise its own' matches exactly one line" \
+  "KEEL_GO_MD=$core8_copy"
+
+# SPEC1: the argument-hint now offers a spec path.
+spec1a_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$spec1a_copy" "argument-hint:" "spec path" "path"
+assert_case_turns_red "(g) needle mutation: SPEC1 argument-hint spec-path option removed" \
+  "(g) needle [dir #642 SPEC1: argument-hint spec path]: 'spec path' matches exactly one line" \
+  "KEEL_GO_MD=$spec1a_copy"
+
+# SPEC1: a spec-path argument's file plays the heading of steps 2, 4 and 6.
+spec1b_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$spec1b_copy" "the file is the ticket" \
+  "the heading of steps 2, 4 and 6" "used throughout"
+assert_case_turns_red "(g) needle mutation: SPEC1 spec-path heading-of-steps rule removed" \
+  "(g) needle [dir #642 SPEC1: spec-path heading of steps 2, 4, 6]: 'the heading of steps 2, 4 and 6' matches exactly one line" \
+  "KEEL_GO_MD=$spec1b_copy"
+
+# SPEC1: step 6's claim goes onto the spec's Status: line in spec mode.
+spec1c_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$spec1c_copy" "added if absent" "spec mode: its" "in spec mode,"
+assert_case_turns_red "(g) needle mutation: SPEC1 claim-into-Status-line rule removed" \
+  "(g) needle [dir #642 SPEC1: claim into Status: line]: 'spec mode: its' matches exactly one line" \
+  "KEEL_GO_MD=$spec1c_copy"
+
+# SPEC1: spec mode closes per the guide, not the backlog sweep.
+spec1d_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$spec1d_copy" "added if absent" "closed per the guide" "wrapped up by hand"
+assert_case_turns_red "(g) needle mutation: SPEC1 closed-per-the-guide rule removed" \
+  "(g) needle [dir #642 SPEC1: closed per the guide]: 'closed per the guide' matches exactly one line" \
+  "KEEL_GO_MD=$spec1d_copy"
 
 # (h) the three previously-unpinned rules, each dropped through its own KEEL_GO_MD scratch copy.
 h1_copy="$(scratch_copy "$go_md" go.md)"
