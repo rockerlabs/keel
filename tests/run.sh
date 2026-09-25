@@ -39,20 +39,89 @@ fi
 guard_repo_root="$(cd "$here/.." && pwd)"
 guard_before_branch="" guard_before_head="" guard_before_status=""
 guard_before_reflog=""
-guard_before_impact_store="" guard_before_read_trace_store=""
+guard_before_config=""
 guard_ref_scope_available=0
+
+# dir #630 S4 tripwire, widened (T1, delta-audit 0.11.0-0.12.0 fix round): the original tripwire
+# snapshotted exactly two named keys (keel.impactStore / keel.readTraceStore), so any OTHER config
+# write a fixture leaked into the real checkout — a stray `git config --local --add` outside those
+# two keys — went unreported (live-verified: `git -C "$guard_repo_root" config --local --add
+# zz.probeKey x` exits 0 and trips nothing under the old two-key snapshot). Snapshot the WHOLE local
+# config instead and diff it before/after. Every per-branch key (`branch.<name>.<key>` — `.merge` and
+# `.remote` are the two that actually churn, but this also covers `.description`, `.pushRemote`,
+# `.rebase`, `.vscode-merge-base`, any other subkey under a `[branch "<name>"]` section) is EXCLUDED,
+# on evidence, not by default: local config is shared by every worktree of this repo, and ordinary
+# concurrent work outside this suite writes these constantly — `git push -u` / `branch
+# --set-upstream-to`. Measured live on this checkout: 128 of 139 local config keys are exactly this
+# per-branch tracking shape (`git config --local --name-only --list | grep '^branch\.' | sed -E
+# 's/.*\.([^.]+)$/\1/' | sort | uniq -c` → all `merge`/`remote`), and this canary already tripped on
+# exactly that noise 8x this release. The exclusion is scoped to that shape specifically — three or
+# more dot-separated segments under `branch.` — NOT the whole `branch.*` namespace: a bare top-level
+# `[branch]` setting (`branch.autoSetupMerge`, `branch.sort` — real git-config(1) keys, unrelated to
+# per-branch tracking) still trips, since `^branch\.` alone would have silently swallowed those too
+# (found live by this ticket's own `/code-review high` pass). Everything else this suite watches
+# (core.*, extensions.*, remote.*, keel.*, …) changes rarely enough in ordinary operation that a
+# change there still deserves the loud trip below — this is the one disclosed, named residual, not a
+# silent blanket allowance for every namespace.
+guard_config_snapshot() {
+  git -C "$1" config --local --list 2>/dev/null | grep -vE '^branch\.[^.=]+\.[^.=]+=' | LC_ALL=C sort || true
+}
+
+# guard_redact_diff_values — the widened snapshot above compares full `key=value` lines (a value-only
+# change on an existing key must still trip), but a CHANGED VALUE is exactly what must never reach the
+# trip report's own printed output: some config namespaces this snapshot now also watches CAN
+# legitimately carry a credential (`actions/checkout` persists one into `http.<url>.extraHeader` by
+# default; a `remote.*.url` sometimes embeds a token) — manager-flagged, dir #630 S4/T1 (delta-audit
+# 0.11.0-0.12.0 fix round), the old two-key snapshot never had this exposure since it only ever
+# watched two path-like keel.* keys. Does NOT key off `diff`'s own line-prefix convention (an earlier
+# version of this filter matched a literal `< `/`> ` two-byte prefix and shipped believing that was
+# universal — found live by this ticket's own /code-review high pass, run against a real alpine:3.21
+# container: busybox `diff` defaults to UNIFIED format with no such prefix at all, `-`/`+`/`---`/`+++`/
+# `@@`, so that version's redaction silently no-opped on the one CI leg this exists to protect,
+# printing the raw credential straight through). Instead: any line containing `=` gets everything from
+# its FIRST `=` onward cut, keeping only what precedes it (a key name, plus whatever diff's own
+# leading marker character(s) already are — `<`/`>`/`-`/`+`, unaffected either way); a line with no `=`
+# at all (a hunk header, a `---`/`+++`/`@@` divider) passes through untouched. This works identically
+# under GNU/BSD diff's normal format and busybox's unified format, verified against both. Known,
+# accepted residual (disclosed, not silently accepted): a MULTI-LINE config value's own continuation
+# line carries no `key=` prefix of its own, so it isn't cut by this filter — git-config values with an
+# embedded literal newline are exceedingly rare in practice (neither of this fix's two motivating
+# shapes, `http.*.extraHeader` or an inline-token URL, is ever multi-line) and are left as a stated gap
+# rather than a stateful multi-line-aware parser this fix's scope doesn't call for. Pure bash (no
+# `sed -E`/`-r`): a GNU-only sed flag is the exact live portability trap category this replaces
+# (CLAUDE.md's Linux-leg traps), and this filter needs none.
+guard_redact_diff_values() {
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      *=*) printf '%s\n' "${line%%=*}" ;;
+      *)   printf '%s\n' "$line" ;;
+    esac
+  done
+}
 
 if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
   guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
   # dir #630 S4: this suite must never write the real checkout's own provenance record (multi-valued
-  # keel.impactStore / keel.readTraceStore in ITS local git config) — every B-test that exercises S4
-  # writes that key only inside a $SANDBOX-cloned repo (new_repo()), never against $guard_repo_root
-  # itself. `--get-all` returns rc 1 (no value) or rc 128 (not a repo); both are swallowed by `|| true`,
-  # same as the rest of this canary. Captured here, compared after the run below.
-  guard_before_impact_store="$(git -C "$guard_repo_root" config --local --get-all keel.impactStore 2>/dev/null || true)"
-  guard_before_read_trace_store="$(git -C "$guard_repo_root" config --local --get-all keel.readTraceStore 2>/dev/null || true)"
+  # keel.impactStore / keel.readTraceStore, or any other key, in ITS local git config) — every B-test
+  # that exercises S4 writes that key only inside a $SANDBOX-cloned repo (new_repo()), never against
+  # $guard_repo_root itself. `--list` returns rc 1 (no local config) or rc 128 (not a repo); both are
+  # swallowed by `|| true`, same as the rest of this canary. Captured here, compared after the run
+  # below. The old two named-key snapshot is a subset of this one, so keel.impactStore /
+  # keel.readTraceStore still trip exactly as before — deliberately not excluded, unlike branch.*
+  # above: this is the exact leak class dir #630 S4 exists to catch (the #466 incident wrote
+  # keel.readTraceStore into the real checkout). Known, accepted residual (manager-flagged): a value
+  # found here is AMBIGUOUS, not necessarily a leak — dir #630 S4/S13 record provenance in the
+  # project's own local config by design, so when an operator works in the keel checkout itself, the
+  # read-trace hook / keel-impact's backfill legitimately write these same two keys into it on their
+  # first-ever write, and that can land while an unrelated suite run happens to be in flight. This
+  # canary deliberately errs toward reporting anyway — a missed leak (#466) is the expensive failure
+  # mode, a one-time false trip is cheap to reconcile by hand, which the two-way attribution it prints
+  # either way ("either a test escaped its sandbox, or something outside the suite changed this
+  # checkout during the run") already covers correctly for this case too.
+  guard_before_config="$(guard_config_snapshot "$guard_repo_root")"
 
   # dir #333: the compare above cannot see the two channels dir #320's own leak was actually found
   # through — a stray BRANCH left in the real repo, or a REFLOG entry appended without moving HEAD.
@@ -244,8 +313,7 @@ if [ -n "$guard_before_head" ]; then
   guard_after_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
   guard_after_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
   guard_after_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
-  guard_after_impact_store="$(git -C "$guard_repo_root" config --local --get-all keel.impactStore 2>/dev/null || true)"
-  guard_after_read_trace_store="$(git -C "$guard_repo_root" config --local --get-all keel.readTraceStore 2>/dev/null || true)"
+  guard_after_config="$(guard_config_snapshot "$guard_repo_root")"
   guard_before_refs_unowned="" guard_after_refs_unowned="" guard_after_reflog=""
   if [ "$guard_ref_scope_available" = 1 ]; then
     guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
@@ -263,8 +331,7 @@ if [ -n "$guard_before_head" ]; then
       || [ "$guard_after_status" != "$guard_before_status" ] \
       || [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ] \
       || [ "$guard_after_reflog" != "$guard_before_reflog" ] \
-      || [ "$guard_after_impact_store" != "$guard_before_impact_store" ] \
-      || [ "$guard_after_read_trace_store" != "$guard_before_read_trace_store" ]; then
+      || [ "$guard_after_config" != "$guard_before_config" ]; then
     printf '\n!!! TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318) !!!\n'
     printf 'the real checkout this suite ran from changed during the run:\n'
     printf '  before: branch=%s head=%s\n' "$guard_before_branch" "$guard_before_head"
@@ -285,6 +352,16 @@ if [ -n "$guard_before_head" ]; then
     fi
     if [ "$guard_after_status" != "$guard_before_status" ]; then
       printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
+      # T3 (delta-audit 0.11.0-0.12.0 fix round, S2 lead L3 / manager lead 3): the HEAD-moved shape
+      # above already gets a dedicated "possibly your own commit" hint; the status-only shape (HEAD
+      # unmoved, felt live by a worker whose own uncommitted edit landed on this checkout while its
+      # own background ./tests/run.sh was still alive) had none — just the generic line above. Mirror
+      # the HEAD-moved hint here without downgrading the trip: still "do not push" either way.
+      if [ "$guard_after_head" = "$guard_before_head" ]; then
+        printf '  HEAD did not move — possibly your own uncommitted edit (or a concurrent session'"'"'s) to\n'
+        printf '  this checkout while this same ./tests/run.sh was still running in the background (never\n'
+        printf '  edit a checkout while its own suite run is still alive). Reconcile by hand either way.\n'
+      fi
     fi
     if [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ]; then
       printf '  an unowned branch (in refs/heads, checked out by no worktree) appeared, moved, or\n'
@@ -296,11 +373,14 @@ if [ -n "$guard_before_head" ]; then
       printf '  HEAD reflog entry count changed during the run (%s -> %s) (dir #333)\n' \
         "$guard_before_reflog" "$guard_after_reflog"
     fi
-    if [ "$guard_after_impact_store" != "$guard_before_impact_store" ] || [ "$guard_after_read_trace_store" != "$guard_before_read_trace_store" ]; then
-      printf '  this checkout'"'"'s own git config gained/lost a keel.impactStore or keel.readTraceStore value during the run (dir #630 S4 tripwire):\n'
-      printf '    keel.impactStore:    before=[%s] after=[%s]\n' "$guard_before_impact_store" "$guard_after_impact_store"
-      printf '    keel.readTraceStore: before=[%s] after=[%s]\n' "$guard_before_read_trace_store" "$guard_after_read_trace_store"
-      printf '  a test wrote the real repo'"'"'s own provenance record instead of a $SANDBOX-cloned one — fix the fixture, never disable this check.\n'
+    if [ "$guard_after_config" != "$guard_before_config" ]; then
+      printf '  this checkout'"'"'s own local git config changed during the run (dir #630 S4 tripwire,\n'
+      printf '  widened to the whole local config — per-branch tracking keys excluded, see tests/run.sh\n'
+      printf '  comment above). Key(s) that changed (values withheld — see guard_redact_diff_values'"'"'s\n'
+      printf '  own comment: some namespaces this snapshot now also watches can legitimately carry a\n'
+      printf '  credential, e.g. actions/checkout'"'"'s own http.*.extraHeader):\n'
+      printf '%s\n' "$(diff <(printf '%s\n' "$guard_before_config") <(printf '%s\n' "$guard_after_config") | guard_redact_diff_values)"
+      printf '  a test wrote to the real repo'"'"'s own local git config instead of a $SANDBOX-cloned one — fix the fixture, never disable this check.\n'
     fi
     # dir #318: this used to name only "a fixture helper" as the cause. tests/lib.sh's guard now
     # refuses every ref write a test makes against this checkout, so an unowned-branch change can no

@@ -303,6 +303,22 @@ check_contains "symlinked run.sh -> the ref-scope NOTE names dir #333" "$OUT" "d
 check_contains "symlinked run.sh -> the ref-scope NOTE says ref-guard.sh was not found" "$OUT" "ref-guard.sh not found"
 check_contains "symlinked run.sh -> the fixture still ran despite the NOTE" "$OUT" "=== test_a.sh ==="
 
+# new_run_sh_fixture — a throwaway REAL git repo (new_repo, unlike mkfakedir's synthetic dir) with a
+# copy of run.sh under tests/ and a stub lib.sh, for the corruption-canary fixtures below (T8, B19,
+# T1, T3) that all drive run.sh against a real checkout of their own. Promoted here at its second use
+# (this file's own "second use = promote" convention, tests/lib.sh's pin() comment) — T8 below was
+# the first, B19/T1/T3 make four more (found by this ticket's own /code-review high pass: T8 was
+# initially left hand-rolling the same bootstrap the helper now encapsulates). Prints its path, like
+# new_repo/mkfakedir.
+new_run_sh_fixture() {
+  local d; d="$(new_repo)"
+  git -C "$d" commit -q --allow-empty -m init
+  mkdir -p "$d/tests"
+  cp "$runner" "$d/tests/run.sh"
+  : > "$d/tests/lib.sh"
+  printf '%s' "$d"
+}
+
 # --- dir #318 T8: a fixture test file that leaks a bare `git branch` against its own watched repo
 # trips the canary end-to-end (unlike the guard itself, which this file cannot exercise against the
 # REAL checkout without corrupting the very thing it protects — this fixture repo is disposable).
@@ -310,11 +326,8 @@ check_contains "symlinked run.sh -> the fixture still ran despite the NOTE" "$OU
 # detection half, not tests/lib.sh's prevention half), but it DOES carry a copy of
 # tools/lib/ref-guard.sh, so guard_ref_scope_available stays 1 and the unowned-refs block actually
 # runs (E20: without it, that block is skipped entirely).
-leakroot="$(new_repo)"
-git -C "$leakroot" commit -q --allow-empty -m init
-mkdir -p "$leakroot/tests" "$leakroot/tools/lib"
-cp "$runner" "$leakroot/tests/run.sh"
-: > "$leakroot/tests/lib.sh"
+leakroot="$(new_run_sh_fixture)"
+mkdir -p "$leakroot/tools/lib"
 cp "$REPO_ROOT/tools/lib/ref-guard.sh" "$leakroot/tools/lib/ref-guard.sh"
 printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." branch leak\nexit 0\n' > "$leakroot/tests/test_leak.sh"
 run bash "$leakroot/tests/run.sh"
@@ -334,17 +347,15 @@ git -C "$leakroot" branch -D leak >/dev/null 2>&1 || true
 # keel.impactStore/keel.readTraceStore record trips the canary, naming the new value; an unchanged
 # run passes. Needs no tools/lib/ref-guard.sh copy (unlike the T8 fixture above): this check runs
 # whenever guard_repo_root is a git repo at all, independent of the ref-scope half. ------------------
-b19root="$(new_repo)"
-git -C "$b19root" commit -q --allow-empty -m init
-mkdir -p "$b19root/tests"
-cp "$runner" "$b19root/tests/run.sh"
-: > "$b19root/tests/lib.sh"
+b19root="$(new_run_sh_fixture)"
 printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local --add keel.impactStore /fake/lost-entry\nexit 0\n' \
   > "$b19root/tests/test_b19_leak.sh"
 run bash "$b19root/tests/run.sh"
 check_status "B19: a test writing the real repo's keel.impactStore trips the canary -> exit 1" 1 "$STATUS"
 check_contains "B19: the trip names dir #630's S4 tripwire" "$OUT" "dir #630 S4 tripwire"
-check_contains "B19: the trip names the new value" "$OUT" "/fake/lost-entry"
+check_contains "B19: the trip names the changed key" "$OUT" "keel.impactstore"
+check_absent "B19: the trip withholds the value (found live by /code-review high: a credential-shaped value elsewhere in local config must never be echoed)" \
+  "$OUT" "/fake/lost-entry"
 git -C "$b19root" config --local --unset-all keel.impactStore >/dev/null 2>&1 || true
 
 # an UNCHANGED run (no test file mutates the config) passes
@@ -353,5 +364,76 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$b19root/tests/test_b19_clean.sh"
 run bash "$b19root/tests/run.sh"
 check_status "B19: an unchanged run passes" 0 "$STATUS"
 check_contains "B19: an unchanged run reports ALL TEST FILES PASSED" "$OUT" "ALL TEST FILES PASSED"
+
+# --- T1 (delta-audit 0.11.0-0.12.0 fix round): the tripwire now diffs the WHOLE local config, not
+# just the two keel.impactStore/keel.readTraceStore keys above — a fixture that writes an ARBITRARY
+# key the old snapshot never watched (zz.probe) still trips, and the trip names the leaked key.
+# Mutation proof (run manually, not committed): temporarily restoring the old two-named-key snapshot
+# in tests/run.sh turns this assertion RED; restoring the widened snapshot turns it green again. -----
+zz_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local --add zz.probe leaked-value\nexit 0\n' \
+  > "$zz_root/tests/test_zz_leak.sh"
+run bash "$zz_root/tests/run.sh"
+check_status "T1: a test writing an arbitrary zz.probe key trips the canary -> exit 1" 1 "$STATUS"
+check_contains "T1: the trip still names dir #630's S4 tripwire" "$OUT" "dir #630 S4 tripwire"
+check_contains "T1: the trip names the leaked key, not just the two old named keys" "$OUT" "zz.probe"
+check_absent "T1: the trip withholds the leaked key's value" "$OUT" "leaked-value"
+
+# --- T1: a key in the EXCLUDED branch.* namespace is NOT reported as a leak — pins the one disclosed
+# residual named in tests/run.sh's own comment (ordinary concurrent activity outside this suite, e.g.
+# a sibling session's `git push -u` / `branch --set-upstream-to`, writes exactly this shape). --------
+br_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local branch.some-branch.remote origin\nexit 0\n' \
+  > "$br_root/tests/test_br_noise.sh"
+run bash "$br_root/tests/run.sh"
+check_status "T1: an excluded branch.* write does NOT trip the canary -> exit 0" 0 "$STATUS"
+check_contains "T1: excluded branch.* write still reports ALL TEST FILES PASSED" "$OUT" "ALL TEST FILES PASSED"
+check_absent "T1: excluded branch.* write is not named as a corruption trip" "$OUT" \
+  "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED"
+
+# --- T1 (found live by this ticket's own /code-review high pass): a BARE top-level branch.* setting
+# (no per-branch subsection — a real git-config(1) key, unrelated to the per-branch tracking noise the
+# exclusion above is scoped to) still trips. Pins that the exclusion regex is scoped to
+# branch.<name>.<subkey>, not the whole branch.* namespace. Mutation proof (run manually, not
+# committed): widening the regex back to a bare `grep -v '^branch\.'` turns this assertion RED.
+bratop_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local branch.autoSetupMerge always\nexit 0\n' \
+  > "$bratop_root/tests/test_bratop_leak.sh"
+run bash "$bratop_root/tests/run.sh"
+check_status "T1: a bare top-level branch.* setting still trips the canary -> exit 1" 1 "$STATUS"
+check_contains "T1: the trip names the bare branch.* key" "$OUT" "branch.autosetupmerge"
+check_absent "T1: the trip withholds the bare branch.* key's value" "$OUT" "always"
+
+# --- T1 (manager-flagged, delta-audit 0.11.0-0.12.0 fix round): a changed key whose VALUE is
+# credential-shaped (a token embedded in a URL, the exact actions/checkout http.*.extraHeader shape)
+# never has that value echoed into the trip output — only the key name. The snapshot itself still
+# compares full key=value lines (a value-only change on an existing key must still trip); only the
+# REPORT strips it, via guard_redact_diff_values(). Mutation proof (run manually, not committed):
+# printing the raw `diff` output again (skipping the `| guard_redact_diff_values` filter) turns the
+# second check below RED — the credential value reappears in $OUT.
+cred_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local http.https://example.invalid/.extraheader "AUTHORIZATION: basic dG90YWxseS1hLXJlYWwtdG9rZW4="\nexit 0\n' \
+  > "$cred_root/tests/test_cred_leak.sh"
+run bash "$cred_root/tests/run.sh"
+check_status "T1: a credential-shaped config value trips the canary -> exit 1" 1 "$STATUS"
+check_contains "T1: the trip names the credential-bearing key" "$OUT" "extraheader"
+check_absent "T1: the trip withholds the credential value" "$OUT" "dG90YWxseS1hLXJlYWwtdG9rZW4="
+
+# --- T3 (delta-audit 0.11.0-0.12.0 fix round, S2 lead L3 / manager lead 3): a status-only change
+# (an untracked file write, no commit) with HEAD unmoved now gets its own hint alongside the existing
+# generic "status also changed" line, mirroring the HEAD-moved shape's dedicated hint above. Mutation
+# proof (run manually, not committed): deleting the new hint block in tests/run.sh turns the third
+# check below RED; restoring it turns it green again. ------------------------------------------------
+st_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\necho dirty > "$(dirname "$0")/../untracked-leak.txt"\nexit 0\n' \
+  > "$st_root/tests/test_st_leak.sh"
+run bash "$st_root/tests/run.sh"
+check_status "T3: an untracked-file leak (status-only, HEAD unmoved) trips the canary -> exit 1" 1 "$STATUS"
+check_contains "T3: the existing generic status-changed line still prints" "$OUT" \
+  "working-tree/index status also changed"
+check_contains "T3: the new HEAD-unmoved hint names a concurrent own edit" "$OUT" \
+  "possibly your own uncommitted edit (or a concurrent session's) to"
+check_contains "T3: the hint says never edit during a live run and to reconcile by hand" "$OUT" \
+  "edit a checkout while its own suite run is still alive). Reconcile by hand either way."
 
 summary
