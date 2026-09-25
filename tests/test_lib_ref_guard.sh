@@ -18,15 +18,70 @@
 # the exact file G2's summary() reads, and its content alone cannot say which armed repo a given line
 # came from (every fixture below points its guard.cfg at the same $SANDBOX/ref-guard/hooks). What
 # actually proves this file leaked nothing into the real checkout is NOT log inspection — it's
-# REPO_ROOT's own refs, snapshotted below and compared again at the end. Only once that direct
-# ref-state proof holds is the log cleared, right before summary(), so this file's own intentional
-# coverage of the guard doesn't fail itself via the exact mechanism it's testing.
+# REPO_ROOT's own refs/heads branches, snapshotted below (ownership-scoped, S-fix-1) and compared
+# again at the end. Only once that direct ref-state proof holds is the log cleared, right before
+# summary(), so this file's own intentional coverage of the guard doesn't fail itself via the exact
+# mechanism it's testing.
+#
+# S-fix-1 (delta-audit 0.11.0-0.12.0 fix round F4): the ORIGINAL self-check compared REPO_ROOT's
+# WHOLE `git for-each-ref` before/after, which trips on any ordinary concurrent activity in a SIBLING
+# worktree of this same checkout — a branch create, a commit, a fetch moving refs/remotes — a false
+# leak alarm with nothing actually leaked (live-reproduced twice; felt once in a full suite run,
+# 2026-09-25). Now scoped to refs/heads only, ownership-filtered via tools/lib/ref-guard.sh's
+# guard_owned_branches/guard_filter_unowned — the SAME shape tests/run.sh's own dir #333 canary
+# already uses for exactly this reason (T14 below pins this file's own use of that shape via a
+# fixture repo, never REPO_ROOT itself). Two namespaces the old whole-namespace compare also watched
+# are dropped here, not silently: refs/remotes moves on every `git fetch` (CLAUDE.md instructs a
+# `git fetch --prune` before every commit, in every worktree — the single noisiest concurrent channel
+# of all); refs/tags can also move on a plain `git fetch` (tag-following is git's default) even
+# without an explicit tag push. Any other namespace some other tool on this machine happens to write
+# into the shared common dir (e.g. a `refs/codex/*` checkpoint ref, observed live on this checkout) is
+# dropped for the same reason — it is not this file's own fixtures writing there, and ref_guard_arm
+# (armed on REPO_ROOT for this whole process, below) already refuses every git-level ref write this
+# file's own fixtures could make against REPO_ROOT regardless of which namespace it targets. This
+# self-check is redundant proof-of-no-leak for the branch channel specifically (dir #320's own
+# incident shape), not the only thing standing between a fixture bug here and the real checkout.
+#
+# NAMED RESIDUAL (found by this ticket's own /code-review high pass): "owned" per
+# guard_owned_branches includes REPO_ROOT's OWN currently-checked-out branch — REPO_ROOT is itself
+# one of the worktrees `git worktree list --porcelain` enumerates — so a hypothetical write that
+# moved REPO_ROOT's own branch tip (rather than creating a new, unowned stray branch — dir #320's
+# actual incident shape) would now be excluded from this compare too, same as a sibling's ordinary
+# churn. Accepted, not silently: run as part of the real `./tests/run.sh` suite (this file's only
+# real invocation context — it is not part of the claude-kb adopter's two-file symlink set), that
+# exact scenario is still caught independently, by tests/run.sh's OWN separate before/after
+# `branch --show-current`/`rev-parse HEAD` compare (dir #318), which this file's self-check never
+# duplicated even before S-fix-1. The gap is real only for this one file run standalone
+# (`bash tests/test_lib_ref_guard.sh`, outside `./tests/run.sh`) — a real development workflow, so
+# named here rather than dismissed.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 lib_src="$TESTS_DIR/lib.sh"
 check_file "tests/lib.sh exists" "$lib_src"
-repo_root_refs_before_self="$(git -C "$REPO_ROOT" for-each-ref)"
+
+guard_lib="$REPO_ROOT/tools/lib/ref-guard.sh"
+check_file "tools/lib/ref-guard.sh exists" "$guard_lib"
+# shellcheck source=tools/lib/ref-guard.sh
+. "$guard_lib" || { echo "tools/lib/ref-guard.sh failed to source — refusing (S-fix-1's self-check needs its ownership-scoping helpers, and a silent 'command not found' here would make the self-check vacuously pass)" >&2; exit 1; }
+
+# repo_root_self_check_unowned OWNED_BEFORE OWNED_AFTER REFS_SNAPSHOT — the ownership-scoped filter
+# this file's own self-check (at the bottom) and T14's fixture-driven proof (below) both apply, via
+# the SAME seam: swapping this body from guard_union+guard_filter_unowned back to a bare passthrough
+# (`printf '%s\n' "$3"` — the pre-S-fix-1 whole-namespace-equivalent shape for the refs/heads channel)
+# is exactly the mutation T14(a)'s sibling-activity assertion exists to catch red. A named local
+# wrapper, not a direct guard_union/guard_filter_unowned call at each site, so that one mutation
+# catches every caller without also affecting tools/lib/ref-guard.sh's own coverage in
+# test_ref_guard.sh. Takes OWNED_BEFORE/OWNED_AFTER rather than a pre-unioned single argument, so a
+# caller needs no separate union variable of its own — the union (a sibling worktree's branch may
+# start or stop being owned mid-window either way) is computed here, once per call, from whichever
+# REFS_SNAPSHOT (before or after) that call is filtering.
+repo_root_self_check_unowned() {
+  guard_filter_unowned "$(guard_union "$1" "$2")" "$3"
+}
+
+repo_root_owned_before_self="$(guard_owned_branches "$REPO_ROOT")"
+repo_root_refs_before_self="$(guard_refs_snapshot "$REPO_ROOT")"
 
 # assert_refused LABEL CMD... — CMD is expected to exit non-zero (the guard refused a ref write).
 # Refusal shapes differ by operation and git version (128 for most, 255 for a refused `worktree add`
@@ -350,16 +405,67 @@ check_block_equal "T13: g13's own refs are unchanged" "$g13_refs_before" "$g13_r
 check_block_equal "T13: foreign13's own refs are unchanged — the ambient GIT_DIR named it but did not divert the write into it" \
   "$foreign13_refs_before" "$foreign13_refs_after"
 
-# The authoritative check this whole file rests on: REPO_ROOT's own refs, proven unchanged by direct
+# ============================================================================================
+# T14 — S-fix-1: the self-check's own ownership-scoped compare, fixture-driven (never against the
+# real REPO_ROOT, which this file cannot safely leak-simulate against). tools/lib/ref-guard.sh's own
+# test_ref_guard.sh already covers guard_owned_branches/guard_refs_snapshot/guard_filter_unowned/
+# guard_union in isolation; this scenario instead pins repo_root_self_check_unowned() above — the
+# exact seam this file's own self-check (below) calls — via a fixture repo standing in for REPO_ROOT.
+# ============================================================================================
+r14="$(new_repo)"
+git -C "$r14" commit -q --allow-empty -m init
+
+# (a) sibling-worktree activity during the window: a linked worktree branching and committing on ITS
+# OWN branch is ordinary concurrent work (this repo's own fleet of worktrees), not a leak — the
+# scoped compare must stay green.
+wt14="$SANDBOX/T14-sibling-wt"
+run git -C "$r14" worktree add -q -b t14-sibling "$wt14"
+check_status "T14: sibling worktree add for the fixture succeeds" 0 "$STATUS"
+owned_before_t14a="$(guard_owned_branches "$r14")"
+refs_before_t14a="$(guard_refs_snapshot "$r14")"
+git -C "$wt14" commit -q --allow-empty -m "t14 sibling commit"
+owned_after_t14a="$(guard_owned_branches "$r14")"
+refs_after_t14a="$(guard_refs_snapshot "$r14")"
+unowned_before_t14a="$(repo_root_self_check_unowned "$owned_before_t14a" "$owned_after_t14a" "$refs_before_t14a")"
+unowned_after_t14a="$(repo_root_self_check_unowned "$owned_before_t14a" "$owned_after_t14a" "$refs_after_t14a")"
+if [ "$unowned_before_t14a" = "$unowned_after_t14a" ]; then
+  pass "T14(a): sibling-worktree commit activity during the window stays green (scoped compare)"
+else
+  fail "T14(a): sibling-worktree commit activity during the window stays green (scoped compare)" \
+    "before=[$unowned_before_t14a] after=[$unowned_after_t14a]"
+fi
+
+# (b) an unowned branch created directly in the fixture's main repo (nobody's worktree) during the
+# window — the exact shape dir #320's own incident took — must still trip red.
+owned_before_t14b="$(guard_owned_branches "$r14")"
+refs_before_t14b="$(guard_refs_snapshot "$r14")"
+git -C "$r14" branch t14-unowned-leak
+owned_after_t14b="$(guard_owned_branches "$r14")"
+refs_after_t14b="$(guard_refs_snapshot "$r14")"
+unowned_before_t14b="$(repo_root_self_check_unowned "$owned_before_t14b" "$owned_after_t14b" "$refs_before_t14b")"
+unowned_after_t14b="$(repo_root_self_check_unowned "$owned_before_t14b" "$owned_after_t14b" "$refs_after_t14b")"
+check_ne "T14(b): an unowned branch appearing during the window trips the scoped compare (red path pinned)" \
+  "$unowned_before_t14b" "$unowned_after_t14b"
+check_contains "T14(b): the unowned leak branch is the reported difference" "$unowned_after_t14b" "t14-unowned-leak"
+git -C "$r14" branch -D t14-unowned-leak >/dev/null
+
+# The authoritative check this whole file rests on: REPO_ROOT's own UNOWNED refs/heads branches
+# (S-fix-1: scoped, not the whole namespace — see the header comment), proven unchanged by direct
 # comparison — not by trusting the shared refused-log's contents, since that log cannot say which
 # armed repo each refusal came from (every fixture above points its guard.cfg at the same
-# $SANDBOX/ref-guard/hooks). This is what actually rules out a leak into the real checkout.
-repo_root_refs_after_self="$(git -C "$REPO_ROOT" for-each-ref)"
-if [ "$repo_root_refs_before_self" = "$repo_root_refs_after_self" ]; then
-  pass "self-check: REPO_ROOT's own refs are unchanged after every fixture above"
+# $SANDBOX/ref-guard/hooks). This is what actually rules out a leak into the real checkout, without
+# false-tripping on a sibling worktree's own ordinary branch churn.
+repo_root_owned_after_self="$(guard_owned_branches "$REPO_ROOT")"
+repo_root_refs_after_self="$(guard_refs_snapshot "$REPO_ROOT")"
+repo_root_refs_before_self_unowned="$(repo_root_self_check_unowned "$repo_root_owned_before_self" "$repo_root_owned_after_self" "$repo_root_refs_before_self")"
+repo_root_refs_after_self_unowned="$(repo_root_self_check_unowned "$repo_root_owned_before_self" "$repo_root_owned_after_self" "$repo_root_refs_after_self")"
+if [ "$repo_root_refs_before_self_unowned" = "$repo_root_refs_after_self_unowned" ]; then
+  pass "self-check: REPO_ROOT's own unowned refs/heads branches are unchanged after every fixture above"
 else
-  fail "self-check: REPO_ROOT's own refs are unchanged after every fixture above" \
-    "REPO_ROOT's refs changed — this is a real leak, not an expected fixture refusal"
+  fail "self-check: REPO_ROOT's own unowned refs/heads branches are unchanged after every fixture above" \
+    "an unowned branch appeared, moved, or disappeared in REPO_ROOT — this is a real leak, not an
+expected fixture refusal, and not explained by any sibling worktree's own branch churn. diff:
+$(diff <(printf '%s\n' "$repo_root_refs_before_self_unowned") <(printf '%s\n' "$repo_root_refs_after_self_unowned"))"
 fi
 
 # Having proven that directly, the shared refused-log's entries can only be this file's own

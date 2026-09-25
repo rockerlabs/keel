@@ -404,13 +404,29 @@ check_status "T1: a bare top-level branch.* setting still trips the canary -> ex
 check_contains "T1: the trip names the bare branch.* key" "$OUT" "branch.autosetupmerge"
 check_absent "T1: the trip withholds the bare branch.* key's value" "$OUT" "always"
 
+# --- F4b (found live by this ticket's own /code-review high pass): a FOUR-segment branch.* key
+# (a branch literally named "foo.bar" — dots are valid in git branch names — makes
+# `branch.foo.bar.remote`, section=branch/subsection="foo.bar"/key=remote) still trips: the new
+# case-glob exclusion in guard_config_snapshot is scoped to exactly THREE segments
+# (branch.<name>.<subkey>), same as the old regex's `[^.=]+\.[^.=]+=` could only ever match two
+# single-segment captures. Mutation proof (run manually, not committed): widening the inner
+# `case "$rest" in *.*.*) ;; *) continue ;; esac` to match ANY multi-dot rest (i.e. excluding this
+# shape too) turns this assertion RED.
+br4_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local branch.foo.bar.remote origin\nexit 0\n' \
+  > "$br4_root/tests/test_br4_leak.sh"
+run bash "$br4_root/tests/run.sh"
+check_status "F4b: a four-segment branch.<name>.<a>.<b> key still trips the canary -> exit 1" 1 "$STATUS"
+check_contains "F4b: the trip names the four-segment key" "$OUT" "branch.foo.bar.remote"
+check_absent "F4b: the trip withholds the four-segment key's value" "$OUT" "origin"
+
 # --- T1 (manager-flagged, delta-audit 0.11.0-0.12.0 fix round): a changed key whose VALUE is
 # credential-shaped (a token embedded in a URL, the exact actions/checkout http.*.extraHeader shape)
 # never has that value echoed into the trip output — only the key name. The snapshot itself still
-# compares full key=value lines (a value-only change on an existing key must still trip); only the
-# REPORT strips it, via guard_redact_diff_values(). Mutation proof (run manually, not committed):
-# printing the raw `diff` output again (skipping the `| guard_redact_diff_values` filter) turns the
-# second check below RED — the credential value reappears in $OUT.
+# fingerprints every key (a value-only change on an existing key must still trip); only the REPORT
+# strips anything past the key, via guard_diff_keys_only(). Mutation proof (run manually, not
+# committed): printing the raw `diff` output again (skipping the `| guard_diff_keys_only` filter)
+# turns the second check below RED — the credential value reappears in $OUT.
 cred_root="$(new_run_sh_fixture)"
 printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local http.https://example.invalid/.extraheader "AUTHORIZATION: basic dG90YWxseS1hLXJlYWwtdG9rZW4="\nexit 0\n' \
   > "$cred_root/tests/test_cred_leak.sh"
@@ -418,6 +434,30 @@ run bash "$cred_root/tests/run.sh"
 check_status "T1: a credential-shaped config value trips the canary -> exit 1" 1 "$STATUS"
 check_contains "T1: the trip names the credential-bearing key" "$OUT" "extraheader"
 check_absent "T1: the trip withholds the credential value" "$OUT" "dG90YWxseS1hLXJlYWwtdG9rZW4="
+
+# --- F4b (S-fix F2-T1, delta-audit 0.11.0-0.12.0 fix round): a MULTI-LINE config value's own
+# continuation line used to carry no `key=` prefix, so the old cut-at-`=` filter let it straight
+# through unredacted (live-reproduced, macOS + alpine, git 2.52.0). Reuses T1's own credential-
+# shaped first line (`AUTHORIZATION: basic ...` above) with a second, also credential-SHAPED-but-not-
+# secret-scan-KEY-shaped line appended via an embedded newline (a real `ghp_`+36 token here would trip
+# this repo's own commit-time secret guard, same reason T1's line is `dG90YWxseS1hLXJlYWwtdG9rZW4=`,
+# not a real token). guard_config_snapshot now fingerprints the WHOLE multi-line value as one record
+# (git config --local --list -z), so neither line can leak. Mutation proof (run manually, not
+# committed): reintroducing the raw value into guard_config_snapshot (the pre-F4b `--list` line form)
+# turns both absence checks below RED on macOS AND the alpine leg; restoring the fingerprint form
+# turns them green again. --------------------------------------------------------------------------
+multiline_root="$(new_run_sh_fixture)"
+cat > "$multiline_root/tests/test_multiline_leak.sh" <<'EOF'
+#!/usr/bin/env bash
+git -C "$(dirname "$0")/.." config --local multi.secret "$(printf 'AUTHORIZATION: basic dG90YWxseS1hLXJlYWwtdG9rZW4=\nSECONDLINE-dG90YWxseS1hLXJlYWwtc2Vjb25kLWxpbmU=')"
+exit 0
+EOF
+run bash "$multiline_root/tests/run.sh"
+check_status "F4b: a multi-line config value's leak still trips the canary -> exit 1" 1 "$STATUS"
+check_contains "F4b: the trip names the multi-line key" "$OUT" "multi.secret"
+check_absent "F4b: the trip withholds the FIRST line of the multi-line value" "$OUT" "dG90YWxseS1hLXJlYWwtdG9rZW4="
+check_absent "F4b: the trip withholds the SECOND line (F2-T1's own gap: the old filter let exactly this line through unredacted)" \
+  "$OUT" "dG90YWxseS1hLXJlYWwtc2Vjb25kLWxpbmU="
 
 # --- T3 (delta-audit 0.11.0-0.12.0 fix round, S2 lead L3 / manager lead 3): a status-only change
 # (an untracked file write, no commit) with HEAD unmoved now gets its own hint alongside the existing

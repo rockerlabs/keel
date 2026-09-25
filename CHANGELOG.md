@@ -283,6 +283,11 @@ sections real content going forward — see that page for exactly when each one 
   comment — rather than silently allowing it; a status-only trip with HEAD unmoved now names a
   concurrent own edit as the likely cause, mirroring the existing HEAD-moved hint (dir #333's
   release-manager amendment; dir #318 is the optional isolation class either trip sits alongside).
+  F4b (S-fix F2-T1, delta-audit 0.11.0-0.12.0 fix round): a MULTI-LINE config value's own
+  continuation line carried no `key=` prefix, so the old cut-at-`=` filter let it through unredacted
+  (live-reproduced, macOS + alpine). The tripwire now snapshots `git config --local --list -z`
+  records and never holds or prints a value at all, including a multi-line one — only a key name and
+  a `cksum` fingerprint of its value.
 - **`keel-check.sh`'s and `keel-check-gate.sh`'s repo-top resolution could be hijacked by an inherited
   `GIT_DIR`/`GIT_WORK_TREE`** (dir #644, dir #647 — partial: #647 stays open for the rest of its
   list): an ambient pair naming a decoy repo made `git -C "$PWD"`/`git -C "$cwd"` answer for the decoy
@@ -299,6 +304,15 @@ sections real content going forward — see that page for exactly when each one 
   instead of the real cause — still fail-CLOSED, but misleading. Now also requires `-d "$HOME"`, and
   every caller's message (`keel-check.sh`, `pre-pr-gate.sh`'s CLI and hook modes) names the actual
   reason via the new `gate_home_diagnosis()` (unset, empty, or not a directory).
+- **`tests/test_lib_ref_guard.sh`'s real-checkout self-check now ignores branches other worktrees
+  own** (dir #318, dir #333): the whole-`for-each-ref` before/after compare tripped on ordinary
+  concurrent activity in a sibling worktree of this checkout (a branch create, a commit, a fetch
+  moving refs/remotes) with nothing actually leaked — live-reproduced twice, felt once in a full
+  suite run. Scoped to refs/heads only, ownership-filtered via the same `tools/lib/ref-guard.sh`
+  helpers `tests/run.sh`'s own corruption canary already uses for exactly this reason; `refs/tags`
+  and `refs/remotes` are dropped from the compare too, on the same evidence that canary already
+  applies. New T14 pins the scoped compare against a fixture repo, never the real checkout: sibling-
+  worktree activity during the window stays green, an unowned branch still trips red.
 
 ## [0.11.0] — 2026-09-22
 
