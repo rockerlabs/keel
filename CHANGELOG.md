@@ -15,6 +15,64 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-09-25
+
+**Known issues, disclosed at the cut.** This reads the previous cut's paragraph item by item, the
+way v0.11.0's own paragraph read v0.10.2's. It named **fifteen open items**, and **one is fixed
+here**: **dir #617** (a review subagent mutated the real machine-global secret-guard while
+reproducing a defect live, the second hit this release-cycle of that class — closed in two halves,
+PR #457 (a) and PR #455 (b)). **The remaining fourteen ship open again.** Three of them —
+**dir #499** (the private audit harness has no delta-bundling mode), **dir #511**
+(`keel-check-gate.sh`'s opt-in hard veto matches only two literal prefixes) and **dir #515**
+(`docs/keel-ab/seed.sh` accepts a relative `--with-keel` path it cannot copy) — were named first at
+v0.10.1, so **this is the fourth consecutive release they ship open**, said plainly rather than let
+a repeated disclosure read as the first one. Also still open: **dir #625** (a second `--force` run
+over the secret-guard installer can still overwrite a *different* foreign hook's own permanent
+backup with no existence check — a narrower sibling of the class v0.11.0's own fix-before-tag
+regression closed). Six items from v0.11.0's own RC audit, still ticket-next: **dir #619** (the
+backlog census's foreign-citation guard is structurally inert, in three places at once), **dir #620**
+(`read-trace.sh` reports a wrap completion stamp recorded even when the write can fail), **dir #621**
+(the citation strip does not tolerate `**`/`__` emphasis, a family already ticketed twice before),
+**dir #622** (`pre-pr-gate.sh`'s parser-facing `git diff` is not locale-pinned, in the fail-open
+direction), **dir #623** (`line-citations.sh` has no test at the late-NUL boundary) and **dir #624**
+(a doc citation pointing at a section override that has never existed in any revision of the cited
+file). **dir #626** (the delta-audit deriver's own `--help` and header omit closure failure from
+their exit-code list) still owns that fix. **Known process defects, adopter-invisible but
+recorded:** **dir #592** (a suite timing assertion flakes under fork contention, felt by four
+independent workers), **dir #614** (the cross-vendor review leg this project leans on is not a keel
+artifact — its recipe lives only in the operator's own personal memory) and **dir #616** (waiting on
+CI costs a session a no-op turn per tick).
+
+**This release's own RC audit** found four behavioural defects: two introduced in this range and
+fixed before the tag — the new impact-store provenance writer followed an inherited `GIT_DIR` into
+another repository's `.git/config` (fix PR #468), and the new ref-guard self-check false-failed
+under a sibling worktree's ordinary, unrelated commit (fix PR #470); one baseline at v0.11.0, also
+fixed here — a gate veto with two unguarded `git -C` calls (fix PR #467); and one a known-class
+test-sandbox guard-coverage gap, not a new regression — the guard covers refs but not an arbitrary
+`git config` write, disclosed via a widened detection tripwire rather than closed at the write (PR
+#469). A fifth defect, induced by the first fix round itself — a multi-line config value's
+continuation line printed unredacted in the test suite's own trip report — was fixed in the same
+PR #470. Two more items were fixed in-release rather than ticketed, by operator decision: three
+previously-unpinned `go.md` rules, and a misleading, though still fail-closed, HOME-as-a-file deny
+message (both PR #467). **Zero ticket-next items were filed this release.**
+
+**New disclosures at this cut:** **dir #647** — the inherited `GIT_DIR`/`GIT_COMMON_DIR` hijack
+class is closed here for `keel-check.sh` and `keel-check-gate.sh`, but stays open for
+`pre-pr-gate.sh`, `public-audit.sh`, `doctor.sh`, `tools/self/*`, `keel-impact.sh` (via
+`repo-top.sh`), read-trace, `secret-scan.sh`, and `impact-store.sh`'s own `impact_claim_key` — it
+needs a design pass, since two of those are live hooks. A disclosed scope line in the new ref-guard
+self-check (`tests/test_lib_ref_guard.sh`): it excludes `REPO_ROOT`'s own checked-out branch from
+what it watches, standalone — covered, inside the full suite, by `tests/run.sh`'s own separate
+before/after compare, this file's only real invocation context. **dir #437** shipped its spec only;
+the build is next release. **dir #635** shipped its first PR only; a second PR and the backlog sort
+follow this tag.
+
+**Process incidents this release, not ticketed:** the suite's self-concurrency canary tripped ten
+times on workers' own edits during a background run, so this release added an own-edit hint to the
+trip text; during one PR's build, a test wrote two `keel.readTraceStore` values into the real
+`.git/config` — the same day's tripwire caught it, and PR #469 then widened that tripwire; and the
+cross-vendor review leg ran on GPT-OSS after Gemini's quota ran out mid-run.
+
 ### Added
 
 - **`/go` now checks a ticket's readiness before implementing it, reads its spec file, and writes an
@@ -228,7 +286,7 @@ sections real content going forward — see that page for exactly when each one 
   (dir #627): every `tests/test_*.sh` sourced `tests/lib.sh` with a bare `.` and no `|| exit`, so a
   missing `lib.sh` (a gitignored symlink in the claude-kb adopter, absent from a fresh `git worktree
   add`) let a test's fixtures run against the REAL machine instead of stopping — on 2026-09-22 this
-  deleted a live `~/.claude` harness home. All 82 test files now fail closed on their own source
+  deleted a live `~/.claude` harness home. Every test file now fails closed on its own source
   line, `lib.sh` itself refuses to be sourced if `mktemp -d` silently failed to create the sandbox,
   and `tests/run.sh` refuses to start the whole suite when `lib.sh` is missing, before any fixture
   runs. A second, independent fail-open in the same harness: a test file calling an assertion
