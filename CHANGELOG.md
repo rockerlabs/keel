@@ -278,11 +278,11 @@ sections real content going forward — see that page for exactly when each one 
   F4, F5, F10, dir #640).
 - **`tests/run.sh`'s corruption-canary tripwire (dir #630) now diffs the WHOLE local git config of the
   real checkout instead of snapshotting two named keys, redacting any changed key's VALUE from the trip
-  report (found live against the alpine CI leg's busybox `diff`) and naming any excluded key class
-  (`branch.<name>.merge`/`.remote`, disclosed in the file's own comment) rather than silently allowing
-  it; a status-only trip with HEAD unmoved now names a concurrent own edit as the likely cause,
-  mirroring the existing HEAD-moved hint (dir #333's release-manager amendment; dir #318 is the
-  optional isolation class either trip sits alongside).
+  report (found live against the alpine CI leg's busybox `diff`) and naming any excluded key class —
+  every per-branch key (`branch.<name>.<key>`, e.g. `.merge`/`.remote`), disclosed in the file's own
+  comment — rather than silently allowing it; a status-only trip with HEAD unmoved now names a
+  concurrent own edit as the likely cause, mirroring the existing HEAD-moved hint (dir #333's
+  release-manager amendment; dir #318 is the optional isolation class either trip sits alongside).
 - **`keel-check.sh`'s and `keel-check-gate.sh`'s repo-top resolution could be hijacked by an inherited
   `GIT_DIR`/`GIT_WORK_TREE`** (dir #644, dir #647 — partial: #647 stays open for the rest of its
   list): an ambient pair naming a decoy repo made `git -C "$PWD"`/`git -C "$cwd"` answer for the decoy

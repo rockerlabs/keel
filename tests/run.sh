@@ -47,7 +47,9 @@ guard_ref_scope_available=0
 # write a fixture leaked into the real checkout — a stray `git config --local --add` outside those
 # two keys — went unreported (live-verified: `git -C "$guard_repo_root" config --local --add
 # zz.probeKey x` exits 0 and trips nothing under the old two-key snapshot). Snapshot the WHOLE local
-# config instead and diff it before/after. `branch.<name>.merge`/`branch.<name>.remote` are EXCLUDED,
+# config instead and diff it before/after. Every per-branch key (`branch.<name>.<key>` — `.merge` and
+# `.remote` are the two that actually churn, but this also covers `.description`, `.pushRemote`,
+# `.rebase`, `.vscode-merge-base`, any other subkey under a `[branch "<name>"]` section) is EXCLUDED,
 # on evidence, not by default: local config is shared by every worktree of this repo, and ordinary
 # concurrent work outside this suite writes these constantly — `git push -u` / `branch
 # --set-upstream-to`. Measured live on this checkout: 128 of 139 local config keys are exactly this
