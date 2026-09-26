@@ -51,10 +51,10 @@ tools/vendor-review.sh --client tools/vendor-review/agy.sh \
   --system system-prompt.md --bundle bundle.md --label my-review --out private/audit-harness/out
 ```
 
-Prints the round directory it wrote — `<out>/round-<UTC timestamp>-<label>/`, holding `raw.json`
-(the raw API response) and `reply.md` (the model's reply, unwrapped) — and, when `jq` is on `PATH`,
-a one-line token-usage summary. `tools/vendor-review/agy.sh` needs the `agy` CLI installed and
-authenticated on your own machine; the script itself holds no credentials.
+Prints the round directory it wrote: `<out>/round-<UTC timestamp>-<label>/`, holding `raw.json`
+(the raw API response — read it for anything vendor-specific, like a token-usage figure) and
+`reply.md` (the model's reply, unwrapped). `tools/vendor-review/agy.sh` needs the `agy` CLI
+installed and authenticated on your own machine; the script itself holds no credentials.
 
 ## The rails (non-negotiable)
 

@@ -35,8 +35,9 @@
 set -euo pipefail
 
 usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
-die_args() { echo "vendor-review.sh: $*" >&2; exit 2; }
-refuse()   { echo "vendor-review.sh: $*" >&2; exit 3; }
+die()      { local code="$1"; shift; echo "vendor-review.sh: $*" >&2; exit "$code"; }
+die_args() { die 2 "$@"; }
+refuse()   { die 3 "$@"; }
 
 client="" system="" bundle="" label="" out_dir="out"
 while [ $# -gt 0 ]; do
@@ -105,11 +106,6 @@ if [ "$client_status" != 0 ]; then
   exit "$client_status"
 fi
 
-bundle_bytes="$(wc -c < "$bundle" | tr -d ' ')"
+bundle_bytes="$(wc -c < "$bundle")"
+bundle_bytes="${bundle_bytes// /}"
 printf 'vendor-review: round written to %s (leak gate clean, bundle %s bytes)\n' "$round" "$bundle_bytes"
-if command -v jq >/dev/null 2>&1 && [ -s "$round/raw.json" ]; then
-  usage_line="$(jq -r 'if .usage then
-      "input_tokens=\(.usage.input_tokens // "?") output_tokens=\(.usage.output_tokens // "?")"
-    else empty end' "$round/raw.json" 2>/dev/null || true)"
-  [ -n "$usage_line" ] && printf 'vendor-review: %s\n' "$usage_line"
-fi

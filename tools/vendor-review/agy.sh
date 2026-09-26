@@ -50,20 +50,16 @@ user_msg="$(cat)"
 sys_msg=""
 [ -n "$sys_file" ] && sys_msg="$(cat "$sys_file")"
 
-tmp_combined="$(mktemp)"
-resp_json="$(mktemp)"
-err_file="$(mktemp)"
-trap 'rm -f "$tmp_combined" "$resp_json" "$err_file"' EXIT
-
-{
-  # The no-tools sentence is load-bearing: a model that tries a tool instead of reading the inline
-  # bundle can return an EMPTY response with status SUCCESS rather than an error.
+# The no-tools sentence is load-bearing: a model that tries a tool instead of reading the inline
+# bundle can return an EMPTY response with status SUCCESS rather than an error.
+combined="$(
   [ -n "$sys_msg" ] && printf '%s\n' "$sys_msg"
   printf '\n---\n\nIMPORTANT: do NOT call any tool; you have no tool access. Answer strictly from the\ntext in this message.\n\n'
   printf '%s' "$user_msg"
-} > "$tmp_combined"
+)"
 
-combined_bytes="$(wc -c < "$tmp_combined" | tr -d ' ')"
+combined_bytes="$(printf '%s' "$combined" | wc -c)"
+combined_bytes="${combined_bytes// /}"
 if [ "$combined_bytes" -gt "$max_bytes" ]; then
   echo "agy.sh: HARD STOP — combined prompt is $combined_bytes bytes, over the ${max_bytes}-byte cap." >&2
   echo "  agy's inline truncation past ~192,000 bytes is SILENT — this is a hard stop, not a warning." >&2
@@ -71,12 +67,15 @@ if [ "$combined_bytes" -gt "$max_bytes" ]; then
   exit 2
 fi
 
-combined="$(cat "$tmp_combined")"
+resp_json="$(mktemp)"
+err_file="$(mktemp)"
+trap 'rm -f "$resp_json" "$err_file"' EXIT
 
-if ! "$AGY_BIN" -p "$combined" --model "$MODEL" --output-format json --print-timeout "$TIMEOUT" \
-     > "$resp_json" 2> "$err_file"; then
-  ec=$?
-  echo "agy.sh: agy CLI call failed (exit $ec). stderr:" >&2
+agy_status=0
+"$AGY_BIN" -p "$combined" --model "$MODEL" --output-format json --print-timeout "$TIMEOUT" \
+  > "$resp_json" 2> "$err_file" || agy_status=$?
+if [ "$agy_status" != 0 ]; then
+  echo "agy.sh: agy CLI call failed (exit $agy_status). stderr:" >&2
   cat "$err_file" >&2
   [ -n "$raw_out" ] && cat "$resp_json" > "$raw_out" 2>/dev/null
   exit 1

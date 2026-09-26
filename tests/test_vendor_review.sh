@@ -51,12 +51,11 @@ printf 'system prompt\n' > "$system"
 printf 'bundle content\n' > "$bundle"
 out="$SANDBOX/out-clean"
 
-# --- basic success: round dir written, reply + raw.json readable, usage summary printed ------------
+# --- basic success: round dir written, reply + raw.json readable ------------------------------------
 run "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label smoketest --out "$out"
 check_status "vendor-review: clean run exits 0" 0 "$STATUS"
 check_contains "vendor-review: reports round dir written" "$OUT" "round written to"
 check_contains "vendor-review: reports leak gate clean" "$OUT" "leak gate clean"
-check_contains "vendor-review: prints token-usage summary" "$OUT" "input_tokens=42"
 
 round="$(find "$out" -maxdepth 1 -name 'round-*-smoketest' -type d | head -1)"
 check_dir "vendor-review: round dir exists" "${round:-/nonexistent}"

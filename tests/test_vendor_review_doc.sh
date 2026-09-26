@@ -14,11 +14,13 @@ drydock="$REPO_ROOT/docs/drydock.md"
 tool="$REPO_ROOT/tools/vendor-review.sh"
 client="$REPO_ROOT/tools/vendor-review/agy.sh"
 
+check_executable() { [ -x "$2" ] && pass "$1 is executable" || fail "$1 is executable" "not +x"; }
+
 check_file "docs/vendor-review.md exists" "$doc"
-check_file "tools/vendor-review.sh exists and is executable" "$tool"
-[ -x "$tool" ] && pass "tools/vendor-review.sh is executable" || fail "tools/vendor-review.sh is executable" "not +x"
+check_file "tools/vendor-review.sh exists" "$tool"
+check_executable "tools/vendor-review.sh" "$tool"
 check_file "tools/vendor-review/agy.sh exists" "$client"
-[ -x "$client" ] && pass "tools/vendor-review/agy.sh is executable" || fail "tools/vendor-review/agy.sh is executable" "not +x"
+check_executable "tools/vendor-review/agy.sh" "$client"
 
 # --- discoverability: README and reference.md both list it -----------------------------------------
 pin "README Docs section links docs/vendor-review.md" \
