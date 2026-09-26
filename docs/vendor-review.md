@@ -37,9 +37,11 @@ A client script must:
 - read the user message on stdin;
 - accept an optional system prompt via `--system FILE`;
 - print the model's reply to stdout;
-- accept `--raw-out FILE` and, on success, write the full raw API response there as JSON;
+- accept `--raw-out FILE` and, on success, write the full raw API response there as JSON — it MAY
+  also write it on a failed call, best-effort, for debugging: `--raw-out`'s mere existence is not
+  proof of success, only the client's own exit code is;
 - exit non-zero on any failure (an auth error, a vendor error, a denied tool call, an oversize
-  prompt) rather than printing a plausible-looking empty answer.
+  prompt, an empty or whitespace-only reply) rather than printing a plausible-looking empty answer.
 
 Point `--client` at your own script to reach a different vendor CLI — the leak gate and the
 round-dir bookkeeping stay the same either way.
