@@ -2,7 +2,9 @@
 # tools/vendor-review/agy.sh — thin client for tools/vendor-review.sh: wraps Google's Antigravity
 # CLI (`agy`) as a cross-vendor reader. Satisfies vendor-review.sh's --client contract (see that
 # file's own header): reads the user message from stdin, an optional system prompt from --system
-# FILE, prints the reply to stdout, and (with --raw-out FILE) saves the raw API response as JSON.
+# FILE, prints the reply to stdout, and (with --raw-out FILE) saves the raw API response as JSON —
+# on a failed call it saves whatever raw response it has too, best-effort, for debugging, so
+# --raw-out's mere existence is never proof of success; this script's own exit code is.
 #
 # Requires the `agy` CLI installed and authenticated (https://antigravity.google/cli) — this script
 # holds no credentials of its own; auth is the CLI's own config, outside this repo and outside git.
@@ -24,6 +26,8 @@
 # raising this number.
 set -euo pipefail
 
+usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
+
 AGY_BIN="${AGY_BIN:-$HOME/.local/bin/agy}"
 MODEL="${AGY_MODEL:-gemini-3.1-pro-high}"
 TIMEOUT="${AGY_PRINT_TIMEOUT:-15m}"
@@ -35,7 +39,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --system)  sys_file="${2:?--system needs a file}"; shift 2 ;;
     --raw-out) raw_out="${2:?--raw-out needs a file}"; shift 2 ;;
-    -h|--help) sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
     *) echo "agy.sh: unknown arg '$1'" >&2; exit 2 ;;
   esac
 done
@@ -58,8 +62,7 @@ combined="$(
   printf '%s' "$user_msg"
 )"
 
-combined_bytes="$(printf '%s' "$combined" | wc -c)"
-combined_bytes="${combined_bytes// /}"
+combined_bytes="$(printf '%s' "$combined" | wc -c | tr -d ' ')"
 if [ "$combined_bytes" -gt "$max_bytes" ]; then
   echo "agy.sh: HARD STOP — combined prompt is $combined_bytes bytes, over the ${max_bytes}-byte cap." >&2
   echo "  agy's inline truncation past ~192,000 bytes is SILENT — this is a hard stop, not a warning." >&2
@@ -92,10 +95,11 @@ if [ "$status" != "SUCCESS" ]; then
   exit 1
 fi
 
-if [ -z "$content" ]; then
-  # Empty .response with status SUCCESS + a tool-permission denial on stderr = the model tried a
-  # tool it doesn't have — a failed round, not a valid empty answer.
-  echo "agy.sh: empty .response with status SUCCESS — likely a denied tool attempt. stderr:" >&2
+if [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ]; then
+  # A blank or whitespace-only .response with status SUCCESS is the same failure as a truly empty
+  # one — most often a tool-permission denial on stderr (the model tried a tool it doesn't have) —
+  # never a valid answer worth printing as if it were.
+  echo "agy.sh: blank .response with status SUCCESS — likely a denied tool attempt. stderr:" >&2
   cat "$err_file" >&2
   exit 1
 fi

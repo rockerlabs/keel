@@ -61,7 +61,12 @@ installed and authenticated on your own machine; the script itself holds no cred
 1. **The leak gate is mandatory and has no bypass.** `vendor-review.sh` scans `--system` and
    `--bundle` with [`tools/secret-guard/secret-scan.sh`](../tools/secret-guard/secret-scan.sh)
    before anything is sent, and refuses — printing only the offending path, never the matched
-   content — on any hit. There is no `--force` and no `--skip-scan`.
+   content — on any hit. There is no `--force` and no `--skip-scan`. Known limitation, shared with
+   every other caller of the scanner's file-list mode (`tools/audit-packet/export.sh` included): an
+   `.secret-scan-allow` entry in the caller's working directory applies unconditionally here, with
+   none of the same-change-provenance baseline check `--range` mode applies — an allowlist entry
+   added for an unrelated fixture would silently exempt a real match too. Anonymize and review the
+   bundle yourself; don't rely on the gate as the only check.
 2. **Anonymize before assembling the bundle.** Real machine paths, names, and other personal
    literals don't belong in a payload leaving the machine, gate or no gate — the gate is a
    backstop, not the first line of defense.

@@ -109,6 +109,43 @@ check_status "vendor-review: refuses a --client that isn't executable" 2 "$STATU
 run "$TOOL" --client "$client" --system "$SANDBOX/no-such-system.md" --bundle "$bundle" --label x --out "$out"
 check_status "vendor-review: refuses a --system file that doesn't exist" 2 "$STATUS"
 
+# --- --label is sanitized: it lands straight in a path, so '/' and '..' must be refused, not escaped ---
+run "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label "x/../../escaped" --out "$out"
+check_status "vendor-review: refuses a --label containing '/'" 2 "$STATUS"
+check_contains "vendor-review: names --label as the problem" "$OUT" "--label"
+check_nodir "vendor-review: a slash-label never creates anything outside --out" "$SANDBOX/escaped"
+
+run "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label "has spaces" --out "$out"
+check_status "vendor-review: refuses a --label with a space" 2 "$STATUS"
+
+# a label using only the allowed charset (letters, digits, '_', '-') still works
+out5="$SANDBOX/out-label-charset"
+run "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label "PR-473_v2" --out "$out5"
+check_status "vendor-review: a letters/digits/_/- label is accepted" 0 "$STATUS"
+
+# --- round-dir collision: two launches landing on the SAME round dir name refuse the second one -------
+# vendor-review.sh names the round dir from `date -u +...` plus --label, at second granularity — a
+# real two-process race is not reliably reproducible in a test, so a fake `date` ahead on PATH pins
+# both launches to the identical timestamp, making the collision deterministic.
+fake_date_dir="$SANDBOX/fake-date-bin"
+mkdir -p "$fake_date_dir"
+printf '#!/usr/bin/env bash\nprintf "19700101T000000Z"\n' > "$fake_date_dir/date"
+chmod +x "$fake_date_dir/date"
+
+out6="$SANDBOX/out-collision"
+old_path="$PATH"
+PATH="$fake_date_dir:$PATH"
+run "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label collide --out "$out6"
+check_status "vendor-review: first launch at a pinned timestamp succeeds" 0 "$STATUS"
+run "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label collide --out "$out6"
+PATH="$old_path"
+check_status "vendor-review: a second launch at the SAME pinned timestamp+label refuses (exit 3)" 3 "$STATUS"
+check_contains "vendor-review: collision message names the round dir" "$OUT" "already exists"
+check_contains "vendor-review: collision message names the round dir path itself" "$OUT" "round-19700101T000000Z-collide"
+collide_dirs="$(find "$out6" -maxdepth 1 -name 'round-*-collide' -type d | wc -l | tr -d ' ')"
+check_eq "vendor-review: exactly one round dir exists after the collision (never a second copy)" \
+  "1" "$collide_dirs"
+
 run "$TOOL" -h
 check_status "vendor-review: --help exits 0" 0 "$STATUS"
 check_contains "vendor-review: --help documents the --client contract" "$OUT" "read the user message on stdin"
