@@ -265,6 +265,8 @@ Full walkthrough — what changes in your day, the receipts, the residual limits
 - [`docs/verification-economics.md`](docs/verification-economics.md) — when to stop auditing, what to
   file from a run, and how to tell whether your verification method is improving: the stopping rule
   and filing bar that govern `release-audit.md`, `delta-audit.md` and `drydock.md` runs.
+- [`docs/vendor-review.md`](docs/vendor-review.md) — a scriptable cross-vendor reading leg: a
+  leak-gated bundle, a swappable client per vendor CLI, one round dir per launch.
 - [`docs/delegation.md`](docs/delegation.md) — fan bulk read-only analysis out to parallel subagent
   workers behind a file contract, keeping every gate in your own session.
 - [`docs/release-management.md`](docs/release-management.md) — running a whole release with one

@@ -15,6 +15,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The scriptable cross-vendor reading leg ships as a tracked, adopter-usable pair** (dir #614): the
+  Gemini/G6 leg that had run twice with real findings (0.10.2 and 0.11.0 grooms) lived only in the
+  operator's personal keel-project memory and a gitignored client, unreachable from any other project.
+  New `tools/vendor-review.sh` leak-gates a bundle with `secret-guard/secret-scan.sh` (no bypass), then
+  hands it to a swappable `--client` script per vendor CLI; new `tools/vendor-review/agy.sh` is the
+  worked client, for Google's Antigravity CLI reaching Gemini. New `docs/vendor-review.md` carries the
+  recipe, the two bundle shapes (plan/ticket adjudication; per-PR/diff review), and the five
+  non-negotiable rails. `docs/delta-audit.md` §11, `docs/grooming.md` G6, and `docs/drydock.md`'s
+  external-leg section now point at the shipped pair by name instead of an unnamed private harness.
+  `tests/test_vendor_review.sh` and `tests/test_vendor_review_doc.sh` are new.
+
 - **`/go` splits into a small gate and a separate implementer guide** (dir #642, round 3 of three
   fresh-context reviews): `commands/go.md` keeps its ten steps and word budget (≤ 1125), but the "how"
   three patch rounds had squeezed out of it now lives in NEW `commands/go-guide.md` — a hidden command

@@ -440,6 +440,11 @@ none of them mechanical — every one came from reading a ticket body or running
 re-reading the plan itself). A groom that skips this round is a groom that has not yet found its own
 mistakes.
 
+**Optional second axis, same round: a genuinely different model vendor, not just a fresh context
+window.** [`docs/vendor-review.md`](vendor-review.md) ships the tool — a leak-gated bundle of the
+ticket bodies in scope, read by a swappable cross-vendor client. Run twice on a release plan so far
+(2026-09-16, 2026-09-20), it returned findings the same-family round above had not, both times.
+
 ## G7 — the releases cross-run record
 
 Audits already have a cross-run record; releases, until this doc, had none — a release manager's own
