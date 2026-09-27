@@ -515,8 +515,9 @@ audit file either has its `## claims` section or is visibly incomplete. Never re
 
 Every behavioural defect drydock has ever caught in shipped code was found by a **cross-vendor**
 reader, after same-family sessions read the same files clean (`private/audit/RUNS.md`'s cross-run
-record). The scriptable cross-vendor legs this repo has (a raw-API harness,
-[`docs/delta-audit.md`](delta-audit.md) §11) share one ceiling: a small context window per round. A
+record). The scriptable cross-vendor leg this repo ships ([`docs/vendor-review.md`](vendor-review.md),
+plus the harness lessons in [`docs/delta-audit.md`](delta-audit.md) §11) shares one ceiling: a small
+context window per round. A
 vendor with a materially larger window may only be reachable through **another person's account and
 UI** — no API, no CLI, nothing this machine can drive. `tools/audit-packet/{export,import}.sh`
 (dir #495) turn that into a **packet** (what to hand over) and a **result contract** (what comes back)
