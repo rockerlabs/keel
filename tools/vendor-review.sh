@@ -35,8 +35,9 @@
 #
 # The leak gate is mandatory and has no bypass — no --force, no --skip-scan. It scans --system and
 # --bundle with tools/secret-guard/secret-scan.sh before anything is sent, and refuses on any hit,
-# printing only the offending path, never the matched content (the same discipline as
-# tools/audit-packet/export.sh's own leak gate).
+# printing only the offending path, never the matched content — the scan-then-parse-then-refuse shape
+# is tools/lib/leak-gate.sh's leak_gate_run, shared with tools/audit-packet/export.sh's own leak gate
+# rather than a second hand-copy of it.
 set -euo pipefail
 
 usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
@@ -75,19 +76,18 @@ case "$label" in
 esac
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/lib/leak-gate.sh
+. "$script_dir/lib/leak-gate.sh"
 scan_script="$script_dir/secret-guard/secret-scan.sh"
 [ -x "$scan_script" ] || refuse "tools/secret-guard/secret-scan.sh is missing or not executable next
   to this script ($scan_script) — refusing to run without a working leak gate. There is no --force
   and no --skip-scan."
 
 gate_status=0
-gate_err="$("$scan_script" -- "$system" "$bundle" 2>&1 >/dev/null)" || gate_status=$?
+leak_gate_run "$scan_script" "" "$system" "$bundle" || gate_status=$?
 
 if [ "$gate_status" = 1 ]; then
-  # BLOCKED — extract ONLY the leading path off each "  path:line:content" detail line
-  # (secret-scan.sh's own format), never the matched content that follows it (dir #495's own leak
-  # gate discipline, see tools/audit-packet/export.sh's run_leak_gate for the precedent).
-  hit_paths="$(printf '%s\n' "$gate_err" | sed -n 's/^  //p' | cut -d: -f1 | LC_ALL=C sort -u)"
+  hit_paths="$LEAK_GATE_HIT_PATHS"
   [ -n "$hit_paths" ] || hit_paths="(the gate reported a hit but its path could not be parsed — re-run
   tools/secret-guard/secret-scan.sh -- \"$system\" \"$bundle\" directly)"
   refuse "leak gate BLOCKED — secret-shaped string(s) or personal data found in:
@@ -98,7 +98,7 @@ re-run. There is no --force and no --skip-scan."
 elif [ "$gate_status" != 0 ]; then
   refuse "leak gate failed to run (tools/secret-guard/secret-scan.sh exited $gate_status) — refusing
   to run without a clean gate. Its stderr:
-$(printf '%s\n' "$gate_err" | sed 's/^/  /')"
+$(printf '%s' "$LEAK_GATE_STDERR" | sed 's/^/  /')"
 fi
 
 # One round dir per launch, never reused: mkdir (no -p on the leaf) fails loudly if the exact same
