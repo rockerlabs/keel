@@ -30,6 +30,20 @@ sections real content going forward — see that page for exactly when each one 
   and `tests/test_vendor_review_agy_client.sh` (direct coverage of the `agy.sh` client, added after the
   first two files were found to only ever exercise a fake stand-in) are new.
 
+- **New `tools/lib/leak-gate.sh` is the ONE shared leak-gate scan/parse/refuse shape** (dir #614 follow-up):
+  `tools/audit-packet/export.sh`'s `run_leak_gate()` and `tools/vendor-review.sh`'s inline leak-gate block
+  had independently typed out the same "invoke `secret-scan.sh -- FILE...`, then on a BLOCKED exit extract
+  only the leading path off each hit line (never the matched content) and refuse" shape — export.sh even
+  had it twice internally before its own dir #495 review promoted it to a local function, and
+  vendor-review.sh's copy (dir #614) made a third, flagged independently by two review angles during that
+  ticket's `/polish` pass. New `leak_gate_run()` (alongside `tools/lib/gate-paths.sh` and
+  `tools/lib/leak-patterns.sh` as the third promoted-from-duplication shared lib) owns the scan-then-parse
+  mechanics and manages its own scratch file internally; each caller keeps its own refusal wording and,
+  for export.sh, its own PASS 1/PASS 2 path-relabeling hook. `tests/test_leak_gate_lib.sh` is new (direct
+  coverage of `leak_gate_run()` against fake scanner stand-ins, including the first-colon-only split that
+  already caused a real content-leak bug once); `tests/test_audit_packet_export.sh` and
+  `tests/test_vendor_review.sh` continue to cover both callers' end-to-end leak-gate behavior unchanged.
+
 - **`/go` splits into a small gate and a separate implementer guide** (dir #642, round 3 of three
   fresh-context reviews): `commands/go.md` keeps its ten steps and word budget (≤ 1125), but the "how"
   three patch rounds had squeezed out of it now lives in NEW `commands/go-guide.md` — a hidden command

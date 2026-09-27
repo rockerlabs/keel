@@ -88,6 +88,8 @@ refuse()   { err "$1" 3; }
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$script_dir/../lib/nonneg-int.sh"
+# shellcheck source=tools/lib/leak-gate.sh
+. "$script_dir/../lib/leak-gate.sh"
 
 vendor=""
 files_arg=""
@@ -259,64 +261,51 @@ for f in "${files[@]}"; do
   baseline."
 done
 
-# run_leak_gate ERR_FILE MODE CONTEXT FILE... — shared by PASS 1 (MODE=pass1) and PASS 2
-# (MODE=pass2) below: invoke the scanner over FILE..., and on any hit relabel the raw
-# "path:line:content" records for the scratch/packet-internal paths a reader can't otherwise act
-# on, then refuse — same BLOCKED/failed-to-run message shape either pass uses, CONTEXT appended to
-# say which one (empty for PASS 1). Cleanup of a partially-written packet dir is NOT this
-# function's job — the on_exit trap above already does that unconditionally for every failure once
-# $packet_dir exists, so `refuse` below just has to exit. Relabeling is plain bash (`case` /
-# parameter-expansion), never a sed script built out of caller-controlled text: PASS 2's own path
-# runs through $packet_dir, which embeds --vendor/--out verbatim, and those are validated only
-# against `/`/`.`/`..` — a `#` in either used to break a `#`-delimited sed script and crash this
-# script ungracefully under its own `set -e`, instead of refusing cleanly (code review, dir #495).
-# Not shared with secret-scan.sh's own scan_file_args() (a different file, a different job —
-# invoking the scanner, not being it) but IS the fix for this same file typing this
-# scan-then-parse-then-refuse shape out twice on PASS 2's addition, the same "typed out twice"
-# class scan_file_args()'s own comment already names one level down (dir #495 code review, on the
-# first cut of PASS 2).
+# _relabel_leak_gate_path PATH — run_leak_gate's own RELABEL_FN hook (tools/lib/leak-gate.sh), one
+# function for both passes: PASS 1's ack_file/vendor_file are scratch files a reader can't otherwise
+# act on once $scratch is cleaned up on exit; PASS 2's paths live under $packet_dir, meaningless once
+# it's removed on a hit. A single function is safe (not a false-positive risk across passes) because
+# the two match sets never overlap — $packet_dir doesn't exist yet during PASS 1 — and "which pass" was
+# never load-bearing here in the first place; run_leak_gate's own CONTEXT parameter already carries that
+# distinction for the message text (found by this ticket's own /simplify pass, simplification angle: an
+# earlier cut kept two functions and a MODE-keyed dispatch to pick between them). Plain bash (`case` /
+# parameter-expansion), never a sed script built out of caller-controlled text: PASS 2's own path runs
+# through $packet_dir, which embeds --vendor/--out verbatim, and those are validated only against
+# `/`/`.`/`..` — a `#` in either used to break a `#`-delimited sed script and crash this script
+# ungracefully under its own `set -e`, instead of refusing cleanly (code review, dir #495). A literal
+# (double-quoted) prefix in `${1#"$packet_dir"/}` never re-enters pattern matching, so a glob-special
+# byte in $packet_dir can't misfire. `"${packet_dir:-}"` (not a bare `$packet_dir`), local to this one
+# case arm: PASS 1 calls this function before $packet_dir is ever assigned its real value further down,
+# and this script's own `set -u` evaluates a case pattern's variable reference even on a call where that
+# arm can't match — an earlier cut instead pre-bound a global `packet_dir=""` purely to survive that,
+# which put the "not applicable yet" allowance in the script's top-level init block, far from the one
+# case arm that actually needs it (found by this ticket's own `/code-review high` pass, altitude angle).
+_relabel_leak_gate_path() {
+  case "$1" in
+    "$ack_file")             printf '%s' "--disclosure-ack text" ;;
+    "$vendor_file")          printf '%s' "--vendor text" ;;
+    "${packet_dir:-}"/*)     printf '%s' "${1#"${packet_dir:-}"/}" ;;
+    *)                       printf '%s' "$1" ;;
+  esac
+}
+
+# run_leak_gate CONTEXT FILE... — shared by PASS 1 and PASS 2 below: delegates the actual scan-then-parse
+# to tools/lib/leak-gate.sh's leak_gate_run (shared with tools/vendor-review.sh, dir #614's own copy of
+# this exact shape), then builds this script's own BLOCKED/failed-to-run wording — CONTEXT appended to
+# say which pass (empty for PASS 1), "written"/"re-export" being this script's own verbs (vendor-review.sh's
+# are "sent"/"re-run", which is why the two callers keep their own message text rather than sharing it).
+# Cleanup of a partially-written packet dir is NOT this function's job — the on_exit trap above already
+# does that unconditionally for every failure once $packet_dir exists, so `refuse` below just has to
+# exit. Not shared with secret-scan.sh's own scan_file_args() (a different file, a different job —
+# invoking the scanner, not being it).
 run_leak_gate() {
-  local err_file="$1" mode="$2" context="$3"
-  shift 3
-  local status=0 hit_paths labeled p
-  "$scan_script" -- "$@" >/dev/null 2>"$err_file" || status=$?
-  [ "$status" = 0 ] && return 0
+  local context="$1"
+  shift
+  local status=0 hit_paths
+  leak_gate_run "$scan_script" "_relabel_leak_gate_path" "$@" && return 0
+  status=$?
   if [ "$status" = 1 ]; then
-    # BLOCKED — extract ONLY the leading path off each "  path:line:content" / "  path:(binary)
-    # match" detail line (secret-scan.sh's own format, see its emit_stream/emit_blob). Splitting on
-    # the FIRST colon (`cut -d: -f1`, equivalent to secret-scan.sh's own allowlist idiom
-    # `recpath="${rec%%:*}"`) is deliberate, not a from-the-end sed: the matched CONTENT after the
-    # line number can itself contain colons, and a from-the-end strip (tried first, caught live: a
-    # fixture line "leaked token: ghp_..." left "path:3:leaked token" in the message — the word
-    # before its own colon survived) leaks a fragment of the very text this gate exists to keep off
-    # this script's stderr. Never the rest of the line, in any case: that portion carries the
-    # matched secret text, which must not reach a session transcript or a CI log — a wider exposure
-    # than a human's own local terminal, which is what secret-scan.sh's own output is written for.
-    labeled=""
-    while IFS= read -r p; do
-      [ -n "$p" ] || continue
-      case "$mode" in
-        pass1)
-          # A hit against $ack_file/$vendor_file would otherwise print a raw scratch-dir absolute
-          # path, meaningless once $scratch is cleaned up on exit.
-          case "$p" in
-            "$ack_file")    p="--disclosure-ack text" ;;
-            "$vendor_file") p="--vendor text" ;;
-          esac
-          ;;
-        pass2)
-          # Relabel the absolute on-disk path to the packet-relative form a reader can act on
-          # ("chunks/02.txt", "KNOWN.md") — meaningless once $packet_dir is removed on a hit. A
-          # literal (double-quoted) prefix in `${p#"$packet_dir"/}` never re-enters pattern
-          # matching, so a glob-special byte in $packet_dir (from --vendor/--out) can't misfire.
-          case "$p" in
-            "$packet_dir"/*) p="${p#"$packet_dir"/}" ;;
-          esac
-          ;;
-      esac
-      labeled="${labeled}${p}"$'\n'
-    done < <(sed -n 's/^  //p' "$err_file" | cut -d: -f1)
-    hit_paths="$(printf '%s' "$labeled" | LC_ALL=C sort -u)"
+    hit_paths="$LEAK_GATE_HIT_PATHS"
     [ -n "$hit_paths" ] || hit_paths="(the gate reported a hit but its path could not be parsed — see
   tools/secret-guard/secret-scan.sh's own output by re-running it directly)"
     refuse "leak gate BLOCKED$context — secret-shaped string(s) or personal data found in:
@@ -327,7 +316,7 @@ re-export. There is no --force and no --skip-scan."
   else
     refuse "leak gate failed to run$context (tools/secret-guard/secret-scan.sh exited $status) —
   refusing to export without a clean gate. Its stderr:
-$(sed 's/^/  /' "$err_file")"
+$(printf '%s' "$LEAK_GATE_STDERR" | sed 's/^/  /')"
   fi
 }
 
@@ -341,7 +330,6 @@ scan_script="$script_dir/../secret-guard/secret-scan.sh"
   to this script ($scan_script) — refusing to export without a working leak gate. There is no
   --skip-scan."
 
-gate_err="$scratch/gate.err"
 # The listed FILES are not the only operator/caller-supplied text that ends up in the packet —
 # --disclosure-ack and --vendor both land verbatim in MANIFEST.txt (and vendor also names the
 # packet directory and the imported audit files' `auditor:` line). "The would-be packet content"
@@ -363,7 +351,7 @@ printf '%s\n' "$vendor" > "$vendor_file"
 # never inspected — reproduced live with a real key-shaped secret in a file named `staged`, code
 # review high, Angle C. `--` forces every remaining argument to be treated as a literal filename
 # (run_leak_gate's own `$scan_script -- "$@"` call carries this through).
-run_leak_gate "$gate_err" pass1 "" "${files[@]}" "$ack_file" "$vendor_file"
+run_leak_gate "" "${files[@]}" "$ack_file" "$vendor_file"
 gate_files_count="${#files[@]}"
 
 # --- classify: markdown (minus historical) / code / historical -------------------------------------
@@ -648,8 +636,7 @@ while IFS= read -r pf; do
   packet_files+=("$pf")
 done < <(find "$packet_dir" -type f | LC_ALL=C sort)
 
-gate2_err="$scratch/gate2.err"
-run_leak_gate "$gate2_err" pass2 " (assembled-packet pass)" ${packet_files[@]+"${packet_files[@]}"}
+run_leak_gate " (assembled-packet pass)" ${packet_files[@]+"${packet_files[@]}"}
 
 printf 'audit-packet export: wrote %s (%d chunks, leak gate clean, 2 passes)\n' "$packet_dir" "$total_chunks"
 ok=1
