@@ -50,7 +50,7 @@ main() {
   # canary must not take the index lock a concurrent session's own git command may be holding. No checkout reachable (an
   # adopter without the engine link, or CI) -> guard_engine_root stays empty and the half is skipped.
   guard_engine_root="" guard_engine_before=""
-  guard_engine_root="$(cd -P "$HOME/.keel/engine" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
+  guard_engine_root="$(cd -P "${HOME:-}/.keel/engine" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
   if [ "$guard_engine_root" = "$(cd -P "$here/.." 2>/dev/null && pwd -P)" ]; then
     guard_engine_root=""                 # the watched checkout itself — the dir #318 half already covers it
   fi

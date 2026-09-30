@@ -538,6 +538,14 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$watched/tests/test_clean.sh"
 run env HOME="$enghome" bash "$watched/tests/run.sh"
 check_status "dir #653: an untouched engine checkout passes" 0 "$STATUS"
 
+# an unset HOME (a minimal CI container) must not leak an "unbound variable" error out of the engine
+# lookup — run.sh runs under `set -u`
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_clean.sh"
+run env -u HOME bash "$d/run.sh"
+check_status "dir #653: an unset HOME still passes" 0 "$STATUS"
+check_absent "dir #653: an unset HOME raises no unbound-variable error" "$OUT" "unbound variable"
+
 # engine checkout == the watched checkout: already covered by the dir #318 status half, so the engine
 # block stays quiet rather than reporting one leak twice
 selfhome="$(mktemp -d "$SANDBOX/selfhome.XXXXXX")"
