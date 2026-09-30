@@ -60,6 +60,18 @@ sections real content going forward — see that page for exactly when each one 
   clause, each proven to match exactly one line (T5), and the `checklist item` needle + its mutation move
   to the new file along with the text they pin.
 
+- **`docs/grooming.md` G4: when the drain trigger fires, split the pool's growth into tickets a slate cut
+  returned and net new filings before reading it as a filing rate.** The v0.13.0 groom saw about
+  180 → 219, and 32 of the 40 were the v0.12.0 cut's own return. A hand step for now; dir #655 moves the
+  split into `tools/self/pool-report.sh`.
+- **`docs/grooming.md` G1: a carried-over lane with no pain behind it becomes a separate, priced opt-in,
+  confirmed after the operator sees its price.** The v0.12.0 groom planned all 42 tickets on an
+  up-front "whole lane" answer, and the operator cut the slate to 11 the same day.
+- **`docs/release-management.md` R7: record each worker's branch at launch and find its session log by
+  that branch, never by worktree directory or modification time.** v0.12.0 left its 23 workers
+  `unmeasured` because worktree names get recycled; a branch match recovered their cost afterwards. A
+  hand step for now; dir #654 adds the tool step.
+
 ## [0.12.0] — 2026-09-25
 
 **Known issues, disclosed at the cut.** This reads the previous cut's paragraph item by item, the

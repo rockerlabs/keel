@@ -295,6 +295,16 @@ different economics for the same work. This is a real trade against convenience,
 recording the figure every run is what eventually lets someone answer whether the trade is worth it —
 never asserted from one run's feel.
 
+**Record each worker's branch beside its row in the run's ledger at launch, and at close find its
+session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
+names get recycled, so a directory search found nothing and that release left its 23 workers
+`unmeasured`. A modification-time window over-counts roughly thirty times, because a log touched
+inside the window still carries its whole earlier history. Every transcript records the session's git
+branch, and a branch match recovered the workers' cost afterwards. Turning the matched logs into the
+manifest `tools/self/session-cost.sh table` totals is described in
+[`docs/session-cost.md`](session-cost.md). That match is a hand step today, a compensation whose
+remover is `dir #654`.
+
 ## R8 — single writer to `BACKLOG.md` during the release
 
 The manager writes every marker and ticket update; workers request writes through it rather than
