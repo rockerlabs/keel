@@ -229,6 +229,15 @@ operator's to resolve, never this procedure's to infer. A release row with no op
 says so plainly on the row — "carried-over theme, not a sprint" is the wording a plan already uses for
 exactly this case, and it stays visible rather than being dressed up as a sprint it is not.
 
+**A carried-over lane with no pain behind it is a separate, priced opt-in, confirmed after the
+operator sees its price (the 0.13.0 groom, reading the 0.12.0 row).** The 0.12.0 groom asked about
+the lane up front, got "the whole lane", and planned all 42 tickets: every body read, two G6 legs.
+The same day the operator cut the slate to its 11 pain tickets. The answer had come before anyone
+could see what the lane would cost. So the pain rows are planned and reviewed first. The lane follows
+as its own row, priced by G5's per-ticket rule from its ticket count alone. Its body reads and its
+own G6 pass happen only after a "yes" given against that price. A rule of the procedure, not a
+compensation.
+
 **The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
 pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
 wording. It has nothing for a *whole plan* with no per-row pains — which is what you get when the
@@ -324,6 +333,13 @@ settled fact.
   **Record any time this cycle — the reading no longer has to be right the first time.** The release
   key is a correctable record, not an idempotent-once one (`dir #461`): a stale reading is fixed with
   `--record --amend` instead of being avoided by ordering the whole sweep around this one step.
+  **When the drain trigger fires, split the growth by where it came from before reading it as a
+  filing rate (the 0.13.0 groom, 2026-09-30).** The trigger counts the pool, not filings, so a slate cut
+  that sends tickets back reads as growth at the next reading. That groom saw about 180 → 219: 32 of the
+  40 were the previous release's cut returning its carried-over lane, and 8 were net new filings.
+  Returned tickets call for a sort or a drain; filings call for a stricter filing bar. So the plan
+  states both numbers, the returned ones taken from the cut's own record. This is a hand step, a
+  compensation whose remover is `dir #655`.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
@@ -387,8 +403,9 @@ per-item build price (the 0.12.0 groom, reading the 0.11.0 row).** That release 
 items at a per-item figure: output landed inside the band, input-side ran 1.6–2.1× over it. A per-item
 price omits what scales with the release rather than with the item — every session's standing context,
 the audit's subagent fan-out, one rebase per PR queued behind a shared changelog anchor. Divide the last
-measured release total by the build tickets it actually DELIVERED (not its planned slate) and scale that; a per-item figure is a floor only. A
-rule of the procedure, not a compensation — no ticket removes it.
+measured release total by the build tickets it actually DELIVERED (not its planned slate) and scale
+that; a per-item figure is a floor only. A rule of the procedure, not a compensation — no ticket
+removes it.
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
 consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not
