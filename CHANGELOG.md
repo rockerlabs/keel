@@ -15,6 +15,10 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`.gitignore` covers `RELEASES.md` and `BACKLOG-parked.md`** (dir #635 §3.4/§3.5), the release-plan
+  and parked-ticket siblings the backlog sort split off `BACKLOG.md`. `docs/grooming.md` G9 now names
+  `RELEASES.md` as keel's release-plan location.
+
 - **The scriptable cross-vendor reading leg ships as a tracked, adopter-usable pair** (dir #614): the
   Gemini/G6 leg that had run twice with real findings (0.10.2 and 0.11.0 grooms) lived only in the
   operator's personal keel-project memory and a gitignored client, unreachable from any other project.

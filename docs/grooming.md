@@ -521,8 +521,9 @@ shipped conventions:
   open ticket) with the three zero-checks G3 already names. The plan says it is doing this and why,
   and names the ticket that owns where a ticket lives (there, KB.118) — a table is a compensation
   for a tag the file cannot carry yet, not a second convention.
-- **A release-plan table or section** (keel keeps one inside `BACKLOG.md`) is that kind of enrichment:
-  useful where it exists, never required infrastructure a groom depends on.
+- **A release-plan table or section** (keel keeps its plans in `RELEASES.md`, a sibling of
+  `BACKLOG.md`) is that kind of enrichment: useful where it exists, never required infrastructure a
+  groom depends on.
 - **Every record's location** (the standing list in G4(a), the releases cross-run record in G7) is
   per-project, with a sensible default named — never a keel-only absolute path treated as the only
   valid location.
