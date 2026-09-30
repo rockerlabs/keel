@@ -709,6 +709,11 @@ Steps, in order:
    real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
+   **Never commit, amend or edit while a background suite run is alive**
+   (dir #505) — wait for it or kill it first: `tests/run.sh` compares the checkout's HEAD and status
+   before and after the run, so a commit, an amend or an uncommitted edit of your own landing mid-run
+   trips the self-corruption canary as a false positive and costs a full rerun. A trip whose HEAD
+   moved forward: run `git reflog -3` before reading it as a fixture leak.
    Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
    polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
    as step 8, not a bare `done`: step 6 is one of the steps a convergence round must write itself —

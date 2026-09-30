@@ -476,6 +476,24 @@ check_contains "T3: the new HEAD-unmoved hint names a concurrent own edit" "$OUT
 check_contains "T3: the hint says never edit during a live run and to reconcile by hand" "$OUT" \
   "edit a checkout while its own suite run is still alive). Reconcile by hand either way."
 
+# --- dir #505 (b'): the HEAD-moved hint (dir #333's amendment) had no pin, and named its benign cause
+# without the one command that tells own-commit from leak. A fixture test that commits against the
+# watched repo moves HEAD forward on the same branch: the trip still fires (exit 1, never downgraded),
+# the hint names the own-commit cause, and it now names `git reflog -3` as the check. Mutation proof
+# (run manually, not committed): deleting the HEAD-moved hint block in tests/run.sh turns the two
+# hint checks RED; deleting only the reflog line turns the last one RED. ---------------------------
+hm_root="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." commit -q --allow-empty -m own-commit\nexit 0\n' \
+  > "$hm_root/tests/test_hm_commit.sh"
+run bash "$hm_root/tests/run.sh"
+check_status "dir #505: a forward HEAD move during the run trips the canary -> exit 1 (never downgraded)" 1 "$STATUS"
+check_contains "dir #505: the HEAD-moved hint names the session's own commit as the likely cause" "$OUT" \
+  "HEAD moved FORWARD on the same branch — possibly your own commit landing while this"
+check_contains "dir #505: the hint says never to commit during a live run" "$OUT" \
+  "commit against a checkout while its own suite run is still alive"
+check_contains "dir #505: the hint names git reflog -3 as the check that tells own commit from leak" "$OUT" \
+  "reflog -3 — a fresh entry of yours (commit/amend) made since the suite started"
+
 # --- dir #653: the canary must survive a test overwriting run.sh (or lib.sh) itself. bash reads a
 # script incrementally, so a fixture that rewrites the RUNNING run.sh in place (same inode, the shape
 # of a fixture write through a symlink into a checkout; claude-kb's 2026-09-22 incident) used to stop

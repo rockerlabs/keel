@@ -423,6 +423,8 @@ main() {
         printf '  commit against a checkout while its own suite run is still alive), or another ordinary\n'
         printf '  fast-forward (a pull, a fetch+merge) — rather than a leak. Reconcile by hand either way —\n'
         printf '  a moved HEAD is not automatically safe just because it fast-forwards.\n'
+        printf '  check (dir #505): git -C %s reflog -3 — a fresh entry of yours (commit/amend) made since the suite started\n' "$guard_repo_root"
+        printf '  = your own commit; an entry you do not recognize = look for a leak.\n'
       fi
       if [ "$guard_after_status" != "$guard_before_status" ]; then
         printf '  working-tree/index status also changed (git status --porcelain differs from before the run)\n'
