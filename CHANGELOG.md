@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/run.sh`'s corruption canary no longer goes silent when a test overwrites the runner**
+  (dir #653): bash reads a script incrementally, so a fixture that rewrote the running `run.sh` in
+  place (the 2026-09-22 claude-kb incident's silent half) left the runner resuming at a stale offset:
+  its canary never ran and the exit status was whatever the last command returned, with no message.
+  The runner body now sits in one `main()` called by the file's last line, so the canary is already
+  parsed before any test runs. A new no-git compare fingerprints `run.sh` and `lib.sh` before and
+  after the run and names a changed one; and, when `$HOME/.keel/engine` resolves to a different git
+  checkout than the watched one, its tracked-file `git status` is compared too (untracked files are
+  ignored). `tests/test_run_sh.sh` pins all three.
+
 - **`.gitignore` covers `RELEASES.md` and `BACKLOG-parked.md`** (dir #635 §3.4/§3.5), the release-plan
   and parked-ticket siblings the backlog sort split off `BACKLOG.md`. `docs/grooming.md` G9 now names
   `RELEASES.md` as keel's release-plan location.

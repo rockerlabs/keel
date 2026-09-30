@@ -476,4 +476,84 @@ check_contains "T3: the new HEAD-unmoved hint names a concurrent own edit" "$OUT
 check_contains "T3: the hint says never edit during a live run and to reconcile by hand" "$OUT" \
   "edit a checkout while its own suite run is still alive). Reconcile by hand either way."
 
+# --- dir #653: the canary must survive a test overwriting run.sh (or lib.sh) itself. bash reads a
+# script incrementally, so a fixture that rewrites the RUNNING run.sh in place (same inode, the shape
+# of a fixture write through a symlink into a checkout; claude-kb's 2026-09-22 incident) used to stop
+# the runner silently at the stale offset: it never reached its canary and exited 0. The body now
+# sits in one function bash parses up front, and run.sh/lib.sh content is compared before/after.
+# Every overwrite below targets the fakedir's OWN scratch copy — never the real checkout. ------------
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nprintf "#!/usr/bin/env bash\\nexit 0\\n" > "$(dirname "$0")/run.sh"\nexit 0\n' > "$d/test_selfwrite.sh"
+run bash "$d/run.sh"
+check_status "dir #653: a test overwriting the running run.sh -> non-zero, never a silent 0" 1 "$STATUS"
+check_contains "dir #653: the trip names dir #653's canary" "$OUT" "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #653)"
+check_contains "dir #653: the trip names run.sh as the overwritten file" "$OUT" "run.sh changed during the run"
+check_absent "dir #653: an overwritten run.sh is not reported as a pass" "$OUT" "ALL TEST FILES PASSED"
+check_contains "dir #653: the runner still reports the failure count after the overwrite" "$OUT" "TEST FILE(S) FAILED"
+
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nprintf "# overwritten\\n" > "$(dirname "$0")/lib.sh"\nexit 0\n' > "$d/test_libwrite.sh"
+run bash "$d/run.sh"
+check_status "dir #653: a test overwriting lib.sh -> non-zero" 1 "$STATUS"
+check_contains "dir #653: the trip names lib.sh as the overwritten file" "$OUT" "lib.sh changed during the run"
+check_absent "dir #653: the lib.sh overwrite does not also blame run.sh" "$OUT" "run.sh changed during the run"
+
+# needs no git: the claude-kb shape's watched checkout is not keel's, and a git-less tree has no
+# git canary at all — the content compare is what covers it
+check_absent "dir #653: the fakedir is git-less, so only the content compare could have tripped" "$OUT" "branch="
+
+# an unchanged run (no test touches run.sh/lib.sh) still passes and prints no #653 trip
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_clean.sh"
+run bash "$d/run.sh"
+check_status "dir #653: a run that leaves run.sh/lib.sh alone still passes" 0 "$STATUS"
+check_absent "dir #653: an unchanged run prints no #653 trip" "$OUT" "(dir #653)"
+
+# --- dir #653 widening (0.13.0 groom G6): the git canary watches guard_repo_root, which in the
+# claude-kb shape is the KB checkout, not the engine checkout a leaking test actually wrote to (4 of
+# the 6 files overwritten in 2026-09-22 were neither run.sh nor lib.sh). When $HOME/.keel/engine
+# resolves to a DIFFERENT git checkout, its tracked-file status is compared before/after too.
+# Untracked files are ignored on purpose (a peer session's new scratch file is not a leak). --------
+eng="$(new_repo)"
+printf 'tracked\n' > "$eng/engine-file.txt"
+git -C "$eng" add engine-file.txt
+git -C "$eng" commit -q -m init
+enghome="$(mktemp -d "$SANDBOX/enghome.XXXXXX")"
+mkdir -p "$enghome/.keel"
+ln -s "$eng" "$enghome/.keel/engine"
+
+watched="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\nprintf "leaked\\n" > "%s/engine-file.txt"\nexit 0\n' "$eng" > "$watched/tests/test_engine_leak.sh"
+run env HOME="$enghome" bash "$watched/tests/run.sh"
+check_status "dir #653: a test dirtying a tracked file of the engine checkout trips the canary -> exit 1" 1 "$STATUS"
+check_contains "dir #653: the engine trip is named" "$OUT" "the engine checkout changed during the run"
+check_contains "dir #653: the engine trip names the touched file" "$OUT" "engine-file.txt"
+check_absent "dir #653: the engine trip does not print file content" "$OUT" "leaked"
+git -C "$eng" checkout -q -- engine-file.txt
+
+printf '#!/usr/bin/env bash\nprintf "scratch\\n" > "%s/untracked-peer-file.txt"\nexit 0\n' "$eng" > "$watched/tests/test_engine_leak.sh"
+run env HOME="$enghome" bash "$watched/tests/run.sh"
+check_status "dir #653: an UNTRACKED file in the engine checkout does not trip -> exit 0" 0 "$STATUS"
+rm -f "$eng/untracked-peer-file.txt"
+
+rm -f "$watched/tests/test_engine_leak.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$watched/tests/test_clean.sh"
+run env HOME="$enghome" bash "$watched/tests/run.sh"
+check_status "dir #653: an untouched engine checkout passes" 0 "$STATUS"
+
+# engine checkout == the watched checkout: already covered by the dir #318 status half, so the engine
+# block stays quiet rather than reporting one leak twice
+selfhome="$(mktemp -d "$SANDBOX/selfhome.XXXXXX")"
+mkdir -p "$selfhome/.keel"
+ln -s "$watched" "$selfhome/.keel/engine"
+git -C "$watched" add tests/test_clean.sh tests/run.sh tests/lib.sh
+git -C "$watched" commit -q -m fixtures
+printf '#!/usr/bin/env bash\nprintf "leaked\\n" >> "$(dirname "$0")/test_clean.sh"\nexit 0\n' > "$watched/tests/test_selfleak.sh"
+git -C "$watched" add tests/test_selfleak.sh
+git -C "$watched" commit -q -m leaker
+run env HOME="$selfhome" bash "$watched/tests/run.sh"
+check_status "dir #653: a leak into a checkout that is both watched and the engine still trips -> exit 1" 1 "$STATUS"
+check_contains "dir #653: ... via the existing dir #318 status half" "$OUT" "working-tree/index status also changed"
+check_absent "dir #653: ... and is not reported a second time by the engine half" "$OUT" "the engine checkout changed during the run"
+
 summary
