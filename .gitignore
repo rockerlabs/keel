@@ -9,6 +9,10 @@
 # an untracked-but-not-ignored file, one `git add -A` from the public repo (found 2026-09-07 by the
 # 0.9.1 /groom, which created it by running the recording step it had just made mandatory).
 /POOL-HISTORY.jsonl
+# the backlog sort (dir #635 §3.4/§3.5) splits two siblings off BACKLOG.md: release plans and parked
+# tickets. Backlog state, so they inherit its status.
+/RELEASES.md
+/BACKLOG-parked.md
 /INSTANCE.md
 /.claude/
 
