@@ -494,13 +494,10 @@ check_contains "dir #653: the runner still reports the failure count after the o
 d="$(mkfakedir)"
 printf '#!/usr/bin/env bash\nprintf "# overwritten\\n" > "$(dirname "$0")/lib.sh"\nexit 0\n' > "$d/test_libwrite.sh"
 run bash "$d/run.sh"
+# the fakedir is git-less (no dir #318 canary at all): only the content compare can trip here
 check_status "dir #653: a test overwriting lib.sh -> non-zero" 1 "$STATUS"
 check_contains "dir #653: the trip names lib.sh as the overwritten file" "$OUT" "lib.sh changed during the run"
 check_absent "dir #653: the lib.sh overwrite does not also blame run.sh" "$OUT" "run.sh changed during the run"
-
-# needs no git: the claude-kb shape's watched checkout is not keel's, and a git-less tree has no
-# git canary at all — the content compare is what covers it
-check_absent "dir #653: the fakedir is git-less, so only the content compare could have tripped" "$OUT" "branch="
 
 # an unchanged run (no test touches run.sh/lib.sh) still passes and prints no #653 trip
 d="$(mkfakedir)"

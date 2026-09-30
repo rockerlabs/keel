@@ -46,17 +46,16 @@ main() {
   # claude-kb shape the KB checkout, not the engine checkout a leaking test actually wrote into (4 of
   # the 6 files overwritten on 2026-09-22 were neither run.sh nor lib.sh). When $HOME/.keel/engine
   # resolves to a DIFFERENT git checkout than the watched one, snapshot its tracked-file status too.
-  # `-uno`: a peer session's new untracked scratch file is not a leak. No checkout reachable (an
+  # `-uno`: a peer session's new untracked scratch file is not a leak. `--no-optional-locks`: a read-only
+  # canary must not take the index lock a concurrent session's own git command may be holding. No checkout reachable (an
   # adopter without the engine link, or CI) -> guard_engine_root stays empty and the half is skipped.
   guard_engine_root="" guard_engine_before=""
-  if [ -d "$HOME/.keel/engine" ]; then
-    guard_engine_root="$(cd -P "$HOME/.keel/engine" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ "$guard_engine_root" = "$(cd -P "$here/.." 2>/dev/null && pwd -P)" ]; then
-      guard_engine_root=""               # the watched checkout itself — the dir #318 half already covers it
-    fi
+  guard_engine_root="$(cd -P "$HOME/.keel/engine" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ "$guard_engine_root" = "$(cd -P "$here/.." 2>/dev/null && pwd -P)" ]; then
+    guard_engine_root=""                 # the watched checkout itself — the dir #318 half already covers it
   fi
   if [ -n "$guard_engine_root" ]; then
-    guard_engine_before="$(git -C "$guard_engine_root" status --porcelain -uno 2>/dev/null || true)"
+    guard_engine_before="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null || true)"
   fi
 
   # dir #318: a corruption canary for the checkout this suite itself runs from — every test file's
@@ -473,7 +472,7 @@ main() {
   [ "$(cksum < "$0" 2>/dev/null)" = "$guard_run_before" ] || guard_run_changed=1
   [ "$(cksum < "$here/lib.sh" 2>/dev/null)" = "$guard_lib_before" ] || guard_lib_changed=1
   if [ -n "$guard_engine_root" ]; then
-    guard_engine_after="$(git -C "$guard_engine_root" status --porcelain -uno 2>/dev/null || true)"
+    guard_engine_after="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null || true)"
     [ "$guard_engine_after" = "$guard_engine_before" ] || guard_engine_changed=1
   fi
   if [ "$guard_run_changed" = 1 ] || [ "$guard_lib_changed" = 1 ] || [ "$guard_engine_changed" = 1 ]; then
