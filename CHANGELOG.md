@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`install-secret-guard.sh --force` no longer overwrites an earlier saved hook** (dir #625): `--force`
+  keeps the foreign hook it replaces at `<hook>.pre-keel.bak`, permanently, so you can recover it, but a
+  second `--force` run over a DIFFERENT foreign hook (one something external put in place after the first)
+  copied the new hook over that backup with no warning, destroying the first. The run now refuses before
+  touching anything (exit 3), names the backup file already saved, and says to move it aside and re-run.
+  A regression test pins the two-`--force` sequence, which failed before the fix.
+
 - **The self-corruption canary's most common false trip is named where it starts** (dir #505, absorbing
   dir #573): `commands/polish.md`'s retest step now says never to commit, amend or edit while a
   background suite run is alive, since `tests/run.sh` reads a session's own mid-run commit or edit as a
