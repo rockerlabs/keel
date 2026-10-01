@@ -36,4 +36,15 @@ pin "docs/delegation.md's rails block states the dirty-tree discriminator" \
   "$delegation" 'is normal — it'"'"'s the parent' \
   "expected the canonical Worker rails block to say a dirty tree is normal work in progress, not corruption (dir #375)"
 
+# dir #505 (a): the retest caution. A worker who commits or edits the checkout while one of its own
+# background suite runs is still alive trips dir #318's self-corruption canary — a false positive that
+# costs a full rerun (hit twice in 0.10.1, ten trips in 0.12.0). /polish's test and retest steps are
+# where a worker starts those runs, so the caution lives there. Single-line needles (pin() is line-mode).
+pin "commands/polish.md's retest step warns against committing or editing while a background suite run is alive" \
+  "$polish" 'Never commit, amend or edit while a background suite run is alive' \
+  "expected the retest caution naming commit, amend and edit (dir #505)"
+pin "commands/polish.md's retest caution names the canary it would trip" \
+  "$polish" 'self-corruption canary' \
+  "expected the caution to say what trips (dir #505)"
+
 summary

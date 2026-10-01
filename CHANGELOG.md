@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The self-corruption canary's most common false trip is named where it starts** (dir #505, absorbing
+  dir #573): `commands/polish.md`'s retest step now says never to commit, amend or edit while a
+  background suite run is alive, since `tests/run.sh` reads a session's own mid-run commit or edit as a
+  fixture leak and the rerun costs a full suite. The HEAD-moved trip message gains the check that tells
+  an own commit from a leak (`git reflog -3`), and `tests/test_run_sh.sh` pins that hint, which had no
+  pin. The optional downgrade of such a trip to a warning is not shipped: it is filed as dir #656.
+
 - **`tests/run.sh`'s corruption canary no longer goes silent when a test overwrites the runner**
   (dir #653): bash reads a script incrementally, so a fixture that rewrote the running `run.sh` in
   place (the 2026-09-22 claude-kb incident's silent half) left the runner resuming at a stale offset:
