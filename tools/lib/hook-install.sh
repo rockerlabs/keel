@@ -69,16 +69,20 @@ hook_install_check_shape() {
 #             one case the caller refuses without --force; forced, ONLY that command is swapped for ours,
 #             in place, and every sibling command in the entry stays (dir #468).
 #   APPENDED  a different hook already holds this event+matcher: ours goes in a SIBLING entry with the
-#             same matcher. The incumbent entry is never touched, so the reverse direction needs nothing
-#             new and no adopter hook is lost to wire ours (dir #468; it replaced the old CONFLICT
-#             refusal, whose only exits were --force — deleting the incumbent — or hand-edited JSON).
+#             same matcher. The incumbent entry is never touched, so no adopter hook is lost to wire
+#             ours (dir #468).
 #   MISSING   no entry holds this event+matcher: a fresh one is added.
+# "Same hook" (STALE) is judged by `ident` below: the script basename plus the arguments of a
+# `bash '<path>/<script>.sh' args` command, i.e. the shape the installers build with tools/lib/sh-quote.sh's
+# quoting — change one and the other must follow, or STALE silently degrades to APPENDED. It matches on
+# basename only, so an adopter's own script with the same name and args on the same slot reads as STALE
+# too; the cost is a refusal naming it (no --force, no write), never a silent overwrite.
 # Computing the merged (as-if-forced) result even on a STALE is harmless: it is simply never written
 # unless the caller's refuse/--force gate clears it. `report` is TSV lines: STATUS<TAB>event<TAB>matcher.
 hook_install_merge() {
   local merge_prog='
-def ident: if type == "string" then ([capture("(?<b>[^/\u0027 ]+\\.sh)\u0027?(?<r>( .*)?)$")] | .[0] | if . == null then null else .b + .r end) else null end;
-def ours_only($c): reduce .[] as $h ([]; if $h.command == $c and any(.[]; .command == $c) then . else . + [$h] end);
+def ident: if type == "string" then first(capture("(?<b>[^/\u0027 ]+\\.sh)\u0027?(?<r>( .*)?)$") | .b + .r) // null else null end;
+def dedup_ours($c): reduce .[] as $h ([]; if $h.command == $c and any(.[]; .command == $c) then . else . + [$h] end);
 {obj: (.hooks //= {}), report: []} |
 reduce $specs[] as $s (.;
   .obj.hooks[$s.event] //= [] |
@@ -89,7 +93,7 @@ reduce $specs[] as $s (.;
   if ($cmds | index($s.command)) != null then
     .report += [["SAME", $s.event, $s.matcher]]
   elif $id != null and ($cmds | map(select(ident == $id)) | length) > 0 then
-    .obj.hooks[$s.event] |= map(if .matcher == $s.matcher then .hooks |= (map(if (.command | ident) == $id then .command = $s.command else . end) | ours_only($s.command)) else . end)
+    .obj.hooks[$s.event] |= map(if .matcher == $s.matcher then .hooks |= (map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
     | .report += [["STALE", $s.event, $s.matcher]]
   else
     .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
@@ -105,8 +109,8 @@ reduce $specs[] as $s (.;
 # (REMOVED/KEPT instead of the merge's statuses). Across EVERY entry on the spec's event+matcher (an
 # APPENDED sibling can sit after the incumbent), an entry comes out ONLY when its hooks array is
 # byte-identical to the single {type, command} entry the installer would wire right now — anything else
-# on that same event+matcher (the incumbent an APPENDED run left beside ours, yours, or a --force run's
-# replacement of something else entirely) is left in place; KEPT when nothing of ours was there to take.
+# on that same event+matcher (the incumbent an APPENDED run left beside ours, or a hook you later pointed
+# somewhere else) is left in place; KEPT when nothing of ours was there to take.
 # The empty-array prune is scoped to the events the SPECS own (dir #564, dir #390): another tool's empty
 # hook array under `.hooks` is not ours to delete.
 hook_install_remove() {

@@ -52,7 +52,7 @@ check_status "merge: a foreign top-level key survives" dark "$(jq -r '.new.theme
 # --- merge: a foreign command on the same event+matcher is APPENDED beside it, never replaced (dir #468) ---
 foreign='{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"other"}]}]}}'
 merged3="$(hook_install_merge "$specs" "$foreign")"
-check_status "merge: a different command on the same event+matcher → APPENDED (not CONFLICT)" \
+check_status "merge: a different command on the same event+matcher → APPENDED" \
   APPENDED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged3")"
 check_status "merge: …the incumbent entry is byte-untouched" \
   '{"matcher":"Bash","hooks":[{"type":"command","command":"other"}]}' "$(jq -c '.new.hooks.PostToolUse[0]' <<<"$merged3")"
@@ -61,12 +61,9 @@ check_status "merge: …ours rides in a sibling entry with the same matcher" \
 check_status "merge: …and the sibling carries the spec's matcher" \
   Bash "$(jq -r '.new.hooks.PostToolUse[1].matcher' <<<"$merged3")"
 merged3b="$(hook_install_merge "$specs" "$(jq -c '.new' <<<"$merged3")")"
-check_status "merge: re-run over an APPENDED result → SAME (idempotent, no third entry)" \
+check_status "merge: re-run over an APPENDED result → SAME (ours in the second entry is found, not appended again)" \
   SAME "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged3b")"
 check_status "merge: …entry count unchanged after the re-run" 2 "$(jq '.new.hooks.PostToolUse | length' <<<"$merged3b")"
-# our command living in a LATER entry than the incumbent still counts as SAME (the old walk looked at the first)
-check_status "merge: ours in a second entry is still found as SAME, not appended again" \
-  SAME "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged3b")"
 
 # --- merge: the SAME hook at a DIFFERENT path is STALE; the as-if-forced result swaps just that command ---
 stale='{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"keep-me"},{"type":"command","command":"bash '"'"'/old/place/x.sh'"'"' a"}]}]}}'

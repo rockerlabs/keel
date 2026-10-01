@@ -56,12 +56,13 @@
 # is APPENDED beside it, in a sibling entry with that matcher (dir #468). The one refusal left is a STALE
 # copy of this very hook — same script, another path, e.g. a moved checkout — because appending would
 # fire it twice; --force backs up settings.json (a timestamped sibling) first, then swaps just that one
-# command for ours, leaving every other command in its entry. Everything else already in settings.json (other hooks, other keys) is left exactly as it was. A hook
-# that's already exactly ours is left alone (idempotent — safe to re-run after every `git pull`).
+# command for ours, leaving every other command in its entry. Everything else already in settings.json
+# (other hooks, other keys) is left exactly as it was. A hook that's already exactly ours is left alone
+# (idempotent — safe to re-run after every `git pull`).
 #
 # --uninstall (dir #136) mirrors that same discipline in reverse: it removes an event+matcher entry
-# ONLY when its command is byte-identical to what this installer would wire right now — a hook you (or
-# a --force run) later pointed somewhere else is left in place and named as kept, never silently taken
+# ONLY when its command is byte-identical to what this installer would wire right now — a hook you
+# later pointed somewhere else is left in place and named as kept, never silently taken
 # out along with the rest. Backs up settings.json first, same as --force does. This is what
 # uninstall.sh's own closing summary now points adopters at when it finds leftover gate hooks — a
 # whole-home uninstall never removes them itself (it doesn't know whether other repos still need
