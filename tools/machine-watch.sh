@@ -219,21 +219,22 @@ mw_diff_file() {
 # A non-directory hit is `changed`; a directory hit is `entries changed` (covers a deletion inside) — except
 # a directory whose only news is a .DS_Store created in it (creating ANY entry bumps the parent's ctime, so
 # without this the excluded file would still be reported through its parent). A hit that is itself a watched
-# FILE (SETFILE: the resolved set) is skipped — its own row already reports it, under its own tier, and the
-# tree must not report it a second time as quiet. Capped at 20 lines.
+# FILE (SETFILE: the resolved set) is filtered out of find's output in ONE awk pass (a fork per hit would cost
+# thousands on a bulk change) — its own row already reports it, under its own tier. Capped at 20 lines.
 mw_scan_tree() {
   local tier="$1" id="$2" root="$3" stamp="$4" setfile="$5" hit n=0 more=0
   [ -f "$stamp" ] || return 0
   mw_find_newer_flag
   while IFS= read -r hit; do
-    if awk -F'\t' -v h="$hit" '$3 == "file" && $4 == h { f = 1 } END { exit !f }' "$setfile"; then continue; fi
     if [ -d "$hit" ] && [ ! -L "$hit" ]; then
       if [ -n "$(find "$hit/.DS_Store" -maxdepth 0 "$MW_NEWER" "$stamp" 2>/dev/null)" ]; then continue; fi
       if [ "$n" -lt 20 ]; then n=$((n + 1)); mw_line "$tier" "$id" "$hit" "entries changed"; else more=$((more + 1)); fi
     else
       if [ "$n" -lt 20 ]; then n=$((n + 1)); mw_line "$tier" "$id" "$hit" "changed"; else more=$((more + 1)); fi
     fi
-  done < <(find "$root" "$MW_NEWER" "$stamp" ! -name .DS_Store 2>/dev/null)
+  done < <(find "$root" "$MW_NEWER" "$stamp" ! -name .DS_Store 2>/dev/null | awk -v sf="$setfile" '
+    BEGIN { FS = "\t"; while ((getline l < sf) > 0) { split(l, a, "\t"); if (a[3] == "file") skip[a[4]] = 1 } }
+    !($0 in skip)')
   if [ "$more" -gt 0 ]; then mw_line "$tier" "$id" "$root" "…and $more more entries changed"; fi
 }
 
