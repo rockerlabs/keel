@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The shared scratch clone for the container test leg now has a rule for parallel workers**
+  (dir #575, absorbing dir #520): the one canonical Alpine clone path assumed a single user, so a
+  parallel wave's workers each ran `reset --hard` on it under a sibling's running container (three
+  collisions in one wave), and the one-off clones they fell back on piled up because a session cannot
+  delete them. `docs/parallel-sessions.md` gains failure mode F7 with the rail: a per-worker clone path
+  cut from the main checkout, removed by the release manager or the operator, and a rerun as the
+  recovery. A lock was weighed and not taken (`flock` is not on stock macOS, and a lock serializes the
+  wave). `tests/test_parallel_sessions_doc.sh` pins the F7 entry's clauses.
+
 - **`install-secret-guard.sh --force` no longer overwrites an earlier saved hook** (dir #625): `--force`
   keeps the foreign hook it replaces at `<hook>.pre-keel.bak`, permanently, so you can recover it, but a
   second `--force` run over a DIFFERENT foreign hook (one something external put in place after the first)
