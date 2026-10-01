@@ -209,9 +209,7 @@ hook_specs="$(jq -n --arg rt "$rt" '[
   {event: "SessionEnd",   matcher: "",                             command: ("bash " + ($rt|@sh) + " session-end")}
 ]')"
 
-if ! hook_install_check_shape "install-read-trace" "$settings" "$hook_specs" "$current"; then
-  exit 2
-fi
+hook_install_check_shape "install-read-trace" "$settings" "$hook_specs" "$current" || exit 2
 
 if [ "$uninstall" = 1 ]; then
   removal="$(hook_install_remove "$hook_specs" "$current")"

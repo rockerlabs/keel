@@ -2,7 +2,7 @@
 # tools/lib/hook-install.sh — the one settings-merge core every hook installer shares (dir #437 build
 # PR1, MW8; absorbs dir #390's extraction half).
 #
-# Sourced, not executed — no shebang as the first line's contract, no set -e (inherits the caller's).
+# Sourced, not executed: no shebang, no set -e (inherits the caller's).
 #
 # Extracted from tools/install-read-trace.sh and tools/install-pre-pr-gate.sh, which carried byte-
 # identical copies of the backup/atomic-write helpers, the shape check and the merge/remove jq programs
@@ -12,7 +12,9 @@
 # any extras of its own (the gate's manifest and ledger).
 #
 # The hook-specs JSON is an array of {event, matcher, command}. Every function below takes it as an
-# argument and never reads a global, so two installers sourced into one shell cannot cross-talk.
+# argument and never reads a global. The one global it WRITES is $HOOK_INSTALL_BACKUP (set by
+# hook_install_backup, read by the caller right after the call), so two installers sourced into one
+# shell cannot cross-talk on inputs.
 #
 # REQUIRED, not optional, by every caller — the same contract as tools/lib/artifact-cksum.sh, for the
 # same reason: a degrade-and-continue stub here would make an installer write a settings.json merge it

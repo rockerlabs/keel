@@ -297,9 +297,7 @@ hook_specs="$(jq -n --arg gate "$gate" '[
 # shared with install-read-trace.sh — reconcile there, not here, on drift.
 # Valid JSON is not the same as the expected SHAPE (a hand-edited ".hooks" as an array): the lib's
 # check refuses with a clean message instead of a raw jq type error.
-if ! hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$current"; then
-  exit 2
-fi
+hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$current" || exit 2
 
 # --uninstall: the mirror image of the merge below (hook_install_remove / hook_install_merge, same
 # one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/CONFLICT). An event+matcher entry
