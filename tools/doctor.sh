@@ -937,6 +937,30 @@ if [ "$INSTALL_MODE" = 1 ]; then
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global (install-secret-guard.sh --global; or vendor per repo)$guard_eff_note"
   fi
 
+  # dir #637 B8: W-STATE-LEGACY — a durable store (impact, read-trace) still lives in a harness home,
+  # the old address: the next `rm -r` of that home would take it. Audits the audited home AND the default
+  # harness home (a --codex/--home adopter's stores sit under the default one); one WARN per store root,
+  # deduped when the two coincide. A store root holding only compat links (what the migration leaves
+  # behind) is clean. The ID lives here, per the --install convention (header note above).
+  sl_seen=$'\n'
+  for sl_home in "$ihome" "${KEEL_HOME:-${HOME:-}/.claude}"; do
+    [ -n "$sl_home" ] || continue
+    for sl_name in impact read-trace; do
+      sl_root="$(keel_legacy_store_root "$sl_name" "$sl_home")" || continue
+      [ -d "$sl_root" ] || continue
+      sl_key="$(cd "$sl_root" && pwd -P)"
+      case "$sl_seen" in *$'\n'"$sl_key"$'\n'*) continue ;; esac
+      sl_seen="$sl_seen$sl_key"$'\n'
+      sl_real=0
+      for sl_e in "$sl_root"/* "$sl_root"/.[!.]* "$sl_root"/..?*; do
+        if [ -d "$sl_e" ] && [ ! -L "$sl_e" ]; then sl_real=1; break; fi
+      done
+      if [ "$sl_real" = 1 ]; then
+        warn W-STATE-LEGACY "keel's durable store still lives in the harness home at $sl_root — run tools/state-root-migrate.sh --from $sl_home"
+      fi
+    done
+  done
+
   flush_notes "$ihome/.keel/doctor-accept"
   if [ "$exit_code" = 0 ]; then say "doctor: install is complete — everything shipped is wired or declined"; fi
   finish

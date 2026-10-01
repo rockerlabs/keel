@@ -124,6 +124,7 @@ check_file "installs into --home with HOME unset" "$SANDBOX/nohome-flag/CLAUDE.m
 run env -u HOME KEEL_HOME="$SANDBOX/nohome-env" bash "$install" --no-hooks
 check_status "unset HOME + KEEL_HOME + --no-hooks → exit 0" 0 "$STATUS"
 check_file "installs into KEEL_HOME with HOME unset" "$SANDBOX/nohome-env/CLAUDE.md"
+check_contains "…and the state-root move says so instead of failing (dir #637 A9)" "$OUT" "state-root-migrate: HOME unset — nothing migrated"
 
 # a pre-existing NON-Keel CLAUDE.md: never clobbered, install loudly flags the un-merged rails, and
 # still wires everything else (commands included) so onboarding isn't silently half-done.
@@ -1368,5 +1369,34 @@ else
   check_absent "T23 …no raw 'No such file or directory' leak from the retry's own reads" "$t23_second_out" "No such file or directory"
   check_nodir "T23 …the lock is released normally afterward" "$t23home/.install.lock"
 fi
+
+# --- dir #637 A9: every install run moves the harness-home stores into $HOME/.keel -----------------------
+# The sandbox overrides (KEEL_IMPACT_STORE / KEEL_READ_TRACE_STORE) stay set on purpose: the tool prints
+# its one "ignored" notice for them, and the move still targets $HOME/.keel. A fresh HOME per case keeps
+# the shared sandbox home's own default install out of it.
+a9_mk() { mkdir -p "$1"; printf 'row\n' > "$1/ledger.md"; }
+a9h="$SANDBOX/a9-move"; fresh_home_env "$a9h"; mkdir -p "$a9h"
+a9_mk "$a9h/.claude/.keel/impact/-p-a9"
+run env "${FRESH_HOME_ENV[@]}" "$install" --no-hooks
+check_status "A9: an install with a legacy store exits 0" 0 "$STATUS"
+check_dir "A9: the entry moved to \$HOME/.keel/impact" "$a9h/.keel/impact/-p-a9"
+check_link "A9: a compat link is left at the old address" "$a9h/.claude/.keel/impact/-p-a9"
+check_contains "A9: the move's output is indented two spaces under the install log" "$OUT" "  moved $a9h/.claude/.keel/impact/-p-a9"
+run env "${FRESH_HOME_ENV[@]}" "$install" --no-hooks
+check_status "A9: a second run is idempotent (exit 0)" 0 "$STATUS"
+check_contains "A9: ...and finds nothing left to move" "$OUT" "nothing to migrate"
+
+a9c="$SANDBOX/a9-codex"; fresh_home_env "$a9c"; mkdir -p "$a9c"
+a9_mk "$a9c/.claude/.keel/impact/-p-a9c"
+run env "${FRESH_HOME_ENV[@]}" "$install" --codex --home "$a9c/.codex" --no-hooks
+check_status "A9: --codex exits 0" 0 "$STATUS"
+check_dir "A9: --codex also moves a \$HOME/.claude/.keel/impact entry (the default harness home)" "$a9c/.keel/impact/-p-a9c"
+
+a9d="$SANDBOX/a9-conflict"; fresh_home_env "$a9d"; mkdir -p "$a9d"
+a9_mk "$a9d/.claude/.keel/impact/-p-a9d"; a9_mk "$a9d/.keel/impact/-p-a9d"
+run env "${FRESH_HOME_ENV[@]}" "$install" --no-hooks
+check_status "A9: a conflict keeps install's exit status at 0" 0 "$STATUS"
+check_contains "A9: ...and is reported" "$OUT" "kept $a9d/.claude/.keel/impact/-p-a9d"
+check_nolink "A9: ...with the legacy entry left a real directory" "$a9d/.claude/.keel/impact/-p-a9d"
 
 summary
