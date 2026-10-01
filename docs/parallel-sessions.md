@@ -43,7 +43,7 @@ outside the tree by absolute path?* A yes to any of them is outside worktree pro
 
 ## The failure catalog
 
-Six modes, drawn from independent field reports. Each is a symptom, why worktree isolation didn't cover
+Seven modes, drawn from independent field reports. Each is a symptom, why worktree isolation didn't cover
 it, which rail below would have caught it, and which recovery tier gets you back — the commands
 themselves live in the recovery-tiers section, not here.
 
@@ -93,6 +93,20 @@ themselves live in the recovery-tiers section, not here.
   Rail: before trusting a reused clone, run `git remote -v` and require the real remote URL; re-point with
   `git remote set-url origin <url>` and `git fetch --prune` before any `reset --hard` to a commit.
   Recovery: preemptive (the check above) — a stale clone loses nothing, it just verifies nothing.
+- **F7 — the one shared scratch clone under two parallel legs.** A project sets aside ONE clone path for
+  its container test leg ("reuse it, `fetch` and `reset --hard <sha>` instead of cloning fresh"), and a
+  parallel wave of workers all run that leg at once: the second worker's `reset --hard` moves the clone
+  under the first worker's running container, so the first run tests a mix of two commits, or dies
+  mid-run on a guard that watches the tree. Seen live: three collisions in one wave. The workaround that
+  follows is worse — each blocked worker makes a one-off clone, and because a session cannot delete a
+  directory tree (`rm -rf` is denied to it by design) the one-offs pile up on disk. Why isolation didn't
+  help: the clone sits outside every worktree and is shared by name, not by git. Rail: one canonical
+  clone for solo use; in a parallel wave every worker gets a per-worker path (`<canonical>-<worker
+  id>`), cut from the main checkout — run `git remote -v` first (F6) — and the release manager's wrap, or the
+  operator, removes them afterwards; a worker never leaves its clone for a peer to find. A lock was
+  weighed and not taken: it serializes the very legs a wave runs to save time, and `flock` is not on
+  stock macOS. Recovery: the interrupted run is invalid, not the code — rerun the leg on a clone nobody
+  else touches; nothing is lost.
 
 ## The rails
 
@@ -160,7 +174,7 @@ you notice, the cheaper the tier.
   against a shared file's *remote* version (`git show origin/<default>:<path>`), since the remote may
   have claimed that number while you weren't looking; finish with push-verify.
 - **The floor: `git reflog`.** Name it plainly — it recovered two of the first four incidents in the
-  catalog above (F1 and F3); F5 and F6 lose nothing, they mislead instead. It's local-only, and it
+  catalog above (F1 and F3); F5, F6 and F7 lose nothing, they mislead instead. It's local-only, and it
   expires. **Bare `git reflog` reads your own worktree's `HEAD` reflog
   only** — to find commits a *peer* session dropped, check that branch's own reflog instead:
   `git reflog show <branch>`, which every worktree shares. Pair it with `git stash list` and

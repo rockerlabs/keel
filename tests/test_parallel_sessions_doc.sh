@@ -88,10 +88,33 @@ else
     "found $recovery_count '## Recovery tiers' headings, expected exactly 1"
 fi
 
-# --- the failure catalog names all six field-report modes, anonymized (no per-incident section) --
-for mode in 'F1' 'F2' 'F3' 'F4' 'F5' 'F6'; do
+# --- the failure catalog names all seven field-report modes, anonymized (no per-incident section) --
+for mode in 'F1' 'F2' 'F3' 'F4' 'F5' 'F6' 'F7'; do
   pin "parallel-sessions.md failure catalog names $mode" "$doc" "**$mode —" \
     "expected the failure catalog to enumerate $mode"
 done
+
+pin "parallel-sessions.md failure catalog intro counts seven modes" "$doc" "Seven modes, drawn from" \
+  "adding F7 means the intro's count moves with it"
+pin "parallel-sessions.md Recovery tiers floor lists F7 among the modes that lose nothing" "$doc" \
+  "F5, F6 and F7 lose nothing" "F7 loses nothing (a rerun fixes it); the floor bullet must say so"
+
+# --- dir #575 (absorbing dir #520): F7 is the shared scratch clone under two Docker legs. The bullet is
+# flattened to one line first, so a pin survives a re-wrap of the prose. Each pin is one clause of the
+# entry: the symptom, the rail (a per-worker path from the MAIN checkout, never a shared one), who
+# removes the leftovers (a session cannot: rm -rf is denied to it), and the recovery. ---------------
+f7="$(awk '/^- \*\*F7 —/{on=1} on&&/^$/{exit} on{print}' "$doc" | tr '\n' ' ' | tr -s ' ')"
+f7_pin() { # label needle
+  case "$f7" in
+    *"$2"*) pass "F7 entry: $1" ;;
+    *) fail "F7 entry: $1" "expected the F7 bullet to contain: $2" ;;
+  esac
+}
+f7_pin "names the symptom (a reset under a sibling's running container)" "reset --hard"
+f7_pin "rail: one clone path PER WORKER" "per-worker"
+f7_pin "rail: cut the per-worker clone from the main checkout" "main checkout"
+f7_pin "rail: check origin before trusting it (F6)" "git remote -v"
+f7_pin "names the leftover-clone owner (the manager or the operator, not a session)" "release manager"
+f7_pin "recovery: the interrupted run is invalid, rerun it" "rerun"
 
 summary
