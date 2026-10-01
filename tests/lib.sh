@@ -907,6 +907,17 @@ apostrophe_cmd_argv() {
   eval "APOSTROPHE_ARGV=($1)"
 }
 
+# git_var_stub_dir DIR — put a `git` shim in DIR (created) that fails `git var …` with rc 129 and delegates every
+# other call to the real git: Apple's /usr/bin/git 2.39 answers `usage: git var (-l | <variable>)` that way, so
+# prepending DIR to PATH exercises a caller's `git var` fallback on any host (dir #437 PR2).
+git_var_stub_dir() {
+  local real_git
+  real_git="$(command -v git)"
+  mkdir -p "$1"
+  printf '#!/bin/sh\nif [ "${1:-}" = var ]; then exit 129; fi\nexec "%s" "$@"\n' "$real_git" > "$1/git"
+  chmod 755 "$1/git"
+}
+
 # dir #318, G2: a refused ref write fails the file even when the refused command's own failure was
 # swallowed (`|| true`, `2>/dev/null` — test_changelog_section.sh's old `fetch` had exactly this
 # shape). Checked here, once, right before the totals line, rather than at every call site.

@@ -63,6 +63,15 @@ keel_legacy_store_entries() {
   done
 }
 
+# keel_machine_watch_store — the machine-global watcher's baseline store (dir #437 PR2): $KEEL_MACHINE_WATCH_STORE
+# when set (tests, an operator's own location), else keel_store_root machine-watch. The one definition both
+# tools/machine-watch.sh and tools/install-machine-watch.sh call, so the dir the installer pre-creates is the
+# dir the watcher reads — the watcher reads the store's absence as a removal.
+keel_machine_watch_store() {
+  if [ -n "${KEEL_MACHINE_WATCH_STORE:-}" ]; then printf '%s' "$KEEL_MACHINE_WATCH_STORE"; return 0; fi
+  keel_store_root machine-watch
+}
+
 # keel_store_root NAME — where store NAME lives. Rungs, in order, R = keel_state_root's output:
 #   1. keel_state_root fails            → print nothing, return 1.
 #   2. R/NAME is a directory            → R/NAME   (`-d` follows a symlink: a moved store whose old

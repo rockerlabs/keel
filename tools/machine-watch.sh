@@ -64,7 +64,7 @@ for _mw_lib in state-root git-global-paths stat-portable artifact-cksum; do
 done
 unset _mw_lib
 
-MW_TAB="$(printf '\t')"
+MW_TAB=$'\t'
 MW_ERR=""
 # Per-run temp files live in the store (same filesystem, so the final mv is atomic) and are removed on exit.
 MW_TMP=""
@@ -78,10 +78,12 @@ mw_sanitize() {
   printf '%s' "$1"
 }
 
-# mw_store — the store directory; sets MW_ERR and returns 1 when none can be named.
+# mw_store — resolve the store directory ONCE per run into $MW_STORE; sets MW_ERR and returns 1 when none can
+# be named. (A global, not a printed value: a `$(…)` capture would redo the resolution in a subshell per call.)
+MW_STORE=""
 mw_store() {
-  if [ -n "${KEEL_MACHINE_WATCH_STORE:-}" ]; then printf '%s' "$KEEL_MACHINE_WATCH_STORE"; return 0; fi
-  keel_store_root machine-watch || { MW_ERR="no \$HOME, so no baseline store can be named"; return 1; }
+  [ -z "$MW_STORE" ] || return 0
+  MW_STORE="$(keel_machine_watch_store)" || { MW_STORE=""; MW_ERR="no \$HOME, so no baseline store can be named"; return 1; }
 }
 
 # mw_harness_home — <H>; prints nothing and returns 1 without a HOME or KEEL_HOME.
@@ -124,8 +126,7 @@ mw_resolve() {
         case "$line" in ""|"#"*) continue ;; esac
         tier="${line%% *}"; rest="${line#* }"
         case "$tier" in alert|quiet) ;; *) continue ;; esac
-        # shellcheck disable=SC2088  # a LITERAL leading ~/ the user wrote into the file
-        case "$rest" in "~/"*) rest="$HOME/${rest#\~/}" ;; esac
+        rest="$(git_global_expand_tilde "$rest")"
         case "$rest" in /*) ;; *) continue ;; esac
         if [ -d "$rest" ]; then printf 'k\t%s\ttree\t%s\n' "$tier" "$rest"; else printf 'k\t%s\tfile\t%s\n' "$tier" "$rest"; fi
       done < "$p"
@@ -168,14 +169,15 @@ mw_state() {
 # appended as a fifth field.
 mw_fingerprint() {
   local id tier kind p
+  _stat_portable_ensure_flavor   # once here: inside each `$(…)` it would re-probe, and the cache would be lost
   while IFS="$MW_TAB" read -r id tier kind p; do
     [ -n "$p" ] || continue
     printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$tier" "$kind" "$p" "$(mw_state "$kind" "$p")"
   done
 }
 
-# mw_find_newer_flag — `-cnewer` where find has it, else `-newer` (mtime: a mode-only change is then
-# missed — busybox, TO VERIFY item in the spec). Probed once.
+# mw_find_newer_flag — `-cnewer` where find has it, else `-newer` (mtime: a mode-only change inside a tree
+# is then missed — busybox's find has no -cnewer). Probed once per run.
 MW_NEWER=""
 mw_find_newer_flag() {
   [ -n "$MW_NEWER" ] && return 0
@@ -201,17 +203,16 @@ mw_line() {
 # mw_diff_file TIER ID PATH OLD NEW — classify one file's change.
 mw_diff_file() {
   local tier="$1" id="$2" p="$3" old="$4" new="$5" _o om oc nm nc
+  # Only called for a path whose state DIFFERS from its baseline (the diff pass above filters).
   case "$old/$new" in
-    absent/absent) return 0 ;;
     absent/*) mw_line "$tier" "$id" "$p" created; return 0 ;;
     */absent) mw_line alert "$id" "$p" deleted; return 0 ;;
+    other/*|*/other) mw_line "$tier" "$id" "$p" changed; return 0 ;;
   esac
-  [ "$old" != "$new" ] || return 0
   read -r _o om oc <<<"$old"
   read -r _o nm nc <<<"$new"
   if [ "$om" != "$nm" ]; then mw_line "$tier" "$id" "$p" "mode $om→$nm"; fi
   if [ "$oc" != "$nc" ]; then mw_line "$tier" "$id" "$p" "content changed"; fi
-  if [ "$om" = "$nm" ] && [ "$oc" = "$nc" ]; then mw_line "$tier" "$id" "$p" "changed"; fi
 }
 
 # mw_scan_tree TIER ID ROOT STAMP — the ctime scan of one tree: find -cnewer STAMP, never per-file hashes.
@@ -219,29 +220,26 @@ mw_diff_file() {
 # a directory whose only news is a .DS_Store created in it (creating ANY entry bumps the parent's ctime, so
 # without this the excluded file would still be reported through its parent). Capped at 20 lines.
 mw_scan_tree() {
-  local tier="$1" id="$2" root="$3" stamp="$4" hit n=0 total=0
+  local tier="$1" id="$2" root="$3" stamp="$4" hit n=0 more=0
   [ -f "$stamp" ] || return 0
   mw_find_newer_flag
   while IFS= read -r hit; do
-    total=$((total + 1))
-    [ "$n" -lt 20 ] || continue
     if [ -d "$hit" ] && [ ! -L "$hit" ]; then
       if [ -n "$(find "$hit/.DS_Store" -maxdepth 0 "$MW_NEWER" "$stamp" 2>/dev/null)" ]; then continue; fi
-      n=$((n + 1)); mw_line "$tier" "$id" "$hit" "entries changed"
+      if [ "$n" -lt 20 ]; then n=$((n + 1)); mw_line "$tier" "$id" "$hit" "entries changed"; else more=$((more + 1)); fi
     else
-      n=$((n + 1)); mw_line "$tier" "$id" "$hit" "changed"
+      if [ "$n" -lt 20 ]; then n=$((n + 1)); mw_line "$tier" "$id" "$hit" "changed"; else more=$((more + 1)); fi
     fi
   done < <(find "$root" "$MW_NEWER" "$stamp" ! -name .DS_Store 2>/dev/null)
-  if [ "$total" -gt "$n" ] && [ "$n" -ge 20 ]; then
-    mw_line "$tier" "$id" "$root" "…and $((total - n)) more entries changed"
-  fi
+  if [ "$more" -gt 0 ]; then mw_line "$tier" "$id" "$root" "…and $more more entries changed"; fi
 }
 
 # mw_snap_write NAME — write the baseline and stamp. Stamp first: a change made while the fingerprint is
 # being taken is then re-reported next time, never missed.
 mw_snap_write() {
   local name="$1" store snap stamp
-  store="$(mw_store)" || return 1
+  mw_store || return 1
+  store="$MW_STORE"
   mkdir -p "$store" 2>/dev/null || { MW_ERR="cannot create $store"; return 1; }
   snap="$store/$name.snap"; stamp="$store/$name.stamp"
   MW_TMP="$store/.tmp.$$"
@@ -254,7 +252,8 @@ mw_snap_write() {
 # (each change is reported once per session). rc 0 = unchanged, 1 = changed, 2 = error / no baseline.
 mw_check() {
   local name="$1" store snap stamp diff id tier kind p old new
-  store="$(mw_store)" || return 2
+  mw_store || return 2
+  store="$MW_STORE"
   snap="$store/$name.snap"; stamp="$store/$name.stamp"
   [ -f "$snap" ] || { MW_ERR="no baseline named $name"; return 2; }
   ALERT_L=""; QUIET_L=""
@@ -322,19 +321,32 @@ mw_notice() { jq -n --arg s "$1" '{systemMessage: $s}'; }
 
 # --- hook mode (MW3) ---------------------------------------------------------------------------------
 
+# mw_hook_snap SID — record the baseline, or tell the session the watcher could not.
+mw_hook_snap() {
+  mw_snap_write "$1" || { mw_notice "machine-watch: check failed: $MW_ERR"; return 1; }
+}
+# mw_hook_check SID EVENT HEADER — check, then emit the report (changed) or a failure notice (error).
+mw_hook_check() {
+  local rc
+  mw_check "$1"; rc=$?
+  if [ "$rc" = 2 ]; then mw_notice "machine-watch: check failed: $MW_ERR"
+  elif [ "$rc" = 1 ]; then mw_emit "$2" "$3"; fi
+}
+
 mw_hook() {
-  local payload sid ev header store rc
+  local payload parsed sid ev store
   if ! command -v jq >/dev/null 2>&1; then
     printf '{"systemMessage":"machine-watch: check failed: jq not found (hook mode needs it)"}\n'
     return 0
   fi
   [ -z "$MW_LIBS_ERR" ] || { mw_notice "machine-watch: check failed: $MW_LIBS_ERR"; return 0; }
-  payload="$(cat)"
-  sid="$(jq -r '.session_id // empty' <<<"$payload" 2>/dev/null)"
-  ev="$(jq -r '.hook_event_name // empty' <<<"$payload" 2>/dev/null)"
+  IFS= read -r -d '' payload || true
+  parsed="$(jq -r '(.session_id // ""), (.hook_event_name // "")' <<<"$payload" 2>/dev/null)"
+  { read -r sid; read -r ev; } <<<"$parsed"
   case "$ev" in SessionStart|PostToolUse|PostToolUseFailure|SessionEnd) ;; *) return 0 ;; esac
   sid="$(mw_sanitize "$sid")" || { mw_notice "machine-watch: check failed: unusable session_id (only A-Z a-z 0-9 . _ - are accepted)"; return 0; }
-  store="$(mw_store)" || { mw_notice "machine-watch: check failed: $MW_ERR"; return 0; }
+  mw_store || { mw_notice "machine-watch: check failed: $MW_ERR"; return 0; }
+  store="$MW_STORE"
   case "$ev" in
     SessionEnd)
       rm -f "$store/$sid.snap" "$store/$sid.stamp" 2>/dev/null
@@ -342,12 +354,9 @@ mw_hook() {
     SessionStart)
       if [ -f "$store/$sid.snap" ]; then
         # A resume or a compact can hide changes made while this session was not running.
-        header='machine-watch: machine-global state changed while this session was not running:'
-        mw_check "$sid"; rc=$?
-        if [ "$rc" = 2 ]; then mw_notice "machine-watch: check failed: $MW_ERR"
-        elif [ "$rc" = 1 ]; then mw_emit SessionStart "$header"; fi
+        mw_hook_check "$sid" SessionStart 'machine-watch: machine-global state changed while this session was not running:'
       else
-        mw_snap_write "$sid" || { mw_notice "machine-watch: check failed: $MW_ERR"; return 0; }
+        mw_hook_snap "$sid" || return 0
       fi
       # Crashed sessions leave baselines behind.
       find "$store" -maxdepth 1 \( -name '*.snap' -o -name '*.stamp' \) -mtime "+${KEEL_MACHINE_WATCH_MAX_AGE_DAYS:-7}" \
@@ -355,22 +364,18 @@ mw_hook() {
       return 0 ;;
   esac
   # PostToolUse / PostToolUseFailure
-  header='machine-watch: machine-global state changed around this tool call:'
-  if [ ! -f "$store/$sid.snap" ]; then
-    # No baseline for this session is itself evidence: the store may have been removed.
-    if [ ! -d "$store" ]; then
-      ALERT_L="$store: deleted (this session's baseline went with it)"; QUIET_L=""
-      mw_snap_write "$sid" || { mw_notice "machine-watch: check failed: $MW_ERR"; return 0; }
-      mw_emit "$ev" "$header"
-    else
-      mw_snap_write "$sid" || { mw_notice "machine-watch: check failed: $MW_ERR"; return 0; }
-      mw_notice "machine-watch: no baseline for this session — recorded one now (wired mid-session)"
-    fi
-    return 0
+  local header='machine-watch: machine-global state changed around this tool call:'
+  if [ -f "$store/$sid.snap" ]; then
+    mw_hook_check "$sid" "$ev" "$header"
+  elif [ ! -d "$store" ]; then
+    # No baseline for this session is itself evidence: the store was removed.
+    ALERT_L="$store: deleted (this session's baseline went with it)"; QUIET_L=""
+    mw_hook_snap "$sid" || return 0
+    mw_emit "$ev" "$header"
+  else
+    mw_hook_snap "$sid" || return 0
+    mw_notice "machine-watch: no baseline for this session — recorded one now (wired mid-session)"
   fi
-  mw_check "$sid"; rc=$?
-  if [ "$rc" = 2 ]; then mw_notice "machine-watch: check failed: $MW_ERR"
-  elif [ "$rc" = 1 ]; then mw_emit "$ev" "$header"; fi
   return 0
 }
 
@@ -392,7 +397,7 @@ EOF
 }
 
 mw_cli() {
-  local cmd="${1:-}" name rest tier kind store
+  local cmd="${1:-}" name rc tier kind rest
   [ -z "$MW_LIBS_ERR" ] || { echo "machine-watch: $MW_LIBS_ERR" >&2; return 2; }
   case "$cmd" in
     -h|--help) mw_usage; return 0 ;;
@@ -403,14 +408,14 @@ mw_cli() {
       name="$(mw_sanitize "${2:-}")" || { echo "machine-watch: $cmd needs a NAME of only A-Z a-z 0-9 . _ -" >&2; return 2; }
       case "$cmd" in
         snapshot) mw_snap_write "$name" || { echo "machine-watch: $MW_ERR" >&2; return 2; } ;;
-        forget) store="$(mw_store)" || { echo "machine-watch: $MW_ERR" >&2; return 2; }
-                rm -f "$store/$name.snap" "$store/$name.stamp" ;;
+        forget) mw_store || { echo "machine-watch: $MW_ERR" >&2; return 2; }
+                rm -f "$MW_STORE/$name.snap" "$MW_STORE/$name.stamp" ;;
         check)
-          mw_check "$name"; rest=$?
-          if [ "$rest" = 2 ]; then echo "machine-watch: $MW_ERR" >&2; return 2; fi
+          mw_check "$name"; rc=$?
+          if [ "$rc" = 2 ]; then echo "machine-watch: $MW_ERR" >&2; return 2; fi
           [ -z "$ALERT_L" ] || printf '%s\n' "$ALERT_L"
           [ -z "$QUIET_L" ] || printf '%s\n' "$QUIET_L"
-          return "$rest" ;;
+          return "$rc" ;;
       esac
       return 0 ;;
     *) mw_usage >&2; return 2 ;;

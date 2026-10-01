@@ -127,10 +127,7 @@ check_file "W5c a baseline was recorded" "$H/store/s1.snap"
 
 # --- W6: git var unavailable (Apple git 2.39 answers rc 129) -> the documented fallback --------------
 mkcase w6
-mkdir -p "$SANDBOX/stub-w6"
-real_git="$(command -v git)"
-printf '#!/bin/sh\nif [ "${1:-}" = var ]; then exit 129; fi\nexec "%s" "$@"\n' "$real_git" > "$SANDBOX/stub-w6/git"
-chmod 755 "$SANDBOX/stub-w6/git"
+git_var_stub_dir "$SANDBOX/stub-w6"
 run env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM "HOME=$H" "KEEL_HOME=$HH" \
   "KEEL_MACHINE_WATCH_STORE=$H/store" "PATH=$SANDBOX/stub-w6:$PATH" bash "$mw" paths
 check_status "W6 paths with a failing git var -> exit 0" 0 "$STATUS"

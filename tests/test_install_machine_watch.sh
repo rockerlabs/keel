@@ -121,6 +121,12 @@ check_status "--print -> exit 0" 0 "$STATUS"
 check_nofile "--print writes nothing" "$prepo/.claude/settings.json"
 check_contains "--print shows the 4 events" "$OUT" "PostToolUseFailure"
 check_contains "--print is the ready-to-paste hooks object" "$OUT" '"hooks"'
+# the no-jq paste-in snippet is a second spelling of the 4 specs: it must name the same event+matcher pairs
+# (and the same command) as what an install actually wires, or the fallback diverges silently
+ours='[.hooks | to_entries[] | .key as $e | .value[] | select(.hooks[].command | contains("machine-watch.sh")) | [$e, .matcher, .hooks[0].command]] | sort'
+qrepo="$(new_repo)"; "$installer" "$qrepo" >/dev/null 2>&1
+check_eq "--print names the same event+matcher+command triples the install wires" \
+  "$(jq -c "$ours" "$qrepo/.claude/settings.json" 2>/dev/null || true)" "$(jq -c "$ours" <<<"$OUT")"
 
 # --- no jq: a snippet, nothing written -----------------------------------------------------------------
 farm="$(mktemp -d)"; path_farm "$farm" jq

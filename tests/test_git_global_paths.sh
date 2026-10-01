@@ -9,11 +9,8 @@ lib="$REPO_ROOT/tools/lib/git-global-paths.sh"
 # shellcheck source=tools/lib/git-global-paths.sh
 . "$lib"
 
-real_git="$(command -v git)"
 stub="$SANDBOX/stub-nogitvar"
-mkdir -p "$stub"
-printf '#!/bin/sh\nif [ "${1:-}" = var ]; then exit 129; fi\nexec "%s" "$@"\n' "$real_git" > "$stub/git"
-chmod 755 "$stub/git"
+git_var_stub_dir "$stub"
 
 # --- git_global_expand_tilde ---------------------------------------------------------------------------
 h="$SANDBOX/g1"; mkdir -p "$h"

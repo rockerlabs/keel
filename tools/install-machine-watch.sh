@@ -2,7 +2,7 @@
 # install-machine-watch — wire dir #437's machine-global watcher (tools/machine-watch.sh) into a project's
 # (or the machine-global) Claude Code hooks. Opt-in, per repo; adopter-usable, Claude-Code-only (hooks are
 # a Claude Code mechanism — the watcher's CLI `snapshot`/`check` runs by hand on any harness). Same
-# discipline as tools/install-machine-watch.sh, on the shared settings-merge core (tools/lib/hook-install.sh).
+# discipline as tools/install-read-trace.sh, on the shared settings-merge core (tools/lib/hook-install.sh).
 #
 #   install-machine-watch.sh <repo-path>    wire into <repo-path>/.claude/settings.json (project scope —
 #                                            the DEFAULT: survives deletion of ~/.claude, but covers only
@@ -32,7 +32,7 @@
 # NEVER writes a deny rule: prevention is a documented recipe only (docs/delegation.md), with its measured
 # cost beside it. Nothing here touches `permissions`.
 #
-# Never clobbers your data silently (same discipline as install-machine-watch.sh): a different hook on the same
+# Never clobbers your data silently (same discipline as install-read-trace.sh): a different hook on the same
 # event+matcher is left exactly as it is and ours is APPENDED beside it, in a sibling entry. The one refusal
 # is a STALE copy of this very hook (same script, another path), where appending would fire it twice —
 # --force backs up settings.json first, then swaps just that command. A hook already exactly ours is left
@@ -76,7 +76,7 @@ if [ -s "$here/lib/state-root.sh" ] && bash -n "$here/lib/state-root.sh" 2>/dev/
   # shellcheck source=tools/lib/state-root.sh
   . "$here/lib/state-root.sh"
 else
-  keel_store_root() { return 1; }
+  keel_machine_watch_store() { return 1; }
 fi
 # hook-install (dir #437 MW8) — REQUIRED, not optional, unlike the two libs above: it computes the
 # settings.json merge/removal itself, so a degrade-and-continue stub here would write a merge this
@@ -235,11 +235,11 @@ fi
 # an apostrophe produced a command with an unterminated quote ("unexpected EOF while looking for
 # matching quote") and every wired hook silently broke. `@sh` produces a shell-safe single-quoted
 # token, escaping any embedded `'` as `'\''`.
-hook_specs="$(jq -n --arg mw "$mw" '[
-  {event: "SessionStart",        matcher: "",                              command: ("bash " + ($mw|@sh) + " hook")},
-  {event: "PostToolUse",         matcher: "Bash|Write|Edit|NotebookEdit",  command: ("bash " + ($mw|@sh) + " hook")},
-  {event: "PostToolUseFailure",  matcher: "Bash|Write|Edit|NotebookEdit",  command: ("bash " + ($mw|@sh) + " hook")},
-  {event: "SessionEnd",          matcher: "",                              command: ("bash " + ($mw|@sh) + " hook")}
+hook_specs="$(jq -n --arg mw "$mw" '("bash " + ($mw|@sh) + " hook") as $cmd | [
+  {event: "SessionStart",        matcher: "",                              command: $cmd},
+  {event: "PostToolUse",         matcher: "Bash|Write|Edit|NotebookEdit",  command: $cmd},
+  {event: "PostToolUseFailure",  matcher: "Bash|Write|Edit|NotebookEdit",  command: $cmd},
+  {event: "SessionEnd",          matcher: "",                              command: $cmd}
 ]')"
 
 hook_install_check_shape "install-machine-watch" "$settings" "$hook_specs" "$current" || exit 2
@@ -333,8 +333,7 @@ echo "install-machine-watch: wired into $settings"
 # MW7: the store dir is created at install time, so the watcher can read its later ABSENCE as a removal
 # (a fresh install never produces that state). Failure to create it is a warning, not an install failure:
 # the watcher's SessionStart creates it itself.
-if [ -n "${KEEL_MACHINE_WATCH_STORE:-}" ]; then mw_store="$KEEL_MACHINE_WATCH_STORE"
-else mw_store="$(keel_store_root machine-watch)" || mw_store=""; fi
+mw_store="$(keel_machine_watch_store)" || mw_store=""
 if [ -n "$mw_store" ]; then
   mkdir -p "$mw_store" 2>/dev/null || echo "install-machine-watch: could not create the baseline store $mw_store (the watcher will create it at the next SessionStart)" >&2
 fi
