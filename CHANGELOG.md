@@ -21,7 +21,8 @@ sections real content going forward — see that page for exactly when each one 
   `--force` — which replaced the whole entry and deleted the gate's own `rollout-check` hook — or
   hand-edited JSON. A different hook on the same event and matcher is now left byte-untouched and the
   installer's command lands in a sibling entry with that matcher, reported as `APPENDED`; re-running is
-  idempotent and `--uninstall` removes only the installer's own entry, wherever it sits on the event.
+  idempotent and `--uninstall` removes only the installer's own command, wherever it sits on the event
+  (its entry too when that leaves it empty).
   `--force` (with its backup) is now only for the one case where appending would fire a hook twice: the
   same script with the same arguments already wired at a different path, as after a moved checkout; it
   swaps just that command and keeps every other command in its entry. The change is in the shared

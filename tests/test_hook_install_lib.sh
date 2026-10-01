@@ -75,6 +75,10 @@ check_status "merge: …forced, the stale command becomes ours" \
 check_status "merge: …forced, the sibling command in the same entry survives" \
   keep-me "$(jq -r '.new.hooks.PostToolUse[0].hooks[0].command' <<<"$merged4")"
 check_status "merge: …forced, no duplicate entry is added" 1 "$(jq '.new.hooks.PostToolUse | length' <<<"$merged4")"
+hookless='{"hooks":{"PostToolUse":[{"matcher":"Bash"},{"matcher":"Bash","hooks":[{"type":"command","command":"bash '"'"'/old/place/x.sh'"'"' a"}]}]}}'
+merged4b="$(hook_install_merge "$specs" "$hookless" 2>&1)"
+check_status "merge: a same-matcher entry with no hooks key does not crash the stale swap" \
+  STALE "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged4b")"
 other_args='{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash '"'"'/old/x.sh'"'"' b"}]}]}}'
 merged5="$(hook_install_merge "$specs" "$other_args")"
 check_status "merge: same script, DIFFERENT args is a different hook → APPENDED, not STALE" \
@@ -99,6 +103,13 @@ check_status "remove: …the incumbent entry is left exactly as it was" \
 rm5="$(hook_install_remove "$specs" "$(jq -c '.new.hooks.PostToolUse |= reverse | .new' <<<"$merged3")")"
 check_status "remove: ours listed BEFORE the incumbent is found too (not just the first matcher hit)" \
   REMOVED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$rm5")"
+
+# --- remove: ours INSIDE a shared entry (what a forced STALE swap leaves) comes out alone ---------------
+rm6="$(hook_install_remove "$specs" "$(jq -c '.new' <<<"$merged4")")"
+check_status "remove: ours inside an entry with someone else's command → REMOVED, not KEPT" \
+  REMOVED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$rm6")"
+check_status "remove: …only ours leaves; the sibling command in that entry stays" \
+  '[{"type":"command","command":"keep-me"}]' "$(jq -c '.new.hooks.PostToolUse[0].hooks' <<<"$rm6")"
 
 # --- remove: the empty-array prune is scoped to OUR events (dir #564/#390) ------------------------------
 withforeign="$(jq -c '.new + {hooks: (.new.hooks + {Foreign: []})}' <<<"$merged")"

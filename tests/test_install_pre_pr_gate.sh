@@ -130,6 +130,11 @@ sj="$(cat "$crepo/.claude/settings.json")"
 check_absent "the stale path is gone from the live file" "$sj" "/old/checkout/"
 check_contains "the pre-pr-gate command at this checkout is wired instead" "$sj" "'$gate'"
 check_contains "the unrelated sibling command in the same entry survives --force" "$sj" "echo not-the-gate"
+run "$installer" --uninstall "$crepo"
+check_status "--uninstall after a forced stale swap -> exit 0" 0 "$STATUS"
+sj="$(cat "$crepo/.claude/settings.json")"
+check_absent "--uninstall removes ours from the shared entry" "$sj" "$gate"
+check_contains "--uninstall keeps the sibling command" "$sj" "echo not-the-gate"
 
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched ------------------------
 farm="$(mktemp -d)"; path_farm "$farm" jq

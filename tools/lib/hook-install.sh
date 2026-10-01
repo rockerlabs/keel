@@ -93,7 +93,7 @@ reduce $specs[] as $s (.;
   if ($cmds | index($s.command)) != null then
     .report += [["SAME", $s.event, $s.matcher]]
   elif $id != null and ($cmds | map(select(ident == $id)) | length) > 0 then
-    .obj.hooks[$s.event] |= map(if .matcher == $s.matcher then .hooks |= (map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
+    .obj.hooks[$s.event] |= map(if .matcher == $s.matcher then .hooks = ((.hooks // []) | map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
     | .report += [["STALE", $s.event, $s.matcher]]
   else
     .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
@@ -107,12 +107,12 @@ reduce $specs[] as $s (.;
 
 # hook_install_remove SPECS CURRENT — the mirror image of the merge, same one-pass-tagged-report shape
 # (REMOVED/KEPT instead of the merge's statuses). Across EVERY entry on the spec's event+matcher (an
-# APPENDED sibling can sit after the incumbent), an entry comes out ONLY when its hooks array is
-# byte-identical to the single {type, command} entry the installer would wire right now — anything else
-# on that same event+matcher (the incumbent an APPENDED run left beside ours, or a hook you later pointed
-# somewhere else) is left in place; KEPT when nothing of ours was there to take.
-# The empty-array prune is scoped to the events the SPECS own (dir #564, dir #390): another tool's empty
-# hook array under `.hooks` is not ours to delete.
+# APPENDED sibling can sit after the incumbent, and a forced STALE swap leaves ours inside an entry that
+# also holds someone else's command), only our exact {type, command} hook comes out; an entry it leaves
+# empty goes with it, and every other command — the incumbent's, or a hook you later pointed somewhere
+# else — stays. KEPT when nothing of ours was on that slot to take. The empty-array prune is scoped to
+# the events the SPECS own (dir #564, dir #390): another tool's empty hook array under `.hooks` is not
+# ours to delete.
 hook_install_remove() {
   local remove_prog='
 {obj: (.hooks //= {}), report: []} |
@@ -122,8 +122,8 @@ reduce $specs[] as $s (.;
   ([$arr[] | select(.matcher == $s.matcher)]) as $mine |
   if ($mine | length) == 0 then
     .
-  elif ($mine | map(select(.hooks == [$ours])) | length) > 0 then
-    .obj.hooks[$s.event] = ($arr | map(select((.matcher == $s.matcher and .hooks == [$ours]) | not)))
+  elif ($mine | any((.hooks // []) | any(. == $ours))) then
+    .obj.hooks[$s.event] = [$arr[] | if .matcher == $s.matcher and ((.hooks // []) | any(. == $ours)) then (.hooks |= map(select(. != $ours))) | select(.hooks != []) else . end]
     | .report += [["REMOVED", $s.event, $s.matcher]]
   else
     .report += [["KEPT", $s.event, $s.matcher]]
