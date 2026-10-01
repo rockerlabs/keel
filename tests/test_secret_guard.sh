@@ -460,6 +460,42 @@ else
   fi
   check_contains "no-home case resolves the legacy path cleanly, no HOME-unset crash" "$lib_out" "$sync_repo/.keel/impact-events.log"
   rm -rf "$sync_store_root" "$sync_repo/.keel"
+
+  # dir #637 A5: the HOME-set, KEEL_IMPACT_STORE-unset ladder (B2's rungs for `impact`). Every case above
+  # sets KEEL_IMPACT_STORE, so the inline copy's own fallback was never compared with the lib's. Five
+  # fixtures under a throwaway HOME — legacy only, new only, both, neither, legacy under KEEL_HOME —
+  # each run through both implementations under identical env, byte-compared.
+  sync_id="$(cd "$sync_repo" && pwd -P | tr '/' '-')"
+  for sync_case in legacy-only new-only both neither legacy-under-keel-home; do
+    sync_h="$SANDBOX/sync637-$sync_case"; sync_k=""
+    rm -rf "$sync_h"; mkdir -p "$sync_h"
+    case "$sync_case" in
+      legacy-only) mkdir -p "$sync_h/.claude/.keel/impact/$sync_id" ;;
+      new-only) mkdir -p "$sync_h/.keel/impact/$sync_id" ;;
+      both) mkdir -p "$sync_h/.claude/.keel/impact/$sync_id" "$sync_h/.keel/impact/$sync_id" ;;
+      neither) : ;;
+      legacy-under-keel-home) sync_k="$sync_h/harness"; mkdir -p "$sync_k/.keel/impact/$sync_id" ;;
+    esac
+    sync_env=(env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE -u KEEL_HOME HOME="$sync_h")
+    [ -z "$sync_k" ] || sync_env+=(KEEL_HOME="$sync_k")
+    lib_out="$(cd "$sync_repo" && "${sync_env[@]}" bash -c ". '$sync_lib'; impact_log_path .")"
+    inline_out="$(cd "$sync_repo" && "${sync_env[@]}" bash -c "$inline_fn"$'\n''_impact_log_path_inline .')"
+    if [ "$inline_out" = "$lib_out" ]; then
+      pass "sync637 ($sync_case): inline copy agrees with the shared lib"
+    else
+      fail "sync637 ($sync_case): inline copy agrees with the shared lib" "inline='$inline_out' lib='$lib_out'"
+    fi
+    case "$sync_case" in
+      legacy-only) check_eq "sync637 (legacy-only): resolves into the legacy store (transition rung)" "$sync_h/.claude/.keel/impact/$sync_id/impact-events.log" "$lib_out" ;;
+      new-only|both) check_eq "sync637 ($sync_case): resolves into \$HOME/.keel/impact" "$sync_h/.keel/impact/$sync_id/impact-events.log" "$lib_out" ;;
+      legacy-under-keel-home) check_eq "sync637 (legacy-under-keel-home): resolves into the KEEL_HOME legacy store" "$sync_k/.keel/impact/$sync_id/impact-events.log" "$lib_out" ;;
+    esac
+  done
+  # ...and the no-home case names the right override (KEEL_IMPACT_STORE; KEEL_HOME no longer places state).
+  inline_out="$(cd "$sync_repo" && env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE -u KEEL_HOME -u HOME \
+    bash -c "$inline_fn"$'\n''_impact_log_path_inline .' 2>&1)"
+  check_contains "sync637 (no home, no legacy file): the inline copy's message names KEEL_IMPACT_STORE" \
+    "$inline_out" "secret-scan: set HOME, or export KEEL_IMPACT_STORE"
 fi
 
 # --- the explicit --staged alias behaves exactly like the default staged mode --------------------

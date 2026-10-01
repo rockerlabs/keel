@@ -134,4 +134,11 @@ else
   pass "gate_trace_path_for_key: HOME unset -> non-zero exit"
 fi
 
+# --- dir #637 A6: gate_state_root is bound to the state-root resolver's address, so the two can never
+# drift apart (gate_state_root's own code stays fork-free on purpose and does not call it) -------------
+sr_lib="$REPO_ROOT/tools/lib/state-root.sh"
+# shellcheck source=tools/lib/state-root.sh
+. "$sr_lib"
+check_eq "A6: gate_state_root = \$(keel_state_root)/tmp" "$(keel_state_root)/tmp" "$(gate_state_root)"
+
 summary

@@ -278,7 +278,12 @@ _impact_log_path_inline() {
   if [ -n "${KEEL_IMPACT_STORE:-}" ]; then
     store_root="$KEEL_IMPACT_STORE"
   else
-    store_root="${KEEL_HOME:-${HOME:?secret-scan: set HOME, or export KEEL_HOME}/.claude}/.keel/impact"
+    # dir #637 B2, inline: $HOME/.keel/impact when it is a directory; else the legacy store
+    # (${KEEL_HOME:-$HOME/.claude}/.keel/impact) while that is a directory (the transition rung, until
+    # install.sh moves it); else $HOME/.keel/impact. Must stay byte-agreeing with
+    # tools/lib/state-root.sh's keel_store_root (tests/test_secret_guard.sh's sync cases).
+    store_root="${HOME:?secret-scan: set HOME, or export KEEL_IMPACT_STORE}/.keel/impact"
+    [ -d "$store_root" ] || ! [ -d "${KEEL_HOME:-$HOME/.claude}/.keel/impact" ] || store_root="${KEEL_HOME:-$HOME/.claude}/.keel/impact"
   fi
   store="$store_root/$(printf '%s' "$top" | tr '/' '-')"
   if [ -d "$store" ]; then printf '%s/impact-events.log' "$store"; return; fi

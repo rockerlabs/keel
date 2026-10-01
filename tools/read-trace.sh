@@ -78,7 +78,8 @@
 # been run once for a repo (or --global/--home).
 #
 # Writability assumption (dir #393): the resolved store root (KEEL_READ_TRACE_STORE, else
-# $KEEL_HOME/.keel/read-trace, else $HOME/.claude/.keel/read-trace) is assumed WRITABLE. When it
+# $HOME/.keel/read-trace, or the legacy harness-home store until install.sh moves it — dir #637) is
+# assumed WRITABLE. When it
 # resolves but is not writable, every write path degrades silently (nothing recorded) rather than
 # leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's V3 fix gave the
 # unresolved-root case, extended here to the writability axis.
@@ -563,7 +564,7 @@ case "${1:-}" in
     # site in this file already guards this, `rotate` was the one left over). Unlike the silent hooks,
     # `rotate` is an operator-invoked CLI, so it reports the failure instead of silently no-op'ing.
     ro_store="$(_rt_store_dir "$ro_dir" "$ro_top")" || {
-      printf 'read-trace: no persistent store resolves (set HOME, KEEL_HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
+      printf 'read-trace: no persistent store resolves (set HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
       exit 1
     }
     # S13 backfill (same reasoning as aggregate's own): only when the entry physically exists — never

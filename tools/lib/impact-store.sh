@@ -17,22 +17,29 @@
 #
 # Env overrides:
 #   KEEL_IMPACT_STORE    overrides the store ROOT outright — required for test isolation.
-#   KEEL_HOME             overrides $HOME_DIR the same way install.sh's own resolution does
-#                          (${KEEL_HOME:-$HOME/.claude}) — mirrored here, not reinvented. keel-impact.sh
-#                          gains no `--home` of its own; KEEL_HOME/KEEL_IMPACT_STORE cover every case.
+#   (dir #637) The store root is `$HOME/.keel/impact`, resolved by tools/lib/state-root.sh's
+#                          keel_store_root — one root for every keel store, independent of any harness.
+#                          `KEEL_HOME` names the harness home keel installs into; keel's own state lives in `$HOME/.keel`.
+#                          KEEL_HOME no longer places the store; it only names the legacy address
+#                          keel_store_root still honours until install.sh moves a store.
+#                          keel-impact.sh gains no `--home` of its own; KEEL_IMPACT_STORE covers every case.
 #   KEEL_IMPACT_LEDGER / KEEL_IMPACT_EVIDENCE / KEEL_IMPACT_LOG   explicit per-file overrides, unchanged
 #                          from before this ticket — still win over the store outright.
 #
-# Both KEEL_IMPACT_STORE and KEEL_HOME outrank $HOME outright: a caller that sets $HOME alone is NOT
-# isolated from either one (dir #290 found this the hard way — a sandbox that only pointed $HOME
-# elsewhere still had its impact events land in the real store). dir #317's impact_isolated (below) is
-# the one supported way to isolate a call: it unsets every variable this file's resolvers read, not
-# just these two.
+# KEEL_IMPACT_STORE outranks $HOME outright, and so does a KEEL_HOME that holds a legacy store: a caller
+# that sets $HOME alone is NOT isolated from either (dir #290 found this the hard way — a sandbox that
+# only pointed $HOME elsewhere still had its impact events land in the real store). dir #317's
+# impact_isolated (below) is the one supported way to isolate a call: it unsets every variable this
+# file's resolvers read, not just these two.
 #
 # A project is "enabled" iff a store dir already exists for its id. Every path resolver below is
 # read-only (no writes, no mutation) and never errors: empty output means "no explicit override, and
 # this project isn't enabled" — refusing on that (keel-impact.sh's `add`/`rollup`) vs. silently doing
 # nothing (a guardrail hook recording a fire) is each caller's own decision, not this file's.
+
+# dir #637: the state-root resolver (keel_state_root / keel_store_root / keel_legacy_store_root).
+# shellcheck source=tools/lib/state-root.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/state-root.sh"
 
 # dir #415: _impact_main_top/_impact_resolve_top (below) delegate to tools/lib/repo-top.sh's
 # keel_repo_main_top/keel_repo_top instead of each carrying its own copy of the fallback chain — see
@@ -72,15 +79,19 @@ impact_claim_key() {
   git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true
 }
 
-# impact_store_root — D1: $HOME_DIR/.keel/impact, or $KEEL_IMPACT_STORE verbatim when set. $HOME is
-# required only on the fallback path (mirrors install.sh's own `${HOME:?...}` placement) so a caller
-# that always sets KEEL_HOME or KEEL_IMPACT_STORE never needs $HOME under `set -u`. KEEL_IMPACT_STORE
-# and KEEL_HOME both outrank HOME outright (dir #290: setting HOME alone does NOT isolate a caller from
-# either) — impact_isolated (below) is the one supported way to isolate a call from every override this
-# file's resolvers read, not just these two.
+# impact_store_root — D1 / dir #637: $KEEL_IMPACT_STORE verbatim when set; else keel_store_root impact
+# ($HOME/.keel/impact, or the legacy store while that is the only one that exists). $HOME is required
+# only on the fallback path, so a caller that always sets KEEL_IMPACT_STORE never needs $HOME under
+# `set -u`; with neither, one stderr line and return 1 — never a `${HOME:?}` abort. KEEL_IMPACT_STORE
+# outranks HOME outright, and so does a KEEL_HOME holding a legacy store (dir #290: setting HOME alone
+# does NOT isolate a caller from either) — impact_isolated (below) is the one supported way to isolate a
+# call from every override this file's resolvers read, not just these two.
 impact_store_root() {
   if [ -n "${KEEL_IMPACT_STORE:-}" ]; then printf '%s' "$KEEL_IMPACT_STORE"; return; fi
-  printf '%s/.keel/impact' "${KEEL_HOME:-${HOME:?impact-store: set HOME, or export KEEL_HOME}/.claude}"
+  keel_store_root impact || {
+    printf 'impact-store: set HOME, or export KEEL_IMPACT_STORE\n' >&2
+    return 1
+  }
 }
 
 # IMPACT_ISOLATION_VARS — every environment variable, other than HOME, that any keel store resolver
@@ -267,7 +278,7 @@ impact_store_enable() {
 #           *destroyed* from *moved away*, and says so.
 #   never — no record exists on this clone. A fresh clone of a once-enabled repo reads `never`; that
 #           limit is accepted.
-#   moved — this repo recorded some OTHER entry that still exists (KEEL_HOME changed, or the repo's own
+#   moved — this repo recorded some OTHER entry that still exists (the state root changed, or the repo's own
 #           path changed and so did its id).
 # The read-trace half (S13, PR-C) reuses the same three words and the same generic pair below.
 
@@ -410,8 +421,8 @@ _impact_is_legacy_state() {
 # store outright); rungs 3-6 delegate to keel_store_state, shared with S13's read-trace half.
 impact_entry_state() {
   local dir="${1:-.}" entry top
-  # rung 0: unresolved — impact_store_dir fails when HOME, KEEL_HOME and KEEL_IMPACT_STORE are all
-  # unset (impact_store_root's own `${HOME:?...}`); stderr is suppressed, per S6's own wording.
+  # rung 0: unresolved — impact_store_dir fails when HOME and KEEL_IMPACT_STORE are both unset
+  # (impact_store_root returns 1 with a stderr line); stderr is suppressed, per S6's own wording.
   if ! entry="$(impact_store_dir "$dir" 2>/dev/null)"; then
     printf 'unresolved'; return 0
   fi

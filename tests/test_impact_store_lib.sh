@@ -41,18 +41,18 @@ a1_check_no_leak() {
 
 run env "${a1_decoys[@]}" bash -c ". '$lib'; impact_isolated '$a1_h' impact_store_root"
 check_status "A1: impact_isolated + a decoy on every S1 var → impact_store_root still succeeds" 0 "$STATUS"
-check_contains "A1: impact_store_root resolves to \$h/.claude/.keel/impact" "$OUT" "$a1_h/.claude/.keel/impact"
+check_contains "A1: impact_store_root resolves to \$h/.keel/impact" "$OUT" "$a1_h/.keel/impact"
 a1_check_no_leak "A1: impact_store_root"
 
 run env "${a1_decoys[@]}" bash -c \
   ". '$lib'; impact_isolated '$a1_h' impact_store_enable '$a1_fixture' >/dev/null; impact_isolated '$a1_h' impact_log_path '$a1_fixture'"
 check_status "A1: impact_log_path on an enabled fixture resolves under impact_isolated" 0 "$STATUS"
-check_contains "A1: impact_log_path resolves inside \$h's store" "$OUT" "$a1_h/.claude/.keel/impact"
+check_contains "A1: impact_log_path resolves inside \$h's store" "$OUT" "$a1_h/.keel/impact"
 a1_check_no_leak "A1: impact_log_path"
 
 run env "${a1_decoys[@]}" bash -c ". '$lib'; . '$rt_lib'; impact_isolated '$a1_h' read_trace_store_root"
 check_status "A1: read_trace_store_root succeeds under impact_isolated" 0 "$STATUS"
-check_contains "A1: read_trace_store_root resolves to \$h/.claude/.keel/read-trace" "$OUT" "$a1_h/.claude/.keel/read-trace"
+check_contains "A1: read_trace_store_root resolves to \$h/.keel/read-trace" "$OUT" "$a1_h/.keel/read-trace"
 a1_check_no_leak "A1: read_trace_store_root"
 
 # --- A2: impact_isolated's own mechanics (dir #317 S2) ------------------------------------------------
@@ -131,6 +131,9 @@ a3_check() {
 a3_targets="$lib:impact_store_root
 $lib:_impact_file_path
 $REPO_ROOT/tools/lib/read-trace.sh:read_trace_store_root
+$REPO_ROOT/tools/lib/state-root.sh:keel_state_root
+$REPO_ROOT/tools/lib/state-root.sh:keel_store_root
+$REPO_ROOT/tools/lib/state-root.sh:keel_legacy_store_root
 $REPO_ROOT/tools/secret-guard/secret-scan.sh:_impact_log_path_inline"
 
 a3_vars="$(a3_check "$a3_targets" "$a3_pattern")"
@@ -170,11 +173,35 @@ for a4_var in $IMPACT_ISOLATION_VARS; do
   fi
 done
 
-# --- impact_store_root: KEEL_IMPACT_STORE wins outright; else $KEEL_HOME/.keel/impact -------------
+# --- impact_store_root: KEEL_IMPACT_STORE wins outright; else keel_store_root impact (dir #637) -------
+# KEEL_HOME no longer places the store; it only names the harness home whose LEGACY store rung 3 of
+# keel_store_root still honours (A2(f) of docs/specs/637-state-root-home-keel.md).
 store_home="$SANDBOX/store-home"
+mkdir -p "$store_home/.keel/impact"
 run env -u KEEL_IMPACT_STORE KEEL_HOME="$store_home" bash -c ". '$lib'; impact_store_root"
-check_status "impact_store_root uses KEEL_HOME/.keel/impact by default" 0 "$STATUS"
-check_contains "impact_store_root uses KEEL_HOME/.keel/impact by default" "$OUT" "$store_home/.keel/impact"
+check_status "impact_store_root honours a KEEL_HOME legacy store (transition rung)" 0 "$STATUS"
+check_eq "impact_store_root: KEEL_HOME legacy store present → it (A2(f))" "$store_home/.keel/impact" "$OUT"
+
+run env -u KEEL_IMPACT_STORE KEEL_HOME="$SANDBOX/store-home-empty" bash -c ". '$lib'; impact_store_root"
+check_eq "impact_store_root: KEEL_HOME set but holding no store → \$HOME/.keel/impact, KEEL_HOME no longer places state" \
+  "$HOME/.keel/impact" "$OUT"
+
+legacy_h="$SANDBOX/legacy-only-home"
+mkdir -p "$legacy_h/.claude/.keel/impact"
+run env -u KEEL_IMPACT_STORE -u KEEL_HOME HOME="$legacy_h" bash -c ". '$lib'; impact_store_root"
+check_eq "impact_store_root: a legacy-only fixture → the legacy path" "$legacy_h/.claude/.keel/impact" "$OUT"
+
+run env -u KEEL_IMPACT_STORE -u KEEL_READ_TRACE_STORE -u KEEL_HOME -u HOME bash -c ". '$lib'; . '$rt_lib'; read_trace_store_root"
+check_status "read_trace_store_root: HOME unset, no override → rc 1" 1 "$STATUS"
+check_eq "read_trace_store_root: HOME unset, no override → empty stdout" "" "$OUT"
+
+run env -u KEEL_READ_TRACE_STORE -u KEEL_HOME HOME="$legacy_h" bash -c ". '$lib'; . '$rt_lib'; read_trace_store_root"
+check_eq "read_trace_store_root: nothing at either address → \$HOME/.keel/read-trace" "$legacy_h/.keel/read-trace" "$OUT"
+mkdir -p "$legacy_h/.claude/.keel/read-trace"
+run env -u KEEL_READ_TRACE_STORE -u KEEL_HOME HOME="$legacy_h" bash -c ". '$lib'; . '$rt_lib'; read_trace_store_root"
+check_eq "read_trace_store_root: a legacy-only store → the legacy path" "$legacy_h/.claude/.keel/read-trace" "$OUT"
+run env KEEL_READ_TRACE_STORE="$SANDBOX/explicit-rt" bash -c ". '$lib'; . '$rt_lib'; read_trace_store_root"
+check_eq "read_trace_store_root: KEEL_READ_TRACE_STORE wins verbatim" "$SANDBOX/explicit-rt" "$OUT"
 
 run env KEEL_IMPACT_STORE="$SANDBOX/explicit-store" bash -c ". '$lib'; impact_store_root"
 check_contains "KEEL_IMPACT_STORE overrides the store root outright" "$OUT" "$SANDBOX/explicit-store"
@@ -244,7 +271,7 @@ check_status "impact_store_enable is idempotent" 0 "$STATUS"
 noroot_repo="$(new_repo)"
 run env -u KEEL_IMPACT_STORE -u KEEL_HOME -u HOME bash -c "set -e; . '$lib'; impact_store_dir '$noroot_repo'"
 check_status "impact_store_dir fails (nonzero) when HOME can't resolve, not silently" 1 "$STATUS"
-check_contains "impact_store_dir's failure names the real cause (unset HOME), not a bogus path" "$OUT" "set HOME, or export KEEL_HOME"
+check_contains "impact_store_dir's failure names the real cause (unset HOME), not a bogus path" "$OUT" "impact-store: set HOME, or export KEEL_IMPACT_STORE"
 noroot_p="$(cd "$noroot_repo" && pwd -P)"
 noroot_id="$(printf '%s' "$noroot_p" | tr '/' '-')"
 check_nodir "no bogus root-level directory was created for the failed resolution" "/$noroot_id"

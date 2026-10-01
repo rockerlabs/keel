@@ -17,7 +17,7 @@
 #     writer and the receipt reader must resolve the same key from an ordinary Bash call, with no
 #     hook-only field to lean on. Same accepted limitation as that sentinel: two sessions on the SAME
 #     branch of the same repo share one log.
-#   - PERSISTENT, external store at $KEEL_HOME/.keel/read-trace/<project-id>/ (dir #251's own
+#   - PERSISTENT, external store at $HOME/.keel/read-trace/<project-id>/ (dir #637; dir #251's own
 #     external-store discipline — nothing written inside a project's own working tree), accumulating
 #     across sessions and releases: the tier-2 aggregator's raw material. Deliberately NOT
 #     tools/keel-impact.sh's own event log — that log's EVENT_TYPES taxonomy (hold/guard/fire/hit/
@@ -85,8 +85,9 @@ _rt_stamp_wrap_done() {
 
 # --- persistent external store ----------------------------------------------------------------------
 # KEEL_READ_TRACE_STORE overrides the root outright (test isolation, same convention as
-# KEEL_IMPACT_STORE); else $KEEL_HOME/.keel/read-trace, else $HOME/.claude/.keel/read-trace (mirrors
-# impact_store_root's own fallback).
+# KEEL_IMPACT_STORE); else keel_store_root read-trace (dir #637, tools/lib/state-root.sh):
+# $HOME/.keel/read-trace, or the legacy ${KEEL_HOME:-$HOME/.claude}/.keel/read-trace while that is the
+# only one that exists (impact_store_root's own fallback).
 #
 # Returns 1 with NO stdout when none of the three resolve — never `${HOME:?...}`. That form used to
 # live here, but it expands inside a command-substitution chain (every caller below), so the `:?`
@@ -100,9 +101,7 @@ _rt_stamp_wrap_done() {
 # argument, so a failed resolve here quietly drops the persistent-tier write and nothing else.
 read_trace_store_root() {
   if [ -n "${KEEL_READ_TRACE_STORE:-}" ]; then printf '%s' "$KEEL_READ_TRACE_STORE"; return 0; fi
-  if [ -n "${KEEL_HOME:-}" ]; then printf '%s/.keel/read-trace' "$KEEL_HOME"; return 0; fi
-  if [ -n "${HOME:-}" ]; then printf '%s/.claude/.keel/read-trace' "$HOME"; return 0; fi
-  return 1
+  keel_store_root read-trace
 }
 _rt_store_dir() {
   local root

@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Keel's own state now resolves to one root, `$HOME/.keel`, instead of the harness home** (dir #637,
+  PR1 of 2 — the resolver; the move itself is PR2): the impact store and the read-trace store used to live
+  under `${KEEL_HOME:-$HOME/.claude}/.keel/`, which a harness migration and an `rm -r ~/.claude` each took
+  with them, stores included. The new `tools/lib/state-root.sh` is the one place that names the root,
+  and every store resolves through it: `$HOME/.keel/<name>` when that store exists, else the old
+  harness-home address while only that one exists, else `$HOME/.keel/<name>`. That middle step is a
+  transition rung — link-mode hooks run the checkout's scripts the moment you `git pull`, before
+  anything has moved, so existing installs keep reading and writing where their data is. Nothing is moved
+  by this change. `KEEL_HOME` keeps its meaning as the harness home keel installs into; it no longer
+  places state. The inline copy of the resolver in the vendored `secret-scan.sh` follows the same
+  rungs, and its unset-`HOME` message now names `KEEL_IMPACT_STORE`. Re-vendor the guard copies to pick it
+  up; until then a stale copy keeps writing to the old address, which the rung still reads.
+
 - **The two hook installers now append beside a hook already on the same slot instead of refusing**
   (dir #468, absorbing dir #562): `tools/install-read-trace.sh` and `tools/install-pre-pr-gate.sh` both
   want `SessionStart/startup`, so whichever ran second was refused, and the refusal's only exits were
