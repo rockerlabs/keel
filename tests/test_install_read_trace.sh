@@ -57,28 +57,59 @@ run "$installer" "$repo"
 check_status "re-run over a settings.json with foreign keys -> exit 0" 0 "$STATUS"
 check_contains "foreign top-level key survives" "$(cat "$repo/.claude/settings.json")" '"permissions"'
 
-# --- (b) a foreign hook on the SAME event+matcher -> refusal, exit non-zero, file untouched ----------
+# --- (b) a foreign hook on the SAME event+matcher -> ours is APPENDED beside it (dir #468) -----------
+# The refusal this replaced offered only --force (which deleted the incumbent) or hand-edited JSON.
 frepo="$(new_repo)"
 mkdir -p "$frepo/.claude"
 cat > "$frepo/.claude/settings.json" <<EOF
 {"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo not-the-tool"}]}]}}
 EOF
-before="$(cat "$frepo/.claude/settings.json")"
 run "$installer" "$frepo"
-check_status "foreign hook on the same event+matcher -> refused (exit 3)" 3 "$STATUS"
-check_contains "refusal names the conflicting event/matcher" "$OUT" "SessionStart/startup"
-check_contains "refusal points at --force" "$OUT" "--force"
-check_status "settings.json is byte-for-byte untouched" "$before" "$(cat "$frepo/.claude/settings.json")"
+check_status "foreign hook on the same event+matcher -> appended, no refusal (exit 0)" 0 "$STATUS"
+check_contains "reports the append as APPENDED" "$OUT" "APPENDED"
+check_contains "…naming the event/matcher" "$OUT" "SessionStart/startup"
+check_absent "no backup announced — nothing was replaced" "$OUT" "backed up"
+check_status "no backup file was written" 0 "$(find "$frepo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+sj="$(cat "$frepo/.claude/settings.json")"
+check_contains "the incumbent hook is still wired" "$sj" "echo not-the-tool"
+check_contains "the read-trace command is wired beside it" "$sj" "'$rt' startup"
+check_status "the incumbent entry is byte-untouched (ours is a sibling entry)" \
+  '{"matcher":"startup","hooks":[{"type":"command","command":"echo not-the-tool"}]}' \
+  "$(jq -c '.hooks.SessionStart[0]' "$frepo/.claude/settings.json")"
+run "$installer" "$frepo"
+check_status "re-run after an append -> exit 0" 0 "$STATUS"
+check_contains "re-run reports SessionStart already wired" "$OUT" "=    SessionStart/startup"
+check_status "re-run adds no further entry" 2 \
+  "$(jq '.hooks.SessionStart | map(select(.matcher == "startup")) | length' "$frepo/.claude/settings.json")"
+run "$installer" --uninstall "$frepo"
+check_status "--uninstall after an append -> exit 0" 0 "$STATUS"
+sj="$(cat "$frepo/.claude/settings.json")"
+check_contains "--uninstall leaves the incumbent hook in place" "$sj" "echo not-the-tool"
+check_absent "--uninstall removed read-trace's own command" "$sj" "'$rt' startup"
 
-# --- (c) --force backs up settings.json then replaces just that matcher -----------------------------
-run "$installer" --force "$frepo"
+# --- (c) the SAME hook at a different path (a stale install) -> refused; --force swaps just that command
+# --force + backup stay for exactly this case: appending would fire the hook twice (old path + new).
+crepo="$(new_repo)"
+mkdir -p "$crepo/.claude"
+cat > "$crepo/.claude/settings.json" <<EOF
+{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo not-the-tool"},{"type":"command","command":"bash '/old/checkout/tools/read-trace.sh' startup"}]}]}}
+EOF
+before="$(cat "$crepo/.claude/settings.json")"
+run "$installer" "$crepo"
+check_status "the same hook at another path -> refused (exit 3)" 3 "$STATUS"
+check_contains "refusal names the stale event/matcher" "$OUT" "SessionStart/startup"
+check_contains "refusal points at --force" "$OUT" "--force"
+check_status "settings.json is byte-for-byte untouched" "$before" "$(cat "$crepo/.claude/settings.json")"
+run "$installer" --force "$crepo"
 check_status "--force -> exit 0" 0 "$STATUS"
 check_contains "announces the backup" "$OUT" "backed up your existing settings.json"
-bak="$(find "$frepo/.claude" -name 'settings.json.*.bak' | head -n1)"
+bak="$(find "$crepo/.claude" -name 'settings.json.*.bak' | head -n1)"
 [ -n "$bak" ] && pass "a timestamped backup sibling exists" || fail "a timestamped backup sibling exists" "none found"
-check_contains "backup preserves the original foreign command" "$(cat "${bak:-/dev/null}")" "not-the-tool"
-check_absent "the foreign command is gone from the live file" "$(cat "$frepo/.claude/settings.json")" "not-the-tool"
-check_contains "the read-trace command is now wired instead" "$(cat "$frepo/.claude/settings.json")" "$rt"
+check_contains "backup preserves the stale command" "$(cat "${bak:-/dev/null}")" "/old/checkout/"
+sj="$(cat "$crepo/.claude/settings.json")"
+check_absent "the stale path is gone from the live file" "$sj" "/old/checkout/"
+check_contains "the read-trace command at this checkout is wired instead" "$sj" "'$rt' startup"
+check_contains "the unrelated sibling command in the same entry survives --force" "$sj" "echo not-the-tool"
 
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched -------------------------
 farm="$(mktemp -d)"; path_farm "$farm" jq

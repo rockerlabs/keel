@@ -202,7 +202,8 @@ tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global cov
 
 - **Opt-in, separate from `install.sh`.** A hook changes what a session can do without asking each time,
   so `/polish` ships with every install but wires nothing until you run this — same never-clobber
-  discipline as `install-secret-guard.sh` (refuses a foreign hook on the same slot; `--force` backs it up).
+  discipline as `install-secret-guard.sh` (a foreign hook on the same slot is left alone and ours is appended
+  beside it; `--force` is only for a stale copy of the same hook at another path, and backs it up).
 - **Gates the agent, not you.** The hook fires on the assistant's own tool calls — your terminal, and a
   human typing `gh pr create` by hand, are never blocked.
 - **Claude-Code-specific.** Hooks are a Claude Code mechanism; see [`ADAPTING.md`](ADAPTING.md) for the

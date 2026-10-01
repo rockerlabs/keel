@@ -7,8 +7,10 @@
 #                                            open on this machine gets the gate, not just this one
 #   install-pre-pr-gate.sh --home DIR        --global, but into DIR/settings.json — the flag that lets
 #                                            this follow an  install.sh --home DIR  install (dir #98)
-#   install-pre-pr-gate.sh --force …         overwrite a pre-existing, DIFFERENT hook on the same
-#                                            event+matcher (backs up settings.json first; default: refuse)
+#   install-pre-pr-gate.sh --force …         replace a STALE copy of this same hook (same script, another
+#                                            path — a moved checkout); backs up settings.json first
+#                                            (default: refuse that one case; a different hook on the same
+#                                            event+matcher needs no --force — it is appended beside)
 #   install-pre-pr-gate.sh --uninstall …     the reverse: remove exactly the 6 hooks this installer
 #                                            wired (byte-identical match only — a hook you or something
 #                                            else has since changed is left in place, named as kept)
@@ -50,9 +52,11 @@
 # instead of writing anything — degrade to instructions, never a partial/broken write.
 #
 # Never clobbers your data silently (same discipline as install-secret-guard.sh): an existing hook
-# already wired to the SAME event+matcher running a DIFFERENT command is refused and named; --force
-# backs up settings.json (a timestamped sibling) first, then replaces just that matcher's hooks.
-# Everything else already in settings.json (other hooks, other keys) is left exactly as it was. A hook
+# already wired to the SAME event+matcher running a DIFFERENT command is left exactly as it is and ours
+# is APPENDED beside it, in a sibling entry with that matcher (dir #468). The one refusal left is a STALE
+# copy of this very hook — same script, another path, e.g. a moved checkout — because appending would
+# fire it twice; --force backs up settings.json (a timestamped sibling) first, then swaps just that one
+# command for ours, leaving every other command in its entry. Everything else already in settings.json (other hooks, other keys) is left exactly as it was. A hook
 # that's already exactly ours is left alone (idempotent — safe to re-run after every `git pull`).
 #
 # --uninstall (dir #136) mirrors that same discipline in reverse: it removes an event+matcher entry
@@ -121,7 +125,7 @@ Usage:
   install-pre-pr-gate.sh <repo-path>     wire into <repo-path>/.claude/settings.json (project scope)
   install-pre-pr-gate.sh --global        wire into ~/.claude/settings.json (every repo on this machine)
   install-pre-pr-gate.sh --home DIR      --global, but into DIR/settings.json (follows install.sh --home)
-  install-pre-pr-gate.sh --force …       replace a pre-existing, different hook on the same event+matcher
+  install-pre-pr-gate.sh --force …       replace a stale copy of this hook (same script, another path), with a backup
   install-pre-pr-gate.sh --uninstall …   remove exactly the hooks this installer wired (same target flags)
   install-pre-pr-gate.sh -h | --help
 EOF
@@ -162,7 +166,7 @@ while [ "$#" -gt 0 ]; do
 done
 set -- ${rest:+"$rest"}
 
-# --force's whole meaning (overwrite a conflicting hook) doesn't exist on the removal path — --uninstall
+# --force's whole meaning (swap a stale copy of this hook) doesn't exist on the removal path — --uninstall
 # already never touches a hook that differs from ours, unconditionally. Reject the combination instead
 # of silently ignoring one flag.
 if [ "$uninstall" = 1 ] && [ "$force" = 1 ]; then
@@ -300,8 +304,8 @@ hook_specs="$(jq -n --arg gate "$gate" '[
 hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$current" || exit 2
 
 # --uninstall: the mirror image of the merge below (hook_install_remove / hook_install_merge, same
-# one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/CONFLICT). An event+matcher entry
-# comes out ONLY when its hooks array is byte-identical to the single {type, command} entry this
+# one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/APPENDED/STALE). An event+matcher
+# entry comes out ONLY when its hooks array is byte-identical to the single {type, command} entry this
 # installer would wire right now — anything else on that same event+matcher is left in place and
 # reported KEPT, never swept out along with the rest.
 if [ "$uninstall" = 1 ]; then
@@ -375,30 +379,31 @@ if [ "$uninstall" = 1 ]; then
 fi
 
 # One pass (hook_install_merge) computes BOTH the merged settings AND each hook's classification —
-# MISSING (not wired), SAME (already exactly ours — idempotent), or CONFLICT (that event+matcher already
-# runs a different command, someone else's). The as-if-forced result is computed even on a CONFLICT and
-# is never written unless the refuse/--force gate below clears it.
+# MISSING (not wired), SAME (already exactly ours — idempotent), APPENDED (that event+matcher already
+# runs someone else's hook: ours lands in a sibling entry, theirs untouched), or STALE (this same hook at
+# another path — the one case that needs --force). The as-if-forced result is computed even on a STALE
+# and is never written unless the refuse/--force gate below clears it.
 merged="$(hook_install_merge "$hook_specs" "$current")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
-conflicts=""
-n_conflict=0
+stale=""
+n_stale=0
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
-  if [ "$status" = "CONFLICT" ]; then
-    n_conflict=$((n_conflict + 1))
-    conflicts="${conflicts}${conflicts:+, }$event/$matcher"
+  if [ "$status" = "STALE" ]; then
+    n_stale=$((n_stale + 1))
+    stale="${stale}${stale:+, }$event/$matcher"
   fi
 done <<<"$statuses"
 
-if [ "$n_conflict" -gt 0 ] && [ "$force" != 1 ]; then
-  echo "install-pre-pr-gate: $settings already has a different hook wired for: $conflicts" >&2
-  echo "  Refusing to overwrite your data — re-run with --force to back it up and replace, or edit" >&2
-  echo "  $settings by hand. Nothing was changed." >&2
+if [ "$n_stale" -gt 0 ] && [ "$force" != 1 ]; then
+  echo "install-pre-pr-gate: $settings already wires this hook at a different path for: $stale" >&2
+  echo "  (a moved or re-cloned checkout — appending would fire it twice). Re-run with --force to back" >&2
+  echo "  up settings.json and point it at this checkout; your other hooks stay. Nothing was changed." >&2
   exit 3
 fi
 
-if [ "$n_conflict" -gt 0 ] && [ -f "$settings" ]; then
+if [ "$n_stale" -gt 0 ] && [ -f "$settings" ]; then
   hook_install_backup "$settings"
   echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") (--force)"
 fi
@@ -411,7 +416,8 @@ while IFS=$'\t' read -r status event matcher; do
   case "$status" in
     MISSING)  echo "  +    $event/$matcher wired" ;;
     SAME)     echo "  =    $event/$matcher already wired (up to date)" ;;
-    CONFLICT) echo "  ^    $event/$matcher replaced (--force)" ;;
+    APPENDED) echo "  +    $event/$matcher APPENDED beside your existing hook (yours is untouched)" ;;
+    STALE)    echo "  ^    $event/$matcher stale path replaced (--force); your other hooks untouched" ;;
   esac
 done <<<"$statuses"
 
