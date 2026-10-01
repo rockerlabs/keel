@@ -942,21 +942,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # harness home (a --codex/--home adopter's stores sit under the default one); one WARN per store root,
   # deduped when the two coincide. A store root holding only compat links (what the migration leaves
   # behind) is clean. The ID lives here, per the --install convention (header note above).
-  sl_seen=$'\n'
-  for sl_home in "$ihome" "${KEEL_HOME:-${HOME:-}/.claude}"; do
-    [ -n "$sl_home" ] || continue
+  sl_homes=("$ihome")
+  if [ -n "$ghome" ] && [ "$ghome" != "$ihome" ] && ! [ "$ghome" -ef "$ihome" ]; then sl_homes+=("$ghome"); fi
+  for sl_home in "${sl_homes[@]}"; do
     for sl_name in impact read-trace; do
-      sl_root="$(keel_legacy_store_root "$sl_name" "$sl_home")" || continue
-      [ -d "$sl_root" ] || continue
-      sl_key="$(cd "$sl_root" && pwd -P)"
-      case "$sl_seen" in *$'\n'"$sl_key"$'\n'*) continue ;; esac
-      sl_seen="$sl_seen$sl_key"$'\n'
-      sl_real=0
-      for sl_e in "$sl_root"/* "$sl_root"/.[!.]* "$sl_root"/..?*; do
-        if [ -d "$sl_e" ] && [ ! -L "$sl_e" ]; then sl_real=1; break; fi
-      done
-      if [ "$sl_real" = 1 ]; then
-        warn W-STATE-LEGACY "keel's durable store still lives in the harness home at $sl_root — run tools/state-root-migrate.sh --from $sl_home"
+      if [ -n "$(keel_legacy_store_entries "$sl_name" "$sl_home")" ]; then
+        warn W-STATE-LEGACY "keel's durable store still lives in the harness home at $(keel_legacy_store_root "$sl_name" "$sl_home") — run tools/state-root-migrate.sh --from $sl_home"
       fi
     done
   done

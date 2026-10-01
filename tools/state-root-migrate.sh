@@ -97,10 +97,9 @@ srm_main() {
     [ -d "$src" ] || continue
     tgt_root="$root/$name"
     # The legacy root IS the target root (a compat link to it, or the same directory): nothing to move.
-    if [ -d "$tgt_root" ] && [ "$(cd "$src" && pwd -P)" = "$(cd "$tgt_root" && pwd -P)" ]; then continue; fi
-    for e in "$src"/* "$src"/.[!.]* "$src"/..?*; do
-      [ -d "$e" ] && [ ! -L "$e" ] || continue
-      base="$(basename "$e")"
+    if [ "$src" -ef "$tgt_root" ]; then continue; fi
+    while IFS= read -r e; do
+      base="${e##*/}"
       t="$tgt_root/$base"
       if [ -e "$t" ] || [ -L "$t" ]; then
         printf 'kept %s — %s already exists\n' "$e" "$t"
@@ -113,7 +112,7 @@ srm_main() {
         moved=$((moved + 1))
         continue
       fi
-      mkdir -p "$tgt_root"
+      [ -d "$tgt_root" ] || mkdir -p "$tgt_root"
       mv "$e" "$t"
       if [ ! -d "$t" ] || [ -e "$t/$base" ]; then
         printf 'nested %s — the move did not land cleanly at %s; inspect both, nothing was deleted\n' "$e" "$t"
@@ -126,7 +125,7 @@ srm_main() {
       else
         problems=$((problems + 1))
       fi
-    done
+    done < <(keel_legacy_store_entries "$name" "$from")
   done
 
   if [ "$moved" -eq 0 ] && [ "$kept" -eq 0 ] && [ "$problems" -eq 0 ]; then

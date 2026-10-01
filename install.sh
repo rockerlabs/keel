@@ -1856,15 +1856,13 @@ _keel_test_checkpoint manifest-written
 # dir #637 B5: move keel's durable stores (impact, read-trace) out of the harness home into
 # $HOME/.keel — on EVERY run (copy, link, --codex), idempotent, never clobbering (a conflict is kept and
 # reported). First the home this run installed into, then — when it differs — the default harness home,
-# where a --codex/--home adopter's stores sit. Placed on the success path before the lock release below.
-# Guarded by `[ -s ]` (a tools/-less checkout, like the optional libs above) and `|| true`: the move
-# never changes install's exit status. Its output is indented two spaces under the install log.
+# where a --codex/--home adopter's stores sit. It never changes install's exit status.
 if [ -s "$root/tools/state-root-migrate.sh" ]; then
   {
     bash "$root/tools/state-root-migrate.sh" --from "$HOME_DIR" 2>&1 || true
     if [ -n "${HOME:-}" ]; then
       srm_default="${KEEL_HOME:-$HOME/.claude}"
-      if [ -d "$srm_default" ] && [ "$(cd "$srm_default" && pwd -P)" != "$(cd "$HOME_DIR" && pwd -P)" ]; then
+      if [ -d "$srm_default" ] && ! [ "$srm_default" -ef "$HOME_DIR" ]; then
         bash "$root/tools/state-root-migrate.sh" 2>&1 || true
       fi
     fi

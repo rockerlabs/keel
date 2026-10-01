@@ -76,6 +76,22 @@ check_eq "A2(h): default harness home → \$HOME/.claude" "$SANDBOX/a2-h/.claude
 sr "$SANDBOX/a2-h" 'keel_legacy_store_root impact' KEEL_HOME=/k
 check_eq "A2(h): KEEL_HOME is the next default" "/k/.keel/impact" "$OUT"
 
+# --- keel_legacy_store_entries: the one definition of "an entry still to move" (dir #637 PR2) -----------
+h="$SANDBOX/a2-entries"; mkdir -p "$h/.claude/.keel/impact/-p-one" "$h/.claude/.keel/impact/.dotted" "$h/elsewhere"
+printf 'f\n' > "$h/.claude/.keel/impact/stray-file"
+ln -s "$h/elsewhere" "$h/.claude/.keel/impact/moved-link"
+sr "$h" 'keel_legacy_store_entries impact'
+check_status "entries: rc 0" 0 "$STATUS"
+check_eq "entries: real directories only, dot-names included, files and links skipped" \
+  "$(printf '%s\n%s' "$h/.claude/.keel/impact/-p-one" "$h/.claude/.keel/impact/.dotted")" "$OUT"
+sr "$h" 'keel_legacy_store_entries read-trace'
+check_eq "entries: an absent store root prints nothing" "" "$OUT"
+sr "$h" 'keel_legacy_store_entries impact /nowhere'
+check_eq "entries: an explicit harness home that holds nothing prints nothing" "" "$OUT"
+sr -u 'keel_legacy_store_entries impact'
+check_status "entries: no HOME and no home argument → rc 0, nothing" 0 "$STATUS"
+check_eq "entries: ...and no output" "" "$OUT"
+
 sr -u 'keel_store_root impact'
 check_status "B2 rung 1: no HOME → rc 1" 1 "$STATUS"
 check_eq "B2 rung 1: no HOME → empty stdout" "" "$OUT"
