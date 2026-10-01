@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The two hook installers now share one settings-merge core** (dir #437 build PR1, absorbing dir #390's
+  extraction half): `tools/install-read-trace.sh` and `tools/install-pre-pr-gate.sh` each carried a
+  byte-identical copy of the backup and atomic-write helpers, the hooks-shape check and the merge and
+  remove programs, and the next installer (the machine-global watcher, dir #437 build PR2) would have been
+  a third copy. They now source `tools/lib/hook-install.sh`, behind a fail-closed pre-check that refuses
+  with one message if the lib is missing or corrupted. Behaviour does not change: both installers' test
+  files pass unmodified, and the new `tests/test_hook_install_lib.sh` covers the lib directly, including
+  that `--uninstall` prunes only its own events' empty hook arrays.
+
 - **The shared scratch clone for the container test leg now has a rule for parallel workers**
   (dir #575, absorbing dir #520): the one canonical Alpine clone path assumed a single user, so a
   parallel wave's workers each ran `reset --hard` on it under a sibling's running container (three
