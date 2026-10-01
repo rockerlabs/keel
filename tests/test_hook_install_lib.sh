@@ -109,7 +109,7 @@ for inst in install-read-trace.sh install-pre-pr-gate.sh; do
   run bash "$fx/tools/$inst" "$fx/repo"
   check_status "$inst: lib missing → exit 1 (refuses, writes nothing)" 1 "$STATUS"
   check_status "$inst: …names tools/lib/hook-install.sh" 1 \
-    "$(printf '%s' "$OUT" | grep -c 'tools/lib/hook-install.sh is missing or corrupted')"
+    "$(printf '%s' "$OUT" | grep -c 'tools/lib/hook-install (the settings-merge lib) is missing or corrupted')"
   check_status "$inst: …and wrote no settings.json" 0 "$(find "$fx/repo" -name settings.json | grep -c .)"
 done
 

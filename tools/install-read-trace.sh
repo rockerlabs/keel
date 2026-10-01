@@ -70,7 +70,7 @@ if [ -s "$here/lib/hook-install.sh" ] && bash -n "$here/lib/hook-install.sh" 2>/
   # shellcheck source=tools/lib/hook-install.sh
   . "$here/lib/hook-install.sh"
 else
-  echo "install-read-trace: tools/lib/hook-install.sh is missing or corrupted — this checkout is incomplete and cannot safely edit settings.json; re-clone or re-download Keel and re-run" >&2
+  echo "install-read-trace: tools/lib/hook-install (the settings-merge lib) is missing or corrupted — this checkout is incomplete and cannot safely edit settings.json; re-clone or re-download Keel" >&2
   exit 1
 fi
 

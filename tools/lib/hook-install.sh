@@ -6,7 +6,7 @@
 #
 # Extracted from tools/install-read-trace.sh and tools/install-pre-pr-gate.sh, which carried byte-
 # identical copies of the backup/atomic-write helpers, the shape check and the merge/remove jq programs
-# (dir #387 copied the gate's installer; the next installer, tools/install-machine-watch.sh, would have
+# (dir #387 copied the gate's installer; the next installer (the machine-global watcher's, dir #437 PR2) would have
 # been the third copy). One definition, parameterised by the hook-specs JSON and a message prefix.
 # What stays in each installer: its argument parsing, its usage text, its no-jq paste-in snippet, and
 # any extras of its own (the gate's manifest and ledger).
