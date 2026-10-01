@@ -62,6 +62,17 @@ esac
 # shared with install-pre-pr-gate.sh's identical need via tools/lib/sh-quote.sh rather than a second
 # hand-copy.
 rt_sh="$(sh_quote_json "$rt")"
+# hook-install (dir #437 MW8) — REQUIRED, not optional, unlike the two libs above: it computes the
+# settings.json merge/removal itself, so a degrade-and-continue stub here would write a merge this
+# script did not compute. Refuse outright on a missing or unparseable copy; see
+# tools/lib/artifact-cksum.sh's header for the pattern.
+if [ -s "$here/lib/hook-install.sh" ] && bash -n "$here/lib/hook-install.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/hook-install.sh
+  . "$here/lib/hook-install.sh"
+else
+  echo "install-read-trace: tools/lib/hook-install (the settings-merge lib) is missing or corrupted — this checkout is incomplete and cannot safely edit settings.json; re-clone or re-download Keel" >&2
+  exit 1
+fi
 
 usage() {
   cat <<'EOF'
@@ -198,41 +209,10 @@ hook_specs="$(jq -n --arg rt "$rt" '[
   {event: "SessionEnd",   matcher: "",                             command: ("bash " + ($rt|@sh) + " session-end")}
 ]')"
 
-_backup_settings() { backup="$1.$(date -u +%Y%m%dT%H%M%SZ).bak"; cp "$1" "$backup"; }
-_atomic_write() { printf '%s\n' "$2" > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"; }
-
-shape_ok="$(jq -r --argjson specs "$hook_specs" '
-  (.hooks // {}) as $h |
-  (($h | type) == "object") as $hooks_ok |
-  ($specs | map(.event) | unique | all(. as $e | (($h[$e] // []) | type) == "array")) as $events_ok |
-  ($hooks_ok and $events_ok)
-' <<<"$current")"
-if [ "$shape_ok" != "true" ]; then
-  echo "install-read-trace: $settings's \"hooks\" section has an unexpected shape (not the usual" >&2
-  echo "  Claude Code hooks object) — fix it by hand. Nothing was changed." >&2
-  exit 2
-fi
+hook_install_check_shape "install-read-trace" "$settings" "$hook_specs" "$current" || exit 2
 
 if [ "$uninstall" = 1 ]; then
-  remove_prog='
-{obj: (.hooks //= {}), report: []} |
-reduce $specs[] as $s (.;
-  (.obj.hooks[$s.event] // []) as $arr |
-  ($arr | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
-    .
-  elif $arr[$idx].hooks == [{type: "command", command: $s.command}] then
-    .obj.hooks[$s.event] = (.obj.hooks[$s.event] | del(.[$idx]))
-    | .report += [["REMOVED", $s.event, $s.matcher]]
-  else
-    .report += [["KEPT", $s.event, $s.matcher]]
-  end
-) |
-($specs | map(.event) | unique) as $our_events |
-.obj.hooks = (.obj.hooks | with_entries(. as $e | select(($e.value | length > 0) or ($our_events | index($e.key) | not)))) |
-{new: .obj, report: (.report | map(@tsv) | join("\n"))}
-'
-  removal="$(jq --argjson specs "$hook_specs" "$remove_prog" <<<"$current")"
+  removal="$(hook_install_remove "$hook_specs" "$current")"
   statuses="$(jq -r '.report' <<<"$removal")"
 
   print_removal_status() {
@@ -263,10 +243,10 @@ reduce $specs[] as $s (.;
     exit 0
   fi
 
-  _backup_settings "$settings"
+  hook_install_backup "$settings"
   new_settings="$(jq '.new' <<<"$removal")"
-  _atomic_write "$settings" "$new_settings"
-  echo "install-read-trace: backed up settings.json → $(basename "$backup")"
+  hook_install_atomic_write "$settings" "$new_settings"
+  echo "install-read-trace: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
 
   while IFS=$'\t' read -r status event matcher; do
     [ -n "$status" ] || continue
@@ -277,24 +257,7 @@ reduce $specs[] as $s (.;
   exit 0
 fi
 
-merge_prog='
-{obj: (.hooks //= {}), report: []} |
-reduce $specs[] as $s (.;
-  .obj.hooks[$s.event] //= [] |
-  (.obj.hooks[$s.event] | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
-    .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
-    | .report += [["MISSING", $s.event, $s.matcher]]
-  elif (.obj.hooks[$s.event][$idx].hooks // [] | map(.command) | index($s.command)) != null then
-    .report += [["SAME", $s.event, $s.matcher]]
-  else
-    .obj.hooks[$s.event][$idx].hooks = [{type: "command", command: $s.command}]
-    | .report += [["CONFLICT", $s.event, $s.matcher]]
-  end
-) |
-{new: .obj, report: (.report | map(@tsv) | join("\n"))}
-'
-merged="$(jq --argjson specs "$hook_specs" "$merge_prog" <<<"$current")"
+merged="$(hook_install_merge "$hook_specs" "$current")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
 conflicts=""
@@ -315,12 +278,12 @@ if [ "$n_conflict" -gt 0 ] && [ "$force" != 1 ]; then
 fi
 
 if [ "$n_conflict" -gt 0 ] && [ -f "$settings" ]; then
-  _backup_settings "$settings"
-  echo "install-read-trace: backed up your existing settings.json → $(basename "$backup") (--force)"
+  hook_install_backup "$settings"
+  echo "install-read-trace: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") (--force)"
 fi
 
 new_settings="$(jq '.new' <<<"$merged")"
-_atomic_write "$settings" "$new_settings"
+hook_install_atomic_write "$settings" "$new_settings"
 
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue

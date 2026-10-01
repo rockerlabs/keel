@@ -101,6 +101,17 @@ esac
 # own), shared with install-read-trace.sh's identical need via tools/lib/sh-quote.sh rather than a
 # second hand-copy.
 gate_sh="$(sh_quote_json "$gate")"
+# hook-install (dir #437 MW8) — REQUIRED, not optional, unlike the libs above: it computes the
+# settings.json merge/removal itself, so a degrade-and-continue stub here would write a merge this
+# script did not compute. Refuse outright on a missing or unparseable copy; see
+# tools/lib/artifact-cksum.sh's header for the pattern.
+if [ -s "$here/lib/hook-install.sh" ] && bash -n "$here/lib/hook-install.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/hook-install.sh
+  . "$here/lib/hook-install.sh"
+else
+  echo "install-pre-pr-gate: tools/lib/hook-install (the settings-merge lib) is missing or corrupted — this checkout is incomplete and cannot safely edit settings.json; re-clone or re-download Keel" >&2
+  exit 1
+fi
 
 usage() {
   cat <<'EOF'
@@ -282,59 +293,19 @@ hook_specs="$(jq -n --arg gate "$gate" '[
   {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")}
 ]')"
 
-# _backup_settings SETTINGS — a timestamped copy before any destructive edit; sets $backup. Shared by
-# the merge path's --force overwrite and the --uninstall removal path below (previously duplicated).
-_backup_settings() {
-  backup="$1.$(date -u +%Y%m%dT%H%M%SZ).bak"
-  cp "$1" "$backup"
-}
-# _atomic_write SETTINGS CONTENT — write CONTENT to SETTINGS via a same-dir temp file + rename, so a
-# reader never observes a partially-written file. Shared by the same two call sites.
-_atomic_write() {
-  printf '%s\n' "$2" > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
-}
+# Backup/atomic-write/shape-check/merge/remove all live in tools/lib/hook-install.sh (dir #437 MW8),
+# shared with install-read-trace.sh — reconcile there, not here, on drift.
+# Valid JSON is not the same as the expected SHAPE (a hand-edited ".hooks" as an array): the lib's
+# check refuses with a clean message instead of a raw jq type error.
+hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$current" || exit 2
 
-# Valid JSON is not the same as the expected SHAPE — a hand-edited settings.json could have ".hooks" as
-# an array, or ".hooks.PreToolUse" as a string, and the merge below would otherwise crash with a raw jq
-# type error instead of the clean refusal every other bad-input path here gives.
-shape_ok="$(jq -r --argjson specs "$hook_specs" '
-  (.hooks // {}) as $h |
-  (($h | type) == "object") as $hooks_ok |
-  ($specs | map(.event) | unique | all(. as $e | (($h[$e] // []) | type) == "array")) as $events_ok |
-  ($hooks_ok and $events_ok)
-' <<<"$current")"
-if [ "$shape_ok" != "true" ]; then
-  echo "install-pre-pr-gate: $settings's \"hooks\" section has an unexpected shape (not the usual" >&2
-  echo "  Claude Code hooks object) — fix it by hand. Nothing was changed." >&2
-  exit 2
-fi
-
-# --uninstall: the mirror image of the merge below, same one-pass-tagged-report shape (REMOVED/KEPT
-# instead of MISSING/SAME/CONFLICT — reconcile the two on drift, per this file's own header). An
-# event+matcher entry comes out ONLY when its hooks array is byte-identical to the single
-# {type, command} entry this installer would wire right now — anything else on that same event+matcher
-# (yours, or a --force run's replacement of something else entirely) is left in place and reported KEPT,
-# never swept out along with the rest.
+# --uninstall: the mirror image of the merge below (hook_install_remove / hook_install_merge, same
+# one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/CONFLICT). An event+matcher entry
+# comes out ONLY when its hooks array is byte-identical to the single {type, command} entry this
+# installer would wire right now — anything else on that same event+matcher is left in place and
+# reported KEPT, never swept out along with the rest.
 if [ "$uninstall" = 1 ]; then
-  remove_prog='
-{obj: (.hooks //= {}), report: []} |
-reduce $specs[] as $s (.;
-  (.obj.hooks[$s.event] // []) as $arr |
-  ($arr | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
-    .
-  elif $arr[$idx].hooks == [{type: "command", command: $s.command}] then
-    .obj.hooks[$s.event] = (.obj.hooks[$s.event] | del(.[$idx]))
-    | .report += [["REMOVED", $s.event, $s.matcher]]
-  else
-    .report += [["KEPT", $s.event, $s.matcher]]
-  end
-) |
-($specs | map(.event) | unique) as $our_events |
-.obj.hooks = (.obj.hooks | with_entries(. as $e | select(($e.value | length > 0) or ($our_events | index($e.key) | not)))) |
-{new: .obj, report: (.report | map(@tsv) | join("\n"))}
-'
-  removal="$(jq --argjson specs "$hook_specs" "$remove_prog" <<<"$current")"
+  removal="$(hook_install_remove "$hook_specs" "$current")"
   statuses="$(jq -r '.report' <<<"$removal")"
 
   # One definition of each status's print line, reused by both the early "nothing removed" exit (KEPT
@@ -367,10 +338,10 @@ reduce $specs[] as $s (.;
     exit 0
   fi
 
-  _backup_settings "$settings"
+  hook_install_backup "$settings"
   new_settings="$(jq '.new' <<<"$removal")"
-  _atomic_write "$settings" "$new_settings"
-  echo "install-pre-pr-gate: backed up settings.json → $(basename "$backup")"
+  hook_install_atomic_write "$settings" "$new_settings"
+  echo "install-pre-pr-gate: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
 
   while IFS=$'\t' read -r status event matcher; do
     [ -n "$status" ] || continue
@@ -403,29 +374,11 @@ reduce $specs[] as $s (.;
   exit 0
 fi
 
-# One pass computes BOTH the merged settings AND each hook's classification — MISSING (not wired), SAME
-# (already exactly ours — idempotent), or CONFLICT (that event+matcher already runs a different command,
-# someone else's) — from the same walk, so there's exactly one place that decides what "already wired"
-# means. Computing the merged (as-if-forced) result even on a CONFLICT is harmless: it's simply never
-# written unless the refuse/--force gate below clears it.
-merge_prog='
-{obj: (.hooks //= {}), report: []} |
-reduce $specs[] as $s (.;
-  .obj.hooks[$s.event] //= [] |
-  (.obj.hooks[$s.event] | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
-    .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
-    | .report += [["MISSING", $s.event, $s.matcher]]
-  elif (.obj.hooks[$s.event][$idx].hooks // [] | map(.command) | index($s.command)) != null then
-    .report += [["SAME", $s.event, $s.matcher]]
-  else
-    .obj.hooks[$s.event][$idx].hooks = [{type: "command", command: $s.command}]
-    | .report += [["CONFLICT", $s.event, $s.matcher]]
-  end
-) |
-{new: .obj, report: (.report | map(@tsv) | join("\n"))}
-'
-merged="$(jq --argjson specs "$hook_specs" "$merge_prog" <<<"$current")"
+# One pass (hook_install_merge) computes BOTH the merged settings AND each hook's classification —
+# MISSING (not wired), SAME (already exactly ours — idempotent), or CONFLICT (that event+matcher already
+# runs a different command, someone else's). The as-if-forced result is computed even on a CONFLICT and
+# is never written unless the refuse/--force gate below clears it.
+merged="$(hook_install_merge "$hook_specs" "$current")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
 conflicts=""
@@ -446,12 +399,12 @@ if [ "$n_conflict" -gt 0 ] && [ "$force" != 1 ]; then
 fi
 
 if [ "$n_conflict" -gt 0 ] && [ -f "$settings" ]; then
-  _backup_settings "$settings"
-  echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$backup") (--force)"
+  hook_install_backup "$settings"
+  echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") (--force)"
 fi
 
 new_settings="$(jq '.new' <<<"$merged")"
-_atomic_write "$settings" "$new_settings"
+hook_install_atomic_write "$settings" "$new_settings"
 
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
@@ -478,7 +431,7 @@ kind=gate
 settings=$settings
 gate=$gate
 wired_at=$wired_at"
-  _atomic_write "$gate_manifest_file" "$gate_manifest_content"
+  hook_install_atomic_write "$gate_manifest_file" "$gate_manifest_content"
   echo "install-pre-pr-gate: gate manifest ($gate_manifest_file)"
 
   # Checkout-side ledger — the same discovery index install.sh writes to (tools/lib/ledger.sh),
