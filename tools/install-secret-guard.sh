@@ -10,8 +10,9 @@
 #
 # Never clobbers your data silently: a pre-existing pre-commit/pre-push (or global core.hooksPath) that
 # isn't Keel's own is treated as higher-precedence user data — the install refuses and says how to
-# proceed unless you pass --force (which backs up to <hook>.pre-keel.bak first). Bypass a single
-# commit/push deliberately with `git ... --no-verify`.
+# proceed unless you pass --force (which backs up to <hook>.pre-keel.bak first, and refuses — naming the
+# saved file — if that backup already exists, so an earlier saved hook is never overwritten). Bypass a
+# single commit/push deliberately with `git ... --no-verify`.
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
 # turns out to be, not gated behind reaching the <repo> branch below. An inherited GIT_DIR /
@@ -99,6 +100,9 @@ _isg_rollback() {
   exit 4
 }
 
+# Ours carry a "Keel secret-guard" marker; anything at a hook path without it is the user's own.
+_isg_is_keel_hook() { grep -qi 'Keel secret-guard' "$1" 2>/dev/null; }
+
 install_into() {
   local hooks_dir="$1" h t
   # Verify the SOURCE before touching $hooks_dir at all (dir #250, "second defect" — see CHANGELOG.md
@@ -136,10 +140,29 @@ install_into() {
   # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
   # pre-push without it is the user's data (higher precedence than our default), so refuse and explain.
   # --force backs it up to <hook>.pre-keel.bak, then replaces. (Closes SEC1's pre-commit clobber.)
+  #
+  # Pre-flight (dir #625): --force's backup at .pre-keel.bak is PERMANENT, so it must never be
+  # overwritten. A second --force over a DIFFERENT foreign hook (something external replaced the
+  # installed hook after the first --force) would `cp` the new hook over the first one's backup — the
+  # earlier hook silently gone. Refuse BEFORE the loop below touches anything, so neither hook gets a
+  # backup and nothing is left half-done; name the saved file so the user can move it aside and re-run.
+  # `-L` too: a dangling symlink at the backup path makes `-e` false, yet `cp` would write through it.
+  if [ "$force" = 1 ]; then
+    for h in pre-commit pre-push; do
+      t="$hooks_dir/$h"
+      if [ -e "$t" ] && ! _isg_is_keel_hook "$t" \
+          && { [ -e "$t.$isg_bak_force" ] || [ -L "$t.$isg_bak_force" ]; }; then
+        echo "secret-guard: $t is not a Keel hook, and a backup of an earlier one is already saved at" >&2
+        echo "  $t.$isg_bak_force — --force would overwrite it. Move or delete that file, then re-run" >&2
+        echo "  with --force. Nothing was changed." >&2
+        exit 3
+      fi
+    done
+  fi
   for h in pre-commit pre-push; do
     t="$hooks_dir/$h"
     if [ -e "$t" ]; then
-      if grep -qi 'Keel secret-guard' "$t" 2>/dev/null; then
+      if _isg_is_keel_hook "$t"; then
         # Already ours — re-vendoring over it needs no --force and no refuse-and-ask. But the cp
         # below is about to overwrite a WORKING hook, so it still needs a backup: without one, a
         # later failure in this same run (the next cp, chmod, or the post-copy verify) rolled back

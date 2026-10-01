@@ -855,6 +855,37 @@ check_contains "surviving backup still holds the user's original content" \
 check_nofile "the re-install's own run-scoped safety net leaves no stray .keel-upgrade.bak" \
   "$frepo/.git/hooks/pre-commit.keel-upgrade.bak"
 
+# --- dir #625: a second --force over a DIFFERENT foreign hook must not destroy the first backup -----
+# --force over foreign hook A keeps A at the PERMANENT .pre-keel.bak. If something external later
+# replaces the installed hook with a different foreign hook B, a second --force used to `cp` B over
+# that backup — A gone, no warning. Now it refuses (exit 3), names the saved file, and changes nothing.
+f2repo="$(new_repo)"
+f2h="$f2repo/.git/hooks"
+mkdir -p "$f2h"
+printf '#!/bin/sh\n# foreign hook A\nexit 0\n' > "$f2h/pre-commit"
+chmod +x "$f2h/pre-commit"
+run "$isg" --force "$f2repo"
+check_status "first --force over foreign A → exit 0" 0 "$STATUS"
+check_contains "first backup holds foreign A" "$(cat "$f2h/pre-commit.pre-keel.bak")" "foreign hook A"
+# something external swaps in a DIFFERENT foreign hook B (and a foreign pre-push, so the pair is mixed)
+printf '#!/bin/sh\n# foreign hook B\nexit 0\n' > "$f2h/pre-commit"
+printf '#!/bin/sh\n# foreign push C\nexit 0\n' > "$f2h/pre-push"
+run "$isg" --force "$f2repo"
+check_status "second --force over foreign B with a saved backup → exit 3 (refused)" 3 "$STATUS"
+check_contains "refusal names the already-saved backup file" "$OUT" "pre-commit.pre-keel.bak"
+check_contains "the first backup (foreign A) survives the second --force" \
+  "$(cat "$f2h/pre-commit.pre-keel.bak")" "foreign hook A"
+check_contains "foreign B is left in place, untouched" "$(cat "$f2h/pre-commit")" "foreign hook B"
+check_contains "foreign pre-push is left in place, untouched" "$(cat "$f2h/pre-push")" "foreign push C"
+check_nofile "refusal leaves no pre-push backup behind (nothing half-done)" "$f2h/pre-push.pre-keel.bak"
+check_nofile "refusal leaves no stray .keel-upgrade.bak" "$f2h/pre-commit.keel-upgrade.bak"
+# the user moves the saved backup aside → --force proceeds, and backs B up
+mv "$f2h/pre-commit.pre-keel.bak" "$f2h/pre-commit.pre-keel.bak.mine"
+run "$isg" --force "$f2repo"
+check_status "--force after the backup is moved aside → exit 0" 0 "$STATUS"
+check_contains "the new backup holds foreign B" "$(cat "$f2h/pre-commit.pre-keel.bak")" "foreign hook B"
+check_contains "the moved-aside backup is untouched" "$(cat "$f2h/pre-commit.pre-keel.bak.mine")" "foreign hook A"
+
 # --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
 # The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
 # replacing a FOREIGN global core.hooksPath via --force was not, even though it is the one path that
