@@ -100,6 +100,9 @@ _isg_rollback() {
   exit 4
 }
 
+# Ours carry a "Keel secret-guard" marker; anything at a hook path without it is the user's own.
+_isg_is_keel_hook() { grep -qi 'Keel secret-guard' "$1" 2>/dev/null; }
+
 install_into() {
   local hooks_dir="$1" h t
   # Verify the SOURCE before touching $hooks_dir at all (dir #250, "second defect" — see CHANGELOG.md
@@ -147,7 +150,7 @@ install_into() {
   if [ "$force" = 1 ]; then
     for h in pre-commit pre-push; do
       t="$hooks_dir/$h"
-      if [ -e "$t" ] && ! grep -qi 'Keel secret-guard' "$t" 2>/dev/null \
+      if [ -e "$t" ] && ! _isg_is_keel_hook "$t" \
           && { [ -e "$t.$isg_bak_force" ] || [ -L "$t.$isg_bak_force" ]; }; then
         echo "secret-guard: $t is not a Keel hook, and a backup of an earlier one is already saved at" >&2
         echo "  $t.$isg_bak_force — --force would overwrite it. Move or delete that file, then re-run" >&2
@@ -159,7 +162,7 @@ install_into() {
   for h in pre-commit pre-push; do
     t="$hooks_dir/$h"
     if [ -e "$t" ]; then
-      if grep -qi 'Keel secret-guard' "$t" 2>/dev/null; then
+      if _isg_is_keel_hook "$t"; then
         # Already ours — re-vendoring over it needs no --force and no refuse-and-ask. But the cp
         # below is about to overwrite a WORKING hook, so it still needs a backup: without one, a
         # later failure in this same run (the next cp, chmod, or the post-copy verify) rolled back
