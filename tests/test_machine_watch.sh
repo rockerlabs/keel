@@ -269,6 +269,17 @@ rm -f "$H/.config/app/new"
 mw check a
 check_contains "W17 a removal reports the directory's entries changed" "$OUT" "app: entries changed"
 
+# W17b: an alert file that sits INSIDE the quiet tree is reported once, as an alert — not again as a quiet tree hit
+mkcase w17b
+mkdir -p "$H/.config/git"; printf '[user]\n\tname = Alice\n' > "$H/.config/git/config"
+ENVV=("HOME=$H" "GIT_CONFIG_GLOBAL=$H/.config/git/config" "KEEL_HOME=$HH" "KEEL_MACHINE_WATCH_STORE=$H/store")
+mw snapshot a
+tick
+printf '[user]\n\tname = Mallory\n' > "$H/.config/git/config"
+mw check a
+check_contains "W17b the in-tree alert file is reported as an alert" "$OUT" "$H/.config/git/config: content changed"
+check_eq "W17b …and exactly once (no second quiet line for it)" "1" "$(printf '%s\n' "$OUT" | grep -c "$H/.config/git/config:")"
+
 # --- W18: shell rc -------------------------------------------------------------------------------------
 mkcase w18
 hook SessionStart

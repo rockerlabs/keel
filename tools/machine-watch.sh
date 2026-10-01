@@ -218,12 +218,15 @@ mw_diff_file() {
 # mw_scan_tree TIER ID ROOT STAMP — the ctime scan of one tree: find -cnewer STAMP, never per-file hashes.
 # A non-directory hit is `changed`; a directory hit is `entries changed` (covers a deletion inside) — except
 # a directory whose only news is a .DS_Store created in it (creating ANY entry bumps the parent's ctime, so
-# without this the excluded file would still be reported through its parent). Capped at 20 lines.
+# without this the excluded file would still be reported through its parent). A hit that is itself a watched
+# FILE (SETFILE: the resolved set) is skipped — its own row already reports it, under its own tier, and the
+# tree must not report it a second time as quiet. Capped at 20 lines.
 mw_scan_tree() {
-  local tier="$1" id="$2" root="$3" stamp="$4" hit n=0 more=0
+  local tier="$1" id="$2" root="$3" stamp="$4" setfile="$5" hit n=0 more=0
   [ -f "$stamp" ] || return 0
   mw_find_newer_flag
   while IFS= read -r hit; do
+    if awk -F'\t' -v h="$hit" '$3 == "file" && $4 == h { f = 1 } END { exit !f }' "$setfile"; then continue; fi
     if [ -d "$hit" ] && [ ! -L "$hit" ]; then
       if [ -n "$(find "$hit/.DS_Store" -maxdepth 0 "$MW_NEWER" "$stamp" 2>/dev/null)" ]; then continue; fi
       if [ "$n" -lt 20 ]; then n=$((n + 1)); mw_line "$tier" "$id" "$hit" "entries changed"; else more=$((more + 1)); fi
@@ -285,7 +288,7 @@ mw_check() {
   # The tree scan, for every tree present both then and now.
   while IFS="$MW_TAB" read -r id tier kind p old; do
     [ "$kind" = tree ] && [ "$old" = tree ] || continue
-    [ -d "$p" ] && mw_scan_tree "$tier" "$id" "$p" "$stamp"
+    [ -d "$p" ] && mw_scan_tree "$tier" "$id" "$p" "$stamp" "$MW_TMP.set"
   done < "$snap"
   # Replace the baseline with the fresh fingerprint — minus a vanished path the fresh set no longer names
   # (it was reported once as deleted; it is not tracked forever).
