@@ -49,6 +49,19 @@ keel_legacy_store_root() {
   printf '%s/.keel/%s' "$base" "$name"
 }
 
+# keel_legacy_store_entries NAME [HARNESS_HOME] — the entries of a legacy store still to be moved: every
+# direct child of keel_legacy_store_root that is a real directory (symlinks and files are skipped — a
+# symlink is what a finished migration leaves behind), dot-names included, one per line. Prints nothing
+# when the root is absent or holds none. The one definition of "an entry": tools/state-root-migrate.sh
+# moves exactly what it lists, and doctor's W-STATE-LEGACY warns on exactly what it lists.
+keel_legacy_store_entries() {
+  local root e
+  root="$(keel_legacy_store_root "$@")" || return 0
+  for e in "$root"/* "$root"/.[!.]* "$root"/..?*; do
+    if [ -d "$e" ] && [ ! -L "$e" ]; then printf '%s\n' "$e"; fi
+  done
+}
+
 # keel_store_root NAME — where store NAME lives. Rungs, in order, R = keel_state_root's output:
 #   1. keel_state_root fails            → print nothing, return 1.
 #   2. R/NAME is a directory            → R/NAME   (`-d` follows a symlink: a moved store whose old

@@ -15,6 +15,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`install.sh` now moves keel's durable stores into `$HOME/.keel`** (dir #637, PR2 of 2 — the move;
+  PR1 added the resolver): the new `tools/state-root-migrate.sh` takes every entry of the impact and
+  read-trace stores out of `${KEEL_HOME:-$HOME/.claude}/.keel/` and into `$HOME/.keel/`, leaving one
+  symlink per moved entry at the old address, so a downgraded keel or a stale vendored `secret-scan.sh`
+  copy still finds its data and `rm -r ~/.claude` no longer takes the stores with it. `install.sh` runs
+  it on every run (copy, link and `--codex`; a `--codex`/`--home` adopter's stores under the default
+  harness home are moved too) and never changes its own exit status over it. It never overwrites: an entry
+  already present at the target is left untouched and reported with the exact merge command. `doctor
+  --install` warns `W-STATE-LEGACY` while a store still sits in a harness home. **To upgrade, re-run
+  `install.sh`; until then keel keeps using the old location.** To go back, delete the symlinks and move
+  the directories back.
+
 - **Keel's own state now resolves to one root, `$HOME/.keel`, instead of the harness home** (dir #637,
   PR1 of 2 — the resolver; the move itself is PR2): the impact store and the read-trace store used to live
   under `${KEEL_HOME:-$HOME/.claude}/.keel/`, which a harness migration and an `rm -r ~/.claude` each took

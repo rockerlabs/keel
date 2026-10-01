@@ -414,6 +414,19 @@ check_file "B7b doctor-accept file untouched" "$B7B/.keel/doctor-accept"
 # dir #377 (wider half): a kept .keel/ is now NAMED, not silently swallowed by rmdir's || true.
 check_contains "B7b names what kept .keel/ from being removed" "$OUT" "doctor-accept"
 
+# --- dir #637 A11: uninstall never touches a moved store; its closing line lists what kept .keel/ ---------
+A11="$SANDBOX/a11-moved-store/.claude"
+inst --home "$A11" --no-hooks
+mkdir -p "$SANDBOX/a11-moved-store/.keel/impact/-p-a11" "$A11/.keel/impact"
+printf 'row\n' > "$SANDBOX/a11-moved-store/.keel/impact/-p-a11/ledger.md"
+ln -s "$SANDBOX/a11-moved-store/.keel/impact/-p-a11" "$A11/.keel/impact/-p-a11"
+a11_before="$(cksum < "$SANDBOX/a11-moved-store/.keel/impact/-p-a11/ledger.md")"
+unin --home "$A11" --yes
+check_status "A11: uninstall exits 0 after a store move" 0 "$STATUS"
+check_eq "A11: the moved store is byte-identical" "$a11_before" "$(cksum < "$SANDBOX/a11-moved-store/.keel/impact/-p-a11/ledger.md")"
+check_link "A11: the compat link survives" "$A11/.keel/impact/-p-a11"
+check_contains "A11: the kept-.keel line lists impact" "$OUT" "impact"
+
 # --- B7c: dir #377 — a crashed install's stranded scratch (`.prior-manifest.<pid>`,
 # `.artifacts.<pid>`) must not make .keel survive a completed uninstall. install.sh only sweeps
 # these on its own NEXT run, which uninstalling never triggers, so uninstall.sh's own removal loop
