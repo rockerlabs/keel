@@ -38,7 +38,7 @@ keel_state_root() {
 
 # keel_legacy_store_root NAME [HARNESS_HOME] — the retired address of store NAME:
 # `${HARNESS_HOME:-${KEEL_HOME:-$HOME/.claude}}/.keel/NAME`. The one spelling of it: the transition
-# rung below, the migration tool (tools/state-root-migrate.sh) and doctor's W-STATE-LEGACY all call it.
+# rung below, the store-migration tool (dir #637 PR2) and doctor's W-STATE-LEGACY all call it.
 # rc 1 and no output when no harness home can be named (no argument, no KEEL_HOME, no HOME).
 keel_legacy_store_root() {
   local name="$1" base="${2:-${KEEL_HOME:-}}"
