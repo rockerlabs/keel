@@ -103,6 +103,10 @@ keep them around and paste the one you need when you need it.
   bypass — is built entirely on Claude Code `PreToolUse`/`PostToolUse`/`SessionStart`/`UserPromptExpansion`
   hooks (`tools/install-pre-pr-gate.sh` wires them). It **does not port**: on another tool, `/polish`'s
   steps are still worth running by hand or as a prompt, but nothing will block a PR if you skip them.
+- **The machine-global watcher** (`tools/machine-watch.sh`) — its *hook* wiring (`tools/install-machine-watch.sh`)
+  is Claude Code `SessionStart`/`PostToolUse`/`PostToolUseFailure`/`SessionEnd` hooks and **does not port**.
+  Its CLI (`snapshot`/`check`) runs by hand on any tool with a shell, and the `docs/delegation.md` deny-rule
+  recipe is Claude Code settings syntax — on another harness, use your permission layer's equivalent.
 - **Linked consumption of `CORE.md`** — on Claude Code the always-on file can *import* the rails live
   (an `@path` line pointing at the checkout's `CORE.md`), so `git pull` refreshes them without re-copying.
   `install.sh --link` mechanizes exactly this (plus command symlinks; `doctor.sh --install` audits the

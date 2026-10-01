@@ -21,8 +21,9 @@
 #   in use:    tmp          (tools/lib/gate-paths.sh gate_state_root: the gate's rendezvous files)
 #              impact       (tools/lib/impact-store.sh impact_store_root)
 #              read-trace   (tools/lib/read-trace.sh read_trace_store_root)
-#   reserved:  machine-watch, machine-watch.paths   (dir #437 PR2)
-#              config, config.d                      (dir #257)
+#              machine-watch, machine-watch.paths   (tools/machine-watch.sh: the baseline store, and the
+#                           user-authored extra-paths file; dir #437 PR2)
+#   reserved:  config, config.d                      (dir #257)
 # Stays per harness, under `${KEEL_HOME:-$HOME/.claude}/.keel/`, unchanged by dir #637:
 # `install-manifest.*`, `foreign-core.*`, the install scratch and `doctor-accept` — they describe ONE
 # install and are moot once its home is gone.

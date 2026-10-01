@@ -74,6 +74,11 @@ export KEEL_IMPACT_STORE="$SANDBOX/harness-impact-store"
 unset KEEL_HOME
 # Same reasoning as KEEL_IMPACT_STORE above, for the read-trace store's own external root (dir #317).
 export KEEL_READ_TRACE_STORE="$SANDBOX/harness-read-trace-store"
+# And for the machine-global watcher's baseline store (dir #437 PR2, MW5): its default sits under
+# $HOME/.keel/machine-watch, which is already sandboxed with HOME, but an explicit override keeps a case
+# that sources the tool without its own HOME from ever resolving a real path. test_machine_watch.sh's
+# default-location case unsets it on purpose.
+export KEEL_MACHINE_WATCH_STORE="$SANDBOX/harness-machine-watch"
 
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
 # both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS

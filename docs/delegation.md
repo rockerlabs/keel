@@ -292,6 +292,39 @@ reproducing a defect live mutated a machine-global installer target this block w
 reached that prompt). Protecting a surface keel cannot inject into is necessarily a property of the
 *tool* being reviewed, not something a prompt rail can reach.
 
+### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly
+
+The rail above is prose: nothing stops a real session's own command from touching the real machine, and the felt incident (dir #437) was a rail that was *followed*, then edited out of a command by a permission denial's shorter retry. [`tools/machine-watch.sh`](../tools/machine-watch.sh) is the backstop — an opt-in detector (wire it with [`tools/install-machine-watch.sh`](../tools/install-machine-watch.sh)) that fingerprints the machine-global files a live check must never touch and tells the session, on the tool call that caused it, what changed. The recipe below is the *prevention* half, documented and never installed: nothing in keel writes these rules into any settings file.
+
+Claude Code `permissions.deny` rules (on another harness, use your own permission layer's equivalent):
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(git config --global user.*)",
+      "Bash(git config --global core.*)",
+      "Bash(git config --global --add *)",
+      "Bash(git config --global --unset *)",
+      "Bash(git config --global --replace-all *)",
+      "Bash(git config --system *)"
+    ]
+  }
+}
+```
+
+**What it costs, measured.**
+- Of the 6 recorded instances of this class it would have stopped 2 of 6: the two bare `git config --global` calls.
+- It does not see a command inside a script, an installer, a `git -C …` call, or a plain `cp`/`rm`.
+- It also denies the CORRECT sandboxed form, because deny rules match past any leading assignment: `HOME=<sandbox> GIT_CONFIG_GLOBAL=<sandbox> git config --global …` is refused too. A denial is exactly what triggered the incident.
+
+**Adopting it without re-creating the trigger.**
+- Anything that must write global git config inside a sandbox goes in a script file that sets `HOME` and `GIT_CONFIG_GLOBAL` at its top and is run by path: the rule never sees inside the script, and the script carries its own sandbox.
+- After a denial, re-run that same unit — never a shortened retype (the rail's own wording, not restated here).
+- The honest corollary: the same script route is how an UNsandboxed script gets past the rule.
+
+**Pair it with the detector.** The recipe alone covers 2 of 6; `tools/machine-watch.sh` is the backstop that sees all 6, because it watches the machine rather than the command's shape.
+
 ## Disclosures — one canonical text, not mirrors
 
 This pattern's own runs produce disclosures — a verifier's `known — <ticket id>` pointer, a fix
