@@ -79,10 +79,9 @@
 #
 # Writability assumption (dir #393): the resolved store root (KEEL_READ_TRACE_STORE, else
 # $HOME/.keel/read-trace, or the legacy harness-home store until install.sh moves it — dir #637) is
-# assumed WRITABLE. When it
-# resolves but is not writable, every write path degrades silently (nothing recorded) rather than
-# leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's V3 fix gave the
-# unresolved-root case, extended here to the writability axis.
+# assumed WRITABLE. When it resolves but is not writable, every write path degrades silently (nothing
+# recorded) rather than leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's
+# V3 fix gave the unresolved-root case, extended here to the writability axis.
 #
 # Loss detection (dir #630 S13): the FIRST write into a project's persistent entry dir records that
 # path under the LOCAL git config key `keel.readTraceStore` in the repo it belongs to (the same S4

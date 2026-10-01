@@ -31,10 +31,11 @@
 # user-level ~/.claude/CLAUDE.md can still leak into an "isolated" session) — the printed command also
 # passes `--setting-sources project,local` to exclude the user scope, and blanks every
 # tools/lib/impact-store.sh IMPACT_ISOLATION_VARS variable (dir #290 found the first two of these,
-# KEEL_IMPACT_STORE, and a KEEL_HOME holding a legacy store, outrank HOME in that file's own resolution; dir #317 generalized the fix
-# to the whole list after E11 found KEEL_IMPACT_LOG was still leaking through dir #290's narrower
-# version) — so any one of them being exported in the operator's real shell would otherwise redirect
-# part of the canary's own writes into the operator's REAL store, keyed by the throwaway toy repo's path.
+# KEEL_IMPACT_STORE, and a KEEL_HOME holding a legacy store, outrank HOME in that file's own
+# resolution; dir #317 generalized the fix to the whole list after E11 found KEEL_IMPACT_LOG was still
+# leaking through dir #290's narrower version) — so any one of them being exported in the operator's
+# real shell would otherwise redirect part of the canary's own writes into the operator's REAL store,
+# keyed by the throwaway toy repo's path.
 # The rule governs WRITES: a probe that only READS the machine's own configuration is exempt — see
 # docs/rollout-audit.md's Layer 0 carve-out for when that read has to face the real environment
 # (dir #97).

@@ -91,7 +91,7 @@ _rt_stamp_wrap_done() {
 # $HOME/.keel/read-trace, or the legacy ${KEEL_HOME:-$HOME/.claude}/.keel/read-trace while that is the
 # only one that exists.
 #
-# Returns 1 with NO stdout when none of the three resolve — never `${HOME:?...}`. That form used to
+# Returns 1 with NO stdout when neither the override nor $HOME resolves — never `${HOME:?...}`. That form used to
 # live here, but it expands inside a command-substitution chain (every caller below), so the `:?`
 # killed only the subshell: three stderr lines leaked out (breaking this whole mechanism's SILENT
 # contract — tools/read-trace.sh's own header) and, on a writable-root platform, the empty root that
