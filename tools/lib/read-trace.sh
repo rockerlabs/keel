@@ -27,6 +27,8 @@
 
 # shellcheck source=tools/lib/impact-store.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/impact-store.sh"
+# shellcheck source=tools/lib/state-root.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/state-root.sh"
 
 # _rt_tmpdir — $TMPDIR with any trailing slash stripped (macOS sets it WITH one; a bare `pwd`/path
 # join never emits a double slash, so an unstripped candidate would silently never match downstream
@@ -87,7 +89,7 @@ _rt_stamp_wrap_done() {
 # KEEL_READ_TRACE_STORE overrides the root outright (test isolation, same convention as
 # KEEL_IMPACT_STORE); else keel_store_root read-trace (dir #637, tools/lib/state-root.sh):
 # $HOME/.keel/read-trace, or the legacy ${KEEL_HOME:-$HOME/.claude}/.keel/read-trace while that is the
-# only one that exists (impact_store_root's own fallback).
+# only one that exists.
 #
 # Returns 1 with NO stdout when none of the three resolve — never `${HOME:?...}`. That form used to
 # live here, but it expands inside a command-substitution chain (every caller below), so the `:?`

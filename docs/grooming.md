@@ -81,7 +81,7 @@ since the previous release and say which cycle your figures are from.
 
 **An empty aggregate can also be a DESTROYED store, and that one is data loss, not a rotation — the
 tool now says so itself (the 0.12.0 groom, 2026-09-23, found it; `dir #630` made it self-reporting).**
-The store used to live inside the harness home (and an install that has not been re-run still does: `dir #637` moved keel's state to `$HOME/.keel`), so whatever removes that home removes every cycle kept in it:
+The store used to live inside the harness home (and an install that has not been re-run still does: `dir #637` moves keel's state to `$HOME/.keel` once `install.sh` is re-run), so whatever removes that home removes every cycle kept in it:
 a test run without its sandbox deleted the operator's whole harness home (`dir #627`), and the previous
 release's reads went with it — the archive the previous groom's own rotation recorded exists nowhere.
 `aggregate` now tells the cases apart on its own: when the entry it recorded for this project is gone,

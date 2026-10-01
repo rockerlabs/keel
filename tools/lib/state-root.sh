@@ -64,7 +64,8 @@ keel_store_root() {
   local name="$1" root legacy
   root="$(keel_state_root)" || return 1
   if [ -d "$root/$name" ]; then printf '%s/%s' "$root" "$name"; return 0; fi
-  legacy="$(keel_legacy_store_root "$name" 2>/dev/null)" || legacy=""
-  if [ -n "$legacy" ] && [ -d "$legacy" ]; then printf '%s' "$legacy"; return 0; fi
+  # HOME is non-empty here (rung 1), so the legacy address always resolves.
+  legacy="$(keel_legacy_store_root "$name")"
+  if [ -d "$legacy" ]; then printf '%s' "$legacy"; return 0; fi
   printf '%s/%s' "$root" "$name"
 }

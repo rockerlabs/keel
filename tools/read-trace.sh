@@ -348,7 +348,7 @@ case "${1:-}" in
       # wrap-done-then-session-end pair), and a strict `>` would misclassify that tie as unwrapped.
       if [ -n "$se_wrap_ts" ] && ! [[ "$se_wrap_ts" < "$se_last_mutate" ]]; then se_wrapped=1; fi
     fi
-    # se_wlog is empty when no persistent-store root resolves (no HOME/KEEL_HOME/
+    # se_wlog is empty when no persistent-store root resolves (no HOME/
     # KEEL_READ_TRACE_STORE) — a silent skip of the whole persistent-tier write, never a fallback mkdir
     # at "." or a write to an empty filename (dir #387 V3: the latter is an ambiguous-redirect error,
     # which breaks this hook's SILENT contract same as the junk mkdir does). A guard clause, matching
@@ -469,7 +469,7 @@ case "${1:-}" in
             ;;
           moved)
             # The recorded entry for THIS resolve is gone, but a DIFFERENT recorded value for this
-            # project still exists as a directory (KEEL_HOME/KEEL_READ_TRACE_STORE changed) — its
+            # project still exists as a directory (the state root or KEEL_READ_TRACE_STORE changed) — its
             # history is not lost, just not where aggregate looked; name where it still is rather than
             # printing a silent empty table (same wording style as keel-impact.sh's own moved notice).
             printf 'read-trace: store entry moved — recorded at %s, not there now; a prior entry still exists:\n' "$ag_entry"
