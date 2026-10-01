@@ -49,13 +49,40 @@ check_status "merge: re-run → SAME, SAME" \
   "$(printf 'SAME\tPostToolUse\tBash\nSAME\tSessionEnd\t')" "$(jq -r '.report' <<<"$merged2")"
 check_status "merge: a foreign top-level key survives" dark "$(jq -r '.new.theme' <<<"$merged2")"
 
-# --- merge: CONFLICT on the same event+matcher running a different command, replaced in .new ----------
+# --- merge: a foreign command on the same event+matcher is APPENDED beside it, never replaced (dir #468) ---
 foreign='{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"other"}]}]}}'
 merged3="$(hook_install_merge "$specs" "$foreign")"
-check_status "merge: a different command on the same event+matcher → CONFLICT" \
-  CONFLICT "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged3")"
-check_status "merge: …and the as-if-forced result carries ours" \
-  "bash '/k/x.sh' a" "$(jq -r '.new.hooks.PostToolUse[0].hooks[0].command' <<<"$merged3")"
+check_status "merge: a different command on the same event+matcher → APPENDED" \
+  APPENDED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged3")"
+check_status "merge: …the incumbent entry is byte-untouched" \
+  '{"matcher":"Bash","hooks":[{"type":"command","command":"other"}]}' "$(jq -c '.new.hooks.PostToolUse[0]' <<<"$merged3")"
+check_status "merge: …ours rides in a sibling entry with the same matcher" \
+  "bash '/k/x.sh' a" "$(jq -r '.new.hooks.PostToolUse[1].hooks[0].command' <<<"$merged3")"
+check_status "merge: …and the sibling carries the spec's matcher" \
+  Bash "$(jq -r '.new.hooks.PostToolUse[1].matcher' <<<"$merged3")"
+merged3b="$(hook_install_merge "$specs" "$(jq -c '.new' <<<"$merged3")")"
+check_status "merge: re-run over an APPENDED result → SAME (ours in the second entry is found, not appended again)" \
+  SAME "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged3b")"
+check_status "merge: …entry count unchanged after the re-run" 2 "$(jq '.new.hooks.PostToolUse | length' <<<"$merged3b")"
+
+# --- merge: the SAME hook at a DIFFERENT path is STALE; the as-if-forced result swaps just that command ---
+stale='{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"keep-me"},{"type":"command","command":"bash '"'"'/old/place/x.sh'"'"' a"}]}]}}'
+merged4="$(hook_install_merge "$specs" "$stale")"
+check_status "merge: same script + args at another path → STALE (not APPENDED)" \
+  STALE "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged4")"
+check_status "merge: …forced, the stale command becomes ours" \
+  "bash '/k/x.sh' a" "$(jq -r '.new.hooks.PostToolUse[0].hooks[1].command' <<<"$merged4")"
+check_status "merge: …forced, the sibling command in the same entry survives" \
+  keep-me "$(jq -r '.new.hooks.PostToolUse[0].hooks[0].command' <<<"$merged4")"
+check_status "merge: …forced, no duplicate entry is added" 1 "$(jq '.new.hooks.PostToolUse | length' <<<"$merged4")"
+hookless='{"hooks":{"PostToolUse":[{"matcher":"Bash"},{"matcher":"Bash","hooks":[{"type":"command","command":"bash '"'"'/old/place/x.sh'"'"' a"}]}]}}'
+merged4b="$(hook_install_merge "$specs" "$hookless" 2>&1)"
+check_status "merge: a same-matcher entry with no hooks key does not crash the stale swap" \
+  STALE "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged4b")"
+other_args='{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash '"'"'/old/x.sh'"'"' b"}]}]}}'
+merged5="$(hook_install_merge "$specs" "$other_args")"
+check_status "merge: same script, DIFFERENT args is a different hook → APPENDED, not STALE" \
+  APPENDED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged5")"
 
 # --- remove: byte-identical entries go, a differing one is KEPT -----------------------------------------
 rm1="$(hook_install_remove "$specs" "$cur")"
@@ -66,6 +93,23 @@ check_status "remove: a differing command on our event+matcher → KEPT, left in
   KEPT "$(jq -r '.report | split("\t")[0]' <<<"$rm2")"
 check_status "remove: …and still present in .new" other \
   "$(jq -r '.new.hooks.PostToolUse[0].hooks[0].command' <<<"$rm2")"
+
+# --- remove: after an append, only OUR sibling entry goes, wherever it sits (dir #468) --------------------
+rm4="$(hook_install_remove "$specs" "$(jq -c '.new' <<<"$merged3")")"
+check_status "remove: our appended sibling → REMOVED" \
+  REMOVED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$rm4")"
+check_status "remove: …the incumbent entry is left exactly as it was" \
+  '[{"matcher":"Bash","hooks":[{"type":"command","command":"other"}]}]' "$(jq -c '.new.hooks.PostToolUse' <<<"$rm4")"
+rm5="$(hook_install_remove "$specs" "$(jq -c '.new.hooks.PostToolUse |= reverse | .new' <<<"$merged3")")"
+check_status "remove: ours listed BEFORE the incumbent is found too (not just the first matcher hit)" \
+  REMOVED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$rm5")"
+
+# --- remove: ours INSIDE a shared entry (what a forced STALE swap leaves) comes out alone ---------------
+rm6="$(hook_install_remove "$specs" "$(jq -c '.new' <<<"$merged4")")"
+check_status "remove: ours inside an entry with someone else's command → REMOVED, not KEPT" \
+  REMOVED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$rm6")"
+check_status "remove: …only ours leaves; the sibling command in that entry stays" \
+  '[{"type":"command","command":"keep-me"}]' "$(jq -c '.new.hooks.PostToolUse[0].hooks' <<<"$rm6")"
 
 # --- remove: the empty-array prune is scoped to OUR events (dir #564/#390) ------------------------------
 withforeign="$(jq -c '.new + {hooks: (.new.hooks + {Foreign: []})}' <<<"$merged")"

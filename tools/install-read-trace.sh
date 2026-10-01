@@ -10,8 +10,10 @@
 #   install-read-trace.sh --home DIR        --global, but into DIR/settings.json (follows an
 #                                            install.sh --home DIR install, same flag as
 #                                            install-pre-pr-gate.sh's own --home)
-#   install-read-trace.sh --force …         overwrite a pre-existing, DIFFERENT hook on the same
-#                                            event+matcher (backs up settings.json first; default: refuse)
+#   install-read-trace.sh --force …         replace a STALE copy of this same hook (same script, another
+#                                            path — a moved checkout); backs up settings.json first
+#                                            (default: refuse that one case; a different hook on the same
+#                                            event+matcher needs no --force — it is appended beside)
 #   install-read-trace.sh --uninstall …     remove exactly the 3 hooks this installer wired
 #                                            (byte-identical match only)
 #
@@ -25,9 +27,12 @@
 #
 # Never clobbers your data silently (same discipline as install-secret-guard.sh/
 # install-pre-pr-gate.sh): an existing hook already wired to the SAME event+matcher running a
-# DIFFERENT command is refused and named; --force backs up settings.json (a timestamped sibling)
-# first. Everything else already in settings.json is left exactly as it was. A hook that's already
-# exactly ours is left alone (idempotent — safe to re-run after every `git pull`).
+# DIFFERENT command is left exactly as it is and ours is APPENDED beside it, in a sibling entry with
+# that matcher (dir #468 — the slot is shared: install-pre-pr-gate.sh holds SessionStart/startup too).
+# The one refusal left is a STALE copy of this very hook (same script, another path — a moved checkout):
+# appending would fire it twice, so --force backs up settings.json (a timestamped sibling) first, then
+# swaps just that command for ours. Everything else already in settings.json is left exactly as it was.
+# A hook that's already exactly ours is left alone (idempotent — safe to re-run after every `git pull`).
 #
 # Needs jq to edit settings.json safely. Without it: prints the exact hooks JSON to paste in by hand
 # instead of writing anything.
@@ -82,7 +87,7 @@ Usage:
   install-read-trace.sh <repo-path>     wire into <repo-path>/.claude/settings.json (project scope)
   install-read-trace.sh --global        wire into ~/.claude/settings.json (every repo on this machine)
   install-read-trace.sh --home DIR      --global, but into DIR/settings.json (follows install.sh --home)
-  install-read-trace.sh --force …       replace a pre-existing, different hook on the same event+matcher
+  install-read-trace.sh --force …       replace a stale copy of this hook (same script, another path), with a backup
   install-read-trace.sh --uninstall …   remove exactly the hooks this installer wired (same target flags)
   install-read-trace.sh -h | --help
 EOF
@@ -260,24 +265,24 @@ fi
 merged="$(hook_install_merge "$hook_specs" "$current")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
-conflicts=""
-n_conflict=0
+stale=""
+n_stale=0
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
-  if [ "$status" = "CONFLICT" ]; then
-    n_conflict=$((n_conflict + 1))
-    conflicts="${conflicts}${conflicts:+, }$event/$matcher"
+  if [ "$status" = "STALE" ]; then
+    n_stale=$((n_stale + 1))
+    stale="${stale}${stale:+, }$event/$matcher"
   fi
 done <<<"$statuses"
 
-if [ "$n_conflict" -gt 0 ] && [ "$force" != 1 ]; then
-  echo "install-read-trace: $settings already has a different hook wired for: $conflicts" >&2
-  echo "  Refusing to overwrite your data — re-run with --force to back it up and replace, or edit" >&2
-  echo "  $settings by hand. Nothing was changed." >&2
+if [ "$n_stale" -gt 0 ] && [ "$force" != 1 ]; then
+  echo "install-read-trace: $settings already wires this hook at a different path for: $stale" >&2
+  echo "  (a moved or re-cloned checkout — appending would fire it twice). Re-run with --force to back" >&2
+  echo "  up settings.json and point it at this checkout; your other hooks stay. Nothing was changed." >&2
   exit 3
 fi
 
-if [ "$n_conflict" -gt 0 ] && [ -f "$settings" ]; then
+if [ "$n_stale" -gt 0 ] && [ -f "$settings" ]; then
   hook_install_backup "$settings"
   echo "install-read-trace: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") (--force)"
 fi
@@ -290,7 +295,8 @@ while IFS=$'\t' read -r status event matcher; do
   case "$status" in
     MISSING)  echo "  +    $event/$matcher wired" ;;
     SAME)     echo "  =    $event/$matcher already wired (up to date)" ;;
-    CONFLICT) echo "  ^    $event/$matcher replaced (--force)" ;;
+    APPENDED) echo "  +    $event/$matcher APPENDED beside your existing hook (yours is untouched)" ;;
+    STALE)    echo "  ^    $event/$matcher stale path replaced (--force); your other hooks untouched" ;;
   esac
 done <<<"$statuses"
 

@@ -1227,7 +1227,7 @@ for d in "${DIRS[@]}"; do
   if gate_hook_wired "$proj_settings"; then
     say "  OK   /polish gate: wired (project scope, $proj_settings)"
   elif gate_any_reference "$proj_settings"; then
-    warn W-GATE-PARTIAL "$proj_settings references pre-pr-gate.sh but the load-bearing PreToolUse/Bash hook isn't wired — gh pr create is NOT actually gated here; re-run tools/install-pre-pr-gate.sh $d (--force to replace a stale hook)"
+    warn W-GATE-PARTIAL "$proj_settings references pre-pr-gate.sh but the load-bearing PreToolUse/Bash hook isn't wired — gh pr create is NOT actually gated here; re-run tools/install-pre-pr-gate.sh $d (--force if it refuses over a stale path)"
   fi
 
   # Publication-bound projects (those with a .public-audit config) shouldn't commit with a real

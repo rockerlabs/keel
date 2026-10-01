@@ -60,25 +60,44 @@ hook_install_check_shape() {
 }
 
 # hook_install_merge SPECS CURRENT — prints {new, report} as one JSON object. One pass computes BOTH the
-# merged settings AND each hook's classification — MISSING (not wired), SAME (already exactly ours —
-# idempotent), or CONFLICT (that event+matcher already runs a different command, someone else's) — from
-# the same walk, so there is exactly one place that decides what "already wired" means. Computing the
-# merged (as-if-forced) result even on a CONFLICT is harmless: it is simply never written unless the
-# caller's refuse/--force gate clears it. `report` is TSV lines: STATUS<TAB>event<TAB>matcher.
+# merged settings AND each hook's classification, from the same walk, so there is exactly one place that
+# decides what "already wired" means. Per spec, over EVERY entry on that event whose matcher equals the
+# spec's (an adopter's settings can carry several; the first one is not special):
+#   SAME      our exact command is already in one of them — idempotent, nothing written.
+#   STALE     the same hook at a DIFFERENT path is there — the same script basename + the same arguments,
+#             e.g. a moved keel checkout. Appending would fire it twice (old path and new), so this is the
+#             one case the caller refuses without --force; forced, ONLY that command is swapped for ours,
+#             in place, and every sibling command in the entry stays (dir #468).
+#   APPENDED  a different hook already holds this event+matcher: ours goes in a SIBLING entry with the
+#             same matcher. The incumbent entry is never touched, so no adopter hook is lost to wire
+#             ours (dir #468).
+#   MISSING   no entry holds this event+matcher: a fresh one is added.
+# "Same hook" (STALE) is judged by `ident` below: the script basename plus the arguments of a
+# `bash '<path>/<script>.sh' args` command, i.e. the shape the installers build with tools/lib/sh-quote.sh's
+# quoting — change one and the other must follow, or STALE silently degrades to APPENDED. It matches on
+# basename only, so an adopter's own script with the same name and args on the same slot reads as STALE
+# too; the cost is a refusal naming it (no --force, no write), never a silent overwrite.
+# Computing the merged (as-if-forced) result even on a STALE is harmless: it is simply never written
+# unless the caller's refuse/--force gate clears it. `report` is TSV lines: STATUS<TAB>event<TAB>matcher.
 hook_install_merge() {
   local merge_prog='
+def ident: if type == "string" then first(capture("(?<b>[^/\u0027 ]+\\.sh)\u0027?(?<r>( .*)?)$") | .b + .r) // null else null end;
+def dedup_ours($c): reduce .[] as $h ([]; if $h.command == $c and any(.[]; .command == $c) then . else . + [$h] end);
 {obj: (.hooks //= {}), report: []} |
 reduce $specs[] as $s (.;
   .obj.hooks[$s.event] //= [] |
-  (.obj.hooks[$s.event] | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
-    .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
-    | .report += [["MISSING", $s.event, $s.matcher]]
-  elif (.obj.hooks[$s.event][$idx].hooks // [] | map(.command) | index($s.command)) != null then
+  .obj.hooks[$s.event] as $arr |
+  ($s.command | ident) as $id |
+  ([$arr[] | select(.matcher == $s.matcher)]) as $mine |
+  ([$mine[] | (.hooks // [])[] | .command]) as $cmds |
+  if ($cmds | index($s.command)) != null then
     .report += [["SAME", $s.event, $s.matcher]]
+  elif $id != null and ($cmds | map(select(ident == $id)) | length) > 0 then
+    .obj.hooks[$s.event] |= map(if .matcher == $s.matcher then .hooks = ((.hooks // []) | map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
+    | .report += [["STALE", $s.event, $s.matcher]]
   else
-    .obj.hooks[$s.event][$idx].hooks = [{type: "command", command: $s.command}]
-    | .report += [["CONFLICT", $s.event, $s.matcher]]
+    .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
+    | .report += [[(if ($mine | length) > 0 then "APPENDED" else "MISSING" end), $s.event, $s.matcher]]
   end
 ) |
 {new: .obj, report: (.report | map(@tsv) | join("\n"))}
@@ -87,22 +106,24 @@ reduce $specs[] as $s (.;
 }
 
 # hook_install_remove SPECS CURRENT — the mirror image of the merge, same one-pass-tagged-report shape
-# (REMOVED/KEPT instead of MISSING/SAME/CONFLICT). An event+matcher entry comes out ONLY when its hooks
-# array is byte-identical to the single {type, command} entry the installer would wire right now —
-# anything else on that same event+matcher (yours, or a --force run's replacement of something else
-# entirely) is left in place and reported KEPT, never swept out along with the rest. The empty-array
-# prune is scoped to the events the SPECS own (dir #564, dir #390): another tool's empty hook array under
-# `.hooks` is not ours to delete.
+# (REMOVED/KEPT instead of the merge's statuses). Across EVERY entry on the spec's event+matcher (an
+# APPENDED sibling can sit after the incumbent, and a forced STALE swap leaves ours inside an entry that
+# also holds someone else's command), only our exact {type, command} hook comes out; an entry it leaves
+# empty goes with it, and every other command — the incumbent's, or a hook you later pointed somewhere
+# else — stays. KEPT when nothing of ours was on that slot to take. The empty-array prune is scoped to
+# the events the SPECS own (dir #564, dir #390): another tool's empty hook array under `.hooks` is not
+# ours to delete.
 hook_install_remove() {
   local remove_prog='
 {obj: (.hooks //= {}), report: []} |
 reduce $specs[] as $s (.;
   (.obj.hooks[$s.event] // []) as $arr |
-  ($arr | map(.matcher == $s.matcher) | index(true)) as $idx |
-  if $idx == null then
+  ({type: "command", command: $s.command}) as $ours |
+  ([$arr[] | select(.matcher == $s.matcher)]) as $mine |
+  if ($mine | length) == 0 then
     .
-  elif $arr[$idx].hooks == [{type: "command", command: $s.command}] then
-    .obj.hooks[$s.event] = (.obj.hooks[$s.event] | del(.[$idx]))
+  elif ($mine | any((.hooks // []) | any(. == $ours))) then
+    .obj.hooks[$s.event] = [$arr[] | if .matcher == $s.matcher and ((.hooks // []) | any(. == $ours)) then (.hooks |= map(select(. != $ours))) | select(.hooks != []) else . end]
     | .report += [["REMOVED", $s.event, $s.matcher]]
   else
     .report += [["KEPT", $s.event, $s.matcher]]

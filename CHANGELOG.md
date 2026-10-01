@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The two hook installers now append beside a hook already on the same slot instead of refusing**
+  (dir #468, absorbing dir #562): `tools/install-read-trace.sh` and `tools/install-pre-pr-gate.sh` both
+  want `SessionStart/startup`, so whichever ran second was refused, and the refusal's only exits were
+  `--force` — which replaced the whole entry and deleted the gate's own `rollout-check` hook — or
+  hand-edited JSON. A different hook on the same event and matcher is now left byte-untouched and the
+  installer's command lands in a sibling entry with that matcher, reported as `APPENDED`; re-running is
+  idempotent and `--uninstall` removes only the installer's own command, wherever it sits on the event
+  (its entry too when that leaves it empty).
+  `--force` (with its backup) is now only for the one case where appending would fire a hook twice: the
+  same script with the same arguments already wired at a different path, as after a moved checkout; it
+  swaps just that command and keeps every other command in its entry. The change is in the shared
+  `tools/lib/hook-install.sh`, so both installers pick it up.
+
 - **The two hook installers now share one settings-merge core** (dir #437 build PR1, absorbing dir #390's
   extraction half): `tools/install-read-trace.sh` and `tools/install-pre-pr-gate.sh` each carried a
   byte-identical copy of the backup and atomic-write helpers, the hooks-shape check and the merge and
