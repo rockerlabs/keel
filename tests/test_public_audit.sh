@@ -609,4 +609,19 @@ run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" "$d"
 check_status "personal literal in a binary blob only in a refs/pull ref → GAP exit 1" 1 "$STATUS"
 check_contains "PR-ref binary personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in a binary blob"
 
+# --- dir #647 (A4): an inherited GIT_DIR must not redirect the audit to another repo. L carries a private
+# token ONLY in history (committed, then scrubbed); A is clean and holds a refs/keel-pr-audit/head-99 ref.
+# Audited with GIT_DIR=A/.git: before the fix every `git -C "$DIR"` resolved to A, so the leak read clean
+# (exit 0) AND cleanup_pr_refs deleted A's refs/keel-pr-audit/* (E6). Must exit 1, and A's ref must survive.
+l647="$(repo_by dev@example.com)"
+printf 'internal codename ZETA-647\n' > "$l647/leak.txt"; commit_in "$l647" leak
+git -C "$l647" rm -q leak.txt; commit_in "$l647" scrub
+a647="$(repo_by dev@example.com)"
+git -C "$a647" update-ref refs/keel-pr-audit/head-99 HEAD
+a647_refs_before="$(git -C "$a647" for-each-ref)"
+run env GIT_DIR="$a647/.git" bash "$pa" --token 'ZETA-647' "$l647"
+check_status "dir #647 A4: a history-only leak under GIT_DIR=<clean decoy> -> GAP exit 1 (not a false clean)" 1 "$STATUS"
+check_contains "dir #647 A4: names the token found in history" "$OUT" "ZETA-647"
+check_eq "dir #647 A4: the decoy's refs (incl. refs/keel-pr-audit/head-99) are byte-identical" "$a647_refs_before" "$(git -C "$a647" for-each-ref)"
+
 summary

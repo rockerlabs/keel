@@ -10,6 +10,8 @@
 # Portable to bash 3.2 (macOS's shipped /bin/bash) on purpose — no `wait -n`, no associative
 # arrays: a poll loop over tracked PIDs stands in for both.
 set -uo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 # dir #653: the WHOLE runner body lives in main(), called by the last line. bash reads a script
 # incrementally, from a file offset, as it runs — so a test that overwrites this very file in place

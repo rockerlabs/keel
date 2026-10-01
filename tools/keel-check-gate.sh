@@ -17,6 +17,11 @@
 # Needs jq to parse the hook event (like pre-pr-gate.sh). Without it the hook can't tell a commit from any
 # other Bash call, so it allows rather than blocks everything — an explicit, documented choice: this is a
 # workflow floor, not the secret boundary (that's secret-guard, which needs no jq).
+# dir #647 (S3 FINDING-S3-1): drop an inherited repo selector before the `repo_top` resolution below can be
+# hijacked into answering for a different repo (see keel-check.sh's comment at its own copy of this line for
+# the hijack shape). A builtin `unset` at the very top, not a sourced lib: this hook fires on EVERY Bash
+# call, and a sourced guard that fails to load fails silently (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat 2>/dev/null)
@@ -39,13 +44,6 @@ esac
 _kcg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$_kcg_dir/lib/gate-paths.sh"
-# shellcheck source=tools/lib/repo-arg-guard.sh
-# dir #647 (S3 FINDING-S3-1): sanitizes GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE before the
-# `repo_top` resolution below can be hijacked into answering for a different repo (see keel-check.sh's
-# own call-site comment for the full hijack shape). This hook process never spawns a child of its own,
-# so the process-wide unset has no other consumer to weigh here — unlike keel-check.sh, there's no
-# decision to make.
-. "$_kcg_dir/lib/repo-arg-guard.sh"
 unset _kcg_dir
 
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)

@@ -23,24 +23,19 @@
 #         KEEL_IMPACT_LOG       — if set, append one zero-token friction event when the banner fires
 #                                 (metadata only; never the check's output). Mirrors pre-pr-gate.sh.
 set -uo pipefail
+# dir #647 (S3 FINDING-S3-1): drop an inherited repo selector before the `repo_top` resolution below can
+# be hijacked into answering for a different repo — a foreign GIT_DIR paired with a matching GIT_WORK_TREE
+# otherwise names the WRONG repo, so a red marker armed for the real repo is checked (by keel-check-gate.sh)
+# against the decoy's key and the commit slips through (fail OPEN). Process-wide on purpose: it also reaches
+# the operator's declared check command spawned below, accepted — see tools/lib/repo-arg-guard.sh's header
+# (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 _kc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_kc_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$_kc_dir/lib/gate-paths.sh"
-# shellcheck source=tools/lib/repo-arg-guard.sh
-# dir #647 (S3 FINDING-S3-1): sanitizes GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, BEFORE the
-# `repo_top` resolution below can be hijacked into answering for a different repo — a foreign GIT_DIR
-# paired with a matching GIT_WORK_TREE otherwise makes `git -C "$PWD" rev-parse --show-toplevel` name
-# the WRONG repo, so a red marker armed for the real repo is checked (by keel-check-gate.sh) against
-# the decoy's key instead, silently allowing the commit through (fail OPEN). The unset is process-wide
-# (repo-arg-guard.sh's own source-time contract), so it also reaches the operator's declared check
-# command spawned further down, not just the resolver call above — accepted rather than scoped to a
-# subshell around just that one `git -C`: an operator check that depends on an inherited
-# GIT_DIR/GIT_WORK_TREE is exotic, and stripping them is the safer default for a check that might
-# itself shell out to git.
-. "$_kc_dir/lib/repo-arg-guard.sh"
 unset _kc_dir
 
 # Sanitize the threshold: a non-numeric OR overflowing env value falls back to 2 rather than crashing

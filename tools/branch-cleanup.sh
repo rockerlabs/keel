@@ -46,6 +46,8 @@
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 _bc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh

@@ -353,6 +353,12 @@ selftest() {
   # shared git identity for every probe repo's commits/tags below — a probe repo must not depend on
   # host config (max-review reuse finding: this pair used to be re-typed at each of 4 call sites).
   local id_flags=(-c user.name=keel -c user.email=keel@keel.invalid)
+  # dir #647: the probe repos below are built with `git -C "$x" ...`; an inherited GIT_DIR (git exports one
+  # to hooks, `!` aliases and `rebase --exec` in a worktree) would send those commits and tags into a REAL
+  # repo. Dropped here, in selftest() only — never at top level: the hook modes run under git's own
+  # GIT_DIR/GIT_INDEX_FILE for the commit being scanned, and dropping GIT_INDEX_FILE there scans nothing
+  # (tests/test_git_env_guard.sh B4, tests/test_secret_guard.sh A6).
+  unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"

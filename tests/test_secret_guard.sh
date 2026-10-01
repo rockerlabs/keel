@@ -1326,4 +1326,44 @@ check_nofile "dir #644: no hooks were written into the non-git <repo>" "$notrepo
 check_block_equal "dir #644: the decoy repo is STILL byte-identical after the refused non-git attempt" \
   "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
 
+# --- dir #647 (A5): --selftest builds throwaway probe repos with `git -C "$x" ...`. Under an inherited
+# GIT_DIR (git exports one to hooks, `!` aliases and `rebase --exec` in a worktree) those commits and
+# tags landed in the REAL repo GIT_DIR named (E7). R is a repo the selftest must never touch.
+r647="$(new_repo)"
+git -C "$r647" commit -q --allow-empty -m seed
+r647_head="$(git -C "$r647" rev-parse HEAD)"
+r647_refs="$(git -C "$r647" for-each-ref)"
+run env GIT_DIR="$r647/.git" "$scan" --selftest
+check_status "dir #647 A5: --selftest under GIT_DIR=<real repo> -> exit 0" 0 "$STATUS"
+check_absent "dir #647 A5: --selftest under GIT_DIR=<real repo> reports no FAIL" "$OUT" "selftest: FAIL"
+check_eq "dir #647 A5: the real repo's HEAD is unchanged by the selftest" "$r647_head" "$(git -C "$r647" rev-parse HEAD)"
+check_eq "dir #647 A5: the real repo's refs are unchanged (no probe commit/tag landed in it)" "$r647_refs" "$(git -C "$r647" for-each-ref)"
+
+# --- dir #647 (A6, pins B4): the hook modes must KEEP the inherited variables. Inside a linked worktree
+# git hands the pre-commit hook GIT_DIR=<main>/.git/worktrees/<wt> and, for `git commit -a` / `git commit
+# <path>`, a GIT_INDEX_FILE naming a TEMPORARY index that holds the change being committed (E2, E8).
+# Dropping GIT_INDEX_FILE at the scanner's top level makes `git diff --cached` read the stale real index
+# and scan nothing — the guard opens. A real fake key, unstaged, committed with `-a` from a worktree must
+# still be blocked.
+h647="$(new_repo)"
+git -C "$h647" commit -q --allow-empty -m seed
+printf 'clean\n' > "$h647/f.txt"; git -C "$h647" add f.txt; git -C "$h647" commit -q -m base
+run bash "$isg" "$h647"
+check_status "dir #647 A6: vendoring the guard into the fixture repo -> exit 0" 0 "$STATUS"
+hw647="$SANDBOX/h647-wt"
+git -C "$h647" worktree add -q -b wt-h647 "$hw647" >/dev/null 2>&1
+printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$hw647/f.txt"   # modified, NOT staged
+head647="$(git -C "$hw647" rev-parse HEAD)"
+run_in "$hw647" git commit -a -m "leak via -a"
+check_ne "dir #647 A6: git commit -a of an unstaged key from a worktree is blocked (non-zero)" "$STATUS" "0"
+check_contains "dir #647 A6: the block names the secret guard" "$OUT" "BLOCKED"
+check_eq "dir #647 A6: HEAD did not move" "$head647" "$(git -C "$hw647" rev-parse HEAD)"
+# Mutation proof, kept as an assertion: the SAME vendored scanner with the guard line added at TOP LEVEL
+# lets that commit through — i.e. the carve-out above is load-bearing, not decorative.
+cp "$h647/.git/hooks/secret-scan.sh" "$SANDBOX/secret-scan.647.orig"
+{ printf '#!/usr/bin/env bash\n'; printf '%s\n' "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE"; sed 1d "$SANDBOX/secret-scan.647.orig"; } > "$h647/.git/hooks/secret-scan.sh"
+chmod +x "$h647/.git/hooks/secret-scan.sh"
+run_in "$hw647" git commit -a -m "leak via -a, top-level unset"
+check_status "dir #647 A6 mutation: a top-level unset in the scanner lets the key commit through (the carve-out is load-bearing)" 0 "$STATUS"
+
 summary
