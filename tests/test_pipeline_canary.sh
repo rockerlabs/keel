@@ -260,7 +260,7 @@ home6="$sandbox6/home"
 # $repo6 itself (a macOS /var/folders temp path resolves through /private via git), so only the real
 # function gives the id production actually uses.
 id6="$(impact_project_id "$repo6")"
-check_dir "setup's pre-created store entry lands inside the sandbox HOME, not the operator's KEEL_IMPACT_STORE" "$home6/.claude/.keel/impact/$id6"
+check_dir "setup's pre-created store entry lands inside the sandbox HOME, not the operator's KEEL_IMPACT_STORE" "$home6/.keel/impact/$id6"
 check_nodir "setup's store entry must not exist under the operator's real KEEL_IMPACT_STORE" "$escape_store/$id6"
 
 # Drive a full run the way the FIXED printed instructions actually tell the operator to (HOME=$home6,

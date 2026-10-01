@@ -260,7 +260,7 @@ array_contains() {  # $1 = needle, remaining = haystack
 # runs both under identical env/fixtures and asserts byte-identical output, so this copy can't quietly
 # drift from tools/lib/impact-store.sh's impact_log_path/impact_claim_key.
 _impact_log_path_inline() {
-  local dir="${1:-.}" klog="${KEEL_IMPACT_LOG:-}" store_root top store
+  local dir="${1:-.}" klog="${KEEL_IMPACT_LOG:-}" store_root legacy_root top store
   if [ -n "$klog" ]; then printf '%s' "$klog"; return; fi
   top="$(git -C "$dir" worktree list --porcelain 2>/dev/null |
     awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
@@ -278,7 +278,13 @@ _impact_log_path_inline() {
   if [ -n "${KEEL_IMPACT_STORE:-}" ]; then
     store_root="$KEEL_IMPACT_STORE"
   else
-    store_root="${KEEL_HOME:-${HOME:?secret-scan: set HOME, or export KEEL_HOME}/.claude}/.keel/impact"
+    # dir #637 B2, inline: $HOME/.keel/impact when it is a directory; else the legacy store
+    # (${KEEL_HOME:-$HOME/.claude}/.keel/impact) while that is a directory (the transition rung, until
+    # install.sh moves it); else $HOME/.keel/impact. Must stay byte-agreeing with
+    # tools/lib/state-root.sh's keel_store_root (tests/test_secret_guard.sh's sync cases).
+    store_root="${HOME:?secret-scan: set HOME, or export KEEL_IMPACT_STORE}/.keel/impact"
+    legacy_root="${KEEL_HOME:-$HOME/.claude}/.keel/impact"
+    if ! [ -d "$store_root" ] && [ -d "$legacy_root" ]; then store_root="$legacy_root"; fi
   fi
   store="$store_root/$(printf '%s' "$top" | tr '/' '-')"
   if [ -d "$store" ]; then printf '%s/impact-events.log' "$store"; return; fi

@@ -2,7 +2,7 @@
 
 **Frozen historical artifact.** Live scoring moved to `.keel/ledger.md` when this checkout got its own
 impact-tracking marker (2026-07-20), and moved again with dir #251 (2026-08-22) to an external store —
-`$KEEL_HOME/.keel/impact/<project-id>/ledger.md`, never inside the project's own tree. This file's rows
+`$HOME/.keel/impact/<project-id>/ledger.md`, never inside the project's own tree. This file's rows
 below are not updated any further; it is kept as a record of Keel's earliest dogfooding history. **One
 exception:** dir #10's own decided plan calls for a one-off public snapshot of the (private, gitignored)
 live ledger's aggregate once enough sessions accumulate — that snapshot is appended below as its own
@@ -39,7 +39,7 @@ next to this file (in an installed project's external store the same file is nam
 The rows above are historical only. This section is the reviewed, one-off SNAPSHOT that dir #10's
 2026-07-12 decision (this project's own backlog, not part of the public tree) called for once enough
 sessions had accumulated: the live ledger
-and its evidence file stay private and gitignored (`$KEEL_HOME/.keel/impact/<project-id>/`) — never
+and its evidence file stay private and gitignored (`$HOME/.keel/impact/<project-id>/`) — never
 committed — this published aggregate is the exception. It covers keel's own dogfooding of itself, from
 `.keel/` tracking going live on 2026-07-20 through 2026-09-06.
 

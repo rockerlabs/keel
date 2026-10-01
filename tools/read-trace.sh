@@ -78,10 +78,10 @@
 # been run once for a repo (or --global/--home).
 #
 # Writability assumption (dir #393): the resolved store root (KEEL_READ_TRACE_STORE, else
-# $KEEL_HOME/.keel/read-trace, else $HOME/.claude/.keel/read-trace) is assumed WRITABLE. When it
-# resolves but is not writable, every write path degrades silently (nothing recorded) rather than
-# leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's V3 fix gave the
-# unresolved-root case, extended here to the writability axis.
+# $HOME/.keel/read-trace, or the legacy harness-home store until install.sh moves it — dir #637) is
+# assumed WRITABLE. When it resolves but is not writable, every write path degrades silently (nothing
+# recorded) rather than leaking `mkdir`/redirect errors to stderr — the same SILENT contract dir #387's
+# V3 fix gave the unresolved-root case, extended here to the writability axis.
 #
 # Loss detection (dir #630 S13): the FIRST write into a project's persistent entry dir records that
 # path under the LOCAL git config key `keel.readTraceStore` in the repo it belongs to (the same S4
@@ -347,7 +347,7 @@ case "${1:-}" in
       # wrap-done-then-session-end pair), and a strict `>` would misclassify that tie as unwrapped.
       if [ -n "$se_wrap_ts" ] && ! [[ "$se_wrap_ts" < "$se_last_mutate" ]]; then se_wrapped=1; fi
     fi
-    # se_wlog is empty when no persistent-store root resolves (no HOME/KEEL_HOME/
+    # se_wlog is empty when no persistent-store root resolves (no HOME/
     # KEEL_READ_TRACE_STORE) — a silent skip of the whole persistent-tier write, never a fallback mkdir
     # at "." or a write to an empty filename (dir #387 V3: the latter is an ambiguous-redirect error,
     # which breaks this hook's SILENT contract same as the junk mkdir does). A guard clause, matching
@@ -468,7 +468,7 @@ case "${1:-}" in
             ;;
           moved)
             # The recorded entry for THIS resolve is gone, but a DIFFERENT recorded value for this
-            # project still exists as a directory (KEEL_HOME/KEEL_READ_TRACE_STORE changed) — its
+            # project still exists as a directory (the state root or KEEL_READ_TRACE_STORE changed) — its
             # history is not lost, just not where aggregate looked; name where it still is rather than
             # printing a silent empty table (same wording style as keel-impact.sh's own moved notice).
             printf 'read-trace: store entry moved — recorded at %s, not there now; a prior entry still exists:\n' "$ag_entry"
@@ -563,7 +563,7 @@ case "${1:-}" in
     # site in this file already guards this, `rotate` was the one left over). Unlike the silent hooks,
     # `rotate` is an operator-invoked CLI, so it reports the failure instead of silently no-op'ing.
     ro_store="$(_rt_store_dir "$ro_dir" "$ro_top")" || {
-      printf 'read-trace: no persistent store resolves (set HOME, KEEL_HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
+      printf 'read-trace: no persistent store resolves (set HOME, or KEEL_READ_TRACE_STORE) — nothing to rotate\n' >&2
       exit 1
     }
     # S13 backfill (same reasoning as aggregate's own): only when the entry physically exists — never

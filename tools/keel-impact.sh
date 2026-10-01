@@ -29,7 +29,7 @@
 #   keel-impact.sh -h | --help
 #
 # The ledger/evidence/log triple lives OUTSIDE this repo's working tree (dir #251): an external store,
-# $KEEL_HOME/.keel/impact/<project-id>/, keyed by this repo's main-checkout physical path — never inside
+# $HOME/.keel/impact/<project-id>/ (dir #637), keyed by this repo's main-checkout physical path — never inside
 # the repo itself. KEEL_IMPACT_LEDGER / KEEL_IMPACT_EVIDENCE / KEEL_IMPACT_LOG each override their own
 # file outright; KEEL_IMPACT_STORE overrides the store root. See tools/lib/impact-store.sh.
 # The date is stamped from `date -u` so rows are ordered and reproducible.
@@ -243,7 +243,7 @@ ingestion. TYPE ∈ hold guard fire hit miss friction.
 
 dir #630: this repo's `enable` is recorded durably — a multi-valued `keel.impactStore` key in the repo's
 own LOCAL git config (never the global one; documented so a `git config --local -l` doesn't surprise you)
-— so a store entry that later goes missing (a wiped harness home, a moved KEEL_HOME) is told apart from
+— so a store entry that later goes missing (a wiped or moved state root) is told apart from
 one that was simply never created. `add`/`rollup`/`enable` all refuse with a named "store entry is
 missing" error on a LOST entry rather than silently inviting you to re-enable and restart the trend at
 zero. Two ways forward: `keel-impact.sh restore FROM_DIR` recovers the old trend from a copy of a prior
@@ -283,7 +283,7 @@ quarantined so it never inflates the live signal: it skips the live event log, i
 `-retro` (and dropped one tier, since a retro estimate is weaker), and the live `rollup` excludes it —
 `rollup --retro` shows only these. --asof YYYY-MM-DD backdates the row to the session's real date.
 
-Ledger/evidence/log files live in an external store, $KEEL_HOME/.keel/impact/<project-id>/, never inside
+Ledger/evidence/log files live in an external store, $HOME/.keel/impact/<project-id>/, never inside
 this repo's own tree; $KEEL_IMPACT_LEDGER / $KEEL_IMPACT_EVIDENCE / $KEEL_IMPACT_LOG each override their
 own file outright, $KEEL_IMPACT_STORE overrides the store root. `add`/`rollup` refuse on a repo that has
 never been enabled (no store entry, no legacy marker either) — run `enable` first.
@@ -1677,7 +1677,7 @@ cmd_restore() {
       exit 2
       ;;
     unresolved)
-      printf 'keel-impact: restore: no store root resolved (set HOME, or export KEEL_HOME/KEEL_IMPACT_STORE)\n' >&2
+      printf 'keel-impact: restore: no store root resolved (set HOME, or export KEEL_IMPACT_STORE)\n' >&2
       exit 2
       ;;
   esac
