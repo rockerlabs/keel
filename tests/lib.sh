@@ -72,11 +72,9 @@ export KEEL_IMPACT_STORE="$SANDBOX/harness-impact-store"
 # operator's own shell happens to export one, so no tool this harness spawns can resolve through an
 # inherited KEEL_HOME by accident.
 unset KEEL_HOME
-# delta-audit 0.13.0 S2-1: the same class for the machine-watch notifier. The installer's own note tells the
-# operator to export KEEL_MACHINE_WATCH_NOTIFIER "for Claude Code", and the Bash tool inherits it — mw_notify
-# prefers it over every test stub, so an exported notifier ran THEIR command on test data (13 cases red, 13
-# logger calls carrying test paths). KEEL_MACHINE_WATCH_MAX_AGE_DAYS moves the watcher's staleness cut-off the
-# same way. Neither has a harness default; a test that needs one sets it itself.
+# delta-audit 0.13.0 S2-1: the same class for the machine-watch notifier (the installer tells the operator to
+# export it, and mw_notify prefers it over every test stub) and its staleness knob. Neither has a harness
+# default; a test that needs one sets it itself.
 unset KEEL_MACHINE_WATCH_NOTIFIER KEEL_MACHINE_WATCH_MAX_AGE_DAYS
 # Same reasoning as KEEL_IMPACT_STORE above, for the read-trace store's own external root (dir #317).
 export KEEL_READ_TRACE_STORE="$SANDBOX/harness-read-trace-store"

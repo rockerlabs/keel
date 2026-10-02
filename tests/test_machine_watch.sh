@@ -355,7 +355,7 @@ done
 # MINBIN: the tools the hook needs, WITHOUT osascript — and the notify-send stub, so the Linux branch is
 # reachable on a macOS box (where the real /usr/bin/osascript would otherwise always win the probe).
 for _n in bash sh jq git awk find cksum stat mkdir mv rm touch cp cat sed tr uname dirname basename date id sleep \
-  head cut grep sort wc ls readlink env dd mktemp rmdir xargs expr chmod ln tail cmp diff; do
+  head cut grep sort wc ls readlink env dd rmdir xargs expr chmod ln tail cmp diff; do
   _p="$(command -v "$_n" 2>/dev/null)" && [ -x "$_p" ] && ln -sf "$_p" "$MINBIN/$_n"
 done
 unset _n _p
@@ -364,7 +364,6 @@ unset _n _p
 # ignores $TMPDIR, so that leak cannot be observed by redirecting it). `mktemp` in MINBIN is therefore a shim:
 # with PROBE_SCRATCH set it makes the dir THERE, so a leftover is checkable under the case's own scratch.
 _real_mktemp="$(command -v mktemp)"
-rm -f "$MINBIN/mktemp"
 cat > "$MINBIN/mktemp" <<SHIM
 #!/bin/sh
 [ -z "\${PROBE_SCRATCH:-}" ] || { mkdir -p "\$PROBE_SCRATCH" && exec "$_real_mktemp" -d "\$PROBE_SCRATCH/probe.XXXXXX"; }
@@ -446,8 +445,7 @@ hook PostToolUse
 wait_log 'CALL notify-send'; check_status "W27 no osascript, notify-send present -> notify-send" 0 "$?"
 check_contains "W27 notify-send carries the alert line" "$(cat "$NLOG")" "$H/.gitconfig: content changed"
 check_eq "W27 S2-6: the hook's probe dirs are removed under the minimal PATH (rmdir present)" "" "$(ls -A "$H/probes" 2>/dev/null)"
-if [ -d "$H/probes" ]; then pass "W27 S2-6 fixture: the probe was actually made under the scratch (the shim is live)"
-else fail "W27 S2-6 fixture: the probe was actually made under the scratch (the shim is live)" "no $H/probes — the mktemp shim never ran"; fi
+check_dir "W27 S2-6 fixture: the probe was actually made under the scratch (the shim is live)" "$H/probes"
 notify_case w27b
 ENVV+=("PATH=$MINBIN" "PROBE_SCRATCH=$H/probes")
 rm -f "$MINBIN/notify-send"

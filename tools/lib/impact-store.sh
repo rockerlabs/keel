@@ -97,10 +97,10 @@ impact_store_root() {
 # IMPACT_ISOLATION_VARS — every environment variable, other than HOME, that any keel store resolver
 # reads: impact_store_root above, _impact_file_path below, tools/lib/read-trace.sh's
 # read_trace_store_root, tools/lib/state-root.sh's keel_machine_watch_store (KEEL_MACHINE_WATCH_STORE), and
-# the vendored tools/secret-guard/secret-scan.sh's own _impact_log_path_inline copy. Named in this ONE place (dir #317) so impact_isolated (below) — and any
-# future caller that wants a truly sandboxed store root — unsets the whole list, not just whichever two
-# variables a fix happens to know about at the time: the exact class of miss that let dir #290's own
-# canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its printed command). A new store-resolving
+# the vendored tools/secret-guard/secret-scan.sh's own _impact_log_path_inline copy. Named in this ONE
+# place (dir #317) so impact_isolated (below) — and any future caller that wants a truly sandboxed store
+# root — unsets the whole list, not just whichever two variables a fix happens to know about at the
+# time: the exact class of miss that let dir #290's own canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its printed command). A new store-resolving
 # variable anywhere must be added here; tests/test_impact_store_lib.sh's A3 pins that with a mutation
 # proof, so a resolver that starts reading an unlisted variable fails the suite.
 IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"

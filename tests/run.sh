@@ -56,20 +56,16 @@ main() {
   if [ "$guard_engine_root" = "$(cd -P "$here/.." 2>/dev/null && pwd -P)" ]; then
     guard_engine_root=""                 # the watched checkout itself — the dir #318 half already covers it
   fi
-  # delta-audit 0.13.0 S6-1: a REACHABLE checkout whose `git status` errors (a corrupted index, a
-  # dubious-ownership refusal, a git too old for `--no-optional-locks`) used to read as an EMPTY snapshot on
-  # both sides — "nothing changed", silently, the guard failing open on the very leak it exists for. The
-  # exit status is kept instead: a failed first call means the half did NOT run, and it says so (a NOTE
-  # near the top and again beside the verdict, the ref-guard half's shape). It does not fail the run: an
-  # engine checkout git cannot read is an environment condition (an adopter, another uid), not evidence
-  # of a leak, and failing would block every suite run on it — the dir #505 / dir #656 precedent is to
-  # never trade a trip's meaning for convenience, and the NOTE leaves every existing trip exactly as it was.
-  # The converse IS a trip (see the compare below): readable before the run, unreadable after it.
+  # delta-audit 0.13.0 S6-1: a reachable checkout whose `git status` errors (corrupted index, dubious
+  # ownership, a git too old for `--no-optional-locks`) used to read as an empty snapshot on both sides —
+  # the guard failing open and silent. A failed FIRST call now means the half did not run, and says so (a
+  # NOTE here and beside the verdict, the ref-guard half's shape). It does not fail the run: an engine
+  # checkout git cannot read is an environment condition, not evidence of a leak (dir #505 / dir #656: no
+  # existing trip changes meaning). Readable before the run but not after IS a trip — see the compare below.
   if [ -n "$guard_engine_root" ]; then
     if guard_engine_before="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null)"; then
       guard_engine_ran=1
     else
-      guard_engine_before=""
       printf 'NOTE: `git status` of the engine checkout %s failed — the engine half of the corruption\n' "$guard_engine_root" >&2
       printf '      canary (dir #653) did NOT run this time; the suite is not watching that checkout.\n' >&2
     fi
@@ -487,20 +483,17 @@ main() {
   # dir #653: the compares that need no watched git repo — this runner's and lib.sh's own content, and
   # the engine checkout's tracked-file status. Independent of the dir #318 block above on purpose:
   # it must fire for a git-less tree too.
-  guard_run_changed=0 guard_lib_changed=0 guard_engine_changed=0 guard_engine_unreadable=0
+  guard_run_changed=0 guard_lib_changed=0 guard_engine_changed=0
   [ "$(cksum < "$0" 2>/dev/null)" = "$guard_run_before" ] || guard_run_changed=1
   [ "$(cksum < "$here/lib.sh" 2>/dev/null)" = "$guard_lib_before" ] || guard_lib_changed=1
   if [ "$guard_engine_ran" = 1 ]; then
-    # The half was armed (a readable snapshot before). `status` failing NOW is not "unchanged": something
-    # during the run made the checkout unreadable, which is a change — a trip, never a silent empty compare.
-    if guard_engine_after="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null)"; then
-      [ "$guard_engine_after" = "$guard_engine_before" ] || guard_engine_changed=1
-    else
-      guard_engine_unreadable=1
-    fi
+    # Armed (readable before). `status` failing NOW is a change, never an empty "unchanged" compare: the
+    # sentinel differs from any snapshot, so the diff below shows the failure.
+    guard_engine_after="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null)" \
+      || guard_engine_after='(git status failed)'
+    [ "$guard_engine_after" = "$guard_engine_before" ] || guard_engine_changed=1
   fi
-  if [ "$guard_run_changed" = 1 ] || [ "$guard_lib_changed" = 1 ] || [ "$guard_engine_changed" = 1 ] \
-    || [ "$guard_engine_unreadable" = 1 ]; then
+  if [ "$guard_run_changed" = 1 ] || [ "$guard_lib_changed" = 1 ] || [ "$guard_engine_changed" = 1 ]; then
     printf '\n!!! TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #653) !!!\n'
     if [ "$guard_run_changed" = 1 ]; then
       printf '  %s changed during the run: %s\n' "$(basename "$0")" "$0"
@@ -512,10 +505,6 @@ main() {
       printf '  the engine checkout changed during the run (tracked files only; `git status --porcelain -uno`\n'
       printf '  of %s, before -> after):\n%s\n' "$guard_engine_root" \
         "$(diff <(printf '%s\n' "$guard_engine_before") <(printf '%s\n' "$guard_engine_after"))"
-    fi
-    if [ "$guard_engine_unreadable" = 1 ]; then
-      printf '  `git status` of the engine checkout %s worked before the run and FAILED after it —\n' "$guard_engine_root"
-      printf '  something in the run left that checkout unreadable (its index or .git corrupted?).\n'
     fi
     printf 'either a test wrote into files it does not own, or something outside the suite did (your own edit\n'
     printf 'of one of these files while this run was alive counts — never edit a checkout while its own suite\n'

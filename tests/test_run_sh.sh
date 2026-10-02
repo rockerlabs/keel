@@ -303,6 +303,18 @@ check_contains "symlinked run.sh -> the ref-scope NOTE names dir #333" "$OUT" "d
 check_contains "symlinked run.sh -> the ref-scope NOTE says ref-guard.sh was not found" "$OUT" "ref-guard.sh not found"
 check_contains "symlinked run.sh -> the fixture still ran despite the NOTE" "$OUT" "=== test_a.sh ==="
 
+# new_engine_fixture — a real repo holding one tracked file, plus a HOME whose .keel/engine links to it (the
+# dir #653 engine half). Sets ENG_REPO and ENG_HOME (two values, so not a $(...) helper like its neighbours).
+new_engine_fixture() {
+  ENG_REPO="$(new_repo)"
+  printf 'tracked\n' > "$ENG_REPO/engine-file.txt"
+  git -C "$ENG_REPO" add engine-file.txt
+  git -C "$ENG_REPO" commit -q -m init
+  ENG_HOME="$(mktemp -d "$SANDBOX/enghome.XXXXXX")"
+  mkdir -p "$ENG_HOME/.keel"
+  ln -s "$ENG_REPO" "$ENG_HOME/.keel/engine"
+}
+
 # new_run_sh_fixture — a throwaway REAL git repo (new_repo, unlike mkfakedir's synthetic dir) with a
 # copy of run.sh under tests/ and a stub lib.sh, for the corruption-canary fixtures below (T8, B19,
 # T1, T3) that all drive run.sh against a real checkout of their own. Promoted here at its second use
@@ -529,13 +541,7 @@ check_absent "dir #653: an unchanged run prints no #653 trip" "$OUT" "(dir #653)
 # the 6 files overwritten in 2026-09-22 were neither run.sh nor lib.sh). When $HOME/.keel/engine
 # resolves to a DIFFERENT git checkout, its tracked-file status is compared before/after too.
 # Untracked files are ignored on purpose (a peer session's new scratch file is not a leak). --------
-eng="$(new_repo)"
-printf 'tracked\n' > "$eng/engine-file.txt"
-git -C "$eng" add engine-file.txt
-git -C "$eng" commit -q -m init
-enghome="$(mktemp -d "$SANDBOX/enghome.XXXXXX")"
-mkdir -p "$enghome/.keel"
-ln -s "$eng" "$enghome/.keel/engine"
+new_engine_fixture; eng="$ENG_REPO"; enghome="$ENG_HOME"
 
 watched="$(new_run_sh_fixture)"
 printf '#!/usr/bin/env bash\nprintf "leaked\\n" > "%s/engine-file.txt"\nexit 0\n' "$eng" > "$watched/tests/test_engine_leak.sh"
@@ -584,39 +590,25 @@ check_absent "dir #653: ... and is not reported a second time by the engine half
 # --- S6-1 (delta audit 0.13.0): a REACHABLE engine checkout whose `git status` errors must not read as
 # "nothing changed". A corrupted index (status rc 128) used to fail the half open and silent: the leaking
 # test rewrote an engine file and the run printed ALL TEST FILES PASSED with no word about the half. -------
-eng2="$(new_repo)"
-printf 'tracked\n' > "$eng2/engine-file.txt"
-git -C "$eng2" add engine-file.txt
-git -C "$eng2" commit -q -m init
-enghome2="$(mktemp -d "$SANDBOX/enghome2.XXXXXX")"
-mkdir -p "$enghome2/.keel"
-ln -s "$eng2" "$enghome2/.keel/engine"
+new_engine_fixture; eng2="$ENG_REPO"; enghome2="$ENG_HOME"
+watched="$(new_run_sh_fixture)"   # fresh: the one above ends up holding the selfleak commits
 printf 'garbage\n' > "$eng2/.git/index"
 git -C "$eng2" status --porcelain -uno >/dev/null 2>&1
 check_status "S6-1 fixture: git status of the corrupted engine checkout really fails" 128 "$?"
 
-watched="$(new_run_sh_fixture)"
 printf '#!/usr/bin/env bash\nprintf "leaked\\n" > "%s/engine-file.txt"\nexit 0\n' "$eng2" > "$watched/tests/test_engine_leak.sh"
 run env HOME="$enghome2" bash "$watched/tests/run.sh"
 # Decision (comment in tests/run.sh): a not-run half is reported, not failed — the exit status stays 0.
 check_status "S6-1: an unreadable engine checkout does not fail the run by itself -> exit 0" 0 "$STATUS"
-check_contains "S6-1: the NOTE says the engine half did NOT run" "$OUT" "the engine half of the corruption"
-check_contains "S6-1: ... and names the checkout" "$OUT" "$eng2"
-check_contains "S6-1: the NOTE is repeated beside the verdict" "$OUT" "engine half of the corruption canary (dir #653) did not run this time"
-check_status "S6-1: the NOTE appears exactly twice (top + verdict)" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
+check_contains "S6-1: the NOTE names the checkout" "$OUT" "$eng2"
+check_status "S6-1: the NOTE says the half did not run, at the top and again beside the verdict (exactly twice)" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
 
 # the converse: readable before the run, unreadable after it -> the half WAS armed, so that is a trip
-eng3="$(new_repo)"
-printf 'tracked\n' > "$eng3/engine-file.txt"
-git -C "$eng3" add engine-file.txt
-git -C "$eng3" commit -q -m init
-enghome3="$(mktemp -d "$SANDBOX/enghome3.XXXXXX")"
-mkdir -p "$enghome3/.keel"
-ln -s "$eng3" "$enghome3/.keel/engine"
+new_engine_fixture; eng3="$ENG_REPO"; enghome3="$ENG_HOME"
 printf '#!/usr/bin/env bash\nprintf "garbage\\n" > "%s/.git/index"\nexit 0\n' "$eng3" > "$watched/tests/test_engine_leak.sh"
 run env HOME="$enghome3" bash "$watched/tests/run.sh"
 check_status "S6-1: an engine checkout that goes unreadable DURING the run trips the canary -> exit 1" 1 "$STATUS"
-check_contains "S6-1: ... and says it worked before and failed after" "$OUT" "worked before the run and FAILED after it"
+check_contains "S6-1: ... and the before -> after diff shows the status failure" "$OUT" "(git status failed)"
 check_absent "S6-1: ... without the not-run NOTE (the half did run)" "$OUT" "did NOT run this time"
 
 summary
