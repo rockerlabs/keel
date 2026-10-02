@@ -133,8 +133,7 @@ check_contains "HOME unset, explicit override -> still counts (FAIL #1)" "$OUT" 
 # repo's GIT_DIR paired with its own GIT_WORK_TREE, present in the environment BEFORE keel-check.sh
 # runs its inline copy of tools/lib/repo-arg-guard.sh's unset line (dir #647), must not make
 # `git -C "$PWD" rev-parse --show-toplevel` answer for the decoy while $PWD is really inside the real
-# repo. Mirrors
-# tests/test_repo_arg_guard_lib.sh's own hijack pattern.
+# repo. Mirrors tests/test_repo_arg_guard_lib.sh's own hijack pattern.
 fresh_sd
 real="$(new_repo)"; git -C "$real" commit -q --allow-empty -m init
 decoy="$(new_repo)"; git -C "$decoy" commit -q --allow-empty -m init

@@ -7,8 +7,10 @@
 # census was a literal grep for the variable NAME `repo`, which is how this class regrew).
 #
 #   B1 — a SCRIPT is every tracked (or not-yet-tracked, not ignored) file whose first line is a `#!`
-#        naming sh or bash, except tests/test_*.sh and tests/lib.sh (covered by the unset at the top of tests/lib.sh). Each
-#        git-reaching script carries the B2 line before its first git-reaching line.
+#        naming sh or bash, except tests/test_*.sh and tests/lib.sh (covered by the unset at the top of
+#        tests/lib.sh). Each git-reaching script carries the guard line (B2: `unset GIT_DIR
+#        GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE`, byte-identical to tools/lib/repo-arg-guard.sh's)
+#        before its first git-reaching line.
 #   B3 — git-reaching = a non-comment line where `git` is a word followed by whitespace or end of line,
 #        or a source line naming a git-reaching LIB (derived here as a fixed point, never hard-coded).
 #   B4 — the hook carve-out: secret-scan.sh keeps every inherited variable in its hook modes (git's own
@@ -22,8 +24,8 @@
 
 echo "git-env guard census (dir #647)"
 
-# `git` as a word, then whitespace or end of line (leg 1 of the spec's review: the earlier 30-subcommand
-# list missed `git clone`, `git --no-optional-locks`, `git add`).
+# `git` as a word, then whitespace or end of line — not a list of subcommands: an earlier 30-subcommand
+# list missed `git clone`, `git --no-optional-locks` and `git add`.
 GW='(^|[^A-Za-z0-9_./-])git([[:space:]]|$)'
 GUARD="$(grep -m1 '^unset GIT_DIR' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"
 case "$GUARD" in
@@ -67,82 +69,84 @@ src_re() {
 # guard_line FILE — number of the first line equal to GUARD (column 0); empty if none.
 guard_line() { awk -v g="$GUARD" '$0 == g { print NR; exit }' "$1"; }
 
-# census ROOT — sets C_REACH (git-reaching B1 scripts), C_LIBS (git-reaching libs), C_OFF (one
-# "<file>|<rule>|<why>" per offender), all newline-separated strings (a 0-element bash-3.2 array under
-# `set -u` crashes, so no arrays).
-census() {
-  local root="$1" f b l libs reach_libs changed
-  C_REACH="" C_LIBS="" C_OFF=""
+# has_line LIST ITEM — is ITEM one of the newline-separated lines of LIST.
+has_line() {
+  case "
+$1
+" in *"
+$2
+"*) return 0 ;; esac
+  return 1
+}
+
+# add_off WHAT — append one offender line to C_OFF.
+add_off() { C_OFF="${C_OFF:+$C_OFF
+}$1"; }
+
+# derive_libs ROOT — sets C_LIBS: the libs that reach git, directly or by sourcing one that does (a fixed
+# point, never hard-coded). Candidates are tools/lib/*.sh and tools/secret-guard/range-lib.sh.
+derive_libs() {
+  local root="$1" libs l b changed=1
   libs="$(cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh 2>/dev/null)"
-  reach_libs=""
-  while IFS= read -r l; do
-    [ -n "$l" ] || continue
-    [ -n "$(first_reach "$root/$l" "$(src_re "")")" ] && reach_libs="${reach_libs:+$reach_libs
-}$(basename "$l")"
-  done <<< "$libs"
-  changed=1
+  C_LIBS=""
   while [ "$changed" = 1 ]; do
     changed=0
     while IFS= read -r l; do
       [ -n "$l" ] || continue
       b="$(basename "$l")"
-      case "
-$reach_libs
-" in *"
-$b
-"*) continue ;; esac
-      if [ -n "$(first_reach "$root/$l" "$(src_re "$reach_libs")")" ]; then
-        reach_libs="${reach_libs:+$reach_libs
+      has_line "$C_LIBS" "$b" && continue
+      if [ -n "$(first_reach "$root/$l" "$(src_re "$C_LIBS")")" ]; then
+        C_LIBS="${C_LIBS:+$C_LIBS
 }$b"
         changed=1
       fi
     done <<< "$libs"
   done
-  C_LIBS="$reach_libs"
-  local re mode first g body bfirst bguard
-  re="$(src_re "$reach_libs")"
+}
+
+# census ROOT [LIBS] — sets C_REACH (git-reaching B1 scripts), C_LIBS (git-reaching libs), C_OFF (one
+# "<file>|<rule>|<why>" per offender), all newline-separated strings (a 0-element bash-3.2 array under
+# `set -u` crashes, so no arrays). LIBS, when given, is a lib set derived earlier (the sandbox trees copy
+# the real libs unchanged, so re-deriving it per case would only cost time).
+census() {
+  local root="$1" f l re mode first g sel
+  C_REACH="" C_OFF=""
+  if [ -n "${2:-}" ]; then C_LIBS="$2"; else derive_libs "$root"; fi
+  re="$(src_re "$C_LIBS")"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     [ -f "$root/$f" ] || continue
     case "$f" in tests/test_*.sh | tests/lib.sh) continue ;; esac
-    [ "$(head -c 2 "$root/$f")" = "#!" ] || continue
-    head -1 "$root/$f" | grep -Eq '(^|[^A-Za-z0-9_])(ba)?sh([^A-Za-z0-9_]|$)' || continue
+    head -1 "$root/$f" | grep -Eq '^#!.*[^A-Za-z0-9_](ba)?sh([^A-Za-z0-9_]|$)' || continue
     first="$(first_reach "$root/$f" "$re")"
     [ -n "$first" ] || continue
     C_REACH="${C_REACH:+$C_REACH
 }$f"
     mode="$(allow_mode "$f")"
+    [ "$mode" = exempt ] && continue
     g="$(guard_line "$root/$f")"
-    case "$mode" in
-      exempt) continue ;;
-      selftest-only)
-        # B4: no column-0 guard (a top-level drop would open the pre-commit hook), and the line,
-        # leading whitespace stripped, sits inside selftest() before that function's first git line.
-        if [ -n "$g" ]; then
-          C_OFF="${C_OFF:+$C_OFF
-}$f|dir #647 B4|the guard sits at top level (line $g): hook modes need git's own GIT_DIR/GIT_INDEX_FILE"
-        fi
-        body="$(awk '/^selftest\(\) \{/ { on = 1 } on { print NR ":" $0 } on && /^\}/ { exit }' "$root/$f")"
-        bguard="$(printf '%s\n' "$body" | awk -v g="$GUARD" '{ i = index($0, ":"); n = substr($0, 1, i - 1); s = substr($0, i + 1); sub(/^[ \t]+/, "", s); if (s == g) { print n; exit } }')"
-        bfirst="$(printf '%s\n' "$body" | awk -v gw="$GW" '{ i = index($0, ":"); n = substr($0, 1, i - 1); s = substr($0, i + 1); if (s ~ /^[ \t]*#/) next; if (s ~ gw) { print n; exit } }')"
-        if [ -z "$bguard" ]; then
-          C_OFF="${C_OFF:+$C_OFF
-}$f|dir #647 B4|selftest() carries no copy of the guard line"
-        elif [ -n "$bfirst" ] && [ "$bguard" -gt "$bfirst" ]; then
-          C_OFF="${C_OFF:+$C_OFF
-}$f|dir #647 B4|selftest()'s guard (line $bguard) comes after its first git-reaching line ($bfirst)"
-        fi
-        ;;
-      *)
-        if [ -z "$g" ]; then
-          C_OFF="${C_OFF:+$C_OFF
-}$f|dir #647 B1|no column-0 '$GUARD' line (first git-reaching line: $first)"
-        elif [ "$g" -gt "$first" ]; then
-          C_OFF="${C_OFF:+$C_OFF
-}$f|dir #647 B1|the guard (line $g) comes after the first git-reaching line ($first)"
-        fi
-        ;;
-    esac
+    if [ "$mode" = selftest-only ]; then
+      # B4: no column-0 guard (a top-level drop would open the pre-commit hook), and the line, leading
+      # whitespace stripped, sits inside selftest() before that function's first git-reaching line.
+      [ -z "$g" ] || add_off "$f|dir #647 B4|the guard sits at top level (line $g): hook modes need git's own GIT_DIR/GIT_INDEX_FILE"
+      sel="$(awk -v g="$GUARD" -v gw="$GW" '
+        /^selftest\(\) \{/ { on = 1 }
+        on { s = $0; sub(/^[ \t]+/, "", s)
+             if (s == g && !bg) bg = NR
+             if (s !~ /^#/ && s ~ gw && !bf) bf = NR }
+        on && /^\}/ { exit }
+        END { print bg + 0, bf + 0 }' "$root/$f")"
+      set -- $sel   # two integers: the guard line and the first git-reaching line, 0 = none
+      if [ "$1" = 0 ]; then
+        add_off "$f|dir #647 B4|selftest() carries no copy of the guard line"
+      elif [ "$2" != 0 ] && [ "$1" -gt "$2" ]; then
+        add_off "$f|dir #647 B4|selftest()'s guard (line $1) comes after its first git-reaching line ($2)"
+      fi
+    elif [ -z "$g" ]; then
+      add_off "$f|dir #647 B1|no column-0 '$GUARD' line (first git-reaching line: $first)"
+    elif [ "$g" -gt "$first" ]; then
+      add_off "$f|dir #647 B1|the guard (line $g) comes after the first git-reaching line ($first)"
+    fi
   done <<< "$(cd "$root" && git ls-files --cached --others --exclude-standard)"
   # B5: no lib, range-lib.sh or hook stub carries the line (stripped — the stricter reading), except
   # repo-arg-guard.sh itself.
@@ -150,8 +154,7 @@ $b
     [ -n "$l" ] || continue
     [ "$l" = tools/lib/repo-arg-guard.sh ] && continue
     if awk -v g="$GUARD" '{ s = $0; sub(/^[ \t]+/, "", s); if (s == g) { found = 1 } } END { exit !found }' "$root/$l"; then
-      C_OFF="${C_OFF:+$C_OFF
-}$l|dir #647 B5|a lib or hook stub carries the guard line (a lib-level unset changes every sourcer)"
+      add_off "$l|dir #647 B5|a lib or hook stub carries the guard line (a lib-level unset changes every sourcer)"
     fi
   done <<< "$(cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh tools/secret-guard/pre-commit tools/secret-guard/pre-push 2>/dev/null)"
 }
@@ -162,9 +165,9 @@ real_off="$C_OFF"
 real_reach="$C_REACH"
 real_libs="$C_LIBS"
 
-# A1 — the non-vacuity floor: every T1 file (spec §Design T1, as reconciled at implementation) plus
-# install-secret-guard.sh is in the git-reaching set; the derived lib set has the seven git-reaching
-# libs and not range-lib.
+# A1 — the non-vacuity floor, a hand-kept list on purpose (a census that silently finds nothing would be
+# green): every script known to reach git when this census was written, plus install-secret-guard.sh, is in
+# the git-reaching set; the derived lib set has the seven git-reaching libs and not range-lib.
 t1="bootstrap.sh install.sh uninstall.sh keel tests/run.sh examples/tour.sh docs/demo/record-demo.sh
 docs/keel-ab/seed.sh docs/keel-ab/grade.sh
 tools/pre-pr-gate.sh tools/public-audit.sh tools/doctor.sh tools/keel-impact.sh tools/read-trace.sh
@@ -178,38 +181,30 @@ tools/self/backlog-census.sh tools/self/pool-report.sh tools/self/session-cost.s
 tools/secret-guard/ci-scan.sh tools/secret-guard/secret-scan.sh tools/install-secret-guard.sh"
 floor_missing=""
 for f in $t1; do
-  case "
-$real_reach
-" in *"
-$f
-"*) ;; *) floor_missing="$floor_missing $f" ;; esac
+  has_line "$real_reach" "$f" || floor_missing="$floor_missing $f"
 done
 if [ -z "$floor_missing" ]; then
-  pass "A1: the census's git-reaching set contains every file of the spec's T1 and install-secret-guard.sh"
+  pass "A1: the census's git-reaching set contains every known git-reaching script"
 else
-  fail "A1: the census's git-reaching set contains every file of the spec's T1" "missing from the set (detector regressed, or a file moved):$floor_missing"
+  fail "A1: the census's git-reaching set contains every known git-reaching script" "missing from the set (detector regressed, or a file moved):$floor_missing"
 fi
 libs_missing=""
 for b in backlog-blocks impact-store read-trace ref-guard repo-arg-guard repo-top transcript-usage; do
-  case "
-$real_libs
-" in *"
-$b.sh
-"*) ;; *) libs_missing="$libs_missing $b" ;; esac
+  has_line "$real_libs" "$b.sh" || libs_missing="$libs_missing $b"
 done
 if [ -z "$libs_missing" ]; then
   pass "A1: the derived git-reaching lib set contains the seven known libs"
 else
   fail "A1: the derived git-reaching lib set contains the seven known libs" "missing:$libs_missing"
 fi
-case "
-$real_libs
-" in
-  *"
-range-lib.sh
-"*) fail "A1: range-lib.sh is not git-reaching" "the derived lib set contains range-lib.sh (it reaches no git)" ;;
-  *) pass "A1: range-lib.sh is not in the derived lib set" ;;
-esac
+if has_line "$real_libs" range-lib.sh; then
+  fail "A1: range-lib.sh is not git-reaching" "the derived lib set contains range-lib.sh (it reaches no git)"
+else
+  pass "A1: range-lib.sh is not in the derived lib set"
+fi
+# tests/test_*.sh are outside B1 because tests/lib.sh unsets the variables before any fixture runs; pin
+# that line (every test file sourcing lib.sh is tests/test_lib_source_guard.sh's job).
+check_eq "tests/lib.sh carries the guard line the census exempts every test file on" 1 "$(grep -cxF -- "$GUARD" "$REPO_ROOT/tests/lib.sh")"
 
 # The census itself: every offender, each naming its file and rule.
 if [ -z "$real_off" ]; then
@@ -236,7 +231,7 @@ build_sandbox() { # prints the sandbox root
 }
 
 sb="$(build_sandbox)"
-census "$sb"
+census "$sb" "$real_libs"
 base_off="$C_OFF"
 if [ -z "$base_off" ]; then
   pass "A2: the unmutated sandbox tree has no offenders (baseline)"
@@ -244,23 +239,17 @@ else
   fail "A2: the unmutated sandbox tree has no offenders (baseline)" "$(head -3 <<< "$base_off")"
 fi
 
-# case_red LABEL FILE — expect FILE among the offenders and not in the baseline.
+# case_red LABEL FILE SANDBOX BASELINE — expect FILE among the offenders and not in the baseline.
 case_red() {
   local label="$1" file="$2" sbc="$3" before="$4"
-  census "$sbc"
-  case "
-$before
-" in
-    *"
-$file|"*) fail "$label" "$file is already an offender in the baseline — the case proves nothing" ; return ;;
-  esac
-  case "
-$C_OFF
-" in
-    *"
-$file|"*) pass "$label" ;;
-    *) fail "$label" "the census did not name $file; offenders: ${C_OFF:-none}" ;;
-  esac
+  census "$sbc" "$real_libs"
+  if grep -q -- "^$file|" <<< "$before"; then
+    fail "$label" "$file is already an offender in the baseline — the case proves nothing"
+  elif grep -q -- "^$file|" <<< "$C_OFF"; then
+    pass "$label"
+  else
+    fail "$label" "the census did not name $file; offenders: ${C_OFF:-none}"
+  fi
 }
 mutated() { # LABEL ORIGINAL COPY — the mutation changed the file
   if cmp -s "$2" "$3"; then fail "$1" "the mutation was a no-op on $3"; else pass "$1"; fi
@@ -280,7 +269,7 @@ case_red "A2 case 2: a three-variable line in pre-pr-gate.sh -> red, naming it (
 
 # 3. the line deleted from secret-scan.sh's selftest() (leading whitespace: it is indented there)
 sb="$(build_sandbox)"
-awk -v g="$GUARD" '{ s = $0; sub(/^[ \t]+/, "", s); if (s == g) next } { print }' "$sb/tools/secret-guard/secret-scan.sh" > "$sb/ss.tmp" && mv "$sb/ss.tmp" "$sb/tools/secret-guard/secret-scan.sh"
+delete_line_containing "$sb/tools/secret-guard/secret-scan.sh" "$GUARD"
 mutated "A2 case 3: deleting the guard from selftest() changes the file" "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$sb/tools/secret-guard/secret-scan.sh"
 case_red "A2 case 3: the guard deleted from secret-scan.sh's selftest() -> red, naming it (B4)" tools/secret-guard/secret-scan.sh "$sb" "$base_off"
 

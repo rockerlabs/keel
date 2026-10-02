@@ -17,10 +17,10 @@
 # Needs jq to parse the hook event (like pre-pr-gate.sh). Without it the hook can't tell a commit from any
 # other Bash call, so it allows rather than blocks everything — an explicit, documented choice: this is a
 # workflow floor, not the secret boundary (that's secret-guard, which needs no jq).
-# dir #647 (S3 FINDING-S3-1): drop an inherited repo selector before the `repo_top` resolution below can be
-# hijacked into answering for a different repo (see keel-check.sh's comment at its own copy of this line for
-# the hijack shape). A builtin `unset` at the very top, not a sourced lib: this hook fires on EVERY Bash
-# call, and a sourced guard that fails to load fails silently (tests/test_git_env_guard.sh pins this line).
+# dir #647: drop an inherited repo selector before the `repo_top` resolution below can be hijacked into
+# answering for a different repo (the hijack shape is in keel-check.sh's comment on its copy of this line).
+# Above `command -v jq` because this hook fires on EVERY Bash call: a builtin `unset` costs nothing there,
+# a sourced guard that failed to load would fail silently (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 command -v jq >/dev/null 2>&1 || exit 0
 

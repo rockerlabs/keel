@@ -1360,9 +1360,8 @@ check_contains "dir #647 A6: the block names the secret guard" "$OUT" "BLOCKED"
 check_eq "dir #647 A6: HEAD did not move" "$head647" "$(git -C "$hw647" rev-parse HEAD)"
 # Mutation proof, kept as an assertion: the SAME vendored scanner with the guard line added at TOP LEVEL
 # lets that commit through — i.e. the carve-out above is load-bearing, not decorative.
-cp "$h647/.git/hooks/secret-scan.sh" "$SANDBOX/secret-scan.647.orig"
-{ printf '#!/usr/bin/env bash\n'; printf '%s\n' "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE"; sed 1d "$SANDBOX/secret-scan.647.orig"; } > "$h647/.git/hooks/secret-scan.sh"
-chmod +x "$h647/.git/hooks/secret-scan.sh"
+insert_before_line_containing "$h647/.git/hooks/secret-scan.sh" "selftest() {" "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE"
+chmod +x "$h647/.git/hooks/secret-scan.sh"   # the helper rewrites through a temp file and mv
 run_in "$hw647" git commit -a -m "leak via -a, top-level unset"
 check_status "dir #647 A6 mutation: a top-level unset in the scanner lets the key commit through (the carve-out is load-bearing)" 0 "$STATUS"
 

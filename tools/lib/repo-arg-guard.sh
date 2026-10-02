@@ -10,14 +10,12 @@
 # GIT_COMMON_DIR, so that combination is not caught by a git-config-based guard either, and the write
 # lands in the real repo even when the path named on the command line is not a git repository at all.
 #
-# Unconditional at SOURCE time, not inside a function a caller has to remember to invoke at exactly
-# the right call site (altitude finding, dir #644's own /simplify pass): a guard gated behind "did
-# something call keel_repo_arg_guard yet" is only as strong as every future edit's memory to do so at
-# every git-touching branch — the same shape of gap that let dir #318's N8 go unnoticed the first
-# time. tests/lib.sh already gets this right (its own unset is the first thing that runs after `set
-# -uo pipefail`, load-bearing for every git call the file goes on to make, not just some of them); this
-# file gives every OTHER script that sources it the same structural guarantee, for free, by the act of
-# sourcing alone.
+# Unconditional, never behind a function a caller has to remember to invoke at exactly the right call
+# site (altitude finding, dir #644's own /simplify pass): a guard gated behind "did something call
+# keel_repo_arg_guard yet" is only as strong as every future edit's memory to do so at every git-touching
+# branch — the same shape of gap that let dir #318's N8 go unnoticed the first time. tests/lib.sh gets
+# this right: its own unset is the first thing that runs after `set -uo pipefail`, load-bearing for every
+# git call the file goes on to make, not just some of them.
 #
 # The census (tests/test_git_env_guard.sh, dir #647) requires every git-reaching script to carry THIS
 # file's unset as an inline line of its own, byte-identical to the one below — this file stays the single
@@ -26,12 +24,14 @@
 # silently and leaves the variables set (the reason pipeline-canary.sh once needed a result check after
 # its source), and some scripts cannot source tools/lib/ at all (they are copied standalone, or run as
 # POSIX sh from a pipe). tools/install-secret-guard.sh was the first to inline it, for the standalone
-# reason — its own tests run scratch copies that carry no tools/lib/.
+# reason — its own tests run scratch copies that carry no tools/lib/. So the reason to SOURCE this file
+# is keel_repo_arg_guard() below (tools/install-read-trace.sh, tools/install-pre-pr-gate.sh); the unset
+# at source time is a second copy behind those scripts' own inline line.
 #
 # The unset is process-wide: it also reaches every child the script spawns, a check command an operator
-# declared included (tools/keel-check.sh's own call-site comment records why that is accepted rather than
-# scoped down to the one resolver call — PR #467). The same acceptance now holds for every script the
-# census covers.
+# declared included. Accepted rather than scoped down to the one resolver call: an operator check that
+# depends on an inherited GIT_DIR/GIT_WORK_TREE is exotic, and stripping them is the safer default for a
+# check that might itself shell out to git. Every script the census covers carries the same acceptance.
 #
 # Sourced, not executed — no shebang, no set -e (inherits the caller's). keel_repo_arg_guard's `exit 2`
 # on failure does NOT depend on the caller's `set -e` (correction, /code-review max, two independent

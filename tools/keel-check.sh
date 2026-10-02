@@ -23,11 +23,11 @@
 #         KEEL_IMPACT_LOG       — if set, append one zero-token friction event when the banner fires
 #                                 (metadata only; never the check's output). Mirrors pre-pr-gate.sh.
 set -uo pipefail
-# dir #647 (S3 FINDING-S3-1): drop an inherited repo selector before the `repo_top` resolution below can
-# be hijacked into answering for a different repo — a foreign GIT_DIR paired with a matching GIT_WORK_TREE
-# otherwise names the WRONG repo, so a red marker armed for the real repo is checked (by keel-check-gate.sh)
-# against the decoy's key and the commit slips through (fail OPEN). Process-wide on purpose: it also reaches
-# the operator's declared check command spawned below, accepted — see tools/lib/repo-arg-guard.sh's header
+# dir #647: drop an inherited repo selector before the `repo_top` resolution below can be hijacked into
+# answering for a different repo — a foreign GIT_DIR paired with a matching GIT_WORK_TREE otherwise names
+# the WRONG repo, so a red marker armed for the real repo is checked (by keel-check-gate.sh) against the
+# decoy's key and the commit slips through (fail OPEN). The unset also reaches the operator's declared
+# check command spawned below: accepted, see tools/lib/repo-arg-guard.sh's header
 # (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
