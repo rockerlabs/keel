@@ -212,6 +212,19 @@ tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global cov
 Full walkthrough — what changes in your day, the receipts, the residual limits →
 [`docs/getting-started.md`](docs/getting-started.md).
 
+**Optional: a machine-global watcher.** `tools/machine-watch.sh` fingerprints the files a live check must
+never touch (git's global config, the global hooks dir, ssh config, shell rc files) and tells the session,
+on the tool call that changed one, what happened — it catches the "a retried command lost its sandbox"
+accident the prose rail cannot. Same opt-in discipline as the gate:
+
+```bash
+tools/install-machine-watch.sh <repo>   # project scope (default) — --global covers every session instead
+```
+
+Project scope survives a deleted `~/.claude` but covers only that repo's sessions; `--global` covers all of
+them but lives in `~/.claude`. `--uninstall` removes exactly what it wired. On a harness without hooks,
+`machine-watch.sh snapshot x` before a live check and `check x` after it do the same by hand.
+
 ## Good to know
 
 > **"Isn't this just a well-written `CLAUDE.md`?"** Mostly, yes — and that's the point: one that's

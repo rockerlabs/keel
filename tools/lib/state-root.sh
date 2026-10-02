@@ -21,8 +21,9 @@
 #   in use:    tmp          (tools/lib/gate-paths.sh gate_state_root: the gate's rendezvous files)
 #              impact       (tools/lib/impact-store.sh impact_store_root)
 #              read-trace   (tools/lib/read-trace.sh read_trace_store_root)
-#   reserved:  machine-watch, machine-watch.paths   (dir #437 PR2)
-#              config, config.d                      (dir #257)
+#              machine-watch, machine-watch.paths   (tools/machine-watch.sh: the baseline store, and the
+#                           user-authored extra-paths file; dir #437 PR2)
+#   reserved:  config, config.d                      (dir #257)
 # Stays per harness, under `${KEEL_HOME:-$HOME/.claude}/.keel/`, unchanged by dir #637:
 # `install-manifest.*`, `foreign-core.*`, the install scratch and `doctor-accept` — they describe ONE
 # install and are moot once its home is gone.
@@ -60,6 +61,15 @@ keel_legacy_store_entries() {
   for e in "$root"/* "$root"/.[!.]* "$root"/..?*; do
     if [ -d "$e" ] && [ ! -L "$e" ]; then printf '%s\n' "$e"; fi
   done
+}
+
+# keel_machine_watch_store — the machine-global watcher's baseline store (dir #437 PR2): $KEEL_MACHINE_WATCH_STORE
+# when set (tests, an operator's own location), else keel_store_root machine-watch. The one definition both
+# tools/machine-watch.sh and tools/install-machine-watch.sh call, so the dir the installer pre-creates is the
+# dir the watcher reads — the watcher reads the store's absence as a removal.
+keel_machine_watch_store() {
+  if [ -n "${KEEL_MACHINE_WATCH_STORE:-}" ]; then printf '%s' "$KEEL_MACHINE_WATCH_STORE"; return 0; fi
+  keel_store_root machine-watch
 }
 
 # keel_store_root NAME — where store NAME lives. Rungs, in order, R = keel_state_root's output:

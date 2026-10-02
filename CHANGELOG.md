@@ -32,6 +32,24 @@ sections real content going forward — see that page for exactly when each one 
   run `install-secret-guard.sh <repo>`. Nothing breaks in the meantime; the old copy simply keeps the old
   `--selftest` behaviour.
 
+- **A detector for the sandbox rail, and its deny-rule recipe** (dir #437, PR2 of 2 — PR1 was the shared
+  settings-merge lib): `docs/delegation.md` tells a worker never to touch the real `$HOME` in a live check,
+  but nothing enforced that for a real session's own commands — in the felt incident a permission denial
+  made the retry shorter, the `HOME=` prefix fell out, and the machine's real git identity was rewritten.
+  The new `tools/machine-watch.sh` fingerprints the machine-global files such a check must never touch
+  (the git global and system config, every file in the global hooks dir, `~/.ssh/config`, the shell rc
+  files — alert tier; the harness `settings.json`/`CLAUDE.md`, `known_hosts`, `~/.config` — quiet tier),
+  and reports what changed on the tool call that caused it: to the model always, to the operator as a
+  banner for the alert tier only. It cannot say who made a change, and tells the model not to "restore"
+  what it cannot prove it did. Modes, deletions and new files are caught, not only content; file content
+  is never stored or printed. The opt-in `tools/install-machine-watch.sh` wires it into Claude Code (project
+  scope is the documented default; `--global` and `--home DIR` also work), appends beside hooks already on
+  the same slot, and `--uninstall` removes only its own. The baseline store is `$HOME/.keel/machine-watch`,
+  so `rm -r ~/.claude` no longer takes it along. On a harness without hooks, `snapshot` before a live check
+  and `check` after it work by hand. Separately, `docs/delegation.md` now carries the matching
+  `permissions.deny` rules as a recipe with their measured price beside them (2 of 6 recorded instances
+  stopped; the correct sandboxed form is denied too) — documented, never installed.
+
 - **`install.sh` now moves keel's durable stores into `$HOME/.keel`** (dir #637, PR2 of 2 — the move;
   PR1 added the resolver): the new `tools/state-root-migrate.sh` takes every entry of the impact and
   read-trace stores out of `${KEEL_HOME:-$HOME/.claude}/.keel/` and into `$HOME/.keel/`, leaving one

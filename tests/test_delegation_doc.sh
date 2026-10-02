@@ -161,4 +161,28 @@ pin "FRAMEWORK.md still carries the sync smell corollary delegation.md cites" \
   "$framework" 'The sync smell' \
   "expected FRAMEWORK.md to still state the corollary the Disclosures section points at"
 
+# --- dir #437 PR2 (MW9): the deny-rule recipe, priced, outside the verbatim rails block --------------
+pin "the recipe names the detector" "$doc" 'tools/machine-watch.sh' \
+  "expected the sandbox-rail subsection to point at the watcher it pairs with"
+pin "the recipe states its measured coverage" "$doc" 'it would have stopped 2 of 6' \
+  "expected the recipe's measured cost: it covers 2 of the 6 recorded instances"
+pin "the recipe states it denies the correct sandboxed form" "$doc" 'deny rules match past any leading assignment' \
+  "expected the recipe to say the correct sandboxed form is denied too, and why"
+pin "the recipe states the script-file adoption rule" "$doc" 'goes in a script file that sets `HOME` and `GIT_CONFIG_GLOBAL` at its top and is run by path' \
+  "expected the recipe's adoption rule: a sandboxed global-config write goes in a script file run by path"
+pin "the recipe states nothing installs the rules" "$doc" 'nothing in keel writes these rules into any settings file' \
+  "expected the recipe to state it is documented, never installed"
+# the subsection sits OUTSIDE the verbatim block (the block-extract drift tests read only the block)
+if extract_rails_block "$doc" | grep -qF 'machine-watch'; then
+  fail "the recipe sits outside the verbatim rails block" "the verbatim block names machine-watch — the recipe leaked into the block copied to ten places"
+else
+  pass "the recipe sits outside the verbatim rails block"
+fi
+# a recipe, never wiring: no installed script may write a deny rule
+if git -C "$REPO_ROOT" grep -n 'permissions.deny' -- tools install.sh 2>/dev/null | grep -v ':[0-9]*:[[:space:]]*#' | grep -q .; then
+  fail "no keel script writes permissions.deny" "$(git -C "$REPO_ROOT" grep -n 'permissions.deny' -- tools install.sh | head -3)"
+else
+  pass "no keel script writes permissions.deny"
+fi
+
 summary
