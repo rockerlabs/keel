@@ -352,4 +352,57 @@ check_status "export: a mid-mkdir failure (chunks/ after the parent) refuses, ex
 pkt14="$(find "$out14" -maxdepth 1 -name 'packet-stubv-*' -type d 2>/dev/null | head -1)"
 check_nodir "export: a mid-mkdir failure leaves no empty packet dir behind (dir #526)" "${pkt14:-/nonexistent}"
 
+# --- the leak gate FAILS CLOSED: a scanner that errors, dies, is not executable or is missing refuses ----
+# (audit S7-1: run_leak_gate's failed-to-run branch and the -x guard could both be deleted with this suite
+# green.) export.sh resolves its scanner relative to its own location, so run a COPY of tools/ whose
+# secret-guard/secret-scan.sh is swapped. The file list is CLEAN throughout — the refusal must come from the
+# scanner failing, never from a finding.
+fx="$SANDBOX/gate-fail-fx"
+rm -rf "$fx"; mkdir -p "$fx"; cp -R "$REPO_ROOT/tools" "$fx/tools"
+fx_tool="$fx/tools/audit-packet/export.sh"
+fx_scan="$fx/tools/secret-guard/secret-scan.sh"
+r15="$(mk_repo)"
+fl15="$SANDBOX/files-gatefail.txt"; files_list > "$fl15"
+fx_n=0
+gate_fail_case() {
+  # $1 label, $2 expected message fragment
+  fx_n=$((fx_n + 1))
+  local o="out-gatefail-$fx_n"
+  run_in "$r15" "$fx_tool" --vendor gatefail --baseline HEAD --out "$o" --disclosure-ack "t" --files "$fl15"
+  check_status "export: $1 → exit 3 (refuses)" 3 "$STATUS"
+  check_contains "export: $1 → names the failure" "$OUT" "$2"
+  check_status "export: $1 → no packet dir left behind" 0 \
+    "$(find "$r15/$o" -maxdepth 1 -name 'packet-*' 2>/dev/null | grep -c . || true)"
+}
+
+printf '#!/bin/sh\necho "scanner exploded" >&2\nexit 2\n' > "$fx_scan"; chmod +x "$fx_scan"
+gate_fail_case "a scanner that exits 2 (failed to run)" "leak gate failed to run"
+check_contains "export: …and carries the scanner's own exit status" "$OUT" "exited 2"
+check_contains "export: …and its stderr" "$OUT" "scanner exploded"
+
+printf '#!/bin/sh\nkill -9 $$\n' > "$fx_scan"; chmod +x "$fx_scan"
+gate_fail_case "a scanner killed by SIGKILL (137)" "leak gate failed to run"
+check_contains "export: …and carries the 137 status" "$OUT" "exited 137"
+
+# PASS 2 (the assembled packet): the scanner is fine for PASS 1 and dies on the second call. Same
+# run_leak_gate branch, but the packet dir already exists by then — the refusal must clean it up
+# (the "no packet dir left behind" check inside the helper).
+fx_count="$SANDBOX/gatefail-scan-count"; rm -f "$fx_count"
+cat > "$fx_scan" <<STUB
+#!/bin/sh
+n=\$(cat "$fx_count" 2>/dev/null || echo 0)
+echo \$((n + 1)) > "$fx_count"
+[ "\$n" -ge 1 ] && { echo "second pass exploded" >&2; exit 2; }
+exit 0
+STUB
+chmod +x "$fx_scan"
+gate_fail_case "a scanner that fails only on the assembled-packet pass" "leak gate failed to run (assembled-packet pass)"
+check_status "export: …PASS 2 ran (the scanner was called twice)" 2 "$(cat "$fx_count" 2>/dev/null)"
+
+chmod 644 "$fx_scan"
+gate_fail_case "a non-executable scanner" "missing or not executable"
+
+rm -f "$fx_scan"
+gate_fail_case "a missing scanner" "missing or not executable"
+
 summary

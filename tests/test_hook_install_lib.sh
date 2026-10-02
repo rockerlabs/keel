@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # test_hook_install_lib.sh — dir #437 build PR1 (MW8): tools/lib/hook-install.sh is the ONE settings-merge
 # core that tools/install-read-trace.sh and tools/install-pre-pr-gate.sh used to carry as two byte-identical
-# hand copies (and that a third installer would have copied again). Direct coverage of the lib's own
+# hand copies (and that a third installer would have copied again — install-machine-watch.sh is that
+# third consumer, so both installer loops below name all three). Direct coverage of the lib's own
 # contract, so a future edit to the merge/remove programs is caught here and not only through the two
 # installers' end-to-end fixtures (tests/test_install_read_trace.sh, tests/test_install_pre_pr_gate.sh —
 # which this PR leaves byte-unmodified, the spec's proof of behaviour preservation).
@@ -16,7 +17,7 @@ run bash -n "$lib"
 check_status "hook-install.sh parses (bash -n)" 0 "$STATUS"
 
 # --- the spec's PR1 acceptance: the programs live ONLY in the lib ------------------------------------
-for inst in install-read-trace.sh install-pre-pr-gate.sh; do
+for inst in install-read-trace.sh install-pre-pr-gate.sh install-machine-watch.sh; do
   n="$(grep -c 'merge_prog=' "$REPO_ROOT/tools/$inst" || true)"
   check_status "$inst carries no merge_prog= (the program lives only in the lib)" 0 "$n"
   n="$(grep -c 'remove_prog=' "$REPO_ROOT/tools/$inst" || true)"
@@ -142,7 +143,7 @@ check_status "atomic_write: leaves no temp sibling behind" 0 \
   "$(find "$SANDBOX" -maxdepth 1 -name 's.json.keeltmp.*' | grep -c . || true)"
 
 # --- fail-closed sourcing: a checkout missing the lib refuses, with one actionable message --------------
-for inst in install-read-trace.sh install-pre-pr-gate.sh; do
+for inst in install-read-trace.sh install-pre-pr-gate.sh install-machine-watch.sh; do
   fx="$SANDBOX/incomplete-$inst"
   rm -rf "$fx"; mkdir -p "$fx/tools/lib"
   cp "$REPO_ROOT/tools/$inst" "$fx/tools/$inst"

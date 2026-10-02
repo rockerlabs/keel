@@ -35,6 +35,20 @@ sections real content going forward — see that page for exactly when each one 
   PASSED` with no word about that half. A failed first status now prints a NOTE, repeated beside the verdict,
   that the half did not run (the run's exit status is unchanged: an unreadable checkout is not evidence of a
   leak); a checkout readable before the run but unreadable after it trips the canary.
+- **The negative paths of the guards this release added are now pinned by tests that turn red without them**
+  (found by the 0.13.0 delta audit; tests only, no shipped tool changed). **dir #637:** the
+  "uninstall never touches a moved store" test now builds the store under the same `$HOME/.keel` the
+  uninstall runs with, so an `rm -rf "$HOME/.keel/impact"` in `uninstall.sh` fails it (the store used to
+  sit outside that HOME, and only the compat link was bound). **dir #614:** `vendor-review.sh` and
+  `audit-packet/export.sh` are each tested against a leak-gate scanner that exits 2, dies by SIGKILL (137),
+  is not executable, or is missing, and against a scanner that fails only on `export.sh`'s second,
+  assembled-packet pass; every case must refuse with exit 3, name the failure and write nothing, which
+  deleting either refuse branch used to leave unnoticed. **dir #437:** the settings-merge lib's
+  no-merge-program and fail-closed-sourcing checks now cover `install-machine-watch.sh`, the third
+  consumer, not just the two older installers. **dir #625:** `install-secret-guard.sh --force` is tested
+  against a dangling symlink at the permanent backup path, so dropping the `-L` arm fails. **dir #647:**
+  the repo-arg-guard consumer check now covers `install-machine-watch.sh` and pins the executable
+  `source` line itself, not a substring a neighbouring `# shellcheck source=` comment also satisfied.
 
 - **Every git-reaching keel script now drops an inherited `GIT_DIR`/`GIT_COMMON_DIR`/`GIT_WORK_TREE`/
   `GIT_INDEX_FILE` before its first git call** (dir #647, closing the class dir #644 started): the
