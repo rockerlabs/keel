@@ -225,6 +225,10 @@ Project scope survives a deleted `~/.claude` but covers only that repo's session
 them but lives in `~/.claude`. `--uninstall` removes exactly what it wired. On a harness without hooks,
 `machine-watch.sh snapshot x` before a live check and `check x` after it do the same by hand.
 
+Who sees a report: the model, always — that relay is the guaranteed channel. The hook's banner is
+client-dependent (the Claude desktop app does not render it), so an alert-tier change also raises a native
+OS notification (macOS, or Linux with `notify-send`); `KEEL_MACHINE_WATCH_NOTIFY=0` turns that off.
+
 ## Good to know
 
 > **"Isn't this just a well-written `CLAUDE.md`?"** Mostly, yes — and that's the point: one that's

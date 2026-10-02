@@ -50,6 +50,17 @@ sections real content going forward — see that page for exactly when each one 
   `permissions.deny` rules as a recipe with their measured price beside them (2 of 6 recorded instances
   stopped; the correct sandboxed form is denied too) — documented, never installed.
 
+- **The sandbox-rail detector now reaches the operator in the Claude desktop app** (dir #657): the
+  operator's own drill showed the model received `machine-watch`'s report but the operator saw no banner —
+  the hook's `systemMessage` is not rendered there, so the alert tier's second channel was blind. Every
+  alert-tier report in hook mode now also raises one native OS notification (macOS `osascript`, Linux
+  `notify-send` when present, otherwise nothing — never an error, never a block, the text passed as
+  arguments and capped at five lines plus a count). It is on by default once the hook is wired;
+  `KEEL_MACHINE_WATCH_NOTIFY=0` turns it off and `KEEL_MACHINE_WATCH_NOTIFIER=/path/to/cmd` replaces the OS
+  probe. `README.md` and `docs/delegation.md` now say plainly that the harness banner is client-dependent
+  and the model's relay is the guaranteed channel. Limits stated there: macOS may need notification
+  settings to allow `osascript`, and a change several live sessions see raises one notification per session.
+
 - **`install.sh` now moves keel's durable stores into `$HOME/.keel`** (dir #637, PR2 of 2 — the move;
   PR1 added the resolver): the new `tools/state-root-migrate.sh` takes every entry of the impact and
   read-trace stores out of `${KEEL_HOME:-$HOME/.claude}/.keel/` and into `$HOME/.keel/`, leaving one

@@ -79,6 +79,10 @@ export KEEL_READ_TRACE_STORE="$SANDBOX/harness-read-trace-store"
 # that sources the tool without its own HOME from ever resolving a real path. test_machine_watch.sh's
 # default-location case unsets it on purpose.
 export KEEL_MACHINE_WATCH_STORE="$SANDBOX/harness-machine-watch"
+# dir #657: the watcher raises a native OS notification for every alert-tier report (the operator's channel —
+# the desktop app never renders the hook banner). Off for the whole suite so no test, in any file, pops a real
+# banner on the machine running it; test_machine_watch.sh W22+ switch it on, against a stub that only logs argv.
+export KEEL_MACHINE_WATCH_NOTIFY=0
 
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
 # both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS

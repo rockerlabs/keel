@@ -24,7 +24,8 @@
 # The watched set (MW1), resolved in the CALLER's environment — for the hook that is the harness's, on
 # purpose: a command's own sandbox variables must not hide the real machine from its watcher. `<H>` is
 # the harness home, ${KEEL_HOME:-$HOME/.claude}.
-#   ALERT (a change raises an operator banner AND tells the model)
+#   ALERT (a change raises an operator banner AND an OS notification, AND tells the model — see "The
+#          operator's channel" below)
 #     the git global config files (git var GIT_CONFIG_GLOBAL), the git system config, every file directly
 #     inside the effective machine-wide core.hooksPath dir, ~/.ssh/config, the shell rc files
 #   QUIET (a change tells only the model, and names the expected writer)
@@ -37,6 +38,14 @@
 # Fingerprints (MW2): a file is `absent` or `file <octal mode> <cksum>`; a tree is one ctime scan
 # (find -cnewer), never per-file hashes; file CONTENT is never stored and never printed. The baseline
 # store is $HOME/.keel/machine-watch (dir #637's state root), or $KEEL_MACHINE_WATCH_STORE.
+#
+# The operator's channel (dir #657): the hook's `systemMessage` banner is client-dependent — the terminal CLI
+# may show it, the Claude desktop app does NOT render it — so the model's relay is the in-session channel and
+# the OS notification is the operator's. Every alert-tier report in hook mode also raises ONE native
+# notification (macOS `osascript`, else Linux `notify-send`, else nothing — never an error, never a block).
+# Env: KEEL_MACHINE_WATCH_NOTIFY=0 turns it off (on by default once the hook is wired);
+#      KEEL_MACHINE_WATCH_NOTIFIER=/path/to/cmd replaces the OS probe, called as `cmd TITLE BODY`.
+# One notification per session that sees the change: each session keeps its own baseline.
 #
 # What it cannot do: it cannot tell WHO made a change (another session, the operator, a background
 # process) — every report says so, and tells the model not to "restore" anything it cannot prove it did.
@@ -307,7 +316,27 @@ mw_check() {
 
 # --- reporting (MW4) ---------------------------------------------------------------------------------
 
-# mw_emit EVENT HEADER — the hook's JSON on stdout: additionalContext always (every line + the fixed
+# mw_notify — the operator's channel (dir #657): one native OS notification for the alert lines in ALERT_L.
+# The text is passed as ARGUMENTS, never spliced into a script (a path may carry a quote), the notifier runs
+# detached with every stream closed (it must never hold the hook's stdout open, delay the call, or fail it),
+# and the body is capped — a bulk change shows the first lines and a count, not the whole list.
+mw_notify() {
+  [ "${KEEL_MACHINE_WATCH_NOTIFY:-1}" != 0 ] || return 0
+  [ -n "$ALERT_L" ] || return 0
+  local title body
+  title='keel machine-watch: machine-global state changed'
+  body="$(printf '%s\n' "$ALERT_L" | awk 'NR <= 5 { print; next } { more++ } END { if (more) printf "…and %d more\n", more }')"
+  body="${body:0:600}"
+  local -a nargv
+  if [ -n "${KEEL_MACHINE_WATCH_NOTIFIER:-}" ]; then nargv=("$KEEL_MACHINE_WATCH_NOTIFIER" "$title" "$body")
+  elif command -v osascript >/dev/null 2>&1; then
+    nargv=(osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' -- "$body" "$title")
+  elif command -v notify-send >/dev/null 2>&1; then nargv=(notify-send -- "$title" "$body")
+  else return 0; fi
+  ( "${nargv[@]}" </dev/null >/dev/null 2>&1 & )
+}
+
+# mw_emit EVENT HEADER — the hook's JSON on stdout, then (alert tier only) the OS notification (mw_notify): additionalContext always (every line + the fixed
 # paragraph); systemMessage only when an alert line exists (alert lines + the fixed paragraph).
 mw_emit() {
   local ev="$1" header="$2" ctx sys=""
@@ -323,6 +352,7 @@ $MW_FIXED"
   jq -n --arg ev "$ev" --arg ctx "$ctx" --arg sys "$sys" \
     '{hookSpecificOutput: {hookEventName: $ev, additionalContext: $ctx}}
      + (if $sys == "" then {} else {systemMessage: $sys} end)'
+  mw_notify
 }
 
 # mw_notice TEXT — a lone systemMessage.
