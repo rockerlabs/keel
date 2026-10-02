@@ -290,8 +290,10 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   instead of writing anything), a few small `/tmp` state files per repo, and a few extra minutes per PR
   for the review pass itself.
 
-Never clobbers a hook you already have on the same slot — same refuse/`--force`-backs-up discipline as
-`install-secret-guard.sh`. Health check any time: `tools/doctor.sh --install` (flags `/polish` shipped
+Never clobbers a hook you already have on the same slot: a foreign hook is left alone and ours is
+appended beside it (`install-secret-guard.sh` differs here — it refuses a foreign hook unless you pass
+`--force`, which backs it up first). `--force` here is only for replacing a stale copy of this same
+hook at another path, and it backs that up. Health check any time: `tools/doctor.sh --install` (flags `/polish` shipped
 but no machine-global gate wired — expected if you used project scope instead, which is the default).
 This is a Claude Code hooks mechanism specifically — see [`ADAPTING.md`](../ADAPTING.md) for the honest
 boundary on other tools.

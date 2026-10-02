@@ -15,6 +15,25 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+**Known issues, disclosed at the cut.** Six things from the 0.13.0 delta audit ship known-imperfect; none
+is fixed in this release. (1) `tools/machine-watch.sh` does not follow files pulled in by a git `[include]`
+or an ssh `Include` — only the git global and system config files and `~/.ssh/config` themselves are
+fingerprinted — and a
+mode-only change to the file a watched symlink points at goes unseen, because the mode it reads is the
+link's own (a content change through the link is seen); the shell-startup files it watches are `.zshrc`,
+`.zshenv`, `.zprofile`, `.bashrc`, `.bash_profile` and `.profile`. (2) The watcher's hook fires after
+`Bash`, `Write`, `Edit` and `NotebookEdit` only: a change made through another tool, an MCP shell for
+example, is reported after the next matching call, and a session that ends first drops its baseline
+unchecked. (3) A stale vendored `secret-scan.sh` copy still finds its data only through the symlinks
+`state-root-migrate.sh` leaves for the entries that existed at the move; a project enabled after the move
+has none, so that old copy does not record its guard fires — re-vendor before enabling new projects.
+(4) The `GIT_DIR` census detects the common git-call shapes, not every shape (`git;`, `/usr/bin/git` and
+`"git"` are missed), and the dropped set is the four variables only: `GIT_OBJECT_DIRECTORY` and its
+siblings are not in it. (5) `vendor-review.sh`'s leak gate has no flag bypass, but a `.secret-scan-allow`
+in the working directory is honoured by the scanner (`docs/vendor-review.md`, rail 1). (6) `agy.sh`'s
+185 KB cap is the inline-prompt limit; on Linux a single argument of 128 KiB (131072 bytes) or more
+fails earlier, with "Argument list too long".
+
 - **The test suite no longer runs an operator's machine-watch notifier on test data** (dir #437, caught by the
   0.13.0 delta audit): `tests/lib.sh` unset `KEEL_HOME` but left `KEEL_MACHINE_WATCH_NOTIFIER` and
   `KEEL_MACHINE_WATCH_MAX_AGE_DAYS` inherited, and the notifier outranks every test stub. An operator who set
@@ -49,6 +68,16 @@ sections real content going forward — see that page for exactly when each one 
   against a dangling symlink at the permanent backup path, so dropping the `-L` arm fails. **dir #647:**
   the repo-arg-guard consumer check now covers `install-machine-watch.sh` and pins the executable
   `source` line itself, not a substring a neighbouring `# shellcheck source=` comment also satisfied.
+- **Prose the 0.13.0 range falsified is corrected** (found by the 0.13.0 delta audit; comments and docs
+  only, no behaviour change): `docs/getting-started.md`, `README.md` and `docs/reference.md` no longer say
+  the pre-PR-gate installer shares `install-secret-guard.sh`'s refuse-a-foreign-hook discipline — since dir
+  #468 it appends beside a foreign hook, and says where the two differ; `ADAPTING.md` no longer says no
+  tool in `tools/` calls a model (`tools/vendor-review/agy.sh` runs `agy`; it names that one exception);
+  `install-pre-pr-gate.sh`'s `--uninstall` comments and `tests/test_hook_install_lib.sh` no longer state the
+  pre-append rule that an entry came out only when its whole hooks array matched; `repo-arg-guard.sh`'s
+  header and `tests/test_repo_arg_guard_lib.sh` name `install-machine-watch.sh` as the third sourcer and no
+  longer name `pipeline-canary.sh`; and the dir #647 entry below no longer carries a script count, which
+  went stale when two more guarded scripts merged after it was written.
 
 - **Every git-reaching keel script now drops an inherited `GIT_DIR`/`GIT_COMMON_DIR`/`GIT_WORK_TREE`/
   `GIT_INDEX_FILE` before its first git call** (dir #647, closing the class dir #644 started): the
@@ -56,12 +85,13 @@ sections real content going forward — see that page for exactly when each one 
   `public-audit.sh` passed a repo with a history leak and deleted another repo's `refs/keel-pr-audit/*`,
   `secret-scan.sh --selftest` committed a fake key and a tag into a real repo, and `bootstrap.sh --link`
   fast-forwarded whatever repo the variable named. The variable is ordinary — in a worktree git itself
-  exports it to hooks, `!` aliases and `rebase --exec`. 35 of the 37 scripts that reach git carry one
-  inline line at the top, byte-identical to `tools/lib/repo-arg-guard.sh`'s; `secret-scan.sh` drops
-  the variables only inside `--selftest`, because its hook modes run under git's own `GIT_INDEX_FILE`
-  for the commit being scanned and dropping it would scan nothing; `ci-scan.sh` is exempt (bare git in
-  its cwd, in CI). A new census test, `tests/test_git_env_guard.sh`, turns red on any future script that
-  reaches git without the line. The unset reaches every child a script spawns. **Upgrade note:** the
+  exports it to hooks, `!` aliases and `rebase --exec`. Every git-reaching script carries one inline
+  line before its first git call, byte-identical to `tools/lib/repo-arg-guard.sh`'s, except two:
+  `secret-scan.sh` drops the variables only inside `--selftest`, because its hook modes run under git's
+  own `GIT_INDEX_FILE` for the commit being scanned and dropping it would scan nothing, and `ci-scan.sh`
+  is exempt (bare git in its cwd, in CI). A new census test, `tests/test_git_env_guard.sh`, turns red on
+  a future script that reaches git in one of the common call shapes without the line (the known issues
+  above name the shapes it misses). The unset reaches every child a script spawns. **Upgrade note:** the
   vendored `secret-scan.sh` changed, so `doctor` warns `W-GUARD-GLOBAL-STALE` until you re-run
   `install-secret-guard.sh --global`, and `W-GUARD-STALE` for each repo carrying its own copy until you
   run `install-secret-guard.sh <repo>`. Nothing breaks in the meantime; the old copy simply keeps the old
@@ -106,7 +136,8 @@ sections real content going forward — see that page for exactly when each one 
   PR1 added the resolver): the new `tools/state-root-migrate.sh` takes every entry of the impact and
   read-trace stores out of `${KEEL_HOME:-$HOME/.claude}/.keel/` and into `$HOME/.keel/`, leaving one
   symlink per moved entry at the old address, so a downgraded keel or a stale vendored `secret-scan.sh`
-  copy still finds its data and `rm -r ~/.claude` no longer takes the stores with it. `install.sh` runs
+  copy still finds the data that existed at the move (a project enabled afterwards has no such link — see
+  the known issues above) and `rm -r ~/.claude` no longer takes the stores with it. `install.sh` runs
   it on every run (copy, link and `--codex`; a `--codex`/`--home` adopter's stores under the default
   harness home are moved too) and never changes its own exit status over it. It never overwrites: an entry
   already present at the target is left untouched and reported with the exact merge command. `doctor

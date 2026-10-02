@@ -60,13 +60,14 @@
 # (other hooks, other keys) is left exactly as it was. A hook that's already exactly ours is left alone
 # (idempotent — safe to re-run after every `git pull`).
 #
-# --uninstall (dir #136) mirrors that same discipline in reverse: it removes an event+matcher entry
-# ONLY when its command is byte-identical to what this installer would wire right now — a hook you
-# later pointed somewhere else is left in place and named as kept, never silently taken
-# out along with the rest. Backs up settings.json first, same as --force does. This is what
-# uninstall.sh's own closing summary now points adopters at when it finds leftover gate hooks — a
-# whole-home uninstall never removes them itself (it doesn't know whether other repos still need
-# tools/pre-pr-gate.sh to exist).
+# --uninstall (dir #136) mirrors that same discipline in reverse: on each event+matcher it removes only
+# OUR hook — the {type, command} pair byte-identical to what this installer would wire right now —
+# wherever it sits (a sibling entry, or inside an entry that also holds someone else's command); a hook
+# you later pointed somewhere else, and every other command, is left in place and the slot is named as
+# kept, never silently taken out along with the rest. Backs up settings.json first, same as --force
+# does. This is what uninstall.sh's own closing summary now points adopters at when it finds leftover
+# gate hooks — a whole-home uninstall never removes them itself (it doesn't know whether other repos
+# still need tools/pre-pr-gate.sh to exist).
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -307,10 +308,11 @@ hook_specs="$(jq -n --arg gate "$gate" '[
 hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$current" || exit 2
 
 # --uninstall: the mirror image of the merge below (hook_install_remove / hook_install_merge, same
-# one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/APPENDED/STALE). An event+matcher
-# entry comes out ONLY when its hooks array is byte-identical to the single {type, command} entry this
-# installer would wire right now — anything else on that same event+matcher is left in place and
-# reported KEPT, never swept out along with the rest.
+# one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/APPENDED/STALE). Only OUR exact
+# {type, command} hook comes out, from any entry on that event+matcher (dir #468: after an append, ours
+# sits in a sibling entry; after a forced STALE swap, inside an entry that also holds someone else's
+# command); an entry it leaves empty goes with it, and everything else on that slot stays. KEPT when
+# nothing of ours was there to take.
 if [ "$uninstall" = 1 ]; then
   removal="$(hook_install_remove "$hook_specs" "$current")"
   statuses="$(jq -r '.report' <<<"$removal")"

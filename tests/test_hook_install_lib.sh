@@ -85,7 +85,7 @@ merged5="$(hook_install_merge "$specs" "$other_args")"
 check_status "merge: same script, DIFFERENT args is a different hook → APPENDED, not STALE" \
   APPENDED "$(jq -r '.report | split("\n")[0] | split("\t")[0]' <<<"$merged5")"
 
-# --- remove: byte-identical entries go, a differing one is KEPT -----------------------------------------
+# --- remove: our exact hook goes, a differing command on the slot is KEPT ------------------------------
 rm1="$(hook_install_remove "$specs" "$cur")"
 check_status "remove: both of ours → REMOVED, REMOVED" \
   "$(printf 'REMOVED\tPostToolUse\tBash\nREMOVED\tSessionEnd\t')" "$(jq -r '.report' <<<"$rm1")"
