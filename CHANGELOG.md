@@ -15,6 +15,26 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The test suite no longer runs an operator's machine-watch notifier on test data** (dir #437, caught by the
+  0.13.0 delta audit): `tests/lib.sh` unset `KEEL_HOME` but left `KEEL_MACHINE_WATCH_NOTIFIER` and
+  `KEEL_MACHINE_WATCH_MAX_AGE_DAYS` inherited, and the notifier outranks every test stub. An operator who set
+  the notifier as the installer's own note says got 13 failing cases and 13 calls to their own command
+  carrying test paths. Both variables are now unset; a new case (W33) pins it.
+- **The machine-watch Linux-path cases no longer leave empty probe directories behind** (dir #437, caught by
+  the 0.13.0 delta audit): the minimal `PATH` they run the hook under lacked `rmdir`, so each run left five
+  empty `mktemp` directories in the real temp dir. `rmdir` is now on that `PATH`, and the cases assert none is
+  left.
+- **The store-isolation list now names `KEEL_MACHINE_WATCH_STORE`** (dir #437, caught by the 0.13.0 delta
+  audit): the machine-watch store resolver reads it, but `IMPACT_ISOLATION_VARS` did not list it, so a decoy
+  value leaked through `impact_isolated`; the A3 coverage pin now covers that resolver too. `state-root.sh`'s
+  header no longer says "No override variable", and two stale comments in `impact-store.sh` are corrected. No
+  behaviour change outside the isolation helper.
+- **`tests/run.sh`'s engine-checkout canary no longer fails open and silent** (dir #653, caught by the 0.13.0
+  delta audit): when `git status` of the `~/.keel/engine` checkout errored (a corrupted index, another uid's
+  checkout), both snapshots read empty, so a test that rewrote an engine file still ended `ALL TEST FILES
+  PASSED` with no word about that half. A failed first status now prints a NOTE, repeated beside the verdict,
+  that the half did not run (the run's exit status is unchanged: an unreadable checkout is not evidence of a
+  leak); a checkout readable before the run but unreadable after it trips the canary.
 - **The negative paths of the guards this release added are now pinned by tests that turn red without them**
   (found by the 0.13.0 delta audit; tests only, no shipped tool changed). **dir #637:** the
   "uninstall never touches a moved store" test now builds the store under the same `$HOME/.keel` the

@@ -55,6 +55,12 @@ check_status "A1: read_trace_store_root succeeds under impact_isolated" 0 "$STAT
 check_contains "A1: read_trace_store_root resolves to \$h/.keel/read-trace" "$OUT" "$a1_h/.keel/read-trace"
 a1_check_no_leak "A1: read_trace_store_root"
 
+# delta-audit 0.13.0 S4-4: keel_machine_watch_store reads KEEL_MACHINE_WATCH_STORE — the decoy must not survive impact_isolated.
+run env "${a1_decoys[@]}" bash -c ". '$lib'; impact_isolated '$a1_h' keel_machine_watch_store"
+check_status "A1: keel_machine_watch_store succeeds under impact_isolated" 0 "$STATUS"
+check_contains "A1: keel_machine_watch_store resolves to \$h/.keel/machine-watch" "$OUT" "$a1_h/.keel/machine-watch"
+a1_check_no_leak "A1: keel_machine_watch_store"
+
 # --- A2: impact_isolated's own mechanics (dir #317 S2) ------------------------------------------------
 run bash -c ". '$lib'; a2fn() { return 3; }; impact_isolated '$SANDBOX/a2-home' a2fn"
 check_status "A2: impact_isolated returns a shell function's own exit status (3)" 3 "$STATUS"
@@ -86,8 +92,8 @@ check_contains "A2: a caller with IFS=\$'\\\\n' (no space) still gets real isola
 check_absent "A2: ...the decoy KEEL_HOME never leaks through under a customized IFS" "$OUT" "a2-ifs-decoy"
 
 # --- A3: IMPACT_ISOLATION_VARS variable-coverage pin, mutation-proven (dir #317 S1) ------------------
-# Every var (besides HOME) that impact_store_root, _impact_file_path, read_trace_store_root and the
-# vendored secret-scan.sh's own _impact_log_path_inline copy read must be listed in
+# Every var (besides HOME) that impact_store_root, _impact_file_path, read_trace_store_root,
+# keel_machine_watch_store and the vendored secret-scan.sh's own _impact_log_path_inline copy read must be listed in
 # IMPACT_ISOLATION_VARS — a new store-resolving variable anywhere is then forced onto that list or this
 # test goes red. Mutated below to prove it: a resolver gaining an unlisted var must fail, and the
 # extraction itself must not be satisfiable by matching nothing (that would pass A3 vacuously).
@@ -95,12 +101,12 @@ check_absent "A2: ...the decoy KEEL_HOME never leaks through under a customized 
 # LITERAL `$NAME`/`${NAME` in the source, the exact form S1/S11-A3 specify and every real resolver in
 # this codebase uses today — it does NOT see indirect expansion (`${!var}`) or a name built up
 # dynamically (string concatenation into `eval`). A resolver written in one of those forms would read
-# an unlisted variable without A3 catching it. None of the four target functions use either form
+# an unlisted variable without A3 catching it. None of the target functions use either form
 # (verified by reading them), and neither does anything else in this codebase's store resolvers.
 a3_pattern='\$\{?[A-Z][A-Z0-9_]*'
 # The floor vars a3_check must actually see at least once, or its own extraction is suspect (vacuous-
 # pass guard) — named ONCE here, read by both a3_check itself and the "not vacuous" loop below it.
-a3_floor_vars="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE"
+a3_floor_vars="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"
 
 # a3_check TARGETS PATTERN — TARGETS is a newline-separated "file:func" list. Extracts every var each
 # target function reads (a sed range over the function body, piped through grep -E PATTERN), prints one
@@ -134,6 +140,7 @@ $REPO_ROOT/tools/lib/read-trace.sh:read_trace_store_root
 $REPO_ROOT/tools/lib/state-root.sh:keel_state_root
 $REPO_ROOT/tools/lib/state-root.sh:keel_store_root
 $REPO_ROOT/tools/lib/state-root.sh:keel_legacy_store_root
+$REPO_ROOT/tools/lib/state-root.sh:keel_machine_watch_store
 $REPO_ROOT/tools/secret-guard/secret-scan.sh:_impact_log_path_inline"
 
 a3_vars="$(a3_check "$a3_targets" "$a3_pattern")"
