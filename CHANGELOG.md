@@ -17,10 +17,10 @@ sections real content going forward — see that page for exactly when each one 
 
 **Known issues, disclosed at the cut.** Six things from the 0.13.0 delta audit ship known-imperfect; none
 is fixed in this release. (1) `tools/machine-watch.sh` does not follow files pulled in by a git `[include]`
-or an ssh `Include` — only the git global and system config files and `~/.ssh/config` themselves are
-fingerprinted — and a
-mode-only change to the file a watched symlink points at goes unseen, because the mode it reads is the
-link's own (a content change through the link is seen); the shell-startup files it watches are `.zshrc`,
+or an ssh `Include` — the git global and system config files and `~/.ssh/config` are fingerprinted
+themselves, but nothing they pull in is — and a mode-only change to the file a watched symlink points
+at goes unseen, because the mode it reads is the link's own (a content change through the link is
+seen); the shell-startup files it watches are `.zshrc`,
 `.zshenv`, `.zprofile`, `.bashrc`, `.bash_profile` and `.profile`. (2) The watcher's hook fires after
 `Bash`, `Write`, `Edit` and `NotebookEdit` only: a change made through another tool, an MCP shell for
 example, is reported after the next matching call, and a session that ends first drops its baseline

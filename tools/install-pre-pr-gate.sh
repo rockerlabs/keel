@@ -63,11 +63,11 @@
 # --uninstall (dir #136) mirrors that same discipline in reverse: on each event+matcher it removes only
 # OUR hook — the {type, command} pair byte-identical to what this installer would wire right now —
 # wherever it sits (a sibling entry, or inside an entry that also holds someone else's command); a hook
-# you later pointed somewhere else, and every other command, is left in place and the slot is named as
-# kept, never silently taken out along with the rest. Backs up settings.json first, same as --force
-# does. This is what uninstall.sh's own closing summary now points adopters at when it finds leftover
-# gate hooks — a whole-home uninstall never removes them itself (it doesn't know whether other repos
-# still need tools/pre-pr-gate.sh to exist).
+# you later pointed somewhere else, and every other command, is left in place — a slot with none of ours
+# on it is reported kept — never silently taken out along with the rest. Backs up settings.json first,
+# same as --force does. This is what uninstall.sh's own closing summary now points adopters at when it
+# finds leftover gate hooks — a whole-home uninstall never removes them itself (it doesn't know whether
+# other repos still need tools/pre-pr-gate.sh to exist).
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
