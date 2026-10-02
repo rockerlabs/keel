@@ -34,6 +34,8 @@
 # file outright; KEEL_IMPACT_STORE overrides the store root. See tools/lib/impact-store.sh.
 # The date is stamped from `date -u` so rows are ordered and reproducible.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh

@@ -37,6 +37,8 @@
 # Needs jq to edit settings.json safely. Without it: prints the exact hooks JSON to paste in by hand
 # instead of writing anything.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 rt="$repo_root/tools/read-trace.sh"

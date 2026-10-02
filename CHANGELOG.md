@@ -15,6 +15,23 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Every git-reaching keel script now drops an inherited `GIT_DIR`/`GIT_COMMON_DIR`/`GIT_WORK_TREE`/
+  `GIT_INDEX_FILE` before its first git call** (dir #647, closing the class dir #644 started): the
+  pre-PR gate allowed `gh pr create` for a repo with no receipt when `GIT_DIR` named a receipted one,
+  `public-audit.sh` passed a repo with a history leak and deleted another repo's `refs/keel-pr-audit/*`,
+  `secret-scan.sh --selftest` committed a fake key and a tag into a real repo, and `bootstrap.sh --link`
+  fast-forwarded whatever repo the variable named. The variable is ordinary — in a worktree git itself
+  exports it to hooks, `!` aliases and `rebase --exec`. 35 of the 37 scripts that reach git carry one
+  inline line at the top, byte-identical to `tools/lib/repo-arg-guard.sh`'s; `secret-scan.sh` drops
+  the variables only inside `--selftest`, because its hook modes run under git's own `GIT_INDEX_FILE`
+  for the commit being scanned and dropping it would scan nothing; `ci-scan.sh` is exempt (bare git in
+  its cwd, in CI). A new census test, `tests/test_git_env_guard.sh`, turns red on any future script that
+  reaches git without the line. The unset reaches every child a script spawns. **Upgrade note:** the
+  vendored `secret-scan.sh` changed, so `doctor` warns `W-GUARD-GLOBAL-STALE` until you re-run
+  `install-secret-guard.sh --global`, and `W-GUARD-STALE` for each repo carrying its own copy until you
+  run `install-secret-guard.sh <repo>`. Nothing breaks in the meantime; the old copy simply keeps the old
+  `--selftest` behaviour.
+
 - **A detector for the sandbox rail, and its deny-rule recipe** (dir #437, PR2 of 2 — PR1 was the shared
   settings-merge lib): `docs/delegation.md` tells a worker never to touch the real `$HOME` in a live check,
   but nothing enforced that for a real session's own commands — in the felt incident a permission denial

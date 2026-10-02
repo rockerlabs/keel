@@ -3677,4 +3677,26 @@ gate_env "ls -la" "$d" -u HOME
 check_status "HOME unset + a non-gate command -> hook still exits 0" 0 "$STATUS"
 check_absent "HOME unset + a non-gate command -> allowed (empty out), never denied for an unrelated command" "$OUT" "deny"
 
+# --- dir #647 (A3): an inherited GIT_DIR must not redirect which repo the gate evaluates. Repo A has no
+# receipt, repo B has a complete one. Run for cwd=A under GIT_DIR=B/.git: before the fix every `git -C
+# "$cwd"` inside the gate resolved to B, so the gate read B's receipt and ALLOWED A's `gh pr create` (the
+# fail-open this ticket measured, E5). It must DENY, and must leave B's refs, HEAD and receipt file
+# byte-identical (the decoy is read-only to the gate).
+a647="$(mkrepo)"
+b647="$(mkrepo)"
+write_full_receipt "$b647"
+rm -f "$(sentinel_for "$a647")"
+b647_refs_before="$(git -C "$b647" for-each-ref)"
+b647_head_before="$(git -C "$b647" rev-parse HEAD)"
+b647_receipt_before="$(cat "$(sentinel_for "$b647")" 2>/dev/null)"
+gate_env "gh pr create --fill" "$a647" "GIT_DIR=$b647/.git"
+check_status "dir #647 A3: cwd=A (no receipt) under GIT_DIR=B/.git -> hook exits 0" 0 "$STATUS"
+check_contains "dir #647 A3: an inherited GIT_DIR pointing at a receipted repo does not make A's gate allow" "$OUT" '"permissionDecision":"deny"'
+check_eq "dir #647 A3: the decoy's refs are byte-identical after the gate ran" "$b647_refs_before" "$(git -C "$b647" for-each-ref)"
+check_eq "dir #647 A3: the decoy's HEAD is unchanged" "$b647_head_before" "$(git -C "$b647" rev-parse HEAD)"
+check_eq "dir #647 A3: the decoy's receipt file is byte-identical" "$b647_receipt_before" "$(cat "$(sentinel_for "$b647")" 2>/dev/null)"
+# The converse: B with its own receipt still allows, under a GIT_DIR pointing at A.
+gate_env "gh pr create --fill" "$b647" "GIT_DIR=$a647/.git"
+check_absent "dir #647 A3: cwd=B (receipted) under GIT_DIR=A/.git is still allowed" "$OUT" "deny"
+
 summary

@@ -68,6 +68,8 @@
 # whole-home uninstall never removes them itself (it doesn't know whether other repos still need
 # tools/pre-pr-gate.sh to exist).
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 gate="$repo_root/tools/pre-pr-gate.sh"

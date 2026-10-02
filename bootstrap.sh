@@ -25,6 +25,8 @@
 # POSIX sh (it's piped to `sh`); install.sh itself needs bash, checked below. Prefer reading this
 # before piping a remote script to a shell — or use the clone path in the README if you'd rather.
 set -eu
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 REPO="${KEEL_REPO:-https://github.com/rockerlabs/keel.git}"
 KEEL_DEFAULT_REF=""

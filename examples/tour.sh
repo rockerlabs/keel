@@ -7,6 +7,8 @@
 #
 # Not `set -e`: one step (a blocked commit) is *meant* to fail, and the tour narrates it.
 set -uo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 

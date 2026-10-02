@@ -36,6 +36,8 @@
 # "fails" — shape); a missing/unreadable BACKLOG.md is a silent skip, not an error, the same as
 # every other keel-self-maintenance check that reads this gitignored, optional file.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$self_dir/../.." && pwd)"

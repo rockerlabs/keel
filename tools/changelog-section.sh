@@ -25,6 +25,8 @@
 #               HEAD not matching the `v<version>` release tag (composing from a stale checkout),
 #               and <notes-file> landing within 80% of the section's own size (a copy, not a digest).
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 usage() {
   cat <<'EOF'
