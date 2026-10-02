@@ -415,15 +415,18 @@ check_file "B7b doctor-accept file untouched" "$B7B/.keel/doctor-accept"
 check_contains "B7b names what kept .keel/ from being removed" "$OUT" "doctor-accept"
 
 # --- dir #637 A11: uninstall never touches a moved store; its closing line lists what kept .keel/ ---------
+# The moved store sits under the sandbox $HOME/.keel — the exact root the uninstall runs with — so a regression
+# that wipes $HOME/.keel/impact turns this red (audit S4-1: a store outside that HOME bound only the compat link).
 A11="$SANDBOX/a11-moved-store/.claude"
+A11_STORE="$HOME/.keel/impact/-p-a11"
 inst --home "$A11" --no-hooks
-mkdir -p "$SANDBOX/a11-moved-store/.keel/impact/-p-a11" "$A11/.keel/impact"
-printf 'row\n' > "$SANDBOX/a11-moved-store/.keel/impact/-p-a11/ledger.md"
-ln -s "$SANDBOX/a11-moved-store/.keel/impact/-p-a11" "$A11/.keel/impact/-p-a11"
-a11_before="$(cksum < "$SANDBOX/a11-moved-store/.keel/impact/-p-a11/ledger.md")"
+mkdir -p "$A11_STORE" "$A11/.keel/impact"
+printf 'row\n' > "$A11_STORE/ledger.md"
+ln -s "$A11_STORE" "$A11/.keel/impact/-p-a11"
+a11_before="$(cksum < "$A11_STORE/ledger.md")"
 unin --home "$A11" --yes
 check_status "A11: uninstall exits 0 after a store move" 0 "$STATUS"
-check_eq "A11: the moved store is byte-identical" "$a11_before" "$(cksum < "$SANDBOX/a11-moved-store/.keel/impact/-p-a11/ledger.md")"
+check_eq "A11: the moved store is byte-identical" "$a11_before" "$(cksum < "$A11_STORE/ledger.md" 2>/dev/null)"
 check_link "A11: the compat link survives" "$A11/.keel/impact/-p-a11"
 check_contains "A11: the kept-.keel line lists impact" "$OUT" "impact"
 
