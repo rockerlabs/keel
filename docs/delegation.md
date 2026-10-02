@@ -325,6 +325,8 @@ Claude Code `permissions.deny` rules (on another harness, use your own permissio
 
 **Pair it with the detector.** The recipe alone covers 2 of 6; `tools/machine-watch.sh` is the backstop that sees all 6, because it watches the machine rather than the command's shape.
 
+**Who sees a report.** The model sees every report as hook context on the same tool call, and the rail's fixed paragraph tells it to tell the operator — that relay is the guaranteed channel. The hook's `systemMessage` banner is client-dependent: it is **not rendered in the Claude desktop app** (confirmed live, dir #657), and whether another client shows it is not verified. So every alert-tier report in hook mode also raises one native OS notification, which is the operator's own channel: macOS `osascript`, Linux `notify-send` when present, nothing otherwise — never an error, never a block. It is on by default once the hook is wired; `KEEL_MACHINE_WATCH_NOTIFY=0` turns it off, and `KEEL_MACHINE_WATCH_NOTIFIER=/path/to/cmd` replaces it (called as `cmd TITLE BODY`). Two limits: macOS shows an `osascript` notification only if its Notification settings allow it (it is typically attributed to Script Editor), and each live session keeps its own baseline, so a change several sessions see raises one notification per session.
+
 ## Disclosures — one canonical text, not mirrors
 
 This pattern's own runs produce disclosures — a verifier's `known — <ticket id>` pointer, a fix

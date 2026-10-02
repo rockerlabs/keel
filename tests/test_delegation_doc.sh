@@ -172,6 +172,13 @@ pin "the recipe states the script-file adoption rule" "$doc" 'goes in a script f
   "expected the recipe's adoption rule: a sandboxed global-config write goes in a script file run by path"
 pin "the recipe states nothing installs the rules" "$doc" 'nothing in keel writes these rules into any settings file' \
   "expected the recipe to state it is documented, never installed"
+# dir #657: the operator's channel — the doc says plainly which channel is guaranteed and which is client-dependent
+pin "the doc says the hook banner is not rendered in the desktop app" "$doc" 'is **not rendered in the Claude desktop app**' \
+  "expected the detector paragraph to state the harness banner is client-dependent (dir #657)"
+pin "the doc names the model's relay as the guaranteed channel" "$doc" 'that relay is the guaranteed channel' \
+  "expected the detector paragraph to name the model's relay as the in-session channel (dir #657)"
+pin "the doc documents the OS notification and its off switch" "$doc" 'KEEL_MACHINE_WATCH_NOTIFY=0' \
+  "expected the detector paragraph to document the OS notification's off switch (dir #657)"
 # the subsection sits OUTSIDE the verbatim block (the block-extract drift tests read only the block)
 if extract_rails_block "$doc" | grep -qF 'machine-watch'; then
   fail "the recipe sits outside the verbatim rails block" "the verbatim block names machine-watch — the recipe leaked into the block copied to ten places"
