@@ -43,6 +43,9 @@
 # A coarse-timestamp find (busybox: whole seconds) can miss a tree change made in the very second the
 # baseline was written; a mode-only change inside a tree is seen only where find supports -cnewer.
 set -o pipefail
+# dir #647: drop an inherited repo selector before any git call — the watched set is MACHINE-wide, and an inherited
+# GIT_DIR would make `git -C <scratch> config core.hooksPath` read that repo's local scope instead.
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
