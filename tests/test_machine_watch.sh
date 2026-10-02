@@ -88,9 +88,14 @@ check_contains "W4 a deleted hook file is reported" "$OUT" "post-commit: deleted
 # W3b: the same mode report under a single-byte locale — bash then reads `$var→` as one variable name
 # (CI's macos-14 leg went red on exactly this); skipped where the host has no such locale.
 l1=""
-for cand in en_US.ISO8859-1 en_US.ISO-8859-1 en_US.iso88591 en_US.ISO8859-15; do
-  case "$(locale -a 2>/dev/null)" in *"$cand"*) l1="$cand"; break ;; esac
-done
+# `command -v locale` first: Alpine ships no `locale`, and tests/lib.sh's command_not_found_handle kills the whole
+# file on a failed lookup (see pick_utf8_locale in lib.sh).
+if command -v locale >/dev/null 2>&1; then
+  avail_locales="$(locale -a 2>/dev/null)"
+  for cand in en_US.ISO8859-1 en_US.ISO-8859-1 en_US.iso88591 en_US.ISO8859-15; do
+    case "$avail_locales" in *"$cand"*) l1="$cand"; break ;; esac
+  done
+fi
 if [ -n "$l1" ]; then
   mkcase w3b
   mw snapshot a
