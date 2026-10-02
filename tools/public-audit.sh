@@ -34,6 +34,8 @@
 # Note: tokens are unanchored regexes — a short token also matches inside unrelated strings such as
 # a commit hash. Prefer a specific token to avoid false positives.
 set -uo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 QUIET=0
 NO_HISTORY=0

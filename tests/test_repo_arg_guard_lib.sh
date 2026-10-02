@@ -58,16 +58,16 @@ run env GIT_DIR="$decoy_gitdir" bash -c '. "$1"; keel_repo_arg_guard "$2"' _ "$l
 check_status "keel_repo_arg_guard: an ambient GIT_DIR does not rescue a non-git repo (still exit 2)" 2 "$STATUS"
 check_contains "keel_repo_arg_guard: still names it as not a git repo under the ambient hijack" "$OUT" "not a git repo: $notrepo"
 
-# --- consumers: pipeline-canary.sh, install-read-trace.sh and install-pre-pr-gate.sh all source this
-# file (the source-time unset alone is enough for pipeline-canary.sh, which never resolves a caller-
-# named repo); install-secret-guard.sh deliberately inlines the same unset instead (see its own
-# comment) — asserted here so a future edit that drops any of these doesn't go unnoticed by any test
-# file. One loop, one read per file (each file's content is read once, not once per check on it).
-for consumer in pipeline-canary.sh install-read-trace.sh install-pre-pr-gate.sh; do
+# --- consumers: install-read-trace.sh and install-pre-pr-gate.sh source this file for
+# keel_repo_arg_guard (their <repo> branch calls it); every other script inlines the unset instead
+# (dir #647 — tests/test_git_env_guard.sh is the census), and install-secret-guard.sh was the first to
+# (it is copied standalone, see its own comment) — asserted here so a future edit that drops either
+# doesn't go unnoticed by any test file. One loop, one read per file (each file's content is read once,
+# not once per check on it).
+for consumer in install-read-trace.sh install-pre-pr-gate.sh; do
   csrc="$(cat "$REPO_ROOT/tools/$consumer")"
   check_contains "tools/$consumer sources tools/lib/repo-arg-guard.sh" "$csrc" 'lib/repo-arg-guard.sh'
-  [ "$consumer" = pipeline-canary.sh ] ||
-    check_contains "tools/$consumer's <repo> branch calls keel_repo_arg_guard" "$csrc" 'keel_repo_arg_guard "$repo"'
+  check_contains "tools/$consumer's <repo> branch calls keel_repo_arg_guard" "$csrc" 'keel_repo_arg_guard "$repo"'
 done
 isg_src="$(cat "$REPO_ROOT/tools/install-secret-guard.sh")"
 check_contains "tools/install-secret-guard.sh unsets the four vars inline (not sourced), at the top" \

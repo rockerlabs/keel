@@ -55,7 +55,7 @@ check_nodir "demo-bypass with mktemp missing → no stray .git landed in the inv
 
 # --- demo-bypass under an ambient GIT_DIR (dir #644) — its own fixture creation (mktemp'd $d, then
 # git init/config/commit against it) must not get redirected into whatever repo an inherited GIT_DIR
-# names, the same class of hijack tools/lib/repo-arg-guard.sh closes for the other three consumers
+# names, the same class of hijack the inline unset at the top of pipeline-canary.sh closes (dir #647)
 # (/code-review max finding: this file had zero coverage of it despite already having the exact right
 # idiom, one test block up, for a different pipeline-canary.sh guard). `decoy644` stands in for
 # whatever repo an operator's already-exported GIT_DIR happens to name.

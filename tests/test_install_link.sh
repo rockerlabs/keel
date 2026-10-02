@@ -346,4 +346,27 @@ assert_doctor_warn W-CLI-UNWIRED "bin/keel missing"
 # "not a symlink" text, which advises a flat --force that aborts force_backup's plain `cp` on a directory.
 check_contains "W-CLI-UNWIRED carve-out wording matches install.sh's own advice" "$OUT" "not a symlink or a directory"
 
+# --- dir #647 (A7): bootstrap.sh --link over an existing checkout runs `git -C "$dest" pull --ff-only`
+# (a WRITE). Under an inherited GIT_DIR that resolved to whatever repo the variable named and fast-
+# forwarded IT (E13). The decoy has a remote.origin.url AND an upstream for its branch, with origin one
+# commit ahead — without an upstream the decoy's pull fails harmlessly and the case would be green before
+# the fix. The kept checkout is a clone of REPO_ROOT.
+dk647="$SANDBOX/kept-keel-647"; dh647="$SANDBOX/boot-link-home-647"
+git clone -q "$REPO_ROOT" "$dk647"
+decoy647="$(new_repo_with_origin)"
+decoy647_branch="$(branch_raw_for "$decoy647")"
+decoy647_origin="$(git -C "$decoy647" remote get-url origin)"
+git -C "$decoy647" branch -q --set-upstream-to="origin/$decoy647_branch" "$decoy647_branch"
+ahead647="$(mktemp -d "$SANDBOX/ahead647.XXXXXX")"
+git clone -q "$decoy647_origin" "$ahead647/c"
+git -C "$ahead647/c" commit -q --allow-empty -m ahead
+git -C "$ahead647/c" push -q origin "$decoy647_branch"
+decoy647_head="$(git -C "$decoy647" rev-parse HEAD)"
+decoy647_refs="$(git -C "$decoy647" for-each-ref)"
+run env GIT_DIR="$decoy647/.git" KEEL_REPO="$REPO_ROOT" KEEL_DIR="$dk647" sh "$REPO_ROOT/bootstrap.sh" --link --home "$dh647" --no-hooks
+check_status "dir #647 A7: bootstrap --link over a kept checkout under GIT_DIR=<decoy> -> exit 0" 0 "$STATUS"
+check_contains "dir #647 A7: it took the update-in-place branch" "$OUT" "updating the existing checkout"
+check_eq "dir #647 A7: the decoy's HEAD did not move (no pull landed in it)" "$decoy647_head" "$(git -C "$decoy647" rev-parse HEAD)"
+check_eq "dir #647 A7: the decoy's refs are byte-identical" "$decoy647_refs" "$(git -C "$decoy647" for-each-ref)"
+
 summary

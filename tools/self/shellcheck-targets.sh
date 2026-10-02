@@ -10,6 +10,8 @@
 # Usage: tools/self/shellcheck-targets.sh [REPO_DIR]   (default: current directory)
 # Prints one repo-relative path per line.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 repo_dir="${1:-.}"
 # `-z`, not plain `ls-files`: git C-quotes any path it cannot print literally, and such a string
 # matches neither the `*.sh` arm (it ends in a quote) nor `head`'s idea of a filename, so the file was

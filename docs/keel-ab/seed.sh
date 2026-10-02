@@ -30,6 +30,8 @@
 # verbatim, sight unseen) — this is a fixture builder for a protocol frozen in BACKLOG.md's dir #94
 # spec, not a hardened tool for adopting into unattended pipelines.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 usage() {
   cat <<'EOF'

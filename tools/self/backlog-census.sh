@@ -53,6 +53,8 @@
 # tools/self/pool-report.sh resolves it (dir #135) — override for a test fixture or a
 # non-standard layout by passing it positionally, same as that sibling.
 set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$self_dir/../.." && pwd)"
