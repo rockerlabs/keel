@@ -922,6 +922,22 @@ check_status "--force after the backup is moved aside → exit 0" 0 "$STATUS"
 check_contains "the new backup holds foreign B" "$(cat "$f2h/pre-commit.pre-keel.bak")" "foreign hook B"
 check_contains "the moved-aside backup is untouched" "$(cat "$f2h/pre-commit.pre-keel.bak.mine")" "foreign hook A"
 
+# A DANGLING symlink at the backup path: `-e` is false for it, yet `cp` would write through the link
+# (to wherever it points). The pre-flight's `-L` arm must refuse exactly as it does for a real file.
+f3repo="$(new_repo)"
+f3h="$f3repo/.git/hooks"
+mkdir -p "$f3h"
+printf '#!/bin/sh\n# foreign hook D\nexit 0\n' > "$f3h/pre-commit"
+chmod +x "$f3h/pre-commit"
+f3target="$SANDBOX/f3-dangling-target"
+rm -f "$f3target"
+ln -s "$f3target" "$f3h/pre-commit.pre-keel.bak"
+run "$isg" --force "$f3repo"
+check_status "--force with a DANGLING symlink at the backup path → exit 3 (refused)" 3 "$STATUS"
+check_contains "dangling-symlink refusal names the backup path" "$OUT" "pre-commit.pre-keel.bak"
+check_nofile "the refusal did not write through the dangling link" "$f3target"
+check_contains "foreign hook D is left in place, untouched" "$(cat "$f3h/pre-commit")" "foreign hook D"
+
 # --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
 # The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
 # replacing a FOREIGN global core.hooksPath via --force was not, even though it is the one path that

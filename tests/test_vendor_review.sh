@@ -89,6 +89,43 @@ check_contains "vendor-review: names the failing client and its exit code" "$OUT
 round4="$(find "$out4" -maxdepth 1 -name 'round-*-clientfail' -type d | head -1)"
 check_dir "vendor-review: round dir kept on client failure (post-mortem)" "${round4:-/nonexistent}"
 
+# --- the leak gate FAILS CLOSED: a scanner that errors, dies, is not executable or is missing refuses ----
+# (audit S7-1: both refuse branches could be deleted with this suite still green). The tool resolves its
+# scanner relative to its own location, so run a COPY of tools/ whose secret-guard/secret-scan.sh we swap.
+# The bundle is CLEAN throughout — the refusal must come from the scanner failing, never from a finding.
+fx="$SANDBOX/gate-fail-fx"
+rm -rf "$fx"; mkdir -p "$fx"; cp -R "$REPO_ROOT/tools" "$fx/tools"
+fx_tool="$fx/tools/vendor-review.sh"
+fx_scan="$fx/tools/secret-guard/secret-scan.sh"
+fx_n=0
+gate_fail_case() {
+  # $1 label, $2 expected message fragment
+  fx_n=$((fx_n + 1))
+  local o="$SANDBOX/out-gatefail-$fx_n" kc="$SANDBOX/gatefail-client-ran-$fx_n"
+  printf '#!/usr/bin/env bash\n: > "%s"\nexit 0\n' "$kc" > "$SANDBOX/gatefail-client-$fx_n.sh"
+  chmod +x "$SANDBOX/gatefail-client-$fx_n.sh"
+  run "$fx_tool" --client "$SANDBOX/gatefail-client-$fx_n.sh" --system "$system" --bundle "$bundle" --label gatefail --out "$o"
+  check_status "vendor-review: $1 → exit 3 (refuses)" 3 "$STATUS"
+  check_contains "vendor-review: $1 → names the failure" "$OUT" "$2"
+  check_nodir "vendor-review: $1 → nothing written" "$o"
+  check_nofile "vendor-review: $1 → the client is never invoked" "$kc"
+}
+
+printf '#!/bin/sh\necho "scanner exploded" >&2\nexit 2\n' > "$fx_scan"; chmod +x "$fx_scan"
+gate_fail_case "a scanner that exits 2 (failed to run)" "leak gate failed to run"
+check_contains "vendor-review: …and carries the scanner's own exit status" "$OUT" "exited 2"
+check_contains "vendor-review: …and its stderr" "$OUT" "scanner exploded"
+
+printf '#!/bin/sh\nkill -9 $$\n' > "$fx_scan"; chmod +x "$fx_scan"
+gate_fail_case "a scanner killed by SIGKILL (137)" "leak gate failed to run"
+check_contains "vendor-review: …and carries the 137 status" "$OUT" "exited 137"
+
+chmod 644 "$fx_scan"
+gate_fail_case "a non-executable scanner" "missing or not executable"
+
+rm -f "$fx_scan"
+gate_fail_case "a missing scanner" "missing or not executable"
+
 # --- argument validation: every required flag is checked, with --help named as the way out ----------
 run "$TOOL" --system "$system" --bundle "$bundle" --label x --out "$out"
 check_status "vendor-review: refuses with no --client" 2 "$STATUS"

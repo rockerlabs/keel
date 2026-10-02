@@ -64,9 +64,12 @@ check_contains "keel_repo_arg_guard: still names it as not a git repo under the 
 # (it is copied standalone, see its own comment) — asserted here so a future edit that drops either
 # doesn't go unnoticed by any test file. One loop, one read per file (each file's content is read once,
 # not once per check on it).
-for consumer in install-read-trace.sh install-pre-pr-gate.sh; do
+for consumer in install-read-trace.sh install-pre-pr-gate.sh install-machine-watch.sh; do
   csrc="$(cat "$REPO_ROOT/tools/$consumer")"
-  check_contains "tools/$consumer sources tools/lib/repo-arg-guard.sh" "$csrc" 'lib/repo-arg-guard.sh'
+  # The executable source line itself, whole-line — a bare substring would also match the `# shellcheck
+  # source=` comment above it, so deleting the actual `. "$here/lib/repo-arg-guard.sh"` stayed green.
+  check_status "tools/$consumer sources tools/lib/repo-arg-guard.sh (the source line, not just its comment)" 1 \
+    "$(printf '%s\n' "$csrc" | grep -cxF '. "$here/lib/repo-arg-guard.sh"')"
   check_contains "tools/$consumer's <repo> branch calls keel_repo_arg_guard" "$csrc" 'keel_repo_arg_guard "$repo"'
 done
 isg_src="$(cat "$REPO_ROOT/tools/install-secret-guard.sh")"
