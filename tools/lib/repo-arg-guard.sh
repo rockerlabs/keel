@@ -25,8 +25,9 @@
 # its source), and some scripts cannot source tools/lib/ at all (they are copied standalone, or run as
 # POSIX sh from a pipe). tools/install-secret-guard.sh was the first to inline it, for the standalone
 # reason — its own tests run scratch copies that carry no tools/lib/. So the reason to SOURCE this file
-# is keel_repo_arg_guard() below (tools/install-read-trace.sh, tools/install-pre-pr-gate.sh); the unset
-# at source time is a second copy behind those scripts' own inline line.
+# is keel_repo_arg_guard() below (tools/install-read-trace.sh, tools/install-pre-pr-gate.sh,
+# tools/install-machine-watch.sh); the unset at source time is a second copy behind those scripts' own
+# inline line.
 #
 # The unset is process-wide: it also reaches every child the script spawns, a check command an operator
 # declared included. Accepted rather than scoped down to the one resolver call: an operator check that

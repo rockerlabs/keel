@@ -6,10 +6,10 @@
 # — including the validity gate itself — into a different repository than the one named on the command
 # line, up to and including making a NON-git $REPO falsely pass as valid (reproduced live, recorded in
 # tools/install-secret-guard.sh's own comment at its call site). This pins the unset and the function
-# directly, plus that tools/pipeline-canary.sh, tools/install-read-trace.sh and
-# tools/install-pre-pr-gate.sh all source this file (tools/install-secret-guard.sh deliberately does
-# NOT — see its own comment for why, and tests/test_secret_guard.sh's own dir #644 block for its
-# coverage).
+# directly, plus that tools/install-read-trace.sh, tools/install-pre-pr-gate.sh and
+# tools/install-machine-watch.sh all source this file (tools/pipeline-canary.sh used to, and carries the
+# inline unset instead since dir #647; tools/install-secret-guard.sh deliberately does NOT — see its own
+# comment for why, and tests/test_secret_guard.sh's own dir #644 block for its coverage).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -58,8 +58,8 @@ run env GIT_DIR="$decoy_gitdir" bash -c '. "$1"; keel_repo_arg_guard "$2"' _ "$l
 check_status "keel_repo_arg_guard: an ambient GIT_DIR does not rescue a non-git repo (still exit 2)" 2 "$STATUS"
 check_contains "keel_repo_arg_guard: still names it as not a git repo under the ambient hijack" "$OUT" "not a git repo: $notrepo"
 
-# --- consumers: install-read-trace.sh and install-pre-pr-gate.sh source this file for
-# keel_repo_arg_guard (their <repo> branch calls it); every other script inlines the unset instead
+# --- consumers: install-read-trace.sh, install-pre-pr-gate.sh and install-machine-watch.sh source this
+# file for keel_repo_arg_guard (their <repo> branch calls it); every other script inlines the unset instead
 # (dir #647 — tests/test_git_env_guard.sh is the census), and install-secret-guard.sh was the first to
 # (it is copied standalone, see its own comment) — asserted here so a future edit that drops either
 # doesn't go unnoticed by any test file. One loop, one read per file (each file's content is read once,

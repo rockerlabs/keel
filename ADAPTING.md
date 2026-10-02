@@ -50,8 +50,10 @@ These are starting points — check your tool's docs for the exact file, and tel
 > `FRAMEWORK.md` / `PRINCIPLES.md`) plus whichever rails you don't already have. The `tools/` work the
 > same no matter whose rules file you keep.
 
-**2. Use the tools directly — nothing to change.** `tools/` is plain Bash + git. They never call a model,
-so they run under any tool, any model, or none:
+**2. Use the tools directly — nothing to change.** `tools/` is plain Bash + git, with one exception:
+the opt-in `tools/vendor-review.sh` hands a leak-gated bundle to a vendor CLI you install yourself (its
+worked client, `tools/vendor-review/agy.sh`, runs Google's `agy`). Nothing else in `tools/` calls a
+model, so the rest run under any tool, any model, or none:
 
 ```bash
 tools/install-secret-guard.sh --global   # turn on the commit/push secret check
