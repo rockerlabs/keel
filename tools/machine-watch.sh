@@ -327,18 +327,16 @@ mw_notify() {
   title='keel machine-watch: machine-global state changed'
   body="$(printf '%s\n' "$ALERT_L" | awk 'NR <= 5 { print; next } { more++ } END { if (more) printf "…and %d more\n", more }')"
   body="${body:0:600}"
-  if [ -n "${KEEL_MACHINE_WATCH_NOTIFIER:-}" ]; then
-    ( "$KEEL_MACHINE_WATCH_NOTIFIER" "$title" "$body" </dev/null >/dev/null 2>&1 & )
+  local -a nargv
+  if [ -n "${KEEL_MACHINE_WATCH_NOTIFIER:-}" ]; then nargv=("$KEEL_MACHINE_WATCH_NOTIFIER" "$title" "$body")
   elif command -v osascript >/dev/null 2>&1; then
-    ( osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' \
-        -- "$body" "$title" </dev/null >/dev/null 2>&1 & )
-  elif command -v notify-send >/dev/null 2>&1; then
-    ( notify-send -- "$title" "$body" </dev/null >/dev/null 2>&1 & )
-  fi
-  return 0
+    nargv=(osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' -- "$body" "$title")
+  elif command -v notify-send >/dev/null 2>&1; then nargv=(notify-send -- "$title" "$body")
+  else return 0; fi
+  ( "${nargv[@]}" </dev/null >/dev/null 2>&1 & )
 }
 
-# mw_emit EVENT HEADER — the hook's JSON on stdout: additionalContext always (every line + the fixed
+# mw_emit EVENT HEADER — the hook's JSON on stdout, then (alert tier only) the OS notification (mw_notify): additionalContext always (every line + the fixed
 # paragraph); systemMessage only when an alert line exists (alert lines + the fixed paragraph).
 mw_emit() {
   local ev="$1" header="$2" ctx sys=""

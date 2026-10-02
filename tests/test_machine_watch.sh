@@ -334,7 +334,7 @@ else
   pass "W21 the watcher never touches permissions"
 fi
 
-# --- W22-W30: the operator's channel (dir #657) — a native OS notification for every alert-tier report ----
+# --- W22-W32: the operator's channel (dir #657) — a native OS notification for every alert-tier report ----
 # The hook's systemMessage is not rendered by the Claude desktop app, so the alert tier also raises an OS
 # notification (macOS `osascript`, Linux `notify-send`, a KEEL_MACHINE_WATCH_NOTIFIER command of your own).
 # tests/lib.sh turns it OFF suite-wide (KEEL_MACHINE_WATCH_NOTIFY=0) so no test pops a real banner on the
@@ -385,7 +385,7 @@ check_contains "W22 macOS: the notifier is osascript" "$(cat "$NLOG")" "CALL osa
 check_contains "W22 the notification names the changed file and the change" "$(cat "$NLOG")" "$H/.gitconfig: content changed"
 check_contains "W22 the notification names the watcher" "$(cat "$NLOG")" "machine-watch"
 check_absent "W22 the notification is short — it does not carry the fixed paragraph" "$(cat "$NLOG")" "cannot tell who made the change"
-check_eq "W22 exactly one notification for the one tool call" "1" "$(grep -c '^CALL' "$NLOG")"
+check_count "W22 exactly one notification for the one tool call" "$NLOG" '^CALL' 1
 jq_ok '.systemMessage and .hookSpecificOutput.additionalContext' \
   && pass "W22 the harness JSON is unchanged — the notification is an addition, not a replacement" \
   || fail "W22 the harness JSON is unchanged — the notification is an addition, not a replacement" "got: $OUT"
@@ -395,13 +395,13 @@ notify_case w23
 hook SessionStart
 printf '{"a":1}\n' > "$HH/settings.json"
 hook PostToolUse
-sleep 1
+sleep 0.5
 check_eq "W23 a quiet-tier change raises no notification" "" "$(cat "$NLOG")"
 
 # W24: nothing changed -> nothing raised.
 notify_case w24
 hook SessionStart; hook PostToolUse
-sleep 1
+sleep 0.5
 check_eq "W24 an unchanged machine raises no notification" "" "$(cat "$NLOG")"
 
 # W25: KEEL_MACHINE_WATCH_NOTIFY=0 is the off switch, and the JSON is still emitted.
@@ -410,7 +410,7 @@ ENVV+=("KEEL_MACHINE_WATCH_NOTIFY=0")
 hook SessionStart
 printf 'x\n' >> "$H/.gitconfig"
 hook PostToolUse
-sleep 1
+sleep 0.5
 check_eq "W25 KEEL_MACHINE_WATCH_NOTIFY=0 raises no notification" "" "$(cat "$NLOG")"
 jq_ok '.systemMessage' && pass "W25 …and the banner JSON is still emitted" || fail "W25 …and the banner JSON is still emitted" "got: $OUT"
 
@@ -442,12 +442,12 @@ check_status "W27b neither notifier present -> the hook still exits 0" 0 "$STATU
 jq_ok '.systemMessage and .hookSpecificOutput.additionalContext' \
   && pass "W27b neither notifier present -> the harness JSON is intact, nothing else on stdout" \
   || fail "W27b neither notifier present -> the harness JSON is intact, nothing else on stdout" "got: $OUT"
-sleep 1
+sleep 0.5
 check_eq "W27b neither notifier present -> nothing logged" "" "$(cat "$NLOG")"
 
 # W28: a notifier that fails, writes noise or hangs never changes the hook's result and never delays it.
 notify_case w28
-ENVV+=("STUB_RC=1" "STUB_NOISE=1" "STUB_SLEEP=3")
+ENVV+=("STUB_RC=1" "STUB_NOISE=1" "STUB_SLEEP=2")
 hook SessionStart
 printf 'x\n' >> "$H/.gitconfig"
 hook PostToolUse
@@ -456,11 +456,11 @@ jq_ok '.systemMessage and .hookSpecificOutput.additionalContext' \
   && pass "W28 …its noise never reaches the hook's stdout (the JSON parses)" \
   || fail "W28 …its noise never reaches the hook's stdout (the JSON parses)" "got: $OUT"
 if grep -q '^DONE' "$NLOG"; then
-  fail "W28 the hook does not wait for the notifier" "the 3 s stub had finished before the hook returned"
+  fail "W28 the hook does not wait for the notifier" "the 2 s stub had finished before the hook returned"
 else
   pass "W28 the hook does not wait for the notifier"
 fi
-sleep 4   # let the background stub finish before the case home goes away
+wait_log DONE   # let the background stub finish before the case home goes away
 
 # W29: KEEL_MACHINE_WATCH_NOTIFIER — your own command, called as NOTIFIER TITLE BODY, wins over the OS probe.
 notify_case w29
@@ -502,10 +502,9 @@ hook SessionStart
 tick
 i=0; while [ "$i" -lt 25 ]; do printf 'n\n' > "$H/bigtree/f$i"; i=$((i + 1)); done
 hook PostToolUse
-wait_log CALL; check_status "W31 a bulk change raises a notification" 0 "$?"
+wait_log more; check_status "W31 a bulk change raises a notification" 0 "$?"
 check_contains "W31 the capped notification says how many more there are" "$(cat "$NLOG")" "more"
-check_eq "W31 the body is capped — the first 5 report lines, not all 21" "5" "$(grep -c 'bigtree' "$NLOG")"
-sleep 1
+check_count "W31 the body is capped — the first 5 report lines, not all 21" "$NLOG" 'bigtree' 5
 
 # W32: hook mode only — the CLI's `check` prints to the operator's own terminal and raises nothing.
 notify_case w32
@@ -513,7 +512,7 @@ mw snapshot a
 printf 'x\n' >> "$H/.gitconfig"
 mw check a
 check_status "W32 CLI check still reports the change" 1 "$STATUS"
-sleep 1
+sleep 0.5
 check_eq "W32 the CLI raises no notification" "" "$(cat "$NLOG")"
 
 summary
