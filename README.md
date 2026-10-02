@@ -227,7 +227,9 @@ them but lives in `~/.claude`. `--uninstall` removes exactly what it wired. On a
 
 Who sees a report: the model, always — that relay is the guaranteed channel. The hook's banner is
 client-dependent (the Claude desktop app does not render it), so an alert-tier change also raises a native
-OS notification (macOS, or Linux with `notify-send`); `KEEL_MACHINE_WATCH_NOTIFY=0` turns that off.
+OS notification (macOS, or Linux with `notify-send`); `KEEL_MACHINE_WATCH_NOTIFY=0` turns that off. On
+macOS that notification comes from Script Editor and is dropped silently until Script Editor may notify:
+once, open Script Editor, run `display notification "test" with title "keel"`, and accept the prompt.
 
 ## Good to know
 

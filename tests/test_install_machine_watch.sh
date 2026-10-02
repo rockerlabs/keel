@@ -153,6 +153,25 @@ else
   pass "the installer never writes permissions.deny"
 fi
 
+# --- macOS: the one-time Script Editor step is named on install (dir #657 follow-up) --------------------
+# Re-runs on the already-wired $repo (the note prints on every install run). The gate is osascript alone:
+# the notify env vars belong to the hook's environment, which the installer cannot see (tests/lib.sh's
+# suite-wide KEEL_MACHINE_WATCH_NOTIFY=0 is in force here, and must not suppress the note).
+stub="$SANDBOX/osascript-stub"; mkdir -p "$stub"
+printf '#!/bin/sh\nexit 0\n' > "$stub/osascript"; chmod +x "$stub/osascript"
+run env PATH="$stub:$PATH" "$installer" "$repo"
+check_status "with osascript on PATH -> install exit 0" 0 "$STATUS"
+check_contains "with osascript on PATH the install names the Script Editor step" "$OUT" "open Script Editor, run"
+check_contains "the note names the off switch it cannot see" "$OUT" "skip this if KEEL_MACHINE_WATCH_NOTIFY=0"
+noosa="$SANDBOX/no-osascript-bin"; path_farm "$noosa" osascript
+run env PATH="$noosa" "$installer" "$repo"
+check_status "without osascript -> install exit 0" 0 "$STATUS"
+check_absent "without osascript the install says nothing about Script Editor" "$OUT" "Script Editor"
+for f in README.md docs/delegation.md; do
+  pin "$f names the one-time Script Editor step" "$REPO_ROOT/$f" 'display notification "test" with title "keel"' \
+    "expected $f to carry the Script Editor permission step (dir #657)"
+done
+
 # --- the docs name both tools wherever an adopter looks (README, ADAPTING, reference, delegation) ------
 for f in README.md ADAPTING.md docs/reference.md docs/delegation.md; do
   pin "$f names machine-watch" "$REPO_ROOT/$f" "machine-watch" "expected $f to carry the watcher (dir #437 PR2)"

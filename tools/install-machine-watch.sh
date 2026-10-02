@@ -340,3 +340,12 @@ if [ -n "$mw_store" ]; then
   mkdir -p "$mw_store" 2>/dev/null || echo "install-machine-watch: could not create the baseline store $mw_store (the watcher will create it at the next SessionStart)" >&2
 fi
 echo "Hooks in settings files are normally picked up live; restart Claude Code if the watcher does not fire."
+# dir #657: macOS drops an osascript notification silently (exit 0) until Script Editor may notify, and
+# Script Editor is not even listed in Notification settings before it has posted one itself. Gated on
+# osascript alone: KEEL_MACHINE_WATCH_NOTIFY/_NOTIFIER are read from the HOOK's environment, which this
+# shell cannot see, so the note names the off switch instead of guessing from the installer's env.
+if command -v osascript >/dev/null 2>&1; then
+  echo "macOS: alert notifications come from Script Editor and are dropped silently until it may notify"
+  echo "  (skip this if KEEL_MACHINE_WATCH_NOTIFY=0 or a KEEL_MACHINE_WATCH_NOTIFIER is set for Claude Code)."
+  echo "  Once: open Script Editor, run  display notification \"test\" with title \"keel\"  and accept the prompt."
+fi

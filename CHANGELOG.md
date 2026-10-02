@@ -61,6 +61,12 @@ sections real content going forward — see that page for exactly when each one 
   and the model's relay is the guaranteed channel. Limits stated there: macOS may need notification
   settings to allow `osascript`, and a change several live sessions see raises one notification per session.
 
+- **The macOS notification's one-time permission step is now named where an adopter looks** (dir #657
+  follow-up): the operator's re-run drill saw no notification until Script Editor was granted permission
+  — macOS drops `osascript` notifications silently (exit 0) until then. `docs/delegation.md` (the
+  mechanism, replacing its "not verified here" note) and `README.md` now give the step, and
+  `tools/install-machine-watch.sh` prints it on install wherever `osascript` exists.
+
 - **`install.sh` now moves keel's durable stores into `$HOME/.keel`** (dir #637, PR2 of 2 — the move;
   PR1 added the resolver): the new `tools/state-root-migrate.sh` takes every entry of the impact and
   read-trace stores out of `${KEEL_HOME:-$HOME/.claude}/.keel/` and into `$HOME/.keel/`, leaving one
