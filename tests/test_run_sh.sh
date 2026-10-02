@@ -555,6 +555,7 @@ rm -f "$watched/tests/test_engine_leak.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$watched/tests/test_clean.sh"
 run env HOME="$enghome" bash "$watched/tests/run.sh"
 check_status "dir #653: an untouched engine checkout passes" 0 "$STATUS"
+check_absent "S6-1: a readable engine checkout prints no engine-half NOTE" "$OUT" "engine half of the corruption canary"
 
 # an unset HOME (a minimal CI container) must not leak an "unbound variable" error out of the engine
 # lookup — run.sh runs under `set -u`
@@ -563,6 +564,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_clean.sh"
 run env -u HOME bash "$d/run.sh"
 check_status "dir #653: an unset HOME still passes" 0 "$STATUS"
 check_absent "dir #653: an unset HOME raises no unbound-variable error" "$OUT" "unbound variable"
+check_absent "S6-1: no engine checkout reachable (unset HOME) -> no engine-half NOTE either" "$OUT" "engine half of the corruption canary"
 
 # engine checkout == the watched checkout: already covered by the dir #318 status half, so the engine
 # block stays quiet rather than reporting one leak twice
@@ -578,5 +580,43 @@ run env HOME="$selfhome" bash "$watched/tests/run.sh"
 check_status "dir #653: a leak into a checkout that is both watched and the engine still trips -> exit 1" 1 "$STATUS"
 check_contains "dir #653: ... via the existing dir #318 status half" "$OUT" "working-tree/index status also changed"
 check_absent "dir #653: ... and is not reported a second time by the engine half" "$OUT" "the engine checkout changed during the run"
+
+# --- S6-1 (delta audit 0.13.0): a REACHABLE engine checkout whose `git status` errors must not read as
+# "nothing changed". A corrupted index (status rc 128) used to fail the half open and silent: the leaking
+# test rewrote an engine file and the run printed ALL TEST FILES PASSED with no word about the half. -------
+eng2="$(new_repo)"
+printf 'tracked\n' > "$eng2/engine-file.txt"
+git -C "$eng2" add engine-file.txt
+git -C "$eng2" commit -q -m init
+enghome2="$(mktemp -d "$SANDBOX/enghome2.XXXXXX")"
+mkdir -p "$enghome2/.keel"
+ln -s "$eng2" "$enghome2/.keel/engine"
+printf 'garbage\n' > "$eng2/.git/index"
+git -C "$eng2" status --porcelain -uno >/dev/null 2>&1
+check_status "S6-1 fixture: git status of the corrupted engine checkout really fails" 128 "$?"
+
+watched="$(new_run_sh_fixture)"
+printf '#!/usr/bin/env bash\nprintf "leaked\\n" > "%s/engine-file.txt"\nexit 0\n' "$eng2" > "$watched/tests/test_engine_leak.sh"
+run env HOME="$enghome2" bash "$watched/tests/run.sh"
+# Decision (comment in tests/run.sh): a not-run half is reported, not failed — the exit status stays 0.
+check_status "S6-1: an unreadable engine checkout does not fail the run by itself -> exit 0" 0 "$STATUS"
+check_contains "S6-1: the NOTE says the engine half did NOT run" "$OUT" "the engine half of the corruption"
+check_contains "S6-1: ... and names the checkout" "$OUT" "$eng2"
+check_contains "S6-1: the NOTE is repeated beside the verdict" "$OUT" "engine half of the corruption canary (dir #653) did not run this time"
+check_status "S6-1: the NOTE appears exactly twice (top + verdict)" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
+
+# the converse: readable before the run, unreadable after it -> the half WAS armed, so that is a trip
+eng3="$(new_repo)"
+printf 'tracked\n' > "$eng3/engine-file.txt"
+git -C "$eng3" add engine-file.txt
+git -C "$eng3" commit -q -m init
+enghome3="$(mktemp -d "$SANDBOX/enghome3.XXXXXX")"
+mkdir -p "$enghome3/.keel"
+ln -s "$eng3" "$enghome3/.keel/engine"
+printf '#!/usr/bin/env bash\nprintf "garbage\\n" > "%s/.git/index"\nexit 0\n' "$eng3" > "$watched/tests/test_engine_leak.sh"
+run env HOME="$enghome3" bash "$watched/tests/run.sh"
+check_status "S6-1: an engine checkout that goes unreadable DURING the run trips the canary -> exit 1" 1 "$STATUS"
+check_contains "S6-1: ... and says it worked before and failed after" "$OUT" "worked before the run and FAILED after it"
+check_absent "S6-1: ... without the not-run NOTE (the half did run)" "$OUT" "did NOT run this time"
 
 summary

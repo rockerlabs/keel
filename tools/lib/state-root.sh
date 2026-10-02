@@ -13,8 +13,10 @@
 # second role as keel's state root is retired. Only `keel_legacy_store_root` below still reads it for
 # state, to find a store that has not been moved yet.
 #
-# No override variable: tests already redirect `$HOME` (tests/lib.sh), so `$HOME/.keel` follows the
-# sandbox for free. An override is added only if a real need is shown.
+# No override variable for the root itself: tests already redirect `$HOME` (tests/lib.sh), so `$HOME/.keel`
+# follows the sandbox for free. A per-store override exists only where a real need was shown — today one:
+# KEEL_MACHINE_WATCH_STORE (keel_machine_watch_store below), which tests/lib.sh points into the sandbox and
+# tools/lib/impact-store.sh's IMPACT_ISOLATION_VARS names, so a store resolver cannot read it unisolated.
 #
 # Names under the state root — each name once, here (B6). A new name joins this list in the PR that
 # introduces it:

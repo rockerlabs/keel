@@ -96,14 +96,14 @@ impact_store_root() {
 
 # IMPACT_ISOLATION_VARS — every environment variable, other than HOME, that any keel store resolver
 # reads: impact_store_root above, _impact_file_path below, tools/lib/read-trace.sh's
-# read_trace_store_root, and the vendored tools/secret-guard/secret-scan.sh's own
-# _impact_log_path_inline copy. Named in this ONE place (dir #317) so impact_isolated (below) — and any
+# read_trace_store_root, tools/lib/state-root.sh's keel_machine_watch_store (KEEL_MACHINE_WATCH_STORE), and
+# the vendored tools/secret-guard/secret-scan.sh's own _impact_log_path_inline copy. Named in this ONE place (dir #317) so impact_isolated (below) — and any
 # future caller that wants a truly sandboxed store root — unsets the whole list, not just whichever two
 # variables a fix happens to know about at the time: the exact class of miss that let dir #290's own
 # canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its printed command). A new store-resolving
 # variable anywhere must be added here; tests/test_impact_store_lib.sh's A3 pins that with a mutation
 # proof, so a resolver that starts reading an unlisted variable fails the suite.
-IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE"
+IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"
 
 # impact_isolated HOME_DIR CMD [ARG…] — dir #317: the ONE way to run CMD (a shell function or an
 # external command) fully isolated from every ambient keel store override, without a caller having to
@@ -133,10 +133,11 @@ impact_isolated() {
 }
 
 # impact_store_dir [DIR] — the store directory for DIR's project (computed; existence not checked).
-# `root="$(impact_store_root)" || return 1` (dir #251 review): impact_store_root's `${HOME:?...}` fires
-# inside that nested command substitution's own subshell, which does NOT abort a printf that merely
-# embeds the substitution as one of several arguments — the printf's own exit status is what a caller's
-# `set -e` sees, and printf succeeds regardless. Capturing the substitution as its own statement first
+# `root="$(impact_store_root)" || return 1` (dir #251 review): impact_store_root's failure (no HOME and no
+# KEEL_IMPACT_STORE: one stderr line, return 1 — it no longer aborts, dir #637) happens inside that nested
+# command substitution's own subshell, and a failing substitution embedded as one of several printf arguments
+# does NOT stop the printf — the printf's own exit status is what a caller's `set -e` sees, and printf
+# succeeds regardless. Capturing the substitution as its own statement first
 # lets its failure propagate explicitly, instead of this function silently returning the malformed
 # "/<project-id>" (empty root + "/" + slug) that a caller doing `mkdir -p "$(impact_store_dir ...)"`
 # (e.g. impact_store_enable below, keel-impact.sh's own `migrate`) would otherwise create at the

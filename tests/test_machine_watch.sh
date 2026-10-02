@@ -355,10 +355,23 @@ done
 # MINBIN: the tools the hook needs, WITHOUT osascript — and the notify-send stub, so the Linux branch is
 # reachable on a macOS box (where the real /usr/bin/osascript would otherwise always win the probe).
 for _n in bash sh jq git awk find cksum stat mkdir mv rm touch cp cat sed tr uname dirname basename date id sleep \
-  head cut grep sort wc ls readlink env dd mktemp xargs expr chmod ln tail cmp diff; do
+  head cut grep sort wc ls readlink env dd mktemp rmdir xargs expr chmod ln tail cmp diff; do
   _p="$(command -v "$_n" 2>/dev/null)" && [ -x "$_p" ] && ln -sf "$_p" "$MINBIN/$_n"
 done
 unset _n _p
+# delta-audit 0.13.0 S2-6: tools/lib/git-global-paths.sh probes with a bare `mktemp -d` and removes the probe
+# with `rmdir`; a MINBIN without rmdir left 5 empty dirs per run in the REAL temp dir (macOS's bare `mktemp -d`
+# ignores $TMPDIR, so that leak cannot be observed by redirecting it). `mktemp` in MINBIN is therefore a shim:
+# with PROBE_SCRATCH set it makes the dir THERE, so a leftover is checkable under the case's own scratch.
+_real_mktemp="$(command -v mktemp)"
+rm -f "$MINBIN/mktemp"
+cat > "$MINBIN/mktemp" <<SHIM
+#!/bin/sh
+[ -z "\${PROBE_SCRATCH:-}" ] || { mkdir -p "\$PROBE_SCRATCH" && exec "$_real_mktemp" -d "\$PROBE_SCRATCH/probe.XXXXXX"; }
+exec "$_real_mktemp" "\$@"
+SHIM
+chmod 755 "$MINBIN/mktemp"
+unset _real_mktemp
 # notify_case NAME — a fresh case whose hook env switches the notification on, with the stub log in $NLOG.
 notify_case() {
   mkcase "$1"
@@ -423,7 +436,7 @@ wait_log CALL; check_status "W26 a resume-time alert change raises a notificatio
 
 # W27: Linux — no osascript on the path, notify-send present -> notify-send; neither -> silent, no error.
 notify_case w27
-ENVV+=("PATH=$MINBIN")
+ENVV+=("PATH=$MINBIN" "PROBE_SCRATCH=$H/probes")
 hook SessionStart
 printf 'x\n' >> "$H/.gitconfig"
 hook PostToolUse
@@ -432,8 +445,11 @@ printf 'y\n' >> "$H/.gitconfig"
 hook PostToolUse
 wait_log 'CALL notify-send'; check_status "W27 no osascript, notify-send present -> notify-send" 0 "$?"
 check_contains "W27 notify-send carries the alert line" "$(cat "$NLOG")" "$H/.gitconfig: content changed"
+check_eq "W27 S2-6: the hook's probe dirs are removed under the minimal PATH (rmdir present)" "" "$(ls -A "$H/probes" 2>/dev/null)"
+if [ -d "$H/probes" ]; then pass "W27 S2-6 fixture: the probe was actually made under the scratch (the shim is live)"
+else fail "W27 S2-6 fixture: the probe was actually made under the scratch (the shim is live)" "no $H/probes — the mktemp shim never ran"; fi
 notify_case w27b
-ENVV+=("PATH=$MINBIN")
+ENVV+=("PATH=$MINBIN" "PROBE_SCRATCH=$H/probes")
 rm -f "$MINBIN/notify-send"
 hook SessionStart
 printf 'x\n' >> "$H/.gitconfig"
@@ -444,6 +460,7 @@ jq_ok '.systemMessage and .hookSpecificOutput.additionalContext' \
   || fail "W27b neither notifier present -> the harness JSON is intact, nothing else on stdout" "got: $OUT"
 sleep 0.5
 check_eq "W27b neither notifier present -> nothing logged" "" "$(cat "$NLOG")"
+check_eq "W27b S2-6: no probe dir left under the minimal PATH" "" "$(ls -A "$H/probes" 2>/dev/null)"
 
 # W28: a notifier that fails, writes noise or hangs never changes the hook's result and never delays it.
 notify_case w28
@@ -514,5 +531,20 @@ mw check a
 check_status "W32 CLI check still reports the change" 1 "$STATUS"
 sleep 0.5
 check_eq "W32 the CLI raises no notification" "" "$(cat "$NLOG")"
+
+# W33 (delta-audit 0.13.0 S2-1): the harness must not inherit the operator's notifier. lib.sh is sourced in a CHILD
+# that starts with the variables exported — as the installer's own note tells an operator to do — and reports what
+# is left once it has run. A state check, not a behavioural one: mw_notify reads exactly that variable first, so a
+# value that survives the harness is the whole defect (13 cases red, 13 calls carrying test paths when found).
+run env KEEL_MACHINE_WATCH_NOTIFIER=/operator/own-notifier KEEL_MACHINE_WATCH_MAX_AGE_DAYS=9 \
+  KEEL_MACHINE_WATCH_STORE=/decoy-store bash -c \
+  '. "$1/tests/lib.sh" || exit 1
+   printf "notifier=%s\nmaxage=%s\nstore=%s\nsandbox=%s\n" "${KEEL_MACHINE_WATCH_NOTIFIER-unset}" \
+     "${KEEL_MACHINE_WATCH_MAX_AGE_DAYS-unset}" "$KEEL_MACHINE_WATCH_STORE" "$SANDBOX"' _ "$REPO_ROOT"
+check_status "W33 the harness sources cleanly with an operator's machine-watch variables exported" 0 "$STATUS"
+check_contains "W33 an exported KEEL_MACHINE_WATCH_NOTIFIER is unset by the harness" "$OUT" "notifier=unset"
+check_contains "W33 an exported KEEL_MACHINE_WATCH_MAX_AGE_DAYS is unset by the harness" "$OUT" "maxage=unset"
+w33_sb="$(printf '%s\n' "$OUT" | sed -n 's/^sandbox=//p')"
+check_contains "W33 the store override is redirected into the child's sandbox, not inherited" "$OUT" "store=$w33_sb/"
 
 summary
