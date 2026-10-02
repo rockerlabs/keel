@@ -85,6 +85,20 @@ rm -f "$HK/post-commit"
 mw check a
 check_contains "W4 a deleted hook file is reported" "$OUT" "post-commit: deleted"
 
+# W3b: the same mode report under a single-byte locale — bash then reads `$var→` as one variable name
+# (CI's macos-14 leg went red on exactly this); skipped where the host has no such locale.
+l1=""
+for cand in en_US.ISO8859-1 en_US.ISO-8859-1 en_US.iso88591 en_US.ISO8859-15; do
+  case "$(locale -a 2>/dev/null)" in *"$cand"*) l1="$cand"; break ;; esac
+done
+if [ -n "$l1" ]; then
+  mkcase w3b
+  mw snapshot a
+  chmod 700 "$HK/pre-commit"
+  run env "${ENVV[@]}" "LC_ALL=$l1" bash "$mw" check a
+  check_contains "W3b the mode report survives a single-byte locale ($l1)" "$OUT" "pre-commit: mode 755→700"
+fi
+
 # --- W5: the dir #627 shape, DEFAULT store location (under $HOME/.keel, outside the harness home) ----
 mkcase w5
 ENVV=("HOME=$H" "GIT_CONFIG_GLOBAL=$H/.gitconfig" "KEEL_HOME=$HH")

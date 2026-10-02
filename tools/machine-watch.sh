@@ -214,7 +214,9 @@ mw_diff_file() {
   esac
   read -r _o om oc <<<"$old"
   read -r _o nm nc <<<"$new"
-  if [ "$om" != "$nm" ]; then mw_line "$tier" "$id" "$p" "mode $om→$nm"; fi
+  # Braces, not `$om→$nm`: under a single-byte (Latin-1) locale bash reads the arrow's bytes as part of the
+  # variable name and both expansions come out empty (CI's macos-14 leg).
+  if [ "$om" != "$nm" ]; then mw_line "$tier" "$id" "$p" "mode ${om}→${nm}"; fi
   if [ "$oc" != "$nc" ]; then mw_line "$tier" "$id" "$p" "content changed"; fi
 }
 
