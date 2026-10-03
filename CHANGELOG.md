@@ -15,6 +15,8 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-03
+
 **Known issues, disclosed at the cut.** These things from the 0.13.0 delta audit ship known-imperfect; none
 is fixed in this release. (1) `tools/machine-watch.sh` does not follow files pulled in by a git `[include]`
 or an ssh `Include` — the git global and system config files and `~/.ssh/config` are fingerprinted
