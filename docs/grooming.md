@@ -37,9 +37,11 @@ Before touching the plan, read the previous cycle's records: the releases cross-
 the audits' cross-run record rows, the release record a manager writes at close (keel's own instance is
 the FINAL NUMBERS paragraph its `dir #367`-style ticket record carries — a project without a ticket
 record of its own writes the equivalent wherever its release-manager procedure lands it), and every
-ticket filed by the previous cycle's managers. Where the project's read-trace aggregate exists (keel:
-`dir #387`), it supplies two more G0 inputs — a dead-doc signal and a wrap-loss-scale signal, the two
-things that mechanism exists to surface. Consume it **by pointing at the tool that produces it**, never
+ticket filed by the previous cycle's managers. A cycle built ticket by ticket with no manager (keel's
+0.13.0, under an operator moratorium) has no such record: the audit orchestrator completed the
+release row at the tag, and the tickets it filed are that cycle's filings. Where the project's
+read-trace aggregate exists (keel: `dir #387`), it supplies two more G0 inputs — a dead-doc signal and
+a wrap-loss-scale signal, the two things that mechanism exists to surface. Consume it **by pointing at the tool that produces it**, never
 by citing its internal format: no column names, no file path, no output shape — the tool's own doc is
 where that lives, and it may change there without this doc needing an edit.
 
@@ -238,7 +240,8 @@ The same day the operator cut the slate to its 11 pain tickets. The answer had c
 could see what the lane would cost. So the pain rows are planned and reviewed first. The lane follows
 as its own row, priced by G5's per-ticket rule from its ticket count alone. Its body reads and its
 own G6 pass happen only after a "yes" given against that price. A rule of the procedure, not a
-compensation.
+compensation. The same holds for a parked file as a whole: the 0.14.0 groom's "full groom" answer
+came before the parked file's 223 open tickets had a price, so the groom priced it and asked again.
 
 **The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
 pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
@@ -342,6 +345,11 @@ settled fact.
   Returned tickets call for a sort or a drain; filings call for a stricter filing bar. So the plan
   states both numbers, the returned ones taken from the cut's own record. This is a hand step, a
   compensation whose remover is `dir #655`.
+  **A split backlog changes what the reading means (the 0.14.0 groom).** Once a sort moves most open
+  tickets into a parked file, the tool counts the live file only. Keel's history went from 180 to 19
+  at its split. That drop is a change of definition, not a drain. So the plan states the parked count
+  beside the recorded reading, and no growth figure is read across the split. Same compensation,
+  same remover (`dir #655`): its record must say which files a reading covered.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
