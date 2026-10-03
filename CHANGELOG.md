@@ -60,10 +60,26 @@ fails earlier, with "Argument list too long".
   0.13.0 delta audit's re-check pair): `test_install_machine_watch.sh` built its no-`jq` `PATH` farm (one
   symlink per command on `PATH`) with a bare `mktemp -d` and never removed it. `test_install_pre_pr_gate.sh` and
   `test_install_read_trace.sh` have carried the same leak since before this release: three more farms and a
-  scratch checkout per run. On macOS a bare `mktemp` ignores `$TMPDIR`, so no redirect caught them. Every
-  such path is now minted under the suite's sandbox, which is removed when each test file exits, and a new
-  census (`tests/test_no_bare_mktemp.sh`) fails on any `$(mktemp …)` call in a test file that mints outside
-  the sandbox and is not on its allow-list.
+  scratch checkout per run. On macOS a bare `mktemp` ignores `$TMPDIR`, so no redirect caught them. Their
+  scratch is now minted under the suite's sandbox instead, and a new census (`tests/test_no_bare_mktemp.sh`)
+  fails on a `$(mktemp …)` call in a test file that mints outside the sandbox and is not on its allow-list.
+  The census checks that one call shape only.
+- **`tests/run.sh`'s watched-checkout canary no longer fails open and silent** (dir #318, a baseline defect
+  that predates this release, found by the 0.13.0 delta audit's round-3 re-check): when the checkout the suite
+  runs from carried a `.git` that git could not read (another uid's checkout, a corrupted `.git`), the dir #318
+  half was skipped with no word, so a test that rewrote a tracked file still ended `ALL TEST FILES PASSED`.
+  It now prints the same NOTE as the engine half, repeated beside the verdict, and keeps that half's
+  decision: the exit status is unchanged. A tree with no `.git` at all stays the quiet skip.
+- **A full suite run no longer strands scratch in the real temp dir through paths the census cannot
+  see** (dir #653 and dir #480, baseline defects found by the 0.13.0 delta audit's round-3 re-check):
+  `tests/run.sh` minted its per-file log directory with a bare `mktemp -d`, which ignores `$TMPDIR` on macOS;
+  dir #480 keeps that directory on a failing run on purpose, and `test_run_sh.sh`'s failing fixtures each left
+  one behind. It is now minted from a template rooted at `$TMPDIR`, and `test_run_sh.sh` points `$TMPDIR` at its
+  sandbox. A mint that returns nothing, or not a directory, now fails the run before any test file starts (a
+  failing `mktemp` as root used to send the logs to `/` and could still end in a pass). `test_read_trace.sh`
+  replaced the sandbox-removal trap `tests/lib.sh` installs and then cleared it, stranding its whole sandbox;
+  it now chains that removal. `test_changelog_section.sh` removes the scratch file the tool keeps on purpose
+  in its failure cases. Tests and comments only; no shipped tool changed.
 - **The negative paths of the guards this release added are now pinned by tests that turn red without them**
   (found by the 0.13.0 delta audit; tests only, no shipped tool changed). **dir #637:** the
   "uninstall never touches a moved store" test now builds the store under the same `$HOME/.keel` the

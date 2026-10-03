@@ -230,11 +230,20 @@ for sh_bin in bash zsh; do
   fi
 done
 
+# The scratch path a failed --edit names in its message ("... preserved at <path>") — the tool keeps that
+# file on purpose, in the real temp dir, so each case that reaches it removes it again.
+scratch_path_from_out() { printf '%s\n' "$OUT" | sed -n 's/.*preserved at \(.*\)$/\1/p'; }
+
 notes_untouched="$SANDBOX/edit-notes-untouched.md"
 printf 'SENTINEL\n' > "$notes_untouched"
 run env "EDITOR=$edit_repo/bin/editor-fail.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_untouched"
 check_status "--edit with a failing editor -> nonzero exit" 1 "$STATUS"
 check_contains "notes-file is left untouched on editor failure" "$(cat "$notes_untouched")" "SENTINEL"
+# The tool preserves its scratch file on this path on purpose (a --wait wrapper failing can leave real
+# typing in it), so it is ours to remove here: it sits in the real temp dir (delta-audit 0.13.0 R2-1).
+untouched_scratch="$(scratch_path_from_out)"
+check_file "the failing-editor path preserved a scratch file (so there is something to remove)" "$untouched_scratch"
+rm -f "$untouched_scratch"
 
 run env -u EDITOR "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$SANDBOX/edit-notes-unset.md"
 check_status "--edit with \$EDITOR unset -> nonzero exit" 1 "$STATUS"
@@ -249,7 +258,7 @@ run env "EDITOR=$edit_repo/bin/editor-fail-after-write.sh" "$edit_repo/tools/cha
 check_status "--edit whose editor writes content then fails -> nonzero exit" 1 "$STATUS"
 check_contains "notes-file itself still not written (editor failure never copies)" "$([ -f "$notes_after_write" ] && cat "$notes_after_write" || echo NOTHING_WRITTEN)" "NOTHING_WRITTEN"
 check_contains "failure names a recoverable scratch-file path" "$OUT" "preserved at"
-recovered_scratch="$(printf '%s\n' "$OUT" | sed -n 's/.*preserved at \(.*\)$/\1/p')"
+recovered_scratch="$(scratch_path_from_out)"
 check_contains "the scratch file with the user's real content actually survives on disk" \
   "$(cat "$recovered_scratch" 2>/dev/null)" "USER TYPED THIS"
 rm -f "$recovered_scratch"
@@ -270,6 +279,9 @@ notes_bad_dir="$edit_repo/no-such-directory/out.md"
 run env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_bad_dir"
 check_status "--edit whose cp destination fails -> nonzero exit" 1 "$STATUS"
 check_contains "failure names a recoverable scratch-file path, not silent data loss" "$OUT" "your edited draft is preserved at"
+cpfail_scratch="$(scratch_path_from_out)"
+check_file "the cp-failure path preserved a scratch file (so there is something to remove)" "$cpfail_scratch"
+rm -f "$cpfail_scratch"   # preserved on purpose; it sits in the real temp dir, so remove it (delta-audit 0.13.0 R2-1)
 
 # --- --edit composition guards (dir #326) --------------------------------------------------------
 # Two independent, non-fatal warnings at the notes-composition step: (a) the composed notes-file

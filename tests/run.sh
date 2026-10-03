@@ -60,7 +60,7 @@ main() {
   # beside the verdict. Neither fails the run: an unreadable checkout is an environment condition, not
   # evidence of a leak (dir #505 / dir #656: no existing trip changes meaning). Readable before the run
   # but not after IS a trip — see the compare below.
-  guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0
+  guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0 guard_repo_skipped=0
   guard_engine_skip() {
     printf 'NOTE: %s — the engine half of the corruption\n' "$1" >&2
     printf '      canary (dir #653) did NOT run this time; the suite is not watching that checkout.\n' >&2
@@ -196,6 +196,12 @@ main() {
     done
   }
 
+  # delta-audit 0.13.0 R2-2: the engine half's skip-with-a-NOTE, applied to the PRIMARY half. The dir #318 canary below used to be
+  # skipped without a word whenever `git rev-parse --git-dir` failed for any reason — including the ones
+  # that are not "this is not a repo": a checkout owned by another uid ("dubious ownership"), a corrupted
+  # `.git`. A watched path that carries a `.git` yet cannot be read now prints the same NOTE, repeated
+  # beside the verdict, with the same decision (reported, not failed). No `.git` at all stays the quiet,
+  # ordinary skip (a git-less tree is not an environment fault).
   if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
     guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
     guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
@@ -259,6 +265,10 @@ main() {
       # happened).
       guard_before_reflog="$(guard_reflog_count "$guard_repo_root")"
     fi
+  elif [ -e "$guard_repo_root/.git" ]; then
+    printf 'NOTE: %s carries a .git that git cannot read — the dir #318 half of the corruption\n' "$guard_repo_root" >&2
+    printf '      canary did NOT run this time; the suite is not watching the checkout it runs from.\n' >&2
+    guard_repo_skipped=1
   fi
 
   # KEEL_TEST_JOBS overrides the concurrency cap (e.g. `KEEL_TEST_JOBS=1 ./tests/run.sh` to force the
@@ -285,7 +295,20 @@ main() {
   case "$jobs_cap" in (*[!0-9]*|'') jobs_cap=4 ;; esac
   [ "$jobs_cap" -ge 1 ] || jobs_cap=1
 
-  logdir="$(mktemp -d)"
+  # delta-audit 0.13.0 R2-1 / R2-4: the per-file logs live in a directory minted from a TEMPLATE rooted at
+  # $TMPDIR — a bare `mktemp -d` ignores $TMPDIR on macOS, so the preserved-on-failure directory below
+  # (dir #480) could not be redirected, and tests/test_run_sh.sh's failing fixtures left one in the real
+  # temp dir on every run. And the result is checked, not trusted (the dir #627 class tests/lib.sh closed
+  # for $SANDBOX): under `set -uo pipefail` with no `-e`, a failing `mktemp` yields an empty name, every
+  # log path then resolves to `/<file>.log`, and as root the run could still print ALL TEST FILES PASSED.
+  # A failed mint FAILS the run, loudly, before any test file starts.
+  tmp_base="${TMPDIR:-/tmp}"
+  tmp_base="${tmp_base%/}"
+  logdir="$(mktemp -d "$tmp_base/keel-run.XXXXXX" 2>/dev/null)" || logdir=""
+  if [ -z "$logdir" ] || [ "$logdir" = / ] || [ ! -d "$logdir" ]; then
+    printf 'FATAL: mktemp -d did not return a usable log dir under %s (got %s) — refusing to run: the per-file logs would land outside a throwaway directory (delta-audit 0.13.0 R2-4).\n' "$tmp_base" "$logdir" >&2
+    exit 1
+  fi
   trap 'rm -rf "$logdir"' EXIT
 
   failed=0
@@ -536,6 +559,11 @@ main() {
   if [ "$guard_engine_skipped" = 1 ]; then
     printf 'NOTE: the engine half of the corruption canary (dir #653) did not run this time — see the NOTE\n' >&2
     printf '      near the top of this output for why.\n' >&2
+  fi
+  # delta-audit 0.13.0 R2-2: and for the dir #318 half.
+  if [ "$guard_repo_skipped" = 1 ]; then
+    printf 'NOTE: the dir #318 half of the corruption canary did not run this time — see the NOTE near\n' >&2
+    printf '      the top of this output for why.\n' >&2
   fi
   if [ "$failed" -eq 0 ]; then
     printf 'ALL TEST FILES PASSED\n'

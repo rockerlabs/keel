@@ -659,8 +659,11 @@ d="$(mkrepo)"; rt_env unwritable_root
 mkdir -p "$RT_STORE"
 chmod 500 "$RT_STORE"
 # Restore the mode before the sandbox's own cleanup runs — a mode-500 dir blocks `rm -rf` for a
-# non-root cleanup, which would otherwise strand this case's sandbox tree.
-trap 'chmod 700 "$RT_STORE" 2>/dev/null' EXIT
+# non-root cleanup, which would otherwise strand this case's sandbox tree. The trap CHAINS tests/lib.sh's
+# own sandbox removal (`trap 'rm -rf "$SANDBOX"' EXIT`) rather than replacing it: a bare replacement, and
+# the `trap - EXIT` that used to follow, left the whole sandbox behind in the real temp dir on every run
+# (delta-audit 0.13.0 R2-1).
+trap 'chmod 700 "$RT_STORE" 2>/dev/null; rm -rf "$SANDBOX"' EXIT
 
 # A Read (not just an Edit) is required to exercise the persistent-store write at all: mutate rows
 # (_rt_record_mutate) only ever touch the EPHEMERAL, TMPDIR-resident session log, never the
@@ -686,7 +689,7 @@ else
 fi
 
 chmod 700 "$RT_STORE" 2>/dev/null
-trap - EXIT
+trap 'rm -rf "$SANDBOX"' EXIT   # re-arm exactly the trap tests/lib.sh installed; the chmod step is done
 
 # --- S13 (dir #630 PR-C): read-trace loss detection, the read-trace half of the impact store's S4/S6
 # provenance mechanism (tools/lib/impact-store.sh's keel_store_record/keel_store_state, reused
