@@ -67,7 +67,7 @@ main() {
   # `.git`. A watched path that carries a `.git` yet cannot be read now prints the same NOTE, repeated
   # beside the verdict, with the same decision (reported, not failed). No `.git` at all stays the quiet,
   # ordinary skip (a git-less tree is not an environment fault).
-  guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0
+  guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0 guard_repo_skipped=0
   guard_engine_skip() {
     printf 'NOTE: %s — the engine half of the corruption\n' "$1" >&2
     printf '      canary (dir #653) did NOT run this time; the suite is not watching that checkout.\n' >&2
@@ -203,14 +203,7 @@ main() {
     done
   }
 
-  guard_repo_skipped=0
-  if ! git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
-    if [ -e "$guard_repo_root/.git" ]; then
-      printf 'NOTE: %s carries a .git that git cannot read — the dir #318 half of the corruption\n' "$guard_repo_root" >&2
-      printf '      canary did NOT run this time; the suite is not watching the checkout it runs from.\n' >&2
-      guard_repo_skipped=1
-    fi
-  else
+  if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
     guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
     guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
     guard_before_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
@@ -273,6 +266,10 @@ main() {
       # happened).
       guard_before_reflog="$(guard_reflog_count "$guard_repo_root")"
     fi
+  elif [ -e "$guard_repo_root/.git" ]; then
+    printf 'NOTE: %s carries a .git that git cannot read — the dir #318 half of the corruption\n' "$guard_repo_root" >&2
+    printf '      canary did NOT run this time; the suite is not watching the checkout it runs from.\n' >&2
+    guard_repo_skipped=1
   fi
 
   # KEEL_TEST_JOBS overrides the concurrency cap (e.g. `KEEL_TEST_JOBS=1 ./tests/run.sh` to force the
