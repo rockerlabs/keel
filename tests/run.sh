@@ -60,13 +60,6 @@ main() {
   # beside the verdict. Neither fails the run: an unreadable checkout is an environment condition, not
   # evidence of a leak (dir #505 / dir #656: no existing trip changes meaning). Readable before the run
   # but not after IS a trip — see the compare below.
-  #
-  # delta-audit 0.13.0 R2-2: the same shape on the PRIMARY half. The dir #318 canary below used to be
-  # skipped without a word whenever `git rev-parse --git-dir` failed for any reason — including the ones
-  # that are not "this is not a repo": a checkout owned by another uid ("dubious ownership"), a corrupted
-  # `.git`. A watched path that carries a `.git` yet cannot be read now prints the same NOTE, repeated
-  # beside the verdict, with the same decision (reported, not failed). No `.git` at all stays the quiet,
-  # ordinary skip (a git-less tree is not an environment fault).
   guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0 guard_repo_skipped=0
   guard_engine_skip() {
     printf 'NOTE: %s — the engine half of the corruption\n' "$1" >&2
@@ -203,6 +196,12 @@ main() {
     done
   }
 
+  # delta-audit 0.13.0 R2-2: the engine half's skip-with-a-NOTE, applied to the PRIMARY half. The dir #318 canary below used to be
+  # skipped without a word whenever `git rev-parse --git-dir` failed for any reason — including the ones
+  # that are not "this is not a repo": a checkout owned by another uid ("dubious ownership"), a corrupted
+  # `.git`. A watched path that carries a `.git` yet cannot be read now prints the same NOTE, repeated
+  # beside the verdict, with the same decision (reported, not failed). No `.git` at all stays the quiet,
+  # ordinary skip (a git-less tree is not an environment fault).
   if git -C "$guard_repo_root" rev-parse --git-dir >/dev/null 2>&1; then
     guard_before_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
     guard_before_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"

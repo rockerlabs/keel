@@ -70,7 +70,7 @@ fails earlier, with "Argument list too long".
   half was skipped with no word, so a test that rewrote a tracked file still ended `ALL TEST FILES PASSED`.
   It now prints the same NOTE as the engine half, repeated beside the verdict, and keeps that half's
   decision: the exit status is unchanged. A tree with no `.git` at all stays the quiet skip.
-- **A full suite run no longer strands scratch in the real temp dir through three paths the census cannot
+- **A full suite run no longer strands scratch in the real temp dir through paths the census cannot
   see** (dir #653 and dir #480, baseline defects found by the 0.13.0 delta audit's round-3 re-check):
   `tests/run.sh` minted its per-file log directory with a bare `mktemp -d`, which ignores `$TMPDIR` on macOS;
   dir #480 keeps that directory on a failing run on purpose, and `test_run_sh.sh`'s failing fixtures each left
