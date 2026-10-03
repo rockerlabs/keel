@@ -25,8 +25,7 @@
 #                                                    wrap-fuse flag is pending)
 #   SessionEnd   / (all reasons)                 -> read-trace.sh session-end (silent)
 #
-# Never clobbers your data silently (same discipline as install-secret-guard.sh/
-# install-pre-pr-gate.sh): an existing hook already wired to the SAME event+matcher running a
+# Never clobbers your data silently: an existing hook already wired to the SAME event+matcher running a
 # DIFFERENT command is left exactly as it is and ours is APPENDED beside it, in a sibling entry with
 # that matcher (dir #468 — the slot is shared: install-pre-pr-gate.sh holds SessionStart/startup too).
 # The one refusal left is a STALE copy of this very hook (same script, another path — a moved checkout):

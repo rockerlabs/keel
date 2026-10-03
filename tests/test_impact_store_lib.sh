@@ -31,7 +31,7 @@ for a1_var in $IMPACT_ISOLATION_VARS; do
 done
 
 # a1_check_no_leak LABEL — asserts none of $a1_decoys' values appear in the just-run $OUT, one check
-# per decoy (shared by the three resolver checks below instead of each repeating the same loop).
+# per decoy (shared by the resolver checks below instead of each repeating the same loop).
 a1_check_no_leak() {
   local label="$1" a1_decoy
   for a1_decoy in "${a1_decoys[@]}"; do
@@ -144,13 +144,13 @@ $REPO_ROOT/tools/lib/state-root.sh:keel_machine_watch_store
 $REPO_ROOT/tools/secret-guard/secret-scan.sh:_impact_log_path_inline"
 
 a3_vars="$(a3_check "$a3_targets" "$a3_pattern")"
-check_status "A3: every var the four resolvers read is HOME or in IMPACT_ISOLATION_VARS" 0 "$?"
+check_status "A3: every var the target resolvers read is HOME or in IMPACT_ISOLATION_VARS" 0 "$?"
 for a3_required in $a3_floor_vars; do
   check_contains "A3 floor: the extraction actually sees $a3_required (not vacuous)" "$a3_vars" "$a3_required"
 done
 
 # Mutation 1: a resolver reading an unlisted variable (KEEL_FOO) must go red. Only impact_store_root's
-# OWN target is swapped for a mutated copy — the other three stay real (derived from $a3_targets by
+# OWN target is swapped for a mutated copy — every other target stays real (derived from $a3_targets by
 # swapping just its first line, not a second hand-typed copy that could drift out of sync), so the
 # floor stays satisfied and the only possible reason left for going red is the injected KEEL_FOO read.
 a3_mut1="$SANDBOX/impact-store-mut1.sh"
