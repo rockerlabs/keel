@@ -14,9 +14,10 @@
 # state, to find a store that has not been moved yet.
 #
 # No override variable for the root itself: tests already redirect `$HOME` (tests/lib.sh), so `$HOME/.keel`
-# follows the sandbox for free. A per-store override exists only where a real need was shown — today one:
-# KEEL_MACHINE_WATCH_STORE (keel_machine_watch_store below), which tests/lib.sh points into the sandbox and
-# tools/lib/impact-store.sh's IMPACT_ISOLATION_VARS names, so a store resolver cannot read it unisolated.
+# follows the sandbox for free. A store gets its own override only where a real need was shown. In this
+# file that is keel_machine_watch_store below: it reads KEEL_MACHINE_WATCH_STORE, which tests/lib.sh points
+# into the sandbox and tools/lib/impact-store.sh's IMPACT_ISOLATION_VARS names, so a store resolver cannot
+# read it unisolated.
 #
 # Names under the state root — each name once, here (B6). A new name joins this list in the PR that
 # introduces it:

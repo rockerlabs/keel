@@ -51,12 +51,12 @@
 # Needs jq to edit settings.json safely. Without it: prints the exact hooks JSON to paste in by hand
 # instead of writing anything — degrade to instructions, never a partial/broken write.
 #
-# Never clobbers your data silently (same discipline as install-secret-guard.sh): an existing hook
-# already wired to the SAME event+matcher running a DIFFERENT command is left exactly as it is and ours
-# is APPENDED beside it, in a sibling entry with that matcher (dir #468). The one refusal left is a STALE
-# copy of this very hook — same script, another path, e.g. a moved checkout — because appending would
-# fire it twice; --force backs up settings.json (a timestamped sibling) first, then swaps just that one
-# command for ours, leaving every other command in its entry. Everything else already in settings.json
+# Never clobbers your data silently: an existing hook already wired to the SAME event+matcher running a
+# DIFFERENT command is left exactly as it is and ours is APPENDED beside it, in a sibling entry with
+# that matcher (dir #468). The one refusal left is a STALE copy of this very hook — same script,
+# another path, e.g. a moved checkout — because appending would fire it twice; --force backs up
+# settings.json (a timestamped sibling) first, then swaps just that one command for ours, leaving
+# every other command in its entry. Everything else already in settings.json
 # (other hooks, other keys) is left exactly as it was. A hook that's already exactly ours is left alone
 # (idempotent — safe to re-run after every `git pull`).
 #
@@ -64,10 +64,10 @@
 # OUR hook — the {type, command} pair byte-identical to what this installer would wire right now —
 # wherever it sits (a sibling entry, or inside an entry that also holds someone else's command); a hook
 # you later pointed somewhere else, and every other command, is left in place — a slot holding commands
-# but none of ours is reported kept — never silently taken out along with the rest. Backs up settings.json first,
-# same as --force does. This is what uninstall.sh's own closing summary now points adopters at when it
-# finds leftover gate hooks — a whole-home uninstall never removes them itself (it doesn't know whether
-# other repos still need tools/pre-pr-gate.sh to exist).
+# but none of ours is reported kept — never silently taken out along with the rest. Backs up
+# settings.json first, same as --force does. This is what uninstall.sh's own closing summary now points
+# adopters at when it finds leftover gate hooks — a whole-home uninstall never removes them itself (it
+# doesn't know whether other repos still need tools/pre-pr-gate.sh to exist).
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -311,8 +311,7 @@ hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$curre
 # one-pass-tagged-report shape — REMOVED/KEPT instead of MISSING/SAME/APPENDED/STALE). Only OUR exact
 # {type, command} hook comes out, from any entry on that event+matcher (dir #468: after an append, ours
 # sits in a sibling entry; after a forced STALE swap, inside an entry that also holds someone else's
-# command); an entry it leaves empty goes with it, and everything else on that slot stays. KEPT when
-# nothing of ours was there to take.
+# command); an entry it leaves empty goes with it, and everything else on that slot stays.
 if [ "$uninstall" = 1 ]; then
   removal="$(hook_install_remove "$hook_specs" "$current")"
   statuses="$(jq -r '.report' <<<"$removal")"

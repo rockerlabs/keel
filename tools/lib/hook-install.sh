@@ -110,9 +110,9 @@ reduce $specs[] as $s (.;
 # APPENDED sibling can sit after the incumbent, and a forced STALE swap leaves ours inside an entry that
 # also holds someone else's command), only our exact {type, command} hook comes out; an entry it leaves
 # empty goes with it, and every other command — the incumbent's, or a hook you later pointed somewhere
-# else — stays. KEPT when nothing of ours was on that slot to take. The empty-array prune is scoped to
-# the events the SPECS own (dir #564, dir #390): another tool's empty hook array under `.hooks` is not
-# ours to delete.
+# else — stays. KEPT when that event+matcher has entries but none holds ours; a slot with no entries
+# gets no report line. The empty-array prune is scoped to the events the SPECS own (dir #564, dir #390):
+# another tool's empty hook array under `.hooks` is not ours to delete.
 hook_install_remove() {
   local remove_prog='
 {obj: (.hooks //= {}), report: []} |
