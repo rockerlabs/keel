@@ -15,6 +15,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`docs/delta-audit.md`: three procedure lessons from the 0.13.0 run.** §2: resolve the anchor's CI run
+  by commit, never by branch (a branch listing once returned a run two weeks old). §8: the re-check pair's
+  scope is an operator decision, put at the first NO-GO with three named exits, because pairs that read
+  whole files never fall silent. §9: every verifier pass restarts from the written record. Items 1–3
+  of dir #669; its rails-block item stays open.
+- **`docs/grooming.md`: a cycle with no manager, a parked file as a priced opt-in, and the pool reading
+  after a split.** G0 names what a ticket-by-ticket cycle leaves as its records. G1 extends the priced
+  opt-in to a parked file as a whole. G4: a pool reading compares only with readings of the same
+  coverage, so after a split the plan states the parked count beside it and reads no growth across the
+  change. A hand step for now; dir #655 removes it.
+
 ## [0.13.0] — 2026-10-03
 
 **Known issues, disclosed at the cut.** These things from the 0.13.0 delta audit ship known-imperfect; none

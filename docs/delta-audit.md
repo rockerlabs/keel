@@ -43,6 +43,9 @@ Resolve two revisions **live**, never by quoting a plan file or a prior session'
 
 CI must be green at the anchor before anything else starts — an audit on a red tree cannot tell
 prose or logic drift from a live bug, and every finding it produces inherits that ambiguity.
+**Resolve that CI run by commit, never by branch:** `gh run list --commit <sha>`, and assert the
+run's head SHA equals it (a branch listing once returned a run two weeks old). The same rule holds at
+every later verifier pass and at the tag-time check.
 
 **The anchor stays FIXED as `origin/main` moves.** Commits after the anchor are expected — this is
 the run's own fix round — and each must be listed per affected file in the run's ledger. A
@@ -289,6 +292,16 @@ independent diverse legs, run in parallel on the same state, yielding no behavio
 new class. A run can satisfy every bullet above while still owing Clause A's second silent round; the
 verifier checks both before declaring tag-ready, never the coverage bar alone.
 
+**The re-check pair's scope is an operator decision, put at the FIRST NO-GO with its price.** A pair
+that reads the touched files whole re-lists the run's own open items and keeps finding latent
+baseline defects, so under a literal-zero reading it never goes silent — the trap
+[`docs/verification-economics.md`](verification-economics.md) §3 names for Clause A. One run
+measured 25, 4, 8 and 6 behavioural findings per pair over four rounds and reached GO only when the
+operator scoped the fifth pair to the last fix round's new surface. Three exits: that section's
+known-defect carve-out, a pair scoped to the fix round's new surface, or Clause A waived for the run
+in so many words. At the first NO-GO the orchestrator names all three, with the convergence figures
+so far, before a second whole-file pair.
+
 **A GO verdict does not close the run — two records do, and a run that skips them leaves nothing a
 later cycle can read.** Both are the **orchestrator's**, by the roles table above (§5: "**all**
 bookkeeping"), not the verifier's: the verifier issues the verdict and stops, so a duty timed to the
@@ -507,6 +520,10 @@ Protocol rule 6, plus your reconciliation section if applicable. End your final 
 output of `ls -la <that path>` (§6).
 ```
 
+Every verifier pass restarts from the written record, never from a resumed context: one run's
+verifier context could not be resumed after the harness deleted its worktree, and passes three to
+five ran fresh from the verdict record alone.
+
 **S-final — verifier, GO/NO-GO:**
 
 ```
@@ -522,6 +539,7 @@ Confirm suite evidence came from a clean worktree or CI, never the operator's ow
 separately from that coverage bar, confirm Clause A itself — two independent diverse legs, run in
 parallel on the same state, together finding no behavioural findings and no new class — before
 declaring GO; a fully-verdicted ledger is not by itself permission to stop (docs/delta-audit.md §8).
+Append this pass's full record to the verdict record before you issue the verdict.
 
 Follow the Protocol: docs/delta-audit.md §4, all 8 rules, binding — including rule 8: only THIS
 session issues a release verdict.
