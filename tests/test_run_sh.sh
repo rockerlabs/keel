@@ -8,6 +8,12 @@
 runner="$REPO_ROOT/tests/run.sh"
 check_file "run.sh exists" "$runner"
 
+# delta-audit 0.13.0 R2-1: every fixture below runs a COPY of run.sh, and a failing fixture makes that copy
+# preserve its per-file logdir on purpose (dir #480). run.sh mints the logdir from a template rooted at
+# $TMPDIR, so pointing $TMPDIR at the sandbox keeps each preserved logdir inside it — removed with the
+# sandbox when this file exits — instead of stranding one in the real temp dir per failing fixture.
+export TMPDIR="$SANDBOX"
+
 # mkfakedir NAME — a throwaway tests/-shaped dir under $SANDBOX with its own copy of run.sh, so a
 # fixture test_*.sh file inside it is the only thing run.sh's glob picks up. Includes a stub lib.sh
 # (dir #627: run.sh now refuses to start when lib.sh is absent) so every fixture below — none of
@@ -207,6 +213,10 @@ check_status "failing fixture -> exit 1 (logdir case)" 1 "$STATUS"
 check_contains "a failing run names where its per-file logs were preserved" "$OUT" "per-file logs preserved"
 preserved_dir="$(printf '%s\n' "$OUT" | sed -n 's/.*per-file logs preserved[^:]*: //p' | tail -1)"
 check_dir "the preserved logdir actually exists after run.sh exited" "$preserved_dir"
+case "$preserved_dir" in
+  "$SANDBOX"/*) pass "R2-1: the preserved logdir sits under \$TMPDIR (the sandbox), not the real temp dir" ;;
+  *) fail "R2-1: the preserved logdir sits under \$TMPDIR (the sandbox), not the real temp dir" "got: $preserved_dir" ;;
+esac
 check_contains "the preserved logdir holds the failing file's own log, not just a stub" \
   "$(cat "$preserved_dir/test_b.sh.log" 2>/dev/null)" "dir480-marker-line"
 [ -n "$preserved_dir" ] && rm -rf "$preserved_dir"
@@ -225,8 +235,8 @@ check_absent "an all-pass run reports no preserved logdir" "$OUT" "per-file logs
 # leaked on every run) left every prior assertion in this file green. Since a clean run prints no
 # path, the logdir can't be named after the fact the way the failure branch's $preserved_dir is —
 # instead a `mktemp` shim ahead of the real one on PATH records the path run.sh's own `mktemp -d`
-# creates (bare `mktemp -d`, unlike `mktemp -t`, does not honor $TMPDIR on macOS/BSD, so redirecting
-# via TMPDIR alone is not portable enough to trust here).
+# creates (a bare `mktemp -d`, unlike a template or `mktemp -t`, does not honor $TMPDIR on macOS/BSD;
+# run.sh now passes a template, but a shim stays the portable way to learn the path whichever form it uses).
 mktemp_shim_dir="$(mktemp -d "$SANDBOX/mktemp-shim.XXXXXX")"
 mktemp_log="$(mktemp "$SANDBOX/mktemp-log.XXXXXX")"
 real_mktemp="$(command -v mktemp)"
@@ -658,5 +668,87 @@ run env HOME="$danglehome" bash "$watched/tests/run.sh"
 check_status "R1 F1: a dangling engine link -> exit 0" 0 "$STATUS"
 check_contains "R1 F1: ... the NOTE names the link" "$OUT" "$danglehome/.keel/engine does not resolve"
 check_status "R1 F1: ... and the not-run NOTE is printed twice" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
+
+# --- R2-4 (the 0.13.0 delta audit's re-check): run.sh's logdir mint had no empty-result guard. Under `set -uo
+# pipefail` (no `-e`) a `mktemp` that fails — or prints nothing — left logdir empty, every log path became
+# `/<file>.log`, and as root the run could still end ALL TEST FILES PASSED. It must now FAIL, loudly, before
+# any test file starts. A `mktemp` shim that prints nothing and exits 0 stands in (the strictest shape: no rc
+# to notice either); HOME and TMPDIR are the sandbox's, so nothing leaves it. -----------------------------------
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_a.sh"
+emptybin="$(mktemp -d "$SANDBOX/emptymktemp.XXXXXX")"
+printf '#!/bin/sh\nexit 0\n' > "$emptybin/mktemp"
+chmod 755 "$emptybin/mktemp"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "R2-4: a mktemp that yields no logdir fails the run -> exit 1" 1 "$STATUS"
+check_contains "R2-4: ... loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
+check_absent "R2-4: ... never as a pass" "$OUT" "ALL TEST FILES PASSED"
+check_absent "R2-4: ... and before any test file started" "$OUT" "=== test_a.sh ==="
+check_nofile "R2-4: no log was written to the filesystem root" "/test_a.sh.log"
+
+# the same with a mktemp that FAILS (rc 1, a message on stderr)
+printf '#!/bin/sh\necho "mktemp: failed to create directory (shim)" >&2\nexit 1\n' > "$emptybin/mktemp"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "R2-4: a mktemp that exits nonzero fails the run -> exit 1" 1 "$STATUS"
+check_contains "R2-4: ... with the same loud message" "$OUT" "mktemp -d did not return a usable log dir"
+
+# --- R2-2 (the 0.13.0 delta audit's re-check): the dir #318 half — the WATCHED checkout — was skipped
+# silently whenever `git rev-parse --git-dir` failed, including for a checkout that IS a repo git merely
+# cannot read (another uid's, "dubious ownership"). F1's twin on the primary half: it now prints a NOTE at
+# the top and again beside the verdict, and keeps the engine half's decision (reported, not failed). A
+# fixture test overwrites a tracked file of the watched checkout: with the half unarmed that leak still
+# passes, which is exactly why the skip must be loud. Two shapes: git's own ownership check (skipped on a
+# leg whose system config marks every directory safe, as the alpine leg's does), and a `git` shim. ---------
+watched="$(new_run_sh_fixture)"
+printf 'tracked\n' > "$watched/f.txt"
+git -C "$watched" add f.txt
+git -C "$watched" commit -q -m f
+printf '#!/usr/bin/env bash\nprintf "leaked\\n" > "$(dirname "$0")/../f.txt"\nexit 0\n' > "$watched/tests/test_leak.sh"
+
+# control: the readable checkout trips on the leak, with no not-run NOTE
+run bash "$watched/tests/run.sh"
+check_status "R2-2 control: a readable watched checkout trips on a leaked tracked-file write -> exit 1" 1 "$STATUS"
+check_absent "R2-2 control: ... and prints no not-run NOTE" "$OUT" "did NOT run this time"
+git -C "$watched" checkout -q -- f.txt
+
+# shape 1: git's own ownership check refuses the watched checkout
+if GIT_TEST_ASSUME_DIFFERENT_OWNER=1 git -C "$watched" rev-parse --git-dir >/dev/null 2>&1; then
+  pass "R2-2: shape 1 (dubious ownership) skipped — this git/system config does not refuse the checkout (the alpine leg marks every directory safe)"
+else
+  run env GIT_TEST_ASSUME_DIFFERENT_OWNER=1 bash "$watched/tests/run.sh"
+  check_status "R2-2: a watched checkout git refuses to read does not fail the run by itself -> exit 0" 0 "$STATUS"
+  check_status "R2-2: ... the NOTE says the dir #318 half did not run, at the top and again beside the verdict (exactly twice)" 2 \
+    "$(printf '%s\n' "$OUT" | grep -c 'dir #318 half of the corruption')"
+  check_contains "R2-2: ... and names the checkout" "$OUT" "$watched"
+  git -C "$watched" checkout -q -- f.txt
+fi
+
+# shape 2: a `git` shim that fails `rev-parse --git-dir` for the watched checkout only (run.sh calls it as
+# `git -C <dir> rev-parse --git-dir`)
+watched_phys="$(cd -P "$watched" && pwd -P)"
+shim2="$(mktemp -d "$SANDBOX/gitshim2.XXXXXX")"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'if [ "$1" = -C ] && [ "$3" = rev-parse ] && [ "$4" = --git-dir ] && [ "$(cd -P "$2" && pwd -P)" = %q ]; then\n' "$watched_phys"
+  printf '  echo "fatal: unreadable (shim)" >&2; exit 128\n'
+  printf 'fi\n'
+  printf 'exec %q "$@"\n' "$(command -v git)"
+} > "$shim2/git"
+chmod 755 "$shim2/git"
+check_status "R2-2 fixture: the shim really fails rev-parse --git-dir for the watched checkout" 128 \
+  "$(PATH="$shim2:$PATH" git -C "$watched" rev-parse --git-dir >/dev/null 2>&1; echo $?)"
+check_status "R2-2 fixture: ... and only for it" 0 "$(PATH="$shim2:$PATH" git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; echo $?)"
+run env PATH="$shim2:$PATH" bash "$watched/tests/run.sh"
+check_status "R2-2: a watched checkout the shim makes unreadable does not fail the run by itself -> exit 0" 0 "$STATUS"
+check_status "R2-2: ... the NOTE is printed twice" 2 "$(printf '%s\n' "$OUT" | grep -c 'dir #318 half of the corruption')"
+check_contains "R2-2: ... and names the checkout" "$OUT" "$watched"
+git -C "$watched" checkout -q -- f.txt
+
+# a tree with NO .git at all is the ordinary, quiet skip (a git-less fixture dir is not an environment fault)
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_clean.sh"
+run bash "$d/run.sh"
+check_status "R2-2: a git-less tree still passes" 0 "$STATUS"
+check_absent "R2-2: ... with no dir #318 NOTE" "$OUT" "dir #318 half of the corruption"
 
 summary

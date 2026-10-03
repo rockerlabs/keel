@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# test_no_bare_mktemp.sh — the census that keeps test scratch inside the suite's sandbox (dir #437, caught
-# by the 0.13.0 delta audit). A bare `mktemp` / `mktemp -d` in a test file lands in the REAL temp dir, and
-# on macOS it ignores $TMPDIR, so no redirect can catch it: three install tests left PATH farms (one
-# symlink per command on PATH, thousands of them) and a scratch checkout there on every run. tests/lib.sh's
-# $SANDBOX is removed when a test file exits, so a scratch path minted under it —
-# `mktemp -d "$SANDBOX/name.XXXXXX"` — cannot outlive the run.
+# test_no_bare_mktemp.sh — a census of one leak shape in the test files (dir #437, caught by the 0.13.0
+# delta audit). A bare `mktemp` / `mktemp -d` in a test file lands in the REAL temp dir, and on macOS it
+# ignores $TMPDIR, so no redirect can catch it: install tests left PATH farms (one symlink per command on
+# PATH) and a scratch checkout there on every run. tests/lib.sh removes $SANDBOX when a test file exits, so
+# a path minted under it — `mktemp -d "$SANDBOX/name.XXXXXX"` — goes with it, unless the test replaces or
+# clears that cleanup trap, which this census does not look for.
 #
 # Axis, named: this detects the `$(mktemp …)` call shape on a non-comment line of a tests/test_*.sh file.
 # It does not see a backtick call, a `mktemp` outside a command substitution, or a template held in a

@@ -235,6 +235,11 @@ printf 'SENTINEL\n' > "$notes_untouched"
 run env "EDITOR=$edit_repo/bin/editor-fail.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_untouched"
 check_status "--edit with a failing editor -> nonzero exit" 1 "$STATUS"
 check_contains "notes-file is left untouched on editor failure" "$(cat "$notes_untouched")" "SENTINEL"
+# The tool preserves its scratch file on this path on purpose (a --wait wrapper failing can leave real
+# typing in it), so it is ours to remove here: it sits in the real temp dir (delta-audit 0.13.0 R2-1).
+untouched_scratch="$(printf '%s\n' "$OUT" | sed -n 's/.*preserved at \(.*\)$/\1/p')"
+check_file "the failing-editor path preserved a scratch file (so there is something to remove)" "$untouched_scratch"
+rm -f "$untouched_scratch"
 
 run env -u EDITOR "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$SANDBOX/edit-notes-unset.md"
 check_status "--edit with \$EDITOR unset -> nonzero exit" 1 "$STATUS"
@@ -270,6 +275,9 @@ notes_bad_dir="$edit_repo/no-such-directory/out.md"
 run env "EDITOR=$edit_repo/bin/editor-ok.sh" "$edit_repo/tools/changelog-section.sh" --edit 1.0.0 "$notes_bad_dir"
 check_status "--edit whose cp destination fails -> nonzero exit" 1 "$STATUS"
 check_contains "failure names a recoverable scratch-file path, not silent data loss" "$OUT" "your edited draft is preserved at"
+cpfail_scratch="$(printf '%s\n' "$OUT" | sed -n 's/.*preserved at \(.*\)$/\1/p')"
+check_file "the cp-failure path preserved a scratch file (so there is something to remove)" "$cpfail_scratch"
+rm -f "$cpfail_scratch"   # preserved on purpose; it sits in the real temp dir, so remove it (delta-audit 0.13.0 R2-1)
 
 # --- --edit composition guards (dir #326) --------------------------------------------------------
 # Two independent, non-fatal warnings at the notes-composition step: (a) the composed notes-file
