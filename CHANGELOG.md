@@ -15,7 +15,7 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
-**Known issues, disclosed at the cut.** Six things from the 0.13.0 delta audit ship known-imperfect; none
+**Known issues, disclosed at the cut.** These things from the 0.13.0 delta audit ship known-imperfect; none
 is fixed in this release. (1) `tools/machine-watch.sh` does not follow files pulled in by a git `[include]`
 or an ssh `Include` — the git global and system config files and `~/.ssh/config` are fingerprinted
 themselves, but nothing they pull in is — and a mode-only change to the file a watched symlink points
@@ -32,7 +32,14 @@ has none, so that old copy does not record its guard fires — re-vendor before 
 siblings are not in it. (5) `vendor-review.sh`'s leak gate has no flag bypass, but a `.secret-scan-allow`
 in the working directory is honoured by the scanner (`docs/vendor-review.md`, rail 1). (6) `agy.sh`'s
 185 KB cap is the inline-prompt limit; on Linux a single argument of 128 KiB (131072 bytes) or more
-fails earlier, with "Argument list too long".
+fails earlier, with "Argument list too long". (7) `tests/run.sh`'s corruption canary compares
+`git status --porcelain` before and after the run, so a test that rewrites a tracked file the operator
+already had uncommitted edits in is not seen: the file is listed as modified in both snapshots. It prints a
+NOTE and skips when the watched checkout carries a `.git` that git cannot read, but skips silently when
+`tests/` sits in a subdirectory of an unreadable repo, because the path it watches is the parent of
+`tests/` and has no `.git` of its own. And a `TMPDIR` pointing inside the watched checkout, at a directory that
+holds no untracked files yet and is not git-ignored, trips it on a clean run: the per-file log directory
+is made after the before-snapshot and still exists at the compare, so it appears as an untracked path.
 
 - **The test suite no longer runs an operator's machine-watch notifier on test data** (dir #437, caught by the
   0.13.0 delta audit): `tests/lib.sh` unset `KEEL_HOME` but left `KEEL_MACHINE_WATCH_NOTIFIER` and
@@ -64,11 +71,11 @@ fails earlier, with "Argument list too long".
   scratch is now minted under the suite's sandbox instead, and a new census (`tests/test_no_bare_mktemp.sh`)
   fails on a `$(mktemp …)` call in a test file that mints outside the sandbox and is not on its allow-list.
   The census checks that one call shape only.
-- **`tests/run.sh`'s watched-checkout canary no longer fails open and silent** (dir #318, a baseline defect
+- **`tests/run.sh`'s watched-checkout canary is no longer silent about an unreadable `.git`** (dir #318, a baseline defect
   that predates this release, found by the 0.13.0 delta audit's round-3 re-check): when the checkout the suite
   runs from carried a `.git` that git could not read (another uid's checkout, a corrupted `.git`), the dir #318
   half was skipped with no word, so a test that rewrote a tracked file still ended `ALL TEST FILES PASSED`.
-  It now prints the same NOTE as the engine half, repeated beside the verdict, and keeps that half's
+  It now prints a NOTE of the same shape as the engine half's, repeated beside the verdict, and keeps that half's
   decision: the exit status is unchanged. A tree with no `.git` at all stays the quiet skip.
 - **A full suite run no longer strands scratch in the real temp dir through paths the census cannot
   see** (dir #653 and dir #480, baseline defects found by the 0.13.0 delta audit's round-3 re-check):
