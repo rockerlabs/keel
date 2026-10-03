@@ -129,7 +129,7 @@ check_eq "--print names the same event+matcher+command triples the install wires
   "$(jq -c "$ours" "$qrepo/.claude/settings.json" 2>/dev/null || true)" "$(jq -c "$ours" <<<"$OUT")"
 
 # --- no jq: a snippet, nothing written -----------------------------------------------------------------
-farm="$(mktemp -d)"; path_farm "$farm" jq
+farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
 njrepo="$(new_repo)"
 run env PATH="$farm" "$installer" "$njrepo"
 check_status "no jq -> non-zero (nothing installed)" 1 "$STATUS"

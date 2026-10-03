@@ -48,26 +48,37 @@ main() {
   # claude-kb shape the KB checkout, not the engine checkout a leaking test actually wrote into (4 of
   # the 6 files overwritten on 2026-09-22 were neither run.sh nor lib.sh). When $HOME/.keel/engine
   # resolves to a DIFFERENT git checkout than the watched one, snapshot its tracked-file status too.
-  # `-uno`: a peer session's new untracked scratch file is not a leak. `--no-optional-locks`: a read-only
-  # canary must not take the index lock a concurrent session's own git command may be holding. No checkout reachable (an
-  # adopter without the engine link, or CI) -> guard_engine_root stays empty and the half is skipped.
-  guard_engine_root="" guard_engine_before="" guard_engine_ran=0
-  guard_engine_root="$(cd -P "${HOME:-}/.keel/engine" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ "$guard_engine_root" = "$(cd -P "$here/.." 2>/dev/null && pwd -P)" ]; then
-    guard_engine_root=""                 # the watched checkout itself — the dir #318 half already covers it
+  # `-uno`: a peer session's new untracked scratch file is not a leak. `--no-optional-locks`: a
+  # read-only canary must not take the index lock a concurrent session's own git command may be holding.
+  # No $HOME/.keel/engine at all, neither a directory nor a link (an adopter without the engine link, or
+  # CI) -> the half is skipped without a word.
+  #
+  # delta-audit 0.13.0 S6-1 / R1 F1: an engine path that IS there but git cannot read used to skip the
+  # half silently, at either step: resolving it (a dangling link — the checkout moved — a directory `cd`
+  # cannot enter, another uid's checkout — "dubious ownership" — or not a checkout at all) or `status`
+  # (a corrupted index, a git too old for `--no-optional-locks`). Either now prints a NOTE, repeated
+  # beside the verdict. Neither fails the run: an unreadable checkout is an environment condition, not
+  # evidence of a leak (dir #505 / dir #656: no existing trip changes meaning). Readable before the run
+  # but not after IS a trip — see the compare below.
+  guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0
+  guard_engine_skip() {
+    printf 'NOTE: %s — the engine half of the corruption\n' "$1" >&2
+    printf '      canary (dir #653) did NOT run this time; the suite is not watching that checkout.\n' >&2
+    guard_engine_skipped=1
+  }
+  if [ -d "${HOME:-}/.keel/engine" ] || [ -L "${HOME:-}/.keel/engine" ]; then
+    guard_engine_root="$(cd -P "${HOME:-}/.keel/engine" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -z "$guard_engine_root" ]; then
+      guard_engine_skip "${HOME:-}/.keel/engine does not resolve to a checkout git can read"
+    elif [ "$guard_engine_root" = "$(cd -P "$here/.." 2>/dev/null && pwd -P)" ]; then
+      guard_engine_root=""               # the watched checkout itself — the dir #318 half already covers it
+    fi
   fi
-  # delta-audit 0.13.0 S6-1: a reachable checkout whose `git status` errors (corrupted index, dubious
-  # ownership, a git too old for `--no-optional-locks`) used to read as an empty snapshot on both sides —
-  # the guard failing open and silent. A failed FIRST call now means the half did not run, and says so (a
-  # NOTE here and beside the verdict, the ref-guard half's shape). It does not fail the run: an engine
-  # checkout git cannot read is an environment condition, not evidence of a leak (dir #505 / dir #656: no
-  # existing trip changes meaning). Readable before the run but not after IS a trip — see the compare below.
   if [ -n "$guard_engine_root" ]; then
     if guard_engine_before="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null)"; then
       guard_engine_ran=1
     else
-      printf 'NOTE: `git status` of the engine checkout %s failed — the engine half of the corruption\n' "$guard_engine_root" >&2
-      printf '      canary (dir #653) did NOT run this time; the suite is not watching that checkout.\n' >&2
+      guard_engine_skip "\`git status\` of the engine checkout $guard_engine_root failed"
     fi
   fi
 
@@ -522,7 +533,7 @@ main() {
     printf '      time — see the NOTE near the top of this output for why.\n' >&2
   fi
   # delta-audit 0.13.0 S6-1: the same repeat for the engine half (its NOTE ran near the top).
-  if [ -n "$guard_engine_root" ] && [ "$guard_engine_ran" != 1 ]; then
+  if [ "$guard_engine_skipped" = 1 ]; then
     printf 'NOTE: the engine half of the corruption canary (dir #653) did not run this time — see the NOTE\n' >&2
     printf '      near the top of this output for why.\n' >&2
   fi

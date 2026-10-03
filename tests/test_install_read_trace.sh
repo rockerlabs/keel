@@ -50,7 +50,7 @@ n="$(grep -c '"matcher": "startup"' "$repo/.claude/settings.json")"
 check_status "re-run does not duplicate the SessionStart entry" 1 "$n"
 
 # --- foreign content elsewhere in settings.json survives untouched ----------------------------------
-tmp_perm="$(mktemp)"
+tmp_perm="$(mktemp "$SANDBOX/settings.XXXXXX")"
 jq '. + {permissions: {allow: ["Bash(ls:*)"]}}' "$repo/.claude/settings.json" > "$tmp_perm"
 mv "$tmp_perm" "$repo/.claude/settings.json"
 run "$installer" "$repo"
@@ -117,7 +117,7 @@ check_absent "--uninstall removes ours from the shared entry" "$sj" "$rt"
 check_contains "--uninstall keeps the sibling command" "$sj" "echo not-the-tool"
 
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched -------------------------
-farm="$(mktemp -d)"; path_farm "$farm" jq
+farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
 njrepo="$(new_repo)"
 run env PATH="$farm" "$installer" "$njrepo"
 check_status "no jq -> non-zero (nothing installed)" 1 "$STATUS"

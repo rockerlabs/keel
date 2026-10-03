@@ -49,11 +49,21 @@ fails earlier, with "Argument list too long".
   header no longer says "No override variable", and two stale comments in `impact-store.sh` are corrected. No
   behaviour change outside the isolation helper.
 - **`tests/run.sh`'s engine-checkout canary no longer fails open and silent** (dir #653, caught by the 0.13.0
-  delta audit): when `git status` of the `~/.keel/engine` checkout errored (a corrupted index, another uid's
-  checkout), both snapshots read empty, so a test that rewrote an engine file still ended `ALL TEST FILES
-  PASSED` with no word about that half. A failed first status now prints a NOTE, repeated beside the verdict,
-  that the half did not run (the run's exit status is unchanged: an unreadable checkout is not evidence of a
-  leak); a checkout readable before the run but unreadable after it trips the canary.
+  delta audit and its re-check pair): when git could not read the `~/.keel/engine` checkout, the half was
+  skipped, so a test that rewrote an engine file still ended `ALL TEST FILES PASSED` with no word about that
+  half. It failed at either of two steps: resolving the path to a checkout (a dangling link left by a moved
+  checkout, another uid's checkout, git's "dubious ownership"), or `git status` of one it did resolve (a
+  corrupted index). Either failure now prints a NOTE, repeated beside the verdict, that the half did not run
+  (the run's exit status is unchanged: an unreadable checkout is not evidence of a leak); a checkout readable
+  before the run but unreadable after it trips the canary.
+- **Three install tests no longer leave scratch in the real temp dir on every run** (dir #437, caught by the
+  0.13.0 delta audit's re-check pair): `test_install_machine_watch.sh` built its no-`jq` `PATH` farm (one
+  symlink per command on `PATH`) with a bare `mktemp -d` and never removed it. `test_install_pre_pr_gate.sh` and
+  `test_install_read_trace.sh` have carried the same leak since before this release: three more farms and a
+  scratch checkout per run. On macOS a bare `mktemp` ignores `$TMPDIR`, so no redirect caught them. Every
+  such path is now minted under the suite's sandbox, which is removed when each test file exits, and a new
+  census (`tests/test_no_bare_mktemp.sh`) fails on any `$(mktemp …)` call in a test file that mints outside
+  the sandbox and is not on its allow-list.
 - **The negative paths of the guards this release added are now pinned by tests that turn red without them**
   (found by the 0.13.0 delta audit; tests only, no shipped tool changed). **dir #637:** the
   "uninstall never touches a moved store" test now builds the store under the same `$HOME/.keel` the
