@@ -37,13 +37,14 @@ Before touching the plan, read the previous cycle's records: the releases cross-
 the audits' cross-run record rows, the release record a manager writes at close (keel's own instance is
 the FINAL NUMBERS paragraph its `dir #367`-style ticket record carries — a project without a ticket
 record of its own writes the equivalent wherever its release-manager procedure lands it), and every
-ticket filed by the previous cycle's managers. A cycle built ticket by ticket with no manager (keel's
-0.13.0, under an operator moratorium) has no such record: the audit orchestrator completed the
-release row at the tag, and the tickets it filed are that cycle's filings. Where the project's
-read-trace aggregate exists (keel: `dir #387`), it supplies two more G0 inputs — a dead-doc signal and
-a wrap-loss-scale signal, the two things that mechanism exists to surface. Consume it **by pointing at the tool that produces it**, never
-by citing its internal format: no column names, no file path, no output shape — the tool's own doc is
-where that lives, and it may change there without this doc needing an edit.
+ticket filed by the previous cycle's managers. A cycle built ticket by ticket with no manager has no
+such record; its records are wherever its closing step wrote them (keel's 0.13.0: the audit
+orchestrator completed the release row at the tag, and its filings are that cycle's filings). Where
+the project's read-trace aggregate exists (keel: `dir #387`), it supplies two more G0 inputs — a
+dead-doc signal and a wrap-loss-scale signal, the two things that mechanism exists to surface.
+Consume it **by pointing at the tool that produces it**, never by citing its internal format: no
+column names, no file path, no output shape — the tool's own doc is where that lives, and it may
+change there without this doc needing an edit.
 
 **Read both signals against what the sensor can actually see, and expect the first cycle to spend
 most of its effort on the instrument rather than on the docs.** Three coverage gaps, all found by one
@@ -240,8 +241,8 @@ The same day the operator cut the slate to its 11 pain tickets. The answer had c
 could see what the lane would cost. So the pain rows are planned and reviewed first. The lane follows
 as its own row, priced by G5's per-ticket rule from its ticket count alone. Its body reads and its
 own G6 pass happen only after a "yes" given against that price. A rule of the procedure, not a
-compensation. The same holds for a parked file as a whole: the 0.14.0 groom's "full groom" answer
-came before the parked file's 223 open tickets had a price, so the groom priced it and asked again.
+compensation. It holds for any set the operator opts into wholesale, a parked file included (keel's
+0.14.0 groom took "full groom" before the parked file had a price, then priced it and asked again).
 
 **The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
 pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
@@ -345,11 +346,11 @@ settled fact.
   Returned tickets call for a sort or a drain; filings call for a stricter filing bar. So the plan
   states both numbers, the returned ones taken from the cut's own record. This is a hand step, a
   compensation whose remover is `dir #655`.
-  **A split backlog changes what the reading means (the 0.14.0 groom).** Once a sort moves most open
-  tickets into a parked file, the tool counts the live file only. Keel's history went from 180 to 19
-  at its split. That drop is a change of definition, not a drain. So the plan states the parked count
-  beside the recorded reading, and no growth figure is read across the split. Same compensation,
-  same remover (`dir #655`): its record must say which files a reading covered.
+  **A reading compares only with readings of the same coverage (the 0.14.0 groom).** When what the
+  tool counts changes (a sort moving most open tickets to a parked file, a new filter), the plan
+  states the uncounted part beside the reading and reads no growth across the change (keel's history
+  went 180 → 19 at its split: a change of definition, not a drain). Same remover, `dir #655`, whose
+  record must name the files a reading covered.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
