@@ -70,7 +70,7 @@ n="$(grep -c '"matcher": "Bash"' "$repo/.claude/settings.json")"
 check_status "re-run does not duplicate the PreToolUse/Bash entry" 1 "$n"
 
 # --- foreign content elsewhere in settings.json survives untouched ----------------------------------
-tmp_perm="$(mktemp)"
+tmp_perm="$(mktemp "$SANDBOX/settings.XXXXXX")"
 jq '. + {permissions: {allow: ["Bash(ls:*)"]}}' "$repo/.claude/settings.json" > "$tmp_perm"
 mv "$tmp_perm" "$repo/.claude/settings.json"
 run "$installer" "$repo"
@@ -137,7 +137,7 @@ check_absent "--uninstall removes ours from the shared entry" "$sj" "$gate"
 check_contains "--uninstall keeps the sibling command" "$sj" "echo not-the-gate"
 
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched ------------------------
-farm="$(mktemp -d)"; path_farm "$farm" jq
+farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
 njrepo="$(new_repo)"
 run env PATH="$farm" "$installer" "$njrepo"
 check_status "no jq -> non-zero (nothing installed)" 1 "$STATUS"
@@ -367,7 +367,7 @@ check_status "W-GATE-PARTIAL is advisory only -> exit 0" 0 "$STATUS"
 check_contains "referenced but load-bearing hook missing -> WARN W-GATE-PARTIAL" "$OUT" "W-GATE-PARTIAL"
 
 # --- regression: a checkout path containing a space still produces a working (single-token) command --
-sp_root="$(mktemp -d)/space checkout"
+sp_root="$(mktemp -d "$SANDBOX/space.XXXXXX")/space checkout"
 mkdir -p "$sp_root/tools"
 cp "$installer" "$sp_root/tools/install-pre-pr-gate.sh"
 cp "$gate" "$sp_root/tools/pre-pr-gate.sh"
@@ -464,7 +464,7 @@ check_contains "second run reports nothing to remove" "$OUT" "nothing to remove"
 frepo2="$(new_repo)"
 run "$installer" "$frepo2"
 check_status "wiring the foreign-hook fixture -> exit 0" 0 "$STATUS"
-tmp_foreign="$(mktemp)"
+tmp_foreign="$(mktemp "$SANDBOX/settings.XXXXXX")"
 jq '.hooks.PreToolUse[0].hooks[0].command = "echo not-the-gate-anymore"' \
   "$frepo2/.claude/settings.json" > "$tmp_foreign"
 mv "$tmp_foreign" "$frepo2/.claude/settings.json"
@@ -478,7 +478,7 @@ check_absent "the untouched SessionStart hook is still removed" "$(cat "$frepo2/
 # --- (e) foreign top-level content (e.g. permissions) survives untouched ----------------------------
 prepo="$(new_repo)"
 run "$installer" "$prepo"
-tmp_perm2="$(mktemp)"
+tmp_perm2="$(mktemp "$SANDBOX/settings.XXXXXX")"
 jq '. + {permissions: {allow: ["Bash(ls:*)"]}}' "$prepo/.claude/settings.json" > "$tmp_perm2"
 mv "$tmp_perm2" "$prepo/.claude/settings.json"
 run "$installer" --uninstall "$prepo"
@@ -517,7 +517,7 @@ check_status "--uninstall --home DIR -> exit 0" 0 "$STATUS"
 check_absent "the retargeted settings.json no longer carries the gate" "$(cat "$uhhome/settings.json")" "$gate"
 
 # --- (g) no jq -> instructions printed, nothing changed ----------------------------------------------
-farm2="$(mktemp -d)"; path_farm "$farm2" jq
+farm2="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm2" jq
 njrepo2="$(new_repo)"
 run "$installer" "$njrepo2"
 before_nj="$(cat "$njrepo2/.claude/settings.json")"

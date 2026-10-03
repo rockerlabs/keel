@@ -107,7 +107,7 @@ fi
 d="$(mkfakedir)"
 printf '#!/usr/bin/env bash\necho hello-from-int-a\nsleep 5\nexit 0\n' > "$d/test_a.sh"
 printf '#!/usr/bin/env bash\necho hello-from-int-b\nsleep 5\nexit 0\n' > "$d/test_b.sh"
-int_out="$(mktemp)"
+int_out="$(mktemp "$SANDBOX/int-out.XXXXXX")"
 t0=$(date +%s)
 env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
 rpid=$!
@@ -610,5 +610,53 @@ run env HOME="$enghome3" bash "$watched/tests/run.sh"
 check_status "S6-1: an engine checkout that goes unreadable DURING the run trips the canary -> exit 1" 1 "$STATUS"
 check_contains "S6-1: ... and the before -> after diff shows the status failure" "$OUT" "(git status failed)"
 check_absent "S6-1: ... without the not-run NOTE (the half did run)" "$OUT" "did NOT run this time"
+
+# --- R1 F1 (the 0.13.0 delta audit's re-check): the S6-1 NOTE above fired only when `git status` failed.
+# A $HOME/.keel/engine DIRECTORY that `git rev-parse` cannot resolve — another uid's checkout, git's
+# "dubious ownership", reproduced with GIT_TEST_ASSUME_DIFFERENT_OWNER=1 — left guard_engine_root empty
+# and skipped the half with no word: a leaked engine file still ended ALL TEST FILES PASSED. A `git` shim
+# that fails `rev-parse` only inside the engine checkout stands in for that (the env-var route is defeated
+# on the alpine leg, whose system config marks every directory safe). -------------------------------------
+new_engine_fixture; eng4="$ENG_REPO"; enghome4="$ENG_HOME"
+eng4_phys="$(cd -P "$eng4" && pwd -P)"
+shimbin="$(mktemp -d "$SANDBOX/gitshim.XXXXXX")"
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'if [ "$1" = rev-parse ] && [ "$(pwd -P)" = %q ]; then\n' "$eng4_phys"
+  printf '  echo "fatal: detected dubious ownership in repository (shim)" >&2; exit 128\n'
+  printf 'fi\n'
+  printf 'exec %q "$@"\n' "$(command -v git)"
+} > "$shimbin/git"
+chmod 755 "$shimbin/git"
+(cd "$eng4" && PATH="$shimbin:$PATH" git rev-parse --show-toplevel >/dev/null 2>&1)
+check_status "R1 F1 fixture: the shim really fails rev-parse inside the engine checkout" 128 "$?"
+check_status "R1 F1 fixture: ... and only there" 0 "$(cd "$watched" && PATH="$shimbin:$PATH" git rev-parse --show-toplevel >/dev/null 2>&1; echo $?)"
+
+printf '#!/usr/bin/env bash\nprintf "leaked\\n" > "%s/engine-file.txt"\nexit 0\n' "$eng4" > "$watched/tests/test_engine_leak.sh"
+run env HOME="$enghome4" PATH="$shimbin:$PATH" bash "$watched/tests/run.sh"
+# The same decision as S6-1 above: a not-run half is reported, not failed.
+check_status "R1 F1: an engine directory git cannot resolve does not fail the run by itself -> exit 0" 0 "$STATUS"
+check_contains "R1 F1: the NOTE names the engine directory" "$OUT" "$enghome4/.keel/engine"
+check_status "R1 F1: the NOTE says the half did not run, at the top and again beside the verdict (exactly twice)" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
+
+# the same NOTE for a directory that is not a checkout at all (the ceiling keeps git from finding an
+# enclosing repo above the sandbox)
+plainhome="$(mktemp -d "$SANDBOX/plainhome.XXXXXX")"
+mkdir -p "$plainhome/.keel/engine"
+rm -f "$watched/tests/test_engine_leak.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$watched/tests/test_clean.sh"
+run env HOME="$plainhome" GIT_CEILING_DIRECTORIES="$plainhome/.keel" bash "$watched/tests/run.sh"
+check_status "R1 F1: an engine directory that is not a checkout -> exit 0" 0 "$STATUS"
+check_status "R1 F1: ... and the not-run NOTE is printed twice" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
+
+# the likeliest real trigger: the engine link dangles (the checkout it named was moved or deleted). `[ -d ]`
+# alone is false for it, which would have skipped the half without a word again.
+danglehome="$(mktemp -d "$SANDBOX/danglehome.XXXXXX")"
+mkdir -p "$danglehome/.keel"
+ln -s "$danglehome/moved-away" "$danglehome/.keel/engine"
+run env HOME="$danglehome" bash "$watched/tests/run.sh"
+check_status "R1 F1: a dangling engine link -> exit 0" 0 "$STATUS"
+check_contains "R1 F1: ... the NOTE names the link" "$OUT" "$danglehome/.keel/engine does not resolve"
+check_status "R1 F1: ... and the not-run NOTE is printed twice" 2 "$(printf '%s\n' "$OUT" | grep -c 'engine half of the corruption')"
 
 summary
