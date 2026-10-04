@@ -1066,7 +1066,13 @@ hp="$(git config --global core.hooksPath 2>/dev/null || true)"
 case "$hp" in
   *keel-hooks)
     echo "  • The machine-global secret-guard is still wired (core.hooksPath=$hp) — kept on purpose."
-    echo "    To remove it too:  git config --global --unset core.hooksPath && rm -rf \"$hp\""
+    # Through the installer's own --uninstall, not a bare `--unset`: it restores the hooksPath a
+    # --global --force displaced (recorded in keel.displacedHooksPath, dir #659), which `--unset` would lose.
+    # A literal leading ~/ (git expands it itself) is expanded here too: inside the printed double
+    # quotes it would not be, and `rm -rf "~/…"` names a `~` directory under the current one.
+    # shellcheck disable=SC2088  # matching a literal ~ on purpose
+    case "$hp" in "~/"*) hp_dir="$HOME/${hp#\~/}" ;; *) hp_dir="$hp" ;; esac
+    echo "    To remove it too:  \"$root/tools/install-secret-guard.sh\" --global --uninstall && rm -rf \"$hp_dir\""
     ;;
 esac
 

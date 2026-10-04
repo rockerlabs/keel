@@ -3,7 +3,10 @@
 # directory its machine-wide `core.hooksPath` names (dir #437 PR2, MW1 a-c). One definition for the
 # machine-global watcher (tools/machine-watch.sh); tools/doctor.sh carries a hand-copied twin of the
 # hooksPath resolution (its `_expand_hookspath_tilde` and effective-hooksPath probe) that a follow-up
-# migrates onto this file — a named duplicate, not a silent one.
+# migrates onto this file — a named duplicate, not a silent one. Three more named copies of the `~/`
+# expansion (dir #659): install.sh's `keel_hooks_is`, uninstall.sh's hint path (`hp_dir`), and
+# tools/install-secret-guard.sh's `_isg_norm_path` — the last ships standalone and can never source
+# this file.
 #
 # Sourced, not executed: no shebang, no set -e (inherits the caller's), no set -u assumption.
 #
