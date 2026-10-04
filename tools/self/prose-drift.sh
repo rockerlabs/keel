@@ -135,15 +135,20 @@ MIN_BLOCK=3
 # fence toggle re-derived here instead would be a second copy of that exact drift, one file over —
 # so this program itself never needs to know about fences at all. Emits TSV (line, length,
 # block-baseline) per hit.
+#
+# Lengths are CHARACTERS (dir #486): length() counts bytes in BWK awk and mawk, which halves every
+# threshold on Cyrillic. chars() drops UTF-8 continuation bytes (0x80-0xBF), leaving one byte per
+# character. LC_ALL=C is load-bearing: without it busybox awk and gawk reject the byte-range regex.
 scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on stdin)
-  awk -v WRAP_MAX="$WRAP_MAX" -v MARGIN="$MARGIN" -v MIN_BLOCK="$MIN_BLOCK" -v MODE="$1" '
+  LC_ALL=C awk -v WRAP_MAX="$WRAP_MAX" -v MARGIN="$MARGIN" -v MIN_BLOCK="$MIN_BLOCK" -v MODE="$1" '
+    function chars(s)      { gsub(/[\200-\277]/, "", s); return length(s) }
     function is_bullet(l)  { return (l ~ /^[-*+][ \t]/) || (l ~ /^[0-9]+\.[ \t]/) }
     function is_heading(l) { return l ~ /^#{1,6}[ \t]/ }
     function is_table(l)   { return l ~ /^[ \t]*\|.*\|[ \t]*$/ }
     function is_linkline(l){ return (l ~ /^[ \t]*\[.*\]\(.*\)/) || (l ~ /^[ \t]*\[[^]]*\]:/) }
     function has_url(l)    { return l ~ /https?:\/\// }
     function record() {
-      len = length(raw)
+      len = chars(raw)
       n[block]++
       bl[block, n[block]] = len
       ln[block, n[block]] = NR

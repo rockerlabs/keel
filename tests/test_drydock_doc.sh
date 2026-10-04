@@ -132,6 +132,31 @@ pin "sweep 2 enumerates NUL-delimited" "$doc" "git ls-files -z '*.md' | while IF
 pin "sweep 2's class does not stop at a colon" "$doc" '\]\([^)#]+' \
   "excluding ':' truncates mailto:you@example.com to 'mailto', reported as a dead relative link"
 
+# dir #486: sweep 1 counts CHARACTERS. Executed, not pinned — the awks this suite meets (BWK, busybox,
+# mawk, gawk) disagree on multibyte length() and on a high-byte regex outside the C locale, so only a
+# run on each CI leg proves the shipped line. A 100-char Cyrillic line is 200 bytes: a byte count
+# reports it past 110; a character count must not, and must still report a 120-char one.
+sweep1="$(awk '/^# 1\. anomalous line length/ { getline; print; exit }' "$doc")"
+check_contains "sweep 1 was found in the doc" "$sweep1" "git ls-files -z '*.md'"
+y100="$(rep_cyr 100)"
+y120="$(rep_cyr 120)"
+sweep_repo="$(new_repo)"
+printf '# doc\n\n%s\n%s\n' "${y100}" "${y120}" > "$sweep_repo/doc.md"
+git -C "$sweep_repo" add doc.md
+OUT="$(cd "$sweep_repo" && bash -c "$sweep1" 2>&1)"
+check_absent "sweep 1 does not report a 100-char line that is 200 bytes" "$OUT" "doc.md:3"
+check_contains "sweep 1 reports a 120-char line, measured in characters" "$OUT" "doc.md:4 (120 ch)"
+
+# dir #486: the cost section's calibration is per-file and English-derived; a non-English tree sizes
+# from its own pilot. A first run understated by half is a run that cannot finish.
+pin "the cost section says its numbers do not transfer across languages" "$doc" \
+  'These numbers do not transfer to a tree written in another language' \
+  "expected the cost section to warn a non-English adopter off sizing from keel's numbers"
+pin "the cost section hands over the two-point pilot fit" "$doc" 'per audited file plus a cost per line' \
+  "expected the fixed-per-file plus per-line template for the adopter's own pilot"
+check_absent "the cost section no longer says line counts alone suffice unqualified" \
+  "$(cat "$doc")" 'of comment prose** — close'
+
 # --- dir #231 item 3: a comment is a claim, not evidence — execute what it describes (home: this doc,
 # mirrored into the auditor/verifier templates it hands to agents) ---------------------------------
 pin "drydock.md's phase 1 rail 5 states the execute-don't-read rule" "$doc" \
