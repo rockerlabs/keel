@@ -1185,11 +1185,11 @@ for d in "${DIRS[@]}"; do
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
   # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
-  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_keeldir=""
+  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
       effective) w_eff="$w_v" ;; own) w_own="$w_v" ;; scope) w_scope="$w_v" ;; value) w_value="$w_v" ;;
-      origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
+      origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; pre-push) w_pp="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
     esac
   done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
   w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
@@ -1200,9 +1200,11 @@ for d in "${DIRS[@]}"; do
     # where "wired" must mean what install.sh's Verify means: the pre-commit carries Keel's marker line
     # (a user's wrapper that merely names the tool there is refused by the installer, so it is not Keel's
     # guard). Anywhere else a foreign pre-commit is the user's own wiring and counts.
-    case "$w_keeldir:$w_pc" in
-      1:foreign|1:foreign-link)
-        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($w_value) is Keel's machine-wide hooks dir, but the pre-commit in it is not Keel's (its marker line differs), so Keel's scan does not run — install-secret-guard.sh --global refuses to overwrite it; move it aside, or re-run that with --force (backs it up, then replaces it)$guard_home_note"
+    case "$w_keeldir:$w_pc:$w_pp" in
+      1:foreign*:*|1:*:foreign*)
+        # pre-push too: Verify (and the installer's own refusal) treat a foreign hook of EITHER name in
+        # Keel's dir as "not Keel's", so doctor must reach the same verdict.
+        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($w_value) is Keel's machine-wide hooks dir, but a hook in it (pre-commit or pre-push) is not Keel's (its marker line differs), so Keel's scan may not run — install-secret-guard.sh --global refuses to overwrite it; move it aside, or re-run that with --force (backs it up, then replaces it)$guard_home_note"
         ;;
       *)
         case "$w_pc" in

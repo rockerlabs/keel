@@ -388,6 +388,12 @@ rm -f "$kdir/pre-commit"; ln -s "$kdir/pre-commit.keel" "$kdir/pre-commit"
 doc_run genv "$dkrepo"
 check_absent "doctor: a symlinked Keel pre-commit still guards commits → not flagged unwired" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "doctor: ...but discloses that the installer will not update a symlink" "$OUT" "symlink"
+# Verify and the installer treat a foreign hook of EITHER name in Keel's dir as "not Keel's" — so does doctor.
+rm -f "$kdir/pre-commit"; mv "$kdir/pre-commit.keel" "$kdir/pre-commit"
+printf '#!/bin/sh\n# my own pre-push that mentions Keel secret-guard\nexit 0\n' > "$kdir/pre-push"
+doc_run genv "$dkrepo"
+check_contains "doctor: a non-Keel pre-push in Keel's dir is not 'wired' either" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "doctor: ...and says why" "$OUT" "not Keel's"
 # A user's own hooks dir keeps the old bar: an executable pre-commit is wired (no marker required).
 mk_home d-ownhooks; dohrepo="$(mk_repo)"; mkdir -p "$H/own-hooks"
 printf '#!/bin/sh\nexit 0\n' > "$H/own-hooks/pre-commit"; chmod +x "$H/own-hooks/pre-commit"

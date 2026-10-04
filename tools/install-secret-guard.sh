@@ -672,6 +672,8 @@ Usage:
                                          hooksPath (records the old value in keel.displacedHooksPath)
   install-secret-guard.sh --global --uninstall
                                          unwire the global guard: restore the displaced hooksPath, or unset it
+  install-secret-guard.sh --where <repo-path> | --where --global
+                                         read-only: which hooks dir an install writes, which one git reads
   install-secret-guard.sh -h | --help
 EOF
     exit 0 ;;
