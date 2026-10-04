@@ -156,6 +156,18 @@ check_status "--uninstall takes rollout-check out of the matcher-less entry, the
   '[{"hooks":[{"type":"command","command":"bash wrap-baseline.sh"}]}]' \
   "$(jq -c '.hooks.SessionStart' "$mrepo/.claude/settings.json")"
 
+# --- (c3) dir #600's live repro: --uninstall prunes only the arrays IT emptied. An already-empty
+# SessionStart (one of our event names, holding nothing of ours) used to go too, leaving "hooks": {}.
+prepo="$(new_repo)"
+mkdir -p "$prepo/.claude"
+jq -n --arg c "bash '$gate'" \
+  '{hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: $c}]}], SessionStart: []}}' \
+  > "$prepo/.claude/settings.json"
+run "$installer" --uninstall "$prepo"
+check_status "--uninstall over our PreToolUse + an empty SessionStart -> exit 0" 0 "$STATUS"
+check_status "our emptied PreToolUse is pruned; the already-empty SessionStart is not ours to delete" \
+  '{"SessionStart":[]}' "$(jq -c '.hooks' "$prepo/.claude/settings.json")"
+
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched ------------------------
 farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
 njrepo="$(new_repo)"

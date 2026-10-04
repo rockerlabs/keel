@@ -115,13 +115,25 @@ check_status "remove: ours inside an entry with someone else's command → REMOV
 check_status "remove: …only ours leaves; the sibling command in that entry stays" \
   '[{"type":"command","command":"keep-me"}]' "$(jq -c '.new.hooks.PostToolUse[0].hooks' <<<"$rm6")"
 
-# --- remove: the empty-array prune is scoped to OUR events (dir #564/#390) ------------------------------
+# --- remove: an empty array under another tool's event name survives (dir #564/#390) -------------------
 withforeign="$(jq -c '.new + {hooks: (.new.hooks + {Foreign: []})}' <<<"$merged")"
 rm3="$(hook_install_remove "$specs" "$withforeign")"
 check_status "remove: another tool's empty hook array survives" \
   true "$(jq '.new.hooks | has("Foreign")' <<<"$rm3")"
 check_status "remove: OUR now-empty arrays are pruned" \
   false "$(jq '.new.hooks | has("PostToolUse") or has("SessionEnd")' <<<"$rm3")"
+
+# --- dir #600: the prune keys on the arrays THIS run emptied, not on our event NAMES -------------------
+# An empty array under one of our event names that held nothing of ours (another tool's, or a hand
+# edit's) was not emptied by us, so it is not ours to delete.
+pre_empty="$(jq -c '.new | .hooks.SessionEnd = []' <<<"$merged")"
+rm600="$(hook_install_remove "$specs" "$pre_empty")"
+check_status "remove: an array OUR removal emptied is pruned" false "$(jq '.new.hooks | has("PostToolUse")' <<<"$rm600")"
+check_status "remove: an already-empty array on one of our event names survives" \
+  '[]' "$(jq -c '.new.hooks.SessionEnd' <<<"$rm600")"
+rm600b="$(hook_install_remove "$specs" '{"hooks":{"PostToolUse":[],"SessionEnd":[]}}')"
+check_status "remove: nothing of ours anywhere → nothing pruned" \
+  '{"PostToolUse":[],"SessionEnd":[]}' "$(jq -c '.new.hooks' <<<"$rm600b")"
 
 # --- the shape check ------------------------------------------------------------------------------------
 run hook_install_check_shape "install-x" "/p/settings.json" "$specs" '{"hooks":[]}'

@@ -37,6 +37,10 @@ sections real content going forward — see that page for exactly when each one 
   refusal instead of a raw jq error. Our hook already inside a match-all entry (no matcher, `""` or
   `"*"`) now reads as wired: `--force` used to add a second entry, so the hook fired twice, and
   `--uninstall` now takes it out of that entry. dir #660, dir #92.
+- **`--uninstall` prunes only the hook arrays it emptied.** The shared core used to delete every empty
+  array under one of the installer's event names, so an already-empty `SessionStart` (another tool's,
+  or a hand edit's) went too: `{"hooks":{"PreToolUse":[<ours>],"SessionStart":[]}}` came back as
+  `"hooks": {}`. Now an array goes only when this run took a hook out of it. dir #600.
 
 ## [0.13.0] — 2026-10-03
 
